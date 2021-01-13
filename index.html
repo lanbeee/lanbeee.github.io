@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta http-equiv="x-ua-compatible" content="ie=edge" />
+    <title>SOP All Versions</title>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.11.2/css/all.css">
+    <!-- Google Fonts Roboto -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap">
+    <!-- Bootstrap core CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.0/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Material Design Bootstrap -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/mdbootstrap/4.19.1/css/mdb.min.css" rel="stylesheet">
+    <!-- Your custom styles (optional) -->
+    <!-- <link rel="stylesheet" href="css/style.css"> -->
+    </head>
+<style>
+.mySlides {display:none;
+  text-align: left;
+font-weight: bolder;}
+.first {display: inline;}
+.small_btn{margin-bottom: 1.5em;
+  padding-top: 0.3em;
+  padding-bottom: 0.3em;
+}
+</style>
+<body>
+  <button class="btn" id = "word-count" style="position: fixed;" onclick="word_count()"></button>
+      <div class="container text-center my-4">
+
+    <p class="font-weight-bold">All the versions are pulled from the google spreadsheet</p>
+
+    <a class="btn btn-primary mb-4" href="https://docs.google.com/spreadsheets/d/1t2_HHLkibAybPORmXuDDEFEyetC3p7r1blQRpjzinXg/edit?usp=sharing" role="button" target="_blank">Click to see the source sheet</a>
+
+    <div id="demo">
+      <button class = "btn btn-primary mb-4 left" onclick="allplusDivs(-1)">&#10094;</button>
+      <button class = "btn btn-primary mb-4 right" onclick="allplusDivs(1)">&#10095;</button>
+    </div>
+
+  </div>
+    <!-- jQuery -->
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <!-- Bootstrap tooltips -->
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.6.0/umd/popper.min.js"></script>
+    <!-- Bootstrap core JavaScript -->
+    <script type="text/javascript" src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <!-- MDB core JavaScript -->
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mdbootstrap/4.19.1/js/mdb.min.js"></script>
+    
+    <!-- Populating data from sheets -->
+    <script type="text/javascript">
+          $.getJSON("https://spreadsheets.google.com/feeds/list/1pfYJlnriQ18awiZD1LJKsfy7PJmJkEIBvS3FjZL9S28/od6/public/values?alt=json", function (data) {
+
+      var sheetData = data.feed.entry;
+
+      var i;
+      for (i = 0; i < sheetData.length; i++) {
+
+        var first = data.feed.entry[i]['gsx$_cn6ca']['$t'];
+        var second = data.feed.entry[i]['gsx$_cokwr']['$t'];
+        var third = data.feed.entry[i]['gsx$_cpzh4']['$t'];
+        var fourth = data.feed.entry[i]['gsx$_cre1l']['$t'];
+        var fifth = data.feed.entry[i]['gsx$_chk2m']['$t'];
+
+        // document.getElementById('demo').innerHTML += ('<tr>'+'<td> ahh'+name+'</td>'+'<td>'+age+'</td>'+'<td>'+email+'</td>'+'<td>'+fourth+'</td>'+'<td>'+fifth+'</td>'+'</tr>');
+        document.getElementById('demo').innerHTML += (
+          '<div>' +
+          '<div class="first mySlides ' + i +'" style="width:100%"><div >' + first + '</div></div>' + 
+          '<div class="mySlides ' + i +'" style="width:100%"><div >' + second + '</div></div>' +
+          '<div class="mySlides ' + i +'" style="width:100%"><div >' + third + '</div></div>' +
+          '<div class="mySlides ' + i +'" style="width:100%"><div >' + fourth + '</div></div>' +
+          '<div class="mySlides ' + i +'" style="width:100%"><div >' + fifth + '</div></div>' +
+          '<button class = "small_btn btn left" onclick="plusDivs(-1,' + i + ')">&#10094;</button>' +
+          '<button class = "small_btn btn right" onclick="plusDivs(1,' + i + ')">&#10095;</button>' +
+          '</div>'
+          );
+
+      }
+    });
+    </script>
+    
+
+    <!-- Multtiple slidewhows -->
+
+    <script>
+
+// length should be atleast one more than the no of paragraphs
+var slideIndex = [1,1,1,1,1,1,1];
+var main_index = 1
+
+function allplusDivs(n){
+  for (i = 0; i < slideIndex.length; i++){
+    slideIndex[i] = main_index;
+    plusDivs(n, i);
+  }
+  main_index = slideIndex[0];
+}
+
+function plusDivs(n, j) {
+  showDivs(slideIndex[j] += n,j);
+}
+
+function showDivs(n,j) {
+  var i;
+  var x = document.getElementsByClassName("mySlides " + j);
+  if (n > x.length) {slideIndex[j] = 1}
+  if (n < 1) {slideIndex[j] = x.length}
+  for (i = 0; i < x.length; i++) {
+    x[i].style.display = "none";  
+  }
+  x[slideIndex[j]-1].style.display = "block";  
+}
+</script>
+
+<!-- Word count -->
+<script type="text/javascript">
+  function word_count(){
+    var profile_values = document.getElementsByClassName('mySlides');
+    var total_words = 0;
+    for (i = 0; i < profile_values.length; i++) {
+      style = window.getComputedStyle(profile_values[i]);
+      if (style.getPropertyValue('display') == 'block'){
+        total_words += profile_values[i].innerHTML.trim().split(' ').length;
+      }
+    }
+    document.getElementById('word-count').innerHTML = total_words;  
+}
+</script>
+
+</body>
+</html>
