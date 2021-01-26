@@ -62,6 +62,10 @@ font-weight: bolder;}
         var third = data.feed.entry[i]['gsx$_cpzh4']['$t'];
         var fourth = data.feed.entry[i]['gsx$_cre1l']['$t'];
         var fifth = data.feed.entry[i]['gsx$_chk2m']['$t'];
+        var sixth = data.feed.entry[i]['gsx$_ciyn3']['$t'];
+        var seventh = data.feed.entry[i]['gsx$_ciyn3']['$t'];
+        var eighth = data.feed.entry[i]['gsx$_ciyn3']['$t'];
+
 
         // document.getElementById('demo').innerHTML += ('<tr>'+'<td> ahh'+name+'</td>'+'<td>'+age+'</td>'+'<td>'+email+'</td>'+'<td>'+fourth+'</td>'+'<td>'+fifth+'</td>'+'</tr>');
         document.getElementById('demo').innerHTML += (
@@ -71,6 +75,9 @@ font-weight: bolder;}
           '<div class="mySlides ' + i +'" style="width:100%"><div >' + third + '</div></div>' +
           '<div class="mySlides ' + i +'" style="width:100%"><div >' + fourth + '</div></div>' +
           '<div class="mySlides ' + i +'" style="width:100%"><div >' + fifth + '</div></div>' +
+          '<div class="mySlides ' + i +'" style="width:100%"><div >' + sixth + '</div></div>' +
+          '<div class="mySlides ' + i +'" style="width:100%"><div >' + seventh + '</div></div>' +
+          '<div class="mySlides ' + i +'" style="width:100%"><div >' + eighth + '</div></div>' +
           '<button class = "small_btn btn left" onclick="plusDivs(-1,' + i + ')">&#10094;</button>' +
           '<button class = "small_btn btn right" onclick="plusDivs(1,' + i + ')">&#10095;</button>' +
           '</div>'
@@ -86,7 +93,7 @@ font-weight: bolder;}
     <script>
 
 // length should be atleast one more than the no of paragraphs
-var slideIndex = [1,1,1,1,1,1,1];
+var slideIndex = [1,1,1,1,1,1,1,1];
 var main_index = 1
 
 function allplusDivs(n){
