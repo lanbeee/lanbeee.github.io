@@ -6,6 +6,8 @@
 	<meta name="keywords" content="" />
 	<meta name="description" content="" />
     <link href='http://fonts.googleapis.com/css?family=Roboto:400,100,100italic,300,300itaâ€Œâ€‹lic,400italic,500,500italic,700,700italic,900italic,900' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v6.0.0/css/all.css" integrity="sha384-3B6NwesSXE7YJlcLI9RpRqGf2p/EgVH8BgoKTaUrmKNDkHPStTQ3EyoYjCGXaOTS" crossorigin="anonymous">
+
     <style type="text/css">
         a{text-decoration: none; color: inherit;}
         ul{padding-left: 0.8rem; margin: 0em; margin-bottom: .5em;list-style-type: circle;}
@@ -17,47 +19,50 @@
         .section{border-top:thin solid rgb(214, 214, 214);padding-top: 6px;margin-top:0;}
         .tenure{left: 82%; position: absolute; font-weight: bold; color: rgb(105, 105, 105);}
         .resumecell{position: relative; margin-bottom: .2em;}
-        .nav-tabs{margin-bottom: 0 ;border-top:thin solid rgb(214, 214, 214); padding: 0;} 
-        .nav-item {padding: 0 .1em 0 .1em;display: inline-block;border-right:thin solid rgb(214, 214, 214)}
+        .nav-tabs{margin-bottom: 0 ; padding: 0; color: rgb(105, 105, 105);} 
+        .nav-item {padding: 0;display: inline-block; margin-right: .3em;}
+        i{margin-right: .1em;}
         .resume {font-size: 80%; margin-top: 8mm;display: inline-block; max-width: 19cm; text-align: left; font-family: "Roboto", sans-serif;}
         .content-center{text-align: center;}
+        /* .gridcontainer{display: grid; grid-template-columns: 3.6fr 1fr;} */
      </style>
 
 </head>
 <body class="content-center">
 <div class="resume">
-    <h1 class = "h1 strong sectionhead content-center" style="text-transform: capitalize;">Nabeel Khan</h1>
-    <div class = "contactinfo" style="margin-bottom:0;">
-        <ul class="nav nav-tabs content-center ">
-            <!-- <li class =  'nav-item nav-link active'>716-614-2691</li> -->
-            <li class =  'nav-item'><a href="tel:7166142691">716-614-2691</a></li>
-            <li class =  'nav-item'><a href="mailto:nkhan6@buffalo.edu">nkhan6@buffalo.edu</a></li>
-            <!-- <li class =  'nav-item nav-link active'>nkhan6@buffalo.edu</li> -->
-            <li class =  'nav-item'><a href="https://www.linkedin.com/in/nabilkhaan">linkedin.com/in/nabilkhaan</a></li>
-            <!-- <li class =  'nav-item nav-link active'>linkedin.com/in/nabilkhaan</li> -->
-            <li class =  'nav-item'><a href="https://www.github.com/lanbeee">linkedin.com/in/nabilkhaan</a></li>
-            <!-- <li class =  'nav-item nav-link active'>github.com/lanbeee</li> -->
-            <li class =  'nav-item nav-link active' style="border-right: 0em;">Buffalo, NY, 14214</li>
-        </ul>
-    </div>
-    
-    <!-- <hr style="padding-top:0;margin-top:0;" /> -->
-    <div id="resumebody">
-        <div class="section" id="section0">
-            <h3 class="h3 sectionhead">Summary</h3><div class="resumecell"><span>Engineering Graduate Student with 3+ years of industry experience & seeking internship opportunities</span></div>
+    <div class="gridcontainer">
+        <div>
+            <h1 class = "h1 strong sectionhead" style="text-transform: capitalize;">Nabeel Khan</h1>
+            <summary class="resumecell"><span><strong>Machine Learning Engineer </strong>with 3+ years of industry experience & seeking internship opportunities.</span></summary>
         </div>
+        <div class = "contactinfo " style="margin-bottom:0;">
+            <ul class="nav nav-tabs">
+                <!-- <li class =  'nav-item nav-link active'>716-614-2691</li> -->
+                <li class =  'nav-item'><i class="fa-solid fa-phone"></i><a href="tel:7166142691">716-614-2691</a></li>
+                <li class =  'nav-item'><i class="fa-solid fa-envelope"></i><a href="mailto:nkhan6@buffalo.edu">nkhan6@buffalo.edu</a></li>
+                <!-- <li class =  'nav-item nav-link active'>nkhan6@buffalo.edu</li> -->
+                <li class =  'nav-item'><i class="fa-brands fa-linkedin"></i><a href="https://www.linkedin.com/in/nabilkhaan">linkedin.com/in/nabilkhaan</a></li>
+                <!-- <li class =  'nav-item nav-link active'>linkedin.com/in/nabilkhaan</li> -->
+                <li class =  'nav-item'><i class="fab fa-github"></i><a href="https://www.github.com/lanbeee">github.com/lanbeee</a></li>
+                <!-- <li class =  'nav-item nav-link active'>github.com/lanbeee</li> -->
+                <li class =  'nav-item'><i class="fa-solid fa-location-dot"></i><span>Buffalo, NY, 14214</span></li>
+            </ul>
+        </div>
+    </div>
+    <div id="resumebody">
+        
         <div class="section" id="section1">
-            <h3 class="h3 sectionhead">Education</h3><div class="resumecell"><span><strong>Master of Science, Data Science, </strong></span><span>University at Buffalo, SUNY  (GPA: 3.9)</span><span class="tenure">Sep 2021-Jan 2023</span></div><div class="resumecell"><span><strong>Bachelor of Technology, IIT, </strong></span><span>Indian Institute of Technology, Roorkee</span><span class="tenure">May 2013-May 2017</span></div>
+            <h3 class="h3 sectionhead">Education</h3><div class="resumecell"><span><strong>Master of Science, Data Science, </strong></span><span>University at Buffalo, SUNY</span><span class="tenure">Sep 2021-Jan 2023</span></div><div class="resumecell"><span>Relevant course work: Statistical Data Mining, Data Model & Query Language, Probability Theory, Predictive Analytics, Machine Learning, Reinforcement Learning.</span><span class="tenure">GPA: 3.9</span></div><div class="resumecell"><span><strong>Bachelor of Technology, IIT, </strong></span><span>Indian Institute of Technology, Roorkee</span><span class="tenure">May 2013-May 2017</span></div>
         </div>
         <div class="section" id="section2">
-            <h3 class="h3 sectionhead">Skills</h3><div class="resumecell"><ul><li><span><strong>Languages : </strong></span><span>Python, Django, Flask, JavaScript, HTML, CSS</span></li><li><span><strong>ML Tools : </strong></span><span>Classification, Regression, Clustering, Tree Based Algorithms, Bagging & Boosting.
-Libraries: TensorFlow, Keras, PyTorch, and scikit-learn.</span></li><li><span><strong>Data Management : </strong></span><span>SQLite, MySQL, pandas, Numpy, Excel</span></li><li><span><strong>Tools & Data analysis : </strong></span><span>Selenium, Django, Visual Studio Code, Version Control (git), OR Tools</span></li></ul></div>
+            <h3 class="h3 sectionhead">Skills</h3><div class="resumecell"><ul><li><span><strong>Languages : </strong></span><span>Python, JavaScript, MATLAB, R, SAS</span></li><li><span><strong>ML Tools : </strong></span><span>Classification, Regression, Clustering, Tree Based Algorithms, Bagging & Boosting.
+Libraries: TensorFlow, Keras, PyTorch, and scikit-learn.</span></li><li><span><strong>Deep Learning & NLP : </strong></span><span>LSTM, Transformers, CNN, YOLO, Word2Vec, TF-IDF, Topic Modelling, spaCy, NER</span></li><li><span><strong>Data Management : </strong></span><span>SQLite, MySQL, pandas, Numpy, Excel</span></li><li><span><strong>Tools & Data analysis : </strong></span><span>Version Control (git), Tableu, Time Series Forecasting, Data Visualization, Machine Learning Interpretability</span></li></ul></div>
         </div>
         <div class="section" id="section3">
             <h3 class="h3 sectionhead">Work Experience</h3><div class="resumecell"><span><strong>Associate Data Science, </strong></span><span>Merilytics, India</span><span class="tenure">Apr 2020-Aug 2021</span></div><div class="resumecell"><ul><li><span>Delivered ~$25 million annual savings by reducing ~2700 man hours weekly by automating property valuation. Built an Automated Valuation Model (AVM) using TensorFlow-based custom nearest-neighbor architecture to identify comparable properties to predict prices for 4 major property types: Multi-family, Office, Industrial, Retail.</span></li><li><span>Established an end-to-end data pipeline, & refactored complete code following PEP guidelines to productionise a deep learning real estate valuation model in the client's environment.</span></li><li><span>Developed a Revenue forecast model for a major European EV supplier leveraging Time Series forecasting packages such as fb-prophet, neural prophet. Reduced time taken for forecasting from 1 week to 4 hours.</span></li><li><span>Created a heuristic based driver scheduling algorithm to incorporate driving, terminal, and regulatory constraints to create a simulation of bills movement across 34 terminals across United States for a long-haul trucking client.</span></li></ul></div><div class="resumecell"><span><strong>Senior Data Science Analyst, </strong></span><span>Merilytics, India</span><span class="tenure">Feb 2019-Apr 2020</span></div><div class="resumecell"><ul><li><span>Built Sales Forecasting Model using Keras for creating promotion strategy for an American online clothing chain.</span></li><li><span>Developed an end-to-end data pipeline on Azure utilizing Azure functions to automate extract transform and load (ETL) data on a daily basis</span></li><li><span>Utilized KNN for determining comparable real estate properties, incorporating weights for different features</span></li></ul></div><div class="resumecell"><span><strong>Research Intern, </strong></span><span>Vidooly, India</span><span class="tenure">Dec 2018-Jan 2019</span></div><div class="resumecell"><ul><li><span>Developed several Keras models for classifying YouTube Thumbnails and established data pipeline for extracting thumbnails using YouTube API.</span></li></ul></div><div class="resumecell"><span><strong>Co-Founder & Content Creator, </strong></span><span>Synergy Learn, India</span><span class="tenure">Jan 2018-Sep 2018</span></div><div class="resumecell"><ul><li><span>Animated & Produced lectures for YouTube & garnered 10,000 hours of watch time.</span></li><li><span>Managed company website, and social media to promote business.</span></li></ul></div><div class="resumecell"><span><strong>Python Developer Internship, </strong></span><span>Modestreet, India</span><span class="tenure">Sep 2017 Dec 2017</span></div><div class="resumecell"><ul><li><span>Created a web app using Django & Three.js to make 3D human models with specific dimensions, to be used as a virtual mannequin for an online clothing store.</span></li></ul></div>
         </div>
         <div class="section" id="section4">
-            <h3 class="h3 sectionhead">Projects</h3><div class="resumecell"><span><strong>Reinforcement Learning Model for a dice game</strong></span></div><div class="resumecell"><ul><li><span>Designed basic infrastructure to mimic AlphaGo’s breakthrough. Used Ludo instead of Go, which is an intuitive dice-based game & can be treated as a Markov Decision process with ~10^28 unique states.</span></li><li><span>By playing itself, RL model builds intuition instead of using brute force search.</span></li><li><span>Utilized TensorFlow to build value function, with training data as probabilities of deaths of pieces, and generated data by running 1000 iterations for each state using Random policy.</span></li></ul></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"><span><strong>8 Ball Pool Mobile Game Assistant</strong></span></div><div class="resumecell"><ul><li><span>Captured the game screen by mirroring phone’s screen on computer, and then utilized screen capture to generate frames and processed further using OpenCV.</span></li><li><span>Used Hough Circle Transform to detect ball positions, and then predicted & visualized ball trajectories.</span></li></ul></div>
+            <h3 class="h3 sectionhead">Projects</h3><div class="resumecell"><span><strong>Reinforcement Learning Model : </strong></span><span>Designed environment using numpy to mimic AlphaGo for Ludo</span><span class="tenure">Ongoing</span></div><div class="resumecell"><span><strong>8 Ball Pool Assistant : </strong></span><span>Predicted & visualized ball trajectories using OpenCV, & made preemptive optimal decisions</span></div><div class="resumecell"><span><strong>Smartphone Price Prediction : </strong></span><span>Mined data from GSMArena and engineered features by mapping Centurian Mark Score.</span></div><div class="resumecell"><span><strong>Wildfires Analysis : </strong></span><span>Visualized the trends of wildfires using geopandas.</span></div><div class="resumecell"><span><strong>Poultry Price Forecast : </strong></span><span>Scraped 2 years of data using Selenium and built a Time Series forecast model</span></div><div class="resumecell"><span><strong>Probability Project : </strong></span><span>Found expected values using analytical approach as well as simulation.</span></div><div class="resumecell"><span><strong>Grocery Clustering : </strong></span><span>Clustered grocery items using kmeans for optimal positioning</span></div><div class="resumecell"><span><strong>Sentiment Analysis : </strong></span><span>Used Glove Word Embedding (NLP) for analyzing sentiments of tweets</span></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"></div><div class="resumecell"></div>
         </div>
         <div class="section" id="section5">
             <h3 class="h3 sectionhead">Accomplishments</h3><div class="resumecell"><span><strong>Achieved top 0.25 Percentile </strong></span><span>in the Joint Entrance Examination (All India exam with 1.4 million candidates)</span></div></div></div></div>
