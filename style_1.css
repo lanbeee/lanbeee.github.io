@@ -1,0 +1,27 @@
+a{text-decoration: none; color: inherit;}
+ul{padding-left: 0.8rem; margin: 0em; margin-bottom: .5em;list-style-type: circle;}
+.sectionhead{ font-weight: 900; margin: 0; color: rgb(255, 255, 255);text-transform: uppercase;}
+.em{font-style: italic;}
+strong{font-weight: 2000;}
+.mdmfnt{font-weight: bold; color: rgb(105, 105, 105);}
+body{ margin: 0;}
+.section{border-top:thin solid rgb(214, 214, 214);padding-top: 6px;margin-top:0;}
+.tenure{
+    /* left: 82%; position: absolute; */
+    font-weight: bold; color: rgb(105, 105, 105);}
+    
+.resumecell{position: relative; margin-bottom: .2em;}
+.nav-tabs{margin-bottom: 0 ;border-top:thin solid rgb(214, 214, 214); padding: 0; color: rgb(105, 105, 105);} 
+.nav-item {padding: 0;display: inline-block; margin-right: .3em;
+     font-size: 95%;
+    }
+i{margin-right: .1em; }
+li{margin-bottom: .1em; }
+.resume {font-size: 90%; margin-top: 11mm;margin-bottom: 11mm;display: inline-block; width: 22cm; text-align: left; font-family: "Roboto", sans-serif;}
+.content-center{text-align: center;}
+.grid-container{
+    /* display: grid; grid-template-columns: 4fr 1fr; */
+    position: relative;
+}
+.grid-left-elem{ display: inline-block; width: 78%; padding-right: 1.5em;}
+.grid-right-elem{ display: inline-block; width: 23%; height: inherit; position: absolute; top:0%}
