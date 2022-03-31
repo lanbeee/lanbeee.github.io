@@ -7,74 +7,82 @@
 	<meta name="description" content="" />
     <link href='http://fonts.googleapis.com/css?family=Roboto:400,100,100italic,300,300ita‌​lic,400italic,500,500italic,700,700italic,900italic,900' rel='stylesheet' type='text/css'>
     <link rel="stylesheet" href="https://use.fontawesome.com/releases/v6.0.0/css/all.css" integrity="sha384-3B6NwesSXE7YJlcLI9RpRqGf2p/EgVH8BgoKTaUrmKNDkHPStTQ3EyoYjCGXaOTS" crossorigin="anonymous">
-        <style type="text/css">
-        a{text-decoration: none; color: inherit;}
-        ul{padding-left: 0.8rem; margin: 0em; margin-bottom: .5em;list-style-type: circle;}
-        .sectionhead{ font-weight: 900; margin: 0; color: rgb(105, 105, 105);text-transform: uppercase;}
-        .em{font-style: italic;}
-        strong{font-weight: 2000;}
-        .mdmfnt{font-weight: bold; color: rgb(105, 105, 105);}
-        body{ margin: 0;}
-        .section{border-top:thin solid rgb(214, 214, 214);padding-top: 6px;margin-top:0;}
-        .tenure{
-            /* left: 82%; position: absolute; */
-            font-weight: bold; color: rgb(105, 105, 105);}
-            
-        .resumecell{position: relative; margin-bottom: .2em;}
-        .nav-tabs{margin-bottom: 0 ;border-top:thin solid rgb(214, 214, 214); padding: 0; color: rgb(105, 105, 105);} 
-        .nav-item {padding: 0;display: inline-block; margin-right: .3em;
-             font-size: 95%;
-            }
-        i{margin-right: .1em; }
-        li{margin-bottom: .1em; }
-        .resume {font-size: 90%; margin-top: 11mm;display: inline-block; max-width: 19cm; text-align: left; font-family: "Roboto", sans-serif;}
-        .content-center{text-align: center;}
-        .grid-container{
-            /* display: grid; grid-template-columns: 4fr 1fr; */
-            position: relative;
-        }
-        .grid-left-elem{ display: inline-block; width: 78%; padding-right: 1.5em;}
-        .grid-right-elem{ display: inline-block; width: 23%; height: inherit; position: absolute; top:0%}
-
-     </style>
+    <link href="accordion.css" rel="stylesheet" type='text/css'>
+    <link href="style_1.css" rel="stylesheet" type='text/css'>
 </head>
 <body class="content-center">
-<div class="resume">
-    <h1 class = "h1 strong sectionhead content-center" style="text-transform: uppercase;">Nabeel Khan</h1>
-    <div class = "contactinfo" style="margin-bottom:0;">
-        <ul class="nav nav-tabs content-center ">
-            <!-- <li class =  'nav-item nav-link active'>716-614-2691</li> -->
-            <li class =  'nav-item'><i class="fa-solid fa-phone"></i><a href="tel:7166142691">716-614-2691</a></li>
-            <li class =  'nav-item'><i class="fa-solid fa-envelope"></i><a href="mailto:nkhan6@buffalo.edu">nkhan6@buffalo.edu</a></li>
-            <!-- <li class =  'nav-item nav-link active'>nkhan6@buffalo.edu</li> -->
-            <li class =  'nav-item'><i class="fa-brands fa-linkedin"></i><a href="https://www.linkedin.com/in/nabilkhaan">linkedin.com/in/nabilkhaan</a></li>
-            <!-- <li class =  'nav-item nav-link active'>linkedin.com/in/nabilkhaan</li> -->
-            <li class =  'nav-item'><i class="fab fa-github"></i><a href="https://www.github.com/lanbeee">github.com/lanbeee</a></li>
-            <!-- <li class =  'nav-item nav-link active'>github.com/lanbeee</li> -->
-            <li class =  'nav-item'><i class="fa-solid fa-location-dot"></i><span>Buffalo, NY, 14214</span></li>
-        </ul>
+<div class="resume accordion">
+    <div>
+        <input type="checkbox" name="example_accordion" id="section0" class="accordion__input">
+        <label for="section0" class="accordion__label"><h1 class = "h1 strong sectionhead" style="text-transform: uppercase;">Nabeel Khan</h1></label>
+        
+        <div class="accordion__content">
+                <div class="resumecell"><span>Machine Learning Engineer with 3+ years of industry experience & seeking internship opportunities.</span></div>
+                <div class = "contactinfo" style="margin-bottom:0;">
+                        <ul class="nav nav-tabs  ">
+                        <!-- <li class =  'nav-item nav-link active'>716-614-2691</li> -->
+                        <li class =  'nav-item'><i class="fa-solid fa-phone"></i><a href="tel:7166142691">716-614-2691</a></li>
+                        <li class =  'nav-item'><i class="fa-solid fa-envelope"></i><a href="mailto:nkhan6@buffalo.edu">nkhan6@buffalo.edu</a></li>
+                        <!-- <li class =  'nav-item nav-link active'>nkhan6@buffalo.edu</li> -->
+                        <li class =  'nav-item'><i class="fa-brands fa-linkedin"></i><a href="https://www.linkedin.com/in/nabilkhaan">linkedin.com/in/nabilkhaan</a></li>
+                        <!-- <li class =  'nav-item nav-link active'>linkedin.com/in/nabilkhaan</li> -->
+                        <li class =  'nav-item'><i class="fab fa-github"></i><a href="https://www.github.com/lanbeee">github.com/lanbeee</a></li>
+                        <!-- <li class =  'nav-item nav-link active'>github.com/lanbeee</li> -->
+                        <li class =  'nav-item'><i class="fa-solid fa-location-dot"></i><span>Buffalo, NY, 14214</span></li>
+                        </ul>
+                </div>
+        </div>
     </div>
-    
     <!-- <hr style="padding-top:0;margin-top:0;" /> -->
-    <div id="resumebody">
-        <div class="section" id="section0">
-                <h3 class="h3 sectionhead">Summary</h3><div class="resumecell"><span>Machine Learning Engineer with 3+ years of industry experience & seeking internship opportunities.</span></div>
+    <!-- <div id="resumebody"> -->
+        <!-- <div class="section" id="sectionhead1">
+                <input type="checkbox" name="example_accordion" id="section1" class="accordion__input">
+                <label for="section1" class="accordion__label"><h3 class="h3 sectionhead">Summary</h3></label>
+                <div class="accordion__content">
+                        <div class="resumecell"><span>Machine Learning Engineer with 3+ years of industry experience & seeking internship opportunities.</span></div>
+                </div>
+        </div> -->
+        <div class="section" id="sectionhead2">
+                <input type="checkbox" name="example_accordion" id="section2" class="accordion__input">
+                <label for="section2" class="accordion__label"><h3 class="h3 sectionhead">Education</h3></label>
+                <div class="accordion__content">
+                        <div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Master of Science, Data Science, </strong></span><span>University at Buffalo, SUNY</span></div><div class="tenure grid-right-elem">Sep 2021-Jan 2023</div></div><div class="resumecell grid-container"><div class="grid-left-elem"><span>Relevant course work: Statistical Data Mining, Data Model & Query Language, Probability Theory, Predictive Analytics, Machine Learning, Reinforcement Learning.</span></div><div class="tenure grid-right-elem">GPA: 3.92</div></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Bachelor of Technology, IIT Roorkee, </strong></span><span>Indian Institute of Technology, Roorkee</span></div><div class="tenure grid-right-elem">May 2013-May 2017</div></div>
+                </div>
         </div>
-        <div class="section" id="section1">
-                <h3 class="h3 sectionhead">Education</h3><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Master of Science, Data Science, </strong></span><span>University at Buffalo, SUNY</span></div><div class="tenure grid-right-elem">Sep 2021-Jan 2023</div></div><div class="resumecell grid-container"><div class="grid-left-elem"><span>Relevant course work: Statistical Data Mining, Data Model & Query Language, Probability Theory, Predictive Analytics, Machine Learning, Reinforcement Learning.</span></div><div class="tenure grid-right-elem">GPA: 3.92</div></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Bachelor of Technology, IIT Roorkee, </strong></span><span>Indian Institute of Technology, Roorkee</span></div><div class="tenure grid-right-elem">May 2013-May 2017</div></div>
-        </div>
-        <div class="section" id="section2">
-                <h3 class="h3 sectionhead">Skills</h3><div class="resumecell"><ul><li class=""><span><strong>Languages : </strong></span><span>Python, JavaScript, MATLAB, R, SAS</span></li><li class=""><span><strong>ML Tools : </strong></span><span>Classification, Regression, Clustering, Tree Based Algorithms, Bagging & Boosting. <br/>
+        <div class="section" id="sectionhead3">
+                <input type="checkbox" name="example_accordion" id="section3" class="accordion__input">
+                <label for="section3" class="accordion__label"><h3 class="h3 sectionhead">Skills</h3></label>
+                <div class="accordion__content">
+                <div class="resumecell"><ul><li class=""><span><strong>Languages : </strong></span><span>Python, JavaScript, MATLAB, R, SAS</span></li><li class=""><span><strong>ML Tools : </strong></span><span>Classification, Regression, Clustering, Tree Based Algorithms, Bagging & Boosting. <br/>
 Libraries: TensorFlow, Keras, PyTorch, and scikit-learn.</span></li><li class=""><span><strong>Deep Learning & NLP : </strong></span><span>LSTM, Transformers, CNN, YOLO, Word2Vec, TF-IDF, Topic Modelling, spaCy, NER</span></li><li class=""><span><strong>Data Management : </strong></span><span>SQLite, MySQL, pandas, Numpy, Excel</span></li><li class=""><span><strong>Tools & Data analysis : </strong></span><span>Version Control (git), Tableu, Time Series Forecasting, Data Visualization, Machine Learning Interpretability</span></li></ul></div>
+                </div>        
         </div>
-        <div class="section" id="section3">
-                <h3 class="h3 sectionhead">Work Experience</h3><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Associate Data Scientist, </strong></span><span>Merilytics, India</span></div><div class="tenure grid-right-elem">Apr 2020-Aug 2021</div></div><div class="resumecell"><span>Built an Automated Valuation Model (<strong>AVM</strong>) using TensorFlow-based custom nearest-neighbor architecture to identify comparable properties for 4 major property types.</span></div><div class="resumecell"><ul><li class=""><span>Delivered <strong>~$25 million annual savings</strong> by reducing ~2700 man hours weekly by automating property valuation.</span></li><li class=""><span>Collaborated with client on biweekly calls to <strong>deploy the AVM</strong> in the client's environment by establishing an end-to-end data pipeline, & refactoring the code using PEP guidelines.</span></li></ul></div><div class="resumecell"><span>Developed a <strong>Demand forecast model</strong> with 1800 SKUs for a major European EV supplier </span></div><div class="resumecell"><ul><li class=""><span>Leveraged Time Series forecasting packages such as fb-prophet, neural prophet, & seq2seq neural nets.</span></li><li class=""><span>Reduced time taken for forecasting from 1 week to 4 hours with the automated pipeline.</span></li></ul></div><div class="resumecell"><span>Created a heuristic based driver <strong>scheduling algorithm</strong> to incorporate driving, terminal, & regulatory constraints.</span></div><div class="resumecell"><ul><li class=""><span>Automated driver scheduling, reducing the time taken from multiple days to 15 minutes.</span></li><li class=""><span>Produced a simulation of bills movement across 34 terminals for a long-haul trucking client.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Senior Data Science Analyst, </strong></span><span>Merilytics, India</span></div><div class="tenure grid-right-elem">Feb 2019-Apr 2020</div></div><div class="resumecell"><ul><li class=""><span>Built Sales Forecast Model using Keras for creating promotion strategy for an American online clothing chain.</span></li><li class=""><span>Developed an end-to-end data pipeline on Azure utilizing Azure functions to automate ETL.</span></li><li class=""><span>Utilized KNN for determining comparable real estate properties, incorporating weights for different features.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Research Intern, </strong></span><span>Vidooly, India</span></div><div class="tenure grid-right-elem">Dec 2018-Jan 2019</div></div><div class="resumecell"><ul><li class=""><span>Developed several Keras models for classifying YouTube Thumbnails and established data pipeline for extracting thumbnails using YouTube API.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Co-Founder & Content Creator, </strong></span><span>Synergy Learn, India</span></div><div class="tenure grid-right-elem">Jan 2018-Sep 2018</div></div><div class="resumecell"><ul><li class=""><span>Animated & Produced lectures for YouTube & garnered 10,000 hours of watch time.</span></li><li class=""><span>Managed company website, and social media to promote business.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Python Developer Internship, </strong></span><span>Modestreet, India</span></div><div class="tenure grid-right-elem">Sep 2017 Dec 2017</div></div><div class="resumecell"><ul><li class=""><span>Created a web app using Django & Three.js to make 3D human models with specific dimensions, to be used as a virtual mannequin for an online clothing store.</span></li></ul></div>
+        <div class="section" id="sectionhead4">
+                <input type="checkbox" name="example_accordion" id="section4" class="accordion__input">
+                <label for="section4" class="accordion__label"><h3 class="h3 sectionhead">Work Experience</h3></label>
+                <div class="accordion__content">
+                        <div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Associate Data Scientist, </strong></span><span>Merilytics, India</span></div><div class="tenure grid-right-elem">Apr 2020-Aug 2021</div></div><div class="resumecell"><span>Built an Automated Valuation Model (<strong>AVM</strong>) using TensorFlow-based custom nearest-neighbor architecture to identify comparable properties for 4 major property types.</span></div><div class="resumecell"><ul><li class=""><span>Delivered <strong>~$25 million annual savings</strong> by reducing ~2700 man hours weekly by automating property valuation.</span></li><li class=""><span>Collaborated with client on biweekly calls to <strong>deploy the AVM</strong> in the client's environment by establishing an end-to-end data pipeline, & refactoring the code using PEP guidelines.</span></li></ul></div><div class="resumecell"><span>Developed a <strong>Demand forecast model</strong> with 1800 SKUs for a major European EV supplier </span></div><div class="resumecell"><ul><li class=""><span>Leveraged Time Series forecasting packages such as fb-prophet, neural prophet, & seq2seq neural nets.</span></li><li class=""><span>Reduced time taken for forecasting from 1 week to 4 hours with the automated pipeline.</span></li></ul></div><div class="resumecell"><span>Created a heuristic based driver <strong>scheduling algorithm</strong> to incorporate driving, terminal, & regulatory constraints.</span></div><div class="resumecell"><ul><li class=""><span>Automated driver scheduling, reducing the time taken from multiple days to 15 minutes.</span></li><li class=""><span>Produced a simulation of bills movement across 34 terminals for a long-haul trucking client.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Senior Data Science Analyst, </strong></span><span>Merilytics, India</span></div><div class="tenure grid-right-elem">Feb 2019-Apr 2020</div></div><div class="resumecell"><ul><li class=""><span>Built Sales Forecast Model using Keras for creating promotion strategy for an American online clothing chain.</span></li><li class=""><span>Developed an end-to-end data pipeline on Azure utilizing Azure functions to automate ETL.</span></li><li class=""><span>Utilized KNN for determining comparable real estate properties, incorporating weights for different features.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Research Intern, </strong></span><span>Vidooly, India</span></div><div class="tenure grid-right-elem">Dec 2018-Jan 2019</div></div><div class="resumecell"><ul><li class=""><span>Developed several Keras models for classifying YouTube Thumbnails and established data pipeline for extracting thumbnails using YouTube API.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Co-Founder & Content Creator, </strong></span><span>Synergy Learn, India</span></div><div class="tenure grid-right-elem">Jan 2018-Sep 2018</div></div><div class="resumecell"><ul><li class=""><span>Animated & Produced lectures for YouTube & garnered 10,000 hours of watch time.</span></li><li class=""><span>Managed company website, and social media to promote business.</span></li></ul></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Python Developer Internship, </strong></span><span>Modestreet, India</span></div><div class="tenure grid-right-elem">Sep 2017 Dec 2017</div></div><div class="resumecell"><ul><li class=""><span>Created a web app using Django & Three.js to make 3D human models with specific dimensions, to be used as a virtual mannequin for an online clothing store.</span></li></ul></div>
+                </div>
         </div>
-        <div class="section" id="section4">
-                <h3 class="h3 sectionhead">Projects</h3><div class="resumecell"><ul><li class=" grid-container"><div class="grid-left-elem"><span><strong>Reinforcement Learning Model : </strong></span><span>Designed environment using numpy to mimic AlphaGo for Ludo</span></div><div class="tenure grid-right-elem">Ongoing</div></li><li class=" grid-container"><div class="grid-left-elem"><span><strong>Time Series Forecasting : </strong></span><span>Time Series Analysis, customer segmentation, and interactive dashboard for 100k orders from an e-commerce platform.</span></div><div class="tenure grid-right-elem">Ongoing</div></li><li class=" grid-container"><div class="grid-left-elem"><span><strong>Resume Syncronization : </strong></span><span>Managed 6 profile versions on a single spreadsheet to keep changes in sync & avoid repetitive editing. <br /> Utilized Python, HTML, & CSS for formatting & rendering, and Excel for handling data to create this version of my resume.</span></div><div class="tenure grid-right-elem">Ongoing</div></li><li class=""><span><strong>8 Ball Pool : </strong></span><span>Predicted & visualized ball trajectories using OpenCV, & made preemptive optimal decisions.</span></li><li class=""><span><strong>Smartphone Price Prediction : </strong></span><span>Mined data from GSMArena and performed feature engineering by mapping Centurian Mark Score using fuzzy logic</span></li><li class=""><span><strong>Wildfires Analysis : </strong></span><span>Visualized the clusters of different wildfires using geopandas, and predicted the Arson wildfire by performing EDA & appropriate feature engineering.</span></li><li class=""><span><strong>Poultry Price Forecast : </strong></span><span>Scraped 2 years of data using Selenium and built a Time Series forecast model.</span></li><li class=""><span><strong>Probability Project : </strong></span><span>Found expected values using analytical approach as well as simulation.</span></li><li class=""><span><strong>Clustered grocery items </strong></span><span>using kmeans for optimal positioning & proximity of similar items.</span></li><li class=""><span><strong>Sentiment Analysis : </strong></span><span>Used Glove Word Embedding (NLP) for analyzing sentiments from twitter.</span></li></ul></div><div class="resumecell"></div>
+        <div class="section" id="sectionhead5">
+                <input type="checkbox" name="example_accordion" id="section5" class="accordion__input">
+                <label for="section5" class="accordion__label"><h3 class="h3 sectionhead">Projects</h3></label>
+                <div class="accordion__content">
+                        <div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Reinforcement Learning Model : </strong></span><span>Designed environment using numpy to mimic AlphaGo for Ludo</span></div><div class="tenure grid-right-elem">Ongoing</div></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Time Series Forecasting : </strong></span><span>Time Series Analysis, customer segmentation, and interactive dashboard for 100k orders from an e-commerce platform.</span></div><div class="tenure grid-right-elem">Ongoing</div></div><div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Resume Syncronization : </strong></span><span>Managed 6 profile versions on a single spreadsheet to keep changes in sync & avoid repetitive editing. <br /> Utilized Python, HTML, & CSS for formatting & rendering, and Excel for handling data to create this version of my resume.</span></div><div class="tenure grid-right-elem">Ongoing</div></div><div class="resumecell"><span><strong>8 Ball Pool : </strong></span><span>Predicted & visualized ball trajectories using OpenCV, & made preemptive optimal decisions.</span></div><div class="resumecell"><span><strong>Smartphone Price Prediction : </strong></span><span>Mined data from GSMArena and performed feature engineering by mapping Centurian Mark Score using fuzzy logic</span></div><div class="resumecell"><span><strong>Wildfires Analysis : </strong></span><span>Visualized the clusters of different wildfires using geopandas, and predicted the Arson wildfire by performing EDA & appropriate feature engineering.</span></div><div class="resumecell"><span><strong>Poultry Price Forecast : </strong></span><span>Scraped 2 years of data using Selenium and built a Time Series forecast model.</span></div><div class="resumecell"><span><strong>Probability Project : </strong></span><span>Found expected values using analytical approach as well as simulation.</span></div><div class="resumecell"><span><strong>Clustered grocery items </strong></span><span>using kmeans for optimal positioning & proximity of similar items.</span></div><div class="resumecell"><span><strong>Sentiment Analysis : </strong></span><span>Used Glove Word Embedding (NLP) for analyzing sentiments from twitter.</span></div><div class="resumecell"></div>
+                </div>
         </div>
-        <div class="section" id="section5">
-                <h3 class="h3 sectionhead">Accomplishments</h3><div class="resumecell"><span><strong>Achieved 99.76 Percentile </strong></span><span>in the Joint Entrance Examination (All India exam with 1.4 million candidates).</span></div><div class="resumecell"><span><strong>Achieved 98.98 Percentile </strong></span><span> in eLitmus pH Test for Problem Solving.</span></div></div></div></div>
-    <div class="right"></div>
-    <div id="footer"></div>
-    </body></html>
+        <div class="section" id="sectionhead6">
+                <input type="checkbox" name="example_accordion" id="section6" class="accordion__input">
+                <label for="section6" class="accordion__label"><h3 class="h3 sectionhead">Accomplishments</h3></label>
+                <div class="accordion__content">
+                        <div class="resumecell"><span><strong>Achieved 99.76 Percentile </strong></span><span>in the Joint Entrance Examination (All India exam with 1.4 million candidates).</span></div>
+                        <div class="resumecell"><span><strong>Achieved 98.98 Percentile </strong></span><span> in eLitmus pH Test for Problem Solving.</span></div>
+                </div>
+        </div>
+    <!-- </div> -->
+</div>
+    
+    
+<div class="right"></div>
+<div id="footer"></div>
+</body></html>
