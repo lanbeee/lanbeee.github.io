@@ -1,10 +1,14 @@
 .accordion {
-  max-width: 22cm;
+  /* max-width: 22cm; */
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
-  border-radius: 5px;
+  border-radius: 10px;
   overflow: hidden;
   font-family: "Quicksand", sans-serif;
-  background: #2b3a45;
+  background: #243643;
+}
+
+.accordion__content .accordion{
+  background: #3c5567;
 }
 
 .accordion__label,
