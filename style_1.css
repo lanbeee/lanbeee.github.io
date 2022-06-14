@@ -1,10 +1,10 @@
 a{text-decoration: none; color: inherit;}
-ul{padding-left: 0.8rem; margin: 0em; margin-bottom: .5em;list-style-type: circle;}
+ul{padding-left: 1.2rem; margin: 0em; list-style-type: circle;}
 .sectionhead{ font-weight: 900; margin: 0; color: rgb(0, 0, 0);text-transform: uppercase;}
 .em{font-style: italic;}
 strong{font-weight: 2000;}
 .mdmfnt{font-weight: bold; color: rgb(105, 105, 105);}
-body{ margin: 0; background-color: rgb(170, 170, 170);}
+body{ margin: 0; background-color: rgb(105, 105, 105);}
 /* .section{border-top:thin solid rgb(214, 214, 214);margin-top:0;} */
 .tenure{
     /* left: 82%; position: absolute; */
@@ -13,8 +13,8 @@ body{ margin: 0; background-color: rgb(170, 170, 170);}
     font-weight: bold; color: rgb(0, 0, 0);
 }
     
-.resumecell{position: relative; margin-bottom: .2em;}
-.indentsmall{ margin-left: .8em;}
+.resumecell{position: relative; padding-bottom: .2em;}
+.indentsmall{ padding-left: .5em;}
 .nav-tabs{
     /* justify-content: center; */
     /* margin-bottom: 0 ; */
@@ -31,11 +31,48 @@ body{ margin: 0; background-color: rgb(170, 170, 170);}
     }
 i{margin-right: .1em; }
 li{margin-bottom: .1em; }
-.resume {font-size: 90%; margin-top: 11mm;margin-bottom: 22mm;display: inline-block; width: 22cm; text-align: left; font-family: "Roboto", sans-serif;}
+.resume {font-size: 90%; margin-top: 1mm;display: inline-block; width: 22cm; text-align: left; font-family: "Roboto", sans-serif;}
 .content-center{text-align: center;}
 .grid-container{
     /* display: grid; grid-template-columns: 4fr 1fr; */
     position: relative;
 }
 .grid-left-elem{ display: inline-block; width: 77%; padding-right: 1.5em;}
-.grid-right-elem{ display: inline-block; width: 23%; height: inherit; position: absolute; top:0%}
+.grid-right-elem{ display: inline-block; width: 23%; height: inherit; position: absolute; top:0%; padding-top: inherit;}
+
+
+.indsmalltop{
+    padding:8px 25px 2px 25px;
+}
+
+.indsmallbottom{
+    padding:2px 25px 8px 25px;
+}
+
+.indsmallsingle{
+    padding:8px 25px 8px 25px;
+}
+
+.indsmall{
+    padding:2px 25px 2px 25px;
+}
+
+.highlight3 :hover .highlight1:not(:hover){
+    background-color:#eee;
+    /* filter: blur(.5px);
+  -webkit-filter: blur(.5px); */
+}
+
+/* 
+.highlight1:hover{
+    background-color:#eee;
+    filter: blur(1px);
+  -webkit-filter: blur(1px);
+} */
+
+
+
+.highlight2:hover a{
+text-decoration: underline;
+
+}
