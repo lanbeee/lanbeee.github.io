@@ -1,18 +1,13 @@
 .accordion {
   /* max-width: 22cm; */
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.25);
   /* border-radius: 10px; */
   overflow: hidden;
   font-family: "Quicksand", sans-serif;
-  background: #eeeeee;
+  background: #eee;
 }
 
-.accordion__content .accordion{
-  background: #3c5567;
-}
-
-.accordion__label,
-.accordion__content {
+.accordion__label {
   padding: 14px 25px;
 }
 
@@ -23,10 +18,11 @@
   cursor: pointer;
   position: relative;
   transition: background 0.1s;
+  /* background-color: #dcdcdc; */
 }
 
 .accordion__label:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgb(255, 255, 255, 0.5);
 }
 
 .accordion__label::after {
