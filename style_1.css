@@ -76,3 +76,23 @@ li{margin-bottom: .1em; }
 text-decoration: underline;
 
 }
+
+.main_body{
+    margin-left: .6cm;
+}
+
+.side_bar{
+    background-color: rgb(60, 60, 60);
+    position: fixed;
+    width: .6cm;
+    height: 100%;
+    float: left;
+    writing-mode:vertical-lr;
+}
+
+.side_elem{
+    text-transform: uppercase;
+    color: rgb(196, 196, 196);
+    padding-top: .5cm;
+    display: inline;
+}
