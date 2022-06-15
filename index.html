@@ -10,7 +10,18 @@
     <link href="accordion.css" rel="stylesheet" type='text/css'>
     <link href="style_1.css" rel="stylesheet" type='text/css'>
 </head>
-<body class="content-center">
+
+
+<body>
+<div class = "side_bar">
+ <div class="side_elem" onclick='document.getElementById("workex_content").style.display = "block"'><a href="#workex">Work Experience</a></div>
+ <div class="side_elem" onclick='document.getElementById("education_content").style.display = "block"'><a href="#education">Education</a></div>
+ <div class="side_elem" onclick='document.getElementById("skills_content").style.display = "block"'><a href="#skills">Skills</a></div>
+ <div class="side_elem" onclick='document.getElementById("projects_content").style.display = "block"'><a href="#projects">Projects</a></div>
+ <div class="side_elem" onclick='document.getElementById("achievements_content").style.display = "block"'><a href="#achievements">Accomplishments</a></div>
+ <div class="side_elem" onclick='document.getElementById("contact_content").style.display = "block"'><a href="#contact">Contacts</a></div>
+</div>
+<div class = "main_body content-center">
 <div class="resume accordion ">
         <div>
                 <input type="checkbox" name="example_accordion" id="section0" class="accordion__input" checked>
@@ -35,22 +46,22 @@
                         <h3 class="h3 sectionhead">Work Experience</h3>
                         <span>Data Scientist with 3+ years of experience demonstrating history of working with wide variety of tools.</span>
                 </label>
-                <div class="accordion__content">
+                <div class="accordion__content" id="workex_content">
                         <div class="indsmalltop highlight1 highlight2">
                                 <div class="resumecell grid-container">
                                         <div class="grid-left-elem"><span><strong>Data Analyst Intern, </strong></span><span><a href="https://www.tpcaba.com/">The Prefect Child LLC</a>, Brooklyn NY</span></div>
                                         <div class="tenure grid-right-elem">Jun 2022-Aug 2022</div>
                                 </div>
+                                
                                 <div class= "indentsmall">
-                                        <div class= "indentsmall">
-                                                <div class="resumecell">
-                                                        <ul>
-                                                                <li class=""><span>Built a summary dashboard, capturing appropriate KPIs and statistics.</span></li>
-                                                                <li class=""><span>Created a database for addresses & geo coordinates using google maps API, and visualized on a map.</span></li>
-                                                        </ul>
-                                                </div>
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Built a summary dashboard, capturing appropriate KPIs and statistics.</span></li>
+                                                        <li class=""><span>Created a database for addresses & geo coordinates using google maps API, and visualized on a map.</span></li>
+                                                </ul>
                                         </div>
                                 </div>
+                                
                         </div>
                         <div class="indsmall highlight1 highlight2">
                                 <div class="resumecell grid-container">
@@ -175,7 +186,7 @@
         <div class="section" id="education">
                 <input type="checkbox" name="example_accordion" id="section2" class="accordion__input">
                 <label for="section2" class="accordion__label"><h3 class="h3 sectionhead">Education</h3><span>Strong engineering professional with a Bachelor of Technology from IIT Roorkee, <br /> and MS in Data Science from SUNY Buffalo.</span></label>
-                <div class="accordion__content">
+                <div class="accordion__content" id="education_content">
                         <div class="">
                         <div class="indsmalltop highlight2 highlight1">
                                 <div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Master of Science, Data Science, </strong></span><span><a href="https://www.buffalo.edu/">University at Buffalo, SUNY</a></span></div><div class="tenure grid-right-elem">Sep 2021-Jan 2023</div></div>
@@ -190,7 +201,7 @@
         <div class="section" id="skills">
                 <input type="checkbox" name="example_accordion" id="section3" class="accordion__input">
                 <label for="section3" class="accordion__label"><h3 class="h3 sectionhead">Skills</h3><span>Python, Data Analytics, and Deep Learning.</span></label>
-                <div class="accordion__content">
+                <div class="accordion__content" id="skills_content">
                 <div class="resumecell indsmallsingle">
                         <ul>
                                 <li class=""><span><strong>Languages : </strong></span><span>Python, JavaScript, MATLAB, R, SAS</span></li>
@@ -203,15 +214,15 @@
                 </div>
                 </div>        
         </div>
-        <div class="section" id="Projects">
+        <div class="section" id="projects">
                 <input type="checkbox" name="example_accordion" id="section5" class="accordion__input">
                 <label for="section5" class="accordion__label"><h3 class="h3 sectionhead">Projects</h3><span>Passionate about solving interesting problems, and working on new ideas.</span></label>
-                <div class="accordion__content">
+                <div class="accordion__content" id="projects_content">
 
                         <div class="highlight1">
                         <div class="resumecell indsmalltop highlight2"><span><strong><a href="https://github.com/lanbeee/custom_nearest_neighbors">New Architecture : </a></strong></span><span>Created a new deep learning architecture based nearest-neighbors.</span></div>
                         
-                        <div class="resumecell indsmalltop highlight2"><span><strong><a href="https://github.com/lanbeee/multi_agent_reinforcement_learning">Reinforcement Learning : </a></strong></span><span>Created a scalable multi agent environment for Ludo from scratch, used Tabular methods with the downscaled version of Ludo & actor critic for full-scale version, and Designed the reward structures to accelerate learning.</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/multi_agent_reinforcement_learning">Reinforcement Learning : </a></strong></span><span>Created a scalable multi agent environment for Ludo from scratch, used Tabular methods with the downscaled version of Ludo & actor critic for full-scale version, and Designed the reward structures to accelerate learning.</span></div>
                         <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/Data_Models_Query_languages_project">Dashboard : </a></strong></span><span>Created an e-commerce platform from scratch with a summary dashboard, orders page, and a linked PostgreSQL database.</span></div>
                         
 
@@ -243,7 +254,7 @@
         <div class="section" id="achievements">
                 <input type="checkbox" name="example_accordion" id="section6" class="accordion__input" checked>
                 <label for="section6" class="accordion__label"><h3 class="h3 sectionhead">Accomplishments</h3></label>
-                <div class="accordion__content">
+                <div class="accordion__content" id="achievements_content">
                         <div class="resumecell indsmalltop"><span><strong>Achieved 99.76 Percentile </strong></span><span>in the Joint Entrance Examination (All India exam with 1.4 million candidates).</span></div>
                         <div class="resumecell indsmallbottom"><span><strong>Achieved 98.98 Percentile </strong></span><span> in eLitmus pH Test for Problem Solving.</span></div>
                 </div>
@@ -251,7 +262,7 @@
         <div class="section" id="contact">
                 <input type="checkbox" name="example_accordion" id="section7" class="accordion__input" checked>
                 <label for="section7" class="accordion__label"><h3 class="h3 sectionhead">Contacts</h3></label>
-                <div class="accordion__content">
+                <div class="accordion__content" id="contact_content">
                         <div class="resumecell indsmallsingle"><div class = "contactinfo" style="margin-bottom:0;">
                                 <ul class="nav nav-tabs ">
                                     <li class =  'nav-item'><i class="fa-solid fa-phone"></i><a href="tel:7166142691">716-614-2691</a></li>
@@ -267,7 +278,7 @@
         </div>
     <!-- </div> -->
 </div>
-    
+</div>  
     
 <div class="right"></div>
 <div id="footer"></div>
