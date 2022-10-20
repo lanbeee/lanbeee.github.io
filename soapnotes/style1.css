@@ -59,3 +59,16 @@
     background: #ccc;
     cursor: pointer;
     }
+
+    input[type=checkbox], input[type=radio] {
+        margin: 0;
+        line-height: normal;
+    }
+
+    .cbx{
+        margin-left: 15px;
+    }
+
+    .checkbox-inline, .radio-inline {
+        padding-left: 15px;
+    }
