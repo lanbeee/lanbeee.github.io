@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="x-ua-compatible" content="ie=edge">
+<title>SOAP Notes</title>
+
+<!-- CSS -->
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+<link rel="stylesheet" href="style1.css">
+<link rel="stylesheet" href="sign/sign.css">
+
+</head>
+<body>
+    
+    <form class="myForm signature-pad-form" method="POST" action="#">
+        <h1>SOAP Notes</h1>
+        <p>
+            <label>Service Date
+                <input type="date" name="pickup_time" required>
+            </label>
+            <label> Session start time
+                <input type="time" id="starttime" name="starttime" min="09:00" max="18:00" required>
+            </label>
+            <label> Session end Time
+                <input type="time" id="endtime" name="endtime" min="09:00" max="18:00" required>
+            </label>
+        </p>
+
+        <p>
+            <label>Notes
+                <textarea name="comments" cols="100" maxlength="500"></textarea>
+            </label>
+        </p>
+
+        <p>
+            <label>Location
+                <select id="pickup_place" name="pickup_place">
+                    <!-- <option value="" selected="selected">Select One</option> -->
+                    <option value="school" >School</option>
+                    <option value="home" selected="selected">Home</option>
+                    <option value="clinic" >Clinic</option>
+                    <option value="community" >Community</option>
+
+                </select>
+            </label> 
+        </p>
+        
+        <p>
+            <legend>People Present</legend>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="people" value="client" checked> Client </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="people" value="therapist" checked> RBT </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="people" value="parent"> Caregiver </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="people" value="bcba"> BCBA </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="people" value="teacher"> Teacher </label></span>
+        </p>
+
+        <p>
+            <label>Identified Barriers
+            <input type="text" name="barriers" required>
+            </label> 
+        </p>
+
+        <fieldset>
+            <legend>Interventions Used</legend>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="reinforce" checked> Differential Reinforcement </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="primimg" checked> Priming </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="visualsupports"> Visual Supports </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="token"> Token Economy System </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="ignoring"> Planned Ignoring </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="extinct"> Extinction </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="redirect"> Redirection </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="skill"> Behavioral Skill Training </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="block"> Blocking </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="shaping"> Shaping </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="teaching"> Errorless Teaching </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="video"> Video Modelling </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="function"> Function Modelling </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="desensitize"> Systemic Desensitization </label></span>
+                <span><label class="checkbox-inline"> <input type="checkbox" name="interv" value="other"> Other </label></span>
+
+
+        </fieldset>
+        
+        <p>
+            <label>RBT Name and Credentials
+            <input type="text" name="rbt_name" required>
+            </label> 
+        </p>
+
+        <canvas height="200" width="300" class="signature-pad"></canvas>    
+            <p><a href="#" class="clear-button">Clear</a></p>  
+
+        <p>
+            <label>Caregiver Name and Credentials
+            <input type="text" name="caregiver_name" required>
+            </label> 
+        </p>
+
+        
+
+        <button class="submit-button" type="submit">SUBMIT</button> 
+
+</form>
+<script src="sign/sign.js"></script>
+</body>
+</html>
