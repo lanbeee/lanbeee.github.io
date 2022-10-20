@@ -7,7 +7,7 @@ body {
     padding: 1rem;
 }
 .signature-pad-form {  
-    max-width: 300px;  
+    /* max-width: 300px;   */
     margin: 0 auto;
 }
 .signature-pad {  
@@ -21,7 +21,7 @@ body {
     background-color: var(--primary-color);  
     border: none;  
     padding: 0.5rem 1rem;  
-    color: #fff;  
+    /* color: #fff;   */
     cursor: pointer;  
     margin-top: 2rem;
 }
