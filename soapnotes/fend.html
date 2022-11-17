@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>  
+        <meta charset="UTF-8">  
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">  
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">  
+        <title>Intake packet</title>  
+        <!-- <link rel="stylesheet" href="sign.css"> -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+        <style>
+            :root {  
+                --primary-color: #000;
+            }
+
+            .signature-pad-form {  
+                max-width: 700px;  
+                margin: auto;
+            }
+            .padarea{
+                background : white;
+                width : 300px;      
+                height : 250px;      
+                margin : 150px auto; 
+            }
+
+            .signature-pad {
+                
+                margin: auto;
+                max-width: 300px; 
+                cursor: pointer;
+                border: 2px solid var(--primary-color);
+            }
+
+            span,input{
+                margin-bottom: 1em;
+            }
+
+            input{
+                margin-right: .75em;
+            }
+
+            span{
+                margin-right: .5em;
+            }
+            
+            
+            /* .card{
+                padding: .2em;
+                margin-bottom: .2em;
+            } */
+            .inblock{
+                display: inline-block;
+            }
+/* 
+            @media (pointer: coarse) {  body {    
+                overflow: hidden; }}
+                 */
+        </style>
+    </head>
+    <body>
+        <div class="form-group card" style="padding:1em;margin: 1em auto; max-width: fit-content;">
+            <form class="signature-pad-form" action="/files/" enctype="multipart/form-data" method="POST">
+                <h4>Dear Parents/Guardians,</h4><p>
+                    Welcome to The Perfect Child! We are grateful that you are
+    interested in our program and look forward to meeting you and
+    your family. The Perfect Child is a school-based and home-based
+    ABA (Applied Behavior Analysis) program that provides
+    one-on-one therapy for children diagnosed with Autism, as well as
+    other Autism Spectrum Disorders. TPC looks to provide a quality
+    and caring service to each child that is enrolled. Each staff
+    member is highly trained and dedicated to meet the needs of the
+    families and children they serve.</p>
+    
+    <p>The first step in enrolling in our program is completing the
+    necessary paperwork for your child. Please thoroughly fill out each
+    page of the client application packet that is provided below. Once
+    you have completed the and submitted the form you will get a copy in your email.</p>
+    
+    <p>In addition to the application packet,
+    attach all medical documentation relating to the autism diagnosis
+    (this must include Neuropsychological Evaluation) and a copy of
+    your child's insurance card. We will be in contact with after we
+    receive the application packet to continue the intake process. If
+    you have any questions along the way, please contact us.</p>
+    
+    <p style="margin-bottom: 2em;"><strong>
+    Thanks again for your interest in our program!
+                </strong></p>
+
+                <input style="display:none" name="file" type="file" id="file_input">
+                <div>
+                    <div class="inblock"><label><span>Today's Date:</span></label><input id="datePicker" name="datetoday" type="date"></div>
+                    <div class="inblock"><label><span>Client Legal Name:</span></label><input name="name" type="text"></div>
+                    <div class="inblock">
+                        <label><span>Name Client goes by:</span></label><input name="nameb" type="text"></div>
+                        <div class="inblock">
+                        <label><span>Date of Birth:</span></label><input name="DOB" type="date">
+                    </div>
+                    <div class="inblock"><label><span>Gender:</span></label><input name="gender" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Home Address:</span></label><input name="address" type="text">
+                    </div>
+                    <div class="inblock"><label><span>City:</span></label><input name="city" type="text">
+                    </div>
+                    <div class="inblock"><label><span>State:</span></label><input name="state" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Zip:</span></label><input name="zipcode" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Name of School:</span></label><input name="school" type="text">
+                    </div>
+                </div>
+                <div>
+                    <h3>Family Information</h3>
+
+                    <div class="inblock"><label><span>Client lives with:</span></label><input name="liveswith" type="text">
+                    </div>
+                    <h5>Parent/Gurdian 1</h5>
+                    <div class="inblock"><label><span>Name:</span></label><input name="pg1name" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Relationship:</span></label><input name="pg1relation" type="text" value="Mother">
+                    </div>
+                    <div class="inblock"><label><span>Home Address:</span></label><input name="pg1address" type="text">
+                    </div>
+                    <div class="inblock"><label><span>City:</span></label><input name="pg1city" type="text">
+                    </div>
+                    <div class="inblock"><label><span>State:</span></label><input name="pg1state" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Zip:</span></label><input name="pg1zipcode" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Home Phone:</span></label><input name="pg1homephone" type="tel">
+                    </div>
+                    <div class="inblock"><label><span>Cell Phone:</span></label><input name="pg1phone" type="tel">
+                    </div>
+                    <div class="inblock"><label><span>Employed by:</span></label><input name="pg1employer" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Occupation:</span></label><input name="pg1occupation" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Employer Address:</span></label><input name="pg1empadress" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Employer Phone:</span></label><input name="pg1empphone" type="tel">
+                    </div>
+                    
+                    <h5>Parent/Gurdian 2</h5>
+
+                    <div class="inblock"><label><span>Name:</span></label><input name="pg2name" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Relationship:</span></label><input name="pg2relation" type="text" value="Father">
+                    </div>
+                    <div class="inblock"><label><span>Home Address:</span></label><input name="pg2address" type="text">
+                    </div>
+                    <div class="inblock"><label><span>City:</span></label><input name="pg2city" type="text">
+                    </div>
+                    <div class="inblock"><label><span>State:</span></label><input name="pg2state" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Zip:</span></label><input name="pg2zipcode" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Home Phone:</span></label><input name="pg2homephone" type="tel">
+                    </div>
+                    <div class="inblock"><label><span>Cell Phone:</span></label><input name="pg2phone" type="tel">
+                    </div>
+                    <div class="inblock"><label><span>Employed by:</span></label><input name="pg2employer" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Occupation:</span></label><input name="pg2occupation" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Employer Address:</span></label><input name="pg2empadress" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Employer Phone:</span></label><input name="pg2empphone" type="tel">
+                    </div>
+                </div>
+                
+                <div>
+                    <h3>Emergency Contact Information</h3>
+                    <p>
+                        I give permission to The Perfect Child to take whatever emergency decisions are judged 
+    necessary for the care and protection of my child while at the place of service.
+                    </p>
+                    <p>
+                        Please provide the name and phone number of individuals who can be called in case of an 
+    emergency when parents/guardians are not available.
+                    </p>
+
+                    <div class="inblock"><label><span>Emergency Contact:</span></label><input name="emcontact" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Relationship:</span></label><input name="emrelation" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Home Phone Number:</span></label><input name="emhomephone" type="tel">
+                    </div>
+                    <div class="inblock"><label><span>Cell Phone Number:</span></label><input name="emphone" type="tel">
+                    </div>
+                </div>
+                <div>
+                    <h3>Insurance Information</h3>
+                    <p>
+                        I understand that in some medical situations, the staff will need to contact local 
+    emergency resources before the parent/guardian, child's physician and or other adult 
+    acting on the parent/guardian's behalf.
+                    </p>
+
+                    <div class="inblock"><label><span>Name of Primary Insurance: (Private or MA)</span></label><input name="inname" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Member Number/MA Number:</span></label><input name="memnum" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Group Number:</span></label><input name="groupnum" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Subscriber Name:</span></label><input name="subname" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Name of Secondary Insurance: (If Primary insurance is private)</span></label><input name="in2name" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Member Number/MA Number:</span></label><input name="memnum2" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Group Number:</span></label><input name="groupnum2" type="text">
+                    </div>
+                    <div class="inblock"><label><span>Subscriber Name:</span></label><input name="subname2" type="text">
+                    </div>
+
+                    <p>I prefer:</p>
+                    <input type="radio"  name="insurancepref" value="Pay my balance in full at time of service">
+                    <label for="html">Pay my balance in full at time of service</label><br>
+                    <input type="radio" name="insurancepref" value="Pay my balance in full upon receipt of first statement">
+                    <label for="css">Pay my balance in full upon receipt of first statement</label><br>
+                    <input type="radio" name="insurancepref" value="Make payment arrangements prior to services being rendered">
+                    <label for="javascript"> Make payment arrangements prior to services being rendered</label>
+                </div>
+                <div>
+                    <h3>Assignment of insurance benefits</h3>
+                    <p>
+                        I understand the confidentially of my records as protected by law. Information about 
+    me/my child cannot be released without my consent. I understand I may revoke this 
+    consent at any time.
+                    </p>
+                    <p>
+                        I hereby give authorization for The Perfect Child to contact and inform my primary and 
+                        secondary (if applicable) insurance companies of all medical information included in 
+                        treatment plans relating to all claims for benefits submitted on behalf of myself and/or 
+                        dependents. I further expressively agree and acknowledge that my signature on this 
+                        documents authorizes my physician to submit claims for benefits, for services rendered or 
+                        for services to be rendered, without obtaining my signature on each and every claim to be 
+                        submitted for myself and/or dependents, and that I will be bound by this signature as 
+                        though the undersigned had personally signed the particular claim. I authorize the 
+                        Insurance Companies named above to pay and hereby assign directly to TPC all benefits, 
+                        if any, otherwise payable to me for his/her services. I understand I am financially 
+                        responsible for all charges incurred. I further acknowledge that any insurance benefits, 
+                        when received and paid to TPC will be credited to my account, in accordance with the 
+                        above assignment. 
+                    </p>
+                    <div id="datefinaldiv"><label><span>Date:</span></label><input id="datePicker2" name="datetoday2" type="date"></div>
+                    <button type="button" onclick="showPopup()" id="showsignaturepad" style="margin: .5em  auto 2em 0;">Signature Pad</button>
+                    <div style="display: none;width :100%; height : 100%; background : rgba(255,255,255,0.8); position : fixed; left:0; top : 0; z-index : 500; " id="popup_container">
+                        <div class="padarea">
+                            <canvas height="200" width="300" class="signature-pad"></canvas>
+                            <div>
+                                <a href="#" class="clear-button"><button type="button">Clear</button></a>
+                                <a href="#" class="hide-button"><button type="button" onclick="hidePopup()">Done</button></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label><span>Attach all medical documents</span></label><br />
+                    <input name="filesb" type="file" multiple>
+                </div>
+                
+                
+                <button style="width: 100%;"class="submit-button" type="button">Submit</button>
+                
+                <!-- <input type="submit" class="submit-but"> -->
+            </form>
+        </div>  
+        <!-- <script src="sign.js"></script> -->
+        <script>
+            var date = new Date();
+
+            var day = date.getDate();
+            var month = date.getMonth() + 1;
+            var year = date.getFullYear();
+
+            if (month < 10) month = "0" + month;
+            if (day < 10) day = "0" + day;
+
+            var today = year + "-" + month + "-" + day;       
+            document.getElementById('datePicker').value = today;
+            document.getElementById('datePicker2').value = today;
+
+            const canvas = document.querySelector('canvas');
+            const form = document.querySelector('.signature-pad-form');
+            const clearButton = document.querySelector('.clear-button');
+            const submitButton = document.querySelector('.submit-button');
+            const showsign = document.getElementById('showsignaturepad');
+            const ctx = canvas.getContext('2d');
+            let writingMode = false
+
+
+            function showPopup(){  
+                document.getElementById("popup_container").style.display="block";
+            }
+
+            function hidePopup(){  
+                document.getElementById("popup_container").style.display="none";
+                const imageURL = canvas.toDataURL();
+                const image = document.createElement('img');  
+                image.src = imageURL;  
+                image.height = canvas.height;  
+                image.width = canvas.width;  
+                image.style.display = 'block';  
+                document.getElementById("datefinaldiv").appendChild(image);
+            }
+
+            submitButton.addEventListener('click', (event) => {  
+                // event.preventDefault();
+                
+                const imageURL = canvas.toDataURL();
+                loadURLToInputField(imageURL);
+                setTimeout(() => { form.submit(); }, 1);
+                // 
+                // console.log(imageURL);
+                // const image = document.createElement('img');  
+                // image.src = imageURL;  
+                // image.height = canvas.height;  
+                // image.width = canvas.width;  
+                // image.style.display = 'block';  
+                // form.appendChild(image);  
+                clearPad();
+            })
+
+            const clearPad = () => {  
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+
+            clearButton.addEventListener('click', (event) => {  
+                event.preventDefault();  
+                clearPad();
+            })
+
+            function loadURLToInputField(url){
+                getImgURL(url, (imgBlob)=>{
+                // Load img blob to input
+                let fileName = (Math.random() + 1).toString(36).substring(2) + '.png'; // should .replace(/[/\\?%*:|"<>]/g, '-') for remove special char like / \
+                let file = new File([imgBlob], fileName,{type:"image/jpeg", lastModified:new Date().getTime()}, 'utf-8');
+                let container = new DataTransfer(); 
+                container.items.add(file);
+                document.querySelector('#file_input').files = container.files;
+                // document.querySelector('#status').files = container.files;
+                
+                })
+            }
+
+            function getImgURL(url, callback){
+            var xhr = new XMLHttpRequest();
+            xhr.onload = function() {
+                callback(xhr.response);
+            };
+            xhr.open('GET', url);
+            xhr.responseType = 'blob';
+            xhr.send();
+            }
+
+            const getCursorPosition = (event) => {  
+                positionX = event.clientX - event.target.getBoundingClientRect().x;
+                positionY = event.clientY - event.target.getBoundingClientRect().y;
+                return [positionX, positionY];
+            }
+
+
+            const handlePointerMove = (event) =>{
+                if (!writingMode) return
+                
+                const [posX, posY] = getCursorPosition(event);
+                ctx.lineTo(posX, posY);
+                ctx.stroke();
+            }
+
+            const handlePointerUp = () =>{
+                writingMode = false;
+            }
+
+            const handlePointerDown = (event) =>{
+                writingMode = true;
+                ctx.beginPath();
+
+                const [posX, posY] = getCursorPosition(event);
+                ctx.moveTo(posX, posY);
+            }
+
+            ctx.lineWidth = 3
+            ctx.lineJoin = ctx.lineCap = 'round';
+
+            canvas.addEventListener('pointerdown', handlePointerDown, {passive: true});
+            canvas.addEventListener('pointerup', handlePointerUp, {passive: true});
+            canvas.addEventListener('pointermove', handlePointerMove, {passive: true});
+        </script>
+    </body>
+</html>
