@@ -292,17 +292,20 @@
 
             function showPopup(){  
                 document.getElementById("popup_container").style.display="block";
+                document.getElementsByTagName("body")[0].style.overflow = "hidden";
             }
 
             function hidePopup(){  
                 document.getElementById("popup_container").style.display="none";
                 const imageURL = canvas.toDataURL();
-                const image = document.createElement('img');  
+                const image = document.createElement('img');
                 image.src = imageURL;  
                 image.height = canvas.height;  
                 image.width = canvas.width;  
                 image.style.display = 'block';  
                 document.getElementById("datefinaldiv").appendChild(image);
+                document.getElementsByTagName("body")[0].style.overflow = "auto";
+
             }
 
             submitButton.addEventListener('click', (event) => {  
