@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>7 Day Scheduler</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background-color: #f7f7f7;
+            margin: 0;
+            padding: 0;
+        }
+    
+        .container {
+            max-width: 600px;
+            width: 100%;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+        }
+    
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+    
+        h2 {
+            font-size: 1em;
+            padding: 5px 10px; /* Adjusted padding */
+            margin-bottom: 14px; /* Removed margin-bottom */
+            font-weight: normal;
+            /* background-color: white; Set background color to white */
+            border-radius: 7px; /* Rounded borders */
+        }
+        
+        .day-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .day-card {
+            background-color: #f7f7f7;
+            padding: 15px 10px; Adjusted padding
+            margin-bottom: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+    
+        .time-select {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+    
+        .time-select > * {
+            margin-bottom: 5px;
+        }
+    
+        button {
+            padding: 12px 20px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: center;
+            width: 100%; /* Full width on mobile */
+        }
+    
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .copy-last {
+            padding: 5px 10px; /* Adjusted padding */
+            margin-bottom: 0px; /* Removed margin-bottom */
+            background-color: white; /* Set background color to white */
+            color: inherit; /* Use the default text color */
+            border: 1px solid #ccc; /* Add a grey border */
+            border-radius: 7px; /* Rounded borders */
+            font-size: inherit; /* Match font size of h2 */
+            font-weight: inherit; /* Match font weight of h2 */
+            cursor: pointer; /* Indicate it's clickable */
+            text-align: left; /* Align text to the left */
+            width: auto; /* Reset width */
+            display: inline; /* Make it inline */
+            font-size: 1em; /* Reset font size */
+        }
+
+        .copy-last:hover {
+            /* light grey color on hover */
+            background-color: black;
+            color: white;
+            /* font-weight: bold; */
+        }
+
+    
+        @media (min-width: 480px) {
+            .time-select {
+                flex-direction: row;
+                align-items: center;
+            }
+    
+            .time-select > * {
+                margin-bottom: 0;
+                margin-right: 10px;
+            }
+    
+            h2 {
+                display: inline-block;
+                margin-right: 10px;
+            }
+    
+            .copy-last {
+                display: inline-block;
+                margin-left: auto;
+                width: auto; /* Reset width for larger screens */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Schedule Editor</h1>
+        <div class="day-card">
+                <div class="day-header">
+                    <h2>Monday</h2>
+                    <button type="button" class="copy-last">Copy Last Schedule</button>
+                </div>
+                <div class="time-select">
+                    <select class="start-time" name="monday-start"></select>
+                    to <select class="end-time" name="monday-end"></select>
+                </div>
+            </div>
+            <div class="day-card">
+                <div class="day-header">
+                    <h2>Tuesday</h2>
+                    <button type="button" class="copy-last">Copy Last Schedule</button>
+                </div>
+                <div class="time-select">
+                    <select class="start-time" name="tuesday-start"></select>
+                    to <select class="end-time" name="tuesday-end"></select>
+                </div>
+            </div>
+            <div class="day-card">
+                <div class="day-header">
+                    <h2>Wednesday</h2>
+                    <button type="button" class="copy-last">Copy Last Schedule</button>
+                </div>
+                <div class="time-select">
+                    <select class="start-time" name="wednesday-start"></select>
+                    to <select class="end-time" name="wednesday-end"></select>
+                </div>
+            </div>
+            <div class="day-card">
+                <div class="day-header">
+                    <h2>Thursday</h2>
+                    <button type="button" class="copy-last">Copy Last Schedule</button>
+                </div>
+                <div class="time-select">
+                    <select class="start-time" name="thursday-start"></select>
+                    to <select class="end-time" name="thursday-end"></select>
+                </div>
+            </div>
+            <div class="day-card">
+                <div class="day-header">
+                    <h2>Friday</h2>
+                    <button type="button" class="copy-last">Copy Last Schedule</button>
+                </div>
+                <div class="time-select">
+                    <select class="start-time" name="friday-start"></select>
+                    to <select class="end-time" name="friday-end"></select>
+                </div>
+            </div>
+            <div class="day-card">
+                <div class="day-header">
+                    <h2>Saturday</h2>
+                    <button type="button" class="copy-last">Copy Last Schedule</button>
+                </div>
+                <div class="time-select">
+                    <select class="start-time" name="saturday-start"></select>
+                    to <select class="end-time" name="saturday-end"></select>
+                </div>
+            </div>
+            <div class="day-card">
+                <div class="day-header">
+                    <h2>Sunday</h2>
+                    <button type="button" class="copy-last">Copy Last Schedule</button>
+                </div>
+                <div class="time-select">
+                    <select class="start-time" name="sunday-start"></select>
+                    to <select class="end-time" name="sunday-end"></select>
+                </div>
+            </div>
+
+            <button type="submit">Save Schedule</button>
+        <!-- </form> -->
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            // Generate time intervals for the dropdowns
+            const timeIntervals = [];
+            for (let i = 8; i <= 21; i++) {
+                for (let j = 0; j < 60; j += 15) {
+                    const hour = i;
+                    const minute = j.toString().padStart(2, '0');
+                    const ampm = hour >= 12 ? 'PM' : 'AM';
+                    const standardHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+                    timeIntervals.push(`${standardHour.toString().padStart(2, '0')}:${minute} ${ampm}`);
+                }
+            }
+
+            const startTimes = document.querySelectorAll('.start-time');
+            const endTimes = document.querySelectorAll('.end-time');
+
+            startTimes.forEach((select, index) => {
+                // Create and append the default option for each dropdown
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = '-- Select Time --';
+                select.appendChild(defaultOption.cloneNode(true)); // for start time
+                endTimes[index].appendChild(defaultOption.cloneNode(true)); // for end time
+
+                // Populate dropdowns with time intervals
+                timeIntervals.forEach(time => {
+                    const option = document.createElement('option');
+                    option.value = time;
+                    option.textContent = time;
+                    select.appendChild(option.cloneNode(true)); // for start time
+                    endTimes[index].appendChild(option.cloneNode(true)); // for end time
+                });
+
+                // Make the end time dropdowns disabled until a start time is selected
+                endTimes[index].disabled = true;
+
+                // When a start time is selected, adjust the end time options and set the initial value
+                select.addEventListener('change', function() {
+                    const selectedTimeIndex = timeIntervals.indexOf(this.value);
+                    const endTimeSelect = endTimes[index];
+
+                    // Enable the end time dropdown
+                    endTimeSelect.disabled = false;
+
+                    // Filter end times to be 1 hour after the selected start time
+                    Array.from(endTimeSelect.options).forEach((option, idx) => {
+                        if (idx === 0 || idx > selectedTimeIndex + 4) {
+                            option.hidden = false;
+                        } else {
+                            option.hidden = true;
+                        }
+                    });
+                    // Hide the default option if it's not already hidden
+                    if (!endTimeSelect.options[0].hidden) {
+                        endTimeSelect.options[0].hidden = true;
+                    }
+
+                    // Set the initial value of the end time to be 3 hours after the start time
+                    if (selectedTimeIndex + 12 < timeIntervals.length) {
+                        endTimeSelect.value = timeIntervals[selectedTimeIndex + 12];
+                    } else {
+                        endTimeSelect.value = ''; // Reset if no valid end time available
+                    }
+                });
+            });
+
+            // Event listeners for "Copy Last Schedule" buttons
+            const copyButtons = document.querySelectorAll('.copy-last');
+            copyButtons.forEach((button, index) => {
+                button.addEventListener('click', function() {
+                    // Loop backwards from the current day to find the most recent day with a start time
+                    for (let i = index - 1; i >= 0; i--) {
+                        if (startTimes[i].value) {
+                            startTimes[index].value = startTimes[i].value;
+                            startTimes[index].dispatchEvent(new Event('change')); // Trigger change event to update end times
+                            endTimes[index].value = endTimes[i].value;
+                            break;
+                        }
+                    }
+                });
+            });
+        });
+
+    </script>
+</body>
+</html>
