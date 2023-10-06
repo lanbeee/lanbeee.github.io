@@ -18,7 +18,7 @@
             margin: 20px auto;
             padding: 20px;
             border: 1px solid #ccc;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
             box-sizing: border-box;
         }
     
@@ -44,10 +44,11 @@
 
         .day-card {
             background-color: #f7f7f7;
-            padding: 15px 10px; Adjusted padding
+            padding: 15px 10px;
             margin-bottom: 10px;
             border-radius: 5px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+            margin-bottom: 5px;
         }
     
         .time-select {
@@ -56,6 +57,7 @@
             justify-content: space-between;
             align-items: flex-start;
             margin-bottom: 10px;
+            /* font-size: large; */
         }
     
         .time-select > * {
@@ -100,6 +102,10 @@
             /* font-weight: bold; */
         }
 
+        select{
+            font-size: larger;
+        }
+
     
         @media (min-width: 480px) {
             .time-select {
@@ -127,8 +133,9 @@
 </head>
 <body>
     <div class="container">
-        <h1>Schedule Editor</h1>
-        <div class="day-card">
+        <form id="scheduleForm">
+            <h1>Schedule Editor</h1>
+            <div class="day-card">
                 <div class="day-header">
                     <h2>Monday</h2>
                     <button type="button" class="copy-last">Copy Last Schedule</button>
@@ -200,7 +207,12 @@
             </div>
 
             <button type="submit">Save Schedule</button>
-        <!-- </form> -->
+
+            <div class="summary-section">
+                <h2>Schedule Summary</h2>
+                <pre id="scheduleSummary"></pre>
+            </div>
+        </form>
     </div>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
@@ -212,7 +224,12 @@
                     const minute = j.toString().padStart(2, '0');
                     const ampm = hour >= 12 ? 'PM' : 'AM';
                     const standardHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
-                    timeIntervals.push(`${standardHour.toString().padStart(2, '0')}:${minute} ${ampm}`);
+                    
+                    if (minute === "00") {
+                        timeIntervals.push(`${standardHour.toString()}${ampm}`);
+                    } else {
+                        timeIntervals.push(`${standardHour.toString()}:${minute}${ampm}`);
+                    }
                 }
             }
 
@@ -249,6 +266,7 @@
 
                     // Filter end times to be 1 hour after the selected start time
                     Array.from(endTimeSelect.options).forEach((option, idx) => {
+                        // console.log("options hidden");
                         if (idx === 0 || idx > selectedTimeIndex + 4) {
                             option.hidden = false;
                         } else {
@@ -284,6 +302,93 @@
                     }
                 });
             });
+            // ... [rest of the code]
+
+            // Function to update the schedule summary based on the selected start and end times
+            const days = ["M", "Tu", "W", "Th", "F", "Sa", "Su"];
+            function updateScheduleSummary() {
+                
+                let scheduleData = [];
+                let summary = "";
+
+                // Collect all schedules from the form
+                startTimes.forEach((startTime, index) => {
+                    if (startTime.value) {
+                        scheduleData.push({
+                            day: index,
+                            schedule: `${startTime.value}-${endTimes[index].value}`
+                        });
+                    }
+                });
+
+                // Group schedules by their time range
+                let groupedSchedules = groupBy(scheduleData, 'schedule');
+
+                // Format each grouped schedule for the summary
+                for (let schedule in groupedSchedules) {
+                    let dayIndices = groupedSchedules[schedule].map(data => data.day);
+                    summary += formatDays(dayIndices) + ": " + formatTime(schedule) + "\n";
+                }
+
+                // Display the formatted summary
+                document.getElementById('scheduleSummary').textContent = summary;
+            }
+
+            // Function to group an array of objects by a specific key
+            function groupBy(array, key) {
+                return array.reduce((result, currentValue) => {
+                    (result[currentValue[key]] = result[currentValue[key]] || []).push(currentValue);
+                    return result;
+                }, {});
+            }
+
+            // Function to format day indices into the desired string format
+            function formatDays(dayIndices) {
+                if (dayIndices.length === 1) {
+                    return days[dayIndices[0]];
+                }
+
+                let formattedDays = [];
+                let startDay = dayIndices[0];
+                let prevDay = startDay;
+
+                // Loop through day indices to group consecutive days
+                for (let i = 1; i < dayIndices.length; i++) {
+                    if (dayIndices[i] - prevDay > 1) {
+                        if (startDay === prevDay) {
+                            formattedDays.push(days[startDay]);
+                        } else {
+                            formattedDays.push(days[startDay] + "-" + days[prevDay]);
+                        }
+                        startDay = dayIndices[i];
+                    }
+                    prevDay = dayIndices[i];
+                }
+
+                if (startDay === prevDay) {
+                    formattedDays.push(days[startDay]);
+                } else {
+                    formattedDays.push(days[startDay] + "-" + days[prevDay]);
+                }
+
+                return formattedDays.join(",");
+            }
+
+            // Function to format a 24-hour time range into a 12-hour format with AM/PM
+            function formatTime(schedule) {
+                let [start, end] = schedule.split('-');
+                return start + "-" + end;
+            }
+
+            // Add an event listener to update the schedule summary whenever the schedule changes
+            startTimes.forEach((select) => {
+                select.addEventListener('change', updateScheduleSummary);
+            });
+
+            endTimes.forEach((select) => {
+                select.addEventListener('change', updateScheduleSummary);
+            });
+
         });
 
     </script>
