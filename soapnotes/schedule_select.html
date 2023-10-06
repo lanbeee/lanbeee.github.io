@@ -207,7 +207,7 @@
             </div>
 
             <div class="summary-section">
-                <h2>Schedule Summary</h2>
+                <!-- <h2>Schedule Summary</h2> -->
                 <pre id="scheduleSummary"></pre>
             </div>
             <button type="submit">Save Schedule</button>
@@ -249,7 +249,7 @@
                     option.value = time;
                     option.textContent = time;
                     select.appendChild(option.cloneNode(true)); // for start time
-                    endTimes[index].appendChild(option.cloneNode(true)); // for end time
+                    // endTimes[index].appendChild(option.cloneNode(true)); // for end time
                 });
 
                 // Make the end time dropdowns disabled until a start time is selected
@@ -261,21 +261,16 @@
                     const endTimeSelect = endTimes[index];
 
                     // Enable the end time dropdown
-                    endTimeSelect.disabled = false;
-
-                    // Filter end times to be 1 hour after the selected start time
-                    Array.from(endTimeSelect.options).forEach((option, idx) => {
-                        // console.log("options hidden");
-                        if (idx === 0 || idx > selectedTimeIndex + 4) {
-                            option.hidden = false;
-                        } else {
-                            option.hidden = true;
-                        }
-                    });
-                    // Hide the default option if it's not already hidden
-                    if (!endTimeSelect.options[0].hidden) {
-                        endTimeSelect.options[0].hidden = true;
+                    endTimeSelect.innerHTML = '';
+                    // Add only the valid end times (those after the selected start time)
+                    for (let i = selectedTimeIndex + 4; i < timeIntervals.length; i++) {
+                        const option = document.createElement('option');
+                        option.value = timeIntervals[i];
+                        option.textContent = timeIntervals[i];
+                        endTimeSelect.appendChild(option);
                     }
+
+                    endTimeSelect.disabled = false;
 
                     // Set the initial value of the end time to be 3 hours after the start time
                     if (selectedTimeIndex + 12 < timeIntervals.length) {
