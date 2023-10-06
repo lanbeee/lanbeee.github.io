@@ -206,12 +206,11 @@
                 </div>
             </div>
 
-            <button type="submit">Save Schedule</button>
-
             <div class="summary-section">
                 <h2>Schedule Summary</h2>
                 <pre id="scheduleSummary"></pre>
             </div>
+            <button type="submit">Save Schedule</button>
         </form>
     </div>
     <script>
@@ -300,6 +299,7 @@
                             break;
                         }
                     }
+                    updateScheduleSummary();
                 });
             });
             // ... [rest of the code]
