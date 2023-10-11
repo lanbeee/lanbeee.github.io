@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<!-- saved from url=(0068)http://127.0.0.1:5000/staffcase?caseinfo=XYZ&bts=BT1&bts=BT2&bts=BT3 -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff BTs for Case</title>
+  <style>
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.90);
+      overflow: auto;
+      -webkit-backdrop-filter: blur(5px);
+      backdrop-filter: blur(5px);
+      /* make content center */
+      /* display: flex; */
+      justify-content: center;
+      align-items: flex-start;
+
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+
+    h2 {
+      margin-bottom: 20px;
+    }
+
+    form {
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    .scheduleForm {
+      /* max-width: 600px; */
+      margin-top: 100px;
+    }
+
+    input[type="checkbox"] {
+      display: none;
+    }
+
+    label {
+      display: inline-block;
+      margin: 10px 0;
+      padding: 10px 20px;
+      background-color: #f0f0f0;
+      border-radius: 5px;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      box-sizing: border-box;
+    }
+
+    .date-input-wrapper {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: #f0f0f0;
+      border-radius: 5px;
+      padding: 10px 20px;
+      margin: 10px 0;
+    }
+
+    .date-input-wrapper label {
+      background-color: transparent;
+      padding: 0;
+      width: auto;
+    }
+
+    input[type="date"] {
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      flex-grow: 1;
+      box-sizing: border-box;
+    }
+
+    input[type="checkbox"]:checked + label {
+      background-color: #5bc0de;
+      color: white;
+    }
+
+    input[type="submit"] {
+      margin-top: 20px;
+      padding: 10px 30px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    input[type="submit"]:hover {
+      background-color: #0056b3;
+    }
+
+    h2 {
+        font-size: 1em;
+        padding: 5px 10px; /* Adjusted padding */
+        margin-bottom: 14px; /* Removed margin-bottom */
+        font-weight: normal;
+        /* background-color: white; Set background color to white */
+        border-radius: 7px; /* Rounded borders */
+    }
+    
+    .day-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .day-card {
+        background-color: #f7f7f7;
+        padding: 15px 10px;
+        margin-bottom: 10px;
+        border-radius: 5px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+        margin-bottom: 5px;
+    }
+
+    .time-select {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 10px;
+        /* font-size: large; */
+    }
+
+    .time-select > * {
+        margin-bottom: 5px;
+    }
+
+    button {
+        padding: 12px 20px;
+        background-color: #007BFF;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        text-align: center;
+        width: 100%; /* Full width on mobile */
+    }
+
+    button:hover {
+        background-color: #0056b3;
+    }
+
+    .copy-last {
+        padding: 5px 10px; /* Adjusted padding */
+        margin-bottom: 0px; /* Removed margin-bottom */
+        background-color: white; /* Set background color to white */
+        color: inherit; /* Use the default text color */
+        border: 1px solid #ccc; /* Add a grey border */
+        border-radius: 7px; /* Rounded borders */
+        font-size: inherit; /* Match font size of h2 */
+        font-weight: inherit; /* Match font weight of h2 */
+        cursor: pointer; /* Indicate it's clickable */
+        text-align: left; /* Align text to the left */
+        width: auto; /* Reset width */
+        display: inline; /* Make it inline */
+        font-size: 1em; /* Reset font size */
+    }
+
+    .copy-last:hover {
+        /* light grey color on hover */
+        background-color: black;
+        color: white;
+        /* font-weight: bold; */
+    }
+
+    select{
+        font-size: larger;
+    }
+
+
+    @media (min-width: 480px) {
+        .time-select {
+            flex-direction: row;
+            align-items: center;
+        }
+
+        .time-select > * {
+            margin-bottom: 0;
+            margin-right: 10px;
+        }
+
+        h2 {
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        .copy-last {
+            display: inline-block;
+            margin-left: auto;
+            width: auto; /* Reset width for larger screens */
+        }
+    }
+
+    @media only screen and (max-width: 600px) {
+      form {
+        max-width: 90%;
+      }
+    }
+
+    .reject input[type="checkbox"]:checked + label {
+      background-color: red;
+      color: white;
+    }
+
+    .mode-selector {
+      margin-bottom: 20px;
+    }
+
+    /* Hide the radio buttons */
+    .mode-selector input[type="radio"] {
+      display: none;
+    }
+
+    /* Style the labels for the modes */
+    .mode-selector label {
+      display: inline-block;
+      padding: 10px 20px;
+      background-color: #f0f0f0;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+
+    /* Highlight the selected mode */
+    .mode-selector input[type="radio"]:checked + label {
+      background-color: black;
+      color: white;
+    }
+
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Your existing code
+      document.querySelector('form').addEventListener('submit', function(e) {
+        var checkboxes = document.querySelectorAll('input[name="btslist"]:checked');
+        if (checkboxes.length === 0) {
+          alert('Please select at least one Option!');
+          e.preventDefault(); // Prevent the form from submitting
+        }
+      });
+
+      // New code to toggle the mode
+      const form = document.querySelector('form');
+      const startDateInput = document.getElementById('start-date');
+      document.querySelector('.mode-selector').addEventListener('change', function(e) {
+        if (e.target.id === 'rejectMode') {
+          form.classList.add('reject');
+          startDateInput.removeAttribute('required');
+        } else {
+          form.classList.remove('reject');
+          startDateInput.setAttribute('required', '');
+        }
+      });
+      
+      document.getElementById('openScheduler').addEventListener('click', function() {
+          document.getElementById('schedulerModal').style.display = 'flex';
+      });
+
+      document.getElementById('closescheduler').addEventListener('click', function() {
+          document.getElementById('schedulerModal').style.display = 'none';
+          document.getElementById('scheduleSummaryInput').value = document.getElementById('scheduleSummary').textContent;
+          document.getElementById('scheduleSummary2').textContent = document.getElementById('scheduleSummary').textContent;
+      });
+
+    });
+  </script>
+</head>
+<body>
+<div id="schedulerModal" class="modal">
+  <div id="scheduleForm">
+    <h1>Schedule Editor</h1>
+    <div class="day-card">
+        <div class="day-header">
+            <h2>Monday</h2>
+            <button type="button" class="copy-last">Copy Last Schedule</button>
+        </div>
+        <div class="time-select">
+            <select class="start-time" name="monday-start"><option value="">-- Select Time --</option><option value="8AM">8AM</option><option value="8:15AM">8:15AM</option><option value="8:30AM">8:30AM</option><option value="8:45AM">8:45AM</option><option value="9AM">9AM</option><option value="9:15AM">9:15AM</option><option value="9:30AM">9:30AM</option><option value="9:45AM">9:45AM</option><option value="10AM">10AM</option><option value="10:15AM">10:15AM</option><option value="10:30AM">10:30AM</option><option value="10:45AM">10:45AM</option><option value="11AM">11AM</option><option value="11:15AM">11:15AM</option><option value="11:30AM">11:30AM</option><option value="11:45AM">11:45AM</option><option value="12PM">12PM</option><option value="12:15PM">12:15PM</option><option value="12:30PM">12:30PM</option><option value="12:45PM">12:45PM</option><option value="1PM">1PM</option><option value="1:15PM">1:15PM</option><option value="1:30PM">1:30PM</option><option value="1:45PM">1:45PM</option><option value="2PM">2PM</option><option value="2:15PM">2:15PM</option><option value="2:30PM">2:30PM</option><option value="2:45PM">2:45PM</option><option value="3PM">3PM</option><option value="3:15PM">3:15PM</option><option value="3:30PM">3:30PM</option><option value="3:45PM">3:45PM</option><option value="4PM">4PM</option><option value="4:15PM">4:15PM</option><option value="4:30PM">4:30PM</option><option value="4:45PM">4:45PM</option><option value="5PM">5PM</option><option value="5:15PM">5:15PM</option><option value="5:30PM">5:30PM</option><option value="5:45PM">5:45PM</option><option value="6PM">6PM</option><option value="6:15PM">6:15PM</option><option value="6:30PM">6:30PM</option><option value="6:45PM">6:45PM</option><option value="7PM">7PM</option><option value="7:15PM">7:15PM</option><option value="7:30PM">7:30PM</option><option value="7:45PM">7:45PM</option><option value="8PM">8PM</option><option value="8:15PM">8:15PM</option><option value="8:30PM">8:30PM</option><option value="8:45PM">8:45PM</option><option value="9PM">9PM</option><option value="9:15PM">9:15PM</option><option value="9:30PM">9:30PM</option><option value="9:45PM">9:45PM</option></select>
+            <span class="separator">to</span> <select class="end-time" name="monday-end" disabled=""><option value="">-- Select Time --</option></select>
+        </div>
+    </div>
+    <div class="day-card">
+        <div class="day-header">
+            <h2>Tuesday</h2>
+            <button type="button" class="copy-last">Copy Last Schedule</button>
+        </div>
+        <div class="time-select">
+            <select class="start-time" name="tuesday-start"><option value="">-- Select Time --</option><option value="8AM">8AM</option><option value="8:15AM">8:15AM</option><option value="8:30AM">8:30AM</option><option value="8:45AM">8:45AM</option><option value="9AM">9AM</option><option value="9:15AM">9:15AM</option><option value="9:30AM">9:30AM</option><option value="9:45AM">9:45AM</option><option value="10AM">10AM</option><option value="10:15AM">10:15AM</option><option value="10:30AM">10:30AM</option><option value="10:45AM">10:45AM</option><option value="11AM">11AM</option><option value="11:15AM">11:15AM</option><option value="11:30AM">11:30AM</option><option value="11:45AM">11:45AM</option><option value="12PM">12PM</option><option value="12:15PM">12:15PM</option><option value="12:30PM">12:30PM</option><option value="12:45PM">12:45PM</option><option value="1PM">1PM</option><option value="1:15PM">1:15PM</option><option value="1:30PM">1:30PM</option><option value="1:45PM">1:45PM</option><option value="2PM">2PM</option><option value="2:15PM">2:15PM</option><option value="2:30PM">2:30PM</option><option value="2:45PM">2:45PM</option><option value="3PM">3PM</option><option value="3:15PM">3:15PM</option><option value="3:30PM">3:30PM</option><option value="3:45PM">3:45PM</option><option value="4PM">4PM</option><option value="4:15PM">4:15PM</option><option value="4:30PM">4:30PM</option><option value="4:45PM">4:45PM</option><option value="5PM">5PM</option><option value="5:15PM">5:15PM</option><option value="5:30PM">5:30PM</option><option value="5:45PM">5:45PM</option><option value="6PM">6PM</option><option value="6:15PM">6:15PM</option><option value="6:30PM">6:30PM</option><option value="6:45PM">6:45PM</option><option value="7PM">7PM</option><option value="7:15PM">7:15PM</option><option value="7:30PM">7:30PM</option><option value="7:45PM">7:45PM</option><option value="8PM">8PM</option><option value="8:15PM">8:15PM</option><option value="8:30PM">8:30PM</option><option value="8:45PM">8:45PM</option><option value="9PM">9PM</option><option value="9:15PM">9:15PM</option><option value="9:30PM">9:30PM</option><option value="9:45PM">9:45PM</option></select>
+            <span class="separator">to</span> <select class="end-time" name="tuesday-end" disabled=""><option value="">-- Select Time --</option></select>
+        </div>
+    </div>
+    <div class="day-card">
+        <div class="day-header">
+            <h2>Wednesday</h2>
+            <button type="button" class="copy-last">Copy Last Schedule</button>
+        </div>
+        <div class="time-select">
+            <select class="start-time" name="wednesday-start"><option value="">-- Select Time --</option><option value="8AM">8AM</option><option value="8:15AM">8:15AM</option><option value="8:30AM">8:30AM</option><option value="8:45AM">8:45AM</option><option value="9AM">9AM</option><option value="9:15AM">9:15AM</option><option value="9:30AM">9:30AM</option><option value="9:45AM">9:45AM</option><option value="10AM">10AM</option><option value="10:15AM">10:15AM</option><option value="10:30AM">10:30AM</option><option value="10:45AM">10:45AM</option><option value="11AM">11AM</option><option value="11:15AM">11:15AM</option><option value="11:30AM">11:30AM</option><option value="11:45AM">11:45AM</option><option value="12PM">12PM</option><option value="12:15PM">12:15PM</option><option value="12:30PM">12:30PM</option><option value="12:45PM">12:45PM</option><option value="1PM">1PM</option><option value="1:15PM">1:15PM</option><option value="1:30PM">1:30PM</option><option value="1:45PM">1:45PM</option><option value="2PM">2PM</option><option value="2:15PM">2:15PM</option><option value="2:30PM">2:30PM</option><option value="2:45PM">2:45PM</option><option value="3PM">3PM</option><option value="3:15PM">3:15PM</option><option value="3:30PM">3:30PM</option><option value="3:45PM">3:45PM</option><option value="4PM">4PM</option><option value="4:15PM">4:15PM</option><option value="4:30PM">4:30PM</option><option value="4:45PM">4:45PM</option><option value="5PM">5PM</option><option value="5:15PM">5:15PM</option><option value="5:30PM">5:30PM</option><option value="5:45PM">5:45PM</option><option value="6PM">6PM</option><option value="6:15PM">6:15PM</option><option value="6:30PM">6:30PM</option><option value="6:45PM">6:45PM</option><option value="7PM">7PM</option><option value="7:15PM">7:15PM</option><option value="7:30PM">7:30PM</option><option value="7:45PM">7:45PM</option><option value="8PM">8PM</option><option value="8:15PM">8:15PM</option><option value="8:30PM">8:30PM</option><option value="8:45PM">8:45PM</option><option value="9PM">9PM</option><option value="9:15PM">9:15PM</option><option value="9:30PM">9:30PM</option><option value="9:45PM">9:45PM</option></select>
+            <span class="separator">to</span> <select class="end-time" name="wednesday-end" disabled=""><option value="">-- Select Time --</option></select>
+        </div>
+    </div>
+    <div class="day-card">
+        <div class="day-header">
+            <h2>Thursday</h2>
+            <button type="button" class="copy-last">Copy Last Schedule</button>
+        </div>
+        <div class="time-select">
+            <select class="start-time" name="thursday-start"><option value="">-- Select Time --</option><option value="8AM">8AM</option><option value="8:15AM">8:15AM</option><option value="8:30AM">8:30AM</option><option value="8:45AM">8:45AM</option><option value="9AM">9AM</option><option value="9:15AM">9:15AM</option><option value="9:30AM">9:30AM</option><option value="9:45AM">9:45AM</option><option value="10AM">10AM</option><option value="10:15AM">10:15AM</option><option value="10:30AM">10:30AM</option><option value="10:45AM">10:45AM</option><option value="11AM">11AM</option><option value="11:15AM">11:15AM</option><option value="11:30AM">11:30AM</option><option value="11:45AM">11:45AM</option><option value="12PM">12PM</option><option value="12:15PM">12:15PM</option><option value="12:30PM">12:30PM</option><option value="12:45PM">12:45PM</option><option value="1PM">1PM</option><option value="1:15PM">1:15PM</option><option value="1:30PM">1:30PM</option><option value="1:45PM">1:45PM</option><option value="2PM">2PM</option><option value="2:15PM">2:15PM</option><option value="2:30PM">2:30PM</option><option value="2:45PM">2:45PM</option><option value="3PM">3PM</option><option value="3:15PM">3:15PM</option><option value="3:30PM">3:30PM</option><option value="3:45PM">3:45PM</option><option value="4PM">4PM</option><option value="4:15PM">4:15PM</option><option value="4:30PM">4:30PM</option><option value="4:45PM">4:45PM</option><option value="5PM">5PM</option><option value="5:15PM">5:15PM</option><option value="5:30PM">5:30PM</option><option value="5:45PM">5:45PM</option><option value="6PM">6PM</option><option value="6:15PM">6:15PM</option><option value="6:30PM">6:30PM</option><option value="6:45PM">6:45PM</option><option value="7PM">7PM</option><option value="7:15PM">7:15PM</option><option value="7:30PM">7:30PM</option><option value="7:45PM">7:45PM</option><option value="8PM">8PM</option><option value="8:15PM">8:15PM</option><option value="8:30PM">8:30PM</option><option value="8:45PM">8:45PM</option><option value="9PM">9PM</option><option value="9:15PM">9:15PM</option><option value="9:30PM">9:30PM</option><option value="9:45PM">9:45PM</option></select>
+            <span class="separator">to</span> <select class="end-time" name="thursday-end" disabled=""><option value="">-- Select Time --</option></select>
+        </div>
+    </div>
+    <div class="day-card">
+        <div class="day-header">
+            <h2>Friday</h2>
+            <button type="button" class="copy-last">Copy Last Schedule</button>
+        </div>
+        <div class="time-select">
+            <select class="start-time" name="friday-start"><option value="">-- Select Time --</option><option value="8AM">8AM</option><option value="8:15AM">8:15AM</option><option value="8:30AM">8:30AM</option><option value="8:45AM">8:45AM</option><option value="9AM">9AM</option><option value="9:15AM">9:15AM</option><option value="9:30AM">9:30AM</option><option value="9:45AM">9:45AM</option><option value="10AM">10AM</option><option value="10:15AM">10:15AM</option><option value="10:30AM">10:30AM</option><option value="10:45AM">10:45AM</option><option value="11AM">11AM</option><option value="11:15AM">11:15AM</option><option value="11:30AM">11:30AM</option><option value="11:45AM">11:45AM</option><option value="12PM">12PM</option><option value="12:15PM">12:15PM</option><option value="12:30PM">12:30PM</option><option value="12:45PM">12:45PM</option><option value="1PM">1PM</option><option value="1:15PM">1:15PM</option><option value="1:30PM">1:30PM</option><option value="1:45PM">1:45PM</option><option value="2PM">2PM</option><option value="2:15PM">2:15PM</option><option value="2:30PM">2:30PM</option><option value="2:45PM">2:45PM</option><option value="3PM">3PM</option><option value="3:15PM">3:15PM</option><option value="3:30PM">3:30PM</option><option value="3:45PM">3:45PM</option><option value="4PM">4PM</option><option value="4:15PM">4:15PM</option><option value="4:30PM">4:30PM</option><option value="4:45PM">4:45PM</option><option value="5PM">5PM</option><option value="5:15PM">5:15PM</option><option value="5:30PM">5:30PM</option><option value="5:45PM">5:45PM</option><option value="6PM">6PM</option><option value="6:15PM">6:15PM</option><option value="6:30PM">6:30PM</option><option value="6:45PM">6:45PM</option><option value="7PM">7PM</option><option value="7:15PM">7:15PM</option><option value="7:30PM">7:30PM</option><option value="7:45PM">7:45PM</option><option value="8PM">8PM</option><option value="8:15PM">8:15PM</option><option value="8:30PM">8:30PM</option><option value="8:45PM">8:45PM</option><option value="9PM">9PM</option><option value="9:15PM">9:15PM</option><option value="9:30PM">9:30PM</option><option value="9:45PM">9:45PM</option></select>
+            <span class="separator">to</span> <select class="end-time" name="friday-end" disabled=""><option value="">-- Select Time --</option></select>
+        </div>
+    </div>
+    <div class="day-card">
+        <div class="day-header">
+            <h2>Saturday</h2>
+            <button type="button" class="copy-last">Copy Last Schedule</button>
+        </div>
+        <div class="time-select">
+            <select class="start-time" name="saturday-start"><option value="">-- Select Time --</option><option value="8AM">8AM</option><option value="8:15AM">8:15AM</option><option value="8:30AM">8:30AM</option><option value="8:45AM">8:45AM</option><option value="9AM">9AM</option><option value="9:15AM">9:15AM</option><option value="9:30AM">9:30AM</option><option value="9:45AM">9:45AM</option><option value="10AM">10AM</option><option value="10:15AM">10:15AM</option><option value="10:30AM">10:30AM</option><option value="10:45AM">10:45AM</option><option value="11AM">11AM</option><option value="11:15AM">11:15AM</option><option value="11:30AM">11:30AM</option><option value="11:45AM">11:45AM</option><option value="12PM">12PM</option><option value="12:15PM">12:15PM</option><option value="12:30PM">12:30PM</option><option value="12:45PM">12:45PM</option><option value="1PM">1PM</option><option value="1:15PM">1:15PM</option><option value="1:30PM">1:30PM</option><option value="1:45PM">1:45PM</option><option value="2PM">2PM</option><option value="2:15PM">2:15PM</option><option value="2:30PM">2:30PM</option><option value="2:45PM">2:45PM</option><option value="3PM">3PM</option><option value="3:15PM">3:15PM</option><option value="3:30PM">3:30PM</option><option value="3:45PM">3:45PM</option><option value="4PM">4PM</option><option value="4:15PM">4:15PM</option><option value="4:30PM">4:30PM</option><option value="4:45PM">4:45PM</option><option value="5PM">5PM</option><option value="5:15PM">5:15PM</option><option value="5:30PM">5:30PM</option><option value="5:45PM">5:45PM</option><option value="6PM">6PM</option><option value="6:15PM">6:15PM</option><option value="6:30PM">6:30PM</option><option value="6:45PM">6:45PM</option><option value="7PM">7PM</option><option value="7:15PM">7:15PM</option><option value="7:30PM">7:30PM</option><option value="7:45PM">7:45PM</option><option value="8PM">8PM</option><option value="8:15PM">8:15PM</option><option value="8:30PM">8:30PM</option><option value="8:45PM">8:45PM</option><option value="9PM">9PM</option><option value="9:15PM">9:15PM</option><option value="9:30PM">9:30PM</option><option value="9:45PM">9:45PM</option></select>
+            <span class="separator">to</span> <select class="end-time" name="saturday-end" disabled=""><option value="">-- Select Time --</option></select>
+        </div>
+    </div>
+    <div class="day-card">
+        <div class="day-header">
+            <h2>Sunday</h2>
+            <button type="button" class="copy-last">Copy Last Schedule</button>
+        </div>
+        <div class="time-select">
+            <select class="start-time" name="sunday-start"><option value="">-- Select Time --</option><option value="8AM">8AM</option><option value="8:15AM">8:15AM</option><option value="8:30AM">8:30AM</option><option value="8:45AM">8:45AM</option><option value="9AM">9AM</option><option value="9:15AM">9:15AM</option><option value="9:30AM">9:30AM</option><option value="9:45AM">9:45AM</option><option value="10AM">10AM</option><option value="10:15AM">10:15AM</option><option value="10:30AM">10:30AM</option><option value="10:45AM">10:45AM</option><option value="11AM">11AM</option><option value="11:15AM">11:15AM</option><option value="11:30AM">11:30AM</option><option value="11:45AM">11:45AM</option><option value="12PM">12PM</option><option value="12:15PM">12:15PM</option><option value="12:30PM">12:30PM</option><option value="12:45PM">12:45PM</option><option value="1PM">1PM</option><option value="1:15PM">1:15PM</option><option value="1:30PM">1:30PM</option><option value="1:45PM">1:45PM</option><option value="2PM">2PM</option><option value="2:15PM">2:15PM</option><option value="2:30PM">2:30PM</option><option value="2:45PM">2:45PM</option><option value="3PM">3PM</option><option value="3:15PM">3:15PM</option><option value="3:30PM">3:30PM</option><option value="3:45PM">3:45PM</option><option value="4PM">4PM</option><option value="4:15PM">4:15PM</option><option value="4:30PM">4:30PM</option><option value="4:45PM">4:45PM</option><option value="5PM">5PM</option><option value="5:15PM">5:15PM</option><option value="5:30PM">5:30PM</option><option value="5:45PM">5:45PM</option><option value="6PM">6PM</option><option value="6:15PM">6:15PM</option><option value="6:30PM">6:30PM</option><option value="6:45PM">6:45PM</option><option value="7PM">7PM</option><option value="7:15PM">7:15PM</option><option value="7:30PM">7:30PM</option><option value="7:45PM">7:45PM</option><option value="8PM">8PM</option><option value="8:15PM">8:15PM</option><option value="8:30PM">8:30PM</option><option value="8:45PM">8:45PM</option><option value="9PM">9PM</option><option value="9:15PM">9:15PM</option><option value="9:30PM">9:30PM</option><option value="9:45PM">9:45PM</option></select>
+            <span class="separator">to</span> <select class="end-time" name="sunday-end" disabled=""><option value="">-- Select Time --</option></select>
+        </div>
+    </div>
+
+    <div class="summary-section">
+        <!-- <h2>Schedule Summary</h2> -->
+        <pre id="scheduleSummary"></pre>
+    </div>
+    <button type="button" style="margin-bottom: 20px;" id="closescheduler">Save Schedule</button>
+  </div>
+</div>
+
+<h1>Please select the BT for the case: XYZ</h1>
+<p>Schedule: <span id="scheduleSummary2">M-F: 11AM-1PM</span></p>
+<!-- Schedule Change Button -->
+<button style="max-width: 400px;margin-bottom: 20px;" id="openScheduler">Edit Schedule</button>
+<!-- End of Schedule Change Button -->
+
+<form action="http://127.0.0.1:5000/staffcase?caseinfo=XYZ" method="post" class="">
+  <!-- Mode Selector -->
+  <div class="mode-selector">
+    <input type="radio" name="mode" id="acceptMode" value="accept" checked=""> <label for="acceptMode">Accept</label>
+    <input type="radio" name="mode" id="rejectMode" value="reject"> <label for="rejectMode">Reject</label>
+  </div>
+  <!-- End of Mode Selector -->
+
+
+  <!-- Start Date Input -->
+  <div class="date-input-wrapper">
+    <label for="start-date">Start Date:</label>
+    <input type="date" id="start-date" name="start_date" required="">
+  </div>
+  <!-- End of Start Date Input -->
+
+  <!-- Schedule Input -->
+  <input type="hidden" id="scheduleSummaryInput" name="schedule_summary">
+  <!-- End of Schedule Input -->
+  
+  
+    <input type="checkbox" id="BT1" name="btslist" value="BT1">
+    <label for="BT1">BT1</label>
+  
+    <input type="checkbox" id="BT2" name="btslist" value="BT2">
+    <label for="BT2">BT2</label>
+  
+    <input type="checkbox" id="BT3" name="btslist" value="BT3">
+    <label for="BT3">BT3</label>
+  
+  <input type="submit" value="Submit">
+</form> 
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+      // Generate time intervals for the dropdowns
+      const timeIntervals = [];
+      for (let i = 8; i <= 21; i++) {
+          for (let j = 0; j < 60; j += 15) {
+              const hour = i;
+              const minute = j.toString().padStart(2, '0');
+              const ampm = hour >= 12 ? 'PM' : 'AM';
+              const standardHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+              
+              if (minute === "00") {
+                  timeIntervals.push(`${standardHour.toString()}${ampm}`);
+              } else {
+                  timeIntervals.push(`${standardHour.toString()}:${minute}${ampm}`);
+              }
+          }
+      }
+
+      const startTimes = document.querySelectorAll('.start-time');
+      const endTimes = document.querySelectorAll('.end-time');
+
+      startTimes.forEach((select, index) => {
+          // Create and append the default option for each dropdown
+          const defaultOption = document.createElement('option');
+          defaultOption.value = '';
+          defaultOption.textContent = '-- Select Time --';
+          select.appendChild(defaultOption.cloneNode(true)); // for start time
+          endTimes[index].appendChild(defaultOption.cloneNode(true)); // for end time
+
+          // Populate dropdowns with time intervals
+          timeIntervals.forEach(time => {
+              const option = document.createElement('option');
+              option.value = time;
+              option.textContent = time;
+              select.appendChild(option.cloneNode(true)); // for start time
+              // endTimes[index].appendChild(option.cloneNode(true)); // for end time
+          });
+
+          // Make the end time dropdowns disabled until a start time is selected
+          endTimes[index].disabled = true;
+
+          // When a start time is selected, adjust the end time options and set the initial value
+          select.addEventListener('change', function() {
+              const selectedTimeIndex = timeIntervals.indexOf(this.value);
+              const endTimeSelect = endTimes[index];
+
+              // Enable the end time dropdown
+              endTimeSelect.innerHTML = '';
+              // Add only the valid end times (those after the selected start time)
+              for (let i = selectedTimeIndex + 4; i < timeIntervals.length; i++) {
+                  const option = document.createElement('option');
+                  option.value = timeIntervals[i];
+                  option.textContent = timeIntervals[i];
+                  endTimeSelect.appendChild(option);
+              }
+
+              endTimeSelect.disabled = false;
+
+              // Set the initial value of the end time to be 3 hours after the start time
+              if (selectedTimeIndex + 12 < timeIntervals.length) {
+                  endTimeSelect.value = timeIntervals[selectedTimeIndex + 12];
+              } else {
+                  endTimeSelect.value = ''; // Reset if no valid end time available
+              }
+          });
+      });
+
+      // Event listeners for "Copy Last Schedule" buttons
+      const copyButtons = document.querySelectorAll('.copy-last');
+      copyButtons.forEach((button, index) => {
+          button.addEventListener('click', function() {
+              // Loop backwards from the current day to find the most recent day with a start time
+              for (let i = index - 1; i >= 0; i--) {
+                  if (startTimes[i].value) {
+                      startTimes[index].value = startTimes[i].value;
+                      startTimes[index].dispatchEvent(new Event('change')); // Trigger change event to update end times
+                      endTimes[index].value = endTimes[i].value;
+                      break;
+                  }
+              }
+              updateScheduleSummary();
+          });
+      });
+      // ... [rest of the code]
+
+      // Function to update the schedule summary based on the selected start and end times
+      const days = ["M", "Tu", "W", "Th", "F", "Sa", "Su"];
+      function updateScheduleSummary() {
+          
+          let scheduleData = [];
+          let summary = "";
+
+          // Collect all schedules from the form
+          startTimes.forEach((startTime, index) => {
+              if (startTime.value) {
+                  scheduleData.push({
+                      day: index,
+                      schedule: `${startTime.value}-${endTimes[index].value}`
+                  });
+              }
+          });
+
+          // Group schedules by their time range
+          let groupedSchedules = groupBy(scheduleData, 'schedule');
+
+          // Format each grouped schedule for the summary
+          for (let schedule in groupedSchedules) {
+              let dayIndices = groupedSchedules[schedule].map(data => data.day);
+              summary += formatDays(dayIndices) + ": " + formatTime(schedule) + "\n";
+          }
+
+          // Display the formatted summary
+          document.getElementById('scheduleSummary').textContent = summary;
+      }
+
+      // Function to group an array of objects by a specific key
+      function groupBy(array, key) {
+          return array.reduce((result, currentValue) => {
+              (result[currentValue[key]] = result[currentValue[key]] || []).push(currentValue);
+              return result;
+          }, {});
+      }
+
+      // Function to format day indices into the desired string format
+      function formatDays(dayIndices) {
+          if (dayIndices.length === 1) {
+              return days[dayIndices[0]];
+          }
+
+          let formattedDays = [];
+          let startDay = dayIndices[0];
+          let prevDay = startDay;
+
+          // Loop through day indices to group consecutive days
+          for (let i = 1; i < dayIndices.length; i++) {
+              if (dayIndices[i] - prevDay > 1) {
+                  if (startDay === prevDay) {
+                      formattedDays.push(days[startDay]);
+                  } else {
+                      formattedDays.push(days[startDay] + "-" + days[prevDay]);
+                  }
+                  startDay = dayIndices[i];
+              }
+              prevDay = dayIndices[i];
+          }
+
+          if (startDay === prevDay) {
+              formattedDays.push(days[startDay]);
+          } else {
+              formattedDays.push(days[startDay] + "-" + days[prevDay]);
+          }
+
+          return formattedDays.join(",");
+      }
+
+      // Function to format a 24-hour time range into a 12-hour format with AM/PM
+      function formatTime(schedule) {
+          let [start, end] = schedule.split('-');
+          return start + "-" + end;
+      }
+
+      // Add an event listener to update the schedule summary whenever the schedule changes
+      startTimes.forEach((select) => {
+          select.addEventListener('change', updateScheduleSummary);
+      });
+
+      endTimes.forEach((select) => {
+          select.addEventListener('change', updateScheduleSummary);
+      });
+
+  });
+
+</script>
+
+</body></html>
