@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Google Calendar on Echo Show</title>
+
+  <!-- 
+    The CSS below makes the page take up the full device screen and removes scrolling. 
+    Feel free to customize as needed.
+  -->
+  <style>
+    html, body {
+      margin: 0; 
+      padding: 0; 
+      height: 100%; 
+      width: 100%; 
+      overflow: hidden;
+    }
+    iframe {
+      width: 100%; 
+      height: 100%; 
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- 1) Embed Google Calendar in an iframe -->
+  <iframe 
+    src="https://calendar.google.com" 
+    allowfullscreen
+    loading="lazy">
+  </iframe>
+
+  <!-- 2) Include the keep-silk-open script -->
+  <!-- Force script to run, even if not in Silk: (Optional) -->
+  <script>
+    var AlwaysUseSilk = true;
+    // If you want to debug or see the audio element, also add:
+    // var SilkVisualMode = true;
+  </script>
+  <script defer src="https://dagammla.gitlab.io/keep-silk-open/keep.js"></script>
+</body>
+</html>
