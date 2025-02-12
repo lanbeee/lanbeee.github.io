@@ -35,8 +35,8 @@
 
     <!-- The audio element is managed via JavaScript -->
     <audio 
-      id="azaanAudio"
-      src="static/azaan.mp3"
+      id="silentAudio"
+      src="static/silent.mp3"
       type="audio/mpeg">
     </audio>
   </div>
@@ -54,7 +54,7 @@
     };
 
     // ==================== Elements ====================
-    const azaanAudio = document.getElementById("azaanAudio");
+    const silentAudio = document.getElementById("silentAudio");
     const startLoopBtn = document.getElementById("startLoopBtn");
     const timeDisplay = document.getElementById("time");
     const dateDisplay = document.getElementById("date");
@@ -146,7 +146,7 @@
     // Define prayer times with names and associated audio files.
     // Fajr uses a different audio file.
     const prayerTimes = [
-      { name: "Fajr",    time: "06:52", audioSrc: "static/fajr.mp3" },
+      { name: "Fajr",    time: "07:09", audioSrc: "static/fajr.mp3" },
       { name: "Dhuhr",   time: "13:15", audioSrc: "static/azaan.mp3" },
       { name: "Asr",     time: "15:45", audioSrc: "static/azaan.mp3" },
       { name: "Maghrib", time: "17:45", audioSrc: "static/azaan.mp3" },
@@ -197,11 +197,11 @@
     // Play the Azaan audio once (switching audio source as needed).
     function playAzaanOnce(audioSrc, prayerName) {
       // Update the audio source based on the prayer.
-      azaanAudio.src = audioSrc;
-      azaanAudio.volume = 1;
-      azaanAudio.currentTime = 0;
+      silentAudio.src = audioSrc;
+      silentAudio.volume = 1;
+      silentAudio.currentTime = 0;
 
-      azaanAudio.play()
+      silentAudio.play()
         .then(() => {
           console.log(`${prayerName} Azaan is playing audibly.`);
         })
@@ -217,7 +217,7 @@
 
       // After the audio is presumed to have finished, mute the audio.
       setTimeout(() => {
-        azaanAudio.volume = 0;
+        silentAudio.volume = 0;
         console.log(`${prayerName} Azaan playback completed. Muted again.`);
       }, azaanDuration);
     }
@@ -231,9 +231,9 @@
         startLoopBtn.classList.add("hidden");
 
         // Start playing the audio loop silently.
-        azaanAudio.volume = 0;
-        azaanAudio.loop = true;
-        azaanAudio.play()
+        silentAudio.volume = 0;
+        silentAudio.loop = true;
+        silentAudio.play()
           .then(() => console.log("Silent loop started."))
           .catch(err => console.error("Error starting silent loop:", err));
 
@@ -268,8 +268,8 @@
 
     // Check and restart the audio loop if it stops playing.
     function checkAudioLoop() {
-      if (azaanAudio.paused && isLooping) {
-        azaanAudio.play()
+      if (silentAudio.paused && isLooping) {
+        silentAudio.play()
           .then(() => console.log("Audio loop restarted."))
           .catch(err => console.error("Error restarting audio loop:", err));
       }
@@ -278,9 +278,9 @@
     // Reinitialize the silent audio loop if needed.
     function reinitializeAudioLoop() {
       if (isLooping) {
-        azaanAudio.pause();
-        azaanAudio.currentTime = 0;
-        azaanAudio.play()
+        silentAudio.pause();
+        silentAudio.currentTime = 0;
+        silentAudio.play()
           .then(() => console.log("Silent audio loop reinitialized."))
           .catch(err => console.error("Error reinitializing audio loop:", err));
       }
