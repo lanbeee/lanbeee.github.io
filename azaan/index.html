@@ -174,23 +174,36 @@
       });
     }
 
-    // Play the Azaan using the prayerAudio element.
+    // ==================== Prayer Playback ====================
     function playAzaanOnce(audioSrc, prayerName) {
+      // Remove any previous 'ended' event listener.
+      prayerAudio.onended = null;
+      
       // Set up the prayer audio.
       prayerAudio.src = audioSrc;
       prayerAudio.volume = 1;
       prayerAudio.currentTime = 0;
+      
       prayerAudio.play()
-        .then(() => console.log(`${prayerName} Azaan is playing audibly.`))
+        .then(() => console.log(`${prayerName} Azaan started playing.`))
         .catch(err => console.error(`Error playing ${prayerName} Azaan:`, err));
-
-      // Choose duration: Fajr gets 246 seconds; others use a default (e.g., 130.7 seconds).
-      let azaanDuration = (prayerName === "Fajr") ? 246000 : 130700;
-      setTimeout(() => {
-        // Mute the prayer audio after the expected duration.
+      
+      // When playback naturally ends, log and ensure volume is off.
+      prayerAudio.onended = () => {
+        console.log(`${prayerName} Azaan ended naturally.`);
         prayerAudio.volume = 0;
-        console.log(`${prayerName} Azaan playback completed. Muted again.`);
-      }, azaanDuration);
+      };
+      
+      // If the audio doesn't end naturally, force-stop it after the expected duration.
+      const forcedStopDuration = (prayerName === "Fajr") ? 246000 : 130700;
+      setTimeout(() => {
+        if (!prayerAudio.paused) {
+          console.log(`${prayerName} Azaan forced stop.`);
+          prayerAudio.pause();
+          prayerAudio.currentTime = 0;
+          prayerAudio.volume = 0;
+        }
+      }, forcedStopDuration);
     }
 
     // ==================== Start Silent Loop & Scheduling ====================
