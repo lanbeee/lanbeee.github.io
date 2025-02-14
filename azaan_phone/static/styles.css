@@ -1,0 +1,122 @@
+/* static/css/styles.css */
+
+/* Reset some default styles */
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: #121212; /* Dark background */
+  color: #FFFFFF; /* Light text */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden; /* Prevent scroll */
+}
+
+/* Container for the main content */
+.container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Start Loop Button Styles */
+#startLoopBtn {
+  position: absolute;
+  top: 10px; /* Distance from the top */
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 20px 40px;
+  font-size: 24px;
+  background-color: #1E88E5; /* Primary button color */
+  border: none;
+  border-radius: 8px;
+  color: #FFFFFF;
+  cursor: pointer;
+  z-index: 1000; /* Ensure it's on top */
+  opacity: 1;
+  transition: opacity 1s ease, visibility 1s ease;
+}
+
+/* Hidden state for the button */
+#startLoopBtn.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Optional: Hover effect for the button */
+#startLoopBtn:hover {
+  background-color: #1565C0;
+}
+
+/* Weather Section */
+#weather {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  text-align: right;
+  font-size: 40px;
+  display: flex;
+  align-items: center;
+}
+
+#weather img {
+  width: 80px;
+  height: 80px;
+  margin-right: 20px;
+}
+
+/* Time Display */
+#time {
+  font-size: 200px;
+  text-align: center;
+  margin-top: 100px;
+}
+
+/* Date Display */
+#date {
+  font-size: 32px;
+  text-align: center;
+  margin-top: 10px;
+}
+
+/* Message Section */
+#message {
+  position: absolute;
+  bottom: 20px;
+  width: 100%;
+  text-align: center;
+  font-size: 32px;
+}
+
+/* Dark Mode Enhancements */
+h1 {
+  text-align: center;
+  margin-top: 50px; /* Adjusted to avoid overlap with button */
+  font-size: 40px;
+}
+
+/* Responsive Adjustments for Landscape on 5-inch Screen */
+@media only screen and (max-width: 800px) and (max-height: 600px) {
+  #time {
+    font-size: 80px;
+  }
+  
+  #date, #weather, #message, h1 {
+    font-size: 24px;
+  }
+  
+  #startLoopBtn {
+    padding: 15px 30px;
+    font-size: 20px;
+  }
+  
+  #weather img {
+    width: 30px;
+    height: 30px;
+    margin-right: 8px;
+    filter: brightness(0) invert(1);
+  }
+  
+}
