@@ -2,41 +2,72 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Azaan Scheduler for iOS Safari</title>
+  <title>Azaan Scheduler Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- External CSS & Icons -->
+  <link rel="stylesheet" href="static/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; }
-    button { font-size: 18px; padding: 10px 20px; }
-    #status { margin-top: 20px; font-size: 16px; }
+    /* Basic styling; you can further refine this in your external CSS file */
+    body { 
+      font-family: sans-serif; 
+      background: #f0f0f0; 
+      margin: 0; 
+      padding: 0; 
+      text-align: center;
+    }
+    .container {
+      max-width: 600px;
+      margin: 20px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1 { margin-bottom: 10px; }
+    #startButton { 
+      font-size: 20px; 
+      padding: 10px 20px; 
+      margin-bottom: 20px; 
+      cursor: pointer;
+    }
+    #time { font-size: 48px; margin: 10px 0; }
+    #date { font-size: 20px; margin-bottom: 10px; }
+    #weather { margin-bottom: 10px; }
+    #weather img { vertical-align: middle; }
+    #message { font-size: 24px; margin-bottom: 20px; }
+    #status { font-size: 16px; color: #666; margin-top: 20px; }
   </style>
 </head>
 <body>
-  <h1>Azaan Scheduler</h1>
-  <p>This scheduler is optimized for iOS Safari.</p>
-  <button id="startButton">Start Scheduler</button>
-  <div id="status">Status: Waiting for user action…</div>
+  <div class="container">
+    <h1>Azaan Scheduler Dashboard</h1>
+    <button id="startButton">Start Scheduler</button>
+    <div id="time">--:--</div>
+    <div id="date">Loading date...</div>
+    <div id="weather"><span id="weatherInfo">Loading weather...</span></div>
+    <div id="message">Welcome!</div>
+    <div id="status">Status: Waiting for user action…</div>
+  </div>
 
   <script>
+    /* ==================== Web Audio API Scheduler for iOS Safari ==================== */
+    
     // Global variables for the AudioContext and decoded audio buffers.
     let audioContext;
     let fajrBuffer, azaanBuffer;
 
-    // Define prayer times (24‑hour format as strings).
-    // Adjust the times as needed.
+    // Define prayer times (24-hour format as strings) and corresponding audio sources.
     const prayerTimes = [
       { name: "Fajr",    time: "06:45", audioSrc: "static/fajr.mp3" },
       { name: "Dhuhr",   time: "13:15", audioSrc: "static/azaan.mp3" },
       { name: "Asr",     time: "15:45", audioSrc: "static/azaan.mp3" },
-      { name: "Maghrib", time: "19:05", audioSrc: "static/azaan.mp3" },
-      { name: "Isha",    time: "19:16", audioSrc: "static/azaan.mp3" }
+      { name: "Maghrib", time: "18:00", audioSrc: "static/azaan.mp3" },
+      { name: "Isha",    time: "21:45", audioSrc: "static/azaan.mp3" }
     ];
 
-    // Forced playback durations (in seconds).
-    // Fajr: 246 seconds; others: 130.7 seconds.
-    const forcedDurations = {
-      "Fajr": 246,
-      "default": 130.7
-    };
+    // Forced playback durations (in seconds): Fajr = 246, others ~130.7 seconds.
+    const forcedDurations = { "Fajr": 246, "default": 130.7 };
 
     // Utility: Load and decode an audio file from a given URL.
     function loadAudio(url) {
@@ -46,7 +77,6 @@
     }
 
     // Calculate the next occurrence of each prayer time.
-    // Returns an array of objects with { name, time (Date), audioSrc }.
     function computeNextPrayerTimes() {
       const now = new Date();
       return prayerTimes.map(prayer => {
@@ -57,7 +87,6 @@
           now.getDate(),
           hours,
           minutes,
-          0,
           0
         );
         if (prayerDate <= now) {
@@ -77,34 +106,90 @@
         console.log(`Scheduling ${prayer.name} in ${delay} ms`);
         setTimeout(() => {
           playPrayer(prayer);
-          // Also, re-schedule the same prayer for every 24 hours.
+          // Re-schedule the same prayer every 24 hours.
           setInterval(() => playPrayer(prayer), 24 * 60 * 60 * 1000);
         }, delay);
+        document.getElementById("status").textContent = "Prayers scheduled.";
       });
-      document.getElementById("status").textContent = "Prayers scheduled.";
     }
 
     // Play the prayer audio using the Web Audio API.
     function playPrayer(prayer) {
       const source = audioContext.createBufferSource();
-      // Choose the appropriate buffer.
       source.buffer = (prayer.name === "Fajr") ? fajrBuffer : azaanBuffer;
       source.connect(audioContext.destination);
       source.start();
       console.log(`${prayer.name} started at ${new Date().toLocaleTimeString()}`);
-
-      // Force-stop playback after the specified duration.
       const duration = (prayer.name === "Fajr") ? forcedDurations["Fajr"] : forcedDurations["default"];
       source.stop(audioContext.currentTime + duration);
     }
 
-    // Unlock and initialize the audio system on user tap.
+    /* ==================== UI Functions ==================== */
+
+    // Update time and date display.
+    function updateTimeAndDate() {
+      const now = new Date();
+      let hours = now.getHours();
+      const minutes = String(now.getMinutes()).padStart(2, "0");
+      // Convert to 12-hour format.
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      document.getElementById("time").textContent = `${hours}:${minutes}`;
+      const options = { month: "short", day: "numeric", weekday: "long" };
+      document.getElementById("date").textContent = now.toLocaleDateString("en-US", options);
+    }
+    setInterval(updateTimeAndDate, 60000);
+    updateTimeAndDate();
+
+    // Fetch and display weather information.
+    async function fetchWeather() {
+      // Using a provided proxy URL.
+      const url = "https://fragrant-frost-a94d.nabeeliitr.workers.dev/";
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Weather data fetch failed.");
+        const data = await response.json();
+        const temperature = Math.round(data.main.temp);
+        const weatherDescription = data.weather[0].description;
+        const iconCode = data.weather[0].icon;
+        const iconUrl = `http://openweathermap.org/img/wn/${iconCode}@2x.png`;
+        document.getElementById("weatherInfo").innerHTML = `<img src="${iconUrl}" alt="${weatherDescription}"> ${temperature}°C, ${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}`;
+      } catch (error) {
+        console.error(error);
+        document.getElementById("weatherInfo").textContent = "Unable to load weather data.";
+      }
+    }
+    fetchWeather();
+    setInterval(fetchWeather, 10 * 60 * 1000);
+
+    // Update greeting message based on time.
+    function updateMessage() {
+      const now = new Date();
+      const hours = now.getHours();
+      let message = "Welcome!";
+      if (hours >= 22 || hours < 5) {
+        message = "Time to Sleep";
+      } else if (hours >= 5 && hours < 12) {
+        message = "Good Morning!";
+      } else if (hours >= 12 && hours < 17) {
+        message = "Good Afternoon!";
+      } else if (hours >= 17 && hours < 20) {
+        message = "Good Evening!";
+      } else if (hours >= 20 && hours < 22) {
+        message = "Relax and Unwind";
+      }
+      document.getElementById("message").textContent = message;
+    }
+    setInterval(updateMessage, 60000);
+    updateMessage();
+
+    /* ==================== Start Scheduler on User Interaction ==================== */
+
     document.getElementById("startButton").addEventListener("click", () => {
-      // Create (or resume) the AudioContext.
+      // Create and resume the AudioContext (this unlocks audio playback on iOS).
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       audioContext.resume().then(() => {
         document.getElementById("status").textContent = "Audio context unlocked. Loading audio files…";
-        // Load both audio files concurrently.
         Promise.all([
           loadAudio("static/fajr.mp3"),
           loadAudio("static/azaan.mp3")
@@ -120,7 +205,7 @@
         console.error("AudioContext error:", err);
         document.getElementById("status").textContent = "Error unlocking audio.";
       });
-      // Hide the start button after unlocking.
+      // Hide the start button after activation.
       document.getElementById("startButton").style.display = "none";
     });
   </script>
