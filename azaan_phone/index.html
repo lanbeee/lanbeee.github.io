@@ -4,60 +4,44 @@
   <meta charset="UTF-8">
   <title>Azaan Scheduler Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- External CSS & Icons -->
+  <!-- Use your external stylesheet -->
   <link rel="stylesheet" href="static/styles.css">
+  <!-- Optional Font Awesome icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    /* Basic styling; you can further refine this in your external CSS file */
-    body { 
-      font-family: sans-serif; 
-      background: #f0f0f0; 
-      margin: 0; 
-      padding: 0; 
-      text-align: center;
-    }
-    .container {
-      max-width: 600px;
-      margin: 20px auto;
-      background: #fff;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    h1 { margin-bottom: 10px; }
-    #startButton { 
-      font-size: 20px; 
-      padding: 10px 20px; 
-      margin-bottom: 20px; 
-      cursor: pointer;
-    }
-    #time { font-size: 48px; margin: 10px 0; }
-    #date { font-size: 20px; margin-bottom: 10px; }
-    #weather { margin-bottom: 10px; }
-    #weather img { vertical-align: middle; }
-    #message { font-size: 24px; margin-bottom: 20px; }
-    #status { font-size: 16px; color: #666; margin-top: 20px; }
-  </style>
 </head>
 <body>
   <div class="container">
-    <h1>Azaan Scheduler Dashboard</h1>
-    <button id="startButton">Start Scheduler</button>
+    <!-- Start Button (styled as #startLoopBtn per your CSS) -->
+    <button id="startLoopBtn">Start</button>
+    
+    <!-- Title (h1 styled via your CSS) -->
+    <!-- <h1>Azaan Scheduler Dashboard</h1> -->
+    
+    <!-- Weather Display (positioned top-right by your CSS) -->
+    <div id="weather">
+      <span id="weatherInfo">Loading weather...</span>
+    </div>
+    
+    <!-- Time Display (large, centered) -->
     <div id="time">--:--</div>
+    
+    <!-- Date Display -->
     <div id="date">Loading date...</div>
-    <div id="weather"><span id="weatherInfo">Loading weather...</span></div>
+    
+    <!-- Greeting Message -->
     <div id="message">Welcome!</div>
-    <div id="status">Status: Waiting for user action…</div>
+    
+    <!-- Optional hidden status (for debugging) -->
+    <div id="status" style="display:none;"></div>
   </div>
 
   <script>
-    /* ==================== Web Audio API Scheduler for iOS Safari ==================== */
-    
-    // Global variables for the AudioContext and decoded audio buffers.
+    /* ==================== Web Audio API Prayer Scheduler ==================== */
+
     let audioContext;
     let fajrBuffer, azaanBuffer;
 
-    // Define prayer times (24-hour format as strings) and corresponding audio sources.
+    // Define prayer times (24-hour format as strings) and associated audio sources.
     const prayerTimes = [
       { name: "Fajr",    time: "06:45", audioSrc: "static/fajr.mp3" },
       { name: "Dhuhr",   time: "13:15", audioSrc: "static/azaan.mp3" },
@@ -66,31 +50,24 @@
       { name: "Isha",    time: "21:45", audioSrc: "static/azaan.mp3" }
     ];
 
-    // Forced playback durations (in seconds): Fajr = 246, others ~130.7 seconds.
+    // Forced playback durations in seconds (Fajr = 246s; others ≈130.7s).
     const forcedDurations = { "Fajr": 246, "default": 130.7 };
 
-    // Utility: Load and decode an audio file from a given URL.
+    // Load and decode an audio file into an AudioBuffer.
     function loadAudio(url) {
       return fetch(url)
         .then(response => response.arrayBuffer())
         .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer));
     }
 
-    // Calculate the next occurrence of each prayer time.
+    // Compute the next occurrence of each prayer time.
     function computeNextPrayerTimes() {
       const now = new Date();
       return prayerTimes.map(prayer => {
         const [hours, minutes] = prayer.time.split(":").map(Number);
-        let prayerDate = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate(),
-          hours,
-          minutes,
-          0
-        );
+        let prayerDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
         if (prayerDate <= now) {
-          // If the time has already passed today, schedule for tomorrow.
+          // If already passed today, schedule for tomorrow.
           prayerDate.setDate(prayerDate.getDate() + 1);
         }
         return { name: prayer.name, time: prayerDate, audioSrc: prayer.audioSrc };
@@ -109,8 +86,8 @@
           // Re-schedule the same prayer every 24 hours.
           setInterval(() => playPrayer(prayer), 24 * 60 * 60 * 1000);
         }, delay);
-        document.getElementById("status").textContent = "Prayers scheduled.";
       });
+      document.getElementById("status").textContent = "Prayers scheduled.";
     }
 
     // Play the prayer audio using the Web Audio API.
@@ -126,7 +103,7 @@
 
     /* ==================== UI Functions ==================== */
 
-    // Update time and date display.
+    // Update time and date every minute.
     function updateTimeAndDate() {
       const now = new Date();
       let hours = now.getHours();
@@ -141,9 +118,8 @@
     setInterval(updateTimeAndDate, 60000);
     updateTimeAndDate();
 
-    // Fetch and display weather information.
+    // Fetch and display weather info (refresh every 10 minutes).
     async function fetchWeather() {
-      // Using a provided proxy URL.
       const url = "https://fragrant-frost-a94d.nabeeliitr.workers.dev/";
       try {
         const response = await fetch(url);
@@ -185,8 +161,8 @@
 
     /* ==================== Start Scheduler on User Interaction ==================== */
 
-    document.getElementById("startButton").addEventListener("click", () => {
-      // Create and resume the AudioContext (this unlocks audio playback on iOS).
+    // When the start button is tapped, unlock the AudioContext and load the audio files.
+    document.getElementById("startLoopBtn").addEventListener("click", () => {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       audioContext.resume().then(() => {
         document.getElementById("status").textContent = "Audio context unlocked. Loading audio files…";
@@ -206,7 +182,7 @@
         document.getElementById("status").textContent = "Error unlocking audio.";
       });
       // Hide the start button after activation.
-      document.getElementById("startButton").style.display = "none";
+      document.getElementById("startLoopBtn").classList.add("hidden");
     });
   </script>
 </body>
