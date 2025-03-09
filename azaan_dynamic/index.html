@@ -105,7 +105,7 @@
 
     function getPrayerTimesForDay(date) {
       const coords = new adhan.Coordinates(DEFAULT_LOCATION.latitude, DEFAULT_LOCATION.longitude);
-      const params = adhan.CalculationMethod.MuslimWorldLeague();
+      const params = adhan.CalculationMethod.NorthAmerica();
       const prayerTimes = new adhan.PrayerTimes(coords, date, params);
       return [
         { name: "Fajr", time: prayerTimes.fajr, audioSrc: "static/fajr.mp3" },
