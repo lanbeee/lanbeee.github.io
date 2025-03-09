@@ -4,54 +4,40 @@
   <meta charset="UTF-8">
   <title>Azaan Scheduler Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Use your external stylesheet -->
   <link rel="stylesheet" href="static/styles.css">
+  <!-- Optional Font Awesome icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- Include local adhan.js (assuming it's in static folder) -->
+  <!-- Include the adhan library (adjust the version/path as needed) -->
   <script src="lib/js/adhan.umd.min.js"></script>
 </head>
 <body>
   <div class="container">
     <button id="startLoopBtn">Start</button>
-    <div id="locationInfo">Location: Loading...</div>
+    
+    <!-- Time Display -->
     <div id="time">--:--</div>
+    
+    <!-- Date Display -->
     <div id="date">Loading date...</div>
+    
+    <!-- Greeting Message -->
     <div id="message">Welcome!</div>
+    
+    <!-- Hidden status for debugging -->
     <div id="status" style="display:none;"></div>
   </div>
 
   <script>
     let audioContext;
     let fajrBuffer, azaanBuffer;
-    let userLocation = { latitude: null, longitude: null };
+    let LOCATION = null; // Will hold {latitude, longitude} after geolocation
+    let prayerTimers = []; // To store timer IDs for scheduled prayers
 
-    // Forced playback durations in seconds
-    const forcedDurations = { "Fajr": 246, "default": 130.7 };
-
-    // Load and decode an audio file into an AudioBuffer
-    function loadAudio(url) {
-      return fetch(url)
-        .then(response => response.arrayBuffer())
-        .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer));
-    }
-
-    // Get user's location
-    function getUserLocation() {
-      return new Promise((resolve, reject) => {
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            position => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
-            error => reject(error)
-          );
-        } else {
-          reject(new Error("Geolocation is not supported by this browser."));
-        }
-      });
-    }
-
-    // Calculate prayer times for a given date and location
-    function calculatePrayerTimes(date, location) {
-      const coords = new adhan.Coordinates(location.latitude, location.longitude);
-      const params = adhan.CalculationMethod.MuslimWorldLeague();
+    // Dynamic prayer times function using adhan library
+    function getPrayerTimesForDay(date) {
+      const coords = new adhan.Coordinates(LOCATION.latitude, LOCATION.longitude);
+      const params = adhan.CalculationMethod.NorthAmerica();
       const prayerTimes = new adhan.PrayerTimes(coords, date, params);
       return [
         { name: "Fajr", time: prayerTimes.fajr, audioSrc: "static/fajr.mp3" },
@@ -62,99 +48,139 @@
       ];
     }
 
-    // Schedule playback for each prayer
-    function schedulePrayers(prayers) {
-      const now = new Date();
-      prayers.forEach(prayer => {
-        const delay = prayer.time.getTime() - now.getTime();
-        if (delay > 0) {
-          setTimeout(() => {
-            playPrayer(prayer);
-          }, delay);
-          console.log(`Scheduled ${prayer.name} in ${delay} ms`);
-        }
-      });
+    // Load and decode an audio file into an AudioBuffer.
+    function loadAudio(url) {
+      return fetch(url)
+        .then(response => response.arrayBuffer())
+        .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer));
     }
 
-    // Play the prayer audio using the Web Audio API
+    // Play the prayer audio using the Web Audio API.
     function playPrayer(prayer) {
       const source = audioContext.createBufferSource();
       source.buffer = (prayer.name === "Fajr") ? fajrBuffer : azaanBuffer;
       source.connect(audioContext.destination);
       source.start();
       console.log(`${prayer.name} started at ${new Date().toLocaleTimeString()}`);
+      // Use forced playback durations if needed (in seconds)
+      const forcedDurations = { "Fajr": 246, "default": 130.7 };
       const duration = (prayer.name === "Fajr") ? forcedDurations["Fajr"] : forcedDurations["default"];
       source.stop(audioContext.currentTime + duration);
     }
 
-    // Update time and date every minute
+    // Schedule today's prayer times that haven't passed yet.
+    function scheduleTodaysPrayers() {
+      // Clear any existing timers
+      prayerTimers.forEach(timerId => clearTimeout(timerId));
+      prayerTimers = [];
+
+      const now = new Date();
+      const prayers = getPrayerTimesForDay(now);
+      prayers.forEach(prayer => {
+        if (prayer.time > now) {
+          const delay = prayer.time.getTime() - now.getTime();
+          console.log(`Scheduling ${prayer.name} in ${delay} ms`);
+          const timerId = setTimeout(() => {
+            playPrayer(prayer);
+          }, delay);
+          prayerTimers.push(timerId);
+        } else {
+          console.log(`${prayer.name} time has already passed for today.`);
+        }
+      });
+      document.getElementById("status").textContent = "Today's prayers scheduled.";
+    }
+
+    // Schedule a daily update at 2AM to recalculate prayer times.
+    function scheduleDailyUpdate() {
+      const now = new Date();
+      let next2AM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 2, 0, 0);
+      if (now >= next2AM) {
+        next2AM.setDate(next2AM.getDate() + 1);
+      }
+      const delay = next2AM.getTime() - now.getTime();
+      console.log(`Next daily update in ${delay} ms`);
+      setTimeout(() => {
+        scheduleTodaysPrayers();
+        scheduleDailyUpdate(); // Reschedule for the next day
+      }, delay);
+    }
+
+    // Update time and date every minute.
     function updateTimeAndDate() {
       const now = new Date();
-      let hours = now.getHours() % 12 || 12;
-      const minutes = String(now.getMinutes()).padStart(2, '0');
+      let hours = now.getHours();
+      const minutes = String(now.getMinutes()).padStart(2, "0");
+      // Convert to 12-hour format.
+      hours = hours % 12;
+      hours = hours ? hours : 12;
       document.getElementById("time").textContent = `${hours}:${minutes}`;
-      const options = { month: 'short', day: 'numeric', weekday: 'long' };
-      document.getElementById("date").textContent = now.toLocaleDateString('en-US', options);
+      const options = { month: "short", day: "numeric", weekday: "long" };
+      document.getElementById("date").textContent = now.toLocaleDateString("en-US", options);
     }
     setInterval(updateTimeAndDate, 60000);
     updateTimeAndDate();
 
-    // Update greeting message based on time
+    // Update greeting message based on time.
     function updateMessage() {
       const now = new Date();
       const hours = now.getHours();
       let message = "Welcome!";
-      if (hours >= 22 || hours < 5) message = "Time to Sleep";
-      else if (hours >= 5 && hours < 12) message = "Good Morning!";
-      else if (hours >= 12 && hours < 17) message = "Good Afternoon!";
-      else if (hours >= 17 && hours < 20) message = "Good Evening!";
-      else if (hours >= 20 && hours < 22) message = "Relax and Unwind";
+      if (hours >= 22 || hours < 5) {
+        message = "Time to Sleep";
+      } else if (hours >= 5 && hours < 12) {
+        message = "Good Morning!";
+      } else if (hours >= 12 && hours < 17) {
+        message = "Good Afternoon!";
+      } else if (hours >= 17 && hours < 20) {
+        message = "Good Evening!";
+      } else if (hours >= 20 && hours < 22) {
+        message = "Relax and Unwind";
+      }
       document.getElementById("message").textContent = message;
     }
     setInterval(updateMessage, 60000);
     updateMessage();
 
-    // Update location info (replacing weather)
-    function updateLocationInfo(location) {
-      document.getElementById("locationInfo").textContent = `Location: Lat ${location.latitude.toFixed(2)}, Lon ${location.longitude.toFixed(2)}`;
-    }
-
-    // Daily update at 2 AM
-    function dailyUpdate() {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const prayers = calculatePrayerTimes(today, userLocation);
-      schedulePrayers(prayers);
-      // Schedule next update at 2 AM
-      const next2AM = new Date(now);
-      next2AM.setHours(2, 0, 0, 0);
-      if (next2AM < now) next2AM.setDate(next2AM.getDate() + 1);
-      const delayUntilNext2AM = next2AM - now;
-      setTimeout(dailyUpdate, delayUntilNext2AM);
-      console.log(`Next update scheduled in ${delayUntilNext2AM} ms`);
-    }
-
-    // Start the scheduler
-    document.getElementById("startLoopBtn").addEventListener("click", async () => {
-      try {
-        userLocation = await getUserLocation();
-        updateLocationInfo(userLocation);
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        await audioContext.resume();
-        [fajrBuffer, azaanBuffer] = await Promise.all([
-          loadAudio("static/fajr.mp3"),
-          loadAudio("static/azaan.mp3")
-        ]);
-        const today = new Date();
-        const prayers = calculatePrayerTimes(today, userLocation);
-        schedulePrayers(prayers);
-        dailyUpdate();
-        document.getElementById("startLoopBtn").classList.add("hidden");
-        document.getElementById("status").textContent = "Scheduler started.";
-      } catch (error) {
-        console.error("Error starting scheduler:", error);
-        document.getElementById("status").textContent = "Error starting scheduler.";
+    // Start scheduler on user interaction.
+    document.getElementById("startLoopBtn").addEventListener("click", () => {
+      // Request geolocation (ensure this is used on a mobile browser with geolocation support)
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((position) => {
+          LOCATION = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+          console.log("Location acquired:", LOCATION);
+          // Unlock AudioContext and load audio files.
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          audioContext.resume().then(() => {
+            document.getElementById("status").textContent = "Audio context unlocked. Loading audio files…";
+            Promise.all([
+              loadAudio("static/fajr.mp3"),
+              loadAudio("static/azaan.mp3")
+            ]).then(buffers => {
+              [fajrBuffer, azaanBuffer] = buffers;
+              document.getElementById("status").textContent = "Audio files loaded. Scheduling prayers…";
+              scheduleTodaysPrayers();
+              scheduleDailyUpdate();
+            }).catch(err => {
+              console.error("Audio load error:", err);
+              document.getElementById("status").textContent = "Error loading audio files.";
+            });
+          }).catch(err => {
+            console.error("AudioContext error:", err);
+            document.getElementById("status").textContent = "Error unlocking audio.";
+          });
+        }, (error) => {
+          console.error("Geolocation error:", error);
+          document.getElementById("status").textContent = "Error fetching location.";
+        });
+      } else {
+        document.getElementById("status").textContent = "Geolocation is not supported by this browser.";
       }
+      // Hide the start button after activation.
+      document.getElementById("startLoopBtn").classList.add("hidden");
     });
   </script>
 </body>
