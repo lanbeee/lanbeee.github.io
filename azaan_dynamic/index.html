@@ -5,8 +5,10 @@
   <title>Azaan Scheduler Dashboard</title>
   <link rel="stylesheet" href="static/styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- Include adhan.js from unpkg CDN -->
-  <script src="https://unpkg.com/adhan-js@latest/dist/adhan.umd.js"></script>
+  <!-- Use a specific version of adhan.js to avoid MIME type issues -->
+  <script src="https://unpkg.com/adhan-js@4.0.1/dist/adhan.umd.js"></script>
+  <!-- Optional: Add a favicon to silence 404 error -->
+  <link rel="icon" href="data:,">
 </head>
 <body>
   <div class="container">
@@ -17,7 +19,6 @@
     <div id="time">--:--</div>
     <div id="date">Loading date...</div>
     <div id="message">Welcome!</div>
-    <!-- Prayer Times Display -->
     <div id="prayerTimesDisplay" style="position: fixed; bottom: 10px; right: 10px; font-size: 12px; background: rgba(0,0,0,0.7); color: white; padding: 5px; border-radius: 3px;">Prayer Times: Loading...</div>
     <audio id="silentAudio" src="static/silent.mp3" type="audio/mpeg"></audio>
     <audio id="prayerAudio" src="" type="audio/mpeg"></audio>
@@ -62,7 +63,8 @@
         const temperature = Math.round(data.main.temp);
         const weatherDescription = data.weather[0].description;
         const iconCode = data.weather[0].icon;
-        const iconUrl = `http://openweathermap.org/img/wn/${iconCode}@2x.png`;
+        // Use HTTPS for weather icon to avoid mixed content warning
+        const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
         weatherInfo.innerHTML = `
           <img src="${iconUrl}" alt="${weatherDescription}" style="filter: brightness(0) invert(1);">
           ${temperature}°C, ${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}
@@ -114,7 +116,6 @@
       ];
     }
 
-    // Update Prayer Times Display
     function updatePrayerTimesDisplay(prayers) {
       const times = prayers.map(prayer => {
         const time = prayer.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -133,7 +134,7 @@
           console.log(`Scheduled ${prayer.name} Azaan at ${prayer.time.toLocaleTimeString()}`);
         }
       });
-      updatePrayerTimesDisplay(prayers); // Update display whenever prayers are scheduled
+      updatePrayerTimesDisplay(prayers);
     }
 
     function playAzaanOnce(audioSrc, prayerName) {
