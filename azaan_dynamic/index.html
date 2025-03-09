@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Azaan Scheduler Dashboard</title>
+  <link rel="stylesheet" href="static/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Include adhan.js from unpkg CDN -->
+  <script src="https://unpkg.com/adhan-js@latest/dist/adhan.umd.js"></script>
+</head>
+<body>
+  <div class="container">
+    <button id="startLoopBtn">Start Azaan Loop</button>
+    <div id="weather">
+      <span id="weatherInfo">Loading weather...</span>
+    </div>
+    <div id="time">--:--</div>
+    <div id="date">Loading date...</div>
+    <div id="message">Welcome!</div>
+    <audio id="silentAudio" src="static/silent.mp3" type="audio/mpeg"></audio>
+    <audio id="prayerAudio" src="" type="audio/mpeg"></audio>
+  </div>
+
+  <script>
+    // ==================== Configuration ====================
+    const WEATHER_API_URL = 'https://api.openweathermap.org/data/2.5/weather';
+    const DEFAULT_LOCATION = { latitude: 43, longitude: -78.79 };
+
+    // ==================== Elements ====================
+    const silentAudio = document.getElementById("silentAudio");
+    const prayerAudio = document.getElementById("prayerAudio");
+    const startLoopBtn = document.getElementById("startLoopBtn");
+    const timeDisplay = document.getElementById("time");
+    const dateDisplay = document.getElementById("date");
+    const weatherInfo = document.getElementById("weatherInfo");
+    const messageDisplay = document.getElementById("message");
+
+    let isLooping = false;
+
+    // ==================== Time and Date ====================
+    function updateTimeAndDate() {
+      const now = new Date();
+      let hours = now.getHours() % 12 || 12;
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      timeDisplay.textContent = `${hours}:${minutes}`;
+      const options = { month: 'short', day: 'numeric', weekday: 'long' };
+      dateDisplay.textContent = now.toLocaleDateString('en-US', options);
+    }
+    setInterval(updateTimeAndDate, 60000);
+    updateTimeAndDate();
+
+    // ==================== Weather ====================
+    async function fetchWeather() {
+      const url = 'https://fragrant-frost-a94d.nabeeliitr.workers.dev/';
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Weather data fetch failed.');
+        const data = await response.json();
+        const temperature = Math.round(data.main.temp);
+        const weatherDescription = data.weather[0].description;
+        const iconCode = data.weather[0].icon;
+        const iconUrl = `http://openweathermap.org/img/wn/${iconCode}@2x.png`;
+        weatherInfo.innerHTML = `
+          <img src="${iconUrl}" alt="${weatherDescription}" style="filter: brightness(0) invert(1);">
+          ${temperature}°C, ${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}
+        `;
+      } catch (error) {
+        console.error(error);
+        weatherInfo.textContent = 'Unable to load weather data.';
+      }
+    }
+    fetchWeather();
+    setInterval(fetchWeather, 10 * 60 * 1000);
+
+    // ==================== Message Section ====================
+    function updateMessage() {
+      const now = new Date();
+      const hours = now.getHours();
+      let message = "Welcome!";
+      if (hours >= 22 || hours < 5) message = "Time to Sleep";
+      else if (hours >= 5 && hours < 12) message = "Good Morning!";
+      else if (hours >= 12 && hours < 17) message = "Good Afternoon!";
+      else if (hours >= 17 && hours < 20) message = "Good Evening!";
+      else if (hours >= 20 && hours < 22) message = "Relax and Unwind";
+      messageDisplay.textContent = message;
+    }
+    setInterval(updateMessage, 60000);
+    updateMessage();
+
+    // ==================== Helper Functions ====================
+    function timeUntilNext2AM() {
+      const now = new Date();
+      const next2AM = new Date(now);
+      next2AM.setHours(2, 0, 0, 0);
+      if (next2AM < now) {
+        next2AM.setDate(next2AM.getDate() + 1);
+      }
+      return next2AM - now;
+    }
+
+    function getPrayerTimesForDay(date) {
+      const coords = new adhan.Coordinates(DEFAULT_LOCATION.latitude, DEFAULT_LOCATION.longitude);
+      const params = adhan.CalculationMethod.MuslimWorldLeague();
+      const prayerTimes = new adhan.PrayerTimes(coords, date, params);
+      return [
+        { name: "Fajr", time: prayerTimes.fajr, audioSrc: "static/fajr.mp3" },
+        { name: "Dhuhr", time: prayerTimes.dhuhr, audioSrc: "static/azaan.mp3" },
+        { name: "Asr", time: prayerTimes.asr, audioSrc: "static/azaan.mp3" },
+        { name: "Maghrib", time: prayerTimes.maghrib, audioSrc: "static/azaan.mp3" },
+        { name: "Isha", time: prayerTimes.isha, audioSrc: "static/azaan.mp3" }
+      ];
+    }
+
+    // ==================== Azaan Scheduling ====================
+    function scheduleAzaan(prayers) {
+      const now = new Date();
+      prayers.forEach(prayer => {
+        const delay = prayer.time.getTime() - now.getTime();
+        if (delay > 0) {
+          setTimeout(() => playAzaanOnce(prayer.audioSrc, prayer.name), delay);
+          console.log(`Scheduled ${prayer.name} Azaan at ${prayer.time.toLocaleTimeString()}`);
+        }
+      });
+    }
+
+    function playAzaanOnce(audioSrc, prayerName) {
+      prayerAudio.src = audioSrc;
+      prayerAudio.volume = 1;
+      prayerAudio.currentTime = 0;
+      prayerAudio.play()
+        .then(() => console.log(`${prayerName} Azaan started playing.`))
+        .catch(err => console.error(`Error playing ${prayerName} Azaan:`, err));
+    }
+
+    function dailyUpdate() {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const prayers = getPrayerTimesForDay(today);
+      scheduleAzaan(prayers);
+      const delayUntilNext2AM = timeUntilNext2AM();
+      setTimeout(dailyUpdate, delayUntilNext2AM);
+      console.log(`Daily update performed at ${now.toLocaleTimeString()}`);
+    }
+
+    // ==================== Start Silent Loop & Scheduling ====================
+    function startSilentLoop() {
+      if (!isLooping) {
+        isLooping = true;
+        startLoopBtn.disabled = true;
+        startLoopBtn.classList.add("hidden");
+
+        silentAudio.volume = 0;
+        silentAudio.loop = true;
+        silentAudio.play()
+          .then(() => console.log("Silent loop started."))
+          .catch(err => console.error("Error starting silent loop:", err));
+
+        const today = new Date();
+        const prayers = getPrayerTimesForDay(today);
+        scheduleAzaan(prayers);
+
+        const delayUntil2AM = timeUntilNext2AM();
+        setTimeout(dailyUpdate, delayUntil2AM);
+
+        console.log("Azaan scheduling initialized.");
+      }
+    }
+    startLoopBtn.addEventListener("click", startSilentLoop);
+
+    // ==================== Keep-Alive Mechanisms ====================
+    function sendHeartbeat() {
+      let heartbeat = document.getElementById('heartbeat');
+      if (!heartbeat) {
+        heartbeat = document.createElement('div');
+        heartbeat.id = 'heartbeat';
+        heartbeat.style.display = 'none';
+        document.body.appendChild(heartbeat);
+      }
+      heartbeat.textContent = new Date().toISOString();
+    }
+
+    function checkAudioLoop() {
+      if (silentAudio.paused && isLooping) {
+        silentAudio.play()
+          .then(() => console.log("Silent audio loop restarted."))
+          .catch(err => console.error("Error restarting silent audio loop:", err));
+      }
+    }
+
+    function reinitializeAudioLoop() {
+      if (isLooping) {
+        silentAudio.pause();
+        silentAudio.currentTime = 0;
+        silentAudio.play()
+          .then(() => console.log("Silent audio loop reinitialized."))
+          .catch(err => console.error("Error reinitializing silent audio loop:", err));
+      }
+    }
+
+    function simulateUserInteraction() {
+      const event = new MouseEvent('mousemove', { view: window, bubbles: true, cancelable: true });
+      document.dispatchEvent(event);
+    }
+
+    setInterval(() => {
+      sendHeartbeat();
+      checkAudioLoop();
+      reinitializeAudioLoop();
+      simulateUserInteraction();
+    }, 5 * 60 * 1000);
+
+    sendHeartbeat();
+  </script>
+</body>
+</html>
