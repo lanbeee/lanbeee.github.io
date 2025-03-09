@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <title>Azaan Scheduler Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Use your external stylesheet -->
+  <!-- External stylesheet -->
   <link rel="stylesheet" href="static/styles.css">
   <!-- Optional Font Awesome icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- Include the adhan library (adjust the version/path as needed) -->
+  <!-- Include adhan library -->
   <script src="lib/js/adhan.umd.min.js"></script>
 </head>
 <body>
@@ -24,6 +24,9 @@
     <!-- Greeting Message -->
     <div id="message">Welcome!</div>
     
+    <!-- Container for displaying prayer times -->
+    <div id="prayerTimes"></div>
+    
     <!-- Hidden status for debugging -->
     <div id="status" style="display:none;"></div>
   </div>
@@ -34,7 +37,7 @@
     let LOCATION = null; // Will hold {latitude, longitude} after geolocation
     let prayerTimers = []; // To store timer IDs for scheduled prayers
 
-    // Dynamic prayer times function using adhan library
+    // Dynamic prayer times function using adhan library.
     function getPrayerTimesForDay(date) {
       const coords = new adhan.Coordinates(LOCATION.latitude, LOCATION.longitude);
       const params = adhan.CalculationMethod.NorthAmerica();
@@ -62,20 +65,42 @@
       source.connect(audioContext.destination);
       source.start();
       console.log(`${prayer.name} started at ${new Date().toLocaleTimeString()}`);
-      // Use forced playback durations if needed (in seconds)
       const forcedDurations = { "Fajr": 246, "default": 130.7 };
       const duration = (prayer.name === "Fajr") ? forcedDurations["Fajr"] : forcedDurations["default"];
       source.stop(audioContext.currentTime + duration);
     }
 
+    // Render the prayer times on the page.
+    function renderPrayerTimes(prayers) {
+      const container = document.getElementById("prayerTimes");
+      container.innerHTML = "<h2>Today's Prayer Times</h2>";
+      const list = document.createElement("ul");
+      prayers.forEach(prayer => {
+        // Format time as HH:MM in 12-hour format.
+        let hours = prayer.time.getHours();
+        const minutes = String(prayer.time.getMinutes()).padStart(2, "0");
+        const ampm = hours >= 12 ? "PM" : "AM";
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        const formattedTime = `${hours}:${minutes} ${ampm}`;
+        const item = document.createElement("li");
+        item.textContent = `${prayer.name}: ${formattedTime}`;
+        list.appendChild(item);
+      });
+      container.appendChild(list);
+    }
+
     // Schedule today's prayer times that haven't passed yet.
     function scheduleTodaysPrayers() {
-      // Clear any existing timers
+      // Clear any existing timers.
       prayerTimers.forEach(timerId => clearTimeout(timerId));
       prayerTimers = [];
 
       const now = new Date();
       const prayers = getPrayerTimesForDay(now);
+      // Update the UI with today's prayer times.
+      renderPrayerTimes(prayers);
+
       prayers.forEach(prayer => {
         if (prayer.time > now) {
           const delay = prayer.time.getTime() - now.getTime();
@@ -102,7 +127,7 @@
       console.log(`Next daily update in ${delay} ms`);
       setTimeout(() => {
         scheduleTodaysPrayers();
-        scheduleDailyUpdate(); // Reschedule for the next day
+        scheduleDailyUpdate(); // Reschedule for the next day.
       }, delay);
     }
 
@@ -144,7 +169,6 @@
 
     // Start scheduler on user interaction.
     document.getElementById("startLoopBtn").addEventListener("click", () => {
-      // Request geolocation (ensure this is used on a mobile browser with geolocation support)
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
           LOCATION = {
@@ -152,7 +176,6 @@
             longitude: position.coords.longitude
           };
           console.log("Location acquired:", LOCATION);
-          // Unlock AudioContext and load audio files.
           audioContext = new (window.AudioContext || window.webkitAudioContext)();
           audioContext.resume().then(() => {
             document.getElementById("status").textContent = "Audio context unlocked. Loading audio files…";
