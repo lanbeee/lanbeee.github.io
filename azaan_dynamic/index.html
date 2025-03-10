@@ -107,7 +107,11 @@
       const coords = new adhan.Coordinates(DEFAULT_LOCATION.latitude, DEFAULT_LOCATION.longitude);
       const params = adhan.CalculationMethod.NorthAmerica();
       const prayerTimes = new adhan.PrayerTimes(coords, date, params);
+      const preFajrTime = new Date(prayerTimes.fajr);
+      preFajrTime.setMinutes(preFajrTime.getMinutes() - 20);
+      
       return [
+        { name: "Pre-Fajr", time: preFajrTime, audioSrc: "static/azaan.mp3" },
         { name: "Fajr", time: prayerTimes.fajr, audioSrc: "static/fajr.mp3" },
         { name: "Dhuhr", time: prayerTimes.dhuhr, audioSrc: "static/azaan.mp3" },
         { name: "Asr", time: prayerTimes.asr, audioSrc: "static/azaan.mp3" },
