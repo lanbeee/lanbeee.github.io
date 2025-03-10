@@ -125,7 +125,8 @@
         const time = prayer.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         return `${time}`;
       }).join(' | ');
-      prayerTimesDisplay.textContent = `Times: ${times}`;
+      // prayerTimesDisplay.textContent = `Times: ${times}`;
+      prayerTimesDisplay.textContent = `Times: ${times.replace(/ 0/g, " ").replace(/AM|PM/g, "")}`;
     }
 
     // ==================== Azaan Scheduling ====================
