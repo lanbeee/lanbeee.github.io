@@ -123,9 +123,9 @@
     function updatePrayerTimesDisplay(prayers) {
       const times = prayers.map(prayer => {
         const time = prayer.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        return `${prayer.name}: ${time}`;
+        return `${time}`;
       }).join(' | ');
-      prayerTimesDisplay.textContent = `Prayer Times: ${times}`;
+      prayerTimesDisplay.textContent = `Times: ${times}`;
     }
 
     // ==================== Azaan Scheduling ====================
