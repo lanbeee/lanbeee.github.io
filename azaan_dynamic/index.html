@@ -60,7 +60,7 @@
         const response = await fetch(url);
         if (!response.ok) throw new Error('Weather data fetch failed.');
         const data = await response.json();
-        const temperature = Math.round(data.main.temp);
+        const temperature = Math.round(data.main.feels_like);
         const weatherDescription = data.weather[0].description;
         const iconCode = data.weather[0].icon;
         // Use HTTPS for weather icon to avoid mixed content warning
