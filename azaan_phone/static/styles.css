@@ -98,4 +98,24 @@ h1 {
 }
 
 /* Responsive Adjustments for Landscape on 5-inch Screen */
-@media only screen and (max-width
+@media only screen and (max-width: 568px) and (orientation: landscape) {
+  #time {
+    font-size: 120px;
+    margin-top: 50px;
+  }
+  #date {
+    font-size: 24px;
+  }
+  #startLoopBtn {
+    padding: 15px 30px;
+    font-size: 20px;
+  }
+  #weather {
+    font-size: 28px;
+  }
+  #weather img {
+    width: 60px;
+    height: 60px;
+    margin-right: 10px;
+  }
+}
