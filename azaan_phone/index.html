@@ -37,6 +37,10 @@
     let LOCATION = null; // Will hold {latitude, longitude} after geolocation
     let prayerTimers = []; // To store timer IDs for scheduled prayers
 
+    // New variables for the 35-second check
+    let prayersScheduled = false;
+    let schedulingCheckTimeout = null;
+
     // Dynamic prayer times function using adhan library.
     function getPrayerTimesForDay(date) {
       const coords = new adhan.Coordinates(LOCATION.latitude, LOCATION.longitude);
@@ -113,6 +117,8 @@
           console.log(`${prayer.name} time has already passed for today.`);
         }
       });
+      // Mark as scheduled to prevent the alert
+      prayersScheduled = true;
       document.getElementById("status").textContent = "Today's prayers scheduled.";
     }
 
@@ -169,6 +175,13 @@
 
     // Start scheduler on user interaction.
     document.getElementById("startLoopBtn").addEventListener("click", () => {
+      // Start a 35-second timer to check if prayers are scheduled
+      schedulingCheckTimeout = setTimeout(() => {
+        if (!prayersScheduled) {
+          alert("Azaan not scheduled within 35 seconds. Please check location permissions or reload.");
+        }
+      }, 35000);
+
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
           LOCATION = {
