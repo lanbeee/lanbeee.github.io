@@ -8,7 +8,7 @@ body, html {
   background-color: #121212; /* Dark background */
   color: #FFFFFF; /* Light text */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  overflow: hidden; /* Prevent scroll */
+  overflow: hidden; /* Prevent scroll by default */
 }
 
 /* Container for the main content */
@@ -98,25 +98,4 @@ h1 {
 }
 
 /* Responsive Adjustments for Landscape on 5-inch Screen */
-@media only screen and (max-width: 800px) and (max-height: 600px) {
-  #time {
-    font-size: 80px;
-  }
-  
-  #date, #weather, #message, h1 {
-    font-size: 24px;
-  }
-  
-  #startLoopBtn {
-    padding: 15px 30px;
-    font-size: 20px;
-  }
-  
-  #weather img {
-    width: 30px;
-    height: 30px;
-    margin-right: 8px;
-    filter: brightness(0) invert(1);
-  }
-  
-}
+@media only screen and (max-width
