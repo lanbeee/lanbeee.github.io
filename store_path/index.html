@@ -297,45 +297,154 @@
       const ENTRANCE = { x: 338, y: 33 };
       const CHECKOUT = { x: 620, y: 265 };
       const categories = {
-            "Fresh Produce": ["apple", "banana", "carrot", "lettuce", "grapes", "onion", "tomato", "cucumber", "strawberry", "spinach", "broccoli", "pear", "peach", "orange", "avocado", "potato"],
-            "Frozen": ["frozen", "ice cream", "pizza", "fries", "veggies", "popsicle", "lasagna", "frozen dinner", "fish sticks", "nuggets"],
-            "Grocery": ["rice", "flour", "oil", "pasta", "canned", "sugar", "spices", "cereal", "beans", "soup", "sauce", "ketchup", "mustard"],
-            "Snacks and Beverages": ["chips", "soda", "cookies", "juice", "snack", "pepsi", "coke", "candy", "crackers", "popcorn", "gatorade", "monster", "coffee", "tea"],
-            "Dairy": ["milk", "cheese", "butter", "yogurt", "cream", "whipped cream", "cottage cheese","eggs"],
-            "Bakery": ["bread", "cake", "donut", "croissant", "bagel", "muffin", "rolls", "pastry", "cupcake", "pie"],
-            "Meat and Seafood": ["chicken", "beef", "pork", "fish", "shrimp", "steak", "salmon", "tuna", "bacon", "crab", "lobster"],
-            "Deli": ["sandwich", "ham", "salami", "turkey", "wrap", "sub", "deli meat", "roast beef"],
-            "Pets": ["dog", "cat", "pet food", "litter", "treats", "kibble", "aquarium", "leash", "toys"],
-            "Cleaning": ["detergent", "disinfectant", "bleach", "soap", "mop", "wipes", "cleaner", "sanitizer", "polish"],
-            "House Supplies": ["paper towels", "toilet paper", "trash bags", "foil", "napkins", "plastic wrap", "plates", "cups"],
-            "Office Supplies": ["pen", "pencil", "notebook", "paper", "stapler", "marker", "highlighter", "binder", "envelope"],
-            "Electronics": ["phone", "laptop", "tv", "camera", "tablet", "charger", "headphones", "speaker", "monitor", "keyboard", "mouse"],
-            "Toys": ["lego", "doll", "puzzle", "game", "playset", "action figure", "plush", "board game"],
-            "Sports": ["ball", "bat", "soccer", "basketball", "tennis", "fitness", "weights", "yoga", "treadmill", "golf"],
-            "Baby": ["diaper", "formula", "stroller", "crib", "pacifier", "bottle", "wipes", "highchair", "car seat"],
-            "Girls": ["dress", "skirt", "leggings", "top", "blouse", "scarf"],
+            "Fresh Produce": ["apple", "banana", "carrot", "lettuce", "grapes", "onion", "tomato", "cucumber", "strawberry", "spinach", "broccoli", "pear", "peach", "orange", "avocado", "potato"
+              ,"fruit", "vegetable", "salad", "melon", "kiwi", "mango", "pineapple", "watermelon", "cabbage", "cauliflower", "celery", "corn", "eggplant", "garlic", "leek", "mushroom", "pepper", "radish", "squash", "zucchini", "asparagus", "artichoke", "beet", "brussels sprouts", "chard", "cherry", "clementine", "fig", "grapefruit", "honeydew", "nectarine", "papaya", "plum", "pomegranate", "raspberry", "tangerine"
+              ,"herb", "cilantro", "parsley", "basil", "mint", "dill", "rosemary", "thyme", "oregano", "sage", "chives", "lavender", "lemongrass"
+            ],
+            "Frozen": ["frozen", "ice cream", "pizza", "fries", "veggies", "popsicle", "lasagna", "frozen dinner", "fish sticks", "nuggets"
+              ,"frozen fruit", "frozen vegetable", "frozen meal", "frozen entree", "frozen appetizer", "frozen breakfast", "frozen dessert", "frozen yogurt", "ice cream sandwich", "sorbet", "gelato", "frozen pie", "frozen cake", "frozen cookie dough", "frozen waffle", "frozen pancake", "frozen burrito", "frozen taco", "frozen meatball", "frozen sausage", "frozen chicken tenders", "frozen fish fillet",
+              "frozen shrimp", "frozen crab", "frozen lobster", "frozen seafood", "frozen vegetable mix", "frozen fruit mix", "frozen smoothie", "frozen juice", "frozen cocktail", "frozen margarita", "frozen daiquiri", "frozen piña colada"
+            ],
+            "Grocery": ["rice", "flour", "oil", "pasta", "canned", "sugar", "spices", "cereal", "beans", "soup", "sauce", "ketchup", "mustard"
+              ,"bread crumbs", "baking powder", "baking soda", "brown sugar", "cornstarch", "couscous", "croutons", "dried fruit", "granola", "honey", "jam", "jelly", "maple syrup", "molasses", "nut butter", "oats", "peanut butter", "pita bread", "popcorn kernels", "quinoa", "salsa", "soy sauce", "syrup", "tortilla chips", "vinegar", "walnuts", "yeast",
+              "canned beans", "canned corn", "canned fruit", "canned vegetables", "canned tuna", "canned chicken", "canned salmon", "canned soup", "canned chili", "canned stew", "canned pasta sauce", "canned tomato sauce", "canned coconut milk",
+              "instant noodles", "ramen noodles", "macaroni and cheese", "instant rice", "instant oatmeal",
+              "pasta sauce", "alfredo sauce", "marinara sauce", "pesto sauce", "barbecue sauce", "hot sauce", "salad dressing", "mayonnaise", "pickles", "olives", "capers",
+              "spaghetti", "fettuccine", "penne", "rotini", "linguine", "macaroni", "lasagna noodles", "angel hair pasta", "canned soup", "canned broth", "canned stock",
+              "canned beans", "canned lentils", "canned chickpeas", "canned black beans", "canned kidney beans", "canned pinto beans", "canned refried beans", "canned baked beans", "canned chili beans", "canned green beans", "canned peas", "canned carrots", "canned mushrooms", "canned potatoes", "canned yams", "canned pumpkin",
+              "evaporated milk", "condensed milk", "coconut milk", "almond milk", "soy milk", "oat milk", "rice milk", "cashew milk", "hemp milk", "flax milk",
+              "powdered milk", "dry milk", "instant milk", "non-dairy creamer", "coffee creamer", "whipped topping",
+            ],
+            "Snacks and Beverages": ["chips", "soda", "cookies", "juice", "snack", "pepsi", "coke", "candy", "crackers", "popcorn", "gatorade", "monster", "red bull", "fanta", "sprite", "7up", "dr pepper", "root beer", "ginger ale", "tonic water", "club soda", "energy drink", "sports drink", "canada dry", "seltzer water", "diet coke", "diet pepsi", "diet soda", "bottled water", "mineral water", "flavored soda", "fruit punch", "lemon-lime soda", "cola", "orange soda", "grape soda", "cream soda", "chocolate milk", "almond milk drink", "soy milk drink", "iced latte", "frappuccino",
+              "water", "tea", "coffee", "energy drink", "trail mix", "granola bar", "protein bar", "fruit snack", "beef jerky", "nuts", "seeds", "dried fruit", "rice cake", "pudding cup", "yogurt cup", "cheese stick", "fruit cup", "applesauce cup",
+              "sparkling water", "flavored water", "coconut water", "sports drink", "vitamin water", "lemonade", "iced coffee", "dairy milk", "reese's", "snickers", "twix", "kit kat", "m&ms", "hershey's", "milky way", "butterfinger", "almond joy", "3 musketeers", "candy bar", "gummy bears", "gummy worms", "licorice", "lollipop", "jawbreaker", "candy cane", "chocolate bar", "chocolate chip cookie", "oatmeal cookie", "sugar cookie", "peanut butter cookie", "shortbread cookie", "macaroon", "biscotti", "rice krispie treat", "poptart", "fig newton", "fruit leather",
+              "roasted nuts", "salted nuts", "honey roasted nuts", "spicy nuts", "trail mix with chocolate", "trail mix with dried fruit", "trail mix with seeds", "protein bar with nuts", "protein bar with chocolate", "granola bar with yogurt coating",
+              "iced tea", "bottled tea", "bottled coffee", "cold brew coffee",
+              "hot chocolate mix", "instant coffee", "tea bags",
+              "soda can", "soda bottle", "juice box", "juice pouch",
+              "energy shot",
+            ],
+            "Dairy": ["milk", "cheese", "butter", "yogurt", "cream", "whipped cream", "cottage cheese","eggs", "half and half", "sour cream", "cream cheese", "feta cheese", "mozzarella cheese", "cheddar cheese", "parmesan cheese", "swiss cheese", "provolone cheese", "blue cheese", "goat cheese", "ricotta cheese", "colby jack cheese", "monterey jack cheese", "pepper jack cheese", "gouda cheese", "brie cheese", "camembert cheese", "mascarpone cheese", "quark cheese",
+              "lactose-free milk", "almond milk", "soy milk", "oat milk", "coconut milk", "cashew milk", "rice milk", "hemp milk", "flax milk", "macadamia milk", "pea milk", "walnut milk", "hazelnut milk",
+              "dairy-free yogurt", "plant-based yogurt", "dairy-free butter", "plant-based butter", "dairy-free cheese", "plant-based cheese",
+            ],
+            "Bakery": ["bread", "cake", "donut", "croissant", "bagel", "muffin", "rolls", "pastry", "cupcake", "pie"
+              ,"white bread", "whole wheat bread", "multigrain bread", "sourdough bread", "rye bread", "pumpernickel bread", "ciabatta bread", "focaccia bread", "brioche bread", "naan bread", "tortilla", "flatbread", "baguette", "english muffin", "hot dog bun", "hamburger bun", "sub roll", "pretzel bun",
+              "gluten-free bread", "gluten-free bagel", "gluten-free muffin", "gluten-free roll", "gluten-free pastry",
+              "birthday cake", "chocolate cake", "vanilla cake", "red velvet cake", "carrot cake", "cheesecake", "fruitcake",
+              "doughnut hole", "glazed doughnut", "chocolate doughnut", "jelly doughnut", "cruller", "old fashioned doughnut",
+            ],
+            "Meat and Seafood": ["chicken", "beef", "pork", "fish", "shrimp", "steak", "salmon", "tuna", "bacon", "crab", "lobster"
+              ,"ground beef", "ground turkey", "ground chicken", "ground pork", "chicken breast", "chicken thigh", "chicken drumstick", "chicken wing", "whole chicken", "pork chop", "pork loin", "pork shoulder", "pork ribs", "beef steak", "beef roast", "beef ribs", "lamb chop", "lamb roast",
+              "salmon fillet", "tilapia fillet", "cod fillet", "halibut fillet", "trout fillet", "catfish fillet", "sea bass fillet",
+              "shrimp cocktail", "shrimp scampi", "crab legs", "crab cakes", "lobster tail", "lobster roll",
+              "sausage", "hot dog", "bratwurst", "chorizo", "andouille sausage",
+              "deli meat"
+            ],
+            "Deli": ["sandwich", "ham", "salami", "turkey", "wrap", "sub", "deli meat", "roast beef"
+              ,"cold cut", "cold cut platter", "charcuterie board", "cheese platter", "fruit platter", "veggie platter",
+              "potato salad", "macaroni salad", "coleslaw", "pasta salad", "green salad", "caesar salad", "garden salad",
+              "hummus platter", "antipasto platter", "sushi platter", "sushi roll", "sashimi", "nigiri", "temaki", "california roll", "spicy tuna roll", "philadelphia roll", "dragon roll", "rainbow roll",
+            ],
+            "Pets": ["dog", "cat", "pet food", "litter", "treats", "kibble", "aquarium", "leash", "toys"
+              ,"dog food", "cat food", "pet treats", "dog treats", "cat treats", "puppy food", "kitten food", "senior dog food", "senior cat food",
+              "dry dog food", "dry cat food", "wet dog food", "wet cat food", "grain-free dog food", "grain-free cat food", "organic dog food", "organic cat food",
+              "dog chew toy",
+            ],
+            "Cleaning": ["detergent", "disinfectant", "bleach", "soap", "mop", "wipes", "cleaner", "sanitizer", "polish","detergent", "fabric softener", "stain remover", "bleach", "cleaning cloths", "microfiber cloths", "sponges", "scrub pads", "toilet cleaner", "glass cleaner", "floor cleaner", "all-purpose cleaner",
+              "laundry booster", "color catcher", "wrinkle releaser", "fabric refresher", "dryer balls", "scent booster", "laundry scent beads", "laundry detergent pods", "dish soap", "dishwasher detergent", "dishwasher rinse aid", "dishwasher cleaner", "garbage disposal cleaner", "kitchen cleaner", "bathroom cleaner", "tile cleaner", "grout cleaner", "mold and mildew remover", "air freshener", "odor eliminator",
+              "broom", "dustpan", "vacuum cleaner", "carpet cleaner", "steam cleaner", "mop bucket", "spray mop", "floor scrubber", "pressure washer",
+            ],
+            "House Supplies": ["paper towels", "toilet paper", "trash bags", "foil", "napkins", "plastic wrap", "plates", "cups",
+              "disposable plates", "disposable cups", "disposable utensils", "plastic cutlery", "paper napkins", "paper towels", "toilet paper rolls", "facial tissues", "kitchen towels", "cleaning wipes", "disinfecting wipes", "garbage bags", "recycling bags", "compost bags", "aluminum foil", "plastic wrap", "wax paper", "parchment paper", "baking cups", "baking liners", "cake boards", "cupcake liners", "food storage bags", "food storage containers", "plastic containers", "glass containers", "silicone bags", "beeswax wraps",
+              "disposable gloves", "rubber gloves", "cleaning gloves", "latex gloves", "nitrile gloves", "vinyl gloves", "dishwashing gloves", "household gloves"
+            ],
+            "Office Supplies": ["pen", "pencil", "notebook", "paper", "stapler", "marker", "highlighter", "binder", "envelope"
+              ,"sticky notes", "index cards", "file folders", "hanging file folders", "file box", "file cabinet", "desk organizer", "desk lamp", "paper clips", "binder clips", "rubber bands", "tape dispenser", "scotch tape", "masking tape", "packing tape", "glue stick", "white-out", "correction tape", "calculator", "calendar", "planner", "address book",
+              "printer paper", "copy paper", "photo paper", "cardstock paper", "colored paper", "construction paper",
+              "envelopes", "bubble mailers", "shipping labels", "postage stamps", "mailing tubes", "address labels", "return address labels",
+            ],
+            "Electronics": ["phone", "laptop", "tv", "camera", "tablet", "charger", "headphones", "speaker", "monitor", "keyboard", "mouse"
+              ,"phone case", "screen protector", "earbuds", "wireless charger", "power bank", "usb cable", "hdmi cable", "ethernet cable", "surge protector", "smartwatch", "fitness tracker", "bluetooth speaker", "smart home device", "smart light bulb", "smart plug", "smart thermostat",
+              "laptop bag", "laptop sleeve", "laptop stand", "monitor stand", "keyboard cover", "mouse pad",
+              "camera lens", "camera tripod", "camera bag", "memory card", "external hard drive", "usb flash drive",
+              "tv mount", "tv stand", "tv antenna", "streaming device", "dvd player", "blu-ray player", "gaming console", "video game", "controller", "headset"
+            ],
+            "Toys": ["lego", "doll", "puzzle", "game", "playset", "action figure", "plush", "board game",
+              "building blocks",  "remote control car", "train set", "action figure", "dollhouse", "puzzle", "board game", "card game", "outdoor toy", "water gun", "frisbee", "kite", "jump rope", "hula hoop", "play tent", "sandbox", "ride-on toy", "scooter", "skateboard", "roller skates", "bicycle", "tricycle", "balance bike", "baby walker", "musical toy", "educational toy", "art supplies", "craft kit", "science kit", "robot kit", "building set", "lego set", "action figure set", "doll set", "plush toy", "stuffed animal", "puppet", "marionette", "toy car", "toy truck", "toy airplane", "toy boat"
+              ,"exploding kittens", "catan", "monopoly", "clue", "risk", "scrabble", "ticket to ride", "carcassonne", "pandemic", "codenames", "7 wonders", "azul", "splendor", "dixit", "mysterium", "kingdomino", "sushi go", "love letter", "ludo", "chess", "checkers", "backgammon", "go", "mahjong", "dominoes", "jenga", "connect 4", "operation", "twister", "battleship"
+            ],
+            "Sports": ["ball", "bat", "soccer", "basketball", "tennis", "fitness", "weights", "yoga", "treadmill", "golf"
+              ,"bicycle", "helmet", "gloves", "knee pads", "elbow pads", "wrist guards", "skateboard", "rollerblades", "scooter", "jump rope", "hula hoop", "frisbee", "kite", "water bottle", "gym bag", "towel", "sunscreen", "sunglasses", "hat", "cap", "visor", "running shoes", "cycling shoes", "cleats", "swimwear", "goggles", "swim cap", "towel", "yoga mat", "resistance bands", "foam roller", "exercise ball", "dumbbells", "kettlebells", "medicine ball", "pull-up bar", "ab roller", "fitness tracker", "heart rate monitor", "sports watch", "bike lock", "bike pump", "bike light", "bike computer", "bike rack", "golf clubs", "golf balls", "golf tees", "golf bag", "tennis racket", "tennis balls", "baseball glove", "baseball bat", "softball glove", "softball bat", "football", "soccer ball", "volleyball", "basketball hoop"
+              ,"tent", "sleeping bag", "backpack", "hiking boots", "compass", "flashlight", "lantern", "camp stove", "cooler", "water bottle", "first aid kit", "insect repellent", "sunscreen", "map", "whistle", "multi-tool", "binoculars", "fishing rod", "fishing reel", "fishing line", "fishing tackle box", "fishing bait", "kayak", "canoe", "paddle", "life jacket", "swimsuit", "snorkel", "goggles", "diving mask", "surfboard", "bodyboard", "beach towel", "beach umbrella", "picnic blanket", "frisbee", "kite"
+            ],
+            "Baby": ["diaper", "formula", "stroller", "crib", "pacifier", "bottle", "wipes", "highchair", "car seat", "onesie", "baby food", "changing pad", "baby monitor", "teething toy"
+              ,"wipes", "diaper rash cream", "baby lotion", "baby shampoo", "baby powder", "baby oil", "baby wash", "diaper bag", "changing table", "baby swing", "bouncer", "play mat", "activity gym", "teether", "rattle", "baby toy", "crib mattress", "crib sheets", "bassinet", "pack and play", "baby carrier", "nursing pillow", "breast pump", "nursing pads", "bottle warmer", "bottle sterilizer", "formula dispenser", "baby food maker", "baby utensils", "sippy cup", "high chair cover",
+              "stroller organizer", "baby gate", "corner guards", "cabinet locks", "outlet covers", "baby proofing kit", "bib", "burp cloth", "swaddle", "sleep sack", "baby blanket", "baby clothes", "baby shoes", "carters", "gerber", "huggies", "pampers"
+            ],
+            "Girls": ["dress", "skirt", "leggings", "top", "blouse", "scarf", "handbag", "hair bow", "hair clip", "hair band", "school uniform"],
             "Boys": ["shorts", "tshirt", "hoodie", "jeans", "sweater"],
             "Mens": ["shirt", "pants", "suit", "jacket", "tie", "belt", "blazer"],
-            "Mens Shoes": ["sneakers", "boots", "loafers", "sandals"],
+            "Mens Shoes": ["sneakers", "boots", "loafers", "sandals", "dress shoes", "oxfords", "slippers", "work boots", "running shoes", "hiking boots"],
             "Womens": ["blouse", "skirt", "dress", "leggings", "handbag", "scarf"],
             "Womens Shoes": ["heels", "sandals", "flats", "boots", "wedges"],
             "Jewelery": ["ring", "necklace", "bracelet", "earrings", "jewelry", "pendant"],
-            "Arts and Crafts": ["paint", "glue", "scissors", "markers", "yarn", "clay", "beads", "paper craft"],
-            "Party Supplies": ["balloon", "decorations", "banner", "streamers", "candles", "party hats", "plates", "napkins"],
-            "Seasonal": ["christmas", "halloween", "easter", "thanksgiving", "holiday", "ornament", "costume"],
-            "Home": ["sofa", "table", "lamp", "rug", "curtain", "mirror", "decor", "shelf"],
-            "Kitchen": ["pan", "pot", "knife", "spoon", "blender", "mixer", "cup", "plate", "microwave", "toaster"],
-            "Laundry": ["detergent", "fabric softener", "laundry basket", "dryer sheets"],
-            "Furniture": ["chair", "desk", "cabinet", "bed", "dresser", "couch"],
-            "Bedding": ["pillow", "blanket", "comforter", "sheets", "duvet"],
-            "Bath and shower": ["shampoo", "conditioner", "soap", "towel", "body wash", "toothbrush", "toothpaste"],
-            "Health": ["vitamin", "supplement", "bandage", "thermometer", "pain reliever", "ibuprofen", "aspirin", "medication", "cough syrup", "first aid", "ointment", "antibiotic", "medicine"],
-            "Personal Care": ["toothpaste", "toothbrush", "deodorant", "razor", "shaving cream", "lotion"],
-            "Beauty": ["makeup", "lipstick", "foundation", "mascara", "eyeliner", "nail polish"],
-            "Hardware": ["screwdriver", "hammer", "drill", "wrench", "pliers", "nails", "screws"],
-            "Paint": ["paint", "roller", "brush", "primer", "spray paint"],
-            "Automotive": ["tire", "oil", "wiper", "car battery", "brake", "engine", "filter"],
-            "Garden": ["shovel", "soil", "seeds", "fertilizer", "hose", "plants", "pots"]
+            "Arts and Crafts": ["paint", "glue", "scissors", "markers", "yarn", "clay", "beads", "paper craft"
+              ,"sketchbook", "canvas", "easel", "paintbrush", "acrylic paint", "watercolor paint", "oil paint", "charcoal", "pastels", "colored pencils", "drawing pencils", "ink pens", "calligraphy pens", "markers", "highlighters", "glue stick", "liquid glue", "tape", "scissors", "craft knife", "cutting mat", "ruler", "stencil", "rubber stamps", "ink pad", "stickers", "washi tape", "yarn", "knitting needles", "crochet hook", "embroidery floss", "sewing kit", "fabric paint", "fabric markers", "beads", "jewelry wire", "jewelry pliers", "clay sculpting tools"
+              ,"modeling clay", "polymer clay", "air dry clay", "ceramic clay", "pottery wheel", "kiln", "glazing supplies", "mosaic tiles", "glass cutting tools", "stained glass supplies"
+            ],
+            "Party Supplies": ["balloon", "decorations", "banner", "streamers", "candles", "party hats", 
+              "confetti", "tablecloth", "napkins", "plates", "cups", "utensils", "gift bag", "wrapping paper", "ribbon", "tape", "gift tag", "invitation", "thank you card", "party favor", "pinata", "cake topper", "cupcake liner", "cake stand", "drink dispenser", "cooler", "ice bucket", "photo booth props", "party lights", "music playlist"
+            ],
+            "Seasonal": ["christmas", "halloween", "easter", "thanksgiving", "holiday", "ornament", "costume"
+              ,"christmas tree", "christmas lights", "christmas wreath", "christmas garland", "christmas stocking", "christmas ornament", "christmas centerpiece", "christmas village", "christmas nativity set",
+              "halloween costume", "halloween decoration", "halloween lights", "halloween wreath", "halloween centerpiece", "halloween party supplies",
+              "easter basket", "easter eggs", "easter grass", "easter decoration", "easter centerpiece",
+              "thanksgiving decoration", "thanksgiving centerpiece", "thanksgiving tableware",
+              "fireworks", "patriotic decoration", "4th of july decoration", "memorial day decoration", "labor day decoration",
+              "valentine's day decoration", "valentine's day card", "valentine's day gift",
+              "st. patrick's day decoration", "st. patrick's day hat",
+              "mother's day gift", "father's day gift",
+              "birthday decoration", "birthday banner", "birthday cake topper",
+              "new year's eve decoration", "new year's eve party supplies"
+            ],
+            "Home": ["sofa", "table", "lamp", "rug", "curtain", "mirror", "decor", "shelf", "cabinet", "desk", "bed", "dresser", "couch", "wardrobe",
+              "picture frame", "vase", "clock", "candle", "throw pillow", "blanket", "plant", "artwork", "wall art", "photo album", "coasters", "tray", "basket", "storage box", "file organizer", "mail sorter", "key holder", "shoe rack", "umbrella stand", "coat rack", "entryway bench", "hall tree"
+            ],
+            "Kitchen": ["pan", "pot", "knife", "spoon", "blender", "mixer", "cup", "plate", "microwave", "toaster", "oven", "stove", "dishwasher", "cutting board", "measuring cup", "measuring spoon", "colander", "strainer", "grater", "peeler", "whisk", "tongs", "ladle", "spatula", "baking sheet", "casserole dish", "mixing bowl", "food processor", "slow cooker", "pressure cooker", "rice cooker", "air fryer", "coffee maker", "kettle",
+              "can opener", "bottle opener", "corkscrew", "salad spinner", "ice cube tray", "thermometer", "timer", "apron", "oven mitts", "pot holders", "trivet", "food storage container", "plastic wrap", "aluminum foil", "wax paper", "baking paper", "kitchen scale", "recipe book", "cookbook stand", "spice rack", "knife block", "dish drying mat",
+              "dish rack", "soap dispenser", "sponge holder", "trash can", "knives block", "utensil holder", "paper towel holder", "napkin holder", "spice rack", "recipe book stand", "kitchen scale", "bread box", "cookie jar", "water filter pitcher"
+            ],
+            "Laundry": [ "laundry basket", "dryer sheets", "iron", "ironing board", "clothes hangers", "hamper",
+              "clothes pins", "drying rack", "laundry bag", "mesh laundry bag", "delicates bag", "garment steamer",
+              "ironing spray", "sizing spray", "fabric refresher", "lint roller", "sewing kit"
+            ],
+            "Furniture": ["chair", "desk", "cabinet", "bed", "dresser", "couch", "wardrobe" , "sofa", "table", "lamp", "rug", "curtain", "mirror", "decor", "shelf", "dresser", "nightstand", "coffee table", "end table", "bookcase", "entertainment center", "tv stand", "ottoman", "bench", "stool", "armchair", "recliner", "futon", "sectional sofa",
+              "dining table", "dining chair", "bar stool", "kitchen island", "kitchen cart", "vanity", "hall tree", "coat rack", "shoe rack", "storage bench", "storage ottoman",
+              "recliner", "reclining chair", "loveseat", "sofa bed", "tv stand", "media console", "entertainment center", "china cabinet", "curio cabinet", "display cabinet", "buffet table", "sideboard", "console table"],
+            "Bedding": ["pillow", "blanket", "comforter", "sheets", "duvet", "mattress", "bed frame", "bed skirt", "throw", "quilt", "fitted sheet", "flat sheet", "pillowcase", "mattress protector", "bedspread", "bed cover", "bed set", "bed-in-a-bag", "bed pillow", "euro sham", "decorative pillow", "body pillow", "throw blanket", "weighted blanket", "electric blanket", "heating blanket", "cooling blanket", "memory foam mattress", "latex mattress", "innerspring mattress", "hybrid mattress", "adjustable bed frame",
+              "bedside", "nightstand", "headboard", "footboard", "bed canopy", "bed tray", "bed caddy", "mattress topper", "pillow top", "bed riser",
+              "loft bed", "bunk bed", "trundle bed", "daybed", "futon", "sofa bed"],
+            "Bath and shower": ["towel", "shower curtain", "bath mat", "soap dish", "toothbrush holder", "mirror", "scale", "toilet brush", "plunger", "trash can", "bathrobe", "loofah", "shower caddy", "washcloths", "liners", "tub", "hooks", "shampoo rack"],
+            "Health": ["vitamin", "supplement", "bandage", "thermometer", "pain reliever", "ibuprofen", "aspirin", "medication", "cough syrup", "first aid", "ointment", "antibiotic", "medicine",
+              "eye drops", "ear drops", "nasal spray", "inhaler", "allergy relief", "cold medicine", "flu medicine", "digestive aid", "probiotic", "antacid", "laxative", "anti-diarrheal", "antifungal", "antiseptic", "hydrocortisone", "calamine lotion", "foot powder",
+              "muscle rub", "heat pack", "cold pack", "ice pack", "hot water bottle", "heating pad", "massager", "blood pressure monitor", "glucose meter", "cholesterol tester", "pulse oximeter", "CPR mask", "first aid kit"],
+            "Personal Care": ["body wash", "shampoo", "conditioner", "soap", "toothpaste", "toothbrush", "deodorant", "razor", "shaving cream", "lotion", "mouthwash", "floss", "moisturizer"],
+            "Beauty": ["makeup", "lipstick", "foundation", "mascara", "eyeliner", "nail polish", "perfume", "cologne", "style", "hair spray", "hair gel", "dye",
+              "brush", "comb", "curler", "straightener", "blow dryer", "tweezers",  "cotton pads", "cotton swabs", "face mask", "scrub", "serum", "cleanser",
+              "toner", "exfoliator", "sunscreen", "aftershave", "hair color", "nail file", "nail clippers", "cuticle pusher", "makeup remover"],
+            "Hardware": ["screwdriver", "hammer", "drill", "wrench", "pliers", "nails", "screws", "saw", "tape measure", "level", "bolt", "nut", "washer", "ladder", "flashlight", "batteries", "extension cord", "glue gun", "plumbing",
+              "electrical", "toolbox", "workbench", "vise", "clamp", "chisel", "file", "sandpaper", "paintbrush", "roller", "drop cloth", "safety glasses", "ear protection", "dust mask", "work gloves", "tool belt",
+              "caulk", "sealant", "insulation", "lumber", "pipe", "fitting", "valve", "hinge", "lock", "chain", "padlock", "cable", "rope", "hook", "bracket", "shelf bracket", "corner brace", "angle bracket"],
+            "Paint": ["paint", "roller", "brush", "primer", "spray paint", "paint thinner", "drop cloth", "painter's tape", "stir stick", "paint tray", "sandpaper", "putty", "caulk", "wallpaper", "wall decal", "paint sprayer",
+              "paint can opener", "paint edger", "paint shield", "paint roller extension", "paint roller cover", "paint roller frame", "paint roller tray liner",
+              "paint roller cleaner", "paint roller spinner", "paint roller washer", "paint roller cage", "paint roller grid"],
+            "Automotive": ["tire", "oil", "wiper", "car battery", "brake", "engine", "filter", "headlight", "taillight", "spark plug", "car wax", "car wash", "air freshener", "jumper cables", "car mat", "car cover", "car seat cover", "roof rack", "bike rack", "car jack", "lug wrench", "tire inflator", "tire pressure gauge", "car vacuum", "car polish", "car detailing kit", "car cleaning supplies",
+              "motor oil", "transmission fluid", "coolant", "antifreeze", "power steering fluid", "brake fluid", "windshield washer fluid", "battery charger", "car diagnostic tool", "OBD-II scanner", "car repair manual", "car maintenance log", "car emergency kit",
+              "windshield sunshade", "wiper blade", "car antenna", "car horn", "car mirror", "car light bulb", "car fuse", "car relay", "car belt", "car hose", "car clamp", "car pulley", "car gasket", "car seal", "car bushing", "car mount", "car bracket", "car spacer"],
+            "Garden": ["shovel", "soil", "seeds", "fertilizer", "hose", "plants", "pots", "flower", "weed killer", "lawn mower", "rake", "pruner", "gloves", "watering can", "sprinkler", "garden decor", "garden statue", "bird feeder", "garden light", "garden tool set", "garden cart", "wheelbarrow", "compost bin", "garden netting", "garden trellis", "garden arch", "garden fence", "garden edging", "garden soil tester",
+              "garden kneeler", "garden apron", "garden hat", "garden boots", "garden clogs", "garden shoes", "garden sandals", "garden socks", "garden umbrella", "garden shade cloth", "garden greenhouse", "garden cold frame", "garden potting bench", "garden storage shed",
+              "showel", "trowel", "cultivator", "weeder", "garden fork", "garden hoe", "garden rake", "garden spade", "garden scissors", "garden shears", "garden loppers", "garden pruners", "garden saw", "garden chainsaw", "garden blower", "garden vacuum"],
         };
       const coordinates = { "Fresh Produce": { "x": 235, "y": 227 }, "Frozen": { "x": 235, "y": 356 }, "Grocery": { "x": 235, "y": 550 }, "Snacks and Beverages": { "x": 235, "y": 731 }, "Dairy": { "x": 235, "y": 899 }, "Bakery": { "x": 79, "y": 343 }, "Meat and Seafood": { "x": 105, "y": 550 }, "Deli": { "x": 105, "y": 783 }, "Pets": { "x": 416, "y": 822 }, "Cleaning": { "x": 519, "y": 822 }, "House Supplies": { "x": 571, "y": 822 }, "Office Supplies": { "x": 636, "y": 822 }, "Electronics": { "x": 817, "y": 822 }, "Toys": { "x": 1101, "y": 822 }, "Sports": { "x": 1295, "y": 822 }, "Baby": { "x": 461, "y": 640 }, "Girls": { "x": 636, "y": 653 }, "Boys": { "x": 745, "y": 653 }, "Mens": { "x": 720, "y": 414 }, "Mens Shoes": { "x": 720, "y": 537 }, "Womens": { "x": 480, "y": 446 }, "Womens Shoes": { "x": 506, "y": 524 }, "Jewelery": { "x": 403, "y": 524 }, "Arts and Crafts": { "x": 855, "y": 615 }, "Party Supplies": { "x": 855, "y": 518 }, "Seasonal": { "x": 855, "y": 408 }, "Home": { "x": 1062, "y": 679 }, "Kitchen": { "x": 1101, "y": 395 }, "Laundry": { "x": 1127, "y": 589 }, "Furniture": { "x": 998, "y": 621 }, "Bedding": { "x": 998, "y": 537 }, "Bath and shower": { "x": 998, "y": 446 }, "Health": { "x": 1024, "y": 278 }, "Personal Care": { "x": 1146, "y": 246 }, "Beauty": { "x": 1282, "y": 246 }, "Hardware": { "x": 1295, "y": 505 }, "Paint": { "x": 1295, "y": 505 }, "Automotive": { "x": 1295, "y": 666 }, "Garden": { "x": 1360, "y": 201 }, };
 
