@@ -19,7 +19,7 @@
         --warn-border: #fdba74;
         --pill: #f3f4f6;
         --green: #10b981;
-        --yellow: #f59e0b;
+        --yellow: #ffff00;
         --red: #ef4444;
       }
       * {
@@ -234,7 +234,7 @@
   </head>
   <body>
     <div class="container">
-      <h1>Plan fastest in-store route — enter your grocery below</h1>
+      <h1>Plan fastest in-store route — enter your items below</h1>
 
       <div class="control-group">
         <label for="item-input"></label>
@@ -865,9 +865,7 @@
         const dist = totalPathDistance(orderedPoints);
         const stops = Math.max(0, orderedPoints.length - 2);
         updateStatus(
-          `Path generated through ${stops} stops. Total distance ≈ ${dist.toFixed(
-            0
-          )} map units.`,
+          `Path generated through ${stops} stops.`,
           false
         );
       }
@@ -902,7 +900,7 @@
           const tp = T(p);
           ctx.beginPath();
           const isEntrance = i === 0 || i === orderedPoints.length - 1;
-          ctx.fillStyle = isEntrance ? "#10b981" : "#f59e0b"; // green : yellow
+          ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00"; // green : yellow
           ctx.arc(
             tp.x,
             tp.y,
