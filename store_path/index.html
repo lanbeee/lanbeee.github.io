@@ -871,64 +871,72 @@
       }
 
       function drawImageAndPath(img, orderedPoints) {
-        // Show canvas
-        canvas.style.display = "block";
-      
-        // Hi-DPI crispness + mobile clarity
-        const DPR = Math.max(1, window.devicePixelRatio || 1);
-      
-        // Render at device pixel ratio but keep CSS size the same
-        canvas.width = img.width * DPR;
-        canvas.height = img.height * DPR;
-        canvas.style.width = img.width + "px";
-        canvas.style.height = img.height + "px";
-      
-        const ctx = canvas.getContext("2d");
-        ctx.setTransform(DPR, 0, 0, DPR, 0, 0); // scale drawing commands
-        ctx.clearRect(0, 0, img.width, img.height);
-      
-        // Draw the map
-        ctx.drawImage(img, 0, 0, img.width, img.height);
-      
-        // Thicker lines & bigger markers (tuned for small screens)
-        const base = Math.min(img.width, img.height);
-        const lineWidth = Math.max(4, Math.round(base * 0.006)); // was ~0.003
-        const pointRadius = Math.max(10, Math.round(lineWidth * 3)); // larger dots
-        const entranceRadius = Math.round(pointRadius * 1.35);
-      
-        // Flip-Y helper (your map coordinates are bottom-left origin)
-        const T = p => ({ x: p.x, y: img.height - p.y });
-      
-        // Path
-        if (orderedPoints.length >= 2) {
-          ctx.lineWidth = lineWidth;
-          ctx.lineJoin = "round";
-          ctx.lineCap = "round";
-          ctx.strokeStyle = "#ef4444"; // red
-          ctx.beginPath();
-          const start = T(orderedPoints[0]);
-          ctx.moveTo(start.x, start.y);
-          for (let i = 1; i < orderedPoints.length; i++) {
-            const pt = T(orderedPoints[i]);
-            ctx.lineTo(pt.x, pt.y);
-          }
-          ctx.stroke();
-        }
-      
-        // Stops (bigger)
-        ctx.lineWidth = Math.max(2, Math.round(lineWidth * 0.6));
-        ctx.strokeStyle = "#111827"; // outline
-      
-        orderedPoints.forEach((p, i) => {
-          const tp = T(p);
-          const isEntrance = i === 0 || i === orderedPoints.length - 1;
-          ctx.beginPath();
-          ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00"; // green / yellow
-          ctx.arc(tp.x, tp.y, isEntrance ? entranceRadius : pointRadius, 0, 2 * Math.PI);
-          ctx.fill();
-          ctx.stroke();
-        });
-      }
+  canvas.style.display = "block";
+
+  // 1) Make the canvas responsive to its container (no giant overflow).
+  canvas.style.width = "100%";
+  canvas.style.height = "auto";
+
+  const containerWidth =
+    (canvas.parentElement && canvas.parentElement.clientWidth) || img.width;
+
+  // We never render wider than the actual image pixels (avoid pointless upscaling).
+  const displayWidth = Math.min(containerWidth, img.width);
+  const scale = displayWidth / img.width;
+  const displayHeight = img.height * scale;
+
+  // 2) Hi-DPI crispness
+  const DPR = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(displayWidth * DPR);
+  canvas.height = Math.round(displayHeight * DPR);
+
+  const ctx = canvas.getContext("2d");
+  // Scale drawing commands so all coordinates remain in the image’s native space.
+  ctx.setTransform(DPR * scale, 0, 0, DPR * scale, 0, 0);
+  ctx.clearRect(0, 0, img.width, img.height);
+
+  // 3) Draw the map at native coordinates (transform handles the scaling).
+  ctx.drawImage(img, 0, 0, img.width, img.height);
+
+  // 4) Thicker lines & bigger markers (measured in native image units).
+  const base = Math.min(img.width, img.height);
+  const lineWidth = Math.max(4, Math.round(base * 0.006));       // chunky path
+  const pointRadius = Math.max(10, Math.round(lineWidth * 3));    // bigger dots
+  const entranceRadius = Math.round(pointRadius * 1.35);
+
+  // Flip-Y helper (your coordinates are bottom-left origin)
+  const T = p => ({ x: p.x, y: img.height - p.y });
+
+  // Path
+  if (orderedPoints.length >= 2) {
+    ctx.lineWidth = lineWidth;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#ef4444";
+    ctx.beginPath();
+    const start = T(orderedPoints[0]);
+    ctx.moveTo(start.x, start.y);
+    for (let i = 1; i < orderedPoints.length; i++) {
+      const pt = T(orderedPoints[i]);
+      ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.stroke();
+  }
+
+  // Stops
+  ctx.lineWidth = Math.max(2, Math.round(lineWidth * 0.6));
+  ctx.strokeStyle = "#111827";
+  orderedPoints.forEach((p, i) => {
+    const tp = T(p);
+    const isEntrance = i === 0 || i === orderedPoints.length - 1;
+    ctx.beginPath();
+    ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00";
+    ctx.arc(tp.x, tp.y, isEntrance ? entranceRadius : pointRadius, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
 
       /* ------------------------------ Init ---------------------------------- */
       init();
