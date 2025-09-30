@@ -871,46 +871,61 @@
       }
 
       function drawImageAndPath(img, orderedPoints) {
+        // Show canvas
         canvas.style.display = "block";
-        canvas.width = img.width;
-        canvas.height = img.height;
+      
+        // Hi-DPI crispness + mobile clarity
+        const DPR = Math.max(1, window.devicePixelRatio || 1);
+      
+        // Render at device pixel ratio but keep CSS size the same
+        canvas.width = img.width * DPR;
+        canvas.height = img.height * DPR;
+        canvas.style.width = img.width + "px";
+        canvas.style.height = img.height + "px";
+      
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-
-        const T = p => ({ x: p.x, y: canvas.height - p.y });
-
-        ctx.lineWidth = Math.max(2, Math.min(img.width, img.height) * 0.003);
-        ctx.lineJoin = "round";
-        ctx.lineCap = "round";
-        const pointRadius = ctx.lineWidth * 2.5;
-
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0); // scale drawing commands
+        ctx.clearRect(0, 0, img.width, img.height);
+      
+        // Draw the map
+        ctx.drawImage(img, 0, 0, img.width, img.height);
+      
+        // Thicker lines & bigger markers (tuned for small screens)
+        const base = Math.min(img.width, img.height);
+        const lineWidth = Math.max(4, Math.round(base * 0.006)); // was ~0.003
+        const pointRadius = Math.max(10, Math.round(lineWidth * 3)); // larger dots
+        const entranceRadius = Math.round(pointRadius * 1.35);
+      
+        // Flip-Y helper (your map coordinates are bottom-left origin)
+        const T = p => ({ x: p.x, y: img.height - p.y });
+      
+        // Path
         if (orderedPoints.length >= 2) {
+          ctx.lineWidth = lineWidth;
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
           ctx.strokeStyle = "#ef4444"; // red
           ctx.beginPath();
           const start = T(orderedPoints[0]);
           ctx.moveTo(start.x, start.y);
           for (let i = 1; i < orderedPoints.length; i++) {
-            const point = T(orderedPoints[i]);
-            ctx.lineTo(point.x, point.y);
+            const pt = T(orderedPoints[i]);
+            ctx.lineTo(pt.x, pt.y);
           }
           ctx.stroke();
         }
-
+      
+        // Stops (bigger)
+        ctx.lineWidth = Math.max(2, Math.round(lineWidth * 0.6));
+        ctx.strokeStyle = "#111827"; // outline
+      
         orderedPoints.forEach((p, i) => {
           const tp = T(p);
-          ctx.beginPath();
           const isEntrance = i === 0 || i === orderedPoints.length - 1;
-          ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00"; // green : yellow
-          ctx.arc(
-            tp.x,
-            tp.y,
-            isEntrance ? pointRadius * 1.2 : pointRadius,
-            0,
-            2 * Math.PI
-          );
+          ctx.beginPath();
+          ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00"; // green / yellow
+          ctx.arc(tp.x, tp.y, isEntrance ? entranceRadius : pointRadius, 0, 2 * Math.PI);
           ctx.fill();
-          ctx.strokeStyle = "#111827";
-          ctx.lineWidth = 1.5;
           ctx.stroke();
         });
       }
