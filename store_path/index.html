@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Walmart Grocery Path Finder</title>
+    <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 16px; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        .control-group { margin: 12px 0; }
+        label { display:block; font-weight:600; margin-bottom:6px; }
+        textarea { width:100%; min-height:120px; }
+        #canvas { width:100%; height:auto; display:none; margin-top:12px; border:1px solid #ddd; border-radius:8px; }
+        .status { margin: 10px 0; color: #444; }
+        .status.error { color: #b00020; }
+        .legend { margin-top:8px; font-size:14px; color:#333; }
+        .legend span { display:inline-flex; align-items:center; margin-right:16px; }
+        .legend i { display:inline-block; width:12px; height:12px; margin-right:6px; border-radius:50%; border:1px solid #222; }
+        .legend .entrance i { background:#00ff00; }
+        .legend .stop i { background:#ffff00; }
+        .legend .path i { background:#ff0000; border-radius:2px; width:18px; height:4px; }
+
+        button { padding:10px 14px; font-weight:600; cursor:pointer; }
+
+        /* Bottom two-column editor */
+        .bottom-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+        .panel { border:1px solid #e5e5e5; border-radius:8px; padding:12px; }
+        .panel h3 { margin: 0 0 8px 0; }
+        table { width:100%; border-collapse: collapse; }
+        th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; }
+        .right-sticky { position: sticky; top: 8px; }
+        .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#f4f4f4; border:1px solid #ddd; font-size:12px; }
+        .small { font-size: 12px; color:#666; }
+        .muted { color:#666; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Walmart Grocery Path Finder 🗺️</h1>
+
+    <div class="control-group">
+        <label for="item-input">1. Enter Grocery Items (one per line)</label>
+        <textarea id="item-input" placeholder="e.g.,&#10;Organic Bananas&#10;Milk&#10;Bread"></textarea>
+    </div>
+
+    <div class="control-group">
+        <label for="image-upload">2. (Optional) Upload a Different Map Image — defaults to walmart_map.JPG</label>
+        <input type="file" id="image-upload" accept="image/*" />
+        <div class="small muted" id="map-status">Attempting to load default map: <code>walmart_map.JPG</code>…</div>
+    </div>
+
+    <div class="control-group">
+        <label for="algorithm-select">3. Choose Pathfinding Algorithm</label>
+        <select id="algorithm-select">
+            <option value="sorted">Simple Sorted Path</option>
+            <option value="tsp" selected>TSP Approximation (Shortest Path)</option>
+        </select>
+    </div>
+
+    <button id="generate-btn">Classify Items and Generate Path</button>
+
+    <div id="output-container">
+        <p id="status-message" class="status">Your generated image will appear here.</p>
+        <canvas id="canvas"></canvas>
+        <div class="legend">
+            <span class="entrance"><i></i>Entrance</span>
+            <span class="stop"><i></i>Category Stops</span>
+            <span class="path"><i></i>Path</span>
+        </div>
+    </div>
+
+    <!-- Bottom editor/result panels -->
+    <div class="bottom-grid">
+        <div class="panel" id="final-result-panel">
+            <h3>Final Result</h3>
+            <div id="final-summary" class="small muted">No path yet.</div>
+            <ol id="visit-order"></ol>
+        </div>
+        <div class="panel right-sticky" id="editor-panel">
+            <h3>Items &amp; Category Editor</h3>
+            <div class="small muted">Change any category then press <strong>Recalculate Path</strong>.</div>
+            <table>
+                <thead>
+                    <tr><th style="width:50%">Item</th><th>Category</th></tr>
+                </thead>
+                <tbody id="editor-body"></tbody>
+            </table>
+            <button id="recalc-btn" style="margin-top:10px;">Recalculate Path</button>
+        </div>
+    </div>
+
+    <div class="result" id="result" style="margin-top: 20px;"></div>
+</div>
+
+<script>
+/* ---------------------------- Config & Data ---------------------------- */
+
+// Force route to start and end here:
+const ENTRANCE = { x: 338, y: 33 };
+
+const categories = {
+    "Fresh Produce": ["apple", "banana", "carrot", "lettuce", "grapes", "onion", "tomato", "cucumber", "strawberry", "spinach", "broccoli", "pear", "peach", "orange", "avocado", "potato"],
+    "Frozen": ["frozen", "ice cream", "pizza", "fries", "veggies", "popsicle", "lasagna", "frozen dinner", "fish sticks", "nuggets"],
+    "Grocery": ["rice", "flour", "oil", "pasta", "canned", "sugar", "spices", "cereal", "beans", "soup", "sauce", "ketchup", "mustard"],
+    "Snacks and Beverages": ["chips", "soda", "cookies", "juice", "snack", "pepsi", "coke", "candy", "crackers", "popcorn", "gatorade", "monster", "coffee", "tea"],
+    "Dairy": ["milk", "cheese", "butter", "yogurt", "cream", "whipped cream", "cottage cheese"],
+    "Bakery": ["bread", "cake", "donut", "croissant", "bagel", "muffin", "rolls", "pastry", "cupcake", "pie"],
+    "Meat and Seafood": ["chicken", "beef", "pork", "fish", "shrimp", "steak", "salmon", "tuna", "bacon", "crab", "lobster"],
+    "Deli": ["sandwich", "ham", "salami", "turkey", "wrap", "sub", "deli meat", "roast beef"],
+    "Pets": ["dog", "cat", "pet food", "litter", "treats", "kibble", "aquarium", "leash", "toys"],
+    "Cleaning": ["detergent", "disinfectant", "bleach", "soap", "mop", "wipes", "cleaner", "sanitizer", "polish"],
+    "House Supplies": ["paper towels", "toilet paper", "trash bags", "foil", "napkins", "plastic wrap", "plates", "cups"],
+    "Office Supplies": ["pen", "pencil", "notebook", "paper", "stapler", "marker", "highlighter", "binder", "envelope"],
+    "Electronics": ["phone", "laptop", "tv", "camera", "tablet", "charger", "headphones", "speaker", "monitor", "keyboard", "mouse"],
+    "Toys": ["lego", "doll", "puzzle", "game", "playset", "action figure", "plush", "board game"],
+    "Sports": ["ball", "bat", "soccer", "basketball", "tennis", "fitness", "weights", "yoga", "treadmill", "golf"],
+    "Baby": ["diaper", "formula", "stroller", "crib", "pacifier", "bottle", "wipes", "highchair", "car seat"],
+    "Girls": ["dress", "skirt", "leggings", "top", "blouse", "scarf"],
+    "Boys": ["shorts", "tshirt", "hoodie", "jeans", "sweater"],
+    "Mens": ["shirt", "pants", "suit", "jacket", "tie", "belt", "blazer"],
+    "Mens Shoes": ["sneakers", "boots", "loafers", "sandals"],
+    "Womens": ["blouse", "skirt", "dress", "leggings", "handbag", "scarf"],
+    "Womens Shoes": ["heels", "sandals", "flats", "boots", "wedges"],
+    "Jewelery": ["ring", "necklace", "bracelet", "earrings", "jewelry", "pendant"],
+    "Arts and Crafts": ["paint", "glue", "scissors", "markers", "yarn", "clay", "beads", "paper craft"],
+    "Party Supplies": ["balloon", "decorations", "banner", "streamers", "candles", "party hats", "plates", "napkins"],
+    "Seasonal": ["christmas", "halloween", "easter", "thanksgiving", "holiday", "ornament", "costume"],
+    "Home": ["sofa", "table", "lamp", "rug", "curtain", "mirror", "decor", "shelf"],
+    "Kitchen": ["pan", "pot", "knife", "spoon", "blender", "mixer", "cup", "plate", "microwave", "toaster"],
+    "Laundry": ["detergent", "fabric softener", "laundry basket", "dryer sheets"],
+    "Furniture": ["chair", "desk", "cabinet", "bed", "dresser", "couch"],
+    "Bedding": ["pillow", "blanket", "comforter", "sheets", "duvet"],
+    "Bath and shower": ["shampoo", "conditioner", "soap", "towel", "body wash", "toothbrush", "toothpaste"],
+    "Health": ["vitamin", "supplement", "bandage", "thermometer", "pain reliever", "ibuprofen", "aspirin", "medication", "cough syrup", "first aid", "ointment", "antibiotic", "medicine"],
+    "Personal Care": ["toothpaste", "toothbrush", "deodorant", "razor", "shaving cream", "lotion"],
+    "Beauty": ["makeup", "lipstick", "foundation", "mascara", "eyeliner", "nail polish"],
+    "Hardware": ["screwdriver", "hammer", "drill", "wrench", "pliers", "nails", "screws"],
+    "Paint": ["paint", "roller", "brush", "primer", "spray paint"],
+    "Automotive": ["tire", "oil", "wiper", "car battery", "brake", "engine", "filter"],
+    "Garden": ["shovel", "soil", "seeds", "fertilizer", "hose", "plants", "pots"]
+};
+const coordinates = { "Fresh Produce": { "x": 235, "y": 227 }, "Frozen": { "x": 235, "y": 356 }, "Grocery": { "x": 235, "y": 550 }, "Snacks and Beverages": { "x": 235, "y": 731 }, "Dairy": { "x": 235, "y": 899 }, "Bakery": { "x": 79, "y": 343 }, "Meat and Seafood": { "x": 105, "y": 550 }, "Deli": { "x": 105, "y": 783 }, "Pets": { "x": 416, "y": 822 }, "Cleaning": { "x": 519, "y": 822 }, "House Supplies": { "x": 571, "y": 822 }, "Office Supplies": { "x": 636, "y": 822 }, "Electronics": { "x": 817, "y": 822 }, "Toys": { "x": 1101, "y": 822 }, "Sports": { "x": 1295, "y": 822 }, "Baby": { "x": 461, "y": 640 }, "Girls": { "x": 636, "y": 653 }, "Boys": { "x": 745, "y": 653 }, "Mens": { "x": 720, "y": 414 }, "Mens Shoes": { "x": 720, "y": 537 }, "Womens": { "x": 480, "y": 446 }, "Womens Shoes": { "x": 506, "y": 524 }, "Jewelery": { "x": 403, "y": 524 }, "Arts and Crafts": { "x": 855, "y": 615 }, "Party Supplies": { "x": 855, "y": 518 }, "Seasonal": { "x": 855, "y": 408 }, "Home": { "x": 1062, "y": 679 }, "Kitchen": { "x": 1101, "y": 395 }, "Laundry": { "x": 1127, "y": 589 }, "Furniture": { "x": 998, "y": 621 }, "Bedding": { "x": 998, "y": 537 }, "Bath and shower": { "x": 998, "y": 446 }, "Health": { "x": 1024, "y": 278 }, "Personal Care": { "x": 1146, "y": 246 }, "Beauty": { "x": 1282, "y": 246 }, "Hardware": { "x": 1295, "y": 505 }, "Paint": { "x": 1295, "y": 505 }, "Automotive": { "x": 1295, "y": 666 }, "Garden": { "x": 1360, "y": 201 }, };
+
+/* ---------------------------- DOM Elements ---------------------------- */
+
+const imageUpload = document.getElementById('image-upload');
+const itemInput = document.getElementById('item-input');
+const algorithmSelect = document.getElementById('algorithm-select');
+const generateBtn = document.getElementById('generate-btn');
+const recalcBtn = document.getElementById('recalc-btn');
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const statusMessage = document.getElementById('status-message');
+const resultDiv = document.getElementById('result');
+
+const mapStatus = document.getElementById('map-status');
+
+const editorBody = document.getElementById('editor-body');
+const finalSummary = document.getElementById('final-summary');
+const visitOrder = document.getElementById('visit-order');
+
+/* ------------------------------ Map Image ------------------------------ */
+
+let defaultMapImage = null; // Image object if walmart_map.JPG is loaded
+let overrideFileURL = null; // Blob URL for uploaded file
+
+function tryLoadDefaultMap() {
+    const img = new Image();
+    img.onload = () => {
+        defaultMapImage = img;
+        mapStatus.textContent = 'Loaded default map walmart_map.JPG.';
+    };
+    img.onerror = () => {
+        defaultMapImage = null;
+        mapStatus.textContent = 'Could not load walmart_map.JPG. You can upload a map image instead.';
+    };
+    img.src = 'walmart_map.JPG';
+}
+
+imageUpload.addEventListener('change', () => {
+    if (overrideFileURL) URL.revokeObjectURL(overrideFileURL);
+    if (imageUpload.files && imageUpload.files[0]) {
+        overrideFileURL = URL.createObjectURL(imageUpload.files[0]);
+        mapStatus.textContent = `Using uploaded image: ${imageUpload.files[0].name}`;
+    } else {
+        overrideFileURL = null;
+        mapStatus.textContent = defaultMapImage ? 'Using default walmart_map.JPG.' : 'No image selected. Attempting default walmart_map.JPG.';
+    }
+});
+
+/* ------------------------------ Events -------------------------------- */
+
+generateBtn.addEventListener('click', () => {
+    const items = itemInput.value.trim().split('\n').map(s => s.trim()).filter(Boolean);
+    if (items.length === 0) {
+        updateStatus("Please enter at least one grocery item.", true);
+        return;
+    }
+
+    const classifiedCategories = items.map(item => classify(item));
+    buildClassificationEditor(items, classifiedCategories);
+
+    const selectedCategories = readSelectedCategories();
+    const points = categoriesToPoints(selectedCategories);
+
+    if (points.length === 0) {
+        updateStatus("Could not find coordinates for the entered items.", true);
+        return;
+    }
+
+    renderAll(points, selectedCategories);
+});
+
+recalcBtn.addEventListener('click', () => {
+    const selectedCategories = readSelectedCategories();
+    const points = categoriesToPoints(selectedCategories);
+    if (points.length === 0) {
+        updateStatus("Selected categories do not have coordinates.", true);
+        return;
+    }
+    renderAll(points, selectedCategories);
+});
+
+/* ------------------------------ Helpers ------------------------------- */
+
+function updateStatus(message, isError = false) {
+    statusMessage.style.display = 'block';
+    statusMessage.textContent = message;
+    statusMessage.className = isError ? 'status error' : 'status';
+    if (isError) canvas.style.display = 'none';
+}
+
+function distance(p1, p2) {
+    const dx = p1.x - p2.x;
+    const dy = p1.y - p2.y;
+    return Math.hypot(dx, dy);
+}
+
+function totalPathDistance(orderedPoints) {
+    if (orderedPoints.length < 2) return 0;
+    let d = 0;
+    for (let i = 1; i < orderedPoints.length; i++) {
+        d += distance(orderedPoints[i - 1], orderedPoints[i]);
+    }
+    return d;
+}
+
+/* --------------------- TF-IDF Classification (yours) ------------------- */
+
+function tokenize(text) {
+    return text.toLowerCase().match(/\b\w+\b/g) || [];
+}
+const docCount = Object.keys(categories).length;
+const df = {};
+for (const [cat, words] of Object.entries(categories)) {
+    const uniqueTokens = new Set(words.map(w => w.toLowerCase()));
+    for (const token of uniqueTokens) df[token] = (df[token] || 0) + 1;
+}
+function tfidfVector(words) {
+    const tokens = tokenize(words.join ? words.join(" ") : words);
+    const counts = {};
+    tokens.forEach(t => counts[t] = (counts[t] || 0) + 1);
+    const vec = {};
+    for (const [t, c] of Object.entries(counts)) {
+        const idf = Math.log(docCount / (1 + (df[t] || 0)));
+        vec[t] = c * idf;
+    }
+    return vec;
+}
+function cosineSim(vecA, vecB) {
+    let dot = 0, normA = 0, normB = 0;
+    const allTokens = new Set([...Object.keys(vecA), ...Object.keys(vecB)]);
+    allTokens.forEach(t => {
+        const a = vecA[t] || 0;
+        const b = vecB[t] || 0;
+        dot += a * b;
+        normA += a * a;
+        normB += b * b;
+    });
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10);
+}
+const categoryVectors = {};
+for (const [cat, words] of Object.entries(categories)) {
+    categoryVectors[cat] = tfidfVector(words);
+}
+function classify(text) {
+    const inputVec = tfidfVector(tokenize(text));
+    let bestCategory = null;
+    let bestScore = -Infinity;
+    for (const [cat, vec] of Object.entries(categoryVectors)) {
+        const score = cosineSim(inputVec, vec);
+        if (score > bestScore) { bestScore = score; bestCategory = cat; }
+    }
+    return bestCategory;
+}
+
+/* -------------------- Editor: items & dropdown categories -------------- */
+
+function buildClassificationEditor(items, initialCategories) {
+    editorBody.innerHTML = '';
+    const allCats = Object.keys(categories).sort();
+    for (let i = 0; i < items.length; i++) {
+        const tr = document.createElement('tr');
+
+        const tdItem = document.createElement('td');
+        tdItem.textContent = items[i];
+        tr.appendChild(tdItem);
+
+        const tdCat = document.createElement('td');
+        const select = document.createElement('select');
+        select.className = 'cat-select';
+        for (const c of allCats) {
+            const opt = document.createElement('option');
+            opt.value = c; opt.textContent = c;
+            if (c === initialCategories[i]) opt.selected = true;
+            select.appendChild(opt);
+        }
+        tdCat.appendChild(select);
+        tr.appendChild(tdCat);
+
+        editorBody.appendChild(tr);
+    }
+}
+
+function readSelectedCategories() {
+    const selects = Array.from(document.querySelectorAll('.cat-select'));
+    return selects.map(s => s.value);
+}
+
+function categoriesToPoints(selectedCategories) {
+    // Unique categories (visit aisle once even if multiple items are in it)
+    const unique = [...new Set(selectedCategories)];
+    return unique
+        .map(cat => coordinates[cat])
+        .filter(coord => coord && Number.isFinite(coord.x) && Number.isFinite(coord.y));
+}
+
+/* --------------------------- Path Algorithms -------------------------- */
+
+// Simple x/y sorted path but forced to start/end at ENTRANCE
+function getSortedPath(points) {
+    const interior = dedupeAndStripEntrance(points);
+    const sorted = interior.sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+    return [ENTRANCE, ...sorted, ENTRANCE];
+}
+
+// Nearest-neighbor TSP starting at ENTRANCE and returning to ENTRANCE
+function getTspApproximationPath(points) {
+    const unvisited = dedupeAndStripEntrance(points);
+    const path = [ENTRANCE];
+    const distanceSq = (p1, p2) => {
+        const dx = p1.x - p2.x, dy = p1.y - p2.y;
+        return dx*dx + dy*dy;
+    };
+
+    while (unvisited.length > 0) {
+        const current = path[path.length - 1];
+        let bestIdx = 0, bestD = Infinity;
+        for (let i = 0; i < unvisited.length; i++) {
+            const d = distanceSq(current, unvisited[i]);
+            if (d < bestD) { bestD = d; bestIdx = i; }
+        }
+        path.push(unvisited.splice(bestIdx, 1)[0]);
+    }
+
+    // Close the loop back to the entrance
+    path.push(ENTRANCE);
+    return path;
+}
+
+// Remove duplicates and any explicit ENTRANCE point the user might have provided
+function dedupeAndStripEntrance(points) {
+    const key = (p) => `${p.x}|${p.y}`;
+    const entranceKey = key(ENTRANCE);
+    const seen = new Set();
+    const out = [];
+    for (const p of points) {
+        const k = key(p);
+        if (k === entranceKey) continue; // strip entrance if present
+        if (!seen.has(k)) { seen.add(k); out.push({ x: p.x, y: p.y }); }
+    }
+    return out;
+}
+
+/* --------------------------- Rendering Logic -------------------------- */
+
+function renderAll(points, selectedCategories) {
+    const img = resolveMapImage();
+    if (!img) {
+        updateStatus('No map image available. Ensure walmart_map.JPG exists or upload a file.', true);
+        return;
+    }
+
+    const orderedPoints = buildPath(points);
+    drawImageAndPath(img, orderedPoints);
+
+    // Final result panel
+    const uniqueCats = [...new Set(selectedCategories)];
+    populateFinalResult(orderedPoints, uniqueCats);
+
+    const dist = totalPathDistance(orderedPoints);
+    updateStatus(`Path generated through ${orderedPoints.length - 2} stops, starting/ending at entrance. Total distance ≈ ${dist.toFixed(1)} map units.`, false);
+}
+
+function resolveMapImage() {
+    // Prefer uploaded file if provided; else default walmart_map.JPG if loaded.
+    if (overrideFileURL) {
+        const img = new Image();
+        img.onload = () => {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            drawImageAndPath(img, lastPathCache || []);
+        };
+        img.src = overrideFileURL;
+        return img; // will paint on onload via draw call above
+    }
+    return defaultMapImage;
+}
+
+let lastPathCache = null;
+
+function buildPath(points) {
+    const algo = algorithmSelect.value;
+    const orderedPoints = (algo === 'sorted')
+        ? getSortedPath(points)
+        : getTspApproximationPath(points);
+    lastPathCache = orderedPoints;
+    return orderedPoints;
+}
+
+function drawImageAndPath(img, orderedPoints) {
+    if (!img) return;
+    // If img is newly created (override) we rely on its onload above
+    if (!img.complete) return;
+
+    canvas.style.display = 'block';
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+
+    // Style
+    ctx.lineWidth = Math.max(2, Math.min(img.width, img.height) * 0.003);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    const pointRadius = ctx.lineWidth * 2;
+
+    // Transform (invert Y to match your original convention)
+    const T = (p) => ({ x: p.x, y: canvas.height - p.y });
+
+    if (orderedPoints.length >= 2) {
+        // Draw path
+        ctx.strokeStyle = '#ff0000';
+        ctx.beginPath();
+        const start = T(orderedPoints[0]);
+        ctx.moveTo(start.x, start.y);
+        for (let i = 1; i < orderedPoints.length; i++) {
+            const tp = T(orderedPoints[i]);
+            ctx.lineTo(tp.x, tp.y);
+        }
+        ctx.stroke();
+    }
+
+    // Draw category stops (yellow) and entrance (green)
+    for (let i = 0; i < orderedPoints.length; i++) {
+        const p = orderedPoints[i];
+        const tp = T(p);
+        ctx.beginPath();
+        const isEntrance = (p.x === ENTRANCE.x && p.y === ENTRANCE.y);
+        ctx.fillStyle = isEntrance ? '#00ff00' : '#ffff00';
+        ctx.arc(tp.x, tp.y, isEntrance ? pointRadius * 1.2 : pointRadius, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.stroke();
+    }
+}
+
+function populateFinalResult(orderedPoints, uniqueCats) {
+    // Summary
+    const dist = totalPathDistance(orderedPoints).toFixed(1);
+    const stopCount = Math.max(0, orderedPoints.length - 2);
+    finalSummary.innerHTML = `
+        <div><span class="pill">Entrance</span> → ${stopCount} stops → <span class="pill">Entrance</span></div>
+        <div class="small muted">Total distance ≈ <strong>${dist}</strong> map units.</div>
+    `;
+
+    // Visit order list
+    visitOrder.innerHTML = '';
+    const stepLabels = ['Entrance', ...uniqueCats, 'Entrance'];
+    for (let i = 0; i < orderedPoints.length; i++) {
+        const li = document.createElement('li');
+        const p = orderedPoints[i];
+        const label = (i === 0 || i === orderedPoints.length - 1) ? 'Entrance' : (stepLabels[i] || 'Stop');
+        li.textContent = `${label} — (${p.x}, ${p.y})`;
+        visitOrder.appendChild(li);
+    }
+}
+
+/* ------------------------------ Init ---------------------------------- */
+
+function init() {
+    tryLoadDefaultMap();
+}
+
+init();
+</script>
+</body>
+</html>
