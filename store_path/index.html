@@ -1,427 +1,798 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-  <title>Walmart Grocery Path Finder</title>
-  <style>
-    :root{
-      --bg:#ffffff;
-      --text:#111827;
-      --muted:#6b7280;
-      --border:#e5e7eb;
-      --accent:#0ea5e9;
-      --error:#b00020;
-      --warn-bg:#fff7ed;
-      --warn-border:#fdba74;
-      --pill:#f3f4f6;
-      --green:#10b981;
-      --yellow:#f59e0b;
-      --red:#ef4444;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color:var(--text);
-      background:var(--bg);
-      line-height:1.45;
-    }
-    .container{
-      max-width: 900px;
-      margin: 0 auto;
-      padding: clamp(12px, 3vw, 20px);
-    }
-    h1{
-      font-size: clamp(20px, 4vw, 28px);
-      margin: 0 0 8px 0;
-    }
-    .subtle{color:var(--muted); font-size:14px; margin-bottom:12px;}
-    .control-group{ margin: 12px 0; }
-    label{ display:block; font-weight:600; margin-bottom:6px; }
-    textarea{
-      width:100%; min-height:120px; padding:12px;
-      border:1px solid var(--border); border-radius:12px; font-size:16px;
-      resize: vertical;
-    }
-    button{
-      width:100%; /* mobile-first: full-width button */
-      padding:14px 16px; font-weight:700; font-size:16px;
-      border-radius:12px; border:1px solid var(--accent);
-      background: var(--accent); color:white; cursor:pointer;
-      transition: transform .02s ease;
-    }
-    button:active{ transform: scale(0.99); }
-    .status{ margin:10px 0; color:#374151; font-size:14px;}
-    .status.error{ color: var(--error); }
-    .panel{
-      border:1px solid var(--border); border-radius:14px; padding:12px;
-      background:white; box-shadow: 0 1px 0 rgba(0,0,0,.03);
-    }
-    .panel h3{ margin:0 0 6px 0; font-size:18px; }
-    .pill{
-      display:inline-block; padding:4px 10px; border-radius:999px;
-      background:var(--pill); border:1px solid var(--border); font-size:12px;
-    }
-    .muted{ color:var(--muted); }
-    .small{ font-size: 12px; }
-    #canvas{ width:100%; height:auto; display:none; margin-top:12px; border:1px solid var(--border); border-radius:12px; }
-    .legend{ margin-top:8px; font-size:14px; color:#333; display:flex; gap:16px; flex-wrap:wrap;}
-    .legend span{ display:inline-flex; align-items:center; gap:6px;}
-    .legend i{ width:12px; height:12px; border-radius:50%; border:1px solid #222; display:inline-block;}
-    .legend .entrance i{ background:#00ff00;}
-    .legend .stop i{ background:#ffff00;}
-    .legend .path i{ background:#ff0000; border-radius:2px; width:18px; height:4px; }
-    table{ width:100%; border-collapse: collapse; margin-top:8px; }
-    th, td{ padding:10px 8px; border-bottom:1px solid var(--border); text-align:left; font-size:15px; vertical-align:middle;}
-    th{ font-size:13px; color:var(--muted); font-weight:600; }
-    td.stop-number{ font-weight:bold; color:var(--accent); text-align:center; }
-    select{
-      width:100%;
-      padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:white;
-      font-size:14px;
-    }
-    tr.needs-category{ background:var(--warn-bg); }
-    tr.needs-category td{ border-bottom:1px solid var(--warn-border); }
-    .warning-text{ color:#9a3412; background:#fff7ed; border:1px solid #fdba74;
-      padding:8px 10px; border-radius:10px; margin-top:8px; font-size:13px;}
-    .grid{
-      display:grid; gap:12px; grid-template-columns: 1fr;
-    }
-    .top-actions{
-      display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;
-      margin: 8px 0 12px 0;
-    }
-    .bottom-action{
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Walmart Grocery Path Finder</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --text: #111827;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --accent: #0ea5e9;
+        --error: #b00020;
+        --warn-bg: #fff7ed;
+        --warn-border: #fdba74;
+        --pill: #f3f4f6;
+        --green: #10b981;
+        --yellow: #f59e0b;
+        --red: #ef4444;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
+          sans-serif;
+        color: var(--text);
+        background: var(--bg);
+        line-height: 1.45;
+      }
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: clamp(12px, 3vw, 20px);
+      }
+      h1 {
+        font-size: clamp(20px, 4vw, 28px);
+        margin: 0 0 8px 0;
+      }
+      .subtle {
+        color: var(--muted);
+        font-size: 14px;
+        margin-bottom: 12px;
+      }
+      .control-group {
+        margin: 12px 0;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 120px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-size: 16px;
+        resize: vertical;
+      }
+      button {
+        width: 100%; /* mobile-first: full-width button */
+        padding: 14px 16px;
+        font-weight: 700;
+        font-size: 16px;
+        border-radius: 12px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+        transition: transform 0.02s ease;
+      }
+      button:active {
+        transform: scale(0.99);
+      }
+      .status {
+        margin: 10px 0;
+        color: #374151;
+        font-size: 14px;
+      }
+      .status.error {
+        color: var(--error);
+      }
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
+        background: white;
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+      }
+      .panel h3 {
+        margin: 0 0 6px 0;
+        font-size: 18px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--pill);
+        border: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small {
+        font-size: 12px;
+      }
+      #canvas {
+        width: 100%;
+        height: auto;
+        display: none;
+        margin-top: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+      .legend {
+        margin-top: 8px;
+        font-size: 14px;
+        color: #333;
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .legend i {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 1px solid #222;
+        display: inline-block;
+      }
+      .legend .entrance i {
+        background: #00ff00;
+      }
+      .legend .stop i {
+        background: #ffff00;
+      }
+      .legend .path i {
+        background: #ff0000;
+        border-radius: 2px;
+        width: 18px;
+        height: 4px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+      }
+      th,
+      td {
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        font-size: 15px;
+        vertical-align: middle;
+      }
+      th {
+        font-size: 13px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      td.stop-number {
+        font-weight: bold;
+        color: var(--accent);
+        text-align: center;
+      }
+      select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: white;
+        font-size: 14px;
+      }
+      tr.needs-category {
+        background: var(--warn-bg);
+      }
+      tr.needs-category td {
+        border-bottom: 1px solid var(--warn-border);
+      }
+      .warning-text {
+        color: #9a3412;
+        background: #fff7ed;
+        border: 1px solid #fdba74;
+        padding: 8px 10px;
+        border-radius: 10px;
+        margin-top: 8px;
+        font-size: 13px;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr;
+      }
+      .top-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin: 8px 0 12px 0;
+      }
+      .bottom-action {
         margin-top: 16px;
-    }
-    @media (min-width: 820px){
-      .grid{ grid-template-columns: 1fr 1fr; }
-      button{ width:auto; min-width:220px; }
-      .bottom-action{ text-align: right; }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Fastest in-store route</h1>
+      }
+      @media (min-width: 820px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
+        button {
+          width: auto;
+          min-width: 220px;
+        }
+        .bottom-action {
+          text-align: right;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Fastest in-store route</h1>
 
-    <div class="control-group">
-      <label for="item-input">Enter Grocery Items</label>
-      <textarea id="item-input" placeholder="e.g.,&#10;Organic Bananas&#10;Milk&#10;Bread&#10;Toilet paper"></textarea>
-    </div>
+      <div class="control-group">
+        <label for="item-input">Enter Grocery Items</label>
+        <textarea
+          id="item-input"
+          placeholder="e.g.,&#10;Organic Bananas&#10;Milk&#10;Bread&#10;Toilet paper"
+        ></textarea>
+      </div>
 
-    <div class="top-actions">
-      <button id="go-btn">Generate Path</button>
-      <div class="small muted" id="map-status">Map: <code>walmart_map.JPG</code></div>
-    </div>
+      <div class="top-actions">
+        <button id="go-btn">Generate Path</button>
+        <div class="small muted" id="map-status">
+          Map: <code>walmart_map.JPG</code>
+        </div>
+      </div>
 
-    <div id="output-container" class="panel">
-      <h3>Map & Route</h3>
-      <p id="status-message" class="status">Your generated image will appear here.</p>
-      <canvas id="canvas"></canvas>
-      <div class="legend">
-        <span class="entrance"><i></i>Entrance</span>
-        <span class="stop"><i></i>Category Stops</span>
-        <span class="path"><i></i>Path</span>
+      <div id="output-container" class="panel">
+        <h3>Map & Route</h3>
+        <p id="status-message" class="status">
+          Your generated image will appear here.
+        </p>
+        <canvas id="canvas"></canvas>
+        <div class="legend">
+          <span class="entrance"><i></i>Entrance</span>
+          <span class="stop"><i></i>Category Stops</span>
+          <span class="path"><i></i>Path</span>
+        </div>
+      </div>
+
+      <div
+        class="panel"
+        id="merged-panel"
+        style="display: none; margin-top: 12px"
+      >
+        <h3 id="summary-title">Shopping List & Route</h3>
+
+        <div class="warning-text" id="unclassified-warning" style="display: none">
+          Some items could not be confidently classified. Please choose a
+          category for each highlighted row, then press <b>Redraw Path</b>.
+        </div>
+
+        <table>
+          <thead id="editor-head"></thead>
+          <tbody id="editor-body"></tbody>
+        </table>
+
+        <div class="bottom-action">
+          <button id="redraw-btn">Redraw Path</button>
+        </div>
       </div>
     </div>
 
-    <div class="panel" id="merged-panel" style="display:none; margin-top:12px;">
-      <h3 id="summary-title">Shopping List & Route</h3>
-
-      <div class="warning-text" id="unclassified-warning" style="display:none;">
-        Some items could not be confidently classified. Please choose a category for each highlighted row, then press <b>Redraw Path</b>.
-      </div>
-
-      <table>
-        <thead id="editor-head">
-          </thead>
-        <tbody id="editor-body"></tbody>
-      </table>
-      
-      <div class="bottom-action">
-        <button id="redraw-btn">Redraw Path</button>
-      </div>
-    </div>
-  </div>
-
-<script>
-/* ---------------------------- Config & Data ---------------------------- */
-const ENTRANCE = { x: 338, y: 33 };
-const categories = {
-    "Fresh Produce": ["apple", "banana", "carrot", "lettuce", "grapes", "onion", "tomato", "cucumber", "strawberry", "spinach", "broccoli", "pear", "peach", "orange", "avocado", "potato"],
-    "Frozen": ["frozen", "ice cream", "pizza", "fries", "veggies", "popsicle", "lasagna", "frozen dinner", "fish sticks", "nuggets"],
-    "Grocery": ["rice", "flour", "oil", "pasta", "canned", "sugar", "spices", "cereal", "beans", "soup", "sauce", "ketchup", "mustard"],
-    "Snacks and Beverages": ["chips", "soda", "cookies", "juice", "snack", "pepsi", "coke", "candy", "crackers", "popcorn", "gatorade", "monster", "coffee", "tea"],
-    "Dairy": ["milk", "cheese", "butter", "yogurt", "cream", "whipped cream", "cottage cheese", "eggs"],
-    "Bakery": ["bread", "cake", "donut", "croissant", "bagel", "muffin", "rolls", "pastry", "cupcake", "pie"],
-    "Meat and Seafood": ["chicken", "beef", "pork", "fish", "shrimp", "steak", "salmon", "tuna", "bacon", "crab", "lobster"],
-    "Deli": ["sandwich", "ham", "salami", "turkey", "wrap", "sub", "deli meat", "roast beef"],
-    "Pets": ["dog", "cat", "pet food", "litter", "treats", "kibble", "aquarium", "leash", "toys"],
-    "Cleaning": ["detergent", "disinfectant", "bleach", "soap", "mop", "wipes", "cleaner", "sanitizer", "polish"],
-    "House Supplies": ["paper towels", "toilet paper", "trash bags", "foil", "napkins", "plastic wrap", "plates", "cups"],
-    "Office Supplies": ["pen", "pencil", "notebook", "paper", "stapler", "marker", "highlighter", "binder", "envelope"],
-    "Electronics": ["phone", "laptop", "tv", "camera", "tablet", "charger", "headphones", "speaker", "monitor", "keyboard", "mouse"],
-    "Toys": ["lego", "doll", "puzzle", "game", "playset", "action figure", "plush", "board game"],
-    "Sports": ["ball", "bat", "soccer", "basketball", "tennis", "fitness", "weights", "yoga", "treadmill", "golf"],
-    "Baby": ["diaper", "formula", "stroller", "crib", "pacifier", "bottle", "wipes", "highchair", "car seat"],
-    "Girls": ["dress", "skirt", "leggings", "top", "blouse", "scarf"],
-    "Boys": ["shorts", "tshirt", "hoodie", "jeans", "sweater"],
-    "Mens": ["shirt", "pants", "suit", "jacket", "tie", "belt", "blazer"],
-    "Mens Shoes": ["sneakers", "boots", "loafers", "sandals"],
-    "Womens": ["blouse", "skirt", "dress", "leggings", "handbag", "scarf"],
-    "Womens Shoes": ["heels", "sandals", "flats", "boots", "wedges"],
-    "Jewelery": ["ring", "necklace", "bracelet", "earrings", "jewelry", "pendant"],
-    "Arts and Crafts": ["paint", "glue", "scissors", "markers", "yarn", "clay", "beads", "paper craft"],
-    "Party Supplies": ["balloon", "decorations", "banner", "streamers", "candles", "party hats", "plates", "napkins"],
-    "Seasonal": ["christmas", "halloween", "easter", "thanksgiving", "holiday", "ornament", "costume"],
-    "Home": ["sofa", "table", "lamp", "rug", "curtain", "mirror", "decor", "shelf"],
-    "Kitchen": ["pan", "pot", "knife", "spoon", "blender", "mixer", "cup", "plate", "microwave", "toaster"],
-    "Laundry": ["detergent", "fabric softener", "laundry basket", "dryer sheets"],
-    "Furniture": ["chair", "desk", "cabinet", "bed", "dresser", "couch"],
-    "Bedding": ["pillow", "blanket", "comforter", "sheets", "duvet"],
-    "Bath and shower": ["shampoo", "conditioner", "soap", "towel", "body wash", "toothbrush", "toothpaste"],
-    "Health": ["vitamin", "supplement", "bandage", "thermometer", "pain reliever", "ibuprofen", "aspirin", "medication", "cough syrup", "first aid", "ointment", "antibiotic", "medicine"],
-    "Personal Care": ["toothpaste", "toothbrush", "deodorant", "razor", "shaving cream", "lotion"],
-    "Beauty": ["makeup", "lipstick", "foundation", "mascara", "eyeliner", "nail polish"],
-    "Hardware": ["screwdriver", "hammer", "drill", "wrench", "pliers", "nails", "screws"],
-    "Paint": ["paint", "roller", "brush", "primer", "spray paint"],
-    "Automotive": ["tire", "oil", "wiper", "car battery", "brake", "engine", "filter"],
-    "Garden": ["shovel", "soil", "seeds", "fertilizer", "hose", "plants", "pots"]
-};
-const coordinates = { "Fresh Produce": { "x": 235, "y": 227 }, "Frozen": { "x": 235, "y": 356 }, "Grocery": { "x": 235, "y": 550 }, "Snacks and Beverages": { "x": 235, "y": 731 }, "Dairy": { "x": 235, "y": 899 }, "Bakery": { "x": 79, "y": 343 }, "Meat and Seafood": { "x": 105, "y": 550 }, "Deli": { "x": 105, "y": 783 }, "Pets": { "x": 416, "y": 822 }, "Cleaning": { "x": 519, "y": 822 }, "House Supplies": { "x": 571, "y": 822 }, "Office Supplies": { "x": 636, "y": 822 }, "Electronics": { "x": 817, "y": 822 }, "Toys": { "x": 1101, "y": 822 }, "Sports": { "x": 1295, "y": 822 }, "Baby": { "x": 461, "y": 640 }, "Girls": { "x": 636, "y": 653 }, "Boys": { "x": 745, "y": 653 }, "Mens": { "x": 720, "y": 414 }, "Mens Shoes": { "x": 720, "y": 537 }, "Womens": { "x": 480, "y": 446 }, "Womens Shoes": { "x": 506, "y": 524 }, "Jewelery": { "x": 403, "y": 524 }, "Arts and Crafts": { "x": 855, "y": 615 }, "Party Supplies": { "x": 855, "y": 518 }, "Seasonal": { "x": 855, "y": 408 }, "Home": { "x": 1062, "y": 679 }, "Kitchen": { "x": 1101, "y": 395 }, "Laundry": { "x": 1127, "y": 589 }, "Furniture": { "x": 998, "y": 621 }, "Bedding": { "x": 998, "y": 537 }, "Bath and shower": { "x": 998, "y": 446 }, "Health": { "x": 1024, "y": 278 }, "Personal Care": { "x": 1146, "y": 246 }, "Beauty": { "x": 1282, "y": 246 }, "Hardware": { "x": 1295, "y": 505 }, "Paint": { "x": 1295, "y": 505 }, "Automotive": { "x": 1295, "y": 666 }, "Garden": { "x": 1360, "y": 201 }, };
-
-/* ---------------------------- DOM Elements ---------------------------- */
-const itemInput = document.getElementById('item-input');
-const goBtn = document.getElementById('go-btn');
-const redrawBtn = document.getElementById('redraw-btn');
-const canvas = document.getElementById('canvas');
-const statusMessage = document.getElementById('status-message');
-const mapStatus = document.getElementById('map-status');
-const editorHead = document.getElementById('editor-head');
-const editorBody = document.getElementById('editor-body');
-const unclassifiedWarning = document.getElementById('unclassified-warning');
-const mergedPanel = document.getElementById('merged-panel');
-
-/* ------------------------------ Map Image ------------------------------ */
-let defaultMapImage = null;
-function tryLoadDefaultMap() { const img = new Image(); img.onload = () => { defaultMapImage = img; mapStatus.textContent = 'Map: walmart_map.JPG (loaded)'; }; img.onerror = () => { defaultMapImage = null; mapStatus.textContent = 'Map: walmart_map.JPG (missing).'; }; img.src = 'walmart_map.JPG'; }
-
-/* ------------------------------ Core Logic -------------------------------- */
-
-/**
- * Handles the "Generate Path" button click.
- * Reads the textarea, classifies items, builds the editor table,
- * and then attempts to draw the initial path.
- */
-function handleGenerate() {
-  const text = itemInput.value.trim().replace(/[,;]+/g, '\n');
-  const items = text.split('\n').map(s => s.trim()).filter(Boolean);
-  if (items.length === 0) {
-    updateStatus('Please enter at least one grocery item.', true);
-    return;
-  }
-
-  // Always build a fresh table from the text area on Generate.
-  const classification = classifyItems(items);
-  buildClassificationEditor(items, classification);
-
-  // Show the panel so the user can see the list and categories.
-  mergedPanel.style.display = 'block';
-
-  // Now, attempt to draw the path with the newly generated categories.
-  handleRedraw();
-}
-
-/**
- * Handles the "Redraw Path" button click.
- * Reads the CURRENT selections from the table, validates them,
- * and redraws the path on the map.
- * This function IGNORES the textarea input.
- */
-function handleRedraw() {
-  const selectedCategories = readSelectedCategories();
-  const hasUnselected = selectedCategories.some(v => !v || v === '__choose__');
-
-  if (hasUnselected) {
-    unclassifiedWarning.style.display = 'block';
-    updateStatus('Please select categories for the highlighted items.', true);
-    canvas.style.display = 'none';
-    return; // Stop here
-  }
-  unclassifiedWarning.style.display = 'none';
-
-  const points = categoriesToPoints(selectedCategories);
-  if (points.length === 0) {
-    updateStatus('Could not find coordinates for any of the selected categories.', true);
-    return; // Stop here
-  }
-
-  // On success, render the results.
-  renderAll(points);
-}
+    <script>
+      /* ---------------------------- Config & Data ---------------------------- */
+      const ENTRANCE = { x: 338, y: 33 };
+      const categories = {
+            "Fresh Produce": ["apple", "banana", "carrot", "lettuce", "grapes", "onion", "tomato", "cucumber", "strawberry", "spinach", "broccoli", "pear", "peach", "orange", "avocado", "potato"],
+            "Frozen": ["frozen", "ice cream", "pizza", "fries", "veggies", "popsicle", "lasagna", "frozen dinner", "fish sticks", "nuggets"],
+            "Grocery": ["rice", "flour", "oil", "pasta", "canned", "sugar", "spices", "cereal", "beans", "soup", "sauce", "ketchup", "mustard"],
+            "Snacks and Beverages": ["chips", "soda", "cookies", "juice", "snack", "pepsi", "coke", "candy", "crackers", "popcorn", "gatorade", "monster", "coffee", "tea"],
+            "Dairy": ["milk", "cheese", "butter", "yogurt", "cream", "whipped cream", "cottage cheese","eggs"],
+            "Bakery": ["bread", "cake", "donut", "croissant", "bagel", "muffin", "rolls", "pastry", "cupcake", "pie"],
+            "Meat and Seafood": ["chicken", "beef", "pork", "fish", "shrimp", "steak", "salmon", "tuna", "bacon", "crab", "lobster"],
+            "Deli": ["sandwich", "ham", "salami", "turkey", "wrap", "sub", "deli meat", "roast beef"],
+            "Pets": ["dog", "cat", "pet food", "litter", "treats", "kibble", "aquarium", "leash", "toys"],
+            "Cleaning": ["detergent", "disinfectant", "bleach", "soap", "mop", "wipes", "cleaner", "sanitizer", "polish"],
+            "House Supplies": ["paper towels", "toilet paper", "trash bags", "foil", "napkins", "plastic wrap", "plates", "cups"],
+            "Office Supplies": ["pen", "pencil", "notebook", "paper", "stapler", "marker", "highlighter", "binder", "envelope"],
+            "Electronics": ["phone", "laptop", "tv", "camera", "tablet", "charger", "headphones", "speaker", "monitor", "keyboard", "mouse"],
+            "Toys": ["lego", "doll", "puzzle", "game", "playset", "action figure", "plush", "board game"],
+            "Sports": ["ball", "bat", "soccer", "basketball", "tennis", "fitness", "weights", "yoga", "treadmill", "golf"],
+            "Baby": ["diaper", "formula", "stroller", "crib", "pacifier", "bottle", "wipes", "highchair", "car seat"],
+            "Girls": ["dress", "skirt", "leggings", "top", "blouse", "scarf"],
+            "Boys": ["shorts", "tshirt", "hoodie", "jeans", "sweater"],
+            "Mens": ["shirt", "pants", "suit", "jacket", "tie", "belt", "blazer"],
+            "Mens Shoes": ["sneakers", "boots", "loafers", "sandals"],
+            "Womens": ["blouse", "skirt", "dress", "leggings", "handbag", "scarf"],
+            "Womens Shoes": ["heels", "sandals", "flats", "boots", "wedges"],
+            "Jewelery": ["ring", "necklace", "bracelet", "earrings", "jewelry", "pendant"],
+            "Arts and Crafts": ["paint", "glue", "scissors", "markers", "yarn", "clay", "beads", "paper craft"],
+            "Party Supplies": ["balloon", "decorations", "banner", "streamers", "candles", "party hats", "plates", "napkins"],
+            "Seasonal": ["christmas", "halloween", "easter", "thanksgiving", "holiday", "ornament", "costume"],
+            "Home": ["sofa", "table", "lamp", "rug", "curtain", "mirror", "decor", "shelf"],
+            "Kitchen": ["pan", "pot", "knife", "spoon", "blender", "mixer", "cup", "plate", "microwave", "toaster"],
+            "Laundry": ["detergent", "fabric softener", "laundry basket", "dryer sheets"],
+            "Furniture": ["chair", "desk", "cabinet", "bed", "dresser", "couch"],
+            "Bedding": ["pillow", "blanket", "comforter", "sheets", "duvet"],
+            "Bath and shower": ["shampoo", "conditioner", "soap", "towel", "body wash", "toothbrush", "toothpaste"],
+            "Health": ["vitamin", "supplement", "bandage", "thermometer", "pain reliever", "ibuprofen", "aspirin", "medication", "cough syrup", "first aid", "ointment", "antibiotic", "medicine"],
+            "Personal Care": ["toothpaste", "toothbrush", "deodorant", "razor", "shaving cream", "lotion"],
+            "Beauty": ["makeup", "lipstick", "foundation", "mascara", "eyeliner", "nail polish"],
+            "Hardware": ["screwdriver", "hammer", "drill", "wrench", "pliers", "nails", "screws"],
+            "Paint": ["paint", "roller", "brush", "primer", "spray paint"],
+            "Automotive": ["tire", "oil", "wiper", "car battery", "brake", "engine", "filter"],
+            "Garden": ["shovel", "soil", "seeds", "fertilizer", "hose", "plants", "pots"]
+        };
+      const coordinates = { "Fresh Produce": { "x": 235, "y": 227 }, "Frozen": { "x": 235, "y": 356 }, "Grocery": { "x": 235, "y": 550 }, "Snacks and Beverages": { "x": 235, "y": 731 }, "Dairy": { "x": 235, "y": 899 }, "Bakery": { "x": 79, "y": 343 }, "Meat and Seafood": { "x": 105, "y": 550 }, "Deli": { "x": 105, "y": 783 }, "Pets": { "x": 416, "y": 822 }, "Cleaning": { "x": 519, "y": 822 }, "House Supplies": { "x": 571, "y": 822 }, "Office Supplies": { "x": 636, "y": 822 }, "Electronics": { "x": 817, "y": 822 }, "Toys": { "x": 1101, "y": 822 }, "Sports": { "x": 1295, "y": 822 }, "Baby": { "x": 461, "y": 640 }, "Girls": { "x": 636, "y": 653 }, "Boys": { "x": 745, "y": 653 }, "Mens": { "x": 720, "y": 414 }, "Mens Shoes": { "x": 720, "y": 537 }, "Womens": { "x": 480, "y": 446 }, "Womens Shoes": { "x": 506, "y": 524 }, "Jewelery": { "x": 403, "y": 524 }, "Arts and Crafts": { "x": 855, "y": 615 }, "Party Supplies": { "x": 855, "y": 518 }, "Seasonal": { "x": 855, "y": 408 }, "Home": { "x": 1062, "y": 679 }, "Kitchen": { "x": 1101, "y": 395 }, "Laundry": { "x": 1127, "y": 589 }, "Furniture": { "x": 998, "y": 621 }, "Bedding": { "x": 998, "y": 537 }, "Bath and shower": { "x": 998, "y": 446 }, "Health": { "x": 1024, "y": 278 }, "Personal Care": { "x": 1146, "y": 246 }, "Beauty": { "x": 1282, "y": 246 }, "Hardware": { "x": 1295, "y": 505 }, "Paint": { "x": 1295, "y": 505 }, "Automotive": { "x": 1295, "y": 666 }, "Garden": { "x": 1360, "y": 201 }, };
 
 
-/* ------------------------------ Events -------------------------------- */
-goBtn.addEventListener('click', handleGenerate);
-redrawBtn.addEventListener('click', handleRedraw);
+      /* ---------------------------- DOM Elements ---------------------------- */
+      const itemInput = document.getElementById("item-input");
+      const goBtn = document.getElementById("go-btn");
+      const redrawBtn = document.getElementById("redraw-btn");
+      const canvas = document.getElementById("canvas");
+      const statusMessage = document.getElementById("status-message");
+      const mapStatus = document.getElementById("map-status");
+      const editorHead = document.getElementById("editor-head");
+      const editorBody = document.getElementById("editor-body");
+      const unclassifiedWarning = document.getElementById(
+        "unclassified-warning"
+      );
+      const mergedPanel = document.getElementById("merged-panel");
 
+      /* ------------------------------ Map Image ------------------------------ */
+      let defaultMapImage = null;
+      function tryLoadDefaultMap() {
+        const img = new Image();
+        img.onload = () => {
+          defaultMapImage = img;
+          mapStatus.textContent = "Map: walmart_map.JPG (loaded)";
+        };
+        img.onerror = () => {
+          defaultMapImage = null;
+          mapStatus.textContent = "Map: walmart_map.JPG (missing).";
+        };
+        img.src = "walmart_map.JPG";
+      }
 
-/* ------------------------------ Helpers ------------------------------- */
-function updateStatus(message, isError = false) { statusMessage.style.display = 'block'; statusMessage.textContent = message; statusMessage.className = isError ? 'status error' : 'status'; if (isError) canvas.style.display = 'none'; }
-function distance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
-function totalPathDistance(orderedPoints) { let d = 0; for (let i = 1; i < orderedPoints.length; i++) d += distance(orderedPoints[i - 1], orderedPoints[i]); return d; }
+      /* ------------------------------ Core Logic -------------------------------- */
 
-/* --------------------- TF-IDF Classification (unchanged) ------------------- */
-function tokenize(text) { return text.toLowerCase().match(/\b\w+\b/g) || []; }
-const docCount = Object.keys(categories).length; const df = {}; for (const [cat, words] of Object.entries(categories)) { const uniqueTokens = new Set(words.map(w => w.toLowerCase())); for (const token of uniqueTokens) df[token] = (df[token] || 0) + 1; }
-function tfidfVector(words) { const tokens = tokenize(Array.isArray(words) ? words.join(' ') : words); const counts = {}; tokens.forEach(t => counts[t] = (counts[t] || 0) + 1); const vec = {}; for (const [t, c] of Object.entries(counts)) { const idf = Math.log(docCount / (1 + (df[t] || 0))); vec[t] = c * idf; } return vec; }
-function cosineSim(vecA, vecB) { let dot = 0, normA = 0, normB = 0; const allTokens = new Set([...Object.keys(vecA), ...Object.keys(vecB)]); allTokens.forEach(t => { const a = vecA[t] || 0; const b = vecB[t] || 0; dot += a * b; normA += a * a; normB += b * b; }); return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10); }
-const categoryVectors = {}; for (const [cat, words] of Object.entries(categories)) { categoryVectors[cat] = tfidfVector(words); }
-function bestCategoryWithScore(text){ const inputVec = tfidfVector(tokenize(text)); let bestCat = null; let bestScore = -Infinity; for (const [cat, vec] of Object.entries(categoryVectors)) { const score = cosineSim(inputVec, vec); if (score > bestScore){ bestScore = score; bestCat = cat; } } return {category: bestCat, score: bestScore}; }
-function classifyItems(items){ return items.map(it => bestCategoryWithScore(it)); }
+      /**
+       * Handles the "Generate Path" button click.
+       * Reads the textarea, classifies items, builds the editor table,
+       * and then attempts to draw the initial path.
+       */
+      function handleGenerate() {
+        const text = itemInput.value.trim().replace(/[,;]+/g, "\n");
+        const items = text.split("\n").map(s => s.trim()).filter(Boolean);
+        if (items.length === 0) {
+          updateStatus("Please enter at least one grocery item.", true);
+          return;
+        }
 
-/* -------------------- UI Building Functions -------------- */
-function buildClassificationEditor(items, classification) {
-  editorHead.innerHTML = `<tr><th style="width:5%">#</th><th style="width:50%">Item</th><th>Category</th></tr>`;
-  editorBody.innerHTML = '';
-  const allCats = Object.keys(categories).sort();
+        // Always build a fresh table from the text area on Generate.
+        const classification = classifyItems(items);
+        buildClassificationEditor(items, classification);
 
-  items.forEach((item, i) => {
-    const {category, score} = classification[i];
-    const needsHuman = !(score >= 0.05);
+        // Show the panel so the user can see the list and categories.
+        mergedPanel.style.display = "block";
 
-    const tr = document.createElement('tr');
-    tr.className = 'item-row';
-    tr.dataset.item = item;
-    if (needsHuman) tr.classList.add('needs-category');
-    
-    const tdStop = document.createElement('td');
-    tdStop.className = 'stop-number';
-    tr.appendChild(tdStop);
+        // Now, attempt to draw the path with the newly generated categories.
+        handleRedraw();
+      }
 
-    const tdItem = document.createElement('td');
-    tdItem.textContent = item;
-    tr.appendChild(tdItem);
+      /**
+       * Handles the "Redraw Path" button click.
+       * Reads the CURRENT selections from the table, validates them,
+       * and redraws the path on the map.
+       * This function IGNORES the textarea input.
+       */
+      function handleRedraw() {
+        const selectedCategories = readSelectedCategories();
+        const hasUnselected = selectedCategories.some(
+          v => !v || v === "__choose__"
+        );
 
-    const tdCat = document.createElement('td');
-    const select = document.createElement('select');
-    select.className = 'cat-select';
+        if (hasUnselected) {
+          unclassifiedWarning.style.display = "block";
+          updateStatus(
+            "Please select categories for the highlighted items.",
+            true
+          );
+          canvas.style.display = "none";
+          return; // Stop here
+        }
+        unclassifiedWarning.style.display = "none";
 
-    if (needsHuman){
-      const placeholder = Object.assign(document.createElement('option'), { value: '__choose__', textContent: 'Select category…', disabled: true, selected: true });
-      select.appendChild(placeholder);
-    }
-    allCats.forEach(c => {
-      const opt = Object.assign(document.createElement('option'), { value: c, textContent: c });
-      if (!needsHuman && c === category) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener('change', () => { tr.classList.remove('needs-category'); });
-    tdCat.appendChild(select);
-    tr.appendChild(tdCat);
-    editorBody.appendChild(tr);
-  });
-}
+        const points = categoriesToPoints(selectedCategories);
+        if (points.length === 0) {
+          updateStatus(
+            "Could not find coordinates for any of the selected categories.",
+            true
+          );
+          return; // Stop here
+        }
 
-function updateEditorWithOrder(orderedPoints) {
-    const coordToCat = Object.fromEntries(
-        Object.entries(coordinates).map(([cat, {x, y}]) => [`${x}|${y}`, cat])
-    );
-    const orderedCategories = orderedPoints.slice(1, -1).map(p => coordToCat[`${p.x}|${p.y}`]);
-    
-    const rowsByCategory = {};
-    editorBody.querySelectorAll('tr.item-row').forEach(tr => {
-        const category = tr.querySelector('select.cat-select').value;
-        if (category && category !== '__choose__') {
+        // On success, render the results.
+        renderAll(points);
+      }
+
+      /* ------------------------------ Events -------------------------------- */
+      goBtn.addEventListener("click", handleGenerate);
+      redrawBtn.addEventListener("click", handleRedraw);
+
+      /* ------------------------------ Helpers ------------------------------- */
+      function updateStatus(message, isError = false) {
+        statusMessage.style.display = "block";
+        statusMessage.textContent = message;
+        statusMessage.className = isError ? "status error" : "status";
+        if (isError) canvas.style.display = "none";
+      }
+      function distance(p1, p2) {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      }
+      function totalPathDistance(orderedPoints) {
+        let d = 0;
+        for (let i = 1; i < orderedPoints.length; i++)
+          d += distance(orderedPoints[i - 1], orderedPoints[i]);
+        return d;
+      }
+
+      /* --------------------- TF-IDF Classification (unchanged) ------------------- */
+      function tokenize(text) {
+        return text.toLowerCase().match(/\b\w+\b/g) || [];
+      }
+      const docCount = Object.keys(categories).length;
+      const df = {};
+      for (const [cat, words] of Object.entries(categories)) {
+        const uniqueTokens = new Set(words.map(w => w.toLowerCase()));
+        for (const token of uniqueTokens) df[token] = (df[token] || 0) + 1;
+      }
+      function tfidfVector(words) {
+        const tokens = tokenize(
+          Array.isArray(words) ? words.join(" ") : words
+        );
+        const counts = {};
+        tokens.forEach(t => (counts[t] = (counts[t] || 0) + 1));
+        const vec = {};
+        for (const [t, c] of Object.entries(counts)) {
+          const idf = Math.log(docCount / (1 + (df[t] || 0)));
+          vec[t] = c * idf;
+        }
+        return vec;
+      }
+      function cosineSim(vecA, vecB) {
+        let dot = 0,
+          normA = 0,
+          normB = 0;
+        const allTokens = new Set([
+          ...Object.keys(vecA),
+          ...Object.keys(vecB),
+        ]);
+        allTokens.forEach(t => {
+          const a = vecA[t] || 0;
+          const b = vecB[t] || 0;
+          dot += a * b;
+          normA += a * a;
+          normB += b * b;
+        });
+        return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10);
+      }
+      const categoryVectors = {};
+      for (const [cat, words] of Object.entries(categories)) {
+        categoryVectors[cat] = tfidfVector(words);
+      }
+      function bestCategoryWithScore(text) {
+        const inputVec = tfidfVector(tokenize(text));
+        let bestCat = null;
+        let bestScore = -Infinity;
+        for (const [cat, vec] of Object.entries(categoryVectors)) {
+          const score = cosineSim(inputVec, vec);
+          if (score > bestScore) {
+            bestScore = score;
+            bestCat = cat;
+          }
+        }
+        return { category: bestCat, score: bestScore };
+      }
+      function classifyItems(items) {
+        return items.map(it => bestCategoryWithScore(it));
+      }
+
+      /* -------------------- UI Building Functions -------------- */
+      function buildClassificationEditor(items, classification) {
+        editorHead.innerHTML = `<tr><th style="width:5%">#</th><th style="width:50%">Item</th><th>Category</th></tr>`;
+        editorBody.innerHTML = "";
+        const allCats = Object.keys(categories).sort();
+
+        items.forEach((item, i) => {
+          const { category, score } = classification[i];
+          const needsHuman = !(score >= 0.05);
+
+          const tr = document.createElement("tr");
+          tr.className = "item-row";
+          tr.dataset.item = item;
+          if (needsHuman) tr.classList.add("needs-category");
+
+          const tdStop = document.createElement("td");
+          tdStop.className = "stop-number";
+          tr.appendChild(tdStop);
+
+          const tdItem = document.createElement("td");
+          tdItem.textContent = item;
+          tr.appendChild(tdItem);
+
+          const tdCat = document.createElement("td");
+          const select = document.createElement("select");
+          select.className = "cat-select";
+
+          if (needsHuman) {
+            const placeholder = Object.assign(
+              document.createElement("option"),
+              {
+                value: "__choose__",
+                textContent: "Select category…",
+                disabled: true,
+                selected: true,
+              }
+            );
+            select.appendChild(placeholder);
+          }
+          allCats.forEach(c => {
+            const opt = Object.assign(document.createElement("option"), {
+              value: c,
+              textContent: c,
+            });
+            if (!needsHuman && c === category) opt.selected = true;
+            select.appendChild(opt);
+          });
+          select.addEventListener("change", () => {
+            tr.classList.remove("needs-category");
+          });
+          tdCat.appendChild(select);
+          tr.appendChild(tdCat);
+          editorBody.appendChild(tr);
+        });
+      }
+
+      function updateEditorWithOrder(orderedPoints) {
+        const coordToCat = Object.fromEntries(
+          Object.entries(coordinates).map(([cat, { x, y }]) => [
+            `${x}|${y}`,
+            cat,
+          ])
+        );
+        const orderedCategories = orderedPoints
+          .slice(1, -1)
+          .map(p => coordToCat[`${p.x}|${p.y}`]);
+
+        const rowsByCategory = {};
+        editorBody.querySelectorAll("tr.item-row").forEach(tr => {
+          const category = tr.querySelector("select.cat-select").value;
+          if (category && category !== "__choose__") {
             if (!rowsByCategory[category]) {
-                rowsByCategory[category] = [];
+              rowsByCategory[category] = [];
             }
             rowsByCategory[category].push(tr);
-        }
-    });
+          }
+        });
 
-    const fragment = document.createDocumentFragment();
+        const fragment = document.createDocumentFragment();
 
-    orderedCategories.forEach((category, index) => {
-        const stopNumber = index + 1;
-        if (rowsByCategory[category]) {
+        orderedCategories.forEach((category, index) => {
+          const stopNumber = index + 1;
+          if (rowsByCategory[category]) {
             rowsByCategory[category].forEach(tr => {
-                tr.querySelector('.stop-number').textContent = stopNumber;
-                fragment.appendChild(tr);
+              tr.querySelector(".stop-number").textContent = stopNumber;
+              fragment.appendChild(tr);
             });
+          }
+        });
+
+        editorBody.innerHTML = "";
+        editorBody.appendChild(fragment);
+      }
+
+      function readSelectedCategories() {
+        return Array.from(document.querySelectorAll(".cat-select")).map(
+          s => s.value
+        );
+      }
+      function categoriesToPoints(selectedCategories) {
+        const unique = [
+          ...new Set(
+            selectedCategories.filter(v => v && v !== "__choose__")
+          ),
+        ];
+        return unique.map(cat => coordinates[cat]).filter(Boolean);
+      }
+
+      /* --------------------------- Path Algorithm -------------------------- */
+      /**
+       * Solves the Traveling Salesperson Problem for the given points.
+       * Uses a brute-force permutation approach for optimal results on small
+       * datasets, falling back to a faster heuristic for larger ones.
+       * @param {Array<Object>} points The points to visit.
+       * @returns {Array<Object>} The optimally ordered path.
+       */
+      function solveTsp(points) {
+        const cities = dedupeAndStripEntrance(points);
+        const MAX_STOPS_FOR_OPTIMAL = 10; // 10! is ~3.6 million, feasible
+
+        if (cities.length === 0) {
+          return [ENTRANCE, ENTRANCE];
         }
-    });
 
-    editorBody.innerHTML = '';
-    editorBody.appendChild(fragment);
-}
+        if (cities.length > MAX_STOPS_FOR_OPTIMAL) {
+          console.warn(
+            `More than ${MAX_STOPS_FOR_OPTIMAL} stops. Using faster nearest-neighbor heuristic instead of optimal TSP.`
+          );
+          return getNearestNeighborPath(cities);
+        }
 
-function readSelectedCategories() { return Array.from(document.querySelectorAll('.cat-select')).map(s => s.value); }
-function categoriesToPoints(selectedCategories) { const unique = [...new Set(selectedCategories.filter(v => v && v !== '__choose__'))]; return unique.map(cat => coordinates[cat]).filter(Boolean); }
+        // --- Brute-force optimal solver ---
+        let minDistance = Infinity;
+        let bestPath = [];
+        const permutations = getPermutations(cities);
 
-/* --------------------------- Path Algorithm (unchanged) -------------------------- */
-function getTspApproximationPath(points) { const unvisited = dedupeAndStripEntrance(points); const path = [ENTRANCE]; const distanceSq = (p1, p2) => { const dx = p1.x - p2.x, dy = p1.y - p2.y; return dx*dx + dy*dy; }; while (unvisited.length > 0) { const current = path[path.length - 1]; let bestIdx = 0, bestD = Infinity; for (let i = 0; i < unvisited.length; i++) { const d = distanceSq(current, unvisited[i]); if (d < bestD) { bestD = d; bestIdx = i; } } path.push(unvisited.splice(bestIdx, 1)[0]); } path.push(ENTRANCE); return path; }
-function dedupeAndStripEntrance(points) { const key = (p) => `${p.x}|${p.y}`; const entranceKey = key(ENTRANCE); const seen = new Set(); const out = []; for (const p of points) { const k = key(p); if (k === entranceKey) continue; if (!seen.has(k)) { seen.add(k); out.push({ x: p.x, y: p.y }); } } return out; }
+        for (const perm of permutations) {
+          const currentPath = [ENTRANCE, ...perm, ENTRANCE];
+          const currentDistance = totalPathDistance(currentPath);
+          if (currentDistance < minDistance) {
+            minDistance = currentDistance;
+            bestPath = currentPath;
+          }
+        }
+        return bestPath;
+      }
 
-/* --------------------------- Rendering Logic -------------------------- */
-function renderAll(points) {
-  if (!defaultMapImage) {
-    updateStatus('Map image missing.', true);
-    return;
-  }
-  const orderedPoints = getTspApproximationPath(points);
-  drawImageAndPath(defaultMapImage, orderedPoints);
-  updateEditorWithOrder(orderedPoints);
-  const dist = totalPathDistance(orderedPoints);
-  const stops = Math.max(0, orderedPoints.length - 2);
-  updateStatus(`Path generated through ${stops} stops. Total distance ≈ ${dist.toFixed(0)} map units.`, false);
-}
+      /**
+       * Generates all permutations of an array.
+       * @param {Array} arr The input array.
+       * @returns {Array<Array>} An array of all permutations.
+       */
+      function getPermutations(arr) {
+        if (arr.length === 0) return [[]];
+        const firstEl = arr[0];
+        const rest = arr.slice(1);
+        const permsWithoutFirst = getPermutations(rest);
+        const allPermutations = [];
+        permsWithoutFirst.forEach(perm => {
+          for (let i = 0; i <= perm.length; i++) {
+            const permWithFirst = [
+              ...perm.slice(0, i),
+              firstEl,
+              ...perm.slice(i),
+            ];
+            allPermutations.push(permWithFirst);
+          }
+        });
+        return allPermutations;
+      }
 
-function drawImageAndPath(img, orderedPoints) {
-  canvas.style.display = 'block';
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0);
+      /**
+       * Fast heuristic for TSP using the Nearest Neighbor algorithm.
+       * @param {Array<Object>} cities The points to visit (must not include ENTRANCE).
+       * @returns {Array<Object>} The ordered path.
+       */
+      function getNearestNeighborPath(cities) {
+        const unvisited = [...cities];
+        const path = [ENTRANCE];
+        const distanceSq = (p1, p2) => {
+          const dx = p1.x - p2.x,
+            dy = p1.y - p2.y;
+          return dx * dx + dy * dy;
+        };
+        while (unvisited.length > 0) {
+          const current = path[path.length - 1];
+          let bestIdx = 0,
+            bestD = Infinity;
+          for (let i = 0; i < unvisited.length; i++) {
+            const d = distanceSq(current, unvisited[i]);
+            if (d < bestD) {
+              bestD = d;
+              bestIdx = i;
+            }
+          }
+          path.push(unvisited.splice(bestIdx, 1)[0]);
+        }
+        path.push(ENTRANCE);
+        return path;
+      }
 
-  const T = (p) => ({ x: p.x, y: canvas.height - p.y });
+      function dedupeAndStripEntrance(points) {
+        const key = p => `${p.x}|${p.y}`;
+        const entranceKey = key(ENTRANCE);
+        const seen = new Set();
+        const out = [];
+        for (const p of points) {
+          const k = key(p);
+          if (k === entranceKey) continue;
+          if (!seen.has(k)) {
+            seen.add(k);
+            out.push({ x: p.x, y: p.y });
+          }
+        }
+        return out;
+      }
 
-  ctx.lineWidth = Math.max(2, Math.min(img.width, img.height) * 0.003);
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  const pointRadius = ctx.lineWidth * 2.5;
+      /* --------------------------- Rendering Logic -------------------------- */
+      function renderAll(points) {
+        if (!defaultMapImage) {
+          updateStatus("Map image missing.", true);
+          return;
+        }
+        const orderedPoints = solveTsp(points);
+        drawImageAndPath(defaultMapImage, orderedPoints);
+        updateEditorWithOrder(orderedPoints);
+        const dist = totalPathDistance(orderedPoints);
+        const stops = Math.max(0, orderedPoints.length - 2);
+        updateStatus(
+          `Path generated through ${stops} stops. Total distance ≈ ${dist.toFixed(
+            0
+          )} map units.`,
+          false
+        );
+      }
 
-  if (orderedPoints.length >= 2) {
-    ctx.strokeStyle = '#ef4444'; // red
-    ctx.beginPath();
-    const start = T(orderedPoints[0]);
-    ctx.moveTo(start.x, start.y);
-    for (let i = 1; i < orderedPoints.length; i++) {
-        const point = T(orderedPoints[i]);
-        ctx.lineTo(point.x, point.y);
-    }
-    ctx.stroke();
-  }
+      function drawImageAndPath(img, orderedPoints) {
+        canvas.style.display = "block";
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
 
-  orderedPoints.forEach((p, i) => {
-    const tp = T(p);
-    ctx.beginPath();
-    const isEntrance = (i === 0 || i === orderedPoints.length - 1);
-    ctx.fillStyle = isEntrance ? '#10b981' : '#f59e0b'; // green : yellow
-    ctx.arc(tp.x, tp.y, isEntrance ? pointRadius * 1.2 : pointRadius, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.strokeStyle = '#111827';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  });
-}
+        const T = p => ({ x: p.x, y: canvas.height - p.y });
 
-/* ------------------------------ Init ---------------------------------- */
-init();
-function init(){ tryLoadDefaultMap(); }
-</script>
-</body>
+        ctx.lineWidth = Math.max(2, Math.min(img.width, img.height) * 0.003);
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        const pointRadius = ctx.lineWidth * 2.5;
+
+        if (orderedPoints.length >= 2) {
+          ctx.strokeStyle = "#ef4444"; // red
+          ctx.beginPath();
+          const start = T(orderedPoints[0]);
+          ctx.moveTo(start.x, start.y);
+          for (let i = 1; i < orderedPoints.length; i++) {
+            const point = T(orderedPoints[i]);
+            ctx.lineTo(point.x, point.y);
+          }
+          ctx.stroke();
+        }
+
+        orderedPoints.forEach((p, i) => {
+          const tp = T(p);
+          ctx.beginPath();
+          const isEntrance = i === 0 || i === orderedPoints.length - 1;
+          ctx.fillStyle = isEntrance ? "#10b981" : "#f59e0b"; // green : yellow
+          ctx.arc(
+            tp.x,
+            tp.y,
+            isEntrance ? pointRadius * 1.2 : pointRadius,
+            0,
+            2 * Math.PI
+          );
+          ctx.fill();
+          ctx.strokeStyle = "#111827";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+      }
+
+      /* ------------------------------ Init ---------------------------------- */
+      init();
+      function init() {
+        tryLoadDefaultMap();
+      }
+    </script>
+  </body>
 </html>
