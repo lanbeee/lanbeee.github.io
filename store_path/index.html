@@ -234,7 +234,7 @@
   </head>
   <body>
     <div class="container">
-      <h1>Plan the fastest in-store route — enter your grocery items below</h1>
+      <h1>Plan fastest in-store route — enter your grocery below</h1>
 
       <div class="control-group">
         <label for="item-input"></label>
@@ -625,34 +625,163 @@
        */
       function solveTsp(points) {
         const cities = dedupeAndStripEntrance(points);
-        const MAX_STOPS_FOR_OPTIMAL = 10; // 10! is ~3.6 million, feasible
+        if (cities.length === 0) return [ENTRANCE, ENTRANCE];
 
-        if (cities.length === 0) {
-          return [ENTRANCE, ENTRANCE];
+        const OPTIMAL_LIMIT = 20; // exact Held–Karp up to 20 stops
+        if (cities.length <= OPTIMAL_LIMIT) {
+            const order = heldKarpTsp(cities);
+            return [ENTRANCE, ...order, ENTRANCE];
+        } else {
+            console.warn(
+            `> ${OPTIMAL_LIMIT} stops — using NN + 2-opt heuristic for speed.`
+            );
+            const order = twoOptImprove(nearestNeighborOrder(cities), cities);
+            return [ENTRANCE, ...order.map(i => cities[i]), ENTRANCE];
         }
-
-        if (cities.length > MAX_STOPS_FOR_OPTIMAL) {
-          console.warn(
-            `More than ${MAX_STOPS_FOR_OPTIMAL} stops. Using faster nearest-neighbor heuristic instead of optimal TSP.`
-          );
-          return getNearestNeighborPath(cities);
-        }
-
-        // --- Brute-force optimal solver ---
-        let minDistance = Infinity;
-        let bestPath = [];
-        const permutations = getPermutations(cities);
-
-        for (const perm of permutations) {
-          const currentPath = [ENTRANCE, ...perm, ENTRANCE];
-          const currentDistance = totalPathDistance(currentPath);
-          if (currentDistance < minDistance) {
-            minDistance = currentDistance;
-            bestPath = currentPath;
-          }
-        }
-        return bestPath;
       }
+
+      function heldKarpTsp(cities) {
+        const n = cities.length;
+        // Precompute distances (including to/from ENTRANCE)
+        const dCity = Array.from({ length: n }, () => Array(n).fill(0));
+        const dStart = Array(n).fill(0);
+        const dEnd = Array(n).fill(0);
+        for (let i = 0; i < n; i++) {
+            dStart[i] = distance(ENTRANCE, cities[i]);
+            dEnd[i] = distance(cities[i], ENTRANCE);
+            for (let j = 0; j < n; j++) {
+            dCity[i][j] = distance(cities[i], cities[j]);
+            }
+        }
+
+        const size = 1 << n;
+        const INF = 1e18;
+
+        // dp[mask][i] = best cost to reach subset "mask" ending at city i
+        const dp = Array.from({ length: size }, () => Array(n).fill(INF));
+        const parent = Array.from({ length: size }, () => Array(n).fill(-1));
+
+        // Base cases: start -> i
+        for (let i = 0; i < n; i++) {
+            const m = 1 << i;
+            dp[m][i] = dStart[i];
+        }
+
+        // Transitions
+        for (let mask = 1; mask < size; mask++) {
+            for (let i = 0; i < n; i++) {
+            if (!(mask & (1 << i))) continue; // i must be in mask
+            const prevMask = mask ^ (1 << i);
+            if (prevMask === 0) continue; // base case already set
+            let best = dp[mask][i];
+            let bestPrev = -1;
+            // try coming from j
+            for (let j = 0; j < n; j++) {
+                if (!(prevMask & (1 << j))) continue;
+                const cand = dp[prevMask][j] + dCity[j][i];
+                if (cand < best) {
+                best = cand;
+                bestPrev = j;
+                }
+            }
+            if (best < dp[mask][i]) {
+                dp[mask][i] = best;
+                parent[mask][i] = bestPrev;
+            }
+            }
+        }
+
+        // Close the tour: add i -> end
+        const full = size - 1;
+        let bestCost = INF;
+        let last = -1;
+        for (let i = 0; i < n; i++) {
+            const cand = dp[full][i] + dEnd[i];
+            if (cand < bestCost) {
+            bestCost = cand;
+            last = i;
+            }
+        }
+
+        // Reconstruct path of indices
+        const orderIdx = [];
+        let mask = full;
+        let cur = last;
+        while (cur !== -1) {
+            orderIdx.push(cur);
+            const p = parent[mask][cur];
+            mask ^= 1 << cur;
+            cur = p;
+        }
+        orderIdx.reverse(); // now in visiting order
+
+        // Map indices to actual point objects
+        return orderIdx.map(i => cities[i]);
+      }
+
+      /* ---------- Fast fallback: NN + 2-opt ---------- */
+      function nearestNeighborOrder(cities) {
+        const n = cities.length;
+        const used = Array(n).fill(false);
+        // seed with closest to entrance
+        let start = 0, best = Infinity;
+        for (let i = 0; i < n; i++) {
+            const d = distance(ENTRANCE, cities[i]);
+            if (d < best) { best = d; start = i; }
+        }
+        const order = [start];
+        used[start] = true;
+        for (let k = 1; k < n; k++) {
+            const last = order[order.length - 1];
+            let bestJ = -1, bestD = Infinity;
+            for (let j = 0; j < n; j++) {
+            if (used[j]) continue;
+            const d = distance(cities[last], cities[j]);
+            if (d < bestD) { bestD = d; bestJ = j; }
+            }
+            order.push(bestJ);
+            used[bestJ] = true;
+        }
+        return order; // array of indices
+        }
+
+        function twoOptImprove(order, cities) {
+        const n = order.length;
+        if (n < 4) return order.slice();
+
+        // Helper to compute tour length from entrance -> order -> entrance
+        const tourLen = ord => {
+            let sum = distance(ENTRANCE, cities[ord[0]]);
+            for (let i = 1; i < ord.length; i++) {
+            sum += distance(cities[ord[i - 1]], cities[ord[i]]);
+            }
+            sum += distance(cities[ord[ord.length - 1]], ENTRANCE);
+            return sum;
+        };
+
+        let improved = true;
+        let bestOrder = order.slice();
+        let bestLen = tourLen(bestOrder);
+
+        while (improved) {
+            improved = false;
+            for (let i = 0; i < n - 2; i++) {
+            for (let k = i + 2; k < n; k++) {
+                // Edges (i,i+1) and (k,k+1) — 2-opt swap
+                const newOrder = bestOrder.slice(0, i + 1)
+                .concat(bestOrder.slice(i + 1, k + 1).reverse())
+                .concat(bestOrder.slice(k + 1));
+                const newLen = tourLen(newOrder);
+                if (newLen + 1e-9 < bestLen) {
+                bestOrder = newOrder;
+                bestLen = newLen;
+                improved = true;
+                }
+            }
+            }
+        }
+        return bestOrder;
+        }
 
       /**
        * Generates all permutations of an array.
