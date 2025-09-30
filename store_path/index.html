@@ -21,87 +21,106 @@
         --green: #10b981;
         --yellow: #ffff00;
         --red: #ef4444;
+        --radius: 12px;
+        --gap-sm: 8px;
+        --gap-md: 12px;
+        --gap-lg: 16px;
       }
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        height: 100%;
-      }
+
+      * { box-sizing: border-box; }
+
+      html, body { height: 100%; }
+
       body {
         margin: 0;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
-          sans-serif;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         color: var(--text);
         background: var(--bg);
         line-height: 1.45;
       }
+
       .container {
         max-width: 900px;
         margin: 0 auto;
         padding: clamp(12px, 3vw, 20px);
       }
+
       h1 {
         font-size: clamp(20px, 4vw, 28px);
-        margin: 0 0 8px 0;
+        margin: 0 0 var(--gap-sm) 0;
       }
+
       .subtle {
         color: var(--muted);
         font-size: 14px;
-        margin-bottom: 12px;
+        margin-bottom: var(--gap-md);
       }
-      .control-group {
-        margin: 12px 0;
+
+      .control-group { margin: var(--gap-md) 0; }
+
+      /* Small a11y improvement: the label was empty */
+      .visually-hidden {
+        position: absolute !important;
+        width: 1px; height: 1px;
+        padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0, 0, 0, 0);
+        white-space: nowrap; border: 0;
       }
+
       label {
         display: block;
         font-weight: 600;
         margin-bottom: 6px;
       }
+
       textarea {
         width: 100%;
         min-height: 120px;
         padding: 12px;
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: var(--radius);
         font-size: 16px;
         resize: vertical;
       }
+
       button {
-        width: 100%; /* mobile-first: full-width button */
+        width: 100%;
         padding: 14px 16px;
         font-weight: 700;
         font-size: 16px;
-        border-radius: 12px;
+        border-radius: var(--radius);
         border: 1px solid var(--accent);
         background: var(--accent);
-        color: white;
+        color: #fff;
         cursor: pointer;
         transition: transform 0.02s ease;
+        margin-bottom: 1em;
       }
-      button:active {
-        transform: scale(0.99);
-      }
+      button:active { transform: scale(0.99); }
+
       .status {
-        margin: 10px 0;
+        margin: var(--gap-sm) 0;
         color: #374151;
         font-size: 14px;
+        display: none; /* hidden until used */
       }
-      .status.error {
-        color: var(--error);
-      }
+      .status.error { color: var(--error); }
+
       .panel {
         border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 12px;
-        background: white;
-        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+        border-radius: calc(var(--radius) + 2px);
+        padding: var(--gap-md);
+        background: #fff;
+        box-shadow: 0 1px 0 rgba(0,0,0,0.03);
       }
+      /* Consistent vertical spacing between stacked panels */
+      .panel + .panel { margin-top: var(--gap-md); }
+
       .panel h3 {
         margin: 0 0 6px 0;
         font-size: 18px;
       }
+
       .pill {
         display: inline-block;
         padding: 4px 10px;
@@ -110,26 +129,25 @@
         border: 1px solid var(--border);
         font-size: 12px;
       }
-      .muted {
-        color: var(--muted);
-      }
-      .small {
-        font-size: 12px;
-      }
+
+      .muted { color: var(--muted); }
+      .small { font-size: 12px; }
+
       #canvas {
         width: 100%;
         height: auto;
         display: none;
-        margin-top: 12px;
+        margin-top: var(--gap-md);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: var(--radius);
       }
+
       .legend {
-        margin-top: 8px;
+        margin-top: var(--gap-sm);
         font-size: 14px;
         color: #333;
         display: flex;
-        gap: 16px;
+        gap: var(--gap-lg);
         flex-wrap: wrap;
       }
       .legend span {
@@ -138,31 +156,25 @@
         gap: 6px;
       }
       .legend i {
-        width: 12px;
-        height: 12px;
+        width: 12px; height: 12px;
         border-radius: 50%;
         border: 1px solid #222;
         display: inline-block;
       }
-      .legend .entrance i {
-        background: #00ff00;
-      }
-      .legend .stop i {
-        background: #ffff00;
-      }
+      .legend .entrance i { background: #00ff00; }
+      .legend .stop i { background: #ffff00; }
       .legend .path i {
         background: #ff0000;
         border-radius: 2px;
-        width: 18px;
-        height: 4px;
+        width: 18px; height: 4px;
       }
+
       table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 8px;
+        margin-top: var(--gap-sm);
       }
-      th,
-      td {
+      th, td {
         padding: 10px 8px;
         border-bottom: 1px solid var(--border);
         text-align: left;
@@ -175,87 +187,85 @@
         font-weight: 600;
       }
       td.stop-number {
-        font-weight: bold;
+        font-weight: 700;
         color: var(--accent);
         text-align: center;
       }
+
       select {
         width: 100%;
         padding: 8px 10px;
         border: 1px solid var(--border);
         border-radius: 10px;
-        background: white;
+        background: #fff;
         font-size: 14px;
       }
-      tr.needs-category {
-        background: var(--warn-bg);
-      }
-      tr.needs-category td {
-        border-bottom: 1px solid var(--warn-border);
-      }
+
+      tr.needs-category { background: var(--warn-bg); }
+      tr.needs-category td { border-bottom: 1px solid var(--warn-border); }
+
       .warning-text {
         color: #9a3412;
         background: #fff7ed;
         border: 1px solid #fdba74;
         padding: 8px 10px;
         border-radius: 10px;
-        margin-top: 8px;
+        margin-top: var(--gap-sm);
         font-size: 13px;
       }
+
       .grid {
         display: grid;
-        gap: 12px;
+        gap: var(--gap-md);
         grid-template-columns: 1fr;
       }
+
       .top-actions {
         display: flex;
         gap: 10px;
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
-        margin: 8px 0 12px 0;
+        margin: var(--gap-sm) 0 0 0;
       }
-      .bottom-action {
-        margin-top: 16px;
-      }
+      .top-actions button { margin-bottom: 0; }
+
+      .bottom-action { margin-top: var(--gap-lg); }
+
+      /* utility to replace inline style on merged-panel */
+      .mt-md { margin-top: var(--gap-md); }
+
       @media (min-width: 820px) {
-        .grid {
-          grid-template-columns: 1fr 1fr;
-        }
-        button {
-          width: auto;
-          min-width: 220px;
-        }
-        .bottom-action {
-          text-align: right;
-        }
+        .grid { grid-template-columns: 1fr 1fr; }
+        button { width: auto; min-width: 220px; }
+        .bottom-action { text-align: right; }
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <h1>Plan fastest in-store route — enter your items below</h1>
+      <div class="panel">
+        <h1>Plan fastest in-store route — enter your items below</h1>
 
-      <div class="control-group">
-        <label for="item-input"></label>
-        <textarea
-          id="item-input"
-          placeholder="e.g.,&#10;Organic Bananas&#10;Milk&#10;Bread&#10;Toilet paper"
-        ></textarea>
-      </div>
+        <div class="control-group">
+          <label class="visually-hidden" for="item-input">Shopping items</label>
+          <textarea
+            id="item-input"
+            placeholder="e.g.,&#10;Organic Bananas&#10;Milk&#10;Bread&#10;Toilet paper"
+          ></textarea>
+        </div>
 
-      <div class="top-actions">
-        <button id="go-btn">Generate Path</button>
-        <div class="small muted" id="map-status">
-          Map: <code>walmart_map.JPG</code>
+        <div class="top-actions">
+          <button id="go-btn">Generate Route</button>
+          <div class="small muted" id="map-status">
+            Map: <code>walmart_map.JPG</code>
+          </div>
         </div>
       </div>
 
       <div id="output-container" class="panel">
         <h3>Map & Route</h3>
-        <p id="status-message" class="status">
-          Your generated image will appear here.
-        </p>
+        <p id="status-message" class="status">Result will be here</p>
         <canvas id="canvas"></canvas>
         <div class="legend">
           <span class="entrance"><i></i>Entrance</span>
@@ -264,32 +274,28 @@
         </div>
       </div>
 
-      <div
-        class="panel"
-        id="merged-panel"
-        style="display: none; margin-top: 12px"
-      >
+      <div class="panel mt-md" id="merged-panel" style="display: none">
+        <div class="bottom-action">
+          <button id="redraw-btn">Redraw Route</button>
+        </div>
         <h3 id="summary-title">Shopping List & Route</h3>
 
         <div class="warning-text" id="unclassified-warning" style="display: none">
           Some items could not be confidently classified. Please choose a
-          category for each highlighted row, then press <b>Redraw Path</b>.
+          category for each highlighted row, then press <b>Redraw Route</b>.
         </div>
 
         <table>
           <thead id="editor-head"></thead>
           <tbody id="editor-body"></tbody>
         </table>
-
-        <div class="bottom-action">
-          <button id="redraw-btn">Redraw Path</button>
-        </div>
       </div>
     </div>
 
     <script>
       /* ---------------------------- Config & Data ---------------------------- */
       const ENTRANCE = { x: 338, y: 33 };
+      const CHECKOUT = { x: 620, y: 265 };
       const categories = {
             "Fresh Produce": ["apple", "banana", "carrot", "lettuce", "grapes", "onion", "tomato", "cucumber", "strawberry", "spinach", "broccoli", "pear", "peach", "orange", "avocado", "potato"],
             "Frozen": ["frozen", "ice cream", "pizza", "fries", "veggies", "popsicle", "lasagna", "frozen dinner", "fish sticks", "nuggets"],
@@ -343,9 +349,7 @@
       const mapStatus = document.getElementById("map-status");
       const editorHead = document.getElementById("editor-head");
       const editorBody = document.getElementById("editor-body");
-      const unclassifiedWarning = document.getElementById(
-        "unclassified-warning"
-      );
+      const unclassifiedWarning = document.getElementById("unclassified-warning");
       const mergedPanel = document.getElementById("merged-panel");
 
       /* ------------------------------ Map Image ------------------------------ */
@@ -354,7 +358,7 @@
         const img = new Image();
         img.onload = () => {
           defaultMapImage = img;
-          mapStatus.textContent = "Map: walmart_map.JPG (loaded)";
+          mapStatus.textContent = "";
         };
         img.onerror = () => {
           defaultMapImage = null;
@@ -363,13 +367,7 @@
         img.src = "walmart_map.JPG";
       }
 
-      /* ------------------------------ Core Logic -------------------------------- */
-
-      /**
-       * Handles the "Generate Path" button click.
-       * Reads the textarea, classifies items, builds the editor table,
-       * and then attempts to draw the initial path.
-       */
+      /* ------------------------------ Core Logic ---------------------------- */
       function handleGenerate() {
         const text = itemInput.value.trim().replace(/[,;]+/g, "\n");
         const items = text.split("\n").map(s => s.trim()).filter(Boolean);
@@ -378,88 +376,66 @@
           return;
         }
 
-        // Always build a fresh table from the text area on Generate.
         const classification = classifyItems(items);
         buildClassificationEditor(items, classification);
 
-        // Show the panel so the user can see the list and categories.
         mergedPanel.style.display = "block";
-
-        // Now, attempt to draw the path with the newly generated categories.
         handleRedraw();
       }
 
-      /**
-       * Handles the "Redraw Path" button click.
-       * Reads the CURRENT selections from the table, validates them,
-       * and redraws the path on the map.
-       * This function IGNORES the textarea input.
-       */
       function handleRedraw() {
         const selectedCategories = readSelectedCategories();
-        const hasUnselected = selectedCategories.some(
-          v => !v || v === "__choose__"
-        );
+        const hasUnselected = selectedCategories.some(v => !v || v === "__choose__");
 
         if (hasUnselected) {
           unclassifiedWarning.style.display = "block";
-          updateStatus(
-            "Please select categories for the highlighted items.",
-            true
-          );
+          updateStatus("Please select categories for the highlighted items.", true);
           canvas.style.display = "none";
-          return; // Stop here
+          return;
         }
         unclassifiedWarning.style.display = "none";
 
         const points = categoriesToPoints(selectedCategories);
         if (points.length === 0) {
-          updateStatus(
-            "Could not find coordinates for any of the selected categories.",
-            true
-          );
-          return; // Stop here
+          updateStatus("Could not find coordinates for any of the selected categories.", true);
+          return;
         }
 
-        // On success, render the results.
         renderAll(points);
       }
 
-      /* ------------------------------ Events -------------------------------- */
+      /* -------------------------------- Events ------------------------------- */
       goBtn.addEventListener("click", handleGenerate);
       redrawBtn.addEventListener("click", handleRedraw);
 
-      /* ------------------------------ Helpers ------------------------------- */
+      /* ------------------------------- Helpers ------------------------------- */
       function updateStatus(message, isError = false) {
         statusMessage.style.display = "block";
         statusMessage.textContent = message;
         statusMessage.className = isError ? "status error" : "status";
         if (isError) canvas.style.display = "none";
       }
-      function distance(p1, p2) {
-        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      }
+
+      function distance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+
       function totalPathDistance(orderedPoints) {
         let d = 0;
-        for (let i = 1; i < orderedPoints.length; i++)
-          d += distance(orderedPoints[i - 1], orderedPoints[i]);
+        for (let i = 1; i < orderedPoints.length; i++) d += distance(orderedPoints[i - 1], orderedPoints[i]);
         return d;
       }
 
-      /* --------------------- TF-IDF Classification (unchanged) ------------------- */
-      function tokenize(text) {
-        return text.toLowerCase().match(/\b\w+\b/g) || [];
-      }
+      /* ---------------- TF-IDF Classification (unchanged) -------------------- */
+      function tokenize(text) { return text.toLowerCase().match(/\b\w+\b/g) || []; }
+
       const docCount = Object.keys(categories).length;
       const df = {};
       for (const [cat, words] of Object.entries(categories)) {
         const uniqueTokens = new Set(words.map(w => w.toLowerCase()));
         for (const token of uniqueTokens) df[token] = (df[token] || 0) + 1;
       }
+
       function tfidfVector(words) {
-        const tokens = tokenize(
-          Array.isArray(words) ? words.join(" ") : words
-        );
+        const tokens = tokenize(Array.isArray(words) ? words.join(" ") : words);
         const counts = {};
         tokens.forEach(t => (counts[t] = (counts[t] || 0) + 1));
         const vec = {};
@@ -469,14 +445,10 @@
         }
         return vec;
       }
+
       function cosineSim(vecA, vecB) {
-        let dot = 0,
-          normA = 0,
-          normB = 0;
-        const allTokens = new Set([
-          ...Object.keys(vecA),
-          ...Object.keys(vecB),
-        ]);
+        let dot = 0, normA = 0, normB = 0;
+        const allTokens = new Set([...Object.keys(vecA), ...Object.keys(vecB)]);
         allTokens.forEach(t => {
           const a = vecA[t] || 0;
           const b = vecB[t] || 0;
@@ -486,28 +458,25 @@
         });
         return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10);
       }
+
       const categoryVectors = {};
       for (const [cat, words] of Object.entries(categories)) {
         categoryVectors[cat] = tfidfVector(words);
       }
+
       function bestCategoryWithScore(text) {
         const inputVec = tfidfVector(tokenize(text));
-        let bestCat = null;
-        let bestScore = -Infinity;
+        let bestCat = null, bestScore = -Infinity;
         for (const [cat, vec] of Object.entries(categoryVectors)) {
           const score = cosineSim(inputVec, vec);
-          if (score > bestScore) {
-            bestScore = score;
-            bestCat = cat;
-          }
+          if (score > bestScore) { bestScore = score; bestCat = cat; }
         }
         return { category: bestCat, score: bestScore };
       }
-      function classifyItems(items) {
-        return items.map(it => bestCategoryWithScore(it));
-      }
 
-      /* -------------------- UI Building Functions -------------- */
+      function classifyItems(items) { return items.map(it => bestCategoryWithScore(it)); }
+
+      /* ------------------------ UI Building Functions ------------------------ */
       function buildClassificationEditor(items, classification) {
         editorHead.innerHTML = `<tr><th style="width:5%">#</th><th style="width:50%">Item</th><th>Category</th></tr>`;
         editorBody.innerHTML = "";
@@ -535,17 +504,15 @@
           select.className = "cat-select";
 
           if (needsHuman) {
-            const placeholder = Object.assign(
-              document.createElement("option"),
-              {
-                value: "__choose__",
-                textContent: "Select category…",
-                disabled: true,
-                selected: true,
-              }
-            );
+            const placeholder = Object.assign(document.createElement("option"), {
+              value: "__choose__",
+              textContent: "Select category…",
+              disabled: true,
+              selected: true,
+            });
             select.appendChild(placeholder);
           }
+
           allCats.forEach(c => {
             const opt = Object.assign(document.createElement("option"), {
               value: c,
@@ -554,9 +521,11 @@
             if (!needsHuman && c === category) opt.selected = true;
             select.appendChild(opt);
           });
+
           select.addEventListener("change", () => {
             tr.classList.remove("needs-category");
           });
+
           tdCat.appendChild(select);
           tr.appendChild(tdCat);
           editorBody.appendChild(tr);
@@ -565,28 +534,21 @@
 
       function updateEditorWithOrder(orderedPoints) {
         const coordToCat = Object.fromEntries(
-          Object.entries(coordinates).map(([cat, { x, y }]) => [
-            `${x}|${y}`,
-            cat,
-          ])
+          Object.entries(coordinates).map(([cat, { x, y }]) => [`${x}|${y}`, cat])
         );
-        const orderedCategories = orderedPoints
-          .slice(1, -1)
-          .map(p => coordToCat[`${p.x}|${p.y}`]);
+
+        const orderedCategories = orderedPoints.slice(1, -1).map(p => coordToCat[`${p.x}|${p.y}`]);
 
         const rowsByCategory = {};
         editorBody.querySelectorAll("tr.item-row").forEach(tr => {
           const category = tr.querySelector("select.cat-select").value;
           if (category && category !== "__choose__") {
-            if (!rowsByCategory[category]) {
-              rowsByCategory[category] = [];
-            }
+            if (!rowsByCategory[category]) rowsByCategory[category] = [];
             rowsByCategory[category].push(tr);
           }
         });
 
         const fragment = document.createDocumentFragment();
-
         orderedCategories.forEach((category, index) => {
           const stopNumber = index + 1;
           if (rowsByCategory[category]) {
@@ -602,120 +564,83 @@
       }
 
       function readSelectedCategories() {
-        return Array.from(document.querySelectorAll(".cat-select")).map(
-          s => s.value
-        );
+        return Array.from(document.querySelectorAll(".cat-select")).map(s => s.value);
       }
+
       function categoriesToPoints(selectedCategories) {
-        const unique = [
-          ...new Set(
-            selectedCategories.filter(v => v && v !== "__choose__")
-          ),
-        ];
+        const unique = [...new Set(selectedCategories.filter(v => v && v !== "__choose__"))];
         return unique.map(cat => coordinates[cat]).filter(Boolean);
       }
 
-      /* --------------------------- Path Algorithm -------------------------- */
-      /**
-       * Solves the Traveling Salesperson Problem for the given points.
-       * Uses a brute-force permutation approach for optimal results on small
-       * datasets, falling back to a faster heuristic for larger ones.
-       * @param {Array<Object>} points The points to visit.
-       * @returns {Array<Object>} The optimally ordered path.
-       */
+      /* -------------------------- Path Algorithm ----------------------------- */
       function solveTsp(points) {
         const cities = dedupeAndStripEntrance(points);
         if (cities.length === 0) return [ENTRANCE, ENTRANCE];
 
         const OPTIMAL_LIMIT = 20; // exact Held–Karp up to 20 stops
         if (cities.length <= OPTIMAL_LIMIT) {
-            const order = heldKarpTsp(cities);
-            return [ENTRANCE, ...order, ENTRANCE];
+          const order = heldKarpTsp(cities);
+          return [ENTRANCE, ...order, CHECKOUT];
         } else {
-            console.warn(
-            `> ${OPTIMAL_LIMIT} stops — using NN + 2-opt heuristic for speed.`
-            );
-            const order = twoOptImprove(nearestNeighborOrder(cities), cities);
-            return [ENTRANCE, ...order.map(i => cities[i]), ENTRANCE];
+          console.warn(`> ${OPTIMAL_LIMIT} stops — using NN + 2-opt heuristic for speed.`);
+          const order = twoOptImprove(nearestNeighborOrder(cities), cities);
+          return [ENTRANCE, ...order.map(i => cities[i]), CHECKOUT];
         }
       }
 
       function heldKarpTsp(cities) {
         const n = cities.length;
-        // Precompute distances (including to/from ENTRANCE)
         const dCity = Array.from({ length: n }, () => Array(n).fill(0));
         const dStart = Array(n).fill(0);
         const dEnd = Array(n).fill(0);
         for (let i = 0; i < n; i++) {
-            dStart[i] = distance(ENTRANCE, cities[i]);
-            dEnd[i] = distance(cities[i], ENTRANCE);
-            for (let j = 0; j < n; j++) {
-            dCity[i][j] = distance(cities[i], cities[j]);
-            }
+          dStart[i] = distance(ENTRANCE, cities[i]);
+          dEnd[i] = distance(cities[i], CHECKOUT);
+          for (let j = 0; j < n; j++) dCity[i][j] = distance(cities[i], cities[j]);
         }
 
         const size = 1 << n;
         const INF = 1e18;
-
-        // dp[mask][i] = best cost to reach subset "mask" ending at city i
         const dp = Array.from({ length: size }, () => Array(n).fill(INF));
         const parent = Array.from({ length: size }, () => Array(n).fill(-1));
 
-        // Base cases: start -> i
         for (let i = 0; i < n; i++) {
-            const m = 1 << i;
-            dp[m][i] = dStart[i];
+          const m = 1 << i;
+          dp[m][i] = dStart[i];
         }
 
-        // Transitions
         for (let mask = 1; mask < size; mask++) {
-            for (let i = 0; i < n; i++) {
-            if (!(mask & (1 << i))) continue; // i must be in mask
+          for (let i = 0; i < n; i++) {
+            if (!(mask & (1 << i))) continue;
             const prevMask = mask ^ (1 << i);
-            if (prevMask === 0) continue; // base case already set
+            if (prevMask === 0) continue;
             let best = dp[mask][i];
             let bestPrev = -1;
-            // try coming from j
             for (let j = 0; j < n; j++) {
-                if (!(prevMask & (1 << j))) continue;
-                const cand = dp[prevMask][j] + dCity[j][i];
-                if (cand < best) {
-                best = cand;
-                bestPrev = j;
-                }
+              if (!(prevMask & (1 << j))) continue;
+              const cand = dp[prevMask][j] + dCity[j][i];
+              if (cand < best) { best = cand; bestPrev = j; }
             }
-            if (best < dp[mask][i]) {
-                dp[mask][i] = best;
-                parent[mask][i] = bestPrev;
-            }
-            }
+            if (best < dp[mask][i]) { dp[mask][i] = best; parent[mask][i] = bestPrev; }
+          }
         }
 
-        // Close the tour: add i -> end
         const full = size - 1;
-        let bestCost = INF;
-        let last = -1;
+        let bestCost = INF, last = -1;
         for (let i = 0; i < n; i++) {
-            const cand = dp[full][i] + dEnd[i];
-            if (cand < bestCost) {
-            bestCost = cand;
-            last = i;
-            }
+          const cand = dp[full][i] + dEnd[i];
+          if (cand < bestCost) { bestCost = cand; last = i; }
         }
 
-        // Reconstruct path of indices
         const orderIdx = [];
-        let mask = full;
-        let cur = last;
+        let mask = full, cur = last;
         while (cur !== -1) {
-            orderIdx.push(cur);
-            const p = parent[mask][cur];
-            mask ^= 1 << cur;
-            cur = p;
+          orderIdx.push(cur);
+          const p = parent[mask][cur];
+          mask ^= 1 << cur;
+          cur = p;
         }
-        orderIdx.reverse(); // now in visiting order
-
-        // Map indices to actual point objects
+        orderIdx.reverse();
         return orderIdx.map(i => cities[i]);
       }
 
@@ -723,40 +648,36 @@
       function nearestNeighborOrder(cities) {
         const n = cities.length;
         const used = Array(n).fill(false);
-        // seed with closest to entrance
         let start = 0, best = Infinity;
         for (let i = 0; i < n; i++) {
-            const d = distance(ENTRANCE, cities[i]);
-            if (d < best) { best = d; start = i; }
+          const d = distance(ENTRANCE, cities[i]);
+          if (d < best) { best = d; start = i; }
         }
         const order = [start];
         used[start] = true;
         for (let k = 1; k < n; k++) {
-            const last = order[order.length - 1];
-            let bestJ = -1, bestD = Infinity;
-            for (let j = 0; j < n; j++) {
+          const last = order[order.length - 1];
+          let bestJ = -1, bestD = Infinity;
+          for (let j = 0; j < n; j++) {
             if (used[j]) continue;
             const d = distance(cities[last], cities[j]);
             if (d < bestD) { bestD = d; bestJ = j; }
-            }
-            order.push(bestJ);
-            used[bestJ] = true;
+          }
+          order.push(bestJ);
+          used[bestJ] = true;
         }
-        return order; // array of indices
-        }
+        return order;
+      }
 
-        function twoOptImprove(order, cities) {
+      function twoOptImprove(order, cities) {
         const n = order.length;
         if (n < 4) return order.slice();
 
-        // Helper to compute tour length from entrance -> order -> entrance
         const tourLen = ord => {
-            let sum = distance(ENTRANCE, cities[ord[0]]);
-            for (let i = 1; i < ord.length; i++) {
-            sum += distance(cities[ord[i - 1]], cities[ord[i]]);
-            }
-            sum += distance(cities[ord[ord.length - 1]], ENTRANCE);
-            return sum;
+          let sum = distance(ENTRANCE, cities[ord[0]]);
+          for (let i = 1; i < ord.length; i++) sum += distance(cities[ord[i - 1]], cities[ord[i]]);
+          sum += distance(cities[ord[ord.length - 1]], CHECKOUT);
+          return sum;
         };
 
         let improved = true;
@@ -764,30 +685,24 @@
         let bestLen = tourLen(bestOrder);
 
         while (improved) {
-            improved = false;
-            for (let i = 0; i < n - 2; i++) {
+          improved = false;
+          for (let i = 0; i < n - 2; i++) {
             for (let k = i + 2; k < n; k++) {
-                // Edges (i,i+1) and (k,k+1) — 2-opt swap
-                const newOrder = bestOrder.slice(0, i + 1)
+              const newOrder = bestOrder.slice(0, i + 1)
                 .concat(bestOrder.slice(i + 1, k + 1).reverse())
                 .concat(bestOrder.slice(k + 1));
-                const newLen = tourLen(newOrder);
-                if (newLen + 1e-9 < bestLen) {
+              const newLen = tourLen(newOrder);
+              if (newLen + 1e-9 < bestLen) {
                 bestOrder = newOrder;
                 bestLen = newLen;
                 improved = true;
-                }
+              }
             }
-            }
+          }
         }
         return bestOrder;
-        }
+      }
 
-      /**
-       * Generates all permutations of an array.
-       * @param {Array} arr The input array.
-       * @returns {Array<Array>} An array of all permutations.
-       */
       function getPermutations(arr) {
         if (arr.length === 0) return [[]];
         const firstEl = arr[0];
@@ -796,40 +711,26 @@
         const allPermutations = [];
         permsWithoutFirst.forEach(perm => {
           for (let i = 0; i <= perm.length; i++) {
-            const permWithFirst = [
-              ...perm.slice(0, i),
-              firstEl,
-              ...perm.slice(i),
-            ];
+            const permWithFirst = [...perm.slice(0, i), firstEl, ...perm.slice(i)];
             allPermutations.push(permWithFirst);
           }
         });
         return allPermutations;
       }
 
-      /**
-       * Fast heuristic for TSP using the Nearest Neighbor algorithm.
-       * @param {Array<Object>} cities The points to visit (must not include ENTRANCE).
-       * @returns {Array<Object>} The ordered path.
-       */
       function getNearestNeighborPath(cities) {
         const unvisited = [...cities];
         const path = [ENTRANCE];
         const distanceSq = (p1, p2) => {
-          const dx = p1.x - p2.x,
-            dy = p1.y - p2.y;
+          const dx = p1.x - p2.x, dy = p1.y - p2.y;
           return dx * dx + dy * dy;
         };
         while (unvisited.length > 0) {
           const current = path[path.length - 1];
-          let bestIdx = 0,
-            bestD = Infinity;
+          let bestIdx = 0, bestD = Infinity;
           for (let i = 0; i < unvisited.length; i++) {
             const d = distanceSq(current, unvisited[i]);
-            if (d < bestD) {
-              bestD = d;
-              bestIdx = i;
-            }
+            if (d < bestD) { bestD = d; bestIdx = i; }
           }
           path.push(unvisited.splice(bestIdx, 1)[0]);
         }
@@ -853,7 +754,7 @@
         return out;
       }
 
-      /* --------------------------- Rendering Logic -------------------------- */
+      /* --------------------------- Rendering Logic --------------------------- */
       function renderAll(points) {
         if (!defaultMapImage) {
           updateStatus("Map image missing.", true);
@@ -862,87 +763,69 @@
         const orderedPoints = solveTsp(points);
         drawImageAndPath(defaultMapImage, orderedPoints);
         updateEditorWithOrder(orderedPoints);
-        const dist = totalPathDistance(orderedPoints);
         const stops = Math.max(0, orderedPoints.length - 2);
-        updateStatus(
-          `Path generated through ${stops} stops.`,
-          false
-        );
+        updateStatus(`Path generated through ${stops} stops`, false);
       }
 
       function drawImageAndPath(img, orderedPoints) {
-  canvas.style.display = "block";
+        canvas.style.display = "block";
+        canvas.style.width = "100%";
+        canvas.style.height = "auto";
 
-  // 1) Make the canvas responsive to its container (no giant overflow).
-  canvas.style.width = "100%";
-  canvas.style.height = "auto";
+        const containerWidth = (canvas.parentElement && canvas.parentElement.clientWidth) || img.width;
+        const displayWidth = Math.min(containerWidth, img.width);
+        const scale = displayWidth / img.width;
+        const displayHeight = img.height * scale;
 
-  const containerWidth =
-    (canvas.parentElement && canvas.parentElement.clientWidth) || img.width;
+        const DPR = Math.max(1, window.devicePixelRatio || 1);
+        canvas.width = Math.round(displayWidth * DPR);
+        canvas.height = Math.round(displayHeight * DPR);
 
-  // We never render wider than the actual image pixels (avoid pointless upscaling).
-  const displayWidth = Math.min(containerWidth, img.width);
-  const scale = displayWidth / img.width;
-  const displayHeight = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(DPR * scale, 0, 0, DPR * scale, 0, 0);
+        ctx.clearRect(0, 0, img.width, img.height);
 
-  // 2) Hi-DPI crispness
-  const DPR = Math.max(1, window.devicePixelRatio || 1);
-  canvas.width = Math.round(displayWidth * DPR);
-  canvas.height = Math.round(displayHeight * DPR);
+        ctx.drawImage(img, 0, 0, img.width, img.height);
 
-  const ctx = canvas.getContext("2d");
-  // Scale drawing commands so all coordinates remain in the image’s native space.
-  ctx.setTransform(DPR * scale, 0, 0, DPR * scale, 0, 0);
-  ctx.clearRect(0, 0, img.width, img.height);
+        const base = Math.min(img.width, img.height);
+        const lineWidth = Math.max(4, Math.round(base * 0.006));
+        const pointRadius = Math.max(10, Math.round(lineWidth * 3));
+        const entranceRadius = Math.round(pointRadius * 1.35);
 
-  // 3) Draw the map at native coordinates (transform handles the scaling).
-  ctx.drawImage(img, 0, 0, img.width, img.height);
+        const T = p => ({ x: p.x, y: img.height - p.y });
 
-  // 4) Thicker lines & bigger markers (measured in native image units).
-  const base = Math.min(img.width, img.height);
-  const lineWidth = Math.max(4, Math.round(base * 0.006));       // chunky path
-  const pointRadius = Math.max(10, Math.round(lineWidth * 3));    // bigger dots
-  const entranceRadius = Math.round(pointRadius * 1.35);
+        if (orderedPoints.length >= 2) {
+          ctx.lineWidth = lineWidth;
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+          ctx.strokeStyle = "#ef4444";
+          ctx.beginPath();
+          const start = T(orderedPoints[0]);
+          ctx.moveTo(start.x, start.y);
+          for (let i = 1; i < orderedPoints.length; i++) {
+            const pt = T(orderedPoints[i]);
+            ctx.lineTo(pt.x, pt.y);
+          }
+          ctx.stroke();
+        }
 
-  // Flip-Y helper (your coordinates are bottom-left origin)
-  const T = p => ({ x: p.x, y: img.height - p.y });
-
-  // Path
-  if (orderedPoints.length >= 2) {
-    ctx.lineWidth = lineWidth;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#ef4444";
-    ctx.beginPath();
-    const start = T(orderedPoints[0]);
-    ctx.moveTo(start.x, start.y);
-    for (let i = 1; i < orderedPoints.length; i++) {
-      const pt = T(orderedPoints[i]);
-      ctx.lineTo(pt.x, pt.y);
-    }
-    ctx.stroke();
-  }
-
-  // Stops
-  ctx.lineWidth = Math.max(2, Math.round(lineWidth * 0.6));
-  ctx.strokeStyle = "#111827";
-  orderedPoints.forEach((p, i) => {
-    const tp = T(p);
-    const isEntrance = i === 0 || i === orderedPoints.length - 1;
-    ctx.beginPath();
-    ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00";
-    ctx.arc(tp.x, tp.y, isEntrance ? entranceRadius : pointRadius, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.stroke();
-  });
-}
-
-
-      /* ------------------------------ Init ---------------------------------- */
-      init();
-      function init() {
-        tryLoadDefaultMap();
+        ctx.lineWidth = Math.max(2, Math.round(lineWidth * 0.6));
+        ctx.strokeStyle = "#111827";
+        orderedPoints.forEach((p, i) => {
+          const tp = T(p);
+          const isEntrance = i === 0 || i === orderedPoints.length - 1;
+          ctx.beginPath();
+          ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00";
+          ctx.arc(tp.x, tp.y, isEntrance ? entranceRadius : pointRadius, 0, 2 * Math.PI);
+          ctx.fill();
+          ctx.stroke();
+        });
       }
+
+      /* --------------------------------- Init -------------------------------- */
+      (function init() {
+        tryLoadDefaultMap();
+      })();
     </script>
   </body>
 </html>
