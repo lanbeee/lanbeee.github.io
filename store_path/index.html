@@ -241,6 +241,7 @@
         .bottom-action { text-align: right; }
       }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pluralize/8.0.0/pluralize.min.js"></script>
   </head>
   <body>
     <div class="container">
@@ -299,21 +300,39 @@
       const categories = {
             "Fresh Produce": ["apple", "banana", "carrot", "lettuce", "grapes", "onion", "tomato", "cucumber", "strawberry", "spinach", "broccoli", "pear", "peach", "orange", "avocado", "potato"
               ,"fruit", "vegetable", "salad", "melon", "kiwi", "mango", "pineapple", "watermelon", "cabbage", "cauliflower", "celery", "corn", "eggplant", "garlic", "leek", "mushroom", "pepper", "radish", "squash", "zucchini", "asparagus", "artichoke", "beet", "brussels sprouts", "chard", "cherry", "clementine", "fig", "grapefruit", "honeydew", "nectarine", "papaya", "plum", "pomegranate", "raspberry", "tangerine"
-              ,"herb", "cilantro", "parsley", "basil", "mint", "dill", "rosemary", "thyme", "oregano", "sage", "chives", "lavender", "lemongrass"
+              ,"herb", "cilantro", "parsley", "basil", "mint", "dill", "rosemary", "thyme", "oregano", "sage", "chives", "lavender", "lemongrass",
+              "lemon", "lime", 
+              "blueberry", "blackberry", "cranberry", "currant", "gooseberry", "jackfruit", "longan", "loquat", "persimmon", "rambutan", "starfruit",
+              "cantaloupe", "honeydew melon", "casaba melon", "canary melon", "galia melon", "sugar snap peas", "snow peas", "edamame", "fennel", "jicama", "kale", "collard greens", "mustard greens", "turnip greens", "watercress", "bok choy", "napa cabbage", "savoy cabbage", "radicchio", "endive"
             ],
             "Frozen": ["frozen", "ice cream", "pizza", "fries", "veggies", "popsicle", "lasagna", "frozen dinner", "fish sticks", "nuggets"
               ,"frozen fruit", "frozen vegetable", "frozen meal", "frozen entree", "frozen appetizer", "frozen breakfast", "frozen dessert", "frozen yogurt", "ice cream sandwich", "sorbet", "gelato", "frozen pie", "frozen cake", "frozen cookie dough", "frozen waffle", "frozen pancake", "frozen burrito", "frozen taco", "frozen meatball", "frozen sausage", "frozen chicken tenders", "frozen fish fillet",
-              "frozen shrimp", "frozen crab", "frozen lobster", "frozen seafood", "frozen vegetable mix", "frozen fruit mix", "frozen smoothie", "frozen juice", "frozen cocktail", "frozen margarita", "frozen daiquiri", "frozen piña colada"
+              "frozen shrimp", "frozen crab", "frozen lobster", "frozen seafood", "frozen vegetable mix", "frozen fruit mix", "frozen smoothie", "frozen juice", "frozen cocktail", "frozen margarita", "frozen daiquiri", "frozen piña colada",
+              "frozen spinach", "frozen broccoli", "frozen cauliflower", "frozen peas", "frozen corn", "frozen green beans", "frozen carrots", "frozen mixed vegetables", "frozen stir-fry vegetables", "frozen edamame", "frozen okra", "frozen asparagus", "frozen brussels sprouts", "frozen kale", "frozen collard greens", "frozen mustard greens", "frozen turnip greens",
+              "frozen pizza rolls", "frozen pizza pockets", "frozen calzone", "frozen stromboli", "frozen garlic bread", "frozen breadsticks", "frozen pretzels", "frozen mozzarella sticks", "frozen jalapeño poppers", "frozen onion rings", "frozen tater tots", "frozen hash browns", "frozen breakfast sandwich", "frozen breakfast burrito", "frozen breakfast bowl"
+              ,"frozen chicken nuggets", "frozen chicken wings", "frozen chicken strips", "frozen chicken patties", "frozen chicken breast", "frozen chicken thigh", "frozen chicken drumstick", "frozen chicken leg", "frozen chicken whole",
             ],
             "Grocery": ["rice", "flour", "oil", "pasta", "canned", "sugar", "spices", "cereal", "beans", "soup", "sauce", "ketchup", "mustard"
+              ,"white rice", "brown rice", "basmati rice", "jasmine rice", "wild rice", "arborio rice", "sushi rice", "rice noodles", "rice paper",
               ,"bread crumbs", "baking powder", "baking soda", "brown sugar", "cornstarch", "couscous", "croutons", "dried fruit", "granola", "honey", "jam", "jelly", "maple syrup", "molasses", "nut butter", "oats", "peanut butter", "pita bread", "popcorn kernels", "quinoa", "salsa", "soy sauce", "syrup", "tortilla chips", "vinegar", "walnuts", "yeast",
               "canned beans", "canned corn", "canned fruit", "canned vegetables", "canned tuna", "canned chicken", "canned salmon", "canned soup", "canned chili", "canned stew", "canned pasta sauce", "canned tomato sauce", "canned coconut milk",
               "instant noodles", "ramen noodles", "macaroni and cheese", "instant rice", "instant oatmeal",
               "pasta sauce", "alfredo sauce", "marinara sauce", "pesto sauce", "barbecue sauce", "hot sauce", "salad dressing", "mayonnaise", "pickles", "olives", "capers",
               "spaghetti", "fettuccine", "penne", "rotini", "linguine", "macaroni", "lasagna noodles", "angel hair pasta", "canned soup", "canned broth", "canned stock",
+              "vegetable broth", "chicken broth", "beef broth", "miso soup", "tomato soup", "chicken noodle soup", "clam chowder", "minestrone soup", "lentil soup", "black bean soup",
               "canned beans", "canned lentils", "canned chickpeas", "canned black beans", "canned kidney beans", "canned pinto beans", "canned refried beans", "canned baked beans", "canned chili beans", "canned green beans", "canned peas", "canned carrots", "canned mushrooms", "canned potatoes", "canned yams", "canned pumpkin",
               "evaporated milk", "condensed milk", "coconut milk", "almond milk", "soy milk", "oat milk", "rice milk", "cashew milk", "hemp milk", "flax milk",
               "powdered milk", "dry milk", "instant milk", "non-dairy creamer", "coffee creamer", "whipped topping",
+              "pancake mix", "waffle mix", "cornbread mix", "muffin mix", "brownie mix", "cake mix", "cookie mix", "bread mix",
+              "instant pudding", "gelatin dessert", "fruit snacks", "fruit leather", "fruit cups", "applesauce cups",
+              "ramen", "instant ramen", "cup noodles", "soup mix", "broth mix", "stock mix",
+              "Boxed dinner kits", "meal kits", "pasta kits", "rice kits", "grain bowls", "stir fry kits", "salad kits", "wrap kits"
+              ,"strawberry jam", "blueberry jam", "raspberry jam", "apricot jam", "peach jam", "orange marmalade", "grape jelly", "mixed fruit jelly", "spicy jelly", "seedless jelly", "chunky jelly",
+              "almond butter", "cashew butter", "sunflower seed butter", "hazelnut spread", "chocolate spread",
+              "olive oil", "vegetable oil", "canola oil", "coconut oil", "avocado oil", "sesame oil", "peanut oil", "grapeseed oil", "sunflower oil", "safflower oil", "walnut oil", "pumpkin seed oil",
+              "stuffing mix", "gravy mix", "sauce mix", "curry paste", "curry powder", "taco seasoning", "chili powder", "italian seasoning", "herbes de provence", "poultry seasoning", "sea salt", "kosher salt", "table salt", "black pepper", "white pepper", "red pepper flakes", "paprika", "cumin", "turmeric", "coriander", "cinnamon", "nutmeg", "cloves", "allspice", "ginger", "cardamom", "vanilla extract", "almond extract",
+              "stevia", "splenda", "artificial sweetener", "agave nectar", "date syrup", "brown rice syrup",
+              "chickpea pasta", "lentil pasta", "quinoa pasta", "zucchini noodles", "spaghetti squash", "spaghetti squash noodles"
             ],
             "Snacks and Beverages": ["chips", "soda", "cookies", "juice", "snack", "pepsi", "coke", "candy", "crackers", "popcorn", "gatorade", "monster", "red bull", "fanta", "sprite", "7up", "dr pepper", "root beer", "ginger ale", "tonic water", "club soda", "energy drink", "sports drink", "canada dry", "seltzer water", "diet coke", "diet pepsi", "diet soda", "bottled water", "mineral water", "flavored soda", "fruit punch", "lemon-lime soda", "cola", "orange soda", "grape soda", "cream soda", "chocolate milk", "almond milk drink", "soy milk drink", "iced latte", "frappuccino",
               "water", "tea", "coffee", "energy drink", "trail mix", "granola bar", "protein bar", "fruit snack", "beef jerky", "nuts", "seeds", "dried fruit", "rice cake", "pudding cup", "yogurt cup", "cheese stick", "fruit cup", "applesauce cup",
@@ -322,14 +341,21 @@
               "iced tea", "bottled tea", "bottled coffee", "cold brew coffee",
               "hot chocolate mix", "instant coffee", "tea bags",
               "soda can", "soda bottle", "juice box", "juice pouch",
+              "almonds", "cashews", "peanuts", "walnuts", "pecans", "macadamia nuts", "hazelnuts", "pistachios", "sunflower seeds", "pumpkin seeds", "chia seeds", "flax seeds",
+              "raisins", "dried cranberries", "dried apricots", "dates", "dried mango", "dried pineapple", "dried banana chips",
               "energy shot",
+              "kombucha", "matcha drink", "yerba mate drink",
+              "hot chocolate", "instant hot chocolate", "marshmallows"
+              ,"popcorn", "microwave popcorn", "kettle corn", "cheese popcorn", "caramel popcorn", "butter popcorn", "gourmet popcorn",
+              "potato chips", "tortilla chips", "corn chips", "veggie chips", "pretzels", "rice crackers", "cheese crackers", "whole grain crackers", "multigrain crackers", "gluten-free crackers", "saltine crackers", "graham crackers", "animal crackers", "cheese puffs", "pita chips", "bagel chips", "flatbread crackers",
             ],
             "Dairy": ["milk", "cheese", "butter", "yogurt", "cream", "whipped cream", "cottage cheese","eggs", "half and half", "sour cream", "cream cheese", "feta cheese", "mozzarella cheese", "cheddar cheese", "parmesan cheese", "swiss cheese", "provolone cheese", "blue cheese", "goat cheese", "ricotta cheese", "colby jack cheese", "monterey jack cheese", "pepper jack cheese", "gouda cheese", "brie cheese", "camembert cheese", "mascarpone cheese", "quark cheese",
               "lactose-free milk", "almond milk", "soy milk", "oat milk", "coconut milk", "cashew milk", "rice milk", "hemp milk", "flax milk", "macadamia milk", "pea milk", "walnut milk", "hazelnut milk",
               "dairy-free yogurt", "plant-based yogurt", "dairy-free butter", "plant-based butter", "dairy-free cheese", "plant-based cheese",
+              "margarine", "whipped topping", "non-dairy creamer", "coffee creamer",
             ],
             "Bakery": ["bread", "cake", "donut", "croissant", "bagel", "muffin", "rolls", "pastry", "cupcake", "pie"
-              ,"white bread", "whole wheat bread", "multigrain bread", "sourdough bread", "rye bread", "pumpernickel bread", "ciabatta bread", "focaccia bread", "brioche bread", "naan bread", "tortilla", "flatbread", "baguette", "english muffin", "hot dog bun", "hamburger bun", "sub roll", "pretzel bun",
+              ,"white bread", "whole wheat bread", "multigrain bread", "sourdough bread", "rye bread", "pumpernickel bread", "ciabatta bread", "focaccia bread", "brioche bread", "naan bread", "tortilla", "flatbread", "baguette", "english muffin", "hot dog bun", "hamburger bun", "sub roll", "pretzel bun","pretzel", "croissant", "danish", "strudel", "turnover", "eclair", "cream puff",
               "gluten-free bread", "gluten-free bagel", "gluten-free muffin", "gluten-free roll", "gluten-free pastry",
               "birthday cake", "chocolate cake", "vanilla cake", "red velvet cake", "carrot cake", "cheesecake", "fruitcake",
               "doughnut hole", "glazed doughnut", "chocolate doughnut", "jelly doughnut", "cruller", "old fashioned doughnut",
@@ -345,6 +371,10 @@
               ,"cold cut", "cold cut platter", "charcuterie board", "cheese platter", "fruit platter", "veggie platter",
               "potato salad", "macaroni salad", "coleslaw", "pasta salad", "green salad", "caesar salad", "garden salad",
               "hummus platter", "antipasto platter", "sushi platter", "sushi roll", "sashimi", "nigiri", "temaki", "california roll", "spicy tuna roll", "philadelphia roll", "dragon roll", "rainbow roll",
+              "hummus", "tabbouleh", "baba ganoush", "tzatziki",
+              "pepperoni", "mortadella", "prosciutto", "capicola", "bologna", "pastrami", "corned beef",
+              "lunch meat"
+          
             ],
             "Pets": ["dog", "cat", "pet food", "litter", "treats", "kibble", "aquarium", "leash", "toys"
               ,"dog food", "cat food", "pet treats", "dog treats", "cat treats", "puppy food", "kitten food", "senior dog food", "senior cat food",
@@ -352,12 +382,14 @@
               "dog chew toy",
             ],
             "Cleaning": ["detergent", "disinfectant", "bleach", "soap", "mop", "wipes", "cleaner", "sanitizer", "polish","detergent", "fabric softener", "stain remover", "bleach", "cleaning cloths", "microfiber cloths", "sponges", "scrub pads", "toilet cleaner", "glass cleaner", "floor cleaner", "all-purpose cleaner",
-              "laundry booster", "color catcher", "wrinkle releaser", "fabric refresher", "dryer balls", "scent booster", "laundry scent beads", "laundry detergent pods", "dish soap", "dishwasher detergent", "dishwasher rinse aid", "dishwasher cleaner", "garbage disposal cleaner", "kitchen cleaner", "bathroom cleaner", "tile cleaner", "grout cleaner", "mold and mildew remover", "air freshener", "odor eliminator",
+              "laundry booster", "color catcher", "wrinkle releaser", "fabric refresher", "dryer sheets","dryer balls", "scent booster", "laundry scent beads", "laundry detergent pods", "dish soap", "dishwasher detergent", "dishwasher rinse aid", "dishwasher cleaner", "garbage disposal cleaner", "kitchen cleaner", "bathroom cleaner", "tile cleaner", "grout cleaner", "mold and mildew remover", "air freshener", "odor eliminator",
               "broom", "dustpan", "vacuum cleaner", "carpet cleaner", "steam cleaner", "mop bucket", "spray mop", "floor scrubber", "pressure washer",
             ],
             "House Supplies": ["paper towels", "toilet paper", "trash bags", "foil", "napkins", "plastic wrap", "plates", "cups",
               "disposable plates", "disposable cups", "disposable utensils", "plastic cutlery", "paper napkins", "paper towels", "toilet paper rolls", "facial tissues", "kitchen towels", "cleaning wipes", "disinfecting wipes", "garbage bags", "recycling bags", "compost bags", "aluminum foil", "plastic wrap", "wax paper", "parchment paper", "baking cups", "baking liners", "cake boards", "cupcake liners", "food storage bags", "food storage containers", "plastic containers", "glass containers", "silicone bags", "beeswax wraps",
               "disposable gloves", "rubber gloves", "cleaning gloves", "latex gloves", "nitrile gloves", "vinyl gloves", "dishwashing gloves", "household gloves"
+              ,"tissue", "facial tissue", "handkerchief", "wet wipes", "baby wipes", "flushable wipes", "antibacterial wipes", "makeup remover wipes", "sanitary wipes"
+              ,"freezer bags", "sandwich bags", "snack bags", "gallon bags", "quart bags", "pint bags", "half-gallon bags", "food storage bags", "zipper bags", "resealable bags", "vacuum seal bags",
             ],
             "Office Supplies": ["pen", "pencil", "notebook", "paper", "stapler", "marker", "highlighter", "binder", "envelope"
               ,"sticky notes", "index cards", "file folders", "hanging file folders", "file box", "file cabinet", "desk organizer", "desk lamp", "paper clips", "binder clips", "rubber bands", "tape dispenser", "scotch tape", "masking tape", "packing tape", "glue stick", "white-out", "correction tape", "calculator", "calendar", "planner", "address book",
@@ -375,8 +407,8 @@
               ,"exploding kittens", "catan", "monopoly", "clue", "risk", "scrabble", "ticket to ride", "carcassonne", "pandemic", "codenames", "7 wonders", "azul", "splendor", "dixit", "mysterium", "kingdomino", "sushi go", "love letter", "ludo", "chess", "checkers", "backgammon", "go", "mahjong", "dominoes", "jenga", "connect 4", "operation", "twister", "battleship"
             ],
             "Sports": ["ball", "bat", "soccer", "basketball", "tennis", "fitness", "weights", "yoga", "treadmill", "golf"
-              ,"bicycle", "helmet", "gloves", "knee pads", "elbow pads", "wrist guards", "skateboard", "rollerblades", "scooter", "jump rope", "hula hoop", "frisbee", "kite", "water bottle", "gym bag", "towel", "sunscreen", "sunglasses", "hat", "cap", "visor", "running shoes", "cycling shoes", "cleats", "swimwear", "goggles", "swim cap", "towel", "yoga mat", "resistance bands", "foam roller", "exercise ball", "dumbbells", "kettlebells", "medicine ball", "pull-up bar", "ab roller", "fitness tracker", "heart rate monitor", "sports watch", "bike lock", "bike pump", "bike light", "bike computer", "bike rack", "golf clubs", "golf balls", "golf tees", "golf bag", "tennis racket", "tennis balls", "baseball glove", "baseball bat", "softball glove", "softball bat", "football", "soccer ball", "volleyball", "basketball hoop"
-              ,"tent", "sleeping bag", "backpack", "hiking boots", "compass", "flashlight", "lantern", "camp stove", "cooler", "water bottle", "first aid kit", "insect repellent", "sunscreen", "map", "whistle", "multi-tool", "binoculars", "fishing rod", "fishing reel", "fishing line", "fishing tackle box", "fishing bait", "kayak", "canoe", "paddle", "life jacket", "swimsuit", "snorkel", "goggles", "diving mask", "surfboard", "bodyboard", "beach towel", "beach umbrella", "picnic blanket", "frisbee", "kite"
+              ,"bicycle", "helmet", "gloves", "knee pads", "elbow pads", "wrist guards", "skateboard", "rollerblades", "scooter", "jump rope", "hula hoop", "frisbee", "kite", "water bottle", "gym bag", "towel", "sunglasses", "hat", "cap", "visor", "running shoes", "cycling shoes", "cleats", "swimwear", "goggles", "swim cap", "towel", "yoga mat", "resistance bands", "foam roller", "exercise ball", "dumbbells", "kettlebells", "medicine ball", "pull-up bar", "ab roller", "fitness tracker", "heart rate monitor", "sports watch", "bike lock", "bike pump", "bike light", "bike computer", "bike rack", "golf clubs", "golf balls", "golf tees", "golf bag", "tennis racket", "tennis balls", "baseball glove", "baseball bat", "softball glove", "softball bat", "football", "soccer ball", "volleyball", "basketball hoop"
+              ,"tent", "sleeping bag", "backpack", "hiking boots", "compass", "flashlight", "lantern", "camp stove", "cooler", "water bottle", "first aid kit", "insect repellent",  "whistle", "multi-tool", "binoculars", "fishing rod", "fishing reel", "fishing line", "fishing tackle box", "fishing bait", "kayak", "canoe", "paddle", "life jacket", "swimsuit", "snorkel", "goggles", "diving mask", "surfboard", "bodyboard", "beach towel", "beach umbrella", "picnic blanket", "frisbee", "kite"
             ],
             "Baby": ["diaper", "formula", "stroller", "crib", "pacifier", "bottle", "wipes", "highchair", "car seat", "onesie", "baby food", "changing pad", "baby monitor", "teething toy"
               ,"wipes", "diaper rash cream", "baby lotion", "baby shampoo", "baby powder", "baby oil", "baby wash", "diaper bag", "changing table", "baby swing", "bouncer", "play mat", "activity gym", "teether", "rattle", "baby toy", "crib mattress", "crib sheets", "bassinet", "pack and play", "baby carrier", "nursing pillow", "breast pump", "nursing pads", "bottle warmer", "bottle sterilizer", "formula dispenser", "baby food maker", "baby utensils", "sippy cup", "high chair cover",
@@ -415,7 +447,7 @@
               "can opener", "bottle opener", "corkscrew", "salad spinner", "ice cube tray", "thermometer", "timer", "apron", "oven mitts", "pot holders", "trivet", "food storage container", "plastic wrap", "aluminum foil", "wax paper", "baking paper", "kitchen scale", "recipe book", "cookbook stand", "spice rack", "knife block", "dish drying mat",
               "dish rack", "soap dispenser", "sponge holder", "trash can", "knives block", "utensil holder", "paper towel holder", "napkin holder", "spice rack", "recipe book stand", "kitchen scale", "bread box", "cookie jar", "water filter pitcher"
             ],
-            "Laundry": [ "laundry basket", "dryer sheets", "iron", "ironing board", "clothes hangers", "hamper",
+            "Laundry": [ "laundry basket", "iron", "ironing board", "clothes hangers", "hamper",
               "clothes pins", "drying rack", "laundry bag", "mesh laundry bag", "delicates bag", "garment steamer",
               "ironing spray", "sizing spray", "fabric refresher", "lint roller", "sewing kit"
             ],
@@ -426,16 +458,22 @@
               "bedside", "nightstand", "headboard", "footboard", "bed canopy", "bed tray", "bed caddy", "mattress topper", "pillow top", "bed riser",
               "loft bed", "bunk bed", "trundle bed", "daybed", "futon", "sofa bed"],
             "Bath and shower": ["towel", "shower curtain", "bath mat", "soap dish", "toothbrush holder", "mirror", "scale", "toilet brush", "plunger", "trash can", "bathrobe", "loofah", "shower caddy", "washcloths", "liners", "tub", "hooks", "shampoo rack"],
-            "Health": ["vitamin", "supplement", "bandage", "thermometer", "pain reliever", "ibuprofen", "aspirin", "medication", "cough syrup", "first aid", "ointment", "antibiotic", "medicine",
+            "Health": ["vitamin", "supplement", "bandage", "band aid", "thermometer", "pain reliever", "ibuprofen", "aspirin", "medication", "cough syrup", "first aid", "ointment", "antibiotic", "medicine",
               "eye drops", "ear drops", "nasal spray", "inhaler", "allergy relief", "cold medicine", "flu medicine", "digestive aid", "probiotic", "antacid", "laxative", "anti-diarrheal", "antifungal", "antiseptic", "hydrocortisone", "calamine lotion", "foot powder",
               "muscle rub", "heat pack", "cold pack", "ice pack", "hot water bottle", "heating pad", "massager", "blood pressure monitor", "glucose meter", "cholesterol tester", "pulse oximeter", "CPR mask", "first aid kit"],
-            "Personal Care": ["body wash", "shampoo", "conditioner", "soap", "toothpaste", "toothbrush", "deodorant", "razor", "shaving cream", "lotion", "mouthwash", "floss", "moisturizer"],
+            "Personal Care": ["body wash", "shampoo", "conditioner", "soap", "toothpaste", "toothbrush", "deodorant", "razor", "shaving cream", "lotion", "mouthwash", "floss", "moisturizer",
+              "Chapstick", "sunscreen", "aftershave", 
+              "hair gel", "hair spray", "hair mousse", "hair serum", "hair oil", "hair mask", "face wash", "facial cleanser", "toner", "exfoliator", "face scrub", "face mask", "eye cream", "lip balm", "nail clippers", "nail file", "cuticle pusher", "tweezers", "cotton pads", "cotton swabs",
+              "feminine hygiene", "sanitary pads", "tampons", "menstrual cup", "panty liners", "intimate wash", "body powder", "foot powder", "hand sanitizer", "antibacterial wipes", "bath salts", "bubble bath", "bath oil", "bath bomb", "loofah", "body brush", "pumice stone"
+            ],
             "Beauty": ["makeup", "lipstick", "foundation", "mascara", "eyeliner", "nail polish", "perfume", "cologne", "style", "hair spray", "hair gel", "dye",
               "brush", "comb", "curler", "straightener", "blow dryer", "tweezers",  "cotton pads", "cotton swabs", "face mask", "scrub", "serum", "cleanser",
-              "toner", "exfoliator", "sunscreen", "aftershave", "hair color", "nail file", "nail clippers", "cuticle pusher", "makeup remover"],
+              "toner", "exfoliator", "hair color", "nail file", "nail clippers", "cuticle pusher", "makeup remover"],
             "Hardware": ["screwdriver", "hammer", "drill", "wrench", "pliers", "nails", "screws", "saw", "tape measure", "level", "bolt", "nut", "washer", "ladder", "flashlight", "batteries", "extension cord", "glue gun", "plumbing",
               "electrical", "toolbox", "workbench", "vise", "clamp", "chisel", "file", "sandpaper", "paintbrush", "roller", "drop cloth", "safety glasses", "ear protection", "dust mask", "work gloves", "tool belt",
-              "caulk", "sealant", "insulation", "lumber", "pipe", "fitting", "valve", "hinge", "lock", "chain", "padlock", "cable", "rope", "hook", "bracket", "shelf bracket", "corner brace", "angle bracket"],
+              "caulk", "sealant", "insulation", "lumber", "pipe", "fitting", "valve", "hinge", "lock", "chain", "padlock", "cable", "rope", "hook", "bracket", "shelf bracket", "corner brace", "angle bracket"
+              ,"light bulb", "light fixture", "switch", "outlet", "circuit breaker", "fuse", "wire", "cable ties", "zip ties", "duct tape", "electrical tape", "plumber's tape", "teflon tape", "pipe wrench", "pipe cutter", "plunger", "drain snake", "toilet auger", "faucet repair kit", "shower repair kit", "toilet repair kit",
+            ],
             "Paint": ["paint", "roller", "brush", "primer", "spray paint", "paint thinner", "drop cloth", "painter's tape", "stir stick", "paint tray", "sandpaper", "putty", "caulk", "wallpaper", "wall decal", "paint sprayer",
               "paint can opener", "paint edger", "paint shield", "paint roller extension", "paint roller cover", "paint roller frame", "paint roller tray liner",
               "paint roller cleaner", "paint roller spinner", "paint roller washer", "paint roller cage", "paint roller grid"],
@@ -458,7 +496,9 @@
       const mapStatus = document.getElementById("map-status");
       const editorHead = document.getElementById("editor-head");
       const editorBody = document.getElementById("editor-body");
-      const unclassifiedWarning = document.getElementById("unclassified-warning");
+      const unclassifiedWarning = document.getElementById(
+        "unclassified-warning"
+      );
       const mergedPanel = document.getElementById("merged-panel");
 
       /* ------------------------------ Map Image ------------------------------ */
@@ -467,6 +507,7 @@
         const img = new Image();
         img.onload = () => {
           defaultMapImage = img;
+          // mapStatus.textContent = "Map: walmart_map.JPG (loaded)";
           mapStatus.textContent = "";
         };
         img.onerror = () => {
@@ -476,8 +517,14 @@
         img.src = "walmart_map.JPG";
       }
 
-      /* ------------------------------ Core Logic ---------------------------- */
-      function handleGenerate() {
+      /* ------------------------------ Core Logic -------------------------------- */
+
+      /**
+       * Handles the "Generate Path" button click.
+       * Reads the textarea, classifies items, builds the editor table,
+       * and then attempts to draw the initial path.
+       */
+      async function handleGenerate() {
         const text = itemInput.value.trim().replace(/[,;]+/g, "\n");
         const items = text.split("\n").map(s => s.trim()).filter(Boolean);
         if (items.length === 0) {
@@ -485,107 +532,269 @@
           return;
         }
 
-        const classification = classifyItems(items);
+        updateStatus("Classifying items…");
+        const classification = await classifyItems(items); // <-- now async
         buildClassificationEditor(items, classification);
 
         mergedPanel.style.display = "block";
         handleRedraw();
       }
 
+      /**
+       * Handles the "Redraw Path" button click.
+       * Reads the CURRENT selections from the table, validates them,
+       * and redraws the path on the map.
+       * This function IGNORES the textarea input.
+       */
       function handleRedraw() {
         const selectedCategories = readSelectedCategories();
-        const hasUnselected = selectedCategories.some(v => !v || v === "__choose__");
+        const hasUnselected = selectedCategories.some(
+          v => !v || v === "__choose__"
+        );
 
         if (hasUnselected) {
           unclassifiedWarning.style.display = "block";
-          updateStatus("Please select categories for the highlighted items.", true);
+          updateStatus(
+            "Please select categories for the highlighted items.",
+            true
+          );
           canvas.style.display = "none";
-          return;
+          return; // Stop here
         }
         unclassifiedWarning.style.display = "none";
 
         const points = categoriesToPoints(selectedCategories);
         if (points.length === 0) {
-          updateStatus("Could not find coordinates for any of the selected categories.", true);
-          return;
+          updateStatus(
+            "Could not find coordinates for any of the selected categories.",
+            true
+          );
+          return; // Stop here
         }
 
+        // On success, render the results.
         renderAll(points);
       }
 
-      /* -------------------------------- Events ------------------------------- */
+      /* ------------------------------ Events -------------------------------- */
       goBtn.addEventListener("click", handleGenerate);
       redrawBtn.addEventListener("click", handleRedraw);
 
-      /* ------------------------------- Helpers ------------------------------- */
+      /* ------------------------------ Helpers ------------------------------- */
       function updateStatus(message, isError = false) {
         statusMessage.style.display = "block";
         statusMessage.textContent = message;
         statusMessage.className = isError ? "status error" : "status";
         if (isError) canvas.style.display = "none";
       }
-
-      function distance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
-
+      function distance(p1, p2) {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      }
       function totalPathDistance(orderedPoints) {
         let d = 0;
-        for (let i = 1; i < orderedPoints.length; i++) d += distance(orderedPoints[i - 1], orderedPoints[i]);
+        for (let i = 1; i < orderedPoints.length; i++)
+          d += distance(orderedPoints[i - 1], orderedPoints[i]);
         return d;
       }
 
-      /* ---------------- TF-IDF Classification (unchanged) -------------------- */
-      function tokenize(text) { return text.toLowerCase().match(/\b\w+\b/g) || []; }
+      /* ---------- Keyword+Stem -> LLM fallback classification ---------- */
+/** very small tokenizer */
+function tokenize(text) {
+  return (text.toLowerCase().match(/[a-z0-9]+(?:'[a-z0-9]+)?/g) || []);
+}
 
-      const docCount = Object.keys(categories).length;
-      const df = {};
-      for (const [cat, words] of Object.entries(categories)) {
-        const uniqueTokens = new Set(words.map(w => w.toLowerCase()));
-        for (const token of uniqueTokens) df[token] = (df[token] || 0) + 1;
+/** ultra-simple stemmer (good enough for grocery terms) */
+// function stemWord(w) {
+//   w = w.toLowerCase();
+
+//   // --- plural normalization (order matters) ---
+//   if (w.length > 5 && w.endsWith("ives")) return w.slice(0, -4) + "ife"; // knives -> knife, wives -> wife, lives -> life
+//   if (w.length > 4 && w.endsWith("ves"))  return w.slice(0, -3) + "f";   // leaves -> leaf, loaves -> loaf, shelves -> shelf
+//   if (w.length > 4 && w.endsWith("ies"))  return w.slice(0, -3) + "y";   // berries -> berry, batteries -> battery
+//   if (w.length > 4 && w.endsWith("oes"))  return w.slice(0, -2);         // tomatoes -> tomato, potatoes -> potato, heroes -> hero
+//   if (w.length > 4 && /(xes|ches|shes|sses|zzes)$/.test(w)) return w.slice(0, -2); // boxes -> box, dishes -> dish, glasses -> glass
+//   if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) return w.slice(0, -1); // apples -> apple, but keep "glass" & "bass"
+
+//   // --- light verb/participle endings ---
+//   if (w.length > 5 && w.endsWith("ing")) return w.slice(0, -3); // dressing -> dress
+//   if (w.length > 4 && w.endsWith("ed"))  return w.slice(0, -2); // grated -> grat(e) (good enough for matching)
+
+//   return w;
+// }
+
+// REPLACE ONLY THIS FUNCTION
+function stemWord(w) {
+  // normalize plural nouns robustly (tomatoes -> tomato, knives -> knife, etc.)
+  const singular = (window.pluralize && typeof window.pluralize.singular === 'function')
+    ? window.pluralize.singular(String(w).toLowerCase())
+    : String(w).toLowerCase();
+
+  // light verb normalization (optional, keeps grocery nouns intact)
+  if (singular.length > 5 && singular.endsWith("ing")) return singular.slice(0, -3);
+  if (singular.length > 4 && singular.endsWith("ed"))  return singular.slice(0, -2);
+
+  return singular;
+}
+
+
+
+function stemPhrase(s) {
+  return tokenize(s).map(stemWord).join(" ");
+}
+
+/** build a stemmed keyword index once */
+const stemmedCategoryKeywords = (() => {
+  const map = {};
+  for (const [cat, words] of Object.entries(categories)) {
+    // de-duplicate and pre-stem all category keywords/phrases
+    const set = new Set(words.map(stemPhrase));
+    map[cat] = set;
+  }
+  return map;
+})();
+
+/** Try simple keyword/phrase match (with stemming). Returns {category, score} or null */
+function keywordMatchCategory(itemText) {
+  const itemStemmed = stemPhrase(itemText);
+  // prefer the longest matching phrase to disambiguate (e.g., "brussels sprouts" vs "sprouts")
+  let best = null;
+  for (const [cat, stems] of Object.entries(stemmedCategoryKeywords)) {
+    for (const kw of stems) {
+      // exact token/phrase presence check on the stemmed string
+      // add spaces around to avoid partial-token false positives
+      if ((" " + itemStemmed + " ").includes(" " + kw + " ")) {
+        const score = kw.length; // longer phrase = higher score
+        if (!best || score > best._len) best = { category: cat, score: 1, _len: score };
       }
+    }
+  }
+  return best ? { category: best.category, score: best.score } : null;
+}
 
-      function tfidfVector(words) {
-        const tokens = tokenize(Array.isArray(words) ? words.join(" ") : words);
-        const counts = {};
-        tokens.forEach(t => (counts[t] = (counts[t] || 0) + 1));
-        const vec = {};
-        for (const [t, c] of Object.entries(counts)) {
-          const idf = Math.log(docCount / (1 + (df[t] || 0)));
-          vec[t] = c * idf;
-        }
-        return vec;
-      }
+/* ---------- N-gram (1–2) TF-IDF backup (uses existing tokenize) ---------- */
 
-      function cosineSim(vecA, vecB) {
-        let dot = 0, normA = 0, normB = 0;
-        const allTokens = new Set([...Object.keys(vecA), ...Object.keys(vecB)]);
-        allTokens.forEach(t => {
-          const a = vecA[t] || 0;
-          const b = vecB[t] || 0;
-          dot += a * b;
-          normA += a * a;
-          normB += b * b;
-        });
-        return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10);
-      }
+// build DF over unigrams + bigrams
+const __docCount = Object.keys(categories).length;
+const __df = {};
 
-      const categoryVectors = {};
-      for (const [cat, words] of Object.entries(categories)) {
-        categoryVectors[cat] = tfidfVector(words);
-      }
+function __makeNgrams(tokens, nMin = 1, nMax = 2) {
+  const grams = [];
+  for (let n = nMin; n <= nMax; n++) {
+    for (let i = 0; i + n <= tokens.length; i++) {
+      grams.push(tokens.slice(i, i + n).join(" "));
+    }
+  }
+  return grams;
+}
 
-      function bestCategoryWithScore(text) {
-        const inputVec = tfidfVector(tokenize(text));
-        let bestCat = null, bestScore = -Infinity;
-        for (const [cat, vec] of Object.entries(categoryVectors)) {
-          const score = cosineSim(inputVec, vec);
-          if (score > bestScore) { bestScore = score; bestCat = cat; }
-        }
-        return { category: bestCat, score: bestScore };
-      }
+// document frequency across categories (each category is a "document")
+for (const [_, words] of Object.entries(categories)) {
+  const uniqTerms = new Set();
+  for (const w of words) {
+    const toks = tokenize(String(w).toLowerCase());
+    __makeNgrams(toks, 1, 2).forEach(g => uniqTerms.add(g));
+  }
+  for (const term of uniqTerms) __df[term] = (__df[term] || 0) + 1;
+}
 
-      function classifyItems(items) { return items.map(it => bestCategoryWithScore(it)); }
+function __tfidfVector(textOrTokens) {
+  const baseTokens = Array.isArray(textOrTokens)
+    ? textOrTokens
+    : tokenize(String(textOrTokens).toLowerCase());
 
-      /* ------------------------ UI Building Functions ------------------------ */
+  const grams = __makeNgrams(baseTokens, 1, 2); // unigrams + bigrams
+  const counts = {};
+  grams.forEach(g => counts[g] = (counts[g] || 0) + 1);
+
+  const vec = {};
+  for (const [term, c] of Object.entries(counts)) {
+    const idf = Math.log(__docCount / (1 + (__df[term] || 0)));
+    vec[term] = c * idf;
+  }
+  return vec;
+}
+
+function __cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  keys.forEach(k => {
+    const x = a[k] || 0, y = b[k] || 0;
+    dot += x * y; na += x * x; nb += y * y;
+  });
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
+}
+
+// build category vectors on n-grams as well
+const __categoryVectors = {};
+for (const [cat, words] of Object.entries(categories)) {
+  const allTokens = [];
+  for (const w of words) {
+    const toks = tokenize(String(w).toLowerCase());
+    allTokens.push(...__makeNgrams(toks, 1, 2));
+  }
+  __categoryVectors[cat] = __tfidfVector(allTokens);
+}
+
+function bestCategoryWithScoreTFIDF(text) {
+  const v = __tfidfVector(tokenize(text));
+  let bestCat = null, bestScore = -Infinity;
+  for (const [cat, vec] of Object.entries(__categoryVectors)) {
+    const s = __cosine(v, vec);
+    if (s > bestScore) { bestScore = s; bestCat = cat; }
+  }
+  return { category: bestCat, score: bestScore };
+}
+
+/** Cloudflare Worker LLM fallback (keeps API key server-side) */
+async function classifyViaLLM(itemText) {
+  try {
+    const res = await fetch("https://YOUR-WORKER.SUBDOMAIN.workers.dev/classify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        item: itemText,
+        // give the model the closed set of categories
+        categories: Object.keys(categories)
+      }),
+      // optional: tighten timeouts with AbortController if you want
+    });
+    if (!res.ok) throw new Error("LLM proxy error: " + res.status);
+    const data = await res.json();
+    // expected shape: { category: "Fresh Produce", confidence: 0.0..1.0 }
+    if (data && typeof data.category === "string") {
+      return { category: data.category, score: typeof data.confidence === "number" ? data.confidence : 0.5 };
+    }
+  } catch (e) {
+    console.warn("LLM fallback failed:", e);
+  }
+  // unresolved -> force user selection in the editor
+  return { category: null, score: 0 };
+}
+
+/** Public classifier (async): keyword -> LLM -> unresolved */
+// REPLACE ONLY THIS FUNCTION
+async function classifyItems(items) {
+  const out = [];
+  for (const it of items) {
+    // 1) Keyword/phrase (with stemming) — primary
+    const kw = keywordMatchCategory(it);
+    if (kw) { out.push(kw); continue; }
+
+    // 2) TF-IDF backup
+    // const tf = bestCategoryWithScoreTFIDF(it);
+    // if (tf && tf.score >= 0.001) { // keep same thresholding behavior
+    //   out.push(tf);
+    //   continue;
+    // }
+
+    // 3) LLM fallback (kept but disabled for now)
+    // out.push(await classifyViaLLM(it));
+    out.push({ category: null, score: 0 }); // unresolved -> user selects
+  }
+  return out;
+}
+
+      /* -------------------- UI Building Functions -------------- */
       function buildClassificationEditor(items, classification) {
         editorHead.innerHTML = `<tr><th style="width:5%">#</th><th style="width:50%">Item</th><th>Category</th></tr>`;
         editorBody.innerHTML = "";
@@ -593,7 +802,7 @@
 
         items.forEach((item, i) => {
           const { category, score } = classification[i];
-          const needsHuman = !(score >= 0.001);
+          const needsHuman = !(score >= 0.05);
 
           const tr = document.createElement("tr");
           tr.className = "item-row";
@@ -613,15 +822,17 @@
           select.className = "cat-select";
 
           if (needsHuman) {
-            const placeholder = Object.assign(document.createElement("option"), {
-              value: "__choose__",
-              textContent: "Select category…",
-              disabled: true,
-              selected: true,
-            });
+            const placeholder = Object.assign(
+              document.createElement("option"),
+              {
+                value: "__choose__",
+                textContent: "Select category…",
+                disabled: true,
+                selected: true,
+              }
+            );
             select.appendChild(placeholder);
           }
-
           allCats.forEach(c => {
             const opt = Object.assign(document.createElement("option"), {
               value: c,
@@ -630,11 +841,9 @@
             if (!needsHuman && c === category) opt.selected = true;
             select.appendChild(opt);
           });
-
           select.addEventListener("change", () => {
             tr.classList.remove("needs-category");
           });
-
           tdCat.appendChild(select);
           tr.appendChild(tdCat);
           editorBody.appendChild(tr);
@@ -643,21 +852,28 @@
 
       function updateEditorWithOrder(orderedPoints) {
         const coordToCat = Object.fromEntries(
-          Object.entries(coordinates).map(([cat, { x, y }]) => [`${x}|${y}`, cat])
+          Object.entries(coordinates).map(([cat, { x, y }]) => [
+            `${x}|${y}`,
+            cat,
+          ])
         );
-
-        const orderedCategories = orderedPoints.slice(1, -1).map(p => coordToCat[`${p.x}|${p.y}`]);
+        const orderedCategories = orderedPoints
+          .slice(1, -1)
+          .map(p => coordToCat[`${p.x}|${p.y}`]);
 
         const rowsByCategory = {};
         editorBody.querySelectorAll("tr.item-row").forEach(tr => {
           const category = tr.querySelector("select.cat-select").value;
           if (category && category !== "__choose__") {
-            if (!rowsByCategory[category]) rowsByCategory[category] = [];
+            if (!rowsByCategory[category]) {
+              rowsByCategory[category] = [];
+            }
             rowsByCategory[category].push(tr);
           }
         });
 
         const fragment = document.createDocumentFragment();
+
         orderedCategories.forEach((category, index) => {
           const stopNumber = index + 1;
           if (rowsByCategory[category]) {
@@ -673,83 +889,120 @@
       }
 
       function readSelectedCategories() {
-        return Array.from(document.querySelectorAll(".cat-select")).map(s => s.value);
+        return Array.from(document.querySelectorAll(".cat-select")).map(
+          s => s.value
+        );
       }
-
       function categoriesToPoints(selectedCategories) {
-        const unique = [...new Set(selectedCategories.filter(v => v && v !== "__choose__"))];
+        const unique = [
+          ...new Set(
+            selectedCategories.filter(v => v && v !== "__choose__")
+          ),
+        ];
         return unique.map(cat => coordinates[cat]).filter(Boolean);
       }
 
-      /* -------------------------- Path Algorithm ----------------------------- */
+      /* --------------------------- Path Algorithm -------------------------- */
+      /**
+       * Solves the Traveling Salesperson Problem for the given points.
+       * Uses a brute-force permutation approach for optimal results on small
+       * datasets, falling back to a faster heuristic for larger ones.
+       * @param {Array<Object>} points The points to visit.
+       * @returns {Array<Object>} The optimally ordered path.
+       */
       function solveTsp(points) {
         const cities = dedupeAndStripEntrance(points);
         if (cities.length === 0) return [ENTRANCE, ENTRANCE];
 
         const OPTIMAL_LIMIT = 20; // exact Held–Karp up to 20 stops
         if (cities.length <= OPTIMAL_LIMIT) {
-          const order = heldKarpTsp(cities);
-          return [ENTRANCE, ...order, CHECKOUT];
+            const order = heldKarpTsp(cities);
+            return [ENTRANCE, ...order, CHECKOUT];
         } else {
-          console.warn(`> ${OPTIMAL_LIMIT} stops — using NN + 2-opt heuristic for speed.`);
-          const order = twoOptImprove(nearestNeighborOrder(cities), cities);
-          return [ENTRANCE, ...order.map(i => cities[i]), CHECKOUT];
+            console.warn(
+            `> ${OPTIMAL_LIMIT} stops — using NN + 2-opt heuristic for speed.`
+            );
+            const order = twoOptImprove(nearestNeighborOrder(cities), cities);
+            return [ENTRANCE, ...order.map(i => cities[i]), CHECKOUT];
         }
       }
 
       function heldKarpTsp(cities) {
         const n = cities.length;
+        // Precompute distances (including to/from ENTRANCE)
         const dCity = Array.from({ length: n }, () => Array(n).fill(0));
         const dStart = Array(n).fill(0);
         const dEnd = Array(n).fill(0);
         for (let i = 0; i < n; i++) {
-          dStart[i] = distance(ENTRANCE, cities[i]);
-          dEnd[i] = distance(cities[i], CHECKOUT);
-          for (let j = 0; j < n; j++) dCity[i][j] = distance(cities[i], cities[j]);
+            dStart[i] = distance(ENTRANCE, cities[i]);
+            dEnd[i] = distance(cities[i], CHECKOUT);
+            for (let j = 0; j < n; j++) {
+            dCity[i][j] = distance(cities[i], cities[j]);
+            }
         }
 
         const size = 1 << n;
         const INF = 1e18;
+
+        // dp[mask][i] = best cost to reach subset "mask" ending at city i
         const dp = Array.from({ length: size }, () => Array(n).fill(INF));
         const parent = Array.from({ length: size }, () => Array(n).fill(-1));
 
+        // Base cases: start -> i
         for (let i = 0; i < n; i++) {
-          const m = 1 << i;
-          dp[m][i] = dStart[i];
+            const m = 1 << i;
+            dp[m][i] = dStart[i];
         }
 
+        // Transitions
         for (let mask = 1; mask < size; mask++) {
-          for (let i = 0; i < n; i++) {
-            if (!(mask & (1 << i))) continue;
+            for (let i = 0; i < n; i++) {
+            if (!(mask & (1 << i))) continue; // i must be in mask
             const prevMask = mask ^ (1 << i);
-            if (prevMask === 0) continue;
+            if (prevMask === 0) continue; // base case already set
             let best = dp[mask][i];
             let bestPrev = -1;
+            // try coming from j
             for (let j = 0; j < n; j++) {
-              if (!(prevMask & (1 << j))) continue;
-              const cand = dp[prevMask][j] + dCity[j][i];
-              if (cand < best) { best = cand; bestPrev = j; }
+                if (!(prevMask & (1 << j))) continue;
+                const cand = dp[prevMask][j] + dCity[j][i];
+                if (cand < best) {
+                best = cand;
+                bestPrev = j;
+                }
             }
-            if (best < dp[mask][i]) { dp[mask][i] = best; parent[mask][i] = bestPrev; }
-          }
+            if (best < dp[mask][i]) {
+                dp[mask][i] = best;
+                parent[mask][i] = bestPrev;
+            }
+            }
         }
 
+        // Close the tour: add i -> end
         const full = size - 1;
-        let bestCost = INF, last = -1;
+        let bestCost = INF;
+        let last = -1;
         for (let i = 0; i < n; i++) {
-          const cand = dp[full][i] + dEnd[i];
-          if (cand < bestCost) { bestCost = cand; last = i; }
+            const cand = dp[full][i] + dEnd[i];
+            if (cand < bestCost) {
+            bestCost = cand;
+            last = i;
+            }
         }
 
+        // Reconstruct path of indices
         const orderIdx = [];
-        let mask = full, cur = last;
+        let mask = full;
+        let cur = last;
         while (cur !== -1) {
-          orderIdx.push(cur);
-          const p = parent[mask][cur];
-          mask ^= 1 << cur;
-          cur = p;
+            orderIdx.push(cur);
+            const p = parent[mask][cur];
+            mask ^= 1 << cur;
+            cur = p;
         }
-        orderIdx.reverse();
+        orderIdx.reverse(); // now in visiting order
+
+        // Map indices to actual point objects
         return orderIdx.map(i => cities[i]);
       }
 
@@ -757,36 +1010,40 @@
       function nearestNeighborOrder(cities) {
         const n = cities.length;
         const used = Array(n).fill(false);
+        // seed with closest to entrance
         let start = 0, best = Infinity;
         for (let i = 0; i < n; i++) {
-          const d = distance(ENTRANCE, cities[i]);
-          if (d < best) { best = d; start = i; }
+            const d = distance(ENTRANCE, cities[i]);
+            if (d < best) { best = d; start = i; }
         }
         const order = [start];
         used[start] = true;
         for (let k = 1; k < n; k++) {
-          const last = order[order.length - 1];
-          let bestJ = -1, bestD = Infinity;
-          for (let j = 0; j < n; j++) {
+            const last = order[order.length - 1];
+            let bestJ = -1, bestD = Infinity;
+            for (let j = 0; j < n; j++) {
             if (used[j]) continue;
             const d = distance(cities[last], cities[j]);
             if (d < bestD) { bestD = d; bestJ = j; }
-          }
-          order.push(bestJ);
-          used[bestJ] = true;
+            }
+            order.push(bestJ);
+            used[bestJ] = true;
         }
-        return order;
-      }
+        return order; // array of indices
+        }
 
-      function twoOptImprove(order, cities) {
+        function twoOptImprove(order, cities) {
         const n = order.length;
         if (n < 4) return order.slice();
 
+        // Helper to compute tour length from entrance -> order -> entrance
         const tourLen = ord => {
-          let sum = distance(ENTRANCE, cities[ord[0]]);
-          for (let i = 1; i < ord.length; i++) sum += distance(cities[ord[i - 1]], cities[ord[i]]);
-          sum += distance(cities[ord[ord.length - 1]], CHECKOUT);
-          return sum;
+            let sum = distance(ENTRANCE, cities[ord[0]]);
+            for (let i = 1; i < ord.length; i++) {
+            sum += distance(cities[ord[i - 1]], cities[ord[i]]);
+            }
+            sum += distance(cities[ord[ord.length - 1]], CHECKOUT);
+            return sum;
         };
 
         let improved = true;
@@ -794,24 +1051,30 @@
         let bestLen = tourLen(bestOrder);
 
         while (improved) {
-          improved = false;
-          for (let i = 0; i < n - 2; i++) {
+            improved = false;
+            for (let i = 0; i < n - 2; i++) {
             for (let k = i + 2; k < n; k++) {
-              const newOrder = bestOrder.slice(0, i + 1)
+                // Edges (i,i+1) and (k,k+1) — 2-opt swap
+                const newOrder = bestOrder.slice(0, i + 1)
                 .concat(bestOrder.slice(i + 1, k + 1).reverse())
                 .concat(bestOrder.slice(k + 1));
-              const newLen = tourLen(newOrder);
-              if (newLen + 1e-9 < bestLen) {
+                const newLen = tourLen(newOrder);
+                if (newLen + 1e-9 < bestLen) {
                 bestOrder = newOrder;
                 bestLen = newLen;
                 improved = true;
-              }
+                }
             }
-          }
+            }
         }
         return bestOrder;
-      }
+        }
 
+      /**
+       * Generates all permutations of an array.
+       * @param {Array} arr The input array.
+       * @returns {Array<Array>} An array of all permutations.
+       */
       function getPermutations(arr) {
         if (arr.length === 0) return [[]];
         const firstEl = arr[0];
@@ -820,26 +1083,40 @@
         const allPermutations = [];
         permsWithoutFirst.forEach(perm => {
           for (let i = 0; i <= perm.length; i++) {
-            const permWithFirst = [...perm.slice(0, i), firstEl, ...perm.slice(i)];
+            const permWithFirst = [
+              ...perm.slice(0, i),
+              firstEl,
+              ...perm.slice(i),
+            ];
             allPermutations.push(permWithFirst);
           }
         });
         return allPermutations;
       }
 
+      /**
+       * Fast heuristic for TSP using the Nearest Neighbor algorithm.
+       * @param {Array<Object>} cities The points to visit (must not include ENTRANCE).
+       * @returns {Array<Object>} The ordered path.
+       */
       function getNearestNeighborPath(cities) {
         const unvisited = [...cities];
         const path = [ENTRANCE];
         const distanceSq = (p1, p2) => {
-          const dx = p1.x - p2.x, dy = p1.y - p2.y;
+          const dx = p1.x - p2.x,
+            dy = p1.y - p2.y;
           return dx * dx + dy * dy;
         };
         while (unvisited.length > 0) {
           const current = path[path.length - 1];
-          let bestIdx = 0, bestD = Infinity;
+          let bestIdx = 0,
+            bestD = Infinity;
           for (let i = 0; i < unvisited.length; i++) {
             const d = distanceSq(current, unvisited[i]);
-            if (d < bestD) { bestD = d; bestIdx = i; }
+            if (d < bestD) {
+              bestD = d;
+              bestIdx = i;
+            }
           }
           path.push(unvisited.splice(bestIdx, 1)[0]);
         }
@@ -863,7 +1140,7 @@
         return out;
       }
 
-      /* --------------------------- Rendering Logic --------------------------- */
+      /* --------------------------- Rendering Logic -------------------------- */
       function renderAll(points) {
         if (!defaultMapImage) {
           updateStatus("Map image missing.", true);
@@ -872,69 +1149,87 @@
         const orderedPoints = solveTsp(points);
         drawImageAndPath(defaultMapImage, orderedPoints);
         updateEditorWithOrder(orderedPoints);
+        const dist = totalPathDistance(orderedPoints);
         const stops = Math.max(0, orderedPoints.length - 2);
-        updateStatus(`Path generated through ${stops} stops`, false);
+        updateStatus(
+          `Path generated through ${stops} stops`,
+          false
+        );
       }
 
       function drawImageAndPath(img, orderedPoints) {
-        canvas.style.display = "block";
-        canvas.style.width = "100%";
-        canvas.style.height = "auto";
+  canvas.style.display = "block";
 
-        const containerWidth = (canvas.parentElement && canvas.parentElement.clientWidth) || img.width;
-        const displayWidth = Math.min(containerWidth, img.width);
-        const scale = displayWidth / img.width;
-        const displayHeight = img.height * scale;
+  // 1) Make the canvas responsive to its container (no giant overflow).
+  canvas.style.width = "100%";
+  canvas.style.height = "auto";
 
-        const DPR = Math.max(1, window.devicePixelRatio || 1);
-        canvas.width = Math.round(displayWidth * DPR);
-        canvas.height = Math.round(displayHeight * DPR);
+  const containerWidth =
+    (canvas.parentElement && canvas.parentElement.clientWidth) || img.width;
 
-        const ctx = canvas.getContext("2d");
-        ctx.setTransform(DPR * scale, 0, 0, DPR * scale, 0, 0);
-        ctx.clearRect(0, 0, img.width, img.height);
+  // We never render wider than the actual image pixels (avoid pointless upscaling).
+  const displayWidth = Math.min(containerWidth, img.width);
+  const scale = displayWidth / img.width;
+  const displayHeight = img.height * scale;
 
-        ctx.drawImage(img, 0, 0, img.width, img.height);
+  // 2) Hi-DPI crispness
+  const DPR = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(displayWidth * DPR);
+  canvas.height = Math.round(displayHeight * DPR);
 
-        const base = Math.min(img.width, img.height);
-        const lineWidth = Math.max(4, Math.round(base * 0.006));
-        const pointRadius = Math.max(10, Math.round(lineWidth * 3));
-        const entranceRadius = Math.round(pointRadius * 1.35);
+  const ctx = canvas.getContext("2d");
+  // Scale drawing commands so all coordinates remain in the image’s native space.
+  ctx.setTransform(DPR * scale, 0, 0, DPR * scale, 0, 0);
+  ctx.clearRect(0, 0, img.width, img.height);
 
-        const T = p => ({ x: p.x, y: img.height - p.y });
+  // 3) Draw the map at native coordinates (transform handles the scaling).
+  ctx.drawImage(img, 0, 0, img.width, img.height);
 
-        if (orderedPoints.length >= 2) {
-          ctx.lineWidth = lineWidth;
-          ctx.lineJoin = "round";
-          ctx.lineCap = "round";
-          ctx.strokeStyle = "#ef4444";
-          ctx.beginPath();
-          const start = T(orderedPoints[0]);
-          ctx.moveTo(start.x, start.y);
-          for (let i = 1; i < orderedPoints.length; i++) {
-            const pt = T(orderedPoints[i]);
-            ctx.lineTo(pt.x, pt.y);
-          }
-          ctx.stroke();
-        }
+  // 4) Thicker lines & bigger markers (measured in native image units).
+  const base = Math.min(img.width, img.height);
+  const lineWidth = Math.max(4, Math.round(base * 0.006));       // chunky path
+  const pointRadius = Math.max(10, Math.round(lineWidth * 3));    // bigger dots
+  const entranceRadius = Math.round(pointRadius * 1.35);
 
-        ctx.lineWidth = Math.max(2, Math.round(lineWidth * 0.6));
-        ctx.strokeStyle = "#111827";
-        orderedPoints.forEach((p, i) => {
-          const tp = T(p);
-          const isEntrance = i === 0 || i === orderedPoints.length - 1;
-          ctx.beginPath();
-          ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00";
-          ctx.arc(tp.x, tp.y, isEntrance ? entranceRadius : pointRadius, 0, 2 * Math.PI);
-          ctx.fill();
-          ctx.stroke();
-        });
-      }
+  // Flip-Y helper (your coordinates are bottom-left origin)
+  const T = p => ({ x: p.x, y: img.height - p.y });
 
-      /* --------------------------------- Init -------------------------------- */
-      (function init() {
+  // Path
+  if (orderedPoints.length >= 2) {
+    ctx.lineWidth = lineWidth;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#ef4444";
+    ctx.beginPath();
+    const start = T(orderedPoints[0]);
+    ctx.moveTo(start.x, start.y);
+    for (let i = 1; i < orderedPoints.length; i++) {
+      const pt = T(orderedPoints[i]);
+      ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.stroke();
+  }
+
+  // Stops
+  ctx.lineWidth = Math.max(2, Math.round(lineWidth * 0.6));
+  ctx.strokeStyle = "#111827";
+  orderedPoints.forEach((p, i) => {
+    const tp = T(p);
+    const isEntrance = i === 0 || i === orderedPoints.length - 1;
+    ctx.beginPath();
+    ctx.fillStyle = isEntrance ? "#10b981" : "#ffff00";
+    ctx.arc(tp.x, tp.y, isEntrance ? entranceRadius : pointRadius, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+
+      /* ------------------------------ Init ---------------------------------- */
+      init();
+      function init() {
         tryLoadDefaultMap();
-      })();
+      }
     </script>
   </body>
 </html>
