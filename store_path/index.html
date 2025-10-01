@@ -593,7 +593,7 @@
 
         items.forEach((item, i) => {
           const { category, score } = classification[i];
-          const needsHuman = !(score >= 0.05);
+          const needsHuman = !(score >= 0.01);
 
           const tr = document.createElement("tr");
           tr.className = "item-row";
