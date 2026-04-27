@@ -13,6 +13,11 @@
 <body>
   <div class="container">
     <button id="startLoopBtn">Start Azaan Loop</button>
+    <div id="exerciseCounter">
+      <button id="counterResetBtn" aria-label="Reset counter">⟳</button>
+      <div id="counterValue">0</div>
+      <div id="highScoreValue">0</div>
+    </div>
     <div id="weather">
       <span id="weatherInfo">Loading weather...</span>
     </div>
@@ -28,6 +33,48 @@
     // ==================== Configuration ====================
     const WEATHER_API_URL = 'https://api.openweathermap.org/data/2.5/weather';
     const DEFAULT_LOCATION = { latitude: 43, longitude: -78.79 };
+    const THEME_PALETTES = {
+      dawn: {
+        bg: "#203040",
+        text: "#F2F7FF",
+        buttonBg: "#3D6CA8",
+        buttonHoverBg: "#335E93",
+        buttonText: "#FFFFFF",
+        weatherIconFilter: "brightness(0) invert(1)"
+      },
+      noon: {
+        bg: "#F3F7FF",
+        text: "#0F1B2B",
+        buttonBg: "#2D5CA6",
+        buttonHoverBg: "#244D8C",
+        buttonText: "#FFFFFF",
+        weatherIconFilter: "none"
+      },
+      afternoon: {
+        bg: "#FFF6E9",
+        text: "#2A1B0B",
+        buttonBg: "#B56A1F",
+        buttonHoverBg: "#985616",
+        buttonText: "#FFFFFF",
+        weatherIconFilter: "none"
+      },
+      sunset: {
+        bg: "#2C1B2E",
+        text: "#FFEBDD",
+        buttonBg: "#8A3A6C",
+        buttonHoverBg: "#743158",
+        buttonText: "#FFFFFF",
+        weatherIconFilter: "brightness(0) invert(1)"
+      },
+      night: {
+        bg: "#121212",
+        text: "#FFFFFF",
+        buttonBg: "#1E88E5",
+        buttonHoverBg: "#1565C0",
+        buttonText: "#FFFFFF",
+        weatherIconFilter: "brightness(0) invert(1)"
+      }
+    };
 
     // ==================== Elements ====================
     const silentAudio = document.getElementById("silentAudio");
@@ -38,8 +85,157 @@
     const weatherInfo = document.getElementById("weatherInfo");
     const messageDisplay = document.getElementById("message");
     const prayerTimesDisplay = document.getElementById("prayerTimesDisplay");
+    const counterResetBtn = document.getElementById("counterResetBtn");
+    const counterValue = document.getElementById("counterValue");
+    const highScoreValue = document.getElementById("highScoreValue");
 
     let isLooping = false;
+    let exerciseCounter = 0;
+    let exerciseHighScore = 0;
+    let lastCounterDate = "";
+    let currentThemePhase = "";
+
+    const COUNTER_STORAGE_KEY = "exerciseCounterState";
+
+    function loadCounterStateFromStorage() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(COUNTER_STORAGE_KEY) || "{}");
+        exerciseCounter = Number.isFinite(saved.counter) ? saved.counter : 0;
+        exerciseHighScore = Number.isFinite(saved.highScore) ? saved.highScore : 0;
+        lastCounterDate = typeof saved.lastDate === "string" ? saved.lastDate : "";
+      } catch (error) {
+        exerciseCounter = 0;
+        exerciseHighScore = 0;
+        lastCounterDate = "";
+      }
+    }
+
+    function formatLocalDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function getPrayerCalculationContext() {
+      const coords = new adhan.Coordinates(DEFAULT_LOCATION.latitude, DEFAULT_LOCATION.longitude);
+      const params = adhan.CalculationMethod.NorthAmerica();
+      return { coords, params };
+    }
+
+    function getPrayerByName(prayers, name) {
+      return prayers.find(prayer => prayer.name === name);
+    }
+
+    function applyTheme(phase) {
+      if (phase === currentThemePhase) return;
+      const palette = THEME_PALETTES[phase] || THEME_PALETTES.night;
+      const root = document.documentElement;
+      root.style.setProperty("--app-bg", palette.bg);
+      root.style.setProperty("--app-text", palette.text);
+      root.style.setProperty("--button-bg", palette.buttonBg);
+      root.style.setProperty("--button-hover-bg", palette.buttonHoverBg);
+      root.style.setProperty("--button-text", palette.buttonText);
+      root.style.setProperty("--weather-icon-filter", palette.weatherIconFilter);
+      currentThemePhase = phase;
+    }
+
+    function updateThemeByPrayerTimes() {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const { coords, params } = getPrayerCalculationContext();
+      const rawPrayerTimes = new adhan.PrayerTimes(coords, today, params);
+      const prayers = getPrayerTimesForDay(today);
+
+      const fajr = getPrayerByName(prayers, "Fajr").time;
+      const dhuhr = getPrayerByName(prayers, "Dhuhr").time;
+      const asr = getPrayerByName(prayers, "Asr").time;
+      const maghrib = getPrayerByName(prayers, "Maghrib").time;
+      const isha = getPrayerByName(prayers, "Isha").time;
+      const sunrise = rawPrayerTimes.sunrise;
+
+      let phase = "noon";
+      if (now >= isha || now < sunrise) phase = "night";
+      else if (now >= maghrib) phase = "sunset";
+      else if (now >= asr) phase = "afternoon";
+      else if (now >= dhuhr) phase = "noon";
+      else if (now >= fajr) phase = "dawn";
+      else phase = "night";
+
+      applyTheme(phase);
+    }
+
+    function dateFromLocalIso(dateString) {
+      const [year, month, day] = dateString.split("-").map(Number);
+      return new Date(year, month - 1, day);
+    }
+
+    function daysBetween(fromDateString, toDateString) {
+      const start = dateFromLocalIso(fromDateString);
+      const end = dateFromLocalIso(toDateString);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+      return Math.floor((end - start) / (24 * 60 * 60 * 1000));
+    }
+
+    function saveCounterState() {
+      localStorage.setItem(COUNTER_STORAGE_KEY, JSON.stringify({
+        counter: exerciseCounter,
+        highScore: exerciseHighScore,
+        lastDate: lastCounterDate
+      }));
+    }
+
+    function renderCounter() {
+      counterValue.textContent = String(exerciseCounter);
+      highScoreValue.textContent = String(exerciseHighScore);
+    }
+
+    function applyMissedCounterDays() {
+      const today = formatLocalDate(new Date());
+      if (!lastCounterDate) {
+        lastCounterDate = today;
+        return;
+      }
+
+      const missedDays = daysBetween(lastCounterDate, today);
+      if (missedDays > 0) {
+        exerciseCounter += missedDays;
+        exerciseHighScore = Math.max(exerciseHighScore, exerciseCounter);
+        lastCounterDate = today;
+      }
+    }
+
+    function syncCounterToToday() {
+      applyMissedCounterDays();
+      exerciseHighScore = Math.max(exerciseHighScore, exerciseCounter);
+      renderCounter();
+      saveCounterState();
+    }
+
+    function resetCounter() {
+      exerciseCounter = 0;
+      lastCounterDate = formatLocalDate(new Date());
+      renderCounter();
+      saveCounterState();
+    }
+
+    function scheduleNextCounterIncrement() {
+      const now = new Date();
+      const nextMidnight = new Date(now);
+      nextMidnight.setHours(24, 0, 0, 0);
+      const delay = nextMidnight.getTime() - now.getTime();
+      setTimeout(() => {
+        syncCounterToToday();
+        scheduleNextCounterIncrement();
+      }, delay);
+    }
+
+    function initializeCounter() {
+      loadCounterStateFromStorage();
+      syncCounterToToday();
+      scheduleNextCounterIncrement();
+    }
 
     // ==================== Time and Date ====================
     function updateTimeAndDate() {
@@ -49,6 +245,7 @@
       timeDisplay.textContent = `${hours}:${minutes}`;
       const options = { month: 'short', day: 'numeric', weekday: 'long' };
       dateDisplay.textContent = now.toLocaleDateString('en-US', options);
+      updateThemeByPrayerTimes();
     }
     setInterval(updateTimeAndDate, 60000);
     updateTimeAndDate();
@@ -66,7 +263,7 @@
         // Use HTTPS for weather icon to avoid mixed content warning
         const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
         weatherInfo.innerHTML = `
-          <img src="${iconUrl}" alt="${weatherDescription}" style="filter: brightness(0) invert(1);">
+          <img src="${iconUrl}" alt="${weatherDescription}">
           ${temperature}°C, ${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}
         `;
       } catch (error) {
@@ -91,6 +288,8 @@
     }
     setInterval(updateMessage, 60000);
     updateMessage();
+    initializeCounter();
+    counterResetBtn.addEventListener("click", resetCounter);
 
     // ==================== Helper Functions ====================
     function timeUntilNext2AM() {
@@ -104,13 +303,17 @@
     }
 
     function getPrayerTimesForDay(date) {
-      const coords = new adhan.Coordinates(DEFAULT_LOCATION.latitude, DEFAULT_LOCATION.longitude);
-      const params = adhan.CalculationMethod.NorthAmerica();
+      const { coords, params } = getPrayerCalculationContext();
       const prayerTimes = new adhan.PrayerTimes(coords, date, params);
       // const preFajrTime = new Date(prayerTimes.fajr);
       // preFajrTime.setMinutes(preFajrTime.getMinutes() - 20);
       const preSunRiseTime = new Date(prayerTimes.sunrise);
       preSunRiseTime.setMinutes(preSunRiseTime.getMinutes() - 30);
+      const nextDay = new Date(date);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayPrayerTimes = new adhan.PrayerTimes(coords, nextDay, params);
+      const sunriseMinus8Hours = new Date(nextDayPrayerTimes.sunrise.getTime() - (8 * 60 * 60 * 1000));
+      const adjustedIshaTime = new Date(Math.max(sunriseMinus8Hours.getTime(), prayerTimes.isha.getTime()));
       
       return [
         // { name: "Pre-Fajr", time: preFajrTime, audioSrc: "static/azaan.mp3" }, // for Ramadan
@@ -119,7 +322,7 @@
         { name: "Dhuhr", time: prayerTimes.dhuhr, audioSrc: "static/azaan.mp3" },
         { name: "Asr", time: prayerTimes.asr, audioSrc: "static/azaan.mp3" },
         { name: "Maghrib", time: prayerTimes.maghrib, audioSrc: "static/azaan.mp3" },
-        { name: "Isha", time: prayerTimes.isha, audioSrc: "static/azaan.mp3" }
+        { name: "Isha", time: adjustedIshaTime, audioSrc: "static/azaan.mp3" }
       ];
     }
 
