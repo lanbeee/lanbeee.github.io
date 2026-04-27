@@ -1,14 +1,24 @@
 /* static/css/styles.css */
 
+:root {
+  --app-bg: #121212;
+  --app-text: #FFFFFF;
+  --button-bg: #1E88E5;
+  --button-hover-bg: #1565C0;
+  --button-text: #FFFFFF;
+  --weather-icon-filter: brightness(0) invert(1);
+}
+
 /* Reset some default styles */
 body, html {
   margin: 0;
   padding: 0;
   height: 100%;
-  background-color: #121212; /* Dark background */
-  color: #FFFFFF; /* Light text */
+  background-color: var(--app-bg);
+  color: var(--app-text);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   overflow: hidden; /* Prevent scroll */
+  transition: background-color 0.4s ease, color 0.4s ease;
 }
 
 /* Container for the main content */
@@ -20,6 +30,43 @@ body, html {
   box-sizing: border-box;
 }
 
+#exerciseCounter {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: calc(env(safe-area-inset-left, 0px) + 14px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  z-index: 1100;
+}
+
+#counterResetBtn {
+  background: transparent;
+  border: none;
+  color: var(--app-text);
+  font-size: 24px;
+  line-height: 1;
+  padding: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#counterValue {
+  font-size: 52px;
+  line-height: 1;
+}
+
+#highScoreValue {
+  font-size: 20px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
 /* Start Loop Button Styles */
 #startLoopBtn {
   position: absolute;
@@ -28,12 +75,118 @@ body, html {
   transform: translateX(-50%);
   padding: 20px 40px;
   font-size: 24px;
-  background-color: #1E88E5; /* Primary button color */
+  background-color: var(--button-bg);
   border: none;
   border-radius: 8px;
-  color: #FFFFFF;
+  color: var(--button-text);
   cursor: pointer;
   z-index: 1000; /* Ensure it's on top */
+  opacity: 1;
+  transition: opacity 1s ease, visibility 1s ease;
+}
+
+/* Hidden state for the button */
+#startLoopBtn.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Optional: Hover effect for the button */
+#startLoopBtn:hover {
+  background-color: var(--button-hover-bg);
+}
+
+/* Weather Section */
+#weather {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  text-align: right;
+  font-size: 40px;
+  display: flex;
+  align-items: center;
+}
+
+#weather img {
+  width: 80px;
+  height: 80px;
+  margin-right: 20px;
+  filter: var(--weather-icon-filter);
+}
+
+/* Time Display */
+#time {
+  font-size: 200px;
+  text-align: center;
+  margin-top: 100px;
+}
+
+/* Date Display */
+#date {
+  font-size: 32px;
+  text-align: center;
+  margin-top: 10px;
+}
+
+/* Message Section */
+#message {
+  position: absolute;
+  bottom: 20px;
+  width: 100%;
+  text-align: center;
+  font-size: 32px;
+}
+
+/* Dark Mode Enhancements */
+h1 {
+  text-align: center;
+  margin-top: 50px; /* Adjusted to avoid overlap with button */
+  font-size: 40px;
+}
+
+/* Responsive Adjustments for Landscape on 5-inch Screen */
+@media only screen and (max-width: 800px) and (max-height: 600px) {
+  #exerciseCounter {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+  }
+
+  #counterResetBtn {
+    font-size: 22px;
+    width: 48px;
+    height: 48px;
+  }
+
+  #counterValue {
+    font-size: 36px;
+  }
+
+  #highScoreValue {
+    font-size: 16px;
+  }
+
+  #time {
+    font-size: 80px;
+  }
+  
+  #date, #weather, #message, h1 {
+    font-size: 24px;
+  }
+  
+  #startLoopBtn {
+    padding: 15px 30px;
+    font-size: 20px;
+  }
+  
+  #weather img {
+    width: 30px;
+    height: 30px;
+    margin-right: 8px;
+    filter: var(--weather-icon-filter);
+  }
+  
+}
   opacity: 1;
   transition: opacity 1s ease, visibility 1s ease;
 }
