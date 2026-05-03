@@ -33,16 +33,25 @@
     // ==================== Configuration ====================
     const WEATHER_API_URL = 'https://api.openweathermap.org/data/2.5/weather';
     const DEFAULT_LOCATION = { latitude: 43, longitude: -78.79 };
+    // In THEME_PALETTES, update/add:
     const THEME_PALETTES = {
-      dawn: {
-        bg: "#203040",
-        text: "#F2F7FF",
+      preDawn: {          // Light: 30min before sunrise → Sunrise
+        bg: "#C8D8E8",
+        text: "#1A2A3A",
         buttonBg: "#3D6CA8",
         buttonHoverBg: "#335E93",
         buttonText: "#FFFFFF",
+        weatherIconFilter: "none"
+      },
+      morning: {          // Dark: Sunrise → Dhuhr
+        bg: "#1A2F45",
+        text: "#E8F4FF",
+        buttonBg: "#4A90D9",
+        buttonHoverBg: "#357ABD",
+        buttonText: "#FFFFFF",
         weatherIconFilter: "brightness(0) invert(1)"
       },
-      noon: {
+      noon: {             // Light: Dhuhr → Asr
         bg: "#F3F7FF",
         text: "#0F1B2B",
         buttonBg: "#2D5CA6",
@@ -50,23 +59,23 @@
         buttonText: "#FFFFFF",
         weatherIconFilter: "none"
       },
-      afternoon: {
-        bg: "#FFC078",
-        text: "#4A2A05",
+      afternoon: {        // Dark: Asr → Maghrib
+        bg: "#7A3B00",
+        text: "#FFE8CC",
         buttonBg: "#EA580C",
         buttonHoverBg: "#C2410C",
         buttonText: "#FFFFFF",
-        weatherIconFilter: "none"
+        weatherIconFilter: "brightness(0) invert(1)"
       },
-      sunset: {
-        bg: "#5A3B5D",
-        text: "#FFEBDD",
+      evening: {          // Light: Maghrib → Sleep
+        bg: "#F2D9E8",
+        text: "#3B1A2A",
         buttonBg: "#C06A96",
         buttonHoverBg: "#A85C86",
         buttonText: "#FFFFFF",
-        weatherIconFilter: "brightness(0) invert(1)"
+        weatherIconFilter: "none"
       },
-      night: {
+      night: {            // Dark: Sleep → Fajr
         bg: "#121212",
         text: "#FFFFFF",
         buttonBg: "#1E88E5",
@@ -145,22 +154,25 @@
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const { coords, params } = getPrayerCalculationContext();
       const rawPrayerTimes = new adhan.PrayerTimes(coords, today, params);
-      const prayers = getPrayerTimesForDay(today);
 
-      const fajr = getPrayerByName(prayers, "Fajr").time;
-      const dhuhr = getPrayerByName(prayers, "Dhuhr").time;
-      const asr = getPrayerByName(prayers, "Asr").time;
+      const prayers = getPrayerTimesForDay(today);
+      const fajr    = getPrayerByName(prayers, "Fajr").time;     // = sunrise - 30min
+      const dhuhr   = getPrayerByName(prayers, "Dhuhr").time;
+      const asr     = getPrayerByName(prayers, "Asr").time;
       const maghrib = getPrayerByName(prayers, "Maghrib").time;
-      const isha = getPrayerByName(prayers, "Isha").time;
+      const isha    = getPrayerByName(prayers, "Isha").time;
       const sunrise = rawPrayerTimes.sunrise;
 
-      let phase = "noon";
-      if (now >= isha || now < sunrise) phase = "night";
-      else if (now >= maghrib) phase = "sunset";
-      else if (now >= asr) phase = "afternoon";
-      else if (now >= dhuhr) phase = "noon";
-      else if (now >= fajr) phase = "dawn";
-      else phase = "night";
+      // Sleep time = Isha (your adjusted one)
+      // "Sleep → Fajr" = from Isha until the Fajr azan (30min before sunrise)
+
+      let phase;
+      if      (now >= fajr    && now < sunrise) phase = "preDawn";    // Light
+      else if (now >= sunrise && now < dhuhr)   phase = "morning";    // Dark
+      else if (now >= dhuhr   && now < asr)     phase = "noon";       // Light
+      else if (now >= asr     && now < maghrib) phase = "afternoon";  // Dark
+      else if (now >= maghrib && now < isha)    phase = "evening";    // Light
+      else                                       phase = "night";      // Dark (Isha → Fajr)
 
       applyTheme(phase);
     }
