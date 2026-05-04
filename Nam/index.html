@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Quest of Namra</title>
+  <style>
+    :root {
+      --bg-a: #fff4df;
+      --bg-b: #ffe7c7;
+      --bg-c: #ffd9f3;
+      --ink: #1f1f1f;
+      --panel: #fffdf7;
+      --accent: #f97316;
+      --accent-2: #0ea5e9;
+      --danger: #e11d48;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      color: var(--ink);
+      font-family: "Trebuchet MS", "Lucida Sans", sans-serif;
+      background:
+        radial-gradient(circle at 12% 18%, var(--bg-c), transparent 45%),
+        radial-gradient(circle at 80% -5%, #fde68a, transparent 45%),
+        linear-gradient(145deg, var(--bg-a), var(--bg-b));
+      animation: skyDrift 9s ease-in-out infinite;
+    }
+
+    @keyframes skyDrift {
+      0%, 100% { background-position: 0 0, 0 0, 0 0; }
+      50% { background-position: 16px -14px, -12px 18px, 0 0; }
+    }
+
+    .stage {
+      position: relative;
+      width: min(760px, 92vw);
+      margin: 6vh auto;
+      z-index: 10;
+      background: var(--panel);
+      border: 4px dashed #fb923c;
+      border-radius: 22px;
+      padding: 20px 18px 18px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+      animation: wobble 4.5s ease-in-out infinite;
+    }
+
+    @keyframes wobble {
+      0%, 100% { transform: rotate(-0.25deg); }
+      50% { transform: rotate(0.25deg); }
+    }
+
+    .scene-title {
+      margin: 0 0 8px;
+      font-size: clamp(1.4rem, 4vw, 2.2rem);
+      line-height: 1.1;
+    }
+
+    .scene-text {
+      margin: 0;
+      min-height: 4.5em;
+      font-size: clamp(1rem, 2.6vw, 1.22rem);
+      line-height: 1.45;
+      max-width: 62ch;
+    }
+
+    .action-zone {
+      margin-top: 16px;
+      min-height: 180px;
+      position: relative;
+      border: 2px solid #fed7aa;
+      border-radius: 16px;
+      padding: 12px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .hint {
+      margin-top: 10px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #6b7280;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 800;
+      padding: 10px 16px;
+      cursor: pointer;
+      transition: transform 0.12s ease;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-main { background: #22c55e; color: #052e16; box-shadow: 0 5px 0 #15803d; }
+    .btn-alt { background: #3b82f6; color: #fff; box-shadow: 0 5px 0 #1d4ed8; }
+    .btn-danger { background: #fb7185; color: #4c0519; box-shadow: 0 5px 0 #e11d48; }
+    .btn-food { background: #f59e0b; color: #422006; box-shadow: 0 5px 0 #d97706; }
+
+    .runaway {
+      position: absolute;
+      z-index: 3;
+    }
+
+    .chip {
+      position: absolute;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: #fef08a;
+      border: 2px solid #eab308;
+      font-weight: 900;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .progress {
+      width: min(520px, 95%);
+      height: 18px;
+      border-radius: 999px;
+      border: 2px solid #93c5fd;
+      background: #eff6ff;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+
+    .progress > div {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #22c55e);
+      transition: width 0.14s linear;
+    }
+
+    .food-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .fall {
+      position: fixed;
+      top: -8vh;
+      font-size: 1.4rem;
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0.95;
+      animation: fall linear forwards;
+    }
+
+    @keyframes fall {
+      to {
+        transform: translateY(115vh) rotate(680deg);
+        opacity: 0.95;
+      }
+    }
+
+    .stamp {
+      position: fixed;
+      right: 10px;
+      bottom: 10px;
+      z-index: 20;
+      font-size: 0.82rem;
+      border: 1px solid #f59e0b;
+      border-radius: 10px;
+      padding: 6px 8px;
+      background: #ffffffc4;
+    }
+
+    .tiny-note {
+      font-size: 0.92rem;
+      color: #4b5563;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <main class="stage" id="stage">
+    <h1 class="scene-title" id="title"></h1>
+    <p class="scene-text" id="text"></p>
+    <div class="action-zone" id="actionZone"></div>
+    <div class="hint" id="hint"></div>
+  </main>
+  <div class="stamp">Buffalo x Aligarh Birthday Chaos</div>
+
+  <script>
+    const titleEl = document.getElementById("title");
+    const textEl = document.getElementById("text");
+    const actionZone = document.getElementById("actionZone");
+    const hintEl = document.getElementById("hint");
+    const stageCard = document.getElementById("stage");
+
+    let scene = 0;
+
+    const scenes = [
+      {
+        title: "Chapter 1: Morning in Buffalo",
+        text: "Today, in Buffalo, a legendary human named Fariha (alias Namra, alias Nimra, occasionally alias Nirma) wakes up. Mission: unlock her birthday story.",
+        hint: "Tap begin.",
+        render: () => {
+          const btn = button("Begin the chaos", "btn btn-main");
+          btn.addEventListener("click", nextScene);
+          actionZone.appendChild(btn);
+        }
+      },
+      {
+        title: "Chapter 2: The Annoying Door",
+        text: "A tiny door appears. It says: 'Only very patient birthday queens may proceed.' The Next button has other plans.",
+        hint: "Try to click the blue button 5 times. It runs away first.",
+        render: () => {
+          let dodges = 0;
+          const run = button("Next", "btn btn-alt runaway");
+          placeInZone(run, 40, 80);
+
+          const dodge = () => {
+            if (dodges < 5) {
+              dodges += 1;
+              hintEl.textContent = `Dodged ${dodges}/5. Keep hunting.`;
+              randomizeInZone(run);
+              shakeCard(8);
+              burst(["😈", "🏃", "💨"], 6);
+            }
+          };
+
+          run.addEventListener("mouseenter", dodge);
+          run.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            dodge();
+          }, { passive: false });
+
+          run.addEventListener("click", () => {
+            if (dodges < 5) {
+              dodge();
+              return;
+            }
+            nextScene();
+          });
+
+          actionZone.appendChild(run);
+        }
+      },
+      {
+        title: "Chapter 3: Identity Crisis",
+        text: "Forest spirits whisper: 'Namra? Nimra? Nirma?' Catch the correct name tokens before they fly away.",
+        hint: "Catch 'Namra' 3 times. One real. Many imposters.",
+        render: () => {
+          let caught = 0;
+          const roundTimers = [];
+
+          const stopRoundTimers = () => {
+            while (roundTimers.length) {
+              clearInterval(roundTimers.pop());
+            }
+          };
+
+          const clearRound = () => {
+            stopRoundTimers();
+            actionZone.querySelectorAll(".chip").forEach((el) => el.remove());
+          };
+
+          const spawnChip = (word, isReal, forceX = null, forceY = null) => {
+            const chip = document.createElement("button");
+            chip.className = "chip";
+            chip.textContent = word;
+            const x = forceX ?? Math.random() * (actionZone.clientWidth - 120);
+            const y = forceY ?? Math.random() * (actionZone.clientHeight - 56);
+            placeInZone(chip, x, y);
+            chip.style.transform = `rotate(${rand(-8, 8)}deg) scale(${(0.92 + Math.random() * 0.2).toFixed(2)})`;
+            chip.style.zIndex = String(rand(1, 3));
+
+            if (!isReal) {
+              let dodgesLeft = 3;
+              chip.addEventListener("mouseenter", () => {
+                if (dodgesLeft > 0) {
+                  dodgesLeft -= 1;
+                  randomizeInZone(chip);
+                }
+              });
+            } else {
+              let realDodge = 1;
+              chip.addEventListener("mouseenter", () => {
+                if (realDodge > 0) {
+                  realDodge -= 1;
+                  randomizeInZone(chip);
+                }
+              });
+            }
+
+            chip.addEventListener("click", () => {
+              if (isReal) {
+                caught += 1;
+                hintEl.textContent = `Great. Namra caught ${caught}/3.`;
+                burst(["🎯", "✅", "🥳"], 6);
+                clearRound();
+                if (caught >= 3) {
+                  nextScene();
+                  return;
+                }
+                spawnRound();
+                return;
+              }
+
+              hintEl.textContent = `Oops, that was ${word}. Nice try.`;
+              shakeCard(10);
+              chip.remove();
+            });
+
+            actionZone.appendChild(chip);
+            return chip;
+          };
+
+          const spawnRound = () => {
+            clearRound();
+            const decoys = [
+              "Nimra", "Nirma", "Naaamra", "Namrah", "Numra", "Nimrah",
+              "NamrA", "Narmra", "Namraa", "Nimrra", "Nymra", "Nam-Ra"
+            ];
+            const clusterX = Math.random() * (actionZone.clientWidth - 140);
+            const clusterY = Math.random() * (actionZone.clientHeight - 60);
+            const realChip = spawnChip("Namra", true, clusterX, clusterY);
+
+            for (let i = 0; i < 13; i++) {
+              const nearX = Math.max(4, Math.min(clusterX + rand(-90, 90), actionZone.clientWidth - 140));
+              const nearY = Math.max(4, Math.min(clusterY + rand(-70, 70), actionZone.clientHeight - 56));
+              const decoyWord = decoys[Math.floor(Math.random() * decoys.length)];
+              spawnChip(decoyWord, false, nearX, nearY);
+            }
+
+            const shuffleTimer = setInterval(() => {
+              const allChips = Array.from(actionZone.querySelectorAll(".chip"));
+              if (!allChips.length || !document.body.contains(realChip)) return;
+              allChips.forEach((chip, idx) => {
+                if (chip === realChip) return;
+                if (idx % 2 === 0 || Math.random() < 0.36) randomizeInZone(chip);
+              });
+              if (Math.random() < 0.65) {
+                const rx = parseFloat(realChip.style.left || "0");
+                const ry = parseFloat(realChip.style.top || "0");
+                const hideX = Math.max(4, Math.min(rx + rand(-34, 34), actionZone.clientWidth - 140));
+                const hideY = Math.max(4, Math.min(ry + rand(-26, 26), actionZone.clientHeight - 56));
+                placeInZone(realChip, hideX, hideY);
+              }
+            }, 750);
+            roundTimers.push(shuffleTimer);
+          };
+
+          spawnRound();
+        }
+      },
+      {
+        title: "Chapter 4: Creative Energy Refill",
+        text: "Between mom duties and tiny-human negotiations, your painting and baking time got stolen. Refill creative energy to continue.",
+        hint: "Fill BOTH bars to 85%. Hold one power, then the other. They still fight each other.",
+        render: () => {
+          const creativeWrap = document.createElement("div");
+          const creativeLabel = document.createElement("div");
+          creativeLabel.className = "tiny-note";
+          creativeLabel.style.fontWeight = "800";
+          creativeLabel.textContent = "Creative spark";
+          const creativeBar = document.createElement("div");
+          creativeBar.className = "progress";
+          const creativeFill = document.createElement("div");
+          creativeBar.appendChild(creativeFill);
+          creativeWrap.append(creativeLabel, creativeBar);
+
+          const focusWrap = document.createElement("div");
+          const focusLabel = document.createElement("div");
+          focusLabel.className = "tiny-note";
+          focusLabel.style.fontWeight = "800";
+          focusLabel.textContent = "Focus fuel";
+          const focusBar = document.createElement("div");
+          focusBar.className = "progress";
+          const focusFill = document.createElement("div");
+          focusBar.appendChild(focusFill);
+          focusWrap.append(focusLabel, focusBar);
+
+          const holdCreative = button("Hold: Paint + Bake", "btn btn-danger");
+          holdCreative.style.fontSize = "1.02rem";
+          holdCreative.style.position = "absolute";
+          holdCreative.style.right = "14px";
+          holdCreative.style.bottom = "14px";
+
+          const holdFocus = button("Hold: Mom Power", "btn btn-alt");
+          holdFocus.style.fontSize = "1.02rem";
+          holdFocus.style.position = "absolute";
+          holdFocus.style.left = "14px";
+          holdFocus.style.bottom = "14px";
+
+          const sabotage = button("Check group chat now", "btn btn-food");
+          sabotage.style.position = "absolute";
+          sabotage.style.left = "50%";
+          sabotage.style.bottom = "74px";
+          sabotage.style.transform = "translateX(-50%)";
+
+          const note = document.createElement("div");
+          note.className = "tiny-note";
+          note.textContent = "Warning: holding one bar drains the other. Chaotic life simulator.";
+
+          let creative = 0;
+          let focus = 0;
+          let active = "";
+
+          const startHold = (type) => (e) => {
+            e.preventDefault();
+            active = type;
+          };
+          const endHold = () => {
+            active = "";
+          };
+
+          const growTick = setInterval(() => {
+            if (active === "creative") {
+              creative = Math.min(100, creative + 3.5);
+              focus = Math.max(0, focus - 0.55);
+              if (Math.random() < 0.2) randomizeInZone(holdCreative);
+              if (Math.random() < 0.12) randomizeInZone(sabotage);
+            } else if (active === "focus") {
+              focus = Math.min(100, focus + 3.2);
+              creative = Math.max(0, creative - 0.55);
+              if (Math.random() < 0.2) randomizeInZone(holdFocus);
+              if (Math.random() < 0.12) randomizeInZone(sabotage);
+            } else {
+              creative = Math.max(0, creative - 0.75);
+              focus = Math.max(0, focus - 0.75);
+            }
+
+            creativeFill.style.width = creative + "%";
+            focusFill.style.width = focus + "%";
+
+            if (creative >= 85 && focus >= 85) {
+                clearInterval(growTick);
+                clearInterval(windTick);
+                nextScene();
+            }
+          }, 95);
+
+          const windTick = setInterval(() => {
+            randomizeInZone(holdCreative);
+            randomizeInZone(holdFocus);
+            if (Math.random() < 0.5) randomizeInZone(sabotage);
+          }, 2900);
+
+          sabotage.addEventListener("click", () => {
+            creative = Math.max(0, creative - 12);
+            focus = Math.max(0, focus - 12);
+            hintEl.textContent = "Friends group chat consumed 12% energy.";
+            shakeCard(9);
+          });
+
+          holdCreative.addEventListener("mousedown", startHold("creative"));
+          holdCreative.addEventListener("touchstart", startHold("creative"), { passive: false });
+          holdFocus.addEventListener("mousedown", startHold("focus"));
+          holdFocus.addEventListener("touchstart", startHold("focus"), { passive: false });
+          window.addEventListener("mouseup", endHold);
+          window.addEventListener("touchend", endHold);
+
+          actionZone.append(creativeWrap, focusWrap, holdCreative, holdFocus, sabotage, note);
+        }
+      },
+      {
+        title: "Chapter 5: Picky Foodie Challenge",
+        text: "Dinner planner opens. You are picky, refined, and always right. The only acceptable plan includes barbecue vibes and Aligarh-style mutton.",
+        hint: "Click the Aligarh mutton option.",
+        render: () => {
+          const grid = document.createElement("div");
+          grid.className = "food-grid";
+
+          const items = [
+            "Cold plain salad with regret",
+            "Mystery soggy sandwich",
+            "Aligarh-style mutton feast",
+            "Random noodles with no spice",
+            "Vanilla air with zero taste",
+            "Unseasoned broccoli surprise"
+          ];
+
+          items.forEach((label) => {
+            const b = button(label, "btn btn-food");
+            if (label.includes("Aligarh-style")) {
+              b.addEventListener("click", () => {
+                burst(["🍛", "🔥", "👑", "❤️"], 16);
+                nextScene();
+              });
+            } else {
+              b.addEventListener("mouseenter", () => {
+                b.style.transform = `translate(${rand(-20, 20)}px, ${rand(-16, 16)}px) rotate(${rand(-8, 8)}deg)`;
+              });
+              b.addEventListener("click", () => {
+                hintEl.textContent = "Nope. Birthday queen rejects low-quality food.";
+                shakeCard(7);
+              });
+            }
+            grid.appendChild(b);
+          });
+
+          actionZone.appendChild(grid);
+        }
+      },
+      {
+        title: "Chapter 6: Park Explorer Mode",
+        text: "Park breeze + friend-chat energy + barbecue cravings. Catch real fireflies and avoid chat bubbles.",
+        hint: "Catch 6 fireflies. Ignore chat bubbles.",
+        render: () => {
+          let score = 0;
+          const target = 6;
+          const liveTimers = [];
+
+          const scoreEl = document.createElement("div");
+          scoreEl.className = "tiny-note";
+          scoreEl.style.fontWeight = "800";
+          scoreEl.textContent = `Nature points: 0/${target}`;
+          actionZone.appendChild(scoreEl);
+
+          const clearAllTimers = () => {
+            while (liveTimers.length) {
+              clearInterval(liveTimers.pop());
+            }
+          };
+
+          const spawnSprite = (kind = "firefly") => {
+            const sprite = document.createElement("button");
+            sprite.className = "chip";
+            sprite.dataset.kind = kind;
+
+            if (kind === "firefly") {
+              sprite.textContent = "✨ firefly";
+              sprite.style.background = "#dcfce7";
+              sprite.style.borderColor = "#22c55e";
+            } else {
+              sprite.textContent = "💬 friend ping";
+              sprite.style.background = "#fde68a";
+              sprite.style.borderColor = "#f59e0b";
+            }
+
+            randomizeInZone(sprite);
+
+            let freezeUntil = 0;
+            const mover = setInterval(() => {
+              if (!document.body.contains(sprite)) {
+                clearInterval(mover);
+                return;
+              }
+              if (Date.now() < freezeUntil) return;
+              randomizeInZone(sprite);
+            }, 950);
+            liveTimers.push(mover);
+
+            const freezeShort = () => {
+              freezeUntil = Date.now() + 450;
+            };
+            sprite.addEventListener("mouseenter", freezeShort);
+
+            const handleTap = (e) => {
+              e.preventDefault();
+              if (!document.body.contains(sprite)) return;
+              if (sprite.dataset.kind === "firefly") {
+                score += 1;
+                scoreEl.textContent = `Nature points: ${score}/${target}`;
+                burst(["🌿", "🍃", "🔥"], 8);
+                sprite.remove();
+                clearInterval(mover);
+                if (score >= target) {
+                  clearAllTimers();
+                  nextScene();
+                  return;
+                }
+                spawnSprite(Math.random() < 0.62 ? "firefly" : "chat");
+              } else {
+                hintEl.textContent = "That was a chat bubble. Nice gossip, no points.";
+                shakeCard(8);
+                randomizeInZone(sprite);
+              }
+            };
+
+            sprite.addEventListener("click", handleTap);
+            sprite.addEventListener("touchstart", handleTap, { passive: false });
+            actionZone.appendChild(sprite);
+          };
+
+          for (let i = 0; i < 7; i++) {
+            spawnSprite(i < 4 ? "firefly" : "chat");
+          }
+        }
+      },
+      {
+        title: "Final Chapter",
+        text: "Happy Birthday, Nammunno. Here's your favorite Chocolate parfait cake ! You are magic: artist heart, baker soul, nature explorer, barbecue enthusiast, and queen of friend chats. May this year give you more canvases, more oven joy, more park sunsets, and endless Aligarh-level deliciousness.",
+        hint: "Quest complete.",
+        render: () => {
+          const end = document.createElement("div");
+          end.className = "tiny-note";
+          end.style.fontSize = "1.05rem";
+          end.style.fontWeight = "800";
+          end.style.color = "#be123c";
+          end.textContent = "Happy Birthday Namra, from your very annoying but loving husband.";
+
+          const replay = button("Replay chaos", "btn btn-alt");
+          replay.addEventListener("click", () => {
+            scene = 0;
+            renderScene();
+          });
+
+          actionZone.append(end, replay);
+          burst(["🎂", "🧁", "🎨", "🌳", "💖", "🥳", "🍛"], 30);
+          document.body.style.filter = "saturate(1.08)";
+        }
+      }
+    ];
+
+    function renderScene() {
+      const s = scenes[scene];
+      titleEl.textContent = s.title;
+      textEl.textContent = s.text;
+      hintEl.textContent = s.hint;
+      actionZone.innerHTML = "";
+      s.render();
+    }
+
+    function nextScene() {
+      scene = Math.min(scene + 1, scenes.length - 1);
+      renderScene();
+    }
+
+    function button(label, cls) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = cls;
+      b.textContent = label;
+      return b;
+    }
+
+    function placeInZone(el, x, y) {
+      el.style.position = "absolute";
+      el.style.left = `${Math.max(4, Math.min(x, actionZone.clientWidth - 140))}px`;
+      el.style.top = `${Math.max(4, Math.min(y, actionZone.clientHeight - 50))}px`;
+    }
+
+    function randomizeInZone(el) {
+      const x = Math.random() * (actionZone.clientWidth - 140);
+      const y = Math.random() * (actionZone.clientHeight - 52);
+      placeInZone(el, x, y);
+    }
+
+    function rand(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function burst(symbols, count) {
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement("div");
+        p.className = "fall";
+        p.textContent = symbols[Math.floor(Math.random() * symbols.length)];
+        p.style.left = Math.random() * 100 + "vw";
+        p.style.animationDuration = 3.5 + Math.random() * 4 + "s";
+        p.style.fontSize = (1 + Math.random() * 1.4) + "rem";
+        document.body.appendChild(p);
+        setTimeout(() => p.remove(), 9000);
+      }
+    }
+
+    function shakeCard(distance) {
+      stageCard.animate(
+        [
+          { transform: `translateX(${-distance}px)` },
+          { transform: `translateX(${distance}px)` },
+          { transform: "translateX(0px)" }
+        ],
+        { duration: 220, iterations: 1 }
+      );
+    }
+
+    setInterval(() => {
+      if (Math.random() < 0.42) {
+        burst(["🧁", "🎨", "🍃", "✨"], 2);
+      }
+    }, 2100);
+
+    renderScene();
+  </script>
+</body>
+</html>
