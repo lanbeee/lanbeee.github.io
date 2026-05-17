@@ -103,8 +103,12 @@
     let exerciseHighScore = 0;
     let lastCounterDate = "";
     let currentThemePhase = "";
+    let currentTransitionPhase = "";
+    let cachedThemeTimelineDate = "";
+    let cachedThemeTimeline = [];
 
     const COUNTER_STORAGE_KEY = "exerciseCounterState";
+    const THEME_TRANSITION_DURATION_MS = 30 * 60 * 1000;
 
     function loadCounterStateFromStorage() {
       try {
@@ -136,45 +140,134 @@
       return prayers.find(prayer => prayer.name === name);
     }
 
-    function applyTheme(phase) {
-      if (phase === currentThemePhase) return;
+    function setThemeVars(prefix, palette) {
+      const root = document.documentElement;
+      root.style.setProperty(`${prefix}app-bg`, palette.bg);
+      root.style.setProperty(`${prefix}app-text`, palette.text);
+      root.style.setProperty(`${prefix}button-bg`, palette.buttonBg);
+      root.style.setProperty(`${prefix}button-hover-bg`, palette.buttonHoverBg);
+      root.style.setProperty(`${prefix}button-text`, palette.buttonText);
+      root.style.setProperty(`${prefix}weather-icon-filter`, palette.weatherIconFilter);
+    }
+
+    function applyTheme(phase, transition = null) {
       const palette = THEME_PALETTES[phase] || THEME_PALETTES.night;
       const root = document.documentElement;
-      root.style.setProperty("--app-bg", palette.bg);
-      root.style.setProperty("--app-text", palette.text);
-      root.style.setProperty("--button-bg", palette.buttonBg);
-      root.style.setProperty("--button-hover-bg", palette.buttonHoverBg);
-      root.style.setProperty("--button-text", palette.buttonText);
-      root.style.setProperty("--weather-icon-filter", palette.weatherIconFilter);
-      currentThemePhase = phase;
+
+      if (phase !== currentThemePhase) {
+        setThemeVars("--", palette);
+        currentThemePhase = phase;
+      }
+
+      if (transition) {
+        const nextPalette = THEME_PALETTES[transition.nextPhase] || THEME_PALETTES.night;
+        if (transition.nextPhase !== currentTransitionPhase) {
+          setThemeVars("--next-", nextPalette);
+          currentTransitionPhase = transition.nextPhase;
+        }
+        root.style.setProperty("--theme-split", `${transition.progress}%`);
+        root.classList.add("theme-transitioning");
+      } else {
+        root.style.setProperty("--theme-split", "0%");
+        root.classList.remove("theme-transitioning");
+        currentTransitionPhase = "";
+      }
+    }
+
+    function buildThemeTimelineForDay(date) {
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const { coords, params } = getPrayerCalculationContext();
+      const rawPrayerTimes = new adhan.PrayerTimes(coords, day, params);
+      const prayers = getPrayerTimesForDay(day);
+      const fajr = getPrayerByName(prayers, "Fajr").time;
+      const dhuhr = getPrayerByName(prayers, "Dhuhr").time;
+      const asr = getPrayerByName(prayers, "Asr").time;
+      const maghrib = getPrayerByName(prayers, "Maghrib").time;
+      const isha = getPrayerByName(prayers, "Isha").time;
+
+      return [
+        { time: fajr, phase: "preDawn" },
+        { time: rawPrayerTimes.sunrise, phase: "morning" },
+        { time: dhuhr, phase: "noon" },
+        { time: asr, phase: "afternoon" },
+        { time: maghrib, phase: "evening" },
+        { time: isha, phase: "night" }
+      ].sort((a, b) => a.time - b.time);
+    }
+
+    function getThemeState(now = new Date()) {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const cacheKey = formatLocalDate(today);
+
+      if (cacheKey !== cachedThemeTimelineDate) {
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        cachedThemeTimeline = [
+          ...buildThemeTimelineForDay(yesterday),
+          ...buildThemeTimelineForDay(today),
+          ...buildThemeTimelineForDay(tomorrow)
+        ].sort((a, b) => a.time - b.time);
+        cachedThemeTimelineDate = cacheKey;
+      }
+
+      let activeIndex = cachedThemeTimeline.findIndex((event, index) => {
+        const nextEvent = cachedThemeTimeline[index + 1];
+        return now >= event.time && (!nextEvent || now < nextEvent.time);
+      });
+
+      if (activeIndex === -1) {
+        activeIndex = 0;
+      }
+
+      const activeEvent = cachedThemeTimeline[activeIndex];
+      const nextEvent = cachedThemeTimeline[activeIndex + 1];
+      const state = { phase: activeEvent.phase, transition: null };
+
+      if (nextEvent) {
+        const transitionStart = nextEvent.time.getTime() - THEME_TRANSITION_DURATION_MS;
+        const nowTime = now.getTime();
+        if (nowTime >= transitionStart && nowTime < nextEvent.time.getTime()) {
+          const elapsed = nowTime - transitionStart;
+          const progress = Math.max(0, Math.min(100, (elapsed / THEME_TRANSITION_DURATION_MS) * 100));
+          state.transition = {
+            nextPhase: nextEvent.phase,
+            progress: progress.toFixed(4)
+          };
+        }
+      }
+
+      return state;
     }
 
     function updateThemeByPrayerTimes() {
+      const themeState = getThemeState();
+      applyTheme(themeState.phase, themeState.transition);
+    }
+
+    function updateThemeAfterBoundary() {
+      updateThemeByPrayerTimes();
+      setTimeout(updateThemeByPrayerTimes, 1000);
+    }
+
+    function scheduleThemeBoundaryRefreshes() {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const { coords, params } = getPrayerCalculationContext();
-      const rawPrayerTimes = new adhan.PrayerTimes(coords, today, params);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const events = [
+        ...buildThemeTimelineForDay(today),
+        ...buildThemeTimelineForDay(tomorrow)
+      ];
 
-      const prayers = getPrayerTimesForDay(today);
-      const fajr    = getPrayerByName(prayers, "Fajr").time;     // = sunrise - 30min
-      const dhuhr   = getPrayerByName(prayers, "Dhuhr").time;
-      const asr     = getPrayerByName(prayers, "Asr").time;
-      const maghrib = getPrayerByName(prayers, "Maghrib").time;
-      const isha    = getPrayerByName(prayers, "Isha").time;
-      const sunrise = rawPrayerTimes.sunrise;
-
-      // Sleep time = Isha (your adjusted one)
-      // "Sleep → Fajr" = from Isha until the Fajr azan (30min before sunrise)
-
-      let phase;
-      if      (now >= fajr    && now < sunrise) phase = "preDawn";    // Light
-      else if (now >= sunrise && now < dhuhr)   phase = "morning";    // Dark
-      else if (now >= dhuhr   && now < asr)     phase = "noon";       // Light
-      else if (now >= asr     && now < maghrib) phase = "afternoon";  // Dark
-      else if (now >= maghrib && now < isha)    phase = "evening";    // Light
-      else                                       phase = "night";      // Dark (Isha → Fajr)
-
-      applyTheme(phase);
+      events.forEach(event => {
+        const delay = event.time.getTime() - now.getTime();
+        if (delay > 0) {
+          setTimeout(updateThemeAfterBoundary, delay);
+        }
+      });
     }
 
     function dateFromLocalIso(dateString) {
@@ -261,6 +354,8 @@
     }
     setInterval(updateTimeAndDate, 60000);
     updateTimeAndDate();
+    setInterval(updateThemeByPrayerTimes, 1000);
+    scheduleThemeBoundaryRefreshes();
 
     // ==================== Weather ====================
     async function fetchWeather() {
@@ -275,8 +370,11 @@
         // Use HTTPS for weather icon to avoid mixed content warning
         const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
         weatherInfo.innerHTML = `
-          <img src="${iconUrl}" alt="${weatherDescription}">
-          ${temperature}°C, ${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}
+          <span class="weatherIconWrap" aria-hidden="true">
+            <img class="weatherIconCurrent" src="${iconUrl}" alt="">
+            <img class="weatherIconNext" src="${iconUrl}" alt="">
+          </span>
+          <span>${temperature}°C, ${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}</span>
         `;
       } catch (error) {
         console.error(error);
@@ -374,6 +472,7 @@
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const prayers = getPrayerTimesForDay(today);
       scheduleAzaan(prayers);
+      scheduleThemeBoundaryRefreshes();
       const delayUntilNext2AM = timeUntilNext2AM();
       setTimeout(dailyUpdate, delayUntilNext2AM);
       console.log(`Daily update performed at ${now.toLocaleTimeString()}`);
