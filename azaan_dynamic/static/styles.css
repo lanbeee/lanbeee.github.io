@@ -3,10 +3,60 @@
 :root {
   --app-bg: #121212;
   --app-text: #FFFFFF;
+  --next-app-bg: var(--app-bg);
+  --next-app-text: var(--app-text);
   --button-bg: #1E88E5;
   --button-hover-bg: #1565C0;
   --button-text: #FFFFFF;
+  --next-button-bg: var(--button-bg);
+  --next-button-hover-bg: var(--button-hover-bg);
+  --next-button-text: var(--button-text);
   --weather-icon-filter: brightness(0) invert(1);
+  --next-weather-icon-filter: var(--weather-icon-filter);
+  --theme-split: 0%;
+  --theme-page-bg: var(--app-bg);
+  --theme-text-fill: var(--app-text);
+  --theme-button-bg: var(--button-bg);
+  --theme-button-hover-bg: var(--button-hover-bg);
+  --theme-button-text-fill: var(--button-text);
+}
+
+:root.theme-transitioning {
+  --theme-page-bg: linear-gradient(
+    to right,
+    var(--next-app-bg) 0%,
+    var(--next-app-bg) var(--theme-split),
+    var(--app-bg) var(--theme-split),
+    var(--app-bg) 100%
+  );
+  --theme-text-fill: linear-gradient(
+    to right,
+    var(--next-app-text) 0%,
+    var(--next-app-text) var(--theme-split),
+    var(--app-text) var(--theme-split),
+    var(--app-text) 100%
+  );
+  --theme-button-bg: linear-gradient(
+    to right,
+    var(--next-button-bg) 0%,
+    var(--next-button-bg) var(--theme-split),
+    var(--button-bg) var(--theme-split),
+    var(--button-bg) 100%
+  );
+  --theme-button-hover-bg: linear-gradient(
+    to right,
+    var(--next-button-hover-bg) 0%,
+    var(--next-button-hover-bg) var(--theme-split),
+    var(--button-hover-bg) var(--theme-split),
+    var(--button-hover-bg) 100%
+  );
+  --theme-button-text-fill: linear-gradient(
+    to right,
+    var(--next-button-text) 0%,
+    var(--next-button-text) var(--theme-split),
+    var(--button-text) var(--theme-split),
+    var(--button-text) 100%
+  );
 }
 
 /* Reset some default styles */
@@ -14,7 +64,7 @@ body, html {
   margin: 0;
   padding: 0;
   height: 100%;
-  background-color: var(--app-bg);
+  background: var(--theme-page-bg);
   color: var(--app-text);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   overflow: hidden; /* Prevent scroll */
@@ -28,6 +78,35 @@ body, html {
   height: 100%;
   padding: 20px;
   box-sizing: border-box;
+}
+
+#counterResetBtn,
+#counterValue,
+#highScoreValue,
+#weather,
+#time,
+#date,
+#message,
+#prayerTimesDisplay,
+h1 {
+  color: var(--app-text);
+}
+
+:root.theme-transitioning #counterResetBtn,
+:root.theme-transitioning #counterValue,
+:root.theme-transitioning #highScoreValue,
+:root.theme-transitioning #weather,
+:root.theme-transitioning #time,
+:root.theme-transitioning #date,
+:root.theme-transitioning #message,
+:root.theme-transitioning #prayerTimesDisplay,
+:root.theme-transitioning h1 {
+  background-image: var(--theme-text-fill);
+  background-size: 100vw 100%;
+  background-attachment: fixed;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 #exerciseCounter {
@@ -44,7 +123,6 @@ body, html {
 #counterResetBtn {
   background: transparent;
   border: none;
-  color: var(--app-text);
   font-size: 24px;
   line-height: 1;
   padding: 0;
@@ -75,7 +153,7 @@ body, html {
   transform: translateX(-50%);
   padding: 20px 40px;
   font-size: 24px;
-  background-color: var(--button-bg);
+  background: var(--theme-button-bg);
   border: none;
   border-radius: 8px;
   color: var(--button-text);
@@ -94,7 +172,7 @@ body, html {
 
 /* Optional: Hover effect for the button */
 #startLoopBtn:hover {
-  background-color: var(--button-hover-bg);
+  background: var(--theme-button-hover-bg);
 }
 
 /* Weather Section */
@@ -113,6 +191,35 @@ body, html {
   height: 80px;
   margin-right: 20px;
   filter: var(--weather-icon-filter);
+}
+
+.weatherIconWrap {
+  position: relative;
+  display: inline-block;
+  width: 80px;
+  height: 80px;
+  margin-right: 20px;
+  flex: 0 0 auto;
+}
+
+.weatherIconWrap img {
+  position: absolute;
+  inset: 0;
+  margin-right: 0;
+}
+
+.weatherIconNext {
+  display: none;
+}
+
+:root.theme-transitioning .weatherIconCurrent {
+  filter: var(--weather-icon-filter);
+}
+
+:root.theme-transitioning .weatherIconNext {
+  display: block;
+  clip-path: inset(0 calc(100% - var(--theme-split)) 0 0);
+  filter: var(--next-weather-icon-filter);
 }
 
 /* Time Display */
@@ -185,91 +292,15 @@ h1 {
     margin-right: 8px;
     filter: var(--weather-icon-filter);
   }
-  
-}
-  opacity: 1;
-  transition: opacity 1s ease, visibility 1s ease;
-}
 
-/* Hidden state for the button */
-#startLoopBtn.hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-/* Optional: Hover effect for the button */
-#startLoopBtn:hover {
-  background-color: #1565C0;
-}
-
-/* Weather Section */
-#weather {
-  position: absolute;
-  top: 10px;
-  right: 20px;
-  text-align: right;
-  font-size: 40px;
-  display: flex;
-  align-items: center;
-}
-
-#weather img {
-  width: 80px;
-  height: 80px;
-  margin-right: 20px;
-}
-
-/* Time Display */
-#time {
-  font-size: 200px;
-  text-align: center;
-  margin-top: 100px;
-}
-
-/* Date Display */
-#date {
-  font-size: 32px;
-  text-align: center;
-  margin-top: 10px;
-}
-
-/* Message Section */
-#message {
-  position: absolute;
-  bottom: 20px;
-  width: 100%;
-  text-align: center;
-  font-size: 32px;
-}
-
-/* Dark Mode Enhancements */
-h1 {
-  text-align: center;
-  margin-top: 50px; /* Adjusted to avoid overlap with button */
-  font-size: 40px;
-}
-
-/* Responsive Adjustments for Landscape on 5-inch Screen */
-@media only screen and (max-width: 800px) and (max-height: 600px) {
-  #time {
-    font-size: 80px;
-  }
-  
-  #date, #weather, #message, h1 {
-    font-size: 24px;
-  }
-  
-  #startLoopBtn {
-    padding: 15px 30px;
-    font-size: 20px;
-  }
-  
-  #weather img {
+  .weatherIconWrap {
     width: 30px;
     height: 30px;
     margin-right: 8px;
-    filter: brightness(0) invert(1);
+  }
+
+  .weatherIconWrap img {
+    margin-right: 0;
   }
   
 }
