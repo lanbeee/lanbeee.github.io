@@ -364,22 +364,6 @@ button {
   opacity: 0.76;
 }
 
-#prayerTimesDisplay {
-  position: fixed;
-  right: calc(env(safe-area-inset-right, 0px) + 12px);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
-  z-index: 20;
-  padding: 6px 9px;
-  background: color-mix(in srgb, #000000 45%, transparent);
-  border: 1px solid color-mix(in srgb, var(--app-text) 12%, transparent);
-  border-radius: 999px;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  backdrop-filter: blur(12px);
-}
-
 .settings-panel {
   position: fixed;
   top: 0;
@@ -605,7 +589,6 @@ button {
 #planList span,
 #planList strong,
 #planList em,
-#prayerTimesDisplay,
 .settings-panel {
   color: var(--app-text);
 }
@@ -620,8 +603,7 @@ button {
 :root.theme-transitioning .counter-label,
 :root.theme-transitioning #planList span,
 :root.theme-transitioning #planList strong,
-:root.theme-transitioning #planList em,
-:root.theme-transitioning #prayerTimesDisplay {
+:root.theme-transitioning #planList em {
   background-image: var(--theme-text-fill);
   background-size: 100vw 100%;
   background-attachment: fixed;
@@ -705,14 +687,6 @@ button {
     grid-template-columns: 1fr;
   }
 
-  #prayerTimesDisplay {
-    left: calc(env(safe-area-inset-left, 0px) + 10px);
-    right: auto;
-    max-width: calc(100vw - 20px);
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
 }
 
 @media (max-height: 560px) {
