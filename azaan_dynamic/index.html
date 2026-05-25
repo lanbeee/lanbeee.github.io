@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="static/styles.css">
   <link rel="icon" href="data:,">
   <script src="lib/js/adhan.umd.min.js"></script>
+  <script src="static/worldcities.generated.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -364,8 +365,15 @@
         citySelect.disabled = true;
         locationStatus.textContent = "Loading city list...";
         cityFileLabel.hidden = true;
+        if (window.WORLD_CITIES_DATA) {
+          processGeneratedCityData(window.WORLD_CITIES_DATA);
+          populateCountrySelect();
+          applySavedLocationToSelects();
+          locationStatus.textContent = `${citiesByCountry.size} countries loaded from generated data.`;
+          return;
+        }
         if (window.location.protocol === "file:") {
-          throw new Error("Local file mode blocks automatic CSV loading.");
+          throw new Error("Local file mode blocks automatic CSV loading. Run scripts/convert-worldcities.js to create static/worldcities.generated.js.");
         }
         const response = await fetch("static/worldcities.csv");
         if (!response.ok) throw new Error("City data unavailable.");
@@ -384,6 +392,16 @@
           : "City list could not load. Check that static/worldcities.csv is reachable.";
         cityFileLabel.hidden = window.location.protocol !== "file:";
       }
+    }
+
+    function processGeneratedCityData(cityData) {
+      citiesByCountry = new Map();
+      Object.entries(cityData).forEach(([country, cities]) => {
+        citiesByCountry.set(country, cities
+          .map(([city, latitude, longitude]) => ({ city, country, latitude: Number(latitude), longitude: Number(longitude) }))
+          .filter((entry) => entry.city && Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude))
+          .sort((a, b) => a.city.localeCompare(b.city)));
+      });
     }
 
     function processCityCsvText(csvText) {
