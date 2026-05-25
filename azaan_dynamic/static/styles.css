@@ -1,13 +1,11 @@
-/* static/css/styles.css */
-
 :root {
   --app-bg: #121212;
-  --app-text: #FFFFFF;
+  --app-text: #ffffff;
   --next-app-bg: var(--app-bg);
   --next-app-text: var(--app-text);
-  --button-bg: #1E88E5;
-  --button-hover-bg: #1565C0;
-  --button-text: #FFFFFF;
+  --button-bg: #1e88e5;
+  --button-hover-bg: #1565c0;
+  --button-text: #ffffff;
   --next-button-bg: var(--button-bg);
   --next-button-hover-bg: var(--button-hover-bg);
   --next-button-text: var(--button-text);
@@ -19,6 +17,9 @@
   --theme-button-bg: var(--button-bg);
   --theme-button-hover-bg: var(--button-hover-bg);
   --theme-button-text-fill: var(--button-text);
+  --panel-bg: color-mix(in srgb, var(--app-bg) 82%, #000000 18%);
+  --panel-border: color-mix(in srgb, var(--app-text) 22%, transparent);
+  --soft-surface: color-mix(in srgb, var(--app-text) 10%, transparent);
 }
 
 :root.theme-transitioning {
@@ -59,153 +60,161 @@
   );
 }
 
-/* Reset some default styles */
-body, html {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: var(--theme-page-bg);
-  color: var(--app-text);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  overflow: hidden; /* Prevent scroll */
-  transition: background-color 0.4s ease, color 0.4s ease;
-}
-
-/* Container for the main content */
-.container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  padding: 20px;
+* {
   box-sizing: border-box;
 }
 
-#counterResetBtn,
-#counterValue,
-#highScoreValue,
-#weather,
-#time,
-#date,
-#message,
-#prayerTimesDisplay,
-h1 {
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--theme-page-bg);
   color: var(--app-text);
+  font-family: ui-rounded, "Avenir Next", "Trebuchet MS", sans-serif;
+  transition: background-color 0.4s ease, color 0.4s ease;
 }
 
-:root.theme-transitioning #counterResetBtn,
-:root.theme-transitioning #counterValue,
-:root.theme-transitioning #highScoreValue,
-:root.theme-transitioning #weather,
-:root.theme-transitioning #time,
-:root.theme-transitioning #date,
-:root.theme-transitioning #message,
-:root.theme-transitioning #prayerTimesDisplay,
-:root.theme-transitioning h1 {
-  background-image: var(--theme-text-fill);
-  background-size: 100vw 100%;
-  background-attachment: fixed;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+button,
+select,
+input {
+  font: inherit;
 }
 
-#exerciseCounter {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 10px);
-  left: calc(env(safe-area-inset-left, 0px) + 14px);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  z-index: 1100;
+button {
+  color: inherit;
 }
 
-#counterResetBtn {
-  background: transparent;
-  border: none;
-  font-size: 24px;
-  line-height: 1;
-  padding: 0;
-  width: 44px;
-  height: 44px;
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100svh;
+  min-height: 100vh;
+  padding: calc(env(safe-area-inset-top, 0px) + 18px) calc(env(safe-area-inset-right, 0px) + 18px) calc(env(safe-area-inset-bottom, 0px) + 18px) calc(env(safe-area-inset-left, 0px) + 18px);
+}
+
+.top-bar {
+  position: fixed;
+  inset: calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + 12px) auto calc(env(safe-area-inset-left, 0px) + 12px);
   display: grid;
-  place-items: center;
-  cursor: pointer;
-  touch-action: manipulation;
+  grid-template-columns: minmax(90px, 1fr) auto minmax(90px, 1fr);
+  align-items: start;
+  gap: 12px;
+  z-index: 50;
+  pointer-events: none;
 }
 
-#counterValue {
-  font-size: 52px;
+.top-bar > * {
+  pointer-events: auto;
+}
+
+.date-block {
+  justify-self: start;
   line-height: 1;
+  letter-spacing: -0.03em;
 }
 
-#highScoreValue {
-  font-size: 20px;
-  line-height: 1;
-  opacity: 0.7;
+#dateDay {
+  font-size: clamp(1.35rem, 3.2vw, 3rem);
+  font-weight: 800;
 }
 
-/* Start Loop Button Styles */
+#dateValue {
+  margin-top: 0.25rem;
+  font-size: clamp(0.9rem, 1.4vw, 1.25rem);
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.top-actions {
+  justify-self: end;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 #startLoopBtn {
-  position: absolute;
-  top: 10px; /* Distance from the top */
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 20px 40px;
-  font-size: 24px;
+  justify-self: center;
+  padding: clamp(10px, 1.8vw, 18px) clamp(16px, 3vw, 36px);
   background: var(--theme-button-bg);
-  border: none;
-  border-radius: 8px;
+  border: 0;
+  border-radius: 999px;
   color: var(--button-text);
   cursor: pointer;
-  z-index: 1000; /* Ensure it's on top */
+  font-size: clamp(0.88rem, 1.7vw, 1.35rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  box-shadow: 0 18px 50px color-mix(in srgb, #000000 28%, transparent);
   opacity: 1;
-  transition: opacity 1s ease, visibility 1s ease;
+  transition: opacity 0.7s ease, visibility 0.7s ease, transform 0.2s ease;
 }
 
-/* Hidden state for the button */
+#startLoopBtn:hover {
+  background: var(--theme-button-hover-bg);
+  transform: translateY(-1px);
+}
+
 #startLoopBtn.hidden {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
-/* Optional: Hover effect for the button */
-#startLoopBtn:hover {
-  background: var(--theme-button-hover-bg);
+.icon-button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: var(--soft-surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+  backdrop-filter: blur(16px);
 }
 
-/* Weather Section */
 #weather {
-  position: absolute;
-  top: 10px;
-  right: 20px;
-  text-align: right;
-  font-size: 40px;
+  max-width: min(42vw, 420px);
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  min-height: 44px;
+  text-align: right;
+  font-size: clamp(0.9rem, 1.8vw, 1.8rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+#weatherInfo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: clamp(6px, 1vw, 14px);
 }
 
 #weather img {
-  width: 80px;
-  height: 80px;
-  margin-right: 20px;
+  width: clamp(32px, 6vw, 76px);
+  height: clamp(32px, 6vw, 76px);
   filter: var(--weather-icon-filter);
 }
 
 .weatherIconWrap {
   position: relative;
   display: inline-block;
-  width: 80px;
-  height: 80px;
-  margin-right: 20px;
+  width: clamp(32px, 6vw, 76px);
+  height: clamp(32px, 6vw, 76px);
   flex: 0 0 auto;
 }
 
 .weatherIconWrap img {
   position: absolute;
   inset: 0;
-  margin-right: 0;
 }
 
 .weatherIconNext {
@@ -222,85 +231,514 @@ h1 {
   filter: var(--next-weather-icon-filter);
 }
 
-/* Time Display */
+#exerciseCounter {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + clamp(86px, 16vh, 132px));
+  left: calc(env(safe-area-inset-left, 0px) + clamp(12px, 2vw, 24px));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  z-index: 30;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
+}
+
+#exerciseCounter.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-12px);
+  pointer-events: none;
+}
+
+#counterResetBtn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: clamp(1.3rem, 2.4vw, 1.8rem);
+  line-height: 1;
+  touch-action: manipulation;
+}
+
+#counterValue {
+  font-size: clamp(2rem, 8vw, 4.25rem);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -0.08em;
+}
+
+.counter-label {
+  font-size: clamp(0.75rem, 1.5vw, 1rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
+.center-stage {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
 #time {
-  font-size: 200px;
-  text-align: center;
-  margin-top: 100px;
-}
-
-/* Date Display */
-#date {
-  font-size: 32px;
-  text-align: center;
-  margin-top: 10px;
-}
-
-/* Message Section */
-#message {
   position: absolute;
-  bottom: 20px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100vw;
+  padding-inline: 2vw;
+  text-align: center;
+  font-size: clamp(5rem, 19vw, 16rem);
+  font-weight: 950;
+  line-height: 0.78;
+  letter-spacing: -0.1em;
+  white-space: nowrap;
+}
+
+#dayPlan {
+  position: absolute;
+  top: calc(50% + clamp(3.5rem, 10vw, 8.75rem));
+  left: 50%;
+  width: min(92vw, 920px);
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+#message {
+  margin: 0 auto;
+  max-width: 920px;
+  font-size: clamp(1rem, 2.2vw, 2.1rem);
+  font-weight: 850;
+  letter-spacing: -0.04em;
+}
+
+#planList {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: clamp(10px, 2vh, 18px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+#planList li {
+  min-width: 0;
+  padding: clamp(8px, 1.5vw, 14px);
+  background: color-mix(in srgb, var(--app-text) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-text) 18%, transparent);
+  border-radius: 18px;
+  text-align: left;
+  backdrop-filter: blur(14px);
+}
+
+#planList span,
+#planList strong,
+#planList em {
+  display: block;
+}
+
+#planList span {
+  font-size: 0.78rem;
+  font-weight: 900;
+  opacity: 0.74;
+}
+
+#planList strong {
+  margin-top: 4px;
+  font-size: clamp(0.85rem, 1.1vw, 1rem);
+  line-height: 1.05;
+}
+
+#planList em {
+  margin-top: 6px;
+  font-size: clamp(0.72rem, 0.95vw, 0.9rem);
+  font-style: normal;
+  line-height: 1.25;
+  opacity: 0.76;
+}
+
+#prayerTimesDisplay {
+  position: fixed;
+  right: calc(env(safe-area-inset-right, 0px) + 12px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 20;
+  padding: 6px 9px;
+  background: color-mix(in srgb, #000000 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-text) 12%, transparent);
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  backdrop-filter: blur(12px);
+}
+
+.settings-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 200;
+  width: min(92vw, 460px);
+  height: 100svh;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 22px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  color: var(--app-text);
+  box-shadow: -30px 0 80px color-mix(in srgb, #000000 35%, transparent);
+  transform: translateX(105%);
+  transition: transform 0.28s ease;
+}
+
+.settings-panel.is-open {
+  transform: translateX(0);
+}
+
+.panel-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: none;
+  background: color-mix(in srgb, #000000 42%, transparent);
+  border: 0;
+  cursor: pointer;
+}
+
+.panel-scrim.is-visible {
+  display: block;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 2.2rem;
+  line-height: 0.9;
+  letter-spacing: -0.07em;
+}
+
+.panel-header p {
+  margin: 10px 0 0;
+  font-weight: 800;
+  opacity: 0.72;
+}
+
+.panel-section {
+  margin-top: 24px;
+  padding: 18px;
+  background: var(--soft-surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 24px;
+}
+
+.panel-section h3 {
+  margin: 0 0 14px;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.panel-section label {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  font-weight: 850;
+  opacity: 0.82;
+}
+
+.panel-section select,
+.panel-section input,
+.panel-section textarea {
   width: 100%;
-  text-align: center;
-  font-size: 32px;
+  margin-top: 7px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--app-bg) 72%, #ffffff 6%);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  color: var(--app-text);
 }
 
-/* Dark Mode Enhancements */
-h1 {
-  text-align: center;
-  margin-top: 50px; /* Adjusted to avoid overlap with button */
-  font-size: 40px;
+.panel-section textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.35;
 }
 
-/* Responsive Adjustments for Landscape on 5-inch Screen */
-@media only screen and (max-width: 800px) and (max-height: 600px) {
-  #exerciseCounter {
-    top: calc(env(safe-area-inset-top, 0px) + 8px);
-    left: calc(env(safe-area-inset-left, 0px) + 10px);
+.planner-controls {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.planner-subsection {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--app-text) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-text) 12%, transparent);
+  border-radius: 18px;
+}
+
+.planner-subsection h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.planner-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.planner-fields label {
+  margin-top: 0;
+}
+
+.inline-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.inline-field span {
+  font-size: 0.88rem;
+  font-weight: 850;
+  opacity: 0.76;
+}
+
+.planner-days {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.planner-days label {
+  margin-top: 0;
+}
+
+.panel-action {
+  width: 100%;
+  margin-top: 4px;
+  padding: 13px 16px;
+  background: var(--theme-button-bg);
+  border: 0;
+  border-radius: 999px;
+  color: var(--button-text);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.panel-action:hover {
+  background: var(--theme-button-hover-bg);
+}
+
+.file-loader {
+  display: block;
+  padding: 12px;
+  background: var(--theme-button-bg);
+  border-radius: 14px;
+  color: var(--button-text);
+  cursor: pointer;
+  text-align: center;
+}
+
+.file-loader input {
+  display: none;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.toggle-row input {
+  width: 20px;
+  height: 20px;
+  margin-top: 0;
+  accent-color: var(--button-bg);
+}
+
+.hint,
+.planner-grid p {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  opacity: 0.76;
+}
+
+.planner-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.planner-grid strong {
+  display: block;
+  font-size: 1rem;
+}
+
+#dateDay,
+#dateValue,
+#weather,
+#time,
+#message,
+#exerciseCounter,
+#counterResetBtn,
+#counterValue,
+.counter-label,
+#planList span,
+#planList strong,
+#planList em,
+#prayerTimesDisplay,
+.settings-panel {
+  color: var(--app-text);
+}
+
+:root.theme-transitioning #dateDay,
+:root.theme-transitioning #dateValue,
+:root.theme-transitioning #weather,
+:root.theme-transitioning #time,
+:root.theme-transitioning #message,
+:root.theme-transitioning #counterResetBtn,
+:root.theme-transitioning #counterValue,
+:root.theme-transitioning .counter-label,
+:root.theme-transitioning #planList span,
+:root.theme-transitioning #planList strong,
+:root.theme-transitioning #planList em,
+:root.theme-transitioning #prayerTimesDisplay {
+  background-image: var(--theme-text-fill);
+  background-size: 100vw 100%;
+  background-attachment: fixed;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@media (max-width: 900px) {
+  .top-bar {
+    grid-template-columns: 1fr auto;
+    align-items: start;
   }
 
-  #counterResetBtn {
-    font-size: 22px;
-    width: 48px;
-    height: 48px;
-  }
-
-  #counterValue {
-    font-size: 36px;
-  }
-
-  #highScoreValue {
-    font-size: 16px;
-  }
-
-  #time {
-    font-size: 80px;
-  }
-  
-  #date, #weather, #message, h1 {
-    font-size: 24px;
-  }
-  
   #startLoopBtn {
-    padding: 15px 30px;
-    font-size: 20px;
-  }
-  
-  #weather img {
-    width: 30px;
-    height: 30px;
-    margin-right: 8px;
-    filter: var(--weather-icon-filter);
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin-top: 8px;
   }
 
-  .weatherIconWrap {
-    width: 30px;
-    height: 30px;
-    margin-right: 8px;
+  .top-actions {
+    max-width: 55vw;
   }
 
-  .weatherIconWrap img {
-    margin-right: 0;
+  #planList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  
+
+  #planList li:nth-child(n + 5) {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .top-bar {
+    inset: calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 10px) auto calc(env(safe-area-inset-left, 0px) + 10px);
+    gap: 8px;
+  }
+
+  #weather {
+    max-width: 46vw;
+  }
+
+  #weatherInfo span:last-child {
+    display: none;
+  }
+
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  #exerciseCounter {
+    top: calc(env(safe-area-inset-top, 0px) + 82px);
+  }
+
+  #dayPlan {
+    top: calc(50% + clamp(3rem, 13vw, 5rem));
+  }
+
+  #planList {
+    grid-template-columns: 1fr;
+    width: min(88vw, 420px);
+    margin-inline: auto;
+  }
+
+  #planList li:nth-child(n + 4) {
+    display: none;
+  }
+
+  #planList em {
+    display: none;
+  }
+
+  .planner-days,
+  .planner-fields {
+    grid-template-columns: 1fr;
+  }
+
+  #prayerTimesDisplay {
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+    right: auto;
+    max-width: calc(100vw - 20px);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (max-height: 560px) {
+  #dayPlan {
+    top: calc(50% + 3.8rem);
+  }
+
+  #message {
+    font-size: clamp(0.9rem, 2vw, 1.1rem);
+  }
+
+  #planList {
+    display: none;
+  }
+
+  #exerciseCounter {
+    top: calc(env(safe-area-inset-top, 0px) + 66px);
+  }
+}
+
+@media (max-width: 520px) and (max-height: 760px) {
+  #message {
+    max-width: 84vw;
+  }
+
+  #planList li:nth-child(n + 3) {
+    display: none;
+  }
 }
