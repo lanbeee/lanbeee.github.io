@@ -185,7 +185,6 @@
 
     <button id="panelScrim" class="panel-scrim" type="button" aria-label="Close settings"></button>
 
-    <div id="prayerTimesDisplay">Prayer Times: Loading...</div>
     <audio id="silentAudio" src="static/silent.mp3" type="audio/mpeg"></audio>
     <audio id="prayerAudio" src="" type="audio/mpeg"></audio>
   </div>
@@ -255,7 +254,6 @@
     const weatherInfo = document.getElementById("weatherInfo");
     const messageDisplay = document.getElementById("message");
     const planList = document.getElementById("planList");
-    const prayerTimesDisplay = document.getElementById("prayerTimesDisplay");
     const counterResetBtn = document.getElementById("counterResetBtn");
     const counterValue = document.getElementById("counterValue");
     const highScoreValue = document.getElementById("highScoreValue");
@@ -474,7 +472,6 @@
       updateThemeByPrayerTimes();
       scheduleThemeBoundaryRefreshes();
       fetchWeather();
-      updatePrayerTimesDisplay(getPrayerTimesForDay(new Date()));
       if (isLooping) rescheduleAzaan();
       updatePlanner();
     }
@@ -590,7 +587,6 @@
       cachedThemeTimelineDate = "";
       updateThemeByPrayerTimes();
       scheduleThemeBoundaryRefreshes();
-      updatePrayerTimesDisplay(getPrayerTimesForDay(new Date()));
       if (isLooping) rescheduleAzaan();
       renderPlannerControls();
       updatePlanner();
@@ -903,14 +899,6 @@
       ];
     }
 
-    function updatePrayerTimesDisplay(prayers) {
-      const times = prayers.map((prayer) => {
-        const time = prayer.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        return ` ${time}`;
-      }).join(",");
-      prayerTimesDisplay.textContent = `Times:${times.replace(/ 0/g, " ").replace(/AM|PM/g, "")}`;
-    }
-
     function timeUntilNext2AM() {
       const now = new Date();
       const next2AM = new Date(now);
@@ -930,7 +918,6 @@
           console.log(`Scheduled ${prayer.name} Azaan at ${prayer.time.toLocaleTimeString()}`);
         }
       });
-      updatePrayerTimesDisplay(prayers);
     }
 
     function rescheduleAzaan() {
@@ -988,7 +975,11 @@
     }
 
     function formatPlanTime(date) {
-      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(" AM", "a").replace(" PM", "p");
+      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?(AM|PM)$/i, "").replace(/^0/, "");
+    }
+
+    function formatPlannerTime(timeString, fallback) {
+      return formatPlanTime(todayAtTime(timeString, fallback));
     }
 
     function getWeeklyAnchor(now) {
@@ -999,24 +990,51 @@
       const monthPriority = plannerNotes(planner.monthPriorities)[0];
       const customNote = plannerNotes(planner.customNotes)[0];
       const weatherActivity = plannerNotes(planner.weatherActivities)[0] || "walk";
-      if (day === planner.laundryDay) return "🧺 Laundry today. Start before dinner so it does not steal the night.";
-      if (day === planner.vacuumDay) return "🧹 Vacuum today. Keep it quick and do it before the evening slows down.";
-      if (day === planner.groceryDay) return "🛒 Weekly groceries today. Check the list before leaving work.";
-      if ((day === 6 || day === 0) && weekOfMonth === planner.meatGroceryWeek) return `🥩 Monthly meat/misc grocery run fits this ${weekLabel(planner.meatGroceryWeek)}${monthPriority ? `; also keep "${monthPriority}" visible` : ""}.`;
-      if ((day === 6 || day === 0) && weekOfMonth === planner.movieWeek) return `🎬 Movie weekend option for the ${weekLabel(planner.movieWeek)}. Keep one relaxed block open.`;
-      if (day === planner.friendsDay) return "👥 Friends/visit window today if the week is not overloaded.";
-      if (day === planner.gamesDay) return "🎮 PS/games window today. Keep the rest of the evening lighter.";
-      if (day === planner.walkDay) return `🚶 If weather is pleasant, use after work for a ${weatherActivity}.`;
-      if (day === planner.restDay) return "🛋️ Protected rest/buffer day. Do not over-schedule it.";
-      if (day === planner.parkDay) return `🌳 Park/outdoor day if weather allows${customNote ? `; note: ${customNote}` : ""}.`;
-      if (day === planner.weekendBufferDay) return "🧭 Weekend buffer for rest, family requests, and spillover errands.";
-      if (weekPriority) return `🎯 This week: ${weekPriority}`;
-      if (monthPriority) return `📅 This month: ${monthPriority}`;
-      return `🧭 Keep a flexible buffer. Upcoming: laundry ${dayLabel(planner.laundryDay)}, vacuum ${dayLabel(planner.vacuumDay)}, groceries ${dayLabel(planner.groceryDay)}, games ${dayLabel(planner.gamesDay)}.`;
+      if (day === planner.laundryDay) return "🧺 Laundry";
+      if (day === planner.vacuumDay) return "🧹 Vacuum";
+      if (day === planner.groceryDay) return "🛒 Weekly groceries";
+      if ((day === 6 || day === 0) && weekOfMonth === planner.meatGroceryWeek) return monthPriority ? `🥩 Meat run + ${monthPriority}` : "🥩 Meat/misc run";
+      if ((day === 6 || day === 0) && weekOfMonth === planner.movieWeek) return "🎬 Movie night";
+      if (day === planner.friendsDay) return "👥 Friends visit";
+      if (day === planner.gamesDay) return "🎮 PS/games";
+      if (day === planner.walkDay) return `🚶 ${weatherActivity}`;
+      if (day === planner.restDay) return "🛋️ Rest buffer";
+      if (day === planner.parkDay) return customNote ? `🌳 Park + ${customNote}` : "🌳 Park";
+      if (day === planner.weekendBufferDay) return "🧭 Weekend buffer";
+      if (weekPriority) return `🎯 ${weekPriority}`;
+      if (monthPriority) return `📅 ${monthPriority}`;
+      return `🧭 Free buffer`;
     }
 
     function pushPlan(items, time, title, detail) {
       if (time > new Date()) items.push({ time, title, detail });
+    }
+
+    function pushTodayAnchors(items, now, startTime) {
+      const planner = getPlannerSettings();
+      const day = now.getDay();
+      const weekOfMonth = Math.ceil(now.getDate() / 7);
+      const weatherActivity = plannerNotes(planner.weatherActivities)[0] || "walk";
+      const customNote = plannerNotes(planner.customNotes)[0];
+      const monthPriority = plannerNotes(planner.monthPriorities)[0];
+      let offset = 25;
+
+      const addAnchor = (title, detail) => {
+        pushPlan(items, addMinutes(startTime, offset), title, detail);
+        offset += 35;
+      };
+
+      if (day === planner.laundryDay) addAnchor("🧺 Laundry", "Start before dinner");
+      if (day === planner.vacuumDay) addAnchor("🧹 Vacuum", "Quick reset");
+      if (day === planner.groceryDay) addAnchor("🛒 Groceries", "Check list first");
+      if (day === planner.walkDay) addAnchor("🚶 Walk", weatherActivity);
+      if (day === planner.friendsDay) addAnchor("👥 Friends", "Visit window");
+      if (day === planner.gamesDay) addAnchor("🎮 Games", "Keep evening light");
+      if (day === planner.restDay) addAnchor("🛋️ Rest", "Protect buffer");
+      if ((day === 6 || day === 0) && weekOfMonth === planner.meatGroceryWeek) addAnchor("🥩 Meat run", monthPriority || "Monthly items");
+      if ((day === 6 || day === 0) && weekOfMonth === planner.movieWeek) addAnchor("🎬 Movie", "Weekend block");
+      if (day === planner.parkDay) addAnchor("🌳 Park", customNote || "If weather is good");
+      if (day === planner.weekendBufferDay) addAnchor("🧭 Buffer", "Rest / requests");
     }
 
     function buildPlanForRestOfDay(now = new Date()) {
@@ -1031,38 +1049,31 @@
       const weekPriority = plannerNotes(planner.weekPriorities)[0];
       const monthPriority = plannerNotes(planner.monthPriorities)[0];
       const customNote = plannerNotes(planner.customNotes)[0];
-      const weatherActivity = plannerNotes(planner.weatherActivities)[0] || "walk";
       const projectTime = todayAtTime(planner.projectTime, DEFAULT_PLANNER.projectTime);
       const workStart = todayAtTime(planner.workStart, DEFAULT_PLANNER.workStart);
       const workEnd = todayAtTime(planner.workEnd, DEFAULT_PLANNER.workEnd);
       const workEndLate = todayAtTime(planner.workEndLate, DEFAULT_PLANNER.workEndLate);
       const lunchTime = planner.lunchWithDhuhr ? dhuhr : todayAt(12, 30);
       const snackTime = planner.snackBeforeSunset ? addMinutes(maghrib, -45) : addMinutes(workEnd, 20);
-      const weekOfMonth = Math.ceil(now.getDate() / 7);
       const items = [];
 
-      pushPlan(items, fajr, "🌅 Wake and reset", `Get up ${planner.wakeOffsetMinutes} minutes before sunrise, pray Fajr, then use the quiet block for personal projects.`);
-      pushPlan(items, projectTime, "🍳 Breakfast + projects", weekPriority ? `Move this priority forward: ${weekPriority}` : "Small breakfast, review the day, and move one personal task forward.");
+      pushPlan(items, fajr, "🌅 Wake + Fajr", `${planner.wakeOffsetMinutes} min before sunrise`);
+      pushPlan(items, projectTime, "🍳 Breakfast/projects", weekPriority || "One personal task");
       if (!isWeekend) {
-        pushPlan(items, workStart, "💼 Job focus block", "Start work. Keep deep work before meetings when possible.");
-        pushPlan(items, lunchTime, "🕌 Dhuhr + lunch", planner.lunchWithDhuhr ? "Use lunch as the prayer break so the afternoon starts clean." : "Take lunch deliberately and protect Dhuhr separately.");
-        pushPlan(items, planner.asrAfterWork ? addMinutes(workEnd, 5) : asr, "🕌 Asr window", planner.asrAfterWork ? "Pray Asr after shutdown if work blocks the earlier window." : "Pray Asr close to its time if your calendar allows.");
-        pushPlan(items, snackTime, "🍪 Snack / reset", planner.snackBeforeSunset ? "Have evening snacks before sunset if possible." : "Use a short snack break after work.");
-        pushPlan(items, workEndLate, "✅ Work shutdown", "Close work, plan tomorrow, and stop the job from leaking into dinner.");
-        pushPlan(items, addMinutes(workEndLate, 30), "📌 Weekly anchor", getWeeklyAnchor(now));
+        pushPlan(items, workStart, "💼 Work", `${formatPlannerTime(planner.workStart, DEFAULT_PLANNER.workStart)}-${formatPlannerTime(planner.workEndLate, DEFAULT_PLANNER.workEndLate)}`);
+        pushPlan(items, lunchTime, "🕌 Dhuhr + lunch", planner.lunchWithDhuhr ? "Combined break" : "Separate break");
+        pushPlan(items, planner.asrAfterWork ? addMinutes(workEnd, 5) : asr, "🕌 Asr", planner.asrAfterWork ? "After shutdown" : "Near prayer time");
+        pushPlan(items, snackTime, "🍪 Snack", planner.snackBeforeSunset ? "Before sunset" : "After work");
+        pushPlan(items, workEndLate, "✅ Shutdown", "Plan tomorrow");
+        pushTodayAnchors(items, now, workEndLate);
       } else {
-        pushPlan(items, todayAt(10, 30), "🛋️ Flexible weekend block", customNote || "Keep one real rest block open before adding errands or social plans.");
-        if (now.getDay() === planner.parkDay) pushPlan(items, todayAt(14, 0), "🌳 Park / outdoor option", `If the weather is pleasant, make this the ${weatherActivity} or park window.`);
-        if (now.getDay() === planner.weekendBufferDay) pushPlan(items, todayAt(15, 0), "🧭 Weekend buffer", "Keep this open for rest, sudden requests, or spillover errands.");
-        if (weekOfMonth === planner.meatGroceryWeek) pushPlan(items, todayAt(11, 30), "🥩 Monthly grocery run", "Meat and miscellaneous items fit this weekend.");
-        if (weekOfMonth === planner.movieWeek) pushPlan(items, todayAt(20, 0), "🎬 Movie weekend", "Keep one relaxed movie block open.");
-        pushPlan(items, todayAt(19, 30), "🎮 Friends or games", `Games default: ${dayLabel(planner.gamesDay)}. Friends default: ${dayLabel(planner.friendsDay)}.`);
-        pushPlan(items, addMinutes(todayAt(12, 0), 30), "📌 Weekend anchor", getWeeklyAnchor(now));
+        pushPlan(items, todayAt(10, 30), "🛋️ Weekend buffer", customNote || "Keep space open");
+        pushTodayAnchors(items, now, todayAt(11, 0));
       }
-      if (monthPriority) pushPlan(items, todayAt(20, 15), "📅 Monthly priority", monthPriority);
-      pushPlan(items, maghrib, "🕌 Maghrib", "Pray near sunset, then transition into dinner.");
-      pushPlan(items, addMinutes(maghrib, planner.dinnerOffsetMinutes), "🍽️ Dinner", `Default is ${planner.dinnerOffsetMinutes} minutes after Maghrib unless the evening plan needs an earlier meal.`);
-      pushPlan(items, isha, "🌙 Isha + wind-down", "Pray Isha, reduce screens, and set up tomorrow.");
+      if (monthPriority) pushPlan(items, todayAt(20, 15), "📅 Monthly", monthPriority);
+      pushPlan(items, maghrib, "🕌 Maghrib", "Then dinner prep");
+      pushPlan(items, addMinutes(maghrib, planner.dinnerOffsetMinutes), "🍽️ Dinner", `${planner.dinnerOffsetMinutes} min after Maghrib`);
+      pushPlan(items, isha, "🌙 Isha", "Wind down");
       return items.sort((a, b) => a.time - b.time).slice(0, 5);
     }
 
@@ -1071,14 +1082,14 @@
       const isWeekend = now.getDay() === 0 || now.getDay() === 6;
       const planner = getPlannerSettings();
       const priority = plannerNotes(planner.weekPriorities)[0] || plannerNotes(planner.monthPriorities)[0];
-      if (hour < 5) return `😴 Sleep is the priority. Protect the ${planner.wakeOffsetMinutes}-minute pre-sunrise wake-up.`;
-      if (hour < 9) return priority ? `🌅 Quiet morning: prayer, breakfast, then make progress on "${priority}".` : "🌅 Quiet morning: prayer, personal projects, breakfast, then prepare for work.";
-      if (!isWeekend && hour < 12) return `💼 Work block (${planner.workStart}-${planner.workEndLate}). Use the freshest energy for the hardest job task.`;
-      if (!isWeekend && hour < 15) return planner.lunchWithDhuhr ? "🕌 Midday: pair Dhuhr with lunch and keep the afternoon focused." : "🕌 Midday: protect lunch and Dhuhr as separate anchors.";
-      if (!isWeekend && hour < 18) return `✅ Close work around ${planner.workEnd}-${planner.workEndLate}. Leave a clean next step for tomorrow.`;
-      if (hour < 20) return `🌇 Evening reset: prayer, snack/dinner, then ${getWeeklyAnchor(now)}`;
-      if (hour < 22) return "🌙 Wind down after dinner and Isha. Avoid starting large tasks now.";
-      return "😴 Late night: stop expanding the day and prepare for sleep.";
+      if (hour < 5) return `😴 Sleep. Wake ${planner.wakeOffsetMinutes} min before sunrise.`;
+      if (hour < 9) return priority ? `🌅 Morning: ${priority}` : "🌅 Morning: Fajr, projects, breakfast.";
+      if (!isWeekend && hour < 12) return `💼 Work until ${formatPlannerTime(planner.workEndLate, DEFAULT_PLANNER.workEndLate)}.`;
+      if (!isWeekend && hour < 15) return planner.lunchWithDhuhr ? "🕌 Dhuhr + lunch." : "🕌 Lunch and Dhuhr.";
+      if (!isWeekend && hour < 18) return `✅ Finish work, then ${getWeeklyAnchor(now)}.`;
+      if (hour < 20) return `🌇 Evening: ${getWeeklyAnchor(now)}.`;
+      if (hour < 22) return "🌙 Dinner, Isha, wind down.";
+      return "😴 Sleep mode.";
     }
 
     function updatePlanner() {
@@ -1192,7 +1203,6 @@
     applySettings();
     initializeCounter();
     updateTimeAndDate();
-    updatePrayerTimesDisplay(getPrayerTimesForDay(new Date()));
     scheduleThemeBoundaryRefreshes();
     loadCityData();
     fetchWeather();
