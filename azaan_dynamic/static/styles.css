@@ -294,7 +294,7 @@ button {
   width: 100vw;
   padding-inline: 2vw;
   text-align: center;
-  font-size: clamp(5rem, 19vw, 16rem);
+  font-size: clamp(4.4rem, 18vw, 16rem);
   font-weight: 950;
   line-height: 0.78;
   letter-spacing: -0.1em;
@@ -303,7 +303,7 @@ button {
 
 #dayPlan {
   position: absolute;
-  top: calc(50% + clamp(3.5rem, 10vw, 8.75rem));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 54px);
   left: 50%;
   width: min(92vw, 920px);
   transform: translateX(-50%);
@@ -683,7 +683,7 @@ button {
   }
 
   #dayPlan {
-    top: calc(50% + clamp(3rem, 13vw, 5rem));
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 48px);
   }
 
   #planList {
@@ -716,15 +716,77 @@ button {
 }
 
 @media (max-height: 560px) {
+  .top-bar {
+    inset: calc(env(safe-area-inset-top, 0px) + 8px) calc(env(safe-area-inset-right, 0px) + 8px) auto calc(env(safe-area-inset-left, 0px) + 8px);
+  }
+
+  #dateDay {
+    font-size: clamp(1rem, 3vw, 1.6rem);
+  }
+
+  #dateValue {
+    font-size: clamp(0.72rem, 1.6vw, 0.95rem);
+  }
+
+  #weather {
+    min-height: 38px;
+    font-size: clamp(0.78rem, 1.8vw, 1rem);
+  }
+
+  #weather img,
+  .weatherIconWrap {
+    width: clamp(28px, 5vw, 40px);
+    height: clamp(28px, 5vw, 40px);
+  }
+
+  .icon-button {
+    width: 38px;
+    height: 38px;
+    font-size: 21px;
+  }
+
+  #time {
+    font-size: clamp(4rem, 15vw, 8.4rem);
+  }
+
   #dayPlan {
-    top: calc(50% + 3.8rem);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 42px);
+    width: min(94vw, 860px);
   }
 
   #message {
-    font-size: clamp(0.9rem, 2vw, 1.1rem);
+    max-width: 86vw;
+    font-size: clamp(0.82rem, 2vw, 1.05rem);
+    line-height: 1.05;
   }
 
   #planList {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 7px;
+  }
+
+  #planList li {
+    padding: 7px 8px;
+    border-radius: 12px;
+  }
+
+  #planList li:nth-child(n + 4) {
+    display: none;
+  }
+
+  #planList span {
+    font-size: 0.66rem;
+  }
+
+  #planList strong {
+    margin-top: 2px;
+    font-size: 0.74rem;
+    line-height: 1;
+  }
+
+  #planList em {
     display: none;
   }
 
