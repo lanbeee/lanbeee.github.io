@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>tings</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg2: #f5f4f0;
+    --bg3: #eeede8;
+    --text: #1a1a1a;
+    --text2: #6b6a65;
+    --text3: #9e9d98;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.22);
+    --radius: 16px;
+    --radius-sm: 8px;
+    --teal-bg: #E1F5EE;
+    --teal-icon: #0F6E56;
+    --teal-text: #085041;
+    --amber-bg: #FAEEDA;
+    --amber-icon: #BA7517;
+    --amber-text: #633806;
+    --red-bg: #FCEBEB;
+    --red-icon: #A32D2D;
+    --red-text: #791F1F;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1e;
+      --bg2: #2c2c2e;
+      --bg3: #3a3a3c;
+      --text: #f2f2f7;
+      --text2: #aeaeb2;
+      --text3: #6e6e73;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.2);
+      --teal-bg: #085041;
+      --teal-icon: #5DCAA5;
+      --teal-text: #9FE1CB;
+      --amber-bg: #633806;
+      --amber-icon: #EF9F27;
+      --amber-text: #FAC775;
+      --red-bg: #791F1F;
+      --red-icon: #F09595;
+      --red-text: #F7C1C1;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg2);
+    color: var(--text);
+    min-height: 100dvh;
+    display: flex;
+    justify-content: center;
+    padding: 0 0 60px;
+  }
+  .app {
+    width: 100%;
+    max-width: 480px;
+    background: var(--bg);
+    min-height: 100dvh;
+    padding: 0 16px;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 0 16px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+    border-bottom: 0.5px solid var(--border);
+  }
+  .wordmark {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 0.5px solid var(--border2);
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: background 0.15s;
+  }
+  .icon-btn:active { background: var(--bg2); }
+  .icon-btn i { font-size: 20px; }
+
+  /* ting cards */
+  #list { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; }
+  .ting-card {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 12px 13px 13px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .pulse-btn {
+    width: 54px;
+    height: 54px;
+    min-width: 54px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 24px;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform 0.1s;
+  }
+  .pulse-btn:active { transform: scale(0.86); }
+  .ting-info { flex: 1; min-width: 0; }
+  .ting-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+  }
+  .ting-meta {
+    font-size: 12px;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+  .dot { margin: 0 6px; color: var(--text3); }
+  .chip {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 99px;
+    border: 0.5px solid transparent;
+    white-space: nowrap;
+    margin-left: 6px;
+  }
+  .del-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .del-btn:active { color: var(--red-icon); }
+  .del-btn i { font-size: 17px; }
+
+  #empty {
+    text-align: center;
+    color: var(--text3);
+    font-size: 14px;
+    padding: 60px 0 20px;
+    line-height: 1.7;
+  }
+
+  /* bottom sheets */
+  .sheet-wrap {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.42);
+    z-index: 100;
+    align-items: flex-end;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sheet-wrap.open { display: flex; }
+  .sheet {
+    background: var(--bg);
+    width: 100%;
+    max-width: 480px;
+    border-radius: 20px 20px 0 0;
+    padding: 20px 18px 36px;
+    animation: slideup 0.22s ease;
+  }
+  @keyframes slideup {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .sheet-title {
+    font-size: 15px;
+    font-weight: 500;
+    margin-bottom: 16px;
+    color: var(--text);
+  }
+  .sheet-name {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .sheet-sub {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 20px;
+  }
+
+  /* inputs */
+  input[type=text], input[type=number] {
+    width: 100%;
+    font-size: 15px;
+    padding: 11px 14px;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-sm);
+    background: var(--bg2);
+    color: var(--text);
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    margin-bottom: 12px;
+  }
+  input[type=text]:focus, input[type=number]:focus {
+    border-color: var(--teal-icon);
+    box-shadow: 0 0 0 3px rgba(15,110,86,0.15);
+  }
+  input[type=number] { width: 72px; text-align: center; margin-bottom: 0; }
+
+  /* segmented control */
+  .seg {
+    display: flex;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .seg-opt {
+    flex: 1;
+    padding: 10px 0;
+    font-size: 13px;
+    font-family: inherit;
+    text-align: center;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: var(--text2);
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.12s, color 0.12s;
+  }
+  .seg-opt.on {
+    background: var(--bg3);
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* target row */
+  .target-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .target-label { font-size: 13px; color: var(--text2); }
+
+  /* action buttons */
+  .btn-row { display: flex; gap: 8px; }
+  .btn {
+    flex: 1;
+    padding: 13px 0;
+    border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border2);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: background 0.12s;
+  }
+  .btn:active { background: var(--bg2); }
+  .btn.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+    font-weight: 500;
+  }
+  .btn.primary:active { opacity: 0.82; }
+
+  /* storage warning */
+  #quota-bar {
+    display: none;
+    margin: 0 0 12px;
+    font-size: 12px;
+    color: var(--amber-text);
+    background: var(--amber-bg);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <span class="wordmark">tings</span>
+    <button class="icon-btn" id="open-add" aria-label="add ting">
+      <i class="ti ti-plus" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <div id="quota-bar"></div>
+  <div id="list"></div>
+  <p id="empty">nothing tracked yet<br><span style="color:var(--text3);font-size:13px;">tap + to add your first ting</span></p>
+
+  <!-- add sheet -->
+  <div class="sheet-wrap" id="add-sheet">
+    <div class="sheet">
+      <p class="sheet-title">new ting</p>
+      <input type="text" id="ting-name" placeholder="name it…" autocomplete="off" autocorrect="off" spellcheck="false" />
+      <div class="seg" id="type-seg">
+        <button class="seg-opt on" data-v="keepup">nurture</button>
+        <button class="seg-opt" data-v="reduce">ease off</button>
+      </div>
+      <div class="target-row">
+        <input type="number" id="ting-days" min="1" max="90" value="7" />
+        <span class="target-label">day rhythm</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="do-save">done</button>
+        <button class="btn" id="do-cancel">nah</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- confirm sheet -->
+  <div class="sheet-wrap" id="confirm-sheet">
+    <div class="sheet">
+      <p class="sheet-name" id="confirm-name"></p>
+      <p class="sheet-sub" id="confirm-sub"></p>
+      <div class="btn-row">
+        <button class="btn primary" id="confirm-yes">yep, did it</button>
+        <button class="btn" id="confirm-no">nope</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+const KEY = 'tings_v2';
+const MAX_LOGS = 8;        // entries stored per ting
+const MAX_TINGS = 50;      // hard ceiling on number of tings
+const QUOTA_WARN_KB = 30;  // warn user when storage exceeds this
+const QUOTA_HARD_KB = 80;  // refuse new tings above this (well within 5MB)
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+}
+function save(d) {
+  try {
+    const str = JSON.stringify(d);
+    const kb = Math.round((str.length * 2) / 1024);
+    localStorage.setItem(KEY, str);
+    updateQuotaBar(kb);
+    return true;
+  } catch (e) {
+    alert('storage full — remove some tings first');
+    return false;
+  }
+}
+function sizeKb(d) {
+  return Math.round((JSON.stringify(d).length * 2) / 1024);
+}
+function updateQuotaBar(kb) {
+  const bar = document.getElementById('quota-bar');
+  if (kb >= QUOTA_WARN_KB) {
+    bar.style.display = 'block';
+    bar.textContent = `storage: ~${kb} KB used — consider removing old tings`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function daysSince(ts) {
+  if (!ts) return null;
+  return Math.floor((Date.now() - ts) / 86400000);
+}
+function avgInterval(logs) {
+  if (!logs || logs.length < 2) return null;
+  const s = [...logs].sort((a, b) => a - b);
+  let sum = 0;
+  for (let i = 1; i < s.length; i++) sum += (s[i] - s[i - 1]);
+  return Math.round(sum / (s.length - 1) / 86400000);
+}
+
+function colors(days, target, type) {
+  if (days === null) return { bg: 'var(--bg2)', icon: 'var(--text3)', chip: null };
+  const r = days / target;
+  const good = type === 'keepup' ? r < 0.75 : r > 1.5;
+  const warn = type === 'keepup' ? (r >= 0.75 && r < 1.1) : (r > 0.9 && r <= 1.5);
+  if (good) return { bg: 'var(--teal-bg)', icon: 'var(--teal-icon)', chipBg: 'var(--teal-bg)', chipColor: 'var(--teal-text)' };
+  if (warn) return { bg: 'var(--amber-bg)', icon: 'var(--amber-icon)', chipBg: 'var(--amber-bg)', chipColor: 'var(--amber-text)' };
+  return { bg: 'var(--red-bg)', icon: 'var(--red-icon)', chipBg: 'var(--red-bg)', chipColor: 'var(--red-text)' };
+}
+
+function vibe(days, target, type) {
+  if (days === null) return null;
+  const r = days / target;
+  if (type === 'keepup') {
+    if (r < 0.75) return 'fresh';
+    if (r < 1.1) return 'soon';
+    return 'overdue';
+  } else {
+    if (r > 1.5) return 'chillin';
+    if (r > 0.9) return 'watch it';
+    return 'too much';
+  }
+}
+
+let pendingIdx = null;
+let selectedType = 'keepup';
+
+function render() {
+  const data = load();
+  const list = document.getElementById('list');
+  const empty = document.getElementById('empty');
+  list.innerHTML = '';
+
+  updateQuotaBar(sizeKb(data));
+
+  if (!data.length) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  data.forEach((h, i) => {
+    const days = daysSince(h.lastLog);
+    const avg = avgInterval(h.logs);
+    const c = colors(days, h.target, h.type);
+    const v = vibe(days, h.target, h.type);
+    const icon = h.type === 'keepup' ? 'ti-heart' : 'ti-trending-down';
+
+    const card = document.createElement('div');
+    card.className = 'ting-card';
+
+    const chipHtml = v
+      ? `<span class="chip" style="background:${c.chipBg};color:${c.chipColor};">${v}</span>`
+      : '';
+
+    card.innerHTML = `
+      <button class="pulse-btn" data-i="${i}" aria-label="log ${h.name}" style="background:${c.bg};">
+        <i class="ti ${icon}" style="color:${c.icon};" aria-hidden="true"></i>
+      </button>
+      <div class="ting-info">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">
+          <span class="ting-name">${h.name}</span>${chipHtml}
+        </div>
+        <div class="ting-meta">
+          <span>${days === null ? 'not yet' : days + 'd ago'}</span>
+          <span class="dot">·</span>
+          <span>every ${h.target}d</span>
+          ${avg !== null ? `<span class="dot">·</span><span>~${avg}d avg</span>` : ''}
+        </div>
+      </div>
+      <button class="del-btn" data-del="${i}" aria-label="remove ${h.name}">
+        <i class="ti ti-x"></i>
+      </button>`;
+    list.appendChild(card);
+  });
+
+  list.querySelectorAll('[data-i]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = +btn.dataset.i;
+      const h = load()[i];
+      pendingIdx = i;
+      const days = daysSince(h.lastLog);
+      document.getElementById('confirm-name').textContent = h.name;
+      document.getElementById('confirm-sub').textContent =
+        days === null ? 'first time?' : `last logged ${days}d ago`;
+      openSheet('confirm-sheet');
+    });
+  });
+
+  list.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = +btn.dataset.del;
+      const d = load();
+      d.splice(i, 1);
+      save(d);
+      render();
+    });
+  });
+}
+
+function openSheet(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeSheet(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+document.getElementById('type-seg').addEventListener('click', e => {
+  const opt = e.target.closest('[data-v]');
+  if (!opt) return;
+  selectedType = opt.dataset.v;
+  document.querySelectorAll('#type-seg .seg-opt').forEach(o => o.classList.toggle('on', o === opt));
+});
+
+document.getElementById('open-add').addEventListener('click', () => {
+  openSheet('add-sheet');
+  setTimeout(() => document.getElementById('ting-name').focus(), 80);
+});
+
+function cancelAdd() {
+  closeSheet('add-sheet');
+  document.getElementById('ting-name').value = '';
+  document.getElementById('ting-days').value = '7';
+  selectedType = 'keepup';
+  document.querySelectorAll('#type-seg .seg-opt').forEach((o, i) => o.classList.toggle('on', i === 0));
+}
+
+document.getElementById('do-cancel').addEventListener('click', cancelAdd);
+document.getElementById('add-sheet').addEventListener('click', e => {
+  if (e.target === e.currentTarget) cancelAdd();
+});
+
+document.getElementById('do-save').addEventListener('click', () => {
+  const name = document.getElementById('ting-name').value.trim();
+  if (!name) { document.getElementById('ting-name').focus(); return; }
+
+  const d = load();
+  if (d.length >= MAX_TINGS) {
+    alert(`you've got ${MAX_TINGS} tings — remove some before adding more`);
+    return;
+  }
+  if (sizeKb(d) >= QUOTA_HARD_KB) {
+    alert('storage ceiling reached — remove some tings first');
+    return;
+  }
+
+  const target = Math.max(1, Math.min(90, parseInt(document.getElementById('ting-days').value) || 7));
+  d.push({ name: name.slice(0, 60), type: selectedType, target, lastLog: null, logs: [] });
+  if (save(d)) {
+    cancelAdd();
+    render();
+  }
+});
+
+document.getElementById('ting-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('do-save').click();
+});
+
+document.getElementById('confirm-yes').addEventListener('click', () => {
+  if (pendingIdx === null) return;
+  const d = load();
+  const now = Date.now();
+  d[pendingIdx].lastLog = now;
+  if (!d[pendingIdx].logs) d[pendingIdx].logs = [];
+  d[pendingIdx].logs.push(now);
+  if (d[pendingIdx].logs.length > MAX_LOGS) d[pendingIdx].logs = d[pendingIdx].logs.slice(-MAX_LOGS);
+  save(d);
+  pendingIdx = null;
+  closeSheet('confirm-sheet');
+  render();
+});
+
+document.getElementById('confirm-no').addEventListener('click', () => {
+  pendingIdx = null;
+  closeSheet('confirm-sheet');
+});
+
+document.getElementById('confirm-sheet').addEventListener('click', e => {
+  if (e.target === e.currentTarget) {
+    pendingIdx = null;
+    closeSheet('confirm-sheet');
+  }
+});
+
+render();
+</script>
+</body>
+</html>
