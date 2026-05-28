@@ -6,316 +6,206 @@
 <title>tings</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
 <style>
+:root {
+  --bg:#ffffff; --bg2:#f5f4f0; --bg3:#e8e7e2;
+  --text:#1a1a1a; --text2:#6b6a65; --text3:#9e9d98;
+  --border:rgba(0,0,0,0.11); --border2:rgba(0,0,0,0.2);
+  --radius:16px; --radius-sm:10px;
+  --teal-bg:#E1F5EE; --teal-icon:#0F6E56; --teal-text:#085041;
+  --amber-bg:#FAEEDA; --amber-icon:#BA7517; --amber-text:#633806;
+  --red-bg:#FCEBEB; --red-icon:#A32D2D; --red-text:#791F1F;
+  --purple-bg:#EEEDFE; --purple-icon:#534AB7; --purple-text:#3C3489;
+}
+@media (prefers-color-scheme:dark) {
   :root {
-    --bg: #ffffff;
-    --bg2: #f5f4f0;
-    --bg3: #eeede8;
-    --text: #1a1a1a;
-    --text2: #6b6a65;
-    --text3: #9e9d98;
-    --border: rgba(0,0,0,0.12);
-    --border2: rgba(0,0,0,0.22);
-    --radius: 16px;
-    --radius-sm: 8px;
-    --teal-bg: #E1F5EE;
-    --teal-icon: #0F6E56;
-    --teal-text: #085041;
-    --amber-bg: #FAEEDA;
-    --amber-icon: #BA7517;
-    --amber-text: #633806;
-    --red-bg: #FCEBEB;
-    --red-icon: #A32D2D;
-    --red-text: #791F1F;
+    --bg:#1c1c1e; --bg2:#2c2c2e; --bg3:#3a3a3c;
+    --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
+    --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
+    --teal-bg:#085041; --teal-icon:#5DCAA5; --teal-text:#9FE1CB;
+    --amber-bg:#633806; --amber-icon:#EF9F27; --amber-text:#FAC775;
+    --red-bg:#791F1F; --red-icon:#F09595; --red-text:#F7C1C1;
+    --purple-bg:#3C3489; --purple-icon:#AFA9EC; --purple-text:#CECBF6;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1c1c1e;
-      --bg2: #2c2c2e;
-      --bg3: #3a3a3c;
-      --text: #f2f2f7;
-      --text2: #aeaeb2;
-      --text3: #6e6e73;
-      --border: rgba(255,255,255,0.1);
-      --border2: rgba(255,255,255,0.2);
-      --teal-bg: #085041;
-      --teal-icon: #5DCAA5;
-      --teal-text: #9FE1CB;
-      --amber-bg: #633806;
-      --amber-icon: #EF9F27;
-      --amber-text: #FAC775;
-      --red-bg: #791F1F;
-      --red-icon: #F09595;
-      --red-text: #F7C1C1;
-    }
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { font-size: 16px; -webkit-text-size-adjust: 100%; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--bg2);
-    color: var(--text);
-    min-height: 100dvh;
-    display: flex;
-    justify-content: center;
-    padding: 0 0 60px;
-  }
-  .app {
-    width: 100%;
-    max-width: 480px;
-    background: var(--bg);
-    min-height: 100dvh;
-    padding: 0 16px;
-  }
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 0 16px;
-    position: sticky;
-    top: 0;
-    background: var(--bg);
-    z-index: 10;
-    border-bottom: 0.5px solid var(--border);
-  }
-  .wordmark {
-    font-size: 20px;
-    font-weight: 600;
-    letter-spacing: -0.5px;
-    color: var(--text);
-  }
-  .icon-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: 0.5px solid var(--border2);
-    background: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: var(--text);
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    transition: background 0.15s;
-  }
-  .icon-btn:active { background: var(--bg2); }
-  .icon-btn i { font-size: 20px; }
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{font-size:16px;-webkit-text-size-adjust:100%;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:var(--bg2);color:var(--text);
+  min-height:100dvh;display:flex;justify-content:center;padding:0 0 60px;
+}
+.app{width:100%;max-width:480px;background:var(--bg);min-height:100dvh;padding:0 16px;}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 0 16px;position:sticky;top:0;background:var(--bg);
+  z-index:10;border-bottom:0.5px solid var(--border);
+}
+.wordmark{font-size:20px;font-weight:600;letter-spacing:-0.5px;color:var(--text);}
+.icon-btn{
+  width:44px;height:44px;border-radius:50%;
+  border:0.5px solid var(--border2);background:transparent;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--text);
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.icon-btn i{font-size:20px;}
 
-  /* ting cards */
-  #list { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; }
-  .ting-card {
-    background: var(--bg);
-    border: 0.5px solid var(--border);
-    border-radius: var(--radius);
-    padding: 13px 12px 13px 13px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .pulse-btn {
-    width: 54px;
-    height: 54px;
-    min-width: 54px;
-    border-radius: 50%;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 24px;
-    flex-shrink: 0;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    transition: transform 0.1s;
-  }
-  .pulse-btn:active { transform: scale(0.86); }
-  .ting-info { flex: 1; min-width: 0; }
-  .ting-name {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 4px;
-  }
-  .ting-meta {
-    font-size: 12px;
-    color: var(--text2);
-    display: flex;
-    align-items: center;
-    gap: 0;
-    flex-wrap: wrap;
-  }
-  .dot { margin: 0 6px; color: var(--text3); }
-  .chip {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 99px;
-    border: 0.5px solid transparent;
-    white-space: nowrap;
-    margin-left: 6px;
-  }
-  .del-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    border: none;
-    background: transparent;
-    color: var(--text3);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-  .del-btn:active { color: var(--red-icon); }
-  .del-btn i { font-size: 17px; }
+/* list */
+#list{display:flex;flex-direction:column;gap:8px;padding:14px 0;}
 
-  #empty {
-    text-align: center;
-    color: var(--text3);
-    font-size: 14px;
-    padding: 60px 0 20px;
-    line-height: 1.7;
-  }
+/* swipe row wrapper */
+.swipe-row{
+  position:relative;overflow:hidden;border-radius:var(--radius);
+  touch-action:pan-y;
+}
+.swipe-row.dragging{transition:none;}
+.swipe-actions{
+  position:absolute;right:0;top:0;bottom:0;
+  display:flex;align-items:stretch;
+  border-radius:0 var(--radius) var(--radius) 0;
+  overflow:hidden;
+  pointer-events:none;
+}
+.swipe-action{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;padding:0 14px;cursor:pointer;
+  font-size:11px;font-weight:500;border:none;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  white-space:nowrap;
+  min-width:64px;
+}
+.swipe-action i{font-size:20px;}
+.sa-backlog{background:#534AB7;color:#EEEDFE;}
+.sa-snooze{background:#5b5b6a;color:#e8e8f0;}
+.sa-nuke{background:#A32D2D;color:#FCEBEB;}
 
-  /* bottom sheets */
-  .sheet-wrap {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.42);
-    z-index: 100;
-    align-items: flex-end;
-    justify-content: center;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .sheet-wrap.open { display: flex; }
-  .sheet {
-    background: var(--bg);
-    width: 100%;
-    max-width: 480px;
-    border-radius: 20px 20px 0 0;
-    padding: 20px 18px 36px;
-    animation: slideup 0.22s ease;
-  }
-  @keyframes slideup {
-    from { transform: translateY(100%); opacity: 0; }
-    to   { transform: translateY(0);    opacity: 1; }
-  }
-  .sheet-title {
-    font-size: 15px;
-    font-weight: 500;
-    margin-bottom: 16px;
-    color: var(--text);
-  }
-  .sheet-name {
-    font-size: 17px;
-    font-weight: 500;
-    color: var(--text);
-    margin-bottom: 4px;
-  }
-  .sheet-sub {
-    font-size: 13px;
-    color: var(--text2);
-    margin-bottom: 20px;
-  }
+/* card */
+.ting-card{
+  background:var(--bg);border:0.5px solid var(--border);
+  border-radius:var(--radius);
+  padding:13px 12px 13px 13px;
+  display:flex;align-items:center;gap:12px;
+  position:relative;z-index:1;
+  transition:transform 0.22s cubic-bezier(.25,.46,.45,.94);
+  will-change:transform;
+  user-select:none;-webkit-user-select:none;
+}
+.ting-card.snoozed{opacity:0.45;}
 
-  /* inputs */
-  input[type=text], input[type=number] {
-    width: 100%;
-    font-size: 15px;
-    padding: 11px 14px;
-    border: 0.5px solid var(--border2);
-    border-radius: var(--radius-sm);
-    background: var(--bg2);
-    color: var(--text);
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    margin-bottom: 12px;
-  }
-  input[type=text]:focus, input[type=number]:focus {
-    border-color: var(--teal-icon);
-    box-shadow: 0 0 0 3px rgba(15,110,86,0.15);
-  }
-  input[type=number] { width: 72px; text-align: center; margin-bottom: 0; }
+.pulse-btn{
+  width:54px;height:54px;min-width:54px;border-radius:50%;
+  border:none;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:24px;flex-shrink:0;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  transition:transform 0.12s;
+}
+.pulse-btn:active{transform:scale(0.84);}
+.ting-info{flex:1;min-width:0;}
+.ting-name{
+  font-size:15px;font-weight:500;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;
+}
+.ting-meta{font-size:12px;color:var(--text2);display:flex;align-items:center;flex-wrap:wrap;}
+.dot{margin:0 5px;color:var(--text3);}
+.chip{
+  font-size:11px;font-weight:500;padding:2px 8px;border-radius:99px;
+  border:0.5px solid transparent;white-space:nowrap;margin-left:6px;
+}
+.drag-handle{
+  width:28px;height:44px;display:flex;align-items:center;justify-content:center;
+  color:var(--text3);cursor:grab;flex-shrink:0;touch-action:none;
+}
+.drag-handle i{font-size:18px;}
+.drag-handle:active{cursor:grabbing;}
 
-  /* segmented control */
-  .seg {
-    display: flex;
-    border: 0.5px solid var(--border2);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    margin-bottom: 12px;
-  }
-  .seg-opt {
-    flex: 1;
-    padding: 10px 0;
-    font-size: 13px;
-    font-family: inherit;
-    text-align: center;
-    cursor: pointer;
-    background: transparent;
-    border: none;
-    color: var(--text2);
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.12s, color 0.12s;
-  }
-  .seg-opt.on {
-    background: var(--bg3);
-    color: var(--text);
-    font-weight: 500;
-  }
+/* drag ghost */
+.ting-card.dragging-ghost{opacity:0.35;border:1.5px dashed var(--border2);}
+.ting-card.drag-over{border-color:var(--teal-icon);}
 
-  /* target row */
-  .target-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .target-label { font-size: 13px; color: var(--text2); }
+#empty{
+  text-align:center;color:var(--text3);font-size:14px;
+  padding:60px 0 20px;line-height:1.7;
+}
 
-  /* action buttons */
-  .btn-row { display: flex; gap: 8px; }
-  .btn {
-    flex: 1;
-    padding: 13px 0;
-    border-radius: var(--radius-sm);
-    border: 0.5px solid var(--border2);
-    background: transparent;
-    color: var(--text);
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    transition: background 0.12s;
-  }
-  .btn:active { background: var(--bg2); }
-  .btn.primary {
-    background: var(--text);
-    color: var(--bg);
-    border-color: var(--text);
-    font-weight: 500;
-  }
-  .btn.primary:active { opacity: 0.82; }
+/* sheets */
+.sheet-wrap{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.42);z-index:100;
+  align-items:flex-end;justify-content:center;
+  -webkit-tap-highlight-color:transparent;
+}
+.sheet-wrap.open{display:flex;}
+.sheet{
+  background:var(--bg);width:100%;max-width:480px;
+  border-radius:20px 20px 0 0;padding:20px 18px 36px;
+  animation:slideup 0.22s ease;
+}
+@keyframes slideup{from{transform:translateY(100%);opacity:0;}to{transform:translateY(0);opacity:1;}}
+.sheet-title{font-size:15px;font-weight:500;margin-bottom:16px;color:var(--text);}
+.sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
+.sheet-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
 
-  /* storage warning */
-  #quota-bar {
-    display: none;
-    margin: 0 0 12px;
-    font-size: 12px;
-    color: var(--amber-text);
-    background: var(--amber-bg);
-    border-radius: var(--radius-sm);
-    padding: 8px 12px;
-  }
+/* menu sheet rows */
+.menu-row{
+  display:flex;align-items:center;gap:14px;padding:14px 2px;
+  border-bottom:0.5px solid var(--border);cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.menu-row:last-child{border-bottom:none;}
+.menu-row i{font-size:20px;color:var(--text2);width:24px;text-align:center;}
+.menu-row-label{font-size:15px;color:var(--text);}
+.menu-row-sub{font-size:12px;color:var(--text3);margin-top:1px;}
+.menu-row.danger i,.menu-row.danger .menu-row-label{color:var(--red-icon);}
+.menu-row:active{background:var(--bg2);}
+
+input[type=text],input[type=number],input[type=date]{
+  width:100%;font-size:15px;padding:11px 14px;
+  border:0.5px solid var(--border2);border-radius:var(--radius-sm);
+  background:var(--bg2);color:var(--text);outline:none;
+  -webkit-appearance:none;appearance:none;margin-bottom:12px;
+  font-family:inherit;
+}
+input[type=text]:focus,input[type=number]:focus,input[type=date]:focus{
+  border-color:var(--teal-icon);box-shadow:0 0 0 3px rgba(15,110,86,0.15);
+}
+input[type=number]{width:72px;text-align:center;margin-bottom:0;}
+input[type=date]{color-scheme:light dark;}
+
+.seg{
+  display:flex;border:0.5px solid var(--border2);
+  border-radius:var(--radius-sm);overflow:hidden;margin-bottom:12px;
+}
+.seg-opt{
+  flex:1;padding:10px 0;font-size:13px;font-family:inherit;text-align:center;
+  cursor:pointer;background:transparent;border:none;color:var(--text2);
+  -webkit-tap-highlight-color:transparent;
+  transition:background 0.12s,color 0.12s;
+}
+.seg-opt.on{background:var(--bg3);color:var(--text);font-weight:500;}
+
+.target-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+.target-label{font-size:13px;color:var(--text2);}
+
+.btn-row{display:flex;gap:8px;}
+.btn{
+  flex:1;padding:13px 0;border-radius:var(--radius-sm);
+  border:0.5px solid var(--border2);background:transparent;color:var(--text);
+  font-size:14px;font-family:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.btn:active{background:var(--bg2);}
+.btn.primary{background:var(--text);color:var(--bg);border-color:var(--text);font-weight:500;}
+.btn.primary:active{opacity:0.82;}
+
+#quota-bar{
+  display:none;margin:0 0 12px;font-size:12px;
+  color:var(--amber-text);background:var(--amber-bg);
+  border-radius:var(--radius-sm);padding:8px 12px;
+}
+
+/* double-tap flash */
+@keyframes flash{0%{opacity:1;}50%{opacity:0.3;}100%{opacity:1;}}
+.flash{animation:flash 0.3s ease;}
 </style>
 </head>
 <body>
@@ -340,19 +230,20 @@
       <div class="seg" id="type-seg">
         <button class="seg-opt on" data-v="keepup">nurture</button>
         <button class="seg-opt" data-v="reduce">ease off</button>
+        <button class="seg-opt" data-v="zero">quit</button>
       </div>
-      <div class="target-row">
+      <div class="target-row" id="target-row">
         <input type="number" id="ting-days" min="1" max="90" value="7" />
         <span class="target-label">day rhythm</span>
       </div>
       <div class="btn-row">
-        <button class="btn primary" id="do-save">done</button>
+        <button class="btn primary" id="do-save">let's go</button>
         <button class="btn" id="do-cancel">nah</button>
       </div>
     </div>
   </div>
 
-  <!-- confirm sheet -->
+  <!-- confirm sheet (single tap) -->
   <div class="sheet-wrap" id="confirm-sheet">
     <div class="sheet">
       <p class="sheet-name" id="confirm-name"></p>
@@ -364,234 +255,543 @@
     </div>
   </div>
 
+  <!-- menu sheet (swipe) -->
+  <div class="sheet-wrap" id="menu-sheet">
+    <div class="sheet">
+      <p class="sheet-name" id="menu-name"></p>
+      <p class="sheet-sub" id="menu-sub"></p>
+      <div id="menu-rows"></div>
+    </div>
+  </div>
+
+  <!-- backlog sheet -->
+  <div class="sheet-wrap" id="backlog-sheet">
+    <div class="sheet">
+      <p class="sheet-title">add a past entry</p>
+      <input type="date" id="backlog-date" />
+      <div class="btn-row">
+        <button class="btn primary" id="backlog-save">plant it</button>
+        <button class="btn" id="backlog-cancel">nah</button>
+      </div>
+    </div>
+  </div>
+
 </div>
+
 <script>
 const KEY = 'tings_v2';
-const MAX_LOGS = 8;        // entries stored per ting
-const MAX_TINGS = 50;      // hard ceiling on number of tings
-const QUOTA_WARN_KB = 30;  // warn user when storage exceeds this
-const QUOTA_HARD_KB = 80;  // refuse new tings above this (well within 5MB)
+const MAX_LOGS = 8;
+const MAX_TINGS = 50;
+const QUOTA_WARN_KB = 30;
+const QUOTA_HARD_KB = 80;
+const SWIPE_THRESHOLD = 60;
+const SWIPE_REVEAL = 200;
 
-function load() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||[];}catch{return [];}}
+function save(d){
+  try{
+    const str=JSON.stringify(d);
+    const kb=Math.round((str.length*2)/1024);
+    localStorage.setItem(KEY,str);
+    updateQuotaBar(kb);return true;
+  }catch(e){alert('storage full — remove some tings first');return false;}
 }
-function save(d) {
-  try {
-    const str = JSON.stringify(d);
-    const kb = Math.round((str.length * 2) / 1024);
-    localStorage.setItem(KEY, str);
-    updateQuotaBar(kb);
-    return true;
-  } catch (e) {
-    alert('storage full — remove some tings first');
-    return false;
+function sizeKb(d){return Math.round((JSON.stringify(d).length*2)/1024);}
+function updateQuotaBar(kb){
+  const bar=document.getElementById('quota-bar');
+  if(kb>=QUOTA_WARN_KB){bar.style.display='block';bar.textContent=`storage: ~${kb} KB — consider removing old tings`;}
+  else{bar.style.display='none';}
+}
+function daysSince(ts){if(!ts)return null;return Math.floor((Date.now()-ts)/86400000);}
+function avgInterval(logs){
+  if(!logs||logs.length<2)return null;
+  const s=[...logs].sort((a,b)=>a-b);let sum=0;
+  for(let i=1;i<s.length;i++)sum+=(s[i]-s[i-1]);
+  return Math.round(sum/(s.length-1)/86400000);
+}
+
+function colors(days,target,type){
+  if(type==='zero'){
+    if(days===null)return{bg:'var(--purple-bg)',icon:'var(--purple-icon)',chipBg:'var(--purple-bg)',chipColor:'var(--purple-text)'};
+    if(days===0)return{bg:'var(--red-bg)',icon:'var(--red-icon)',chipBg:'var(--red-bg)',chipColor:'var(--red-text)'};
+    if(days<3)return{bg:'var(--amber-bg)',icon:'var(--amber-icon)',chipBg:'var(--amber-bg)',chipColor:'var(--amber-text)'};
+    return{bg:'var(--teal-bg)',icon:'var(--teal-icon)',chipBg:'var(--teal-bg)',chipColor:'var(--teal-text)'};
   }
+  if(days===null)return{bg:'var(--bg2)',icon:'var(--text3)',chipBg:null,chipColor:null};
+  const r=days/target;
+  const good=type==='keepup'?r<0.75:r>1.5;
+  const warn=type==='keepup'?(r>=0.75&&r<1.1):(r>0.9&&r<=1.5);
+  if(good)return{bg:'var(--teal-bg)',icon:'var(--teal-icon)',chipBg:'var(--teal-bg)',chipColor:'var(--teal-text)'};
+  if(warn)return{bg:'var(--amber-bg)',icon:'var(--amber-icon)',chipBg:'var(--amber-bg)',chipColor:'var(--amber-text)'};
+  return{bg:'var(--red-bg)',icon:'var(--red-icon)',chipBg:'var(--red-bg)',chipColor:'var(--red-text)'};
 }
-function sizeKb(d) {
-  return Math.round((JSON.stringify(d).length * 2) / 1024);
-}
-function updateQuotaBar(kb) {
-  const bar = document.getElementById('quota-bar');
-  if (kb >= QUOTA_WARN_KB) {
-    bar.style.display = 'block';
-    bar.textContent = `storage: ~${kb} KB used — consider removing old tings`;
-  } else {
-    bar.style.display = 'none';
+
+function vibe(days,target,type){
+  if(type==='zero'){
+    if(days===null)return'clean streak';
+    if(days===0)return'slipped today';
+    if(days<3)return'recent slip';
+    return'holding strong';
   }
-}
-
-function daysSince(ts) {
-  if (!ts) return null;
-  return Math.floor((Date.now() - ts) / 86400000);
-}
-function avgInterval(logs) {
-  if (!logs || logs.length < 2) return null;
-  const s = [...logs].sort((a, b) => a - b);
-  let sum = 0;
-  for (let i = 1; i < s.length; i++) sum += (s[i] - s[i - 1]);
-  return Math.round(sum / (s.length - 1) / 86400000);
-}
-
-function colors(days, target, type) {
-  if (days === null) return { bg: 'var(--bg2)', icon: 'var(--text3)', chip: null };
-  const r = days / target;
-  const good = type === 'keepup' ? r < 0.75 : r > 1.5;
-  const warn = type === 'keepup' ? (r >= 0.75 && r < 1.1) : (r > 0.9 && r <= 1.5);
-  if (good) return { bg: 'var(--teal-bg)', icon: 'var(--teal-icon)', chipBg: 'var(--teal-bg)', chipColor: 'var(--teal-text)' };
-  if (warn) return { bg: 'var(--amber-bg)', icon: 'var(--amber-icon)', chipBg: 'var(--amber-bg)', chipColor: 'var(--amber-text)' };
-  return { bg: 'var(--red-bg)', icon: 'var(--red-icon)', chipBg: 'var(--red-bg)', chipColor: 'var(--red-text)' };
-}
-
-function vibe(days, target, type) {
-  if (days === null) return null;
-  const r = days / target;
-  if (type === 'keepup') {
-    if (r < 0.75) return 'fresh';
-    if (r < 1.1) return 'soon';
-    return 'overdue';
-  } else {
-    if (r > 1.5) return 'chillin';
-    if (r > 0.9) return 'watch it';
-    return 'too much';
+  if(days===null)return null;
+  const r=days/target;
+  if(type==='keepup'){
+    if(r<0.75)return'fresh';if(r<1.1)return'soon';return'overdue';
+  }else{
+    if(r>1.5)return'chillin';if(r>0.9)return'watch it';return'too much';
   }
 }
 
-let pendingIdx = null;
-let selectedType = 'keepup';
+function metaLine(h){
+  const days=daysSince(h.lastLog);
+  const avg=avgInterval(h.logs);
+  const parts=[];
+  if(h.snoozedUntil&&Date.now()<h.snoozedUntil){
+    const d=Math.ceil((h.snoozedUntil-Date.now())/86400000);
+    parts.push(`snoozed ${d}d`);
+  }else{
+    parts.push(days===null?'not yet':days+'d ago');
+    if(h.type!=='zero'&&h.target){parts.push('every '+h.target+'d');}
+    if(avg!==null){parts.push('~'+avg+'d avg');}
+  }
+  return parts;
+}
 
-function render() {
-  const data = load();
-  const list = document.getElementById('list');
-  const empty = document.getElementById('empty');
-  list.innerHTML = '';
+let pendingIdx=null;
+let menuIdx=null;
+let selectedType='keepup';
+let showSnoozed=false;
 
+// ── drag-to-reorder state ──
+let dragSrcIdx=null;
+let dragOverIdx=null;
+let longPressTimer=null;
+let isDragging=false;
+let dragEl=null;
+let dragGhost=null;
+let dragStartY=0;
+let dragCurrentY=0;
+let dragOffsetY=0;
+const CARD_GAP=8;
+
+// ── swipe state ──
+let swipeTouchId=null;
+let swipeStartX=0;
+let swipeStartY=0;
+let swipeEl=null;
+let swipeCardEl=null;
+let swipeActionsEl=null;
+let swipeIdx=null;
+let swipeOpen=false;
+let swipeOpenEl=null;
+let swipeOpenCard=null;
+
+// double-tap tracking
+let lastTap={idx:-1,time:0};
+
+function render(){
+  const data=load();
+  const list=document.getElementById('list');
+  const empty=document.getElementById('empty');
+  list.innerHTML='';
   updateQuotaBar(sizeKb(data));
 
-  if (!data.length) { empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
-
-  data.forEach((h, i) => {
-    const days = daysSince(h.lastLog);
-    const avg = avgInterval(h.logs);
-    const c = colors(days, h.target, h.type);
-    const v = vibe(days, h.target, h.type);
-    const icon = h.type === 'keepup' ? 'ti-heart' : 'ti-trending-down';
-
-    const card = document.createElement('div');
-    card.className = 'ting-card';
-
-    const chipHtml = v
-      ? `<span class="chip" style="background:${c.chipBg};color:${c.chipColor};">${v}</span>`
-      : '';
-
-    card.innerHTML = `
-      <button class="pulse-btn" data-i="${i}" aria-label="log ${h.name}" style="background:${c.bg};">
-        <i class="ti ${icon}" style="color:${c.icon};" aria-hidden="true"></i>
-      </button>
-      <div class="ting-info">
-        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">
-          <span class="ting-name">${h.name}</span>${chipHtml}
-        </div>
-        <div class="ting-meta">
-          <span>${days === null ? 'not yet' : days + 'd ago'}</span>
-          <span class="dot">·</span>
-          <span>every ${h.target}d</span>
-          ${avg !== null ? `<span class="dot">·</span><span>~${avg}d avg</span>` : ''}
-        </div>
-      </div>
-      <button class="del-btn" data-del="${i}" aria-label="remove ${h.name}">
-        <i class="ti ti-x"></i>
-      </button>`;
-    list.appendChild(card);
+  const visible=data.filter((h,i)=>{
+    if(h.snoozedUntil&&Date.now()<h.snoozedUntil&&!showSnoozed)return false;
+    return true;
   });
 
-  list.querySelectorAll('[data-i]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const i = +btn.dataset.i;
-      const h = load()[i];
-      pendingIdx = i;
-      const days = daysSince(h.lastLog);
-      document.getElementById('confirm-name').textContent = h.name;
-      document.getElementById('confirm-sub').textContent =
-        days === null ? 'first time?' : `last logged ${days}d ago`;
-      openSheet('confirm-sheet');
+  if(!visible.length){empty.style.display='block';return;}
+  empty.style.display='none';
+
+  // map visible back to real indices
+  const realIndices=data.map((_,i)=>i).filter(i=>{
+    const h=data[i];
+    if(h.snoozedUntil&&Date.now()<h.snoozedUntil&&!showSnoozed)return false;
+    return true;
+  });
+
+  realIndices.forEach((realIdx,pos)=>{
+    const h=data[realIdx];
+    const days=daysSince(h.lastLog);
+    const c=colors(days,h.target,h.type);
+    const v=vibe(days,h.target,h.type);
+    const parts=metaLine(h);
+
+    const icon=h.type==='keepup'?'ti-heart':h.type==='zero'?'ti-flame-off':'ti-trending-down';
+    const chipHtml=v?`<span class="chip" style="background:${c.chipBg};color:${c.chipColor};">${v}</span>`:'';
+
+    const row=document.createElement('div');
+    row.className='swipe-row';
+    row.dataset.realIdx=realIdx;
+
+    row.innerHTML=`
+      <div class="swipe-actions">
+        <button class="swipe-action sa-backlog" data-action="backlog" aria-label="backlog"><i class="ti ti-history" aria-hidden="true"></i>past</button>
+        <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
+        <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>gone</button>
+      </div>
+      <div class="ting-card${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}" data-real="${realIdx}">
+        <span class="drag-handle" aria-label="drag to reorder"><i class="ti ti-grip-vertical" aria-hidden="true"></i></span>
+        <button class="pulse-btn" data-pulse="${realIdx}" aria-label="log ${h.name}" style="background:${c.bg};">
+          <i class="ti ${icon}" style="color:${c.icon};" aria-hidden="true"></i>
+        </button>
+        <div class="ting-info">
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">
+            <span class="ting-name">${h.name}</span>${chipHtml}
+          </div>
+          <div class="ting-meta">
+            ${parts.map((p,i)=>i===0?`<span>${p}</span>`:`<span class="dot">·</span><span>${p}</span>`).join('')}
+          </div>
+        </div>
+      </div>`;
+
+    list.appendChild(row);
+    setupSwipe(row);
+    setupLongPress(row,realIdx);
+    setupDoubleTap(row,realIdx);
+  });
+
+  // single-tap on pulse button
+  list.querySelectorAll('[data-pulse]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const i=+btn.dataset.pulse;
+      openConfirm(i);
     });
   });
 
-  list.querySelectorAll('[data-del]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const i = +btn.dataset.del;
-      const d = load();
-      d.splice(i, 1);
+  // swipe action buttons
+  list.querySelectorAll('.swipe-action').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const ri=+btn.closest('.swipe-row').dataset.realIdx;
+      const action=btn.dataset.action;
+      closeAllSwipes();
+      if(action==='backlog')openBacklog(ri);
+      else if(action==='snooze')doSnooze(ri);
+      else if(action==='nuke')doNuke(ri);
+    });
+  });
+}
+
+// ── Swipe to reveal ──
+function setupSwipe(row){
+  const card=row.querySelector('.ting-card');
+  const actions=row.querySelector('.swipe-actions');
+  let startX=0,startY=0,startTime=0,dx=0,moved=false,touchId=null;
+
+  row.addEventListener('touchstart',e=>{
+    if(isDragging)return;
+    const t=e.changedTouches[0];
+    touchId=t.identifier;startX=t.clientX;startY=t.clientY;
+    startTime=Date.now();dx=0;moved=false;
+    // close other open swipes
+    if(swipeOpenCard&&swipeOpenCard!==card){
+      swipeOpenCard.style.transform='';
+      swipeOpenEl=null;swipeOpenCard=null;
+    }
+  },{passive:true});
+
+  row.addEventListener('touchmove',e=>{
+    if(isDragging)return;
+    const t=[...e.changedTouches].find(t=>t.identifier===touchId);
+    if(!t)return;
+    const ddx=t.clientX-startX;
+    const ddy=t.clientY-startY;
+    if(!moved&&Math.abs(ddy)>Math.abs(ddx))return; // vertical scroll
+    moved=true;dx=ddx;
+    if(dx>0)return; // no right swipe
+    const clamped=Math.max(-SWIPE_REVEAL,dx);
+    card.style.transition='none';
+    card.style.transform=`translateX(${clamped}px)`;
+    // show actions proportionally
+    const pct=Math.min(1,Math.abs(clamped)/SWIPE_REVEAL);
+    actions.style.width=Math.abs(clamped)+'px';
+    actions.style.pointerEvents=pct>0.2?'auto':'none';
+  },{passive:true});
+
+  row.addEventListener('touchend',e=>{
+    if(isDragging||!moved)return;
+    const snap=dx<-SWIPE_THRESHOLD;
+    card.style.transition='transform 0.22s cubic-bezier(.25,.46,.45,.94)';
+    if(snap){
+      card.style.transform=`translateX(-${SWIPE_REVEAL}px)`;
+      actions.style.width=SWIPE_REVEAL+'px';
+      actions.style.pointerEvents='auto';
+      swipeOpenEl=row;swipeOpenCard=card;
+    }else{
+      card.style.transform='';
+      actions.style.width='0';
+      actions.style.pointerEvents='none';
+      swipeOpenEl=null;swipeOpenCard=null;
+    }
+  });
+}
+
+function closeAllSwipes(){
+  if(swipeOpenCard){
+    swipeOpenCard.style.transition='transform 0.22s cubic-bezier(.25,.46,.45,.94)';
+    swipeOpenCard.style.transform='';
+    const row=swipeOpenCard.closest('.swipe-row');
+    if(row){const a=row.querySelector('.swipe-actions');if(a){a.style.width='0';a.style.pointerEvents='none';}}
+    swipeOpenEl=null;swipeOpenCard=null;
+  }
+}
+
+// ── Long press drag to reorder ──
+function setupLongPress(row,realIdx){
+  const card=row.querySelector('.ting-card');
+  const handle=card.querySelector('.drag-handle');
+  let lpt=null;
+
+  function startLong(e){
+    if(swipeOpenCard)return;
+    const touch=e.touches?e.touches[0]:e;
+    lpt=setTimeout(()=>{
+      beginDrag(row,realIdx,touch.clientY);
+    },400);
+  }
+  function cancelLong(){clearTimeout(lpt);lpt=null;}
+
+  handle.addEventListener('touchstart',e=>{startLong(e);},{passive:true});
+  handle.addEventListener('touchend',cancelLong);
+  handle.addEventListener('touchmove',e=>{
+    if(isDragging)return;
+    cancelLong();
+  },{passive:true});
+}
+
+function beginDrag(row,realIdx,startClientY){
+  isDragging=true;
+  dragSrcIdx=realIdx;
+  dragEl=row;
+  dragStartY=startClientY;
+  dragCurrentY=startClientY;
+
+  row.querySelector('.ting-card').classList.add('dragging-ghost');
+
+  // vibrate if supported
+  if(navigator.vibrate)navigator.vibrate(30);
+
+  function onMove(e){
+    if(!isDragging)return;
+    const t=e.touches?e.touches[0]:e;
+    dragCurrentY=t.clientY;
+    const dy=dragCurrentY-dragStartY;
+    row.querySelector('.ting-card').style.transform=`translateY(${dy}px)`;
+    row.querySelector('.ting-card').style.zIndex=20;
+
+    // find which row we're over
+    const rows=[...document.querySelectorAll('.swipe-row')];
+    let overRow=null;
+    rows.forEach(r=>{
+      const rect=r.getBoundingClientRect();
+      const mid=(rect.top+rect.bottom)/2;
+      if(dragCurrentY>rect.top&&dragCurrentY<rect.bottom)overRow=r;
+    });
+    rows.forEach(r=>r.querySelector('.ting-card').classList.remove('drag-over'));
+    if(overRow&&overRow!==row){
+      overRow.querySelector('.ting-card').classList.add('drag-over');
+      dragOverIdx=+overRow.dataset.realIdx;
+    }else{dragOverIdx=null;}
+  }
+
+  function onEnd(){
+    if(!isDragging)return;
+    isDragging=false;
+    row.querySelector('.ting-card').style.transform='';
+    row.querySelector('.ting-card').style.zIndex='';
+    row.querySelector('.ting-card').classList.remove('dragging-ghost');
+    document.querySelectorAll('.ting-card').forEach(c=>c.classList.remove('drag-over'));
+
+    if(dragOverIdx!==null&&dragOverIdx!==dragSrcIdx){
+      const d=load();
+      const item=d.splice(dragSrcIdx,1)[0];
+      const newPos=dragOverIdx>dragSrcIdx?dragOverIdx:dragOverIdx;
+      d.splice(newPos,0,item);
       save(d);
       render();
-    });
+    }
+    dragSrcIdx=null;dragOverIdx=null;dragEl=null;
+    document.removeEventListener('touchmove',onMove);
+    document.removeEventListener('touchend',onEnd);
+    document.removeEventListener('mousemove',onMove);
+    document.removeEventListener('mouseup',onEnd);
+  }
+
+  document.addEventListener('touchmove',onMove,{passive:true});
+  document.addEventListener('touchend',onEnd);
+  document.addEventListener('mousemove',onMove);
+  document.addEventListener('mouseup',onEnd);
+}
+
+// ── Double tap to quick-log ──
+function setupDoubleTap(row,realIdx){
+  const card=row.querySelector('.ting-card');
+  card.addEventListener('click',e=>{
+    if(e.target.closest('.pulse-btn')||e.target.closest('.drag-handle'))return;
+    if(swipeOpenCard){closeAllSwipes();return;}
+    const now=Date.now();
+    if(lastTap.idx===realIdx&&now-lastTap.time<350){
+      lastTap={idx:-1,time:0};
+      quickLog(realIdx,card);
+    }else{
+      lastTap={idx:realIdx,time:now};
+    }
   });
 }
 
-function openSheet(id) {
-  document.getElementById(id).classList.add('open');
-}
-function closeSheet(id) {
-  document.getElementById(id).classList.remove('open');
-}
-
-document.getElementById('type-seg').addEventListener('click', e => {
-  const opt = e.target.closest('[data-v]');
-  if (!opt) return;
-  selectedType = opt.dataset.v;
-  document.querySelectorAll('#type-seg .seg-opt').forEach(o => o.classList.toggle('on', o === opt));
-});
-
-document.getElementById('open-add').addEventListener('click', () => {
-  openSheet('add-sheet');
-  setTimeout(() => document.getElementById('ting-name').focus(), 80);
-});
-
-function cancelAdd() {
-  closeSheet('add-sheet');
-  document.getElementById('ting-name').value = '';
-  document.getElementById('ting-days').value = '7';
-  selectedType = 'keepup';
-  document.querySelectorAll('#type-seg .seg-opt').forEach((o, i) => o.classList.toggle('on', i === 0));
-}
-
-document.getElementById('do-cancel').addEventListener('click', cancelAdd);
-document.getElementById('add-sheet').addEventListener('click', e => {
-  if (e.target === e.currentTarget) cancelAdd();
-});
-
-document.getElementById('do-save').addEventListener('click', () => {
-  const name = document.getElementById('ting-name').value.trim();
-  if (!name) { document.getElementById('ting-name').focus(); return; }
-
-  const d = load();
-  if (d.length >= MAX_TINGS) {
-    alert(`you've got ${MAX_TINGS} tings — remove some before adding more`);
-    return;
-  }
-  if (sizeKb(d) >= QUOTA_HARD_KB) {
-    alert('storage ceiling reached — remove some tings first');
-    return;
-  }
-
-  const target = Math.max(1, Math.min(90, parseInt(document.getElementById('ting-days').value) || 7));
-  d.push({ name: name.slice(0, 60), type: selectedType, target, lastLog: null, logs: [] });
-  if (save(d)) {
-    cancelAdd();
-    render();
-  }
-});
-
-document.getElementById('ting-name').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('do-save').click();
-});
-
-document.getElementById('confirm-yes').addEventListener('click', () => {
-  if (pendingIdx === null) return;
-  const d = load();
-  const now = Date.now();
-  d[pendingIdx].lastLog = now;
-  if (!d[pendingIdx].logs) d[pendingIdx].logs = [];
-  d[pendingIdx].logs.push(now);
-  if (d[pendingIdx].logs.length > MAX_LOGS) d[pendingIdx].logs = d[pendingIdx].logs.slice(-MAX_LOGS);
+function quickLog(i,cardEl){
+  const d=load();
+  const now=Date.now();
+  d[i].lastLog=now;
+  if(!d[i].logs)d[i].logs=[];
+  d[i].logs.push(now);
+  if(d[i].logs.length>MAX_LOGS)d[i].logs=d[i].logs.slice(-MAX_LOGS);
   save(d);
-  pendingIdx = null;
-  closeSheet('confirm-sheet');
+  if(cardEl){cardEl.classList.add('flash');setTimeout(()=>cardEl.classList.remove('flash'),350);}
+  render();
+}
+
+// ── Confirm sheet ──
+function openConfirm(i){
+  const h=load()[i];
+  if(!h)return;
+  pendingIdx=i;
+  const days=daysSince(h.lastLog);
+  document.getElementById('confirm-name').textContent=h.name;
+  document.getElementById('confirm-sub').textContent=days===null?'first time?':`last logged ${days}d ago`;
+  openSheet('confirm-sheet');
+}
+
+// ── Menu sheet (from swipe action or future use) ──
+function openMenu(i){
+  const h=load()[i];
+  if(!h)return;
+  menuIdx=i;
+  document.getElementById('menu-name').textContent=h.name;
+  const days=daysSince(h.lastLog);
+  document.getElementById('menu-sub').textContent=days===null?'never logged':`last ${days}d ago`;
+  const rows=document.getElementById('menu-rows');
+  rows.innerHTML=`
+    <div class="menu-row" data-ma="backlog"><i class="ti ti-history"></i><div><div class="menu-row-label">past entry</div><div class="menu-row-sub">plant a date you did it before</div></div></div>
+    <div class="menu-row" data-ma="snooze"><i class="ti ti-moon"></i><div><div class="menu-row-label">ghost it for a bit</div><div class="menu-row-sub">hide for 7 days</div></div></div>
+    <div class="menu-row danger" data-ma="nuke"><i class="ti ti-trash"></i><div><div class="menu-row-label">drop it</div><div class="menu-row-sub">remove this ting forever</div></div></div>`;
+  rows.querySelectorAll('[data-ma]').forEach(r=>{
+    r.addEventListener('click',()=>{
+      closeSheet('menu-sheet');
+      const action=r.dataset.ma;
+      if(action==='backlog')openBacklog(menuIdx);
+      else if(action==='snooze')doSnooze(menuIdx);
+      else if(action==='nuke')doNuke(menuIdx);
+    });
+  });
+  openSheet('menu-sheet');
+}
+
+// ── Snooze ──
+function doSnooze(i){
+  const d=load();
+  d[i].snoozedUntil=Date.now()+(7*86400000);
+  save(d);render();
+}
+
+// ── Nuke ──
+function doNuke(i){
+  const d=load();
+  d.splice(i,1);
+  save(d);render();
+}
+
+// ── Backlog entry ──
+let backlogIdx=null;
+function openBacklog(i){
+  backlogIdx=i;
+  const today=new Date().toISOString().slice(0,10);
+  document.getElementById('backlog-date').value=today;
+  openSheet('backlog-sheet');
+}
+
+document.getElementById('backlog-save').addEventListener('click',()=>{
+  const val=document.getElementById('backlog-date').value;
+  if(!val)return;
+  const ts=new Date(val+'T12:00:00').getTime();
+  const d=load();
+  if(!d[backlogIdx].logs)d[backlogIdx].logs=[];
+  d[backlogIdx].logs.push(ts);
+  d[backlogIdx].logs.sort((a,b)=>a-b);
+  if(d[backlogIdx].logs.length>MAX_LOGS)d[backlogIdx].logs=d[backlogIdx].logs.slice(-MAX_LOGS);
+  // update lastLog if this is more recent
+  if(!d[backlogIdx].lastLog||ts>d[backlogIdx].lastLog)d[backlogIdx].lastLog=ts;
+  save(d);
+  closeSheet('backlog-sheet');
+  backlogIdx=null;
   render();
 });
+document.getElementById('backlog-cancel').addEventListener('click',()=>{closeSheet('backlog-sheet');backlogIdx=null;});
+document.getElementById('backlog-sheet').addEventListener('click',e=>{if(e.target===e.currentTarget){closeSheet('backlog-sheet');backlogIdx=null;}});
 
-document.getElementById('confirm-no').addEventListener('click', () => {
-  pendingIdx = null;
-  closeSheet('confirm-sheet');
+// ── Sheet helpers ──
+function openSheet(id){document.getElementById(id).classList.add('open');}
+function closeSheet(id){document.getElementById(id).classList.remove('open');}
+
+// ── Add sheet ──
+document.getElementById('type-seg').addEventListener('click',e=>{
+  const opt=e.target.closest('[data-v]');if(!opt)return;
+  selectedType=opt.dataset.v;
+  document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o===opt));
+  document.getElementById('target-row').style.display=selectedType==='zero'?'none':'flex';
 });
 
-document.getElementById('confirm-sheet').addEventListener('click', e => {
-  if (e.target === e.currentTarget) {
-    pendingIdx = null;
-    closeSheet('confirm-sheet');
+document.getElementById('open-add').addEventListener('click',()=>{
+  openSheet('add-sheet');
+  setTimeout(()=>document.getElementById('ting-name').focus(),80);
+});
+
+function cancelAdd(){
+  closeSheet('add-sheet');
+  document.getElementById('ting-name').value='';
+  document.getElementById('ting-days').value='7';
+  selectedType='keepup';
+  document.querySelectorAll('#type-seg .seg-opt').forEach((o,i)=>o.classList.toggle('on',i===0));
+  document.getElementById('target-row').style.display='flex';
+}
+document.getElementById('do-cancel').addEventListener('click',cancelAdd);
+document.getElementById('add-sheet').addEventListener('click',e=>{if(e.target===e.currentTarget)cancelAdd();});
+
+document.getElementById('do-save').addEventListener('click',()=>{
+  const name=document.getElementById('ting-name').value.trim();
+  if(!name){document.getElementById('ting-name').focus();return;}
+  const d=load();
+  if(d.length>=MAX_TINGS){alert(`${MAX_TINGS} tings max — drop some first`);return;}
+  if(sizeKb(d)>=QUOTA_HARD_KB){alert('storage ceiling — drop some tings first');return;}
+  const target=selectedType==='zero'?null:Math.max(1,Math.min(90,parseInt(document.getElementById('ting-days').value)||7));
+  d.push({name:name.slice(0,60),type:selectedType,target,lastLog:null,logs:[]});
+  if(save(d)){cancelAdd();render();}
+});
+document.getElementById('ting-name').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('do-save').click();});
+
+// ── Confirm sheet actions ──
+document.getElementById('confirm-yes').addEventListener('click',()=>{
+  if(pendingIdx===null)return;
+  const d=load();const now=Date.now();
+  d[pendingIdx].lastLog=now;
+  if(!d[pendingIdx].logs)d[pendingIdx].logs=[];
+  d[pendingIdx].logs.push(now);
+  if(d[pendingIdx].logs.length>MAX_LOGS)d[pendingIdx].logs=d[pendingIdx].logs.slice(-MAX_LOGS);
+  save(d);pendingIdx=null;closeSheet('confirm-sheet');render();
+});
+document.getElementById('confirm-no').addEventListener('click',()=>{pendingIdx=null;closeSheet('confirm-sheet');});
+document.getElementById('confirm-sheet').addEventListener('click',e=>{if(e.target===e.currentTarget){pendingIdx=null;closeSheet('confirm-sheet');}});
+document.getElementById('menu-sheet').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSheet('menu-sheet');});
+
+// close swipe on list tap
+document.getElementById('list').addEventListener('touchstart',e=>{
+  if(swipeOpenCard&&!e.target.closest('.swipe-actions')&&!e.target.closest('.ting-card')){
+    closeAllSwipes();
   }
-});
+},{passive:true});
 
 render();
 </script>
