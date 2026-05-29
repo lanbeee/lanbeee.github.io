@@ -9,6 +9,8 @@ const SWIPE_THRESHOLD = 60;
 const SWIPE_REVEAL = 136;
 const TAP_DELAY = 310;
 const HANDLE_WINDOW_MS = 5 * 60 * 1000;
+const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
+const WIDTH_TRANSITION = 'width 190ms cubic-bezier(.3,.7,.2,1)';
 
 const $ = id => document.getElementById(id);
 
@@ -397,6 +399,7 @@ function setupSwipe(row){
     if(dx > 0)return;
     const clamped = Math.max(-SWIPE_REVEAL,dx);
     card.style.transition = 'none';
+    actions.style.transition = 'none';
     card.style.transform = `translateX(${clamped}px)`;
     const pct = Math.min(1,Math.abs(clamped) / SWIPE_REVEAL);
     actions.style.width = `${Math.abs(clamped)}px`;
@@ -406,7 +409,8 @@ function setupSwipe(row){
   row.addEventListener('touchend',()=>{
     if(isDragging || !moved)return;
     const snap = dx < -SWIPE_THRESHOLD;
-    card.style.transition = 'transform 0.22s cubic-bezier(.25,.46,.45,.94)';
+    card.style.transition = SNAP_TRANSITION;
+    actions.style.transition = WIDTH_TRANSITION;
     if(snap){
       card.style.transform = `translateX(-${SWIPE_REVEAL}px)`;
       actions.style.width = `${SWIPE_REVEAL}px`;
@@ -426,10 +430,11 @@ function closeAllSwipes(){
     const card = row.querySelector('.ting-card');
     const actions = row.querySelector('.swipe-actions');
     if(card){
-      card.style.transition = 'transform 0.22s cubic-bezier(.25,.46,.45,.94)';
+      card.style.transition = SNAP_TRANSITION;
       card.style.transform = '';
     }
     if(actions){
+      actions.style.transition = WIDTH_TRANSITION;
       actions.style.width = '0';
       actions.style.pointerEvents = 'none';
     }
@@ -618,10 +623,10 @@ function quickLog(i,card){
   if(!logTing(i))return;
   if(card){
     card.classList.add('logged');
-    setTimeout(()=>card.classList.remove('logged'),520);
+    setTimeout(()=>card.classList.remove('logged'),380);
   }
   showToast('planted');
-  setTimeout(render,540);
+  setTimeout(render,260);
 }
 
 function openConfirm(i){
@@ -958,8 +963,8 @@ function showReachPad(){
   clearTimeout(reachTimer);
   reachTimer = setTimeout(()=>{
     document.body.classList.remove('reach-pad');
-    window.scrollTo({top:0,behavior:'smooth'});
-  },1400);
+    requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
+  },950);
 }
 
 function updateHeaderOnScroll(){
