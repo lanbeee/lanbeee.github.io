@@ -25,6 +25,8 @@ let dragSrcIdx = null;
 let dragOverIdx = null;
 let dragRows = [];
 let dragDropIndex = null;
+let dragStartY = 0;
+let dragFrame = null;
 let toastTimer = null;
 
 function load(){
@@ -419,6 +421,7 @@ function beginDrag(row,realIdx,startY){
   row.classList.add('dragging');
   dragSrcIdx = realIdx;
   dragOverIdx = null;
+  dragStartY = startY;
   dragDropIndex = [...document.querySelectorAll('.swipe-row')].indexOf(row);
   dragRows = [...document.querySelectorAll('.swipe-row')].map((item,index)=>{
     const rect = item.getBoundingClientRect();
@@ -429,18 +432,23 @@ function beginDrag(row,realIdx,startY){
     };
   });
   row.dataset.dragStartY = String(startY);
-  row.querySelector('.ting-card').classList.add('dragging-ghost');
+  const card = row.querySelector('.ting-card');
+  card.style.transition = 'none';
+  card.classList.add('dragging-ghost');
   if(navigator.vibrate)navigator.vibrate(25);
 }
 
 function moveDrag(row,currentY){
-  const startY = Number(row.dataset.dragStartY || currentY);
   const card = row.querySelector('.ting-card');
-  card.style.transform = `translateY(${currentY - startY}px)`;
-  card.style.zIndex = 20;
+  if(dragFrame)cancelAnimationFrame(dragFrame);
+  dragFrame = requestAnimationFrame(()=>{
+    card.style.transition = 'none';
+    card.style.transform = `translate3d(0,${currentY - dragStartY}px,0)`;
+    card.style.zIndex = 20;
+  });
 
   const otherRows = dragRows.filter(item=>item.realIdx !== dragSrcIdx);
-  const deadZone = 12;
+  const deadZone = 18;
   let nextDropIndex = 0;
   otherRows.forEach(item=>{
     if(currentY > item.center + deadZone)nextDropIndex += 1;
@@ -467,10 +475,13 @@ function moveDrag(row,currentY){
 
 function endDrag(row){
   const card = row.querySelector('.ting-card');
+  if(dragFrame)cancelAnimationFrame(dragFrame);
+  dragFrame = null;
   isDragging = false;
   document.body.classList.remove('drag-active');
   row.classList.remove('dragging');
   card.style.transform = '';
+  card.style.transition = '';
   card.style.zIndex = '';
   card.classList.remove('dragging-ghost');
   document.querySelectorAll('.ting-card').forEach(c=>c.classList.remove('drag-over'));
@@ -487,6 +498,7 @@ function endDrag(row){
   dragOverIdx = null;
   dragRows = [];
   dragDropIndex = null;
+  dragStartY = 0;
   render();
 }
 
