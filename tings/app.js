@@ -427,14 +427,20 @@ function moveDrag(row,currentY){
   card.style.transform = `translateY(${currentY - startY}px)`;
   card.style.zIndex = 20;
 
-  const rows = [...document.querySelectorAll('.swipe-row')];
+  const rows = [...document.querySelectorAll('.swipe-row')].filter(r=>r !== row);
   let overRow = null;
+  let closest = Infinity;
   rows.forEach(r=>{
     const rect = r.getBoundingClientRect();
-    if(currentY > rect.top && currentY < rect.bottom)overRow = r;
+    const center = rect.top + rect.height / 2;
+    const distance = Math.abs(currentY - center);
+    if(distance < closest){
+      closest = distance;
+      overRow = r;
+    }
   });
-  rows.forEach(r=>r.querySelector('.ting-card').classList.remove('drag-over'));
-  if(overRow && overRow !== row){
+  document.querySelectorAll('.ting-card').forEach(c=>c.classList.remove('drag-over'));
+  if(overRow){
     overRow.querySelector('.ting-card').classList.add('drag-over');
     dragOverIdx = +overRow.dataset.realIdx;
   }else{
