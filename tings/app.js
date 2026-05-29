@@ -57,6 +57,21 @@ function save(data){
 
 function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024);}
 function daysSince(ts){return ts ? Math.floor((Date.now() - ts) / 86400000) : null;}
+function dayDistance(ts){return ts ? Math.round((Date.now() - ts) / 86400000) : null;}
+function entryWhen(ts){
+  const days = dayDistance(ts);
+  if(days === null)return 'not yet';
+  if(days < 0)return `in ${Math.abs(days)}d`;
+  if(days === 0)return 'today';
+  return `${days}d ago`;
+}
+function todayIso(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }
@@ -142,7 +157,7 @@ function metaLine(h){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil){
     parts.push(`snoozed ${Math.ceil((h.snoozedUntil - Date.now()) / 86400000)}d`);
   }else{
-    parts.push(days === null ? 'not yet' : `${days}d ago`);
+    parts.push(entryWhen(h.lastLog));
     if(h.type !== 'zero' && h.target)parts.push(`every ${h.target}d`);
     if(avg !== null)parts.push(`~${avg}d avg`);
   }
@@ -233,7 +248,7 @@ function render(){
       </div>
       <div class="ting-card${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}" data-real="${realIdx}">
         <span class="drag-handle" aria-label="drag"><i class="ti ti-grip-vertical" aria-hidden="true"></i></span>
-        <button class="pulse-btn" data-pulse="${realIdx}" aria-label="log ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
+        <button class="pulse-btn" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info">
@@ -324,11 +339,18 @@ function setupSwipe(row){
 }
 
 function closeAllSwipes(){
-  if(!swipeOpenCard)return;
-  swipeOpenCard.style.transition = 'transform 0.22s cubic-bezier(.25,.46,.45,.94)';
-  swipeOpenCard.style.transform = '';
-  const actions = swipeOpenCard.closest('.swipe-row')?.querySelector('.swipe-actions');
-  if(actions){actions.style.width = '0';actions.style.pointerEvents = 'none';}
+  document.querySelectorAll('.swipe-row').forEach(row=>{
+    const card = row.querySelector('.ting-card');
+    const actions = row.querySelector('.swipe-actions');
+    if(card){
+      card.style.transition = 'transform 0.22s cubic-bezier(.25,.46,.45,.94)';
+      card.style.transform = '';
+    }
+    if(actions){
+      actions.style.width = '0';
+      actions.style.pointerEvents = 'none';
+    }
+  });
   swipeOpenCard = null;
 }
 
@@ -368,6 +390,7 @@ function setupDrag(row,realIdx){
 function beginDrag(row,realIdx,startY){
   closeAllSwipes();
   isDragging = true;
+  document.body.classList.add('drag-active');
   dragSrcIdx = realIdx;
   dragOverIdx = null;
   row.dataset.dragStartY = String(startY);
@@ -399,6 +422,7 @@ function moveDrag(row,currentY){
 function endDrag(row){
   const card = row.querySelector('.ting-card');
   isDragging = false;
+  document.body.classList.remove('drag-active');
   card.style.transform = '';
   card.style.zIndex = '';
   card.classList.remove('dragging-ghost');
@@ -471,7 +495,7 @@ function openConfirm(i){
   pendingIdx = i;
   const days = daysSince(h.lastLog);
   $('confirm-name').textContent = h.name;
-  $('confirm-sub').textContent = days === null ? 'first time?' : `last ${days}d ago`;
+  $('confirm-sub').textContent = days === null ? 'first time?' : `last entry ${entryWhen(h.lastLog)}`;
   openSheet('confirm-sheet');
 }
 
@@ -491,7 +515,7 @@ function openDetail(i){
   syncRhythm('detail',h.target || 7);
   $('detail-mark').style.background = c.bg;
   $('detail-mark').style.color = c.icon;
-  $('detail-mark').setAttribute('aria-label',`log ${h.name}`);
+  $('detail-mark').setAttribute('aria-label',`add entry for ${h.name}`);
   $('detail-mark').innerHTML = iconHtml(h,c);
   renderStats(h);
   renderGraph(h);
@@ -502,29 +526,35 @@ function renderStats(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
   const total = h.logs?.length || 0;
+  const gapNum = days === null ? '-' : days < 0 ? Math.abs(days) : days;
+  const gapLabel = days < 0 ? 'away' : 'gap';
   $('detail-stats').innerHTML = `
-    <div class="stat"><div class="stat-num">${days === null ? '-' : days}</div><div class="stat-label">gap</div></div>
+    <div class="stat"><div class="stat-num">${gapNum}</div><div class="stat-label">${gapLabel}</div></div>
     <div class="stat"><div class="stat-num">${avg === null ? '-' : avg}</div><div class="stat-label">pace</div></div>
-    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">logs</div></div>`;
+    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">entries</div></div>`;
 }
 
 function aboutText(h){
   const days = daysSince(h.lastLog);
   if(h.type === 'zero'){
     if(days === null)return 'You are keeping this off the board.';
-    if(days === 0)return 'Logged today. Reset, then keep moving.';
-    return `${days} clean days since the last log.`;
+    if(days < 0)return `Next entry is ${entryWhen(h.lastLog)}.`;
+    if(days === 0)return 'Entry today. Reset, then keep moving.';
+    return `${days} clean days since the last entry.`;
   }
   const target = h.target || 7;
   if(days === null)return `Aim for about every ${target} days.`;
-  if(h.type === 'keepup')return days <= target ? `Last log was ${days} days ago. Still in rhythm.` : `Last log was ${days} days ago. Time to bring it back.`;
-  return days >= target ? `${days} days clear. Keep the gap wide.` : `Logged ${days} days ago. Let it cool.`;
+  if(days < 0)return `Next entry is ${entryWhen(h.lastLog)}.`;
+  const when = entryWhen(h.lastLog);
+  if(h.type === 'keepup')return days <= target ? `Last entry was ${when}. Still in rhythm.` : `Last entry was ${when}. Time to bring it back.`;
+  return days >= target ? `${days} days clear. Keep the gap wide.` : `Entry was ${when}. Let it cool.`;
 }
 
 function trendText(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
-  if(days === null)return 'no logs yet';
+  if(days === null)return 'no entries yet';
+  if(days < 0)return 'coming up';
   if(h.type === 'zero'){
     if(days === 0)return 'fresh slip';
     if(days < 3)return 'settling';
@@ -578,7 +608,9 @@ function doNuke(i){
 
 function openBacklog(i){
   backlogIdx = i;
-  $('backlog-date').value = new Date().toISOString().slice(0,10);
+  const today = todayIso();
+  $('backlog-date').max = today;
+  $('backlog-date').value = today;
   openSheet('backlog-sheet');
 }
 
@@ -601,7 +633,6 @@ function cancelAdd(){
   syncRhythm('ting',7);
   selectedType = 'keepup';
   document.querySelectorAll('#type-seg .seg-opt').forEach((o,i)=>o.classList.toggle('on',i === 0));
-  $('target-row').style.display = 'flex';
   $('target-slider-row').style.display = 'flex';
 }
 
@@ -616,13 +647,12 @@ $('type-seg').addEventListener('click',e=>{
   if(!opt)return;
   selectedType = opt.dataset.v;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
-  $('target-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
   $('target-slider-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
 });
 
 $('open-add').addEventListener('click',()=>{
   openSheet('add-sheet');
-  setTimeout(()=>$('ting-name').focus(),80);
+  $('ting-name').focus({preventScroll:true});
 });
 
 $('do-cancel').addEventListener('click',cancelAdd);
@@ -703,7 +733,8 @@ $('detail-save').addEventListener('click',()=>{
   if(h.type !== 'zero')h.target = Math.max(1,Math.min(90,parseInt($('detail-days').value,10) || h.target || 7));
   save(data);
   showToast('tuned');
-  openDetail(detailIdx);
+  closeSheet('detail-sheet');
+  detailIdx = null;
   render();
 });
 $('detail-mark').addEventListener('click',()=>{
@@ -723,6 +754,10 @@ $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cl
 $('backlog-save').addEventListener('click',()=>{
   const val = $('backlog-date').value;
   if(!val || backlogIdx === null)return;
+  if(val > todayIso()){
+    showToast('past only');
+    return;
+  }
   const ts = new Date(`${val}T12:00:00`).getTime();
   const data = load();
   if(!data[backlogIdx])return;
