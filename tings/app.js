@@ -44,6 +44,7 @@ let lastScrollY = 0;
 let headerHidden = false;
 let headerRevealPull = 0;
 let topTouchY = 0;
+let topTouchX = 0;
 let reorderPressing = false;
 let detailTuneOriginal = null;
 
@@ -964,7 +965,7 @@ function showReachPad(){
   reachTimer = setTimeout(()=>{
     document.body.classList.remove('reach-pad');
     requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
-  },950);
+  },1800);
 }
 
 function updateHeaderOnScroll(){
@@ -1102,11 +1103,17 @@ $('detail-emoji').addEventListener('input',()=>setDetailDirty());
 window.addEventListener('scroll',updateHeaderOnScroll,{passive:true});
 document.addEventListener('touchstart',e=>{
   if(e.target.closest('.drag-handle'))return;
-  if(window.scrollY <= 4)topTouchY = e.touches[0].clientY;
+  if(window.scrollY <= 4){
+    topTouchY = e.touches[0].clientY;
+    topTouchX = e.touches[0].clientX;
+  }
 },{passive:true});
 document.addEventListener('touchmove',e=>{
   if(e.target.closest('.drag-handle'))return;
-  if(window.scrollY <= 4 && e.touches[0].clientY - topTouchY > 22)showReachPad();
+  if(window.scrollY > 4)return;
+  const dy = e.touches[0].clientY - topTouchY;
+  const dx = Math.abs(e.touches[0].clientX - topTouchX);
+  if(dy > 42 && dx < dy * 0.45)showReachPad();
 },{passive:true});
 document.addEventListener('wheel',e=>{
   if(window.scrollY <= 4 && e.deltaY < -8)showReachPad();
