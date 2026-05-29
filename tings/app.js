@@ -39,7 +39,10 @@ let toastTimer = null;
 let handleTimer = null;
 let reachTimer = null;
 let lastScrollY = 0;
+let headerHidden = false;
+let headerRevealPull = 0;
 let topTouchY = 0;
+let reorderPressing = false;
 let detailTuneOriginal = null;
 
 function load(){
@@ -304,7 +307,7 @@ function render(){
       empty.innerHTML = 'snoozed for now<br><span class="empty-sub">tap to peek</span>';
       empty.onclick = ()=>{showSnoozed = true;render();};
     }else{
-      empty.innerHTML = 'noting tracked yet<br><span class="empty-sub">tap + to add your first ting</span>';
+      empty.innerHTML = 'nothing tracked yet<br><span class="empty-sub">tap + to add your first ting</span>';
     }
     return;
   }
@@ -445,6 +448,8 @@ function setupDrag(row,realIdx){
 
   handle.addEventListener('pointerdown',e=>{
     if(swipeOpenCard)return;
+    e.preventDefault();
+    reorderPressing = true;
     pointerId = e.pointerId;
     startY = e.clientY;
     handle.setPointerCapture(pointerId);
@@ -458,11 +463,13 @@ function setupDrag(row,realIdx){
 
   handle.addEventListener('pointerup',()=>{
     clear();
+    reorderPressing = false;
     if(isDragging)endDrag(row);
   });
 
   handle.addEventListener('pointercancel',()=>{
     clear();
+    reorderPressing = false;
     if(isDragging)endDrag(row);
   });
 }
@@ -945,6 +952,7 @@ function showToast(text){
 }
 
 function showReachPad(){
+  if(isDragging || reorderPressing || document.querySelector('.sheet-wrap.open'))return;
   if(window.scrollY > 4)return;
   document.body.classList.add('reach-pad');
   clearTimeout(reachTimer);
@@ -956,8 +964,24 @@ function showReachPad(){
 
 function updateHeaderOnScroll(){
   const y = window.scrollY;
-  document.body.classList.toggle('header-hidden',y > 36 && y > lastScrollY);
-  if(y < 12)document.body.classList.remove('header-hidden');
+  const dy = y - lastScrollY;
+  if(isDragging || reorderPressing){
+    lastScrollY = y;
+    return;
+  }
+  if(y < 12){
+    headerHidden = false;
+    headerRevealPull = 0;
+  }else if(dy > 4 && y > 42){
+    headerHidden = true;
+    headerRevealPull = 0;
+  }else if(dy < -2){
+    headerRevealPull += Math.abs(dy);
+    if(headerRevealPull > 64)headerHidden = false;
+  }else if(dy > 0){
+    headerRevealPull = 0;
+  }
+  document.body.classList.toggle('header-hidden',headerHidden);
   lastScrollY = y;
 }
 
@@ -1072,10 +1096,12 @@ $('detail-emoji').addEventListener('input',()=>setDetailDirty());
 
 window.addEventListener('scroll',updateHeaderOnScroll,{passive:true});
 document.addEventListener('touchstart',e=>{
+  if(e.target.closest('.drag-handle'))return;
   if(window.scrollY <= 4)topTouchY = e.touches[0].clientY;
 },{passive:true});
 document.addEventListener('touchmove',e=>{
-  if(window.scrollY <= 4 && e.touches[0].clientY - topTouchY > 18)showReachPad();
+  if(e.target.closest('.drag-handle'))return;
+  if(window.scrollY <= 4 && e.touches[0].clientY - topTouchY > 22)showReachPad();
 },{passive:true});
 document.addEventListener('wheel',e=>{
   if(window.scrollY <= 4 && e.deltaY < -8)showReachPad();
