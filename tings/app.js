@@ -6,7 +6,7 @@ const MAX_TINGS = 50;
 const QUOTA_WARN_KB = 30;
 const QUOTA_HARD_KB = 80;
 const SWIPE_THRESHOLD = 60;
-const SWIPE_REVEAL = 200;
+const SWIPE_REVEAL = 136;
 const TAP_DELAY = 310;
 const HANDLE_WINDOW_MS = 5 * 60 * 1000;
 
@@ -17,6 +17,9 @@ let detailIdx = null;
 let snoozeIdx = null;
 let dayEntryIdx = null;
 let dayEntryTs = null;
+let detailMonthOffset = 0;
+let overviewMonthOffset = 0;
+let dayLogsKey = null;
 let selectedType = 'keepup';
 let showSnoozed = false;
 let sortMode = localStorage.getItem(SORT_KEY) || 'smart';
@@ -623,6 +626,7 @@ function openConfirm(i){
 function openDetail(i){
   const h = load()[i];
   if(!h)return;
+  if(detailIdx !== i)detailMonthOffset = 0;
   detailIdx = i;
   const days = daysSince(h.lastLog);
   const c = colors(days,h.target,h.type);
@@ -716,41 +720,43 @@ function renderGraph(h){
 }
 
 function renderCalendar(h){
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const first = new Date(year,month,1);
-  const last = new Date(year,month + 1,0);
+  const frame = monthFrame(detailMonthOffset);
+  const {year,month,first,last,label,today} = frame;
   const logs = [...(h.logs || [])];
-  const loggedDays = new Set(logs.map(dateKey));
+  const dayCounts = new Map();
+  logs.forEach(ts=>{
+    const key = dateKey(ts);
+    dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
+  });
   const monthEntries = logs.filter(ts=>{
     const d = new Date(ts);
     return d.getFullYear() === year && d.getMonth() === month;
   }).length;
-  const label = first.toLocaleDateString(undefined,{month:'short',year:'numeric'});
   $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
 
   const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
   const blanks = Array.from({length:first.getDay()},()=>'<div class="cal-day blank"></div>');
-  const today = dateKey(Date.now());
   const toneClass = h.type === 'zero' ? 'miss' : h.type === 'reduce' ? 'warn' : 'hit';
   const days = Array.from({length:last.getDate()},(_,i)=>{
     const date = new Date(year,month,i + 1);
     const key = dateKey(date.getTime());
+    const count = dayCounts.get(key) || 0;
+    const dots = count ? `<span class="cal-dots"><span class="cal-dot ${toneClass}"></span>${count > 1 ? `<span class="cal-more">+${count - 1}</span>` : ''}</span>` : '<span class="cal-dots"></span>';
     const cls = [
-      loggedDays.has(key) ? toneClass : '',
+      count ? 'has-entry' : '',
       key === today ? 'today' : '',
       date.getTime() <= Date.now() ? 'pickable' : ''
     ].filter(Boolean).join(' ');
-    return `<button class="cal-day ${cls}" data-entry-day="${key}" ${date.getTime() > Date.now() ? 'disabled' : ''}>${i + 1}</button>`;
+    return `<button class="cal-day ${cls}" data-entry-day="${key}" ${date.getTime() > Date.now() ? 'disabled' : ''}><span>${i + 1}</span>${dots}</button>`;
   });
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
 }
 
-function monthFrame(){
+function monthFrame(offset = 0){
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
+  const anchor = new Date(now.getFullYear(),now.getMonth() + offset,1);
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
   const first = new Date(year,month,1);
   const last = new Date(year,month + 1,0);
   const label = first.toLocaleDateString(undefined,{month:'short',year:'numeric'});
@@ -765,7 +771,7 @@ function entryTone(type){
 
 function renderOverview(){
   const data = load();
-  const frame = monthFrame();
+  const frame = monthFrame(overviewMonthOffset);
   const byDay = new Map();
   let total = 0;
   data.forEach(h=>{
@@ -789,8 +795,12 @@ function renderOverview(){
     const entries = byDay.get(key) || [];
     const dots = entries.slice(0,3).map(item=>`<span class="cal-dot ${entryTone(item.type)}"></span>`).join('');
     const more = entries.length > 3 ? `<span class="cal-more">+${entries.length - 3}</span>` : '';
-    const cls = key === frame.today ? 'today' : '';
-    return `<div class="cal-day ${cls}"><span>${i + 1}</span><span class="cal-dots">${dots}</span>${more}</div>`;
+    const cls = [
+      entries.length ? 'has-entry' : '',
+      key === frame.today ? 'today' : '',
+      'pickable'
+    ].filter(Boolean).join(' ');
+    return `<button class="cal-day ${cls}" data-log-day="${key}"><span>${i + 1}</span><span class="cal-dots">${dots}</span>${more}</button>`;
   });
   $('overview-calendar').innerHTML = [...heads,...blanks,...days].join('');
 
@@ -809,6 +819,25 @@ function renderOverview(){
       <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
     </div>
   `).join('') : '<div class="overview-item"><span class="overview-name">quiet month</span><span class="overview-meta">no entries yet</span></div>';
+}
+
+function renderDayLogs(key){
+  const data = load();
+  const rows = [];
+  data.forEach(h=>{
+    const count = (h.logs || []).filter(ts=>dateKey(ts) === key).length;
+    if(!count)return;
+    rows.push({h,count,c:colors(daysSince(h.lastLog),h.target,h.type)});
+  });
+  const ts = new Date(`${key}T12:00:00`).getTime();
+  $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  $('day-logs-sub').textContent = rows.length ? `${rows.reduce((sum,row)=>sum + row.count,0)} entries` : 'no entries';
+  $('day-logs-list').innerHTML = rows.length ? rows.map(({h,count,c})=>`
+    <div class="overview-item">
+      <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
+      <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
+    </div>
+  `).join('') : '<div class="overview-item"><span class="overview-name">quiet day</span><span class="overview-meta">nothing planted</span></div>';
 }
 
 function openSnooze(i){
@@ -1037,17 +1066,43 @@ $('detail-calendar').addEventListener('click',e=>{
   if(!day || detailIdx === null)return;
   openDayEntry(detailIdx,day.dataset.entryDay);
 });
+$('detail-prev-month').addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  detailMonthOffset -= 1;
+  renderCalendar(load()[detailIdx]);
+});
+$('detail-next-month').addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  detailMonthOffset += 1;
+  renderCalendar(load()[detailIdx]);
+});
 
 $('open-about').addEventListener('click',()=>openSheet('about-sheet'));
 $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
 
 $('open-overview').addEventListener('click',()=>{
+  overviewMonthOffset = 0;
   renderOverview();
   openSheet('overview-sheet');
 });
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
+$('overview-prev-month').addEventListener('click',()=>{
+  overviewMonthOffset -= 1;
+  renderOverview();
+});
+$('overview-next-month').addEventListener('click',()=>{
+  overviewMonthOffset += 1;
+  renderOverview();
+});
+$('overview-calendar').addEventListener('click',e=>{
+  const day = e.target.closest('[data-log-day]');
+  if(!day)return;
+  dayLogsKey = day.dataset.logDay;
+  renderDayLogs(dayLogsKey);
+  openSheet('day-logs-sheet');
+});
 
 $('snooze-sheet').addEventListener('click',e=>{
   const opt = e.target.closest('[data-snooze-days]');
@@ -1072,6 +1127,9 @@ $('day-entry-save').addEventListener('click',()=>{
 });
 $('day-entry-cancel').addEventListener('click',()=>{dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');});
 $('day-entry-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');}});
+
+$('day-logs-close').addEventListener('click',()=>{dayLogsKey = null;closeSheet('day-logs-sheet');});
+$('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');}});
 
 $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();

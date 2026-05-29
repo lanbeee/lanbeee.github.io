@@ -240,6 +240,14 @@ body.drag-active .swipe-actions{display:none;}
 }
 .overview-card{margin-bottom:12px;}
 .month-card .section-top{margin-bottom:8px;}
+.month-nav{display:flex;align-items:center;gap:8px;}
+.mini-nav{
+  width:28px;height:28px;border-radius:50%;border:0.5px solid var(--border);
+  background:var(--bg);color:var(--text2);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.mini-nav i{font-size:16px;}
+.mini-nav:active{background:var(--bg3);}
 .month-grid{
   display:grid;grid-template-columns:repeat(7,1fr);gap:5px;
 }
@@ -256,9 +264,10 @@ body.drag-active .swipe-actions{display:none;}
 .cal-day.hit{background:var(--teal-bg);color:var(--teal-text);}
 .cal-day.warn{background:var(--amber-bg);color:var(--amber-text);}
 .cal-day.miss{background:var(--red-bg);color:var(--red-text);}
-.all-month-grid .cal-day{
+.rich-month-grid .cal-day{
   height:36px;flex-direction:column;gap:2px;font-size:10px;
 }
+.rich-month-grid .cal-day.has-entry{color:var(--text);}
 .cal-dots{display:flex;gap:2px;align-items:center;justify-content:center;min-height:5px;}
 .cal-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);}
 .cal-dot.hit{background:var(--teal-icon);}
