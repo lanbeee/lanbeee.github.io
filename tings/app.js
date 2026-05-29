@@ -167,12 +167,35 @@ function metaLine(h){
 function attentionScore(h,index){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
   const days = daysSince(h.lastLog);
-  if(days === null)return 40 - index / 100;
-  if(h.type === 'zero')return days === 0 ? 120 : Math.max(0,24 - days);
   const target = h.target || 7;
+
+  if(h.type === 'keepup'){
+    if(days === null)return 82 - index / 100;
+    const ratio = days / target;
+    if(ratio >= 1)return 220 + Math.min(40,ratio * 10) - index / 100;
+    if(ratio >= 0.75)return 155 + ratio * 30 - index / 100;
+    return 35 + ratio * 55 - index / 100;
+  }
+
+  if(h.type === 'reduce'){
+    if(days === null)return 32 - index / 100;
+    const ratio = days / target;
+    if(ratio < 0.5)return 128 + (0.5 - ratio) * 45 - index / 100;
+    if(ratio < 1)return 88 + (1 - ratio) * 35 - index / 100;
+    return Math.max(12,40 - ratio * 10) - index / 100;
+  }
+
+  if(h.type === 'zero'){
+    if(days === null)return 10 - index / 100;
+    if(days < 0)return 8 - index / 100;
+    if(days === 0)return 24 - index / 100;
+    if(days < 3)return 18 - index / 100;
+    return Math.max(4,14 - days / 3) - index / 100;
+  }
+
+  if(days === null)return 20 - index / 100;
   const ratio = days / target;
-  if(h.type === 'keepup')return ratio >= 1 ? 100 + ratio : ratio * 50;
-  return ratio <= 1 ? 100 + (1 - ratio) * 40 : Math.max(0,45 - ratio * 8);
+  return ratio >= 1 ? 80 + ratio : ratio * 40;
 }
 
 function visibleIndices(data){
@@ -614,8 +637,30 @@ function openBacklog(i){
   openSheet('backlog-sheet');
 }
 
-function openSheet(id){$(id).classList.add('open');}
-function closeSheet(id){$(id).classList.remove('open');}
+function updateKeyboardLift(){
+  const addOpen = $('add-sheet').classList.contains('open');
+  if(!addOpen || !window.visualViewport){
+    document.documentElement.style.setProperty('--keyboard-lift','0px');
+    return;
+  }
+  const keyboard = Math.max(0,window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop);
+  document.documentElement.style.setProperty('--keyboard-lift',`${keyboard}px`);
+}
+
+function keepFocusedInputVisible(){
+  const active = document.activeElement;
+  if(!active || !$('add-sheet').contains(active))return;
+  active.scrollIntoView({block:'center',inline:'nearest'});
+}
+
+function openSheet(id){
+  $(id).classList.add('open');
+  updateKeyboardLift();
+}
+function closeSheet(id){
+  $(id).classList.remove('open');
+  if(id === 'add-sheet')updateKeyboardLift();
+}
 
 function showToast(text){
   const toast = $('toast');
@@ -653,6 +698,10 @@ $('type-seg').addEventListener('click',e=>{
 $('open-add').addEventListener('click',()=>{
   openSheet('add-sheet');
   $('ting-name').focus({preventScroll:true});
+  setTimeout(()=>{
+    updateKeyboardLift();
+    keepFocusedInputVisible();
+  },260);
 });
 
 $('do-cancel').addEventListener('click',cancelAdd);
@@ -712,6 +761,14 @@ function bindMarkLimit(id){
 
 bindMarkLimit('ting-emoji');
 bindMarkLimit('detail-emoji');
+
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize',()=>{
+    updateKeyboardLift();
+    keepFocusedInputVisible();
+  });
+  window.visualViewport.addEventListener('scroll',updateKeyboardLift);
+}
 
 $('confirm-yes').addEventListener('click',()=>{
   if(pendingIdx === null)return;
