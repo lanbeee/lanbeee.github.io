@@ -1,10 +1,10 @@
 const KEY = 'tings_v2';
 const SORT_KEY = 'tings_sort_v1';
 const HANDLE_UNTIL_KEY = 'tings_handle_until_v1';
-const MAX_LOGS = 24;
-const MAX_TINGS = 50;
-const QUOTA_WARN_KB = 30;
-const QUOTA_HARD_KB = 80;
+const MAX_LOGS = 500;
+const MAX_TINGS = 300;
+const QUOTA_WARN_KB = 2048;
+const QUOTA_HARD_KB = 4096;
 const SWIPE_THRESHOLD = 60;
 const SWIPE_REVEAL = 136;
 const TAP_DELAY = 310;
@@ -37,6 +37,10 @@ let dragStartY = 0;
 let dragFrame = null;
 let toastTimer = null;
 let handleTimer = null;
+let reachTimer = null;
+let lastScrollY = 0;
+let topTouchY = 0;
+let detailTuneOriginal = null;
 
 function load(){
   try{return normalize(JSON.parse(localStorage.getItem(KEY)) || []);}
@@ -636,6 +640,7 @@ function openDetail(i){
   $('detail-trend').textContent = trendText(h);
   $('detail-emoji').value = h.emoji || '';
   $('detail-days').value = h.target || '';
+  detailTuneOriginal = {emoji:h.emoji || '',target:h.target || ''};
   $('detail-slider-row').style.display = h.type === 'zero' ? 'none' : 'flex';
   $('detail-target-help').style.display = h.type === 'zero' ? 'none' : 'block';
   $('detail-target-help').textContent = rhythmHelp(h.type);
@@ -647,7 +652,38 @@ function openDetail(i){
   renderStats(h);
   renderGraph(h);
   renderCalendar(h);
+  setDetailDirty(false);
   openSheet('detail-sheet');
+}
+
+function currentDetailTune(){
+  return {
+    emoji:cleanMark($('detail-emoji').value),
+    target:$('detail-days').value || ''
+  };
+}
+
+function setDetailDirty(force){
+  const sheet = $('detail-sheet').querySelector('.detail-sheet');
+  const current = currentDetailTune();
+  const dirty = force ?? (
+    detailTuneOriginal &&
+    (current.emoji !== detailTuneOriginal.emoji || String(current.target) !== String(detailTuneOriginal.target))
+  );
+  sheet.classList.toggle('tune-dirty',Boolean(dirty));
+}
+
+function restoreDetailTune(){
+  if(!detailTuneOriginal)return;
+  $('detail-emoji').value = detailTuneOriginal.emoji;
+  if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
+  setDetailDirty(false);
+}
+
+function closeDetail(){
+  detailIdx = null;
+  detailTuneOriginal = null;
+  closeSheet('detail-sheet');
 }
 
 function renderStats(h){
@@ -908,6 +944,23 @@ function showToast(text){
   toastTimer = setTimeout(()=>toast.classList.remove('show'),900);
 }
 
+function showReachPad(){
+  if(window.scrollY > 4)return;
+  document.body.classList.add('reach-pad');
+  clearTimeout(reachTimer);
+  reachTimer = setTimeout(()=>{
+    document.body.classList.remove('reach-pad');
+    window.scrollTo({top:0,behavior:'smooth'});
+  },1400);
+}
+
+function updateHeaderOnScroll(){
+  const y = window.scrollY;
+  document.body.classList.toggle('header-hidden',y > 36 && y > lastScrollY);
+  if(y < 12)document.body.classList.remove('header-hidden');
+  lastScrollY = y;
+}
+
 function cancelAdd(){
   closeSheet('add-sheet');
   $('ting-name').value = '';
@@ -1002,6 +1055,9 @@ function bindRhythm(prefix){
 
 bindRhythm('ting');
 bindRhythm('detail');
+$('detail-days').addEventListener('input',()=>setDetailDirty());
+$('detail-days').addEventListener('blur',()=>setDetailDirty());
+$('detail-days-slider').addEventListener('input',()=>setDetailDirty());
 
 function bindMarkLimit(id){
   $(id).addEventListener('input',e=>{
@@ -1012,6 +1068,18 @@ function bindMarkLimit(id){
 
 bindMarkLimit('ting-emoji');
 bindMarkLimit('detail-emoji');
+$('detail-emoji').addEventListener('input',()=>setDetailDirty());
+
+window.addEventListener('scroll',updateHeaderOnScroll,{passive:true});
+document.addEventListener('touchstart',e=>{
+  if(window.scrollY <= 4)topTouchY = e.touches[0].clientY;
+},{passive:true});
+document.addEventListener('touchmove',e=>{
+  if(window.scrollY <= 4 && e.touches[0].clientY - topTouchY > 18)showReachPad();
+},{passive:true});
+document.addEventListener('wheel',e=>{
+  if(window.scrollY <= 4 && e.deltaY < -8)showReachPad();
+},{passive:true});
 
 if(window.visualViewport){
   window.visualViewport.addEventListener('resize',()=>{
@@ -1043,6 +1111,7 @@ $('detail-save').addEventListener('click',()=>{
   showToast('tuned');
   closeSheet('detail-sheet');
   detailIdx = null;
+  detailTuneOriginal = null;
   render();
 });
 $('detail-mark').addEventListener('click',()=>{
@@ -1059,8 +1128,9 @@ $('detail-add').addEventListener('click',()=>{
   openDetail(detailIdx);
   render();
 });
-$('detail-close').addEventListener('click',()=>{detailIdx = null;closeSheet('detail-sheet');});
-$('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){detailIdx = null;closeSheet('detail-sheet');}});
+$('detail-cool').addEventListener('click',closeDetail);
+$('detail-close').addEventListener('click',()=>{restoreDetailTune();closeDetail();});
+$('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeDetail();});
 $('detail-calendar').addEventListener('click',e=>{
   const day = e.target.closest('[data-entry-day]');
   if(!day || detailIdx === null)return;
