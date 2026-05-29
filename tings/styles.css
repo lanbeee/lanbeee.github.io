@@ -7,6 +7,7 @@
   --amber-bg:#FAEEDA; --amber-icon:#BA7517; --amber-text:#633806;
   --red-bg:#FCEBEB; --red-icon:#A32D2D; --red-text:#791F1F;
   --purple-bg:#EEEDFE; --purple-icon:#534AB7; --purple-text:#3C3489;
+  --keyboard-lift:0px;
 }
 @media (prefers-color-scheme:dark) {
   :root {
@@ -155,6 +156,10 @@ body.drag-active .swipe-actions{display:none;}
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
   animation:slideup 0.22s ease;
+}
+#add-sheet .sheet{
+  transform:translateY(calc(var(--keyboard-lift) * -1));
+  transition:transform 0.18s ease;
 }
 @keyframes slideup{from{transform:translateY(100%);opacity:0;}to{transform:translateY(0);opacity:1;}}
 .sheet-title{font-size:15px;font-weight:500;margin-bottom:16px;color:var(--text);}
