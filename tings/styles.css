@@ -92,7 +92,7 @@ body.header-hidden .topbar{
 .bottom-nav .nav-add{background:var(--text);color:var(--bg);border-color:var(--text);}
 
 #list{display:flex;flex-direction:column;gap:8px;padding:14px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
-body.reach-pad #list{padding-top:156px;}
+body.reach-pad #list{padding-top:220px;}
 body.drag-active #list{padding-top:14px;}
 
 .swipe-row{
