@@ -14,7 +14,9 @@ const $ = id => document.getElementById(id);
 
 let pendingIdx = null;
 let detailIdx = null;
-let backlogIdx = null;
+let snoozeIdx = null;
+let dayEntryIdx = null;
+let dayEntryTs = null;
 let selectedType = 'keepup';
 let showSnoozed = false;
 let sortMode = localStorage.getItem(SORT_KEY) || 'smart';
@@ -80,6 +82,13 @@ function todayIso(){
   const day = String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
 }
+function dateKey(ts){
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }
@@ -102,6 +111,23 @@ function avgInterval(logs){
   let sum = 0;
   for(let i=1;i<sorted.length;i++)sum += sorted[i] - sorted[i-1];
   return Math.round(sum / (sorted.length - 1) / 86400000);
+}
+
+function currentRun(h){
+  const logs = [...(h.logs || [])].sort((a,b)=>b-a);
+  const days = daysSince(h.lastLog);
+  if(h.type !== 'keepup'){
+    return {num:days === null ? '-' : Math.max(0,days),label:'clear'};
+  }
+  if(!logs.length)return {num:'-',label:'run'};
+  const targetMs = (h.target || 7) * 86400000;
+  if(days !== null && days > (h.target || 7))return {num:0,label:'run'};
+  let run = 1;
+  for(let i=0;i<logs.length - 1;i++){
+    if(logs[i] - logs[i + 1] <= targetMs)run += 1;
+    else break;
+  }
+  return {num:run,label:'run'};
 }
 
 function updateQuotaBar(kb){
@@ -291,7 +317,6 @@ function render(){
     row.dataset.realIdx = realIdx;
     row.innerHTML = `
       <div class="swipe-actions">
-        <button class="swipe-action sa-backlog" data-action="backlog" aria-label="past"><i class="ti ti-history" aria-hidden="true"></i>past</button>
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>gone</button>
       </div>
@@ -328,8 +353,7 @@ function render(){
       e.stopPropagation();
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
-      if(btn.dataset.action === 'backlog')openBacklog(idx);
-      if(btn.dataset.action === 'snooze')doSnooze(idx);
+      if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
   });
@@ -566,6 +590,16 @@ function logTing(i){
   return save(data);
 }
 
+function logTingAt(i,ts){
+  const data = load();
+  if(!data[i])return false;
+  const entryTs = Math.min(ts,Date.now());
+  data[i].logs = [...(data[i].logs || []),entryTs].sort((a,b)=>a-b).slice(-MAX_LOGS);
+  data[i].lastLog = Math.max(...data[i].logs);
+  data[i].snoozedUntil = null;
+  return save(data);
+}
+
 function quickLog(i,card){
   if(!logTing(i))return;
   if(card){
@@ -608,6 +642,7 @@ function openDetail(i){
   $('detail-mark').innerHTML = iconHtml(h,c);
   renderStats(h);
   renderGraph(h);
+  renderCalendar(h);
   openSheet('detail-sheet');
 }
 
@@ -615,11 +650,13 @@ function renderStats(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
   const total = h.logs?.length || 0;
+  const run = currentRun(h);
   const gapNum = days === null ? '-' : days < 0 ? Math.abs(days) : days;
   const gapLabel = days < 0 ? 'away' : 'gap';
   $('detail-stats').innerHTML = `
     <div class="stat"><div class="stat-num">${gapNum}</div><div class="stat-label">${gapLabel}</div></div>
     <div class="stat"><div class="stat-num">${avg === null ? '-' : avg}</div><div class="stat-label">pace</div></div>
+    <div class="stat"><div class="stat-num">${run.num}</div><div class="stat-label">${run.label}</div></div>
     <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">entries</div></div>`;
 }
 
@@ -678,12 +715,116 @@ function renderGraph(h){
   }).join('');
 }
 
-function doSnooze(i){
+function renderCalendar(h){
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const first = new Date(year,month,1);
+  const last = new Date(year,month + 1,0);
+  const logs = [...(h.logs || [])];
+  const loggedDays = new Set(logs.map(dateKey));
+  const monthEntries = logs.filter(ts=>{
+    const d = new Date(ts);
+    return d.getFullYear() === year && d.getMonth() === month;
+  }).length;
+  const label = first.toLocaleDateString(undefined,{month:'short',year:'numeric'});
+  $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
+
+  const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
+  const blanks = Array.from({length:first.getDay()},()=>'<div class="cal-day blank"></div>');
+  const today = dateKey(Date.now());
+  const toneClass = h.type === 'zero' ? 'miss' : h.type === 'reduce' ? 'warn' : 'hit';
+  const days = Array.from({length:last.getDate()},(_,i)=>{
+    const date = new Date(year,month,i + 1);
+    const key = dateKey(date.getTime());
+    const cls = [
+      loggedDays.has(key) ? toneClass : '',
+      key === today ? 'today' : '',
+      date.getTime() <= Date.now() ? 'pickable' : ''
+    ].filter(Boolean).join(' ');
+    return `<button class="cal-day ${cls}" data-entry-day="${key}" ${date.getTime() > Date.now() ? 'disabled' : ''}>${i + 1}</button>`;
+  });
+  $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
+}
+
+function monthFrame(){
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const first = new Date(year,month,1);
+  const last = new Date(year,month + 1,0);
+  const label = first.toLocaleDateString(undefined,{month:'short',year:'numeric'});
+  return {year,month,first,last,label,today:dateKey(Date.now())};
+}
+
+function entryTone(type){
+  if(type === 'zero')return 'miss';
+  if(type === 'reduce')return 'warn';
+  return 'hit';
+}
+
+function renderOverview(){
+  const data = load();
+  const frame = monthFrame();
+  const byDay = new Map();
+  let total = 0;
+  data.forEach(h=>{
+    (h.logs || []).forEach(ts=>{
+      const d = new Date(ts);
+      if(d.getFullYear() !== frame.year || d.getMonth() !== frame.month)return;
+      const key = dateKey(ts);
+      if(!byDay.has(key))byDay.set(key,[]);
+      byDay.get(key).push({name:h.name,type:h.type});
+      total += 1;
+    });
+  });
+
+  $('overview-copy').textContent = data.length ? `${total} entries across ${data.length} tings.` : 'month view across every ting.';
+  $('overview-calendar-label').textContent = frame.label;
+  const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
+  const blanks = Array.from({length:frame.first.getDay()},()=>'<div class="cal-day blank"></div>');
+  const days = Array.from({length:frame.last.getDate()},(_,i)=>{
+    const date = new Date(frame.year,frame.month,i + 1);
+    const key = dateKey(date.getTime());
+    const entries = byDay.get(key) || [];
+    const dots = entries.slice(0,3).map(item=>`<span class="cal-dot ${entryTone(item.type)}"></span>`).join('');
+    const more = entries.length > 3 ? `<span class="cal-more">+${entries.length - 3}</span>` : '';
+    const cls = key === frame.today ? 'today' : '';
+    return `<div class="cal-day ${cls}"><span>${i + 1}</span><span class="cal-dots">${dots}</span>${more}</div>`;
+  });
+  $('overview-calendar').innerHTML = [...heads,...blanks,...days].join('');
+
+  const monthRows = data.map(h=>{
+    const count = (h.logs || []).filter(ts=>{
+      const d = new Date(ts);
+      return d.getFullYear() === frame.year && d.getMonth() === frame.month;
+    }).length;
+    const c = colors(daysSince(h.lastLog),h.target,h.type);
+    return {h,count,c};
+  }).filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,8);
+
+  $('overview-list').innerHTML = monthRows.length ? monthRows.map(({h,count,c})=>`
+    <div class="overview-item">
+      <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
+      <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
+    </div>
+  `).join('') : '<div class="overview-item"><span class="overview-name">quiet month</span><span class="overview-meta">no entries yet</span></div>';
+}
+
+function openSnooze(i){
+  const h = load()[i];
+  if(!h)return;
+  snoozeIdx = i;
+  $('snooze-name').textContent = h.name;
+  openSheet('snooze-sheet');
+}
+
+function doSnooze(i,days){
   const data = load();
   if(!data[i])return;
-  data[i].snoozedUntil = Date.now() + 7 * 86400000;
+  data[i].snoozedUntil = Date.now() + days * 86400000;
   save(data);
-  showToast('snoozed');
+  showToast(`snoozed ${days}d`);
   render();
 }
 
@@ -695,12 +836,14 @@ function doNuke(i){
   render();
 }
 
-function openBacklog(i){
-  backlogIdx = i;
-  const today = todayIso();
-  $('backlog-date').max = today;
-  $('backlog-date').value = today;
-  openSheet('backlog-sheet');
+function openDayEntry(i,key){
+  const h = load()[i];
+  if(!h)return;
+  dayEntryIdx = i;
+  dayEntryTs = new Date(`${key}T12:00:00`).getTime();
+  $('day-entry-name').textContent = h.name;
+  $('day-entry-sub').textContent = `add entry for ${new Date(dayEntryTs).toLocaleDateString(undefined,{month:'short',day:'numeric'})}?`;
+  openSheet('day-entry-sheet');
 }
 
 function updateKeyboardLift(){
@@ -889,31 +1032,46 @@ $('detail-add').addEventListener('click',()=>{
 });
 $('detail-close').addEventListener('click',()=>{detailIdx = null;closeSheet('detail-sheet');});
 $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){detailIdx = null;closeSheet('detail-sheet');}});
+$('detail-calendar').addEventListener('click',e=>{
+  const day = e.target.closest('[data-entry-day]');
+  if(!day || detailIdx === null)return;
+  openDayEntry(detailIdx,day.dataset.entryDay);
+});
 
 $('open-about').addEventListener('click',()=>openSheet('about-sheet'));
 $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
 
-$('backlog-save').addEventListener('click',()=>{
-  const val = $('backlog-date').value;
-  if(!val || backlogIdx === null)return;
-  if(val > todayIso()){
-    showToast('past only');
-    return;
-  }
-  const ts = new Date(`${val}T12:00:00`).getTime();
-  const data = load();
-  if(!data[backlogIdx])return;
-  data[backlogIdx].logs = [...(data[backlogIdx].logs || []),ts].sort((a,b)=>a-b).slice(-MAX_LOGS);
-  if(!data[backlogIdx].lastLog || ts > data[backlogIdx].lastLog)data[backlogIdx].lastLog = ts;
-  save(data);
-  closeSheet('backlog-sheet');
-  backlogIdx = null;
-  showToast('planted');
-  render();
+$('open-overview').addEventListener('click',()=>{
+  renderOverview();
+  openSheet('overview-sheet');
 });
-$('backlog-cancel').addEventListener('click',()=>{closeSheet('backlog-sheet');backlogIdx = null;});
-$('backlog-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){closeSheet('backlog-sheet');backlogIdx = null;}});
+$('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
+$('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
+
+$('snooze-sheet').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-snooze-days]');
+  if(!opt || snoozeIdx === null)return;
+  const days = parseInt(opt.dataset.snoozeDays,10);
+  doSnooze(snoozeIdx,days);
+  snoozeIdx = null;
+  closeSheet('snooze-sheet');
+});
+$('snooze-cancel').addEventListener('click',()=>{snoozeIdx = null;closeSheet('snooze-sheet');});
+$('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){snoozeIdx = null;closeSheet('snooze-sheet');}});
+
+$('day-entry-save').addEventListener('click',()=>{
+  if(dayEntryIdx === null || dayEntryTs === null)return;
+  if(!logTingAt(dayEntryIdx,dayEntryTs))return;
+  closeSheet('day-entry-sheet');
+  if(detailIdx !== null)openDetail(detailIdx);
+  dayEntryIdx = null;
+  dayEntryTs = null;
+  showToast('planted');
+  if(detailIdx === null)render();
+});
+$('day-entry-cancel').addEventListener('click',()=>{dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');});
+$('day-entry-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');}});
 
 $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
