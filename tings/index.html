@@ -14,6 +14,9 @@
   <div class="topbar">
     <button class="wordmark" id="open-about" aria-label="how it works">tings</button>
     <div class="top-actions">
+      <button class="icon-btn" id="open-overview" aria-label="all tings calendar">
+        <i class="ti ti-calendar-month" aria-hidden="true"></i>
+      </button>
       <button class="icon-btn" id="toggle-sort" aria-label="order tings">
         <i class="ti ti-arrows-sort" aria-hidden="true"></i>
       </button>
@@ -86,6 +89,13 @@
         </div>
         <div class="stats-row" id="detail-stats"></div>
         <div class="graph" id="detail-graph"></div>
+        <div class="month-card">
+          <div class="section-top">
+            <span class="section-label">month</span>
+            <span class="trend-copy" id="detail-calendar-label"></span>
+          </div>
+          <div class="month-grid" id="detail-calendar"></div>
+        </div>
       </div>
       <div class="detail-section tune-section">
         <span class="section-label">tune</span>
@@ -101,10 +111,31 @@
           </label>
         </div>
       </div>
-      <div class="btn-row">
+      <div class="btn-row detail-actions">
         <button class="btn primary" id="detail-save">keep it</button>
         <button class="btn" id="detail-close">nah</button>
       </div>
+    </div>
+  </div>
+
+  <!-- overview sheet -->
+  <div class="sheet-wrap" id="overview-sheet">
+    <div class="sheet overview-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title">all tings</p>
+          <p class="about-copy" id="overview-copy">month view across every ting.</p>
+        </div>
+        <button class="mini-add" id="overview-close" aria-label="close"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="month-card overview-card">
+        <div class="section-top">
+          <span class="section-label">month</span>
+          <span class="trend-copy" id="overview-calendar-label"></span>
+        </div>
+        <div class="month-grid all-month-grid" id="overview-calendar"></div>
+      </div>
+      <div class="overview-list" id="overview-list"></div>
     </div>
   </div>
 
@@ -115,11 +146,12 @@
       <p class="about-copy">Tings are recurring things you want to do more, do less, or stop. Each entry means it happened once.</p>
       <div class="about-grid">
         <div><span>+ button</span><p>Add a habit, or thing to track. Choose nurture, ease off, or quit.</p></div>
+        <div><span>calendar</span><p>Open the month view for all tings. It shows entry days without extra planning work.</p></div>
         <div><span>top icon</span><p>Sort icon means smart order. List icon means hand order, and shows the drag grips for a little while.</p></div>
         
         <div><span>tap icon</span><p>Record that it happened today with a confirmation.</p></div>
         <div><span>double tap</span><p>Record today immediately when you do not need confirmation.</p></div>
-        <div><span>swipe left</span><p>Log something that happened before today, hide it for a week, or remove the ting.</p></div>
+        <div><span>swipe left</span><p>Pick how long to snooze a ting, or remove it.</p></div>
         <div><span>hold grip</span><p>Drag a card to set your own order. The app will remember it.</p></div>
         <div><span>tap card</span><p>Open details to see status, trend, graph, and settings for that ting.</p></div>
         <div><span>tune</span><p>Change the icon and rhythm. Rhythm is the days you want between entries.</p></div>
@@ -127,8 +159,10 @@
         <div><span>ease off</span><p>For things you still do, just less often. Smart order keeps recent ones quieter.</p></div>
         <div><span>quit</span><p>For things you want off the board. They stay low-key even after a slip.</p></div>
         <div><span>gap</span><p>Days since the latest entry. If an old future entry exists, it shows days away.</p></div>
+        <div><span>run</span><p>For nurture, this is your current in-rhythm run. For ease off and quit, it shows clear days.</p></div>
         <div><span>pace</span><p>Your usual space between entries, based on recent history.</p></div>
         <div><span>graph</span><p>Bars show entry spacing: green is good, amber is watch, red needs attention.</p></div>
+        <div><span>month</span><p>The calendar marks entry days. In a ting page, tap a day to add an entry there.</p></div>
       </div>
       <div class="btn-row about-actions">
         <button class="btn primary" id="about-close">cool</button>
@@ -136,14 +170,31 @@
     </div>
   </div>
 
-  <!-- backlog sheet -->
-  <div class="sheet-wrap" id="backlog-sheet">
+  <!-- snooze sheet -->
+  <div class="sheet-wrap" id="snooze-sheet">
     <div class="sheet">
-      <p class="sheet-title">add a past entry</p>
-      <input type="date" id="backlog-date" />
+      <p class="sheet-name" id="snooze-name"></p>
+      <p class="sheet-sub">hide it for a bit</p>
+      <div class="snooze-options">
+        <button class="btn" data-snooze-days="1">1d</button>
+        <button class="btn" data-snooze-days="3">3d</button>
+        <button class="btn" data-snooze-days="7">7d</button>
+        <button class="btn" data-snooze-days="14">14d</button>
+      </div>
       <div class="btn-row">
-        <button class="btn primary" id="backlog-save">plant it</button>
-        <button class="btn" id="backlog-cancel">nah</button>
+        <button class="btn" id="snooze-cancel">nah</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- day entry sheet -->
+  <div class="sheet-wrap" id="day-entry-sheet">
+    <div class="sheet">
+      <p class="sheet-name" id="day-entry-name"></p>
+      <p class="sheet-sub" id="day-entry-sub"></p>
+      <div class="btn-row">
+        <button class="btn primary" id="day-entry-save">plant it</button>
+        <button class="btn" id="day-entry-cancel">nah</button>
       </div>
     </div>
   </div>
