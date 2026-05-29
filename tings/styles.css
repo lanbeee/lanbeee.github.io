@@ -62,6 +62,7 @@ body{
   overflow:hidden;
   pointer-events:none;
 }
+body.drag-active .swipe-actions{display:none;}
 .swipe-action{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:3px;padding:0 14px;cursor:pointer;
@@ -120,8 +121,16 @@ body{
 .drag-handle i{font-size:18px;}
 .drag-handle:active{cursor:grabbing;}
 
-.ting-card.dragging-ghost{opacity:0.35;border:1.5px dashed var(--border2);}
-.ting-card.drag-over{border-color:var(--teal-icon);transform:translateY(2px);}
+.ting-card.dragging-ghost{
+  opacity:1;background:var(--bg);
+  border:1.5px dashed var(--border2);
+  box-shadow:0 8px 22px rgba(0,0,0,0.12);
+}
+.ting-card.drag-over{
+  background:var(--bg);border-color:var(--teal-icon);
+  box-shadow:inset 0 0 0 1px var(--teal-icon);
+  transform:translateY(2px);
+}
 
 #empty{
   text-align:center;color:var(--text3);font-size:14px;
@@ -135,11 +144,16 @@ body{
   background:rgba(0,0,0,0.42);z-index:100;
   align-items:flex-end;justify-content:center;
   -webkit-tap-highlight-color:transparent;
+  padding-top:env(safe-area-inset-top);
 }
 .sheet-wrap.open{display:flex;}
 .sheet{
   background:var(--bg);width:100%;max-width:480px;
-  border-radius:20px 20px 0 0;padding:20px 18px 36px;
+  border-radius:20px 20px 0 0;padding:20px 18px calc(36px + env(safe-area-inset-bottom));
+  max-height:calc(100dvh - env(safe-area-inset-top));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
   animation:slideup 0.22s ease;
 }
 @keyframes slideup{from{transform:translateY(100%);opacity:0;}to{transform:translateY(0);opacity:1;}}
@@ -198,19 +212,17 @@ body{
 .edit-row input{margin-bottom:0;}
 .emoji-input{max-width:88px;text-align:center;}
 .range-row{display:flex;align-items:center;gap:10px;margin:-2px 0 16px;}
-.range-label{
-  width:34px;text-align:right;font-size:12px;font-weight:500;color:var(--text2);
-}
 .range-value{
   width:54px;height:38px;padding:0 8px;border:0.5px solid var(--border);
   border-radius:var(--radius-sm);background:var(--bg);
-  display:flex;align-items:center;justify-content:center;gap:1px;
+  display:grid;grid-template-columns:24px auto;align-items:center;justify-content:center;gap:1px;
   color:var(--text2);font-size:12px;font-weight:600;line-height:1;
+  flex-shrink:0;
 }
 .range-value input[type=text]{
   width:24px;height:22px;padding:0;border:0;background:transparent;margin:0;
   color:var(--text);font-size:14px;font-weight:600;text-align:right;line-height:22px;
-  appearance:textfield;-webkit-appearance:none;
+  appearance:textfield;-webkit-appearance:none;font-variant-numeric:tabular-nums;
 }
 .range-value input[type=text]:focus{box-shadow:none;border:0;}
 input[type=range]{
@@ -237,7 +249,7 @@ input[type=range]::-moz-range-thumb{
   color:var(--text);font-size:14px;line-height:1.45;margin:-4px 0 14px;
 }
 .about-grid{
-  display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:16px;
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;
 }
 .about-grid div{
   background:var(--bg2);border:0.5px solid var(--border);
@@ -273,9 +285,6 @@ input[type=date]{color-scheme:light dark;}
 }
 .seg-opt.on{background:var(--bg3);color:var(--text);font-weight:500;}
 
-.target-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
-.target-label{font-size:13px;color:var(--text2);}
-
 .btn-row{display:flex;gap:8px;}
 .btn{
   flex:1;padding:13px 0;border-radius:var(--radius-sm);
@@ -301,6 +310,22 @@ input[type=date]{color-scheme:light dark;}
   transition:opacity 0.18s ease,transform 0.18s ease;
 }
 #toast.show{opacity:1;transform:translate(-50%,0);}
+
+@media (max-width:340px){
+  .app{padding:0 14px;}
+  .sheet{padding-left:16px;padding-right:16px;}
+  .about-grid{grid-template-columns:1fr;}
+  .about-grid div{padding:9px 10px;}
+  .about-grid p{font-size:12px;line-height:1.32;}
+}
+
+@media (max-height:680px){
+  .about-copy{font-size:13px;margin-bottom:10px;}
+  .about-grid{gap:6px;}
+  .about-grid div{padding-top:8px;padding-bottom:8px;}
+  .about-grid span{font-size:12px;}
+  .about-grid p{font-size:11.5px;line-height:1.28;}
+}
 
 @keyframes flash{0%{opacity:1;}50%{opacity:0.3;}100%{opacity:1;}}
 @keyframes ring{
