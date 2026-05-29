@@ -23,6 +23,8 @@ let lastTap = {idx:-1,time:0};
 let isDragging = false;
 let dragSrcIdx = null;
 let dragOverIdx = null;
+let dragRows = [];
+let dragDropIndex = null;
 let toastTimer = null;
 
 function load(){
@@ -414,8 +416,18 @@ function beginDrag(row,realIdx,startY){
   closeAllSwipes();
   isDragging = true;
   document.body.classList.add('drag-active');
+  row.classList.add('dragging');
   dragSrcIdx = realIdx;
   dragOverIdx = null;
+  dragDropIndex = [...document.querySelectorAll('.swipe-row')].indexOf(row);
+  dragRows = [...document.querySelectorAll('.swipe-row')].map((item,index)=>{
+    const rect = item.getBoundingClientRect();
+    return {
+      index,
+      realIdx:+item.dataset.realIdx,
+      center:rect.top + rect.height / 2
+    };
+  });
   row.dataset.dragStartY = String(startY);
   row.querySelector('.ting-card').classList.add('dragging-ghost');
   if(navigator.vibrate)navigator.vibrate(25);
@@ -427,22 +439,27 @@ function moveDrag(row,currentY){
   card.style.transform = `translateY(${currentY - startY}px)`;
   card.style.zIndex = 20;
 
-  const rows = [...document.querySelectorAll('.swipe-row')].filter(r=>r !== row);
-  let overRow = null;
-  let closest = Infinity;
-  rows.forEach(r=>{
-    const rect = r.getBoundingClientRect();
-    const center = rect.top + rect.height / 2;
-    const distance = Math.abs(currentY - center);
-    if(distance < closest){
-      closest = distance;
-      overRow = r;
-    }
+  const otherRows = dragRows.filter(item=>item.realIdx !== dragSrcIdx);
+  const deadZone = 12;
+  let nextDropIndex = 0;
+  otherRows.forEach(item=>{
+    if(currentY > item.center + deadZone)nextDropIndex += 1;
   });
+  if(dragDropIndex !== null && Math.abs(nextDropIndex - dragDropIndex) === 1){
+    const boundary = otherRows[Math.min(nextDropIndex,dragDropIndex)]?.center;
+    if(boundary !== undefined && Math.abs(currentY - boundary) < deadZone * 2){
+      nextDropIndex = dragDropIndex;
+    }
+  }
+  dragDropIndex = nextDropIndex;
+
+  const sourceOrderIndex = dragRows.find(item=>item.realIdx === dragSrcIdx)?.index ?? 0;
+  const targetOrderIndex = nextDropIndex >= sourceOrderIndex ? nextDropIndex + 1 : nextDropIndex;
+  const overRow = dragRows.find(item=>item.index === targetOrderIndex && item.realIdx !== dragSrcIdx);
   document.querySelectorAll('.ting-card').forEach(c=>c.classList.remove('drag-over'));
   if(overRow){
-    overRow.querySelector('.ting-card').classList.add('drag-over');
-    dragOverIdx = +overRow.dataset.realIdx;
+    document.querySelector(`.swipe-row[data-real-idx="${overRow.realIdx}"] .ting-card`)?.classList.add('drag-over');
+    dragOverIdx = overRow.realIdx;
   }else{
     dragOverIdx = null;
   }
@@ -452,29 +469,35 @@ function endDrag(row){
   const card = row.querySelector('.ting-card');
   isDragging = false;
   document.body.classList.remove('drag-active');
+  row.classList.remove('dragging');
   card.style.transform = '';
   card.style.zIndex = '';
   card.classList.remove('dragging-ghost');
   document.querySelectorAll('.ting-card').forEach(c=>c.classList.remove('drag-over'));
 
-  if(dragOverIdx !== null && dragOverIdx !== dragSrcIdx){
-    const data = reorderByVisibleOrder(load(),dragSrcIdx,dragOverIdx);
+  const currentOrder = visibleIndices(load());
+  const from = currentOrder.indexOf(dragSrcIdx);
+  if(dragDropIndex !== null && from >= 0 && dragDropIndex !== from){
+    const data = reorderByVisibleOrder(load(),dragSrcIdx,dragDropIndex);
     setSortMode('manual');
     save(data);
     showToast('hand order');
   }
   dragSrcIdx = null;
   dragOverIdx = null;
+  dragRows = [];
+  dragDropIndex = null;
   render();
 }
 
-function reorderByVisibleOrder(data,sourceIdx,targetIdx){
+function reorderByVisibleOrder(data,sourceIdx,targetPosition){
   const order = visibleIndices(data);
   const from = order.indexOf(sourceIdx);
-  const to = order.indexOf(targetIdx);
-  if(from < 0 || to < 0)return data;
+  if(from < 0)return data;
   const nextOrder = [...order];
   nextOrder.splice(from,1);
+  const to = Math.max(0,Math.min(targetPosition,nextOrder.length));
+  if(from === to)return data;
   nextOrder.splice(to,0,sourceIdx);
   const hidden = data.map((_,i)=>i).filter(i=>!nextOrder.includes(i));
   return [...nextOrder,...hidden].map(i=>data[i]);
