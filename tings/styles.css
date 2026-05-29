@@ -81,6 +81,7 @@ body.header-hidden .topbar{
 
 #list{display:flex;flex-direction:column;gap:8px;padding:14px 0 8px;transition:padding-top 0.34s cubic-bezier(.2,.8,.2,1);}
 body.reach-pad #list{padding-top:168px;}
+body.drag-active #list{padding-top:14px;}
 
 .swipe-row{
   position:relative;overflow:hidden;border-radius:var(--radius);
@@ -441,7 +442,7 @@ input[type=date]{color-scheme:light dark;}
 }
 
 #toast{
-  position:fixed;left:50%;bottom:22px;transform:translate(-50%,18px);
+  position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translate(-50%,18px);
   z-index:200;background:var(--text);color:var(--bg);
   font-size:13px;font-weight:500;padding:10px 14px;
   border-radius:999px;opacity:0;pointer-events:none;
