@@ -1,5 +1,6 @@
 const KEY = 'tings_v2';
 const SORT_KEY = 'tings_sort_v1';
+const HANDLE_UNTIL_KEY = 'tings_handle_until_v1';
 const MAX_LOGS = 24;
 const MAX_TINGS = 50;
 const QUOTA_WARN_KB = 30;
@@ -7,6 +8,7 @@ const QUOTA_HARD_KB = 80;
 const SWIPE_THRESHOLD = 60;
 const SWIPE_REVEAL = 200;
 const TAP_DELAY = 310;
+const HANDLE_WINDOW_MS = 5 * 60 * 1000;
 
 const $ = id => document.getElementById(id);
 
@@ -16,6 +18,7 @@ let backlogIdx = null;
 let selectedType = 'keepup';
 let showSnoozed = false;
 let sortMode = localStorage.getItem(SORT_KEY) || 'smart';
+let handleUntil = parseInt(localStorage.getItem(HANDLE_UNTIL_KEY),10) || 0;
 
 let swipeOpenCard = null;
 let tapTimer = null;
@@ -28,6 +31,7 @@ let dragDropIndex = null;
 let dragStartY = 0;
 let dragFrame = null;
 let toastTimer = null;
+let handleTimer = null;
 
 function load(){
   try{return normalize(JSON.parse(localStorage.getItem(KEY)) || []);}
@@ -156,14 +160,12 @@ function vibe(days,target,type){
 
 function metaLine(h){
   const days = daysSince(h.lastLog);
-  const avg = avgInterval(h.logs);
   const parts = [];
   if(h.snoozedUntil && Date.now() < h.snoozedUntil){
     parts.push(`snoozed ${Math.ceil((h.snoozedUntil - Date.now()) / 86400000)}d`);
   }else{
     parts.push(entryWhen(h.lastLog));
     if(h.type !== 'zero' && h.target)parts.push(`every ${h.target}d`);
-    if(avg !== null)parts.push(`~${avg}d avg`);
   }
   return parts;
 }
@@ -174,19 +176,20 @@ function attentionScore(h,index){
   const target = h.target || 7;
 
   if(h.type === 'keepup'){
-    if(days === null)return 82 - index / 100;
+    if(days === null)return 130 - index / 100;
     const ratio = days / target;
-    if(ratio >= 1)return 220 + Math.min(40,ratio * 10) - index / 100;
-    if(ratio >= 0.75)return 155 + ratio * 30 - index / 100;
-    return 35 + ratio * 55 - index / 100;
+    if(ratio >= 1)return 260 + Math.min(55,ratio * 14) - index / 100;
+    if(ratio >= 0.75)return 185 + ratio * 35 - index / 100;
+    return 70 + ratio * 70 - index / 100;
   }
 
   if(h.type === 'reduce'){
-    if(days === null)return 32 - index / 100;
+    if(days === null)return 38 - index / 100;
     const ratio = days / target;
-    if(ratio < 0.5)return 128 + (0.5 - ratio) * 45 - index / 100;
-    if(ratio < 1)return 88 + (1 - ratio) * 35 - index / 100;
-    return Math.max(12,40 - ratio * 10) - index / 100;
+    if(ratio >= 1.25)return 92 + Math.min(24,(ratio - 1.25) * 18) - index / 100;
+    if(ratio >= 1)return 68 + ratio * 12 - index / 100;
+    if(ratio >= 0.75)return 42 + ratio * 12 - index / 100;
+    return 18 + ratio * 20 - index / 100;
   }
 
   if(h.type === 'zero'){
@@ -218,17 +221,34 @@ function iconHtml(h,c){
   return `<i class="ti ${defaultIcon(h.type)}" style="color:${c.icon};" aria-hidden="true"></i>`;
 }
 
+function extendHandleWindow(){
+  handleUntil = Date.now() + HANDLE_WINDOW_MS;
+  localStorage.setItem(HANDLE_UNTIL_KEY,String(handleUntil));
+}
+
+function handlesVisible(){
+  return sortMode === 'manual' && Date.now() < handleUntil;
+}
+
+function scheduleHandleExpiry(){
+  clearTimeout(handleTimer);
+  if(!handlesVisible())return;
+  handleTimer = setTimeout(render,Math.max(0,handleUntil - Date.now()) + 50);
+}
+
 function setSortMode(mode){
   sortMode = mode;
   localStorage.setItem(SORT_KEY,mode);
+  if(mode === 'manual')extendHandleWindow();
   updateSortButton();
 }
 
 function updateSortButton(){
   const btn = $('toggle-sort');
   const icon = btn.querySelector('i');
-  btn.classList.toggle('is-on',sortMode === 'smart');
-  icon.className = 'ti ti-adjustments-horizontal';
+  btn.classList.toggle('is-on',sortMode === 'manual');
+  btn.dataset.mode = sortMode;
+  icon.className = sortMode === 'smart' ? 'ti ti-arrows-sort' : 'ti ti-list';
   btn.setAttribute('aria-label',sortMode === 'smart' ? 'smart order' : 'hand order');
 }
 
@@ -242,6 +262,8 @@ function render(){
   updateSortButton();
 
   const indices = visibleIndices(data);
+  list.classList.toggle('handles-visible',handlesVisible());
+  scheduleHandleExpiry();
   if(!indices.length){
     empty.style.display = 'block';
     empty.classList.toggle('is-action',data.length > 0);
@@ -282,7 +304,7 @@ function render(){
           <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">
             <span class="ting-name">${escapeHtml(h.name)}</span>${chipHtml}
           </div>
-          <div class="ting-meta">
+          <div class="ting-meta" aria-label="status">
             ${parts.map((p,i)=>i===0?`<span>${escapeHtml(p)}</span>`:`<span class="dot">·</span><span>${escapeHtml(p)}</span>`).join('')}
           </div>
         </div>
@@ -491,6 +513,7 @@ function endDrag(row){
   if(dragDropIndex !== null && from >= 0 && dragDropIndex !== from){
     const data = reorderByVisibleOrder(load(),dragSrcIdx,dragDropIndex);
     setSortMode('manual');
+    extendHandleWindow();
     save(data);
     showToast('hand order');
   }
@@ -576,6 +599,8 @@ function openDetail(i){
   $('detail-emoji').value = h.emoji || '';
   $('detail-days').value = h.target || '';
   $('detail-slider-row').style.display = h.type === 'zero' ? 'none' : 'flex';
+  $('detail-target-help').style.display = h.type === 'zero' ? 'none' : 'block';
+  $('detail-target-help').textContent = rhythmHelp(h.type);
   syncRhythm('detail',h.target || 7);
   $('detail-mark').style.background = c.bg;
   $('detail-mark').style.color = c.icon;
@@ -720,6 +745,8 @@ function cancelAdd(){
   selectedType = 'keepup';
   document.querySelectorAll('#type-seg .seg-opt').forEach((o,i)=>o.classList.toggle('on',i === 0));
   $('target-slider-row').style.display = 'flex';
+  $('target-help').style.display = 'block';
+  $('target-help').textContent = rhythmHelp(selectedType);
 }
 
 $('toggle-sort').addEventListener('click',()=>{
@@ -734,6 +761,8 @@ $('type-seg').addEventListener('click',e=>{
   selectedType = opt.dataset.v;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
   $('target-slider-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
+  $('target-help').style.display = selectedType === 'zero' ? 'none' : 'block';
+  $('target-help').textContent = rhythmHelp(selectedType);
 });
 
 $('open-add').addEventListener('click',()=>{
@@ -765,6 +794,11 @@ function clampRhythm(value){
   return Math.max(1,Math.min(90,parseInt(value,10) || 7));
 }
 
+function rhythmHelp(type){
+  if(type === 'reduce')return 'rhythm is the gap you want before it happens again.';
+  return 'rhythm is about how many days between entries.';
+}
+
 function syncRhythm(prefix,value){
   const days = clampRhythm(value);
   $(`${prefix}-days`).value = days;
@@ -785,6 +819,10 @@ function bindRhythm(prefix){
     const days = clampRhythm(typed);
     slider.value = days;
     if(label)label.textContent = `${days}d`;
+  });
+  field.addEventListener('focus',e=>{
+    e.target.dataset.was = e.target.value;
+    e.target.value = '';
   });
   field.addEventListener('blur',e=>syncRhythm(prefix,e.target.value));
   slider.addEventListener('input',e=>syncRhythm(prefix,e.target.value));
@@ -836,6 +874,13 @@ $('detail-save').addEventListener('click',()=>{
   render();
 });
 $('detail-mark').addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  if(!logTing(detailIdx))return;
+  showToast('planted');
+  openDetail(detailIdx);
+  render();
+});
+$('detail-add').addEventListener('click',()=>{
   if(detailIdx === null)return;
   if(!logTing(detailIdx))return;
   showToast('planted');

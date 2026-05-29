@@ -12,10 +12,10 @@
 <div class="app">
 
   <div class="topbar">
-    <button class="wordmark" id="open-about" aria-label="about tings">tings</button>
+    <button class="wordmark" id="open-about" aria-label="how it works">tings</button>
     <div class="top-actions">
       <button class="icon-btn" id="toggle-sort" aria-label="order tings">
-        <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
+        <i class="ti ti-arrows-sort" aria-hidden="true"></i>
       </button>
       <button class="icon-btn" id="open-add" aria-label="add ting">
         <i class="ti ti-plus" aria-hidden="true"></i>
@@ -31,13 +31,16 @@
   <div class="sheet-wrap" id="add-sheet">
     <div class="sheet">
       <p class="sheet-title">new ting</p>
-      <input type="text" id="ting-name" placeholder="name it…" autocomplete="off" autocorrect="off" spellcheck="false" />
-      <input type="text" id="ting-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
+      <div class="name-icon-row">
+        <input type="text" id="ting-name" placeholder="name it…" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <input type="text" id="ting-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
+      </div>
       <div class="seg" id="type-seg">
         <button class="seg-opt on" data-v="keepup">nurture</button>
         <button class="seg-opt" data-v="reduce">ease off</button>
         <button class="seg-opt" data-v="zero">quit</button>
       </div>
+      <p class="field-hint" id="target-help">rhythm is about how many days between entries.</p>
       <div class="range-row" id="target-slider-row">
         <input type="range" id="ting-days-slider" min="1" max="90" value="7" />
         <label class="range-value" aria-label="day rhythm">
@@ -73,6 +76,7 @@
           <p class="sheet-name" id="detail-name"></p>
           <p class="sheet-sub" id="detail-sub"></p>
         </div>
+        <button class="mini-add" id="detail-add" aria-label="add entry"><i class="ti ti-plus" aria-hidden="true"></i></button>
       </div>
       <div class="detail-section">
         <p class="detail-about" id="detail-about"></p>
@@ -88,6 +92,7 @@
         <div class="edit-row">
           <input type="text" id="detail-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
         </div>
+        <p class="field-hint" id="detail-target-help">rhythm is about how many days between entries.</p>
         <div class="range-row" id="detail-slider-row">
           <input type="range" id="detail-days-slider" min="1" max="90" value="7" />
           <label class="range-value" aria-label="day rhythm">
@@ -106,27 +111,27 @@
   <!-- about sheet -->
   <div class="sheet-wrap" id="about-sheet">
     <div class="sheet about-sheet">
-      <p class="sheet-title">about tings</p>
+      <p class="sheet-title">how it works</p>
       <p class="about-copy">Tings are recurring things you want to do more, do less, or stop. Each entry means it happened once.</p>
       <div class="about-grid">
         <div><span>+ button</span><p>Add a habit, or thing to track. Choose nurture, ease off, or quit.</p></div>
-        <div><span>top icon</span><p>Smart order lifts due soon. Hand order keeps your order.</p></div>
+        <div><span>top icon</span><p>Sort icon means smart order. List icon means hand order, and shows the drag grips for a little while.</p></div>
         
         <div><span>tap icon</span><p>Record that it happened today with a confirmation.</p></div>
         <div><span>double tap</span><p>Record today immediately when you do not need confirmation.</p></div>
-        <div><span>swipe left</span><p>Add an older entry, hide it for a week, or remove the ting.</p></div>
+        <div><span>swipe left</span><p>Log something that happened before today, hide it for a week, or remove the ting.</p></div>
         <div><span>hold grip</span><p>Drag a card to set your own order. The app will remember it.</p></div>
         <div><span>tap card</span><p>Open details to see status, trend, graph, and settings for that ting.</p></div>
-        <div><span>tune</span><p>Change the icon and entry interval.</p></div>
+        <div><span>tune</span><p>Change the icon and rhythm. Rhythm is the days you want between entries.</p></div>
         <div><span>nurture</span><p>For things you want to keep doing. Due or nearly due tings move up.</p></div>
-        <div><span>ease off</span><p>For things you still do, just less often. Recent entries move up as a soft warning.</p></div>
+        <div><span>ease off</span><p>For things you still do, just less often. Smart order keeps recent ones quieter.</p></div>
         <div><span>quit</span><p>For things you want off the board. They stay low-key even after a slip.</p></div>
         <div><span>gap</span><p>Days since the latest entry. If an old future entry exists, it shows days away.</p></div>
         <div><span>pace</span><p>Your usual space between entries, based on recent history.</p></div>
         <div><span>graph</span><p>Bars show entry spacing: green is good, amber is watch, red needs attention.</p></div>
       </div>
-      <div class="btn-row">
-        <button class="btn primary" id="about-close">got it</button>
+      <div class="btn-row about-actions">
+        <button class="btn primary" id="about-close">cool</button>
       </div>
     </div>
   </div>
