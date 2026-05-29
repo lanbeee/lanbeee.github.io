@@ -38,13 +38,12 @@
         <button class="seg-opt" data-v="reduce">ease off</button>
         <button class="seg-opt" data-v="zero">quit</button>
       </div>
-      <div class="target-row" id="target-row">
-        <input type="number" id="ting-days" min="1" max="90" value="7" />
-        <span class="target-label">day rhythm</span>
-      </div>
       <div class="range-row" id="target-slider-row">
         <input type="range" id="ting-days-slider" min="1" max="90" value="7" />
-        <span class="range-label" id="ting-days-label">7d</span>
+        <label class="range-value" aria-label="day rhythm">
+          <input type="text" id="ting-days" inputmode="numeric" maxlength="2" value="7" />
+          <span>d</span>
+        </label>
       </div>
       <div class="btn-row">
         <button class="btn primary" id="do-save">let's go</button>
@@ -69,7 +68,7 @@
   <div class="sheet-wrap" id="detail-sheet">
     <div class="sheet detail-sheet">
       <div class="detail-head">
-        <button class="pulse-btn detail-mark" id="detail-mark" aria-label="log ting"></button>
+        <button class="pulse-btn detail-mark" id="detail-mark" aria-label="add entry"></button>
         <div class="detail-title-wrap">
           <p class="sheet-name" id="detail-name"></p>
           <p class="sheet-sub" id="detail-sub"></p>
@@ -108,16 +107,16 @@
   <div class="sheet-wrap" id="about-sheet">
     <div class="sheet about-sheet">
       <p class="sheet-title">about tings</p>
-      <p class="about-copy">Tings are recurring things you want to do more, do less, or stop. Each log means it happened once.</p>
+      <p class="about-copy">Tings are recurring things you want to do more, do less, or stop. Each entry means it happened once.</p>
       <div class="about-grid">
         <div><span>+ button</span><p>Add a habit, task, or thing to track. Choose keep doing, do less, or quit.</p></div>
         <div><span>tap card</span><p>Open details to see status, trend, graph, and settings for that ting.</p></div>
         <div><span>tap icon</span><p>Record that it happened today. A confirm step helps avoid mistakes.</p></div>
         <div><span>double tap</span><p>Record today immediately when you do not need confirmation.</p></div>
-        <div><span>swipe left</span><p>Add an older date, hide it for a week, or remove the ting.</p></div>
+        <div><span>swipe left</span><p>Add an older entry, hide it for a week, or remove the ting.</p></div>
         <div><span>hold grip</span><p>Drag a card to set your own order. The app will remember it.</p></div>
         <div><span>top icon</span><p>Smart order brings due items up. Hand order keeps your order.</p></div>
-        <div><span>tune</span><p>Change the icon/emoji and how many days should pass between logs.</p></div>
+        <div><span>tune</span><p>Change the icon/emoji and how many days should pass between entries.</p></div>
       </div>
       <div class="btn-row">
         <button class="btn primary" id="about-close">got it</button>
