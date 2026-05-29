@@ -307,7 +307,7 @@ function render(){
       empty.innerHTML = 'snoozed for now<br><span class="empty-sub">tap to peek</span>';
       empty.onclick = ()=>{showSnoozed = true;render();};
     }else{
-      empty.innerHTML = 'nothing tracked yet<br><span class="empty-sub">tap + to add your first ting</span>';
+      empty.innerHTML = 'noting tracked yet<br><span class="empty-sub">tap + to add your first ting</span>';
     }
     return;
   }
@@ -880,7 +880,7 @@ function renderDayLogs(key){
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
       <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
     </div>
-  `).join('') : '<div class="overview-item"><span class="overview-name">quiet day</span><span class="overview-meta">nothing planted</span></div>';
+  `).join('') : '<div class="overview-item"><span class="overview-name">quiet day</span><span class="overview-meta">noting planted</span></div>';
 }
 
 function openSnooze(i){
