@@ -92,9 +92,13 @@
         <div class="month-card">
           <div class="section-top">
             <span class="section-label">month</span>
-            <span class="trend-copy" id="detail-calendar-label"></span>
+            <div class="month-nav">
+              <button class="mini-nav" id="detail-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+              <span class="trend-copy" id="detail-calendar-label"></span>
+              <button class="mini-nav" id="detail-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+            </div>
           </div>
-          <div class="month-grid" id="detail-calendar"></div>
+          <div class="month-grid rich-month-grid" id="detail-calendar"></div>
         </div>
       </div>
       <div class="detail-section tune-section">
@@ -131,9 +135,13 @@
       <div class="month-card overview-card">
         <div class="section-top">
           <span class="section-label">month</span>
-          <span class="trend-copy" id="overview-calendar-label"></span>
+          <div class="month-nav">
+            <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+            <span class="trend-copy" id="overview-calendar-label"></span>
+            <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+          </div>
         </div>
-        <div class="month-grid all-month-grid" id="overview-calendar"></div>
+        <div class="month-grid rich-month-grid" id="overview-calendar"></div>
       </div>
       <div class="overview-list" id="overview-list"></div>
     </div>
@@ -146,7 +154,7 @@
       <p class="about-copy">Tings are recurring things you want to do more, do less, or stop. Each entry means it happened once.</p>
       <div class="about-grid">
         <div><span>+ button</span><p>Add a habit, or thing to track. Choose nurture, ease off, or quit.</p></div>
-        <div><span>calendar</span><p>Open the month view for all tings. It shows entry days without extra planning work.</p></div>
+        <div><span>calendar</span><p>Open the month view for all tings. Tap a day to see what happened.</p></div>
         <div><span>top icon</span><p>Sort icon means smart order. List icon means hand order, and shows the drag grips for a little while.</p></div>
         
         <div><span>tap icon</span><p>Record that it happened today with a confirmation.</p></div>
@@ -162,7 +170,7 @@
         <div><span>run</span><p>For nurture, this is your current in-rhythm run. For ease off and quit, it shows clear days.</p></div>
         <div><span>pace</span><p>Your usual space between entries, based on recent history.</p></div>
         <div><span>graph</span><p>Bars show entry spacing: green is good, amber is watch, red needs attention.</p></div>
-        <div><span>month</span><p>The calendar marks entry days. In a ting page, tap a day to add an entry there.</p></div>
+        <div><span>month</span><p>Use arrows to change months. In a ting page, tap a day to add an entry there.</p></div>
       </div>
       <div class="btn-row about-actions">
         <button class="btn primary" id="about-close">cool</button>
@@ -195,6 +203,18 @@
       <div class="btn-row">
         <button class="btn primary" id="day-entry-save">plant it</button>
         <button class="btn" id="day-entry-cancel">nah</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- day logs sheet -->
+  <div class="sheet-wrap" id="day-logs-sheet">
+    <div class="sheet">
+      <p class="sheet-name" id="day-logs-title"></p>
+      <p class="sheet-sub" id="day-logs-sub"></p>
+      <div class="overview-list" id="day-logs-list"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="day-logs-close">cool</button>
       </div>
     </div>
   </div>
