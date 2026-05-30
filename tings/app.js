@@ -55,6 +55,7 @@ let reorderPressing = false;
 let buttonPointer = null;
 let suppressNativeButton = null;
 let actionButtonPointer = null;
+let actionTouchPointer = null;
 let detailTuneOriginal = null;
 let calendarPointer = null;
 let cardPointer = null;
@@ -1258,6 +1259,14 @@ function pauseSheetMomentum(btn){
   },140);
 }
 
+function fixedActionButtonAt(x,y){
+  const el = document.elementFromPoint(x,y);
+  if(!el)return null;
+  const btn = el.closest('.detail-actions button,.about-actions button,.overview-actions button,.bottom-nav button');
+  if(!btn || btn.disabled)return null;
+  return btn;
+}
+
 function showReachPad(){
   if(isDragging || reorderPressing || document.querySelector('.sheet-wrap.open'))return;
   if(window.scrollY > 4)return;
@@ -1340,6 +1349,41 @@ function bindFixedActionButtons(){
     });
   });
 }
+
+document.addEventListener('touchstart',e=>{
+  if(e.touches.length !== 1)return;
+  const t = e.touches[0];
+  const btn = fixedActionButtonAt(t.clientX,t.clientY);
+  if(!btn)return;
+  suppressBottomNav();
+  pauseSheetMomentum(btn);
+  actionTouchPointer = {btn,id:t.identifier,x:t.clientX,y:t.clientY,time:Date.now()};
+  e.preventDefault();
+  e.stopPropagation();
+}, {capture:true,passive:false});
+
+document.addEventListener('touchend',e=>{
+  if(!actionTouchPointer)return;
+  const t = [...e.changedTouches].find(item=>item.identifier === actionTouchPointer.id);
+  if(!t)return;
+  const tap = actionTouchPointer;
+  actionTouchPointer = null;
+  const moved = Math.hypot(t.clientX - tap.x,t.clientY - tap.y);
+  const endBtn = fixedActionButtonAt(t.clientX,t.clientY);
+  if(!tap.btn.disabled && endBtn === tap.btn && moved <= 160 && Date.now() - tap.time < 1200){
+    suppressNativeButton = tap.btn;
+    tap.btn.click();
+    setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},160);
+  }
+  e.preventDefault();
+  e.stopPropagation();
+}, {capture:true,passive:false});
+
+document.addEventListener('touchcancel',e=>{
+  if(!actionTouchPointer)return;
+  const t = [...e.changedTouches].find(item=>item.identifier === actionTouchPointer.id);
+  if(t)actionTouchPointer = null;
+}, {capture:true,passive:true});
 
 function bindCalendarTap(container,selector,handler){
   container.addEventListener('pointerdown',e=>{

@@ -97,6 +97,10 @@ body.nav-suppressed .bottom-nav{
 }
 .bottom-nav .icon-btn{background:var(--bg);border-color:var(--border);}
 .bottom-nav .nav-add{background:var(--text);color:var(--bg);border-color:var(--text);}
+.bottom-nav button,
+.detail-actions button,
+.about-actions button,
+.overview-actions button{touch-action:none;}
 
 #list{display:flex;flex-direction:column;gap:8px;padding:14px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
 body.reach-pad #list{padding-top:220px;}
