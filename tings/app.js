@@ -38,6 +38,8 @@ let dragDropIndex = null;
 let dragStartY = 0;
 let dragFrame = null;
 let toastTimer = null;
+let undoTimer = null;
+let pendingUndo = null;
 let handleTimer = null;
 let reachTimer = null;
 let reachHoldTimer = null;
@@ -63,11 +65,10 @@ function normalize(items){
     name: h.name || '',
     type: h.type || 'keepup',
     target: h.type === 'zero' ? null : (h.target || 7),
-    lastLog: h.lastLog || null,
-    logs: Array.isArray(h.logs) ? h.logs.slice(-MAX_LOGS) : [],
+    logs: Array.isArray(h.logs) ? h.logs.slice().sort((a,b)=>a-b).slice(-MAX_LOGS) : [],
     emoji: h.emoji || '',
     snoozedUntil: h.snoozedUntil || null
-  }));
+  })).map(h => ({...h,lastLog:latestActualLog(h.logs)}));
 }
 
 function save(data){
@@ -78,12 +79,19 @@ function save(data){
     updateQuotaBar(kb);
     return true;
   }catch(e){
-    alert('storage full - drop some tings first');
+    alert('storage full - remove some habits first');
     return false;
   }
 }
 
 function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024);}
+function latestActualLog(logs){
+  const actual = (logs || []).filter(ts=>ts <= Date.now()).sort((a,b)=>a-b);
+  return actual.length ? actual[actual.length - 1] : null;
+}
+function actualLogs(logs){
+  return (logs || []).filter(ts=>ts <= Date.now()).sort((a,b)=>a-b);
+}
 function daysSince(ts){return ts ? Math.floor((Date.now() - ts) / 86400000) : null;}
 function dayDistance(ts){return ts ? Math.round((Date.now() - ts) / 86400000) : null;}
 function entryWhen(ts){
@@ -124,15 +132,15 @@ function cleanMark(value){
 }
 
 function avgInterval(logs){
-  if(!logs || logs.length < 2)return null;
-  const sorted = [...logs].sort((a,b)=>a-b);
+  const sorted = actualLogs(logs);
+  if(sorted.length < 2)return null;
   let sum = 0;
   for(let i=1;i<sorted.length;i++)sum += sorted[i] - sorted[i-1];
   return Math.round(sum / (sorted.length - 1) / 86400000);
 }
 
 function currentRun(h){
-  const logs = [...(h.logs || [])].sort((a,b)=>b-a);
+  const logs = actualLogs(h.logs).sort((a,b)=>b-a);
   const days = daysSince(h.lastLog);
   if(h.type !== 'keepup'){
     return {num:days === null ? '-' : Math.max(0,days),label:'clear'};
@@ -191,22 +199,22 @@ function colors(days,target,type){
 
 function vibe(days,target,type){
   if(type === 'zero'){
-    if(days === null)return 'clean slate';
-    if(days === 0)return 'slipped';
+    if(days === null)return 'no entries';
+    if(days === 0)return 'today';
     if(days < 3)return 'recent';
-    return 'holding';
+    return 'clear';
   }
   if(days === null)return null;
   const ratio = days / target;
-  if(type === 'keepup')return ratio < 0.75 ? 'fresh' : ratio < 1.1 ? 'soon' : 'overdue';
-  return ratio > 1.5 ? 'clear' : ratio > 0.9 ? 'watch' : 'hot';
+  if(type === 'keepup')return ratio < 0.75 ? 'logged' : ratio < 1.1 ? 'due soon' : 'overdue';
+  return ratio > 1.5 ? 'good gap' : ratio > 0.9 ? 'near target' : 'too soon';
 }
 
 function metaLine(h){
   const days = daysSince(h.lastLog);
   const parts = [];
   if(h.snoozedUntil && Date.now() < h.snoozedUntil){
-    parts.push(`snoozed ${Math.ceil((h.snoozedUntil - Date.now()) / 86400000)}d`);
+    parts.push(`hidden ${Math.ceil((h.snoozedUntil - Date.now()) / 86400000)}d`);
   }else{
     parts.push(entryWhen(h.lastLog));
     if(h.type !== 'zero' && h.target)parts.push(`every ${h.target}d`);
@@ -290,10 +298,15 @@ function setSortMode(mode){
 function updateSortButton(){
   const btn = $('toggle-sort');
   const icon = btn.querySelector('i');
+  const count = load().length;
+  btn.classList.toggle('is-hidden',count <= 4);
+  btn.disabled = count <= 4;
+  $('open-overview').classList.toggle('is-hidden',count === 0);
+  $('open-overview').disabled = count === 0;
   btn.classList.toggle('is-on',sortMode === 'manual');
   btn.dataset.mode = sortMode;
   icon.className = sortMode === 'smart' ? 'ti ti-arrows-sort' : 'ti ti-list';
-  btn.setAttribute('aria-label',sortMode === 'smart' ? 'smart order' : 'hand order');
+  btn.setAttribute('aria-label',sortMode === 'smart' ? 'smart order' : 'custom order');
 }
 
 function render(){
@@ -312,10 +325,10 @@ function render(){
     empty.style.display = 'block';
     empty.classList.toggle('is-action',data.length > 0);
     if(data.length){
-      empty.innerHTML = 'snoozed for now<br><span class="empty-sub">tap to peek</span>';
+      empty.innerHTML = 'hidden for now<br><span class="empty-sub">tap to show</span>';
       empty.onclick = ()=>{showSnoozed = true;render();};
     }else{
-      empty.innerHTML = 'nothing tracked yet<br><span class="empty-sub">tap + to add your first ting</span>';
+      empty.innerHTML = 'no habits yet<br><span class="empty-sub">tap + to add your first habit</span>';
     }
     return;
   }
@@ -335,12 +348,12 @@ function render(){
     row.dataset.realIdx = realIdx;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
-        <button class="swipe-action sa-plant" data-action="plant" aria-label="plant"><i class="ti ti-seedling" aria-hidden="true"></i>plant</button>
-        <button class="swipe-action sa-peek" data-action="peek" aria-label="peek"><i class="ti ti-chart-line" aria-hidden="true"></i>peek</button>
+        <button class="swipe-action sa-plan" data-action="plan-next" aria-label="plan next"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>
+        <button class="swipe-action sa-skip" data-action="skip" aria-label="skip for now"><i class="ti ti-player-skip-forward" aria-hidden="true"></i>skip</button>
       </div>
       <div class="swipe-actions swipe-actions-right">
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
-        <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>gone</button>
+        <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
       <div class="ting-card${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}" data-real="${realIdx}">
         <span class="drag-handle" aria-label="drag"><i class="ti ti-grip-vertical" aria-hidden="true"></i></span>
@@ -376,8 +389,8 @@ function render(){
       e.stopPropagation();
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
-      if(btn.dataset.action === 'plant')quickLog(idx);
-      if(btn.dataset.action === 'peek')openDetail(idx);
+      if(btn.dataset.action === 'plan-next')planNext(idx);
+      if(btn.dataset.action === 'skip')skipForNow(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
@@ -583,7 +596,7 @@ function endDrag(row){
     setSortMode('manual');
     extendHandleWindow();
     save(data);
-    showToast('hand order');
+    showToast('custom order');
   }
   dragSrcIdx = null;
   dragOverIdx = null;
@@ -633,20 +646,67 @@ function logTing(i){
   const data = load();
   const now = Date.now();
   if(!data[i])return false;
+  const undo = {type:'entry',idx:i,ts:now,snoozedUntil:data[i].snoozedUntil || null};
   data[i].lastLog = now;
-  data[i].logs = [...(data[i].logs || []),now].slice(-MAX_LOGS);
+  data[i].logs = [...(data[i].logs || []),now].sort((a,b)=>a-b).slice(-MAX_LOGS);
   data[i].snoozedUntil = null;
-  return save(data);
+  if(!save(data))return false;
+  showUndo('Entry logged',undo);
+  return true;
 }
 
 function logTingAt(i,ts){
   const data = load();
   if(!data[i])return false;
-  const entryTs = Math.min(ts,Date.now());
+  const entryTs = ts;
+  const undo = {type:'entry',idx:i,ts:entryTs,snoozedUntil:data[i].snoozedUntil || null};
   data[i].logs = [...(data[i].logs || []),entryTs].sort((a,b)=>a-b).slice(-MAX_LOGS);
-  data[i].lastLog = Math.max(...data[i].logs);
-  data[i].snoozedUntil = null;
+  data[i].lastLog = latestActualLog(data[i].logs);
+  if(entryTs <= Date.now())data[i].snoozedUntil = null;
+  if(!save(data))return false;
+  showUndo(entryTs > Date.now() ? 'Plan added' : 'Entry added',undo);
+  return true;
+}
+
+function removeEntryAt(i,ts){
+  const data = load();
+  if(!data[i])return false;
+  const logs = [...(data[i].logs || [])];
+  const pos = logs.indexOf(ts);
+  if(pos < 0)return false;
+  logs.splice(pos,1);
+  data[i].logs = logs;
+  data[i].lastLog = latestActualLog(logs);
   return save(data);
+}
+
+function undoLastAction(){
+  if(!pendingUndo)return;
+  const data = load();
+  if(pendingUndo.type === 'entry'){
+    const {idx,ts,snoozedUntil} = pendingUndo;
+    if(!data[idx])return;
+    const logs = [...(data[idx].logs || [])];
+    const pos = logs.indexOf(ts);
+    if(pos >= 0)logs.splice(pos,1);
+    data[idx].logs = logs;
+    data[idx].lastLog = latestActualLog(logs);
+    data[idx].snoozedUntil = snoozedUntil;
+  }
+  if(pendingUndo.type === 'hide'){
+    const {idx,snoozedUntil} = pendingUndo;
+    if(!data[idx])return;
+    data[idx].snoozedUntil = snoozedUntil;
+  }
+  if(pendingUndo.type === 'delete'){
+    const {idx,habit} = pendingUndo;
+    data.splice(Math.min(idx,data.length),0,habit);
+  }
+  if(save(data)){
+    hideUndo();
+    showToast('undone');
+    refreshOpenViews();
+  }
 }
 
 function quickLog(i,card){
@@ -655,8 +715,39 @@ function quickLog(i,card){
     card.classList.add('logged');
     setTimeout(()=>card.classList.remove('logged'),380);
   }
-  showToast('planted');
   setTimeout(render,260);
+}
+
+function nextPlanTime(h){
+  const base = h.lastLog || Date.now();
+  const target = h.type === 'zero' ? 1 : (h.target || 7);
+  let d = new Date(base + target * 86400000);
+  d = new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0,0);
+  if(d.getTime() <= Date.now()){
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    d = new Date(tomorrow.getFullYear(),tomorrow.getMonth(),tomorrow.getDate(),12,0,0,0);
+  }
+  return d.getTime();
+}
+
+function planNext(i){
+  const h = load()[i];
+  if(!h)return;
+  const ts = nextPlanTime(h);
+  if(logTingAt(i,ts))refreshOpenViews();
+}
+
+function skipForNow(i){
+  const data = load();
+  if(!data[i])return;
+  const days = data[i].type === 'zero' ? 1 : Math.max(1,data[i].target || 1);
+  const previous = data[i].snoozedUntil || null;
+  data[i].snoozedUntil = Date.now() + days * 86400000;
+  if(save(data)){
+    showUndo(`Hidden ${days}d`,{type:'hide',idx:i,snoozedUntil:previous});
+    render();
+  }
 }
 
 function openConfirm(i){
@@ -731,29 +822,32 @@ function closeDetail(){
 function renderStats(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
-  const total = h.logs?.length || 0;
+  const completed = actualLogs(h.logs).length;
+  const planned = (h.logs || []).filter(ts=>ts > Date.now()).length;
   const run = currentRun(h);
   const gapNum = days === null ? '-' : days < 0 ? Math.abs(days) : days;
-  const gapLabel = days < 0 ? 'away' : 'gap';
+  const gapLabel = days < 0 ? 'until next' : 'since last';
   const target = h.target || 7;
   const recent = recentWindowStats(h,30);
   const score = progressScore(h);
   const scoreLabel = score === null ? '-' : `${score}%`;
-  const scoreName = h.type === 'keepup' ? 'rhythm' : h.type === 'reduce' ? 'space' : 'clear';
-  const monthLabel = h.type === 'keepup' ? '30d hits' : h.type === 'reduce' ? '30d count' : '30d slips';
+  const scoreName = h.type === 'keepup' ? 'progress' : h.type === 'reduce' ? 'gap' : 'avoidance';
+  const monthLabel = 'last 30d';
   const monthValue = h.type === 'keepup' ? `${recent.good}/${recent.expected}` : recent.count;
-  const targetLine = h.type === 'zero' ? 'no slips' : `${target}d aim`;
+  const targetLine = h.type === 'zero' ? 'avoid' : `${target}d`;
+  const runLabel = h.type === 'keepup' ? 'streak' : 'clear days';
   $('detail-stats').innerHTML = `
     <div class="score-card">
       <div class="score-ring" style="--score:${score ?? 0};"><span>${scoreLabel}</span></div>
       <div><div class="score-title">${scoreName}</div><div class="score-sub">${progressCopy(h,score)}</div></div>
     </div>
     <div class="stat"><div class="stat-num">${gapNum}</div><div class="stat-label">${gapLabel}</div></div>
-    <div class="stat"><div class="stat-num">${avg === null ? '-' : avg}</div><div class="stat-label">pace</div></div>
+    <div class="stat"><div class="stat-num">${avg === null ? '-' : avg}</div><div class="stat-label">avg gap</div></div>
     <div class="stat"><div class="stat-num">${monthValue}</div><div class="stat-label">${monthLabel}</div></div>
-    <div class="stat"><div class="stat-num">${run.num}</div><div class="stat-label">${run.label}</div></div>
-    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">entries</div></div>
-    <div class="stat"><div class="stat-num">${targetLine}</div><div class="stat-label">shape</div></div>`;
+    <div class="stat"><div class="stat-num">${run.num}</div><div class="stat-label">${runLabel}</div></div>
+    <div class="stat"><div class="stat-num">${completed}</div><div class="stat-label">logged</div></div>
+    <div class="stat"><div class="stat-num">${planned}</div><div class="stat-label">planned</div></div>
+    <div class="stat"><div class="stat-num">${targetLine}</div><div class="stat-label">target</div></div>`;
 }
 
 function recentWindowStats(h,windowDays = 30){
@@ -783,18 +877,18 @@ function progressScore(h){
 function progressCopy(h,score){
   if(score === null)return 'start with one entry';
   if(h.type === 'keepup'){
-    if(score >= 80)return 'in rhythm';
+    if(score >= 80)return 'on track';
     if(score >= 55)return 'nearly due';
-    return 'needs a nudge';
+    return 'needs attention';
   }
   if(h.type === 'reduce'){
-    if(score >= 80)return 'good space';
-    if(score >= 45)return 'cooling';
-    return 'too warm';
+    if(score >= 80)return 'good gap';
+    if(score >= 45)return 'improving';
+    return 'too recent';
   }
-  if(score >= 80)return 'clear run';
+  if(score >= 80)return 'on track';
   if(score >= 35)return 'building';
-  return 'fresh reset';
+  return 'recent entry';
 }
 
 function aboutText(h){
@@ -809,8 +903,8 @@ function aboutText(h){
   if(days === null)return `Aim for about every ${target} days.`;
   if(days < 0)return `Next entry is ${entryWhen(h.lastLog)}.`;
   const when = entryWhen(h.lastLog);
-  if(h.type === 'keepup')return days <= target ? `Last entry was ${when}. Still in rhythm.` : `Last entry was ${when}. Time to bring it back.`;
-  return days >= target ? `${days} days clear. Keep the gap wide.` : `Entry was ${when}. Let it cool.`;
+  if(h.type === 'keepup')return days <= target ? `Last entry was ${when}. You are on track.` : `Last entry was ${when}. This needs attention.`;
+  return days >= target ? `${days} days since the last entry. Good gap.` : `Entry was ${when}. Try to increase the gap.`;
 }
 
 function trendText(h){
@@ -819,23 +913,23 @@ function trendText(h){
   if(days === null)return 'no entries yet';
   if(days < 0)return 'coming up';
   if(h.type === 'zero'){
-    if(days === 0)return 'fresh slip';
-    if(days < 3)return 'settling';
-    return 'clean streak';
+    if(days === 0)return 'entry today';
+    if(days < 3)return 'recent entry';
+    return 'on track';
   }
   const target = h.target || 7;
   const pace = avg || days;
   if(h.type === 'keepup'){
     if(days > target)return 'due now';
-    return pace <= target ? 'on pace' : 'drifting';
+    return pace <= target ? 'on pace' : 'behind';
   }
-  if(days < target)return 'too warm';
-  return pace >= target ? 'cooling down' : 'watch it';
+  if(days < target)return 'too recent';
+  return pace >= target ? 'on track' : 'watch';
 }
 
 function renderGraph(h){
   const graph = $('detail-graph');
-  const logs = [...(h.logs || [])].sort((a,b)=>a-b);
+  const logs = actualLogs(h.logs);
   const target = h.target || 7;
   if(!logs.length){
     graph.innerHTML = '<div class="graph-empty">no entries yet</div>';
@@ -862,9 +956,9 @@ function renderGraph(h){
 
 function graphCaption(h,intervals){
   const last = intervals[intervals.length - 1];
-  if(h.type === 'keepup')return `last gap ${last}d. shorter bars are better.`;
-  if(h.type === 'reduce')return `last gap ${last}d. taller bars are better.`;
-  return `last clean run ${last}d. taller bars are better.`;
+  if(h.type === 'keepup')return `last gap ${last}d. target is ${h.target || 7}d or less.`;
+  if(h.type === 'reduce')return `last gap ${last}d. more days between entries is better.`;
+  return `last clear stretch ${last}d. more days between entries is better.`;
 }
 
 function renderCalendar(h){
@@ -893,11 +987,15 @@ function renderCalendar(h){
     const cls = [
       count ? 'has-entry' : '',
       key === today ? 'today' : '',
-      date.getTime() <= Date.now() ? 'pickable' : ''
+      'pickable'
     ].filter(Boolean).join(' ');
-    return `<button class="cal-day ${cls}" data-entry-day="${key}" ${date.getTime() > Date.now() ? 'disabled' : ''}><span>${i + 1}</span>${dots}</button>`;
+    return `<button class="cal-day ${cls}" data-entry-day="${key}"><span>${i + 1}</span>${dots}</button>`;
   });
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
+}
+
+function hasPlannedEntryForDay(h,key){
+  return (h.logs || []).some(ts=>dateKey(ts) === key && ts > Date.now());
 }
 
 function monthFrame(offset = 0){
@@ -933,7 +1031,7 @@ function renderOverview(){
     });
   });
 
-  $('overview-copy').textContent = data.length ? `${total} entries across ${data.length} tings.` : 'month view across every ting.';
+  $('overview-copy').textContent = data.length ? `${total} entries across ${data.length} habits.` : 'All entries and planned dates.';
   $('overview-calendar-label').textContent = frame.label;
   const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
   const blanks = Array.from({length:frame.first.getDay()},()=>'<div class="cal-day blank"></div>');
@@ -972,20 +1070,27 @@ function renderOverview(){
 function renderDayLogs(key){
   const data = load();
   const rows = [];
-  data.forEach(h=>{
-    const count = (h.logs || []).filter(ts=>dateKey(ts) === key).length;
+  data.forEach((h,i)=>{
+    const entries = (h.logs || []).filter(ts=>dateKey(ts) === key);
+    const count = entries.length;
     if(!count)return;
-    rows.push({h,count,c:colors(daysSince(h.lastLog),h.target,h.type)});
+    rows.push({h,index:i,count,entries,c:colors(daysSince(h.lastLog),h.target,h.type)});
   });
   const ts = new Date(`${key}T12:00:00`).getTime();
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
   $('day-logs-sub').textContent = rows.length ? `${rows.reduce((sum,row)=>sum + row.count,0)} entries` : 'no entries';
-  $('day-logs-list').innerHTML = rows.length ? rows.map(({h,count,c})=>`
+  $('day-logs-list').innerHTML = rows.length ? rows.map(({h,index,count,entries,c})=>{
+    const plannedCount = entries.filter(entryTs=>entryTs > Date.now()).length;
+    const remove = plannedCount ? `<button class="mini-text-btn" data-remove-plan="${index}" data-plan-day="${key}">remove plan</button>` : '';
+    return `
     <div class="overview-item">
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
-      <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
-    </div>
-  `).join('') : '<div class="overview-item"><span class="overview-name">quiet day</span><span class="overview-meta">nothing planted</span></div>';
+      <span class="overview-meta">${plannedCount ? `${plannedCount} planned` : `${count} ${count === 1 ? 'entry' : 'entries'}`}</span>
+      ${remove}
+    </div>`;
+  }).join('') : '<div class="overview-item"><span class="overview-name">no entries</span><span class="overview-meta">add one below</span></div>';
+  $('day-log-ting').innerHTML = data.length ? data.map((h,i)=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No habits</option>';
+  $('day-log-add').disabled = !data.length;
 }
 
 function openSnooze(i){
@@ -999,18 +1104,23 @@ function openSnooze(i){
 function doSnooze(i,days){
   const data = load();
   if(!data[i])return;
+  const previous = data[i].snoozedUntil || null;
   data[i].snoozedUntil = Date.now() + days * 86400000;
-  save(data);
-  showToast(`snoozed ${days}d`);
-  render();
+  if(save(data)){
+    showUndo(`Hidden ${days}d`,{type:'hide',idx:i,snoozedUntil:previous});
+    render();
+  }
 }
 
 function doNuke(i){
   const data = load();
+  const removed = data[i];
+  if(!removed)return;
   data.splice(i,1);
-  save(data);
-  showToast('gone');
-  render();
+  if(save(data)){
+    showUndo('Habit removed',{type:'delete',idx:i,habit:removed});
+    render();
+  }
 }
 
 function openDayEntry(i,key){
@@ -1019,7 +1129,8 @@ function openDayEntry(i,key){
   dayEntryIdx = i;
   dayEntryTs = new Date(`${key}T12:00:00`).getTime();
   $('day-entry-name').textContent = h.name;
-  $('day-entry-sub').textContent = `add entry for ${new Date(dayEntryTs).toLocaleDateString(undefined,{month:'short',day:'numeric'})}?`;
+  const label = dayEntryTs > Date.now() ? 'Plan entry for' : 'Add entry for';
+  $('day-entry-sub').textContent = `${label} ${new Date(dayEntryTs).toLocaleDateString(undefined,{month:'short',day:'numeric'})}?`;
   openSheet('day-entry-sheet');
 }
 
@@ -1054,6 +1165,28 @@ function showToast(text){
   toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>toast.classList.remove('show'),900);
+}
+
+function showUndo(text,undo){
+  pendingUndo = undo;
+  $('undo-text').textContent = text;
+  $('undo-toast').classList.add('show');
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo,5200);
+}
+
+function hideUndo(){
+  clearTimeout(undoTimer);
+  undoTimer = null;
+  pendingUndo = null;
+  $('undo-toast').classList.remove('show');
+}
+
+function refreshOpenViews(){
+  render();
+  if(detailIdx !== null && $('detail-sheet').classList.contains('open'))openDetail(detailIdx);
+  if($('overview-sheet').classList.contains('open'))renderOverview();
+  if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
 }
 
 function showReachPad(){
@@ -1117,8 +1250,7 @@ document.addEventListener('pointerup',e=>{
   const dx = Math.abs(e.clientX - x);
   const dy = Math.abs(e.clientY - y);
   const moved = Math.hypot(dx,dy);
-  const sameButton = forgivingButtonTarget(e.target) === btn;
-  if(sameButton && moved > 8 && moved <= 30 && Date.now() - time < 900){
+  if(moved > 8 && moved <= 160 && Date.now() - time < 1200){
     suppressNativeButton = btn;
     e.preventDefault();
     e.stopPropagation();
@@ -1151,7 +1283,7 @@ function cancelAdd(){
 
 $('toggle-sort').addEventListener('click',()=>{
   setSortMode(sortMode === 'smart' ? 'manual' : 'smart');
-  showToast(sortMode === 'smart' ? 'smart order' : 'hand order');
+  showToast(sortMode === 'smart' ? 'smart order' : 'custom order');
   render();
 });
 
@@ -1181,11 +1313,11 @@ $('do-save').addEventListener('click',()=>{
   const name = $('ting-name').value.trim();
   if(!name){$('ting-name').focus();return;}
   const data = load();
-  if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} tings max`);return;}
+  if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
   if(sizeKb(data) >= QUOTA_HARD_KB){alert('storage ceiling');return;}
   const target = selectedType === 'zero' ? null : Math.max(1,Math.min(90,parseInt($('ting-days').value,10) || 7));
   data.push({name:name.slice(0,60),type:selectedType,target,lastLog:null,logs:[],emoji:cleanMark($('ting-emoji').value)});
-  if(save(data)){cancelAdd();showToast('new ting');render();}
+  if(save(data)){cancelAdd();showToast('added');render();}
 });
 
 $('ting-name').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
@@ -1195,8 +1327,8 @@ function clampRhythm(value){
 }
 
 function rhythmHelp(type){
-  if(type === 'reduce')return 'rhythm is the gap you want before it happens again.';
-  return 'rhythm is about how many days between entries.';
+  if(type === 'reduce')return 'Target is the gap you want before it happens again.';
+  return 'Target days between entries.';
 }
 
 function syncRhythm(prefix,value){
@@ -1248,24 +1380,24 @@ $('detail-emoji').addEventListener('input',()=>setDetailDirty());
 window.addEventListener('scroll',updateHeaderOnScroll,{passive:true});
 document.addEventListener('touchstart',e=>{
   cancelReachHold();
-  topTouchStartedAtTop = window.scrollY <= 1 && !e.target.closest('.drag-handle') && !e.target.closest('.swipe-row');
+  topTouchStartedAtTop = window.scrollY <= 1 && !e.target.closest('button,input,select,.drag-handle');
   if(topTouchStartedAtTop){
     topTouchY = e.touches[0].clientY;
     topTouchX = e.touches[0].clientX;
   }
 },{passive:true});
 document.addEventListener('touchmove',e=>{
-  if(!topTouchStartedAtTop || e.target.closest('.drag-handle') || e.target.closest('.swipe-row'))return cancelReachHold();
+  if(!topTouchStartedAtTop || e.target.closest('button,input,select,.drag-handle'))return cancelReachHold();
   if(window.scrollY > 1)return cancelReachHold();
   const dy = e.touches[0].clientY - topTouchY;
   const dx = Math.abs(e.touches[0].clientX - topTouchX);
-  if(dy < 128 || dx > dy * 0.22)return cancelReachHold();
+  if(dy < 110 || dx > dy * 0.28)return cancelReachHold();
   if(!reachArmed){
     reachArmed = true;
     reachHoldTimer = setTimeout(()=>{
       showReachPad();
       cancelReachHold();
-    },180);
+    },800);
   }
 },{passive:true});
 document.addEventListener('touchend',cancelReachHold,{passive:true});
@@ -1287,7 +1419,6 @@ $('confirm-yes').addEventListener('click',()=>{
   logTing(pendingIdx);
   pendingIdx = null;
   closeSheet('confirm-sheet');
-  showToast('planted');
   render();
 });
 $('confirm-no').addEventListener('click',()=>{pendingIdx = null;closeSheet('confirm-sheet');});
@@ -1301,7 +1432,7 @@ $('detail-save').addEventListener('click',()=>{
   h.emoji = cleanMark($('detail-emoji').value);
   if(h.type !== 'zero')h.target = Math.max(1,Math.min(90,parseInt($('detail-days').value,10) || h.target || 7));
   save(data);
-  showToast('tuned');
+  showToast('saved');
   closeSheet('detail-sheet');
   detailIdx = null;
   detailTuneOriginal = null;
@@ -1310,14 +1441,12 @@ $('detail-save').addEventListener('click',()=>{
 $('detail-mark').addEventListener('click',()=>{
   if(detailIdx === null)return;
   if(!logTing(detailIdx))return;
-  showToast('planted');
   openDetail(detailIdx);
   render();
 });
 $('detail-add').addEventListener('click',()=>{
   if(detailIdx === null)return;
   if(!logTing(detailIdx))return;
-  showToast('planted');
   openDetail(detailIdx);
   render();
 });
@@ -1327,6 +1456,13 @@ $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)c
 $('detail-calendar').addEventListener('click',e=>{
   const day = e.target.closest('[data-entry-day]');
   if(!day || detailIdx === null)return;
+  const h = load()[detailIdx];
+  if(h && hasPlannedEntryForDay(h,day.dataset.entryDay)){
+    dayLogsKey = day.dataset.entryDay;
+    renderDayLogs(dayLogsKey);
+    openSheet('day-logs-sheet');
+    return;
+  }
   openDayEntry(detailIdx,day.dataset.entryDay);
 });
 $('detail-prev-month').addEventListener('click',()=>{
@@ -1345,6 +1481,7 @@ $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
 
 $('open-overview').addEventListener('click',()=>{
+  if(!load().length)return;
   overviewMonthOffset = 0;
   renderOverview();
   openSheet('overview-sheet');
@@ -1366,6 +1503,30 @@ $('overview-calendar').addEventListener('click',e=>{
   renderDayLogs(dayLogsKey);
   openSheet('day-logs-sheet');
 });
+$('day-log-add').addEventListener('click',()=>{
+  if(!dayLogsKey)return;
+  const idx = parseInt($('day-log-ting').value,10);
+  if(Number.isNaN(idx))return;
+  const ts = new Date(`${dayLogsKey}T12:00:00`).getTime();
+  if(!logTingAt(idx,ts))return;
+  renderDayLogs(dayLogsKey);
+  render();
+  if($('overview-sheet').classList.contains('open'))renderOverview();
+});
+$('day-logs-list').addEventListener('click',e=>{
+  const btn = e.target.closest('[data-remove-plan]');
+  if(!btn)return;
+  const idx = parseInt(btn.dataset.removePlan,10);
+  const key = btn.dataset.planDay;
+  const data = load();
+  const h = data[idx];
+  if(!h)return;
+  const planned = (h.logs || []).filter(ts=>dateKey(ts) === key && ts > Date.now());
+  if(!planned.length)return;
+  planned.forEach(ts=>removeEntryAt(idx,ts));
+  showToast('plan removed');
+  refreshOpenViews();
+});
 
 $('snooze-sheet').addEventListener('click',e=>{
   const opt = e.target.closest('[data-snooze-days]');
@@ -1380,12 +1541,12 @@ $('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){
 
 $('day-entry-save').addEventListener('click',()=>{
   if(dayEntryIdx === null || dayEntryTs === null)return;
-  if(!logTingAt(dayEntryIdx,dayEntryTs))return;
+  const ts = dayEntryTs;
+  if(!logTingAt(dayEntryIdx,ts))return;
   closeSheet('day-entry-sheet');
   if(detailIdx !== null)openDetail(detailIdx);
   dayEntryIdx = null;
   dayEntryTs = null;
-  showToast('planted');
   if(detailIdx === null)render();
 });
 $('day-entry-cancel').addEventListener('click',()=>{dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');});
@@ -1393,6 +1554,7 @@ $('day-entry-sheet').addEventListener('click',e=>{if(e.target === e.currentTarge
 
 $('day-logs-close').addEventListener('click',()=>{dayLogsKey = null;closeSheet('day-logs-sheet');});
 $('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');}});
+$('undo-action').addEventListener('click',undoLastAction);
 
 $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
