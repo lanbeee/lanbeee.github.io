@@ -6,7 +6,7 @@ const MAX_TINGS = 300;
 const QUOTA_WARN_KB = 2048;
 const QUOTA_HARD_KB = 4096;
 const SWIPE_THRESHOLD = 60;
-const SWIPE_REVEAL = 136;
+const SWIPE_ACTION_WIDTH = 68;
 const TAP_DELAY = 310;
 const HANDLE_WINDOW_MS = 5 * 60 * 1000;
 const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
@@ -39,6 +39,7 @@ let dragStartY = 0;
 let dragFrame = null;
 let toastTimer = null;
 let undoTimer = null;
+let navSuppressTimer = null;
 let pendingUndo = null;
 let handleTimer = null;
 let reachTimer = null;
@@ -345,6 +346,8 @@ function render(){
     const v = plannedToday ? 'planned today' : vibe(days,h.target,h.type);
     const parts = metaLine(h);
     const chipHtml = v ? `<span class="chip" style="background:${c.chipBg};color:${c.chipColor};">${v}</span>` : '';
+    const cardScore = progressScore(h);
+    const scoreText = cardScore === null ? 'No entries yet' : `${progressCopy(h,cardScore)} · ${cardScore}%`;
     const planAction = h.type === 'zero'
       ? ''
       : `<button class="swipe-action sa-plan" data-action="plan-next" aria-label="plan ${escapeHtml(nextPlanLabel(h))}"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>plan</span><small>${escapeHtml(nextPlanLabel(h))}</small></button>`;
@@ -372,6 +375,8 @@ function render(){
           <div class="ting-meta" aria-label="status">
             ${parts.map((p,i)=>i===0?`<span>${escapeHtml(p)}</span>`:`<span class="dot">·</span><span>${escapeHtml(p)}</span>`).join('')}
           </div>
+          <div class="ting-meta" aria-label="progress">${escapeHtml(scoreText)}</div>
+          <div class="ting-progress" aria-hidden="true" style="--score:${cardScore ?? 0};"><span></span></div>
         </div>
       </div>`;
 
@@ -407,6 +412,10 @@ function setupSwipe(row){
   const rightActions = row.querySelector('.swipe-actions-right');
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
 
+  function revealWidth(actions){
+    return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
+  }
+
   row.addEventListener('touchstart',e=>{
     if(isDragging)return;
     if(e.target.closest('.drag-handle'))return;
@@ -426,14 +435,16 @@ function setupSwipe(row){
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
     moved = true;dx = ddx;
-    const clamped = Math.max(-SWIPE_REVEAL,Math.min(SWIPE_REVEAL,dx));
-    const activeActions = clamped > 0 ? leftActions : rightActions;
-    const inactiveActions = clamped > 0 ? rightActions : leftActions;
+    const wantsLeft = dx > 0;
+    const activeActions = wantsLeft ? leftActions : rightActions;
+    const inactiveActions = wantsLeft ? rightActions : leftActions;
+    const reveal = revealWidth(activeActions);
+    const clamped = reveal ? Math.max(-reveal,Math.min(reveal,dx)) : 0;
     card.style.transition = 'none';
     activeActions.style.transition = 'none';
     inactiveActions.style.transition = 'none';
     card.style.transform = `translateX(${clamped}px)`;
-    const pct = Math.min(1,Math.abs(clamped) / SWIPE_REVEAL);
+    const pct = reveal ? Math.min(1,Math.abs(clamped) / reveal) : 0;
     activeActions.style.width = `${Math.abs(clamped)}px`;
     activeActions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
     inactiveActions.style.width = '0';
@@ -442,16 +453,17 @@ function setupSwipe(row){
 
   row.addEventListener('touchend',()=>{
     if(isDragging || !moved)return;
-    const snap = Math.abs(dx) > SWIPE_THRESHOLD;
     const dir = dx > 0 ? 1 : -1;
     const activeActions = dir > 0 ? leftActions : rightActions;
     const inactiveActions = dir > 0 ? rightActions : leftActions;
+    const reveal = revealWidth(activeActions);
+    const snap = reveal > 0 && Math.abs(dx) > Math.min(SWIPE_THRESHOLD,reveal * 0.55);
     card.style.transition = SNAP_TRANSITION;
     activeActions.style.transition = WIDTH_TRANSITION;
     inactiveActions.style.transition = WIDTH_TRANSITION;
     if(snap){
-      card.style.transform = `translateX(${dir * SWIPE_REVEAL}px)`;
-      activeActions.style.width = `${SWIPE_REVEAL}px`;
+      card.style.transform = `translateX(${dir * reveal}px)`;
+      activeActions.style.width = `${reveal}px`;
       activeActions.style.pointerEvents = 'auto';
       inactiveActions.style.width = '0';
       inactiveActions.style.pointerEvents = 'none';
@@ -1190,6 +1202,12 @@ function refreshOpenViews(){
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
 }
 
+function suppressBottomNav(ms = 300){
+  document.body.classList.add('nav-suppressed');
+  clearTimeout(navSuppressTimer);
+  navSuppressTimer = setTimeout(()=>document.body.classList.remove('nav-suppressed'),ms);
+}
+
 function showReachPad(){
   if(isDragging || reorderPressing || document.querySelector('.sheet-wrap.open'))return;
   if(window.scrollY > 4)return;
@@ -1455,6 +1473,9 @@ $('detail-add').addEventListener('click',()=>{
 $('detail-cool').addEventListener('click',closeDetail);
 $('detail-close').addEventListener('click',()=>{restoreDetailTune();closeDetail();});
 $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeDetail();});
+$('detail-sheet').querySelectorAll('.detail-actions button').forEach(btn=>{
+  btn.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+});
 $('detail-calendar').addEventListener('click',e=>{
   const day = e.target.closest('[data-entry-day]');
   if(!day || detailIdx === null)return;
@@ -1481,6 +1502,7 @@ $('detail-next-month').addEventListener('click',()=>{
 $('open-about').addEventListener('click',()=>openSheet('about-sheet'));
 $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
+$('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 
 $('open-overview').addEventListener('click',()=>{
   if(!load().length)return;
@@ -1490,6 +1512,7 @@ $('open-overview').addEventListener('click',()=>{
 });
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
+$('overview-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('overview-prev-month').addEventListener('click',()=>{
   overviewMonthOffset -= 1;
   renderOverview();
