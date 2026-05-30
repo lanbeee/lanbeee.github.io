@@ -54,6 +54,7 @@ let reachArmed = false;
 let reorderPressing = false;
 let buttonPointer = null;
 let suppressNativeButton = null;
+let actionButtonPointer = null;
 let detailTuneOriginal = null;
 let calendarPointer = null;
 
@@ -1218,6 +1219,18 @@ function suppressBottomNav(ms = 300){
   navSuppressTimer = setTimeout(()=>document.body.classList.remove('nav-suppressed'),ms);
 }
 
+function pauseSheetMomentum(btn){
+  const sheet = btn.closest('.sheet');
+  const host = sheet || document.scrollingElement || document.documentElement;
+  const y = host.scrollTop;
+  const prevOverflow = host.style.overflowY;
+  host.style.overflowY = 'hidden';
+  host.scrollTop = y;
+  setTimeout(()=>{
+    host.style.overflowY = prevOverflow;
+  },140);
+}
+
 function showReachPad(){
   if(isDragging || reorderPressing || document.querySelector('.sheet-wrap.open'))return;
   if(window.scrollY > 4)return;
@@ -1264,7 +1277,41 @@ function forgivingButtonTarget(target){
   if(!btn || btn.closest('.ting-card'))return null;
   if(btn.closest('.month-nav'))return null;
   if(btn.classList.contains('cal-day'))return null;
+  if(btn.closest('.detail-actions,.about-actions,.overview-actions,.bottom-nav'))return null;
   return btn;
+}
+
+function bindFixedActionButtons(){
+  document.querySelectorAll('.detail-actions button,.about-actions button,.overview-actions button,.bottom-nav button').forEach(btn=>{
+    btn.addEventListener('pointerdown',e=>{
+      if(btn.disabled)return;
+      suppressBottomNav();
+      pauseSheetMomentum(btn);
+      actionButtonPointer = {btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+      btn.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    btn.addEventListener('pointerup',e=>{
+      if(!actionButtonPointer || actionButtonPointer.btn !== btn || actionButtonPointer.id !== e.pointerId)return;
+      const tap = actionButtonPointer;
+      actionButtonPointer = null;
+      btn.releasePointerCapture?.(e.pointerId);
+      const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
+      if(!btn.disabled && moved <= 160 && Date.now() - tap.time < 1200){
+        suppressNativeButton = btn;
+        btn.click();
+        setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},120);
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    btn.addEventListener('pointercancel',e=>{
+      if(actionButtonPointer && actionButtonPointer.btn === btn && actionButtonPointer.id === e.pointerId){
+        actionButtonPointer = null;
+      }
+    });
+  });
 }
 
 function bindCalendarTap(container,selector,handler){
@@ -1323,6 +1370,12 @@ document.addEventListener('pointerup',e=>{
 },true);
 
 document.addEventListener('click',e=>{
+  if(e.target.closest('button') === suppressNativeButton && e.isTrusted){
+    e.preventDefault();
+    e.stopPropagation();
+    suppressNativeButton = null;
+    return;
+  }
   const btn = forgivingButtonTarget(e.target);
   if(btn && btn === suppressNativeButton && e.isTrusted){
     e.preventDefault();
@@ -1486,6 +1539,8 @@ $('confirm-yes').addEventListener('click',()=>{
 });
 $('confirm-no').addEventListener('click',()=>{pendingIdx = null;closeSheet('confirm-sheet');});
 $('confirm-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){pendingIdx = null;closeSheet('confirm-sheet');}});
+
+bindFixedActionButtons();
 
 $('detail-save').addEventListener('click',()=>{
   if(detailIdx === null)return;
