@@ -57,6 +57,8 @@ let suppressNativeButton = null;
 let actionButtonPointer = null;
 let detailTuneOriginal = null;
 let calendarPointer = null;
+let cardPointer = null;
+let suppressCardClick = null;
 
 function load(){
   try{return normalize(JSON.parse(localStorage.getItem(KEY)) || []);}
@@ -648,7 +650,32 @@ function reorderByVisibleOrder(data,sourceIdx,targetPosition){
 
 function setupCardTap(row,realIdx){
   const card = row.querySelector('.ting-card');
+  card.addEventListener('pointerdown',e=>{
+    if(e.target.closest('.drag-handle'))return;
+    if(e.target.closest('.pulse-btn'))return;
+    cardPointer = {card,realIdx,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+  });
+  card.addEventListener('pointerup',e=>{
+    if(!cardPointer || cardPointer.card !== card || cardPointer.id !== e.pointerId)return;
+    const tap = cardPointer;
+    cardPointer = null;
+    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
+    if(moved > 10 || Date.now() - tap.time > 800)return;
+    suppressCardClick = card;
+    if(swipeOpenCard){closeAllSwipes();}
+    else handleCardActivate(realIdx,card,()=>openDetail(realIdx));
+    setTimeout(()=>{if(suppressCardClick === card)suppressCardClick = null;},120);
+  });
+  card.addEventListener('pointercancel',e=>{
+    if(cardPointer && cardPointer.card === card && cardPointer.id === e.pointerId)cardPointer = null;
+  });
   card.addEventListener('click',e=>{
+    if(suppressCardClick === card){
+      e.preventDefault();
+      e.stopPropagation();
+      suppressCardClick = null;
+      return;
+    }
     if(e.target.closest('.drag-handle'))return;
     if(e.target.closest('.pulse-btn'))return;
     if(swipeOpenCard){closeAllSwipes();return;}
