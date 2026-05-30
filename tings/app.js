@@ -40,11 +40,14 @@ let dragFrame = null;
 let toastTimer = null;
 let handleTimer = null;
 let reachTimer = null;
+let reachHoldTimer = null;
 let lastScrollY = 0;
 let headerHidden = false;
 let headerRevealPull = 0;
 let topTouchY = 0;
 let topTouchX = 0;
+let topTouchStartedAtTop = false;
+let reachArmed = false;
 let reorderPressing = false;
 let buttonPointer = null;
 let suppressNativeButton = null;
@@ -1056,12 +1059,19 @@ function showToast(text){
 function showReachPad(){
   if(isDragging || reorderPressing || document.querySelector('.sheet-wrap.open'))return;
   if(window.scrollY > 4)return;
+  if(document.body.classList.contains('reach-pad'))return;
   document.body.classList.add('reach-pad');
   clearTimeout(reachTimer);
   reachTimer = setTimeout(()=>{
     document.body.classList.remove('reach-pad');
     requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
   },1800);
+}
+
+function cancelReachHold(){
+  clearTimeout(reachHoldTimer);
+  reachHoldTimer = null;
+  reachArmed = false;
 }
 
 function updateHeaderOnScroll(){
@@ -1237,21 +1247,31 @@ $('detail-emoji').addEventListener('input',()=>setDetailDirty());
 
 window.addEventListener('scroll',updateHeaderOnScroll,{passive:true});
 document.addEventListener('touchstart',e=>{
-  if(e.target.closest('.drag-handle'))return;
-  if(window.scrollY <= 4){
+  cancelReachHold();
+  topTouchStartedAtTop = window.scrollY <= 1 && !e.target.closest('.drag-handle') && !e.target.closest('.swipe-row');
+  if(topTouchStartedAtTop){
     topTouchY = e.touches[0].clientY;
     topTouchX = e.touches[0].clientX;
   }
 },{passive:true});
 document.addEventListener('touchmove',e=>{
-  if(e.target.closest('.drag-handle'))return;
-  if(window.scrollY > 4)return;
+  if(!topTouchStartedAtTop || e.target.closest('.drag-handle') || e.target.closest('.swipe-row'))return cancelReachHold();
+  if(window.scrollY > 1)return cancelReachHold();
   const dy = e.touches[0].clientY - topTouchY;
   const dx = Math.abs(e.touches[0].clientX - topTouchX);
-  if(dy > 86 && dx < dy * 0.32)showReachPad();
+  if(dy < 128 || dx > dy * 0.22)return cancelReachHold();
+  if(!reachArmed){
+    reachArmed = true;
+    reachHoldTimer = setTimeout(()=>{
+      showReachPad();
+      cancelReachHold();
+    },180);
+  }
 },{passive:true});
+document.addEventListener('touchend',cancelReachHold,{passive:true});
+document.addEventListener('touchcancel',cancelReachHold,{passive:true});
 document.addEventListener('wheel',e=>{
-  if(window.scrollY <= 4 && e.deltaY < -56)showReachPad();
+  if(window.scrollY <= 1 && e.deltaY < -120)showReachPad();
 },{passive:true});
 
 if(window.visualViewport){
