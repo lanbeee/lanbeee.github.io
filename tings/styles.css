@@ -247,6 +247,7 @@ body.drag-active .swipe-actions{display:none;}
   transition:opacity var(--dur-med) ease;
   will-change:opacity;
 }
+.detail-sheet{padding-top:0;}
 .sheet-wrap.open .about-sheet,
 .sheet-wrap.open .detail-sheet,
 .sheet-wrap.open .overview-sheet{transform:none;opacity:1;}
@@ -281,10 +282,10 @@ body.drag-active .swipe-actions{display:none;}
   top:0;
   z-index:45;
   display:flex;align-items:center;gap:13px;
-  margin:-8px -8px 12px;
-  padding:8px;
+  margin:0 -18px 12px;
+  padding:calc(8px + env(safe-area-inset-top)) 18px 8px;
   border:0.5px solid var(--border);
-  border-radius:999px;
+  border-radius:0 0 20px 20px;
   background:color-mix(in srgb,var(--bg) 92%,transparent);
   box-shadow:0 10px 28px rgba(0,0,0,0.12);
   backdrop-filter:blur(18px);
@@ -568,20 +569,25 @@ select{
 }
 
 #toast{
-  position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translate(-50%,18px);
+  position:fixed;left:50%;
+  bottom:calc(var(--nav-bottom) + var(--nav-height) + 16px + env(safe-area-inset-bottom));
+  transform:translate(-50%,18px);
   z-index:200;background:var(--text);color:var(--bg);
   font-size:13px;font-weight:500;padding:10px 14px;
+  max-width:calc(100vw - 32px);
   border-radius:999px;opacity:0;pointer-events:none;
   transition:opacity var(--dur-med) ease,transform var(--dur-med) var(--ease-snappy);
 }
 #toast.show{opacity:1;transform:translate(-50%,0);}
 
 #undo-toast{
-  position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));
+  position:fixed;left:50%;
+  bottom:calc(var(--nav-bottom) + var(--nav-height) + 16px + env(safe-area-inset-bottom));
   transform:translate(-50%,18px);z-index:210;
   display:flex;align-items:center;gap:12px;
   background:var(--text);color:var(--bg);
   font-size:13px;font-weight:500;padding:8px 8px 8px 14px;
+  max-width:calc(100vw - 32px);
   border-radius:999px;opacity:0;pointer-events:none;
   box-shadow:0 10px 30px rgba(0,0,0,0.18);
   transition:opacity var(--dur-med) ease,transform var(--dur-med) var(--ease-snappy);
