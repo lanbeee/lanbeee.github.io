@@ -95,12 +95,16 @@ body.header-hidden .topbar{
 body.nav-suppressed .bottom-nav{
   pointer-events:none;opacity:0.48;
 }
+body.fullpage-open .bottom-nav{
+  pointer-events:none;opacity:0;
+  transform:translateX(-50%) translateY(12px) scale(0.96);
+}
 .bottom-nav .icon-btn{background:var(--bg);border-color:var(--border);}
 .bottom-nav .nav-add{background:var(--text);color:var(--bg);border-color:var(--text);}
 .bottom-nav button,
 .detail-actions button,
 .about-actions button,
-.overview-actions button{touch-action:none;}
+.overview-actions button{touch-action:manipulation;}
 
 #list{display:flex;flex-direction:column;gap:8px;padding:14px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
 body.reach-pad #list{padding-top:220px;}
