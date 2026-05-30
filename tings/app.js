@@ -213,6 +213,7 @@ function vibe(days,target,type){
 function metaLine(h){
   const days = daysSince(h.lastLog);
   const parts = [];
+  if(hasPlannedToday(h))parts.push('planned today');
   if(h.snoozedUntil && Date.now() < h.snoozedUntil){
     parts.push(`hidden ${Math.ceil((h.snoozedUntil - Date.now()) / 86400000)}d`);
   }else{
@@ -226,6 +227,7 @@ function attentionScore(h,index){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
   const days = daysSince(h.lastLog);
   const target = h.target || 7;
+  if(hasPlannedToday(h) && h.type !== 'zero')return 320 - index / 100;
 
   if(h.type === 'keepup'){
     if(days === null)return 130 - index / 100;
@@ -339,17 +341,20 @@ function render(){
     const h = data[realIdx];
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
-    const v = vibe(days,h.target,h.type);
+    const plannedToday = hasPlannedToday(h);
+    const v = plannedToday ? 'planned today' : vibe(days,h.target,h.type);
     const parts = metaLine(h);
     const chipHtml = v ? `<span class="chip" style="background:${c.chipBg};color:${c.chipColor};">${v}</span>` : '';
+    const planAction = h.type === 'zero'
+      ? ''
+      : `<button class="swipe-action sa-plan" data-action="plan-next" aria-label="plan ${escapeHtml(nextPlanLabel(h))}"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>plan</span><small>${escapeHtml(nextPlanLabel(h))}</small></button>`;
 
     const row = document.createElement('div');
     row.className = 'swipe-row';
     row.dataset.realIdx = realIdx;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
-        <button class="swipe-action sa-plan" data-action="plan-next" aria-label="plan next"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>
-        <button class="swipe-action sa-skip" data-action="skip" aria-label="skip for now"><i class="ti ti-player-skip-forward" aria-hidden="true"></i>skip</button>
+        ${planAction}
       </div>
       <div class="swipe-actions swipe-actions-right">
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
@@ -390,7 +395,6 @@ function render(){
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
       if(btn.dataset.action === 'plan-next')planNext(idx);
-      if(btn.dataset.action === 'skip')skipForNow(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
@@ -720,7 +724,7 @@ function quickLog(i,card){
 
 function nextPlanTime(h){
   const base = h.lastLog || Date.now();
-  const target = h.type === 'zero' ? 1 : (h.target || 7);
+  const target = h.target || 7;
   let d = new Date(base + target * 86400000);
   d = new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0,0);
   if(d.getTime() <= Date.now()){
@@ -731,23 +735,15 @@ function nextPlanTime(h){
   return d.getTime();
 }
 
-function planNext(i){
-  const h = load()[i];
-  if(!h)return;
-  const ts = nextPlanTime(h);
-  if(logTingAt(i,ts))refreshOpenViews();
+function nextPlanLabel(h){
+  return new Date(nextPlanTime(h)).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 }
 
-function skipForNow(i){
-  const data = load();
-  if(!data[i])return;
-  const days = data[i].type === 'zero' ? 1 : Math.max(1,data[i].target || 1);
-  const previous = data[i].snoozedUntil || null;
-  data[i].snoozedUntil = Date.now() + days * 86400000;
-  if(save(data)){
-    showUndo(`Hidden ${days}d`,{type:'hide',idx:i,snoozedUntil:previous});
-    render();
-  }
+function planNext(i){
+  const h = load()[i];
+  if(!h || h.type === 'zero')return;
+  const ts = nextPlanTime(h);
+  if(logTingAt(i,ts))refreshOpenViews();
 }
 
 function openConfirm(i){
@@ -998,6 +994,11 @@ function hasPlannedEntryForDay(h,key){
   return (h.logs || []).some(ts=>dateKey(ts) === key && ts > Date.now());
 }
 
+function hasPlannedToday(h){
+  const today = dateKey(Date.now());
+  return (h.logs || []).some(ts=>dateKey(ts) === today && ts > Date.now());
+}
+
 function monthFrame(offset = 0){
   const now = new Date();
   const anchor = new Date(now.getFullYear(),now.getMonth() + offset,1);
@@ -1198,7 +1199,7 @@ function showReachPad(){
   reachTimer = setTimeout(()=>{
     document.body.classList.remove('reach-pad');
     requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
-  },1800);
+  },5200);
 }
 
 function cancelReachHold(){
@@ -1233,6 +1234,7 @@ function updateHeaderOnScroll(){
 function forgivingButtonTarget(target){
   const btn = target.closest('button');
   if(!btn || btn.closest('.ting-card'))return null;
+  if(btn.closest('.month-nav'))return null;
   return btn;
 }
 
