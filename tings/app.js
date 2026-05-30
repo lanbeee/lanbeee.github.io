@@ -46,6 +46,8 @@ let headerRevealPull = 0;
 let topTouchY = 0;
 let topTouchX = 0;
 let reorderPressing = false;
+let buttonPointer = null;
+let suppressNativeButton = null;
 let detailTuneOriginal = null;
 
 function load(){
@@ -310,7 +312,7 @@ function render(){
       empty.innerHTML = 'snoozed for now<br><span class="empty-sub">tap to peek</span>';
       empty.onclick = ()=>{showSnoozed = true;render();};
     }else{
-      empty.innerHTML = 'noting tracked yet<br><span class="empty-sub">tap + to add your first ting</span>';
+      empty.innerHTML = 'nothing tracked yet<br><span class="empty-sub">tap + to add your first ting</span>';
     }
     return;
   }
@@ -329,7 +331,11 @@ function render(){
     row.className = 'swipe-row';
     row.dataset.realIdx = realIdx;
     row.innerHTML = `
-      <div class="swipe-actions">
+      <div class="swipe-actions swipe-actions-left">
+        <button class="swipe-action sa-plant" data-action="plant" aria-label="plant"><i class="ti ti-seedling" aria-hidden="true"></i>plant</button>
+        <button class="swipe-action sa-peek" data-action="peek" aria-label="peek"><i class="ti ti-chart-line" aria-hidden="true"></i>peek</button>
+      </div>
+      <div class="swipe-actions swipe-actions-right">
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>gone</button>
       </div>
@@ -357,7 +363,8 @@ function render(){
   list.querySelectorAll('[data-pulse]').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
-      openConfirm(+btn.dataset.pulse);
+      const idx = +btn.dataset.pulse;
+      handleCardActivate(idx,btn.closest('.ting-card'),()=>openConfirm(idx));
     });
   });
 
@@ -366,6 +373,8 @@ function render(){
       e.stopPropagation();
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
+      if(btn.dataset.action === 'plant')quickLog(idx);
+      if(btn.dataset.action === 'peek')openDetail(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
@@ -374,7 +383,8 @@ function render(){
 
 function setupSwipe(row){
   const card = row.querySelector('.ting-card');
-  const actions = row.querySelector('.swipe-actions');
+  const leftActions = row.querySelector('.swipe-actions-left');
+  const rightActions = row.querySelector('.swipe-actions-right');
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
 
   row.addEventListener('touchstart',e=>{
@@ -383,8 +393,7 @@ function setupSwipe(row){
     const t = e.changedTouches[0];
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     if(swipeOpenCard && swipeOpenCard !== card){
-      swipeOpenCard.style.transform = '';
-      swipeOpenCard = null;
+      closeAllSwipes();
     }
   },{passive:true});
 
@@ -397,30 +406,42 @@ function setupSwipe(row){
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
     moved = true;dx = ddx;
-    if(dx > 0)return;
-    const clamped = Math.max(-SWIPE_REVEAL,dx);
+    const clamped = Math.max(-SWIPE_REVEAL,Math.min(SWIPE_REVEAL,dx));
+    const activeActions = clamped > 0 ? leftActions : rightActions;
+    const inactiveActions = clamped > 0 ? rightActions : leftActions;
     card.style.transition = 'none';
-    actions.style.transition = 'none';
+    activeActions.style.transition = 'none';
+    inactiveActions.style.transition = 'none';
     card.style.transform = `translateX(${clamped}px)`;
     const pct = Math.min(1,Math.abs(clamped) / SWIPE_REVEAL);
-    actions.style.width = `${Math.abs(clamped)}px`;
-    actions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
+    activeActions.style.width = `${Math.abs(clamped)}px`;
+    activeActions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
+    inactiveActions.style.width = '0';
+    inactiveActions.style.pointerEvents = 'none';
   },{passive:true});
 
   row.addEventListener('touchend',()=>{
     if(isDragging || !moved)return;
-    const snap = dx < -SWIPE_THRESHOLD;
+    const snap = Math.abs(dx) > SWIPE_THRESHOLD;
+    const dir = dx > 0 ? 1 : -1;
+    const activeActions = dir > 0 ? leftActions : rightActions;
+    const inactiveActions = dir > 0 ? rightActions : leftActions;
     card.style.transition = SNAP_TRANSITION;
-    actions.style.transition = WIDTH_TRANSITION;
+    activeActions.style.transition = WIDTH_TRANSITION;
+    inactiveActions.style.transition = WIDTH_TRANSITION;
     if(snap){
-      card.style.transform = `translateX(-${SWIPE_REVEAL}px)`;
-      actions.style.width = `${SWIPE_REVEAL}px`;
-      actions.style.pointerEvents = 'auto';
+      card.style.transform = `translateX(${dir * SWIPE_REVEAL}px)`;
+      activeActions.style.width = `${SWIPE_REVEAL}px`;
+      activeActions.style.pointerEvents = 'auto';
+      inactiveActions.style.width = '0';
+      inactiveActions.style.pointerEvents = 'none';
       swipeOpenCard = card;
     }else{
       card.style.transform = '';
-      actions.style.width = '0';
-      actions.style.pointerEvents = 'none';
+      leftActions.style.width = '0';
+      rightActions.style.width = '0';
+      leftActions.style.pointerEvents = 'none';
+      rightActions.style.pointerEvents = 'none';
       swipeOpenCard = null;
     }
   });
@@ -429,16 +450,16 @@ function setupSwipe(row){
 function closeAllSwipes(){
   document.querySelectorAll('.swipe-row').forEach(row=>{
     const card = row.querySelector('.ting-card');
-    const actions = row.querySelector('.swipe-actions');
+    const actions = row.querySelectorAll('.swipe-actions');
     if(card){
       card.style.transition = SNAP_TRANSITION;
       card.style.transform = '';
     }
-    if(actions){
+    actions.forEach(actions=>{
       actions.style.transition = WIDTH_TRANSITION;
       actions.style.width = '0';
       actions.style.pointerEvents = 'none';
-    }
+    });
   });
   swipeOpenCard = null;
 }
@@ -585,19 +606,24 @@ function reorderByVisibleOrder(data,sourceIdx,targetPosition){
 function setupCardTap(row,realIdx){
   const card = row.querySelector('.ting-card');
   card.addEventListener('click',e=>{
-    if(e.target.closest('.pulse-btn') || e.target.closest('.drag-handle'))return;
+    if(e.target.closest('.drag-handle'))return;
+    if(e.target.closest('.pulse-btn'))return;
     if(swipeOpenCard){closeAllSwipes();return;}
-    const now = Date.now();
-    if(lastTap.idx === realIdx && now - lastTap.time < TAP_DELAY){
-      clearTimeout(tapTimer);
-      lastTap = {idx:-1,time:0};
-      quickLog(realIdx,card);
-    }else{
-      lastTap = {idx:realIdx,time:now};
-      clearTimeout(tapTimer);
-      tapTimer = setTimeout(()=>openDetail(realIdx),TAP_DELAY);
-    }
+    handleCardActivate(realIdx,card,()=>openDetail(realIdx));
   });
+}
+
+function handleCardActivate(realIdx,card,singleAction){
+  const now = Date.now();
+  if(lastTap.idx === realIdx && now - lastTap.time < TAP_DELAY){
+    clearTimeout(tapTimer);
+    lastTap = {idx:-1,time:0};
+    quickLog(realIdx,card);
+  }else{
+    lastTap = {idx:realIdx,time:now};
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(singleAction,TAP_DELAY);
+  }
 }
 
 function logTing(i){
@@ -706,11 +732,66 @@ function renderStats(h){
   const run = currentRun(h);
   const gapNum = days === null ? '-' : days < 0 ? Math.abs(days) : days;
   const gapLabel = days < 0 ? 'away' : 'gap';
+  const target = h.target || 7;
+  const recent = recentWindowStats(h,30);
+  const score = progressScore(h);
+  const scoreLabel = score === null ? '-' : `${score}%`;
+  const scoreName = h.type === 'keepup' ? 'rhythm' : h.type === 'reduce' ? 'space' : 'clear';
+  const monthLabel = h.type === 'keepup' ? '30d hits' : h.type === 'reduce' ? '30d count' : '30d slips';
+  const monthValue = h.type === 'keepup' ? `${recent.good}/${recent.expected}` : recent.count;
+  const targetLine = h.type === 'zero' ? 'no slips' : `${target}d aim`;
   $('detail-stats').innerHTML = `
+    <div class="score-card">
+      <div class="score-ring" style="--score:${score ?? 0};"><span>${scoreLabel}</span></div>
+      <div><div class="score-title">${scoreName}</div><div class="score-sub">${progressCopy(h,score)}</div></div>
+    </div>
     <div class="stat"><div class="stat-num">${gapNum}</div><div class="stat-label">${gapLabel}</div></div>
     <div class="stat"><div class="stat-num">${avg === null ? '-' : avg}</div><div class="stat-label">pace</div></div>
+    <div class="stat"><div class="stat-num">${monthValue}</div><div class="stat-label">${monthLabel}</div></div>
     <div class="stat"><div class="stat-num">${run.num}</div><div class="stat-label">${run.label}</div></div>
-    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">entries</div></div>`;
+    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">entries</div></div>
+    <div class="stat"><div class="stat-num">${targetLine}</div><div class="stat-label">shape</div></div>`;
+}
+
+function recentWindowStats(h,windowDays = 30){
+  const since = Date.now() - windowDays * 86400000;
+  const logs = (h.logs || []).filter(ts=>ts >= since && ts <= Date.now());
+  const target = h.target || 7;
+  const expected = h.type === 'keepup' ? Math.max(1,Math.ceil(windowDays / target)) : 0;
+  return {count:logs.length,expected,good:Math.min(logs.length,expected)};
+}
+
+function progressScore(h){
+  const days = daysSince(h.lastLog);
+  if(days === null)return null;
+  if(days < 0)return null;
+  const target = h.target || 7;
+  if(h.type === 'keepup'){
+    const ratio = Math.min(1.6,days / target);
+    return Math.max(0,Math.min(100,Math.round(100 - Math.max(0,ratio - 0.25) * 82)));
+  }
+  if(h.type === 'reduce'){
+    const ratio = Math.min(1.4,days / target);
+    return Math.max(0,Math.min(100,Math.round(ratio * 80)));
+  }
+  return Math.max(0,Math.min(100,Math.round(Math.min(days,30) / 30 * 100)));
+}
+
+function progressCopy(h,score){
+  if(score === null)return 'start with one entry';
+  if(h.type === 'keepup'){
+    if(score >= 80)return 'in rhythm';
+    if(score >= 55)return 'nearly due';
+    return 'needs a nudge';
+  }
+  if(h.type === 'reduce'){
+    if(score >= 80)return 'good space';
+    if(score >= 45)return 'cooling';
+    return 'too warm';
+  }
+  if(score >= 80)return 'clear run';
+  if(score >= 35)return 'building';
+  return 'fresh reset';
 }
 
 function aboutText(h){
@@ -752,20 +833,35 @@ function trendText(h){
 function renderGraph(h){
   const graph = $('detail-graph');
   const logs = [...(h.logs || [])].sort((a,b)=>a-b);
+  const target = h.target || 7;
   if(!logs.length){
-    graph.innerHTML = '<div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>';
+    graph.innerHTML = '<div class="graph-empty">no entries yet</div>';
     return;
   }
-  const intervals = logs.map((ts,i)=>i === 0 ? Math.max(1,daysSince(ts) || 1) : Math.max(1,Math.round((ts - logs[i-1]) / 86400000)));
-  const max = Math.max(...intervals,h.target || 7,1);
-  graph.innerHTML = intervals.slice(-12).map(days=>{
+  const intervals = logs.map((ts,i)=>i === 0 ? Math.max(1,daysSince(ts) || 1) : Math.max(1,Math.round((ts - logs[i-1]) / 86400000))).slice(-14);
+  const max = Math.max(...intervals,target,1);
+  const bars = intervals.map((days,i)=>{
     const height = Math.max(12,Math.round((days / max) * 100));
     let cls = 'hit';
-    if(h.type === 'keepup')cls = days <= (h.target || 7) ? 'hit' : 'miss';
-    if(h.type === 'reduce')cls = days >= (h.target || 7) ? 'hit' : 'warn';
+    if(h.type === 'keepup')cls = days <= target ? 'hit' : 'miss';
+    if(h.type === 'reduce')cls = days >= target ? 'hit' : 'warn';
     if(h.type === 'zero')cls = days >= 3 ? 'hit' : 'miss';
-    return `<div class="bar ${cls}" style="height:${height}%"></div>`;
+    return `<div class="bar ${cls}" style="height:${height}%"><span>${days}</span></div>`;
   }).join('');
+  const targetPct = h.type === 'zero' ? null : Math.max(8,Math.min(92,Math.round((target / max) * 100)));
+  graph.innerHTML = `
+    <div class="graph-bars">
+      ${targetPct ? `<div class="target-line" style="bottom:${targetPct}%"><span>${target}d</span></div>` : ''}
+      ${bars}
+    </div>
+    <div class="graph-caption">${graphCaption(h,intervals)}</div>`;
+}
+
+function graphCaption(h,intervals){
+  const last = intervals[intervals.length - 1];
+  if(h.type === 'keepup')return `last gap ${last}d. shorter bars are better.`;
+  if(h.type === 'reduce')return `last gap ${last}d. taller bars are better.`;
+  return `last clean run ${last}d. taller bars are better.`;
 }
 
 function renderCalendar(h){
@@ -886,7 +982,7 @@ function renderDayLogs(key){
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
       <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
     </div>
-  `).join('') : '<div class="overview-item"><span class="overview-name">quiet day</span><span class="overview-meta">noting planted</span></div>';
+  `).join('') : '<div class="overview-item"><span class="overview-name">quiet day</span><span class="overview-meta">nothing planted</span></div>';
 }
 
 function openSnooze(i){
@@ -990,6 +1086,45 @@ function updateHeaderOnScroll(){
   document.body.classList.toggle('header-hidden',headerHidden);
   lastScrollY = y;
 }
+
+function forgivingButtonTarget(target){
+  const btn = target.closest('button');
+  if(!btn || btn.closest('.ting-card'))return null;
+  return btn;
+}
+
+document.addEventListener('pointerdown',e=>{
+  const btn = forgivingButtonTarget(e.target);
+  if(!btn)return;
+  buttonPointer = {btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+},true);
+
+document.addEventListener('pointerup',e=>{
+  if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
+  const {btn,x,y,time} = buttonPointer;
+  buttonPointer = null;
+  if(btn.disabled)return;
+  const dx = Math.abs(e.clientX - x);
+  const dy = Math.abs(e.clientY - y);
+  const moved = Math.hypot(dx,dy);
+  const sameButton = forgivingButtonTarget(e.target) === btn;
+  if(sameButton && moved > 8 && moved <= 30 && Date.now() - time < 900){
+    suppressNativeButton = btn;
+    e.preventDefault();
+    e.stopPropagation();
+    btn.click();
+    setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},80);
+  }
+},true);
+
+document.addEventListener('click',e=>{
+  const btn = forgivingButtonTarget(e.target);
+  if(btn && btn === suppressNativeButton && e.isTrusted){
+    e.preventDefault();
+    e.stopPropagation();
+    suppressNativeButton = null;
+  }
+},true);
 
 function cancelAdd(){
   closeSheet('add-sheet');
@@ -1113,10 +1248,10 @@ document.addEventListener('touchmove',e=>{
   if(window.scrollY > 4)return;
   const dy = e.touches[0].clientY - topTouchY;
   const dx = Math.abs(e.touches[0].clientX - topTouchX);
-  if(dy > 42 && dx < dy * 0.45)showReachPad();
+  if(dy > 86 && dx < dy * 0.32)showReachPad();
 },{passive:true});
 document.addEventListener('wheel',e=>{
-  if(window.scrollY <= 4 && e.deltaY < -8)showReachPad();
+  if(window.scrollY <= 4 && e.deltaY < -56)showReachPad();
 },{passive:true});
 
 if(window.visualViewport){
