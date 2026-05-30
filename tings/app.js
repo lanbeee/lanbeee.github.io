@@ -55,6 +55,7 @@ let reorderPressing = false;
 let buttonPointer = null;
 let suppressNativeButton = null;
 let detailTuneOriginal = null;
+let calendarPointer = null;
 
 function load(){
   try{return normalize(JSON.parse(localStorage.getItem(KEY)) || []);}
@@ -304,8 +305,8 @@ function updateSortButton(){
   const count = load().length;
   btn.classList.toggle('is-hidden',count <= 4);
   btn.disabled = count <= 4;
-  $('open-overview').classList.toggle('is-hidden',count === 0);
-  $('open-overview').disabled = count === 0;
+  $('open-overview').classList.toggle('is-hidden',count < 2);
+  $('open-overview').disabled = count < 2;
   btn.classList.toggle('is-on',sortMode === 'manual');
   btn.dataset.mode = sortMode;
   icon.className = sortMode === 'smart' ? 'ti ti-arrows-sort' : 'ti ti-list';
@@ -434,6 +435,12 @@ function setupSwipe(row){
     const ddx = t.clientX - startX;
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
+    const openDir = swipeOpenCard === card ? parseInt(row.dataset.swipeOpen || '0',10) : 0;
+    if(openDir && Math.sign(ddx) === -openDir && Math.abs(ddx) > 12){
+      closeAllSwipes();
+      moved = true;dx = 0;
+      return;
+    }
     moved = true;dx = ddx;
     const wantsLeft = dx > 0;
     const activeActions = wantsLeft ? leftActions : rightActions;
@@ -468,6 +475,7 @@ function setupSwipe(row){
       inactiveActions.style.width = '0';
       inactiveActions.style.pointerEvents = 'none';
       swipeOpenCard = card;
+      row.dataset.swipeOpen = String(dir);
     }else{
       card.style.transform = '';
       leftActions.style.width = '0';
@@ -475,6 +483,7 @@ function setupSwipe(row){
       leftActions.style.pointerEvents = 'none';
       rightActions.style.pointerEvents = 'none';
       swipeOpenCard = null;
+      delete row.dataset.swipeOpen;
     }
   });
 }
@@ -492,6 +501,7 @@ function closeAllSwipes(){
       actions.style.width = '0';
       actions.style.pointerEvents = 'none';
     });
+    delete row.dataset.swipeOpen;
   });
   swipeOpenCard = null;
 }
@@ -1253,7 +1263,40 @@ function forgivingButtonTarget(target){
   const btn = target.closest('button');
   if(!btn || btn.closest('.ting-card'))return null;
   if(btn.closest('.month-nav'))return null;
+  if(btn.classList.contains('cal-day'))return null;
   return btn;
+}
+
+function bindCalendarTap(container,selector,handler){
+  container.addEventListener('pointerdown',e=>{
+    const day = e.target.closest(selector);
+    if(!day || !container.contains(day))return;
+    const scrollHost = container.closest('.sheet');
+    calendarPointer = {
+      container,
+      day,
+      id:e.pointerId,
+      x:e.clientX,
+      y:e.clientY,
+      scrollHost,
+      scrollTop:scrollHost ? scrollHost.scrollTop : 0,
+      time:Date.now()
+    };
+  },{passive:true});
+
+  container.addEventListener('pointerup',e=>{
+    if(!calendarPointer || calendarPointer.container !== container || calendarPointer.id !== e.pointerId)return;
+    const tap = calendarPointer;
+    calendarPointer = null;
+    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
+    const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
+    if(moved > 5 || scrolled > 1 || Date.now() - tap.time > 650)return;
+    handler(tap.day,e);
+  },{passive:true});
+
+  container.addEventListener('pointercancel',()=>{
+    if(calendarPointer && calendarPointer.container === container)calendarPointer = null;
+  },{passive:true});
 }
 
 document.addEventListener('pointerdown',e=>{
@@ -1476,8 +1519,7 @@ $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)c
 $('detail-sheet').querySelectorAll('.detail-actions button').forEach(btn=>{
   btn.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 });
-$('detail-calendar').addEventListener('click',e=>{
-  const day = e.target.closest('[data-entry-day]');
+bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   if(!day || detailIdx === null)return;
   const h = load()[detailIdx];
   if(h && hasPlannedEntryForDay(h,day.dataset.entryDay)){
@@ -1505,7 +1547,7 @@ $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cl
 $('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 
 $('open-overview').addEventListener('click',()=>{
-  if(!load().length)return;
+  if(load().length < 2)return;
   overviewMonthOffset = 0;
   renderOverview();
   openSheet('overview-sheet');
@@ -1521,8 +1563,7 @@ $('overview-next-month').addEventListener('click',()=>{
   overviewMonthOffset += 1;
   renderOverview();
 });
-$('overview-calendar').addEventListener('click',e=>{
-  const day = e.target.closest('[data-log-day]');
+bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   if(!day)return;
   dayLogsKey = day.dataset.logDay;
   renderDayLogs(dayLogsKey);
