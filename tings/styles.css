@@ -276,8 +276,22 @@ body.drag-active .swipe-actions{display:none;}
 .sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
 .sheet-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
 
-.detail-head{display:flex;align-items:center;gap:13px;margin-bottom:14px;}
+.detail-head{
+  position:sticky;
+  top:0;
+  z-index:45;
+  display:flex;align-items:center;gap:13px;
+  margin:-8px -8px 12px;
+  padding:8px;
+  border:0.5px solid var(--border);
+  border-radius:999px;
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  box-shadow:0 10px 28px rgba(0,0,0,0.12);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
 .detail-title-wrap{min-width:0;flex:1;}
+.detail-head .sheet-sub{margin-bottom:0;}
 .detail-mark{cursor:pointer;}
 .mini-add{
   width:40px;height:40px;border-radius:50%;border:0.5px solid var(--border2);
