@@ -201,6 +201,53 @@ function colors(days,target,type){
   return map[t];
 }
 
+function visualClassColor(cls){
+  if(cls === 'hit')return 'var(--teal-icon)';
+  if(cls === 'warn')return 'var(--amber-icon)';
+  if(cls === 'miss')return 'var(--red-icon)';
+  if(cls === 'plan')return 'var(--purple-icon)';
+  return 'var(--text3)';
+}
+
+function scoreTone(score){
+  if(score === null || score === undefined)return 'empty';
+  if(score >= 75)return 'hit';
+  if(score >= 45)return 'warn';
+  return 'miss';
+}
+
+function intervalTone(h,days){
+  if(days === null || days === undefined)return '';
+  const target = h.target || 7;
+  if(h.type === 'keepup'){
+    if(days <= target)return 'hit';
+    if(days <= target * 1.35)return 'warn';
+    return 'miss';
+  }
+  if(h.type === 'reduce'){
+    if(days >= target)return 'hit';
+    if(days >= target * 0.65)return 'warn';
+    return 'miss';
+  }
+  if(days >= 14)return 'hit';
+  if(days >= 4)return 'warn';
+  return 'miss';
+}
+
+function logToneMap(h){
+  const actual = actualLogs(h.logs);
+  const map = new Map();
+  actual.forEach((ts,i)=>{
+    const days = i === 0 ? Math.max(1,daysSince(ts) || 1) : Math.max(1,Math.round((ts - actual[i - 1]) / 86400000));
+    map.set(dateKey(ts),intervalTone(h,days));
+  });
+  (h.logs || []).filter(ts=>ts > Date.now()).forEach(ts=>{
+    const key = dateKey(ts);
+    if(!map.has(key))map.set(key,'plan');
+  });
+  return map;
+}
+
 function vibe(days,target,type){
   if(type === 'zero'){
     if(days === null)return 'no entries';
@@ -315,6 +362,146 @@ function updateSortButton(){
   btn.setAttribute('aria-label',sortMode === 'smart' ? 'smart order' : 'custom order');
 }
 
+function updateOverallSummary(data = load()){
+  const label = $('overall-summary');
+  if(!label)return;
+  if(!data.length){
+    label.textContent = 'ready for your first habit';
+    return;
+  }
+  const visible = data.filter(h=>!(h.snoozedUntil && Date.now() < h.snoozedUntil));
+  if(!visible.length){
+    label.textContent = 'all hidden for now';
+    return;
+  }
+  const plannedToday = visible.filter(h=>h.type !== 'zero' && hasPlannedToday(h)).length;
+  const plannedSoon = visible.some(h=>{
+    const plan = nextPlannedLog(h);
+    return h.type !== 'zero' && plan && dayDistance(plan) >= -3;
+  });
+  const buildDueCount = visible.filter(h=>h.type === 'keepup').filter(h=>{
+    const days = daysSince(h.lastLog);
+    return days === null || days >= (h.target || 7) * 0.9;
+  }).length;
+  const buildCalm = visible.filter(h=>h.type === 'keepup').every(h=>{
+    const days = daysSince(h.lastLog);
+    return days !== null && days < (h.target || 7) * 0.9;
+  });
+  const limitGoodCount = visible.filter(h=>h.type === 'reduce').filter(h=>{
+    const days = daysSince(h.lastLog);
+    return days !== null && days >= (h.target || 7);
+  }).length;
+  const limitTooSoonCount = visible.filter(h=>h.type === 'reduce').filter(h=>{
+    const days = daysSince(h.lastLog);
+    return days !== null && days < (h.target || 7) * 0.55;
+  }).length;
+  const stopFreshCount = visible.filter(h=>h.type === 'zero').filter(h=>{
+    const days = daysSince(h.lastLog);
+    return days !== null && days < 3;
+  }).length;
+  const buildCount = visible.filter(h=>h.type === 'keepup').length;
+  const limitCount = visible.filter(h=>h.type === 'reduce').length;
+  const stopCount = visible.filter(h=>h.type === 'zero').length;
+  const tones = visible.map(h=>scoreTone(progressScore(h)));
+  const goodCount = tones.filter(t=>t === 'hit').length;
+  const okayCount = tones.filter(t=>t === 'warn').length;
+  const careCount = tones.filter(t=>t === 'miss' || t === 'empty').length;
+  const total = visible.length;
+  const allGood = goodCount === total;
+  const mostlyGood = goodCount >= Math.ceil(total * 0.65) && careCount <= 1;
+  const mixed = goodCount > 0 && (okayCount > 0 || careCount > 0);
+  const needsCare = careCount >= Math.max(2,Math.ceil(total * 0.35));
+
+  if(allGood && plannedSoon)label.textContent = 'you are on track, with plans ahead';
+  else if(allGood)label.textContent = 'you are on track overall';
+  else if(mostlyGood && plannedToday)label.textContent = 'mostly on track, with plans today';
+  else if(mostlyGood && limitTooSoonCount)label.textContent = 'mostly good, give a few more space';
+  else if(mostlyGood && stopFreshCount)label.textContent = 'mostly good, one reset needs care';
+  else if(mostlyGood)label.textContent = 'mostly on track, a few need care';
+  else if(needsCare && goodCount)label.textContent = 'some progress, but several need care';
+  else if(needsCare)label.textContent = 'things need attention right now';
+  else if(mixed && buildDueCount && limitGoodCount)label.textContent = 'some due, but spacing looks good';
+  else if(mixed && limitTooSoonCount && buildCalm)label.textContent = 'some steady, some need more space';
+  else if(mixed)label.textContent = 'mixed week, some habits need care';
+  else if(plannedToday)label.textContent = 'you have habits planned for today';
+  else if(limitCount && limitGoodCount && !buildCount)label.textContent = 'you are spacing things well';
+  else if(stopCount && !buildCount && !limitCount)label.textContent = 'you are keeping things calm';
+  else label.textContent = 'a little attention would help today';
+}
+
+function nextPlannedLog(h){
+  return (h.logs || []).filter(ts=>ts > Date.now()).sort((a,b)=>a-b)[0] || null;
+}
+
+function cardBadge(h){
+  const days = daysSince(h.lastLog);
+  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'hidden';
+  if(days === null)return null;
+  return vibe(days,h.target,h.type);
+}
+
+function cardCue(h){
+  const days = daysSince(h.lastLog);
+  const target = h.target || 7;
+  const plan = nextPlannedLog(h);
+  if(plan && dateKey(plan) === dateKey(Date.now()) && h.type !== 'zero')return 'Planned for today';
+  if(days === null){
+    if(h.type === 'zero')return 'Nothing logged yet';
+    return 'Ready when you are';
+  }
+  if(days < 0)return 'Coming up';
+  if(h.type === 'keepup'){
+    if(days >= target)return 'Good time to do this';
+    if(days >= target * 0.75)return 'Coming due soon';
+    return 'Still on rhythm';
+  }
+  if(h.type === 'reduce'){
+    if(days >= target)return 'Nice space so far';
+    if(days >= target * 0.55)return 'Keep spacing it out';
+    return 'Give this more space';
+  }
+  if(days === 0)return 'Reset today';
+  if(days < 3)return 'Fresh reset';
+  return 'Clear stretch going';
+}
+
+function cardContext(h){
+  const plan = nextPlannedLog(h);
+  if(plan && h.type !== 'zero')return `<span class="context-pill"><i class="ti ti-calendar-event" aria-hidden="true"></i>${escapeHtml(entryWhen(plan))}</span>`;
+  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return `<span class="context-pill"><i class="ti ti-moon" aria-hidden="true"></i>${escapeHtml(entryWhen(h.snoozedUntil))}</span>`;
+  if(h.type === 'zero')return '<span class="context-pill"><i class="ti ti-ban" aria-hidden="true"></i>avoid</span>';
+  return `<span class="context-pill"><i class="ti ti-repeat" aria-hidden="true"></i>${h.target || 7}d</span>`;
+}
+
+function cardTrail(h){
+  const today = new Date();
+  const logKeys = logToneMap(h);
+  const lastWeekTones = Array.from({length:7},(_,i)=>{
+    const d = new Date(today.getFullYear(),today.getMonth(),today.getDate() - (13 - i));
+    const key = dateKey(d.getTime());
+    return logKeys.get(key) || '';
+  }).filter(Boolean);
+  const lastWeekTone = summarizeTrailTone(lastWeekTones);
+  const lastWeek = `<span class="trail-week ${lastWeekTone}" aria-hidden="true"></span>`;
+  const thisWeek = Array.from({length:7},(_,i)=>{
+    const d = new Date(today.getFullYear(),today.getMonth(),today.getDate() - (6 - i));
+    const key = dateKey(d.getTime());
+    const tone = logKeys.get(key) || '';
+    const todayClass = i === 6 ? ' today' : '';
+    return `<span class="trail-dot ${tone}${todayClass}"></span>`;
+  }).join('');
+  return `${lastWeek}${thisWeek}`;
+}
+
+function summarizeTrailTone(tones){
+  if(!tones.length)return '';
+  if(tones.includes('plan'))return 'plan';
+  if(tones.includes('miss'))return 'miss';
+  if(tones.includes('warn'))return 'warn';
+  if(tones.includes('hit'))return 'hit';
+  return '';
+}
+
 function render(){
   const data = load();
   const list = $('list');
@@ -323,6 +510,7 @@ function render(){
   empty.onclick = null;
   updateQuotaBar(sizeKb(data));
   updateSortButton();
+  updateOverallSummary(data);
 
   const indices = visibleIndices(data);
   list.classList.toggle('handles-visible',handlesVisible());
@@ -346,11 +534,13 @@ function render(){
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
     const plannedToday = hasPlannedToday(h);
-    const v = plannedToday ? 'planned today' : vibe(days,h.target,h.type);
-    const parts = metaLine(h);
-    const chipHtml = v ? `<span class="chip" style="background:${c.chipBg};color:${c.chipColor};">${v}</span>` : '';
+    const v = plannedToday ? 'planned today' : cardBadge(h);
+    const chipHtml = v ? `<span class="chip" style="background:${c.chipBg || 'var(--bg2)'};color:${c.chipColor || 'var(--text2)'};">${escapeHtml(v)}</span>` : '';
     const cardScore = progressScore(h);
-    const scoreText = cardScore === null ? 'No entries yet' : `${progressCopy(h,cardScore)} · ${cardScore}%`;
+    const cardScoreTone = scoreTone(cardScore);
+    const cue = cardCue(h);
+    const context = cardContext(h);
+    const trail = cardTrail(h);
     const planAction = h.type === 'zero'
       ? ''
       : `<button class="swipe-action sa-plan" data-action="plan-next" aria-label="plan ${escapeHtml(nextPlanLabel(h))}"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>plan</span><small>${escapeHtml(nextPlanLabel(h))}</small></button>`;
@@ -372,14 +562,15 @@ function render(){
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info">
-          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">
+          <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>${chipHtml}
           </div>
-          <div class="ting-meta" aria-label="status">
-            ${parts.map((p,i)=>i===0?`<span>${escapeHtml(p)}</span>`:`<span class="dot">·</span><span>${escapeHtml(p)}</span>`).join('')}
+          <div class="ting-cue">${escapeHtml(cue)}</div>
+          <div class="ting-meta" aria-label="status">${context}</div>
+          <div class="ting-visual" aria-hidden="true">
+            <div class="ting-trail">${trail}</div>
+            <div class="mini-score-ring ${cardScoreTone}" style="--score:${cardScore ?? 0};--score-color:${visualClassColor(cardScoreTone)};"></div>
           </div>
-          <div class="ting-meta" aria-label="progress">${escapeHtml(scoreText)}</div>
-          <div class="ting-progress" aria-hidden="true" style="--score:${cardScore ?? 0};"><span></span></div>
         </div>
       </div>`;
 
@@ -821,7 +1012,8 @@ function openConfirm(i){
 function openDetail(i){
   const h = load()[i];
   if(!h)return;
-  if(detailIdx !== i)detailMonthOffset = 0;
+  const changedHabit = detailIdx !== i;
+  if(changedHabit)detailMonthOffset = 0;
   detailIdx = i;
   const days = daysSince(h.lastLog);
   const c = colors(days,h.target,h.type);
@@ -845,6 +1037,11 @@ function openDetail(i){
   renderCalendar(h);
   setDetailDirty(false);
   openSheet('detail-sheet');
+  if(changedHabit){
+    const pager = $('detail-sheet').querySelector('.detail-pager');
+    if(pager)pager.scrollTo({left:0,behavior:'auto'});
+  }
+  updateDetailPagerDots();
 }
 
 function currentDetailTune(){
@@ -889,6 +1086,7 @@ function renderStats(h){
   const recent = recentWindowStats(h,30);
   const score = progressScore(h);
   const scoreLabel = score === null ? '-' : `${score}%`;
+  const scoreCls = scoreTone(score);
   const scoreName = h.type === 'keepup' ? 'progress' : h.type === 'reduce' ? 'gap' : 'avoidance';
   const monthLabel = 'last 30d';
   const monthValue = h.type === 'keepup' ? `${recent.good}/${recent.expected}` : recent.count;
@@ -896,7 +1094,7 @@ function renderStats(h){
   const runLabel = h.type === 'keepup' ? 'streak' : 'clear days';
   $('detail-stats').innerHTML = `
     <div class="score-card">
-      <div class="score-ring" style="--score:${score ?? 0};"><span>${scoreLabel}</span></div>
+      <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
       <div><div class="score-title">${scoreName}</div><div class="score-sub">${progressCopy(h,score)}</div></div>
     </div>
     <div class="stat"><div class="stat-num">${gapNum}</div><div class="stat-label">${gapLabel}</div></div>
@@ -922,14 +1120,19 @@ function progressScore(h){
   if(days < 0)return null;
   const target = h.target || 7;
   if(h.type === 'keepup'){
-    const ratio = Math.min(1.6,days / target);
-    return Math.max(0,Math.min(100,Math.round(100 - Math.max(0,ratio - 0.25) * 82)));
+    if(days <= target * 0.75)return 100;
+    if(days <= target)return Math.round(100 - ((days / target - 0.75) / 0.25) * 25);
+    if(days <= target * 1.35)return Math.round(74 - ((days / target - 1) / 0.35) * 29);
+    return Math.max(0,Math.round(44 - Math.min(1,(days / target - 1.35) / 0.65) * 44));
   }
   if(h.type === 'reduce'){
-    const ratio = Math.min(1.4,days / target);
-    return Math.max(0,Math.min(100,Math.round(ratio * 80)));
+    if(days >= target)return Math.min(100,Math.round(75 + Math.min(1,(days / target - 1) / 0.75) * 25));
+    if(days >= target * 0.65)return Math.round(45 + ((days / target - 0.65) / 0.35) * 29);
+    return Math.max(0,Math.round((days / (target * 0.65)) * 44));
   }
-  return Math.max(0,Math.min(100,Math.round(Math.min(days,30) / 30 * 100)));
+  if(days >= 14)return Math.min(100,Math.round(75 + Math.min(1,(days - 14) / 16) * 25));
+  if(days >= 4)return Math.round(45 + ((days - 4) / 10) * 29);
+  return Math.max(0,Math.round(days / 4 * 44));
 }
 
 function progressCopy(h,score){
@@ -997,10 +1200,7 @@ function renderGraph(h){
   const max = Math.max(...intervals,target,1);
   const bars = intervals.map((days,i)=>{
     const height = Math.max(12,Math.round((days / max) * 100));
-    let cls = 'hit';
-    if(h.type === 'keepup')cls = days <= target ? 'hit' : 'miss';
-    if(h.type === 'reduce')cls = days >= target ? 'hit' : 'warn';
-    if(h.type === 'zero')cls = days >= 3 ? 'hit' : 'miss';
+    const cls = intervalTone(h,days);
     return `<div class="bar ${cls}" style="height:${height}%"><span>${days}</span></div>`;
   }).join('');
   const targetPct = h.type === 'zero' ? null : Math.max(8,Math.min(92,Math.round((target / max) * 100)));
@@ -1014,9 +1214,11 @@ function renderGraph(h){
 
 function graphCaption(h,intervals){
   const last = intervals[intervals.length - 1];
-  if(h.type === 'keepup')return `last gap ${last}d. target is ${h.target || 7}d or less.`;
-  if(h.type === 'reduce')return `last gap ${last}d. more days between entries is better.`;
-  return `last clear stretch ${last}d. more days between entries is better.`;
+  const tone = intervalTone(h,last);
+  const label = tone === 'hit' ? 'good' : tone === 'warn' ? 'close' : 'needs work';
+  if(h.type === 'keepup')return `last gap ${last}d was ${label}. target is ${h.target || 7}d or less.`;
+  if(h.type === 'reduce')return `last gap ${last}d was ${label}. more space is better.`;
+  return `last clear stretch ${last}d was ${label}. longer is better.`;
 }
 
 function renderCalendar(h){
@@ -1024,6 +1226,7 @@ function renderCalendar(h){
   const {year,month,first,last,label,today} = frame;
   const logs = [...(h.logs || [])];
   const dayCounts = new Map();
+  const toneByDay = logToneMap(h);
   logs.forEach(ts=>{
     const key = dateKey(ts);
     dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
@@ -1036,11 +1239,11 @@ function renderCalendar(h){
 
   const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
   const blanks = Array.from({length:first.getDay()},()=>'<div class="cal-day blank"></div>');
-  const toneClass = h.type === 'zero' ? 'miss' : h.type === 'reduce' ? 'warn' : 'hit';
   const days = Array.from({length:last.getDate()},(_,i)=>{
     const date = new Date(year,month,i + 1);
     const key = dateKey(date.getTime());
     const count = dayCounts.get(key) || 0;
+    const toneClass = toneByDay.get(key) || '';
     const dots = count ? `<span class="cal-dots"><span class="cal-dot ${toneClass}"></span>${count > 1 ? `<span class="cal-more">+${count - 1}</span>` : ''}</span>` : '<span class="cal-dots"></span>';
     const cls = [
       count ? 'has-entry' : '',
@@ -1050,6 +1253,17 @@ function renderCalendar(h){
     return `<button class="cal-day ${cls}" data-entry-day="${key}"><span>${i + 1}</span>${dots}</button>`;
   });
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
+}
+
+function updateDetailPagerDots(){
+  const pager = $('detail-sheet').querySelector('.detail-pager');
+  const dots = [...$('detail-sheet').querySelectorAll('.detail-dots span')];
+  if(!pager || !dots.length)return;
+  const page = Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth));
+  dots.forEach((dot,i)=>{
+    dot.style.background = i === page ? 'var(--text)' : 'var(--border2)';
+    dot.style.opacity = i === page ? '0.9' : '0.7';
+  });
 }
 
 function hasPlannedEntryForDay(h,key){
@@ -1084,17 +1298,24 @@ function renderOverview(){
   const byDay = new Map();
   let total = 0;
   data.forEach(h=>{
+    const toneByDay = logToneMap(h);
     (h.logs || []).forEach(ts=>{
       const d = new Date(ts);
       if(d.getFullYear() !== frame.year || d.getMonth() !== frame.month)return;
       const key = dateKey(ts);
       if(!byDay.has(key))byDay.set(key,[]);
-      byDay.get(key).push({name:h.name,type:h.type});
+      byDay.get(key).push({name:h.name,type:h.type,tone:toneByDay.get(key) || entryTone(h.type)});
       total += 1;
     });
   });
 
-  $('overview-copy').textContent = data.length ? `${total} entries across ${data.length} habits.` : 'All entries and planned dates.';
+  const planned = data.reduce((sum,h)=>sum + (h.logs || []).filter(ts=>{
+    const d = new Date(ts);
+    return ts > Date.now() && d.getFullYear() === frame.year && d.getMonth() === frame.month;
+  }).length,0);
+  $('overview-copy').textContent = total
+    ? `${total} entries${planned ? `, ${planned} planned` : ''} this month.`
+    : 'No entries or plans this month.';
   $('overview-calendar-label').textContent = frame.label;
   const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
   const blanks = Array.from({length:frame.first.getDay()},()=>'<div class="cal-day blank"></div>');
@@ -1102,7 +1323,7 @@ function renderOverview(){
     const date = new Date(frame.year,frame.month,i + 1);
     const key = dateKey(date.getTime());
     const entries = byDay.get(key) || [];
-    const dots = entries.slice(0,3).map(item=>`<span class="cal-dot ${entryTone(item.type)}"></span>`).join('');
+    const dots = entries.slice(0,3).map(item=>`<span class="cal-dot ${item.tone}"></span>`).join('');
     const more = entries.length > 3 ? `<span class="cal-more">+${entries.length - 3}</span>` : '';
     const cls = [
       entries.length ? 'has-entry' : '',
@@ -1598,6 +1819,9 @@ $('detail-next-month').addEventListener('click',()=>{
   detailMonthOffset += 1;
   renderCalendar(load()[detailIdx]);
 });
+$('detail-sheet').querySelector('.detail-pager')?.addEventListener('scroll',()=>{
+  requestAnimationFrame(updateDetailPagerDots);
+},{passive:true});
 
 $('open-about').addEventListener('click',()=>openSheet('about-sheet'));
 $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
@@ -1676,6 +1900,7 @@ $('day-entry-sheet').addEventListener('click',e=>{if(e.target === e.currentTarge
 
 $('day-logs-close').addEventListener('click',()=>{dayLogsKey = null;closeSheet('day-logs-sheet');});
 $('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');}});
+$('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');}});
 $('undo-action').addEventListener('click',undoLastAction);
 
 $('list').addEventListener('touchstart',e=>{
