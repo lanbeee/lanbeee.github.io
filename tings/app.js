@@ -1,5 +1,5 @@
 const KEY = 'tings_v2';
-const SORT_SETTINGS_KEY = 'tings_sort_settings_v1';
+const SORT_SETTINGS_KEY = 'tings_app_settings_v2';
 const MAX_LOGS = 500;
 const MAX_TINGS = 300;
 const QUOTA_WARN_KB = 2048;
@@ -31,6 +31,7 @@ const $ = id => document.getElementById(id);
 let pendingIdx = null;
 let detailIdx = null;
 let snoozeIdx = null;
+let snoozeFromDetail = false;
 let dayEntryIdx = null;
 let dayEntryTs = null;
 let detailMonthOffset = 0;
@@ -57,6 +58,7 @@ let topTouchStartedAtTop = false;
 let reachArmed = false;
 let buttonPointer = null;
 let suppressNativeButton = null;
+let settingsPointer = null;
 let detailTuneOriginal = null;
 let calendarPointer = null;
 let cardPointer = null;
@@ -927,6 +929,7 @@ function openDetail(i){
   $('detail-emoji').value = h.emoji || '';
   $('detail-days').value = h.target || '';
   $('detail-pinned').checked = Boolean(h.pinned);
+  $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
   detailTuneOriginal = {
     name:h.name || '',
@@ -1554,6 +1557,7 @@ function updateHeaderOnScroll(){
 function forgivingButtonTarget(target){
   const btn = target.closest('button');
   if(!btn || btn.closest('.ting-card'))return null;
+  if(btn.closest('#settings-sheet'))return null;
   if(btn.closest('.month-nav'))return null;
   if(btn.classList.contains('cal-day'))return null;
   return btn;
@@ -1649,6 +1653,8 @@ function applyAddDefaults(){
 
 function syncSettingsControls(){
   sortSettings = loadSortSettings();
+  const resetConfirm = $('settings-reset-confirm');
+  if(resetConfirm)resetConfirm.hidden = true;
   document.querySelectorAll('#sort-focus-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.focus === sortSettings.focus);
   });
@@ -1658,11 +1664,9 @@ function syncSettingsControls(){
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
   });
-  $('setting-plans-first').checked = Boolean(sortSettings.plansFirst);
-  $('setting-stops-quiet').checked = Boolean(sortSettings.keepStopsQuiet);
-  $('setting-show-snoozed').checked = Boolean(sortSettings.showSnoozed);
-  $('setting-require-confirm').checked = Boolean(sortSettings.requireConfirm);
-  $('setting-reach-assist').checked = Boolean(sortSettings.reachAssist);
+  document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
+    btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
+  });
   syncSettingRange('plan-weight',sortSettings.planWeight,'%');
   syncSettingRange('build-weight',sortSettings.buildWeight,'%');
   syncSettingRange('limit-weight',sortSettings.limitWeight,'%');
@@ -1671,11 +1675,31 @@ function syncSettingsControls(){
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
 }
 
-function updateSortSetting(patch){
+function updateSortSetting(patch,options = {}){
+  const {sync = true,renderNow = true} = options;
   saveSortSettings({...sortSettings,...patch});
-  syncSettingsControls();
+  if(sync)syncSettingsControls();
   if(sortSettings.reachAssist === false)document.body.classList.remove('reach-pad');
-  render();
+  if(renderNow)render();
+}
+
+function toggleAppSettingButton(btn){
+  if(!btn)return;
+  const key = btn.dataset.settingToggle;
+  if(!key)return;
+  updateSortSetting({[key]:!Boolean(sortSettings[key])});
+}
+
+function setAdvancedSettingsOpen(open){
+  const block = $('settings-advanced');
+  const body = $('settings-advanced-body');
+  body.hidden = !open;
+  block.classList.toggle('open',open);
+  $('settings-advanced-toggle').setAttribute('aria-expanded',String(open));
+}
+
+function toggleAdvancedSettings(){
+  setAdvancedSettingsOpen($('settings-advanced-body').hidden);
 }
 
 function syncSettingRange(name,value,suffix){
@@ -1692,7 +1716,10 @@ function bindSettingRange(name,key,suffix){
   field.addEventListener('input',e=>{
     const value = parseInt(e.target.value,10);
     syncSettingRange(name,value,suffix);
-    updateSortSetting({[key]:value});
+    updateSortSetting({[key]:value},{sync:false,renderNow:false});
+  });
+  field.addEventListener('change',()=>{
+    render();
   });
 }
 
@@ -1889,6 +1916,23 @@ $('detail-add').addEventListener('click',()=>{
 });
 $('detail-cool').addEventListener('click',closeDetail);
 $('detail-close').addEventListener('click',()=>{restoreDetailTune();closeDetail();});
+$('detail-snooze').addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  snoozeFromDetail = true;
+  openSnooze(detailIdx);
+});
+$('detail-delete').addEventListener('click',()=>{
+  $('detail-delete-confirm').hidden = false;
+});
+$('detail-delete-no').addEventListener('click',()=>{
+  $('detail-delete-confirm').hidden = true;
+});
+$('detail-delete-yes').addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  const idx = detailIdx;
+  closeDetail();
+  doNuke(idx);
+});
 $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeDetail();});
 $('detail-sheet').querySelectorAll('.detail-actions button').forEach(btn=>{
   btn.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
@@ -1931,6 +1975,7 @@ $('open-settings').addEventListener('click',()=>{
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('settings-advanced-toggle').addEventListener('click',toggleAdvancedSettings);
 $('sort-focus-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-focus]');
   if(!opt)return;
@@ -1948,11 +1993,28 @@ $('default-type-seg').addEventListener('click',e=>{
   if(!opt)return;
   updateSortSetting({defaultType:opt.dataset.defaultType});
 });
-$('setting-plans-first').addEventListener('change',e=>updateSortSetting({plansFirst:e.target.checked}));
-$('setting-stops-quiet').addEventListener('change',e=>updateSortSetting({keepStopsQuiet:e.target.checked}));
-$('setting-show-snoozed').addEventListener('change',e=>updateSortSetting({showSnoozed:e.target.checked}));
-$('setting-require-confirm').addEventListener('change',e=>updateSortSetting({requireConfirm:e.target.checked}));
-$('setting-reach-assist').addEventListener('change',e=>updateSortSetting({reachAssist:e.target.checked}));
+document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
+  btn.addEventListener('click',()=>toggleAppSettingButton(btn));
+});
+$('settings-sheet').addEventListener('pointerdown',e=>{
+  const control = e.target.closest('[data-setting-toggle],#settings-advanced-toggle');
+  if(!control)return;
+  settingsPointer = {control,id:e.pointerId,x:e.clientX,y:e.clientY};
+},{passive:true});
+$('settings-sheet').addEventListener('pointerup',e=>{
+  if(!settingsPointer || settingsPointer.id !== e.pointerId)return;
+  const {control,x,y} = settingsPointer;
+  settingsPointer = null;
+  const moved = Math.hypot(e.clientX - x,e.clientY - y);
+  if(moved > 18)return;
+  e.preventDefault();
+  e.stopPropagation();
+  if(control.matches('[data-setting-toggle]'))toggleAppSettingButton(control);
+  else toggleAdvancedSettings();
+  suppressNativeButton = control;
+  setTimeout(()=>{if(suppressNativeButton === control)suppressNativeButton = null;},80);
+});
+$('settings-sheet').addEventListener('pointercancel',()=>{settingsPointer = null;},{passive:true});
 bindSettingRange('plan-weight','planWeight','%');
 bindSettingRange('build-weight','buildWeight','%');
 bindSettingRange('limit-weight','limitWeight','%');
@@ -1960,6 +2022,12 @@ bindSettingRange('stop-weight','stopWeight','%');
 bindSettingRange('new-weight','newWeight','%');
 bindSettingRange('default-target','defaultTarget','d');
 $('settings-reset').addEventListener('click',()=>{
+  $('settings-reset-confirm').hidden = false;
+});
+$('settings-reset-no').addEventListener('click',()=>{
+  $('settings-reset-confirm').hidden = true;
+});
+$('settings-reset-yes').addEventListener('click',()=>{
   saveSortSettings({...DEFAULT_SORT_SETTINGS});
   syncSettingsControls();
   render();
@@ -2020,11 +2088,13 @@ $('snooze-sheet').addEventListener('click',e=>{
   if(!opt || snoozeIdx === null)return;
   const days = parseInt(opt.dataset.snoozeDays,10);
   doSnooze(snoozeIdx,days);
+  if(snoozeFromDetail)closeDetail();
   snoozeIdx = null;
+  snoozeFromDetail = false;
   closeSheet('snooze-sheet');
 });
-$('snooze-cancel').addEventListener('click',()=>{snoozeIdx = null;closeSheet('snooze-sheet');});
-$('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){snoozeIdx = null;closeSheet('snooze-sheet');}});
+$('snooze-cancel').addEventListener('click',()=>{snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');});
+$('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');}});
 
 $('day-entry-save').addEventListener('click',()=>{
   if(dayEntryIdx === null || dayEntryTs === null)return;
