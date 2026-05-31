@@ -29,9 +29,6 @@
     <button class="icon-btn" id="open-overview" aria-label="calendar">
       <i class="ti ti-calendar-month" aria-hidden="true"></i>
     </button>
-    <button class="icon-btn" id="toggle-sort" aria-label="sort order">
-      <i class="ti ti-arrows-sort" aria-hidden="true"></i>
-    </button>
     <button class="icon-btn nav-add" id="open-add" aria-label="add habit">
       <i class="ti ti-plus" aria-hidden="true"></i>
     </button>
@@ -107,13 +104,30 @@
               <button class="mini-nav" id="detail-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
             </div>
           </div>
+          <div class="overview-stats compact-stats" id="detail-calendar-summary"></div>
           <div class="month-grid rich-month-grid" id="detail-calendar"></div>
+          <div class="calendar-legend" aria-hidden="true">
+            <span><b class="hit"></b>good</span>
+            <span><b class="warn"></b>close</span>
+            <span><b class="miss"></b>care</span>
+            <span><b class="plan"></b>planned</span>
+          </div>
         </section>
         <section class="detail-page detail-section tune-section">
           <span class="section-label">settings</span>
-          <div class="edit-row">
+          <div class="name-icon-row">
+            <input type="text" id="detail-habit-name" placeholder="name" autocomplete="off" autocorrect="off" spellcheck="false" />
             <input type="text" id="detail-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
           </div>
+          <div class="seg" id="detail-type-seg">
+            <button class="seg-opt" data-detail-type="keepup">build</button>
+            <button class="seg-opt" data-detail-type="reduce">limit</button>
+            <button class="seg-opt" data-detail-type="zero">stop</button>
+          </div>
+          <label class="setting-toggle habit-toggle">
+            <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
+            <input type="checkbox" id="detail-pinned" />
+          </label>
           <p class="field-hint" id="detail-target-help">Target days between entries.</p>
           <div class="range-row" id="detail-slider-row">
             <input type="range" id="detail-days-slider" min="1" max="90" value="7" />
@@ -142,6 +156,7 @@
         <div>
           <p class="sheet-title">calendar</p>
           <p class="about-copy" id="overview-copy">Entries and plans by day.</p>
+          <div class="overview-stats" id="overview-stats"></div>
         </div>
       </div>
       <div class="month-card overview-card">
@@ -154,6 +169,12 @@
             </div>
           </div>
         <div class="month-grid rich-month-grid" id="overview-calendar"></div>
+        <div class="calendar-legend" aria-hidden="true">
+          <span><b class="hit"></b>good</span>
+          <span><b class="warn"></b>close</span>
+          <span><b class="miss"></b>care</span>
+          <span><b class="plan"></b>planned</span>
+        </div>
       </div>
       <div class="overview-list" id="overview-list"></div>
       <div class="btn-row overview-actions">
@@ -165,18 +186,125 @@
   <!-- about sheet -->
   <div class="sheet-wrap" id="about-sheet">
     <div class="sheet about-sheet">
-      <p class="sheet-title">how it works</p>
-      <p class="about-copy">A "habit" is something you want to keep doing, do less often, or stop. An entry means it happened once. A future entry is a plan.</p>
+      <p class="sheet-title">Habits</p>
+      <p class="about-copy">A small place to notice what you want to build, limit, or stop. No account needed. Your entries stay in this browser on this device.</p>
       <div class="about-stack">
-        <section class="about-block"><span>log</span><p>Tap the big icon to log today with confirmation. Double tap a card to log quickly.</p></section>
-        <section class="about-block"><span>type</span><p>Build is for habits you want more of. Limit is for things you want less often. Stop is for things you want to avoid.</p></section>
-        <section class="about-block"><span>calendar</span><p>Tap a date to see what happened, add a past entry, or plan a future entry.</p></section>
-        <section class="about-block"><span>order</span><p>Smart order shows what needs attention. Custom order appears when you have more than four habits.</p></section>
-        <section class="about-block"><span>stats</span><p>Open a habit and swipe sideways between insight, calendar, and settings. Avg gap is your usual spacing. Planned counts future entries.</p></section>
-        <section class="about-block"><span>swipe</span><p>Swipe right to plan the next target date. Swipe left to snooze or remove.</p></section>
+        <section class="about-block calm-block"><span>Start simple</span><p>Add one habit, choose build, limit, or stop, then tap its icon when it happens. You can change the name, icon, type, and rhythm later.</p></section>
+        <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
+        <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
+        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order brings up what may need attention. Settings can make this calmer or more active.</p></section>
+        <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
+        <section class="about-block calm-block"><span>Quick actions</span><p>Double tap a card to log quickly. Swipe right to pin or plan. Swipe left to snooze or remove.</p></section>
       </div>
       <div class="btn-row about-actions">
+        <button class="btn" id="open-settings">settings</button>
         <button class="btn primary" id="about-close">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- settings sheet -->
+  <div class="sheet-wrap" id="settings-sheet">
+    <div class="sheet settings-sheet">
+      <p class="sheet-title">settings</p>
+      <p class="about-copy">These shape how the home list decides what to show first.</p>
+      <div class="settings-stack">
+        <section class="settings-block">
+          <span class="settings-label">auto order focus</span>
+          <div class="seg compact-seg" id="sort-focus-seg">
+            <button class="seg-opt" data-focus="balanced">balanced</button>
+            <button class="seg-opt" data-focus="build">build</button>
+            <button class="seg-opt" data-focus="space">space</button>
+          </div>
+          <p class="field-hint">Balanced is best for most people. Build favors due build habits. Space favors limit and stop habits.</p>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label">sort weights</span>
+          <label class="settings-range">
+            <span>planned</span>
+            <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
+            <output id="setting-plan-weight-label"></output>
+          </label>
+          <label class="settings-range">
+            <span>build</span>
+            <input type="range" id="setting-build-weight" min="0" max="200" step="10" />
+            <output id="setting-build-weight-label"></output>
+          </label>
+          <label class="settings-range">
+            <span>limit</span>
+            <input type="range" id="setting-limit-weight" min="0" max="200" step="10" />
+            <output id="setting-limit-weight-label"></output>
+          </label>
+          <label class="settings-range">
+            <span>stop</span>
+            <input type="range" id="setting-stop-weight" min="0" max="200" step="10" />
+            <output id="setting-stop-weight-label"></output>
+          </label>
+          <label class="settings-range">
+            <span>new</span>
+            <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
+            <output id="setting-new-weight-label"></output>
+          </label>
+          <p class="field-hint">100 is normal. Lower means quieter. Higher means it rises sooner.</p>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label">planned window</span>
+          <div class="seg compact-seg" id="plan-window-seg">
+            <button class="seg-opt" data-window="1">today</button>
+            <button class="seg-opt" data-window="3">3 days</button>
+            <button class="seg-opt" data-window="7">week</button>
+          </div>
+          <p class="field-hint">Controls how early planned habits can move up.</p>
+        </section>
+        <section class="settings-block">
+          <label class="setting-toggle">
+            <span><b>plans first</b><small>Planned habits inside the window move near the top.</small></span>
+            <input type="checkbox" id="setting-plans-first" />
+          </label>
+        </section>
+        <section class="settings-block">
+          <label class="setting-toggle">
+            <span><b>keep stop habits quiet</b><small>Stop habits stay lower unless there was a recent reset.</small></span>
+            <input type="checkbox" id="setting-stops-quiet" />
+          </label>
+        </section>
+        <section class="settings-block">
+          <label class="setting-toggle">
+            <span><b>show snoozed habits</b><small>Keep hidden habits visible, faded, on the home screen.</small></span>
+            <input type="checkbox" id="setting-show-snoozed" />
+          </label>
+        </section>
+        <section class="settings-block">
+          <label class="setting-toggle">
+            <span><b>confirm home icon</b><small>Ask before logging from the big icon on a card.</small></span>
+            <input type="checkbox" id="setting-require-confirm" />
+          </label>
+        </section>
+        <section class="settings-block">
+          <label class="setting-toggle">
+            <span><b>reach space</b><small>Allow the intentional pull-and-hold space at the top.</small></span>
+            <input type="checkbox" id="setting-reach-assist" />
+          </label>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label">new habit default</span>
+          <div class="seg compact-seg" id="default-type-seg">
+            <button class="seg-opt" data-default-type="keepup">build</button>
+            <button class="seg-opt" data-default-type="reduce">limit</button>
+            <button class="seg-opt" data-default-type="zero">stop</button>
+          </div>
+          <label class="settings-range">
+            <span>days</span>
+            <input type="range" id="setting-default-target" min="1" max="90" />
+            <output id="setting-default-target-label"></output>
+          </label>
+        </section>
+        <section class="settings-block">
+          <button class="btn" id="settings-reset">reset settings</button>
+        </section>
+      </div>
+      <div class="btn-row settings-actions">
+        <button class="btn primary" id="settings-close">done</button>
       </div>
     </div>
   </div>
