@@ -414,6 +414,7 @@ function setupSwipe(row){
   const leftActions = row.querySelector('.swipe-actions-left');
   const rightActions = row.querySelector('.swipe-actions-right');
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
+  let startedOpen = false;
 
   function revealWidth(actions){
     return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
@@ -424,6 +425,7 @@ function setupSwipe(row){
     if(e.target.closest('.drag-handle'))return;
     const t = e.changedTouches[0];
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
+    startedOpen = swipeOpenCard === card;
     if(swipeOpenCard && swipeOpenCard !== card){
       closeAllSwipes();
     }
@@ -437,8 +439,15 @@ function setupSwipe(row){
     const ddx = t.clientX - startX;
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
+    if(startedOpen){
+      if(Math.abs(ddx) > 12){
+        closeAllSwipes();
+        moved = true;dx = 0;
+      }
+      return;
+    }
     const openDir = swipeOpenCard === card ? parseInt(row.dataset.swipeOpen || '0',10) : 0;
-    if(openDir && Math.sign(ddx) === -openDir && Math.abs(ddx) > 12){
+    if(openDir){
       closeAllSwipes();
       moved = true;dx = 0;
       return;
@@ -462,6 +471,10 @@ function setupSwipe(row){
 
   row.addEventListener('touchend',()=>{
     if(isDragging || !moved)return;
+    if(startedOpen){
+      startedOpen = false;
+      return;
+    }
     const dir = dx > 0 ? 1 : -1;
     const activeActions = dir > 0 ? leftActions : rightActions;
     const inactiveActions = dir > 0 ? rightActions : leftActions;
@@ -1621,8 +1634,7 @@ $('day-log-add').addEventListener('click',()=>{
   const ts = new Date(`${dayLogsKey}T12:00:00`).getTime();
   if(!logTingAt(idx,ts))return;
   renderDayLogs(dayLogsKey);
-  render();
-  if($('overview-sheet').classList.contains('open'))renderOverview();
+  refreshOpenViews();
 });
 $('day-logs-list').addEventListener('click',e=>{
   const btn = e.target.closest('[data-remove-plan]');
@@ -1655,10 +1667,9 @@ $('day-entry-save').addEventListener('click',()=>{
   const ts = dayEntryTs;
   if(!logTingAt(dayEntryIdx,ts))return;
   closeSheet('day-entry-sheet');
-  if(detailIdx !== null)openDetail(detailIdx);
   dayEntryIdx = null;
   dayEntryTs = null;
-  if(detailIdx === null)render();
+  refreshOpenViews();
 });
 $('day-entry-cancel').addEventListener('click',()=>{dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');});
 $('day-entry-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');}});
