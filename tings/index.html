@@ -3,8 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
 <title>Habits</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<style>
+  html{background:#f5f4f0;color-scheme:light dark;}
+  @media (prefers-color-scheme:dark){html{background:#2c2c2e;}}
+</style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
 <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -189,12 +194,12 @@
       <p class="sheet-title">Habits</p>
       <p class="about-copy">A small place to notice what you want to build, limit, or stop. No account needed. Your entries stay in this browser on this device.</p>
       <div class="about-stack">
-        <section class="about-block calm-block"><span>Start simple</span><p>Add one habit, choose build, limit, or stop, then tap its icon when it happens. You can change the name, icon, type, and rhythm later.</p></section>
+        <section class="about-block calm-block"><span>Start simple</span><p>Add one habit, choose build, limit, or stop, then tap its icon when it happens. Tap Habits at the top any time to come back here or open settings.</p></section>
         <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
         <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
         <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order brings up what may need attention. Settings can make this calmer or more active.</p></section>
         <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
-        <section class="about-block calm-block"><span>Quick actions</span><p>Double tap a card to log quickly. Swipe right to pin or plan. Swipe left to snooze or remove.</p></section>
+        <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon to log with confirmation. Double tap anywhere on a card to log quickly. Swipe right to pin or plan. Swipe left to snooze or remove.</p></section>
       </div>
       <div class="btn-row about-actions">
         <button class="btn" id="open-settings">settings</button>
