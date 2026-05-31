@@ -14,9 +14,12 @@
   <div class="topbar">
     <button class="wordmark" id="open-about" aria-label="how it works">
       <img src="./favicon.svg" alt="" aria-hidden="true" />
-      <span>Habits</span>
+      <span class="wordmark-copy">
+        <span>Habits</span>
+      </span>
     </button>
   </div>
+  <p class="overall-summary" id="overall-summary">getting started</p>
 
   <div id="quota-bar"></div>
   <div id="list"></div>
@@ -85,40 +88,43 @@
         </div>
         <button class="mini-add" id="detail-add" aria-label="add entry"><i class="ti ti-plus" aria-hidden="true"></i></button>
       </div>
-      <div class="detail-card">
-        <p class="detail-about" id="detail-about"></p>
-        <div class="section-top">
-          <span class="section-label">insight</span>
-          <span class="trend-copy" id="detail-trend"></span>
-        </div>
-        <div class="stats-row" id="detail-stats"></div>
-        <div class="graph" id="detail-graph"></div>
-      </div>
-      <div class="month-card">
-        <div class="section-top">
-          <span class="section-label">month</span>
-          <div class="month-nav">
-            <button class="mini-nav" id="detail-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
-            <span class="trend-copy" id="detail-calendar-label"></span>
-            <button class="mini-nav" id="detail-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+      <div class="detail-pager" aria-label="habit details">
+        <section class="detail-page detail-card">
+          <p class="detail-about" id="detail-about"></p>
+          <div class="section-top">
+            <span class="section-label">insight</span>
+            <span class="trend-copy" id="detail-trend"></span>
           </div>
-        </div>
-        <div class="month-grid rich-month-grid" id="detail-calendar"></div>
+          <div class="stats-row" id="detail-stats"></div>
+          <div class="graph" id="detail-graph"></div>
+        </section>
+        <section class="detail-page month-card">
+          <div class="section-top">
+            <span class="section-label">month</span>
+            <div class="month-nav">
+              <button class="mini-nav" id="detail-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+              <span class="trend-copy" id="detail-calendar-label"></span>
+              <button class="mini-nav" id="detail-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </div>
+          <div class="month-grid rich-month-grid" id="detail-calendar"></div>
+        </section>
+        <section class="detail-page detail-section tune-section">
+          <span class="section-label">settings</span>
+          <div class="edit-row">
+            <input type="text" id="detail-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
+          </div>
+          <p class="field-hint" id="detail-target-help">Target days between entries.</p>
+          <div class="range-row" id="detail-slider-row">
+            <input type="range" id="detail-days-slider" min="1" max="90" value="7" />
+            <label class="range-value" aria-label="day rhythm">
+              <input type="text" id="detail-days" inputmode="numeric" maxlength="2" value="7" />
+              <span>d</span>
+            </label>
+          </div>
+        </section>
       </div>
-      <div class="detail-section tune-section">
-        <span class="section-label">settings</span>
-        <div class="edit-row">
-          <input type="text" id="detail-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
-        </div>
-        <p class="field-hint" id="detail-target-help">Target days between entries.</p>
-        <div class="range-row" id="detail-slider-row">
-          <input type="range" id="detail-days-slider" min="1" max="90" value="7" />
-          <label class="range-value" aria-label="day rhythm">
-            <input type="text" id="detail-days" inputmode="numeric" maxlength="2" value="7" />
-            <span>d</span>
-          </label>
-        </div>
-      </div>
+      <div class="detail-dots" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="btn-row detail-actions" id="detail-cool-row">
         <button class="btn primary" id="detail-cool">done</button>
       </div>
@@ -135,12 +141,12 @@
       <div class="page-head">
         <div>
           <p class="sheet-title">calendar</p>
-          <p class="about-copy" id="overview-copy">All entries and planned dates.</p>
+          <p class="about-copy" id="overview-copy">Entries and plans by day.</p>
         </div>
       </div>
       <div class="month-card overview-card">
           <div class="section-top">
-            <span class="section-label">month</span>
+            <span class="section-label">activity</span>
             <div class="month-nav">
             <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
             <span class="trend-copy" id="overview-calendar-label"></span>
@@ -166,7 +172,7 @@
         <section class="about-block"><span>type</span><p>Build is for habits you want more of. Limit is for things you want less often. Stop is for things you want to avoid.</p></section>
         <section class="about-block"><span>calendar</span><p>Tap a date to see what happened, add a past entry, or plan a future entry.</p></section>
         <section class="about-block"><span>order</span><p>Smart order shows what needs attention. Custom order appears when you have more than four habits.</p></section>
-        <section class="about-block"><span>stats</span><p>Progress shows how close you are to the target. Avg gap is your usual spacing. Planned counts future entries.</p></section>
+        <section class="about-block"><span>stats</span><p>Open a habit and swipe sideways between insight, calendar, and settings. Avg gap is your usual spacing. Planned counts future entries.</p></section>
         <section class="about-block"><span>swipe</span><p>Swipe right to plan the next target date. Swipe left to snooze or remove.</p></section>
       </div>
       <div class="btn-row about-actions">
