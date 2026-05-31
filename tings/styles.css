@@ -690,6 +690,7 @@ input[type=range]::-moz-range-thumb{
   margin:12px 0 7px;text-transform:none;
 }
 .compact-seg{margin-bottom:9px;}
+.settings-block .compact-seg .seg-opt{font-size:12px;min-height:40px;padding:8px 4px;}
 .settings-grid{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
 .setting-toggle{
   display:flex;align-items:center;justify-content:space-between;gap:14px;
@@ -741,6 +742,7 @@ button.setting-toggle{
   display:grid;grid-template-columns:54px minmax(0,1fr) 44px;
   align-items:center;gap:10px;margin:10px 0;
 }
+.settings-range.wide-label{grid-template-columns:76px minmax(0,1fr) 72px;}
 .settings-range.simple-range{margin-bottom:0;}
 .settings-range span{
   color:var(--text);font-size:12px;font-weight:650;white-space:nowrap;

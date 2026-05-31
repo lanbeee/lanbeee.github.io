@@ -20,6 +20,12 @@ const DEFAULT_SORT_SETTINGS = {
   limitWeight:100,
   stopWeight:55,
   newWeight:100,
+  newBuildMode:'gentle',
+  dueMode:'relative',
+  buildLookAheadDays:3,
+  buildRiseAt:75,
+  limitMode:'overdue',
+  rhythmBias:0,
   requireConfirm:true,
   reachAssist:true,
   defaultType:'keepup',
@@ -284,6 +290,35 @@ function settingScale(value){
   return Math.max(0,Math.min(2,(parseInt(value,10) || 0) / 100));
 }
 
+function clampNumber(value,min,max,fallback){
+  const num = parseInt(value,10);
+  if(Number.isNaN(num))return fallback;
+  return Math.max(min,Math.min(max,num));
+}
+
+function rhythmBiasScore(target,settings){
+  const bias = clampNumber(settings.rhythmBias, -100, 100, 0) / 100;
+  if(!bias)return 0;
+  const normalized = Math.max(0,Math.min(1,(target || 7) / 90));
+  if(bias > 0)return (1 - normalized) * 34 * bias;
+  return normalized * 34 * Math.abs(bias);
+}
+
+function buildUrgency(days,target,settings){
+  const mode = settings.dueMode || 'relative';
+  if(days === null)return null;
+  const ratio = days / target;
+  if(mode === 'date' || mode === 'short'){
+    const remaining = target - days;
+    if(remaining <= 0)return 1 + Math.min(0.75,Math.abs(remaining) / Math.max(3,target));
+    const lookAhead = clampNumber(settings.buildLookAheadDays,1,14,3);
+    const dateUrgency = Math.max(0,1 - remaining / lookAhead);
+    if(mode === 'short')return dateUrgency + Math.max(0,(14 - Math.min(target,14)) / 14) * 0.32;
+    return dateUrgency;
+  }
+  return ratio;
+}
+
 function plannedWithinWindow(h,windowDays){
   const plan = nextPlannedLog(h);
   if(!plan || h.type === 'zero')return false;
@@ -306,12 +341,20 @@ function attentionScore(h,index){
   if(settings.plansFirst && plannedWithinWindow(h,settings.planWindowDays ?? 1))score += 320 * planScale;
 
   if(h.type === 'keepup'){
-    if(days === null)score += 130 * newScale;
+    if(days === null){
+      const mode = settings.newBuildMode || 'gentle';
+      if(mode === 'quiet')score += 30 * newScale;
+      else if(mode === 'rise')score += 165 * newScale;
+      else score += 95 * newScale;
+      if(focus === 'build' && mode === 'rise')score += 45 * newScale;
+    }
     else{
-      const ratio = days / target;
-      if(ratio >= 1)score += 260 + Math.min(55,ratio * 14);
-      else if(ratio >= 0.75)score += 185 + ratio * 35;
-      else score += 70 + ratio * 70;
+      const urgency = buildUrgency(days,target,settings);
+      const riseAt = clampNumber(settings.buildRiseAt,40,110,75) / 100;
+      if(urgency >= 1)score += 260 + Math.min(70,(urgency - 1) * 60);
+      else if(urgency >= riseAt)score += 165 + ((urgency - riseAt) / Math.max(0.05,1 - riseAt)) * 80;
+      else score += 45 + urgency * 70;
+      score += rhythmBiasScore(target,settings);
     }
     if(focus === 'build')score *= 1.22;
     if(focus === 'space')score *= 0.9;
@@ -323,10 +366,24 @@ function attentionScore(h,index){
     if(days === null)score += 38 * newScale;
     else{
       const ratio = days / target;
-      if(ratio >= 1.25)score += 92 + Math.min(24,(ratio - 1.25) * 18);
-      else if(ratio >= 1)score += 68 + ratio * 12;
-      else if(ratio >= 0.75)score += 42 + ratio * 12;
-      else score += 18 + ratio * 20;
+      const mode = settings.limitMode || 'overdue';
+      if(mode === 'quiet'){
+        if(ratio >= 1.5)score += 55 + Math.min(22,(ratio - 1.5) * 16);
+        else score += 10 + ratio * 16;
+      }else if(mode === 'active'){
+        if(ratio >= 1.1)score += 115 + Math.min(30,(ratio - 1.1) * 20);
+        else if(ratio >= 0.75)score += 72 + ratio * 20;
+        else score += 24 + ratio * 26;
+      }else if(mode === 'near'){
+        if(ratio >= 1.15)score += 98 + Math.min(26,(ratio - 1.15) * 18);
+        else if(ratio >= 0.85)score += 58 + ratio * 18;
+        else score += 18 + ratio * 20;
+      }else{
+        if(ratio >= 1.25)score += 92 + Math.min(24,(ratio - 1.25) * 18);
+        else if(ratio >= 1)score += 62 + ratio * 10;
+        else score += 14 + ratio * 16;
+      }
+      score += rhythmBiasScore(target,settings) * 0.35;
     }
     if(focus === 'space')score *= 1.35;
     if(focus === 'build')score *= 0.78;
@@ -1661,6 +1718,18 @@ function syncSettingsControls(){
   document.querySelectorAll('#plan-window-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',parseInt(btn.dataset.window,10) === (sortSettings.planWindowDays ?? 1));
   });
+  document.querySelectorAll('#new-build-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.newBuild === (sortSettings.newBuildMode || 'gentle'));
+  });
+  document.querySelectorAll('#due-mode-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.dueMode === (sortSettings.dueMode || 'relative'));
+  });
+  document.querySelectorAll('#build-window-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',parseInt(btn.dataset.buildWindow,10) === (sortSettings.buildLookAheadDays ?? 3));
+  });
+  document.querySelectorAll('#limit-mode-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.limitMode === (sortSettings.limitMode || 'overdue'));
+  });
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
   });
@@ -1672,6 +1741,8 @@ function syncSettingsControls(){
   syncSettingRange('limit-weight',sortSettings.limitWeight,'%');
   syncSettingRange('stop-weight',sortSettings.stopWeight,'%');
   syncSettingRange('new-weight',sortSettings.newWeight,'%');
+  syncSettingRange('build-start',sortSettings.buildRiseAt,'%');
+  syncSettingRange('rhythm-bias',sortSettings.rhythmBias,'');
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
 }
 
@@ -1707,7 +1778,12 @@ function syncSettingRange(name,value,suffix){
   const label = $(`setting-${name}-label`);
   if(!field || !label)return;
   field.value = value;
-  label.textContent = `${value}${suffix}`;
+  if(name === 'rhythm-bias'){
+    const num = parseInt(value,10) || 0;
+    label.textContent = num === 0 ? 'even' : num > 0 ? `short +${num}` : `long +${Math.abs(num)}`;
+  }else{
+    label.textContent = `${value}${suffix}`;
+  }
 }
 
 function bindSettingRange(name,key,suffix){
@@ -1975,7 +2051,13 @@ $('open-settings').addEventListener('click',()=>{
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('settings-advanced-toggle').addEventListener('click',toggleAdvancedSettings);
+$('settings-advanced-toggle').addEventListener('click',e=>{
+  if(suppressNativeButton === e.currentTarget){
+    e.preventDefault();
+    return;
+  }
+  toggleAdvancedSettings();
+});
 $('sort-focus-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-focus]');
   if(!opt)return;
@@ -1988,13 +2070,43 @@ $('plan-window-seg').addEventListener('click',e=>{
   updateSortSetting({planWindowDays:parseInt(opt.dataset.window,10)});
   showToast('order updated');
 });
+$('new-build-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-new-build]');
+  if(!opt)return;
+  updateSortSetting({newBuildMode:opt.dataset.newBuild});
+  showToast('order updated');
+});
+$('due-mode-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-due-mode]');
+  if(!opt)return;
+  updateSortSetting({dueMode:opt.dataset.dueMode});
+  showToast('order updated');
+});
+$('build-window-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-build-window]');
+  if(!opt)return;
+  updateSortSetting({buildLookAheadDays:parseInt(opt.dataset.buildWindow,10)});
+  showToast('order updated');
+});
+$('limit-mode-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-limit-mode]');
+  if(!opt)return;
+  updateSortSetting({limitMode:opt.dataset.limitMode});
+  showToast('order updated');
+});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
   if(!opt)return;
   updateSortSetting({defaultType:opt.dataset.defaultType});
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
-  btn.addEventListener('click',()=>toggleAppSettingButton(btn));
+  btn.addEventListener('click',e=>{
+    if(suppressNativeButton === btn){
+      e.preventDefault();
+      return;
+    }
+    toggleAppSettingButton(btn);
+  });
 });
 $('settings-sheet').addEventListener('pointerdown',e=>{
   const control = e.target.closest('[data-setting-toggle],#settings-advanced-toggle');
@@ -2020,6 +2132,8 @@ bindSettingRange('build-weight','buildWeight','%');
 bindSettingRange('limit-weight','limitWeight','%');
 bindSettingRange('stop-weight','stopWeight','%');
 bindSettingRange('new-weight','newWeight','%');
+bindSettingRange('build-start','buildRiseAt','%');
+bindSettingRange('rhythm-bias','rhythmBias','');
 bindSettingRange('default-target','defaultTarget','d');
 $('settings-reset').addEventListener('click',()=>{
   $('settings-reset-confirm').hidden = false;

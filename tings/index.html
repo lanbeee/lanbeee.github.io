@@ -210,12 +210,14 @@
   <div class="sheet-wrap" id="about-sheet">
     <div class="sheet about-sheet">
       <p class="sheet-title">Habits</p>
-      <p class="about-copy">A small place to notice what you want to build, limit, or stop. No account needed. Your entries stay in this browser on this device.</p>
+      <p class="about-copy">A small place to notice what you want to build, limit, or stop. No account needed. Your entries stay on this device.</p>
       <div class="about-stack">
-        <section class="about-block calm-block"><span>Start simple</span><p>Add one habit, choose build, limit, or stop, then tap its icon when it happens. Tap Habits at the top any time to come back here or open settings.</p></section>
+        <section class="about-block calm-block"><span>Start simple</span><p>Add a habit, select Build, Limit, or Stop, then tap its icon whenever it occurs. Double-tap to log it instantly. Tap Habits at the top any time to come back here or open settings.</p></section>
+        <section class="about-block calm-block"><span>Not a task list</span><p>A to-do list is for finishing one thing. This is for habits that repeat, fade, slip, or improve over time. You are watching the pattern, not clearing an inbox.</p></section>
+        <section class="about-block calm-block"><span>Not a calendar</span><p>A calendar is for exact appointments. This is lighter: you can plan a day, but the main goal is to notice rhythm, spacing, and progress.</p></section>
         <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
         <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
-        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order brings up what may need attention. Settings can make this calmer or more active.</p></section>
+        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order brings up what may need attention. Settings can change how new, due, planned, limit, and stop habits move.</p></section>
         <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
         <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon to log with confirmation. Double tap anywhere on a card to log quickly. Swipe right to pin or plan. Swipe left to snooze or remove.</p></section>
       </div>
@@ -255,6 +257,33 @@
             <button class="seg-opt" data-window="1">today</button>
             <button class="seg-opt" data-window="3">3 days</button>
             <button class="seg-opt" data-window="7">week</button>
+          </div>
+          <span class="settings-sublabel">new build habits</span>
+          <div class="seg compact-seg" id="new-build-seg">
+            <button class="seg-opt" data-new-build="quiet">stay low</button>
+            <button class="seg-opt" data-new-build="gentle">gentle</button>
+            <button class="seg-opt" data-new-build="rise">rise</button>
+          </div>
+          <p class="field-hint">This controls build habits that have no entries yet.</p>
+          <span class="settings-sublabel">compare due build habits</span>
+          <div class="seg compact-seg" id="due-mode-seg">
+            <button class="seg-opt" data-due-mode="relative">rhythm</button>
+            <button class="seg-opt" data-due-mode="date">date</button>
+            <button class="seg-opt" data-due-mode="short">shorter</button>
+          </div>
+          <p class="field-hint">Rhythm favors the habit that is deeper into its cycle. Date treats two habits due on the same day as close. Shorter favors frequent habits.</p>
+          <span class="settings-sublabel">build look ahead</span>
+          <div class="seg compact-seg" id="build-window-seg">
+            <button class="seg-opt" data-build-window="1">1 day</button>
+            <button class="seg-opt" data-build-window="3">3 days</button>
+            <button class="seg-opt" data-build-window="7">week</button>
+          </div>
+          <span class="settings-sublabel">limit habits rise</span>
+          <div class="seg compact-seg" id="limit-mode-seg">
+            <button class="seg-opt" data-limit-mode="quiet">quiet</button>
+            <button class="seg-opt" data-limit-mode="overdue">overdue</button>
+            <button class="seg-opt" data-limit-mode="near">near</button>
+            <button class="seg-opt" data-limit-mode="active">active</button>
           </div>
         </section>
         <section class="settings-block">
@@ -321,6 +350,16 @@
               <span>new</span>
               <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
               <output id="setting-new-weight-label"></output>
+            </label>
+            <label class="settings-range wide-label">
+              <span>build starts</span>
+              <input type="range" id="setting-build-start" min="40" max="110" step="5" />
+              <output id="setting-build-start-label"></output>
+            </label>
+            <label class="settings-range wide-label">
+              <span>rhythm bias</span>
+              <input type="range" id="setting-rhythm-bias" min="-100" max="100" step="10" />
+              <output id="setting-rhythm-bias-label"></output>
             </label>
           </div>
         </section>
