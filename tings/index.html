@@ -141,6 +141,24 @@
               <span>d</span>
             </label>
           </div>
+          <div class="habit-actions">
+            <span class="settings-label">habit actions</span>
+            <button class="habit-action" id="detail-snooze" type="button">
+              <i class="ti ti-moon" aria-hidden="true"></i>
+              <span><b>snooze habit</b><small>Hide this habit for a few days.</small></span>
+            </button>
+            <button class="habit-action danger" id="detail-delete" type="button">
+              <i class="ti ti-trash" aria-hidden="true"></i>
+              <span><b>remove habit</b><small>Remove it from the list. Undo appears after.</small></span>
+            </button>
+            <div class="reset-confirm" id="detail-delete-confirm" hidden>
+              <p>Remove this habit?</p>
+              <div class="btn-row">
+                <button class="btn primary" id="detail-delete-yes" type="button">remove</button>
+                <button class="btn" id="detail-delete-no" type="button">keep habit</button>
+              </div>
+            </div>
+          </div>
         </section>
       </div>
       <div class="detail-dots" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -212,100 +230,111 @@
   <div class="sheet-wrap" id="settings-sheet">
     <div class="sheet settings-sheet">
       <p class="sheet-title">settings</p>
-      <p class="about-copy">These shape how the home list decides what to show first.</p>
+      <p class="about-copy">Choose how the app behaves. These are app-wide settings, not settings for one habit.</p>
       <div class="settings-stack">
         <section class="settings-block">
-          <span class="settings-label">auto order focus</span>
+          <span class="settings-label">home order</span>
+          <p class="field-hint">Pinned habits always stay first. After that, auto order brings up what needs attention.</p>
           <div class="seg compact-seg" id="sort-focus-seg">
             <button class="seg-opt" data-focus="balanced">balanced</button>
-            <button class="seg-opt" data-focus="build">build</button>
-            <button class="seg-opt" data-focus="space">space</button>
+            <button class="seg-opt" data-focus="build">build due</button>
+            <button class="seg-opt" data-focus="space">limit/stop</button>
           </div>
-          <p class="field-hint">Balanced is best for most people. Build favors due build habits. Space favors limit and stop habits.</p>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label">sort weights</span>
-          <label class="settings-range">
-            <span>planned</span>
-            <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
-            <output id="setting-plan-weight-label"></output>
-          </label>
-          <label class="settings-range">
-            <span>build</span>
-            <input type="range" id="setting-build-weight" min="0" max="200" step="10" />
-            <output id="setting-build-weight-label"></output>
-          </label>
-          <label class="settings-range">
-            <span>limit</span>
-            <input type="range" id="setting-limit-weight" min="0" max="200" step="10" />
-            <output id="setting-limit-weight-label"></output>
-          </label>
-          <label class="settings-range">
-            <span>stop</span>
-            <input type="range" id="setting-stop-weight" min="0" max="200" step="10" />
-            <output id="setting-stop-weight-label"></output>
-          </label>
-          <label class="settings-range">
-            <span>new</span>
-            <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
-            <output id="setting-new-weight-label"></output>
-          </label>
-          <p class="field-hint">100 is normal. Lower means quieter. Higher means it rises sooner.</p>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label">planned window</span>
+          <div class="settings-grid">
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
+              <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="keepStopsQuiet" aria-pressed="false">
+              <span><b>keep stop habits quiet</b><small>Stop habits stay lower unless there was a recent reset.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+          </div>
+          <span class="settings-sublabel">look ahead for plans</span>
           <div class="seg compact-seg" id="plan-window-seg">
             <button class="seg-opt" data-window="1">today</button>
             <button class="seg-opt" data-window="3">3 days</button>
             <button class="seg-opt" data-window="7">week</button>
           </div>
-          <p class="field-hint">Controls how early planned habits can move up.</p>
         </section>
         <section class="settings-block">
-          <label class="setting-toggle">
-            <span><b>plans first</b><small>Planned habits inside the window move near the top.</small></span>
-            <input type="checkbox" id="setting-plans-first" />
-          </label>
+          <span class="settings-label">app behavior</span>
+          <div class="settings-grid">
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="requireConfirm" aria-pressed="false">
+              <span><b>confirm icon tap</b><small>Ask before logging from the large icon on a card.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozed" aria-pressed="false">
+              <span><b>show snoozed habits</b><small>Show hidden habits faded on the home screen.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reachAssist" aria-pressed="false">
+              <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+          </div>
         </section>
         <section class="settings-block">
-          <label class="setting-toggle">
-            <span><b>keep stop habits quiet</b><small>Stop habits stay lower unless there was a recent reset.</small></span>
-            <input type="checkbox" id="setting-stops-quiet" />
-          </label>
-        </section>
-        <section class="settings-block">
-          <label class="setting-toggle">
-            <span><b>show snoozed habits</b><small>Keep hidden habits visible, faded, on the home screen.</small></span>
-            <input type="checkbox" id="setting-show-snoozed" />
-          </label>
-        </section>
-        <section class="settings-block">
-          <label class="setting-toggle">
-            <span><b>confirm home icon</b><small>Ask before logging from the big icon on a card.</small></span>
-            <input type="checkbox" id="setting-require-confirm" />
-          </label>
-        </section>
-        <section class="settings-block">
-          <label class="setting-toggle">
-            <span><b>reach space</b><small>Allow the intentional pull-and-hold space at the top.</small></span>
-            <input type="checkbox" id="setting-reach-assist" />
-          </label>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label">new habit default</span>
+          <span class="settings-label">new habit defaults</span>
+          <p class="field-hint">Used only when you tap + to create a new habit.</p>
           <div class="seg compact-seg" id="default-type-seg">
             <button class="seg-opt" data-default-type="keepup">build</button>
             <button class="seg-opt" data-default-type="reduce">limit</button>
             <button class="seg-opt" data-default-type="zero">stop</button>
           </div>
-          <label class="settings-range">
-            <span>days</span>
+          <label class="settings-range simple-range">
+            <span>rhythm</span>
             <input type="range" id="setting-default-target" min="1" max="90" />
             <output id="setting-default-target-label"></output>
           </label>
         </section>
-        <section class="settings-block">
-          <button class="btn" id="settings-reset">reset settings</button>
+        <section class="settings-block settings-advanced" id="settings-advanced">
+          <button class="settings-advanced-toggle" id="settings-advanced-toggle" type="button" aria-expanded="false" aria-controls="settings-advanced-body">
+            <span>
+              <b>fine tune priority</b>
+              <small>Optional. 100 is normal, lower is quieter, higher rises sooner.</small>
+            </span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-advanced-body" id="settings-advanced-body" hidden>
+            <label class="settings-range">
+              <span>planned</span>
+              <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
+              <output id="setting-plan-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>build</span>
+              <input type="range" id="setting-build-weight" min="0" max="200" step="10" />
+              <output id="setting-build-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>limit</span>
+              <input type="range" id="setting-limit-weight" min="0" max="200" step="10" />
+              <output id="setting-limit-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>stop</span>
+              <input type="range" id="setting-stop-weight" min="0" max="200" step="10" />
+              <output id="setting-stop-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>new</span>
+              <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
+              <output id="setting-new-weight-label"></output>
+            </label>
+          </div>
+        </section>
+        <section class="settings-block settings-danger">
+          <span class="settings-label">start over</span>
+          <p class="field-hint">Reset only changes these app settings. Your habits and entries stay safe.</p>
+          <button class="btn danger-soft" id="settings-reset">reset app settings</button>
+          <div class="reset-confirm" id="settings-reset-confirm" hidden>
+            <p>Reset settings to the app defaults?</p>
+            <div class="btn-row">
+              <button class="btn primary" id="settings-reset-yes">reset</button>
+              <button class="btn" id="settings-reset-no">keep settings</button>
+            </div>
+          </div>
         </section>
       </div>
       <div class="btn-row settings-actions">
