@@ -630,6 +630,22 @@ function setupSwipe(row){
     return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
   }
 
+  function resetSwipe(){
+    card.style.transition = SNAP_TRANSITION;
+    card.style.transform = '';
+    leftActions.style.transition = WIDTH_TRANSITION;
+    rightActions.style.transition = WIDTH_TRANSITION;
+    leftActions.style.width = '0';
+    rightActions.style.width = '0';
+    leftActions.style.pointerEvents = 'none';
+    rightActions.style.pointerEvents = 'none';
+    swipeOpenCard = null;
+    delete row.dataset.swipeOpen;
+    startedOpen = false;
+    moved = false;
+    dx = 0;
+  }
+
   row.addEventListener('touchstart',e=>{
     const t = e.changedTouches[0];
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
@@ -707,6 +723,8 @@ function setupSwipe(row){
       delete row.dataset.swipeOpen;
     }
   });
+
+  row.addEventListener('touchcancel',resetSwipe,{passive:true});
 }
 
 function closeAllSwipes(){
@@ -1814,6 +1832,10 @@ document.addEventListener('touchcancel',cancelReachHold,{passive:true});
 document.addEventListener('wheel',e=>{
   if(window.scrollY <= 1 && e.deltaY < -120)showReachPad();
 },{passive:true});
+window.addEventListener('pageshow',closeAllSwipes);
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden)closeAllSwipes();
+});
 
 if(window.visualViewport){
   window.visualViewport.addEventListener('resize',()=>{
