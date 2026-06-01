@@ -97,9 +97,10 @@ body.header-hidden .overall-summary{
   position:fixed;left:50%;bottom:calc(var(--nav-bottom) + env(safe-area-inset-bottom));
   transform:translateX(-50%);z-index:50;
   display:flex;align-items:center;gap:10px;
-  padding:8px;background:color-mix(in srgb,var(--bg) 88%,transparent);
-  border:0.5px solid var(--border);border-radius:999px;
-  box-shadow:0 10px 30px rgba(0,0,0,0.16);
+  width:max-content;max-width:calc(100vw - 24px);
+  padding:8px;background:color-mix(in srgb,var(--bg) 96%,var(--text) 4%);
+  border:0.5px solid var(--border2);border-radius:999px;
+  box-shadow:0 12px 34px rgba(0,0,0,0.2),0 2px 8px rgba(0,0,0,0.08);
   backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease;
   will-change:transform;
@@ -111,8 +112,41 @@ body.fullpage-open .bottom-nav{
   pointer-events:none;opacity:0;
   transform:translateX(-50%) translateY(12px) scale(0.96);
 }
-.bottom-nav .icon-btn{background:var(--bg);border-color:var(--border);}
+.bottom-nav .icon-btn{
+  background:color-mix(in srgb,var(--bg) 82%,var(--text) 8%);
+  border-color:var(--border2);
+  box-shadow:0 2px 8px rgba(0,0,0,0.08);
+}
+.bottom-nav .icon-btn.is-on{
+  background:var(--text);color:var(--bg);border-color:var(--text);
+}
 .bottom-nav .nav-add{background:var(--text);color:var(--bg);border-color:var(--text);}
+.nav-search{
+  display:none;grid-template-columns:minmax(0,1fr) 36px;
+  align-items:center;gap:0;
+  min-width:0;overflow:hidden;
+  opacity:0;pointer-events:none;
+  transition:opacity var(--dur-fast) ease;
+}
+.bottom-nav.search-open .nav-search{
+  display:grid;
+  width:min(230px,calc(100vw - 174px));
+  gap:6px;opacity:1;pointer-events:auto;
+}
+.nav-search input{
+  width:100%;min-width:0;height:44px;border-radius:999px;
+  border:0.5px solid var(--border2);
+  background:var(--bg);color:var(--text);
+  font:inherit;font-size:15px;font-weight:500;
+  padding:0 14px;outline:none;
+}
+.nav-search input:focus{box-shadow:inset 0 0 0 1.5px var(--border2);}
+.nav-search .search-clear{
+  width:36px;height:36px;align-self:center;
+  background:var(--bg);box-shadow:none;
+}
+.nav-search .search-clear.is-empty{opacity:0.42;}
+.nav-search .search-clear i{font-size:18px;}
 .bottom-nav button,
 .detail-actions button,
 .about-actions button,
@@ -189,7 +223,25 @@ body.reach-pad #list{padding-top:220px;}
   transition:transform var(--dur-fast) var(--ease-tight),filter var(--dur-fast) ease;
 }
 .pulse-btn:active{transform:scale(0.9);filter:saturate(1.05);}
+.ting-card .pulse-btn.emoji-pulse{
+  align-self:stretch;
+  width:78px;height:auto;min-width:78px;min-height:62px;
+  border-radius:12px;background:transparent !important;
+  overflow:visible;
+}
 .emoji-mark{font-size:28px;line-height:1;color:var(--text);}
+.ting-card .pulse-btn .emoji-mark{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:100%;height:100%;
+  font-size:44px;line-height:1;
+}
+.ting-card .pulse-btn.emoji-pulse .emoji-mark{
+  font-size:66px;line-height:0.86;
+}
+.detail-mark.emoji-pulse{
+  border-radius:12px;background:transparent !important;
+}
+.detail-mark.emoji-pulse .emoji-mark{font-size:46px;line-height:0.95;}
 .ting-info{flex:1;min-width:0;}
 .ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px;}
 .ting-name{
@@ -772,6 +824,9 @@ button.setting-toggle{
   background:var(--bg);border:0.5px solid var(--border);
   border-radius:var(--radius-sm);padding:10px;
 }
+.sort-preview-card.current{
+  background:var(--bg2);border-color:var(--text2);
+}
 .sort-preview-card.on{border-color:var(--text);box-shadow:inset 0 0 0 0.5px var(--text);}
 .sort-preview-card > div{
   display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px;
@@ -797,6 +852,10 @@ button.setting-toggle{
 .sort-preview-card li b.keepup{background:var(--teal-bg);color:var(--teal-text);}
 .sort-preview-card li b.reduce{background:var(--amber-bg);color:var(--amber-text);}
 .sort-preview-card li b.zero{background:var(--red-bg);color:var(--red-text);}
+.sort-stop-line{
+  margin:8px 0 0;padding-top:8px;border-top:0.5px solid var(--border);
+  color:var(--text3);font-size:11.5px;font-weight:650;line-height:1.25;
+}
 .settings-advanced-toggle{
   width:100%;border:0;background:transparent;color:inherit;font:inherit;
   display:flex;align-items:center;justify-content:space-between;

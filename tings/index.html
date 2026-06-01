@@ -31,6 +31,15 @@
   <p id="empty">no habits yet<br><span class="empty-sub">tap + to add your first habit</span></p>
 
   <nav class="bottom-nav" aria-label="main actions">
+    <button class="icon-btn" id="open-search" aria-label="search habits" aria-pressed="false">
+      <i class="ti ti-search" aria-hidden="true"></i>
+    </button>
+    <div class="nav-search" id="nav-search" aria-hidden="true">
+      <input type="search" id="habit-search" aria-label="search habits" placeholder="search habits" autocomplete="off" autocorrect="off" spellcheck="false" />
+      <button class="icon-btn search-clear" id="clear-search" aria-label="clear search" type="button">
+        <i class="ti ti-x" aria-hidden="true"></i>
+      </button>
+    </div>
     <button class="icon-btn" id="open-overview" aria-label="calendar">
       <i class="ti ti-calendar-month" aria-hidden="true"></i>
     </button>
@@ -246,24 +255,21 @@
             <button class="seg-opt" data-preset="strict">strict</button>
             <button class="seg-opt" data-preset="custom">custom</button>
           </div>
-          <p class="field-hint">Presets move the controls below. Balanced mixes signals, build favors routines, plans favors planned days, calm lowers noise, and strict raises recent resets.</p>
+          <p class="field-hint">Presets move the controls below. Balanced watches resets, build favors routines, plans favors planned days, calm lowers noise, and strict raises recent resets.</p>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
               <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="keepStopsQuiet" aria-pressed="false">
-              <span><b>keep stop habits quiet</b><small>Stop habits stay in a lower lane unless pinned or made louder in fine tune.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
           <span class="settings-sublabel">stop habits rise</span>
           <div class="seg compact-seg" id="stop-mode-seg">
             <button class="seg-opt" data-stop-mode="quiet">quiet</button>
+            <button class="seg-opt" data-stop-mode="watch">watch</button>
             <button class="seg-opt" data-stop-mode="recent">recent</button>
             <button class="seg-opt" data-stop-mode="active">strict</button>
           </div>
-          <p class="field-hint">Quiet keeps quit habits low. Recent brings them up after a reset. Strict treats resets as urgent.</p>
+          <p class="field-hint">Quiet keeps quit habits low. Watch gives resets a small nudge. Recent brings them into view. Strict treats resets as urgent.</p>
           <span class="settings-sublabel">look ahead for plans</span>
           <div class="seg compact-seg" id="plan-window-seg">
             <button class="seg-opt" data-window="1">today</button>
@@ -311,6 +317,10 @@
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reachAssist" aria-pressed="false">
               <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="focusSearchOnOpen" aria-pressed="false">
+              <span><b>focus search on open</b><small>Open the search field when this app starts.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
