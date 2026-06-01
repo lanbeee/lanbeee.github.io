@@ -108,6 +108,7 @@ let detailTuneOriginal = null;
 let calendarPointer = null;
 let cardPointer = null;
 let suppressCardClick = null;
+let searchDismissPointer = null;
 
 function load(){
   try{return normalize(JSON.parse(localStorage.getItem(KEY)) || []);}
@@ -396,6 +397,13 @@ function buildUrgency(days,target,settings){
   return ratio;
 }
 
+function buildDueScore(urgency,riseAt){
+  if(urgency >= 1)return 88 + Math.min(22,(urgency - 1) * 40);
+  if(urgency >= riseAt)return 42 + ((urgency - riseAt) / Math.max(0.05,1 - riseAt)) * 46;
+  const early = clamp01(urgency / Math.max(0.1,riseAt));
+  return Math.pow(early,2.2) * 26;
+}
+
 function plannedWithinWindow(h,windowDays){
   const plan = nextPlannedLog(h);
   if(!plan || h.type === 'zero')return false;
@@ -455,9 +463,7 @@ function dueSignal(h,settings){
   if(h.type === 'keepup'){
     const urgency = buildUrgency(days,target,settings);
     const riseAt = clampNumber(settings.buildRiseAt,40,110,75) / 100;
-    if(urgency >= 1)return 88 + Math.min(22,(urgency - 1) * 40);
-    if(urgency >= riseAt)return 54 + ((urgency - riseAt) / Math.max(0.05,1 - riseAt)) * 34;
-    return clamp01(urgency / Math.max(0.1,riseAt)) * 44;
+    return buildDueScore(urgency,riseAt);
   }
 
   if(h.type === 'reduce'){
@@ -528,6 +534,17 @@ function priorityComponents(h,settings){
   };
 }
 
+function earlyBuildDamping(h,settings){
+  if(h.type !== 'keepup' || hasPlannedToday(h))return 1;
+  const days = daysSince(h.lastLog);
+  if(days === null || days < 0)return 1;
+  const urgency = buildUrgency(days,h.target || 7,settings);
+  const riseAt = clampNumber(settings.buildRiseAt,40,110,75) / 100;
+  if(urgency >= riseAt)return 1;
+  const progress = clamp01(urgency / Math.max(0.1,riseAt));
+  return 0.28 + Math.pow(progress,1.7) * 0.54;
+}
+
 function mixedPriorityScore(parts,mix){
   return Object.entries(mix).reduce((sum,[key,weight])=>sum + (parts[key] || 0) * weight,0);
 }
@@ -548,6 +565,7 @@ function attentionScore(h,index,settingsOverride = null){
   const focusScale = FOCUS_TYPE_SCALE[focus] || FOCUS_TYPE_SCALE.balanced;
   score *= focusScale[h.type] || 1;
   if(h.type === 'zero')score *= stopPolicy(settings).focus;
+  score *= earlyBuildDamping(h,settings);
 
   score *= typeSettingScale(h,settings);
   return score - index / 100;
@@ -605,8 +623,8 @@ function updateSearchUi(){
   $('nav-search').setAttribute('aria-hidden',String(!open));
   if(clearBtn){
     const empty = !searchQuery.trim();
-    clearBtn.classList.toggle('is-empty',empty);
-    clearBtn.setAttribute('aria-label',empty ? 'close search' : 'clear search');
+    $('nav-search').classList.toggle('is-empty',empty);
+    clearBtn.hidden = true;
   }
 }
 
@@ -645,6 +663,17 @@ function closeSearch(options = {}){
     focus:false,
     render:options.render ?? active
   });
+}
+
+function shouldDismissSearchFromTap(target){
+  const nav = document.querySelector('.bottom-nav');
+  if(!target?.closest)return false;
+  if(!nav?.classList.contains('search-open'))return false;
+  if(target.closest('#habit-search'))return false;
+  if(target.closest('.bottom-nav'))return target.closest('#open-search');
+  if(target.closest('.sheet-wrap.open'))return false;
+  if(searchQuery.trim() && target.closest('.swipe-row,.ting-card,.swipe-actions'))return false;
+  return true;
 }
 
 function updateOverallSummary(data = load()){
@@ -1882,12 +1911,27 @@ function bindCalendarTap(container,selector,handler){
 }
 
 document.addEventListener('pointerdown',e=>{
+  if(shouldDismissSearchFromTap(e.target)){
+    searchDismissPointer = {id:e.pointerId,x:e.clientX,y:e.clientY};
+    return;
+  }
+  searchDismissPointer = null;
   const btn = forgivingButtonTarget(e.target);
   if(!btn)return;
   buttonPointer = {btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
 },true);
 
 document.addEventListener('pointerup',e=>{
+  if(searchDismissPointer && searchDismissPointer.id === e.pointerId){
+    const tap = searchDismissPointer;
+    searchDismissPointer = null;
+    if(Math.hypot(e.clientX - tap.x,e.clientY - tap.y) <= 12){
+      closeSearch();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+  }
   if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
   const {btn,x,y,time} = buttonPointer;
   buttonPointer = null;
@@ -1904,6 +1948,10 @@ document.addEventListener('pointerup',e=>{
   }
 },true);
 
+document.addEventListener('pointercancel',e=>{
+  if(searchDismissPointer && searchDismissPointer.id === e.pointerId)searchDismissPointer = null;
+},true);
+
 document.addEventListener('click',e=>{
   if(e.target.closest('button') === suppressNativeButton && e.isTrusted){
     e.preventDefault();
@@ -1916,6 +1964,7 @@ document.addEventListener('click',e=>{
     e.preventDefault();
     e.stopPropagation();
     suppressNativeButton = null;
+    return;
   }
 },true);
 
@@ -2101,6 +2150,7 @@ function buildSortSamples(){
     sortSampleHabit('call family due soon','keepup',7,sampleLogs([34,21,14,6]),{emoji:'☎️'}),
     sortSampleHabit('movie night just done','keepup',7,sampleLogs([22,15,8,1]),{emoji:'🎬'}),
     sortSampleHabit('new meditation habit','keepup',7,[],{emoji:'🧘'}),
+    sortSampleHabit('40 day habit mid cycle','keepup',40,sampleLogs([97,57,17]),{emoji:'🌿'}),
     sortSampleHabit('monthly date night close','keepup',30,sampleLogs([91,61,28]),{emoji:'💙'}),
     sortSampleHabit('quarterly mini trip overdue','keepup',90,sampleLogs([190,91]),{emoji:'🧳'}),
     sortSampleHabit('planned today workout','keepup',3,sampleLogs([11,8,5],[0]),{emoji:'🏋️'}),
@@ -2215,7 +2265,7 @@ $('open-add').addEventListener('click',()=>{
 $('open-search').addEventListener('click',()=>{
   const nav = document.querySelector('.bottom-nav');
   const isOpen = nav.classList.contains('search-open');
-  if(isOpen && !searchQuery.trim())closeSearch();
+  if(isOpen)closeSearch();
   else setSearchOpen(true);
 });
 $('habit-search').addEventListener('input',e=>{
