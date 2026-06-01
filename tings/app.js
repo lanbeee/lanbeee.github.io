@@ -52,10 +52,10 @@ const DEFAULT_SORT_SETTINGS = {
   defaultTarget:7
 };
 const LIMIT_MODE_POLICY = {
-  quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01},
-  overdue:{readyAt:1,threshold:1.25,ceiling:66,base:14,earlyBase:0,earlyRise:2,progress:0.16,progressEarly:0.02},
-  near:{readyAt:0.8,threshold:1,ceiling:74,base:18,earlyBase:4,earlyRise:12,progress:0.38,progressEarly:0.12},
-  active:{readyAt:0.45,threshold:0.7,ceiling:86,base:26,earlyBase:12,earlyRise:22,progress:0.62,progressEarly:0.3}
+  quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01,trend:0.08,trendEarly:0},
+  overdue:{readyAt:1,threshold:1.25,ceiling:66,base:14,earlyBase:0,earlyRise:2,progress:0.16,progressEarly:0.02,trend:0.22,trendEarly:0.02},
+  near:{readyAt:0.8,threshold:1,ceiling:74,base:18,earlyBase:4,earlyRise:12,progress:0.38,progressEarly:0.12,trend:0.42,trendEarly:0.14},
+  active:{readyAt:0.45,threshold:0.7,ceiling:86,base:26,earlyBase:12,earlyRise:22,progress:0.62,progressEarly:0.3,trend:0.68,trendEarly:0.34}
 };
 const STOP_MODE_POLICY = {
   quiet:{steps:[[1,12],[3,8],[7,4]],fallback:0,progress:0.08,mix:{due:0.38,progress:0.12,trend:0.12},cap:12,offset:-16,focus:1},
@@ -429,7 +429,7 @@ function planSignal(h,settings){
   if(!settings.plansFirst || !plan || h.type === 'zero')return 0;
   const daysUntil = calendarDayDiff(plan);
   const windowDays = clampNumber(settings.planWindowDays,1,14,1);
-  if(daysUntil < 0)return 95;
+  if(daysUntil <= 0)return 120;
   if(daysUntil > windowDays)return 0;
   return 100 - (daysUntil / Math.max(1,windowDays)) * 45;
 }
@@ -472,7 +472,7 @@ function limitDueScore(ratio,policy){
 function dueSignal(h,settings){
   const days = daysSince(h.lastLog);
   const target = h.target || 7;
-  if(days === null)return newHabitSignal(h,settings);
+  if(days === null)return 0;
   if(days < 0)return 8;
 
   if(h.type === 'keepup'){
@@ -495,7 +495,7 @@ function dueSignal(h,settings){
 
 function progressConcern(h,settings){
   const score = progressScore(h);
-  if(score === null)return newHabitSignal(h,settings) * 0.65;
+  if(score === null)return 0;
   const raw = 100 - score;
   if(h.type === 'keepup')return raw;
   if(h.type === 'reduce'){
@@ -508,12 +508,18 @@ function progressConcern(h,settings){
   return raw * stopPolicy(settings).progress;
 }
 
-function trendConcern(h){
+function trendConcern(h,settings){
   const summary = intervalToneSummary(h);
   const hasHistory = intervalValues(h,6).length >= 2;
   if(!hasHistory)return 0;
   if(h.type === 'keepup')return summary.miss + summary.warn * 0.45 - summary.hit * 0.12;
-  if(h.type === 'reduce')return Math.max(0,summary.miss * 0.42 + summary.warn * 0.16 - summary.hit * 0.18);
+  if(h.type === 'reduce'){
+    const days = daysSince(h.lastLog);
+    const ratio = days === null ? 0 : days / (h.target || 7);
+    const policy = limitPolicy(settings);
+    const multiplier = ratio < policy.readyAt ? policy.trendEarly : policy.trend;
+    return Math.max(0,summary.miss * 0.42 + summary.warn * 0.16 - summary.hit * 0.18) * multiplier;
+  }
   return Math.max(0,summary.miss * 0.22 + summary.warn * 0.1 - summary.hit * 0.16);
 }
 
@@ -544,7 +550,7 @@ function priorityComponents(h,settings){
     plan:planSignal(h,settings) * settingScale(settings.planWeight),
     due:dueSignal(h,settings) * settingScale(settings.dueWeight),
     progress:progressConcern(h,settings) * settingScale(settings.progressWeight),
-    trend:Math.max(0,trendConcern(h)) * settingScale(settings.trendWeight),
+    trend:Math.max(0,trendConcern(h,settings)) * settingScale(settings.trendWeight),
     rhythm:rhythmSignal(h,settings) * settingScale(settings.rhythmWeight),
     newness:newHabitSignal(h,settings) * settingScale(settings.newWeight) * (h.lastLog === null ? 0.75 : 0)
   };
@@ -1400,7 +1406,12 @@ function recentWindowStats(h,windowDays = 30){
 
 function intervalValues(h,limit = null){
   const logs = actualLogs(h.logs);
-  const intervals = logs.map((ts,i)=>i === 0 ? Math.max(1,daysSince(ts) || 1) : Math.max(1,Math.round((ts - logs[i-1]) / 86400000)));
+  if(!logs.length)return [];
+  const intervals = [];
+  for(let i=1;i<logs.length;i++){
+    intervals.push(Math.max(1,Math.round((logs[i] - logs[i - 1]) / 86400000)));
+  }
+  intervals.push(Math.max(1,daysSince(logs[logs.length - 1]) || 1));
   return limit ? intervals.slice(-limit) : intervals;
 }
 
@@ -2140,6 +2151,9 @@ function renderSortLabPreview(){
     const quietStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && daysSince(samples[i].lastLog) !== null && daysSince(samples[i].lastLog) >= 14);
     const newStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && samples[i].lastLog === null);
     const stopLine = `fresh reset #${freshStop + 1 || '-'} · clear stretch #${quietStop + 1 || '-'} · no entry #${newStop + 1 || '-'}`;
+    const overdueLimit = orderIndices.findIndex(i=>samples[i].type === 'reduce' && sampleDisplayName(samples[i].name).includes('ready to review'));
+    const tooOftenLimit = orderIndices.findIndex(i=>samples[i].type === 'reduce' && sampleDisplayName(samples[i].name).includes('too often'));
+    const limitLine = `limit overdue #${overdueLimit + 1 || '-'} · too often #${tooOftenLimit + 1 || '-'}`;
     const note = item.note || (name === 'strict'
       ? 'resets can rise'
       : name === 'planned'
@@ -2153,6 +2167,7 @@ function renderSortLabPreview(){
     return `<article class="sort-preview-card ${activeClass}">
       <div><strong>${escapeHtml(name)}</strong><small>${note}</small></div>
       <ol>${order}</ol>
+      <p class="sort-stop-line">${escapeHtml(limitLine)}</p>
       <p class="sort-stop-line">${escapeHtml(stopLine)}</p>
     </article>`;
   }).join('');
@@ -2186,6 +2201,7 @@ function buildSortSamples(){
     sortSampleHabit('slipping reading rhythm','keepup',7,sampleLogs([45,34,23,13,8]),{emoji:'📖'}),
     sortSampleHabit('improving stretch routine','keepup',7,sampleLogs([32,20,11,5,1]),{emoji:'🤸'}),
     sortSampleHabit('video games too recent','reduce',7,sampleLogs([1]),{emoji:'🎮'}),
+    sortSampleHabit('limit habit too often','reduce',7,sampleLogs([5,3,1]),{emoji:'🎯'}),
     sortSampleHabit('takeout good spacing','reduce',14,sampleLogs([42,25,18]),{emoji:'🥡'}),
     sortSampleHabit('social media ready to review','reduce',3,sampleLogs([11,8,5]),{emoji:'📱'}),
     sortSampleHabit('late-night snacks close','reduce',5,sampleLogs([9,6,3]),{emoji:'🍪'}),
