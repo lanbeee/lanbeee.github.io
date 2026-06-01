@@ -9,65 +9,65 @@ const SWIPE_ACTION_WIDTH = 68;
 const TAP_DELAY = 310;
 const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
 const WIDTH_TRANSITION = 'width 190ms cubic-bezier(.3,.7,.2,1)';
-const DEFAULT_SORT_SETTINGS = {
-  preset:'balanced',
-  focus:'balanced',
-  plansFirst:true,
-  keepStopsQuiet:true,
-  showSnoozed:false,
-  planWindowDays:3,
-  planWeight:100,
-  dueWeight:100,
-  progressWeight:70,
-  trendWeight:55,
-  rhythmWeight:55,
-  buildWeight:100,
-  limitWeight:85,
-  stopWeight:25,
-  newWeight:100,
-  newBuildMode:'gentle',
-  dueMode:'relative',
-  buildLookAheadDays:3,
-  buildRiseAt:75,
-  limitMode:'overdue',
-  stopMode:'quiet',
-  rhythmBias:0,
-  requireConfirm:true,
-  reachAssist:true,
-  defaultType:'keepup',
-  defaultTarget:7
-};
 const SORT_PRESETS = {
   balanced:{
-    focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:3,
+    focus:'balanced',plansFirst:true,planWindowDays:3,
     planWeight:100,dueWeight:100,progressWeight:70,trendWeight:55,rhythmWeight:55,
-    buildWeight:100,limitWeight:70,stopWeight:25,newWeight:90,
-    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'quiet',rhythmBias:0
+    buildWeight:100,limitWeight:70,stopWeight:130,newWeight:90,
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'watch',rhythmBias:0
   },
   build:{
-    focus:'build',plansFirst:true,keepStopsQuiet:true,planWindowDays:3,
+    focus:'build',plansFirst:true,planWindowDays:3,
     planWeight:95,dueWeight:135,progressWeight:105,trendWeight:75,rhythmWeight:60,
     buildWeight:140,limitWeight:50,stopWeight:12,newWeight:125,
     newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12
   },
   planned:{
-    focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:7,
+    focus:'balanced',plansFirst:true,planWindowDays:7,
     planWeight:175,dueWeight:85,progressWeight:55,trendWeight:40,rhythmWeight:40,
-    buildWeight:95,limitWeight:65,stopWeight:12,newWeight:70,
-    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'quiet',rhythmBias:0
+    buildWeight:95,limitWeight:65,stopWeight:35,newWeight:70,
+    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0
   },
   calm:{
-    focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:1,
+    focus:'balanced',plansFirst:true,planWindowDays:1,
     planWeight:75,dueWeight:70,progressWeight:35,trendWeight:25,rhythmWeight:25,
-    buildWeight:85,limitWeight:45,stopWeight:8,newWeight:45,
+    buildWeight:85,limitWeight:45,stopWeight:0,newWeight:45,
     newBuildMode:'quiet',dueMode:'date',buildLookAheadDays:1,buildRiseAt:95,limitMode:'quiet',stopMode:'quiet',rhythmBias:-8
   },
   strict:{
-    focus:'build',plansFirst:true,keepStopsQuiet:false,planWindowDays:7,
+    focus:'build',plansFirst:true,planWindowDays:7,
     planWeight:125,dueWeight:145,progressWeight:125,trendWeight:105,rhythmWeight:80,
-    buildWeight:125,limitWeight:115,stopWeight:160,newWeight:120,
+    buildWeight:125,limitWeight:115,stopWeight:135,newWeight:120,
     newBuildMode:'rise',dueMode:'short',buildLookAheadDays:7,buildRiseAt:60,limitMode:'active',stopMode:'active',rhythmBias:18
   }
+};
+const DEFAULT_SORT_SETTINGS = {
+  ...SORT_PRESETS.balanced,
+  preset:'balanced',
+  showSnoozed:false,
+  requireConfirm:true,
+  reachAssist:true,
+  focusSearchOnOpen:false,
+  defaultType:'keepup',
+  defaultTarget:7
+};
+const LIMIT_MODE_POLICY = {
+  quiet:{threshold:1.8,ceiling:54,base:4,rise:8,progress:0.12},
+  overdue:{threshold:1.3,ceiling:66,base:12,rise:16,progress:0.28},
+  near:{threshold:0.95,ceiling:74,base:20,rise:24,progress:0.48},
+  active:{threshold:0.7,ceiling:86,base:30,rise:32,progress:0.72}
+};
+const STOP_MODE_POLICY = {
+  quiet:{steps:[[1,12],[3,8],[7,4]],fallback:0,progress:0.08,mix:{due:0.38,progress:0.12,trend:0.12},cap:12,offset:-16,focus:1},
+  watch:{steps:[[1,34],[2,24],[4,14],[7,6]],fallback:1,progress:0.18,mix:{due:0.62,progress:0.22,trend:0.22},focus:1},
+  recent:{steps:[[1,58],[2,44],[4,28],[7,14]],fallback:3,progress:0.34,mix:{due:0.78,progress:0.28,trend:0.3},focus:1},
+  active:{steps:[[1,92],[2,78],[4,58],[7,34]],fallback:8,progress:0.62,mix:{due:1.5,progress:0.85,trend:0.65},focus:1}
+};
+const BASE_SORT_MIX = {plan:1.45,due:1.35,progress:0.72,trend:0.7,rhythm:1,newness:1};
+const FOCUS_TYPE_SCALE = {
+  balanced:{keepup:1,reduce:1,zero:1},
+  build:{keepup:1.22,reduce:0.78,zero:1},
+  space:{keepup:0.88,reduce:1.22,zero:1.12}
 };
 
 const $ = id => document.getElementById(id);
@@ -83,6 +83,7 @@ let overviewMonthOffset = 0;
 let dayLogsKey = null;
 let selectedType = 'keepup';
 let sortSettings = loadSortSettings();
+let searchQuery = '';
 
 let swipeOpenCard = null;
 let tapTimer = null;
@@ -119,8 +120,9 @@ function loadSortSettings(){
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
     const merged = {...DEFAULT_SORT_SETTINGS,...migrated};
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
-      merged.stopMode = merged.keepStopsQuiet ? 'quiet' : 'recent';
+      merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
+    delete merged.keepStopsQuiet;
     return merged;
   }catch{
     return {...DEFAULT_SORT_SETTINGS};
@@ -128,7 +130,9 @@ function loadSortSettings(){
 }
 
 function saveSortSettings(settings){
-  sortSettings = {...DEFAULT_SORT_SETTINGS,...settings};
+  const next = {...DEFAULT_SORT_SETTINGS,...settings};
+  delete next.keepStopsQuiet;
+  sortSettings = next;
   localStorage.setItem(SORT_SETTINGS_KEY,JSON.stringify(sortSettings));
 }
 
@@ -432,6 +436,16 @@ function newHabitSignal(h,settings){
   return 48;
 }
 
+function stopPolicy(settings){
+  return STOP_MODE_POLICY[settings.stopMode || 'watch'] || STOP_MODE_POLICY.watch;
+}
+
+function stopDueScore(days,settings){
+  const policy = stopPolicy(settings);
+  const step = policy.steps.find(([limit])=>days < limit);
+  return step ? step[1] : policy.fallback;
+}
+
 function dueSignal(h,settings){
   const days = daysSince(h.lastLog);
   const target = h.target || 7;
@@ -448,34 +462,13 @@ function dueSignal(h,settings){
 
   if(h.type === 'reduce'){
     const ratio = days / target;
-    const mode = settings.limitMode || 'overdue';
-    const threshold = mode === 'quiet' ? 1.8 : mode === 'overdue' ? 1.3 : mode === 'near' ? 0.95 : 0.7;
-    const ceiling = mode === 'quiet' ? 54 : mode === 'overdue' ? 66 : mode === 'near' ? 74 : 86;
-    const base = mode === 'active' ? 30 : mode === 'near' ? 20 : mode === 'overdue' ? 12 : 4;
-    if(ratio >= threshold)return 38 + clamp01((ratio - threshold) / Math.max(0.45,threshold)) * (ceiling - 38);
-    return base + clamp01(ratio / threshold) * (mode === 'active' ? 32 : mode === 'near' ? 24 : mode === 'overdue' ? 16 : 8);
+    const policy = LIMIT_MODE_POLICY[settings.limitMode || 'overdue'] || LIMIT_MODE_POLICY.overdue;
+    if(ratio >= policy.threshold)return 38 + clamp01((ratio - policy.threshold) / Math.max(0.45,policy.threshold)) * (policy.ceiling - 38);
+    return policy.base + clamp01(ratio / policy.threshold) * policy.rise;
   }
 
   if(h.type === 'zero'){
-    const mode = settings.stopMode || (settings.keepStopsQuiet ? 'quiet' : 'recent');
-    if(mode === 'quiet'){
-      if(days === 0)return 12;
-      if(days < 3)return 8;
-      if(days < 7)return 4;
-      return 0;
-    }
-    if(mode === 'active'){
-      if(days === 0)return 92;
-      if(days < 2)return 78;
-      if(days < 4)return 58;
-      if(days < 7)return 34;
-      return 8;
-    }
-    if(days === 0)return 58;
-    if(days < 2)return 44;
-    if(days < 4)return 28;
-    if(days < 7)return 14;
-    return 3;
+    return stopDueScore(days,settings);
   }
 
   return 0;
@@ -487,13 +480,10 @@ function progressConcern(h,settings){
   const raw = 100 - score;
   if(h.type === 'keepup')return raw;
   if(h.type === 'reduce'){
-    const mode = settings.limitMode || 'overdue';
-    const multiplier = mode === 'active' ? 0.72 : mode === 'near' ? 0.48 : mode === 'quiet' ? 0.12 : 0.28;
-    return raw * multiplier;
+    const policy = LIMIT_MODE_POLICY[settings.limitMode || 'overdue'] || LIMIT_MODE_POLICY.overdue;
+    return raw * policy.progress;
   }
-  const mode = settings.stopMode || (settings.keepStopsQuiet ? 'quiet' : 'recent');
-  const multiplier = mode === 'active' ? 0.62 : mode === 'recent' ? 0.34 : 0.08;
-  return raw * multiplier;
+  return raw * stopPolicy(settings).progress;
 }
 
 function trendConcern(h){
@@ -521,34 +511,45 @@ function rhythmSignal(h,settings){
   return tieBias;
 }
 
+function typeSettingScale(h,settings){
+  if(h.type === 'keepup')return settingScale(settings.buildWeight);
+  if(h.type === 'reduce')return settingScale(settings.limitWeight);
+  return settingScale(settings.stopWeight);
+}
+
+function priorityComponents(h,settings){
+  return {
+    plan:planSignal(h,settings) * settingScale(settings.planWeight),
+    due:dueSignal(h,settings) * settingScale(settings.dueWeight),
+    progress:progressConcern(h,settings) * settingScale(settings.progressWeight),
+    trend:Math.max(0,trendConcern(h)) * settingScale(settings.trendWeight),
+    rhythm:rhythmSignal(h,settings) * settingScale(settings.rhythmWeight),
+    newness:newHabitSignal(h,settings) * settingScale(settings.newWeight) * (h.lastLog === null ? 0.75 : 0)
+  };
+}
+
+function mixedPriorityScore(parts,mix){
+  return Object.entries(mix).reduce((sum,[key,weight])=>sum + (parts[key] || 0) * weight,0);
+}
+
 function attentionScore(h,index,settingsOverride = null){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const focus = settings.focus || 'balanced';
-  const typeScale = h.type === 'keepup' ? settingScale(settings.buildWeight) : h.type === 'reduce' ? settingScale(settings.limitWeight) : settingScale(settings.stopWeight);
-  const plan = planSignal(h,settings) * settingScale(settings.planWeight);
-  const due = dueSignal(h,settings) * settingScale(settings.dueWeight);
-  const progress = progressConcern(h,settings) * settingScale(settings.progressWeight);
-  const trend = Math.max(0,trendConcern(h)) * settingScale(settings.trendWeight);
-  const rhythm = rhythmSignal(h,settings) * settingScale(settings.rhythmWeight);
-  const newness = newHabitSignal(h,settings) * settingScale(settings.newWeight) * (h.lastLog === null ? 0.75 : 0);
-  let score = plan * 1.45 + due * 1.35 + progress * 0.72 + trend * 0.7 + rhythm + newness;
-
+  const parts = priorityComponents(h,settings);
+  let score = mixedPriorityScore(parts,BASE_SORT_MIX);
   if(h.type === 'zero'){
-    const mode = settings.stopMode || (settings.keepStopsQuiet ? 'quiet' : 'recent');
-    if(mode === 'active')score = due * 1.5 + progress * 0.85 + trend * 0.65;
-    else if(mode === 'recent')score = due * 0.78 + progress * 0.28 + trend * 0.3;
-    else score = Math.min(due * 0.38 + progress * 0.12 + trend * 0.12,12) - 16;
+    const policy = stopPolicy(settings);
+    score = mixedPriorityScore(parts,policy.mix);
+    if(Number.isFinite(policy.cap))score = Math.min(score,policy.cap);
+    score += policy.offset || 0;
   }
 
-  if(h.type === 'keepup' && focus === 'build')score *= 1.22;
-  if(h.type === 'keepup' && focus === 'space')score *= 0.88;
-  if(h.type === 'reduce' && focus === 'space')score *= 1.22;
-  if(h.type === 'reduce' && focus === 'build')score *= 0.78;
-  if(h.type === 'zero' && focus === 'space')score *= 1.12;
-  if(h.type === 'zero' && (settings.stopMode || 'quiet') === 'quiet')score *= 0.56;
+  const focusScale = FOCUS_TYPE_SCALE[focus] || FOCUS_TYPE_SCALE.balanced;
+  score *= focusScale[h.type] || 1;
+  if(h.type === 'zero')score *= stopPolicy(settings).focus;
 
-  score *= typeScale;
+  score *= typeSettingScale(h,settings);
   return score - index / 100;
 }
 
@@ -567,6 +568,18 @@ function visibleIndices(data,settingsOverride = null){
   return indices;
 }
 
+function searchText(h){
+  const typeLabel = h.type === 'keepup' ? 'build routine keepup' : h.type === 'reduce' ? 'limit reduce less' : 'stop quit zero';
+  return `${h.name || ''} ${h.emoji || ''} ${typeLabel}`.toLowerCase();
+}
+
+function filteredVisibleIndices(data){
+  const indices = visibleIndices(data);
+  const query = searchQuery.trim().toLowerCase();
+  if(!query)return indices;
+  return indices.filter(i=>searchText(data[i]).includes(query));
+}
+
 function iconHtml(h,c){
   if(h.emoji)return `<span class="emoji-mark">${escapeHtml(h.emoji)}</span>`;
   return `<i class="ti ${defaultIcon(h.type)}" style="color:${c.icon};" aria-hidden="true"></i>`;
@@ -578,11 +591,60 @@ function updateSortButton(){
   $('open-overview').disabled = count < 2;
 }
 
+function updateSearchUi(){
+  const nav = document.querySelector('.bottom-nav');
+  const input = $('habit-search');
+  const searchBtn = $('open-search');
+  const clearBtn = $('clear-search');
+  if(!nav || !input || !searchBtn)return;
+  const open = nav.classList.contains('search-open');
+  input.value = searchQuery;
+  searchBtn.classList.toggle('is-on',open);
+  searchBtn.setAttribute('aria-pressed',String(open));
+  $('nav-search').setAttribute('aria-hidden',String(!open));
+  if(clearBtn){
+    const empty = !searchQuery.trim();
+    clearBtn.classList.toggle('is-empty',empty);
+    clearBtn.setAttribute('aria-label',empty ? 'close search' : 'clear search');
+  }
+}
+
+function setSearchOpen(open,options = {}){
+  const nav = document.querySelector('.bottom-nav');
+  const input = $('habit-search');
+  if(!nav || !input)return;
+  if(options.clear)searchQuery = '';
+  nav.classList.toggle('search-open',open);
+  updateSearchUi();
+  if(open && options.focus !== false){
+    requestAnimationFrame(()=>input.focus({preventScroll:true}));
+  }else if(!open && document.activeElement === input){
+    input.blur();
+  }
+  if(options.render !== false)render();
+}
+
+function closeSearch(options = {}){
+  const nav = document.querySelector('.bottom-nav');
+  const active = Boolean(searchQuery.trim()) || Boolean(nav?.classList.contains('search-open'));
+  setSearchOpen(false,{
+    clear:options.clear !== false,
+    focus:false,
+    render:options.render ?? active
+  });
+}
+
 function updateOverallSummary(data = load()){
   const label = $('overall-summary');
   if(!label)return;
   if(!data.length){
     label.textContent = 'ready for your first habit';
+    return;
+  }
+  const query = searchQuery.trim();
+  if(query){
+    const matches = filteredVisibleIndices(data).length;
+    label.textContent = matches === 1 ? `1 match for "${query}"` : `${matches} matches for "${query}"`;
     return;
   }
   const visible = data.filter(h=>!(h.snoozedUntil && Date.now() < h.snoozedUntil));
@@ -730,13 +792,18 @@ function render(){
   empty.onclick = null;
   updateQuotaBar(sizeKb(data));
   updateSortButton();
+  updateSearchUi();
   updateOverallSummary(data);
 
-  const indices = visibleIndices(data);
+  const visible = visibleIndices(data);
+  const indices = filteredVisibleIndices(data);
   if(!indices.length){
     empty.style.display = 'block';
-    empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed);
-    if(data.length && !sortSettings.showSnoozed){
+    const hasSearch = searchQuery.trim().length > 0;
+    empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
+    if(hasSearch){
+      empty.innerHTML = 'no matches<br><span class="empty-sub">try another habit name or icon</span>';
+    }else if(data.length && !sortSettings.showSnoozed && !visible.length){
       empty.innerHTML = 'hidden for now<br><span class="empty-sub">tap to show</span>';
       empty.onclick = ()=>{
         saveSortSettings({...sortSettings,showSnoozed:true});
@@ -779,7 +846,7 @@ function render(){
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}" data-real="${realIdx}" style="--card-accent:${accent};">
-        <button class="pulse-btn" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
+        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info">
@@ -1119,6 +1186,7 @@ function openConfirm(i){
 function openDetail(i){
   const h = load()[i];
   if(!h)return;
+  closeSearch();
   const changedHabit = detailIdx !== i;
   if(changedHabit)detailMonthOffset = 0;
   detailIdx = i;
@@ -1144,6 +1212,7 @@ function openDetail(i){
   syncRhythm('detail',h.target || 7);
   $('detail-mark').style.background = c.bg;
   $('detail-mark').style.color = c.icon;
+  $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
   $('detail-mark').setAttribute('aria-label',`add entry for ${h.name}`);
   $('detail-mark').innerHTML = iconHtml(h,c);
   renderStats(h);
@@ -1910,13 +1979,13 @@ function updateSortSetting(patch,options = {}){
 }
 
 function isSortSettingKey(key){
-  return ['plansFirst','keepStopsQuiet','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
+  return ['plansFirst','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
 }
 
 function applySortPreset(name){
   if(name === 'custom'){
     updateSortSetting({preset:'custom'});
-    showToast('custom order');
+    showToast('custom settings');
     return;
   }
   const preset = SORT_PRESETS[name];
@@ -1936,7 +2005,6 @@ function toggleAppSettingButton(btn){
   const key = btn.dataset.settingToggle;
   if(!key)return;
   const patch = {[key]:!Boolean(sortSettings[key])};
-  if(key === 'keepStopsQuiet')patch.stopMode = patch.keepStopsQuiet ? 'quiet' : 'recent';
   if(isSortSettingKey(key))patch.preset = 'custom';
   updateSortSetting(patch);
 }
@@ -1963,18 +2031,26 @@ function renderSortLabPreview(){
   const wrap = $('sort-lab-preview');
   if(!wrap)return;
   const samples = normalize(buildSortSamples());
-  const presetNames = ['balanced','build','planned','calm','strict'];
-  wrap.innerHTML = presetNames.map(name=>{
-    const settings = sortSettingsForPreset(name);
-    const order = visibleIndices(samples,settings)
-      .filter(i=>!samples[i].pinned && !(samples[i].snoozedUntil && Date.now() < samples[i].snoozedUntil))
+  const previewItems = [
+    {name:'current',settings:{...DEFAULT_SORT_SETTINGS,...sortSettings},note:'your setup'},
+    ...['balanced','build','planned','calm','strict'].map(name=>({name,settings:sortSettingsForPreset(name)}))
+  ];
+  wrap.innerHTML = previewItems.map(item=>{
+    const {name,settings} = item;
+    const orderIndices = visibleIndices(samples,settings)
+      .filter(i=>!samples[i].pinned && !(samples[i].snoozedUntil && Date.now() < samples[i].snoozedUntil));
+    const order = orderIndices
       .slice(0,6)
       .map(i=>{
         const h = samples[i];
         const type = h.type === 'keepup' ? 'build' : h.type === 'reduce' ? 'limit' : 'stop';
         return `<li><span>${escapeHtml(sampleDisplayName(h.name))}</span><b class="${h.type}">${type}</b></li>`;
       }).join('');
-    const note = name === 'strict'
+    const freshStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && daysSince(samples[i].lastLog) !== null && daysSince(samples[i].lastLog) < 3);
+    const quietStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && daysSince(samples[i].lastLog) !== null && daysSince(samples[i].lastLog) >= 14);
+    const newStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && samples[i].lastLog === null);
+    const stopLine = `fresh reset #${freshStop + 1 || '-'} · clear stretch #${quietStop + 1 || '-'} · no entry #${newStop + 1 || '-'}`;
+    const note = item.note || (name === 'strict'
       ? 'resets can rise'
       : name === 'planned'
         ? 'plans lead'
@@ -1982,10 +2058,12 @@ function renderSortLabPreview(){
           ? 'builds lead'
           : name === 'calm'
             ? 'only urgent rises'
-            : 'mixed signals';
-    return `<article class="sort-preview-card ${name === (sortSettings.preset || 'balanced') ? 'on' : ''}">
+            : 'mixed signals');
+    const activeClass = name === 'current' ? 'current' : name === (sortSettings.preset || 'balanced') ? 'on' : '';
+    return `<article class="sort-preview-card ${activeClass}">
       <div><strong>${escapeHtml(name)}</strong><small>${note}</small></div>
       <ol>${order}</ol>
+      <p class="sort-stop-line">${escapeHtml(stopLine)}</p>
     </article>`;
   }).join('');
 }
@@ -2110,6 +2188,7 @@ $('type-seg').addEventListener('click',e=>{
 });
 
 $('open-add').addEventListener('click',()=>{
+  closeSearch();
   applyAddDefaults();
   openSheet('add-sheet');
   $('ting-name').focus({preventScroll:true});
@@ -2117,6 +2196,31 @@ $('open-add').addEventListener('click',()=>{
     updateKeyboardLift();
     keepFocusedInputVisible();
   },260);
+});
+
+$('open-search').addEventListener('click',()=>{
+  const nav = document.querySelector('.bottom-nav');
+  const isOpen = nav.classList.contains('search-open');
+  if(isOpen && !searchQuery.trim())closeSearch();
+  else setSearchOpen(true);
+});
+$('habit-search').addEventListener('input',e=>{
+  searchQuery = e.target.value;
+  render();
+});
+$('habit-search').addEventListener('keydown',e=>{
+  if(e.key !== 'Escape')return;
+  if(searchQuery){
+    searchQuery = '';
+    render();
+    e.preventDefault();
+    return;
+  }
+  closeSearch();
+});
+$('clear-search').addEventListener('click',()=>{
+  if(searchQuery.trim())setSearchOpen(true,{clear:true});
+  else closeSearch();
 });
 
 $('do-cancel').addEventListener('click',cancelAdd);
@@ -2396,7 +2500,7 @@ $('limit-mode-seg').addEventListener('click',e=>{
 $('stop-mode-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-stop-mode]');
   if(!opt)return;
-  updateSortSetting({stopMode:opt.dataset.stopMode,keepStopsQuiet:opt.dataset.stopMode === 'quiet',preset:'custom'});
+  updateSortSetting({stopMode:opt.dataset.stopMode,preset:'custom'});
   showToast('order updated');
 });
 $('default-type-seg').addEventListener('click',e=>{
@@ -2461,6 +2565,7 @@ $('settings-reset-yes').addEventListener('click',()=>{
 
 $('open-overview').addEventListener('click',()=>{
   if(load().length < 2)return;
+  closeSearch();
   overviewMonthOffset = 0;
   dayLogsKey = null;
   renderOverview();
@@ -2543,3 +2648,4 @@ $('list').addEventListener('touchstart',e=>{
 },{passive:true});
 
 render();
+if(sortSettings.focusSearchOnOpen)setSearchOpen(true,{render:false});
