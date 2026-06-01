@@ -10,14 +10,19 @@ const TAP_DELAY = 310;
 const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
 const WIDTH_TRANSITION = 'width 190ms cubic-bezier(.3,.7,.2,1)';
 const DEFAULT_SORT_SETTINGS = {
+  preset:'balanced',
   focus:'balanced',
   plansFirst:true,
   keepStopsQuiet:true,
   showSnoozed:false,
-  planWindowDays:1,
+  planWindowDays:3,
   planWeight:100,
+  dueWeight:100,
+  progressWeight:70,
+  trendWeight:55,
+  rhythmWeight:55,
   buildWeight:100,
-  limitWeight:100,
+  limitWeight:85,
   stopWeight:55,
   newWeight:100,
   newBuildMode:'gentle',
@@ -30,6 +35,38 @@ const DEFAULT_SORT_SETTINGS = {
   reachAssist:true,
   defaultType:'keepup',
   defaultTarget:7
+};
+const SORT_PRESETS = {
+  balanced:{
+    focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:3,
+    planWeight:100,dueWeight:100,progressWeight:70,trendWeight:55,rhythmWeight:55,
+    buildWeight:100,limitWeight:85,stopWeight:55,newWeight:100,
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',rhythmBias:0
+  },
+  build:{
+    focus:'build',plansFirst:true,keepStopsQuiet:true,planWindowDays:3,
+    planWeight:95,dueWeight:125,progressWeight:95,trendWeight:70,rhythmWeight:55,
+    buildWeight:130,limitWeight:65,stopWeight:45,newWeight:120,
+    newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',rhythmBias:12
+  },
+  planned:{
+    focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:7,
+    planWeight:150,dueWeight:95,progressWeight:60,trendWeight:45,rhythmWeight:45,
+    buildWeight:100,limitWeight:80,stopWeight:45,newWeight:80,
+    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',rhythmBias:0
+  },
+  calm:{
+    focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:1,
+    planWeight:85,dueWeight:80,progressWeight:45,trendWeight:35,rhythmWeight:30,
+    buildWeight:90,limitWeight:55,stopWeight:30,newWeight:55,
+    newBuildMode:'quiet',dueMode:'date',buildLookAheadDays:1,buildRiseAt:95,limitMode:'quiet',rhythmBias:-8
+  },
+  strict:{
+    focus:'build',plansFirst:true,keepStopsQuiet:false,planWindowDays:7,
+    planWeight:125,dueWeight:140,progressWeight:115,trendWeight:90,rhythmWeight:75,
+    buildWeight:125,limitWeight:105,stopWeight:85,newWeight:120,
+    newBuildMode:'rise',dueMode:'short',buildLookAheadDays:7,buildRiseAt:60,limitMode:'active',rhythmBias:18
+  }
 };
 
 const $ = id => document.getElementById(id);
@@ -77,7 +114,9 @@ function load(){
 
 function loadSortSettings(){
   try{
-    return {...DEFAULT_SORT_SETTINGS,...(JSON.parse(localStorage.getItem(SORT_SETTINGS_KEY)) || {})};
+    const saved = JSON.parse(localStorage.getItem(SORT_SETTINGS_KEY)) || {};
+    const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
+    return {...DEFAULT_SORT_SETTINGS,...migrated};
   }catch{
     return {...DEFAULT_SORT_SETTINGS};
   }
@@ -326,86 +365,133 @@ function plannedWithinWindow(h,windowDays){
   return dist !== null && dist <= 0 && Math.abs(dist) <= windowDays;
 }
 
-function attentionScore(h,index){
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
+function clamp01(value){
+  return Math.max(0,Math.min(1,value));
+}
+
+function dayStart(ts){
+  const d = new Date(ts);
+  return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+}
+
+function calendarDayDiff(ts){
+  return Math.round((dayStart(ts) - dayStart(Date.now())) / 86400000);
+}
+
+function planSignal(h,settings){
+  const plan = nextPlannedLog(h);
+  if(!settings.plansFirst || !plan || h.type === 'zero')return 0;
+  const daysUntil = calendarDayDiff(plan);
+  const windowDays = clampNumber(settings.planWindowDays,1,14,1);
+  if(daysUntil < 0)return 95;
+  if(daysUntil > windowDays)return 0;
+  return 100 - (daysUntil / Math.max(1,windowDays)) * 45;
+}
+
+function newHabitSignal(h,settings){
+  if(h.lastLog !== null)return 0;
+  if(h.type === 'zero')return 8;
+  if(h.type === 'reduce')return 16;
+  const mode = settings.newBuildMode || 'gentle';
+  if(mode === 'quiet')return 18;
+  if(mode === 'rise')return 82;
+  return 48;
+}
+
+function dueSignal(h,settings){
   const days = daysSince(h.lastLog);
   const target = h.target || 7;
-  const settings = sortSettings || DEFAULT_SORT_SETTINGS;
-  const focus = settings.focus || 'balanced';
-  const planScale = settingScale(settings.planWeight);
-  const buildScale = settingScale(settings.buildWeight);
-  const limitScale = settingScale(settings.limitWeight);
-  const stopScale = settingScale(settings.stopWeight);
-  const newScale = settingScale(settings.newWeight);
-  let score = 0;
-  if(settings.plansFirst && plannedWithinWindow(h,settings.planWindowDays ?? 1))score += 320 * planScale;
+  if(days === null)return newHabitSignal(h,settings);
+  if(days < 0)return 8;
 
   if(h.type === 'keepup'){
-    if(days === null){
-      const mode = settings.newBuildMode || 'gentle';
-      if(mode === 'quiet')score += 30 * newScale;
-      else if(mode === 'rise')score += 165 * newScale;
-      else score += 95 * newScale;
-      if(focus === 'build' && mode === 'rise')score += 45 * newScale;
-    }
-    else{
-      const urgency = buildUrgency(days,target,settings);
-      const riseAt = clampNumber(settings.buildRiseAt,40,110,75) / 100;
-      if(urgency >= 1)score += 260 + Math.min(70,(urgency - 1) * 60);
-      else if(urgency >= riseAt)score += 165 + ((urgency - riseAt) / Math.max(0.05,1 - riseAt)) * 80;
-      else score += 45 + urgency * 70;
-      score += rhythmBiasScore(target,settings);
-    }
-    if(focus === 'build')score *= 1.22;
-    if(focus === 'space')score *= 0.9;
-    score *= buildScale;
-    return score - index / 100;
+    const urgency = buildUrgency(days,target,settings);
+    const riseAt = clampNumber(settings.buildRiseAt,40,110,75) / 100;
+    if(urgency >= 1)return 88 + Math.min(22,(urgency - 1) * 40);
+    if(urgency >= riseAt)return 54 + ((urgency - riseAt) / Math.max(0.05,1 - riseAt)) * 34;
+    return clamp01(urgency / Math.max(0.1,riseAt)) * 44;
   }
 
   if(h.type === 'reduce'){
-    if(days === null)score += 38 * newScale;
-    else{
-      const ratio = days / target;
-      const mode = settings.limitMode || 'overdue';
-      if(mode === 'quiet'){
-        if(ratio >= 1.5)score += 55 + Math.min(22,(ratio - 1.5) * 16);
-        else score += 10 + ratio * 16;
-      }else if(mode === 'active'){
-        if(ratio >= 1.1)score += 115 + Math.min(30,(ratio - 1.1) * 20);
-        else if(ratio >= 0.75)score += 72 + ratio * 20;
-        else score += 24 + ratio * 26;
-      }else if(mode === 'near'){
-        if(ratio >= 1.15)score += 98 + Math.min(26,(ratio - 1.15) * 18);
-        else if(ratio >= 0.85)score += 58 + ratio * 18;
-        else score += 18 + ratio * 20;
-      }else{
-        if(ratio >= 1.25)score += 92 + Math.min(24,(ratio - 1.25) * 18);
-        else if(ratio >= 1)score += 62 + ratio * 10;
-        else score += 14 + ratio * 16;
-      }
-      score += rhythmBiasScore(target,settings) * 0.35;
-    }
-    if(focus === 'space')score *= 1.35;
-    if(focus === 'build')score *= 0.78;
-    score *= limitScale;
-    return score - index / 100;
+    const ratio = days / target;
+    const mode = settings.limitMode || 'overdue';
+    const threshold = mode === 'quiet' ? 1.5 : mode === 'overdue' ? 1.25 : mode === 'near' ? 0.85 : 0.65;
+    if(ratio >= threshold)return 50 + clamp01((ratio - threshold) / Math.max(0.35,threshold)) * 38;
+    return clamp01(ratio / threshold) * (mode === 'active' ? 48 : mode === 'near' ? 34 : 22);
   }
 
   if(h.type === 'zero'){
-    if(days === null)score += 10 * newScale;
-    else if(days < 0)score += 8;
-    else if(days === 0)score += 24;
-    else if(days < 3)score += 18;
-    else score += Math.max(4,14 - days / 3);
-    if(settings.keepStopsQuiet)score *= 0.55;
-    if(focus === 'space')score *= 1.2;
-    score *= stopScale;
-    return score - index / 100;
+    if(days === 0)return 74;
+    if(days < 3)return 58;
+    if(days < 7)return 34;
+    if(days < 14)return 18;
+    return 6;
   }
 
-  if(days === null)return 20 - index / 100;
-  const ratio = days / target;
-  return (ratio >= 1 ? 80 + ratio : ratio * 40) - index / 100;
+  return 0;
+}
+
+function progressConcern(h,settings){
+  const score = progressScore(h);
+  if(score === null)return newHabitSignal(h,settings) * 0.65;
+  const raw = 100 - score;
+  if(h.type === 'keepup')return raw;
+  if(h.type === 'reduce'){
+    const mode = settings.limitMode || 'overdue';
+    const multiplier = mode === 'active' ? 0.78 : mode === 'near' ? 0.55 : mode === 'quiet' ? 0.18 : 0.34;
+    return raw * multiplier;
+  }
+  const quiet = settings.keepStopsQuiet ? 0.35 : 0.7;
+  return raw * quiet;
+}
+
+function trendConcern(h){
+  const summary = intervalToneSummary(h);
+  const hasHistory = intervalValues(h,6).length >= 2;
+  if(!hasHistory)return 0;
+  if(h.type === 'keepup')return summary.miss + summary.warn * 0.45 - summary.hit * 0.12;
+  if(h.type === 'reduce')return Math.max(0,summary.miss * 0.55 + summary.warn * 0.2 - summary.hit * 0.16);
+  return Math.max(0,summary.miss * 0.35 + summary.warn * 0.14 - summary.hit * 0.12);
+}
+
+function rhythmSignal(h,settings){
+  if(h.type === 'zero')return 0;
+  const target = h.target || 7;
+  const days = daysSince(h.lastLog);
+  const tieBias = rhythmBiasScore(target,settings);
+  if(days === null)return tieBias * 0.5;
+  if((settings.dueMode || 'relative') === 'short'){
+    return tieBias + Math.max(0,(21 - Math.min(target,21)) / 21) * 18;
+  }
+  if((settings.dueMode || 'relative') === 'date'){
+    const daysLeft = Math.max(0,target - days);
+    return tieBias + Math.max(0,(7 - Math.min(daysLeft,7)) / 7) * 10;
+  }
+  return tieBias;
+}
+
+function attentionScore(h,index){
+  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
+  const settings = sortSettings || DEFAULT_SORT_SETTINGS;
+  const focus = settings.focus || 'balanced';
+  const typeScale = h.type === 'keepup' ? settingScale(settings.buildWeight) : h.type === 'reduce' ? settingScale(settings.limitWeight) : settingScale(settings.stopWeight);
+  const plan = planSignal(h,settings) * settingScale(settings.planWeight);
+  const due = dueSignal(h,settings) * settingScale(settings.dueWeight);
+  const progress = progressConcern(h,settings) * settingScale(settings.progressWeight);
+  const trend = Math.max(0,trendConcern(h)) * settingScale(settings.trendWeight);
+  const rhythm = rhythmSignal(h,settings) * settingScale(settings.rhythmWeight);
+  const newness = newHabitSignal(h,settings) * settingScale(settings.newWeight) * (h.lastLog === null ? 0.75 : 0);
+  let score = plan * 1.35 + due * 1.4 + progress * 0.75 + trend * 0.65 + rhythm + newness;
+
+  if(h.type === 'keepup' && focus === 'build')score *= 1.22;
+  if(h.type === 'keepup' && focus === 'space')score *= 0.88;
+  if(h.type === 'reduce' && focus === 'space')score *= 1.22;
+  if(h.type === 'reduce' && focus === 'build')score *= 0.78;
+  if(h.type === 'zero' && focus === 'space')score *= 1.12;
+  if(h.type === 'zero' && settings.keepStopsQuiet)score *= 0.62;
+
+  score *= typeScale;
+  return score - index / 100;
 }
 
 function visibleIndices(data){
@@ -1712,8 +1798,8 @@ function syncSettingsControls(){
   sortSettings = loadSortSettings();
   const resetConfirm = $('settings-reset-confirm');
   if(resetConfirm)resetConfirm.hidden = true;
-  document.querySelectorAll('#sort-focus-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.focus === sortSettings.focus);
+  document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.preset === (sortSettings.preset || 'custom'));
   });
   document.querySelectorAll('#plan-window-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',parseInt(btn.dataset.window,10) === (sortSettings.planWindowDays ?? 1));
@@ -1737,6 +1823,10 @@ function syncSettingsControls(){
     btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
   });
   syncSettingRange('plan-weight',sortSettings.planWeight,'%');
+  syncSettingRange('due-weight',sortSettings.dueWeight,'%');
+  syncSettingRange('progress-weight',sortSettings.progressWeight,'%');
+  syncSettingRange('trend-weight',sortSettings.trendWeight,'%');
+  syncSettingRange('rhythm-weight',sortSettings.rhythmWeight,'%');
   syncSettingRange('build-weight',sortSettings.buildWeight,'%');
   syncSettingRange('limit-weight',sortSettings.limitWeight,'%');
   syncSettingRange('stop-weight',sortSettings.stopWeight,'%');
@@ -1754,11 +1844,35 @@ function updateSortSetting(patch,options = {}){
   if(renderNow)render();
 }
 
+function isSortSettingKey(key){
+  return ['plansFirst','keepStopsQuiet','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','rhythmBias','focus'].includes(key);
+}
+
+function applySortPreset(name){
+  if(name === 'custom'){
+    updateSortSetting({preset:'custom'});
+    showToast('custom order');
+    return;
+  }
+  const preset = SORT_PRESETS[name];
+  if(!preset)return;
+  updateSortSetting({...preset,preset:name});
+  showToast('preset applied');
+}
+
+function markPresetButton(name){
+  document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.preset === name);
+  });
+}
+
 function toggleAppSettingButton(btn){
   if(!btn)return;
   const key = btn.dataset.settingToggle;
   if(!key)return;
-  updateSortSetting({[key]:!Boolean(sortSettings[key])});
+  const patch = {[key]:!Boolean(sortSettings[key])};
+  if(isSortSettingKey(key))patch.preset = 'custom';
+  updateSortSetting(patch);
 }
 
 function setAdvancedSettingsOpen(open){
@@ -1786,13 +1900,16 @@ function syncSettingRange(name,value,suffix){
   }
 }
 
-function bindSettingRange(name,key,suffix){
+function bindSettingRange(name,key,suffix,options = {}){
   const field = $(`setting-${name}`);
   if(!field)return;
   field.addEventListener('input',e=>{
     const value = parseInt(e.target.value,10);
     syncSettingRange(name,value,suffix);
-    updateSortSetting({[key]:value},{sync:false,renderNow:false});
+    const patch = {[key]:value};
+    if(options.custom !== false && isSortSettingKey(key))patch.preset = 'custom';
+    updateSortSetting(patch,{sync:false,renderNow:false});
+    if(patch.preset)markPresetButton(patch.preset);
   });
   field.addEventListener('change',()=>{
     render();
@@ -2058,40 +2175,39 @@ $('settings-advanced-toggle').addEventListener('click',e=>{
   }
   toggleAdvancedSettings();
 });
-$('sort-focus-seg').addEventListener('click',e=>{
-  const opt = e.target.closest('[data-focus]');
+$('sort-preset-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-preset]');
   if(!opt)return;
-  updateSortSetting({focus:opt.dataset.focus});
-  showToast('order updated');
+  applySortPreset(opt.dataset.preset);
 });
 $('plan-window-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-window]');
   if(!opt)return;
-  updateSortSetting({planWindowDays:parseInt(opt.dataset.window,10)});
+  updateSortSetting({planWindowDays:parseInt(opt.dataset.window,10),preset:'custom'});
   showToast('order updated');
 });
 $('new-build-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-new-build]');
   if(!opt)return;
-  updateSortSetting({newBuildMode:opt.dataset.newBuild});
+  updateSortSetting({newBuildMode:opt.dataset.newBuild,preset:'custom'});
   showToast('order updated');
 });
 $('due-mode-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-due-mode]');
   if(!opt)return;
-  updateSortSetting({dueMode:opt.dataset.dueMode});
+  updateSortSetting({dueMode:opt.dataset.dueMode,preset:'custom'});
   showToast('order updated');
 });
 $('build-window-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-build-window]');
   if(!opt)return;
-  updateSortSetting({buildLookAheadDays:parseInt(opt.dataset.buildWindow,10)});
+  updateSortSetting({buildLookAheadDays:parseInt(opt.dataset.buildWindow,10),preset:'custom'});
   showToast('order updated');
 });
 $('limit-mode-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-limit-mode]');
   if(!opt)return;
-  updateSortSetting({limitMode:opt.dataset.limitMode});
+  updateSortSetting({limitMode:opt.dataset.limitMode,preset:'custom'});
   showToast('order updated');
 });
 $('default-type-seg').addEventListener('click',e=>{
@@ -2128,13 +2244,17 @@ $('settings-sheet').addEventListener('pointerup',e=>{
 });
 $('settings-sheet').addEventListener('pointercancel',()=>{settingsPointer = null;},{passive:true});
 bindSettingRange('plan-weight','planWeight','%');
+bindSettingRange('due-weight','dueWeight','%');
+bindSettingRange('progress-weight','progressWeight','%');
+bindSettingRange('trend-weight','trendWeight','%');
+bindSettingRange('rhythm-weight','rhythmWeight','%');
 bindSettingRange('build-weight','buildWeight','%');
 bindSettingRange('limit-weight','limitWeight','%');
 bindSettingRange('stop-weight','stopWeight','%');
 bindSettingRange('new-weight','newWeight','%');
 bindSettingRange('build-start','buildRiseAt','%');
 bindSettingRange('rhythm-bias','rhythmBias','');
-bindSettingRange('default-target','defaultTarget','d');
+bindSettingRange('default-target','defaultTarget','d',{custom:false});
 $('settings-reset').addEventListener('click',()=>{
   $('settings-reset-confirm').hidden = false;
 });

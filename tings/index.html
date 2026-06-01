@@ -217,7 +217,7 @@
         <section class="about-block calm-block"><span>Not a calendar</span><p>A calendar is for exact appointments. This is lighter: you can plan a day, but the main goal is to notice rhythm, spacing, and progress.</p></section>
         <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
         <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
-        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order brings up what may need attention. Settings can change how new, due, planned, limit, and stop habits move.</p></section>
+        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order brings up what may need attention. Settings has presets and fine tuning for plans, due timing, progress, trend, rhythm, and habit type.</p></section>
         <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
         <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon to log with confirmation. Double tap anywhere on a card to log quickly. Swipe right to pin or plan. Swipe left to snooze or remove.</p></section>
       </div>
@@ -237,11 +237,16 @@
         <section class="settings-block">
           <span class="settings-label">home order</span>
           <p class="field-hint">Pinned habits always stay first. After that, auto order brings up what needs attention.</p>
-          <div class="seg compact-seg" id="sort-focus-seg">
-            <button class="seg-opt" data-focus="balanced">balanced</button>
-            <button class="seg-opt" data-focus="build">build due</button>
-            <button class="seg-opt" data-focus="space">limit/stop</button>
+          <span class="settings-sublabel">priority preset</span>
+          <div class="seg compact-seg preset-seg" id="sort-preset-seg">
+            <button class="seg-opt" data-preset="balanced">balanced</button>
+            <button class="seg-opt" data-preset="build">build</button>
+            <button class="seg-opt" data-preset="planned">plans</button>
+            <button class="seg-opt" data-preset="calm">calm</button>
+            <button class="seg-opt" data-preset="strict">strict</button>
+            <button class="seg-opt" data-preset="custom">custom</button>
           </div>
+          <p class="field-hint">Presets move the controls below. Use custom when you tune by hand.</p>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
               <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
@@ -321,7 +326,7 @@
           <button class="settings-advanced-toggle" id="settings-advanced-toggle" type="button" aria-expanded="false" aria-controls="settings-advanced-body">
             <span>
               <b>fine tune priority</b>
-              <small>Optional. 100 is normal, lower is quieter, higher rises sooner.</small>
+              <small>Optional. 100 is normal. Tune plans, due timing, progress, trend, rhythm, and habit types.</small>
             </span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
@@ -330,6 +335,26 @@
               <span>planned</span>
               <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
               <output id="setting-plan-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>due</span>
+              <input type="range" id="setting-due-weight" min="0" max="200" step="10" />
+              <output id="setting-due-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>progress</span>
+              <input type="range" id="setting-progress-weight" min="0" max="200" step="10" />
+              <output id="setting-progress-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>trend</span>
+              <input type="range" id="setting-trend-weight" min="0" max="200" step="10" />
+              <output id="setting-trend-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>rhythm</span>
+              <input type="range" id="setting-rhythm-weight" min="0" max="200" step="10" />
+              <output id="setting-rhythm-weight-label"></output>
             </label>
             <label class="settings-range">
               <span>build</span>

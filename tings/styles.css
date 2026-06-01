@@ -691,6 +691,14 @@ input[type=range]::-moz-range-thumb{
 }
 .compact-seg{margin-bottom:9px;}
 .settings-block .compact-seg .seg-opt{font-size:12px;min-height:40px;padding:8px 4px;}
+.preset-seg{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+}
+.preset-seg .seg-opt{
+  border-right:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);
+}
+.preset-seg .seg-opt:nth-child(3n){border-right:0;}
+.preset-seg .seg-opt:nth-last-child(-n+3){border-bottom:0;}
 .settings-grid{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
 .setting-toggle{
   display:flex;align-items:center;justify-content:space-between;gap:14px;
