@@ -1209,7 +1209,7 @@ function openDetail(i){
   $('detail-sub').textContent = metaLine(h).join(' · ');
   $('detail-about').textContent = aboutText(h);
   $('detail-trend').textContent = trendText(h);
-  $('detail-habit-name').value = h.name || '';
+  $('detail-habit-message').value = h.name || '';
   $('detail-emoji').value = h.emoji || '';
   $('detail-days').value = h.target || '';
   $('detail-pinned').checked = Boolean(h.pinned);
@@ -1242,7 +1242,7 @@ function openDetail(i){
 
 function currentDetailTune(){
   return {
-    name:$('detail-habit-name').value.trim(),
+    name:$('detail-habit-message').value.trim(),
     type:document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup',
     emoji:cleanMark($('detail-emoji').value),
     target:$('detail-days').value || '',
@@ -1266,7 +1266,7 @@ function setDetailDirty(force){
 
 function restoreDetailTune(){
   if(!detailTuneOriginal)return;
-  $('detail-habit-name').value = detailTuneOriginal.name;
+  $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;
   $('detail-pinned').checked = detailTuneOriginal.pinned;
   setDetailTypeUi(detailTuneOriginal.type);
@@ -1926,7 +1926,7 @@ function cancelAdd(){
 
 function applyAddDefaults(){
   const settings = loadSortSettings();
-  $('ting-name').value = '';
+  $('ting-message').value = '';
   $('ting-emoji').value = '';
   selectedType = settings.defaultType || 'keepup';
   const target = clampRhythm(settings.defaultTarget || 7);
@@ -2205,7 +2205,7 @@ $('open-add').addEventListener('click',()=>{
   closeSearch();
   applyAddDefaults();
   openSheet('add-sheet');
-  $('ting-name').focus({preventScroll:true});
+  $('ting-message').focus({preventScroll:true});
   setTimeout(()=>{
     updateKeyboardLift();
     keepFocusedInputVisible();
@@ -2270,8 +2270,8 @@ $('do-cancel').addEventListener('click',cancelAdd);
 $('add-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cancelAdd();});
 
 $('do-save').addEventListener('click',()=>{
-  const name = $('ting-name').value.trim();
-  if(!name){$('ting-name').focus();return;}
+  const name = $('ting-message').value.trim();
+  if(!name){$('ting-message').focus();return;}
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
   if(sizeKb(data) >= QUOTA_HARD_KB){alert('storage ceiling');return;}
@@ -2280,7 +2280,7 @@ $('do-save').addEventListener('click',()=>{
   if(save(data)){cancelAdd();showToast('added');render();}
 });
 
-$('ting-name').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
+$('ting-message').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
 
 function clampRhythm(value){
   return Math.max(1,Math.min(90,parseInt(value,10) || 7));
@@ -2331,7 +2331,7 @@ function bindRhythm(prefix){
 
 bindRhythm('ting');
 bindRhythm('detail');
-$('detail-habit-name').addEventListener('input',()=>setDetailDirty());
+$('detail-habit-message').addEventListener('input',()=>setDetailDirty());
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');
   if(!opt)return;
@@ -2411,7 +2411,7 @@ $('detail-save').addEventListener('click',()=>{
   const h = data[detailIdx];
   if(!h)return;
   const current = currentDetailTune();
-  if(!current.name){$('detail-habit-name').focus();return;}
+  if(!current.name){$('detail-habit-message').focus();return;}
   h.name = current.name.slice(0,60);
   h.type = current.type;
   h.emoji = current.emoji;
