@@ -52,10 +52,10 @@ const DEFAULT_SORT_SETTINGS = {
   defaultTarget:7
 };
 const LIMIT_MODE_POLICY = {
-  quiet:{threshold:1.8,ceiling:54,base:4,rise:8,progress:0.12},
-  overdue:{threshold:1.3,ceiling:66,base:12,rise:16,progress:0.28},
-  near:{threshold:0.95,ceiling:74,base:20,rise:24,progress:0.48},
-  active:{threshold:0.7,ceiling:86,base:30,rise:32,progress:0.72}
+  quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01},
+  overdue:{readyAt:1,threshold:1.25,ceiling:66,base:14,earlyBase:0,earlyRise:2,progress:0.16,progressEarly:0.02},
+  near:{readyAt:0.8,threshold:1,ceiling:74,base:18,earlyBase:4,earlyRise:12,progress:0.38,progressEarly:0.12},
+  active:{readyAt:0.45,threshold:0.7,ceiling:86,base:26,earlyBase:12,earlyRise:22,progress:0.62,progressEarly:0.3}
 };
 const STOP_MODE_POLICY = {
   quiet:{steps:[[1,12],[3,8],[7,4]],fallback:0,progress:0.08,mix:{due:0.38,progress:0.12,trend:0.12},cap:12,offset:-16,focus:1},
@@ -454,6 +454,21 @@ function stopDueScore(days,settings){
   return step ? step[1] : policy.fallback;
 }
 
+function limitPolicy(settings){
+  return LIMIT_MODE_POLICY[settings.limitMode || 'overdue'] || LIMIT_MODE_POLICY.overdue;
+}
+
+function limitDueScore(ratio,policy){
+  if(ratio < policy.readyAt){
+    return policy.earlyBase + clamp01(ratio / Math.max(0.1,policy.readyAt)) * policy.earlyRise;
+  }
+  if(ratio < policy.threshold){
+    const readySpan = Math.max(0.05,policy.threshold - policy.readyAt);
+    return policy.base + ((ratio - policy.readyAt) / readySpan) * (38 - policy.base);
+  }
+  return 38 + clamp01((ratio - policy.threshold) / Math.max(0.45,policy.threshold)) * (policy.ceiling - 38);
+}
+
 function dueSignal(h,settings){
   const days = daysSince(h.lastLog);
   const target = h.target || 7;
@@ -468,9 +483,7 @@ function dueSignal(h,settings){
 
   if(h.type === 'reduce'){
     const ratio = days / target;
-    const policy = LIMIT_MODE_POLICY[settings.limitMode || 'overdue'] || LIMIT_MODE_POLICY.overdue;
-    if(ratio >= policy.threshold)return 38 + clamp01((ratio - policy.threshold) / Math.max(0.45,policy.threshold)) * (policy.ceiling - 38);
-    return policy.base + clamp01(ratio / policy.threshold) * policy.rise;
+    return limitDueScore(ratio,limitPolicy(settings));
   }
 
   if(h.type === 'zero'){
@@ -486,8 +499,11 @@ function progressConcern(h,settings){
   const raw = 100 - score;
   if(h.type === 'keepup')return raw;
   if(h.type === 'reduce'){
-    const policy = LIMIT_MODE_POLICY[settings.limitMode || 'overdue'] || LIMIT_MODE_POLICY.overdue;
-    return raw * policy.progress;
+    const days = daysSince(h.lastLog);
+    const target = h.target || 7;
+    const ratio = days === null ? 0 : days / target;
+    const policy = limitPolicy(settings);
+    return raw * (ratio < policy.readyAt ? policy.progressEarly : policy.progress);
   }
   return raw * stopPolicy(settings).progress;
 }
@@ -545,6 +561,16 @@ function earlyBuildDamping(h,settings){
   return 0.28 + Math.pow(progress,1.7) * 0.54;
 }
 
+function earlyLimitDamping(h,settings){
+  if(h.type !== 'reduce' || hasPlannedToday(h))return 1;
+  const days = daysSince(h.lastLog);
+  if(days === null || days < 0)return 1;
+  const ratio = days / (h.target || 7);
+  const policy = limitPolicy(settings);
+  if(ratio >= policy.readyAt)return 1;
+  return 0.22 + clamp01(ratio / Math.max(0.1,policy.readyAt)) * 0.35;
+}
+
 function mixedPriorityScore(parts,mix){
   return Object.entries(mix).reduce((sum,[key,weight])=>sum + (parts[key] || 0) * weight,0);
 }
@@ -566,6 +592,7 @@ function attentionScore(h,index,settingsOverride = null){
   score *= focusScale[h.type] || 1;
   if(h.type === 'zero')score *= stopPolicy(settings).focus;
   score *= earlyBuildDamping(h,settings);
+  score *= earlyLimitDamping(h,settings);
 
   score *= typeSettingScale(h,settings);
   return score - index / 100;
