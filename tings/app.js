@@ -23,13 +23,14 @@ const DEFAULT_SORT_SETTINGS = {
   rhythmWeight:55,
   buildWeight:100,
   limitWeight:85,
-  stopWeight:55,
+  stopWeight:25,
   newWeight:100,
   newBuildMode:'gentle',
   dueMode:'relative',
   buildLookAheadDays:3,
   buildRiseAt:75,
   limitMode:'overdue',
+  stopMode:'quiet',
   rhythmBias:0,
   requireConfirm:true,
   reachAssist:true,
@@ -40,32 +41,32 @@ const SORT_PRESETS = {
   balanced:{
     focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:3,
     planWeight:100,dueWeight:100,progressWeight:70,trendWeight:55,rhythmWeight:55,
-    buildWeight:100,limitWeight:85,stopWeight:55,newWeight:100,
-    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',rhythmBias:0
+    buildWeight:100,limitWeight:70,stopWeight:25,newWeight:90,
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'quiet',rhythmBias:0
   },
   build:{
     focus:'build',plansFirst:true,keepStopsQuiet:true,planWindowDays:3,
-    planWeight:95,dueWeight:125,progressWeight:95,trendWeight:70,rhythmWeight:55,
-    buildWeight:130,limitWeight:65,stopWeight:45,newWeight:120,
-    newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',rhythmBias:12
+    planWeight:95,dueWeight:135,progressWeight:105,trendWeight:75,rhythmWeight:60,
+    buildWeight:140,limitWeight:50,stopWeight:12,newWeight:125,
+    newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12
   },
   planned:{
     focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:7,
-    planWeight:150,dueWeight:95,progressWeight:60,trendWeight:45,rhythmWeight:45,
-    buildWeight:100,limitWeight:80,stopWeight:45,newWeight:80,
-    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',rhythmBias:0
+    planWeight:175,dueWeight:85,progressWeight:55,trendWeight:40,rhythmWeight:40,
+    buildWeight:95,limitWeight:65,stopWeight:12,newWeight:70,
+    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'quiet',rhythmBias:0
   },
   calm:{
     focus:'balanced',plansFirst:true,keepStopsQuiet:true,planWindowDays:1,
-    planWeight:85,dueWeight:80,progressWeight:45,trendWeight:35,rhythmWeight:30,
-    buildWeight:90,limitWeight:55,stopWeight:30,newWeight:55,
-    newBuildMode:'quiet',dueMode:'date',buildLookAheadDays:1,buildRiseAt:95,limitMode:'quiet',rhythmBias:-8
+    planWeight:75,dueWeight:70,progressWeight:35,trendWeight:25,rhythmWeight:25,
+    buildWeight:85,limitWeight:45,stopWeight:8,newWeight:45,
+    newBuildMode:'quiet',dueMode:'date',buildLookAheadDays:1,buildRiseAt:95,limitMode:'quiet',stopMode:'quiet',rhythmBias:-8
   },
   strict:{
     focus:'build',plansFirst:true,keepStopsQuiet:false,planWindowDays:7,
-    planWeight:125,dueWeight:140,progressWeight:115,trendWeight:90,rhythmWeight:75,
-    buildWeight:125,limitWeight:105,stopWeight:85,newWeight:120,
-    newBuildMode:'rise',dueMode:'short',buildLookAheadDays:7,buildRiseAt:60,limitMode:'active',rhythmBias:18
+    planWeight:125,dueWeight:145,progressWeight:125,trendWeight:105,rhythmWeight:80,
+    buildWeight:125,limitWeight:115,stopWeight:160,newWeight:120,
+    newBuildMode:'rise',dueMode:'short',buildLookAheadDays:7,buildRiseAt:60,limitMode:'active',stopMode:'active',rhythmBias:18
   }
 };
 
@@ -116,7 +117,11 @@ function loadSortSettings(){
   try{
     const saved = JSON.parse(localStorage.getItem(SORT_SETTINGS_KEY)) || {};
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
-    return {...DEFAULT_SORT_SETTINGS,...migrated};
+    const merged = {...DEFAULT_SORT_SETTINGS,...migrated};
+    if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
+      merged.stopMode = merged.keepStopsQuiet ? 'quiet' : 'recent';
+    }
+    return merged;
   }catch{
     return {...DEFAULT_SORT_SETTINGS};
   }
@@ -135,6 +140,7 @@ function normalize(items){
     logs: Array.isArray(h.logs) ? h.logs.slice().sort((a,b)=>a-b).slice(-MAX_LOGS) : [],
     emoji: h.emoji || '',
     pinned:Boolean(h.pinned),
+    sample:Boolean(h.sample),
     snoozedUntil: h.snoozedUntil || null
   })).map(h => ({...h,lastLog:latestActualLog(h.logs)}));
 }
@@ -159,6 +165,34 @@ function latestActualLog(logs){
 }
 function actualLogs(logs){
   return (logs || []).filter(ts=>ts <= Date.now()).sort((a,b)=>a-b);
+}
+function sampleActual(daysAgo,hour = 9){
+  if(daysAgo === 0){
+    const d = new Date();
+    d.setHours(0,1,0,0);
+    return d.getTime() <= Date.now() ? d.getTime() : Date.now() - 60000;
+  }
+  const d = new Date();
+  d.setHours(hour,0,0,0);
+  d.setDate(d.getDate() - daysAgo);
+  return d.getTime();
+}
+function samplePlan(daysFromNow,hour = 18){
+  if(daysFromNow === 0){
+    const d = new Date();
+    d.setHours(23,59,0,0);
+    return d.getTime() > Date.now() ? d.getTime() : Date.now() + 60000;
+  }
+  const d = new Date();
+  d.setHours(hour,0,0,0);
+  d.setDate(d.getDate() + daysFromNow);
+  return d.getTime();
+}
+function sampleLogs(actualDays = [],plannedDays = []){
+  return [
+    ...actualDays.map(days=>sampleActual(days)),
+    ...plannedDays.map(days=>samplePlan(days))
+  ].sort((a,b)=>a-b);
 }
 function daysSince(ts){return ts ? Math.floor((Date.now() - ts) / 86400000) : null;}
 function dayDistance(ts){return ts ? Math.round((Date.now() - ts) / 86400000) : null;}
@@ -415,17 +449,33 @@ function dueSignal(h,settings){
   if(h.type === 'reduce'){
     const ratio = days / target;
     const mode = settings.limitMode || 'overdue';
-    const threshold = mode === 'quiet' ? 1.5 : mode === 'overdue' ? 1.25 : mode === 'near' ? 0.85 : 0.65;
-    if(ratio >= threshold)return 50 + clamp01((ratio - threshold) / Math.max(0.35,threshold)) * 38;
-    return clamp01(ratio / threshold) * (mode === 'active' ? 48 : mode === 'near' ? 34 : 22);
+    const threshold = mode === 'quiet' ? 1.8 : mode === 'overdue' ? 1.3 : mode === 'near' ? 0.95 : 0.7;
+    const ceiling = mode === 'quiet' ? 54 : mode === 'overdue' ? 66 : mode === 'near' ? 74 : 86;
+    const base = mode === 'active' ? 30 : mode === 'near' ? 20 : mode === 'overdue' ? 12 : 4;
+    if(ratio >= threshold)return 38 + clamp01((ratio - threshold) / Math.max(0.45,threshold)) * (ceiling - 38);
+    return base + clamp01(ratio / threshold) * (mode === 'active' ? 32 : mode === 'near' ? 24 : mode === 'overdue' ? 16 : 8);
   }
 
   if(h.type === 'zero'){
-    if(days === 0)return 74;
-    if(days < 3)return 58;
-    if(days < 7)return 34;
-    if(days < 14)return 18;
-    return 6;
+    const mode = settings.stopMode || (settings.keepStopsQuiet ? 'quiet' : 'recent');
+    if(mode === 'quiet'){
+      if(days === 0)return 12;
+      if(days < 3)return 8;
+      if(days < 7)return 4;
+      return 0;
+    }
+    if(mode === 'active'){
+      if(days === 0)return 92;
+      if(days < 2)return 78;
+      if(days < 4)return 58;
+      if(days < 7)return 34;
+      return 8;
+    }
+    if(days === 0)return 58;
+    if(days < 2)return 44;
+    if(days < 4)return 28;
+    if(days < 7)return 14;
+    return 3;
   }
 
   return 0;
@@ -438,11 +488,12 @@ function progressConcern(h,settings){
   if(h.type === 'keepup')return raw;
   if(h.type === 'reduce'){
     const mode = settings.limitMode || 'overdue';
-    const multiplier = mode === 'active' ? 0.78 : mode === 'near' ? 0.55 : mode === 'quiet' ? 0.18 : 0.34;
+    const multiplier = mode === 'active' ? 0.72 : mode === 'near' ? 0.48 : mode === 'quiet' ? 0.12 : 0.28;
     return raw * multiplier;
   }
-  const quiet = settings.keepStopsQuiet ? 0.35 : 0.7;
-  return raw * quiet;
+  const mode = settings.stopMode || (settings.keepStopsQuiet ? 'quiet' : 'recent');
+  const multiplier = mode === 'active' ? 0.62 : mode === 'recent' ? 0.34 : 0.08;
+  return raw * multiplier;
 }
 
 function trendConcern(h){
@@ -450,8 +501,8 @@ function trendConcern(h){
   const hasHistory = intervalValues(h,6).length >= 2;
   if(!hasHistory)return 0;
   if(h.type === 'keepup')return summary.miss + summary.warn * 0.45 - summary.hit * 0.12;
-  if(h.type === 'reduce')return Math.max(0,summary.miss * 0.55 + summary.warn * 0.2 - summary.hit * 0.16);
-  return Math.max(0,summary.miss * 0.35 + summary.warn * 0.14 - summary.hit * 0.12);
+  if(h.type === 'reduce')return Math.max(0,summary.miss * 0.42 + summary.warn * 0.16 - summary.hit * 0.18);
+  return Math.max(0,summary.miss * 0.22 + summary.warn * 0.1 - summary.hit * 0.16);
 }
 
 function rhythmSignal(h,settings){
@@ -470,9 +521,9 @@ function rhythmSignal(h,settings){
   return tieBias;
 }
 
-function attentionScore(h,index){
+function attentionScore(h,index,settingsOverride = null){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
-  const settings = sortSettings || DEFAULT_SORT_SETTINGS;
+  const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const focus = settings.focus || 'balanced';
   const typeScale = h.type === 'keepup' ? settingScale(settings.buildWeight) : h.type === 'reduce' ? settingScale(settings.limitWeight) : settingScale(settings.stopWeight);
   const plan = planSignal(h,settings) * settingScale(settings.planWeight);
@@ -481,29 +532,37 @@ function attentionScore(h,index){
   const trend = Math.max(0,trendConcern(h)) * settingScale(settings.trendWeight);
   const rhythm = rhythmSignal(h,settings) * settingScale(settings.rhythmWeight);
   const newness = newHabitSignal(h,settings) * settingScale(settings.newWeight) * (h.lastLog === null ? 0.75 : 0);
-  let score = plan * 1.35 + due * 1.4 + progress * 0.75 + trend * 0.65 + rhythm + newness;
+  let score = plan * 1.45 + due * 1.35 + progress * 0.72 + trend * 0.7 + rhythm + newness;
+
+  if(h.type === 'zero'){
+    const mode = settings.stopMode || (settings.keepStopsQuiet ? 'quiet' : 'recent');
+    if(mode === 'active')score = due * 1.5 + progress * 0.85 + trend * 0.65;
+    else if(mode === 'recent')score = due * 0.78 + progress * 0.28 + trend * 0.3;
+    else score = Math.min(due * 0.38 + progress * 0.12 + trend * 0.12,12) - 16;
+  }
 
   if(h.type === 'keepup' && focus === 'build')score *= 1.22;
   if(h.type === 'keepup' && focus === 'space')score *= 0.88;
   if(h.type === 'reduce' && focus === 'space')score *= 1.22;
   if(h.type === 'reduce' && focus === 'build')score *= 0.78;
   if(h.type === 'zero' && focus === 'space')score *= 1.12;
-  if(h.type === 'zero' && settings.keepStopsQuiet)score *= 0.62;
+  if(h.type === 'zero' && (settings.stopMode || 'quiet') === 'quiet')score *= 0.56;
 
   score *= typeScale;
   return score - index / 100;
 }
 
-function visibleIndices(data){
+function visibleIndices(data,settingsOverride = null){
+  const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
-    return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !sortSettings.showSnoozed);
+    return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
   });
   indices.sort((a,b)=>{
     if(data[a].pinned && data[b].pinned)return a - b;
     const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
     if(pin)return pin;
-    return attentionScore(data[b],b) - attentionScore(data[a],a);
+    return attentionScore(data[b],b,settings) - attentionScore(data[a],a,settings);
   });
   return indices;
 }
@@ -625,6 +684,7 @@ function cardTone(h){
 function cardMeta(h){
   const plan = nextPlannedLog(h);
   const parts = [];
+  if(h.sample)parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
   if(h.pinned)parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
   if(h.type !== 'zero')parts.push(`<span class="context-pill" title="target rhythm"><i class="ti ti-repeat" aria-hidden="true"></i>${h.target || 7}d</span>`);
   else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
@@ -1798,6 +1858,8 @@ function syncSettingsControls(){
   sortSettings = loadSortSettings();
   const resetConfirm = $('settings-reset-confirm');
   if(resetConfirm)resetConfirm.hidden = true;
+  updateSortSampleCount();
+  renderSortLabPreview();
   document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.preset === (sortSettings.preset || 'custom'));
   });
@@ -1815,6 +1877,9 @@ function syncSettingsControls(){
   });
   document.querySelectorAll('#limit-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.limitMode === (sortSettings.limitMode || 'overdue'));
+  });
+  document.querySelectorAll('#stop-mode-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.stopMode === (sortSettings.stopMode || 'quiet'));
   });
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
@@ -1845,7 +1910,7 @@ function updateSortSetting(patch,options = {}){
 }
 
 function isSortSettingKey(key){
-  return ['plansFirst','keepStopsQuiet','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','rhythmBias','focus'].includes(key);
+  return ['plansFirst','keepStopsQuiet','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
 }
 
 function applySortPreset(name){
@@ -1871,8 +1936,125 @@ function toggleAppSettingButton(btn){
   const key = btn.dataset.settingToggle;
   if(!key)return;
   const patch = {[key]:!Boolean(sortSettings[key])};
+  if(key === 'keepStopsQuiet')patch.stopMode = patch.keepStopsQuiet ? 'quiet' : 'recent';
   if(isSortSettingKey(key))patch.preset = 'custom';
   updateSortSetting(patch);
+}
+
+function sortSampleCount(){
+  return load().filter(h=>h.sample).length;
+}
+
+function updateSortSampleCount(){
+  const label = $('sort-sample-count');
+  if(label)label.textContent = sortSampleCount() ? `${sortSampleCount()} sample habits currently in the list.` : 'No sample habits are in the list.';
+}
+
+function sortSettingsForPreset(name){
+  if(name === 'custom')return {...DEFAULT_SORT_SETTINGS,...sortSettings,preset:'custom'};
+  return {...DEFAULT_SORT_SETTINGS,...(SORT_PRESETS[name] || SORT_PRESETS.balanced),preset:name};
+}
+
+function sampleDisplayName(name){
+  return String(name || '').replace(/^Sample:\s*/,'');
+}
+
+function renderSortLabPreview(){
+  const wrap = $('sort-lab-preview');
+  if(!wrap)return;
+  const samples = normalize(buildSortSamples());
+  const presetNames = ['balanced','build','planned','calm','strict'];
+  wrap.innerHTML = presetNames.map(name=>{
+    const settings = sortSettingsForPreset(name);
+    const order = visibleIndices(samples,settings)
+      .filter(i=>!samples[i].pinned && !(samples[i].snoozedUntil && Date.now() < samples[i].snoozedUntil))
+      .slice(0,6)
+      .map(i=>{
+        const h = samples[i];
+        const type = h.type === 'keepup' ? 'build' : h.type === 'reduce' ? 'limit' : 'stop';
+        return `<li><span>${escapeHtml(sampleDisplayName(h.name))}</span><b class="${h.type}">${type}</b></li>`;
+      }).join('');
+    const note = name === 'strict'
+      ? 'resets can rise'
+      : name === 'planned'
+        ? 'plans lead'
+        : name === 'build'
+          ? 'builds lead'
+          : name === 'calm'
+            ? 'only urgent rises'
+            : 'mixed signals';
+    return `<article class="sort-preview-card ${name === (sortSettings.preset || 'balanced') ? 'on' : ''}">
+      <div><strong>${escapeHtml(name)}</strong><small>${note}</small></div>
+      <ol>${order}</ol>
+    </article>`;
+  }).join('');
+}
+
+function sortSampleHabit(name,type,target,logs,options = {}){
+  return {
+    name:`Sample: ${name}`,
+    type,
+    target:type === 'zero' ? null : target,
+    logs,
+    emoji:options.emoji || '',
+    pinned:Boolean(options.pinned),
+    sample:true,
+    snoozedUntil:options.snoozedUntil || null
+  };
+}
+
+function buildSortSamples(){
+  return [
+    sortSampleHabit('daily walk overdue','keepup',1,sampleLogs([9,7,5,2]),{emoji:'🚶'}),
+    sortSampleHabit('call family due soon','keepup',7,sampleLogs([34,21,14,6]),{emoji:'☎️'}),
+    sortSampleHabit('movie night just done','keepup',7,sampleLogs([22,15,8,1]),{emoji:'🎬'}),
+    sortSampleHabit('new meditation habit','keepup',7,[],{emoji:'🧘'}),
+    sortSampleHabit('monthly date night close','keepup',30,sampleLogs([91,61,28]),{emoji:'💙'}),
+    sortSampleHabit('quarterly mini trip overdue','keepup',90,sampleLogs([190,91]),{emoji:'🧳'}),
+    sortSampleHabit('planned today workout','keepup',3,sampleLogs([11,8,5],[0]),{emoji:'🏋️'}),
+    sortSampleHabit('planned weekend check-in','keepup',14,sampleLogs([42,28,15],[3]),{emoji:'🗓️'}),
+    sortSampleHabit('pinned water habit','keepup',1,sampleLogs([4,3,1]),{emoji:'💧',pinned:true}),
+    sortSampleHabit('slipping reading rhythm','keepup',7,sampleLogs([45,34,23,13,8]),{emoji:'📖'}),
+    sortSampleHabit('improving stretch routine','keepup',7,sampleLogs([32,20,11,5,1]),{emoji:'🤸'}),
+    sortSampleHabit('video games too recent','reduce',7,sampleLogs([1]),{emoji:'🎮'}),
+    sortSampleHabit('takeout good spacing','reduce',14,sampleLogs([42,25,18]),{emoji:'🥡'}),
+    sortSampleHabit('social media ready to review','reduce',3,sampleLogs([11,8,5]),{emoji:'📱'}),
+    sortSampleHabit('late-night snacks close','reduce',5,sampleLogs([9,6,3]),{emoji:'🍪'}),
+    sortSampleHabit('stop smoking reset today','zero',null,sampleLogs([0]),{emoji:'🚭'}),
+    sortSampleHabit('no soda clear stretch','zero',null,sampleLogs([35,18]),{emoji:'🥤'}),
+    sortSampleHabit('old stop habit no entries','zero',null,[],{emoji:'⛔'}),
+    sortSampleHabit('snoozed build habit','keepup',7,sampleLogs([12]),{emoji:'😴',snoozedUntil:samplePlan(3,8)})
+  ];
+}
+
+function addSortSamples(){
+  const current = load().filter(h=>!h.sample);
+  const samples = buildSortSamples();
+  if(current.length + samples.length > MAX_TINGS){
+    alert(`${MAX_TINGS} habits max`);
+    return;
+  }
+  const next = [...current,...samples].map(h=>({...h,lastLog:latestActualLog(h.logs)}));
+  if(save(next)){
+    updateSortSampleCount();
+    closeSheet('settings-sheet');
+    render();
+    showToast('samples added');
+  }
+}
+
+function removeSortSamples(){
+  const current = load();
+  const next = current.filter(h=>!h.sample);
+  if(next.length === current.length){
+    showToast('no samples');
+    return;
+  }
+  if(save(next)){
+    updateSortSampleCount();
+    render();
+    showToast('samples removed');
+  }
 }
 
 function setAdvancedSettingsOpen(open){
@@ -1910,6 +2092,7 @@ function bindSettingRange(name,key,suffix,options = {}){
     if(options.custom !== false && isSortSettingKey(key))patch.preset = 'custom';
     updateSortSetting(patch,{sync:false,renderNow:false});
     if(patch.preset)markPresetButton(patch.preset);
+    renderSortLabPreview();
   });
   field.addEventListener('change',()=>{
     render();
@@ -2210,6 +2393,12 @@ $('limit-mode-seg').addEventListener('click',e=>{
   updateSortSetting({limitMode:opt.dataset.limitMode,preset:'custom'});
   showToast('order updated');
 });
+$('stop-mode-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-stop-mode]');
+  if(!opt)return;
+  updateSortSetting({stopMode:opt.dataset.stopMode,keepStopsQuiet:opt.dataset.stopMode === 'quiet',preset:'custom'});
+  showToast('order updated');
+});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
   if(!opt)return;
@@ -2255,6 +2444,8 @@ bindSettingRange('new-weight','newWeight','%');
 bindSettingRange('build-start','buildRiseAt','%');
 bindSettingRange('rhythm-bias','rhythmBias','');
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
+$('add-sort-samples').addEventListener('click',addSortSamples);
+$('remove-sort-samples').addEventListener('click',removeSortSamples);
 $('settings-reset').addEventListener('click',()=>{
   $('settings-reset-confirm').hidden = false;
 });
