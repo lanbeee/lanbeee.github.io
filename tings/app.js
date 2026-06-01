@@ -619,12 +619,21 @@ function setSearchOpen(open,options = {}){
   updateSearchUi();
   if(open && options.focus !== false){
     input.focus({preventScroll:true});
+    updateKeyboardLift();
+    keepFocusedInputVisible();
     requestAnimationFrame(()=>{
       if(nav.classList.contains('search-open') && document.activeElement !== input)input.focus({preventScroll:true});
+      updateKeyboardLift();
+      keepFocusedInputVisible();
     });
+    setTimeout(()=>{
+      updateKeyboardLift();
+      keepFocusedInputVisible();
+    },260);
   }else if(!open && document.activeElement === input){
     input.blur();
   }
+  if(!open)updateKeyboardLift();
   if(options.render !== false)render();
 }
 
@@ -1721,7 +1730,8 @@ function openDayEntry(i,key){
 
 function updateKeyboardLift(){
   const addOpen = $('add-sheet').classList.contains('open');
-  if(!addOpen || !window.visualViewport){
+  const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
+  if((!addOpen && !searchOpen) || !window.visualViewport){
     document.documentElement.style.setProperty('--keyboard-lift','0px');
     return;
   }
@@ -1731,7 +1741,7 @@ function updateKeyboardLift(){
 
 function keepFocusedInputVisible(){
   const active = document.activeElement;
-  if(!active || !$('add-sheet').contains(active))return;
+  if(!active || (!$('add-sheet').contains(active) && active !== $('habit-search')))return;
   active.scrollIntoView({block:'center',inline:'nearest'});
 }
 
@@ -2222,6 +2232,35 @@ $('habit-search').addEventListener('keydown',e=>{
   }
   closeSearch();
 });
+$('habit-search').addEventListener('focus',()=>{
+  updateKeyboardLift();
+  keepFocusedInputVisible();
+  setTimeout(()=>{
+    updateKeyboardLift();
+    keepFocusedInputVisible();
+  },260);
+});
+$('habit-search').addEventListener('blur',updateKeyboardLift);
+document.addEventListener('keydown',e=>{
+  const nav = document.querySelector('.bottom-nav');
+  const input = $('habit-search');
+  const target = e.target;
+  const textTarget = target?.matches?.('input,textarea,select') || target?.isContentEditable;
+  if(!nav?.classList.contains('search-open') || document.activeElement === input || textTarget)return;
+  if(e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1)return;
+  input.focus({preventScroll:true});
+  const start = searchQuery.length;
+  const end = searchQuery.length;
+  searchQuery = `${searchQuery.slice(0,start)}${e.key}${searchQuery.slice(end)}`;
+  render();
+  requestAnimationFrame(()=>{
+    input.focus({preventScroll:true});
+    input.setSelectionRange(start + e.key.length,start + e.key.length);
+    updateKeyboardLift();
+    keepFocusedInputVisible();
+  });
+  e.preventDefault();
+});
 $('clear-search').addEventListener('click',()=>{
   if(searchQuery.trim())setSearchOpen(true,{clear:true});
   else closeSearch();
@@ -2652,4 +2691,8 @@ $('list').addEventListener('touchstart',e=>{
 },{passive:true});
 
 render();
-if(sortSettings.focusSearchOnOpen)setSearchOpen(true,{render:false});
+if(sortSettings.focusSearchOnOpen){
+  setSearchOpen(true,{render:false});
+  setTimeout(()=>setSearchOpen(true,{render:false}),150);
+  setTimeout(()=>setSearchOpen(true,{render:false}),500);
+}
