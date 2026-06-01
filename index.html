@@ -1,492 +1,284 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-<meta name="color-scheme" content="light dark" />
-<title>Habits</title>
-<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-<style>
-  html{background:#f5f4f0;color-scheme:light dark;}
-  @media (prefers-color-scheme:dark){html{background:#2c2c2e;}}
-</style>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
-<link rel="stylesheet" href="./styles.css" />
+	<title>Nabeel - IIT - SUNY Buffalo</title>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="keywords" content="" />
+	<meta name="description" content="" />
+    <!-- <link href='http://fonts.googleapis.com/css?family=Roboto:400,100,100italic,300,300ita‌​lic,400italic,500,500italic,700,700italic,900italic,900' rel='stylesheet' type='text/css'> -->
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v6.0.0/css/all.css" integrity="sha384-3B6NwesSXE7YJlcLI9RpRqGf2p/EgVH8BgoKTaUrmKNDkHPStTQ3EyoYjCGXaOTS" crossorigin="anonymous">
+    <link href="accordion.css" rel="stylesheet" type='text/css'>
+    <link href="style_1.css" rel="stylesheet" type='text/css'>
 </head>
+
+
 <body>
-<div class="app">
-
-  <div class="topbar">
-    <button class="wordmark" id="open-about" aria-label="how it works">
-      <img src="./favicon.svg" alt="" aria-hidden="true" />
-      <span class="wordmark-copy">
-        <span>Habits</span>
-      </span>
-    </button>
-  </div>
-  <p class="overall-summary" id="overall-summary">getting started</p>
-
-  <div id="quota-bar"></div>
-  <div id="list"></div>
-  <p id="empty">no habits yet<br><span class="empty-sub">tap + to add your first habit</span></p>
-
-  <nav class="bottom-nav" aria-label="main actions">
-    <button class="icon-btn" id="open-overview" aria-label="calendar">
-      <i class="ti ti-calendar-month" aria-hidden="true"></i>
-    </button>
-    <button class="icon-btn nav-add" id="open-add" aria-label="add habit">
-      <i class="ti ti-plus" aria-hidden="true"></i>
-    </button>
-    <button class="icon-btn" id="open-search" aria-label="search habits" aria-pressed="false">
-      <i class="ti ti-search" aria-hidden="true"></i>
-    </button>
-    <div class="nav-search" id="nav-search" aria-hidden="true">
-      <input type="search" id="habit-search" aria-label="search habits" placeholder="search habits" autocomplete="off" autocorrect="off" spellcheck="false" />
-      <button class="icon-btn search-clear" id="clear-search" aria-label="clear search" type="button">
-        <i class="ti ti-x" aria-hidden="true"></i>
-      </button>
-    </div>
-  </nav>
-
-  <!-- add sheet -->
-  <div class="sheet-wrap" id="add-sheet">
-    <div class="sheet">
-      <p class="sheet-title">new habit</p>
-      <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" aria-label="habit message" placeholder="message" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
-        <input type="text" id="ting-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
-      </div>
-      <div class="seg" id="type-seg">
-        <button class="seg-opt on" data-v="keepup">build</button>
-        <button class="seg-opt" data-v="reduce">limit</button>
-        <button class="seg-opt" data-v="zero">stop</button>
-      </div>
-      <p class="field-hint" id="target-help">Target days between entries.</p>
-      <div class="range-row" id="target-slider-row">
-        <input type="range" id="ting-days-slider" min="1" max="90" value="7" />
-        <label class="range-value" aria-label="day rhythm">
-          <input type="text" id="ting-days" inputmode="numeric" maxlength="2" value="7" />
-          <span>d</span>
-        </label>
-      </div>
-      <div class="btn-row">
-        <button class="btn primary" id="do-save">add</button>
-        <button class="btn" id="do-cancel">cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- confirm sheet (single tap) -->
-  <div class="sheet-wrap" id="confirm-sheet">
-    <div class="sheet">
-      <p class="sheet-name" id="confirm-name"></p>
-      <p class="sheet-sub" id="confirm-sub"></p>
-      <div class="btn-row">
-        <button class="btn primary" id="confirm-yes">log it</button>
-        <button class="btn" id="confirm-no">cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- detail sheet -->
-  <div class="sheet-wrap" id="detail-sheet">
-    <div class="sheet detail-sheet">
-      <div class="detail-head">
-        <button class="pulse-btn detail-mark" id="detail-mark" aria-label="add entry"></button>
-        <div class="detail-title-wrap">
-          <p class="sheet-name" id="detail-name"></p>
-          <p class="sheet-sub" id="detail-sub"></p>
-        </div>
-        <button class="mini-add" id="detail-add" aria-label="add entry"><i class="ti ti-plus" aria-hidden="true"></i></button>
-      </div>
-      <div class="detail-pager" aria-label="habit details">
-        <section class="detail-page detail-card">
-          <p class="detail-about" id="detail-about"></p>
-          <div class="section-top">
-            <span class="section-label">insight</span>
-            <span class="trend-copy" id="detail-trend"></span>
-          </div>
-          <div class="stats-row" id="detail-stats"></div>
-          <div class="graph" id="detail-graph"></div>
-        </section>
-        <section class="detail-page month-card">
-          <div class="section-top">
-            <span class="section-label">month</span>
-            <div class="month-nav">
-              <button class="mini-nav" id="detail-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
-              <span class="trend-copy" id="detail-calendar-label"></span>
-              <button class="mini-nav" id="detail-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-            </div>
-          </div>
-          <div class="overview-stats compact-stats" id="detail-calendar-summary"></div>
-          <div class="month-grid rich-month-grid" id="detail-calendar"></div>
-          <div class="calendar-legend" aria-hidden="true">
-            <span><b class="hit"></b>good</span>
-            <span><b class="warn"></b>close</span>
-            <span><b class="miss"></b>care</span>
-            <span><b class="plan"></b>planned</span>
-          </div>
-        </section>
-        <section class="detail-page detail-section tune-section">
-          <span class="section-label">settings</span>
-          <div class="name-icon-row">
-            <input type="text" id="detail-habit-message" name="message" aria-label="habit message" placeholder="message" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
-            <input type="text" id="detail-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
-          </div>
-          <div class="seg" id="detail-type-seg">
-            <button class="seg-opt" data-detail-type="keepup">build</button>
-            <button class="seg-opt" data-detail-type="reduce">limit</button>
-            <button class="seg-opt" data-detail-type="zero">stop</button>
-          </div>
-          <label class="setting-toggle habit-toggle">
-            <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
-            <input type="checkbox" id="detail-pinned" />
-          </label>
-          <p class="field-hint" id="detail-target-help">Target days between entries.</p>
-          <div class="range-row" id="detail-slider-row">
-            <input type="range" id="detail-days-slider" min="1" max="90" value="7" />
-            <label class="range-value" aria-label="day rhythm">
-              <input type="text" id="detail-days" inputmode="numeric" maxlength="2" value="7" />
-              <span>d</span>
-            </label>
-          </div>
-          <div class="habit-actions">
-            <span class="settings-label">habit actions</span>
-            <button class="habit-action" id="detail-snooze" type="button">
-              <i class="ti ti-moon" aria-hidden="true"></i>
-              <span><b>snooze habit</b><small>Hide this habit for a few days.</small></span>
-            </button>
-            <button class="habit-action danger" id="detail-delete" type="button">
-              <i class="ti ti-trash" aria-hidden="true"></i>
-              <span><b>remove habit</b><small>Remove it from the list. Undo appears after.</small></span>
-            </button>
-            <div class="reset-confirm" id="detail-delete-confirm" hidden>
-              <p>Remove this habit?</p>
-              <div class="btn-row">
-                <button class="btn primary" id="detail-delete-yes" type="button">remove</button>
-                <button class="btn" id="detail-delete-no" type="button">keep habit</button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-      <div class="detail-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-      <div class="btn-row detail-actions" id="detail-cool-row">
-        <button class="btn primary" id="detail-cool">done</button>
-      </div>
-      <div class="btn-row detail-actions tune-actions" id="detail-tune-actions">
-        <button class="btn primary" id="detail-save">save</button>
-        <button class="btn" id="detail-close">cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- overview sheet -->
-  <div class="sheet-wrap" id="overview-sheet">
-    <div class="sheet overview-sheet">
-      <div class="page-head">
+<div class = "side_bar">
+ <div class="side_elem" onclick='document.getElementById("workex_content").style.display = "block"'><a href="#workex">Work Experience</a></div>
+ <div class="side_elem" onclick='document.getElementById("education_content").style.display = "block"'><a href="#education">Education</a></div>
+ <div class="side_elem" onclick='document.getElementById("skills_content").style.display = "block"'><a href="#skills">Skills</a></div>
+ <div class="side_elem" onclick='document.getElementById("projects_content").style.display = "block"'><a href="#projects">Projects</a></div>
+ <div class="side_elem" onclick='document.getElementById("achievements_content").style.display = "block"'><a href="#achievements">Accomplishments</a></div>
+ <div class="side_elem" onclick='document.getElementById("contact_content").style.display = "block"'><a href="#contact">Contacts</a></div>
+</div>
+<div class = "main_body content-center">
+<div class="resume accordion ">
         <div>
-          <p class="sheet-title">calendar</p>
-          <p class="about-copy" id="overview-copy">Entries and plans by day.</p>
-          <div class="overview-stats" id="overview-stats"></div>
+                <input type="checkbox" name="example_accordion" id="section0" class="accordion__input" checked>
+                <label for="section0" class="accordion__label"><h1 class = "h1 strong sectionhead content-center" style="text-transform: uppercase; padding-top: 12px;">Nabeel Khan</h1></label>
+
+                <div class="accordion__content indsmallsingle highlight1">
+                        <div class="resumecell"><span>Data Science Graduate Student with 3+ years of industry experience & seeking full time opportunities.</span></div>
+                </div>
         </div>
-      </div>
-      <div class="month-card overview-card">
-          <div class="section-top">
-            <span class="section-label">activity</span>
-            <div class="month-nav">
-            <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
-            <span class="trend-copy" id="overview-calendar-label"></span>
-            <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-            </div>
-          </div>
-        <div class="month-grid rich-month-grid" id="overview-calendar"></div>
-        <div class="calendar-legend" aria-hidden="true">
-          <span><b class="hit"></b>good</span>
-          <span><b class="warn"></b>close</span>
-          <span><b class="miss"></b>care</span>
-          <span><b class="plan"></b>planned</span>
+    <!-- <hr style="padding-top:0;margin-top:0;" /> -->
+    <!-- <div id="resumebody"> -->
+        <!-- <div class="section" id="sectionhead1">
+                <input type="checkbox" name="example_accordion" id="section1" class="accordion__input">
+                <label for="section1" class="accordion__label"><h3 class="h3 sectionhead">Summary</h3></label>
+                <div class="accordion__content">
+                        <div class="resumecell"><span>Machine Learning Engineer with 3+ years of industry experience & seeking internship opportunities.</span></div>
+                </div>
+        </div> -->
+        <div class="section" id="workex">
+                <input type="checkbox" name="example_accordion" id="section4" class="accordion__input">
+                <label for="section4" class="accordion__label">
+                        <h3 class="h3 sectionhead">Work Experience</h3>
+                        <span>Data Scientist with 3+ years of experience demonstrating history of working with wide variety of tools.</span>
+                </label>
+                <div class="accordion__content" id="workex_content">
+                        <div class="indsmalltop highlight1 highlight2">
+                                <div class="resumecell grid-container">
+                                        <div class="grid-left-elem"><span><strong>Data Analyst Intern, </strong></span><span><a href="https://www.tpcaba.com/">The Prefect Child LLC</a>, Brooklyn NY</span></div>
+                                        <div class="tenure grid-right-elem">Jun 2022-Aug 2022</div>
+                                </div>
+
+                                <div class= "indentsmall">
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Built a summary dashboard, capturing appropriate KPIs and statistics.</span></li>
+                                                        <li class=""><span>Created a database for addresses & geo coordinates using google maps API, and visualized on a map.</span></li>
+                                                </ul>
+                                        </div>
+                                </div>
+
+                        </div>
+                        <div class="indsmall highlight1 highlight2">
+                                <div class="resumecell grid-container">
+                                        <div class="grid-left-elem"><span><strong>Associate Data Scientist, </strong></span><span><a href="https://www.merilytics.com/">Merilytics</a>, India</span></div>
+                                        <div class="tenure grid-right-elem">Apr 2020-Aug 2021</div>
+                                </div>
+                                <div class= "indentsmall">
+                                        <div class="resumecell">
+                                                <span>Built an Automated Valuation Model (<strong>AVM</strong>) using TensorFlow-based custom nearest-neighbor architecture to identify comparable properties for 4 major property types.</span>
+                                                </div>
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Delivered <strong>~$25 million annual savings</strong> by reducing ~2700 man hours weekly by automating property valuation.</span></li>
+                                                        <li class=""><span>Collaborated with client on biweekly calls to <strong>deploy the AVM</strong> in the client's environment by establishing an end-to-end data pipeline, & refactoring the code using PEP guidelines.</span></li>
+                                                        <li>Built a Django Website and hosted the AVM on it to input with ease, and display the results (comparables) on a map.</li>
+                                                </ul>
+                                        </div>
+                                        <div class="resumecell">
+                                                <span>Developed a <strong>Demand forecast model</strong> with 1800 SKUs for a major European EV supplier </span>
+                                        </div>
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Leveraged Time Series forecasting packages such as fb-prophet, neural prophet, & seq2seq neural nets.</span></li>
+                                                        <li class=""><span>Reduced time taken for forecasting from 1 week to 4 hours with the automated pipeline.</span></li>
+                                                </ul>
+                                        </div>
+                                        <div class="resumecell">
+                                                <span>Created a heuristic based driver <strong>scheduling algorithm</strong> to incorporate driving, terminal, & regulatory constraints.</span>
+                                        </div>
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Automated driver scheduling, reducing the time taken from multiple days to 15 minutes.</span></li>
+                                                        <li class=""><span>Produced a simulation of bills movement across 34 terminals for a long-haul trucking client.</span></li>
+                                                </ul>
+                                        </div>
+                                </div>
+                        </div>
+
+                        <div class="indsmall highlight1 highlight2">
+                                <div class="resumecell grid-container">
+                                        <div class="grid-left-elem"><span><strong>Senior Data Science Analyst, </strong></span><span><a href="https://www.merilytics.com/">Merilytics</a>, India</span></div>
+                                        <div class="tenure grid-right-elem">Feb 2019-Apr 2020</div>
+                                </div>
+                                <div class= "indentsmall">
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Built Sales Forecast Model using Keras for creating promotion strategy for an American online clothing chain.</span></li>
+                                                        <li class=""><span>Developed an end-to-end data pipeline on Azure utilizing Azure functions to automate ETL.</span></li>
+                                                        <li class=""><span>Utilized KNN for determining comparable real estate properties, incorporating weights for different features.</span></li>
+                                                </ul>
+                                        </div>
+                                </div>
+                        </div>
+                        <div class="indsmall highlight1 highlight2">
+                                <div class="resumecell grid-container">
+                                        <div class="grid-left-elem"><span><strong>Research Intern, </strong></span><span><a href="https://vidooly.com/">Vidooly</a>, India</span></div>
+                                        <div class="tenure grid-right-elem">Dec 2018-Jan 2019</div>
+                                </div>
+                                <div class= "indentsmall">
+
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Developed several Keras models like Xception and ResNet for classifying YouTube Thumbnails.</span></li>
+                                                        <li>Established the data pipeline for extracting thumbnails using YouTube API.</li>
+                                                </ul>
+                                        </div>
+                                </div>
+                        </div>
+                        <div class="indsmallbottom highlight1 highlight2">
+                                <div class="resumecell grid-container">
+                                        <div class="grid-left-elem"><span><strong>Python Developer Internship, </strong></span><span><a href="https://www.linkedin.com/company/modestreet/">Modestreet</a>, India</span></div>
+                                        <div class="tenure grid-right-elem">Sep 2017-Dec 2017</div>
+                                </div>
+                                <div class= "indentsmall">
+
+                                        <div class="resumecell">
+                                                <ul>
+                                                        <li class=""><span>Created a web app using Django & Three.js to make 3D human models with specific dimensions, to be used as a virtual mannequin for an online clothing store.</span></li>
+                                                </ul>
+                                        </div>
+                                </div>
+                        </div>
+                        <div class="indsmallsingle" style="background-color: #eee;">
+                                <h3 class="h3 sectionhead">Leadership Experience</h3>
+                                <!-- <span>Managed people.</span> -->
+                        </div>
+                        <div class="highlight1">
+
+                                <div class="indsmalltop highlight2">
+                                        <div class="resumecell grid-container">
+                                                <div class="grid-left-elem"><span><strong>President, </strong></span><span><a href="https://buffalo.campuslabs.com/engage/organization/ubdataanalytics">UB Data Analytics Club</a>, Buffalo NY</span></div>
+                                                <div class="tenure grid-right-elem">Apr 2022-Dec 2022</div>
+                                        </div>
+                                        <div class= "indentsmall">
+
+                                                <div class="resumecell">
+                                                        <ul>
+                                                                <li class=""><span>Spearhead events for weekly meetings regarding resumes, cover letters, and LinkedIn workshops, presenting research for 200+ students.</span></li>
+                                                        </ul>
+                                                </div>
+                                        </div>
+                                </div>
+                                <div class="indsmallbottom highlight2">
+                                        <div class="resumecell grid-container">
+                                                <div class="grid-left-elem"><span><strong>Co-Founder & Content Creator, </strong></span><span><a href="https://www.youtube.com/synergylearn">Synergy Learn</a>, India</span></div>
+                                                <div class="tenure grid-right-elem">Jan 2018-Sep 2018</div>
+                                        </div>
+                                        <div class= "indentsmall">
+
+                                                <div class="resumecell">
+                                                        <ul>
+                                                                <li class=""><span>Animated & Produced lectures for YouTube & garnered 10,000 hours of watch time.</span></li>
+                                                                <li class=""><span>Managed a graphic designer, company website, and social media to promote business.</span></li>
+                                                        </ul>
+                                                </div>
+                                        </div>
+                                </div>
+
+                        </div>
+                </div>
         </div>
-      </div>
-      <div class="overview-list" id="overview-list"></div>
-      <div class="btn-row overview-actions">
-        <button class="btn primary" id="overview-close">done</button>
-      </div>
-    </div>
-  </div>
+        <div class="section" id="education">
+                <input type="checkbox" name="example_accordion" id="section2" class="accordion__input">
+                <label for="section2" class="accordion__label"><h3 class="h3 sectionhead">Education</h3><span>Strong engineering professional with a Bachelor of Technology from IIT Roorkee, <br /> and MS in Data Science from SUNY Buffalo.</span></label>
+                <div class="accordion__content" id="education_content">
+                        <div class="">
+                        <div class="indsmalltop highlight2 highlight1">
+                                <div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Master of Science, Data Science, </strong></span><span><a href="https://www.buffalo.edu/">University at Buffalo, SUNY</a></span></div><div class="tenure grid-right-elem">Sep 2021-Jan 2023</div></div>
+                                <div class="resumecell grid-container"><div class="grid-left-elem"><span>Relevant course work: Statistical Data Mining, Data Model & Query Language, Probability Theory, Predictive Analytics, Machine Learning, Reinforcement Learning.</span></div><div class="tenure grid-right-elem">GPA: 3.8</div></div>
+                        </div>
+                        <div class="indsmallbottom highlight2 highlight1">
+                                <div class="resumecell grid-container"><div class="grid-left-elem"><span><strong>Bachelor of Technology, <a href="https://www.iitr.ac.in/">IIT Roorkee</a>, </strong></span><span>Industrial Engineering</span></div><div class="tenure grid-right-elem">May 2013-May 2017</div></div>
+                        </div>
+                        </div>
+                </div>
+        </div>
+        <div class="section" id="skills">
+                <input type="checkbox" name="example_accordion" id="section3" class="accordion__input">
+                <label for="section3" class="accordion__label"><h3 class="h3 sectionhead">Skills</h3><span>Python, Data Analytics, and Deep Learning.</span></label>
+                <div class="accordion__content" id="skills_content">
+                <div class="resumecell indsmallsingle">
+                        <ul>
+                                <li class=""><span><strong>Languages : </strong></span><span>Python, JavaScript, MATLAB, R, SAS</span></li>
+                                <li class=""><span><strong>ML Tools : </strong></span><span>Classification, Regression, Clustering, Tree Based Algorithms, Bagging & Boosting. <br/>
+                                        Libraries: TensorFlow, Keras, PyTorch, and scikit-learn.</span></li>
+                                <li class=""><span><strong>Deep Learning & NLP : </strong></span><span>LSTM, Transformers, CNN, YOLO, Word2Vec, TF-IDF, Topic Modelling, spaCy, NER</span></li>
+                                <li class=""><span><strong>Data Management : </strong></span><span>SQLite, MySQL, pandas, Numpy, Excel</span></li>
+                                <li class=""><span><strong>Tools & Data analysis : </strong></span><span>Version Control (git), Power BI, Tableau, Django, JavaScript, Time Series Forecasting, Data Visualization, Machine Learning Interpretability</span></li>
+                        </ul>
+                </div>
+                </div>        
+        </div>
+        <div class="section" id="projects">
+                <input type="checkbox" name="example_accordion" id="section5" class="accordion__input">
+                <label for="section5" class="accordion__label"><h3 class="h3 sectionhead">Projects</h3><span>Passionate about solving interesting problems, and working on new ideas.</span></label>
+                <div class="accordion__content" id="projects_content">
 
-  <!-- about sheet -->
-  <div class="sheet-wrap" id="about-sheet">
-    <div class="sheet about-sheet">
-      <p class="sheet-title">Habits</p>
-      <p class="about-copy">A small place to notice what you want to build, limit, or stop. No account needed. Your entries stay on this device.</p>
-      <div class="about-stack">
-        <section class="about-block calm-block"><span>Start simple</span><p>Add a habit, select Build, Limit, or Stop, then tap its icon whenever it occurs. Double-tap to log it instantly. Tap Habits at the top any time to come back here or open settings.</p></section>
-        <section class="about-block calm-block"><span>Not a task list</span><p>A to-do list is for finishing one thing. This is for habits that repeat, fade, slip, or improve over time. You are watching the pattern, not clearing an inbox.</p></section>
-        <section class="about-block calm-block"><span>Not a calendar</span><p>A calendar is for exact appointments. This is lighter: you can plan a day, but the main goal is to notice rhythm, spacing, and progress.</p></section>
-        <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
-        <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
-        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order weighs plans, rhythm, recent entries, progress, trends, and habit type. Settings lets you pick a preset or fine tune it.</p></section>
-        <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
-        <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon to log with confirmation. Double tap anywhere on a card to log quickly. Swipe right to pin or plan. Swipe left to snooze or remove.</p></section>
-      </div>
-      <div class="btn-row about-actions">
-        <button class="btn" id="open-settings">settings</button>
-        <button class="btn primary" id="about-close">done</button>
-      </div>
-    </div>
-  </div>
+                        <div class="highlight1">
+                        <div class="resumecell indsmalltop highlight2"><span><strong><a href="https://github.com/lanbeee/custom_nearest_neighbors">New Architecture : </a></strong></span><span>Created a new deep learning architecture based nearest-neighbors.</span></div>
 
-  <!-- settings sheet -->
-  <div class="sheet-wrap" id="settings-sheet">
-    <div class="sheet settings-sheet">
-      <p class="sheet-title">settings</p>
-      <p class="about-copy">Choose how the app behaves. These are app-wide settings, not settings for one habit.</p>
-      <div class="settings-stack">
-        <section class="settings-block">
-          <span class="settings-label">home order</span>
-          <p class="field-hint">Pinned habits always stay first. After that, auto order brings up what needs attention.</p>
-          <span class="settings-sublabel">priority preset</span>
-          <div class="seg compact-seg preset-seg" id="sort-preset-seg">
-            <button class="seg-opt" data-preset="balanced">balanced</button>
-            <button class="seg-opt" data-preset="build">build</button>
-            <button class="seg-opt" data-preset="planned">plans</button>
-            <button class="seg-opt" data-preset="calm">calm</button>
-            <button class="seg-opt" data-preset="strict">strict</button>
-            <button class="seg-opt" data-preset="custom">custom</button>
-          </div>
-          <p class="field-hint">Presets move the controls below. Balanced watches resets, build favors routines, plans favors planned days, calm lowers noise, and strict raises recent resets.</p>
-          <div class="settings-grid">
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
-              <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-          </div>
-          <span class="settings-sublabel">stop habits rise</span>
-          <div class="seg compact-seg" id="stop-mode-seg">
-            <button class="seg-opt" data-stop-mode="quiet">quiet</button>
-            <button class="seg-opt" data-stop-mode="watch">watch</button>
-            <button class="seg-opt" data-stop-mode="recent">recent</button>
-            <button class="seg-opt" data-stop-mode="active">strict</button>
-          </div>
-          <p class="field-hint">Quiet keeps quit habits low. Watch gives resets a small nudge. Recent brings them into view. Strict treats resets as urgent.</p>
-          <span class="settings-sublabel">look ahead for plans</span>
-          <div class="seg compact-seg" id="plan-window-seg">
-            <button class="seg-opt" data-window="1">today</button>
-            <button class="seg-opt" data-window="3">3 days</button>
-            <button class="seg-opt" data-window="7">week</button>
-          </div>
-          <span class="settings-sublabel">new build habits</span>
-          <div class="seg compact-seg" id="new-build-seg">
-            <button class="seg-opt" data-new-build="quiet">stay low</button>
-            <button class="seg-opt" data-new-build="gentle">gentle</button>
-            <button class="seg-opt" data-new-build="rise">rise</button>
-          </div>
-          <p class="field-hint">This controls build habits that have no entries yet.</p>
-          <span class="settings-sublabel">compare due build habits</span>
-          <div class="seg compact-seg" id="due-mode-seg">
-            <button class="seg-opt" data-due-mode="relative">rhythm</button>
-            <button class="seg-opt" data-due-mode="date">date</button>
-            <button class="seg-opt" data-due-mode="short">shorter</button>
-          </div>
-          <p class="field-hint">Rhythm favors the habit that is deeper into its cycle. Date treats two habits due on the same day as close. Shorter favors frequent habits.</p>
-          <span class="settings-sublabel">build look ahead</span>
-          <div class="seg compact-seg" id="build-window-seg">
-            <button class="seg-opt" data-build-window="1">1 day</button>
-            <button class="seg-opt" data-build-window="3">3 days</button>
-            <button class="seg-opt" data-build-window="7">week</button>
-          </div>
-          <span class="settings-sublabel">limit habits rise</span>
-          <div class="seg compact-seg" id="limit-mode-seg">
-            <button class="seg-opt" data-limit-mode="quiet">quiet</button>
-            <button class="seg-opt" data-limit-mode="overdue">overdue</button>
-            <button class="seg-opt" data-limit-mode="near">near</button>
-            <button class="seg-opt" data-limit-mode="active">active</button>
-          </div>
-          <p class="field-hint">Overdue waits until the rhythm has passed. Near and active bring limit habits up earlier.</p>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label">app behavior</span>
-          <div class="settings-grid">
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="requireConfirm" aria-pressed="false">
-              <span><b>confirm icon tap</b><small>Ask before logging from the large icon on a card.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozed" aria-pressed="false">
-              <span><b>show snoozed habits</b><small>Show hidden habits faded on the home screen.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reachAssist" aria-pressed="false">
-              <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="focusSearchOnOpen" aria-pressed="false">
-              <span><b>focus search on open</b><small>Open the search field when this app starts.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-          </div>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label">new habit defaults</span>
-          <p class="field-hint">Used only when you tap + to create a new habit.</p>
-          <div class="seg compact-seg" id="default-type-seg">
-            <button class="seg-opt" data-default-type="keepup">build</button>
-            <button class="seg-opt" data-default-type="reduce">limit</button>
-            <button class="seg-opt" data-default-type="zero">stop</button>
-          </div>
-          <label class="settings-range simple-range">
-            <span>rhythm</span>
-            <input type="range" id="setting-default-target" min="1" max="90" />
-            <output id="setting-default-target-label"></output>
-          </label>
-        </section>
-        <section class="settings-block settings-advanced" id="settings-advanced">
-          <button class="settings-advanced-toggle" id="settings-advanced-toggle" type="button" aria-expanded="false" aria-controls="settings-advanced-body">
-            <span>
-              <b>fine tune priority</b>
-              <small>Optional. 100 is normal. Tune plans, due timing, progress, trend, rhythm, and habit types.</small>
-            </span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-advanced-body" id="settings-advanced-body" hidden>
-            <label class="settings-range">
-              <span>planned</span>
-              <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
-              <output id="setting-plan-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>due</span>
-              <input type="range" id="setting-due-weight" min="0" max="200" step="10" />
-              <output id="setting-due-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>progress</span>
-              <input type="range" id="setting-progress-weight" min="0" max="200" step="10" />
-              <output id="setting-progress-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>trend</span>
-              <input type="range" id="setting-trend-weight" min="0" max="200" step="10" />
-              <output id="setting-trend-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>rhythm</span>
-              <input type="range" id="setting-rhythm-weight" min="0" max="200" step="10" />
-              <output id="setting-rhythm-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>build</span>
-              <input type="range" id="setting-build-weight" min="0" max="200" step="10" />
-              <output id="setting-build-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>limit</span>
-              <input type="range" id="setting-limit-weight" min="0" max="200" step="10" />
-              <output id="setting-limit-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>stop</span>
-              <input type="range" id="setting-stop-weight" min="0" max="200" step="10" />
-              <output id="setting-stop-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>new</span>
-              <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
-              <output id="setting-new-weight-label"></output>
-            </label>
-            <label class="settings-range wide-label">
-              <span>build starts</span>
-              <input type="range" id="setting-build-start" min="40" max="110" step="5" />
-              <output id="setting-build-start-label"></output>
-            </label>
-            <label class="settings-range wide-label">
-              <span>rhythm bias</span>
-              <input type="range" id="setting-rhythm-bias" min="-100" max="100" step="10" />
-              <output id="setting-rhythm-bias-label"></output>
-            </label>
-          </div>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label">sorting lab</span>
-          <p class="field-hint">Add sample habits with different rhythms, plans, progress, pins, snoozes, and habit types. Use them to see how the home order responds to settings.</p>
-          <div class="sort-lab-preview" id="sort-lab-preview"></div>
-          <div class="sample-actions">
-            <button class="btn" id="add-sort-samples" type="button">add sample habits</button>
-            <button class="btn" id="remove-sort-samples" type="button">remove samples</button>
-          </div>
-          <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
-        </section>
-        <section class="settings-block settings-danger">
-          <span class="settings-label">start over</span>
-          <p class="field-hint">Reset only changes these app settings. Your habits and entries stay safe.</p>
-          <button class="btn danger-soft" id="settings-reset">reset app settings</button>
-          <div class="reset-confirm" id="settings-reset-confirm" hidden>
-            <p>Reset settings to the app defaults?</p>
-            <div class="btn-row">
-              <button class="btn primary" id="settings-reset-yes">reset</button>
-              <button class="btn" id="settings-reset-no">keep settings</button>
-            </div>
-          </div>
-        </section>
-      </div>
-      <div class="btn-row settings-actions">
-        <button class="btn primary" id="settings-close">done</button>
-      </div>
-    </div>
-  </div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/multi_agent_reinforcement_learning">Reinforcement Learning : </a></strong></span><span>Created a scalable multi agent environment for Ludo from scratch, used Tabular methods with the downscaled version of Ludo & actor critic for full-scale version, and Designed the reward structures to accelerate learning.</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/Data_Models_Query_languages_project">Dashboard : </a></strong></span><span>Created an e-commerce platform from scratch with a summary dashboard, orders page, and a linked PostgreSQL database.</span></div>
 
-  <!-- snooze sheet -->
-  <div class="sheet-wrap" id="snooze-sheet">
-    <div class="sheet">
-      <p class="sheet-name" id="snooze-name"></p>
-      <p class="sheet-sub">Choose how long to hide this habit.</p>
-      <div class="snooze-options">
-        <button class="btn" data-snooze-days="1">1d</button>
-        <button class="btn" data-snooze-days="3">3d</button>
-        <button class="btn" data-snooze-days="7">7d</button>
-        <button class="btn" data-snooze-days="14">14d</button>
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="snooze-cancel">cancel</button>
-      </div>
-    </div>
-  </div>
 
-  <!-- day entry sheet -->
-  <div class="sheet-wrap" id="day-entry-sheet">
-    <div class="sheet">
-      <p class="sheet-name" id="day-entry-name"></p>
-      <p class="sheet-sub" id="day-entry-sub"></p>
-      <div class="btn-row">
-        <button class="btn primary" id="day-entry-save">add entry</button>
-        <button class="btn" id="day-entry-cancel">cancel</button>
-      </div>
-    </div>
-  </div>
+                        <div class="resumecell indsmall highlight2"><span><strong>Time Series Forecasting : </strong></span><span>Time Series Analysis, customer segmentation, and interactive dashboard for 100k orders from an e-commerce platform.</span></div>
 
-  <!-- day logs sheet -->
-  <div class="sheet-wrap" id="day-logs-sheet">
-    <div class="sheet">
-      <p class="sheet-name" id="day-logs-title"></p>
-      <p class="sheet-sub" id="day-logs-sub"></p>
-      <div class="overview-list" id="day-logs-list"></div>
-      <div class="day-add-row">
-        <select id="day-log-ting" aria-label="habit"></select>
-        <button class="btn primary" id="day-log-add">add entry</button>
-      </div>
-      <div class="btn-row">
-        <button class="btn primary" id="day-logs-close">done</button>
-      </div>
-    </div>
-  </div>
+                        <div class="resumecell grid-container indsmall highlight2">
+                                <div class="grid-left-elem">
+                                        <span><strong><a href="https://github.com/lanbeee/Resume_optimization"> Resume Optimization : </a></strong></span>
+                                        <span>Managed 6 profile versions on a single spreadsheet to keep changes in sync & avoid repetitive editing. <br /> Utilized Python, HTML, & CSS for formatting & rendering, and Excel for handling data to create this version of my resume.</span>
+                                </div>
+                                <div class="tenure grid-right-elem">Ongoing</div>
+                        </div>
 
+
+
+
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/8ballpool">8 Ball Pool : </a></strong></span><span>Predicted & visualized ball trajectories using OpenCV, & made preemptive optimal decisions.</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/Smartphone_price_prediction">Smartphone Price Prediction : </a></strong></span><span>Mined data from GSMArena and performed feature engineering by mapping Centurian Mark Score using fuzzy logic</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/Wildfire_analysis">Wildfires Analysis : </a></strong></span><span>Visualized the clusters of different wildfires using geopandas, and predicted the Arson wildfire by performing EDA & appropriate feature engineering.</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/poultry_price_scraping_prediction">Poultry Price Forecast : </a></strong></span><span>Scraped 2 years of data using Selenium and built a Time Series forecast model.</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/Probability-Project-expected-value-">Probability Project : </a></strong></span><span>Found expected values using analytical approach as well as simulation.</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/grocery_clustering">Clustered grocery items </a></strong></span><span>using kmeans for optimal positioning & proximity of similar items.</span></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/sentiment_analysis">Sentiment Analysis : </a></strong></span><span>Used Glove Word Embedding (NLP) for analyzing sentiments from twitter.</span></div><div class="resumecell"></div>
+                        <div class="resumecell indsmall highlight2"><span><strong><a href="https://github.com/lanbeee/cat_dog_convnet">Convolutional Neural Network : </a></strong></span><span>Used Keras to create a binary classifier using Keras.</span></div><div class="resumecell"></div>
+                        <div class="resumecell indsmallbottom highlight2"><span><strong><a href="https://github.com/lanbeee/SOP">Document blender website : </a></strong></span><span>Documents with same structure are maintained in different google doc files, and sliders for each section of the document are used to blend them. <br />Used spreadsheet & javascript to create a table in backend, where each row forms a section of documents. </span></div>
+                        </div>
+                </div>
+        </div>
+        <div class="section" id="achievements">
+                <input type="checkbox" name="example_accordion" id="section6" class="accordion__input" checked>
+                <label for="section6" class="accordion__label"><h3 class="h3 sectionhead">Accomplishments</h3></label>
+                <div class="accordion__content" id="achievements_content">
+                        <div class="resumecell indsmalltop"><span><strong>Achieved 99.76 Percentile </strong></span><span>in the Joint Entrance Examination (All India exam with 1.4 million candidates).</span></div>
+                        <div class="resumecell indsmallbottom"><span><strong>Achieved 98.98 Percentile </strong></span><span> in eLitmus pH Test for Problem Solving.</span></div>
+                </div>
+        </div>
+        <div class="section" id="contact">
+                <input type="checkbox" name="example_accordion" id="section7" class="accordion__input" checked>
+                <label for="section7" class="accordion__label"><h3 class="h3 sectionhead">Contacts</h3></label>
+                <div class="accordion__content" id="contact_content">
+                        <div class="resumecell indsmallsingle"><div class = "contactinfo" style="margin-bottom:0;">
+                                <ul class="nav nav-tabs ">
+                                    <li class =  'nav-item'><i class="fa-solid fa-envelope"></i><a href="mailto:nkhan6@buffalo.edu">nkhan6@buffalo.edu</a></li>
+                                    <li class =  'nav-item'><i class="fa-brands fa-linkedin"></i><a href="https://www.linkedin.com/in/nabeelsprofile/">linkedin.com/in/nabeelsprofile</a></li>
+                                    <li class =  'nav-item'><i class="fab fa-github"></i><a href="https://www.github.com/lanbeee">github.com/lanbeee</a></li>
+                                    <li class =  'nav-item'><i class="fab fa-instagram"></i><a href="https://www.instagram.com/nabeelsgram/">instagram.com/nabeelsgram</a></li>
+                                    <li class =  'nav-item'><i class="fa-solid fa-location-dot"></i><span>Buffalo, NY, 14214</span></li>
+
+                                </ul>
+                            </div></div>
+                </div>
+        </div>
+    <!-- </div> -->
 </div>
-<div id="toast" role="status" aria-live="polite"></div>
-<div id="undo-toast" role="status" aria-live="polite">
-  <span id="undo-text"></span>
-  <button type="button" id="undo-action">undo</button>
-</div>
+</div>  
 
-<script src="./app.js" defer></script>
-</body>
-</html>
+<div class="right"></div>
+<div id="footer"></div>
+</body></html>
