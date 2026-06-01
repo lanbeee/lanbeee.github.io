@@ -142,7 +142,7 @@ function normalize(items){
     name: h.name || '',
     type: h.type || 'keepup',
     target: h.type === 'zero' ? null : (h.target || 7),
-    logs: Array.isArray(h.logs) ? h.logs.slice().sort((a,b)=>a-b).slice(-MAX_LOGS) : [],
+    logs: normalizeLogs(h.logs),
     emoji: h.emoji || '',
     pinned:Boolean(h.pinned),
     sample:Boolean(h.sample),
@@ -164,12 +164,40 @@ function save(data){
 }
 
 function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024);}
+function logTime(log){
+  return typeof log === 'number' ? log : Number(log?.ts) || 0;
+}
+function isPlanLog(log){
+  return Boolean(log && typeof log === 'object' && log.plan);
+}
+function normalizeLogs(logs){
+  if(!Array.isArray(logs))return [];
+  return logs
+    .map(log=>{
+      const ts = logTime(log);
+      if(!ts)return null;
+      if(isPlanLog(log) || (typeof log === 'number' && ts > Date.now()))return {ts,plan:true};
+      return ts;
+    })
+    .filter(Boolean)
+    .sort((a,b)=>logTime(a)-logTime(b))
+    .slice(-MAX_LOGS);
+}
+function makeLog(ts){
+  return dateKey(ts) > dateKey(Date.now()) ? {ts,plan:true} : ts;
+}
+function sameLog(log,ts,planOnly = false){
+  return logTime(log) === ts && (!planOnly || isPlanLog(log));
+}
 function latestActualLog(logs){
-  const actual = (logs || []).filter(ts=>ts <= Date.now()).sort((a,b)=>a-b);
+  const actual = actualLogs(logs);
   return actual.length ? actual[actual.length - 1] : null;
 }
 function actualLogs(logs){
-  return (logs || []).filter(ts=>ts <= Date.now()).sort((a,b)=>a-b);
+  return normalizeLogs(logs).filter(log=>!isPlanLog(log) && logTime(log) <= Date.now()).map(logTime).sort((a,b)=>a-b);
+}
+function plannedLogs(logs){
+  return normalizeLogs(logs).filter(isPlanLog).map(logTime).sort((a,b)=>a-b);
 }
 function sampleActual(daysAgo,hour = 9){
   if(daysAgo === 0){
@@ -344,7 +372,7 @@ function logToneMap(h){
     const days = i === 0 ? Math.max(1,daysSince(ts) || 1) : Math.max(1,Math.round((ts - actual[i - 1]) / 86400000));
     map.set(dateKey(ts),intervalTone(h,days));
   });
-  (h.logs || []).filter(ts=>ts > Date.now()).forEach(ts=>{
+  plannedLogs(h.logs).forEach(ts=>{
     const key = dateKey(ts);
     if(!map.has(key))map.set(key,'plan');
   });
@@ -577,6 +605,23 @@ function earlyLimitDamping(h,settings){
   return 0.22 + clamp01(ratio / Math.max(0.1,policy.readyAt)) * 0.35;
 }
 
+function recentLimitPenalty(h,settings){
+  if(h.type !== 'reduce')return 0;
+  const days = daysSince(h.lastLog);
+  if(days === null || days < 0)return 0;
+  const target = h.target || 7;
+  const ratio = days / target;
+  const policy = limitPolicy(settings);
+  if(ratio >= policy.readyAt)return 0;
+  const logs = actualLogs(h.logs);
+  if(logs.length < 2)return 0;
+  const recentWindow = Math.max(3,Math.min(14,target));
+  const recentCount = logs.filter(ts=>Date.now() - ts <= recentWindow * 86400000).length;
+  const extra = Math.max(0,recentCount - 1);
+  const modeFactor = (settings.limitMode || 'overdue') === 'quiet' ? 1.3 : (settings.limitMode || 'overdue') === 'overdue' ? 1 : 0.45;
+  return extra * modeFactor * settingScale(settings.limitWeight) * 1.8;
+}
+
 function mixedPriorityScore(parts,mix){
   return Object.entries(mix).reduce((sum,[key,weight])=>sum + (parts[key] || 0) * weight,0);
 }
@@ -599,6 +644,7 @@ function attentionScore(h,index,settingsOverride = null){
   if(h.type === 'zero')score *= stopPolicy(settings).focus;
   score *= earlyBuildDamping(h,settings);
   score *= earlyLimitDamping(h,settings);
+  score -= recentLimitPenalty(h,settings);
 
   score *= typeSettingScale(h,settings);
   return score - index / 100;
@@ -640,6 +686,9 @@ function updateSortButton(){
   const count = load().length;
   $('open-overview').classList.toggle('is-hidden',count < 2);
   $('open-overview').disabled = count < 2;
+  $('open-search').classList.toggle('is-hidden',count < 10);
+  $('open-search').disabled = count < 10;
+  if(count < 10)closeSearch({render:false});
 }
 
 function updateSearchUi(){
@@ -783,7 +832,7 @@ function updateOverallSummary(data = load()){
 }
 
 function nextPlannedLog(h){
-  return (h.logs || []).filter(ts=>ts > Date.now()).sort((a,b)=>a-b)[0] || null;
+  return plannedLogs(h.logs)[0] || null;
 }
 
 function cardCue(h){
@@ -1144,7 +1193,7 @@ function logTing(i){
   if(!data[i])return false;
   const undo = {type:'entry',idx:i,ts:now,snoozedUntil:data[i].snoozedUntil || null};
   data[i].lastLog = now;
-  data[i].logs = [...(data[i].logs || []),now].sort((a,b)=>a-b).slice(-MAX_LOGS);
+  data[i].logs = normalizeLogs([...(data[i].logs || []),now]);
   data[i].snoozedUntil = null;
   if(!save(data))return false;
   showUndo('Entry logged',undo);
@@ -1154,21 +1203,22 @@ function logTing(i){
 function logTingAt(i,ts){
   const data = load();
   if(!data[i])return false;
-  const entryTs = ts;
-  const undo = {type:'entry',idx:i,ts:entryTs,snoozedUntil:data[i].snoozedUntil || null};
-  data[i].logs = [...(data[i].logs || []),entryTs].sort((a,b)=>a-b).slice(-MAX_LOGS);
+  const entryTs = dateKey(ts) <= dateKey(Date.now()) && ts > Date.now() ? Date.now() : ts;
+  const log = makeLog(entryTs);
+  const undo = {type:'entry',idx:i,ts:entryTs,plan:isPlanLog(log),snoozedUntil:data[i].snoozedUntil || null};
+  data[i].logs = normalizeLogs([...(data[i].logs || []),log]);
   data[i].lastLog = latestActualLog(data[i].logs);
-  if(entryTs <= Date.now())data[i].snoozedUntil = null;
+  if(!isPlanLog(log))data[i].snoozedUntil = null;
   if(!save(data))return false;
-  showUndo(entryTs > Date.now() ? 'Plan added' : 'Entry added',undo);
+  showUndo(isPlanLog(log) ? 'Plan added' : 'Entry added',undo);
   return true;
 }
 
-function removeEntryAt(i,ts){
+function removeEntryAt(i,ts,planOnly = false){
   const data = load();
   if(!data[i])return false;
-  const logs = [...(data[i].logs || [])];
-  const pos = logs.indexOf(ts);
+  const logs = normalizeLogs(data[i].logs);
+  const pos = logs.findIndex(log=>sameLog(log,ts,planOnly));
   if(pos < 0)return false;
   logs.splice(pos,1);
   data[i].logs = logs;
@@ -1182,8 +1232,8 @@ function undoLastAction(){
   if(pendingUndo.type === 'entry'){
     const {idx,ts,snoozedUntil} = pendingUndo;
     if(!data[idx])return;
-    const logs = [...(data[idx].logs || [])];
-    const pos = logs.indexOf(ts);
+    const logs = normalizeLogs(data[idx].logs);
+    const pos = logs.findIndex(log=>sameLog(log,ts,Boolean(pendingUndo.plan)));
     if(pos >= 0)logs.splice(pos,1);
     data[idx].logs = logs;
     data[idx].lastLog = latestActualLog(logs);
@@ -1346,7 +1396,7 @@ function renderStats(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
   const completed = actualLogs(h.logs).length;
-  const planned = (h.logs || []).filter(ts=>ts > Date.now()).length;
+  const planned = plannedLogs(h.logs).length;
   const run = currentRun(h);
   const gapNum = days === null ? '-' : days < 0 ? Math.abs(days) : days;
   const gapLabel = days < 0 ? 'until next' : 'since last';
@@ -1398,7 +1448,7 @@ function renderStats(h){
 
 function recentWindowStats(h,windowDays = 30){
   const since = Date.now() - windowDays * 86400000;
-  const logs = (h.logs || []).filter(ts=>ts >= since && ts <= Date.now());
+  const logs = actualLogs(h.logs).filter(ts=>ts >= since);
   const target = h.target || 7;
   const expected = h.type === 'keepup' ? Math.max(1,Math.ceil(windowDays / target)) : 0;
   return {count:logs.length,expected,good:Math.min(logs.length,expected)};
@@ -1568,17 +1618,18 @@ function graphCaption(h,intervals){
 function renderCalendar(h){
   const frame = monthFrame(detailMonthOffset);
   const {year,month,first,last,label,today} = frame;
-  const logs = [...(h.logs || [])];
+  const logs = normalizeLogs(h.logs);
   const dayCounts = new Map();
   const toneByDay = logToneMap(h);
   let actual = 0;
   let planned = 0;
-  logs.forEach(ts=>{
+  logs.forEach(log=>{
+    const ts = logTime(log);
     const d = new Date(ts);
     if(d.getFullYear() !== year || d.getMonth() !== month)return;
     const key = dateKey(ts);
     dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
-    if(ts > Date.now())planned += 1;
+    if(isPlanLog(log))planned += 1;
     else actual += 1;
   });
   const monthEntries = actual + planned;
@@ -1622,12 +1673,12 @@ function updateDetailPagerDots(){
 }
 
 function hasPlannedEntryForDay(h,key){
-  return (h.logs || []).some(ts=>dateKey(ts) === key && ts > Date.now());
+  return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
 }
 
 function hasPlannedToday(h){
   const today = dateKey(Date.now());
-  return (h.logs || []).some(ts=>dateKey(ts) === today && ts > Date.now());
+  return hasPlannedEntryForDay(h,today);
 }
 
 function monthFrame(offset = 0){
@@ -1657,12 +1708,13 @@ function renderOverview(){
   const toneCounts = {hit:0,warn:0,miss:0,plan:0};
   data.forEach(h=>{
     const toneByDay = logToneMap(h);
-    (h.logs || []).forEach(ts=>{
+    normalizeLogs(h.logs).forEach(log=>{
+      const ts = logTime(log);
       const d = new Date(ts);
       if(d.getFullYear() !== frame.year || d.getMonth() !== frame.month)return;
       const key = dateKey(ts);
       if(!byDay.has(key))byDay.set(key,[]);
-      const isPlan = ts > Date.now();
+      const isPlan = isPlanLog(log);
       const tone = isPlan ? 'plan' : toneByDay.get(key) || entryTone(h.type);
       byDay.get(key).push({name:h.name,type:h.type,tone,planned:isPlan});
       total += 1;
@@ -1712,7 +1764,7 @@ function renderOverview(){
   $('overview-calendar').innerHTML = [...heads,...blanks,...days].join('');
 
   const monthRows = data.map(h=>{
-    const count = (h.logs || []).filter(ts=>{
+    const count = actualLogs(h.logs).filter(ts=>{
       const d = new Date(ts);
       return d.getFullYear() === frame.year && d.getMonth() === frame.month;
     }).length;
@@ -1732,7 +1784,7 @@ function renderDayLogs(key){
   const data = load();
   const rows = [];
   data.forEach((h,i)=>{
-    const entries = (h.logs || []).filter(ts=>dateKey(ts) === key);
+    const entries = normalizeLogs(h.logs).filter(log=>dateKey(logTime(log)) === key);
     const count = entries.length;
     if(!count)return;
     rows.push({h,index:i,count,entries,c:colors(daysSince(h.lastLog),h.target,h.type)});
@@ -1741,12 +1793,13 @@ function renderDayLogs(key){
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
   $('day-logs-sub').textContent = rows.length ? `${rows.reduce((sum,row)=>sum + row.count,0)} entries` : 'no entries';
   $('day-logs-list').innerHTML = rows.length ? rows.map(({h,index,count,entries,c})=>{
-    const plannedCount = entries.filter(entryTs=>entryTs > Date.now()).length;
+    const plannedCount = entries.filter(isPlanLog).length;
+    const actualCount = count - plannedCount;
     const remove = plannedCount ? `<button class="mini-text-btn" data-remove-plan="${index}" data-plan-day="${key}">remove plan</button>` : '';
     return `
     <div class="overview-item">
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
-      <span class="overview-meta">${plannedCount ? `${plannedCount} planned` : `${count} ${count === 1 ? 'entry' : 'entries'}`}</span>
+      <span class="overview-meta">${plannedCount ? `${plannedCount} planned${actualCount ? `, ${actualCount} done` : ''}` : `${count} ${count === 1 ? 'entry' : 'entries'}`}</span>
       ${remove}
     </div>`;
   }).join('') : '<div class="overview-item"><span class="overview-name">no entries</span><span class="overview-meta">add one below</span></div>';
@@ -1790,7 +1843,7 @@ function openDayEntry(i,key){
   dayEntryIdx = i;
   dayEntryTs = new Date(`${key}T12:00:00`).getTime();
   $('day-entry-name').textContent = h.name;
-  const label = dayEntryTs > Date.now() ? 'Plan entry for' : 'Add entry for';
+  const label = key > dateKey(Date.now()) ? 'Plan entry for' : 'Add entry for';
   $('day-entry-sub').textContent = `${label} ${new Date(dayEntryTs).toLocaleDateString(undefined,{month:'short',day:'numeric'})}?`;
   openSheet('day-entry-sheet');
 }
@@ -2306,6 +2359,7 @@ $('open-add').addEventListener('click',()=>{
 });
 
 $('open-search').addEventListener('click',()=>{
+  if(load().length < 10)return;
   const nav = document.querySelector('.bottom-nav');
   const isOpen = nav.classList.contains('search-open');
   if(isOpen)closeSearch();
@@ -2742,9 +2796,9 @@ $('day-logs-list').addEventListener('click',e=>{
   const data = load();
   const h = data[idx];
   if(!h)return;
-  const planned = (h.logs || []).filter(ts=>dateKey(ts) === key && ts > Date.now());
+  const planned = normalizeLogs(h.logs).filter(log=>isPlanLog(log) && dateKey(logTime(log)) === key).map(logTime);
   if(!planned.length)return;
-  planned.forEach(ts=>removeEntryAt(idx,ts));
+  planned.forEach(ts=>removeEntryAt(idx,ts,true));
   showToast('plan removed');
   refreshOpenViews();
 });
@@ -2784,7 +2838,7 @@ $('list').addEventListener('touchstart',e=>{
 },{passive:true});
 
 render();
-if(sortSettings.focusSearchOnOpen){
+if(sortSettings.focusSearchOnOpen && load().length >= 10){
   setSearchOpen(true,{render:false});
   setTimeout(()=>setSearchOpen(true,{render:false}),150);
   setTimeout(()=>setSearchOpen(true,{render:false}),500);
