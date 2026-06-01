@@ -599,6 +599,7 @@ function updateSearchUi(){
   if(!nav || !input || !searchBtn)return;
   const open = nav.classList.contains('search-open');
   input.value = searchQuery;
+  document.body.classList.toggle('search-active',open);
   searchBtn.classList.toggle('is-on',open);
   searchBtn.setAttribute('aria-pressed',String(open));
   $('nav-search').setAttribute('aria-hidden',String(!open));
@@ -617,7 +618,10 @@ function setSearchOpen(open,options = {}){
   nav.classList.toggle('search-open',open);
   updateSearchUi();
   if(open && options.focus !== false){
-    requestAnimationFrame(()=>input.focus({preventScroll:true}));
+    input.focus({preventScroll:true});
+    requestAnimationFrame(()=>{
+      if(nav.classList.contains('search-open') && document.activeElement !== input)input.focus({preventScroll:true});
+    });
   }else if(!open && document.activeElement === input){
     input.blur();
   }
