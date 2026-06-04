@@ -43,6 +43,7 @@ const DEFAULT_SORT_SETTINGS = {
   showDurationOnCards:false,
   showRepetitionOnCards:true,
   showFlexibilityOnCards:false,
+  showTopicsOnCards:false,
   reachAssist:true,
   defaultType:'keepup',
   defaultTarget:7,
@@ -74,6 +75,7 @@ const $ = id => document.getElementById(id);
 let detailIdx = null;
 let snoozeIdx = null;
 let snoozeFromDetail = false;
+let activityIdx = null;
 let dayEntryIdx = null;
 let dayEntryTs = null;
 let detailMonthOffset = 0;

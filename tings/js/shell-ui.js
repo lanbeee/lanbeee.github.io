@@ -5,18 +5,99 @@ function openSnooze(i){
   if(!h)return;
   snoozeIdx = i;
   $('snooze-name').textContent = h.name;
+  document.querySelectorAll('[data-snooze-repetitions]').forEach(btn=>{
+    btn.hidden = h.type === 'zero';
+  });
   openSheet('snooze-sheet');
 }
 
-function doSnooze(i,days){
+function snoozeUndoLabel(until,label){
+  if(label)return label;
+  const days = Math.max(1,Math.ceil((until - Date.now()) / 86400000));
+  return `Hidden ${days}d`;
+}
+
+function doSnoozeUntil(i,until,label = ''){
   const data = load();
   if(!data[i])return;
   const previous = data[i].snoozedUntil || null;
-  data[i].snoozedUntil = Date.now() + days * 86400000;
+  data[i].snoozedUntil = until;
   if(save(data)){
-    showUndo(`Hidden ${days}d`,{type:'hide',idx:i,snoozedUntil:previous});
+    showUndo(snoozeUndoLabel(until,label),{type:'hide',idx:i,snoozedUntil:previous});
     render();
   }
+}
+
+function doSnooze(i,days){
+  doSnoozeUntil(i,Date.now() + days * 86400000,`Hidden ${days}d`);
+}
+
+function repetitionSnoozeUntil(h,skipCount){
+  if(!h || h.type === 'zero')return null;
+  const targetDays = Math.max(1,effectiveTarget(h));
+  const targetMs = targetDays * 86400000;
+  const today = dayStart(Date.now());
+  let due = dayStart((h.lastLog || Date.now()) + targetMs);
+  while(due <= today)due += targetMs;
+  due += Math.max(0,skipCount) * targetMs;
+  const showBeforeDue = due - 86400000;
+  const tomorrow = today + 86400000;
+  return Math.max(showBeforeDue,tomorrow);
+}
+
+function doSnoozeRepetitions(i,skipCount){
+  const h = load()[i];
+  const until = repetitionSnoozeUntil(h,skipCount);
+  if(!until)return;
+  const label = skipCount === 1 ? 'Hidden 1 time' : `Hidden ${skipCount} times`;
+  doSnoozeUntil(i,until,label);
+}
+
+function openActivity(i){
+  const h = load()[i];
+  if(!h)return;
+  activityIdx = i;
+  $('activity-name').textContent = h.name;
+  renderActivity(h);
+  openSheet('activity-sheet');
+}
+
+function renderActivity(h){
+  const logs = normalizeLogs(h.logs);
+  const nowKey = dateKey(Date.now());
+  const past = logs
+    .filter(log=>!isPlanLog(log) && dateKey(logTime(log)) <= nowKey)
+    .map(log=>({ts:logTime(log),kind:'entry'}))
+    .sort((a,b)=>b.ts-a.ts);
+  const future = logs
+    .filter(log=>isPlanLog(log) && dateKey(logTime(log)) >= nowKey)
+    .map(log=>({ts:logTime(log),kind:'plan'}))
+    .sort((a,b)=>a.ts-b.ts);
+  const planWord = future.length === 1 ? 'plan' : 'plans';
+  const entryWord = past.length === 1 ? 'entry' : 'entries';
+  $('activity-sub').textContent = `${past.length} ${entryWord} · ${future.length} future ${planWord}`;
+  const futureHtml = future.length ? activitySection('future plans',future) : '';
+  const pastHtml = past.length ? activitySection('past activity',past) : '';
+  const hasActivity = Boolean(futureHtml || pastHtml);
+  $('activity-list').innerHTML = hasActivity
+    ? `${futureHtml}${pastHtml}`
+    : '<p class="activity-empty">No entries or future plans yet.</p>';
+}
+
+function activitySection(title,items){
+  return `<section class="activity-section">
+    <span class="overview-section-title">${title}</span>
+    ${items.map(item=>{
+      const d = new Date(item.ts);
+      const label = d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+      const detail = item.kind === 'plan' ? entryWhen(item.ts) : d.toLocaleDateString(undefined,{year:'numeric'});
+      const icon = item.kind === 'plan' ? 'ti-calendar-event' : 'ti-check';
+      return `<div class="activity-item ${item.kind}">
+        <span class="overview-name"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span>
+        <span class="overview-meta">${escapeHtml(detail)}</span>
+      </div>`;
+    }).join('')}
+  </section>`;
 }
 
 function doNuke(i){
