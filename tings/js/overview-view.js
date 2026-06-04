@@ -6,8 +6,34 @@ function entryTone(type){
   return 'hit';
 }
 
+function overviewTopicChoices(data){
+  const topics = normalizeTopics([...(sortSettings?.topics || []),...data.flatMap(h=>normalizeTopics(h.topics))]);
+  const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
+  return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
+}
+
+function matchesOverviewTopic(h,topic){
+  if(!topic || topic === 'all')return true;
+  const topics = normalizeTopics(h.topics);
+  if(topic === '__none__')return !topics.length;
+  return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
+}
+
+function renderOverviewTopicFilter(data){
+  const wrap = $('overview-topic-filter');
+  if(!wrap)return;
+  const choices = overviewTopicChoices(data);
+  if(!choices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
+  wrap.innerHTML = choices.map(choice=>`
+    <button type="button" class="topic-filter ${choice.key === overviewTopicFilter ? 'on' : ''}" data-overview-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
+  `).join('');
+}
+
 function renderOverview(){
-  const data = load();
+  const allData = load();
+  renderOverviewTopicFilter(allData);
+  const data = allData.filter(h=>matchesOverviewTopic(h,overviewTopicFilter));
+  const topicLabel = overviewTopicFilter === 'all' ? '' : overviewTopicFilter === '__none__' ? 'No topic' : overviewTopicFilter;
   const frame = monthFrame(overviewMonthOffset);
   const byDay = new Map();
   let total = 0;
@@ -40,8 +66,8 @@ function renderOverview(){
   const bestTone = toneCounts.miss ? 'some days need care' : toneCounts.warn ? 'mostly steady' : actual ? 'clean month so far' : planned ? 'plans are set' : 'quiet month';
 
   $('overview-copy').textContent = total
-    ? `${bestTone}. ${actual} entries${planned ? `, ${planned} planned` : ''}.`
-    : 'No entries or plans this month.';
+    ? `${topicLabel ? `${topicLabel}: ` : ''}${bestTone}. ${actual} entries${planned ? `, ${planned} planned` : ''}.`
+    : `${topicLabel ? `${topicLabel}: ` : ''}No entries or plans this month.`;
   $('overview-stats').innerHTML = `
     <span class="overview-stat"><i class="ti ti-calendar-check" aria-hidden="true"></i>${activeDays} active days</span>
     <span class="overview-stat"><i class="ti ti-list-check" aria-hidden="true"></i>${actual} entries</span>
@@ -110,8 +136,10 @@ function renderOverview(){
 
 function renderDayLogs(key){
   const data = load();
+  const topicLabel = overviewTopicFilter === 'all' ? '' : overviewTopicFilter === '__none__' ? 'no topic' : overviewTopicFilter;
   const rows = [];
   data.forEach((h,i)=>{
+    if(!matchesOverviewTopic(h,overviewTopicFilter))return;
     const entries = normalizeLogs(h.logs).filter(log=>dateKey(logTime(log)) === key);
     const count = entries.length;
     if(!count)return;
@@ -119,7 +147,9 @@ function renderDayLogs(key){
   });
   const ts = new Date(`${key}T12:00:00`).getTime();
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
-  $('day-logs-sub').textContent = rows.length ? `${rows.reduce((sum,row)=>sum + row.count,0)} entries` : 'no entries';
+  $('day-logs-sub').textContent = rows.length
+    ? `${rows.reduce((sum,row)=>sum + row.count,0)} entries${topicLabel ? ` · ${topicLabel}` : ''}`
+    : `no entries${topicLabel ? ` · ${topicLabel}` : ''}`;
   renderDayAvailability(key);
   $('day-logs-list').innerHTML = rows.length ? rows.map(({h,index,count,entries,c})=>{
     const plannedCount = entries.filter(isPlanLog).length;
@@ -132,8 +162,12 @@ function renderDayLogs(key){
       ${remove}
     </div>`;
   }).join('') : '<div class="overview-item"><span class="overview-name">no entries</span><span class="overview-meta">add one below</span></div>';
-  $('day-log-ting').innerHTML = data.length ? data.map((h,i)=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No habits</option>';
-  $('day-log-add').disabled = !data.length;
+  const addOptions = data
+    .map((h,i)=>({h,i}))
+    .filter(({h})=>matchesOverviewTopic(h,overviewTopicFilter))
+    .sort((a,b)=>(a.h.name || '').localeCompare(b.h.name || '',undefined,{sensitivity:'base'}));
+  $('day-log-ting').innerHTML = addOptions.length ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No habits</option>';
+  $('day-log-add').disabled = !addOptions.length;
 }
 
 function renderDayAvailability(key){

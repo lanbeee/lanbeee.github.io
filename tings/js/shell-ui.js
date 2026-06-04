@@ -65,38 +65,93 @@ function openActivity(i){
 function renderActivity(h){
   const logs = normalizeLogs(h.logs);
   const nowKey = dateKey(Date.now());
+  const actual = actualLogs(h.logs);
   const past = logs
     .filter(log=>!isPlanLog(log) && dateKey(logTime(log)) <= nowKey)
-    .map(log=>({ts:logTime(log),kind:'entry'}))
+    .map(log=>({ts:logTime(log),kind:'entry',detail:activityEntryDetail(actual,logTime(log))}))
     .sort((a,b)=>b.ts-a.ts);
   const future = logs
     .filter(log=>isPlanLog(log) && dateKey(logTime(log)) >= nowKey)
     .map(log=>({ts:logTime(log),kind:'plan'}))
     .sort((a,b)=>a.ts-b.ts);
-  const planWord = future.length === 1 ? 'plan' : 'plans';
-  const entryWord = past.length === 1 ? 'entry' : 'entries';
-  $('activity-sub').textContent = `${past.length} ${entryWord} · ${future.length} future ${planWord}`;
-  const futureHtml = future.length ? activitySection('future plans',future) : '';
-  const pastHtml = past.length ? activitySection('past activity',past) : '';
+  const topics = normalizeTopics(h.topics);
+  $('activity-sub').textContent = [
+    cardCue(h),
+    h.type === 'zero' ? 'stop' : `${h.target || 7}d rhythm`,
+    topics.length ? topics.join(', ') : ''
+  ].filter(Boolean).join(' · ');
+  $('activity-summary').innerHTML = activitySummary(h,actual,future);
+  const futureHtml = future.length ? activitySection('future plans',future.slice(0,6)) : '';
+  const pastHtml = past.length ? activitySection('recent activity',past.slice(0,12),past.length - 12) : '';
   const hasActivity = Boolean(futureHtml || pastHtml);
   $('activity-list').innerHTML = hasActivity
     ? `${futureHtml}${pastHtml}`
     : '<p class="activity-empty">No entries or future plans yet.</p>';
 }
 
-function activitySection(title,items){
+function activitySummary(h,actual,future){
+  const frame = monthFrame(0);
+  const thisMonth = actual.filter(ts=>{
+    const d = new Date(ts);
+    return d.getFullYear() === frame.year && d.getMonth() === frame.month;
+  }).length;
+  const last = actual.length ? entryWhen(actual[actual.length - 1]) : 'none';
+  const next = activityNextMoment(h,future);
+  const spacing = averageSpacing(actual);
+  return [
+    activityMetric('ti-list-check','total',actual.length || '0'),
+    activityMetric('ti-calendar-check','month',thisMonth || '0'),
+    activityMetric('ti-history','last',last),
+    activityMetric(next.icon,'next',next.label),
+    spacing ? activityMetric('ti-arrows-left-right','avg gap',spacing) : ''
+  ].join('');
+}
+
+function activityMetric(icon,label,value){
+  return `<span class="activity-metric"><i class="ti ${icon}" aria-hidden="true"></i><b>${escapeHtml(String(value))}</b><small>${escapeHtml(label)}</small></span>`;
+}
+
+function activityNextMoment(h,future){
+  if(future.length)return {icon:'ti-calendar-event',label:entryWhen(future[0].ts)};
+  if(h.type === 'zero')return {icon:'ti-shield-check',label:h.lastLog ? 'rebuilding' : 'clear'};
+  if(!h.lastLog)return {icon:'ti-player-play',label:'ready'};
+  const due = dayStart(h.lastLog) + Math.max(1,effectiveTarget(h)) * 86400000;
+  return {icon:'ti-calendar-time',label:entryWhen(due)};
+}
+
+function activityEntryDetail(actual,ts){
+  const idx = actual.indexOf(ts);
+  if(idx > 0){
+    const gap = Math.max(1,Math.round((ts - actual[idx - 1]) / 86400000));
+    return `${gap}d gap`;
+  }
+  return 'first entry';
+}
+
+function averageSpacing(actual){
+  if(actual.length < 2)return '';
+  const gaps = [];
+  for(let i = Math.max(1,actual.length - 6); i < actual.length; i++){
+    gaps.push(Math.max(1,Math.round((actual[i] - actual[i - 1]) / 86400000)));
+  }
+  const avg = Math.round(gaps.reduce((sum,gap)=>sum + gap,0) / gaps.length);
+  return `${avg}d`;
+}
+
+function activitySection(title,items,moreCount = 0){
   return `<section class="activity-section">
     <span class="overview-section-title">${title}</span>
     ${items.map(item=>{
       const d = new Date(item.ts);
       const label = d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
-      const detail = item.kind === 'plan' ? entryWhen(item.ts) : d.toLocaleDateString(undefined,{year:'numeric'});
+      const detail = item.kind === 'plan' ? entryWhen(item.ts) : item.detail || d.toLocaleDateString(undefined,{year:'numeric'});
       const icon = item.kind === 'plan' ? 'ti-calendar-event' : 'ti-check';
       return `<div class="activity-item ${item.kind}">
         <span class="overview-name"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span>
         <span class="overview-meta">${escapeHtml(detail)}</span>
       </div>`;
     }).join('')}
+    ${moreCount > 0 ? `<div class="activity-more">${moreCount} older ${moreCount === 1 ? 'entry' : 'entries'}</div>` : ''}
   </section>`;
 }
 

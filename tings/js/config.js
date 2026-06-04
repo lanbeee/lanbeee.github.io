@@ -80,6 +80,7 @@ let dayEntryIdx = null;
 let dayEntryTs = null;
 let detailMonthOffset = 0;
 let overviewMonthOffset = 0;
+let overviewTopicFilter = 'all';
 let dayLogsKey = null;
 let selectedType = 'keepup';
 let sortSettings = null;
