@@ -50,10 +50,10 @@
 
   <!-- add sheet -->
   <div class="sheet-wrap" id="add-sheet">
-    <div class="sheet">
+    <div class="sheet add-sheet">
       <p class="sheet-title">new habit</p>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" aria-label="habit message" placeholder="message" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <input type="text" id="ting-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <input type="text" id="ting-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
       </div>
       <div class="seg" id="type-seg">
@@ -61,22 +61,6 @@
         <button class="seg-opt" data-v="reduce">limit</button>
         <button class="seg-opt" data-v="zero">stop</button>
       </div>
-      <span class="settings-sublabel">topics</span>
-      <div class="topic-chip-row" id="ting-topic-chips"></div>
-      <div class="planning-grid">
-        <label>
-          <span>duration</span>
-          <input type="number" id="ting-duration" min="1" max="720" value="30" inputmode="numeric" />
-        </label>
-        <label>
-          <span>flexibility</span>
-          <input type="number" id="ting-flexibility" min="0" max="60" value="0" inputmode="numeric" />
-        </label>
-      </div>
-      <span class="settings-sublabel">only on these days</span>
-      <div class="schedule-chip-row" id="ting-weekday-chips"></div>
-      <span class="settings-sublabel compact-label">only on these month days</span>
-      <div class="monthday-chip-row" id="ting-monthday-chips"></div>
       <p class="field-hint" id="target-help">Target days between entries.</p>
       <div class="range-row" id="target-slider-row">
         <input type="range" id="ting-days-slider" min="1" max="183" value="7" />
@@ -85,7 +69,39 @@
           <span>d</span>
         </label>
       </div>
-      <div class="btn-row">
+      <section class="add-option-group">
+        <button class="add-option-toggle" type="button" aria-expanded="false">
+          <span><b>details</b><small>Topics, duration, and flexibility.</small></span>
+          <i class="ti ti-chevron-down" aria-hidden="true"></i>
+        </button>
+        <div class="add-option-panel" hidden>
+          <span class="settings-sublabel">topics</span>
+          <div class="topic-chip-row" id="ting-topic-chips"></div>
+          <div class="planning-grid">
+            <label>
+              <span>duration</span>
+              <input type="number" id="ting-duration" min="1" max="720" value="30" inputmode="numeric" />
+            </label>
+            <label>
+              <span>flexibility</span>
+              <input type="number" id="ting-flexibility" min="0" max="60" value="0" inputmode="numeric" />
+            </label>
+          </div>
+        </div>
+      </section>
+      <section class="add-option-group">
+        <button class="add-option-toggle" type="button" aria-expanded="false">
+          <span><b>schedule limits</b><small>Restrict this habit to certain days.</small></span>
+          <i class="ti ti-chevron-down" aria-hidden="true"></i>
+        </button>
+        <div class="add-option-panel" hidden>
+          <span class="settings-sublabel">only on these days</span>
+          <div class="schedule-chip-row" id="ting-weekday-chips"></div>
+          <span class="settings-sublabel compact-label">only on these month days</span>
+          <div class="monthday-chip-row" id="ting-monthday-chips"></div>
+        </div>
+      </section>
+      <div class="btn-row add-actions">
         <button class="btn primary" id="do-save">add</button>
         <button class="btn" id="do-cancel">cancel</button>
       </div>
@@ -160,7 +176,7 @@
         <section class="detail-page detail-section tune-section">
           <span class="section-label">identity</span>
           <div class="name-icon-row">
-            <input type="text" id="detail-habit-message" name="message" aria-label="habit message" placeholder="message" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+            <input type="text" id="detail-habit-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
             <input type="text" id="detail-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
           </div>
           <div class="seg" id="detail-type-seg">
@@ -252,7 +268,7 @@
         <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
         <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order weighs plans, rhythm, recent entries, progress, trends, and habit type. Settings lets you pick a preset or fine tune it.</p></section>
         <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
-        <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon or double tap a card to log. Undo appears after. Swipe right to pin or plan. Swipe left to snooze or remove.</p></section>
+        <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon or double tap a card to log. Undo appears after. Swipe right to pin or review activity. Swipe left to snooze or remove.</p></section>
       </div>
       <div class="btn-row about-actions">
         <button class="btn" id="open-settings">settings</button>
@@ -358,6 +374,10 @@
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showFlexibilityOnCards" aria-pressed="false">
               <span><b>show flexibility on cards</b><small>Show the flexibility window chip on habit cards.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTopicsOnCards" aria-pressed="false">
+              <span><b>show topics on cards</b><small>Show topic labels in the home list.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reachAssist" aria-pressed="false">
@@ -485,9 +505,23 @@
         <button class="btn" data-snooze-days="3">3d</button>
         <button class="btn" data-snooze-days="7">7d</button>
         <button class="btn" data-snooze-days="14">14d</button>
+        <button class="btn" data-snooze-repetitions="1">1 time</button>
+        <button class="btn" data-snooze-repetitions="2">2 times</button>
       </div>
       <div class="btn-row">
         <button class="btn" id="snooze-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- activity sheet -->
+  <div class="sheet-wrap" id="activity-sheet">
+    <div class="sheet">
+      <p class="sheet-name" id="activity-name"></p>
+      <p class="sheet-sub" id="activity-sub">Activity and plans.</p>
+      <div class="activity-list" id="activity-list"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="activity-close">done</button>
       </div>
     </div>
   </div>
