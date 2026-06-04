@@ -229,6 +229,7 @@
           <p class="sheet-title">calendar</p>
           <p class="about-copy" id="overview-copy">Entries and plans by day.</p>
           <div class="overview-stats" id="overview-stats"></div>
+          <div class="topic-filter-row" id="overview-topic-filter" aria-label="topic activity filter"></div>
         </div>
       </div>
       <div class="month-card overview-card">
@@ -516,9 +517,17 @@
 
   <!-- activity sheet -->
   <div class="sheet-wrap" id="activity-sheet">
-    <div class="sheet">
-      <p class="sheet-name" id="activity-name"></p>
-      <p class="sheet-sub" id="activity-sub">Activity and plans.</p>
+    <div class="sheet activity-sheet">
+      <div class="activity-head">
+        <div>
+          <p class="sheet-name" id="activity-name"></p>
+          <p class="sheet-sub" id="activity-sub">Activity and plans.</p>
+        </div>
+        <button class="mini-nav activity-calendar-btn" id="activity-calendar" type="button" aria-label="open calendar">
+          <i class="ti ti-calendar-month" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="activity-summary" id="activity-summary"></div>
       <div class="activity-list" id="activity-list"></div>
       <div class="btn-row">
         <button class="btn primary" id="activity-close">done</button>
