@@ -16,6 +16,13 @@ function applyAddDefaults(){
   syncRhythm('ting',target);
   renderTopicChips('ting-topic-chips',[]);
   renderScheduleChips('ting',{});
+  document.querySelectorAll('#add-sheet .add-option-group').forEach(group=>{
+    group.classList.remove('open');
+    const toggle = group.querySelector('.add-option-toggle');
+    const panel = group.querySelector('.add-option-panel');
+    if(toggle)toggle.setAttribute('aria-expanded','false');
+    if(panel)panel.hidden = true;
+  });
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
   $('target-slider-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
   $('target-help').style.display = selectedType === 'zero' ? 'none' : 'block';

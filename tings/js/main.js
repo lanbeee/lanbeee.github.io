@@ -161,6 +161,17 @@ $('ting-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('ting-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
+document.querySelectorAll('#add-sheet .add-option-toggle').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const group = btn.closest('.add-option-group');
+    const panel = group?.querySelector('.add-option-panel');
+    if(!group || !panel)return;
+    const open = !group.classList.contains('open');
+    group.classList.toggle('open',open);
+    btn.setAttribute('aria-expanded',String(open));
+    panel.hidden = !open;
+  });
+});
 $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');
@@ -500,9 +511,10 @@ $('day-logs-list').addEventListener('click',e=>{
 
 $('snooze-sheet').addEventListener('click',e=>{
   const opt = e.target.closest('[data-snooze-days]');
-  if(!opt || snoozeIdx === null)return;
-  const days = parseInt(opt.dataset.snoozeDays,10);
-  doSnooze(snoozeIdx,days);
+  const repeatOpt = e.target.closest('[data-snooze-repetitions]');
+  if((!opt && !repeatOpt) || snoozeIdx === null)return;
+  if(opt)doSnooze(snoozeIdx,parseInt(opt.dataset.snoozeDays,10));
+  if(repeatOpt)doSnoozeRepetitions(snoozeIdx,parseInt(repeatOpt.dataset.snoozeRepetitions,10));
   if(snoozeFromDetail)closeDetail();
   snoozeIdx = null;
   snoozeFromDetail = false;
@@ -510,6 +522,9 @@ $('snooze-sheet').addEventListener('click',e=>{
 });
 $('snooze-cancel').addEventListener('click',()=>{snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');});
 $('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');}});
+
+$('activity-close').addEventListener('click',()=>{activityIdx = null;closeSheet('activity-sheet');});
+$('activity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){activityIdx = null;closeSheet('activity-sheet');}});
 
 $('day-entry-save').addEventListener('click',()=>{
   if(dayEntryIdx === null || dayEntryTs === null)return;

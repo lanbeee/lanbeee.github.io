@@ -360,10 +360,12 @@ function cardMeta(h,options = {}){
     parts.push(`<span class="context-pill schedule ${eligible ? '' : 'icon-only'}" title="${escapeHtml(title)}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(eligible)}</span>`);
   }
   const topics = normalizeTopics(h.topics);
-  topics.slice(0,2).forEach(topic=>{
-    parts.push(`<span class="context-pill quiet" title="topic"><i class="ti ti-tag" aria-hidden="true"></i>${escapeHtml(topic)}</span>`);
-  });
-  if(topics.length > 2)parts.push(`<span class="context-pill quiet" title="more topics">+${topics.length - 2}</span>`);
+  if(options.forceTopics || sortSettings.showTopicsOnCards){
+    topics.slice(0,2).forEach(topic=>{
+      parts.push(`<span class="context-pill quiet" title="topic"><i class="ti ti-tag" aria-hidden="true"></i>${escapeHtml(topic)}</span>`);
+    });
+    if(topics.length > 2)parts.push(`<span class="context-pill quiet" title="more topics">+${topics.length - 2}</span>`);
+  }
   if(plan && h.type !== 'zero'){
     const label = compactPlanLabel(plan);
     parts.push(`<span class="context-pill plan ${label ? '' : 'icon-only'}" title="${escapeHtml(`planned ${entryWhen(plan)}`)}"><i class="ti ti-calendar-event" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
@@ -446,9 +448,7 @@ function render(){
     const trail = cardTrail(h);
     const accent = visualClassColor(cardScoreTone);
     const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
-    const planAction = h.type === 'zero'
-      ? ''
-      : `<button class="swipe-action sa-plan" data-action="plan-next" aria-label="plan ${escapeHtml(nextPlanLabel(h))}"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>plan</span><small>${escapeHtml(nextPlanLabel(h))}</small></button>`;
+    const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
 
     const row = document.createElement('div');
     row.className = 'swipe-row';
@@ -456,7 +456,7 @@ function render(){
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         ${pinAction}
-        ${planAction}
+        ${activityAction}
       </div>
       <div class="swipe-actions swipe-actions-right">
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
@@ -489,6 +489,11 @@ function render(){
   list.querySelectorAll('[data-pulse]').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
+      if(swipeOpenCard){
+        e.preventDefault();
+        closeAllSwipes();
+        return;
+      }
       const idx = +btn.dataset.pulse;
       const card = btn.closest('.ting-card');
       handleCardActivate(idx,card,()=>quickLog(idx,card));
@@ -501,7 +506,7 @@ function render(){
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
       if(btn.dataset.action === 'pin')togglePin(idx);
-      if(btn.dataset.action === 'plan-next')planNext(idx);
+      if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
@@ -550,6 +555,7 @@ function setupSwipe(row){
     const ddx = t.clientX - startX;
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
+    e.preventDefault();
     if(startedOpen){
       if(Math.abs(ddx) > 12){
         closeAllSwipes();
@@ -578,7 +584,7 @@ function setupSwipe(row){
     activeActions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
     inactiveActions.style.width = '0';
     inactiveActions.style.pointerEvents = 'none';
-  },{passive:true});
+  },{passive:false});
 
   row.addEventListener('touchend',()=>{
     if(!moved)return;
