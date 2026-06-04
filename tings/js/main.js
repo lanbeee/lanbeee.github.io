@@ -457,9 +457,10 @@ $('settings-reset-yes').addEventListener('click',()=>{
 });
 
 $('open-overview').addEventListener('click',()=>{
-  if(load().length < 2)return;
+  if(!load().length)return;
   closeSearch();
   overviewMonthOffset = 0;
+  overviewTopicFilter = 'all';
   dayLogsKey = null;
   renderOverview();
   openSheet('overview-sheet');
@@ -473,6 +474,13 @@ $('overview-prev-month').addEventListener('click',()=>{
 });
 $('overview-next-month').addEventListener('click',()=>{
   overviewMonthOffset += 1;
+  renderOverview();
+});
+$('overview-topic-filter').addEventListener('click',e=>{
+  const btn = e.target.closest('[data-overview-topic]');
+  if(!btn)return;
+  overviewTopicFilter = btn.dataset.overviewTopic || 'all';
+  dayLogsKey = null;
   renderOverview();
 });
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
@@ -524,6 +532,13 @@ $('snooze-cancel').addEventListener('click',()=>{snoozeIdx = null;snoozeFromDeta
 $('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');}});
 
 $('activity-close').addEventListener('click',()=>{activityIdx = null;closeSheet('activity-sheet');});
+$('activity-calendar').addEventListener('click',()=>{
+  if(activityIdx === null)return;
+  const idx = activityIdx;
+  activityIdx = null;
+  closeSheet('activity-sheet');
+  openDetailCalendar(idx);
+});
 $('activity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){activityIdx = null;closeSheet('activity-sheet');}});
 
 $('day-entry-save').addEventListener('click',()=>{
