@@ -155,6 +155,27 @@ function bindRhythm(prefix){
 
 bindRhythm('ting');
 bindRhythm('detail');
+
+function bindCompactNumber(id,clamp,options={}){
+  const field = $(id);
+  const maxLength = options.maxLength || field.maxLength || 3;
+
+  field.addEventListener('input',e=>{
+    e.target.value = e.target.value.replace(/\D/g,'').slice(0,maxLength);
+  });
+  field.addEventListener('focus',e=>{
+    e.target.dataset.was = e.target.value;
+    e.target.value = '';
+  });
+  field.addEventListener('blur',e=>{
+    e.target.value = clamp(e.target.value);
+  });
+}
+
+bindCompactNumber('ting-duration',clampDuration,{maxLength:3});
+bindCompactNumber('ting-flexibility',clampFlexibility,{maxLength:2});
+bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
+bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
 $('ting-topic-chips').addEventListener('click',toggleTopicChip);
 $('detail-topic-chips').addEventListener('click',toggleTopicChip);
 $('ting-weekday-chips').addEventListener('click',toggleScheduleChip);
