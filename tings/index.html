@@ -54,8 +54,12 @@
       <p class="sheet-title">new habit</p>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
-        <input type="text" id="ting-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <label class="emoji-field">
+          <span>emoji</span>
+          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+        </label>
       </div>
+      <p class="field-hint emoji-help">Optional. Use an emoji like 🏃 or 📚; blank uses the default habit icon.</p>
       <div class="seg" id="type-seg">
         <button class="seg-opt on" data-v="keepup">build</button>
         <button class="seg-opt" data-v="reduce">limit</button>
@@ -78,14 +82,20 @@
           <span class="settings-sublabel">topics</span>
           <div class="topic-chip-row" id="ting-topic-chips"></div>
           <div class="planning-grid">
-            <label>
+            <div class="planning-field">
               <span>duration</span>
-              <input type="number" id="ting-duration" min="1" max="720" value="30" inputmode="numeric" />
-            </label>
-            <label>
-              <span>flexibility</span>
-              <input type="number" id="ting-flexibility" min="0" max="60" value="0" inputmode="numeric" />
-            </label>
+              <label class="range-value" aria-label="duration in minutes">
+                <input type="text" id="ting-duration" inputmode="numeric" maxlength="3" value="30" />
+                <span>min</span>
+              </label>
+            </div>
+            <div class="planning-field">
+              <span>flexibility <small>(extra days)</small></span>
+              <label class="range-value" aria-label="flexibility in days">
+                <input type="text" id="ting-flexibility" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
           </div>
         </div>
       </section>
@@ -151,14 +161,20 @@
         <section class="detail-page detail-section tune-section">
           <span class="section-label">schedule</span>
           <div class="planning-grid">
-            <label>
+            <div class="planning-field">
               <span>duration</span>
-              <input type="number" id="detail-duration" min="1" max="720" value="30" inputmode="numeric" />
-            </label>
-            <label>
-              <span>flexibility</span>
-              <input type="number" id="detail-flexibility" min="0" max="60" value="0" inputmode="numeric" />
-            </label>
+              <label class="range-value" aria-label="duration in minutes">
+                <input type="text" id="detail-duration" inputmode="numeric" maxlength="3" value="30" />
+                <span>min</span>
+              </label>
+            </div>
+            <div class="planning-field">
+              <span>flexibility <small>(extra days)</small></span>
+              <label class="range-value" aria-label="flexibility in days">
+                <input type="text" id="detail-flexibility" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
           </div>
           <span class="settings-sublabel">only on these days</span>
           <div class="schedule-chip-row" id="detail-weekday-chips"></div>
@@ -177,8 +193,12 @@
           <span class="section-label">identity</span>
           <div class="name-icon-row">
             <input type="text" id="detail-habit-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
-            <input type="text" id="detail-emoji" class="emoji-input" placeholder="icon" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" />
+            <label class="emoji-field">
+              <span>emoji</span>
+              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+            </label>
           </div>
+          <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
           <div class="seg" id="detail-type-seg">
             <button class="seg-opt" data-detail-type="keepup">build</button>
             <button class="seg-opt" data-detail-type="reduce">limit</button>
