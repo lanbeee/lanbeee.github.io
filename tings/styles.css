@@ -391,6 +391,7 @@ body.reach-pad #list{padding-top:220px;}
 }
 .add-sheet{
   padding-bottom:calc(88px + var(--keyboard-lift) + env(safe-area-inset-bottom));
+  position:relative;
 }
 .detail-sheet{padding-top:0;}
 .sheet-wrap.open .add-sheet,
@@ -616,8 +617,9 @@ body.reach-pad #list{padding-top:220px;}
 }
 .overview-card{margin-bottom:12px;}
 .overview-stats{
-  display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-6px 0 12px;
+  display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;margin:-6px 0 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;
 }
+.overview-stats::-webkit-scrollbar{display:none;}
 .overview-stats.compact-stats{margin:-2px 0 10px;}
 .overview-stat{
   display:inline-flex;align-items:center;gap:4px;
@@ -745,6 +747,18 @@ body.reach-pad #list{padding-top:220px;}
   color:var(--text3);font-size:12px;line-height:1.35;margin:-2px 0 10px;
 }
 .field-hint.emoji-help{margin:-4px 0 12px;}
+.emoji-suggestion{
+  position:absolute;top:calc(20px + env(safe-area-inset-top));right:18px;
+  display:flex;align-items:center;justify-content:center;
+  height:28px;min-width:90px;padding:0 12px;
+  cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;
+  border-radius:999px;
+  background:var(--bg2);border:0.5px solid var(--border2);
+  font-weight:650;font-size:12px;line-height:1;color:var(--text2);
+  transition:background 0.15s;
+}
+.emoji-suggestion:active{background:var(--bg3);}
+.emoji-suggestion[hidden]{display:none;}
 .topic-chip-row,.topic-list{
   display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:-2px 0 12px;
 }
