@@ -184,6 +184,18 @@ $('detail-type-seg').addEventListener('click',e=>{
 $('detail-pinned').addEventListener('change',()=>setDetailDirty());
 $('detail-duration').addEventListener('input',()=>setDetailDirty());
 $('detail-flexibility').addEventListener('input',()=>setDetailDirty());
+document.addEventListener('click',e=>{
+  document.querySelectorAll('.info-tooltip:not([hidden])').forEach(tip=>{
+    if(e.target.closest(`[data-tip="${tip.id}"]`))return;
+    tip.hidden = true;
+  });
+},true);
+document.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-tip]');
+  if(!btn)return;
+  const tip = $(btn.dataset.tip);
+  if(tip)tip.toggleAttribute('hidden');
+});
 $('detail-days').addEventListener('input',()=>setDetailDirty());
 $('detail-days').addEventListener('blur',()=>setDetailDirty());
 $('detail-days-slider').addEventListener('input',()=>setDetailDirty());
