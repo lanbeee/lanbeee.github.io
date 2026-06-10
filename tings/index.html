@@ -73,44 +73,10 @@
           <span>d</span>
         </label>
       </div>
-      <section class="add-option-group">
-        <button class="add-option-toggle" type="button" aria-expanded="false">
-          <span><b>details</b><small>Topics, duration, and flexibility.</small></span>
-          <i class="ti ti-chevron-down" aria-hidden="true"></i>
-        </button>
-        <div class="add-option-panel" hidden>
-          <span class="settings-sublabel">topics</span>
-          <div class="topic-chip-row" id="ting-topic-chips"></div>
-          <div class="planning-grid">
-            <div class="planning-field">
-              <span>duration</span>
-              <label class="range-value" aria-label="duration in minutes">
-                <input type="text" id="ting-duration" inputmode="numeric" maxlength="3" value="30" />
-                <span>min</span>
-              </label>
-            </div>
-            <div class="planning-field">
-              <span>flexibility <small>(extra days)</small></span>
-              <label class="range-value" aria-label="flexibility in days">
-                <input type="text" id="ting-flexibility" inputmode="numeric" maxlength="2" value="0" />
-                <span>d</span>
-              </label>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section class="add-option-group">
-        <button class="add-option-toggle" type="button" aria-expanded="false">
-          <span><b>schedule limits</b><small>Restrict this habit to certain days.</small></span>
-          <i class="ti ti-chevron-down" aria-hidden="true"></i>
-        </button>
-        <div class="add-option-panel" hidden>
-          <span class="settings-sublabel">only on these days</span>
-          <div class="schedule-chip-row" id="ting-weekday-chips"></div>
-          <span class="settings-sublabel compact-label">only on these month days</span>
-          <div class="monthday-chip-row" id="ting-monthday-chips"></div>
-        </div>
-      </section>
+      <div class="add-topics-section" id="add-topics-section">
+        <span class="settings-sublabel">topics</span>
+        <div class="topic-chip-row" id="ting-topic-chips"></div>
+      </div>
       <div class="btn-row add-actions">
         <button class="btn primary" id="do-save">add</button>
         <button class="btn" id="do-cancel">cancel</button>
@@ -169,7 +135,7 @@
               </label>
             </div>
             <div class="planning-field">
-              <span>flexibility <small>(extra days)</small></span>
+              <span>flexibility <small>(helps with planning)</small></span>
               <label class="range-value" aria-label="flexibility in days">
                 <input type="text" id="detail-flexibility" inputmode="numeric" maxlength="2" value="0" />
                 <span>d</span>
@@ -312,9 +278,10 @@
             <button class="seg-opt" data-preset="balanced">balanced</button>
             <button class="seg-opt" data-preset="build">build</button>
             <button class="seg-opt" data-preset="planned">plans</button>
+            <button class="seg-opt" data-preset="todayFirst">today</button>
             <button class="seg-opt" data-preset="custom">custom</button>
           </div>
-          <p class="field-hint">Presets move the controls below. Balanced watches everything, build favors routines, and plans favors planned days.</p>
+          <p class="field-hint">Presets move the controls below. Balanced watches everything, build favors routines, plans favors planned days, and today puts today items and overdue items first.</p>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
               <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
