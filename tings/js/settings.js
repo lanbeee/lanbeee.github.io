@@ -19,6 +19,7 @@ function applyAddDefaults(){
   $('target-slider-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
   $('target-help').style.display = selectedType === 'zero' ? 'none' : 'block';
   $('target-help').textContent = rhythmHelp(selectedType);
+  if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
 }
 
 function syncSettingsControls(){
