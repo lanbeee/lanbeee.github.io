@@ -67,6 +67,16 @@ function openDetailCalendar(i){
   });
 }
 
+function openDetailSchedule(i){
+  openDetail(i);
+  requestAnimationFrame(()=>{
+    const pager = $('detail-sheet').querySelector('.detail-pager');
+    if(!pager)return;
+    pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
+    updateDetailPagerDots();
+  });
+}
+
 function detailHeaderLine(h){
   const parts = [cardCue(h)];
   if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);

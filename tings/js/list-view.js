@@ -437,8 +437,25 @@ function render(){
   empty.classList.remove('is-action');
   empty.style.display = 'none';
 
+  const todayFirstActive = sortSettings.preset === 'todayFirst';
+  let sectionCat = -1;
+
   indices.forEach(realIdx=>{
     const h = data[realIdx];
+    const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
+
+    if(todayFirstActive && !h.pinned && cat !== sectionCat){
+      const labels = {0:'today',1:'overdue',2:'upcoming'};
+      const label = labels[cat];
+      if(label){
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        header.textContent = label;
+        list.appendChild(header);
+      }
+      sectionCat = cat;
+    }
+
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
     const cardScore = progressScore(h);

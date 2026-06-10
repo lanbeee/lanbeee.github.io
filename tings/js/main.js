@@ -95,13 +95,9 @@ $('do-save').addEventListener('click',()=>{
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
     pinned:false,
-    topics:selectedAddTopics(),
-    allowedWeekdays:selectedWeekdaysFrom('ting-weekday-chips'),
-    allowedMonthDays:selectedMonthDaysFrom('ting-monthday-chips'),
-    flexibilityDays:clampFlexibility($('ting-flexibility').value),
-    durationMinutes:clampDuration($('ting-duration').value)
+    topics:selectedAddTopics()
   });
-  if(save(data)){cancelAdd();showToast('added');render();}
+  if(save(data)){cancelAdd();render();openDetailSchedule(data.length - 1);}
 });
 
 $('ting-message').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
@@ -172,27 +168,12 @@ function bindCompactNumber(id,clamp,options={}){
   });
 }
 
-bindCompactNumber('ting-duration',clampDuration,{maxLength:3});
-bindCompactNumber('ting-flexibility',clampFlexibility,{maxLength:2});
 bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
 bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
 $('ting-topic-chips').addEventListener('click',toggleTopicChip);
 $('detail-topic-chips').addEventListener('click',toggleTopicChip);
-$('ting-weekday-chips').addEventListener('click',toggleScheduleChip);
-$('ting-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
-document.querySelectorAll('#add-sheet .add-option-toggle').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    const group = btn.closest('.add-option-group');
-    const panel = group?.querySelector('.add-option-panel');
-    if(!group || !panel)return;
-    const open = !group.classList.contains('open');
-    group.classList.toggle('open',open);
-    btn.setAttribute('aria-expanded',String(open));
-    panel.hidden = !open;
-  });
-});
 $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');

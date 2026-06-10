@@ -9,20 +9,12 @@ function applyAddDefaults(){
   const settings = loadSortSettings();
   $('ting-message').value = '';
   $('ting-emoji').value = '';
-  $('ting-duration').value = DEFAULT_DURATION_MINUTES;
-  $('ting-flexibility').value = DEFAULT_FLEXIBILITY_DAYS;
   selectedType = settings.defaultType || 'keepup';
   const target = clampRhythm(settings.defaultTarget || 7);
   syncRhythm('ting',target);
   renderTopicChips('ting-topic-chips',[]);
-  renderScheduleChips('ting',{});
-  document.querySelectorAll('#add-sheet .add-option-group').forEach(group=>{
-    group.classList.remove('open');
-    const toggle = group.querySelector('.add-option-toggle');
-    const panel = group.querySelector('.add-option-panel');
-    if(toggle)toggle.setAttribute('aria-expanded','false');
-    if(panel)panel.hidden = true;
-  });
+  const topicsWrap = $('add-topics-section');
+  if(topicsWrap)topicsWrap.hidden = !topicOptions().length;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
   $('target-slider-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
   $('target-help').style.display = selectedType === 'zero' ? 'none' : 'block';
@@ -161,7 +153,7 @@ function renderSortLabPreview(){
   const samples = normalize(buildSortSamples());
   const previewItems = [
     {name:'current',settings:{...DEFAULT_SORT_SETTINGS,...sortSettings},note:'your setup'},
-    ...['balanced','build','planned'].map(name=>({name,settings:sortSettingsForPreset(name)}))
+    ...['balanced','build','planned','todayFirst'].map(name=>({name,settings:sortSettingsForPreset(name)}))
   ];
   wrap.innerHTML = previewItems.map(item=>{
     const {name,settings} = item;
@@ -185,7 +177,9 @@ function renderSortLabPreview(){
         ? 'plans lead'
         : name === 'build'
           ? 'builds lead'
-          : 'mixed signals');
+          : name === 'todayFirst'
+            ? 'today & overdue first'
+            : 'mixed signals');
     const activeClass = name === 'current' ? 'current' : name === (sortSettings.preset || 'balanced') ? 'on' : '';
     return `<article class="sort-preview-card ${activeClass}">
       <div><strong>${escapeHtml(name)}</strong><small>${note}</small></div>
