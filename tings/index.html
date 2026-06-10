@@ -56,11 +56,11 @@
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <label class="emoji-field">
-          <span id="emoji-label">emoji</span>
+          <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. Use an emoji like 🏃 or 📚; blank uses the default habit icon.</div></span></span>
           <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
       </div>
-      <p class="field-hint emoji-help">Optional. Use an emoji like 🏃 or 📚; blank uses the default habit icon.</p>
       <div class="seg" id="type-seg">
         <button class="seg-opt on" data-v="keepup">build</button>
         <button class="seg-opt" data-v="reduce">limit</button>
@@ -136,7 +136,8 @@
               </label>
             </div>
             <div class="planning-field">
-              <span>flexibility <small>(helps with planning)</small></span>
+              <span class="flexibility-label">flexibility <button type="button" class="info-btn" data-tip="detail-flexibility-help" aria-label="about flexibility"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-flexibility-help" role="tooltip" hidden>Adds a buffer to your target for planning purposes.</div></span>
               <label class="range-value" aria-label="flexibility in days">
                 <input type="text" id="detail-flexibility" inputmode="numeric" maxlength="2" value="0" />
                 <span>d</span>
@@ -333,8 +334,8 @@
           <p class="field-hint">Overdue waits until the rhythm has passed. Near and active bring limit habits up earlier.</p>
         </section>
         <section class="settings-block">
-          <span class="settings-label">topics</span>
-          <p class="field-hint">Use topics for search and activity reporting. Topics do not affect sorting.</p>
+          <span class="settings-label"><span style="position:relative;display:inline-block">topics <button type="button" class="info-btn" data-tip="settings-topics-help" aria-label="about topics"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-topics-help" role="tooltip" hidden>Use topics for search and activity reporting. Topics do not affect sorting.</div></span></span>
           <div class="topic-manage-row">
             <input type="text" id="topic-name" placeholder="new topic" maxlength="32" autocomplete="off" />
             <button class="btn primary" id="topic-add" type="button">add</button>
@@ -342,8 +343,8 @@
           <div class="topic-list" id="topic-list"></div>
         </section>
         <section class="settings-block">
-          <span class="settings-label">availability</span>
-          <p class="field-hint">Default time available for habits and planning each weekday.</p>
+          <span class="settings-label"><span style="position:relative;display:inline-block">availability <button type="button" class="info-btn" data-tip="settings-avail-help" aria-label="about availability"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-avail-help" role="tooltip" hidden>Default time available for habits and planning each weekday.</div></span></span>
           <div class="availability-grid" id="availability-grid"></div>
         </section>
         <section class="settings-block">
@@ -376,8 +377,8 @@
           </div>
         </section>
         <section class="settings-block">
-          <span class="settings-label">new habit defaults</span>
-          <p class="field-hint">Used only when you tap + to create a new habit.</p>
+          <span class="settings-label"><span style="position:relative;display:inline-block">new habit defaults <button type="button" class="info-btn" data-tip="settings-defaults-help" aria-label="about defaults"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-defaults-help" role="tooltip" hidden>Used only when you tap + to create a new habit.</div></span></span>
           <div class="seg compact-seg" id="default-type-seg">
             <button class="seg-opt" data-default-type="keepup">build</button>
             <button class="seg-opt" data-default-type="reduce">limit</button>
