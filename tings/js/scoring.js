@@ -474,8 +474,27 @@ function attentionScore(h,index,settingsOverride = null){
   return score - index / 100;
 }
 
+function todayCategory(h,settings){
+  const days = daysSince(h.lastLog);
+  const target = effectiveTarget(h);
+  const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
+  const isAvailableToday = scheduleDistance === 0;
+
+  if(hasPlannedToday(h) && h.type !== 'zero')return 0;
+
+  if(h.type === 'keepup' && days !== null && days >= target){
+    return isAvailableToday ? 0 : 1;
+  }
+  if(h.type === 'reduce' && days !== null && days >= target){
+    return isAvailableToday ? 0 : 1;
+  }
+
+  return 2;
+}
+
 function visibleIndices(data,settingsOverride = null){
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
+  const todayFirst = settings.preset === 'todayFirst';
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
     return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
@@ -484,6 +503,11 @@ function visibleIndices(data,settingsOverride = null){
     if(data[a].pinned && data[b].pinned)return a - b;
     const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
     if(pin)return pin;
+    if(todayFirst){
+      const catA = todayCategory(data[a],settings);
+      const catB = todayCategory(data[b],settings);
+      if(catA !== catB)return catA - catB;
+    }
     return attentionScore(data[b],b,settings) - attentionScore(data[a],a,settings);
   });
   return indices;

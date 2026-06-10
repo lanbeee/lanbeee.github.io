@@ -34,11 +34,17 @@ const SORT_PRESETS = {
     planWeight:175,dueWeight:85,progressWeight:55,trendWeight:40,rhythmWeight:40,
     buildWeight:95,limitWeight:65,stopWeight:35,newWeight:70,
     newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0
+  },
+  todayFirst:{
+    focus:'balanced',plansFirst:true,planWindowDays:3,
+    planWeight:120,dueWeight:140,progressWeight:60,trendWeight:50,rhythmWeight:50,
+    buildWeight:110,limitWeight:80,stopWeight:110,newWeight:100,
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:70,limitMode:'overdue',stopMode:'watch',rhythmBias:0
   }
 };
 const DEFAULT_SORT_SETTINGS = {
-  ...SORT_PRESETS.balanced,
-  preset:'balanced',
+  ...SORT_PRESETS.todayFirst,
+  preset:'todayFirst',
   showSnoozed:false,
   showDurationOnCards:false,
   showRepetitionOnCards:true,
