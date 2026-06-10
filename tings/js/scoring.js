@@ -480,6 +480,9 @@ function todayCategory(h,settings){
   const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
   const isAvailableToday = scheduleDistance === 0;
 
+  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 3;
+  if(h.type === 'zero')return 3;
+
   if(hasPlannedToday(h) && h.type !== 'zero')return 0;
 
   if(h.type === 'keepup' && days !== null && days >= target){

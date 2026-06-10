@@ -445,7 +445,7 @@ function render(){
     const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
 
     if(todayFirstActive && !h.pinned && cat !== sectionCat){
-      const labels = {0:'today',1:'overdue',2:'upcoming'};
+      const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
       const label = labels[cat];
       if(label){
         const header = document.createElement('div');
