@@ -52,10 +52,11 @@
   <div class="sheet-wrap" id="add-sheet">
     <div class="sheet add-sheet">
       <p class="sheet-title">new habit</p>
+      <span id="emoji-suggestion" class="emoji-suggestion" hidden role="button" tabindex="0"></span>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <label class="emoji-field">
-          <span>emoji</span>
+          <span id="emoji-label">emoji</span>
           <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
       </div>
@@ -573,6 +574,7 @@
 <script src="./js/detail-view.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
+<script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings.js" defer></script>
 <script src="./js/main.js" defer></script>
 </body>
