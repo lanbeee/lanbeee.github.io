@@ -172,6 +172,13 @@ body.fullpage-open .bottom-nav{
 .overview-actions button{touch-action:manipulation;}
 
 #list{display:flex;flex-direction:column;gap:8px;padding:14px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
+.section-header{
+  display:block;color:var(--text3);font-size:11px;font-weight:700;
+  letter-spacing:0.04em;text-transform:uppercase;
+  padding:12px 3px 0;line-height:1;margin-top:4px;
+  border-top:0.5px solid var(--border);
+}
+.section-header:first-child{border-top:none;margin-top:0;padding-top:0;}
 body.reach-pad #list{padding-top:220px;}
 
 .swipe-row{
@@ -244,13 +251,12 @@ body.reach-pad #list{padding-top:220px;}
   transition:transform var(--dur-fast) var(--ease-tight),filter var(--dur-fast) ease;
 }
 .pulse-btn:active{transform:scale(0.9);filter:saturate(1.05);}
-.ting-card .pulse-btn.emoji-pulse{
-  align-self:stretch;
-  width:78px;height:auto;min-width:78px;min-height:62px;
-  border-radius:12px;background:transparent !important;
-  overflow:visible;
-}
 .emoji-mark{font-size:28px;line-height:1;color:var(--text);}
+.ting-card .pulse-btn{
+  align-self:stretch;width:78px;min-width:78px;height:auto;border-radius:12px;
+  background:transparent !important;
+}
+.ting-card .pulse-btn .ti{font-size:44px;}
 .ting-card .pulse-btn .emoji-mark{
   display:inline-flex;align-items:center;justify-content:center;
   width:100%;height:100%;
@@ -259,10 +265,14 @@ body.reach-pad #list{padding-top:220px;}
 .ting-card .pulse-btn.emoji-pulse .emoji-mark{
   font-size:66px;line-height:0.86;
 }
+.detail-mark{
+  align-self:center;width:62px;min-width:62px;height:62px;border-radius:50%;
+}
 .detail-mark.emoji-pulse{
   border-radius:12px;background:transparent !important;
 }
 .detail-mark.emoji-pulse .emoji-mark{font-size:46px;line-height:0.95;}
+.detail-mark .ti{font-size:46px;}
 .ting-info{flex:1;min-width:0;}
 .ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px;}
 .ting-name{
@@ -877,7 +887,7 @@ input[type=range]::-moz-range-thumb{
 .compact-seg{margin-bottom:9px;}
 .settings-block .compact-seg .seg-opt{font-size:12px;min-height:40px;padding:8px 4px;}
 .preset-seg{
-  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
 }
 .preset-seg .seg-opt{
   border-right:0.5px solid var(--border2);
