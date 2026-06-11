@@ -83,7 +83,9 @@ function save(data){
 
 function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024);}
 function clampRhythmValue(value){
-  return Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt(value,10) || 7));
+  const n = parseInt(value,10);
+  if(isNaN(n))return 7;
+  return Math.max(1,Math.min(MAX_RHYTHM_DAYS,n));
 }
 function clampFlexibility(value){
   return Math.max(0,Math.min(60,parseInt(value,10) || DEFAULT_FLEXIBILITY_DAYS));
