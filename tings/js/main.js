@@ -122,7 +122,7 @@ function setDetailTypeUi(type){
 
 function syncRhythm(prefix,value){
   const field = $(`${prefix}-days`);
-  const prev = parseInt(field.value,10) || 7;
+  const prev = parseInt(field.dataset.orig || field.value,10) || 7;
   const days = clampRhythm(value);
   field.value = days;
   const label = $(`${prefix}-days-label`);
@@ -180,14 +180,11 @@ function bindRhythm(prefix){
     const typed = e.target.value.replace(/\D/g,'').slice(0,3);
     e.target.value = typed;
     if(!typed)return;
-    const prev = parseInt(field.dataset.was,10) || 7;
     const days = clampRhythm(typed);
     if(label)label.textContent = `${days}d`;
-    crown._animateTo((crown._scroll || 0) + (days - prev) * 10);
-    field.dataset.was = String(days);
   });
   field.addEventListener('focus',e=>{
-    e.target.dataset.was = e.target.value;
+    e.target.dataset.orig = e.target.value;
     e.target.value = '';
   });
   field.addEventListener('blur',e=>syncRhythm(prefix,e.target.value));
@@ -246,10 +243,6 @@ function bindRhythm(prefix){
       const curVal = parseInt(field.value,10) || 7;
       if(derivedVal !== curVal){
         setVal(derivedVal);
-      }else if(curVal <= 1 || curVal >= MAX_RHYTHM_DAYS){
-        drawCrownRidges(canvas,crown._scroll);
-        momentumId = null;
-        return;
       }
       drawCrownRidges(canvas,crown._scroll);
       momentumId = requestAnimationFrame(tick);
