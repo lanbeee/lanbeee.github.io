@@ -123,14 +123,46 @@ function setDetailTypeUi(type){
 function syncRhythm(prefix,value){
   const days = clampRhythm(value);
   $(`${prefix}-days`).value = days;
-  $(`${prefix}-days-slider`).value = days;
   const label = $(`${prefix}-days-label`);
   if(label)label.textContent = `${days}d`;
 }
 
+function drawCrownRidges(canvas, scroll){
+  if(!canvas || !canvas.isConnected)return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if(w === 0 || h === 0)return;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const R = w / 2, cx = w / 2;
+  const stepDeg = 3.6, baseW = 2.2, radOff = scroll / R;
+  const radOffDeg = radOff * 180 / Math.PI;
+  const margin = 5;
+  const startI = Math.ceil((-90 - margin - radOffDeg) / stepDeg);
+  const endI = Math.floor((90 + margin - radOffDeg) / stepDeg);
+  ctx.clearRect(0,0,w,h);
+  for(let i = startI; i <= endI; i++){
+    const adjDeg = i * stepDeg + radOffDeg;
+    const a = adjDeg * Math.PI / 180;
+    const x = cx + R * Math.sin(a);
+    const f = Math.max(0, Math.cos(a));
+    const rw = baseW * f + 0.2;
+    if(rw < 0.2 || x < -rw || x > w + rw)continue;
+    ctx.fillStyle = `rgba(0,0,0,${0.18 * f + 0.06})`;
+    ctx.fillRect(x - rw / 2, 1, Math.max(0.5, rw), h - 2);
+    if(f > 0.3){
+      ctx.fillStyle = `rgba(255,255,255,${0.07 * f})`;
+      ctx.fillRect(x - rw / 2, 1, Math.max(0.5, rw * 0.35), h - 2);
+    }
+  }
+}
+
 function bindRhythm(prefix){
   const field = $(`${prefix}-days`);
-  const slider = $(`${prefix}-days-slider`);
+  const crown = $(`${prefix}-days-slider`);
   const label = $(`${prefix}-days-label`);
 
   field.addEventListener('input',e=>{
@@ -138,7 +170,6 @@ function bindRhythm(prefix){
     e.target.value = typed;
     if(!typed)return;
     const days = clampRhythm(typed);
-    slider.value = days;
     if(label)label.textContent = `${days}d`;
   });
   field.addEventListener('focus',e=>{
@@ -146,11 +177,123 @@ function bindRhythm(prefix){
     e.target.value = '';
   });
   field.addEventListener('blur',e=>syncRhythm(prefix,e.target.value));
-  slider.addEventListener('input',e=>syncRhythm(prefix,e.target.value));
+
+  let startX,startVal,prevX,totalScroll = 0,velX = 0,momentumId = null;
+  const canvas = crown.querySelector('.crown-canvas');
+  const friction = 0.935;
+
+  const cancelMomentum = () => {
+    if(momentumId){cancelAnimationFrame(momentumId);momentumId=null;}
+  };
+
+  const setVal = val => {
+    const days = clampRhythm(val);
+    field.value = days;
+    if(label)label.textContent = `${days}d`;
+    crown.setAttribute('aria-valuenow',days);
+    if(prefix === 'detail')setDetailDirty();
+  };
+
+  const updateVisual = scroll => {
+    drawCrownRidges(canvas, scroll);
+  };
+
+  window.addEventListener('resize',()=>drawCrownRidges(canvas, totalScroll));
+
+  const startMomentum = initVel => {
+    cancelMomentum();
+    const baseScroll = totalScroll;
+    const baseVal = parseInt(field.value,10) || 7;
+    let vel = initVel;
+    const tick = () => {
+      vel *= friction;
+      if(Math.abs(vel) < 0.5){momentumId = null;return;}
+      totalScroll += vel;
+      const derivedVal = clampRhythm(baseVal + Math.round((totalScroll - baseScroll) / 4));
+      const curVal = parseInt(field.value,10) || 7;
+      if(derivedVal !== curVal){
+        setVal(derivedVal);
+      }else if(curVal <= 1 || curVal >= MAX_RHYTHM_DAYS){
+        drawCrownRidges(canvas,totalScroll);
+        momentumId = null;
+        return;
+      }
+      drawCrownRidges(canvas,totalScroll);
+      momentumId = requestAnimationFrame(tick);
+    };
+    momentumId = requestAnimationFrame(tick);
+  };
+
+  crown.addEventListener('pointerdown',e=>{
+    cancelMomentum();
+    startX = e.clientX;
+    prevX = e.clientX;
+    startVal = parseInt(field.value,10) || 7;
+    velX = 0;
+    crown.setPointerCapture(e.pointerId);
+    crown.classList.add('active');
+  });
+
+  crown.addEventListener('pointermove',e=>{
+    if(prevX === undefined)return;
+    const dx = e.clientX - prevX;
+    prevX = e.clientX;
+    velX = velX * 0.55 + dx * 0.45;
+    const newVal = clampRhythm(startVal + Math.round((e.clientX - startX) / 4));
+    const oldVal = parseInt(field.value,10) || 7;
+    if(newVal !== oldVal){
+      setVal(newVal);
+      totalScroll += dx;
+      updateVisual(totalScroll);
+    }
+  });
+
+  const endDrag = () => {
+    prevX = undefined;
+    crown.classList.remove('active');
+    if(Math.abs(velX) > 1)startMomentum(velX);
+    velX = 0;
+  };
+
+  crown.addEventListener('pointerup',endDrag);
+  crown.addEventListener('pointercancel',endDrag);
+
+  crown.addEventListener('wheel',e=>{
+    e.preventDefault();
+    cancelMomentum();
+    const step = e.deltaY < 0 ? 1 : -1;
+    const newVal = clampRhythm((parseInt(field.value,10) || 7) + step);
+    const oldVal = parseInt(field.value,10) || 7;
+    if(newVal !== oldVal){
+      setVal(newVal);
+      totalScroll += e.deltaY * -0.5;
+      updateVisual(totalScroll);
+    }
+  },{passive:false});
+
+  crown.addEventListener('keydown',e=>{
+    const inc = e.key === 'ArrowRight' || e.key === 'ArrowUp';
+    const dec = e.key === 'ArrowLeft' || e.key === 'ArrowDown';
+    if(inc||dec){
+      e.preventDefault();
+      cancelMomentum();
+      const newVal = clampRhythm((parseInt(field.value,10) || 7) + (inc ? 1 : -1));
+      const oldVal = parseInt(field.value,10) || 7;
+      if(newVal !== oldVal){
+        setVal(newVal);
+        totalScroll += inc ? 8 : -8;
+        updateVisual(totalScroll);
+      }
+    }
+  });
 }
 
 bindRhythm('ting');
 bindRhythm('detail');
+requestAnimationFrame(()=>{
+  drawCrownRidges($('ting-days-slider')?.querySelector('.crown-canvas'),0);
+  drawCrownRidges($('detail-days-slider')?.querySelector('.crown-canvas'),0);
+});
 
 function bindCompactNumber(id,clamp,options={}){
   const field = $(id);
@@ -198,7 +341,6 @@ document.addEventListener('click',e=>{
 });
 $('detail-days').addEventListener('input',()=>setDetailDirty());
 $('detail-days').addEventListener('blur',()=>setDetailDirty());
-$('detail-days-slider').addEventListener('input',()=>setDetailDirty());
 
 function bindMarkLimit(id){
   $(id).addEventListener('input',e=>{
