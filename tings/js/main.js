@@ -121,10 +121,22 @@ function setDetailTypeUi(type){
 }
 
 function syncRhythm(prefix,value){
+  const field = $(`${prefix}-days`);
+  const prev = parseInt(field.value,10) || 7;
   const days = clampRhythm(value);
-  $(`${prefix}-days`).value = days;
+  field.value = days;
   const label = $(`${prefix}-days-label`);
   if(label)label.textContent = `${days}d`;
+  const crown = $(`${prefix}-days-slider`);
+  if(crown){
+    const target = (crown._scroll || 0) + (days - prev) * 10;
+    if(crown._animateTo)crown._animateTo(target);
+    else{
+      crown._scroll = target;
+      const canvas = crown.querySelector('.crown-canvas');
+      if(canvas)drawCrownRidges(canvas, crown._scroll);
+    }
+  }
 }
 
 function drawCrownRidges(canvas, scroll){
@@ -144,6 +156,8 @@ function drawCrownRidges(canvas, scroll){
   const startI = Math.ceil((-90 - margin - radOffDeg) / stepDeg);
   const endI = Math.floor((90 + margin - radOffDeg) / stepDeg);
   ctx.clearRect(0,0,w,h);
+  const rootStyle = getComputedStyle(document.documentElement);
+  const ridgeColor = rootStyle.getPropertyValue('--text2').trim() || '#6b6a65';
   for(let i = startI; i <= endI; i++){
     const adjDeg = i * stepDeg + radOffDeg;
     const a = adjDeg * Math.PI / 180;
@@ -151,12 +165,9 @@ function drawCrownRidges(canvas, scroll){
     const f = Math.max(0, Math.cos(a));
     const rw = baseW * f + 0.2;
     if(rw < 0.2 || x < -rw || x > w + rw)continue;
-    ctx.fillStyle = `rgba(0,0,0,${0.18 * f + 0.06})`;
+    const alpha = 0.85 * f + 0.15;
+    ctx.fillStyle = `color-mix(in srgb, ${ridgeColor} ${Math.round(alpha * 100)}%, transparent)`;
     ctx.fillRect(x - rw / 2, 1, Math.max(0.5, rw), h - 2);
-    if(f > 0.3){
-      ctx.fillStyle = `rgba(255,255,255,${0.07 * f})`;
-      ctx.fillRect(x - rw / 2, 1, Math.max(0.5, rw * 0.35), h - 2);
-    }
   }
 }
 
@@ -169,8 +180,11 @@ function bindRhythm(prefix){
     const typed = e.target.value.replace(/\D/g,'').slice(0,3);
     e.target.value = typed;
     if(!typed)return;
+    const prev = parseInt(field.dataset.was,10) || 7;
     const days = clampRhythm(typed);
     if(label)label.textContent = `${days}d`;
+    crown._animateTo((crown._scroll || 0) + (days - prev) * 10);
+    field.dataset.was = String(days);
   });
   field.addEventListener('focus',e=>{
     e.target.dataset.was = e.target.value;
@@ -178,12 +192,31 @@ function bindRhythm(prefix){
   });
   field.addEventListener('blur',e=>syncRhythm(prefix,e.target.value));
 
-  let startX,startVal,prevX,totalScroll = 0,velX = 0,momentumId = null;
+  let startVal,prevX,velX = 0,momentumId = null,smoothAnimId = null;
+  crown._scroll = 0;
   const canvas = crown.querySelector('.crown-canvas');
   const friction = 0.935;
 
   const cancelMomentum = () => {
     if(momentumId){cancelAnimationFrame(momentumId);momentumId=null;}
+    if(smoothAnimId){cancelAnimationFrame(smoothAnimId);smoothAnimId=null;}
+  };
+
+  crown._animateTo = target => {
+    cancelMomentum();
+    const start = crown._scroll;
+    const delta = target - start;
+    if(Math.abs(delta) < 1){crown._scroll = target;updateVisual(crown._scroll);return;}
+    const startTime = performance.now();
+    const tick = now => {
+      const t = Math.min((now - startTime) / 400, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      crown._scroll = start + delta * ease;
+      updateVisual(crown._scroll);
+      if(t < 1)smoothAnimId = requestAnimationFrame(tick);
+      else smoothAnimId = null;
+    };
+    smoothAnimId = requestAnimationFrame(tick);
   };
 
   const setVal = val => {
@@ -198,27 +231,27 @@ function bindRhythm(prefix){
     drawCrownRidges(canvas, scroll);
   };
 
-  window.addEventListener('resize',()=>drawCrownRidges(canvas, totalScroll));
+  window.addEventListener('resize',()=>drawCrownRidges(canvas, crown._scroll));
 
   const startMomentum = initVel => {
     cancelMomentum();
-    const baseScroll = totalScroll;
+    const baseScroll = crown._scroll;
     const baseVal = parseInt(field.value,10) || 7;
     let vel = initVel;
     const tick = () => {
       vel *= friction;
       if(Math.abs(vel) < 0.5){momentumId = null;return;}
-      totalScroll += vel;
-      const derivedVal = clampRhythm(baseVal + Math.round((totalScroll - baseScroll) / 4));
+      crown._scroll += vel;
+      const derivedVal = clampRhythm(baseVal + Math.round((crown._scroll - baseScroll) / 10));
       const curVal = parseInt(field.value,10) || 7;
       if(derivedVal !== curVal){
         setVal(derivedVal);
       }else if(curVal <= 1 || curVal >= MAX_RHYTHM_DAYS){
-        drawCrownRidges(canvas,totalScroll);
+        drawCrownRidges(canvas,crown._scroll);
         momentumId = null;
         return;
       }
-      drawCrownRidges(canvas,totalScroll);
+      drawCrownRidges(canvas,crown._scroll);
       momentumId = requestAnimationFrame(tick);
     };
     momentumId = requestAnimationFrame(tick);
@@ -226,10 +259,10 @@ function bindRhythm(prefix){
 
   crown.addEventListener('pointerdown',e=>{
     cancelMomentum();
-    startX = e.clientX;
     prevX = e.clientX;
     startVal = parseInt(field.value,10) || 7;
     velX = 0;
+    crown._valScroll = 0;
     crown.setPointerCapture(e.pointerId);
     crown.classList.add('active');
   });
@@ -239,13 +272,14 @@ function bindRhythm(prefix){
     const dx = e.clientX - prevX;
     prevX = e.clientX;
     velX = velX * 0.55 + dx * 0.45;
-    const newVal = clampRhythm(startVal + Math.round((e.clientX - startX) / 4));
+    crown._scroll += dx;
+    updateVisual(crown._scroll);
+    const speed = Math.abs(velX);
+    const gain = 1 + speed * 0.15;
+    crown._valScroll += dx * gain;
+    const newVal = clampRhythm(startVal + Math.round(crown._valScroll / 10));
     const oldVal = parseInt(field.value,10) || 7;
-    if(newVal !== oldVal){
-      setVal(newVal);
-      totalScroll += dx;
-      updateVisual(totalScroll);
-    }
+    if(newVal !== oldVal)setVal(newVal);
   });
 
   const endDrag = () => {
@@ -266,8 +300,8 @@ function bindRhythm(prefix){
     const oldVal = parseInt(field.value,10) || 7;
     if(newVal !== oldVal){
       setVal(newVal);
-      totalScroll += e.deltaY * -0.5;
-      updateVisual(totalScroll);
+      crown._scroll += e.deltaY * -0.5;
+      updateVisual(crown._scroll);
     }
   },{passive:false});
 
@@ -281,8 +315,8 @@ function bindRhythm(prefix){
       const oldVal = parseInt(field.value,10) || 7;
       if(newVal !== oldVal){
         setVal(newVal);
-        totalScroll += inc ? 8 : -8;
-        updateVisual(totalScroll);
+        crown._scroll += inc ? 10 : -10;
+        updateVisual(crown._scroll);
       }
     }
   });
