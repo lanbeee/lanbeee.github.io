@@ -117,15 +117,15 @@ button {
 }
 
 #dateDay {
-  font-size: clamp(1.55rem, 3.4vw, 3rem);
-  font-weight: 800;
+  font-size: clamp(1.55rem, 3.5vw, 3.1rem);
+  font-weight: 650;
 }
 
 #dateValue {
   margin-top: 0.4rem;
-  font-size: clamp(1.05rem, 1.45vw, 1.4rem);
-  font-weight: 750;
-  opacity: 0.72;
+  font-size: clamp(1.05rem, 1.5vw, 1.45rem);
+  font-weight: 500;
+  opacity: 0.78;
 }
 
 .top-actions {
@@ -185,8 +185,8 @@ button {
   justify-content: flex-end;
   min-height: 42px;
   text-align: right;
-  font-size: clamp(1rem, 1.65vw, 1.65rem);
-  font-weight: 800;
+  font-size: clamp(1.05rem, 1.75vw, 1.8rem);
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -205,7 +205,7 @@ button {
 }
 
 .weatherText strong {
-  font-weight: 900;
+  font-weight: 750;
 }
 
 .weatherText span {
@@ -254,14 +254,14 @@ button {
 
 #time {
   position: absolute;
-  top: 45%;
+  top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   width: 100vw;
   padding-inline: 2vw;
   text-align: center;
-  font-size: clamp(6.2rem, 18.6vw, 16rem);
-  font-weight: 900;
+  font-size: clamp(6.8rem, 20vw, 17rem);
+  font-weight: 800;
   line-height: 0.82;
   white-space: nowrap;
 }
@@ -280,9 +280,9 @@ button {
   margin: 0 auto;
   max-width: 1040px;
   text-wrap: balance;
-  font-size: clamp(2.05rem, 4.4vw, 4.25rem);
-  font-weight: 850;
-  line-height: 1.06;
+  font-size: clamp(2.3rem, 4.9vw, 4.6rem);
+  font-weight: 600;
+  line-height: 1.08;
 }
 
 .settings-panel {
@@ -336,7 +336,7 @@ button {
 
 .panel-header p {
   margin: 10px 0 0;
-  font-weight: 800;
+  font-weight: 600;
   opacity: 0.72;
 }
 
@@ -359,7 +359,7 @@ button {
   display: block;
   margin-top: 12px;
   font-size: 0.9rem;
-  font-weight: 850;
+  font-weight: 650;
   opacity: 0.82;
 }
 
@@ -373,7 +373,7 @@ button {
 .inline-field span {
   margin-top: 7px;
   min-width: 48px;
-  font-weight: 850;
+  font-weight: 650;
   opacity: 0.76;
 }
 
@@ -404,7 +404,7 @@ button {
   border-radius: 999px;
   color: var(--button-text);
   cursor: pointer;
-  font-weight: 900;
+  font-weight: 750;
 }
 
 .panel-action:hover {
@@ -498,6 +498,7 @@ button {
 
   #dateDay {
     font-size: clamp(1.45rem, 5.8vw, 2rem);
+    font-weight: 650;
     line-height: 0.98;
   }
 
@@ -509,7 +510,7 @@ button {
   #weather {
     max-width: 46vw;
     min-height: 38px;
-    font-size: clamp(1.05rem, 4.4vw, 1.4rem);
+    font-size: clamp(1.15rem, 4.8vw, 1.55rem);
   }
 
   .weatherText span {
@@ -523,14 +524,15 @@ button {
   }
 
   #time {
-    top: 44.5%;
-    font-size: clamp(6.8rem, 30vw, 9.8rem);
+    top: 50%;
+    font-size: clamp(7.6rem, 34vw, 11rem);
   }
 
   #message {
     max-width: 94vw;
-    font-size: clamp(2rem, 8.1vw, 3rem);
-    line-height: 1.06;
+    font-size: clamp(2.25rem, 9vw, 3.35rem);
+    font-weight: 600;
+    line-height: 1.08;
   }
 
   #dayPlan {
@@ -569,8 +571,8 @@ button {
   }
 
   #time {
-    top: 44.5%;
-    font-size: clamp(5.6rem, 18.5vw, 9.4rem);
+    top: 50%;
+    font-size: clamp(6.1rem, 20vw, 10rem);
   }
 
   #dayPlan {
@@ -580,8 +582,8 @@ button {
 
   #message {
     max-width: 94vw;
-    font-size: clamp(1.65rem, 4.8vw, 2.35rem);
-    line-height: 1.06;
+    font-size: clamp(1.9rem, 5.5vw, 2.65rem);
+    line-height: 1.08;
   }
 }
 
@@ -623,7 +625,8 @@ button {
   }
 
   #time {
-    font-size: clamp(9.2rem, 25vw, 15rem);
+    top: 50%;
+    font-size: clamp(9.6rem, 26vw, 15.6rem);
   }
 
   #dayPlan {
@@ -633,14 +636,14 @@ button {
 
   #message {
     max-width: 92vw;
-    font-size: clamp(2.05rem, 3.9vw, 3rem);
-    line-height: 1.06;
+    font-size: clamp(2.25rem, 4.3vw, 3.35rem);
+    line-height: 1.08;
   }
 }
 
 @media (max-width: 520px) and (max-height: 760px) {
   #message {
     max-width: 94vw;
-    font-size: clamp(1.85rem, 7.8vw, 2.65rem);
+    font-size: clamp(2.05rem, 8.8vw, 3rem);
   }
 }
