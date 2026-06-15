@@ -74,7 +74,7 @@ body {
 body {
   background: var(--theme-page-bg);
   color: var(--app-text);
-  font-family: ui-rounded, "Avenir Next", "Trebuchet MS", sans-serif;
+  font-family: ui-rounded, "Avenir Next", "Nunito Sans", system-ui, sans-serif;
   transition: background-color 0.4s ease, color 0.4s ease;
 }
 
@@ -98,11 +98,11 @@ button {
 
 .top-bar {
   position: fixed;
-  inset: calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + 12px) auto calc(env(safe-area-inset-left, 0px) + 12px);
+  inset: calc(env(safe-area-inset-top, 0px) + 16px) calc(env(safe-area-inset-right, 0px) + 18px) auto calc(env(safe-area-inset-left, 0px) + 18px);
   display: grid;
-  grid-template-columns: minmax(90px, 1fr) auto minmax(90px, 1fr);
-  align-items: start;
-  gap: 12px;
+  grid-template-columns: minmax(140px, 1fr) auto minmax(140px, 1fr);
+  align-items: center;
+  gap: 16px;
   z-index: 50;
   pointer-events: none;
 }
@@ -114,18 +114,17 @@ button {
 .date-block {
   justify-self: start;
   line-height: 1;
-  letter-spacing: -0.03em;
 }
 
 #dateDay {
-  font-size: clamp(1.35rem, 3.2vw, 3rem);
+  font-size: clamp(1.55rem, 3.4vw, 3rem);
   font-weight: 800;
 }
 
 #dateValue {
-  margin-top: 0.25rem;
-  font-size: clamp(0.9rem, 1.4vw, 1.25rem);
-  font-weight: 700;
+  margin-top: 0.4rem;
+  font-size: clamp(1.05rem, 1.45vw, 1.4rem);
+  font-weight: 750;
   opacity: 0.72;
 }
 
@@ -139,16 +138,16 @@ button {
 
 #startLoopBtn {
   justify-self: center;
-  padding: clamp(10px, 1.8vw, 18px) clamp(16px, 3vw, 36px);
+  padding: clamp(9px, 1.35vw, 15px) clamp(15px, 2.4vw, 30px);
   background: var(--theme-button-bg);
   border: 0;
   border-radius: 999px;
   color: var(--button-text);
   cursor: pointer;
-  font-size: clamp(0.88rem, 1.7vw, 1.35rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  box-shadow: 0 18px 50px color-mix(in srgb, #000000 28%, transparent);
+  font-size: clamp(0.84rem, 1.25vw, 1.05rem);
+  font-weight: 750;
+  letter-spacing: 0;
+  box-shadow: 0 12px 34px color-mix(in srgb, #000000 22%, transparent);
   opacity: 1;
   transition: opacity 0.7s ease, visibility 0.7s ease, transform 0.2s ease;
 }
@@ -165,8 +164,8 @@ button {
 }
 
 .icon-button {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -174,21 +173,21 @@ button {
   border: 1px solid var(--panel-border);
   border-radius: 999px;
   cursor: pointer;
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
   backdrop-filter: blur(16px);
 }
 
 #weather {
-  max-width: min(42vw, 420px);
+  max-width: min(40vw, 380px);
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  min-height: 44px;
+  min-height: 42px;
   text-align: right;
-  font-size: clamp(0.9rem, 1.8vw, 1.8rem);
+  font-size: clamp(1rem, 1.65vw, 1.65rem);
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 #weatherInfo {
@@ -198,17 +197,32 @@ button {
   gap: clamp(6px, 1vw, 14px);
 }
 
+.weatherText {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45em;
+  white-space: nowrap;
+}
+
+.weatherText strong {
+  font-weight: 900;
+}
+
+.weatherText span {
+  opacity: 0.78;
+}
+
 #weather img {
-  width: clamp(32px, 6vw, 76px);
-  height: clamp(32px, 6vw, 76px);
+  width: clamp(30px, 4.8vw, 58px);
+  height: clamp(30px, 4.8vw, 58px);
   filter: var(--weather-icon-filter);
 }
 
 .weatherIconWrap {
   position: relative;
   display: inline-block;
-  width: clamp(32px, 6vw, 76px);
-  height: clamp(32px, 6vw, 76px);
+  width: clamp(30px, 4.8vw, 58px);
+  height: clamp(30px, 4.8vw, 58px);
   flex: 0 0 auto;
 }
 
@@ -231,54 +245,6 @@ button {
   filter: var(--next-weather-icon-filter);
 }
 
-#exerciseCounter {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + clamp(86px, 16vh, 132px));
-  left: calc(env(safe-area-inset-left, 0px) + clamp(12px, 2vw, 24px));
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  z-index: 30;
-  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
-}
-
-#exerciseCounter.is-hidden {
-  opacity: 0;
-  visibility: hidden;
-  transform: translateX(-12px);
-  pointer-events: none;
-}
-
-#counterResetBtn {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font-size: clamp(1.3rem, 2.4vw, 1.8rem);
-  line-height: 1;
-  touch-action: manipulation;
-}
-
-#counterValue {
-  font-size: clamp(2rem, 8vw, 4.25rem);
-  font-weight: 900;
-  line-height: 0.9;
-  letter-spacing: -0.08em;
-}
-
-.counter-label {
-  font-size: clamp(0.75rem, 1.5vw, 1rem);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  opacity: 0.7;
-  text-transform: uppercase;
-}
-
 .center-stage {
   position: fixed;
   inset: 0;
@@ -288,24 +254,23 @@ button {
 
 #time {
   position: absolute;
-  top: 50%;
+  top: 45%;
   left: 50%;
   transform: translate(-50%, -50%);
   width: 100vw;
   padding-inline: 2vw;
   text-align: center;
-  font-size: clamp(4.4rem, 18vw, 16rem);
-  font-weight: 950;
-  line-height: 0.78;
-  letter-spacing: -0.1em;
+  font-size: clamp(6.2rem, 18.6vw, 16rem);
+  font-weight: 900;
+  line-height: 0.82;
   white-space: nowrap;
 }
 
 #dayPlan {
   position: absolute;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 54px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(38px, 6.4vh, 76px));
   left: 50%;
-  width: min(92vw, 920px);
+  width: min(92vw, 1080px);
   transform: translateX(-50%);
   text-align: center;
   pointer-events: none;
@@ -313,55 +278,11 @@ button {
 
 #message {
   margin: 0 auto;
-  max-width: 920px;
-  font-size: clamp(1rem, 2.2vw, 2.1rem);
+  max-width: 1040px;
+  text-wrap: balance;
+  font-size: clamp(2.05rem, 4.4vw, 4.25rem);
   font-weight: 850;
-  letter-spacing: -0.04em;
-}
-
-#planList {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin: clamp(10px, 2vh, 18px) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-#planList li {
-  min-width: 0;
-  padding: clamp(8px, 1.5vw, 14px);
-  background: color-mix(in srgb, var(--app-text) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--app-text) 18%, transparent);
-  border-radius: 18px;
-  text-align: left;
-  backdrop-filter: blur(14px);
-}
-
-#planList span,
-#planList strong,
-#planList em {
-  display: block;
-}
-
-#planList span {
-  font-size: 0.78rem;
-  font-weight: 900;
-  opacity: 0.74;
-}
-
-#planList strong {
-  margin-top: 4px;
-  font-size: clamp(0.85rem, 1.1vw, 1rem);
-  line-height: 1.05;
-}
-
-#planList em {
-  margin-top: 6px;
-  font-size: clamp(0.72rem, 0.95vw, 0.9rem);
-  font-style: normal;
-  line-height: 1.25;
-  opacity: 0.76;
+  line-height: 1.06;
 }
 
 .settings-panel {
@@ -410,7 +331,7 @@ button {
   margin: 0;
   font-size: 2.2rem;
   line-height: 0.9;
-  letter-spacing: -0.07em;
+  letter-spacing: 0;
 }
 
 .panel-header p {
@@ -442,6 +363,20 @@ button {
   opacity: 0.82;
 }
 
+.inline-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.inline-field span {
+  margin-top: 7px;
+  min-width: 48px;
+  font-weight: 850;
+  opacity: 0.76;
+}
+
 .panel-section select,
 .panel-section input,
 .panel-section textarea {
@@ -458,61 +393,6 @@ button {
   min-height: 88px;
   resize: vertical;
   line-height: 1.35;
-}
-
-.planner-controls {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.planner-subsection {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  background: color-mix(in srgb, var(--app-text) 7%, transparent);
-  border: 1px solid color-mix(in srgb, var(--app-text) 12%, transparent);
-  border-radius: 18px;
-}
-
-.planner-subsection h4 {
-  margin: 0;
-  font-size: 0.9rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.planner-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 12px;
-}
-
-.planner-fields label {
-  margin-top: 0;
-}
-
-.inline-field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.inline-field span {
-  font-size: 0.88rem;
-  font-weight: 850;
-  opacity: 0.76;
-}
-
-.planner-days {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 12px;
-}
-
-.planner-days label {
-  margin-top: 0;
 }
 
 .panel-action {
@@ -559,22 +439,11 @@ button {
   accent-color: var(--button-bg);
 }
 
-.hint,
-.planner-grid p {
+.hint {
   margin: 10px 0 0;
   font-size: 0.9rem;
   line-height: 1.45;
   opacity: 0.76;
-}
-
-.planner-grid {
-  display: grid;
-  gap: 16px;
-}
-
-.planner-grid strong {
-  display: block;
-  font-size: 1rem;
 }
 
 #dateDay,
@@ -582,13 +451,6 @@ button {
 #weather,
 #time,
 #message,
-#exerciseCounter,
-#counterResetBtn,
-#counterValue,
-.counter-label,
-#planList span,
-#planList strong,
-#planList em,
 .settings-panel {
   color: var(--app-text);
 }
@@ -597,13 +459,7 @@ button {
 :root.theme-transitioning #dateValue,
 :root.theme-transitioning #weather,
 :root.theme-transitioning #time,
-:root.theme-transitioning #message,
-:root.theme-transitioning #counterResetBtn,
-:root.theme-transitioning #counterValue,
-:root.theme-transitioning .counter-label,
-:root.theme-transitioning #planList span,
-:root.theme-transitioning #planList strong,
-:root.theme-transitioning #planList em {
+:root.theme-transitioning #message {
   background-image: var(--theme-text-fill);
   background-size: 100vw 100%;
   background-attachment: fixed;
@@ -616,6 +472,7 @@ button {
   .top-bar {
     grid-template-columns: 1fr auto;
     align-items: start;
+    gap: 10px;
   }
 
   #startLoopBtn {
@@ -627,14 +484,6 @@ button {
   .top-actions {
     max-width: 55vw;
   }
-
-  #planList {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  #planList li:nth-child(n + 5) {
-    display: none;
-  }
 }
 
 @media (max-width: 620px) {
@@ -643,68 +492,68 @@ button {
   }
 
   .top-bar {
-    inset: calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 10px) auto calc(env(safe-area-inset-left, 0px) + 10px);
+    inset: calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + 12px) auto calc(env(safe-area-inset-left, 0px) + 12px);
     gap: 8px;
+  }
+
+  #dateDay {
+    font-size: clamp(1.45rem, 5.8vw, 2rem);
+    line-height: 0.98;
+  }
+
+  #dateValue {
+    margin-top: 0.26rem;
+    font-size: clamp(0.95rem, 3.7vw, 1.15rem);
   }
 
   #weather {
     max-width: 46vw;
+    min-height: 38px;
+    font-size: clamp(1.05rem, 4.4vw, 1.4rem);
   }
 
-  #weatherInfo span:last-child {
+  .weatherText span {
     display: none;
   }
 
   .icon-button {
-    width: 40px;
-    height: 40px;
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
   }
 
-  #exerciseCounter {
-    top: calc(env(safe-area-inset-top, 0px) + 82px);
+  #time {
+    top: 44.5%;
+    font-size: clamp(6.8rem, 30vw, 9.8rem);
+  }
+
+  #message {
+    max-width: 94vw;
+    font-size: clamp(2rem, 8.1vw, 3rem);
+    line-height: 1.06;
   }
 
   #dayPlan {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 48px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 44px);
   }
-
-  #planList {
-    grid-template-columns: 1fr;
-    width: min(88vw, 420px);
-    margin-inline: auto;
-  }
-
-  #planList li:nth-child(n + 4) {
-    display: none;
-  }
-
-  #planList em {
-    display: none;
-  }
-
-  .planner-days,
-  .planner-fields {
-    grid-template-columns: 1fr;
-  }
-
 }
 
 @media (max-height: 560px) {
   .top-bar {
-    inset: calc(env(safe-area-inset-top, 0px) + 8px) calc(env(safe-area-inset-right, 0px) + 8px) auto calc(env(safe-area-inset-left, 0px) + 8px);
+    inset: calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 10px) auto calc(env(safe-area-inset-left, 0px) + 10px);
   }
 
   #dateDay {
-    font-size: clamp(1rem, 3vw, 1.6rem);
+    font-size: clamp(1.18rem, 3.4vw, 1.65rem);
   }
 
   #dateValue {
-    font-size: clamp(0.72rem, 1.6vw, 0.95rem);
+    font-size: clamp(0.82rem, 1.8vw, 1rem);
   }
 
   #weather {
     min-height: 38px;
-    font-size: clamp(0.78rem, 1.8vw, 1rem);
+    font-size: clamp(0.92rem, 2vw, 1.2rem);
   }
 
   #weather img,
@@ -720,52 +569,19 @@ button {
   }
 
   #time {
-    font-size: clamp(4rem, 15vw, 8.4rem);
+    top: 44.5%;
+    font-size: clamp(5.6rem, 18.5vw, 9.4rem);
   }
 
   #dayPlan {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 42px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 26px);
     width: min(94vw, 860px);
   }
 
   #message {
-    max-width: 86vw;
-    font-size: clamp(0.82rem, 2vw, 1.05rem);
-    line-height: 1.05;
-  }
-
-  #planList {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 7px;
-  }
-
-  #planList li {
-    padding: 7px 8px;
-    border-radius: 12px;
-  }
-
-  #planList li:nth-child(n + 4) {
-    display: none;
-  }
-
-  #planList span {
-    font-size: 0.66rem;
-  }
-
-  #planList strong {
-    margin-top: 2px;
-    font-size: 0.74rem;
-    line-height: 1;
-  }
-
-  #planList em {
-    display: none;
-  }
-
-  #exerciseCounter {
-    top: calc(env(safe-area-inset-top, 0px) + 66px);
+    max-width: 94vw;
+    font-size: clamp(1.65rem, 4.8vw, 2.35rem);
+    line-height: 1.06;
   }
 }
 
@@ -776,18 +592,18 @@ button {
   }
 
   #dateDay {
-    font-size: clamp(2.2rem, 5.6vw, 3.5rem);
+    font-size: clamp(2.05rem, 5vw, 3.25rem);
   }
 
   #dateValue {
     margin-top: 0.35rem;
-    font-size: clamp(1.35rem, 2.3vw, 1.8rem);
+    font-size: clamp(1.2rem, 2.15vw, 1.65rem);
   }
 
   #weather {
-    min-height: 64px;
+    min-height: 58px;
     max-width: 44vw;
-    font-size: clamp(1.55rem, 3vw, 2.2rem);
+    font-size: clamp(1.45rem, 2.7vw, 2rem);
   }
 
   #weatherInfo {
@@ -796,59 +612,35 @@ button {
 
   #weather img,
   .weatherIconWrap {
-    width: clamp(54px, 7vw, 78px);
-    height: clamp(54px, 7vw, 78px);
+    width: clamp(46px, 6vw, 66px);
+    height: clamp(46px, 6vw, 66px);
   }
 
   .icon-button {
-    width: 58px;
-    height: 58px;
-    font-size: 31px;
+    width: 52px;
+    height: 52px;
+    font-size: 27px;
   }
 
   #time {
-    font-size: clamp(8.8rem, 25vw, 15rem);
+    font-size: clamp(9.2rem, 25vw, 15rem);
   }
 
   #dayPlan {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 46px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 44px);
     width: min(92vw, 900px);
   }
 
   #message {
-    max-width: 88vw;
-    font-size: clamp(1.35rem, 2.8vw, 1.9rem);
-    line-height: 1.05;
-  }
-
-  #planList {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 10px;
-  }
-
-  #planList li {
-    padding: 10px 12px;
-    border-radius: 16px;
-  }
-
-  #planList span {
-    font-size: 0.9rem;
-  }
-
-  #planList strong {
-    margin-top: 3px;
-    font-size: 1.05rem;
-    line-height: 1.02;
+    max-width: 92vw;
+    font-size: clamp(2.05rem, 3.9vw, 3rem);
+    line-height: 1.06;
   }
 }
 
 @media (max-width: 520px) and (max-height: 760px) {
   #message {
-    max-width: 84vw;
-  }
-
-  #planList li:nth-child(n + 3) {
-    display: none;
+    max-width: 94vw;
+    font-size: clamp(1.85rem, 7.8vw, 2.65rem);
   }
 }
