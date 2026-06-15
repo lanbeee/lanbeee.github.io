@@ -27,17 +27,10 @@
       </div>
     </header>
 
-    <section id="exerciseCounter" aria-label="Day counter">
-      <button id="counterResetBtn" type="button" aria-label="Reset counter">⟳</button>
-      <div id="counterValue">0</div>
-      <div class="counter-label">best <span id="highScoreValue">0</span></div>
-    </section>
-
     <main class="center-stage">
       <div id="time" aria-live="polite">--:--</div>
-      <section id="dayPlan" aria-label="Plan for the rest of the day">
-        <div id="message">Loading plan...</div>
-        <ol id="planList"></ol>
+      <section id="dayPlan" aria-label="Daily guidance">
+        <div id="message">Loading...</div>
       </section>
     </main>
 
@@ -51,11 +44,19 @@
       </div>
 
       <section class="panel-section">
-        <h3>Display</h3>
-        <label class="toggle-row">
-          <input id="counterVisibilityToggle" type="checkbox" checked>
-          <span>Show counter / tracker</span>
-        </label>
+        <h3>Timing</h3>
+        <label for="wakeOffsetInput">Fajr/get-up azaan before sunrise</label>
+        <div class="inline-field">
+          <input id="wakeOffsetInput" type="number" min="0" max="180" step="5">
+          <span>min</span>
+        </div>
+        <label for="sleepHoursInput">Sleep target before sunrise</label>
+        <div class="inline-field">
+          <input id="sleepHoursInput" type="number" min="4" max="12" step="0.25">
+          <span>hours</span>
+        </div>
+        <button id="saveTimingBtn" class="panel-action" type="button">Save timing</button>
+        <p id="timingSavedMsg" class="hint" aria-live="polite"></p>
       </section>
 
       <section class="panel-section">
@@ -76,111 +77,6 @@
         <p class="hint">Saved locally on this device and used for prayer times, theme timing, and weather when available.</p>
       </section>
 
-      <section class="panel-section">
-        <h3>Planner</h3>
-        <div class="planner-controls">
-          <div class="planner-subsection">
-            <h4>Daily routine</h4>
-            <div class="planner-fields">
-              <label for="wakeOffsetInput">Wake before sunrise</label>
-              <div class="inline-field">
-                <input id="wakeOffsetInput" type="number" min="0" max="180" step="5">
-                <span>minutes</span>
-              </div>
-              <label for="projectTimeInput">Projects / breakfast</label>
-              <input id="projectTimeInput" type="time">
-              <label for="workStartInput">Work starts</label>
-              <input id="workStartInput" type="time">
-              <label for="workEndInput">Usual work ends</label>
-              <input id="workEndInput" type="time">
-              <label for="workEndLateInput">Late work ends</label>
-              <input id="workEndLateInput" type="time">
-              <label for="dinnerOffsetInput">Dinner after Maghrib</label>
-              <div class="inline-field">
-                <input id="dinnerOffsetInput" type="number" min="0" max="180" step="5">
-                <span>minutes</span>
-              </div>
-            </div>
-
-            <label class="toggle-row">
-              <input id="lunchWithDhuhrToggle" type="checkbox">
-              <span>Pair lunch with Dhuhr</span>
-            </label>
-            <label class="toggle-row">
-              <input id="asrAfterWorkToggle" type="checkbox">
-              <span>Prefer Asr after work if needed</span>
-            </label>
-            <label class="toggle-row">
-              <input id="snackBeforeSunsetToggle" type="checkbox">
-              <span>Plan snacks before sunset</span>
-            </label>
-          </div>
-
-          <div class="planner-subsection">
-            <h4>Weekly rhythm</h4>
-            <div class="planner-days">
-              <label for="laundryDaySelect">Laundry</label>
-              <select id="laundryDaySelect"></select>
-              <label for="vacuumDaySelect">Vacuum</label>
-              <select id="vacuumDaySelect"></select>
-              <label for="groceryDaySelect">Weekly groceries</label>
-              <select id="groceryDaySelect"></select>
-              <label for="friendsDaySelect">Visit friends</label>
-              <select id="friendsDaySelect"></select>
-              <label for="gamesDaySelect">PS / games</label>
-              <select id="gamesDaySelect"></select>
-              <label for="walkDaySelect">Walk if pleasant</label>
-              <select id="walkDaySelect"></select>
-              <label for="restDaySelect">Protected rest / buffer</label>
-              <select id="restDaySelect"></select>
-            </div>
-          </div>
-
-          <div class="planner-subsection">
-            <h4>Monthly / weekend rhythm</h4>
-            <div class="planner-days">
-              <label for="meatGroceryWeekSelect">Meat/misc groceries</label>
-              <select id="meatGroceryWeekSelect"></select>
-              <label for="movieWeekSelect">Movie weekend</label>
-              <select id="movieWeekSelect"></select>
-              <label for="parkDaySelect">Park day</label>
-              <select id="parkDaySelect"></select>
-              <label for="weekendBufferDaySelect">Weekend buffer</label>
-              <select id="weekendBufferDaySelect"></select>
-            </div>
-          </div>
-
-          <label for="weekPrioritiesInput">This week priorities</label>
-          <textarea id="weekPrioritiesInput" rows="3" placeholder="One per line. Example: finish portfolio page, call insurance, prep meal plan"></textarea>
-
-          <label for="monthPrioritiesInput">This month priorities</label>
-          <textarea id="monthPrioritiesInput" rows="3" placeholder="One per line. Example: renew documents, car maintenance, organize storage"></textarea>
-
-          <label for="weatherActivitiesInput">Weather-dependent options</label>
-          <textarea id="weatherActivitiesInput" rows="2" placeholder="Example: walk, park, patio dinner, bike ride"></textarea>
-
-          <label for="customPlanNotesInput">Personal planning notes</label>
-          <textarea id="customPlanNotesInput" rows="3" placeholder="Anything the planner should keep in mind this week/month"></textarea>
-
-          <button id="savePlannerBtn" class="panel-action" type="button">Save planner</button>
-          <p id="plannerSavedMsg" class="hint" aria-live="polite"></p>
-        </div>
-
-        <div class="planner-grid">
-          <div>
-            <strong>Daily anchors</strong>
-            <p id="dailyPlannerSummary">Saved routine appears here.</p>
-          </div>
-          <div>
-            <strong>Weekly rhythm</strong>
-            <p id="weeklyPlannerSummary">Saved weekly rhythm appears here.</p>
-          </div>
-          <div>
-            <strong>Monthly rhythm</strong>
-            <p id="monthlyPlannerSummary">Saved monthly rhythm appears here.</p>
-          </div>
-        </div>
-      </section>
     </aside>
 
     <button id="panelScrim" class="panel-scrim" type="button" aria-label="Close settings"></button>
@@ -198,42 +94,12 @@
       longitude: -78.8487
     };
     const APP_SETTINGS_KEY = "azaanDashboardSettings";
-    const COUNTER_STORAGE_KEY = "exerciseCounterState";
     const THEME_TRANSITION_DURATION_MS = 30 * 60 * 1000;
-    const DAY_OPTIONS = [
-      { value: "0", label: "Sunday" },
-      { value: "1", label: "Monday" },
-      { value: "2", label: "Tuesday" },
-      { value: "3", label: "Wednesday" },
-      { value: "4", label: "Thursday" },
-      { value: "5", label: "Friday" },
-      { value: "6", label: "Saturday" }
-    ];
-    const DEFAULT_PLANNER = {
+    const DEFAULT_ROUTINE = {
       wakeOffsetMinutes: 30,
-      projectTime: "07:00",
-      workStart: "09:00",
-      workEnd: "17:00",
-      workEndLate: "17:30",
+      sleepHoursBeforeSunrise: 8,
       dinnerOffsetMinutes: 45,
-      lunchWithDhuhr: true,
-      asrAfterWork: true,
-      snackBeforeSunset: true,
-      laundryDay: 1,
-      vacuumDay: 3,
-      groceryDay: 4,
-      friendsDay: 6,
-      gamesDay: 5,
-      walkDay: 2,
-      restDay: 0,
-      meatGroceryWeek: 1,
-      movieWeek: 3,
-      parkDay: 6,
-      weekendBufferDay: 0,
-      weatherActivities: "walk\npark",
-      weekPriorities: "",
-      monthPriorities: "",
-      customNotes: ""
+      teaBeforeMaghribMinutes: 45
     };
 
     const THEME_PALETTES = {
@@ -253,11 +119,6 @@
     const dateValueDisplay = document.getElementById("dateValue");
     const weatherInfo = document.getElementById("weatherInfo");
     const messageDisplay = document.getElementById("message");
-    const planList = document.getElementById("planList");
-    const counterResetBtn = document.getElementById("counterResetBtn");
-    const counterValue = document.getElementById("counterValue");
-    const highScoreValue = document.getElementById("highScoreValue");
-    const exerciseCounterEl = document.getElementById("exerciseCounter");
     const menuToggle = document.getElementById("menuToggle");
     const closeMenuBtn = document.getElementById("closeMenuBtn");
     const settingsPanel = document.getElementById("settingsPanel");
@@ -268,41 +129,12 @@
     const cityFileLabel = document.getElementById("cityFileLabel");
     const cityFileInput = document.getElementById("cityFileInput");
     const selectedLocationLabel = document.getElementById("selectedLocationLabel");
-    const counterVisibilityToggle = document.getElementById("counterVisibilityToggle");
     const wakeOffsetInput = document.getElementById("wakeOffsetInput");
-    const projectTimeInput = document.getElementById("projectTimeInput");
-    const workStartInput = document.getElementById("workStartInput");
-    const workEndInput = document.getElementById("workEndInput");
-    const workEndLateInput = document.getElementById("workEndLateInput");
-    const dinnerOffsetInput = document.getElementById("dinnerOffsetInput");
-    const lunchWithDhuhrToggle = document.getElementById("lunchWithDhuhrToggle");
-    const asrAfterWorkToggle = document.getElementById("asrAfterWorkToggle");
-    const snackBeforeSunsetToggle = document.getElementById("snackBeforeSunsetToggle");
-    const laundryDaySelect = document.getElementById("laundryDaySelect");
-    const vacuumDaySelect = document.getElementById("vacuumDaySelect");
-    const groceryDaySelect = document.getElementById("groceryDaySelect");
-    const friendsDaySelect = document.getElementById("friendsDaySelect");
-    const gamesDaySelect = document.getElementById("gamesDaySelect");
-    const walkDaySelect = document.getElementById("walkDaySelect");
-    const restDaySelect = document.getElementById("restDaySelect");
-    const meatGroceryWeekSelect = document.getElementById("meatGroceryWeekSelect");
-    const movieWeekSelect = document.getElementById("movieWeekSelect");
-    const parkDaySelect = document.getElementById("parkDaySelect");
-    const weekendBufferDaySelect = document.getElementById("weekendBufferDaySelect");
-    const weekPrioritiesInput = document.getElementById("weekPrioritiesInput");
-    const monthPrioritiesInput = document.getElementById("monthPrioritiesInput");
-    const weatherActivitiesInput = document.getElementById("weatherActivitiesInput");
-    const customPlanNotesInput = document.getElementById("customPlanNotesInput");
-    const savePlannerBtn = document.getElementById("savePlannerBtn");
-    const plannerSavedMsg = document.getElementById("plannerSavedMsg");
-    const dailyPlannerSummary = document.getElementById("dailyPlannerSummary");
-    const weeklyPlannerSummary = document.getElementById("weeklyPlannerSummary");
-    const monthlyPlannerSummary = document.getElementById("monthlyPlannerSummary");
+    const sleepHoursInput = document.getElementById("sleepHoursInput");
+    const saveTimingBtn = document.getElementById("saveTimingBtn");
+    const timingSavedMsg = document.getElementById("timingSavedMsg");
 
     let isLooping = false;
-    let exerciseCounter = 0;
-    let exerciseHighScore = 0;
-    let lastCounterDate = "";
     let currentThemePhase = "";
     let currentTransitionPhase = "";
     let cachedThemeTimelineDate = "";
@@ -318,20 +150,49 @@
       try {
         const saved = JSON.parse(localStorage.getItem(APP_SETTINGS_KEY) || "{}");
         return {
-          showCounter: true,
           location: { ...DEFAULT_LOCATION },
-          planner: { ...DEFAULT_PLANNER },
+          routine: { ...DEFAULT_ROUTINE },
           ...saved,
           location: { ...DEFAULT_LOCATION, ...(saved.location || {}) },
-          planner: { ...DEFAULT_PLANNER, ...(saved.planner || {}) }
+          routine: { ...DEFAULT_ROUTINE, ...(saved.routine || {}) }
         };
       } catch (error) {
-        return { showCounter: true, location: { ...DEFAULT_LOCATION }, planner: { ...DEFAULT_PLANNER } };
+        return { location: { ...DEFAULT_LOCATION }, routine: { ...DEFAULT_ROUTINE } };
       }
     }
 
     function saveSettings() {
       localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(settings));
+    }
+
+    function getRoutineSettings() {
+      settings.routine = { ...DEFAULT_ROUTINE, ...(settings.routine || {}) };
+      return settings.routine;
+    }
+
+    function renderTimingControls() {
+      const routine = getRoutineSettings();
+      wakeOffsetInput.value = routine.wakeOffsetMinutes;
+      sleepHoursInput.value = routine.sleepHoursBeforeSunrise;
+    }
+
+    function saveTimingSettings() {
+      settings.routine = {
+        ...getRoutineSettings(),
+        wakeOffsetMinutes: Math.max(0, Math.min(180, Number(wakeOffsetInput.value) || DEFAULT_ROUTINE.wakeOffsetMinutes)),
+        sleepHoursBeforeSunrise: Math.max(4, Math.min(12, Number(sleepHoursInput.value) || DEFAULT_ROUTINE.sleepHoursBeforeSunrise))
+      };
+      saveSettings();
+      cachedThemeTimelineDate = "";
+      updateThemeByPrayerTimes();
+      scheduleThemeBoundaryRefreshes();
+      if (isLooping) rescheduleAzaan();
+      renderTimingControls();
+      updateGuidance();
+      timingSavedMsg.textContent = "Saved.";
+      setTimeout(() => {
+        timingSavedMsg.textContent = "";
+      }, 2200);
     }
 
     function parseCsvLine(line) {
@@ -473,155 +334,7 @@
       scheduleThemeBoundaryRefreshes();
       fetchWeather();
       if (isLooping) rescheduleAzaan();
-      updatePlanner();
-    }
-
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      })[char]);
-    }
-
-    function getPlannerSettings() {
-      settings.planner = { ...DEFAULT_PLANNER, ...(settings.planner || {}) };
-      return settings.planner;
-    }
-
-    function populateDaySelect(selectEl) {
-      selectEl.innerHTML = DAY_OPTIONS.map((day) => `<option value="${day.value}">${day.label}</option>`).join("");
-    }
-
-    function populateWeekSelect(selectEl) {
-      selectEl.innerHTML = [
-        { value: "1", label: "1st weekend" },
-        { value: "2", label: "2nd weekend" },
-        { value: "3", label: "3rd weekend" },
-        { value: "4", label: "4th weekend" },
-        { value: "5", label: "5th weekend if available" }
-      ].map((week) => `<option value="${week.value}">${week.label}</option>`).join("");
-    }
-
-    function populatePlannerControls() {
-      [
-        laundryDaySelect,
-        vacuumDaySelect,
-        groceryDaySelect,
-        friendsDaySelect,
-        gamesDaySelect,
-        walkDaySelect,
-        restDaySelect,
-        parkDaySelect,
-        weekendBufferDaySelect
-      ].forEach(populateDaySelect);
-      [meatGroceryWeekSelect, movieWeekSelect].forEach(populateWeekSelect);
-    }
-
-    function renderPlannerControls() {
-      const planner = getPlannerSettings();
-      wakeOffsetInput.value = planner.wakeOffsetMinutes;
-      projectTimeInput.value = planner.projectTime;
-      workStartInput.value = planner.workStart;
-      workEndInput.value = planner.workEnd;
-      workEndLateInput.value = planner.workEndLate;
-      dinnerOffsetInput.value = planner.dinnerOffsetMinutes;
-      lunchWithDhuhrToggle.checked = Boolean(planner.lunchWithDhuhr);
-      asrAfterWorkToggle.checked = Boolean(planner.asrAfterWork);
-      snackBeforeSunsetToggle.checked = Boolean(planner.snackBeforeSunset);
-      laundryDaySelect.value = String(planner.laundryDay);
-      vacuumDaySelect.value = String(planner.vacuumDay);
-      groceryDaySelect.value = String(planner.groceryDay);
-      friendsDaySelect.value = String(planner.friendsDay);
-      gamesDaySelect.value = String(planner.gamesDay);
-      walkDaySelect.value = String(planner.walkDay);
-      restDaySelect.value = String(planner.restDay);
-      meatGroceryWeekSelect.value = String(planner.meatGroceryWeek);
-      movieWeekSelect.value = String(planner.movieWeek);
-      parkDaySelect.value = String(planner.parkDay);
-      weekendBufferDaySelect.value = String(planner.weekendBufferDay);
-      weekPrioritiesInput.value = planner.weekPriorities;
-      monthPrioritiesInput.value = planner.monthPriorities;
-      weatherActivitiesInput.value = planner.weatherActivities;
-      customPlanNotesInput.value = planner.customNotes;
-      renderPlannerSummaries();
-    }
-
-    function renderPlannerSummaries() {
-      const planner = getPlannerSettings();
-      dailyPlannerSummary.textContent = `Wake ${planner.wakeOffsetMinutes} min before sunrise. Projects/breakfast at ${planner.projectTime}. Work ${planner.workStart}-${planner.workEndLate}. Dinner ${planner.dinnerOffsetMinutes} min after Maghrib.`;
-      weeklyPlannerSummary.textContent = `Laundry ${dayLabel(planner.laundryDay)}, vacuum ${dayLabel(planner.vacuumDay)}, groceries ${dayLabel(planner.groceryDay)}, friends ${dayLabel(planner.friendsDay)}, games ${dayLabel(planner.gamesDay)}, rest ${dayLabel(planner.restDay)}.`;
-      monthlyPlannerSummary.textContent = `Meat/misc groceries ${weekLabel(planner.meatGroceryWeek)}, movie ${weekLabel(planner.movieWeek)}, park/outdoor day ${dayLabel(planner.parkDay)}, weekend buffer ${dayLabel(planner.weekendBufferDay)}.`;
-    }
-
-    function savePlannerSettingsFromControls() {
-      settings.planner = {
-        wakeOffsetMinutes: Math.max(0, Math.min(180, Number(wakeOffsetInput.value) || DEFAULT_PLANNER.wakeOffsetMinutes)),
-        projectTime: projectTimeInput.value || DEFAULT_PLANNER.projectTime,
-        workStart: workStartInput.value || DEFAULT_PLANNER.workStart,
-        workEnd: workEndInput.value || DEFAULT_PLANNER.workEnd,
-        workEndLate: workEndLateInput.value || DEFAULT_PLANNER.workEndLate,
-        dinnerOffsetMinutes: Math.max(0, Math.min(180, Number(dinnerOffsetInput.value) || DEFAULT_PLANNER.dinnerOffsetMinutes)),
-        lunchWithDhuhr: lunchWithDhuhrToggle.checked,
-        asrAfterWork: asrAfterWorkToggle.checked,
-        snackBeforeSunset: snackBeforeSunsetToggle.checked,
-        laundryDay: Number(laundryDaySelect.value),
-        vacuumDay: Number(vacuumDaySelect.value),
-        groceryDay: Number(groceryDaySelect.value),
-        friendsDay: Number(friendsDaySelect.value),
-        gamesDay: Number(gamesDaySelect.value),
-        walkDay: Number(walkDaySelect.value),
-        restDay: Number(restDaySelect.value),
-        meatGroceryWeek: Number(meatGroceryWeekSelect.value),
-        movieWeek: Number(movieWeekSelect.value),
-        parkDay: Number(parkDaySelect.value),
-        weekendBufferDay: Number(weekendBufferDaySelect.value),
-        weekPriorities: weekPrioritiesInput.value.trim(),
-        monthPriorities: monthPrioritiesInput.value.trim(),
-        weatherActivities: weatherActivitiesInput.value.trim(),
-        customNotes: customPlanNotesInput.value.trim()
-      };
-      saveSettings();
-      cachedThemeTimelineDate = "";
-      updateThemeByPrayerTimes();
-      scheduleThemeBoundaryRefreshes();
-      if (isLooping) rescheduleAzaan();
-      renderPlannerControls();
-      updatePlanner();
-      plannerSavedMsg.textContent = "Saved. Home plan updated.";
-      setTimeout(() => {
-        plannerSavedMsg.textContent = "";
-      }, 2500);
-    }
-
-    function firstPlannerNote(value) {
-      return String(value || "")
-        .split(/\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean)[0] || "";
-    }
-
-    function plannerNotes(value) {
-      return String(value || "")
-        .split(/\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-
-    function dayLabel(dayValue) {
-      return DAY_OPTIONS.find((day) => day.value === String(dayValue))?.label || "this week";
-    }
-
-    function weekLabel(weekValue) {
-      return {
-        1: "1st weekend",
-        2: "2nd weekend",
-        3: "3rd weekend",
-        4: "4th weekend",
-        5: "5th weekend"
-      }[Number(weekValue)] || "selected weekend";
+      updateGuidance();
     }
 
     function formatLocalDate(date) {
@@ -629,19 +342,6 @@
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
-    }
-
-    function dateFromLocalIso(dateString) {
-      const [year, month, day] = dateString.split("-").map(Number);
-      return new Date(year, month - 1, day);
-    }
-
-    function daysBetween(fromDateString, toDateString) {
-      const start = dateFromLocalIso(fromDateString);
-      const end = dateFromLocalIso(toDateString);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(0, 0, 0, 0);
-      return Math.floor((end - start) / (24 * 60 * 60 * 1000));
     }
 
     function getPrayerCalculationContext() {
@@ -764,87 +464,15 @@
       });
     }
 
-    function loadCounterStateFromStorage() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(COUNTER_STORAGE_KEY) || "{}");
-        exerciseCounter = Number.isFinite(saved.counter) ? saved.counter : 0;
-        exerciseHighScore = Number.isFinite(saved.highScore) ? saved.highScore : 0;
-        lastCounterDate = typeof saved.lastDate === "string" ? saved.lastDate : "";
-      } catch (error) {
-        exerciseCounter = 0;
-        exerciseHighScore = 0;
-        lastCounterDate = "";
-      }
-    }
-
-    function saveCounterState() {
-      localStorage.setItem(COUNTER_STORAGE_KEY, JSON.stringify({
-        counter: exerciseCounter,
-        highScore: exerciseHighScore,
-        lastDate: lastCounterDate
-      }));
-    }
-
-    function renderCounter() {
-      counterValue.textContent = String(exerciseCounter);
-      highScoreValue.textContent = String(exerciseHighScore);
-      exerciseCounterEl.classList.toggle("is-hidden", !settings.showCounter);
-      counterVisibilityToggle.checked = Boolean(settings.showCounter);
-    }
-
-    function applyMissedCounterDays() {
-      const today = formatLocalDate(new Date());
-      if (!lastCounterDate) {
-        lastCounterDate = today;
-        return;
-      }
-      const missedDays = daysBetween(lastCounterDate, today);
-      if (missedDays > 0) {
-        exerciseCounter += missedDays;
-        exerciseHighScore = Math.max(exerciseHighScore, exerciseCounter);
-        lastCounterDate = today;
-      }
-    }
-
-    function syncCounterToToday() {
-      applyMissedCounterDays();
-      exerciseHighScore = Math.max(exerciseHighScore, exerciseCounter);
-      renderCounter();
-      saveCounterState();
-    }
-
-    function resetCounter() {
-      exerciseCounter = 0;
-      lastCounterDate = formatLocalDate(new Date());
-      renderCounter();
-      saveCounterState();
-    }
-
-    function scheduleNextCounterIncrement() {
-      const now = new Date();
-      const nextMidnight = new Date(now);
-      nextMidnight.setHours(24, 0, 0, 0);
-      setTimeout(() => {
-        syncCounterToToday();
-        scheduleNextCounterIncrement();
-      }, nextMidnight.getTime() - now.getTime());
-    }
-
-    function initializeCounter() {
-      loadCounterStateFromStorage();
-      syncCounterToToday();
-      scheduleNextCounterIncrement();
-    }
-
     function updateTimeAndDate() {
       const now = new Date();
       const hours = now.getHours() % 12 || 12;
       const minutes = String(now.getMinutes()).padStart(2, "0");
       timeDisplay.textContent = `${hours}:${minutes}`;
-      dateDayDisplay.textContent = now.toLocaleDateString("en-US", { weekday: "long" });
-      dateValueDisplay.textContent = now.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      dateDayDisplay.textContent = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      dateValueDisplay.textContent = currentLocation.city.split(",")[0];
       updateThemeByPrayerTimes();
-      updatePlanner();
+      updateGuidance();
     }
 
     async function fetchWeather() {
@@ -867,12 +495,13 @@
         const weatherDescription = data.weather[0].description;
         const iconCode = data.weather[0].icon;
         const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
+        const shortDescription = weatherDescription.split(" ")[0];
         weatherInfo.innerHTML = `
           <span class="weatherIconWrap" aria-hidden="true">
             <img class="weatherIconCurrent" src="${iconUrl}" alt="">
             <img class="weatherIconNext" src="${iconUrl}" alt="">
           </span>
-          <span>${temperature}°C, ${weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}</span>
+          <span class="weatherText"><strong>${temperature}°C</strong><span>${shortDescription}</span></span>
         `;
       } catch (error) {
         console.error(error);
@@ -883,13 +512,14 @@
     function getPrayerTimesForDay(date) {
       const { coords, params } = getPrayerCalculationContext();
       const prayerTimes = new adhan.PrayerTimes(coords, date, params);
+      const routine = getRoutineSettings();
       const preSunRiseTime = new Date(prayerTimes.sunrise);
-      preSunRiseTime.setMinutes(preSunRiseTime.getMinutes() - getPlannerSettings().wakeOffsetMinutes);
+      preSunRiseTime.setMinutes(preSunRiseTime.getMinutes() - routine.wakeOffsetMinutes);
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
       const nextDayPrayerTimes = new adhan.PrayerTimes(coords, nextDay, params);
-      const sunriseMinus8Hours = new Date(nextDayPrayerTimes.sunrise.getTime() - (8 * 60 * 60 * 1000));
-      const adjustedIshaTime = new Date(Math.max(sunriseMinus8Hours.getTime(), prayerTimes.isha.getTime()));
+      const sleepTargetTime = new Date(nextDayPrayerTimes.sunrise.getTime() - (routine.sleepHoursBeforeSunrise * 60 * 60 * 1000));
+      const adjustedIshaTime = new Date(Math.max(sleepTargetTime.getTime(), prayerTimes.isha.getTime()));
       return [
         { name: "Fajr", time: preSunRiseTime, audioSrc: "static/fajr.mp3" },
         { name: "Dhuhr", time: prayerTimes.dhuhr, audioSrc: "static/azaan.mp3" },
@@ -963,146 +593,36 @@
       return new Date(date.getTime() + minutes * 60 * 1000);
     }
 
-    function todayAt(hours, minutes = 0) {
-      const date = new Date();
-      date.setHours(hours, minutes, 0, 0);
-      return date;
-    }
-
-    function todayAtTime(timeString, fallback = "12:00") {
-      const [hours, minutes] = String(timeString || fallback).split(":").map(Number);
-      return todayAt(Number.isFinite(hours) ? hours : 12, Number.isFinite(minutes) ? minutes : 0);
-    }
-
     function formatPlanTime(date) {
       return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?(AM|PM)$/i, "").replace(/^0/, "");
     }
 
-    function formatPlannerTime(timeString, fallback) {
-      return formatPlanTime(todayAtTime(timeString, fallback));
-    }
-
-    function getWeeklyAnchor(now) {
-      const day = now.getDay();
-      const weekOfMonth = Math.ceil(now.getDate() / 7);
-      const planner = getPlannerSettings();
-      const weekPriority = plannerNotes(planner.weekPriorities)[0];
-      const monthPriority = plannerNotes(planner.monthPriorities)[0];
-      const customNote = plannerNotes(planner.customNotes)[0];
-      const weatherActivity = plannerNotes(planner.weatherActivities)[0] || "walk";
-      if (day === planner.laundryDay) return "🧺 Laundry";
-      if (day === planner.vacuumDay) return "🧹 Vacuum";
-      if (day === planner.groceryDay) return "🛒 Weekly groceries";
-      if ((day === 6 || day === 0) && weekOfMonth === planner.meatGroceryWeek) return monthPriority ? `🥩 Meat run + ${monthPriority}` : "🥩 Meat/misc run";
-      if ((day === 6 || day === 0) && weekOfMonth === planner.movieWeek) return "🎬 Movie night";
-      if (day === planner.friendsDay) return "👥 Friends visit";
-      if (day === planner.gamesDay) return "🎮 PS/games";
-      if (day === planner.walkDay) return `🚶 ${weatherActivity}`;
-      if (day === planner.restDay) return "🛋️ Rest buffer";
-      if (day === planner.parkDay) return customNote ? `🌳 Park + ${customNote}` : "🌳 Park";
-      if (day === planner.weekendBufferDay) return "🧭 Weekend buffer";
-      if (weekPriority) return `🎯 ${weekPriority}`;
-      if (monthPriority) return `📅 ${monthPriority}`;
-      return `🧭 Free buffer`;
-    }
-
-    function pushPlan(items, time, title, detail) {
-      if (time > new Date()) items.push({ time, title, detail });
-    }
-
-    function pushTodayAnchors(items, now, startTime) {
-      const planner = getPlannerSettings();
-      const day = now.getDay();
-      const weekOfMonth = Math.ceil(now.getDate() / 7);
-      const weatherActivity = plannerNotes(planner.weatherActivities)[0] || "walk";
-      const customNote = plannerNotes(planner.customNotes)[0];
-      const monthPriority = plannerNotes(planner.monthPriorities)[0];
-      let offset = 25;
-
-      const addAnchor = (title, detail) => {
-        pushPlan(items, addMinutes(startTime, offset), title, detail);
-        offset += 35;
-      };
-
-      if (day === planner.laundryDay) addAnchor("🧺 Laundry", "Start before dinner");
-      if (day === planner.vacuumDay) addAnchor("🧹 Vacuum", "Quick reset");
-      if (day === planner.groceryDay) addAnchor("🛒 Groceries", "Check list first");
-      if (day === planner.walkDay) addAnchor("🚶 Walk", weatherActivity);
-      if (day === planner.friendsDay) addAnchor("👥 Friends", "Visit window");
-      if (day === planner.gamesDay) addAnchor("🎮 Games", "Keep evening light");
-      if (day === planner.restDay) addAnchor("🛋️ Rest", "Protect buffer");
-      if ((day === 6 || day === 0) && weekOfMonth === planner.meatGroceryWeek) addAnchor("🥩 Meat run", monthPriority || "Monthly items");
-      if ((day === 6 || day === 0) && weekOfMonth === planner.movieWeek) addAnchor("🎬 Movie", "Weekend block");
-      if (day === planner.parkDay) addAnchor("🌳 Park", customNote || "If weather is good");
-      if (day === planner.weekendBufferDay) addAnchor("🧭 Buffer", "Rest / requests");
-    }
-
-    function buildPlanForRestOfDay(now = new Date()) {
+    function getCurrentGuidance(now = new Date()) {
       const prayers = getPrayerTimesForDay(now);
       const fajr = getPrayerByName(prayers, "Fajr").time;
       const dhuhr = getPrayerByName(prayers, "Dhuhr").time;
       const asr = getPrayerByName(prayers, "Asr").time;
       const maghrib = getPrayerByName(prayers, "Maghrib").time;
       const isha = getPrayerByName(prayers, "Isha").time;
-      const isWeekend = now.getDay() === 0 || now.getDay() === 6;
-      const planner = getPlannerSettings();
-      const weekPriority = plannerNotes(planner.weekPriorities)[0];
-      const monthPriority = plannerNotes(planner.monthPriorities)[0];
-      const customNote = plannerNotes(planner.customNotes)[0];
-      const projectTime = todayAtTime(planner.projectTime, DEFAULT_PLANNER.projectTime);
-      const workStart = todayAtTime(planner.workStart, DEFAULT_PLANNER.workStart);
-      const workEnd = todayAtTime(planner.workEnd, DEFAULT_PLANNER.workEnd);
-      const workEndLate = todayAtTime(planner.workEndLate, DEFAULT_PLANNER.workEndLate);
-      const lunchTime = planner.lunchWithDhuhr ? dhuhr : todayAt(12, 30);
-      const snackTime = planner.snackBeforeSunset ? addMinutes(maghrib, -45) : addMinutes(workEnd, 20);
-      const items = [];
+      const routine = getRoutineSettings();
+      const teaTime = addMinutes(maghrib, -routine.teaBeforeMaghribMinutes);
+      const dinnerTime = addMinutes(maghrib, routine.dinnerOffsetMinutes);
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const nextFajr = getPrayerByName(getPrayerTimesForDay(tomorrow), "Fajr").time;
 
-      pushPlan(items, fajr, "🌅 Wake + Fajr", `${planner.wakeOffsetMinutes} min before sunrise`);
-      pushPlan(items, projectTime, "🍳 Breakfast/projects", weekPriority || "One personal task");
-      if (!isWeekend) {
-        pushPlan(items, workStart, "💼 Work", `${formatPlannerTime(planner.workStart, DEFAULT_PLANNER.workStart)}-${formatPlannerTime(planner.workEndLate, DEFAULT_PLANNER.workEndLate)}`);
-        pushPlan(items, lunchTime, "🕌 Dhuhr + lunch", planner.lunchWithDhuhr ? "Combined break" : "Separate break");
-        pushPlan(items, planner.asrAfterWork ? addMinutes(workEnd, 5) : asr, "🕌 Asr", planner.asrAfterWork ? "After shutdown" : "Near prayer time");
-        pushPlan(items, snackTime, "🍪 Snack", planner.snackBeforeSunset ? "Before sunset" : "After work");
-        pushPlan(items, workEndLate, "✅ Shutdown", "Plan tomorrow");
-        pushTodayAnchors(items, now, workEndLate);
-      } else {
-        pushPlan(items, todayAt(10, 30), "🛋️ Weekend buffer", customNote || "Keep space open");
-        pushTodayAnchors(items, now, todayAt(11, 0));
-      }
-      if (monthPriority) pushPlan(items, todayAt(20, 15), "📅 Monthly", monthPriority);
-      pushPlan(items, maghrib, "🕌 Maghrib", "Then dinner prep");
-      pushPlan(items, addMinutes(maghrib, planner.dinnerOffsetMinutes), "🍽️ Dinner", `${planner.dinnerOffsetMinutes} min after Maghrib`);
-      pushPlan(items, isha, "🌙 Isha", "Wind down");
-      return items.sort((a, b) => a.time - b.time).slice(0, 5);
+      if (now < fajr) return `Sleep. Fajr ${formatPlanTime(fajr)}.`;
+      if (now < dhuhr) return `Morning. Dhuhr ${formatPlanTime(dhuhr)}.`;
+      if (now < asr) return `Lunch. Asr ${formatPlanTime(asr)}.`;
+      if (now < teaTime) return `Afternoon. Tea ${formatPlanTime(teaTime)}.`;
+      if (now < maghrib) return `Tea. Maghrib ${formatPlanTime(maghrib)}.`;
+      if (now < dinnerTime) return `Maghrib. Dinner ${formatPlanTime(dinnerTime)}.`;
+      if (now < isha) return `Dinner. Isha ${formatPlanTime(isha)}.`;
+      return `Sleep. Fajr ${formatPlanTime(nextFajr)}.`;
     }
 
-    function getCurrentGuidance(now = new Date()) {
-      const hour = now.getHours();
-      const isWeekend = now.getDay() === 0 || now.getDay() === 6;
-      const planner = getPlannerSettings();
-      const priority = plannerNotes(planner.weekPriorities)[0] || plannerNotes(planner.monthPriorities)[0];
-      if (hour < 5) return `😴 Sleep. Wake ${planner.wakeOffsetMinutes} min before sunrise.`;
-      if (hour < 9) return priority ? `🌅 Morning: ${priority}` : "🌅 Morning: Fajr, projects, breakfast.";
-      if (!isWeekend && hour < 12) return `💼 Work until ${formatPlannerTime(planner.workEndLate, DEFAULT_PLANNER.workEndLate)}.`;
-      if (!isWeekend && hour < 15) return planner.lunchWithDhuhr ? "🕌 Dhuhr + lunch." : "🕌 Lunch and Dhuhr.";
-      if (!isWeekend && hour < 18) return `✅ Finish work, then ${getWeeklyAnchor(now)}.`;
-      if (hour < 20) return `🌇 Evening: ${getWeeklyAnchor(now)}.`;
-      if (hour < 22) return "🌙 Dinner, Isha, wind down.";
-      return "😴 Sleep mode.";
-    }
-
-    function updatePlanner() {
-      const now = new Date();
-      messageDisplay.textContent = getCurrentGuidance(now);
-      const planItems = buildPlanForRestOfDay(now);
-      planList.innerHTML = planItems.map((item) => `
-        <li>
-          <span>${formatPlanTime(item.time)}</span>
-          <strong>${escapeHtml(item.title)}</strong>
-          <em>${escapeHtml(item.detail)}</em>
-        </li>
-      `).join("");
+    function updateGuidance() {
+      messageDisplay.textContent = getCurrentGuidance(new Date());
     }
 
     function openMenu() {
@@ -1121,11 +641,9 @@
 
     function applySettings() {
       currentLocation = { ...(settings.location || DEFAULT_LOCATION) };
-      settings.showCounter = settings.showCounter !== false;
-      settings.planner = { ...DEFAULT_PLANNER, ...(settings.planner || {}) };
+      settings.routine = { ...DEFAULT_ROUTINE, ...(settings.routine || {}) };
       selectedLocationLabel.textContent = `${currentLocation.city}, ${currentLocation.country}`;
-      renderCounter();
-      renderPlannerControls();
+      renderTimingControls();
     }
 
     function sendHeartbeat() {
@@ -1184,13 +702,7 @@
         locationStatus.textContent = "Could not read that CSV file.";
       }
     });
-    counterVisibilityToggle.addEventListener("change", () => {
-      settings.showCounter = counterVisibilityToggle.checked;
-      saveSettings();
-      renderCounter();
-    });
-    savePlannerBtn.addEventListener("click", savePlannerSettingsFromControls);
-    counterResetBtn.addEventListener("click", resetCounter);
+    saveTimingBtn.addEventListener("click", saveTimingSettings);
     startLoopBtn.addEventListener("click", startSilentLoop);
     menuToggle.addEventListener("click", openMenu);
     closeMenuBtn.addEventListener("click", closeMenu);
@@ -1199,9 +711,7 @@
       if (event.key === "Escape") closeMenu();
     });
 
-    populatePlannerControls();
     applySettings();
-    initializeCounter();
     updateTimeAndDate();
     scheduleThemeBoundaryRefreshes();
     loadCityData();
