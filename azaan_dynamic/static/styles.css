@@ -225,6 +225,7 @@ button {
 }
 
 .weatherIconWrap {
+  --icon-split: 0%;
   position: relative;
   display: inline-block;
   width: clamp(calc(42px * var(--weather-scale)), calc(5.6vw * var(--weather-scale)), calc(76px * var(--weather-scale)));
@@ -247,7 +248,7 @@ button {
 
 :root.theme-transitioning .weatherIconNext {
   display: block;
-  clip-path: inset(0 calc(100% - var(--theme-split)) 0 0);
+  clip-path: inset(0 calc(100% - var(--icon-split)) 0 0);
   filter: var(--next-weather-icon-filter);
 }
 
@@ -283,13 +284,34 @@ button {
 }
 
 #message {
+  --message-split: 0%;
+  position: relative;
   margin: 0 auto;
   display: inline-block;
   max-width: 1120px;
+  padding: 0.05em 0 0.16em;
   text-wrap: balance;
   font-size: clamp(calc(2.75rem * var(--message-scale)), calc(5.5vw * var(--message-scale)), calc(5.35rem * var(--message-scale)));
   font-weight: 560;
-  line-height: 1.03;
+  line-height: 1.12;
+  overflow: visible;
+}
+
+#message::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  display: none;
+  padding: inherit;
+  color: var(--next-app-text);
+  font: inherit;
+  text-align: inherit;
+  -webkit-text-fill-color: currentColor;
+  clip-path: inset(0 calc(100% - var(--message-split)) 0 0);
+  pointer-events: none;
+  white-space: inherit;
+  overflow: visible;
 }
 
 .settings-panel {
@@ -420,6 +442,15 @@ button {
   color: var(--app-text);
 }
 
+.panel-section .range-field input {
+  margin-top: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  accent-color: var(--button-bg);
+}
+
 .panel-section textarea {
   min-height: 88px;
   resize: vertical;
@@ -481,8 +512,6 @@ button {
 :root.theme-transitioning #weather,
 :root.theme-transitioning #weather *,
 :root.theme-transitioning #time,
-:root.theme-transitioning #message,
-:root.theme-transitioning #message *,
 :root.theme-transitioning .settings-panel,
 :root.theme-transitioning .settings-panel *,
 :root.theme-transitioning .icon-button,
@@ -494,6 +523,16 @@ button {
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
+}
+
+:root.theme-transitioning #message {
+  background-image: none;
+  color: var(--app-text);
+  -webkit-text-fill-color: currentColor;
+}
+
+:root.theme-transitioning #message::after {
+  display: block;
 }
 
 :root.theme-transitioning .settings-panel,
@@ -580,7 +619,7 @@ button {
     max-width: 96vw;
     font-size: clamp(calc(2.65rem * var(--message-scale)), calc(10.5vw * var(--message-scale)), calc(4rem * var(--message-scale)));
     font-weight: 560;
-    line-height: 1.02;
+    line-height: 1.12;
   }
 
   #dayPlan {
@@ -631,7 +670,7 @@ button {
   #message {
     max-width: 96vw;
     font-size: clamp(calc(2.15rem * var(--message-scale)), calc(6.3vw * var(--message-scale)), calc(3.15rem * var(--message-scale)));
-    line-height: 1.02;
+    line-height: 1.12;
   }
 }
 
@@ -685,7 +724,7 @@ button {
   #message {
     max-width: 96vw;
     font-size: clamp(calc(2.8rem * var(--message-scale)), calc(5.3vw * var(--message-scale)), calc(4.25rem * var(--message-scale)));
-    line-height: 1.02;
+    line-height: 1.12;
   }
 }
 
