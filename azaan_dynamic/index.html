@@ -64,7 +64,13 @@
         <select id="fontSelect">
           <option value="rounded">Rounded</option>
           <option value="system">System</option>
+          <option value="ember">Amazon Ember</option>
+          <option value="roboto">Roboto</option>
+          <option value="arial">Arial</option>
+          <option value="verdana">Verdana</option>
+          <option value="trebuchet">Trebuchet</option>
           <option value="serif">Serif</option>
+          <option value="georgia">Georgia</option>
           <option value="mono">Mono</option>
         </select>
 
@@ -157,7 +163,13 @@
     const FONT_STACKS = {
       rounded: 'ui-rounded, "Avenir Next", "Nunito Sans", system-ui, sans-serif',
       system: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      ember: '"Amazon Ember", "Helvetica Neue", Arial, sans-serif',
+      roboto: 'Roboto, "Droid Sans", Arial, sans-serif',
+      arial: 'Arial, Helvetica, sans-serif',
+      verdana: 'Verdana, Geneva, sans-serif',
+      trebuchet: '"Trebuchet MS", Arial, sans-serif',
       serif: 'Georgia, "New York", "Times New Roman", serif',
+      georgia: 'Georgia, "Times New Roman", serif',
       mono: 'ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace'
     };
 
@@ -518,11 +530,28 @@
         }
         root.style.setProperty("--theme-split", `${transition.progress}%`);
         root.classList.add("theme-transitioning");
+        updateViewportClipTargets(Number(transition.progress));
       } else {
         root.style.setProperty("--theme-split", "0%");
         root.classList.remove("theme-transitioning");
         currentTransitionPhase = "";
+        updateViewportClipTargets(0);
       }
+    }
+
+    function getElementSplitPercent(element, globalProgress) {
+      if (!element) return 0;
+      const rect = element.getBoundingClientRect();
+      if (!rect.width) return 0;
+      const splitX = window.innerWidth * (globalProgress / 100);
+      return Math.max(0, Math.min(100, ((splitX - rect.left) / rect.width) * 100));
+    }
+
+    function updateViewportClipTargets(globalProgress) {
+      messageDisplay.style.setProperty("--message-split", `${getElementSplitPercent(messageDisplay, globalProgress)}%`);
+      document.querySelectorAll(".weatherIconWrap").forEach((element) => {
+        element.style.setProperty("--icon-split", `${getElementSplitPercent(element, globalProgress)}%`);
+      });
     }
 
     function buildThemeTimelineForDay(date) {
@@ -646,6 +675,10 @@
           </span>
           <span class="weatherText"><strong>${temperature}°C</strong><span>${shortDescription}</span></span>
         `;
+        if (document.documentElement.classList.contains("theme-transitioning")) {
+          const progress = Number(getComputedStyle(document.documentElement).getPropertyValue("--theme-split").replace("%", "")) || 0;
+          updateViewportClipTargets(progress);
+        }
       } catch (error) {
         console.error(error);
         weatherInfo.textContent = "Weather unavailable";
@@ -777,7 +810,13 @@
     }
 
     function updateGuidance() {
-      messageDisplay.textContent = getCurrentGuidance(new Date());
+      const guidance = getCurrentGuidance(new Date());
+      messageDisplay.textContent = guidance;
+      messageDisplay.dataset.text = guidance;
+      if (document.documentElement.classList.contains("theme-transitioning")) {
+        const progress = Number(getComputedStyle(document.documentElement).getPropertyValue("--theme-split").replace("%", "")) || 0;
+        updateViewportClipTargets(progress);
+      }
     }
 
     function openMenu() {
@@ -887,6 +926,12 @@
     panelScrim.addEventListener("click", closeMenu);
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") closeMenu();
+    });
+    window.addEventListener("resize", () => {
+      if (document.documentElement.classList.contains("theme-transitioning")) {
+        const progress = Number(getComputedStyle(document.documentElement).getPropertyValue("--theme-split").replace("%", "")) || 0;
+        updateViewportClipTargets(progress);
+      }
     });
 
     applySettings();
