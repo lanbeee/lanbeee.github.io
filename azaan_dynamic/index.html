@@ -802,10 +802,10 @@
       if (now < fajr) return `Sleep well${icon("🌙")} Fajr azaan ${formatPlanTime(fajr)}.`;
       if (now < dhuhr) return `Morning steady${icon("☀️")} Dhuhr ${formatPlanTime(dhuhr)}.`;
       if (now < asr) return `Lunch window${icon("🍽️")} Asr ${formatPlanTime(asr)}.`;
-      if (now < teaTime) return `Afternoon calm. Tea around ${formatPlanTime(teaTime)}.`;
+      if (now < teaTime) return `Afternoon. Tea around ${formatPlanTime(teaTime)}.`;
       if (now < maghrib) return `Tea time${icon("☕")} Maghrib ${formatPlanTime(maghrib)}.`;
-      if (now < dinnerTime) return `Maghrib done. Dinner around ${formatPlanTime(dinnerTime)}.`;
-      if (now < isha) return `Dinner done. Isha ${formatPlanTime(isha)}.`;
+      if (now < dinnerTime) return `Maghrib from ${formatPlanTime(maghrib)}. Dinner at ${formatPlanTime(dinnerTime)}.`;
+      if (now < isha) return `Dinner time${icon("🍽️")} Isha ${formatPlanTime(isha)}.`;
       return `Wind down${icon("🌙")} Fajr azaan ${formatPlanTime(nextFajr)}.`;
     }
 
