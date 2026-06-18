@@ -23,7 +23,6 @@
         <div id="weather">
           <span id="weatherInfo">Loading weather...</span>
         </div>
-        <button id="menuToggle" class="icon-button" type="button" aria-controls="settingsPanel" aria-expanded="false" aria-label="Open settings">☰</button>
       </div>
     </header>
 
@@ -60,6 +59,55 @@
       </section>
 
       <section class="panel-section">
+        <h3>Display</h3>
+        <label for="fontSelect">Font</label>
+        <select id="fontSelect">
+          <option value="rounded">Rounded</option>
+          <option value="system">System</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Mono</option>
+        </select>
+
+        <label for="clockScaleInput">Clock size</label>
+        <div class="range-field">
+          <input id="clockScaleInput" type="range" min="0.85" max="1.25" step="0.01">
+          <output id="clockScaleValue" for="clockScaleInput">100%</output>
+        </div>
+
+        <label for="dateScaleInput">Date size</label>
+        <div class="range-field">
+          <input id="dateScaleInput" type="range" min="0.85" max="1.35" step="0.01">
+          <output id="dateScaleValue" for="dateScaleInput">100%</output>
+        </div>
+
+        <label for="weatherScaleInput">Weather size</label>
+        <div class="range-field">
+          <input id="weatherScaleInput" type="range" min="0.85" max="1.4" step="0.01">
+          <output id="weatherScaleValue" for="weatherScaleInput">100%</output>
+        </div>
+
+        <label for="messageScaleInput">Bottom text size</label>
+        <div class="range-field">
+          <input id="messageScaleInput" type="range" min="0.85" max="1.35" step="0.01">
+          <output id="messageScaleValue" for="messageScaleInput">100%</output>
+        </div>
+
+        <label for="guidanceToneSelect">Bottom text style</label>
+        <select id="guidanceToneSelect">
+          <option value="warm">Warm</option>
+          <option value="plain">Plain</option>
+        </select>
+
+        <label class="toggle-row" for="emojiToggle">
+          <input id="emojiToggle" type="checkbox">
+          <span>Show small emojis</span>
+        </label>
+
+        <button id="saveDisplayBtn" class="panel-action" type="button">Save display</button>
+        <p id="displaySavedMsg" class="hint" aria-live="polite"></p>
+      </section>
+
+      <section class="panel-section">
         <h3>Location</h3>
         <label for="countrySelect">Country</label>
         <select id="countrySelect">
@@ -70,10 +118,6 @@
           <option>Select a country first</option>
         </select>
         <p id="locationStatus" class="hint" aria-live="polite">Loading city list...</p>
-        <label id="cityFileLabel" class="file-loader" for="cityFileInput" hidden>
-          Load worldcities.csv manually
-          <input id="cityFileInput" type="file" accept=".csv,text/csv">
-        </label>
         <p class="hint">Saved locally on this device and used for prayer times, theme timing, and weather when available.</p>
       </section>
 
@@ -101,6 +145,21 @@
       dinnerOffsetMinutes: 45,
       teaBeforeMaghribMinutes: 45
     };
+    const DEFAULT_DISPLAY = {
+      font: "rounded",
+      clockScale: 1,
+      dateScale: 1,
+      weatherScale: 1,
+      messageScale: 1,
+      guidanceTone: "warm",
+      showEmojis: true
+    };
+    const FONT_STACKS = {
+      rounded: 'ui-rounded, "Avenir Next", "Nunito Sans", system-ui, sans-serif',
+      system: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      serif: 'Georgia, "New York", "Times New Roman", serif',
+      mono: 'ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace'
+    };
 
     const THEME_PALETTES = {
       preDawn: { bg: "#C8D8E8", text: "#1A2A3A", buttonBg: "#3D6CA8", buttonHoverBg: "#335E93", buttonText: "#FFFFFF", weatherIconFilter: "none" },
@@ -119,20 +178,30 @@
     const dateValueDisplay = document.getElementById("dateValue");
     const weatherInfo = document.getElementById("weatherInfo");
     const messageDisplay = document.getElementById("message");
-    const menuToggle = document.getElementById("menuToggle");
     const closeMenuBtn = document.getElementById("closeMenuBtn");
     const settingsPanel = document.getElementById("settingsPanel");
     const panelScrim = document.getElementById("panelScrim");
     const countrySelect = document.getElementById("countrySelect");
     const citySelect = document.getElementById("citySelect");
     const locationStatus = document.getElementById("locationStatus");
-    const cityFileLabel = document.getElementById("cityFileLabel");
-    const cityFileInput = document.getElementById("cityFileInput");
     const selectedLocationLabel = document.getElementById("selectedLocationLabel");
     const wakeOffsetInput = document.getElementById("wakeOffsetInput");
     const sleepHoursInput = document.getElementById("sleepHoursInput");
     const saveTimingBtn = document.getElementById("saveTimingBtn");
     const timingSavedMsg = document.getElementById("timingSavedMsg");
+    const fontSelect = document.getElementById("fontSelect");
+    const clockScaleInput = document.getElementById("clockScaleInput");
+    const clockScaleValue = document.getElementById("clockScaleValue");
+    const dateScaleInput = document.getElementById("dateScaleInput");
+    const dateScaleValue = document.getElementById("dateScaleValue");
+    const weatherScaleInput = document.getElementById("weatherScaleInput");
+    const weatherScaleValue = document.getElementById("weatherScaleValue");
+    const messageScaleInput = document.getElementById("messageScaleInput");
+    const messageScaleValue = document.getElementById("messageScaleValue");
+    const guidanceToneSelect = document.getElementById("guidanceToneSelect");
+    const emojiToggle = document.getElementById("emojiToggle");
+    const saveDisplayBtn = document.getElementById("saveDisplayBtn");
+    const displaySavedMsg = document.getElementById("displaySavedMsg");
 
     let isLooping = false;
     let currentThemePhase = "";
@@ -152,12 +221,14 @@
         return {
           location: { ...DEFAULT_LOCATION },
           routine: { ...DEFAULT_ROUTINE },
+          display: { ...DEFAULT_DISPLAY },
           ...saved,
           location: { ...DEFAULT_LOCATION, ...(saved.location || {}) },
-          routine: { ...DEFAULT_ROUTINE, ...(saved.routine || {}) }
+          routine: { ...DEFAULT_ROUTINE, ...(saved.routine || {}) },
+          display: { ...DEFAULT_DISPLAY, ...(saved.display || {}) }
         };
       } catch (error) {
-        return { location: { ...DEFAULT_LOCATION }, routine: { ...DEFAULT_ROUTINE } };
+        return { location: { ...DEFAULT_LOCATION }, routine: { ...DEFAULT_ROUTINE }, display: { ...DEFAULT_DISPLAY } };
       }
     }
 
@@ -170,17 +241,87 @@
       return settings.routine;
     }
 
+    function getDisplaySettings() {
+      settings.display = { ...DEFAULT_DISPLAY, ...(settings.display || {}) };
+      return settings.display;
+    }
+
+    function clampNumber(value, min, max, fallback) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return fallback;
+      return Math.max(min, Math.min(max, number));
+    }
+
+    function formatPercent(value) {
+      return `${Math.round(value * 100)}%`;
+    }
+
+    function applyDisplaySettings() {
+      const display = getDisplaySettings();
+      const root = document.documentElement;
+      root.style.setProperty("--dashboard-font", FONT_STACKS[display.font] || FONT_STACKS.rounded);
+      root.style.setProperty("--clock-scale", clampNumber(display.clockScale, 0.85, 1.25, DEFAULT_DISPLAY.clockScale));
+      root.style.setProperty("--date-scale", clampNumber(display.dateScale, 0.85, 1.35, DEFAULT_DISPLAY.dateScale));
+      root.style.setProperty("--weather-scale", clampNumber(display.weatherScale, 0.85, 1.4, DEFAULT_DISPLAY.weatherScale));
+      root.style.setProperty("--message-scale", clampNumber(display.messageScale, 0.85, 1.35, DEFAULT_DISPLAY.messageScale));
+      updateGuidance();
+    }
+
     function renderTimingControls() {
       const routine = getRoutineSettings();
       wakeOffsetInput.value = routine.wakeOffsetMinutes;
       sleepHoursInput.value = routine.sleepHoursBeforeSunrise;
     }
 
+    function renderDisplayControls() {
+      const display = getDisplaySettings();
+      fontSelect.value = FONT_STACKS[display.font] ? display.font : DEFAULT_DISPLAY.font;
+      clockScaleInput.value = clampNumber(display.clockScale, 0.85, 1.25, DEFAULT_DISPLAY.clockScale);
+      dateScaleInput.value = clampNumber(display.dateScale, 0.85, 1.35, DEFAULT_DISPLAY.dateScale);
+      weatherScaleInput.value = clampNumber(display.weatherScale, 0.85, 1.4, DEFAULT_DISPLAY.weatherScale);
+      messageScaleInput.value = clampNumber(display.messageScale, 0.85, 1.35, DEFAULT_DISPLAY.messageScale);
+      guidanceToneSelect.value = display.guidanceTone === "plain" ? "plain" : "warm";
+      emojiToggle.checked = Boolean(display.showEmojis);
+      clockScaleValue.textContent = formatPercent(Number(clockScaleInput.value));
+      dateScaleValue.textContent = formatPercent(Number(dateScaleInput.value));
+      weatherScaleValue.textContent = formatPercent(Number(weatherScaleInput.value));
+      messageScaleValue.textContent = formatPercent(Number(messageScaleInput.value));
+    }
+
+    function readDisplayControls() {
+      return {
+        font: FONT_STACKS[fontSelect.value] ? fontSelect.value : DEFAULT_DISPLAY.font,
+        clockScale: clampNumber(clockScaleInput.value, 0.85, 1.25, DEFAULT_DISPLAY.clockScale),
+        dateScale: clampNumber(dateScaleInput.value, 0.85, 1.35, DEFAULT_DISPLAY.dateScale),
+        weatherScale: clampNumber(weatherScaleInput.value, 0.85, 1.4, DEFAULT_DISPLAY.weatherScale),
+        messageScale: clampNumber(messageScaleInput.value, 0.85, 1.35, DEFAULT_DISPLAY.messageScale),
+        guidanceTone: guidanceToneSelect.value === "plain" ? "plain" : "warm",
+        showEmojis: emojiToggle.checked
+      };
+    }
+
+    function previewDisplaySettings() {
+      settings.display = readDisplayControls();
+      renderDisplayControls();
+      applyDisplaySettings();
+    }
+
+    function saveDisplaySettings() {
+      settings.display = readDisplayControls();
+      saveSettings();
+      renderDisplayControls();
+      applyDisplaySettings();
+      displaySavedMsg.textContent = "Saved.";
+      setTimeout(() => {
+        displaySavedMsg.textContent = "";
+      }, 2200);
+    }
+
     function saveTimingSettings() {
       settings.routine = {
         ...getRoutineSettings(),
-        wakeOffsetMinutes: Math.max(0, Math.min(180, Number(wakeOffsetInput.value) || DEFAULT_ROUTINE.wakeOffsetMinutes)),
-        sleepHoursBeforeSunrise: Math.max(4, Math.min(12, Number(sleepHoursInput.value) || DEFAULT_ROUTINE.sleepHoursBeforeSunrise))
+        wakeOffsetMinutes: clampNumber(wakeOffsetInput.value, 0, 180, DEFAULT_ROUTINE.wakeOffsetMinutes),
+        sleepHoursBeforeSunrise: clampNumber(sleepHoursInput.value, 4, 12, DEFAULT_ROUTINE.sleepHoursBeforeSunrise)
       };
       saveSettings();
       cachedThemeTimelineDate = "";
@@ -223,7 +364,6 @@
         countrySelect.disabled = true;
         citySelect.disabled = true;
         locationStatus.textContent = "Loading city list...";
-        cityFileLabel.hidden = true;
         if (window.WORLD_CITIES_DATA) {
           processGeneratedCityData(window.WORLD_CITIES_DATA);
           populateCountrySelect();
@@ -247,9 +387,8 @@
         countrySelect.disabled = true;
         citySelect.disabled = true;
         locationStatus.textContent = window.location.protocol === "file:"
-          ? "Browser security blocks automatic CSV loading from file://. Use the button below or open via http://localhost."
+          ? "Browser security blocks automatic city loading from file://. Open via http://localhost."
           : "City list could not load. Check that static/worldcities.csv is reachable.";
-        cityFileLabel.hidden = window.location.protocol !== "file:";
       }
     }
 
@@ -495,7 +634,11 @@
         const weatherDescription = data.weather[0].description;
         const iconCode = data.weather[0].icon;
         const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
-        const shortDescription = weatherDescription.split(" ")[0];
+        const shortDescription = weatherDescription
+          .replace(/\b\w/g, (letter) => letter.toUpperCase())
+          .split(" ")
+          .slice(0, 2)
+          .join(" ");
         weatherInfo.innerHTML = `
           <span class="weatherIconWrap" aria-hidden="true">
             <img class="weatherIconCurrent" src="${iconUrl}" alt="">
@@ -611,14 +754,26 @@
       tomorrow.setDate(tomorrow.getDate() + 1);
       const nextFajr = getPrayerByName(getPrayerTimesForDay(tomorrow), "Fajr").time;
 
-      if (now < fajr) return `Sleep. Fajr ${formatPlanTime(fajr)}.`;
-      if (now < dhuhr) return `Morning. Dhuhr ${formatPlanTime(dhuhr)}.`;
-      if (now < asr) return `Lunch. Asr ${formatPlanTime(asr)}.`;
-      if (now < teaTime) return `Afternoon. Tea ${formatPlanTime(teaTime)}.`;
-      if (now < maghrib) return `Tea. Maghrib ${formatPlanTime(maghrib)}.`;
-      if (now < dinnerTime) return `Maghrib. Dinner ${formatPlanTime(dinnerTime)}.`;
-      if (now < isha) return `Dinner. Isha ${formatPlanTime(isha)}.`;
-      return `Sleep. Fajr ${formatPlanTime(nextFajr)}.`;
+      const display = getDisplaySettings();
+      const icon = (emoji) => display.showEmojis ? ` ${emoji}` : "";
+      if (display.guidanceTone === "plain") {
+        if (now < fajr) return `Sleep. Fajr azaan ${formatPlanTime(fajr)}.`;
+        if (now < dhuhr) return `Morning. Dhuhr ${formatPlanTime(dhuhr)}.`;
+        if (now < asr) return `Lunch. Asr ${formatPlanTime(asr)}.`;
+        if (now < teaTime) return `Afternoon. Tea around ${formatPlanTime(teaTime)}.`;
+        if (now < maghrib) return `Tea. Maghrib ${formatPlanTime(maghrib)}.`;
+        if (now < dinnerTime) return `Maghrib. Dinner around ${formatPlanTime(dinnerTime)}.`;
+        if (now < isha) return `Dinner. Isha ${formatPlanTime(isha)}.`;
+        return `Sleep. Fajr azaan ${formatPlanTime(nextFajr)}.`;
+      }
+      if (now < fajr) return `Sleep well${icon("🌙")} Fajr azaan ${formatPlanTime(fajr)}.`;
+      if (now < dhuhr) return `Morning steady${icon("☀️")} Dhuhr ${formatPlanTime(dhuhr)}.`;
+      if (now < asr) return `Lunch window${icon("🍽️")} Asr ${formatPlanTime(asr)}.`;
+      if (now < teaTime) return `Afternoon calm. Tea around ${formatPlanTime(teaTime)}.`;
+      if (now < maghrib) return `Tea time${icon("☕")} Maghrib ${formatPlanTime(maghrib)}.`;
+      if (now < dinnerTime) return `Maghrib done. Dinner around ${formatPlanTime(dinnerTime)}.`;
+      if (now < isha) return `Dinner done. Isha ${formatPlanTime(isha)}.`;
+      return `Wind down${icon("🌙")} Fajr azaan ${formatPlanTime(nextFajr)}.`;
     }
 
     function updateGuidance() {
@@ -629,21 +784,55 @@
       settingsPanel.classList.add("is-open");
       panelScrim.classList.add("is-visible");
       settingsPanel.setAttribute("aria-hidden", "false");
-      menuToggle.setAttribute("aria-expanded", "true");
     }
 
     function closeMenu() {
       settingsPanel.classList.remove("is-open");
       panelScrim.classList.remove("is-visible");
       settingsPanel.setAttribute("aria-hidden", "true");
-      menuToggle.setAttribute("aria-expanded", "false");
+    }
+
+    function setupEdgeSwipeMenu() {
+      const edgeWidth = Math.max(44, Math.min(92, window.innerWidth * 0.14));
+      const swipeThreshold = 46;
+      let startX = 0;
+      let startY = 0;
+      let tracking = false;
+
+      document.addEventListener("touchstart", (event) => {
+        if (settingsPanel.classList.contains("is-open")) return;
+        const touch = event.touches[0];
+        if (!touch || touch.clientX < window.innerWidth - edgeWidth) return;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        tracking = true;
+      }, { passive: true });
+
+      document.addEventListener("touchmove", (event) => {
+        if (!tracking) return;
+        const touch = event.touches[0];
+        if (!touch) return;
+        const deltaX = touch.clientX - startX;
+        const deltaY = Math.abs(touch.clientY - startY);
+        if (deltaX < -swipeThreshold && deltaY < 70) {
+          tracking = false;
+          openMenu();
+        }
+      }, { passive: true });
+
+      document.addEventListener("touchend", () => {
+        tracking = false;
+      }, { passive: true });
     }
 
     function applySettings() {
       currentLocation = { ...(settings.location || DEFAULT_LOCATION) };
       settings.routine = { ...DEFAULT_ROUTINE, ...(settings.routine || {}) };
+      settings.display = { ...DEFAULT_DISPLAY, ...(settings.display || {}) };
       selectedLocationLabel.textContent = `${currentLocation.city}, ${currentLocation.country}`;
       renderTimingControls();
+      renderDisplayControls();
+      applyDisplaySettings();
     }
 
     function sendHeartbeat() {
@@ -687,24 +876,13 @@
       const selectedCity = getSelectedCity();
       if (selectedCity) updateLocation(selectedCity);
     });
-    cityFileInput.addEventListener("change", async () => {
-      const file = cityFileInput.files && cityFileInput.files[0];
-      if (!file) return;
-      try {
-        locationStatus.textContent = `Loading ${file.name}...`;
-        processCityCsvText(await file.text());
-        populateCountrySelect();
-        applySavedLocationToSelects();
-        cityFileLabel.hidden = true;
-        locationStatus.textContent = `${citiesByCountry.size} countries loaded from ${file.name}.`;
-      } catch (error) {
-        console.error(error);
-        locationStatus.textContent = "Could not read that CSV file.";
-      }
-    });
     saveTimingBtn.addEventListener("click", saveTimingSettings);
+    [fontSelect, clockScaleInput, dateScaleInput, weatherScaleInput, messageScaleInput, guidanceToneSelect, emojiToggle].forEach((control) => {
+      control.addEventListener("input", previewDisplaySettings);
+      control.addEventListener("change", previewDisplaySettings);
+    });
+    saveDisplayBtn.addEventListener("click", saveDisplaySettings);
     startLoopBtn.addEventListener("click", startSilentLoop);
-    menuToggle.addEventListener("click", openMenu);
     closeMenuBtn.addEventListener("click", closeMenu);
     panelScrim.addEventListener("click", closeMenu);
     document.addEventListener("keydown", (event) => {
@@ -712,6 +890,7 @@
     });
 
     applySettings();
+    setupEdgeSwipeMenu();
     updateTimeAndDate();
     scheduleThemeBoundaryRefreshes();
     loadCityData();
