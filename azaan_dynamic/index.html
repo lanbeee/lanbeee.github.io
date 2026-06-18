@@ -6,8 +6,11 @@
   <title>Azaan Scheduler Dashboard</title>
   <link rel="stylesheet" href="static/styles.css">
   <link rel="icon" href="data:,">
-  <script src="lib/js/adhan.umd.min.js"></script>
-  <script src="static/worldcities.generated.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;700&family=Inter:wght@400;600&family=Nunito:wght@400;700&family=Roboto:wght@400;700&family=Lora:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="lib/js/adhan.umd.min.js" defer></script>
+  <script src="static/worldcities.generated.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -63,14 +66,10 @@
         <label for="fontSelect">Font</label>
         <select id="fontSelect">
           <option value="rounded">Rounded</option>
-          <option value="system">System</option>
-          <option value="ember">Amazon Ember</option>
-          <option value="roboto">Roboto</option>
-          <option value="arial">Arial</option>
-          <option value="verdana">Verdana</option>
-          <option value="trebuchet">Trebuchet</option>
+          <option value="modern">Modern</option>
+          <option value="friendly">Friendly</option>
+          <option value="roboto">Classic (Roboto)</option>
           <option value="serif">Serif</option>
-          <option value="georgia">Georgia</option>
           <option value="mono">Mono</option>
         </select>
 
@@ -149,7 +148,8 @@
       wakeOffsetMinutes: 30,
       sleepHoursBeforeSunrise: 8,
       dinnerOffsetMinutes: 45,
-      teaBeforeMaghribMinutes: 45
+      teaBeforeMaghribMinutes: 45,
+      lunchDurationMinutes: 120
     };
     const DEFAULT_DISPLAY = {
       font: "rounded",
@@ -160,17 +160,19 @@
       guidanceTone: "warm",
       showEmojis: true
     };
+    // Each of these is now backed by a real @font-face loaded in <head> via Google Fonts,
+    // not just an OS-installed-font guess. The old list (Amazon Ember, Trebuchet, Georgia,
+    // SF Mono/Menlo, Avenir Next...) silently fell back to the browser default on
+    // Fire OS/Silk because none of those fonts actually exist on that device - only a
+    // handful of system fonts do. Loading the fonts ourselves makes the picker actually work
+    // everywhere, including low-power screens.
     const FONT_STACKS = {
-      rounded: 'ui-rounded, "Avenir Next", "Nunito Sans", system-ui, sans-serif',
-      system: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
-      ember: '"Amazon Ember", "Helvetica Neue", Arial, sans-serif',
-      roboto: 'Roboto, "Droid Sans", Arial, sans-serif',
-      arial: 'Arial, Helvetica, sans-serif',
-      verdana: 'Verdana, Geneva, sans-serif',
-      trebuchet: '"Trebuchet MS", Arial, sans-serif',
-      serif: 'Georgia, "New York", "Times New Roman", serif',
-      georgia: 'Georgia, "Times New Roman", serif',
-      mono: 'ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace'
+      rounded: '"Quicksand", ui-rounded, system-ui, sans-serif',
+      modern: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      friendly: '"Nunito", system-ui, sans-serif',
+      roboto: '"Roboto", system-ui, sans-serif',
+      serif: '"Lora", Georgia, "Times New Roman", serif',
+      mono: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace'
     };
 
     const THEME_PALETTES = {
@@ -615,6 +617,21 @@
       setTimeout(updateThemeByPrayerTimes, 1000);
     }
 
+    let themeTickTimeout = null;
+
+    function scheduleNextThemeTick() {
+      updateThemeByPrayerTimes();
+      const isTransitioning = document.documentElement.classList.contains("theme-transitioning");
+      // Only tick every second while actively blending between two theme colors
+      // (a ~30 min window around each prayer time change). The rest of the day this
+      // saved a per-second recalculation that never visibly changed anything - real
+      // CPU cost on a low-power screen for zero benefit, since exact boundaries are
+      // already handled by scheduleThemeBoundaryRefreshes().
+      const delay = isTransitioning ? 1000 : 15000;
+      if (themeTickTimeout) clearTimeout(themeTickTimeout);
+      themeTickTimeout = setTimeout(scheduleNextThemeTick, delay);
+    }
+
     function scheduleThemeBoundaryRefreshes() {
       scheduledThemeTimeouts.forEach(clearTimeout);
       scheduledThemeTimeouts = [];
@@ -783,6 +800,13 @@
       const routine = getRoutineSettings();
       const teaTime = addMinutes(maghrib, -routine.teaBeforeMaghribMinutes);
       const dinnerTime = addMinutes(maghrib, routine.dinnerOffsetMinutes);
+      // Lunch is a fixed-length routine block, not "however long it takes Asr to arrive".
+      // On long summer days Asr can land near 5:30pm, so cap the Lunch message and let a
+      // generic Afternoon stage carry the rest of the wait until Asr.
+      const lunchEnd = new Date(Math.min(
+        addMinutes(dhuhr, routine.lunchDurationMinutes).getTime(),
+        asr.getTime()
+      ));
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const nextFajr = getPrayerByName(getPrayerTimesForDay(tomorrow), "Fajr").time;
@@ -792,7 +816,8 @@
       if (display.guidanceTone === "plain") {
         if (now < fajr) return `Sleep. Fajr azaan ${formatPlanTime(fajr)}.`;
         if (now < dhuhr) return `Morning. Dhuhr ${formatPlanTime(dhuhr)}.`;
-        if (now < asr) return `Lunch. Asr ${formatPlanTime(asr)}.`;
+        if (now < lunchEnd) return `Lunch. Asr ${formatPlanTime(asr)}.`;
+        if (now < asr) return `Afternoon. Asr ${formatPlanTime(asr)}.`;
         if (now < teaTime) return `Afternoon. Tea around ${formatPlanTime(teaTime)}.`;
         if (now < maghrib) return `Tea. Maghrib ${formatPlanTime(maghrib)}.`;
         if (now < dinnerTime) return `Maghrib. Dinner around ${formatPlanTime(dinnerTime)}.`;
@@ -801,7 +826,8 @@
       }
       if (now < fajr) return `Sleep well${icon("🌙")} Fajr azaan ${formatPlanTime(fajr)}.`;
       if (now < dhuhr) return `Morning steady${icon("☀️")} Dhuhr ${formatPlanTime(dhuhr)}.`;
-      if (now < asr) return `Lunch window${icon("🍽️")} Asr ${formatPlanTime(asr)}.`;
+      if (now < lunchEnd) return `Lunch window${icon("🍽️")} Asr ${formatPlanTime(asr)}.`;
+      if (now < asr) return `Afternoon. Asr ${formatPlanTime(asr)}.`;
       if (now < teaTime) return `Afternoon. Tea around ${formatPlanTime(teaTime)}.`;
       if (now < maghrib) return `Tea time${icon("☕")} Maghrib ${formatPlanTime(maghrib)}.`;
       if (now < dinnerTime) return `Maghrib from ${formatPlanTime(maghrib)}. Dinner at ${formatPlanTime(dinnerTime)}.`;
@@ -934,23 +960,29 @@
       }
     });
 
-    applySettings();
-    setupEdgeSwipeMenu();
-    updateTimeAndDate();
-    scheduleThemeBoundaryRefreshes();
-    loadCityData();
-    fetchWeather();
-    sendHeartbeat();
-
-    setInterval(updateTimeAndDate, 60000);
-    setInterval(updateThemeByPrayerTimes, 1000);
-    setInterval(fetchWeather, 10 * 60 * 1000);
-    setInterval(() => {
+    // Wrapped in DOMContentLoaded because adhan.umd.min.js and worldcities.generated.js
+    // are now `defer`red (see <head>) so the browser can paint the page immediately
+    // instead of blocking on those downloads first. DOMContentLoaded only fires after
+    // deferred scripts have run, so adhan/WORLD_CITIES_DATA are guaranteed to be ready here.
+    document.addEventListener("DOMContentLoaded", () => {
+      applySettings();
+      setupEdgeSwipeMenu();
+      updateTimeAndDate();
+      scheduleThemeBoundaryRefreshes();
+      loadCityData();
+      fetchWeather();
       sendHeartbeat();
-      checkAudioLoop();
-      reinitializeAudioLoop();
-      simulateUserInteraction();
-    }, 5 * 60 * 1000);
+
+      setInterval(updateTimeAndDate, 60000);
+      scheduleNextThemeTick();
+      setInterval(fetchWeather, 10 * 60 * 1000);
+      setInterval(() => {
+        sendHeartbeat();
+        checkAudioLoop();
+        reinitializeAudioLoop();
+        simulateUserInteraction();
+      }, 5 * 60 * 1000);
+    });
   </script>
 </body>
 </html>
