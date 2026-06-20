@@ -53,19 +53,90 @@ function toggleScheduleChip(e){
   if(btn.closest('#detail-weekday-chips,#detail-monthday-chips'))setDetailDirty();
 }
 
+function createAddTopicPill(){
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'topic-chip topic-chip-add';
+  btn.dataset.topicAdd = '';
+  btn.setAttribute('aria-label','new topic');
+  btn.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i>new topic';
+  return btn;
+}
+
 function renderTopicChips(containerId,selected = []){
   const topics = topicOptions();
   const selectedSet = new Set(normalizeTopics(selected).map(topic=>topic.toLowerCase()));
   const wrap = $(containerId);
   if(!wrap)return;
-  if(!topics.length){
-    wrap.innerHTML = '<span class="topic-chip empty">no topics yet</span>';
-    return;
-  }
   wrap.innerHTML = topics.map(topic=>{
     const on = selectedSet.has(topic.toLowerCase());
     return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
   }).join('');
+  wrap.appendChild(createAddTopicPill());
+}
+
+function beginNewTopicInput(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return;
+  if(wrap.querySelector('.topic-chip-input')){
+    wrap.querySelector('.topic-chip-input')?.focus();
+    return;
+  }
+  const pill = wrap.querySelector('[data-topic-add]');
+  if(!pill)return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'topic-chip topic-chip-input';
+  input.maxLength = 32;
+  input.placeholder = 'new topic';
+  input.autocomplete = 'off';
+  input.autocorrect = 'off';
+  input.spellcheck = false;
+  input.enterKeyHint = 'done';
+  pill.replaceWith(input);
+  input.focus({preventScroll:true});
+  if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
+  if(typeof keepFocusedInputVisible === 'function')keepFocusedInputVisible();
+  let settled = false;
+  const restorePill = ()=>{
+    if(input.isConnected)input.replaceWith(pill);
+  };
+  const commit = ()=>{
+    if(settled)return;
+    settled = true;
+    const topic = cleanTopic(input.value);
+    if(!topic || !$(containerId)){
+      restorePill();
+      return;
+    }
+    const existing = normalizeTopics(topicOptions());
+    if(!existing.some(item=>item.toLowerCase() === topic.toLowerCase())){
+      updateSortSetting({topics:normalizeTopics([...existing,topic])},{renderNow:false});
+    }
+    const nextSelected = normalizeTopics([...selectedTopicsFrom(containerId),topic]);
+    renderTopicChips(containerId,nextSelected);
+    renderTopicList();
+    if(containerId === 'detail-topic-chips')setDetailDirty();
+    render();
+  };
+  input.addEventListener('blur',()=>{
+    if(settled)return;
+    setTimeout(commit,0);
+  });
+  input.addEventListener('keydown',e=>{
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      if(!settled){
+        settled = true;
+        commit();
+      }
+    }else if(e.key === 'Escape'){
+      e.preventDefault();
+      if(settled)return;
+      settled = true;
+      restorePill();
+    }
+  });
 }
 
 function toggleTopicChip(e){
