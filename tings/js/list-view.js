@@ -234,85 +234,6 @@ function shouldDismissSearchFromTap(target){
   return true;
 }
 
-function updateOverallSummary(data = load()){
-  const label = $('overall-summary');
-  if(!label)return;
-  if(!data.length){
-    label.textContent = 'ready for your first habit';
-    return;
-  }
-  const query = searchQuery.trim();
-  if(query){
-    const matches = filteredVisibleIndices(data).length;
-    label.textContent = matches === 1 ? `1 match for "${query}"` : `${matches} matches for "${query}"`;
-    return;
-  }
-  if(homeTopicFilter && homeTopicFilter !== 'all'){
-    const matches = filteredVisibleIndices(data).length;
-    const topicLabel = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
-    label.textContent = matches === 1 ? `1 habit in ${topicLabel}` : `${matches} habits in ${topicLabel}`;
-    return;
-  }
-  const visible = data.filter(h=>!(h.snoozedUntil && Date.now() < h.snoozedUntil));
-  if(!visible.length){
-    label.textContent = 'all hidden for now';
-    return;
-  }
-  const plannedToday = visible.filter(h=>h.type !== 'zero' && hasPlannedToday(h)).length;
-  const plannedSoon = visible.some(h=>{
-    const plan = nextPlannedLog(h);
-    return h.type !== 'zero' && plan && dayDistance(plan) >= -3;
-  });
-  const buildDueCount = visible.filter(h=>h.type === 'keepup').filter(h=>{
-    const days = daysSince(h.lastLog);
-    return days === null || days >= effectiveTarget(h) * 0.9;
-  }).length;
-  const buildCalm = visible.filter(h=>h.type === 'keepup').every(h=>{
-    const days = daysSince(h.lastLog);
-    return days !== null && days < effectiveTarget(h) * 0.9;
-  });
-  const limitGoodCount = visible.filter(h=>h.type === 'reduce').filter(h=>{
-    const days = daysSince(h.lastLog);
-    return days !== null && days >= effectiveTarget(h);
-  }).length;
-  const limitTooSoonCount = visible.filter(h=>h.type === 'reduce').filter(h=>{
-    const days = daysSince(h.lastLog);
-    return days !== null && days < effectiveTarget(h) * 0.55;
-  }).length;
-  const stopFreshCount = visible.filter(h=>h.type === 'zero').filter(h=>{
-    const days = daysSince(h.lastLog);
-    return days !== null && days < 3;
-  }).length;
-  const buildCount = visible.filter(h=>h.type === 'keepup').length;
-  const limitCount = visible.filter(h=>h.type === 'reduce').length;
-  const stopCount = visible.filter(h=>h.type === 'zero').length;
-  const tones = visible.map(h=>scoreTone(progressScore(h)));
-  const goodCount = tones.filter(t=>t === 'hit').length;
-  const okayCount = tones.filter(t=>t === 'warn').length;
-  const careCount = tones.filter(t=>t === 'miss' || t === 'empty').length;
-  const total = visible.length;
-  const allGood = goodCount === total;
-  const mostlyGood = goodCount >= Math.ceil(total * 0.65) && careCount <= 1;
-  const mixed = goodCount > 0 && (okayCount > 0 || careCount > 0);
-  const needsCare = careCount >= Math.max(2,Math.ceil(total * 0.35));
-
-  if(allGood && plannedSoon)label.textContent = 'you are on track, with plans ahead';
-  else if(allGood)label.textContent = 'you are on track overall';
-  else if(mostlyGood && plannedToday)label.textContent = 'mostly on track, with plans today';
-  else if(mostlyGood && limitTooSoonCount)label.textContent = 'mostly good, give a few more space';
-  else if(mostlyGood && stopFreshCount)label.textContent = 'mostly good, one reset needs care';
-  else if(mostlyGood)label.textContent = 'mostly on track, a few need care';
-  else if(needsCare && goodCount)label.textContent = 'some progress, but several need care';
-  else if(needsCare)label.textContent = 'things need attention right now';
-  else if(mixed && buildDueCount && limitGoodCount)label.textContent = 'some due, but spacing looks good';
-  else if(mixed && limitTooSoonCount && buildCalm)label.textContent = 'some steady, some need more space';
-  else if(mixed)label.textContent = 'mixed week, some habits need care';
-  else if(plannedToday)label.textContent = 'you have habits planned for today';
-  else if(limitCount && limitGoodCount && !buildCount)label.textContent = 'you are spacing things well';
-  else if(stopCount && !buildCount && !limitCount)label.textContent = 'you are keeping things calm';
-  else label.textContent = 'a little attention would help today';
-}
-
 function nextPlannedLog(h){
   return plannedLogs(h.logs)[0] || null;
 }
@@ -465,7 +386,6 @@ function render(){
   updateSortButton();
   updateSearchUi();
   renderHomeTopicFilter(data);
-  updateOverallSummary(data);
 
   const visible = visibleIndices(data);
   const indices = filteredVisibleIndices(data);

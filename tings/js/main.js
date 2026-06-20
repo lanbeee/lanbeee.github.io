@@ -643,14 +643,27 @@ $('settings-reset-yes').addEventListener('click',()=>{
   showToast('settings reset');
 });
 
+function hasItemsOnDay(key){
+  const data = load();
+  return data.some(h=>
+    normalizeLogs(h.logs).some(log=>dateKey(logTime(log))===key)
+  );
+}
+
 $('open-overview').addEventListener('click',()=>{
   if(!load().length)return;
   closeSearch();
   overviewMonthOffset = 0;
   overviewTopicFilter = 'all';
-  dayLogsKey = null;
+  const todayKey = todayIso();
+  const autoOpen = sortSettings.autoOpenToday && hasItemsOnDay(todayKey);
+  dayLogsKey = autoOpen ? todayKey : null;
   renderOverview();
   openSheet('overview-sheet');
+  if(autoOpen){
+    renderDayLogs(todayKey);
+    openSheet('day-logs-sheet');
+  }
 });
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
@@ -746,9 +759,18 @@ $('day-entry-save').addEventListener('click',()=>{
 $('day-entry-cancel').addEventListener('click',()=>{dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');});
 $('day-entry-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');}});
 
-$('day-logs-close').addEventListener('click',()=>{dayLogsKey = null;closeSheet('day-logs-sheet');});
-$('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');}});
-$('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');}});
+$('day-logs-overview').addEventListener('click',()=>{
+  dayLogsKey = null;
+  closeSheet('day-logs-sheet');
+  renderOverview();
+});
+$('day-logs-home').addEventListener('click',()=>{
+  dayLogsKey = null;
+  closeSheet('day-logs-sheet');
+  closeSheet('overview-sheet');
+});
+$('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
+$('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('undo-action').addEventListener('click',undoLastAction);
 
 $('list').addEventListener('touchstart',e=>{

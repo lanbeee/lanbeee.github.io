@@ -24,8 +24,6 @@
       </span>
     </button>
   </div>
-  <p class="overall-summary" id="overall-summary">getting started</p>
-
   <div id="quota-bar"></div>
   <div id="home-topic-filter" class="topic-filter-row" aria-label="topic filter"></div>
   <div id="list"></div>
@@ -383,6 +381,10 @@
               <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="autoOpenToday" aria-pressed="false">
+              <span><b>auto-open today in calendar</b><small>Open today's activity when opening the calendar, if there are any entries or plans.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </div>
         </section>
         <section class="settings-block">
@@ -565,7 +567,8 @@
         <button class="btn primary" id="day-log-add">add entry</button>
       </div>
       <div class="btn-row">
-        <button class="btn primary" id="day-logs-close">done</button>
+        <button class="btn" id="day-logs-overview">overview</button>
+        <button class="btn primary" id="day-logs-home">home</button>
       </div>
     </div>
   </div>
