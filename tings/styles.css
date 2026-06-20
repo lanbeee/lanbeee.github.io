@@ -63,7 +63,8 @@ body{
 body.header-hidden .topbar{
   opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
 }
-body.search-active .topbar{
+body.search-active .topbar,
+body.search-active #home-topic-filter{
   opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
 }
 .wordmark{
@@ -756,6 +757,19 @@ body.reach-pad #list{padding-top:220px;}
 }
 .topic-chip.on,.schedule-chip.on,.monthday-chip.on{background:var(--text);color:var(--bg);border-color:var(--text);}
 .topic-chip.empty{color:var(--text3);cursor:default;}
+.topic-chip-add{
+  border-style:dashed;color:var(--text3);background:transparent;
+  display:inline-flex;align-items:center;gap:5px;cursor:pointer;
+}
+.topic-chip-add i{font-size:12px;}
+.topic-chip-add:active{background:var(--bg2);color:var(--text2);}
+.topic-chip-input{
+  background:var(--bg);color:var(--text);
+  border-color:var(--text2);font:inherit;font-size:12px;font-weight:650;
+  border-radius:999px;padding:6px 10px;width:120px;outline:none;
+  -webkit-appearance:none;appearance:none;
+}
+.topic-chip-input::placeholder{color:var(--text3);}
 .schedule-chip-row{
   display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-2px 0 10px;
 }
@@ -1087,6 +1101,7 @@ select{
   margin:0 0 14px;padding-bottom:2px;scrollbar-width:none;
   -webkit-overflow-scrolling:touch;
 }
+#home-topic-filter{margin-top:10px;}
 .topic-filter-row::-webkit-scrollbar{display:none;}
 .topic-filter{
   flex:0 0 auto;max-width:min(180px,70vw);

@@ -340,12 +340,20 @@ function bindCompactNumber(id,clamp,options={}){
 
 bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
 bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
-$('ting-topic-chips').addEventListener('click',toggleTopicChip);
-$('detail-topic-chips').addEventListener('click',toggleTopicChip);
-$('ting-topic-add').addEventListener('click',()=>addTopicFromInput('ting-topic-name',{autoSelect:true}));
-$('ting-topic-name').addEventListener('keydown',e=>{if(e.key === 'Enter'){e.preventDefault();addTopicFromInput('ting-topic-name',{autoSelect:true});}});
-$('detail-topic-add').addEventListener('click',()=>addTopicFromInput('detail-topic-name',{autoSelect:true}));
-$('detail-topic-name').addEventListener('keydown',e=>{if(e.key === 'Enter'){e.preventDefault();addTopicFromInput('detail-topic-name',{autoSelect:true});}});
+$('ting-topic-chips').addEventListener('click',e=>{
+  if(e.target.closest('[data-topic-add]')){
+    beginNewTopicInput('ting-topic-chips');
+    return;
+  }
+  toggleTopicChip(e);
+});
+$('detail-topic-chips').addEventListener('click',e=>{
+  if(e.target.closest('[data-topic-add]')){
+    beginNewTopicInput('detail-topic-chips');
+    return;
+  }
+  toggleTopicChip(e);
+});
 $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
