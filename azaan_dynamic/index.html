@@ -113,6 +113,23 @@
       </section>
 
       <section class="panel-section">
+        <h3>Walk suggestion</h3>
+        <label for="walkMinTempInput">Min comfortable temp</label>
+        <div class="inline-field">
+          <input id="walkMinTempInput" type="number" min="-30" max="50" step="1">
+          <span>°C</span>
+        </div>
+        <label for="walkMaxTempInput">Max comfortable temp</label>
+        <div class="inline-field">
+          <input id="walkMaxTempInput" type="number" min="-30" max="50" step="1">
+          <span>°C</span>
+        </div>
+        <button id="saveWalkBtn" class="panel-action" type="button">Save walk range</button>
+        <p id="walkSavedMsg" class="hint" aria-live="polite"></p>
+        <p id="walkHistoryHint" class="hint">No recent weather data yet.</p>
+      </section>
+
+      <section class="panel-section">
         <h3>Location</h3>
         <label for="countrySelect">Country</label>
         <select id="countrySelect">
@@ -143,13 +160,33 @@
       longitude: -78.8487
     };
     const APP_SETTINGS_KEY = "azaanDashboardSettings";
+    const WEATHER_HISTORY_KEY = "azaanWeatherHistory";
+    const WEATHER_HISTORY_MAX_DAYS = 7;
+    // We fetch weather every 10 minutes but don't need every single reading sitting in
+    // storage for a week - keep roughly one point an hour (~24/day * 7 = ~168 entries max),
+    // except we always keep a point when the condition changes so "did it just rain"
+    // stays accurate.
+    const WEATHER_HISTORY_SAMPLE_GAP_MS = 55 * 60 * 1000;
+    const RECENT_WET_LOOKBACK_MS = 2 * 60 * 60 * 1000;
+    const WEATHER_ANOMALY_MARGIN_C = 5;
+    // Deny-list instead of an allow-list: anything not explicitly bad counts as walkable
+    // (Clear, Clouds, partly cloudy, etc.) rather than only "Clear" - a strict Clear-only
+    // check missed plenty of perfectly fine walking weather.
+    const BAD_WALK_CONDITIONS = new Set([
+      "Rain", "Drizzle", "Thunderstorm", "Snow", "Squall", "Tornado",
+      "Mist", "Fog", "Haze", "Smoke", "Dust", "Sand", "Ash"
+    ]);
     const THEME_TRANSITION_DURATION_MS = 30 * 60 * 1000;
     const DEFAULT_ROUTINE = {
       wakeOffsetMinutes: 30,
       sleepHoursBeforeSunrise: 8,
       dinnerOffsetMinutes: 45,
-      teaBeforeMaghribMinutes: 45,
-      lunchDurationMinutes: 120
+      lunchDurationMinutes: 120,
+      morningDurationMinutes: 120,
+      teaStartAfterAsrMinutes: 30,
+      teaBufferBeforeMaghribMinutes: 20,
+      walkMinTempC: 5,
+      walkMaxTempC: 29
     };
     const DEFAULT_DISPLAY = {
       font: "rounded",
@@ -203,6 +240,11 @@
     const sleepHoursInput = document.getElementById("sleepHoursInput");
     const saveTimingBtn = document.getElementById("saveTimingBtn");
     const timingSavedMsg = document.getElementById("timingSavedMsg");
+    const walkMinTempInput = document.getElementById("walkMinTempInput");
+    const walkMaxTempInput = document.getElementById("walkMaxTempInput");
+    const saveWalkBtn = document.getElementById("saveWalkBtn");
+    const walkSavedMsg = document.getElementById("walkSavedMsg");
+    const walkHistoryHint = document.getElementById("walkHistoryHint");
     const fontSelect = document.getElementById("fontSelect");
     const clockScaleInput = document.getElementById("clockScaleInput");
     const clockScaleValue = document.getElementById("clockScaleValue");
@@ -218,6 +260,7 @@
     const displaySavedMsg = document.getElementById("displaySavedMsg");
 
     let isLooping = false;
+    let latestWeatherSnapshot = null;
     let currentThemePhase = "";
     let currentTransitionPhase = "";
     let cachedThemeTimelineDate = "";
@@ -287,6 +330,26 @@
       sleepHoursInput.value = routine.sleepHoursBeforeSunrise;
     }
 
+    function renderWalkControls() {
+      const routine = getRoutineSettings();
+      walkMinTempInput.value = routine.walkMinTempC;
+      walkMaxTempInput.value = routine.walkMaxTempC;
+      updateWalkHistoryHint();
+    }
+
+    function updateWalkHistoryHint() {
+      const history = loadWeatherHistory();
+      if (!history.length) {
+        walkHistoryHint.textContent = "No recent weather data yet - check back in a day or two.";
+        return;
+      }
+      const temps = history.map((entry) => entry.feelsLikeC);
+      const minSeen = Math.round(Math.min(...temps));
+      const maxSeen = Math.round(Math.max(...temps));
+      const dayCount = new Set(history.map((entry) => new Date(entry.t).toDateString())).size;
+      walkHistoryHint.textContent = `Last ${dayCount} day${dayCount === 1 ? "" : "s"}: ${minSeen}-${maxSeen}°C observed (feels-like). Use this to help pick your range.`;
+    }
+
     function renderDisplayControls() {
       const display = getDisplaySettings();
       fontSelect.value = FONT_STACKS[display.font] ? display.font : DEFAULT_DISPLAY.font;
@@ -347,6 +410,22 @@
       timingSavedMsg.textContent = "Saved.";
       setTimeout(() => {
         timingSavedMsg.textContent = "";
+      }, 2200);
+    }
+
+    function saveWalkSettings() {
+      let walkMinTempC = clampNumber(walkMinTempInput.value, -30, 50, DEFAULT_ROUTINE.walkMinTempC);
+      let walkMaxTempC = clampNumber(walkMaxTempInput.value, -30, 50, DEFAULT_ROUTINE.walkMaxTempC);
+      if (walkMinTempC > walkMaxTempC) {
+        [walkMinTempC, walkMaxTempC] = [walkMaxTempC, walkMinTempC];
+      }
+      settings.routine = { ...getRoutineSettings(), walkMinTempC, walkMaxTempC };
+      saveSettings();
+      renderWalkControls();
+      updateGuidance();
+      walkSavedMsg.textContent = "Saved.";
+      setTimeout(() => {
+        walkSavedMsg.textContent = "";
       }, 2200);
     }
 
@@ -660,6 +739,37 @@
       updateGuidance();
     }
 
+    function loadWeatherHistory() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(WEATHER_HISTORY_KEY) || "[]");
+        return Array.isArray(raw) ? raw : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function saveWeatherHistory(history) {
+      try {
+        localStorage.setItem(WEATHER_HISTORY_KEY, JSON.stringify(history));
+      } catch (error) {
+        console.error("Could not save weather history:", error);
+      }
+    }
+
+    function recordWeatherSample(sample) {
+      let history = loadWeatherHistory();
+      const cutoff = Date.now() - WEATHER_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+      history = history.filter((entry) => entry.t >= cutoff);
+      const last = history[history.length - 1];
+      const conditionChanged = last && last.main !== sample.main;
+      const enoughTimePassed = !last || (sample.t - last.t) >= WEATHER_HISTORY_SAMPLE_GAP_MS;
+      if (enoughTimePassed || conditionChanged) {
+        history.push(sample);
+        saveWeatherHistory(history);
+      }
+      return history;
+    }
+
     async function fetchWeather() {
       if (window.location.protocol === "file:") {
         weatherInfo.textContent = "Weather needs http(s)";
@@ -679,6 +789,17 @@
         const temperature = Math.round(data.main.feels_like);
         const weatherDescription = data.weather[0].description;
         const iconCode = data.weather[0].icon;
+        latestWeatherSnapshot = {
+          main: data.weather[0].main,
+          feelsLikeC: Number(data.main.feels_like),
+          fetchedAt: Date.now()
+        };
+        recordWeatherSample({
+          t: latestWeatherSnapshot.fetchedAt,
+          main: latestWeatherSnapshot.main,
+          feelsLikeC: latestWeatherSnapshot.feelsLikeC
+        });
+        if (typeof updateWalkHistoryHint === "function") updateWalkHistoryHint();
         const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
         const shortDescription = weatherDescription
           .replace(/\b\w/g, (letter) => letter.toUpperCase())
@@ -790,6 +911,42 @@
       return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?(AM|PM)$/i, "").replace(/^0/, "");
     }
 
+    function isGoodWalkWeather() {
+      if (!latestWeatherSnapshot) return false;
+      const ageMs = Date.now() - latestWeatherSnapshot.fetchedAt;
+      if (ageMs > 40 * 60 * 1000) return false; // stale reading, don't guess
+
+      const routine = getRoutineSettings();
+      const { main, feelsLikeC } = latestWeatherSnapshot;
+
+      if (BAD_WALK_CONDITIONS.has(main)) return false;
+      if (feelsLikeC < routine.walkMinTempC || feelsLikeC > routine.walkMaxTempC) return false;
+
+      const history = loadWeatherHistory();
+
+      // Ground's likely still wet/slushy for a while after rain or snow even once it
+      // clears up - don't suggest a walk right away.
+      const recentCutoff = Date.now() - RECENT_WET_LOOKBACK_MS;
+      const recentlyWet = history.some((entry) => entry.t >= recentCutoff && BAD_WALK_CONDITIONS.has(entry.main));
+      if (recentlyWet) return false;
+
+      // Once there's a few days of history, be a bit more cautious on a day that's far
+      // hotter/colder than anything seen recently this week - could be a freak
+      // heatwave/cold snap (or a flaky reading) rather than typical, comfortable weather
+      // for the season - even if it's technically inside the absolute min/max above.
+      const distinctDays = new Set(history.map((entry) => new Date(entry.t).toDateString())).size;
+      if (distinctDays >= 2) {
+        const temps = history.map((entry) => entry.feelsLikeC);
+        const weekMax = Math.max(...temps);
+        const weekMin = Math.min(...temps);
+        if (feelsLikeC > weekMax + WEATHER_ANOMALY_MARGIN_C || feelsLikeC < weekMin - WEATHER_ANOMALY_MARGIN_C) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
     function getCurrentGuidance(now = new Date()) {
       const prayers = getPrayerTimesForDay(now);
       const fajr = getPrayerByName(prayers, "Fajr").time;
@@ -798,38 +955,72 @@
       const maghrib = getPrayerByName(prayers, "Maghrib").time;
       const isha = getPrayerByName(prayers, "Isha").time;
       const routine = getRoutineSettings();
-      const teaTime = addMinutes(maghrib, -routine.teaBeforeMaghribMinutes);
       const dinnerTime = addMinutes(maghrib, routine.dinnerOffsetMinutes);
-      // Lunch is a fixed-length routine block, not "however long it takes Asr to arrive".
-      // On long summer days Asr can land near 5:30pm, so cap the Lunch message and let a
-      // generic Afternoon stage carry the rest of the wait until Asr.
+
+      // Morning is a fixed-length "wake up and get going" block, not "however long until
+      // Dhuhr" - in summer that gap can be 7-8 hours, way past when "Morning steady" still
+      // makes sense. Cap it, then a plain Late-morning stage covers the rest of the wait.
+      const morningEnd = new Date(Math.min(
+        addMinutes(fajr, routine.morningDurationMinutes).getTime(),
+        dhuhr.getTime()
+      ));
+
+      // Lunch is a fixed-length routine block too - see morningEnd above for the same
+      // reasoning applied to the Dhuhr-to-Asr gap.
       const lunchEnd = new Date(Math.min(
         addMinutes(dhuhr, routine.lunchDurationMinutes).getTime(),
         asr.getTime()
       ));
+
+      // Tea now starts a bit after Asr (not squeezed into just the last few minutes
+      // before Maghrib) and ends with a buffer before Maghrib so there's time to wrap up
+      // before the prayer, rather than running right up to it.
+      const teaStart = new Date(Math.min(
+        addMinutes(asr, routine.teaStartAfterAsrMinutes).getTime(),
+        maghrib.getTime()
+      ));
+      const teaEnd = new Date(Math.max(
+        teaStart.getTime(),
+        addMinutes(maghrib, -routine.teaBufferBeforeMaghribMinutes).getTime()
+      ));
+
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const nextFajr = getPrayerByName(getPrayerTimesForDay(tomorrow), "Fajr").time;
 
       const display = getDisplaySettings();
       const icon = (emoji) => display.showEmojis ? ` ${emoji}` : "";
+      const goodForWalk = isGoodWalkWeather();
+      // Used only for the open/unscheduled gaps (late morning, the two afternoon gaps) -
+      // stages that already have a specific activity (lunch, tea, dinner) keep their own
+      // label so the line doesn't get crowded on a small screen.
+      const openGapLabel = (defaultLabel) => goodForWalk ? "Walk weather" : defaultLabel;
+      const openGapIcon = (defaultEmoji) => {
+        if (goodForWalk) return icon("🚶");
+        return defaultEmoji ? icon(defaultEmoji) : "";
+      };
+
       if (display.guidanceTone === "plain") {
         if (now < fajr) return `Sleep. Fajr azaan ${formatPlanTime(fajr)}.`;
-        if (now < dhuhr) return `Morning. Dhuhr ${formatPlanTime(dhuhr)}.`;
+        if (now < morningEnd) return `Morning. Dhuhr ${formatPlanTime(dhuhr)}.`;
+        if (now < dhuhr) return `${openGapLabel("Late morning")}. Dhuhr ${formatPlanTime(dhuhr)}.`;
         if (now < lunchEnd) return `Lunch. Asr ${formatPlanTime(asr)}.`;
-        if (now < asr) return `Afternoon. Asr ${formatPlanTime(asr)}.`;
-        if (now < teaTime) return `Afternoon. Tea around ${formatPlanTime(teaTime)}.`;
-        if (now < maghrib) return `Tea. Maghrib ${formatPlanTime(maghrib)}.`;
+        if (now < asr) return `${openGapLabel("Afternoon")}. Asr ${formatPlanTime(asr)}.`;
+        if (now < teaStart) return `${openGapLabel("Afternoon")}. Tea around ${formatPlanTime(teaStart)}.`;
+        if (now < teaEnd) return `Tea. Maghrib ${formatPlanTime(maghrib)}.`;
+        if (now < maghrib) return `Maghrib soon. ${formatPlanTime(maghrib)}.`;
         if (now < dinnerTime) return `Maghrib. Dinner around ${formatPlanTime(dinnerTime)}.`;
         if (now < isha) return `Dinner. Isha ${formatPlanTime(isha)}.`;
         return `Sleep. Fajr azaan ${formatPlanTime(nextFajr)}.`;
       }
       if (now < fajr) return `Sleep well${icon("🌙")} Fajr azaan ${formatPlanTime(fajr)}.`;
-      if (now < dhuhr) return `Morning steady${icon("☀️")} Dhuhr ${formatPlanTime(dhuhr)}.`;
+      if (now < morningEnd) return `Morning steady${icon("☀️")} Dhuhr ${formatPlanTime(dhuhr)}.`;
+      if (now < dhuhr) return `${openGapLabel("Late morning")}${openGapIcon("")} Dhuhr ${formatPlanTime(dhuhr)}.`;
       if (now < lunchEnd) return `Lunch window${icon("🍽️")} Asr ${formatPlanTime(asr)}.`;
-      if (now < asr) return `Afternoon. Asr ${formatPlanTime(asr)}.`;
-      if (now < teaTime) return `Afternoon. Tea around ${formatPlanTime(teaTime)}.`;
-      if (now < maghrib) return `Tea time${icon("☕")} Maghrib ${formatPlanTime(maghrib)}.`;
+      if (now < asr) return `${openGapLabel("Afternoon")}${openGapIcon("")} Asr ${formatPlanTime(asr)}.`;
+      if (now < teaStart) return `${openGapLabel("Afternoon")}${openGapIcon("")} Tea around ${formatPlanTime(teaStart)}.`;
+      if (now < teaEnd) return `Tea time${icon("☕")} Maghrib ${formatPlanTime(maghrib)}.`;
+      if (now < maghrib) return `Wrapping up${icon("🌅")} Maghrib ${formatPlanTime(maghrib)}.`;
       if (now < dinnerTime) return `Maghrib from ${formatPlanTime(maghrib)}. Dinner at ${formatPlanTime(dinnerTime)}.`;
       if (now < isha) return `Dinner time${icon("🍽️")} Isha ${formatPlanTime(isha)}.`;
       return `Wind down${icon("🌙")} Fajr azaan ${formatPlanTime(nextFajr)}.`;
@@ -896,6 +1087,7 @@
       settings.display = { ...DEFAULT_DISPLAY, ...(settings.display || {}) };
       selectedLocationLabel.textContent = `${currentLocation.city}, ${currentLocation.country}`;
       renderTimingControls();
+      renderWalkControls();
       renderDisplayControls();
       applyDisplaySettings();
     }
@@ -942,6 +1134,7 @@
       if (selectedCity) updateLocation(selectedCity);
     });
     saveTimingBtn.addEventListener("click", saveTimingSettings);
+    saveWalkBtn.addEventListener("click", saveWalkSettings);
     [fontSelect, clockScaleInput, dateScaleInput, weatherScaleInput, messageScaleInput, guidanceToneSelect, emojiToggle].forEach((control) => {
       control.addEventListener("input", previewDisplaySettings);
       control.addEventListener("change", previewDisplaySettings);
