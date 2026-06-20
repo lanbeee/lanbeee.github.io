@@ -16,18 +16,46 @@
 <body>
 <div class="app">
 
-  <div class="topbar">
-    <button class="wordmark" id="open-about" aria-label="how it works">
+  <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
+    <button class="app-bar-logo" id="bar-open-about" aria-label="how it works">
       <img src="./favicon.svg" alt="" aria-hidden="true" />
-      <span class="wordmark-copy">
-        <span>Habits</span>
-      </span>
+      <span class="app-bar-title">Habits</span>
     </button>
+    <div class="app-bar-search" id="app-bar-search" aria-hidden="true">
+      <input type="search" id="habit-search" aria-label="search habits" placeholder="search habits" autocomplete="off" autocorrect="off" spellcheck="false" />
+      <button class="icon-btn search-clear" id="clear-search" aria-label="clear search" type="button">
+        <i class="ti ti-x" aria-hidden="true"></i>
+      </button>
+    </div>
+    <div class="app-bar-actions">
+      <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
+        <i class="ti ti-calendar-month" aria-hidden="true"></i>
+      </button>
+      <button class="icon-btn app-bar-add" id="bar-open-add" aria-label="add habit">
+        <i class="ti ti-plus" aria-hidden="true"></i>
+      </button>
+      <button class="icon-btn" id="bar-open-search" aria-label="search habits" aria-pressed="false">
+        <i class="ti ti-search" aria-hidden="true"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="pane-list">
+    <div class="topbar">
+      <button class="wordmark" id="open-about" aria-label="how it works">
+        <img src="./favicon.svg" alt="" aria-hidden="true" />
+        <span class="wordmark-copy">
+          <span>Habits</span>
+        </span>
+      </button>
+    </div>
+    <div id="quota-bar"></div>
+    <div id="home-topic-filter" class="topic-filter-row" aria-label="topic filter"></div>
+    <div id="list"></div>
+    <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
   </div>
-  <div id="quota-bar"></div>
-  <div id="home-topic-filter" class="topic-filter-row" aria-label="topic filter"></div>
-  <div id="list"></div>
-  <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
+
+  <div class="pane-detail" id="pane-detail" hidden></div>
 
   <nav class="bottom-nav" aria-label="main actions">
     <button class="icon-btn" id="open-overview" aria-label="calendar">
@@ -46,6 +74,7 @@
       </button>
     </div>
   </nav>
+  </div>
 
   <!-- add sheet -->
   <div class="sheet-wrap" id="add-sheet">
@@ -573,6 +602,7 @@
 </div>
 
 <script src="./js/config.js" defer></script>
+<script src="./js/viewport.js" defer></script>
 <script src="./js/data.js" defer></script>
 <script src="./js/scoring.js" defer></script>
 <script src="./js/list-view.js" defer></script>

@@ -235,6 +235,16 @@ function updateSortButton(){
   $('open-overview').disabled = count < 2;
   $('open-search').classList.toggle('is-hidden',count < 10);
   $('open-search').disabled = count < 10;
+  const barOverview = $('bar-open-overview');
+  if (barOverview) {
+    barOverview.classList.toggle('is-hidden',count < 2);
+    barOverview.disabled = count < 2;
+  }
+  const barSearch = $('bar-open-search');
+  if (barSearch) {
+    barSearch.classList.toggle('is-hidden',count < 10);
+    barSearch.disabled = count < 10;
+  }
   if(count < 10)closeSearch({render:false});
 }
 
@@ -242,17 +252,33 @@ function updateSearchUi(){
   const nav = document.querySelector('.bottom-nav');
   const input = $('habit-search');
   const searchBtn = $('open-search');
+  const barSearchBtn = $('bar-open-search');
   const clearBtn = $('clear-search');
-  if(!nav || !input || !searchBtn)return;
-  const open = nav.classList.contains('search-open');
+  if(!input || (!nav && !barSearchBtn))return;
+  const wide = paneTierActive();
+  const open = wide
+    ? !!($('app-bar-search') && $('app-bar-search').classList.contains('is-open'))
+    : !!nav?.classList.contains('search-open');
   input.value = searchQuery;
   document.body.classList.toggle('search-active',open);
-  searchBtn.classList.toggle('is-on',open);
-  searchBtn.setAttribute('aria-pressed',String(open));
-  $('nav-search').setAttribute('aria-hidden',String(!open));
+  if (searchBtn) {
+    searchBtn.classList.toggle('is-on',open);
+    searchBtn.setAttribute('aria-pressed',String(open));
+  }
+  if (barSearchBtn) {
+    barSearchBtn.classList.toggle('is-on',open);
+    barSearchBtn.setAttribute('aria-pressed',String(open));
+  }
+  const navSearchWrap = $('nav-search');
+  if (navSearchWrap) navSearchWrap.setAttribute('aria-hidden',String(!open));
+  const barSearchWrap = $('app-bar-search');
+  if (barSearchWrap) {
+    barSearchWrap.setAttribute('aria-hidden',String(!open));
+    barSearchWrap.classList.toggle('is-open',open);
+  }
   if(clearBtn){
     const empty = !searchQuery.trim();
-    $('nav-search').classList.toggle('is-empty',empty);
+    if (navSearchWrap) navSearchWrap.classList.toggle('is-empty',empty);
     clearBtn.hidden = true;
   }
 }
@@ -260,16 +286,25 @@ function updateSearchUi(){
 function setSearchOpen(open,options = {}){
   const nav = document.querySelector('.bottom-nav');
   const input = $('habit-search');
-  if(!nav || !input)return;
+  if(!input)return;
+  const wide = paneTierActive();
   if(options.clear)searchQuery = '';
-  nav.classList.toggle('search-open',open);
+  if (wide) {
+    const barSearch = $('app-bar-search');
+    if (barSearch) barSearch.classList.toggle('is-open',open);
+    if (nav) nav.classList.remove('search-open');
+  } else {
+    if (nav) nav.classList.toggle('search-open',open);
+    const barSearch = $('app-bar-search');
+    if (barSearch) barSearch.classList.remove('is-open');
+  }
   updateSearchUi();
   if(open && options.focus !== false){
     input.focus({preventScroll:true});
     updateKeyboardLift();
     keepFocusedInputVisible();
     requestAnimationFrame(()=>{
-      if(nav.classList.contains('search-open') && document.activeElement !== input)input.focus({preventScroll:true});
+      if(document.activeElement !== input)input.focus({preventScroll:true});
       updateKeyboardLift();
       keepFocusedInputVisible();
     });
@@ -296,10 +331,16 @@ function closeSearch(options = {}){
 
 function shouldDismissSearchFromTap(target){
   const nav = document.querySelector('.bottom-nav');
+  const barSearch = $('app-bar-search');
+  const wide = paneTierActive();
+  const searchOpen = wide
+    ? !!barSearch?.classList.contains('is-open')
+    : !!nav?.classList.contains('search-open');
   if(!target?.closest)return false;
-  if(!nav?.classList.contains('search-open'))return false;
+  if(!searchOpen)return false;
   if(target.closest('#habit-search'))return false;
   if(target.closest('.bottom-nav'))return target.closest('#open-search');
+  if(target.closest('.app-bar'))return target.closest('#bar-open-search');
   if(target.closest('.sheet-wrap.open'))return false;
   if(searchQuery.trim() && target.closest('.swipe-row,.ting-card,.swipe-actions'))return false;
   return true;
@@ -548,6 +589,11 @@ function render(){
             <div class="ting-trail">${trail}</div>
           </div>
         </div>
+        <div class="card-actions" aria-label="habit actions">
+          <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
+          <button class="card-action-btn" data-action="snooze" aria-label="snooze" title="snooze"><i class="ti ti-moon" aria-hidden="true"></i></button>
+          <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
+        </div>
       </div>`;
 
     list.appendChild(row);
@@ -575,6 +621,15 @@ function render(){
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
       if(btn.dataset.action === 'pin')togglePin(idx);
+      if(btn.dataset.action === 'activity')openActivity(idx);
+      if(btn.dataset.action === 'snooze')openSnooze(idx);
+      if(btn.dataset.action === 'nuke')doNuke(idx);
+    });
+  });
+  list.querySelectorAll('.card-action-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const idx = +btn.closest('.swipe-row').dataset.realIdx;
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);

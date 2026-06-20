@@ -26,10 +26,45 @@ $('open-add').addEventListener('click',()=>{
 $('open-search').addEventListener('click',()=>{
   if(load().length < 10)return;
   const nav = document.querySelector('.bottom-nav');
-  const isOpen = nav.classList.contains('search-open');
+  const wide = paneTierActive();
+  const isOpen = wide
+    ? !!$('app-bar-search')?.classList.contains('is-open')
+    : !!nav?.classList.contains('search-open');
   if(isOpen)closeSearch();
   else setSearchOpen(true);
 });
+$('bar-open-search')?.addEventListener('click',()=>{
+  if(load().length < 10)return;
+  const isOpen = !!$('app-bar-search')?.classList.contains('is-open');
+  if(isOpen)closeSearch();
+  else setSearchOpen(true);
+});
+$('bar-open-add')?.addEventListener('click',()=>{
+  closeSearch();
+  applyAddDefaults();
+  openSheet('add-sheet');
+  $('ting-message').focus({preventScroll:true});
+  setTimeout(()=>{
+    updateKeyboardLift();
+    keepFocusedInputVisible();
+  },260);
+});
+$('bar-open-overview')?.addEventListener('click',()=>{
+  if(!load().length)return;
+  closeSearch();
+  overviewMonthOffset = 0;
+  overviewTopicFilter = 'all';
+  const todayKey = todayIso();
+  const autoOpen = sortSettings.autoOpenToday && hasItemsOnDay(todayKey);
+  dayLogsKey = autoOpen ? todayKey : null;
+  renderOverview();
+  openSheet('overview-sheet');
+  if(autoOpen){
+    renderDayLogs(todayKey);
+    openSheet('day-logs-sheet');
+  }
+});
+$('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
   render();
@@ -490,7 +525,8 @@ $('detail-delete-yes').addEventListener('click',()=>{
   doNuke(idx);
 });
 $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeDetail();});
-$('detail-sheet').querySelectorAll('.detail-actions button').forEach(btn=>{
+const _detailSheetInner = getSheetInner('detail-sheet');
+if (_detailSheetInner) _detailSheetInner.querySelectorAll('.detail-actions button').forEach(btn=>{
   btn.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 });
 bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
@@ -515,7 +551,7 @@ $('detail-next-month').addEventListener('click',()=>{
   detailMonthOffset += 1;
   renderCalendar(load()[detailIdx]);
 });
-$('detail-sheet').querySelector('.detail-pager')?.addEventListener('scroll',()=>{
+getSheetInner('detail-sheet')?.querySelector('.detail-pager')?.addEventListener('scroll',()=>{
   requestAnimationFrame(updateDetailPagerDots);
 },{passive:true});
 
