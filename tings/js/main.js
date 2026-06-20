@@ -342,6 +342,10 @@ bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
 bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
 $('ting-topic-chips').addEventListener('click',toggleTopicChip);
 $('detail-topic-chips').addEventListener('click',toggleTopicChip);
+$('ting-topic-add').addEventListener('click',()=>addTopicFromInput('ting-topic-name',{autoSelect:true}));
+$('ting-topic-name').addEventListener('keydown',e=>{if(e.key === 'Enter'){e.preventDefault();addTopicFromInput('ting-topic-name',{autoSelect:true});}});
+$('detail-topic-add').addEventListener('click',()=>addTopicFromInput('detail-topic-name',{autoSelect:true}));
+$('detail-topic-name').addEventListener('keydown',e=>{if(e.key === 'Enter'){e.preventDefault();addTopicFromInput('detail-topic-name',{autoSelect:true});}});
 $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
@@ -665,6 +669,12 @@ $('overview-topic-filter').addEventListener('click',e=>{
   overviewTopicFilter = btn.dataset.overviewTopic || 'all';
   dayLogsKey = null;
   renderOverview();
+});
+$('home-topic-filter').addEventListener('click',e=>{
+  const btn = e.target.closest('[data-home-topic]');
+  if(!btn)return;
+  homeTopicFilter = btn.dataset.homeTopic || 'all';
+  render();
 });
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   if(!day)return;
