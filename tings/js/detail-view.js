@@ -23,6 +23,7 @@ function openDetail(i){
   $('detail-pinned').checked = Boolean(h.pinned);
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-flexibility').value = h.flexibilityDays || 0;
+  $('detail-topic-name').value = '';
   renderTopicChips('detail-topic-chips',h.topics);
   renderScheduleChips('detail',h);
   $('detail-delete-confirm').hidden = true;

@@ -9,12 +9,13 @@ function applyAddDefaults(){
   const settings = loadSortSettings();
   $('ting-message').value = '';
   $('ting-emoji').value = '';
+  $('ting-topic-name').value = '';
   selectedType = settings.defaultType || 'keepup';
   const target = clampRhythm(settings.defaultTarget || 7);
   syncRhythm('ting',target);
   renderTopicChips('ting-topic-chips',[]);
   const topicsWrap = $('add-topics-section');
-  if(topicsWrap)topicsWrap.hidden = !topicOptions().length;
+  if(topicsWrap)topicsWrap.hidden = false;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
   $('target-slider-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
   $('target-help').style.display = selectedType === 'zero' ? 'none' : 'block';

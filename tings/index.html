@@ -27,6 +27,7 @@
   <p class="overall-summary" id="overall-summary">getting started</p>
 
   <div id="quota-bar"></div>
+  <div id="home-topic-filter" class="topic-filter-row" aria-label="topic filter"></div>
   <div id="list"></div>
   <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
 
@@ -77,6 +78,10 @@
       <div class="add-topics-section" id="add-topics-section">
         <span class="settings-sublabel">topics</span>
         <div class="topic-chip-row" id="ting-topic-chips"></div>
+        <div class="topic-manage-row inline-topic-row">
+          <input type="text" id="ting-topic-name" placeholder="new topic" maxlength="32" autocomplete="off" />
+          <button class="btn primary" id="ting-topic-add" type="button">add</button>
+        </div>
       </div>
       <div class="btn-row add-actions">
         <button class="btn primary" id="do-save">add</button>
@@ -178,6 +183,10 @@
           </label>
           <span class="settings-sublabel">topics</span>
           <div class="topic-chip-row" id="detail-topic-chips"></div>
+          <div class="topic-manage-row inline-topic-row">
+            <input type="text" id="detail-topic-name" placeholder="new topic" maxlength="32" autocomplete="off" />
+            <button class="btn primary" id="detail-topic-add" type="button">add</button>
+          </div>
           <div class="habit-actions">
             <span class="settings-label">habit actions</span>
             <button class="habit-action" id="detail-snooze" type="button">

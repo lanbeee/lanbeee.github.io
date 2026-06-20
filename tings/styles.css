@@ -784,6 +784,8 @@ body.reach-pad #list{padding-top:220px;}
   display:grid;grid-template-columns:minmax(0,1fr) 76px;gap:8px;margin-bottom:10px;
 }
 .topic-manage-row input{margin-bottom:0;}
+.topic-manage-row.inline-topic-row{margin:-4px 0 4px;}
+.topic-manage-row.inline-topic-row .btn{padding:11px 0;font-size:13px;}
 .topic-list .topic-chip{display:inline-flex;align-items:center;gap:6px;}
 .topic-list .topic-chip i{font-size:13px;}
 .planning-grid,.availability-grid{

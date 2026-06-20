@@ -529,6 +529,10 @@ function searchText(h){
 function filteredVisibleIndices(data){
   const indices = visibleIndices(data);
   const query = searchQuery.trim().toLowerCase();
-  if(!query)return indices;
-  return indices.filter(i=>searchText(data[i]).includes(query));
+  const topic = typeof homeTopicFilter !== 'undefined' ? homeTopicFilter : 'all';
+  const base = topic && topic !== 'all' && typeof matchesHomeTopic === 'function'
+    ? indices.filter(i=>matchesHomeTopic(data[i],topic))
+    : indices;
+  if(!query)return base;
+  return base.filter(i=>searchText(data[i]).includes(query));
 }

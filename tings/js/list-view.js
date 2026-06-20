@@ -84,17 +84,31 @@ function renderTopicList(){
     : '<span class="topic-chip empty">no topics</span>';
 }
 
-function addTopic(){
-  const input = $('topic-name');
+function addTopicFromInput(inputId,options = {}){
+  const input = $(inputId);
+  if(!input)return;
   const topic = cleanTopic(input.value);
   if(!topic){input.focus();return;}
   const topics = normalizeTopics([...topicOptions(),topic]);
   updateSortSetting({topics},{renderNow:false});
   input.value = '';
+  input.blur();
   renderTopicList();
-  renderTopicChips('ting-topic-chips',selectedAddTopics());
-  if(detailIdx !== null)renderTopicChips('detail-topic-chips',currentDetailTune().topics);
+  const autoSelect = options.autoSelect;
+  const addSelected = autoSelect ? normalizeTopics([...selectedAddTopics(),topic]) : selectedAddTopics();
+  renderTopicChips('ting-topic-chips',addSelected);
+  if(detailIdx !== null){
+    const detailSelected = autoSelect
+      ? normalizeTopics([...selectedTopicsFrom('detail-topic-chips'),topic])
+      : currentDetailTune().topics;
+    renderTopicChips('detail-topic-chips',detailSelected);
+    if(autoSelect)setDetailDirty();
+  }
   render();
+}
+
+function addTopic(){
+  addTopicFromInput('topic-name');
 }
 
 function removeTopic(topic){
@@ -109,7 +123,39 @@ function removeTopic(topic){
   renderTopicList();
   renderTopicChips('ting-topic-chips',selectedAddTopics());
   if(detailIdx !== null)renderTopicChips('detail-topic-chips',currentDetailTune().topics);
+  if(typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key){
+    homeTopicFilter = 'all';
+  }
   refreshOpenViews();
+}
+
+function homeTopicChoices(data){
+  const topics = normalizeTopics([...topicOptions(),...data.flatMap(h=>normalizeTopics(h.topics))]);
+  const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
+  return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
+}
+
+function matchesHomeTopic(h,topic){
+  if(!topic || topic === 'all')return true;
+  const topics = normalizeTopics(h.topics);
+  if(topic === '__none__')return !topics.length;
+  return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
+}
+
+function renderHomeTopicFilter(data){
+  const wrap = $('home-topic-filter');
+  if(!wrap)return;
+  const choices = homeTopicChoices(data);
+  if(choices.length <= 1){
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
+  if(!choices.some(choice=>choice.key === homeTopicFilter))homeTopicFilter = 'all';
+  wrap.hidden = false;
+  wrap.innerHTML = choices.map(choice=>`
+    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
+  `).join('');
 }
 
 function updateSortButton(){
@@ -199,6 +245,12 @@ function updateOverallSummary(data = load()){
   if(query){
     const matches = filteredVisibleIndices(data).length;
     label.textContent = matches === 1 ? `1 match for "${query}"` : `${matches} matches for "${query}"`;
+    return;
+  }
+  if(homeTopicFilter && homeTopicFilter !== 'all'){
+    const matches = filteredVisibleIndices(data).length;
+    const topicLabel = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
+    label.textContent = matches === 1 ? `1 habit in ${topicLabel}` : `${matches} habits in ${topicLabel}`;
     return;
   }
   const visible = data.filter(h=>!(h.snoozedUntil && Date.now() < h.snoozedUntil));
@@ -412,6 +464,7 @@ function render(){
   updateQuotaBar(sizeKb(data));
   updateSortButton();
   updateSearchUi();
+  renderHomeTopicFilter(data);
   updateOverallSummary(data);
 
   const visible = visibleIndices(data);
@@ -419,9 +472,17 @@ function render(){
   if(!indices.length){
     empty.style.display = 'block';
     const hasSearch = searchQuery.trim().length > 0;
+    const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
     empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
     if(hasSearch){
       empty.innerHTML = 'no matches<br><span class="empty-sub">try another habit name or icon</span>';
+    }else if(hasTopicFilter){
+      const label = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
+      empty.innerHTML = `no habits in ${escapeHtml(label)}<br><span class="empty-sub">tap a topic above to change the filter</span>`;
+      empty.onclick = ()=>{
+        homeTopicFilter = 'all';
+        render();
+      };
     }else if(data.length && !sortSettings.showSnoozed && !visible.length){
       empty.innerHTML = 'hidden for now<br><span class="empty-sub">tap to show</span>';
       empty.onclick = ()=>{
