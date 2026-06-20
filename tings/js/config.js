@@ -79,6 +79,11 @@ const FOCUS_TYPE_SCALE = {
 
 const $ = id => document.getElementById(id);
 
+function paneTierActive() {
+  const tier = document.body && document.body.dataset ? document.body.dataset.tier : '';
+  return tier && tier !== 'mobile-portrait';
+}
+
 let detailIdx = null;
 let snoozeIdx = null;
 let snoozeFromDetail = false;

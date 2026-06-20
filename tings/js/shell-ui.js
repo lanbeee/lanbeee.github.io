@@ -1,5 +1,65 @@
 // Shared sheet controls, toast/undo UI, reach assist, and forgiving pointer handling.
 
+// Tiers that should use the right pane for detail/overview instead of a sheet.
+// (paneTierActive is defined in config.js)
+
+function getPane() {
+  return $('pane-detail');
+}
+
+// Find the inner .sheet element for a given sheet wrap, regardless of whether
+// it's still inside the wrap or has been moved to the right pane.
+function getSheetInner(sheetId) {
+  const wrap = $(sheetId);
+  if (!wrap) return null;
+  // Look in the wrap first.
+  const inWrap = wrap.querySelector('.sheet');
+  if (inWrap) return inWrap;
+  // Otherwise check the pane. The pane's active sheet id is stored in
+  // data-active-sheet, so we know if it should be this one.
+  const pane = getPane();
+  if (!pane) return null;
+  if (pane.dataset.activeSheet === sheetId) {
+    return pane.querySelector('.sheet');
+  }
+  return null;
+}
+
+function mountInPane(sheetId) {
+  const pane = getPane();
+  if (!pane) return null;
+  const sheet = $(sheetId);
+  if (!sheet) return null;
+  // Find the inner — it might be in the wrap (initial state) or in the pane (after previous mount)
+  let inner = sheet.querySelector('.sheet') || pane.querySelector('.sheet');
+  pane.innerHTML = '';
+  pane.removeAttribute('hidden');
+  if (inner) {
+    inner.dataset.paneMounted = '1';
+    pane.appendChild(inner);
+  }
+  pane.dataset.activeSheet = sheetId;
+  document.body.classList.add('pane-active');
+  return inner;
+}
+
+function unmountPane() {
+  const pane = getPane();
+  if (!pane || !pane.dataset.activeSheet) return;
+  const sheetId = pane.dataset.activeSheet;
+  const inner = pane.querySelector('.sheet');
+  if (inner) {
+    delete inner.dataset.paneMounted;
+    // Move the inner back to its sheet wrap
+    const wrap = $(sheetId);
+    if (wrap) wrap.appendChild(inner);
+  }
+  pane.innerHTML = '';
+  if (!paneTierActive()) pane.setAttribute('hidden','');
+  delete pane.dataset.activeSheet;
+  document.body.classList.remove('pane-active');
+}
+
 function openSnooze(i){
   const h = load()[i];
   if(!h)return;
@@ -178,6 +238,10 @@ function openDayEntry(i,key){
 }
 
 function updateKeyboardLift(){
+  if (paneTierActive()) {
+    document.documentElement.style.setProperty('--keyboard-lift','0px');
+    return;
+  }
   const addOpen = $('add-sheet').classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   if((!addOpen && !searchOpen) || !window.visualViewport){
@@ -191,15 +255,39 @@ function updateKeyboardLift(){
 function keepFocusedInputVisible(){
   const active = document.activeElement;
   if(!active || (!$('add-sheet').contains(active) && active !== $('habit-search')))return;
+  if (paneTierActive()) return;
   active.scrollIntoView({block:'center',inline:'nearest'});
 }
 
+// Move the search input to the top app bar on wide tiers, back to bottom nav on phone-portrait.
+function reparentSearch() {
+  const input = $('habit-search');
+  const clear = $('clear-search');
+  if (!input) return;
+  const target = paneTierActive() ? $('app-bar-search') : $('nav-search');
+  if (!target) return;
+  if (input.parentElement !== target) {
+    target.appendChild(input);
+    if (clear) target.appendChild(clear);
+  }
+}
+
 function openSheet(id){
+  if (paneTierActive() && isFullPageSheet(id) && shouldMountInPane(id)) {
+    mountInPane(id);
+    return;
+  }
   $(id).classList.add('open');
   updateFullPageState();
   updateKeyboardLift();
 }
 function closeSheet(id){
+  // If this sheet is currently mounted in the pane, unmount it instead.
+  const pane = getPane();
+  if (pane && pane.dataset.activeSheet === id) {
+    unmountPane();
+    return;
+  }
   $(id).classList.remove('open');
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
@@ -208,6 +296,11 @@ function closeSheet(id){
 
 function isFullPageSheet(id){
   return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet';
+}
+
+function shouldMountInPane(id) {
+  // Detail/overview go into the right pane. About/settings remain as modals.
+  return id === 'detail-sheet' || id === 'overview-sheet';
 }
 
 function updateFullPageState(){
@@ -387,3 +480,77 @@ document.addEventListener('click',e=>{
     return;
   }
 },true);
+
+document.addEventListener('tierchange',()=>{
+  reparentSearch();
+  updateKeyboardLift();
+  // Show/hide the app bar based on tier
+  const appBar = $('app-bar');
+  if (appBar) {
+    if (paneTierActive()) appBar.removeAttribute('hidden');
+    else appBar.setAttribute('hidden','');
+  }
+  // Show the pane-detail on wide tiers so the empty hint is visible
+  const pane = getPane();
+  if (pane) {
+    if (paneTierActive() && !pane.dataset.activeSheet) {
+      // On wide tiers with no mounted sheet, show the pane (it's empty → CSS :empty handles the hint)
+      pane.removeAttribute('hidden');
+    } else if (!paneTierActive()) {
+      pane.setAttribute('hidden','');
+    }
+  }
+  // Close any open full-page sheet or pane so we don't get stuck mid-transition.
+  ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].forEach(id=>{
+    if ($(id).classList.contains('open')) $(id).classList.remove('open');
+  });
+  unmountPane();
+  if (typeof render === 'function') render();
+  if (typeof updateSortButton === 'function') updateSortButton();
+});
+
+// Click outside the mounted sheet closes it. Use capture phase and defer
+// to avoid racing with handlers that mount a sheet as part of their own click
+// processing (e.g. saving a new habit mounts the detail pane).
+let paneCloseTimer = null;
+document.addEventListener('click',e=>{
+  const pane = getPane();
+  if (!pane || !pane.dataset.activeSheet) return;
+  if (e.target.closest('.pane-detail .sheet')) return;
+  if (e.target.closest('.ting-card')) return;
+  if (e.target.closest('.app-bar')) return;
+  if (e.target.closest('.pane-list')) return;
+  if (e.target.closest('.sheet-wrap')) return; // any modal (incl. just-closed add)
+  clearTimeout(paneCloseTimer);
+  paneCloseTimer = setTimeout(()=>{
+    if (pane.dataset.activeSheet) unmountPane();
+  }, 0);
+});
+
+// Escape closes the pane.
+document.addEventListener('keydown',e=>{
+  if (e.key !== 'Escape') return;
+  const pane = getPane();
+  if (pane && pane.dataset.activeSheet) {
+    e.preventDefault();
+    const id = pane.dataset.activeSheet;
+    unmountPane();
+    if (id === 'detail-sheet' && typeof closeDetail === 'function') closeDetail();
+  }
+  // Also close centered modals on Escape
+  ['add-sheet','about-sheet','settings-sheet','overview-sheet','snooze-sheet','activity-sheet','day-entry-sheet','day-logs-sheet'].forEach(id=>{
+    const el = $(id);
+    if (el && el.classList.contains('open')) {
+      e.preventDefault();
+      // delegate to known close handlers
+      if (id === 'add-sheet' && typeof cancelAdd === 'function') cancelAdd();
+      else if (id === 'overview-sheet') closeSheet('overview-sheet');
+      else if (id === 'settings-sheet') closeSheet('settings-sheet');
+      else if (id === 'about-sheet') closeSheet('about-sheet');
+      else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
+      else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
+      else if (id === 'day-entry-sheet') { dayEntryIdx = null; dayEntryTs = null; closeSheet('day-entry-sheet'); }
+      else if (id === 'day-logs-sheet') { dayLogsKey = null; closeSheet('day-logs-sheet'); }
+    }
+  });
+});
