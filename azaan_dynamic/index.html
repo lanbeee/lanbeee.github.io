@@ -911,40 +911,74 @@
       return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?(AM|PM)$/i, "").replace(/^0/, "");
     }
 
+    function calculateWalkabilityScore(feelsLikeC, mainCondition, routine) {
+      // 1. Hard vetos: Bad weather or outside absolute temperature bounds
+      if (BAD_WALK_CONDITIONS.has(mainCondition)) return 0;
+      if (feelsLikeC < routine.walkMinTempC || feelsLikeC > routine.walkMaxTempC) return 0;
+
+      // 2. Temperature Score (0 to 100)
+      // Peak score is at the exact middle of the preferred range.
+      const idealTemp = (routine.walkMinTempC + routine.walkMaxTempC) / 2;
+      const maxDeviation = (routine.walkMaxTempC - routine.walkMinTempC) / 2;
+      
+      // How far are we from the ideal middle? (0 = ideal, maxDeviation = edge of comfort)
+      const deviation = Math.abs(feelsLikeC - idealTemp);
+      
+      // Score: 100 at ideal temp, drops toward 0 at the very edges of min/max bounds
+      const tempScore = Math.max(0, 100 * (1 - (deviation / maxDeviation)));
+
+      // 3. Condition Score
+      let conditionScore = 50; // Acceptable default
+      if (mainCondition === "Clear") conditionScore = 100;
+      if (mainCondition === "Clouds") conditionScore = 80;
+      // (Mist, Rain, etc., are caught by BAD_WALK_CONDITIONS earlier and return 0)
+
+      // 4. Combine (Weighting temperature more heavily than clouds/clear skies)
+      return (tempScore * 0.7) + (conditionScore * 0.3);
+    }
+
     function isGoodWalkWeather() {
       if (!latestWeatherSnapshot) return false;
+      
+      // Don't guess if the weather reading is stale
       const ageMs = Date.now() - latestWeatherSnapshot.fetchedAt;
-      if (ageMs > 40 * 60 * 1000) return false; // stale reading, don't guess
+      if (ageMs > 40 * 60 * 1000) return false; 
 
       const routine = getRoutineSettings();
-      const { main, feelsLikeC } = latestWeatherSnapshot;
-
-      if (BAD_WALK_CONDITIONS.has(main)) return false;
-      if (feelsLikeC < routine.walkMinTempC || feelsLikeC > routine.walkMaxTempC) return false;
-
       const history = loadWeatherHistory();
 
-      // Ground's likely still wet/slushy for a while after rain or snow even once it
-      // clears up - don't suggest a walk right away.
+      // Ground is likely still wet/slushy after recent rain - keep this hard veto
       const recentCutoff = Date.now() - RECENT_WET_LOOKBACK_MS;
       const recentlyWet = history.some((entry) => entry.t >= recentCutoff && BAD_WALK_CONDITIONS.has(entry.main));
       if (recentlyWet) return false;
 
-      // Once there's a few days of history, be a bit more cautious on a day that's far
-      // hotter/colder than anything seen recently this week - could be a freak
-      // heatwave/cold snap (or a flaky reading) rather than typical, comfortable weather
-      // for the season - even if it's technically inside the absolute min/max above.
+      // Calculate the score for right now
+      const currentScore = calculateWalkabilityScore(latestWeatherSnapshot.feelsLikeC, latestWeatherSnapshot.main, routine);
+
+      // If it's a 0 (bad conditions or out of bounds), no walk.
+      if (currentScore === 0) return false;
+
+      // We need at least 2 days of history to compare against "what has usually been".
+      // If we don't have enough history yet, just rely on a decent base score.
       const distinctDays = new Set(history.map((entry) => new Date(entry.t).toDateString())).size;
-      if (distinctDays >= 2) {
-        const temps = history.map((entry) => entry.feelsLikeC);
-        const weekMax = Math.max(...temps);
-        const weekMin = Math.min(...temps);
-        if (feelsLikeC > weekMax + WEATHER_ANOMALY_MARGIN_C || feelsLikeC < weekMin - WEATHER_ANOMALY_MARGIN_C) {
-          return false;
-        }
+      if (distinctDays < 2) {
+         return currentScore > 60; 
       }
 
-      return true;
+      // Calculate historical scores to find the recent baseline
+      const historicalScores = history
+        .map(entry => calculateWalkabilityScore(entry.feelsLikeC, entry.main, routine))
+        .filter(score => score > 0); // Only average the times it was actually walkable
+
+      // If it's been terrible all week (no scores > 0), and now it's good, definitely walk!
+      if (historicalScores.length === 0) return true; 
+
+      // Find the average walkability of the recent "good" periods
+      const avgHistoricalScore = historicalScores.reduce((a, b) => a + b, 0) / historicalScores.length;
+
+      // Suggest a walk if current weather is BETTER than the recent average,
+      // OR if it's just phenomenally good (so you don't miss a perfect day even during a perfect week)
+      return currentScore > avgHistoricalScore || currentScore > 85;
     }
 
     function getCurrentGuidance(now = new Date()) {
