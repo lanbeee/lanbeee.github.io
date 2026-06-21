@@ -253,17 +253,6 @@ function doNuke(i){
   }
 }
 
-function openDayEntry(i,key){
-  const h = load()[i];
-  if(!h)return;
-  dayEntryIdx = i;
-  dayEntryTs = new Date(`${key}T12:00:00`).getTime();
-  $('day-entry-name').textContent = h.name;
-  const label = key > dateKey(Date.now()) ? 'Plan entry for' : 'Add entry for';
-  $('day-entry-sub').textContent = `${label} ${new Date(dayEntryTs).toLocaleDateString(undefined,{month:'short',day:'numeric'})}?`;
-  openSheet('day-entry-sheet');
-}
-
 function updateKeyboardLift(){
   if (paneTierActive()) {
     document.documentElement.style.setProperty('--keyboard-lift','0px');
@@ -429,6 +418,13 @@ function forgivingButtonTarget(target){
 }
 
 function bindCalendarTap(container,selector,handler){
+  // Any horizontally-scrollable pager this calendar lives inside of (the
+  // detail sheet's info/calendar/schedule pager). Swiping between those pages
+  // often starts the gesture on top of a calendar cell, so a tap here has to
+  // be sure the pager never actually moved - not just that the finger ended
+  // up close to where it started.
+  const pager = container.closest('.detail-pager');
+
   container.addEventListener('pointerdown',e=>{
     const day = e.target.closest(selector);
     if(!day || !container.contains(day))return;
@@ -439,20 +435,46 @@ function bindCalendarTap(container,selector,handler){
       id:e.pointerId,
       x:e.clientX,
       y:e.clientY,
+      maxMove:0,
       scrollHost,
       scrollTop:scrollHost ? scrollHost.scrollTop : 0,
+      pager,
+      pagerScrollLeft:pager ? pager.scrollLeft : 0,
       time:Date.now()
     };
+  },{passive:true});
+
+  container.addEventListener('pointermove',e=>{
+    if(!calendarPointer || calendarPointer.container !== container || calendarPointer.id !== e.pointerId)return;
+    // Track the furthest the finger has strayed from the start, not just the
+    // net distance at release - a swipe that springs back to its origin
+    // still moved, even if pointerup lands right where pointerdown began.
+    const dist = Math.hypot(e.clientX - calendarPointer.x,e.clientY - calendarPointer.y);
+    if(dist > calendarPointer.maxMove)calendarPointer.maxMove = dist;
   },{passive:true});
 
   container.addEventListener('pointerup',e=>{
     if(!calendarPointer || calendarPointer.container !== container || calendarPointer.id !== e.pointerId)return;
     const tap = calendarPointer;
     calendarPointer = null;
-    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
     const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
-    if(moved > 5 || scrolled > 1 || Date.now() - tap.time > 650)return;
-    handler(tap.day,e);
+    const pagerScrolled = tap.pager ? Math.abs(tap.pager.scrollLeft - tap.pagerScrollLeft) : 0;
+    if(moved > 6 || scrolled > 1 || pagerScrolled > 1 || Date.now() - tap.time > 650)return;
+    if(!tap.pager){
+      handler(tap.day,e);
+      return;
+    }
+    // A fast flick can release with almost no finger movement yet still carry
+    // the pager into its momentum/snap animation a moment later. Wait two
+    // frames and confirm the pager truly settled before treating this as a tap.
+    const settleScrollLeft = tap.pager.scrollLeft;
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        if(Math.abs(tap.pager.scrollLeft - settleScrollLeft) > 1)return;
+        handler(tap.day,e);
+      });
+    });
   },{passive:true});
 
   container.addEventListener('pointercancel',()=>{
@@ -585,7 +607,7 @@ document.addEventListener('keydown',e=>{
     if (id === 'detail-sheet' && typeof closeDetail === 'function') closeDetail();
   }
   // Also close centered modals on Escape
-  ['add-sheet','about-sheet','settings-sheet','overview-sheet','snooze-sheet','activity-sheet','day-entry-sheet','day-logs-sheet'].forEach(id=>{
+  ['add-sheet','about-sheet','settings-sheet','overview-sheet','snooze-sheet','activity-sheet','day-logs-sheet'].forEach(id=>{
     const el = $(id);
     if (el && el.classList.contains('open')) {
       e.preventDefault();
@@ -596,7 +618,6 @@ document.addEventListener('keydown',e=>{
       else if (id === 'about-sheet') closeSheet('about-sheet');
       else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
       else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
-      else if (id === 'day-entry-sheet') { dayEntryIdx = null; dayEntryTs = null; closeSheet('day-entry-sheet'); }
       else if (id === 'day-logs-sheet') { dayLogsKey = null; closeSheet('day-logs-sheet'); }
     }
   });

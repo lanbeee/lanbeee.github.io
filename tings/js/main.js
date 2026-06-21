@@ -532,14 +532,19 @@ if (_detailSheetInner) _detailSheetInner.querySelectorAll('.detail-actions butto
 bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   if(!day || detailIdx === null)return;
   const h = load()[detailIdx];
-  dayLogsKey = day.dataset.entryDay;
-  renderCalendar(h);
-  if(h && hasPlannedEntryForDay(h,day.dataset.entryDay)){
-    renderDayLogs(dayLogsKey);
+  if(!h)return;
+  const key = day.dataset.entryDay;
+  if(hasPlannedEntryForDay(h,key)){
+    dayLogsKey = key;
+    renderCalendar(h);
+    renderDayLogs(key);
     openSheet('day-logs-sheet');
     return;
   }
-  openDayEntry(detailIdx,day.dataset.entryDay);
+  const ts = new Date(`${key}T12:00:00`).getTime();
+  if(!logTingAt(detailIdx,ts))return;
+  dayLogsKey = key;
+  refreshOpenViews();
 });
 $('detail-prev-month').addEventListener('click',()=>{
   if(detailIdx === null)return;
@@ -699,6 +704,7 @@ $('open-overview').addEventListener('click',()=>{
   closeSearch();
   overviewMonthOffset = 0;
   overviewTopicFilter = 'all';
+  overviewRangeFilter = 'recent';
   const todayKey = todayIso();
   const autoOpen = sortSettings.autoOpenToday && hasItemsOnDay(todayKey);
   dayLogsKey = autoOpen ? todayKey : null;
@@ -724,6 +730,13 @@ $('overview-topic-filter').addEventListener('click',e=>{
   const btn = e.target.closest('[data-overview-topic]');
   if(!btn)return;
   overviewTopicFilter = btn.dataset.overviewTopic || 'all';
+  dayLogsKey = null;
+  renderOverview();
+});
+$('overview-range-filter').addEventListener('click',e=>{
+  const btn = e.target.closest('[data-overview-range]');
+  if(!btn)return;
+  overviewRangeFilter = btn.dataset.overviewRange || 'recent';
   dayLogsKey = null;
   renderOverview();
 });
@@ -790,18 +803,6 @@ $('activity-calendar').addEventListener('click',()=>{
   openDetailCalendar(idx);
 });
 $('activity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){activityIdx = null;closeSheet('activity-sheet');}});
-
-$('day-entry-save').addEventListener('click',()=>{
-  if(dayEntryIdx === null || dayEntryTs === null)return;
-  const ts = dayEntryTs;
-  if(!logTingAt(dayEntryIdx,ts))return;
-  closeSheet('day-entry-sheet');
-  dayEntryIdx = null;
-  dayEntryTs = null;
-  refreshOpenViews();
-});
-$('day-entry-cancel').addEventListener('click',()=>{dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');});
-$('day-entry-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayEntryIdx = null;dayEntryTs = null;closeSheet('day-entry-sheet');}});
 
 $('day-logs-overview').addEventListener('click',()=>{
   dayLogsKey = null;
