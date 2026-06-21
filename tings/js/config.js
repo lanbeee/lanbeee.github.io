@@ -129,6 +129,7 @@ let buttonPointer = null;
 let suppressNativeButton = null;
 let settingsPointer = null;
 let detailTuneOriginal = null;
+let detailScheduleView = 'allowed';
 let calendarPointer = null;
 let cardPointer = null;
 let suppressCardClick = null;

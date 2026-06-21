@@ -391,6 +391,21 @@ $('detail-topic-chips').addEventListener('click',e=>{
 });
 $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
+$('detail-preferred-weekday-chips').addEventListener('click',toggleScheduleChip);
+$('detail-preferred-monthday-chips').addEventListener('click',toggleScheduleChip);
+$('detail-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
+$('detail-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
+$('detail-time-clear').addEventListener('click',()=>{
+  $('detail-time-start').value = '';
+  $('detail-time-end').value = '';
+  $('detail-time-clear').hidden = true;
+  setDetailDirty();
+});
+$('detail-schedule-view-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-schedule-view]');
+  if(!opt)return;
+  setScheduleView(opt.dataset.scheduleView);
+});
 $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');
@@ -482,6 +497,14 @@ $('detail-save').addEventListener('click',()=>{
   h.topics = normalizeTopics(current.topics);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
   h.allowedMonthDays = normalizeAllowedMonthDays(current.allowedMonthDays);
+  h.preferredWeekdays = normalizeAllowedWeekdays(current.preferredWeekdays);
+  h.preferredMonthDays = normalizeAllowedMonthDays(current.preferredMonthDays);
+  h.allowedTimeStart = current.allowedTimeStart;
+  h.allowedTimeEnd = current.allowedTimeEnd;
+  if(h.allowedTimeStart === null || h.allowedTimeEnd === null){
+    h.allowedTimeStart = null;
+    h.allowedTimeEnd = null;
+  }
   h.durationMinutes = current.durationMinutes;
   h.flexibilityDays = current.flexibilityDays;
   h.target = current.type === 'zero' ? null : clampRhythmValue(current.target || h.target || 7);

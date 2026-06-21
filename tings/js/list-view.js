@@ -43,6 +43,35 @@ function renderScheduleChips(prefix,h = {}){
       return `<button type="button" class="monthday-chip ${on ? 'on' : ''}" data-monthday="${day}" aria-pressed="${on}">${day}</button>`;
     }).join('');
   }
+  const prefWeekdays = new Set(normalizeAllowedWeekdays(h.preferredWeekdays));
+  const prefMonthDays = new Set(normalizeAllowedMonthDays(h.preferredMonthDays));
+  const prefWeekdayWrap = $(`${prefix}-preferred-weekday-chips`);
+  const prefMonthWrap = $(`${prefix}-preferred-monthday-chips`);
+  if(prefWeekdayWrap){
+    prefWeekdayWrap.innerHTML = WEEKDAY_LABELS.map((label,day)=>{
+      const on = prefWeekdays.has(day);
+      return `<button type="button" class="schedule-chip preferred ${on ? 'on' : ''}" data-weekday="${day}" aria-pressed="${on}">${label}</button>`;
+    }).join('');
+  }
+  if(prefMonthWrap){
+    prefMonthWrap.innerHTML = Array.from({length:31},(_,i)=>{
+      const day = i + 1;
+      const on = prefMonthDays.has(day);
+      return `<button type="button" class="monthday-chip preferred ${on ? 'on' : ''}" data-monthday="${day}" aria-pressed="${on}">${day}</button>`;
+    }).join('');
+  }
+}
+
+function minutesToTimeInput(minutes){
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+function timeInputToMinutes(value){
+  if(!value)return null;
+  const [h,m] = value.split(':').map(Number);
+  if(Number.isNaN(h) || Number.isNaN(m))return null;
+  return h * 60 + m;
 }
 
 function toggleScheduleChip(e){
@@ -50,7 +79,7 @@ function toggleScheduleChip(e){
   if(!btn)return;
   btn.classList.toggle('on');
   btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
-  if(btn.closest('#detail-weekday-chips,#detail-monthday-chips'))setDetailDirty();
+  if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips'))setDetailDirty();
 }
 
 function createAddTopicPill(){
@@ -442,7 +471,11 @@ function cardMeta(h,options = {}){
   if(hasDaySchedule(h)){
     const eligible = nextEligibleShort(h);
     const title = [scheduleSummary(h),nextEligibleCopy(h)].filter(Boolean).join(' · ');
-    parts.push(`<span class="context-pill schedule ${eligible ? '' : 'icon-only'}" title="${escapeHtml(title)}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(eligible)}</span>`);
+    const prefClass = hasPreferredDays(h) ? ' has-preferred' : '';
+    parts.push(`<span class="context-pill schedule${prefClass} ${eligible ? '' : 'icon-only'}" title="${escapeHtml(title)}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(eligible)}</span>`);
+  }
+  if(hasTimeWindow(h)){
+    parts.push(`<span class="context-pill time" title="time window"><i class="ti ti-clock-hour-4" aria-hidden="true"></i>${escapeHtml(timeWindowSummary(h))}</span>`);
   }
   const topics = normalizeTopics(h.topics);
   if(options.forceTopics || sortSettings.showTopicsOnCards){

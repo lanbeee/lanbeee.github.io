@@ -25,6 +25,8 @@ function openDetail(i){
   $('detail-flexibility').value = h.flexibilityDays || 0;
   renderTopicChips('detail-topic-chips',h.topics);
   renderScheduleChips('detail',h);
+  renderTimeWindowInputs(h);
+  setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
   detailTuneOriginal = {
@@ -36,6 +38,10 @@ function openDetail(i){
     topics:normalizeTopics(h.topics),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
+    preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
+    preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
+    allowedTimeStart:h.allowedTimeStart ?? null,
+    allowedTimeEnd:h.allowedTimeEnd ?? null,
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     flexibilityDays:h.flexibilityDays || 0
   };
@@ -85,7 +91,29 @@ function detailHeaderLine(h){
     const next = nextEligibleShort(h);
     if(next)parts.push(next);
   }
+  if(hasTimeWindow(h))parts.push(timeWindowSummary(h));
   return parts.filter(Boolean).join(' · ');
+}
+
+function renderTimeWindowInputs(h = {}){
+  const start = $('detail-time-start');
+  const end = $('detail-time-end');
+  const clear = $('detail-time-clear');
+  if(!start || !end)return;
+  if(hasTimeWindow(h)){
+    start.value = minutesToTimeInput(h.allowedTimeStart);
+    end.value = minutesToTimeInput(h.allowedTimeEnd);
+    if(clear)clear.hidden = false;
+  }else{
+    start.value = '';
+    end.value = '';
+    if(clear)clear.hidden = true;
+  }
+}
+function syncTimeClearBtn(){
+  const clear = $('detail-time-clear');
+  if(!clear)return;
+  clear.hidden = !$('detail-time-start').value && !$('detail-time-end').value;
 }
 
 function currentDetailTune(){
@@ -98,6 +126,10 @@ function currentDetailTune(){
     topics:selectedTopicsFrom('detail-topic-chips'),
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
     allowedMonthDays:selectedMonthDaysFrom('detail-monthday-chips'),
+    preferredWeekdays:selectedWeekdaysFrom('detail-preferred-weekday-chips'),
+    preferredMonthDays:selectedMonthDaysFrom('detail-preferred-monthday-chips'),
+    allowedTimeStart:timeInputToMinutes($('detail-time-start').value),
+    allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
     durationMinutes:clampDuration($('detail-duration').value),
     flexibilityDays:clampFlexibility($('detail-flexibility').value)
   };
@@ -117,7 +149,11 @@ function setDetailDirty(force){
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
       current.allowedWeekdays.join('|') !== detailTuneOriginal.allowedWeekdays.join('|') ||
-      current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|'))
+      current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|') ||
+      current.preferredWeekdays.join('|') !== detailTuneOriginal.preferredWeekdays.join('|') ||
+      current.preferredMonthDays.join('|') !== detailTuneOriginal.preferredMonthDays.join('|') ||
+      current.allowedTimeStart !== detailTuneOriginal.allowedTimeStart ||
+      current.allowedTimeEnd !== detailTuneOriginal.allowedTimeEnd)
   );
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }
@@ -131,14 +167,27 @@ function restoreDetailTune(){
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   renderTopicChips('detail-topic-chips',detailTuneOriginal.topics);
   renderScheduleChips('detail',detailTuneOriginal);
+  renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
   if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
   setDetailDirty(false);
 }
 
+function setScheduleView(view){
+  detailScheduleView = view;
+  document.querySelectorAll('#detail-schedule-view-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.scheduleView === view);
+  });
+  const allowedGroup = $('detail-schedule-allowed');
+  const preferredGroup = $('detail-schedule-preferred');
+  if(allowedGroup)allowedGroup.hidden = view !== 'allowed';
+  if(preferredGroup)preferredGroup.hidden = view !== 'preferred';
+}
+
 function closeDetail(){
   detailIdx = null;
   detailTuneOriginal = null;
+  detailScheduleView = 'allowed';
   closeSheet('detail-sheet');
 }
 

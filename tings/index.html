@@ -170,10 +170,31 @@
               </label>
             </div>
           </div>
-          <span class="settings-sublabel">only on these days</span>
-          <div class="schedule-chip-row" id="detail-weekday-chips"></div>
-          <span class="settings-sublabel compact-label">only on these month days</span>
-          <div class="monthday-chip-row" id="detail-monthday-chips"></div>
+          <div class="seg schedule-seg" id="detail-schedule-view-seg">
+            <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
+            <button class="seg-opt" data-schedule-view="preferred">preferred</button>
+          </div>
+          <div id="detail-schedule-allowed">
+            <span class="settings-sublabel">days</span>
+            <div class="schedule-chip-row" id="detail-weekday-chips"></div>
+            <span class="settings-sublabel compact-label">month days</span>
+            <div class="monthday-chip-row" id="detail-monthday-chips"></div>
+          </div>
+          <div id="detail-schedule-preferred" hidden>
+            <span class="settings-sublabel">days</span>
+            <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
+            <span class="settings-sublabel compact-label">month days</span>
+            <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
+          </div>
+          <div class="schedule-time-row">
+            <span class="settings-sublabel compact-label">time window</span>
+            <div class="time-inputs">
+              <input type="time" id="detail-time-start" class="time-input" aria-label="start time" />
+              <span class="time-sep">—</span>
+              <input type="time" id="detail-time-end" class="time-input" aria-label="end time" />
+            </div>
+            <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
+          </div>
           <p class="field-hint" id="detail-target-help">Target days between entries.</p>
           <div class="range-row" id="detail-slider-row">
             <div class="crown-dial" id="detail-days-slider" role="slider" tabindex="0" aria-label="Repetition period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
