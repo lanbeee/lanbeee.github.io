@@ -1090,6 +1090,10 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   height:var(--cal-cell-h,36px);flex-direction:column;gap:2px;font-size:10px;
 }
 .rich-month-grid .cal-day.has-entry{color:var(--text);}
+.month-grid.strip-grid{--cal-cell-h:48px;}
+.strip-grid .strip-wd{font-size:8.5px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.02em;}
+.cal-day.today .strip-wd{color:var(--text2);}
+.strip-grid .strip-num{font-size:12px;font-weight:600;}
 .cal-dots{display:flex;gap:2px;align-items:center;justify-content:center;min-height:5px;}
 .cal-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);}
 .cal-dot.hit{background:var(--teal-icon);}
@@ -1552,6 +1556,9 @@ select{
   white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
 }
 .topic-filter.on{background:var(--text);color:var(--bg);border-color:var(--text);}
+.range-filter-row{margin-bottom:8px;}
+.range-filter{font-weight:700;}
+.range-filter.on{background:var(--purple-icon);color:var(--purple-bg);border-color:var(--purple-icon);}
 .activity-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;}
 .activity-head .sheet-sub{margin-bottom:0;}
 .activity-calendar-btn{width:36px;height:36px;flex-shrink:0;background:var(--bg2);}
@@ -1695,6 +1702,7 @@ body[data-pane-count="3"] #undo-toast{
   .graph{min-height:142px;}
   .graph-bars{height:84px;}
   .rich-month-grid .cal-day{height:31px;}
+  .month-grid.strip-grid .cal-day{height:40px;}
   .calendar-legend{margin-top:7px;}
   .habit-actions{margin-top:12px;padding-top:10px;}
   .habit-action{min-height:50px;padding-top:8px;padding-bottom:8px;}
