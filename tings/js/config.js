@@ -79,9 +79,20 @@ const FOCUS_TYPE_SCALE = {
 
 const $ = id => document.getElementById(id);
 
+// "Is the layout wide enough to mount sheets in side panes?"  True whenever
+// the viewport can fit 2+ panes (>= 960px). Driven by body[data-pane-count]
+// which viewport.js keeps in sync with the window size.
 function paneTierActive() {
-  const tier = document.body && document.body.dataset ? document.body.dataset.tier : '';
-  return tier && tier !== 'mobile-portrait';
+  const count = document.body && document.body.dataset ? document.body.dataset.paneCount : '';
+  return count === '2' || count === '3';
+}
+
+function isThreePaneTier() {
+  return document.body && document.body.dataset && document.body.dataset.paneCount === '3';
+}
+
+function isTwoPaneTier() {
+  return document.body && document.body.dataset && document.body.dataset.paneCount === '2';
 }
 
 let detailIdx = null;

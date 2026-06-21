@@ -7,22 +7,49 @@ function getPane() {
   return $('pane-detail');
 }
 
+function getOverviewPane() {
+  return $('pane-overview');
+}
+
 // Find the inner .sheet element for a given sheet wrap, regardless of whether
-// it's still inside the wrap or has been moved to the right pane.
+// it's still inside the wrap or has been moved to a pane.
 function getSheetInner(sheetId) {
   const wrap = $(sheetId);
   if (!wrap) return null;
-  // Look in the wrap first.
   const inWrap = wrap.querySelector('.sheet');
   if (inWrap) return inWrap;
-  // Otherwise check the pane. The pane's active sheet id is stored in
-  // data-active-sheet, so we know if it should be this one.
   const pane = getPane();
-  if (!pane) return null;
-  if (pane.dataset.activeSheet === sheetId) {
+  if (pane && pane.dataset.activeSheet === sheetId) {
     return pane.querySelector('.sheet');
   }
+  const overviewPane = getOverviewPane();
+  if (overviewPane && sheetId === 'overview-sheet') {
+    return overviewPane.querySelector('.overview-sheet');
+  }
   return null;
+}
+
+// The overview sheet is a permanent pane on wide tiers. Move its inner content
+// between #overview-sheet (modal wrap, mobile-portrait only) and #pane-overview
+// (right-side pane, all wide tiers) based on the current tier.
+function ensureOverviewPlacement() {
+  const wrap = $('overview-sheet');
+  const pane = getOverviewPane();
+  if (!wrap || !pane) return;
+  const inner = wrap.querySelector('.sheet.overview-sheet')
+    || pane.querySelector('.sheet.overview-sheet');
+  if (!inner) return;
+  if (paneTierActive()) {
+    if (inner.parentElement !== pane) {
+      wrap.removeChild(inner);
+      pane.appendChild(inner);
+    }
+  } else {
+    if (inner.parentElement !== wrap) {
+      pane.removeChild(inner);
+      wrap.appendChild(inner);
+    }
+  }
 }
 
 function mountInPane(sheetId) {
@@ -277,6 +304,10 @@ function openSheet(id){
     mountInPane(id);
     return;
   }
+  // The overview is a permanent pane on wide tiers; the modal is never opened.
+  if (paneTierActive() && id === 'overview-sheet') {
+    return;
+  }
   $(id).classList.add('open');
   updateFullPageState();
   updateKeyboardLift();
@@ -286,6 +317,10 @@ function closeSheet(id){
   const pane = getPane();
   if (pane && pane.dataset.activeSheet === id) {
     unmountPane();
+    return;
+  }
+  // Overview is a permanent pane on wide tiers; there is nothing to close.
+  if (paneTierActive() && id === 'overview-sheet') {
     return;
   }
   $(id).classList.remove('open');
@@ -299,8 +334,10 @@ function isFullPageSheet(id){
 }
 
 function shouldMountInPane(id) {
-  // Detail/overview go into the right pane. About/settings remain as modals.
-  return id === 'detail-sheet' || id === 'overview-sheet';
+  // Only the detail sheet is mounted into a pane. The overview lives in its
+  // own permanent .pane-overview slot on wide tiers; about/settings stay as
+  // centered modals.
+  return id === 'detail-sheet';
 }
 
 function updateFullPageState(){
@@ -484,6 +521,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('tierchange',()=>{
   reparentSearch();
   updateKeyboardLift();
+  ensureOverviewPlacement();
   // Show/hide the app bar based on tier
   const appBar = $('app-bar');
   if (appBar) {
@@ -500,12 +538,20 @@ document.addEventListener('tierchange',()=>{
       pane.setAttribute('hidden','');
     }
   }
+  // On 2-pane tiers, if the detail pane was previously the only visible right
+  // pane, also drop body.pane-active so the overview comes back into view.
+  if (!isThreePaneTier() && !pane?.dataset?.activeSheet) {
+    document.body.classList.remove('pane-active');
+  }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
   ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
+  updateFullPageState();
   if (typeof render === 'function') render();
+  // The overview pane needs fresh content on every tier change.
+  if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
   if (typeof updateSortButton === 'function') updateSortButton();
 });
 
@@ -520,6 +566,7 @@ document.addEventListener('click',e=>{
   if (e.target.closest('.ting-card')) return;
   if (e.target.closest('.app-bar')) return;
   if (e.target.closest('.pane-list')) return;
+  if (e.target.closest('.pane-overview')) return; // 3-pane: don't close detail on overview click
   if (e.target.closest('.sheet-wrap')) return; // any modal (incl. just-closed add)
   clearTimeout(paneCloseTimer);
   paneCloseTimer = setTimeout(()=>{

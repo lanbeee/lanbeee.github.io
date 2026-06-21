@@ -55,35 +55,26 @@ function openDetail(i){
     if(pager)pager.scrollTo({left:0,behavior:'auto'});
   }
   renderDetailTabs();
-  setDetailActivePage('insight');
   updateDetailPagerDots();
 }
 
 function openDetailCalendar(i){
   openDetail(i);
   requestAnimationFrame(()=>{
-    if (paneTierActive()) {
-      setDetailActivePage('month');
-    } else {
-      const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-      if(!pager)return;
-      pager.scrollTo({left:pager.clientWidth,behavior:'auto'});
-      updateDetailPagerDots();
-    }
+    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+    if(!pager)return;
+    pager.scrollTo({left:pager.clientWidth,behavior:'auto'});
+    updateDetailPagerDots();
   });
 }
 
 function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
-    if (paneTierActive()) {
-      setDetailActivePage('schedule');
-    } else {
-      const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-      if(!pager)return;
-      pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
-      updateDetailPagerDots();
-    }
+    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+    if(!pager)return;
+    pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
+    updateDetailPagerDots();
   });
 }
 
@@ -443,55 +434,22 @@ function updateDetailPagerDots(){
   });
 }
 
-const DETAIL_TABS = [
-  {key:'insight',label:'insight',icon:'ti ti-chart-line'},
-  {key:'month',label:'month',icon:'ti ti-calendar-month'},
-  {key:'schedule',label:'schedule',icon:'ti ti-calendar-time'},
-  {key:'identity',label:'identity',icon:'ti ti-id'}
-];
-
 function setDetailActivePage(key){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if (!pager) return;
-  const pages = [...pager.querySelectorAll('.detail-page')];
-  if (paneTierActive()) {
-    pages.forEach(p=>p.classList.toggle('is-active',p.dataset.page === key));
-    [...pager.querySelectorAll('.detail-tab')].forEach(t=>{
-      t.classList.toggle('is-active',t.dataset.tab === key);
-    });
-  }
-  // On mobile-portrait, the horizontal pager shows all pages side by side;
-  // scrolling to the right page is the responsibility of the caller.
+  // Every tier uses the mobile-portrait layout: horizontal scroll-snap pager.
+  // The caller has already scrolled to the right page; this also updates the
+  // dot indicator so the user sees where they are.
+  updateDetailPagerDots();
 }
 
 function renderDetailTabs(){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if (!pager) return;
-  if (!paneTierActive()) {
-    // mobile-portrait: remove tabs if any, ensure pages display normally
-    const existingTabs = pager.querySelector('.detail-tabs');
-    if (existingTabs) existingTabs.remove();
-    [...pager.querySelectorAll('.detail-page')].forEach(p=>p.classList.remove('is-active'));
-    return;
-  }
-  if (pager.querySelector('.detail-tabs')) return;
-  const tabsWrap = document.createElement('div');
-  tabsWrap.className = 'detail-tabs';
-  tabsWrap.innerHTML = DETAIL_TABS.map(tab => `
-    <button type="button" class="detail-tab" data-tab="${tab.key}">
-      <i class="${tab.icon}" aria-hidden="true"></i><span>${tab.label}</span>
-    </button>
-  `).join('');
-  pager.insertBefore(tabsWrap, pager.firstChild);
-  // Tag the existing pages with data-page
-  const pages = [...pager.querySelectorAll('.detail-page')];
-  const order = ['insight','month','schedule','identity'];
-  pages.forEach((p,i)=>{p.dataset.page = order[i] || '';});
-  tabsWrap.addEventListener('click',e=>{
-    const btn = e.target.closest('[data-tab]');
-    if (!btn) return;
-    setDetailActivePage(btn.dataset.tab);
-  });
+  // No sidebar tabs in any tier — panes now look exactly like mobile-portrait.
+  const existingTabs = pager.querySelector('.detail-tabs');
+  if (existingTabs) existingTabs.remove();
+  [...pager.querySelectorAll('.detail-page')].forEach(p=>p.classList.remove('is-active'));
 }
 
 function hasPlannedEntryForDay(h,key){
@@ -511,7 +469,7 @@ function monthFrame(offset = 0){
   const first = new Date(year,month,1);
   const last = new Date(year,month + 1,0);
   const label = first.toLocaleDateString(undefined,{month:'short',year:'numeric'});
-  return {year,month,first,last,today:dateKey(Date.now())};
+  return {year,month,first,last,label,today:dateKey(Date.now())};
 }
 
 document.addEventListener('tierchange',()=>{
@@ -519,11 +477,6 @@ document.addEventListener('tierchange',()=>{
   // Re-open detail if it was open, so the layout applies
   if (detailIdx !== null) {
     const idx = detailIdx;
-    if (paneTierActive()) {
-      openSheet('detail-sheet');
-      setDetailActivePage('insight');
-    } else {
-      openSheet('detail-sheet');
-    }
+    openSheet('detail-sheet');
   }
 });

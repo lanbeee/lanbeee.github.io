@@ -17,8 +17,7 @@
   --dur-fast:120ms;
   --dur-med:190ms;
   --dur-slow:260ms;
-  --list-width:100%;
-  --detail-width:0px;
+  --pane-width:480px;
   --sheet-max-width:480px;
   --sheet-radius:20px 20px 0 0;
   --detail-mode:pager;
@@ -52,48 +51,32 @@
 }
 
 body[data-tier="mobile-landscape"]{
-  --list-width:58%;
-  --detail-width:42%;
   --sheet-max-width:520px;
   --sheet-radius:18px;
   --detail-mode:tabs;
   --bar-height:52px;
   --cal-cell-h:36px;
-  --gutter:0px;
-  --app-pad:0 12px;
 }
 body[data-tier="tablet-portrait"]{
-  --list-width:360px;
-  --detail-width:min(640px,calc(100vw - 360px));
   --sheet-max-width:600px;
   --sheet-radius:18px;
   --detail-mode:tabs;
   --bar-height:56px;
   --cal-cell-h:42px;
-  --gutter:24px;
-  --app-pad:0 18px;
 }
 body[data-tier="tablet-landscape"]{
-  --list-width:360px;
-  --detail-width:min(720px,calc(100vw - 360px - 32px));
   --sheet-max-width:640px;
   --sheet-radius:18px;
   --detail-mode:tabs;
   --bar-height:56px;
   --cal-cell-h:46px;
-  --gutter:32px;
-  --app-pad:0 20px;
 }
 body[data-tier="desktop"]{
-  --list-width:440px;
-  --detail-width:min(820px,calc(100vw - 440px - 80px));
   --sheet-max-width:760px;
   --sheet-radius:20px;
   --detail-mode:tabs;
   --bar-height:60px;
   --cal-cell-h:48px;
-  --gutter:48px;
-  --app-pad:0 22px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 [hidden]{display:none !important;}
@@ -105,37 +88,61 @@ body{
   min-height:100dvh;padding:0 0 132px;
   overscroll-behavior-y:contain;
 }
-body[data-tier="mobile-landscape"],
-body[data-tier="tablet-portrait"],
-body[data-tier="tablet-landscape"],
-body[data-tier="desktop"]{
+/* 2+ panes: the .app is a multi-column grid centred in the viewport. */
+body[data-pane-count="2"],
+body[data-pane-count="3"]{
   padding:0;
   display:flex;
   justify-content:center;
   align-items:stretch;
 }
-.app{width:100%;max-width:480px;background:var(--bg);min-height:100dvh;padding:var(--app-pad,0 16px);}
-body[data-tier="mobile-landscape"] .app,
-body[data-tier="tablet-portrait"] .app,
-body[data-tier="tablet-landscape"] .app,
-body[data-tier="desktop"] .app{
-  max-width:calc(var(--list-width) + var(--detail-width) + var(--gutter));
+
+/* 1-pane: behave exactly like mobile-portrait — single 480px column, no bar. */
+body[data-pane-count="1"] .app{
   width:100%;
+  max-width:var(--pane-width);
+  margin:0 auto;
+  background:var(--bg);
   min-height:100dvh;
+  padding:var(--app-pad);
+}
+/* 2-pane: two 480px columns with a single shared top bar. */
+body[data-pane-count="2"] .app{
+  width:100%;
+  max-width:calc(var(--pane-width) * 2);
+  min-height:100dvh;
+  height:100dvh;
   display:grid;
-  grid-template-columns:var(--list-width) var(--detail-width);
+  grid-template-columns:repeat(2, minmax(0, var(--pane-width)));
   grid-template-rows:var(--bar-height) 1fr;
   grid-template-areas:
     "bar bar"
-    "list detail";
+    "list middle";
   background:var(--bg2);
   padding:0;
   gap:0;
   align-items:stretch;
-  height:100dvh;
 }
-body[data-tier="mobile-landscape"] .app{height:auto;min-height:100dvh;max-width:100%;}
+/* 3-pane: three 480px columns with a single shared top bar. */
+body[data-pane-count="3"] .app{
+  width:100%;
+  max-width:calc(var(--pane-width) * 3);
+  min-height:100dvh;
+  height:100dvh;
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, var(--pane-width)));
+  grid-template-rows:var(--bar-height) 1fr;
+  grid-template-areas:
+    "bar bar bar"
+    "list middle right";
+  background:var(--bg2);
+  padding:0;
+  gap:0;
+  align-items:stretch;
+}
 
+/* All panes are phone-shaped: 480px wide, light background, identical look
+   to the mobile-portrait list pane. */
 .pane-list{
   grid-area:list;
   background:var(--bg);
@@ -146,24 +153,53 @@ body[data-tier="mobile-landscape"] .app{height:auto;min-height:100dvh;max-width:
   position:relative;
   min-width:0;
 }
-body[data-tier="mobile-portrait"] .pane-list{
+body[data-pane-count="1"] .pane-list{
   overflow-y:visible;
   overflow-x:visible;
 }
-body[data-tier="tablet-portrait"] .pane-list,
-body[data-tier="tablet-landscape"] .pane-list,
-body[data-tier="desktop"] .pane-list{padding:0 20px;}
-body[data-tier="mobile-landscape"] .pane-list{padding:0 14px;}
+body[data-pane-count="2"] .pane-list,
+body[data-pane-count="3"] .pane-list{padding:0 20px;}
 
-.pane-detail{
-  grid-area:detail;
-  background:var(--bg2);
+.pane-overview{
+  display:none;
+  grid-area:middle;
+  background:var(--bg);
+  border-right:0.5px solid var(--border);
   overflow-y:auto;
-  padding:20px 24px 32px;
+  padding:0 20px 32px;
   min-width:0;
   position:relative;
 }
-body[data-tier="desktop"] .pane-detail{padding:28px 40px 40px;}
+body[data-pane-count="2"] .pane-overview,
+body[data-pane-count="3"] .pane-overview{
+  display:block;
+}
+body[data-pane-count="3"] .pane-overview{
+  border-right:0.5px solid var(--border);
+}
+
+.pane-detail{
+  display:none;
+  grid-area:middle;
+  background:var(--bg);
+  overflow-y:auto;
+  padding:0 20px 32px;
+  min-width:0;
+  position:relative;
+}
+body[data-pane-count="2"].pane-active .pane-detail,
+body[data-pane-count="3"] .pane-detail{
+  display:block;
+}
+body[data-pane-count="3"] .pane-detail{
+  grid-area:right;
+}
+
+/* 2-pane: when detail is open, hide the overview slot. */
+body[data-pane-count="2"].pane-active .pane-overview{
+  display:none !important;
+}
+
 .pane-detail:empty{padding:0;}
 .pane-detail:empty::before{
   content:"Pick a habit to see its detail";
@@ -174,12 +210,32 @@ body[data-tier="desktop"] .pane-detail{padding:28px 40px 40px;}
   text-align:center;
   padding:24px;
 }
+/* On 2+ panes the overview is already a permanent pane, so the calendar
+   button in the app-bar is redundant — the user is already looking at it. */
+body[data-pane-count="2"] #bar-open-overview,
+body[data-pane-count="3"] #bar-open-overview{
+  display:none;
+}
 
-/* When a sheet is mounted inside pane-detail, strip sheet chrome */
+/* On 2+ panes the overview lives inside .pane-overview instead of as a modal. */
+body[data-pane-count="2"] #overview-sheet,
+body[data-pane-count="3"] #overview-sheet{
+  display:none !important;
+}
+/* The "done" button is only meaningful when the overview is a modal. On 2+
+   panes the overview is a permanent pane, so hide it. */
+body[data-pane-count="2"] .pane-overview .overview-actions,
+body[data-pane-count="3"] .pane-overview .overview-actions{
+  display:none;
+}
+
+/* When a sheet is mounted inside a pane, strip sheet chrome */
 .pane-detail .detail-sheet,
 .pane-detail .overview-sheet,
 .pane-detail .settings-sheet,
-.pane-detail .about-sheet{
+.pane-detail .about-sheet,
+.pane-overview .overview-sheet,
+.pane-overview .detail-sheet{
   position:static;inset:auto;
   width:100%;max-width:none;
   min-height:0;max-height:none;
@@ -189,87 +245,35 @@ body[data-tier="desktop"] .pane-detail{padding:28px 40px 40px;}
   margin:0;
   border:0;
 }
-.pane-detail .detail-head{position:static;backdrop-filter:none;-webkit-backdrop-filter:none;background:transparent;}
-.pane-detail .detail-pager{
-  overflow:visible;
-  scroll-snap-type:none;
-  margin:0;padding:0;
-  gap:20px;
-  display:grid;
-  grid-template-columns:160px minmax(0,1fr);
-  align-items:start;
-}
-body[data-tier="mobile-landscape"] .pane-detail .detail-pager,
-body[data-tier="tablet-portrait"] .pane-detail .detail-pager{
-  grid-template-columns:1fr;
-  gap:12px;
-}
-body[data-tier="mobile-landscape"] .pane-detail .detail-tabs,
-body[data-tier="tablet-portrait"] .pane-detail .detail-tabs{
-  flex-direction:row;
-  flex-wrap:wrap;
-  gap:6px;
-  padding:0 0 8px;
-}
-body[data-tier="mobile-landscape"] .pane-detail .detail-tab,
-body[data-tier="tablet-portrait"] .pane-detail .detail-tab{
-  padding:8px 12px;
-  font-size:12.5px;
-}
-body[data-tier="mobile-landscape"] .pane-detail .detail-tab i,
-body[data-tier="tablet-portrait"] .pane-detail .detail-tab i{
-  font-size:16px;
-}
-.pane-detail .detail-page{
-  flex:0 0 auto;min-height:0;scroll-snap-align:none;
-  display:none;
-  min-width:0;
-}
-.pane-detail .detail-page.is-active{display:block;}
-.pane-detail .detail-dots{display:none;}
+/* Detail inside a pane looks and behaves exactly like the mobile-portrait
+   detail sheet: horizontal scroll-snap pager, dots indicator, sticky head,
+   done button at the bottom. The base .detail-pager / .detail-page /
+   .detail-head / .detail-dots rules apply unchanged. */
 .pane-detail .detail-actions,
 .pane-detail .tune-actions,
 .pane-detail .overview-actions,
 .pane-detail .settings-actions,
-.pane-detail .about-actions{
+.pane-detail .about-actions,
+.pane-overview .overview-actions{
   position:static;left:auto;bottom:auto;transform:none;
   width:auto;margin-top:14px;padding:0;
   background:transparent;border:0;border-radius:0;
   box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
 }
 
-.detail-tabs{
-  display:flex;flex-direction:column;gap:4px;
-  position:sticky;top:0;
-  padding:0 0 4px;
-  min-width:0;
+/* Sheets that live permanently in a pane should fill the pane width and not
+   take the modal max-width (which would overflow the 480px pane). */
+body[data-pane-count="2"] .pane-overview .sheet,
+body[data-pane-count="3"] .pane-overview .sheet,
+body[data-pane-count="2"] .pane-detail .sheet,
+body[data-pane-count="3"] .pane-detail .sheet{
+  width:100%;
+  max-width:none;
+  border-radius:0;
+  padding:0 0 24px;
+  max-height:none;
 }
-.detail-tab{
-  border:0;background:transparent;color:var(--text2);
-  font:inherit;font-size:13px;font-weight:600;
-  text-align:left;cursor:pointer;
-  padding:10px 12px;border-radius:10px;
-  -webkit-tap-highlight-color:transparent;
-  display:flex;align-items:center;gap:9px;
-  transition:background var(--dur-fast) ease,color var(--dur-fast) ease;
-}
-.detail-tab i{font-size:18px;color:var(--text3);flex:0 0 auto;}
-.detail-tab span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.detail-tab:hover{background:var(--bg);color:var(--text);}
-.detail-tab.is-active{background:var(--bg);color:var(--text);font-weight:650;}
-.detail-tab.is-active i{color:var(--teal-icon);}
-body[data-tier="tablet-portrait"] .pane-detail .detail-pager{
-  grid-template-columns:160px minmax(0,1fr);
-  gap:20px;
-}
-body[data-tier="tablet-landscape"] .pane-detail .detail-pager{
-  grid-template-columns:180px minmax(0,1fr);
-  gap:24px;
-}
-body[data-tier="desktop"] .pane-detail .detail-pager{
-  grid-template-columns:200px minmax(0,1fr);
-  gap:28px;
-}
+
 .topbar{
   display:flex;align-items:center;justify-content:center;
   padding:12px 16px;position:sticky;top:10px;background:var(--bg);
@@ -280,10 +284,8 @@ body[data-tier="desktop"] .pane-detail .detail-pager{
   max-height:120px;
   will-change:transform,opacity;
 }
-body[data-tier="mobile-landscape"] .topbar,
-body[data-tier="tablet-portrait"] .topbar,
-body[data-tier="tablet-landscape"] .topbar,
-body[data-tier="desktop"] .topbar{
+body[data-pane-count="2"] .topbar,
+body[data-pane-count="3"] .topbar{
   display:none;
 }
 body.header-hidden .topbar{
@@ -293,7 +295,7 @@ body.search-active .topbar,
 body.search-active #home-topic-filter{
   opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
 }
-body[data-tier="mobile-portrait"].search-active .topbar{
+body[data-pane-count="1"].search-active .topbar{
   max-height:0;
   padding-top:0;padding-bottom:0;
   margin-top:0;
@@ -301,13 +303,13 @@ body[data-tier="mobile-portrait"].search-active .topbar{
   box-shadow:none;
   overflow:hidden;
 }
-body[data-tier="mobile-portrait"].search-active #home-topic-filter{
+body[data-pane-count="1"].search-active #home-topic-filter{
   max-height:0;
   margin-top:0;margin-bottom:0;
   padding-top:0;padding-bottom:0;
   overflow:hidden;
 }
-body[data-tier="mobile-portrait"].search-active{
+body[data-pane-count="1"].search-active{
   --nav-bottom:14px;
 }
 .wordmark{
@@ -345,10 +347,8 @@ body[data-tier="mobile-portrait"].search-active{
   position:sticky;top:0;z-index:30;
   min-height:var(--bar-height);
 }
-body[data-tier="mobile-landscape"] .app-bar,
-body[data-tier="tablet-portrait"] .app-bar,
-body[data-tier="tablet-landscape"] .app-bar,
-body[data-tier="desktop"] .app-bar{
+body[data-pane-count="2"] .app-bar,
+body[data-pane-count="3"] .app-bar{
   display:flex;
 }
 .app-bar[hidden]{display:none !important;}
@@ -413,10 +413,8 @@ body[data-tier="desktop"] .app-bar{
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,bottom var(--dur-slow) var(--ease-snappy);
   will-change:transform;
 }
-body[data-tier="mobile-landscape"] .bottom-nav,
-body[data-tier="tablet-portrait"] .bottom-nav,
-body[data-tier="tablet-landscape"] .bottom-nav,
-body[data-tier="desktop"] .bottom-nav{
+body[data-pane-count="2"] .bottom-nav,
+body[data-pane-count="3"] .bottom-nav{
   display:none;
 }
 body.nav-suppressed .bottom-nav{
@@ -557,12 +555,8 @@ body.reach-pad #list{padding-top:220px;}
   .card-action-btn:hover{background:var(--bg2);color:var(--text);}
 }
 .card-action-btn[data-action="nuke"]:hover{color:var(--red-icon);background:var(--red-bg);}
-body[data-tier="mobile-landscape"] .card-actions,
-body[data-tier="tablet-portrait"] .card-actions,
-body[data-tier="tablet-landscape"] .card-actions,
-body[data-tier="desktop"] .card-actions{
-  display:flex;
-}
+/* Snooze/delete buttons stay hidden everywhere; swipe-on-the-card is the
+   only way to access them (matches mobile-portrait behavior on every pane). */
 
 .ting-card.hit{border-color:color-mix(in srgb,var(--teal-icon) 28%,var(--border));}
 .ting-card.warn{border-color:color-mix(in srgb,var(--amber-icon) 30%,var(--border));}
@@ -728,26 +722,16 @@ body[data-tier="desktop"] .card-actions{
 #add-sheet,#about-sheet,#detail-sheet,#overview-sheet,#settings-sheet{
   align-items:stretch;background:rgba(0,0,0,0.18);padding-top:0;
 }
-body[data-tier="mobile-landscape"] #add-sheet,
-body[data-tier="tablet-portrait"] #add-sheet,
-body[data-tier="tablet-landscape"] #add-sheet,
-body[data-tier="desktop"] #add-sheet,
-body[data-tier="mobile-landscape"] #about-sheet,
-body[data-tier="tablet-portrait"] #about-sheet,
-body[data-tier="tablet-landscape"] #about-sheet,
-body[data-tier="desktop"] #about-sheet,
-body[data-tier="mobile-landscape"] #detail-sheet,
-body[data-tier="tablet-portrait"] #detail-sheet,
-body[data-tier="tablet-landscape"] #detail-sheet,
-body[data-tier="desktop"] #detail-sheet,
-body[data-tier="mobile-landscape"] #overview-sheet,
-body[data-tier="tablet-portrait"] #overview-sheet,
-body[data-tier="tablet-landscape"] #overview-sheet,
-body[data-tier="desktop"] #overview-sheet,
-body[data-tier="mobile-landscape"] #settings-sheet,
-body[data-tier="tablet-portrait"] #settings-sheet,
-body[data-tier="tablet-landscape"] #settings-sheet,
-body[data-tier="desktop"] #settings-sheet{
+body[data-pane-count="2"] #add-sheet,
+body[data-pane-count="3"] #add-sheet,
+body[data-pane-count="2"] #about-sheet,
+body[data-pane-count="3"] #about-sheet,
+body[data-pane-count="2"] #detail-sheet,
+body[data-pane-count="3"] #detail-sheet,
+body[data-pane-count="2"] #overview-sheet,
+body[data-pane-count="3"] #overview-sheet,
+body[data-pane-count="2"] #settings-sheet,
+body[data-pane-count="3"] #settings-sheet{
   align-items:center;
   justify-content:center;
   background:rgba(0,0,0,0.36);
@@ -772,16 +756,12 @@ body[data-tier="desktop"] #settings-sheet{
 .sheet-wrap.open .overview-sheet,
 .sheet-wrap.open .settings-sheet{transform:none;opacity:1;}
 
-body[data-tier="mobile-landscape"] .sheet-wrap,
-body[data-tier="tablet-portrait"] .sheet-wrap,
-body[data-tier="tablet-landscape"] .sheet-wrap,
-body[data-tier="desktop"] .sheet-wrap{
+body[data-pane-count="2"] .sheet-wrap,
+body[data-pane-count="3"] .sheet-wrap{
   /* The ID-specific rules above handle align-items etc. */
 }
-body[data-tier="mobile-landscape"] .sheet,
-body[data-tier="tablet-portrait"] .sheet,
-body[data-tier="tablet-landscape"] .sheet,
-body[data-tier="desktop"] .sheet{
+body[data-pane-count="2"] .sheet,
+body[data-pane-count="3"] .sheet{
   width:min(var(--sheet-max-width),calc(100vw - 48px));
   max-width:var(--sheet-max-width);
   max-height:calc(100dvh - 48px);
@@ -789,32 +769,20 @@ body[data-tier="desktop"] .sheet{
   padding:24px 24px calc(24px + env(safe-area-inset-bottom));
   transform:translateY(8px) scale(0.985);
 }
-body[data-tier="mobile-landscape"] .sheet-wrap.open .sheet,
-body[data-tier="tablet-portrait"] .sheet-wrap.open .sheet,
-body[data-tier="tablet-landscape"] .sheet-wrap.open .sheet,
-body[data-tier="desktop"] .sheet-wrap.open .sheet{
+body[data-pane-count="2"] .sheet-wrap.open .sheet,
+body[data-pane-count="3"] .sheet-wrap.open .sheet{
   transform:translateY(0) scale(1);
 }
-body[data-tier="mobile-landscape"] .add-sheet,
-body[data-tier="mobile-landscape"] .about-sheet,
-body[data-tier="mobile-landscape"] .detail-sheet,
-body[data-tier="mobile-landscape"] .overview-sheet,
-body[data-tier="mobile-landscape"] .settings-sheet,
-body[data-tier="tablet-portrait"] .add-sheet,
-body[data-tier="tablet-portrait"] .about-sheet,
-body[data-tier="tablet-portrait"] .detail-sheet,
-body[data-tier="tablet-portrait"] .overview-sheet,
-body[data-tier="tablet-portrait"] .settings-sheet,
-body[data-tier="tablet-landscape"] .add-sheet,
-body[data-tier="tablet-landscape"] .about-sheet,
-body[data-tier="tablet-landscape"] .detail-sheet,
-body[data-tier="tablet-landscape"] .overview-sheet,
-body[data-tier="tablet-landscape"] .settings-sheet,
-body[data-tier="desktop"] .add-sheet,
-body[data-tier="desktop"] .about-sheet,
-body[data-tier="desktop"] .detail-sheet,
-body[data-tier="desktop"] .overview-sheet,
-body[data-tier="desktop"] .settings-sheet{
+body[data-pane-count="2"] .add-sheet,
+body[data-pane-count="2"] .about-sheet,
+body[data-pane-count="2"] .detail-sheet,
+body[data-pane-count="2"] .overview-sheet,
+body[data-pane-count="2"] .settings-sheet,
+body[data-pane-count="3"] .add-sheet,
+body[data-pane-count="3"] .about-sheet,
+body[data-pane-count="3"] .detail-sheet,
+body[data-pane-count="3"] .overview-sheet,
+body[data-pane-count="3"] .settings-sheet{
   min-height:0;
   max-height:calc(100dvh - 48px);
   padding-top:24px;
@@ -822,10 +790,8 @@ body[data-tier="desktop"] .settings-sheet{
   border-radius:var(--sheet-radius);
   transform:none;
 }
-body[data-tier="mobile-landscape"] .add-sheet,
-body[data-tier="tablet-portrait"] .add-sheet,
-body[data-tier="tablet-landscape"] .add-sheet,
-body[data-tier="desktop"] .add-sheet{
+body[data-pane-count="2"] .add-sheet,
+body[data-pane-count="3"] .add-sheet{
   padding-bottom:calc(24px + env(safe-area-inset-bottom));
 }
 
@@ -845,10 +811,8 @@ body[data-tier="desktop"] .add-sheet{
   -webkit-backdrop-filter:blur(18px);
   z-index:160;
 }
-body[data-tier="mobile-landscape"] .add-sheet .add-actions,
-body[data-tier="tablet-portrait"] .add-sheet .add-actions,
-body[data-tier="tablet-landscape"] .add-sheet .add-actions,
-body[data-tier="desktop"] .add-sheet .add-actions{
+body[data-pane-count="2"] .add-sheet .add-actions,
+body[data-pane-count="3"] .add-sheet .add-actions{
   position:static;
   left:auto;bottom:auto;transform:none;
   width:auto;margin-top:8px;padding:0;
@@ -872,22 +836,14 @@ body[data-tier="desktop"] .add-sheet .add-actions{
   -webkit-backdrop-filter:none;
   z-index:160;
 }
-body[data-tier="mobile-landscape"] .about-sheet .about-actions,
-body[data-tier="tablet-portrait"] .about-sheet .about-actions,
-body[data-tier="tablet-landscape"] .about-sheet .about-actions,
-body[data-tier="desktop"] .about-sheet .about-actions,
-body[data-tier="mobile-landscape"] .detail-sheet .detail-actions,
-body[data-tier="tablet-portrait"] .detail-sheet .detail-actions,
-body[data-tier="tablet-landscape"] .detail-sheet .detail-actions,
-body[data-tier="desktop"] .detail-sheet .detail-actions,
-body[data-tier="mobile-landscape"] .overview-sheet .overview-actions,
-body[data-tier="tablet-portrait"] .overview-sheet .overview-actions,
-body[data-tier="tablet-landscape"] .overview-sheet .overview-actions,
-body[data-tier="desktop"] .overview-sheet .overview-actions,
-body[data-tier="mobile-landscape"] .settings-sheet .settings-actions,
-body[data-tier="tablet-portrait"] .settings-sheet .settings-actions,
-body[data-tier="tablet-landscape"] .settings-sheet .settings-actions,
-body[data-tier="desktop"] .settings-sheet .settings-actions{
+body[data-pane-count="2"] .about-sheet .about-actions,
+body[data-pane-count="3"] .about-sheet .about-actions,
+body[data-pane-count="2"] .detail-sheet .detail-actions,
+body[data-pane-count="3"] .detail-sheet .detail-actions,
+body[data-pane-count="2"] .overview-sheet .overview-actions,
+body[data-pane-count="3"] .overview-sheet .overview-actions,
+body[data-pane-count="2"] .settings-sheet .settings-actions,
+body[data-pane-count="3"] .settings-sheet .settings-actions{
   position:static;left:auto;bottom:auto;transform:none;
   width:auto;margin-top:12px;padding:0;background:transparent;
   border:0;border-radius:0;box-shadow:none;
@@ -1101,8 +1057,10 @@ body[data-tier="desktop"] .settings-sheet .settings-actions{
 .mini-nav i{font-size:16px;}
 .mini-nav:active{background:var(--bg3);transform:scale(0.92);}
 .month-grid{
-  display:grid;grid-template-columns:repeat(7,1fr);gap:5px;
+  display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;
 }
+.month-grid > .cal-head,
+.month-grid > .cal-day{min-width:0;}
 .cal-head,.cal-day{
   height:25px;display:flex;align-items:center;justify-content:center;
   font-size:11px;font-weight:500;border-radius:7px;
@@ -1682,14 +1640,10 @@ select{
   box-shadow:0 10px 30px rgba(0,0,0,0.18);
   transition:opacity var(--dur-med) ease,transform var(--dur-med) var(--ease-snappy);
 }
-body[data-tier="mobile-landscape"] #toast,
-body[data-tier="tablet-portrait"] #toast,
-body[data-tier="tablet-landscape"] #toast,
-body[data-tier="desktop"] #toast,
-body[data-tier="mobile-landscape"] #undo-toast,
-body[data-tier="tablet-portrait"] #undo-toast,
-body[data-tier="tablet-landscape"] #undo-toast,
-body[data-tier="desktop"] #undo-toast{
+body[data-pane-count="2"] #toast,
+body[data-pane-count="3"] #toast,
+body[data-pane-count="2"] #undo-toast,
+body[data-pane-count="3"] #undo-toast{
   bottom:24px;
 }
 #undo-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto;}
