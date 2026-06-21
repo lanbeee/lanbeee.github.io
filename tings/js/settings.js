@@ -204,6 +204,12 @@ function sortSampleHabit(name,type,target,logs,options = {}){
     topics:normalizeTopics(options.topics),
     allowedWeekdays:normalizeAllowedWeekdays(options.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(options.allowedMonthDays),
+    preferredWeekdays:normalizeAllowedWeekdays(options.preferredWeekdays),
+    preferredMonthDays:normalizeAllowedMonthDays(options.preferredMonthDays),
+    allowedTimeStart:normalizeTimeMinutes(options.allowedTimeStart),
+    allowedTimeEnd:normalizeTimeMinutes(options.allowedTimeEnd),
+    preferredTimeStart:normalizeTimeMinutes(options.preferredTimeStart),
+    preferredTimeEnd:normalizeTimeMinutes(options.preferredTimeEnd),
     flexibilityDays:clampFlexibility(options.flexibilityDays),
     durationMinutes:clampDuration(options.durationMinutes)
   };
@@ -211,7 +217,7 @@ function sortSampleHabit(name,type,target,logs,options = {}){
 
 function buildSortSamples(){
   return [
-    sortSampleHabit('daily walk overdue','keepup',1,sampleLogs([9,7,5,2]),{emoji:'🚶',topics:['health'],durationMinutes:25}),
+    sortSampleHabit('daily walk overdue','keepup',1,sampleLogs([9,7,5,2]),{emoji:'🚶',topics:['health'],durationMinutes:25,allowedTimeStart:390,allowedTimeEnd:600}),
     sortSampleHabit('call family due soon','keepup',7,sampleLogs([34,21,14,6]),{emoji:'☎️',topics:['relationships'],allowedWeekdays:[2,4]}),
     sortSampleHabit('movie night just done','keepup',7,sampleLogs([22,15,8,1]),{emoji:'🎬',topics:['rest'],allowedWeekdays:[5,6],durationMinutes:120}),
     sortSampleHabit('new meditation habit','keepup',7,[],{emoji:'🧘',topics:['health','calm'],durationMinutes:10}),
@@ -224,7 +230,7 @@ function buildSortSamples(){
     sortSampleHabit('weekend-only yard work','keepup',7,sampleLogs([17,10]),{emoji:'🌱',allowedWeekdays:[0,6],durationMinutes:90}),
     sortSampleHabit('first of month money review','keepup',30,sampleLogs([92,61,31]),{emoji:'💵',allowedMonthDays:[1],durationMinutes:45}),
     sortSampleHabit('15th-only insurance paperwork','keepup',30,sampleLogs([104,74,44]),{emoji:'📄',allowedMonthDays:[15],topics:['admin'],durationMinutes:35}),
-    sortSampleHabit('weekday guitar practice with long title','keepup',2,sampleLogs([12,9,6,3]),{emoji:'🎸',allowedWeekdays:[1,2,3,4,5],topics:['creative','practice'],durationMinutes:20}),
+    sortSampleHabit('weekday guitar practice with long title','keepup',2,sampleLogs([12,9,6,3]),{emoji:'🎸',allowedWeekdays:[1,2,3,4,5],preferredWeekdays:[1,3,5],topics:['creative','practice'],durationMinutes:20}),
     sortSampleHabit('pinned water habit','keepup',1,sampleLogs([4,3,1]),{emoji:'💧',pinned:true,topics:['health']}),
     sortSampleHabit('slipping reading rhythm','keepup',7,sampleLogs([45,34,23,13,8]),{emoji:'📖',topics:['learning']}),
     sortSampleHabit('improving stretch routine','keepup',7,sampleLogs([32,20,11,5,1]),{emoji:'🤸',topics:['health'],durationMinutes:15}),

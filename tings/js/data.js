@@ -49,6 +49,12 @@ function normalize(items){
     topics:normalizeTopics(h.topics),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
+    preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
+    preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
+    allowedTimeStart:normalizeTimeMinutes(h.allowedTimeStart),
+    allowedTimeEnd:normalizeTimeMinutes(h.allowedTimeEnd),
+    preferredTimeStart:normalizeTimeMinutes(h.preferredTimeStart),
+    preferredTimeEnd:normalizeTimeMinutes(h.preferredTimeEnd),
     flexibilityDays:clampFlexibility(h.flexibilityDays),
     durationMinutes:clampDuration(h.durationMinutes)
   })).map(h => ({...h,lastLog:latestActualLog(h.logs)}));
@@ -125,6 +131,11 @@ function normalizeAllowedMonthDays(value){
     return true;
   }).sort((a,b)=>a-b);
   return days.length === 31 ? [] : days;
+}
+function normalizeTimeMinutes(value){
+  const n = parseInt(value,10);
+  if(Number.isNaN(n))return null;
+  return Math.max(0,Math.min(1439,n));
 }
 function normalizeAvailability(value){
   const src = Array.isArray(value) ? value : DEFAULT_AVAILABILITY_MINUTES;
@@ -286,9 +297,30 @@ function scheduledDays(h){
     monthDays:normalizeAllowedMonthDays(h.allowedMonthDays)
   };
 }
+function preferredDays(h){
+  return {
+    weekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
+    monthDays:normalizeAllowedMonthDays(h.preferredMonthDays)
+  };
+}
 function hasDaySchedule(h){
   const schedule = scheduledDays(h);
   return Boolean(schedule.weekdays.length || schedule.monthDays.length);
+}
+function hasPreferredDays(h){
+  const pref = preferredDays(h);
+  return Boolean(pref.weekdays.length || pref.monthDays.length);
+}
+function hasTimeWindow(h){
+  return h.allowedTimeStart !== null && h.allowedTimeEnd !== null;
+}
+function isPreferredDay(h,ts = Date.now()){
+  const pref = preferredDays(h);
+  if(!pref.weekdays.length && !pref.monthDays.length)return false;
+  const d = new Date(ts);
+  if(pref.weekdays.length && !pref.weekdays.includes(d.getDay()))return false;
+  if(pref.monthDays.length && !pref.monthDays.includes(d.getDate()))return false;
+  return true;
 }
 function isDateEligibleForHabit(h,ts = Date.now()){
   const schedule = scheduledDays(h);
@@ -311,11 +343,31 @@ function nextEligibleDistance(h,fromTs = Date.now()){
   const next = nextEligibleDate(h,fromTs);
   return next === null ? null : Math.round((next - dayStart(fromTs)) / 86400000);
 }
+function formatTimeShort(minutes){
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const ampm = h >= 12 ? 'pm' : 'am';
+  const h12 = h % 12 || 12;
+  return m === 0 ? `${h12}${ampm}` : `${h12}:${String(m).padStart(2,'0')}${ampm}`;
+}
+function timeWindowSummary(h){
+  if(!hasTimeWindow(h))return '';
+  return `${formatTimeShort(h.allowedTimeStart)}–${formatTimeShort(h.allowedTimeEnd)}`;
+}
 function scheduleSummary(h){
   const schedule = scheduledDays(h);
   const parts = [];
   if(schedule.weekdays.length)parts.push(schedule.weekdays.map(weekdayShort).join('/'));
   if(schedule.monthDays.length)parts.push(schedule.monthDays.map(monthOrdinal).join('/'));
+  const tw = timeWindowSummary(h);
+  if(tw)parts.push(tw);
+  return parts.join(' ');
+}
+function preferredSummary(h){
+  const pref = preferredDays(h);
+  const parts = [];
+  if(pref.weekdays.length)parts.push(pref.weekdays.map(weekdayShort).join('/'));
+  if(pref.monthDays.length)parts.push(pref.monthDays.map(monthOrdinal).join('/'));
   return parts.join(' and ');
 }
 function escapeHtml(value){

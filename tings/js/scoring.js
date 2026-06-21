@@ -322,7 +322,8 @@ function priorityComponents(h,settings){
     duration:plannerFit.duration,
     availability:plannerFit.availability,
     flexibility:plannerFit.flexibility,
-    schedule:scheduleSignal(h)
+    schedule:scheduleSignal(h),
+    preferred:preferredSignal(h)
   };
 }
 
@@ -351,6 +352,10 @@ function scheduleSignal(h){
   if(distance <= 3)return -24;
   if(distance <= 7)return -42;
   return -68;
+}
+function preferredSignal(h){
+  if(!hasPreferredDays(h))return 0;
+  return isPreferredDay(h) ? 8 : -4;
 }
 
 function todayActionSignal(h,settings){
@@ -460,7 +465,7 @@ function attentionScore(h,index,settingsOverride = null){
     if(Number.isFinite(policy.cap))score = Math.min(score,policy.cap);
     score += policy.offset || 0;
   }
-  score += parts.duration + parts.availability + parts.flexibility + parts.schedule;
+  score += parts.duration + parts.availability + parts.flexibility + parts.schedule + parts.preferred;
 
   const focusScale = FOCUS_TYPE_SCALE[focus] || FOCUS_TYPE_SCALE.balanced;
   score *= focusScale[h.type] || 1;
@@ -519,9 +524,12 @@ function visibleIndices(data,settingsOverride = null){
 function searchText(h){
   const typeLabel = h.type === 'keepup' ? 'build routine keepup' : h.type === 'reduce' ? 'limit reduce less' : 'stop quit zero';
   const schedule = scheduledDays(h);
+  const pref = preferredDays(h);
   const scheduleText = [
     ...schedule.weekdays.flatMap(day=>[weekdayShort(day),new Date(2024,0,7 + day).toLocaleDateString(undefined,{weekday:'long'})]),
-    ...schedule.monthDays.flatMap(day=>[String(day),monthOrdinal(day)])
+    ...schedule.monthDays.flatMap(day=>[String(day),monthOrdinal(day)]),
+    ...pref.weekdays.flatMap(day=>[weekdayShort(day),'preferred']),
+    ...pref.monthDays.flatMap(day=>[String(day),'preferred'])
   ].join(' ');
   return `${h.name || ''} ${h.emoji || ''} ${typeLabel} ${(h.topics || []).join(' ')} ${scheduleText}`.toLowerCase();
 }
