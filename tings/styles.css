@@ -275,8 +275,9 @@ body[data-tier="desktop"] .pane-detail .detail-pager{
   padding:12px 16px;position:sticky;top:10px;background:var(--bg);
   z-index:10;border:0.5px solid var(--border);border-radius:999px;
   box-shadow:0 8px 24px rgba(0,0,0,0.06);
-  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease;
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,max-height var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy);
   width:max-content;margin:10px auto 0;
+  max-height:120px;
   will-change:transform,opacity;
 }
 body[data-tier="mobile-landscape"] .topbar,
@@ -291,6 +292,23 @@ body.header-hidden .topbar{
 body.search-active .topbar,
 body.search-active #home-topic-filter{
   opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
+}
+body[data-tier="mobile-portrait"].search-active .topbar{
+  max-height:0;
+  padding-top:0;padding-bottom:0;
+  margin-top:0;
+  border-color:transparent;
+  box-shadow:none;
+  overflow:hidden;
+}
+body[data-tier="mobile-portrait"].search-active #home-topic-filter{
+  max-height:0;
+  margin-top:0;margin-bottom:0;
+  padding-top:0;padding-bottom:0;
+  overflow:hidden;
+}
+body[data-tier="mobile-portrait"].search-active{
+  --nav-bottom:14px;
 }
 .wordmark{
   border:none;background:transparent;padding:0;margin:0;
@@ -392,7 +410,7 @@ body[data-tier="desktop"] .app-bar{
   border:0.5px solid var(--border2);border-radius:999px;
   box-shadow:0 12px 34px rgba(0,0,0,0.2),0 2px 8px rgba(0,0,0,0.08);
   backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease;
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,bottom var(--dur-slow) var(--ease-snappy);
   will-change:transform;
 }
 body[data-tier="mobile-landscape"] .bottom-nav,
@@ -1556,6 +1574,8 @@ select{
   display:flex;align-items:center;gap:6px;overflow-x:auto;
   margin:0 0 14px;padding-bottom:2px;scrollbar-width:none;
   -webkit-overflow-scrolling:touch;
+  max-height:60px;
+  transition:max-height var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy);
 }
 #home-topic-filter{margin:10px -10px 14px;padding:0 10px;width:calc(100% + 20px);max-width:calc(100% + 20px);}
 .topic-filter-row::-webkit-scrollbar{display:none;}
