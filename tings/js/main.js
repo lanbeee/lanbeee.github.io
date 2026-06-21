@@ -71,7 +71,7 @@ $('habit-search').addEventListener('input',e=>{
 });
 $('habit-search').addEventListener('keydown',e=>{
   if(e.key !== 'Escape')return;
-  if(searchQuery){
+if(searchQuery){
     searchQuery = '';
     render();
     e.preventDefault();
@@ -823,3 +823,5 @@ $('list').addEventListener('touchstart',e=>{
 },{passive:true});
 
 render();
+ensureOverviewPlacement();
+if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
