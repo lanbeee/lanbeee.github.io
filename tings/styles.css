@@ -216,6 +216,13 @@ body[data-pane-count="2"] #bar-open-overview,
 body[data-pane-count="3"] #bar-open-overview{
   display:none;
 }
+/* In 2+ panes the overview lives in a fixed-width (480px) pane. Allow the
+   stats row to wrap onto a second line so nothing gets clipped. */
+body[data-pane-count="2"] .overview-stats,
+body[data-pane-count="3"] .overview-stats{
+  flex-wrap:wrap;
+  overflow-x:visible;
+}
 
 /* On 2+ panes the overview lives inside .pane-overview instead of as a modal. */
 body[data-pane-count="2"] #overview-sheet,
