@@ -360,7 +360,7 @@ function hideUndo(){
 function refreshOpenViews(){
   render();
   if(detailIdx !== null && $('detail-sheet').classList.contains('open'))openDetail(detailIdx);
-  if($('overview-sheet').classList.contains('open'))renderOverview();
+  if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
 }
 

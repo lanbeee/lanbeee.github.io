@@ -884,7 +884,7 @@ function quickLog(i,card){
     card.classList.add('logged');
     setTimeout(()=>card.classList.remove('logged'),380);
   }
-  setTimeout(render,260);
+  setTimeout(refreshOpenViews, 260);
 }
 
 function nextPlanTime(h){
