@@ -124,6 +124,16 @@
           <input id="walkMaxTempInput" type="number" min="-30" max="50" step="1">
           <span>°C</span>
         </div>
+        <label for="walkMaxUviInput">Max comfortable UV</label>
+        <div class="range-field">
+          <input id="walkMaxUviInput" type="range" min="1" max="11" step="1">
+          <output id="walkMaxUviValue" for="walkMaxUviInput">10</output>
+        </div>
+        <label for="walkMaxAqiInput">Max comfortable AQI</label>
+        <div class="range-field">
+          <input id="walkMaxAqiInput" type="range" min="1" max="5" step="1">
+          <output id="walkMaxAqiValue" for="walkMaxAqiInput">3</output>
+        </div>
         <button id="saveWalkBtn" class="panel-action" type="button">Save walk range</button>
         <p id="walkSavedMsg" class="hint" aria-live="polite"></p>
         <p id="walkHistoryHint" class="hint">No recent weather data yet.</p>
@@ -186,7 +196,11 @@
       teaStartAfterAsrMinutes: 30,
       teaBufferBeforeMaghribMinutes: 20,
       walkMinTempC: 5,
-      walkMaxTempC: 29
+      walkMaxTempC: 29,
+      // UV index ceiling (0-11+). Above this = hard veto; below = soft score.
+      walkMaxUvi: 10,
+      // AQI ceiling on OpenWeather's 1-5 scale. Above this = hard veto.
+      walkMaxAqi: 3
     };
     const DEFAULT_DISPLAY = {
       font: "rounded",
@@ -242,6 +256,10 @@
     const timingSavedMsg = document.getElementById("timingSavedMsg");
     const walkMinTempInput = document.getElementById("walkMinTempInput");
     const walkMaxTempInput = document.getElementById("walkMaxTempInput");
+    const walkMaxUviInput = document.getElementById("walkMaxUviInput");
+    const walkMaxUviValue = document.getElementById("walkMaxUviValue");
+    const walkMaxAqiInput = document.getElementById("walkMaxAqiInput");
+    const walkMaxAqiValue = document.getElementById("walkMaxAqiValue");
     const saveWalkBtn = document.getElementById("saveWalkBtn");
     const walkSavedMsg = document.getElementById("walkSavedMsg");
     const walkHistoryHint = document.getElementById("walkHistoryHint");
@@ -334,6 +352,10 @@
       const routine = getRoutineSettings();
       walkMinTempInput.value = routine.walkMinTempC;
       walkMaxTempInput.value = routine.walkMaxTempC;
+      walkMaxUviInput.value = routine.walkMaxUvi;
+      walkMaxUviValue.textContent = routine.walkMaxUvi;
+      walkMaxAqiInput.value = routine.walkMaxAqi;
+      walkMaxAqiValue.textContent = routine.walkMaxAqi;
       updateWalkHistoryHint();
     }
 
@@ -419,7 +441,9 @@
       if (walkMinTempC > walkMaxTempC) {
         [walkMinTempC, walkMaxTempC] = [walkMaxTempC, walkMinTempC];
       }
-      settings.routine = { ...getRoutineSettings(), walkMinTempC, walkMaxTempC };
+      const walkMaxUvi = clampNumber(walkMaxUviInput.value, 1, 11, DEFAULT_ROUTINE.walkMaxUvi);
+      const walkMaxAqi = clampNumber(walkMaxAqiInput.value, 1, 5, DEFAULT_ROUTINE.walkMaxAqi);
+      settings.routine = { ...getRoutineSettings(), walkMinTempC, walkMaxTempC, walkMaxUvi, walkMaxAqi };
       saveSettings();
       renderWalkControls();
       updateGuidance();
@@ -792,12 +816,19 @@
         latestWeatherSnapshot = {
           main: data.weather[0].main,
           feelsLikeC: Number(data.main.feels_like),
+          // uvi/aqi are optional - the worker omits them if the OpenWeather
+          // UV/air_pollution calls fail. Treat absent as null and let the
+          // scorer apply no penalty rather than vetoing.
+          uvi: typeof data.uvi === "number" ? data.uvi : null,
+          aqi: typeof data.aqi === "number" ? data.aqi : null,
           fetchedAt: Date.now()
         };
         recordWeatherSample({
           t: latestWeatherSnapshot.fetchedAt,
           main: latestWeatherSnapshot.main,
-          feelsLikeC: latestWeatherSnapshot.feelsLikeC
+          feelsLikeC: latestWeatherSnapshot.feelsLikeC,
+          uvi: latestWeatherSnapshot.uvi,
+          aqi: latestWeatherSnapshot.aqi
         });
         if (typeof updateWalkHistoryHint === "function") updateWalkHistoryHint();
         const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
@@ -911,30 +942,52 @@
       return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?(AM|PM)$/i, "").replace(/^0/, "");
     }
 
-    function calculateWalkabilityScore(feelsLikeC, mainCondition, routine) {
-      // 1. Hard vetos: Bad weather or outside absolute temperature bounds
+    function calculateWalkabilityScore(snapshot, routine) {
+      const feelsLikeC = snapshot.feelsLikeC;
+      const mainCondition = snapshot.main;
+      // uvi/aqi may be null (worker fetch failed) or undefined (old history
+      // entries saved before this feature existed). Treat both as "unknown".
+      const uvi = snapshot.uvi;
+      const aqi = snapshot.aqi;
+
+      // 1. Hard vetos: bad weather, outside temp bounds, or past UV/AQI ceilings.
       if (BAD_WALK_CONDITIONS.has(mainCondition)) return 0;
       if (feelsLikeC < routine.walkMinTempC || feelsLikeC > routine.walkMaxTempC) return 0;
+      if (uvi != null && uvi > routine.walkMaxUvi) return 0;
+      if (aqi != null && aqi > routine.walkMaxAqi) return 0;
 
-      // 2. Temperature Score (0 to 100)
-      // Peak score is at the exact middle of the preferred range.
+      // 2. Temperature score (0-100). Peak at the midpoint of the comfort range.
       const idealTemp = (routine.walkMinTempC + routine.walkMaxTempC) / 2;
-      const maxDeviation = (routine.walkMaxTempC - routine.walkMinTempC) / 2;
-      
-      // How far are we from the ideal middle? (0 = ideal, maxDeviation = edge of comfort)
+      const maxDeviation = Math.max(0.0001, (routine.walkMaxTempC - routine.walkMinTempC) / 2);
       const deviation = Math.abs(feelsLikeC - idealTemp);
-      
-      // Score: 100 at ideal temp, drops toward 0 at the very edges of min/max bounds
       const tempScore = Math.max(0, 100 * (1 - (deviation / maxDeviation)));
 
-      // 3. Condition Score
+      // 3. Condition score.
       let conditionScore = 50; // Acceptable default
       if (mainCondition === "Clear") conditionScore = 100;
-      if (mainCondition === "Clouds") conditionScore = 80;
-      // (Mist, Rain, etc., are caught by BAD_WALK_CONDITIONS earlier and return 0)
+      else if (mainCondition === "Clouds") conditionScore = 80;
+      // (Mist, Rain, etc. are caught by BAD_WALK_CONDITIONS above.)
 
-      // 4. Combine (Weighting temperature more heavily than clouds/clear skies)
-      return (tempScore * 0.7) + (conditionScore * 0.3);
+      // 4. UV + AQI sub-scores. Each scales 100 -> 0 from ideal up to the
+      // user's max. When the reading is unknown we drop that factor and
+      // renormalize the remaining weights, so a missing UV at night neither
+      // inflates nor deflates the overall score.
+      const factors = [
+        { weight: 0.55, score: tempScore },
+        { weight: 0.20, score: conditionScore }
+      ];
+      if (uvi != null) {
+        const uvScore = Math.max(0, 100 * (1 - uvi / Math.max(1, routine.walkMaxUvi)));
+        factors.push({ weight: 0.12, score: uvScore });
+      }
+      if (aqi != null) {
+        // AQI starts at 1 (Good), so the walkable band is [1 .. walkMaxAqi].
+        const aqiRange = Math.max(1, routine.walkMaxAqi - 1);
+        const aqiScore = Math.max(0, 100 * (1 - (aqi - 1) / aqiRange));
+        factors.push({ weight: 0.13, score: aqiScore });
+      }
+      const totalWeight = factors.reduce((sum, f) => sum + f.weight, 0);
+      return factors.reduce((sum, f) => sum + f.weight * f.score, 0) / totalWeight;
     }
 
     function isGoodWalkWeather() {
@@ -953,7 +1006,7 @@
       if (recentlyWet) return false;
 
       // Calculate the score for right now
-      const currentScore = calculateWalkabilityScore(latestWeatherSnapshot.feelsLikeC, latestWeatherSnapshot.main, routine);
+      const currentScore = calculateWalkabilityScore(latestWeatherSnapshot, routine);
 
       // If it's a 0 (bad conditions or out of bounds), no walk.
       if (currentScore === 0) return false;
@@ -967,7 +1020,7 @@
 
       // Calculate historical scores to find the recent baseline
       const historicalScores = history
-        .map(entry => calculateWalkabilityScore(entry.feelsLikeC, entry.main, routine))
+        .map(entry => calculateWalkabilityScore(entry, routine))
         .filter(score => score > 0); // Only average the times it was actually walkable
 
       // If it's been terrible all week (no scores > 0), and now it's good, definitely walk!
@@ -1169,6 +1222,12 @@
     });
     saveTimingBtn.addEventListener("click", saveTimingSettings);
     saveWalkBtn.addEventListener("click", saveWalkSettings);
+    [walkMaxUviInput, walkMaxAqiInput].forEach((control) => {
+      control.addEventListener("input", () => {
+        walkMaxUviValue.textContent = walkMaxUviInput.value;
+        walkMaxAqiValue.textContent = walkMaxAqiInput.value;
+      });
+    });
     [fontSelect, clockScaleInput, dateScaleInput, weatherScaleInput, messageScaleInput, guidanceToneSelect, emojiToggle].forEach((control) => {
       control.addEventListener("input", previewDisplaySettings);
       control.addEventListener("change", previewDisplaySettings);
