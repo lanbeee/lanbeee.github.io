@@ -360,7 +360,16 @@ function hideUndo(){
 function refreshOpenViews(){
   render();
   const detailOpen = $('detail-sheet').classList.contains('open') || (paneTierActive() && getPane()?.dataset.activeSheet === 'detail-sheet');
-  if(detailIdx !== null && detailOpen)openDetail(detailIdx);
+  if(detailIdx !== null && (detailOpen || paneTierActive())){
+    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+    const scrollLeft = pager?.scrollLeft ?? 0;
+    openDetail(detailIdx);
+    if(pager){
+      requestAnimationFrame(()=>{
+        pager.scrollLeft = scrollLeft;
+      });
+    }
+  }
   if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
 }
