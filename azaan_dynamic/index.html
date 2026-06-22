@@ -23,9 +23,9 @@
       <button id="startLoopBtn">Start Azaan Loop</button>
 
       <div class="top-actions">
-        <button id="weather" type="button" aria-label="Open detailed weather" aria-haspopup="dialog">
+        <div id="weather" role="button" tabindex="0" aria-label="Open detailed weather" aria-haspopup="dialog">
           <span id="weatherInfo">Loading weather...</span>
-        </button>
+        </div>
       </div>
     </header>
 
@@ -1525,7 +1525,22 @@
     startLoopBtn.addEventListener("click", startSilentLoop);
     closeMenuBtn.addEventListener("click", closeMenu);
     weatherBtn.addEventListener("click", openWeatherDetail);
+    // #weather is a focusable <div> (not a button) so the theme's background-
+    // clip:text transition stays reliable. Activate it with Enter/Space to
+    // keep it accessible via keyboard / Alexa remote.
+    weatherBtn.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+        event.preventDefault();
+        openWeatherDetail();
+      }
+    });
     closeWeatherModalBtn.addEventListener("click", closeWeatherDetail);
+    // Clicking the modal's own backdrop (the container, not the card) closes
+    // it. The modal sits above #panelScrim so the scrim's handler can't catch
+    // these clicks - the modal has to handle its own outside-click dismiss.
+    weatherModal.addEventListener("click", (event) => {
+      if (event.target === weatherModal) closeWeatherDetail();
+    });
     // Scrim dismisses whichever surface is on top (or both).
     panelScrim.addEventListener("click", () => {
       closeMenu();

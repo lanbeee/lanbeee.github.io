@@ -194,16 +194,10 @@ button {
   font-size: clamp(calc(1.35rem * var(--weather-scale)), calc(2.55vw * var(--weather-scale)), calc(2.55rem * var(--weather-scale)));
   font-weight: 600;
   letter-spacing: 0;
-  /* It's a <button> now so it opens the detail modal on tap. Strip the
-     default UA button chrome so it still renders like the old <div>. */
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  color: inherit;
-  font-family: inherit;
+  /* It's a <div> (not a button) so the theme system's background-clip:text
+     transition works reliably - background-clip:text is flaky on <button>
+     in the Alexa/Silk browser. We make it behave like a button via
+     role/tabindex + the handlers in index.html. */
   cursor: pointer;
   border-radius: 14px;
   -webkit-tap-highlight-color: transparent;
