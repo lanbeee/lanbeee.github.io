@@ -1,13 +1,102 @@
 // Local storage, normalization, quota pruning, and date/text helpers.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// DATA SCHEMAS — JSDoc typedefs
+// Source of truth for Habit and Settings shapes. Mirrors the normalize()
+// output below. When porting to React Native, these become TypeScript
+// interfaces in src/types/ with no field changes.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * A single log entry. Either a timestamp (ms since epoch) for an actual
+ * occurrence, or a planned-future entry wrapping that timestamp.
+ * @typedef {(number|{ts:number,plan:true})} LogEntry
+ */
+
+/**
+ * A habit. Stored in the habits array under the `tings_v2` localStorage key.
+ * @typedef {Object} Habit
+ * @property {string} name                    — display name (max 60 chars)
+ * @property {'keepup'|'reduce'|'zero'} type  — build / limit / stop
+ * @property {number|null} target             — rhythm in days; null when type === 'zero'
+ * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
+ * @property {string} emoji                   — grapheme cluster(s), '' means default icon
+ * @property {boolean} pinned                 — stays above auto-sorted habits
+ * @property {boolean} sample                 — true if created by the sort-lab sample builder
+ * @property {number|null} snoozedUntil       — ms timestamp; habit hidden on home until then
+ * @property {string[]} topics                — user-defined tags (max 24, each max 32 chars)
+ * @property {number[]} allowedWeekdays       — 0=Sun … 6=Sat; empty means every day
+ * @property {number[]} allowedMonthDays      — 1-31; empty means every day
+ * @property {number[]} preferredWeekdays     — like allowedWeekdays, but for the "preferred" set
+ * @property {number[]} preferredMonthDays    — like allowedMonthDays, but for the "preferred" set
+ * @property {number|null} allowedTimeStart   — minutes since midnight; null = unrestricted
+ * @property {number|null} allowedTimeEnd     — minutes since midnight; null = unrestricted
+ * @property {number|null} preferredTimeStart — minutes since midnight; null = unrestricted
+ * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
+ * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60
+ * @property {number} durationMinutes         — planned session length; 1-720
+ * @property {number|null} lastLog            — derived: most recent actual log timestamp
+ */
+
+/**
+ * App-wide sort/display settings. Stored under `tings_app_settings_v2`.
+ * Composed from SORT_PRESETS[preset] plus the fields below.
+ * @typedef {Object} Settings
+ * @property {'balanced'|'build'|'planned'|'todayFirst'|'custom'} preset
+ * @property {'balanced'|'build'|'space'} focus                 — inherited from the preset
+ * @property {boolean} plansFirst                              — let planned habits rise
+ * @property {number} planWindowDays                           — 1-14, look-ahead for plan signal
+ * @property {number} planWeight                               — 0-200, multiplies plan signal
+ * @property {number} dueWeight                                — 0-200
+ * @property {number} progressWeight                           — 0-200
+ * @property {number} trendWeight                              — 0-200
+ * @property {number} rhythmWeight                             — 0-200
+ * @property {number} buildWeight                              — 0-200, scales build-type habits
+ * @property {number} limitWeight                              — 0-200, scales limit-type habits
+ * @property {number} stopWeight                               — 0-200, scales stop-type habits
+ * @property {number} newWeight                                — 0-200, scales never-logged habits
+ * @property {'quiet'|'gentle'|'rise'} newBuildMode            — handling for new build habits
+ * @property {'relative'|'date'|'short'} dueMode               — how build-habit urgency is computed
+ * @property {number} buildLookAheadDays                       — 1-14
+ * @property {number} buildRiseAt                              — 40-110, urgency % where build habits rise
+ * @property {'quiet'|'overdue'|'near'|'active'} limitMode    — limit-habit policy selector
+ * @property {'quiet'|'watch'|'recent'|'active'} stopMode      — stop-habit policy selector
+ * @property {number} rhythmBias                               — -100 to 100, favours shorter or longer rhythms
+ * @property {boolean} showSnoozed                             — render snoozed habits faded on home
+ * @property {boolean} showDurationOnCards                     — show duration chip on home cards
+ * @property {boolean} showRepetitionOnCards                   — show rhythm chip on home cards
+ * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
+ * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
+ * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
+ * @property {boolean} autoOpenToday                           — open today's activity when opening the calendar
+ * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
+ * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
+ * @property {string[]} topics                                 — master topic list (max 24)
+ * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
+ * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
+ */
+
+/**
+ * Day-of-week + day-of-month schedule pair returned by scheduledDays()/preferredDays().
+ * Empty arrays mean "no restriction in this dimension".
+ * @typedef {Object} DaySchedule
+ * @property {number[]} weekdays    — 0=Sun … 6=Sat
+ * @property {number[]} monthDays   — 1-31
+ */
+
+// ─────────────────────────────────────────────────────────────────────────
+// STORAGE — IMPURE (touches localStorage). Swappable via js/storage.js.
+// In the RN port these functions move into src/data/storage.ts backed by MMKV;
+// the rest of the file (pure helpers below) ports verbatim.
+// ─────────────────────────────────────────────────────────────────────────
 
 function load(){
-  try{return normalize(JSON.parse(localStorage.getItem(KEY)) || []);}
-  catch{return [];}
+  return normalize(Storage.read(KEY) || []);
 }
 
 function loadSortSettings(){
   try{
-    const saved = JSON.parse(localStorage.getItem(SORT_SETTINGS_KEY)) || {};
+    const saved = Storage.read(SORT_SETTINGS_KEY) || {};
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
     const merged = {...DEFAULT_SORT_SETTINGS,...migrated};
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
@@ -33,8 +122,13 @@ function saveSortSettings(settings){
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
   sortSettings = next;
-  localStorage.setItem(SORT_SETTINGS_KEY,JSON.stringify(sortSettings));
+  Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// NORMALIZATION — PURE (no I/O). Validates and coerces raw parsed JSON into
+// the canonical Habit / Settings shapes declared above.
+// ─────────────────────────────────────────────────────────────────────────
 
 function normalize(items){
   return items.map(h => ({
@@ -69,14 +163,14 @@ function save(data){
       next = pruneForStorage(next,QUOTA_HARD_KB - 120);
       str = JSON.stringify(next);
     }
-    localStorage.setItem(KEY,str);
+    Storage.writeRaw(KEY, str);
     updateQuotaBar(sizeKb(next));
     return true;
   }catch(e){
     try{
       const pruned = pruneForStorage(normalize(data),QUOTA_HARD_KB - 360);
       const str = JSON.stringify(pruned);
-      localStorage.setItem(KEY,str);
+      Storage.writeRaw(KEY, str);
       updateQuotaBar(sizeKb(pruned));
       showToast('old dense activity compacted');
       return true;
@@ -86,6 +180,11 @@ function save(data){
     }
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// NORMALIZATION PRIMITIVES — PURE. Coercion helpers used by normalize() and
+// also called directly from view/settings code. Each is self-contained.
+// ─────────────────────────────────────────────────────────────────────────
 
 function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024);}
 function clampRhythmValue(value){
@@ -191,6 +290,11 @@ function pruneForStorage(items,targetKb){
   }
   return next;
 }
+// ─────────────────────────────────────────────────────────────────────────
+// LOG ENTRIES — PURE. Helpers that operate on a habit's logs array without
+// touching storage. LogEntry = number | {ts:number,plan:true} (see typedef).
+// ─────────────────────────────────────────────────────────────────────────
+
 function logTime(log){
   return typeof log === 'number' ? log : Number(log?.ts) || 0;
 }
@@ -254,6 +358,12 @@ function sampleLogs(actualDays = [],plannedDays = []){
     ...plannedDays.map(days=>samplePlan(days))
   ].sort((a,b)=>a-b);
 }
+// ─────────────────────────────────────────────────────────────────────────
+// DATES — PURE. Time-of-day helpers used by scoring, views, and schedules.
+// All take a ms timestamp; none read the DOM. `Date.now()` is the only
+// impurity and is acceptable (clock reads port cleanly to RN).
+// ─────────────────────────────────────────────────────────────────────────
+
 function daysSince(ts){return ts ? Math.floor((Date.now() - ts) / 86400000) : null;}
 function dayDistance(ts){return ts ? Math.round((Date.now() - ts) / 86400000) : null;}
 function dayStart(ts){
@@ -291,6 +401,12 @@ function monthOrdinal(day){
 function weekdayShort(day){
   return WEEKDAY_LABELS[day] || '';
 }
+// ─────────────────────────────────────────────────────────────────────────
+// SCHEDULES — PURE. Compute allowed/preferred day sets for a habit and answer
+// eligibility queries. These are the highest-value functions to port verbatim
+// because the calendar view, scoring, and add-habit preview all depend on them.
+// ─────────────────────────────────────────────────────────────────────────
+
 function scheduledDays(h){
   return {
     weekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
@@ -370,6 +486,12 @@ function preferredSummary(h){
   if(pref.monthDays.length)parts.push(pref.monthDays.map(monthOrdinal).join('/'));
   return parts.join(' and ');
 }
+// ─────────────────────────────────────────────────────────────────────────
+// FORMATTING + MISC — MOSTLY PURE. scheduleSummary/preferredSummary return
+// human-readable strings; escapeHtml is the only DOM-aware function here and
+// only exists to support innerHTML rendering in the view layer.
+// ─────────────────────────────────────────────────────────────────────────
+
 function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }

@@ -1,18 +1,30 @@
 // Shared sheet controls, toast/undo UI, reach assist, and forgiving pointer handling.
 
+// ---------------------------------------------------------------------------
+// FILE PURPOSE (React Native port reference):
+//  - This file manages sheet modals, toast/undo notifications, and pane layout.
+//  - In the RN port, sheets become @gorhom/bottom-sheet and toasts become an
+//    animated overlay.
+//  - RENDER functions become React components.
+//  - HANDLER/WIRE functions become useEffect hooks or gesture callbacks.
+// ---------------------------------------------------------------------------
+
 // Tiers that should use the right pane for detail/overview instead of a sheet.
 // (paneTierActive is defined in config.js)
 
+// PURE: returns the detail pane element
 function getPane() {
   return $('pane-detail');
 }
 
+// PURE: returns the overview pane element
 function getOverviewPane() {
   return $('pane-overview');
 }
 
 // Find the inner .sheet element for a given sheet wrap, regardless of whether
 // it's still inside the wrap or has been moved to a pane.
+// PURE: locates a sheet inner element in wrap or pane
 function getSheetInner(sheetId) {
   const wrap = $(sheetId);
   if (!wrap) return null;
@@ -32,6 +44,7 @@ function getSheetInner(sheetId) {
 // The overview sheet is a permanent pane on wide tiers. Move its inner content
 // between #overview-sheet (modal wrap, mobile-portrait only) and #pane-overview
 // (right-side pane, all wide tiers) based on the current tier.
+// RENDER: moves overview sheet between wrap and pane
 function ensureOverviewPlacement() {
   const wrap = $('overview-sheet');
   const pane = getOverviewPane();
@@ -52,6 +65,7 @@ function ensureOverviewPlacement() {
   }
 }
 
+// RENDER: mounts a sheet into the detail pane
 function mountInPane(sheetId) {
   const pane = getPane();
   if (!pane) return null;
@@ -70,6 +84,7 @@ function mountInPane(sheetId) {
   return inner;
 }
 
+// RENDER: unmounts the detail pane and restores sheet wrap
 function unmountPane() {
   const pane = getPane();
   if (!pane || !pane.dataset.activeSheet) return;
@@ -87,6 +102,7 @@ function unmountPane() {
   document.body.classList.remove('pane-active');
 }
 
+// HYBRID: opens snooze sheet and seeds its UI from state
 function openSnooze(i){
   const h = load()[i];
   if(!h)return;
@@ -98,12 +114,14 @@ function openSnooze(i){
   openSheet('snooze-sheet');
 }
 
+// PURE: computes the snooze undo label
 function snoozeUndoLabel(until,label){
   if(label)return label;
   const days = Math.max(1,Math.ceil((until - Date.now()) / 86400000));
   return `Hidden ${days}d`;
 }
 
+// HANDLER: applies snooze until timestamp and re-renders
 function doSnoozeUntil(i,until,label = ''){
   const data = load();
   if(!data[i])return;
@@ -115,10 +133,12 @@ function doSnoozeUntil(i,until,label = ''){
   }
 }
 
+// HANDLER: snoozes a habit by a number of days
 function doSnooze(i,days){
   doSnoozeUntil(i,Date.now() + days * 86400000,`Hidden ${days}d`);
 }
 
+// PURE: computes repetition-based snooze until timestamp
 function repetitionSnoozeUntil(h,skipCount){
   if(!h || h.type === 'zero')return null;
   const targetDays = Math.max(1,effectiveTarget(h));
@@ -132,6 +152,7 @@ function repetitionSnoozeUntil(h,skipCount){
   return Math.max(showBeforeDue,tomorrow);
 }
 
+// HANDLER: snoozes a habit by skipped repetitions
 function doSnoozeRepetitions(i,skipCount){
   const h = load()[i];
   const until = repetitionSnoozeUntil(h,skipCount);
@@ -140,6 +161,7 @@ function doSnoozeRepetitions(i,skipCount){
   doSnoozeUntil(i,until,label);
 }
 
+// HYBRID: opens activity sheet and seeds its UI from state
 function openActivity(i){
   const h = load()[i];
   if(!h)return;
@@ -149,6 +171,7 @@ function openActivity(i){
   openSheet('activity-sheet');
 }
 
+// RENDER: renders activity log UI for a habit
 function renderActivity(h){
   const logs = normalizeLogs(h.logs);
   const nowKey = dateKey(Date.now());
@@ -176,6 +199,7 @@ function renderActivity(h){
     : '<p class="activity-empty">No entries or future plans yet.</p>';
 }
 
+// PURE: builds activity summary metrics HTML
 function activitySummary(h,actual,future){
   const frame = monthFrame(0);
   const thisMonth = actual.filter(ts=>{
@@ -194,10 +218,12 @@ function activitySummary(h,actual,future){
   ].join('');
 }
 
+// PURE: builds a single activity metric HTML span
 function activityMetric(icon,label,value){
   return `<span class="activity-metric"><i class="ti ${icon}" aria-hidden="true"></i><b>${escapeHtml(String(value))}</b><small>${escapeHtml(label)}</small></span>`;
 }
 
+// PURE: computes next activity moment and icon
 function activityNextMoment(h,future){
   if(future.length)return {icon:'ti-calendar-event',label:entryWhen(future[0].ts)};
   if(h.type === 'zero')return {icon:'ti-shield-check',label:h.lastLog ? 'rebuilding' : 'clear'};
@@ -206,6 +232,7 @@ function activityNextMoment(h,future){
   return {icon:'ti-calendar-time',label:entryWhen(due)};
 }
 
+// PURE: computes detail string for an activity entry
 function activityEntryDetail(actual,ts){
   const idx = actual.indexOf(ts);
   if(idx > 0){
@@ -215,6 +242,7 @@ function activityEntryDetail(actual,ts){
   return 'first entry';
 }
 
+// PURE: computes average gap label between recent logs
 function averageSpacing(actual){
   if(actual.length < 2)return '';
   const gaps = [];
@@ -225,6 +253,7 @@ function averageSpacing(actual){
   return `${avg}d`;
 }
 
+// PURE: builds an activity list section HTML
 function activitySection(title,items,moreCount = 0){
   return `<section class="activity-section">
     <span class="overview-section-title">${title}</span>
@@ -242,6 +271,7 @@ function activitySection(title,items,moreCount = 0){
   </section>`;
 }
 
+// HANDLER: deletes a habit and shows undo
 function doNuke(i){
   const data = load();
   const removed = data[i];
@@ -253,6 +283,7 @@ function doNuke(i){
   }
 }
 
+// RENDER: adjusts keyboard lift CSS variable for open sheets
 function updateKeyboardLift(){
   if (paneTierActive()) {
     document.documentElement.style.setProperty('--keyboard-lift','0px');
@@ -268,6 +299,7 @@ function updateKeyboardLift(){
   document.documentElement.style.setProperty('--keyboard-lift',`${keyboard}px`);
 }
 
+// RENDER: scrolls focused input into view
 function keepFocusedInputVisible(){
   const active = document.activeElement;
   if(!active || (!$('add-sheet').contains(active) && active !== $('habit-search')))return;
@@ -276,6 +308,7 @@ function keepFocusedInputVisible(){
 }
 
 // Move the search input to the top app bar on wide tiers, back to bottom nav on phone-portrait.
+// RENDER: reparents search input based on tier
 function reparentSearch() {
   const input = $('habit-search');
   const clear = $('clear-search');
@@ -288,6 +321,7 @@ function reparentSearch() {
   }
 }
 
+// RENDER: opens a sheet or mounts it in the pane
 function openSheet(id){
   if (paneTierActive() && isFullPageSheet(id) && shouldMountInPane(id)) {
     mountInPane(id);
@@ -301,6 +335,7 @@ function openSheet(id){
   updateFullPageState();
   updateKeyboardLift();
 }
+// RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
   // If this sheet is currently mounted in the pane, unmount it instead.
   const pane = getPane();
@@ -318,10 +353,12 @@ function closeSheet(id){
   if(id === 'add-sheet')updateKeyboardLift();
 }
 
+// PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
   return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet';
 }
 
+// PURE: checks if a sheet id mounts into the pane
 function shouldMountInPane(id) {
   // Only the detail sheet is mounted into a pane. The overview lives in its
   // own permanent .pane-overview slot on wide tiers; about/settings stay as
@@ -329,11 +366,13 @@ function shouldMountInPane(id) {
   return id === 'detail-sheet';
 }
 
+// RENDER: toggles body class for full-page sheet state
 function updateFullPageState(){
   const open = ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].some(id=>$(id).classList.contains('open'));
   document.body.classList.toggle('fullpage-open',open);
 }
 
+// RENDER: shows and auto-hides the toast message
 function showToast(text){
   const toast = $('toast');
   toast.textContent = text;
@@ -342,6 +381,7 @@ function showToast(text){
   toastTimer = setTimeout(()=>toast.classList.remove('show'),900);
 }
 
+// HYBRID: shows undo toast and stores pending undo state
 function showUndo(text,undo){
   pendingUndo = undo;
   $('undo-text').textContent = text;
@@ -350,6 +390,7 @@ function showUndo(text,undo){
   undoTimer = setTimeout(hideUndo,5200);
 }
 
+// HYBRID: hides undo toast and clears pending undo state
 function hideUndo(){
   clearTimeout(undoTimer);
   undoTimer = null;
@@ -357,6 +398,7 @@ function hideUndo(){
   $('undo-toast').classList.remove('show');
 }
 
+// HYBRID: re-renders currently open views after data change
 function refreshOpenViews(){
   render();
   const detailOpen = $('detail-sheet').classList.contains('open') || (paneTierActive() && getPane()?.dataset.activeSheet === 'detail-sheet');
@@ -374,12 +416,14 @@ function refreshOpenViews(){
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
 }
 
+// RENDER: temporarily suppresses the bottom nav
 function suppressBottomNav(ms = 300){
   document.body.classList.add('nav-suppressed');
   clearTimeout(navSuppressTimer);
   navSuppressTimer = setTimeout(()=>document.body.classList.remove('nav-suppressed'),ms);
 }
 
+// HYBRID: shows reach-assist pad based on settings and scroll
 function showReachPad(){
   if(!sortSettings.reachAssist)return;
   if(document.querySelector('.sheet-wrap.open'))return;
@@ -393,12 +437,14 @@ function showReachPad(){
   },5200);
 }
 
+// HANDLER: cancels an in-progress reach hold gesture
 function cancelReachHold(){
   clearTimeout(reachHoldTimer);
   reachHoldTimer = null;
   reachArmed = false;
 }
 
+// HYBRID: updates header visibility state and body class on scroll
 function updateHeaderOnScroll(){
   const y = window.scrollY;
   const dy = y - lastScrollY;
@@ -418,6 +464,7 @@ function updateHeaderOnScroll(){
   lastScrollY = y;
 }
 
+// PURE: resolves forgiving button target from an event target
 function forgivingButtonTarget(target){
   const btn = target.closest('button');
   if(!btn || btn.closest('.ting-card'))return null;
@@ -427,6 +474,7 @@ function forgivingButtonTarget(target){
   return btn;
 }
 
+// WIRE: attaches forgiving pointer tap handlers to a calendar
 function bindCalendarTap(container,selector,handler){
   // Any horizontally-scrollable pager this calendar lives inside of (the
   // detail sheet's info/calendar/schedule pager). Swiping between those pages

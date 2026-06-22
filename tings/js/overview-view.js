@@ -1,17 +1,30 @@
 // Monthly overview, topic activity reporting, day logs, and date availability overrides.
+//
+// This file renders the calendar overview sheet: the month/14-day grid, the
+// day drill-down (activity list), and per-date availability overrides.
+//
+// React Native port guide:
+//   - RENDER functions  -> React functional components (return JSX).
+//   - HANDLER functions -> onPress / onChange callback props.
+//   - WIRE functions    -> useEffect setup hooks (attach listeners / gestures).
+//   - PURE functions    -> plain helper modules (no change needed).
+//   - HYBRID functions  -> split into a component + a callback before porting.
 
+// PURE: maps habit type to entry tone
 function entryTone(type){
   if(type === 'zero')return 'miss';
   if(type === 'reduce')return 'warn';
   return 'hit';
 }
 
+// PURE: builds topic filter choice list
 function overviewTopicChoices(data){
   const topics = normalizeTopics([...(sortSettings?.topics || []),...data.flatMap(h=>normalizeTopics(h.topics))]);
   const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
   return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
 }
 
+// PURE: tests habit against topic filter
 function matchesOverviewTopic(h,topic){
   if(!topic || topic === 'all')return true;
   const topics = normalizeTopics(h.topics);
@@ -19,6 +32,7 @@ function matchesOverviewTopic(h,topic){
   return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
 }
 
+// HYBRID: renders topic pills, fixes invalid selection
 function renderOverviewTopicFilter(data){
   const wrap = $('overview-topic-filter');
   if(!wrap)return;
@@ -37,6 +51,7 @@ const OVERVIEW_RANGES = [
   {key:'all',label:'all time'}
 ];
 
+// HYBRID: renders range pills, fixes invalid selection
 function renderOverviewRangeFilter(){
   const wrap = $('overview-range-filter');
   if(!wrap)return;
@@ -49,6 +64,7 @@ function renderOverviewRangeFilter(){
 // Tallies every log that passes `included(ts)` into a per-day map plus
 // running totals, shared by the recent/month/all-time renderers below so
 // "busiest day" and "active days" are computed identically everywhere.
+// PURE: tallies per-day log entries and totals
 function buildDayTally(data,included){
   const map = new Map();
   let total = 0;
@@ -74,12 +90,14 @@ function buildDayTally(data,included){
   return {map,total,actual,planned,toneCounts};
 }
 
+// PURE: derives active days and busiest
 function dayTallySummary(tally){
   const activeDays = [...tally.map.values()].filter(entries=>entries.some(entry=>!entry.planned)).length;
   const busiest = [...tally.map.entries()].sort((a,b)=>b[1].length - a[1].length)[0];
   return {activeDays,busiest};
 }
 
+// PURE: picks summary copy from tone counts
 function overviewToneCopy(tally,emptyWord){
   if(tally.toneCounts.miss)return 'some days need care';
   if(tally.toneCounts.warn)return 'mostly steady';
@@ -88,6 +106,7 @@ function overviewToneCopy(tally,emptyWord){
   return emptyWord;
 }
 
+// RENDER: writes overview stats row markup
 function renderOverviewStatsRow(activeDays,actual,planned,busiestLabel){
   $('overview-stats').innerHTML = `
     <span class="overview-stat"><i class="ti ti-calendar-check" aria-hidden="true"></i>${activeDays} active days</span>
@@ -96,6 +115,7 @@ function renderOverviewStatsRow(activeDays,actual,planned,busiestLabel){
     <span class="overview-stat"><i class="ti ti-chart-bar" aria-hidden="true"></i>busy ${busiestLabel}</span>`;
 }
 
+// PURE: builds calendar day cell HTML
 function cellMarkup(key,date,entries,extraSpans = ''){
   const tones = ['hit','warn','miss','plan']
     .filter(tone=>entries.some(item=>item.tone === tone))
@@ -115,6 +135,7 @@ function cellMarkup(key,date,entries,extraSpans = ''){
 
 // Lists shared by every range mode: top habits and topics by entry count.
 // `countForHabit` decides what "count" means for the active range.
+// RENDER: writes top habits and topics lists
 function renderOverviewLists(data,countForHabit,scopeNote = ''){
   const rows = data.map(h=>({h,count:countForHabit(h),c:colors(daysSince(h.lastLog),h.target,h.type)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,8);
@@ -144,12 +165,14 @@ function renderOverviewLists(data,countForHabit,scopeNote = ''){
   `).join('')}` : '<div class="overview-item"><span class="overview-name">quiet stretch</span><span class="overview-meta">no entries yet</span></div>'}`;
 }
 
+// RENDER: toggles month nav buttons and label
 function setOverviewMonthNav(showNav,label){
   $('overview-prev-month').hidden = !showNav;
   $('overview-next-month').hidden = !showNav;
   $('overview-calendar-label').textContent = label;
 }
 
+// RENDER: orchestrates full overview sheet render
 function renderOverview(){
   const allData = load();
   renderOverviewTopicFilter(allData);
@@ -162,6 +185,7 @@ function renderOverview(){
 
 // Default view: a 14-cell strip (today and the 13 days before it), always
 // anchored to "now" rather than whatever month happens to be navigated to.
+// RENDER: renders 14-day strip and stats
 function renderOverviewRecent(data,topicLabel){
   const end = dayStart(Date.now()) + 86400000; // exclusive: start of tomorrow
   const start = end - 14 * 86400000;
@@ -195,6 +219,7 @@ function renderOverviewRecent(data,topicLabel){
 // but the stats/lists below it cover the habit's entire history instead of
 // just the visible month, so "most active" reflects all-time, not one page
 // of the calendar.
+// RENDER: renders month grid and stats
 function renderOverviewMonth(data,topicLabel,allTime){
   const frame = monthFrame(overviewMonthOffset);
   const gridTally = buildDayTally(data,ts=>{
@@ -235,6 +260,7 @@ function renderOverviewMonth(data,topicLabel,allTime){
   renderOverviewLists(data,countForHabit,allTime ? ' · all time' : '');
 }
 
+// RENDER: writes day drill-down entries list
 function renderDayLogs(key){
   const data = load();
   const topicLabel = overviewTopicFilter === 'all' ? '' : overviewTopicFilter === '__none__' ? 'no topic' : overviewTopicFilter;
@@ -271,6 +297,7 @@ function renderDayLogs(key){
   $('day-log-add').disabled = !addOptions.length;
 }
 
+// RENDER: writes day availability override UI
 function renderDayAvailability(key){
   const overrides = normalizeAvailabilityOverrides(sortSettings.availabilityOverrides);
   const hasOverride = Object.prototype.hasOwnProperty.call(overrides,key);
@@ -284,6 +311,7 @@ function renderDayAvailability(key){
   $('day-availability-clear').hidden = !hasOverride;
 }
 
+// HYBRID: persists availability minutes, re-renders
 function saveDayAvailabilityOverride(){
   if(!dayLogsKey)return;
   const minutes = Math.max(0,Math.min(1440,parseInt($('day-availability-minutes').value,10) || 0));
@@ -294,6 +322,7 @@ function saveDayAvailabilityOverride(){
   showToast('availability saved');
 }
 
+// HYBRID: removes availability override, re-renders
 function clearDayAvailabilityOverride(){
   if(!dayLogsKey)return;
   const overrides = normalizeAvailabilityOverrides(sortSettings.availabilityOverrides);
