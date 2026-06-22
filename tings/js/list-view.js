@@ -1,30 +1,45 @@
 // Topic chips, search UI, summary copy, cards, swipe gestures, and quick actions.
+//
+// This file renders the home list view (topic chips, search, summary copy,
+// cards, swipe gestures, and quick actions). Annotated for a React Native port:
+//   - RENDER  -> React functional components
+//   - HANDLER -> onPress / onChange callbacks
+//   - WIRE    -> useEffect setup hooks
+//   - PURE    -> plain helper modules / selectors
+//   - HYBRID  -> split into state hooks + presentational components
 
+// PURE: build icon markup string
 function iconHtml(h,c){
   if(h.emoji)return `<span class="emoji-mark">${escapeHtml(h.emoji)}</span>`;
   return `<i class="ti ${defaultIcon(h.type)}" style="color:${c.icon};" aria-hidden="true"></i>`;
 }
 
+// PURE: get normalized topic list
 function topicOptions(){
   return normalizeTopics((sortSettings || loadSortSettings()).topics);
 }
 
+// PURE: read selected topics from DOM
 function selectedTopicsFrom(containerId){
   return [...$(containerId).querySelectorAll('.topic-chip.on')].map(btn=>btn.dataset.topic);
 }
 
+// PURE: read selected add-topic chips
 function selectedAddTopics(){
   return selectedTopicsFrom('ting-topic-chips');
 }
 
+// PURE: read selected weekday chips
 function selectedWeekdaysFrom(containerId){
   return [...$(containerId).querySelectorAll('.schedule-chip.on')].map(btn=>parseInt(btn.dataset.weekday,10));
 }
 
+// PURE: read selected month-day chips
 function selectedMonthDaysFrom(containerId){
   return [...$(containerId).querySelectorAll('.monthday-chip.on')].map(btn=>parseInt(btn.dataset.monthday,10));
 }
 
+// RENDER: draw weekday and month-day chips
 function renderScheduleChips(prefix,h = {}){
   const weekdays = new Set(normalizeAllowedWeekdays(h.allowedWeekdays));
   const monthDays = new Set(normalizeAllowedMonthDays(h.allowedMonthDays));
@@ -62,11 +77,13 @@ function renderScheduleChips(prefix,h = {}){
   }
 }
 
+// PURE: convert minutes to HH:MM
 function minutesToTimeInput(minutes){
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
+// PURE: parse HH:MM into minutes
 function timeInputToMinutes(value){
   if(!value)return null;
   const [h,m] = value.split(':').map(Number);
@@ -74,6 +91,7 @@ function timeInputToMinutes(value){
   return h * 60 + m;
 }
 
+// HANDLER: toggle schedule chip on tap
 function toggleScheduleChip(e){
   const btn = e.target.closest('.schedule-chip[data-weekday],.monthday-chip[data-monthday]');
   if(!btn)return;
@@ -82,6 +100,7 @@ function toggleScheduleChip(e){
   if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips'))setDetailDirty();
 }
 
+// RENDER: build the add-topic pill button
 function createAddTopicPill(){
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -92,6 +111,7 @@ function createAddTopicPill(){
   return btn;
 }
 
+// RENDER: draw selectable topic chips
 function renderTopicChips(containerId,selected = []){
   const topics = topicOptions();
   const selectedSet = new Set(normalizeTopics(selected).map(topic=>topic.toLowerCase()));
@@ -104,6 +124,7 @@ function renderTopicChips(containerId,selected = []){
   wrap.appendChild(createAddTopicPill());
 }
 
+// HYBRID: swap pill for input and wire commit
 function beginNewTopicInput(containerId){
   const wrap = $(containerId);
   if(!wrap)return;
@@ -168,6 +189,7 @@ function beginNewTopicInput(containerId){
   });
 }
 
+// HANDLER: toggle topic chip on tap
 function toggleTopicChip(e){
   const btn = e.target.closest('.topic-chip[data-topic]');
   if(!btn)return;
@@ -175,6 +197,7 @@ function toggleTopicChip(e){
   if(btn.closest('#detail-topic-chips'))setDetailDirty();
 }
 
+// RENDER: draw removable topic list
 function renderTopicList(){
   const list = $('topic-list');
   if(!list)return;
@@ -184,6 +207,7 @@ function renderTopicList(){
     : '<span class="topic-chip empty">no topics</span>';
 }
 
+// HYBRID: add topic, update state, re-render
 function addTopicFromInput(inputId,options = {}){
   const input = $(inputId);
   if(!input)return;
@@ -207,10 +231,12 @@ function addTopicFromInput(inputId,options = {}){
   render();
 }
 
+// HANDLER: add topic from input field
 function addTopic(){
   addTopicFromInput('topic-name');
 }
 
+// HYBRID: remove topic and refresh views
 function removeTopic(topic){
   const key = topic.toLowerCase();
   const topics = topicOptions().filter(item=>item.toLowerCase() !== key);
@@ -229,12 +255,14 @@ function removeTopic(topic){
   refreshOpenViews();
 }
 
+// PURE: compute home topic filter choices
 function homeTopicChoices(data){
   const topics = normalizeTopics([...topicOptions(),...data.flatMap(h=>normalizeTopics(h.topics))]);
   const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
   return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
 }
 
+// PURE: test habit matches home topic
 function matchesHomeTopic(h,topic){
   if(!topic || topic === 'all')return true;
   const topics = normalizeTopics(h.topics);
@@ -242,6 +270,7 @@ function matchesHomeTopic(h,topic){
   return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
 }
 
+// HYBRID: draw filter and reset invalid state
 function renderHomeTopicFilter(data){
   const wrap = $('home-topic-filter');
   if(!wrap)return;
@@ -258,6 +287,7 @@ function renderHomeTopicFilter(data){
   `).join('');
 }
 
+// RENDER: toggle sort and search buttons
 function updateSortButton(){
   const count = load().length;
   $('open-overview').classList.toggle('is-hidden',count < 2);
@@ -277,6 +307,7 @@ function updateSortButton(){
   if(count < 10)closeSearch({render:false});
 }
 
+// RENDER: sync search bar to query state
 function updateSearchUi(){
   const nav = document.querySelector('.bottom-nav');
   const input = $('habit-search');
@@ -312,6 +343,7 @@ function updateSearchUi(){
   }
 }
 
+// HYBRID: open/close search, focus, render
 function setSearchOpen(open,options = {}){
   const nav = document.querySelector('.bottom-nav');
   const input = $('habit-search');
@@ -348,6 +380,7 @@ function setSearchOpen(open,options = {}){
   if(options.render !== false)render();
 }
 
+// HYBRID: close and clear search UI
 function closeSearch(options = {}){
   const nav = document.querySelector('.bottom-nav');
   const active = Boolean(searchQuery.trim()) || Boolean(nav?.classList.contains('search-open'));
@@ -358,6 +391,7 @@ function closeSearch(options = {}){
   });
 }
 
+// PURE: decide if tap dismisses search
 function shouldDismissSearchFromTap(target){
   const nav = document.querySelector('.bottom-nav');
   const barSearch = $('app-bar-search');
@@ -375,10 +409,12 @@ function shouldDismissSearchFromTap(target){
   return true;
 }
 
+// PURE: get next planned log entry
 function nextPlannedLog(h){
   return plannedLogs(h.logs)[0] || null;
 }
 
+// PURE: compute next-eligible label text
 function nextEligibleCopy(h){
   if(!hasDaySchedule(h))return '';
   const distance = nextEligibleDistance(h);
@@ -390,6 +426,7 @@ function nextEligibleCopy(h){
   return `available ${new Date(next).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
 }
 
+// PURE: compute short next-eligible label
 function nextEligibleShort(h){
   if(!hasDaySchedule(h))return '';
   const distance = nextEligibleDistance(h);
@@ -398,6 +435,7 @@ function nextEligibleShort(h){
   return `${distance}d`;
 }
 
+// PURE: compute compact plan day label
 function compactPlanLabel(ts){
   const days = calendarDayDiff(ts);
   if(days === null)return '';
@@ -405,6 +443,7 @@ function compactPlanLabel(ts){
   return `${days}d`;
 }
 
+// PURE: compute keep-up cue text
 function buildCue(h,days,target){
   if(days === null)return 'Ready for first entry';
   if(days < 0)return 'Planned ahead';
@@ -422,6 +461,7 @@ function buildCue(h,days,target){
   return `${remaining} days left`;
 }
 
+// PURE: compute reduce cue text
 function limitCue(h,days,target){
   if(days === null)return 'No entries yet';
   if(days < 0)return 'Planned ahead';
@@ -432,6 +472,7 @@ function limitCue(h,days,target){
   return 'Enough space';
 }
 
+// PURE: compute card status cue text
 function cardCue(h){
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
@@ -451,12 +492,14 @@ function cardCue(h){
   return `${days} days clear`;
 }
 
+// PURE: compute card tone class
 function cardTone(h){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'quiet';
   if(hasPlannedToday(h) && h.type !== 'zero')return 'plan';
   return scoreTone(progressScore(h));
 }
 
+// PURE: build card meta pills markup
 function cardMeta(h,options = {}){
   const plan = nextPlannedLog(h);
   const parts = [];
@@ -492,6 +535,7 @@ function cardMeta(h,options = {}){
   return parts.join('');
 }
 
+// PURE: build card trail dots markup
 function cardTrail(h){
   const today = new Date();
   const logKeys = logToneMap(h);
@@ -512,6 +556,7 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
+// PURE: reduce trail tones to one
 function summarizeTrailTone(tones){
   if(!tones.length)return '';
   if(tones.includes('plan'))return 'plan';
@@ -521,6 +566,7 @@ function summarizeTrailTone(tones){
   return '';
 }
 
+// RENDER: render the full habit list
 function render(){
   const data = load();
   const list = $('list');
@@ -670,6 +716,7 @@ function render(){
   });
 }
 
+// WIRE: attach swipe gesture listeners
 function setupSwipe(row){
   const card = row.querySelector('.ting-card');
   const leftActions = row.querySelector('.swipe-actions-left');
@@ -677,10 +724,12 @@ function setupSwipe(row){
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
   let startedOpen = false;
 
+  // PURE: measure total swipe action width
   function revealWidth(actions){
     return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
   }
 
+  // HYBRID: reset swipe DOM and clear state
   function resetSwipe(){
     card.style.transition = SNAP_TRANSITION;
     card.style.transform = '';
@@ -779,6 +828,7 @@ function setupSwipe(row){
   row.addEventListener('touchcancel',resetSwipe,{passive:true});
 }
 
+// HYBRID: close all open swipe rows
 function closeAllSwipes(){
   document.querySelectorAll('.swipe-row').forEach(row=>{
     const card = row.querySelector('.ting-card');
@@ -797,6 +847,7 @@ function closeAllSwipes(){
   swipeOpenCard = null;
 }
 
+// WIRE: attach card tap and pointer listeners
 function setupCardTap(row,realIdx){
   const card = row.querySelector('.ting-card');
   card.addEventListener('pointerdown',e=>{
@@ -830,6 +881,7 @@ function setupCardTap(row,realIdx){
   });
 }
 
+// HANDLER: distinguish tap vs double-tap
 function handleCardActivate(realIdx,card,singleAction){
   const now = Date.now();
   if(lastTap.idx === realIdx && now - lastTap.time < TAP_DELAY){
@@ -843,6 +895,7 @@ function handleCardActivate(realIdx,card,singleAction){
   }
 }
 
+// HYBRID: log entry and show undo
 function logTing(i){
   const data = load();
   const now = Date.now();
@@ -856,6 +909,7 @@ function logTing(i){
   return true;
 }
 
+// HYBRID: log entry at timestamp, show undo
 function logTingAt(i,ts){
   const data = load();
   if(!data[i])return false;
@@ -870,6 +924,7 @@ function logTingAt(i,ts){
   return true;
 }
 
+// HANDLER: splice entry from habit logs
 function removeEntryAt(i,ts,planOnly = false){
   const data = load();
   if(!data[i])return false;
@@ -882,6 +937,7 @@ function removeEntryAt(i,ts,planOnly = false){
   return save(data);
 }
 
+// HYBRID: revert last action and refresh
 function undoLastAction(){
   if(!pendingUndo)return;
   const data = load();
@@ -911,6 +967,7 @@ function undoLastAction(){
   }
 }
 
+// HYBRID: log entry and flash card
 function quickLog(i,card){
   if(!logTing(i))return;
   if(card){
@@ -920,6 +977,7 @@ function quickLog(i,card){
   setTimeout(refreshOpenViews, 260);
 }
 
+// PURE: compute next plan timestamp
 function nextPlanTime(h){
   const base = h.lastLog || Date.now();
   const target = h.target || 7;
@@ -933,10 +991,12 @@ function nextPlanTime(h){
   return d.getTime();
 }
 
+// PURE: format next plan date label
 function nextPlanLabel(h){
   return new Date(nextPlanTime(h)).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 }
 
+// HYBRID: schedule next plan entry
 function planNext(i){
   const h = load()[i];
   if(!h || h.type === 'zero')return;
@@ -944,6 +1004,7 @@ function planNext(i){
   if(logTingAt(i,ts))refreshOpenViews();
 }
 
+// HYBRID: toggle pin and re-render
 function togglePin(i){
   const data = load();
   if(!data[i])return;

@@ -1,5 +1,15 @@
 // Habit detail sheet, stats, graph, and per-habit calendar.
+//
+// This file renders the habit detail sheet: the score ring, stats, the gap
+// graph, the per-habit calendar, and the schedule editor (weekday / monthday /
+// time-window). Functions are tagged by role to guide the React Native port:
+//   - RENDER  -> become React functional components (return JSX).
+//   - HANDLER -> become onPress / onChange callbacks.
+//   - WIRE    -> become useEffect setup hooks.
+//   - HYBRID  -> split into a component + hooks + handlers.
+//   - PURE    -> port verbatim into shared utils.
 
+// HYBRID: opens sheet, syncs DOM and detail state
 function openDetail(i){
   const h = load()[i];
   if(!h)return;
@@ -64,6 +74,7 @@ function openDetail(i){
   updateDetailPagerDots();
 }
 
+// HYBRID: opens detail then scrolls to calendar
 function openDetailCalendar(i){
   openDetail(i);
   requestAnimationFrame(()=>{
@@ -74,6 +85,7 @@ function openDetailCalendar(i){
   });
 }
 
+// HYBRID: opens detail then scrolls to schedule
 function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
@@ -84,6 +96,7 @@ function openDetailSchedule(i){
   });
 }
 
+// PURE: builds header subtitle from habit state
 function detailHeaderLine(h){
   const parts = [cardCue(h)];
   if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
@@ -95,6 +108,7 @@ function detailHeaderLine(h){
   return parts.filter(Boolean).join(' · ');
 }
 
+// RENDER: fills time window input fields
 function renderTimeWindowInputs(h = {}){
   const start = $('detail-time-start');
   const end = $('detail-time-end');
@@ -110,12 +124,14 @@ function renderTimeWindowInputs(h = {}){
     if(clear)clear.hidden = true;
   }
 }
+// RENDER: toggles time-clear button visibility
 function syncTimeClearBtn(){
   const clear = $('detail-time-clear');
   if(!clear)return;
   clear.hidden = !$('detail-time-start').value && !$('detail-time-end').value;
 }
 
+// HYBRID: reads form DOM into tune object
 function currentDetailTune(){
   return {
     name:$('detail-habit-message').value.trim(),
@@ -135,6 +151,7 @@ function currentDetailTune(){
   };
 }
 
+// HYBRID: compares form to original, toggles dirty class
 function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const current = currentDetailTune();
@@ -158,6 +175,7 @@ function setDetailDirty(force){
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }
 
+// HYBRID: rewrites form fields from saved original
 function restoreDetailTune(){
   if(!detailTuneOriginal)return;
   $('detail-habit-message').value = detailTuneOriginal.name;
@@ -173,6 +191,7 @@ function restoreDetailTune(){
   setDetailDirty(false);
 }
 
+// HYBRID: switches allowed/preferred schedule section
 function setScheduleView(view){
   detailScheduleView = view;
   document.querySelectorAll('#detail-schedule-view-seg .seg-opt').forEach(btn=>{
@@ -184,6 +203,7 @@ function setScheduleView(view){
   if(preferredGroup)preferredGroup.hidden = view !== 'preferred';
 }
 
+// HYBRID: resets detail state and closes sheet
 function closeDetail(){
   detailIdx = null;
   detailTuneOriginal = null;
@@ -191,6 +211,7 @@ function closeDetail(){
   closeSheet('detail-sheet');
 }
 
+// RENDER: renders score ring and stat cards
 function renderStats(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
@@ -245,6 +266,7 @@ function renderStats(h){
     <div class="stat compact"><div class="stat-num">${completed}</div><div class="stat-label">total entries</div></div>`;
 }
 
+// PURE: summarizes logs inside a day window
 function recentWindowStats(h,windowDays = 30){
   const since = Date.now() - windowDays * 86400000;
   const logs = actualLogs(h.logs).filter(ts=>ts >= since);
@@ -253,6 +275,7 @@ function recentWindowStats(h,windowDays = 30){
   return {count:logs.length,expected,good:Math.min(logs.length,expected)};
 }
 
+// PURE: lists recent gap intervals in days
 function intervalValues(h,limit = null){
   const logs = actualLogs(h.logs);
   if(!logs.length)return [];
@@ -264,6 +287,7 @@ function intervalValues(h,limit = null){
   return limit ? intervals.slice(-limit) : intervals;
 }
 
+// PURE: tallies gap tones into percentages
 function intervalToneSummary(h){
   const intervals = intervalValues(h,14);
   if(!intervals.length)return {hit:0,warn:0,miss:0,label:'no gap history'};
@@ -280,6 +304,7 @@ function intervalToneSummary(h){
   return {hit,warn,miss,label};
 }
 
+// PURE: maps score to a label string
 function scoreTitle(h,score){
   if(score === null)return 'no pattern yet';
   if(h.type === 'keepup'){
@@ -297,6 +322,7 @@ function scoreTitle(h,score){
   return 'recent reset';
 }
 
+// PURE: computes 0-100 progress score
 function progressScore(h){
   const days = daysSince(h.lastLog);
   if(days === null)return null;
@@ -318,6 +344,7 @@ function progressScore(h){
   return Math.max(0,Math.round(days / 4 * 44));
 }
 
+// PURE: maps score to guidance copy
 function progressCopy(h,score){
   if(score === null)return 'start with one entry';
   if(h.type === 'keepup'){
@@ -335,6 +362,7 @@ function progressCopy(h,score){
   return 'there was a recent reset';
 }
 
+// PURE: builds the about blurb string
 function aboutText(h){
   const days = daysSince(h.lastLog);
   if(h.type === 'zero'){
@@ -356,6 +384,7 @@ function aboutText(h){
   return days >= target ? `${days} days since the last entry. Good gap.` : `Entry was ${when}. Try to increase the gap.`;
 }
 
+// PURE: builds the short trend label
 function trendText(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
@@ -377,6 +406,7 @@ function trendText(h){
   return pace >= target ? 'on track' : 'watch';
 }
 
+// RENDER: renders gap history bar graph
 function renderGraph(h){
   const graph = $('detail-graph');
   const logs = actualLogs(h.logs);
@@ -403,12 +433,14 @@ function renderGraph(h){
     <div class="graph-caption">${graphCaption(h,intervals)}</div>`;
 }
 
+// PURE: returns the graph rule hint
 function graphRule(h){
   if(h.type === 'keepup')return 'shorter is better';
   if(h.type === 'reduce')return 'longer is better';
   return 'longer is better';
 }
 
+// PURE: builds the graph caption string
 function graphCaption(h,intervals){
   const last = intervals[intervals.length - 1];
   const tone = intervalTone(h,last);
@@ -420,6 +452,7 @@ function graphCaption(h,intervals){
   return `Last clear stretch was ${last}d: ${label}. Longer is better.${avgPart}`;
 }
 
+// RENDER: renders month calendar grid
 function renderCalendar(h){
   const frame = monthFrame(detailMonthOffset);
   const {year,month,first,last,label,today} = frame;
@@ -466,6 +499,7 @@ function renderCalendar(h){
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
 }
 
+// RENDER: syncs pager dot indicator
 function updateDetailPagerDots(){
   const inner = getSheetInner('detail-sheet');
   const pager = inner?.querySelector('.detail-pager');
@@ -483,6 +517,7 @@ function updateDetailPagerDots(){
   });
 }
 
+// RENDER: syncs active pager dot indicator
 function setDetailActivePage(key){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if (!pager) return;
@@ -492,6 +527,7 @@ function setDetailActivePage(key){
   updateDetailPagerDots();
 }
 
+// RENDER: clears legacy tab chrome in pager
 function renderDetailTabs(){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if (!pager) return;
@@ -501,15 +537,18 @@ function renderDetailTabs(){
   [...pager.querySelectorAll('.detail-page')].forEach(p=>p.classList.remove('is-active'));
 }
 
+// PURE: checks planned log for a day key
 function hasPlannedEntryForDay(h,key){
   return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
 }
 
+// PURE: checks a planned entry exists today
 function hasPlannedToday(h){
   const today = dateKey(Date.now());
   return hasPlannedEntryForDay(h,today);
 }
 
+// PURE: computes month boundary dates and label
 function monthFrame(offset = 0){
   const now = new Date();
   const anchor = new Date(now.getFullYear(),now.getMonth() + offset,1);

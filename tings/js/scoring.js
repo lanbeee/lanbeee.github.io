@@ -1,4 +1,18 @@
-// Planner-ready priority scoring, rhythm signals, and search filtering.
+// ─────────────────────────────────────────────────────────────────────────
+// scoring.js — Planner-ready priority scoring, rhythm signals, and search.
+//
+// Pure module: every function here takes data in and returns data out. The
+// only impurities are reads of the `sortSettings` global (passed in by
+// attentionScore/visibleIndices via settingsOverride or default) and reads of
+// `searchQuery` / `homeTopicFilter` in filteredVisibleIndices. None of these
+// functions touch the DOM except `updateQuotaBar`, which is grouped separately
+// at the bottom for easy extraction.
+//
+// Port target: src/logic/scoring.ts — types only, no logic changes.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ─── Visual metadata: tones, colors, icons ───
+// Map habit state → CSS class tokens used by the view layer. Pure.
 
 function currentRun(h){
   const logs = actualLogs(h.logs).sort((a,b)=>b-a);
@@ -16,6 +30,11 @@ function currentRun(h){
   }
   return {num:run,label:'run'};
 }
+
+// ─── UI side-effect — DOM-aware (the one impure function in this file) ───
+// updateQuotaBar reads QUOTA_WARN_KB and mutates #quota-bar. It lives here
+// because save() in data.js calls it directly. In the RN port this becomes a
+// React state update triggered by the store, not a function in scoring.ts.
 
 function updateQuotaBar(kb){
   const bar = $('quota-bar');
@@ -125,6 +144,8 @@ function metaLine(h){
   return parts;
 }
 
+// ─── Numeric primitives ───
+
 function settingScale(value){
   return Math.max(0,Math.min(2,(parseInt(value,10) || 0) / 100));
 }
@@ -134,6 +155,11 @@ function clampNumber(value,min,max,fallback){
   if(Number.isNaN(num))return fallback;
   return Math.max(min,Math.min(max,num));
 }
+
+// ─── Effective target & urgency curves ───
+// effectiveTarget applies flexibility; buildUrgency maps a days/target ratio
+// into 0..1+ according to dueMode. buildDueScore turns that into a 0..110
+// attention score using a piecewise curve tuned by buildRiseAt.
 
 function rhythmBiasScore(target,settings){
   const bias = clampNumber(settings.rhythmBias, -100, 100, 0) / 100;
@@ -158,6 +184,13 @@ function buildUrgency(days,target,settings){
   return ratio;
 }
 
+/**
+ * Effective rhythm in days, accounting for flexibility.
+ * For build habits flexibility extends the target; for limit habits it shortens it;
+ * for stop habits flexibility is ignored.
+ * @param {Habit} h
+ * @returns {number}
+ */
 function effectiveTarget(h){
   const target = h.target || 7;
   const flex = clampFlexibility(h.flexibilityDays);
@@ -187,6 +220,10 @@ function clamp01(value){
 function calendarDayDiff(ts){
   return Math.round((dayStart(ts) - dayStart(Date.now())) / 86400000);
 }
+
+// ─── Score components: plan / new / due / progress / trend / rhythm ───
+// Each returns a 0..~110 contribution for one habit. Mixed together by
+// priorityComponents() and weighted by the user's setting scales.
 
 function planSignal(h,settings){
   const plan = nextPlannedLog(h);
@@ -303,12 +340,25 @@ function rhythmSignal(h,settings){
   return tieBias;
 }
 
+// ─── Priority composition ───
+// priorityComponents gathers every signal for a habit; attentionScore merges
+// them with BASE_SORT_MIX (or stop-mode mix), applies focus/type scaling,
+// damping for early build/limit habits, and returns the final sort key.
+
 function typeSettingScale(h,settings){
   if(h.type === 'keepup')return settingScale(settings.buildWeight);
   if(h.type === 'reduce')return settingScale(settings.limitWeight);
   return settingScale(settings.stopWeight);
 }
 
+/**
+ * Per-component priority breakdown for a habit. Each key is a 0..~110 score
+ * that attentionScore merges with BASE_SORT_MIX. Used by the sort lab preview
+ * and by debug tooling.
+ * @param {Habit} h
+ * @param {Settings} settings
+ * @returns {Object} {now,plan,due,progress,trend,rhythm,newness,duration,availability,flexibility,schedule,preferred}
+ */
 function priorityComponents(h,settings){
   const plannerFit = plannerFitSignal(h,settings);
   return {
@@ -453,6 +503,20 @@ function mixedPriorityScore(parts,mix){
   return Object.entries(mix).reduce((sum,[key,weight])=>sum + (parts[key] || 0) * weight,0);
 }
 
+/**
+ * Final attention score used for home ordering. Higher = earlier on the list.
+ * Snoozed habits return a large negative so they sort last. The score
+ * combines every signal in priorityComponents(), applies focus/type scaling,
+ * early-cycle damping, today readiness, and a tiny index tiebreak.
+ *
+ * IMPURE: reads the `sortSettings` global if settingsOverride is null. In the
+ * RN port, callers always pass settings explicitly.
+ *
+ * @param {Habit} h
+ * @param {number} index    — original array index, used as a tiebreak (-index/100)
+ * @param {Settings|null} [settingsOverride]
+ * @returns {number}
+ */
 function attentionScore(h,index,settingsOverride = null){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
@@ -479,6 +543,21 @@ function attentionScore(h,index,settingsOverride = null){
   return score - index / 100;
 }
 
+// ─── Categorization & visible-sort ───
+// todayCategory buckets habits into today/overdue/upcoming/other.
+// visibleIndices returns the full ordering, accounting for pins, snooze,
+// todayFirst preset, and the attentionScore tiebreak.
+
+/**
+ * Bucket a habit into a today-first category. Lower = more urgent.
+ *   0 = today (planned, or due and eligible today)
+ *   1 = overdue but not eligible today
+ *   2 = upcoming
+ *   3 = snoozed or stop-type (always deprioritized in todayFirst)
+ * @param {Habit} h
+ * @param {Settings} settings
+ * @returns {0|1|2|3}
+ */
 function todayCategory(h,settings){
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
@@ -500,6 +579,16 @@ function todayCategory(h,settings){
   return 2;
 }
 
+/**
+ * Sorted indices into the habits array, respecting pins, snooze visibility,
+ * the todayFirst preset (if active), and attentionScore for the final order.
+ *
+ * IMPURE: reads `sortSettings` if settingsOverride is null.
+ *
+ * @param {Habit[]} data
+ * @param {Settings|null} [settingsOverride]
+ * @returns {number[]} indices into `data`, best-first
+ */
 function visibleIndices(data,settingsOverride = null){
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const todayFirst = settings.preset === 'todayFirst';
@@ -520,6 +609,10 @@ function visibleIndices(data,settingsOverride = null){
   });
   return indices;
 }
+
+// ─── Search filtering ─── IMPURE: reads `searchQuery` and `homeTopicFilter`
+// globals from config.js. searchText() itself is pure and produces the
+// haystack; filtering happens here. In the RN port, pass these as args.
 
 function searchText(h){
   const typeLabel = h.type === 'keepup' ? 'build routine keepup' : h.type === 'reduce' ? 'limit reduce less' : 'stop quit zero';

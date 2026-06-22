@@ -1,5 +1,31 @@
 // Event binding and application startup.
 
+// ─────────────────────────────────────────────────────────────────
+// main.js — application controller (pre-React-Native-port notes)
+// ─────────────────────────────────────────────────────────────────
+// This file is the main controller: it wires DOM events to app
+// state and triggers re-renders in response.
+//
+// Responsibilities concentrated here:
+//   • crown dial gesture (pointer / momentum / wheel / keyboard)
+//   • keyboard lift (visualViewport-driven layout adjustment)
+//   • reach assist (pull-down-at-top gesture)
+//   • pane sync (overview / day-logs / detail sheet coordination)
+//
+// React Native port mapping:
+//   • WIRE functions    → useEffect hooks that register gesture /
+//                         event subscriptions + return cleanup.
+//   • HANDLER functions → gesture callbacks (react-native-gesture-
+//                         handler) or pressable event handlers.
+//   • The controller itself dissolves into React component
+//     lifecycle + Zustand store actions; no global imperative
+//     wiring survives.
+//   • Most HYBRID functions split into two pieces:
+//       (1) a Zustand store action that mutates state, and
+//       (2) a useEffect that reacts to that state change and
+//           updates the UI.
+// ─────────────────────────────────────────────────────────────────
+
 sortSettings = loadSortSettings();
 
 $('type-seg').addEventListener('click',e=>{
@@ -137,15 +163,18 @@ $('do-save').addEventListener('click',()=>{
 
 $('ting-message').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
 
+// PURE: clamp rhythm value to valid range
 function clampRhythm(value){
   return clampRhythmValue(value);
 }
 
+// PURE: return help text for a rhythm type
 function rhythmHelp(type){
   if(type === 'reduce')return 'Target is the gap you want before it happens again.';
   return 'Target days between entries.';
 }
 
+// RENDER: update detail type segmented control + help
 function setDetailTypeUi(type){
   document.querySelectorAll('#detail-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.detailType === type);
@@ -155,6 +184,7 @@ function setDetailTypeUi(type){
   $('detail-target-help').textContent = rhythmHelp(type);
 }
 
+// HYBRID: sync rhythm field, label, and crown dial state
 function syncRhythm(prefix,value){
   const field = $(`${prefix}-days`);
   const prev = parseInt(field.dataset.orig || field.value,10) || 7;
@@ -174,6 +204,7 @@ function syncRhythm(prefix,value){
   }
 }
 
+// RENDER: draw crown dial ridges onto canvas
 function drawCrownRidges(canvas, scroll){
   if(!canvas || !canvas.isConnected)return;
   const dpr = window.devicePixelRatio || 1;
@@ -206,6 +237,7 @@ function drawCrownRidges(canvas, scroll){
   }
 }
 
+// WIRE: attach crown dial gesture + input listeners
 function bindRhythm(prefix){
   const field = $(`${prefix}-days`);
   const crown = $(`${prefix}-days-slider`);
@@ -357,6 +389,7 @@ requestAnimationFrame(()=>{
   drawCrownRidges($('detail-days-slider')?.querySelector('.crown-canvas'),0);
 });
 
+// WIRE: attach numeric input focus/blur validators
 function bindCompactNumber(id,clamp,options={}){
   const field = $(id);
   const maxLength = options.maxLength || field.maxLength || 3;
@@ -431,6 +464,7 @@ document.addEventListener('click',e=>{
 $('detail-days').addEventListener('input',()=>setDetailDirty());
 $('detail-days').addEventListener('blur',()=>setDetailDirty());
 
+// WIRE: attach emoji/mark character limit handler
 function bindMarkLimit(id){
   $(id).addEventListener('input',e=>{
     const limited = cleanMark(e.target.value);
@@ -715,6 +749,7 @@ $('settings-reset-yes').addEventListener('click',()=>{
   showToast('settings reset');
 });
 
+// PURE: check if any habit logged on a day
 function hasItemsOnDay(key){
   const data = load();
   return data.some(h=>

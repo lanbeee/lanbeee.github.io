@@ -1,10 +1,17 @@
 // Add-habit defaults, settings controls, topic management, availability defaults, and sort lab samples.
+//
+// RN PORT NOTES:
+//   - This file manages the settings sheet (sort presets, toggles, topics, availability, sort lab).
+//   - RENDER functions become React form components.
+//   - HANDLER functions become onPress/onChange callbacks that update the Zustand settings store.
 
+// HANDLER: cancel add sheet and reset form
 function cancelAdd(){
   closeSheet('add-sheet');
   applyAddDefaults();
 }
 
+// HYBRID: reset add-form fields and selected type
 function applyAddDefaults(){
   const settings = loadSortSettings();
   $('ting-message').value = '';
@@ -22,6 +29,7 @@ function applyAddDefaults(){
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
 }
 
+// HYBRID: sync settings UI from stored state
 function syncSettingsControls(){
   sortSettings = loadSortSettings();
   const resetConfirm = $('settings-reset-confirm');
@@ -71,6 +79,7 @@ function syncSettingsControls(){
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
 }
 
+// RENDER: draw weekday availability inputs
 function renderAvailabilityControls(){
   const wrap = $('availability-grid');
   if(!wrap)return;
@@ -83,6 +92,7 @@ function renderAvailabilityControls(){
   `).join('');
 }
 
+// HANDLER: save edited availability day value
 function saveAvailabilityDay(index,value){
   const availability = normalizeAvailability(sortSettings.availabilityMinutes);
   availability[index] = Math.max(0,Math.min(1440,parseInt(value,10) || 0));
@@ -91,6 +101,7 @@ function saveAvailabilityDay(index,value){
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayAvailability(dayLogsKey);
 }
 
+// HYBRID: patch sort state and re-sync UI
 function updateSortSetting(patch,options = {}){
   const {sync = true,renderNow = true} = options;
   saveSortSettings({...sortSettings,...patch});
@@ -99,10 +110,12 @@ function updateSortSetting(patch,options = {}){
   if(renderNow)render();
 }
 
+// PURE: check if key is a sort setting
 function isSortSettingKey(key){
   return ['plansFirst','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
 }
 
+// HANDLER: apply a named sort preset
 function applySortPreset(name){
   if(name === 'custom'){
     updateSortSetting({preset:'custom'});
@@ -115,12 +128,14 @@ function applySortPreset(name){
   showToast('preset applied');
 }
 
+// RENDER: highlight active preset button
 function markPresetButton(name){
   document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.preset === name);
   });
 }
 
+// HANDLER: toggle a boolean app setting
 function toggleAppSettingButton(btn){
   if(!btn)return;
   const key = btn.dataset.settingToggle;
@@ -130,24 +145,29 @@ function toggleAppSettingButton(btn){
   updateSortSetting(patch);
 }
 
+// PURE: count sample habits in list
 function sortSampleCount(){
   return load().filter(h=>h.sample).length;
 }
 
+// RENDER: update sample count label text
 function updateSortSampleCount(){
   const label = $('sort-sample-count');
   if(label)label.textContent = sortSampleCount() ? `${sortSampleCount()} sample habits currently in the list.` : 'No sample habits are in the list.';
 }
 
+// PURE: build settings object for preset
 function sortSettingsForPreset(name){
   if(name === 'custom')return {...DEFAULT_SORT_SETTINGS,...sortSettings,preset:'custom'};
   return {...DEFAULT_SORT_SETTINGS,...(SORT_PRESETS[name] || SORT_PRESETS.balanced),preset:name};
 }
 
+// PURE: strip sample prefix from name
 function sampleDisplayName(name){
   return String(name || '').replace(/^Sample:\s*/,'');
 }
 
+// RENDER: draw sort lab preview cards
 function renderSortLabPreview(){
   const wrap = $('sort-lab-preview');
   if(!wrap)return;
@@ -191,6 +211,7 @@ function renderSortLabPreview(){
   }).join('');
 }
 
+// PURE: build a sample habit object
 function sortSampleHabit(name,type,target,logs,options = {}){
   return {
     name:`Sample: ${name}`,
@@ -215,6 +236,7 @@ function sortSampleHabit(name,type,target,logs,options = {}){
   };
 }
 
+// PURE: build array of sample habits
 function buildSortSamples(){
   return [
     sortSampleHabit('daily walk overdue','keepup',1,sampleLogs([9,7,5,2]),{emoji:'🚶',topics:['health'],durationMinutes:25,allowedTimeStart:390,allowedTimeEnd:600}),
@@ -247,6 +269,7 @@ function buildSortSamples(){
   ];
 }
 
+// HANDLER: add sample habits to list
 function addSortSamples(){
   const current = load().filter(h=>!h.sample);
   const samples = buildSortSamples();
@@ -263,6 +286,7 @@ function addSortSamples(){
   }
 }
 
+// HANDLER: remove sample habits from list
 function removeSortSamples(){
   const current = load();
   const next = current.filter(h=>!h.sample);
@@ -277,6 +301,7 @@ function removeSortSamples(){
   }
 }
 
+// RENDER: expand or collapse advanced settings
 function setAdvancedSettingsOpen(open){
   const block = $('settings-advanced');
   const body = $('settings-advanced-body');
@@ -285,10 +310,12 @@ function setAdvancedSettingsOpen(open){
   $('settings-advanced-toggle').setAttribute('aria-expanded',String(open));
 }
 
+// HANDLER: toggle advanced settings section
 function toggleAdvancedSettings(){
   setAdvancedSettingsOpen($('settings-advanced-body').hidden);
 }
 
+// RENDER: sync range field value and label
 function syncSettingRange(name,value,suffix){
   const field = $(`setting-${name}`);
   const label = $(`setting-${name}-label`);
@@ -302,6 +329,7 @@ function syncSettingRange(name,value,suffix){
   }
 }
 
+// WIRE: attach input and change listeners to range
 function bindSettingRange(name,key,suffix,options = {}){
   const field = $(`setting-${name}`);
   if(!field)return;

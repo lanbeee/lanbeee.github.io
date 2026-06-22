@@ -29,7 +29,56 @@
   --app-pad:0;
 }
 @media (prefers-color-scheme:dark) {
-  :root {
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — single source of truth for the visual language.
+   Keep in sync with src/theme/tokens.ts in the React Native port.
+   The RN ThemeProvider reads these to build lightTokens / darkTokens objects.
+
+   ── Surface ───────────────────────────────────────────────────────────────
+   Light:  --bg:#ffffff  --bg2:#f5f4f0  --bg3:#e8e7e2
+   Dark:   --bg:#1c1c1e  --bg2:#2c2c2e  --bg3:#3a3a3c
+
+   ── Text ──────────────────────────────────────────────────────────────────
+   Light:  --text:#1a1a1a  --text2:#6b6a65  --text3:#9e9d98
+   Dark:   --text:#f2f2f7  --text2:#aeaeb2  --text3:#6e6e73
+
+   ── Borders ───────────────────────────────────────────────────────────────
+   Light:  --border:rgba(0,0,0,0.11)      --border2:rgba(0,0,0,0.2)
+   Dark:   --border:rgba(255,255,255,0.09) --border2:rgba(255,255,255,0.18)
+
+   ── Radii ─────────────────────────────────────────────────────────────────
+   --radius:16px   --radius-sm:10px
+
+   ── Semantic colors (light / dark) ────────────────────────────────────────
+   Teal    bg #E1F5EE / #085041   icon #0F6E56 / #5DCAA5   text #085041 / #9FE1CB
+   Amber   bg #FAEEDA / #633806   icon #BA7517 / #EF9F27   text #633806 / #FAC775
+   Red     bg #FCEBEB / #791F1F   icon #A32D2D / #F09595   text #791F1F / #F7C1C1
+   Purple  bg #EEEDFE / #3C3489   icon #534AB7 / #AFA9EC   text #3C3489 / #CECBF6
+   Blue    bg #E6F2FA / #0B4E6E   icon #176B91 / #84CDEE   text #0B4E6E / #BFE8F7
+   Green   bg #E8F5E9 / #1B5E20   icon #2E7D32 / #81C784   text #1B5E20 / #A5D6A7
+
+   ── Layout ────────────────────────────────────────────────────────────────
+   --keyboard-lift:0px   --nav-bottom:42px   --nav-height:60px
+   --sheet-action-gap:10px   --pane-width:480px
+   --card-pulse:62px   --gutter:0px   --app-pad:0
+
+   ── Per-tier overrides (body[data-tier=...]) ──────────────────────────────
+                  sheet-max-width  sheet-radius  detail-mode  bar-height  cal-cell-h
+   mobile-portrait  480px           20px …        pager        56px        36px
+   mobile-landscape 520px           18px           tabs         52px        36px
+   tablet-portrait  600px           18px           tabs         56px        42px
+   tablet-landscape 640px           18px           tabs         56px        46px
+   desktop          760px           20px           tabs         60px        48px
+
+   ── Motion ───────────────────────────────────────────────────────────────
+   --ease-snappy:cubic-bezier(.2,.8,.2,1)   --ease-tight:cubic-bezier(.3,.7,.2,1)
+   --dur-fast:120ms   --dur-med:190ms   --dur-slow:260ms
+
+   ── Detail mode (component switch, not a color) ───────────────────────────
+   --detail-mode:pager | tabs   (pager on mobile-portrait, tabs elsewhere)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
     --bg:#1c1c1e; --bg2:#2c2c2e; --bg3:#3a3a3c;
     --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
     --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
