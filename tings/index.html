@@ -2,10 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 <meta name="color-scheme" content="light dark" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Habits" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="./manifest.json" />
 <title>Habits 🔁</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <style>
   html{background:#f5f4f0;color-scheme:light dark;}
   @media (prefers-color-scheme:dark){html{background:#2c2c2e;}}
@@ -620,5 +626,10 @@
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings.js" defer></script>
 <script src="./js/main.js" defer></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+</script>
 </body>
 </html>
