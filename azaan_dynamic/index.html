@@ -23,9 +23,9 @@
       <button id="startLoopBtn">Start Azaan Loop</button>
 
       <div class="top-actions">
-        <div id="weather">
+        <button id="weather" type="button" aria-label="Open detailed weather" aria-haspopup="dialog">
           <span id="weatherInfo">Loading weather...</span>
-        </div>
+        </button>
       </div>
     </header>
 
@@ -157,6 +157,19 @@
 
     <button id="panelScrim" class="panel-scrim" type="button" aria-label="Close settings"></button>
 
+    <div id="weatherModal" class="weather-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="weatherModalTitle">
+      <div class="weather-modal-card">
+        <div class="weather-modal-header">
+          <div>
+            <h2 id="weatherModalTitle">Weather</h2>
+            <p id="weatherModalSub" class="hint">—</p>
+          </div>
+          <button id="closeWeatherModalBtn" class="icon-button" type="button" aria-label="Close weather">×</button>
+        </div>
+        <div id="weatherModalBody" class="weather-modal-body"></div>
+      </div>
+    </div>
+
     <audio id="silentAudio" src="static/silent.mp3" type="audio/mpeg"></audio>
     <audio id="prayerAudio" src="" type="audio/mpeg"></audio>
   </div>
@@ -172,11 +185,15 @@
     const APP_SETTINGS_KEY = "azaanDashboardSettings";
     const WEATHER_HISTORY_KEY = "azaanWeatherHistory";
     const WEATHER_HISTORY_MAX_DAYS = 7;
-    // We fetch weather every 10 minutes but don't need every single reading sitting in
-    // storage for a week - keep roughly one point an hour (~24/day * 7 = ~168 entries max),
-    // except we always keep a point when the condition changes so "did it just rain"
-    // stays accurate.
-    const WEATHER_HISTORY_SAMPLE_GAP_MS = 55 * 60 * 1000;
+    // Adaptive polling: during the day we back off up to 40 min when conditions
+    // are stable, and shorten to 10 min when they're volatile. The sample gap
+    // is set so a 40-min poll still records every reading, while rapid 10-min
+    // polls during volatile weather don't flood storage.
+    const WEATHER_HISTORY_SAMPLE_GAP_MS = 20 * 60 * 1000;
+    const WEATHER_HISTORY_MAX_ENTRIES = 250;
+    const WEATHER_FETCH_MIN_DELAY_MS = 10 * 60 * 1000;
+    const WEATHER_FETCH_MAX_DELAY_MS = 40 * 60 * 1000;
+    const WEATHER_FETCH_SLEEP_DELAY_MS = 2 * 60 * 60 * 1000;
     const RECENT_WET_LOOKBACK_MS = 2 * 60 * 60 * 1000;
     const WEATHER_ANOMALY_MARGIN_C = 5;
     // Deny-list instead of an allow-list: anything not explicitly bad counts as walkable
@@ -186,6 +203,18 @@
       "Rain", "Drizzle", "Thunderstorm", "Snow", "Squall", "Tornado",
       "Mist", "Fog", "Haze", "Smoke", "Dust", "Sand", "Ash"
     ]);
+    // OpenWeather AQI is a 1-5 rating; UV index is 0-11+. These maps give the
+    // detail view a human label instead of a bare number.
+    const AQI_LABELS = { 1: "Good", 2: "Fair", 3: "Moderate", 4: "Poor", 5: "Very Poor" };
+    function uviLabel(uvi) {
+      if (uvi == null) return "—";
+      if (uvi < 3) return "Low";
+      if (uvi < 6) return "Moderate";
+      if (uvi < 8) return "High";
+      if (uvi < 11) return "Very High";
+      return "Extreme";
+    }
+    const COMPASS_POINTS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
     const THEME_TRANSITION_DURATION_MS = 30 * 60 * 1000;
     const DEFAULT_ROUTINE = {
       wakeOffsetMinutes: 30,
@@ -242,6 +271,11 @@
     const dateDayDisplay = document.getElementById("dateDay");
     const dateValueDisplay = document.getElementById("dateValue");
     const weatherInfo = document.getElementById("weatherInfo");
+    const weatherBtn = document.getElementById("weather");
+    const weatherModal = document.getElementById("weatherModal");
+    const weatherModalSub = document.getElementById("weatherModalSub");
+    const weatherModalBody = document.getElementById("weatherModalBody");
+    const closeWeatherModalBtn = document.getElementById("closeWeatherModalBtn");
     const messageDisplay = document.getElementById("message");
     const closeMenuBtn = document.getElementById("closeMenuBtn");
     const settingsPanel = document.getElementById("settingsPanel");
@@ -789,6 +823,13 @@
       const enoughTimePassed = !last || (sample.t - last.t) >= WEATHER_HISTORY_SAMPLE_GAP_MS;
       if (enoughTimePassed || conditionChanged) {
         history.push(sample);
+        // Hard cap so a week of volatile 10-min polling can't grow storage
+        // without bound on the Alexa box. Drop the oldest (we keep the most
+        // recent WEATHER_HISTORY_MAX_ENTRIES samples, which still spans enough
+        // distinct days for the walkability baseline).
+        if (history.length > WEATHER_HISTORY_MAX_ENTRIES) {
+          history = history.slice(history.length - WEATHER_HISTORY_MAX_ENTRIES);
+        }
         saveWeatherHistory(history);
       }
       return history;
@@ -810,29 +851,40 @@
         if (!response.ok) response = await fetch(WEATHER_PROXY_URL);
         if (!response.ok) throw new Error("Weather data fetch failed.");
         const data = await response.json();
-        const temperature = Math.round(data.main.feels_like);
-        const weatherDescription = data.weather[0].description;
-        const iconCode = data.weather[0].icon;
-        latestWeatherSnapshot = {
-          main: data.weather[0].main,
-          feelsLikeC: Number(data.main.feels_like),
-          // uvi/aqi are optional - the worker omits them if the OpenWeather
-          // UV/air_pollution calls fail. Treat absent as null and let the
-          // scorer apply no penalty rather than vetoing.
+        // Pull every useful field off the payload once. Missing numbers become
+        // null so the detail aggregator can skip them gracefully (and so old
+        // history entries that predate the richer schema don't blow up).
+        const num = (v) => (typeof v === "number" ? v : null);
+        const w = Array.isArray(data.weather) && data.weather[0] ? data.weather[0] : {};
+        const detail = {
+          main: w.main || "Unknown",
+          description: w.description || "",
+          icon: w.icon || "",
+          temp: num(data.main && data.main.temp),
+          feelsLikeC: num(data.main && data.main.feels_like),
+          tempMin: num(data.main && data.main.temp_min),
+          tempMax: num(data.main && data.main.temp_max),
+          humidity: num(data.main && data.main.humidity),
+          pressure: num(data.main && data.main.pressure),
+          windSpeed: num(data.wind && data.wind.speed),
+          windDeg: num(data.wind && data.wind.deg),
+          windGust: num(data.wind && data.wind.gust),
+          cloudCover: num(data.clouds && data.clouds.all),
+          visibility: num(data.visibility),
           uvi: typeof data.uvi === "number" ? data.uvi : null,
-          aqi: typeof data.aqi === "number" ? data.aqi : null,
-          fetchedAt: Date.now()
+          aqi: typeof data.aqi === "number" ? data.aqi : null
         };
-        recordWeatherSample({
-          t: latestWeatherSnapshot.fetchedAt,
-          main: latestWeatherSnapshot.main,
-          feelsLikeC: latestWeatherSnapshot.feelsLikeC,
-          uvi: latestWeatherSnapshot.uvi,
-          aqi: latestWeatherSnapshot.aqi
-        });
+        const nowMs = Date.now();
+        latestWeatherSnapshot = { ...detail, fetchedAt: nowMs };
+        recordWeatherSample({ ...detail, t: nowMs });
+        const temperature = Math.round(detail.feelsLikeC);
+        const iconCode = detail.icon;
         if (typeof updateWalkHistoryHint === "function") updateWalkHistoryHint();
+        // If the detail modal is open, refresh it in place so the user sees the
+        // new reading without reopening.
+        if (weatherModal.classList.contains("is-open")) renderWeatherDetail();
         const iconUrl = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
-        const shortDescription = weatherDescription
+        const shortDescription = (detail.description || "")
           .replace(/\b\w/g, (letter) => letter.toUpperCase())
           .split(" ")
           .slice(0, 2)
@@ -852,6 +904,223 @@
         console.error(error);
         weatherInfo.textContent = "Weather unavailable";
       }
+    }
+
+    // ---- Adaptive weather polling --------------------------------------
+    // Instead of a flat 10-min interval we self-reschedule each time: during
+    // the day we back off toward 40 min when conditions are stable and snap
+    // back to 10 min when they're volatile; overnight (after the sleep azaan
+    // up to the Fajr wake azaan) we drop to once every 2 hours. The chain is
+    // kicked off from init() after the first immediate fetch.
+    let weatherFetchTimeout = null;
+
+    function isWithinSleepWindow(now) {
+      try {
+        const prayers = getPrayerTimesForDay(now);
+        const fajrAzan = getPrayerByName(prayers, "Fajr").time; // today's wake azaan (pre-sunrise)
+        const isha = getPrayerByName(prayers, "Isha").time;     // today's adjusted sleep start
+        if (now.getTime() < fajrAzan.getTime()) return true;    // pre-dawn, after last night's sleep
+        if (now.getTime() >= isha.getTime()) return true;       // tonight, after sleep azaan
+        return false;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function getNextWeatherDelayMs() {
+      const now = new Date();
+      if (isWithinSleepWindow(now)) return WEATHER_FETCH_SLEEP_DELAY_MS;
+
+      const history = loadWeatherHistory();
+      if (history.length < 2) return WEATHER_FETCH_MIN_DELAY_MS; // not enough baseline yet
+
+      const last = history[history.length - 1];
+      const prev = history[history.length - 2];
+
+      // Active bad weather is dynamic - keep the refresh short so we notice
+      // when it clears.
+      if (BAD_WALK_CONDITIONS.has(last.main)) return WEATHER_FETCH_MIN_DELAY_MS;
+
+      // Condition just changed: re-check soon to confirm the trend.
+      if (last.main !== prev.main) return 15 * 60 * 1000;
+
+      // Temperature drift between the last two samples decides the rest.
+      const tempDelta = Math.abs(Number(last.feelsLikeC) - Number(prev.feelsLikeC));
+      if (tempDelta >= 2) return 15 * 60 * 1000;
+      if (tempDelta >= 1) return 20 * 60 * 1000;
+
+      // Everything's been steady - back off to the max.
+      return WEATHER_FETCH_MAX_DELAY_MS;
+    }
+
+    function scheduleNextWeatherFetch() {
+      if (weatherFetchTimeout) clearTimeout(weatherFetchTimeout);
+      weatherFetchTimeout = setTimeout(async () => {
+        await fetchWeather();
+        scheduleNextWeatherFetch();
+      }, getNextWeatherDelayMs());
+    }
+
+    // ---- Weather detail modal -----------------------------------------
+    function compassDir(deg) {
+      if (deg == null || !Number.isFinite(Number(deg))) return "—";
+      const idx = Math.round(((Number(deg) % 360) / 22.5)) % 16;
+      return COMPASS_POINTS[idx];
+    }
+
+    function formatRelativeTime(ms) {
+      const secs = Math.round(ms / 1000);
+      if (secs < 60) return "just now";
+      const mins = Math.round(secs / 60);
+      if (mins < 60) return `${mins} min ago`;
+      const hrs = Math.round(mins / 60);
+      return `${hrs} hr ago`;
+    }
+
+    function escapeHtml(str) {
+      return String(str == null ? "" : str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // {min, max, avg} over an array of numbers, ignoring nulls/non-finite.
+    function aggregateNumbers(values) {
+      const nums = (values || []).filter((v) => v != null && Number.isFinite(Number(v))).map(Number);
+      if (!nums.length) return null;
+      const min = Math.min(...nums);
+      const max = Math.max(...nums);
+      const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+      return { min, max, avg };
+    }
+
+    // Build a 12-bucket sparkline (last 24h, 2h per bucket) of feels-like
+    // temp. Returns { bars: [{avg, empty}], min, max }.
+    function buildTempSparkline(history) {
+      const now = Date.now();
+      const windowMs = 24 * 60 * 60 * 1000;
+      const bucketCount = 12;
+      const bucketMs = windowMs / bucketCount;
+      const buckets = Array.from({ length: bucketCount }, () => []);
+      for (const entry of history) {
+        const age = now - entry.t;
+        if (age < 0 || age > windowMs) continue;
+        const temp = Number(entry.feelsLikeC);
+        if (!Number.isFinite(temp)) continue;
+        const idx = bucketCount - 1 - Math.floor(age / bucketMs);
+        if (idx >= 0 && idx < bucketCount) buckets[idx].push(temp);
+      }
+      const avgs = buckets.map((b) => (b.length ? b.reduce((a, c) => a + c, 0) / b.length : null));
+      const valid = avgs.filter((v) => v != null);
+      if (!valid.length) return null;
+      const min = Math.min(...valid);
+      const max = Math.max(...valid);
+      return { avgs, min, max };
+    }
+
+    function renderWeatherDetail() {
+      const snap = latestWeatherSnapshot;
+      const history = loadWeatherHistory();
+      const sub = (currentLocation && currentLocation.city)
+        ? `${currentLocation.city}${currentLocation.country ? ", " + currentLocation.country : ""}`
+        : "—";
+      const ageSuffix = snap && snap.fetchedAt
+        ? " · updated " + formatRelativeTime(Date.now() - snap.fetchedAt)
+        : "";
+      weatherModalSub.textContent = sub + ageSuffix;
+
+      if (!snap) {
+        weatherModalBody.innerHTML = `<p class="hint">No weather data yet. Tap again after the next refresh.</p>`;
+        return;
+      }
+
+      const feels = snap.feelsLikeC != null ? Math.round(snap.feelsLikeC) : "—";
+      const temp = snap.temp != null ? Math.round(snap.temp) : null;
+      const tempDisplay = temp != null ? temp : feels;
+      const tempSub = temp != null && temp !== feels ? `Feels like ${feels}°C` : "";
+      const iconUrl = snap.icon ? `https://openweathermap.org/img/wn/${snap.icon}@2x.png` : "";
+      const iconHtml = iconUrl ? `<img src="${iconUrl}" alt="">` : "";
+      const desc = escapeHtml(snap.description);
+
+      const windMs = snap.windSpeed;
+      const windKmh = windMs != null ? Math.round(windMs * 3.6) : null;
+      const gustKmh = snap.windGust != null ? Math.round(snap.windGust * 3.6) : null;
+      const windSub = gustKmh != null ? `gusts ${gustKmh}` : (windMs != null ? `${Math.round(windMs)} m/s` : "");
+      const visKm = snap.visibility != null ? (snap.visibility / 1000) : null;
+
+      const aqiLabel = snap.aqi != null ? (AQI_LABELS[snap.aqi] || "—") : "—";
+      const uviLabelStr = uviLabel(snap.uvi);
+
+      // Metric tiles: only render the ones we actually have data for.
+      const metrics = [];
+      if (snap.humidity != null) metrics.push(["Humidity", `${Math.round(snap.humidity)}%`, ""]);
+      if (windKmh != null) metrics.push(["Wind", `${windKmh} km/h`, `${compassDir(snap.windDeg)}${windSub ? " · " + windSub : ""}`]);
+      if (snap.pressure != null) metrics.push(["Pressure", `${Math.round(snap.pressure)} hPa`, ""]);
+      if (snap.cloudCover != null) metrics.push(["Cloud cover", `${Math.round(snap.cloudCover)}%`, ""]);
+      if (visKm != null) metrics.push(["Visibility", visKm >= 10 ? "10+ km" : `${visKm.toFixed(1)} km`, ""]);
+      metrics.push(["UV index", snap.uvi != null ? `${Math.round(snap.uvi * 10) / 10}` : "—", uviLabelStr]);
+      metrics.push(["Air quality", snap.aqi != null ? `${snap.aqi}/5` : "—", aqiLabel]);
+      const metricsHtml = metrics.map(([label, value, sub2]) => `
+        <div class="wx-metric">
+          <div class="wx-metric-label">${escapeHtml(label)}</div>
+          <div class="wx-metric-value">${escapeHtml(value)}</div>
+          ${sub2 ? `<div class="wx-metric-sub">${escapeHtml(sub2)}</div>` : ""}
+        </div>`).join("");
+
+      // 24h sparkline.
+      const spark = buildTempSparkline(history);
+      let sparkHtml = "";
+      if (spark) {
+        const range = Math.max(0.5, spark.max - spark.min); // avoid divide-by-zero
+        let lastValidIdx = -1;
+        spark.avgs.forEach((v, i) => { if (v != null) lastValidIdx = i; });
+        const bars = spark.avgs.map((v, i) => {
+          if (v == null) return `<div class="wx-spark-bar is-empty"></div>`;
+          const heightPct = 12 + 88 * ((v - spark.min) / range);
+          const nowClass = i === lastValidIdx ? " is-now" : "";
+          return `<div class="wx-spark-bar${nowClass}" style="height:${heightPct.toFixed(1)}%" title="${Math.round(v)}°C"></div>`;
+        }).join("");
+        sparkHtml = `
+          <div class="wx-trend-wrap">
+            <div class="wx-section-title">Last 24h · feels-like</div>
+            <div class="wx-spark">${bars}</div>
+            <div class="wx-trend-axis"><span>${Math.round(spark.min)}°C low</span><span>${Math.round(spark.max)}°C high</span></div>
+          </div>`;
+      }
+
+      // Aggregated ranges over the full stored history (~7 days).
+      const tempAgg = aggregateNumbers(history.map((e) => e.feelsLikeC));
+      const humAgg = aggregateNumbers(history.map((e) => e.humidity));
+      const gustAgg = aggregateNumbers(history.map((e) => e.windGust));
+      const uviAgg = aggregateNumbers(history.map((e) => e.uvi));
+      const dayCount = new Set(history.map((e) => new Date(e.t).toDateString())).size;
+      // Most common conditions seen.
+      const condCounts = {};
+      history.forEach((e) => { if (e && e.main) condCounts[e.main] = (condCounts[e.main] || 0) + 1; });
+      const topConds = Object.entries(condCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c]) => c).join(", ");
+      const summaryParts = [];
+      if (tempAgg) summaryParts.push(`Temp <strong>${Math.round(tempAgg.min)}–${Math.round(tempAgg.max)}°C</strong>`);
+      if (humAgg) summaryParts.push(`Humidity <strong>${Math.round(humAgg.min)}–${Math.round(humAgg.max)}%</strong>`);
+      if (gustAgg) summaryParts.push(`Gusts to <strong>${Math.round(gustAgg.max * 3.6)} km/h</strong>`);
+      if (uviAgg) summaryParts.push(`UV up to <strong>${Math.round(uviAgg.max)}</strong>`);
+      const summaryHtml = summaryParts.length
+        ? `<div class="wx-summary-row">Last ${dayCount || 1} day${dayCount === 1 ? "" : "s"}: ${summaryParts.join(" · ")}${topConds ? " · mostly " + escapeHtml(topConds) : ""}</div>`
+        : "";
+
+      weatherModalBody.innerHTML = `
+        <div class="wx-current">
+          ${iconHtml}
+          <div>
+            <div class="wx-current-temp">${tempDisplay}°C</div>
+            ${tempSub ? `<div class="wx-current-desc">${tempSub}</div>` : ""}
+            ${desc ? `<div class="wx-current-desc">${desc}</div>` : ""}
+          </div>
+        </div>
+        <div class="wx-metric-grid">${metricsHtml}</div>
+        ${sparkHtml}
+        ${summaryHtml}
+      `;
     }
 
     function getPrayerTimesForDay(date) {
@@ -1123,16 +1392,36 @@
       }
     }
 
+    function syncScrim() {
+      // The settings drawer and the weather modal share one backdrop. Keep it
+      // visible as long as either surface is open.
+      const anyOpen = settingsPanel.classList.contains("is-open") || weatherModal.classList.contains("is-open");
+      panelScrim.classList.toggle("is-visible", anyOpen);
+    }
+
     function openMenu() {
       settingsPanel.classList.add("is-open");
-      panelScrim.classList.add("is-visible");
       settingsPanel.setAttribute("aria-hidden", "false");
+      syncScrim();
     }
 
     function closeMenu() {
       settingsPanel.classList.remove("is-open");
-      panelScrim.classList.remove("is-visible");
       settingsPanel.setAttribute("aria-hidden", "true");
+      syncScrim();
+    }
+
+    function openWeatherDetail() {
+      renderWeatherDetail();
+      weatherModal.classList.add("is-open");
+      weatherModal.setAttribute("aria-hidden", "false");
+      syncScrim();
+    }
+
+    function closeWeatherDetail() {
+      weatherModal.classList.remove("is-open");
+      weatherModal.setAttribute("aria-hidden", "true");
+      syncScrim();
     }
 
     function setupEdgeSwipeMenu() {
@@ -1235,9 +1524,18 @@
     saveDisplayBtn.addEventListener("click", saveDisplaySettings);
     startLoopBtn.addEventListener("click", startSilentLoop);
     closeMenuBtn.addEventListener("click", closeMenu);
-    panelScrim.addEventListener("click", closeMenu);
+    weatherBtn.addEventListener("click", openWeatherDetail);
+    closeWeatherModalBtn.addEventListener("click", closeWeatherDetail);
+    // Scrim dismisses whichever surface is on top (or both).
+    panelScrim.addEventListener("click", () => {
+      closeMenu();
+      closeWeatherDetail();
+    });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeMenu();
+      if (event.key === "Escape") {
+        closeWeatherDetail();
+        closeMenu();
+      }
     });
     window.addEventListener("resize", () => {
       if (document.documentElement.classList.contains("theme-transitioning")) {
@@ -1261,7 +1559,7 @@
 
       setInterval(updateTimeAndDate, 60000);
       scheduleNextThemeTick();
-      setInterval(fetchWeather, 10 * 60 * 1000);
+      scheduleNextWeatherFetch();
       setInterval(() => {
         sendHeartbeat();
         checkAudioLoop();

@@ -194,6 +194,29 @@ button {
   font-size: clamp(calc(1.35rem * var(--weather-scale)), calc(2.55vw * var(--weather-scale)), calc(2.55rem * var(--weather-scale)));
   font-weight: 600;
   letter-spacing: 0;
+  /* It's a <button> now so it opens the detail modal on tap. Strip the
+     default UA button chrome so it still renders like the old <div>. */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 14px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#weather:hover,
+#weather:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 4px;
+}
+
+#weather:active {
+  opacity: 0.7;
 }
 
 #weatherInfo {
@@ -347,6 +370,180 @@ button {
 
 .panel-scrim.is-visible {
   display: block;
+}
+
+/* Centered weather detail modal. Sits above the settings panel (z-index)
+   and reuses the panel-scrim as its backdrop. */
+.weather-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 4vw, 40px);
+}
+
+.weather-modal.is-open {
+  display: flex;
+}
+
+.weather-modal-card {
+  width: min(92vw, 560px);
+  max-height: min(88svh, 720px);
+  overflow-y: auto;
+  padding: clamp(16px, 3vw, 26px);
+  background: var(--panel-bg);
+  color: var(--app-text);
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  box-shadow: 0 30px 90px color-mix(in srgb, #000000 45%, transparent);
+}
+
+.weather-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.weather-modal-header h2 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 0.95;
+}
+
+.weather-modal-header .hint {
+  margin: 8px 0 0;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.weather-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+/* Current-conditions hero block. */
+.wx-current {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.wx-current img {
+  width: 88px;
+  height: 88px;
+  filter: var(--weather-icon-filter, none);
+}
+
+.wx-current-temp {
+  font-size: clamp(2.6rem, 9vw, 3.6rem);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.wx-current-desc {
+  font-weight: 600;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+/* Responsive grid of metric tiles (humidity, wind, pressure, ...). */
+.wx-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.wx-metric {
+  padding: 12px 14px;
+  background: var(--soft-surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+}
+
+.wx-metric-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.wx-metric-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.wx-metric-sub {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  margin-top: 1px;
+}
+
+.wx-section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 4px 0 2px;
+}
+
+/* 24h temperature trend bar. Built with inline width %s, no canvas. */
+.wx-trend-wrap {
+  padding: 14px 16px;
+  background: var(--soft-surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+}
+
+/* Sparkline of ~12 buckets over the last 24h. Pure flexbox, no canvas. */
+.wx-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 54px;
+  margin: 12px 0 6px;
+}
+
+.wx-spark-bar {
+  flex: 1 1 0;
+  min-width: 4px;
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, currentColor 55%, transparent);
+  transition: height 0.2s ease;
+}
+
+.wx-spark-bar.is-empty {
+  height: 4px !important;
+  opacity: 0.25;
+}
+
+.wx-spark-bar.is-now {
+  background: currentColor;
+}
+
+.wx-trend-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  opacity: 0.65;
+}
+
+.wx-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 0.92rem;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+.wx-summary-row strong {
+  font-weight: 700;
 }
 
 .panel-header {
