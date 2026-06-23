@@ -229,7 +229,7 @@
     // into UV too would double-count. This gives the modal the most accurate
     // effective UV the data supports.
     function displayUvi(uvi, cloudCover, aqi) {
-      const v = cloudAdjustedUvi(uvi, cloudCover);
+      let v = cloudAdjustedUvi(uvi, cloudCover);
       if (v == null) return null;
       if (aqi != null) v *= (1 - 0.075 * (aqi - 1));
       return v;
