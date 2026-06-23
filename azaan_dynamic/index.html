@@ -214,6 +214,26 @@
       if (uvi < 11) return "Very High";
       return "Extreme";
     }
+
+    // The legacy /data/2.5/uvi endpoint returns clear-sky UV (solar-elevation
+    // based) and ignores real-time clouds. Cloud cover is station-observed and
+    // reliable. WHO model: full overcast attenuates ground-level UV by ~40%.
+    function cloudAdjustedUvi(uvi, cloudCover) {
+      if (uvi == null) return null;
+      if (cloudCover == null) return uvi;
+      return uvi * (1 - 0.4 * (cloudCover / 100));
+    }
+
+    // Display-only UV: also attenuate by AQI (aerosols scatter UV). Not used
+    // in walkability scoring — AQI has its own weight there, so factoring it
+    // into UV too would double-count. This gives the modal the most accurate
+    // effective UV the data supports.
+    function displayUvi(uvi, cloudCover, aqi) {
+      const v = cloudAdjustedUvi(uvi, cloudCover);
+      if (v == null) return null;
+      if (aqi != null) v *= (1 - 0.075 * (aqi - 1));
+      return v;
+    }
     const COMPASS_POINTS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
     const THEME_TRANSITION_DURATION_MS = 30 * 60 * 1000;
     const DEFAULT_ROUTINE = {
@@ -1050,7 +1070,8 @@
       const visKm = snap.visibility != null ? (snap.visibility / 1000) : null;
 
       const aqiLabel = snap.aqi != null ? (AQI_LABELS[snap.aqi] || "—") : "—";
-      const uviLabelStr = uviLabel(snap.uvi);
+      const adjUvi = displayUvi(snap.uvi, snap.cloudCover, snap.aqi);
+      const uviLabelStr = uviLabel(adjUvi);
 
       // Metric tiles: only render the ones we actually have data for.
       const metrics = [];
@@ -1059,7 +1080,7 @@
       if (snap.pressure != null) metrics.push(["Pressure", `${Math.round(snap.pressure)} hPa`, ""]);
       if (snap.cloudCover != null) metrics.push(["Cloud cover", `${Math.round(snap.cloudCover)}%`, ""]);
       if (visKm != null) metrics.push(["Visibility", visKm >= 10 ? "10+ km" : `${visKm.toFixed(1)} km`, ""]);
-      metrics.push(["UV index", snap.uvi != null ? `${Math.round(snap.uvi * 10) / 10}` : "—", uviLabelStr]);
+      metrics.push(["UV index", adjUvi != null ? `${Math.round(adjUvi * 10) / 10}` : "—", uviLabelStr]);
       metrics.push(["Air quality", snap.aqi != null ? `${snap.aqi}/5` : "—", aqiLabel]);
       const metricsHtml = metrics.map(([label, value, sub2]) => `
         <div class="wx-metric">
@@ -1093,7 +1114,7 @@
       const tempAgg = aggregateNumbers(history.map((e) => e.feelsLikeC));
       const humAgg = aggregateNumbers(history.map((e) => e.humidity));
       const gustAgg = aggregateNumbers(history.map((e) => e.windGust));
-      const uviAgg = aggregateNumbers(history.map((e) => e.uvi));
+      const uviAgg = aggregateNumbers(history.map((e) => displayUvi(e.uvi, e.cloudCover, e.aqi)));
       const dayCount = new Set(history.map((e) => new Date(e.t).toDateString())).size;
       // Most common conditions seen.
       const condCounts = {};
@@ -1216,7 +1237,7 @@
       const mainCondition = snapshot.main;
       // uvi/aqi may be null (worker fetch failed) or undefined (old history
       // entries saved before this feature existed). Treat both as "unknown".
-      const uvi = snapshot.uvi;
+      const uvi = cloudAdjustedUvi(snapshot.uvi, snapshot.cloudCover);
       const aqi = snapshot.aqi;
 
       // 1. Hard vetos: bad weather, outside temp bounds, or past UV/AQI ceilings.
