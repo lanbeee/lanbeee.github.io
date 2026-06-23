@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Habits" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="./manifest.json" />
+<title>Habits</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+<style>
+  html{background:#f5f4f0;color-scheme:light dark;}
+  @media (prefers-color-scheme:dark){html{background:#2c2c2e;}}
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
+    <button class="app-bar-logo" id="bar-open-about" aria-label="how it works">
+      <img src="./favicon.svg" alt="" aria-hidden="true" />
+      <span class="app-bar-title">Habits</span>
+    </button>
+    <div class="app-bar-search" id="app-bar-search" aria-hidden="true">
+      <input type="search" id="habit-search" aria-label="search habits" placeholder="search habits" autocomplete="off" autocorrect="off" spellcheck="false" />
+      <button class="icon-btn search-clear" id="clear-search" aria-label="clear search" type="button">
+        <i class="ti ti-x" aria-hidden="true"></i>
+      </button>
+    </div>
+    <div class="app-bar-actions">
+      <button class="icon-btn" id="bar-open-today" aria-label="today">
+        <i class="ti ti-list-check" aria-hidden="true"></i>
+      </button>
+      <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
+        <i class="ti ti-calendar-month" aria-hidden="true"></i>
+      </button>
+      <button class="icon-btn app-bar-add" id="bar-open-add" aria-label="add habit">
+        <i class="ti ti-plus" aria-hidden="true"></i>
+      </button>
+      <button class="icon-btn" id="bar-open-search" aria-label="search habits" aria-pressed="false">
+        <i class="ti ti-search" aria-hidden="true"></i>
+      </button>
+    </div>
+  </header>
+
+    <div class="pane-list">
+      <div class="topbar">
+        <button class="wordmark" id="open-about" aria-label="how it works">
+          <img src="./favicon.svg" alt="" aria-hidden="true" />
+          <span class="wordmark-copy">
+            <span>Habits</span>
+          </span>
+        </button>
+      </div>
+      <div id="quota-bar"></div>
+      <div id="reminder-banner" class="reminder-banner" hidden></div>
+      <div id="home-topic-filter" class="topic-filter-row" aria-label="topic filter"></div>
+      <div id="list"></div>
+      <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
+    </div>
+
+  <div class="pane-overview" id="pane-overview"></div>
+
+  <div class="pane-detail" id="pane-detail" hidden></div>
+
+  <nav class="bottom-nav" aria-label="main actions">
+    <button class="icon-btn" id="open-today" aria-label="today">
+      <i class="ti ti-list-check" aria-hidden="true"></i>
+    </button>
+    <button class="icon-btn" id="open-overview" aria-label="calendar">
+      <i class="ti ti-calendar-month" aria-hidden="true"></i>
+    </button>
+    <button class="icon-btn nav-add" id="open-add" aria-label="add habit">
+      <i class="ti ti-plus" aria-hidden="true"></i>
+    </button>
+    <button class="icon-btn" id="open-search" aria-label="search habits" aria-pressed="false">
+      <i class="ti ti-search" aria-hidden="true"></i>
+    </button>
+    <div class="nav-search" id="nav-search" aria-hidden="true">
+    </div>
+  </nav>
+  </div>
+
+  <!-- add sheet -->
+  <div class="sheet-wrap" id="add-sheet">
+    <div class="sheet add-sheet">
+      <p class="sheet-title">new habit</p>
+      <span id="emoji-suggestion" class="emoji-suggestion" hidden role="button" tabindex="0"></span>
+      <div class="name-icon-row">
+        <input type="text" id="ting-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <label class="emoji-field">
+          <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. Use an emoji like 🏃 or 📚; blank uses the default habit icon.</div></span></span>
+          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+        </label>
+      </div>
+      <div class="seg" id="type-seg">
+        <button class="seg-opt on" data-v="keepup">build</button>
+        <button class="seg-opt" data-v="reduce">limit</button>
+        <button class="seg-opt" data-v="zero">stop</button>
+        <button class="seg-opt" data-v="task">task</button>
+        <button class="seg-opt" data-v="event">event</button>
+      </div>
+      <p class="field-hint" id="target-help">Target days between entries.</p>
+      <div class="range-row" id="target-slider-row">
+        <div class="crown-dial" id="ting-days-slider" role="slider" tabindex="0" aria-label="Repetition period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
+        <label class="range-value" aria-label="day rhythm">
+          <input type="text" id="ting-days" inputmode="numeric" maxlength="3" value="7" />
+          <span>d</span>
+        </label>
+      </div>
+      <div class="plan-field-row" id="task-due-row" hidden>
+        <div class="plan-field-main">
+          <label class="plan-date-label" for="ting-due-date">due</label>
+          <input type="date" id="ting-due-date" class="plan-date-input" />
+          <button type="button" class="mini-text-btn" id="ting-due-clear" hidden>someday</button>
+        </div>
+        <label class="setting-toggle compact-toggle hard-due-toggle">
+          <input type="checkbox" id="ting-hard-due" />
+          <span>hard deadline</span>
+        </label>
+      </div>
+      <div class="plan-field-row" id="event-time-row" hidden>
+        <label class="plan-date-label" for="ting-event-time">when</label>
+        <input type="datetime-local" id="ting-event-time" class="plan-date-input" />
+      </div>
+      <div class="add-topics-section" id="add-topics-section">
+        <span class="settings-sublabel">topics</span>
+        <div class="topic-chip-row" id="ting-topic-chips"></div>
+      </div>
+      <div class="btn-row add-actions">
+        <button class="btn primary" id="do-save">add</button>
+        <button class="btn" id="do-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- detail sheet -->
+  <div class="sheet-wrap" id="detail-sheet">
+    <div class="sheet detail-sheet">
+      <div class="detail-head ting-card" id="detail-head-card">
+        <button class="pulse-btn detail-mark" id="detail-mark" aria-label="add entry"></button>
+        <div class="ting-info detail-title-wrap">
+          <div class="ting-main">
+            <span class="ting-name" id="detail-name"></span>
+          </div>
+          <div class="ting-cue detail-cue" id="detail-sub"></div>
+        </div>
+      </div>
+      <div class="detail-pager" aria-label="habit details">
+        <section class="detail-page detail-card">
+          <p class="detail-about" id="detail-about"></p>
+          <div class="section-top">
+            <span class="section-label">insight</span>
+            <span class="trend-copy" id="detail-trend"></span>
+          </div>
+          <div class="stats-row" id="detail-stats"></div>
+          <div class="graph" id="detail-graph"></div>
+        </section>
+        <section class="detail-page month-card">
+          <div class="section-top">
+            <span class="section-label">month</span>
+            <div class="month-nav">
+              <button class="mini-nav" id="detail-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+              <span class="trend-copy" id="detail-calendar-label"></span>
+              <button class="mini-nav" id="detail-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </div>
+          <div class="overview-stats compact-stats" id="detail-calendar-summary"></div>
+          <div class="month-grid rich-month-grid" id="detail-calendar"></div>
+          <div class="calendar-legend" aria-hidden="true">
+            <span><b class="hit"></b>good</span>
+            <span><b class="warn"></b>close</span>
+            <span><b class="miss"></b>care</span>
+            <span><b class="plan"></b>planned</span>
+          </div>
+        </section>
+        <section class="detail-page detail-section tune-section">
+          <span class="section-label">schedule</span>
+          <div class="planning-grid">
+            <div class="planning-field">
+              <span>duration</span>
+              <label class="range-value" aria-label="duration in minutes">
+                <input type="text" id="detail-duration" inputmode="numeric" maxlength="3" value="30" />
+                <span>min</span>
+              </label>
+            </div>
+            <div class="planning-field">
+              <span class="flexibility-label">flexibility <button type="button" class="info-btn" data-tip="detail-flexibility-help" aria-label="about flexibility"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-flexibility-help" role="tooltip" hidden>Adds a buffer to your target for planning purposes.</div></span>
+              <label class="range-value" aria-label="flexibility in days">
+                <input type="text" id="detail-flexibility" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
+          </div>
+          <div class="plan-field-row" id="detail-due-row" hidden>
+            <div class="plan-field-main">
+              <label class="plan-date-label" for="detail-due-date">due</label>
+              <input type="date" id="detail-due-date" class="plan-date-input" />
+              <button type="button" class="mini-text-btn" id="detail-due-clear" hidden>someday</button>
+            </div>
+            <label class="hard-due-toggle">
+              <input type="checkbox" id="detail-hard-due" />
+              <span>hard deadline</span>
+            </label>
+          </div>
+          <div class="plan-field-row" id="detail-event-row" hidden>
+            <label class="plan-date-label" for="detail-event-time">when</label>
+            <input type="datetime-local" id="detail-event-time" class="plan-date-input" />
+          </div>
+          <div class="seg schedule-seg" id="detail-schedule-view-seg">
+            <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
+            <button class="seg-opt" data-schedule-view="preferred">preferred</button>
+          </div>
+          <div id="detail-schedule-allowed">
+            <span class="settings-sublabel">days</span>
+            <div class="schedule-chip-row" id="detail-weekday-chips"></div>
+            <span class="settings-sublabel compact-label">month days</span>
+            <div class="monthday-chip-row" id="detail-monthday-chips"></div>
+          </div>
+          <div id="detail-schedule-preferred" hidden>
+            <span class="settings-sublabel">days</span>
+            <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
+            <span class="settings-sublabel compact-label">month days</span>
+            <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
+          </div>
+          <div class="schedule-time-row">
+            <span class="settings-sublabel compact-label">time window</span>
+            <div class="time-inputs">
+              <input type="time" id="detail-time-start" class="time-input" aria-label="start time" />
+              <span class="time-sep">—</span>
+              <input type="time" id="detail-time-end" class="time-input" aria-label="end time" />
+            </div>
+            <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
+          </div>
+          <p class="field-hint" id="detail-target-help">Target days between entries.</p>
+          <div class="range-row" id="detail-slider-row">
+            <div class="crown-dial" id="detail-days-slider" role="slider" tabindex="0" aria-label="Repetition period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
+            <label class="range-value" aria-label="day rhythm">
+              <input type="text" id="detail-days" inputmode="numeric" maxlength="3" value="7" />
+              <span>d</span>
+            </label>
+          </div>
+        </section>
+        <section class="detail-page detail-section tune-section">
+          <span class="section-label">identity</span>
+          <div class="name-icon-row">
+            <input type="text" id="detail-habit-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+            <label class="emoji-field">
+              <span>emoji</span>
+              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+            </label>
+          </div>
+          <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
+          <div class="seg" id="detail-type-seg">
+            <button class="seg-opt" data-detail-type="keepup">build</button>
+            <button class="seg-opt" data-detail-type="reduce">limit</button>
+            <button class="seg-opt" data-detail-type="zero">stop</button>
+            <button class="seg-opt" data-detail-type="task">task</button>
+            <button class="seg-opt" data-detail-type="event">event</button>
+          </div>
+          <label class="setting-toggle habit-toggle">
+            <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
+            <input type="checkbox" id="detail-pinned" />
+          </label>
+          <span class="settings-sublabel">topics</span>
+          <div class="topic-chip-row" id="detail-topic-chips"></div>
+          <div class="habit-actions">
+            <span class="settings-label">habit actions</span>
+            <button class="habit-action" id="detail-export" type="button" hidden>
+              <i class="ti ti-calendar-share" aria-hidden="true"></i>
+              <span><b>export to calendar</b><small>Add this to your phone's calendar for a real alert.</small></span>
+            </button>
+            <button class="habit-action" id="detail-snooze" type="button">
+              <i class="ti ti-moon" aria-hidden="true"></i>
+              <span><b>snooze habit</b><small>Hide this habit for a few days.</small></span>
+            </button>
+            <button class="habit-action danger" id="detail-delete" type="button">
+              <i class="ti ti-trash" aria-hidden="true"></i>
+              <span><b>remove habit</b><small>Remove it from the list. Undo appears after.</small></span>
+            </button>
+            <div class="reset-confirm" id="detail-delete-confirm" hidden>
+              <p>Remove this habit?</p>
+              <div class="btn-row">
+                <button class="btn primary" id="detail-delete-yes" type="button">remove</button>
+                <button class="btn" id="detail-delete-no" type="button">keep habit</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="detail-dots" aria-hidden="true"></div>
+      <div class="btn-row detail-actions" id="detail-cool-row">
+        <button class="btn primary" id="detail-cool">done</button>
+      </div>
+      <div class="btn-row detail-actions tune-actions" id="detail-tune-actions">
+        <button class="btn primary" id="detail-save">save</button>
+        <button class="btn" id="detail-close">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- overview sheet -->
+  <div class="sheet-wrap" id="overview-sheet">
+    <div class="sheet overview-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title">calendar</p>
+          <p class="about-copy" id="overview-copy">Entries and plans by day.</p>
+          <div class="overview-stats" id="overview-stats"></div>
+          <div class="topic-filter-row range-filter-row" id="overview-range-filter" aria-label="calendar range filter"></div>
+          <div class="topic-filter-row" id="overview-topic-filter" aria-label="topic activity filter"></div>
+        </div>
+      </div>
+      <div class="month-card overview-card">
+          <div class="section-top">
+            <span class="section-label">activity</span>
+            <div class="month-nav">
+            <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+            <span class="trend-copy" id="overview-calendar-label"></span>
+            <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </div>
+        <div class="month-grid rich-month-grid" id="overview-calendar"></div>
+        <div class="calendar-legend" aria-hidden="true">
+          <span><b class="hit"></b>good</span>
+          <span><b class="warn"></b>close</span>
+          <span><b class="miss"></b>care</span>
+          <span><b class="plan"></b>planned</span>
+        </div>
+      </div>
+      <div class="overview-list" id="overview-list"></div>
+      <div class="btn-row overview-actions">
+        <button class="btn primary" id="overview-close">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- today agenda sheet -->
+  <div class="sheet-wrap" id="today-sheet">
+    <div class="sheet today-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title">today</p>
+          <p class="about-copy" id="today-summary">Your plan for today.</p>
+        </div>
+      </div>
+      <div class="today-content" id="today-content"></div>
+      <div class="today-week-section">
+        <div class="section-top"><span class="section-label">this week</span><span class="trend-copy" id="today-week-note"></span></div>
+        <div class="month-grid rich-month-grid strip-grid" id="today-week-strip"></div>
+      </div>
+      <div class="btn-row overview-actions">
+        <button class="btn" id="today-overview">calendar</button>
+        <button class="btn primary" id="today-close">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- about sheet -->
+  <div class="sheet-wrap" id="about-sheet">
+    <div class="sheet about-sheet">
+      <p class="sheet-title">Habits</p>
+      <p class="about-copy">A small place to notice what you want to build, limit, or stop. No account needed. Your entries stay on this device.</p>
+      <div class="about-stack">
+        <section class="about-block calm-block"><span>Start simple</span><p>Add a habit, select Build, Limit, or Stop, then tap its icon whenever it occurs. Double-tap to log it instantly. Tap Habits at the top any time to come back here or open settings.</p></section>
+        <section class="about-block calm-block"><span>Not a task list</span><p>A to-do list is for finishing one thing. This is for habits that repeat, fade, slip, or improve over time. You are watching the pattern, not clearing an inbox.</p></section>
+        <section class="about-block calm-block"><span>Not a calendar</span><p>A calendar is for exact appointments. This is lighter: you can plan a day, but the main goal is to notice rhythm, spacing, and progress.</p></section>
+        <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
+        <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
+        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order weighs plans, rhythm, recent entries, progress, trends, and habit type. Settings lets you pick a preset or fine tune it.</p></section>
+        <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
+        <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon or double tap a card to log. Undo appears after. Swipe right to pin or review activity. Swipe left to snooze or remove.</p></section>
+      </div>
+      <div class="btn-row about-actions">
+        <button class="btn" id="open-settings">settings</button>
+        <button class="btn primary" id="about-close">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- settings sheet -->
+  <div class="sheet-wrap" id="settings-sheet">
+    <div class="sheet settings-sheet">
+      <p class="sheet-title">settings</p>
+      <p class="about-copy">Choose how the app behaves. These are app-wide settings, not settings for one habit.</p>
+      <div class="settings-stack">
+        <section class="settings-block">
+          <span class="settings-label">home order</span>
+          <p class="field-hint">Pinned habits always stay first. After that, auto order brings up what needs attention.</p>
+          <span class="settings-sublabel">priority preset</span>
+          <div class="seg compact-seg preset-seg" id="sort-preset-seg">
+            <button class="seg-opt" data-preset="balanced">balanced</button>
+            <button class="seg-opt" data-preset="build">build</button>
+            <button class="seg-opt" data-preset="planned">plans</button>
+            <button class="seg-opt" data-preset="todayFirst">today</button>
+            <button class="seg-opt" data-preset="custom">custom</button>
+          </div>
+          <p class="field-hint">Presets move the controls below. Balanced watches everything, build favors routines, plans favors planned days, and today puts today items and overdue items first.</p>
+          <div class="settings-grid">
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
+              <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+          </div>
+          <span class="settings-sublabel">stop habits rise</span>
+          <div class="seg compact-seg" id="stop-mode-seg">
+            <button class="seg-opt" data-stop-mode="quiet">quiet</button>
+            <button class="seg-opt" data-stop-mode="watch">watch</button>
+            <button class="seg-opt" data-stop-mode="recent">recent</button>
+            <button class="seg-opt" data-stop-mode="active">strict</button>
+          </div>
+          <p class="field-hint">Quiet keeps quit habits low. Watch gives resets a small nudge. Recent brings them into view. Strict treats resets as urgent.</p>
+          <span class="settings-sublabel">look ahead for plans</span>
+          <div class="seg compact-seg" id="plan-window-seg">
+            <button class="seg-opt" data-window="1">today</button>
+            <button class="seg-opt" data-window="3">3 days</button>
+            <button class="seg-opt" data-window="7">week</button>
+          </div>
+          <span class="settings-sublabel">new build habits</span>
+          <div class="seg compact-seg" id="new-build-seg">
+            <button class="seg-opt" data-new-build="quiet">stay low</button>
+            <button class="seg-opt" data-new-build="gentle">gentle</button>
+            <button class="seg-opt" data-new-build="rise">rise</button>
+          </div>
+          <p class="field-hint">This controls build habits that have no entries yet.</p>
+          <span class="settings-sublabel">compare due build habits</span>
+          <div class="seg compact-seg" id="due-mode-seg">
+            <button class="seg-opt" data-due-mode="relative">rhythm</button>
+            <button class="seg-opt" data-due-mode="date">date</button>
+            <button class="seg-opt" data-due-mode="short">shorter</button>
+          </div>
+          <p class="field-hint">Rhythm favors the habit that is deeper into its cycle. Date treats two habits due on the same day as close. Shorter favors frequent habits.</p>
+          <span class="settings-sublabel">build look ahead</span>
+          <div class="seg compact-seg" id="build-window-seg">
+            <button class="seg-opt" data-build-window="1">1 day</button>
+            <button class="seg-opt" data-build-window="3">3 days</button>
+            <button class="seg-opt" data-build-window="7">week</button>
+          </div>
+          <span class="settings-sublabel">limit habits rise</span>
+          <div class="seg compact-seg" id="limit-mode-seg">
+            <button class="seg-opt" data-limit-mode="quiet">quiet</button>
+            <button class="seg-opt" data-limit-mode="overdue">overdue</button>
+            <button class="seg-opt" data-limit-mode="near">near</button>
+            <button class="seg-opt" data-limit-mode="active">active</button>
+          </div>
+          <p class="field-hint">Overdue waits until the rhythm has passed. Near and active bring limit habits up earlier.</p>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label"><span style="position:relative;display:inline-block">topics <button type="button" class="info-btn" data-tip="settings-topics-help" aria-label="about topics"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-topics-help" role="tooltip" hidden>Use topics for search and activity reporting. Topics do not affect sorting.</div></span></span>
+          <div class="topic-manage-row">
+            <input type="text" id="topic-name" placeholder="new topic" maxlength="32" autocomplete="off" />
+            <button class="btn primary" id="topic-add" type="button">add</button>
+          </div>
+          <div class="topic-list" id="topic-list"></div>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label"><span style="position:relative;display:inline-block">availability <button type="button" class="info-btn" data-tip="settings-avail-help" aria-label="about availability"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-avail-help" role="tooltip" hidden>Default time available for habits and planning each weekday.</div></span></span>
+          <div class="availability-grid" id="availability-grid"></div>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label">app behavior</span>
+          <div class="settings-grid">
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozed" aria-pressed="false">
+              <span><b>show snoozed habits</b><small>Show hidden habits faded on the home screen.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDurationOnCards" aria-pressed="false">
+              <span><b>show duration on cards</b><small>Keep duration visible on the home list. Detail view always shows it.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showRepetitionOnCards" aria-pressed="false">
+              <span><b>show repetition on cards</b><small>Show the rhythm or stop chip on each habit card.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showFlexibilityOnCards" aria-pressed="false">
+              <span><b>show flexibility on cards</b><small>Show the flexibility window chip on habit cards.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTopicsOnCards" aria-pressed="false">
+              <span><b>show topics on cards</b><small>Show topic labels in the home list.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reachAssist" aria-pressed="false">
+              <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="autoOpenToday" aria-pressed="false">
+              <span><b>auto-open today in calendar</b><small>Open today's activity when opening the calendar, if there are any entries or plans.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
+              <span><b>reminders</b><small>Heads-up for hard deadlines and events starting soon. On iPhone, reminders appear when you open the app.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label"><span style="position:relative;display:inline-block">new habit defaults <button type="button" class="info-btn" data-tip="settings-defaults-help" aria-label="about defaults"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-defaults-help" role="tooltip" hidden>Used only when you tap + to create a new habit.</div></span></span>
+          <div class="seg compact-seg" id="default-type-seg">
+            <button class="seg-opt" data-default-type="keepup">build</button>
+            <button class="seg-opt" data-default-type="reduce">limit</button>
+            <button class="seg-opt" data-default-type="zero">stop</button>
+          </div>
+          <label class="settings-range simple-range">
+            <span>rhythm</span>
+            <input type="range" id="setting-default-target" min="1" max="183" />
+            <output id="setting-default-target-label"></output>
+          </label>
+        </section>
+        <section class="settings-block settings-advanced" id="settings-advanced">
+          <button class="settings-advanced-toggle" id="settings-advanced-toggle" type="button" aria-expanded="false" aria-controls="settings-advanced-body">
+            <span>
+              <b>fine tune priority</b>
+              <small>Optional. 100 is normal. Tune plans, due timing, progress, trend, rhythm, and habit types.</small>
+            </span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-advanced-body" id="settings-advanced-body" hidden>
+            <label class="settings-range">
+              <span>planned</span>
+              <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
+              <output id="setting-plan-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>due</span>
+              <input type="range" id="setting-due-weight" min="0" max="200" step="10" />
+              <output id="setting-due-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>progress</span>
+              <input type="range" id="setting-progress-weight" min="0" max="200" step="10" />
+              <output id="setting-progress-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>trend</span>
+              <input type="range" id="setting-trend-weight" min="0" max="200" step="10" />
+              <output id="setting-trend-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>rhythm</span>
+              <input type="range" id="setting-rhythm-weight" min="0" max="200" step="10" />
+              <output id="setting-rhythm-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>build</span>
+              <input type="range" id="setting-build-weight" min="0" max="200" step="10" />
+              <output id="setting-build-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>limit</span>
+              <input type="range" id="setting-limit-weight" min="0" max="200" step="10" />
+              <output id="setting-limit-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>stop</span>
+              <input type="range" id="setting-stop-weight" min="0" max="200" step="10" />
+              <output id="setting-stop-weight-label"></output>
+            </label>
+            <label class="settings-range">
+              <span>new</span>
+              <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
+              <output id="setting-new-weight-label"></output>
+            </label>
+            <label class="settings-range wide-label">
+              <span>build starts</span>
+              <input type="range" id="setting-build-start" min="40" max="110" step="5" />
+              <output id="setting-build-start-label"></output>
+            </label>
+            <label class="settings-range wide-label">
+              <span>rhythm bias</span>
+              <input type="range" id="setting-rhythm-bias" min="-100" max="100" step="10" />
+              <output id="setting-rhythm-bias-label"></output>
+            </label>
+          </div>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label">sorting lab</span>
+          <p class="field-hint">Add sample habits with different rhythms, plans, progress, pins, snoozes, and habit types. Use them to see how the home order responds to settings.</p>
+          <div class="sort-lab-preview" id="sort-lab-preview"></div>
+          <div class="sample-actions">
+            <button class="btn" id="add-sort-samples" type="button">add sample habits</button>
+            <button class="btn" id="remove-sort-samples" type="button">remove samples</button>
+          </div>
+          <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
+        </section>
+        <section class="settings-block settings-danger">
+          <span class="settings-label">start over</span>
+          <p class="field-hint">Reset only changes these app settings. Your habits and entries stay safe.</p>
+          <button class="btn danger-soft" id="settings-reset">reset app settings</button>
+          <div class="reset-confirm" id="settings-reset-confirm" hidden>
+            <p>Reset settings to the app defaults?</p>
+            <div class="btn-row">
+              <button class="btn primary" id="settings-reset-yes">reset</button>
+              <button class="btn" id="settings-reset-no">keep settings</button>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="btn-row settings-actions">
+        <button class="btn primary" id="settings-close">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- snooze sheet -->
+  <div class="sheet-wrap" id="snooze-sheet">
+    <div class="sheet">
+      <p class="sheet-name" id="snooze-name"></p>
+      <p class="sheet-sub">Choose how long to hide this habit.</p>
+      <div class="snooze-options">
+        <button class="btn" data-snooze-days="1">1d</button>
+        <button class="btn" data-snooze-days="3">3d</button>
+        <button class="btn" data-snooze-days="7">7d</button>
+        <button class="btn" data-snooze-days="14">14d</button>
+        <button class="btn" data-snooze-repetitions="1">1 time</button>
+        <button class="btn" data-snooze-repetitions="2">2 times</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="snooze-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- activity sheet -->
+  <div class="sheet-wrap" id="activity-sheet">
+    <div class="sheet activity-sheet">
+      <div class="activity-head">
+        <div>
+          <p class="sheet-name" id="activity-name"></p>
+          <p class="sheet-sub" id="activity-sub">Activity and plans.</p>
+        </div>
+        <button class="mini-nav activity-calendar-btn" id="activity-calendar" type="button" aria-label="open calendar">
+          <i class="ti ti-calendar-month" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="activity-summary" id="activity-summary"></div>
+      <div class="activity-list" id="activity-list"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="activity-close">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- day logs sheet -->
+  <div class="sheet-wrap" id="day-logs-sheet">
+    <div class="sheet">
+      <p class="sheet-name" id="day-logs-title"></p>
+      <p class="sheet-sub" id="day-logs-sub"></p>
+      <div class="day-availability">
+        <div>
+          <b id="day-availability-label">availability</b>
+          <small id="day-availability-source"></small>
+        </div>
+        <input type="number" id="day-availability-minutes" min="0" max="1440" inputmode="numeric" />
+        <button class="mini-text-btn" id="day-availability-save" type="button">save</button>
+        <button class="mini-text-btn" id="day-availability-clear" type="button">clear</button>
+      </div>
+      <div class="overview-list" id="day-logs-list"></div>
+      <div class="day-add-row">
+        <select id="day-log-ting" aria-label="habit"></select>
+        <button class="btn primary" id="day-log-add">add entry</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="day-logs-overview">overview</button>
+        <button class="btn primary" id="day-logs-home">home</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="undo-toast" role="status" aria-live="polite">
+  <span id="undo-text"></span>
+  <button type="button" id="undo-action">undo</button>
+</div>
+
+<script src="./js/config.js" defer></script>
+<script src="./js/storage.js" defer></script>
+<script src="./js/viewport.js" defer></script>
+<script src="./js/data.js" defer></script>
+<script src="./js/scoring.js" defer></script>
+<script src="./js/list-view.js" defer></script>
+<script src="./js/detail-view.js" defer></script>
+<script src="./js/overview-view.js" defer></script>
+<script src="./js/today-view.js" defer></script>
+<script src="./js/reminders.js" defer></script>
+<script src="./js/shell-ui.js" defer></script>
+<script src="./js/emoji-suggest.js" defer></script>
+<script src="./js/settings.js" defer></script>
+<script src="./js/main.js" defer></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+</script>
+</body>
+</html>
