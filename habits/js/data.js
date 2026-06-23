@@ -1,0 +1,561 @@
+// Local storage, normalization, quota pruning, and date/text helpers.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// DATA SCHEMAS — JSDoc typedefs
+// Source of truth for Habit and Settings shapes. Mirrors the normalize()
+// output below. When porting to React Native, these become TypeScript
+// interfaces in src/types/ with no field changes.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * A single log entry. Either a timestamp (ms since epoch) for an actual
+ * occurrence, or a planned-future entry wrapping that timestamp.
+ * @typedef {(number|{ts:number,plan:true})} LogEntry
+ */
+
+/**
+ * A habit. Stored in the habits array under the `tings_v2` localStorage key.
+ * The same record shape expresses all four item kinds via `type`; the fields
+ * below marked with TaskFields / EventFields only carry meaning for that type.
+ * @typedef {Object} Habit
+ * @property {string} name                    — display name (max 60 chars)
+ * @property {'keepup'|'reduce'|'zero'|'task'|'event'} type  — build / limit / stop / one-off / fixed time
+ * @property {number|null} target             — rhythm in days; null when type in zero/task/event
+ * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
+ * @property {string} emoji                   — grapheme cluster(s), '' means default icon
+ * @property {boolean} pinned                 — stays above auto-sorted habits
+ * @property {boolean} sample                 — true if created by the sort-lab sample builder
+ * @property {number|null} snoozedUntil       — ms timestamp; habit hidden on home until then
+ * @property {string[]} topics                — user-defined tags (max 24, each max 32 chars)
+ * @property {number[]} allowedWeekdays       — 0=Sun … 6=Sat; empty means every day
+ * @property {number[]} allowedMonthDays      — 1-31; empty means every day
+ * @property {number[]} preferredWeekdays     — like allowedWeekdays, but for the "preferred" set
+ * @property {number[]} preferredMonthDays    — like allowedMonthDays, but for the "preferred" set
+ * @property {number|null} allowedTimeStart   — minutes since midnight; null = unrestricted
+ * @property {number|null} allowedTimeEnd     — minutes since midnight; null = unrestricted
+ * @property {number|null} preferredTimeStart — minutes since midnight; null = unrestricted
+ * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
+ * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
+ * @property {number} durationMinutes         — planned session length; 1-720
+ * @property {number|null} lastLog            — derived: most recent actual log timestamp
+ * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
+ *
+ * — TaskFields (additional semantics when type === 'task') —
+ * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
+ * @property {boolean} hardDue                — true when dueDate is a real deadline (escalates urgency past it)
+ *
+ * — EventFields (additional semantics when type === 'event') —
+ * @property {number|null} eventTime          — ms timestamp at the exact minute the event starts
+ */
+
+/**
+ * App-wide sort/display settings. Stored under `tings_app_settings_v2`.
+ * Composed from SORT_PRESETS[preset] plus the fields below.
+ * @typedef {Object} Settings
+ * @property {'balanced'|'build'|'planned'|'todayFirst'|'custom'} preset
+ * @property {'balanced'|'build'|'space'} focus                 — inherited from the preset
+ * @property {boolean} plansFirst                              — let planned habits rise
+ * @property {number} planWindowDays                           — 1-14, look-ahead for plan signal
+ * @property {number} planWeight                               — 0-200, multiplies plan signal
+ * @property {number} dueWeight                                — 0-200
+ * @property {number} progressWeight                           — 0-200
+ * @property {number} trendWeight                              — 0-200
+ * @property {number} rhythmWeight                             — 0-200
+ * @property {number} buildWeight                              — 0-200, scales build-type habits
+ * @property {number} limitWeight                              — 0-200, scales limit-type habits
+ * @property {number} stopWeight                               — 0-200, scales stop-type habits
+ * @property {number} newWeight                                — 0-200, scales never-logged habits
+ * @property {'quiet'|'gentle'|'rise'} newBuildMode            — handling for new build habits
+ * @property {'relative'|'date'|'short'} dueMode               — how build-habit urgency is computed
+ * @property {number} buildLookAheadDays                       — 1-14
+ * @property {number} buildRiseAt                              — 40-110, urgency % where build habits rise
+ * @property {'quiet'|'overdue'|'near'|'active'} limitMode    — limit-habit policy selector
+ * @property {'quiet'|'watch'|'recent'|'active'} stopMode      — stop-habit policy selector
+ * @property {number} rhythmBias                               — -100 to 100, favours shorter or longer rhythms
+ * @property {boolean} showSnoozed                             — render snoozed habits faded on home
+ * @property {boolean} showDurationOnCards                     — show duration chip on home cards
+ * @property {boolean} showRepetitionOnCards                   — show rhythm chip on home cards
+ * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
+ * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
+ * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
+ * @property {boolean} autoOpenToday                           — open today's activity when opening the calendar
+ * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
+ * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
+ * @property {string[]} topics                                 — master topic list (max 24)
+ * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
+ * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
+ */
+
+/**
+ * Day-of-week + day-of-month schedule pair returned by scheduledDays()/preferredDays().
+ * Empty arrays mean "no restriction in this dimension".
+ * @typedef {Object} DaySchedule
+ * @property {number[]} weekdays    — 0=Sun … 6=Sat
+ * @property {number[]} monthDays   — 1-31
+ */
+
+// ─────────────────────────────────────────────────────────────────────────
+// STORAGE — IMPURE (touches localStorage). Swappable via js/storage.js.
+// In the RN port these functions move into src/data/storage.ts backed by MMKV;
+// the rest of the file (pure helpers below) ports verbatim.
+// ─────────────────────────────────────────────────────────────────────────
+
+function load(){
+  return normalize(Storage.read(KEY) || []);
+}
+
+function loadSortSettings(){
+  try{
+    const saved = Storage.read(SORT_SETTINGS_KEY) || {};
+    const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
+    const merged = {...DEFAULT_SORT_SETTINGS,...migrated};
+    if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
+      merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
+    }
+    if(merged.preset && merged.preset !== 'custom' && !SORT_PRESETS[merged.preset])merged.preset = 'custom';
+    delete merged.keepStopsQuiet;
+    delete merged.requireConfirm;
+    delete merged.focusSearchOnOpen;
+    merged.topics = normalizeTopics(merged.topics);
+    merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
+    merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
+    return merged;
+  }catch{
+    return {...DEFAULT_SORT_SETTINGS};
+  }
+}
+
+function saveSortSettings(settings){
+  const next = {...DEFAULT_SORT_SETTINGS,...settings};
+  delete next.keepStopsQuiet;
+  next.topics = normalizeTopics(next.topics);
+  next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
+  next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
+  sortSettings = next;
+  Storage.write(SORT_SETTINGS_KEY, sortSettings);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// NORMALIZATION — PURE (no I/O). Validates and coerces raw parsed JSON into
+// the canonical Habit / Settings shapes declared above.
+// ─────────────────────────────────────────────────────────────────────────
+
+function normalize(items){
+  return items.map(h => ({
+    name: h.name || '',
+    type: h.type || 'keepup',
+    target: (h.type === 'zero' || h.type === 'task' || h.type === 'event')
+      ? null
+      : clampRhythmValue(h.target || 7),
+    dueDate: h.type === 'task' ? clampDayTimestamp(h.dueDate) : null,
+    hardDue: h.type === 'task' ? Boolean(h.hardDue) : false,
+    eventTime: h.type === 'event' ? clampTimestamp(h.eventTime) : null,
+    createdAt: h.createdAt || null,
+    logs: normalizeLogs(h.logs),
+    emoji: h.emoji || '',
+    pinned:Boolean(h.pinned),
+    sample:Boolean(h.sample),
+    snoozedUntil: h.snoozedUntil || null,
+    topics:normalizeTopics(h.topics),
+    allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
+    allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
+    preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
+    preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
+    allowedTimeStart:normalizeTimeMinutes(h.allowedTimeStart),
+    allowedTimeEnd:normalizeTimeMinutes(h.allowedTimeEnd),
+    preferredTimeStart:normalizeTimeMinutes(h.preferredTimeStart),
+    preferredTimeEnd:normalizeTimeMinutes(h.preferredTimeEnd),
+    flexibilityDays:clampFlexibility(h.flexibilityDays),
+    durationMinutes:clampDuration(h.durationMinutes)
+  })).map(h => ({...h,lastLog:latestActualLog(h.logs)}));
+}
+
+function save(data){
+  try{
+    let next = normalize(data);
+    let str = JSON.stringify(next);
+    const kb = Math.round((str.length * 2) / 1024);
+    if(kb >= QUOTA_HARD_KB){
+      next = pruneForStorage(next,QUOTA_HARD_KB - 120);
+      str = JSON.stringify(next);
+    }
+    Storage.writeRaw(KEY, str);
+    updateQuotaBar(sizeKb(next));
+    return true;
+  }catch(e){
+    try{
+      const pruned = pruneForStorage(normalize(data),QUOTA_HARD_KB - 360);
+      const str = JSON.stringify(pruned);
+      Storage.writeRaw(KEY, str);
+      updateQuotaBar(sizeKb(pruned));
+      showToast('old dense activity compacted');
+      return true;
+    }catch{
+      alert('storage full - remove some habits first');
+      return false;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// NORMALIZATION PRIMITIVES — PURE. Coercion helpers used by normalize() and
+// also called directly from view/settings code. Each is self-contained.
+// ─────────────────────────────────────────────────────────────────────────
+
+function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024);}
+function clampRhythmValue(value){
+  const n = parseInt(value,10);
+  if(isNaN(n))return 7;
+  return Math.max(1,Math.min(MAX_RHYTHM_DAYS,n));
+}
+function clampFlexibility(value){
+  return Math.max(0,Math.min(60,parseInt(value,10) || DEFAULT_FLEXIBILITY_DAYS));
+}
+function clampDuration(value){
+  return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
+}
+function clampTimestamp(value){
+  const n = Number(value);
+  if(!Number.isFinite(n) || n <= 0)return null;
+  const MS_YEAR = 365 * 86400000;
+  if(n < Date.now() - 10 * MS_YEAR || n > Date.now() + 10 * MS_YEAR)return null;
+  return Math.round(n);
+}
+function clampDayTimestamp(value){
+  const ts = clampTimestamp(value);
+  return ts === null ? null : dayStart(ts);
+}
+function cleanTopic(value){
+  return String(value || '').trim().replace(/\s+/g,' ').slice(0,32);
+}
+function normalizeTopics(value){
+  const items = Array.isArray(value) ? value : String(value || '').split(',');
+  const seen = new Set();
+  return items.map(cleanTopic).filter(topic=>{
+    const key = topic.toLowerCase();
+    if(!topic || seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).slice(0,24);
+}
+function normalizeAllowedWeekdays(value){
+  const items = Array.isArray(value) ? value : String(value || '').split(',');
+  const seen = new Set();
+  const days = items.map(day=>parseInt(day,10)).filter(day=>{
+    if(!Number.isInteger(day) || day < 0 || day > 6 || seen.has(day))return false;
+    seen.add(day);
+    return true;
+  }).sort((a,b)=>a-b);
+  return days.length === 7 ? [] : days;
+}
+function normalizeAllowedMonthDays(value){
+  const items = Array.isArray(value) ? value : String(value || '').split(',');
+  const seen = new Set();
+  const days = items.map(day=>parseInt(day,10)).filter(day=>{
+    if(!Number.isInteger(day) || day < 1 || day > 31 || seen.has(day))return false;
+    seen.add(day);
+    return true;
+  }).sort((a,b)=>a-b);
+  return days.length === 31 ? [] : days;
+}
+function normalizeTimeMinutes(value){
+  const n = parseInt(value,10);
+  if(Number.isNaN(n))return null;
+  return Math.max(0,Math.min(1439,n));
+}
+function normalizeAvailability(value){
+  const src = Array.isArray(value) ? value : DEFAULT_AVAILABILITY_MINUTES;
+  return WEEKDAY_LABELS.map((_,i)=>Math.max(0,Math.min(1440,parseInt(src[i],10) || 0)));
+}
+function normalizeAvailabilityOverrides(value){
+  if(!value || typeof value !== 'object' || Array.isArray(value))return {};
+  return Object.entries(value).reduce((acc,[key,minutes])=>{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(key))return acc;
+    acc[key] = Math.max(0,Math.min(1440,parseInt(minutes,10) || 0));
+    return acc;
+  },{});
+}
+function effectiveAvailabilityMinutes(key,settings = sortSettings){
+  const normalized = {...DEFAULT_SORT_SETTINGS,...settings};
+  const overrides = normalizeAvailabilityOverrides(normalized.availabilityOverrides);
+  if(Object.prototype.hasOwnProperty.call(overrides,key))return overrides[key];
+  const d = new Date(`${key}T12:00:00`);
+  const weekly = normalizeAvailability(normalized.availabilityMinutes);
+  return weekly[d.getDay()] ?? 0;
+}
+function retentionWeight(h,log){
+  if(isPlanLog(log))return Infinity;
+  const ageDays = Math.max(0,calendarDayDiff(logTime(log)) * -1);
+  const target = h.target || (h.type === 'zero' ? 30 : 7);
+  const actualCount = actualLogs(h.logs).length;
+  if(ageDays <= 120)return Infinity;
+  const rareBonus = Math.min(220,target * 3) + Math.max(0,16 - actualCount) * 18;
+  const densePenalty = Math.max(0,actualCount - 36) * 7;
+  return rareBonus - densePenalty - ageDays;
+}
+function pruneForStorage(items,targetKb){
+  const next = normalize(items).map(h=>({...h,logs:normalizeLogs(h.logs)}));
+  let guard = 0;
+  while(sizeKb(next) > targetKb && guard < 5000){
+    guard += 1;
+    let candidate = null;
+    next.forEach((h,habitIndex)=>{
+      const logs = normalizeLogs(h.logs);
+      if(actualLogs(logs).length <= 12)return;
+      logs.forEach((log,logIndex)=>{
+        if(isPlanLog(log))return;
+        const weight = retentionWeight({...h,logs},log);
+        if(weight === Infinity)return;
+        if(!candidate || weight < candidate.weight){
+          candidate = {habitIndex,logIndex,weight};
+        }
+      });
+    });
+    if(!candidate)break;
+    next[candidate.habitIndex].logs.splice(candidate.logIndex,1);
+    next[candidate.habitIndex].lastLog = latestActualLog(next[candidate.habitIndex].logs);
+  }
+  return next;
+}
+// ─────────────────────────────────────────────────────────────────────────
+// LOG ENTRIES — PURE. Helpers that operate on a habit's logs array without
+// touching storage. LogEntry = number | {ts:number,plan:true} (see typedef).
+// ─────────────────────────────────────────────────────────────────────────
+
+function logTime(log){
+  return typeof log === 'number' ? log : Number(log?.ts) || 0;
+}
+function isPlanLog(log){
+  return Boolean(log && typeof log === 'object' && log.plan);
+}
+function normalizeLogs(logs){
+  if(!Array.isArray(logs))return [];
+  return logs
+    .map(log=>{
+      const ts = logTime(log);
+      if(!ts)return null;
+      if(isPlanLog(log) || (typeof log === 'number' && ts > Date.now()))return {ts,plan:true};
+      return ts;
+    })
+    .filter(Boolean)
+    .sort((a,b)=>logTime(a)-logTime(b))
+    .slice(-MAX_LOGS);
+}
+function makeLog(ts){
+  return dateKey(ts) > dateKey(Date.now()) ? {ts,plan:true} : ts;
+}
+function sameLog(log,ts,planOnly = false){
+  return logTime(log) === ts && (!planOnly || isPlanLog(log));
+}
+function latestActualLog(logs){
+  const actual = actualLogs(logs);
+  return actual.length ? actual[actual.length - 1] : null;
+}
+function actualLogs(logs){
+  return normalizeLogs(logs).filter(log=>!isPlanLog(log) && logTime(log) <= Date.now()).map(logTime).sort((a,b)=>a-b);
+}
+function plannedLogs(logs){
+  return normalizeLogs(logs).filter(isPlanLog).map(logTime).sort((a,b)=>a-b);
+}
+function sampleActual(daysAgo,hour = 9){
+  if(daysAgo === 0){
+    const d = new Date();
+    d.setHours(0,1,0,0);
+    return d.getTime() <= Date.now() ? d.getTime() : Date.now() - 60000;
+  }
+  const d = new Date();
+  d.setHours(hour,0,0,0);
+  d.setDate(d.getDate() - daysAgo);
+  return d.getTime();
+}
+function samplePlan(daysFromNow,hour = 18){
+  if(daysFromNow === 0){
+    const d = new Date();
+    d.setHours(23,59,0,0);
+    return d.getTime() > Date.now() ? d.getTime() : Date.now() + 60000;
+  }
+  const d = new Date();
+  d.setHours(hour,0,0,0);
+  d.setDate(d.getDate() + daysFromNow);
+  return d.getTime();
+}
+function sampleLogs(actualDays = [],plannedDays = []){
+  return [
+    ...actualDays.map(days=>sampleActual(days)),
+    ...plannedDays.map(days=>samplePlan(days))
+  ].sort((a,b)=>a-b);
+}
+// ─────────────────────────────────────────────────────────────────────────
+// DATES — PURE. Time-of-day helpers used by scoring, views, and schedules.
+// All take a ms timestamp; none read the DOM. `Date.now()` is the only
+// impurity and is acceptable (clock reads port cleanly to RN).
+// ─────────────────────────────────────────────────────────────────────────
+
+function daysSince(ts){return ts ? Math.floor((Date.now() - ts) / 86400000) : null;}
+function dayDistance(ts){return ts ? Math.round((Date.now() - ts) / 86400000) : null;}
+function daysUntil(ts){return ts ? Math.floor((dayStart(ts) - dayStart(Date.now())) / 86400000) : null;}
+function dayStart(ts){
+  const d = new Date(ts);
+  return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+}
+function entryWhen(ts){
+  const days = dayDistance(ts);
+  if(days === null)return 'not yet';
+  if(days < 0)return `in ${Math.abs(days)}d`;
+  if(days === 0)return 'today';
+  return `${days}d ago`;
+}
+function todayIso(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function dateKey(ts){
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function monthOrdinal(day){
+  const suffix = day % 10 === 1 && day % 100 !== 11 ? 'st'
+    : day % 10 === 2 && day % 100 !== 12 ? 'nd'
+      : day % 10 === 3 && day % 100 !== 13 ? 'rd'
+        : 'th';
+  return `${day}${suffix}`;
+}
+function weekdayShort(day){
+  return WEEKDAY_LABELS[day] || '';
+}
+// ─────────────────────────────────────────────────────────────────────────
+// SCHEDULES — PURE. Compute allowed/preferred day sets for a habit and answer
+// eligibility queries. These are the highest-value functions to port verbatim
+// because the calendar view, scoring, and add-habit preview all depend on them.
+// ─────────────────────────────────────────────────────────────────────────
+
+function scheduledDays(h){
+  return {
+    weekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
+    monthDays:normalizeAllowedMonthDays(h.allowedMonthDays)
+  };
+}
+function preferredDays(h){
+  return {
+    weekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
+    monthDays:normalizeAllowedMonthDays(h.preferredMonthDays)
+  };
+}
+function hasDaySchedule(h){
+  const schedule = scheduledDays(h);
+  return Boolean(schedule.weekdays.length || schedule.monthDays.length);
+}
+function hasPreferredDays(h){
+  const pref = preferredDays(h);
+  return Boolean(pref.weekdays.length || pref.monthDays.length);
+}
+function hasTimeWindow(h){
+  return h.allowedTimeStart !== null && h.allowedTimeEnd !== null;
+}
+function isPreferredDay(h,ts = Date.now()){
+  const pref = preferredDays(h);
+  if(!pref.weekdays.length && !pref.monthDays.length)return false;
+  const d = new Date(ts);
+  if(pref.weekdays.length && !pref.weekdays.includes(d.getDay()))return false;
+  if(pref.monthDays.length && !pref.monthDays.includes(d.getDate()))return false;
+  return true;
+}
+function isDateEligibleForHabit(h,ts = Date.now()){
+  const schedule = scheduledDays(h);
+  if(!schedule.weekdays.length && !schedule.monthDays.length)return true;
+  const d = new Date(ts);
+  if(schedule.weekdays.length && !schedule.weekdays.includes(d.getDay()))return false;
+  if(schedule.monthDays.length && !schedule.monthDays.includes(d.getDate()))return false;
+  return true;
+}
+function nextEligibleDate(h,fromTs = Date.now(),lookAheadDays = 370){
+  if(!hasDaySchedule(h))return dayStart(fromTs);
+  const base = dayStart(fromTs);
+  for(let offset = 0;offset <= lookAheadDays;offset++){
+    const ts = base + offset * 86400000;
+    if(isDateEligibleForHabit(h,ts))return ts;
+  }
+  return null;
+}
+function nextEligibleDistance(h,fromTs = Date.now()){
+  const next = nextEligibleDate(h,fromTs);
+  return next === null ? null : Math.round((next - dayStart(fromTs)) / 86400000);
+}
+// Task readiness — mirrors nextEligibleDate's composition with day schedules.
+// A task surfaces as relevant once today is on/after its readyDate AND the
+// day-of schedule (if any) allows it. flexibilityDays flips direction for
+// tasks: days-before-due it starts surfacing, not a rhythm buffer.
+function taskReadyDate(h){
+  if(h.type !== 'task' || h.dueDate === null)return null;
+  const window = Math.max(0,clampFlexibility(h.flexibilityDays));
+  return h.dueDate - window * 86400000;
+}
+function isTaskReady(h,ts = Date.now()){
+  if(h.type !== 'task')return false;
+  if(h.dueDate === null)return true; // someday tasks are always "ready" (scored separately)
+  const ready = taskReadyDate(h);
+  if(ready !== null && dayStart(ts) < ready)return false;
+  return !hasDaySchedule(h) || isDateEligibleForHabit(h,ts);
+}
+function formatTimeShort(minutes){
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const ampm = h >= 12 ? 'pm' : 'am';
+  const h12 = h % 12 || 12;
+  return m === 0 ? `${h12}${ampm}` : `${h12}:${String(m).padStart(2,'0')}${ampm}`;
+}
+function timeWindowSummary(h){
+  if(!hasTimeWindow(h))return '';
+  return `${formatTimeShort(h.allowedTimeStart)}–${formatTimeShort(h.allowedTimeEnd)}`;
+}
+function scheduleSummary(h){
+  const schedule = scheduledDays(h);
+  const parts = [];
+  if(schedule.weekdays.length)parts.push(schedule.weekdays.map(weekdayShort).join('/'));
+  if(schedule.monthDays.length)parts.push(schedule.monthDays.map(monthOrdinal).join('/'));
+  const tw = timeWindowSummary(h);
+  if(tw)parts.push(tw);
+  return parts.join(' ');
+}
+function preferredSummary(h){
+  const pref = preferredDays(h);
+  const parts = [];
+  if(pref.weekdays.length)parts.push(pref.weekdays.map(weekdayShort).join('/'));
+  if(pref.monthDays.length)parts.push(pref.monthDays.map(monthOrdinal).join('/'));
+  return parts.join(' and ');
+}
+// ─────────────────────────────────────────────────────────────────────────
+// FORMATTING + MISC — MOSTLY PURE. scheduleSummary/preferredSummary return
+// human-readable strings; escapeHtml is the only DOM-aware function here and
+// only exists to support innerHTML rendering in the view layer.
+// ─────────────────────────────────────────────────────────────────────────
+
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+
+function markSegments(value){
+  const text = value.trim();
+  if(Intl.Segmenter){
+    return [...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(text)].map(item=>item.segment);
+  }
+  return Array.from(text);
+}
+
+function cleanMark(value){
+  return markSegments(value).slice(0,2).join('');
+}
+
+function avgInterval(logs){
+  const sorted = actualLogs(logs);
+  if(sorted.length < 2)return null;
+  let sum = 0;
+  for(let i=1;i<sorted.length;i++)sum += sorted[i] - sorted[i-1];
+  return Math.round(sum / (sorted.length - 1) / 86400000);
+}
