@@ -383,10 +383,10 @@ button {
 }
 
 .weather-modal-card {
-  width: min(92vw, 560px);
+  width: min(88vw, 860px);
   max-height: min(88svh, 720px);
   overflow-y: auto;
-  padding: clamp(16px, 3vw, 26px);
+  padding: clamp(14px, 2.5vw, 22px);
   background: var(--panel-bg);
   color: var(--app-text);
   border: 1px solid var(--panel-border);
@@ -399,17 +399,17 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .weather-modal-header h2 {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.8rem;
   line-height: 0.95;
 }
 
 .weather-modal-header .hint {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-weight: 600;
   opacity: 0.7;
 }
@@ -417,21 +417,21 @@ button {
 .weather-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 8px;
+  gap: 12px;
+  margin-top: 6px;
 }
 
 /* Current-conditions hero block. */
 .wx-current {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .wx-current img {
-  width: 88px;
-  height: 88px;
+  width: 72px;
+  height: 72px;
   filter: var(--weather-icon-filter, none);
 }
 
@@ -450,12 +450,12 @@ button {
 /* Responsive grid of metric tiles (humidity, wind, pressure, ...). */
 .wx-metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
 }
 
 .wx-metric {
-  padding: 12px 14px;
+  padding: 10px 12px;
   background: var(--soft-surface);
   border: 1px solid var(--panel-border);
   border-radius: 14px;
@@ -499,8 +499,8 @@ button {
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  height: 54px;
-  margin: 12px 0 6px;
+  height: 44px;
+  margin: 10px 0 6px;
 }
 
 .wx-spark-bar {
