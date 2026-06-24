@@ -359,33 +359,213 @@ toast.
 
 ---
 
-## Stretch: Web Push reminders
+## Web Push notifications (complete)
 
-Flagged as **optional and the riskiest item in this plan** — be honest with
-yourself about scope before starting it.
+Built and deployed. Architecture: one Cloudflare Worker (shared by all PWA
+users) + D1 database + 5-minute scheduled cron. The in-app banner remains the
+primary channel; push is additive and fires at the exact time (+/- 5 min) even
+when the PWA is closed and the phone is locked.
 
-The philosophy of this app is deliberately anti-nag for rhythm-based habits
-— there is no reminder system today, by design. Reminders only make sense
-for the two new rigid shapes: a hard-due task, or an event. Even there:
+### Why this architecture
 
-- True background push (notification fires while the tab/PWA isn't open)
-  needs either a push backend (VAPID keys + a server to hold subscriptions)
-  or the browser's Notification Triggers API, which has poor cross-browser
-  support as of this writing and shouldn't be relied on.
-- A scoped-down v1 that fires reminders only while the app is open or on
-  next launch (checking `eventTime`/`dueDate` against `Date.now()` at
-  startup, the same moment `sortSettings = loadSortSettings()` runs today)
-  delivers real value with zero new infrastructure — it just won't notify
-  you if the PWA is fully closed.
-- True any-time background push is realistically a native-app feature
-  (APNs makes this close to free) — `IOS_PORT_PLAN.md` already lists push
-  notifications as out-of-scope for the RN MVP and a fast-follow after. If
-  reminders matter enough to justify a backend, it may be more efficient to
-  wait for the native port than to stand up push infrastructure for the PWA
-  twice.
+The app is on-device only by design — no backend stores user habits. Web Push
+requires a server to authenticate (VAPID) and encrypt the notification payload
+before forwarding it to Apple's/Google's push service. The Worker is a **pure
+relay**: it receives a scheduled push request, stores it until the fire time,
+then forwards it to the push service. It never stores habit lists, logs, or any
+user data beyond what's needed to deliver the one notification.
 
-**Recommendation:** build the foreground/launch-time check first (cheap,
-real value), defer true background push to the native app phase.
+All users of the PWA share the same Worker endpoint (deployed by the app
+owner). Each device subscribes independently with its own VAPID-signed
+subscription. The Worker never sees habit names unless the user explicitly opts
+into rich notifications (see below).
+
+### Privacy: per-user payload setting
+
+Users choose how much context appears in the notification:
+
+| Setting | Push says | Worker sees | Use case |
+|---------|-----------|-------------|----------|
+| `pushDetailed: false` (default) | `"Task due today"` or `"Event starting soon"` | Only the generic title + opaque tag | Privacy-first, matches app ethos |
+| `pushDetailed: true` | `"Call mom · relationships"` (full body from `gatherReminders`) | The task/event name + topics | Useful, at the cost of sharing content with the relay |
+
+The setting is a toggle in the reminders section of the settings sheet, shown
+only when reminders are on. Toggling it affects only future scheduled pushes
+(existing ones are already enqueued with the payload they were scheduled with).
+
+### Storage: D1 schema
+
+D1 (SQLite via CF) was chosen over KV because:
+
+- Strong consistency — no lost writes when multiple users schedule for the same
+  minute bucket.
+- No free-tier list-operation quota (KV has 1000/day — too tight for a
+  per-minute cron).
+- Naturally handles dedupe via `INSERT OR REPLACE` with a composite PK.
+
+```sql
+CREATE TABLE IF NOT EXISTS scheduled_pushes (
+  device_id   TEXT NOT NULL,
+  sig         TEXT NOT NULL,     -- same sig used for client-side dedupe
+  fire_at     INTEGER NOT NULL,  -- epoch ms, minute-granularity
+  subscription TEXT NOT NULL,    -- JSON: {endpoint, keys: {p256dh, auth}}
+  title       TEXT NOT NULL,
+  body        TEXT,              -- null when pushDetailed === false
+  tag         TEXT NOT NULL,
+  PRIMARY KEY (device_id, sig)
+);
+CREATE INDEX IF NOT EXISTS idx_fire_at ON scheduled_pushes(fire_at);
+```
+
+The Worker runs a cron every 5 minutes:
+
+```sql
+SELECT rowid, * FROM scheduled_pushes WHERE fire_at <= ?;
+```
+
+For each row it calls `webpush.sendNotification(subscription, {title, body, tag})`.
+On success it deletes the row; on invalid-subscription error it also deletes
+(graceful — the device will re-subscribe if it comes back).
+
+### CF Worker endpoints
+
+| Endpoint | Trigger | Body | Action |
+|----------|---------|------|--------|
+| `POST /schedule` | Client (`checkReminders`) | `{deviceId, subscription, title, body, tag, sig, fireAt}` | `INSERT OR REPLACE` into D1 |
+| `POST /cancel` | Client (log, delete, edit) | `{deviceId, sig}` | `DELETE WHERE device_id=? AND sig=?` |
+| `POST /unsubscribe` | Client (reminders off) | `{deviceId}` | `DELETE WHERE device_id=?` |
+| Cron `*/5 * * * *` | CF scheduled | — | Query due rows, fire via web-push, delete fired rows |
+
+The Worker uses the `web-push` npm package. VAPID private key stored as a
+Worker secret (`VAPID_PRIVATE_KEY`). Public key is baked into the client code
+(it's a public identifier by design — no security risk).
+
+### Fire-time logic
+
+| Item type | Fire at | Rationale |
+|-----------|---------|-----------|
+| Hard-due task | `dayStart(h.dueDate)` | Fires at the start of the due day, matching the `daysUntil <= 0` check in `gatherReminders` |
+| Event | `h.eventTime - 3,600,000` | One hour before, matching `REMINDER_EVENT_WINDOW_MS` |
+
+Dedupe piggybacks on the existing `state.notified` set: a push is only
+scheduled when `state.notified.add(sig)` is new for the day. The `sig`
+(`"${type}|${name}|${ts|eventTime}"`) already filters identical reminders
+across checkReminders runs.
+
+### Client module: `push-client.js`
+
+Created as a new file, loaded before `reminders.js` in `index.html`.
+
+| Function | Purpose |
+|----------|---------|
+| `getDeviceId()` | Returns a UUID from `localStorage` (`tings_device_id`), generated once via `crypto.randomUUID()` |
+| `getPushSubscription()` | Cached subscription from `localStorage` or `null` |
+| `subscribeToPush()` | Calls `reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey})` on the SW registration, stores subscription in `localStorage` |
+| `unsubscribeFromPush()` | Calls `subscription.unsubscribe()` + `POST /unsubscribe` to the Worker, clears local sub |
+| `schedulePush(sig, title, body, tag, fireAt)` | `POST /schedule` to the Worker with deviceId + subscription + payload |
+| `cancelPush(sig)` | `POST /cancel` to the Worker with deviceId + sig |
+| `initPush()` | If reminders enabled & `Notification.permission === 'granted'` & not yet subscribed → calls `subscribeToPush()`. On failure (unsupported browser, PWA not installed, permission denied) → silently no-ops. |
+
+All network calls use `fetch` with `keepalive: true` (survives page unload) and
+silently swallow errors (push is best-effort — the in-app banner is the
+reliable channel).
+
+### Integration points
+
+| File | Change | Why |
+|------|--------|-----|
+| `js/push-client.js` | NEW | All push subscription/scheduling/cancellation logic |
+| `js/config.js` | Add `PUSH_WORKER_URL`, `VAPID_PUBLIC_KEY`, `pushDetailed: false` to defaults | Configuration point |
+| `js/reminders.js` | `checkReminders()`: after `state.notified.add(sig)` (line 118), also call `schedulePush()` for each new item. `initReminders()`: call `initPush()` | Wire push into the existing detection loop |
+| `js/settings.js` | `toggleReminders(true)`: call `initPush()`. `toggleReminders(false)`: call `unsubscribeFromPush()`. Sync `pushDetailed` toggle in `syncSettingsControls()` | Ride the existing toggle lifecycle |
+| `js/list-view.js` | `logTing()` (line 1022): call `cancelPush(sig)` after the task is logged | A done task should not push |
+| `js/shell-ui.js` | `doNuke()` (line 275): cancel pushes for the deleted habit's sigs before the splice | A deleted habit should not push |
+| `js/main.js` | Habit save path (~line 649): after saving edited data, cancel all scheduled pushes for that habit index (iterate its sigs) | Edited due/event time should reschedule on next `checkReminders()` |
+| `sw.js` | Add `pushsubscriptionchange` handler: re-subscribe, store new subscription, POST unsubscibe-old + schedule-new to Worker | Apple rotates subscription keys periodically; this keeps push alive |
+| `index.html` | Add `<script src="./js/push-client.js" defer>` before reminders.js (line 697). Add `pushDetailed` toggle UI at line ~504 | Script order + settings UI |
+| `manifest.json` | Add `"serviceworker": {"scope": "./"}` | Safari push permission hint |
+
+### Cancel hooks (prevent stale notifications)
+
+| Trigger | Location | Action |
+|---------|----------|--------|
+| Task completed | `logTing()` at `list-view.js:1022` | `cancelPush(sig)` — computed from the habit's current state before log |
+| Habit deleted | `doNuke()` at `shell-ui.js:275` | For each habit scheduled for removal, compute its reminder sigs and `cancelPush(sig)` for each |
+| Reminders toggled off | `toggleReminders()` at `settings.js:155` | `unsubscribeFromPush()` — deletes ALL scheduled pushes for this device |
+| Habit edited | Save path at `main.js:649` | Cancel-all-for-index, let next `checkReminders()` reschedule |
+
+### Deployment (done once by the app owner)
+
+```bash
+# 1. Generate VAPID keys
+npx web-push generate-vapid-keys
+
+# 2. Set up D1
+wrangler d1 create habits-push
+wrangler d1 execute habits-push --file=worker/schema.sql
+
+# 3. Deploy Worker
+cd worker && npm install web-push
+wrangler secret put VAPID_PRIVATE_KEY
+wrangler deploy
+
+# 4. Update client config
+#    - Put the public key + Worker URL in js/config.js
+#    - Ship the updated PWA
+```
+
+### `worker/wrangler.toml`
+
+```toml
+name = "habits-push"
+main = "push-relay.js"
+compatibility_date = "2025-06-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "habits-push"
+database_id = "<from-wrangler-d1-create>"
+
+[triggers]
+crons = ["*/5 * * * *"]
+```
+
+### iOS Safari specifics
+
+- iOS 17.4+ supports Web Push **only** when the PWA is installed to the Home
+  Screen. If opened in Safari (not installed), `PushManager.subscribe()` will
+  throw or resolve to a non-persistent subscription. `subscribeToPush()`
+  catches this and no-ops silently — the in-app banner still works.
+- On first enable, Safari shows a system permission prompt (same as a native
+  app). This fires from the user gesture in `toggleReminders()`.
+- Apple periodically rotates push subscription keys (`pushsubscriptionchange`
+  event). The SW handler re-subscribes and re-posts scheduled pushes seamlessly.
+
+### Free-tier capacity
+
+- D1 free: 5M rows read/day, 100k rows written/day, 5GB storage.
+- Per user: ~2-5 scheduled pushes at a time. Each schedule = 1 write. Each cron
+  run = ~N reads + N deletes (N = number of pushes due in that 5-min window).
+- For a personal PWA with hundreds of users: comfortable.
+- For thousands of users: D1 is pay-per-use and still very cheap
+  ($0.001/million read rows).
+
+### Key design decisions
+
+1. **No cron on the Worker (Option A — rejected).** The simple relay approach
+   (push only fires when the app is open) was considered but rejected because
+   it cannot fire at the exact time. The current architecture uses Option B:
+   cron + server-side state.
+2. **D1 over KV.** KV's 1000-list-ops/day free limit is too tight for a
+   per-minute cron. D1 has no such limit and provides strong consistency,
+   eliminating write conflicts when multiple users schedule for the same
+   moment.
+3. **Generic payloads by default.** Most users get `"Task due today"` without
+   any habit-specific text. This preserves the app's on-device-only promise.
+   Users who want richer notifications opt in explicitly.
+4. **5-minute cron granularity.** Notifications fire within 5 minutes of the
+   exact due time. This is close enough for tasks and event reminders;
+   sub-minute precision isn't needed for a habits app.
 
 ---
 
@@ -420,7 +600,7 @@ an escape hatch so a fixed event can still land on someone else's calendar.
 | 5 | Drag-to-reschedule | `overview-view.js`, `main.js` | none (works today, just additive) |
 | 6 (stretch) | Foreground reminders | `main.js` (startup check) | 0 |
 | 7 (stretch) | `.ics` export | new pure helper, `detail-view.js` | 0 |
-| 8 (stretch) | True background push | `sw.js` + backend | 6, native app likely better venue |
+| 8 | Web Push (exact-time, all users) | `worker/push-relay.js`, `js/push-client.js`, D1 schema, cron | 6 |
 
 Phases 0–2 are the load-bearing ones — nothing else in this plan works
 without the schema and scoring foundation. Phase 3 (the agenda view) is the
