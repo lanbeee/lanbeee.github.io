@@ -1037,6 +1037,10 @@ function logTing(i){
   data[i].logs = normalizeLogs([...(data[i].logs || []),now]);
   data[i].snoozedUntil = null;
   if(!save(data))return false;
+  // Cancel any scheduled push for this completed task.
+  if(typeof cancelPush === 'function' && data[i].type === 'task'){
+    cancelPush(reminderSignature(data[i]));
+  }
   showUndo('Entry logged',undo);
   return true;
 }

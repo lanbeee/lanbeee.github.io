@@ -6,6 +6,8 @@ const MAX_LOGS = 500;
 const MAX_TINGS = 300;
 const QUOTA_WARN_KB = 4096;
 const QUOTA_HARD_KB = 4800;
+const PUSH_WORKER_URL = 'https://habits-push.YOUR-ACCOUNT.workers.dev';
+const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
 const MAX_RHYTHM_DAYS = 183;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_FLEXIBILITY_DAYS = 0;
@@ -53,6 +55,7 @@ const DEFAULT_SORT_SETTINGS = {
   reachAssist:true,
   autoOpenToday:true,
   reminders:false,
+  pushDetailed:false,
   defaultType:'keepup',
   defaultTarget:7,
   topics:[],

@@ -276,6 +276,10 @@ function doNuke(i){
   const data = load();
   const removed = data[i];
   if(!removed)return;
+  // Cancel any scheduled push before removing.
+  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && (removed.type === 'task' || removed.type === 'event')){
+    cancelPush(reminderSignature(removed));
+  }
   data.splice(i,1);
   if(save(data)){
     showUndo('Habit removed',{type:'delete',idx:i,habit:removed});

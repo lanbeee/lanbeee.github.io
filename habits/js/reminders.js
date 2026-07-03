@@ -1,19 +1,20 @@
 // Reminders — a deliberately minimal, anti-nag heads-up system.
 //
-// Design constraints (see EGO's_EXPANSION.md §"Stretch: Web Push reminders"):
+// Design constraints:
 //  - The app is anti-nag for rhythm habits by design. Reminders ONLY cover the
 //    two rigid shapes: a hard-due task, or an event starting soon.
-//  - On iOS Safari (PWA), system notifications can't fire while the app is
-//    closed without a push backend. So the reliable channel is an in-app banner
-//    shown on launch / when the user returns. System notifications are layered
-//    on top where supported (desktop), and the service-worker push/click
-//    handlers in sw.js are forward-compatible for when a backend exists.
+//  - The in-app banner is the primary channel (works offline, no permissions).
+//  - System notifications (in-app) layer on top where supported (desktop).
+//  - Push notifications (via CF Worker relay) fire at the exact due time even
+//    when the PWA is closed. Push is best-effort; the Worker stores nothing
+//    beyond the scheduled push until it fires.
 //  - "Not too many": each item is reminded at most once per day (persisted
 //    dedupe), the banner consolidates everything into one row, and a dismissed
 //    banner stays gone until a *new* item appears.
 //
 // RN port: gatherReminders() ports verbatim; the banner becomes a React Native
-// in-app notification/local-notification scheduler.
+// in-app notification/local-notification scheduler. Push-client becomes native
+// push module; the CF Worker stays unchanged.
 
 const REMINDER_EVENT_WINDOW_MS = 60 * 60 * 1000; // events starting within 1 hour
 const REMINDER_KEY = 'tings_reminders_v1';
@@ -100,8 +101,13 @@ async function trySystemNotification(title,body,tag){
   }catch(_){}
 }
 
+// In-memory set of sigs for which a push has been scheduled this session.
+// Prevents redundant network calls to the Worker (the Worker dedupes by PK anyway).
+let scheduledPushSigs = null;
+
 // HYBRID: main entry. Checks settings + state, fires one system notification
-// per *new* item (deduped per day) and renders the consolidated banner.
+// per *new* item (deduped per day), schedules exact-time push for current and
+// future items, and renders the consolidated banner.
 let reminderBannerCache = [];
 function checkReminders(options = {}){
   const settings = sortSettings || loadSortSettings();
@@ -110,7 +116,7 @@ function checkReminders(options = {}){
   const reminders = gatherReminders(data);
   const state = loadReminderState();
 
-  // Fire one system notification per newly-due item (max 3/run to avoid spam).
+  // 1. Fire one system notification per newly-due item (max 3/run to avoid spam).
   let fired = 0;
   for(const r of reminders){
     if(state.notified.has(r.sig))continue;
@@ -121,7 +127,46 @@ function checkReminders(options = {}){
   }
   if(fired)saveReminderState(state);
 
-  // Banner = actionable items not dismissed today.
+  // 2. Schedule exact-time push for every reminder (already-scheduled sigs
+  //    are skipped). The Worker's PK dedupe prevents duplicates; this is just
+  //    to avoid unnecessary network calls within a session.
+  if(typeof schedulePush === 'function' && typeof dayStart === 'function'){
+    if(!scheduledPushSigs)scheduledPushSigs = new Set();
+    for(const r of reminders){
+      if(scheduledPushSigs.has(r.sig))continue;
+      scheduledPushSigs.add(r.sig);
+      const fireAt = r.kind === 'event'
+        ? r.h.eventTime - REMINDER_EVENT_WINDOW_MS
+        : dayStart(r.h.dueDate);
+      const body = settings.pushDetailed ? r.body : '';
+      schedulePush(r.sig,r.title,body,r.sig,fireAt);
+    }
+    // Also schedule future-due items not yet in the reminder window.
+    data.forEach(h=>{
+      if(h.type === 'task' && h.hardDue && h.dueDate !== null && h.lastLog === null){
+        const days = daysUntil(h.dueDate);
+        if(days !== null && days > 0 && !h.lastLog){
+          const sig = reminderSignature(h);
+          if(scheduledPushSigs.has(sig))return;
+          scheduledPushSigs.add(sig);
+          const body = settings.pushDetailed ? (h.name + (h.topics?.length ? ` · ${h.topics.join(', ')}` : '')) : '';
+          schedulePush(sig,'Upcoming task',body,sig,dayStart(h.dueDate));
+        }
+      }
+      if(h.type === 'event' && h.eventTime !== null){
+        const ms = h.eventTime - Date.now();
+        if(ms > REMINDER_EVENT_WINDOW_MS){
+          const sig = reminderSignature(h);
+          if(scheduledPushSigs.has(sig))return;
+          scheduledPushSigs.add(sig);
+          const body = settings.pushDetailed ? (h.name + ' · ' + agendaTimeLabel(h.eventTime)) : '';
+          schedulePush(sig,'Upcoming event',body,sig,h.eventTime - REMINDER_EVENT_WINDOW_MS);
+        }
+      }
+    });
+  }
+
+  // 3. Banner = actionable items not dismissed today.
   const bannerItems = reminders.filter(r=>!state.dismissed.has(r.sig));
   renderReminderBanner(bannerItems);
 }
@@ -188,6 +233,7 @@ async function requestReminderPermission(){
 let reminderIntervalId = null;
 function initReminders(){
   checkReminders();
+  if(typeof initPush === 'function')initPush();
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)setTimeout(checkReminders,300);
   });

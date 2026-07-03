@@ -1,0 +1,12 @@
+name = "habits-push"
+main = "push-relay.js"
+compatibility_date = "2025-06-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "habits-push"
+database_id = ""
+
+[triggers]
+crons = ["*/5 * * * *"]

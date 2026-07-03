@@ -447,6 +447,14 @@
               <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
+              <span><b>reminders</b><small>Heads-up for hard deadlines and events starting soon. On iPhone, reminders appear when you open the app.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="pushDetailed" aria-pressed="false">
+              <span><b>include task names in notifications</b><small>When off, push notifications say "Task due today" without names. When on, the full task or event name is included.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </div>
         </section>
         <section class="settings-block">
@@ -563,6 +571,7 @@
 <script src="./js/detail-view.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
 <script src="./js/today-view.js" defer></script>
+<script src="./js/push-client.js" defer></script>
 <script src="./js/reminders.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>

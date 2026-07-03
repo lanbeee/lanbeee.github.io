@@ -149,10 +149,32 @@ function toggleAppSettingButton(btn){
   if(!btn)return;
   const key = btn.dataset.settingToggle;
   if(!key)return;
+  if(key === 'reminders'){toggleReminders();return;}
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
   updateSortSetting(patch);
 }
+
+// HANDLER: enable/disable reminders. On enable, ask for notification permission
+// from this user gesture. The in-app banner works without any permission, so we
+// always enable it; system notifications are a best-effort layer on top.
+async function toggleReminders(){
+  const turningOn = !Boolean(sortSettings.reminders);
+  if(!turningOn){
+    if(typeof unsubscribeFromPush === 'function')unsubscribeFromPush();
+    updateSortSetting({reminders:false});
+    if(typeof hideReminderBanner === 'function')hideReminderBanner();
+    showToast('reminders off');
+    return;
+  }
+  let perm = 'unsupported';
+  if(typeof requestReminderPermission === 'function')perm = await requestReminderPermission();
+  updateSortSetting({reminders:true});
+  showToast(perm === 'granted' ? 'reminders on' : 'reminders on · in-app banner');
+  if(perm === 'granted' && typeof initPush === 'function')initPush();
+  setTimeout(()=>{if(typeof checkReminders === 'function')checkReminders();},120);
+}
+
 
 // PURE: count sample habits in list
 function sortSampleCount(){

@@ -636,6 +636,10 @@ $('detail-save').addEventListener('click',()=>{
     $('detail-event-time').focus();
     return;
   }
+  // Cancel scheduled push for the pre-edit state (sig may change after edit).
+  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && (h.type === 'task' || h.type === 'event')){
+    cancelPush(reminderSignature(h));
+  }
   h.name = current.name.slice(0,60);
   h.type = current.type;
   h.emoji = current.emoji;

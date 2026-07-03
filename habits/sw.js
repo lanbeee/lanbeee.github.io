@@ -74,9 +74,9 @@ self.addEventListener('fetch', event => {
   })());
 });
 
-// Forward-compatible push handling. Today there is no push backend (the app is
-// on-device only), so these are dormant. When a server sends a push (VAPID),
-// the payload is shown as a notification; clicking it focuses/opens the PWA.
+// Push notification relay. Must match the values in js/config.js.
+const PUSH_VAPID_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+
 self.addEventListener('push', event => {
   let data = { title: 'Habits', body: '' };
   try {
@@ -100,4 +100,20 @@ self.addEventListener('notificationclick', event => {
     }
     if (self.clients.openWindow) return self.clients.openWindow('./');
   })());
+});
+
+// Re-subscribe when the push service rotates the subscription keys. The new
+// subscription is forwarded to client pages so push-client.js can store it.
+self.addEventListener('pushsubscriptionchange', event => {
+  event.waitUntil(
+    self.registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: PUSH_VAPID_KEY
+    }).then(newSub => {
+      const data = newSub.toJSON();
+      return self.clients.matchAll({ type: 'window' }).then(all => {
+        all.forEach(c => c.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED', subscription: data }));
+      });
+    }).catch(() => {})
+  );
 });
