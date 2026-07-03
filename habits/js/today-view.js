@@ -26,6 +26,7 @@ function buildTodayAgenda(data,settings){
   const agendaItems = [];
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
+    if(h.type === 'task' && h.lastLog !== null)continue;
     const cost = clampDuration(h.durationMinutes);
     if(cost > remaining && agendaItems.length)continue; // skip, keep scanning for a smaller fit
     agendaItems.push({h,i});

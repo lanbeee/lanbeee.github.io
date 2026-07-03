@@ -108,14 +108,14 @@ function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
-    const merged = {...DEFAULT_SORT_SETTINGS,...migrated};
+    const merged = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...migrated,preset:'todayFirst'};
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
-    if(merged.preset && merged.preset !== 'custom' && !SORT_PRESETS[merged.preset])merged.preset = 'custom';
     delete merged.keepStopsQuiet;
     delete merged.requireConfirm;
     delete merged.focusSearchOnOpen;
+    merged.reminders = false;
     merged.topics = normalizeTopics(merged.topics);
     merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
@@ -126,8 +126,9 @@ function loadSortSettings(){
 }
 
 function saveSortSettings(settings){
-  const next = {...DEFAULT_SORT_SETTINGS,...settings};
+  const next = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...settings,preset:'todayFirst'};
   delete next.keepStopsQuiet;
+  next.reminders = false;
   next.topics = normalizeTopics(next.topics);
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);

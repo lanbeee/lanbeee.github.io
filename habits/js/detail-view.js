@@ -293,8 +293,6 @@ function renderStats(h){
     : h.type === 'task' ? (h.dueDate ? 'due task' : 'someday')
     : h.type === 'event' ? 'fixed event'
     : `${target}d rhythm`;
-  const gapValue = gapNum === '-' ? '-' : `${gapNum}<small>d</small>`;
-  const avgValue = avg === null ? '-' : `${avg}<small>d</small>`;
   const rhythmIcon = h.type === 'zero' ? 'ti-ban'
     : h.type === 'task' ? 'ti-checkbox'
     : h.type === 'event' ? 'ti-calendar-time'
@@ -307,6 +305,34 @@ function renderStats(h){
     : h.type === 'task' ? (h.lastLog !== null ? 'completed' : (h.dueDate ? 'has due date' : 'no due date'))
     : h.type === 'event' ? (h.eventTime ? 'scheduled' : 'no time set')
     : `${planned} planned`;
+  if(h.type === 'task' || h.type === 'event'){
+    const primary = h.type === 'task'
+      ? (h.lastLog !== null ? 'completed' : (h.dueDate ? cardCue(h) : 'someday'))
+      : (h.eventTime ? eventWhenLabel(h.eventTime) : 'no time set');
+    const secondary = h.type === 'task'
+      ? (h.hardDue && h.lastLog === null ? 'hard deadline' : 'task')
+      : `${clampDuration(h.durationMinutes)}m`;
+    const completeLabel = h.type === 'task' ? 'done entries' : 'entries';
+    $('detail-stats').innerHTML = `
+      <div class="score-card ${scoreCls}">
+        <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
+        <div class="score-copy">
+          <div class="score-title">${escapeHtml(scoreName)}</div>
+          <div class="score-sub">${escapeHtml(progressCopy(h,score))}</div>
+          <div class="score-facts">
+            <span><i class="ti ${rhythmIcon}" aria-hidden="true"></i>${escapeHtml(targetLine)}</span>
+            <span><i class="ti ${planIcon}" aria-hidden="true"></i>${escapeHtml(planFact)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="stat"><div class="stat-num">${escapeHtml(primary)}</div><div class="stat-label">status</div></div>
+      <div class="stat"><div class="stat-num">${escapeHtml(secondary)}</div><div class="stat-label">type</div></div>
+      <div class="stat"><div class="stat-num">${clampDuration(h.durationMinutes)}<small>m</small></div><div class="stat-label">duration</div></div>
+      <div class="stat compact"><div class="stat-num">${completed}</div><div class="stat-label">${completeLabel}</div></div>`;
+    return;
+  }
+  const gapValue = gapNum === '-' ? '-' : `${gapNum}<small>d</small>`;
+  const avgValue = avg === null ? '-' : `${avg}<small>d</small>`;
   $('detail-stats').innerHTML = `
     <div class="score-card ${scoreCls}">
       <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
@@ -534,6 +560,20 @@ function trendText(h){
 // RENDER: renders gap history bar graph
 function renderGraph(h){
   const graph = $('detail-graph');
+  if(h.type === 'task' || h.type === 'event'){
+    const when = h.type === 'task'
+      ? (h.dueDate ? entryWhen(h.dueDate) : 'no due date')
+      : (h.eventTime ? eventWhenLabel(h.eventTime) : 'no time set');
+    const note = h.type === 'task'
+      ? (h.lastLog !== null ? `Completed ${entryWhen(h.lastLog)}.` : aboutText(h))
+      : aboutText(h);
+    graph.innerHTML = `
+      <div class="graph-empty task-event-summary">
+        <b>${escapeHtml(when)}</b>
+        <span>${escapeHtml(note)}</span>
+      </div>`;
+    return;
+  }
   const logs = actualLogs(h.logs);
   const target = h.target || 7;
   if(!logs.length){
@@ -562,6 +602,8 @@ function renderGraph(h){
 function graphRule(h){
   if(h.type === 'keepup')return 'shorter is better';
   if(h.type === 'reduce')return 'longer is better';
+  if(h.type === 'task')return 'one-off';
+  if(h.type === 'event')return 'fixed time';
   return 'longer is better';
 }
 
@@ -586,6 +628,15 @@ function renderCalendar(h){
   const toneByDay = logToneMap(h);
   let actual = 0;
   let planned = 0;
+  const addPlannedMarker = ts=>{
+    if(ts === null)return;
+    const d = new Date(ts);
+    if(d.getFullYear() !== year || d.getMonth() !== month)return;
+    const key = dateKey(ts);
+    dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
+    planned += 1;
+    if(!toneByDay.has(key))toneByDay.set(key,'plan');
+  };
   logs.forEach(log=>{
     const ts = logTime(log);
     const d = new Date(ts);
@@ -595,6 +646,8 @@ function renderCalendar(h){
     if(isPlanLog(log))planned += 1;
     else actual += 1;
   });
+  if(h.type === 'event')addPlannedMarker(h.eventTime);
+  if(h.type === 'task' && h.lastLog === null)addPlannedMarker(h.dueDate);
   const monthEntries = actual + planned;
   const activeDays = [...dayCounts.values()].filter(Boolean).length;
   $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
@@ -667,10 +720,18 @@ function hasPlannedEntryForDay(h,key){
   return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
 }
 
+// PURE: checks whether a task/event has its own scheduled date on a day.
+function hasScheduledMarkerForDay(h,key){
+  return (
+    (h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === key) ||
+    (h.type === 'task' && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
+  );
+}
+
 // PURE: checks a planned entry exists today
 function hasPlannedToday(h){
   const today = dateKey(Date.now());
-  return hasPlannedEntryForDay(h,today);
+  return hasPlannedEntryForDay(h,today) || hasScheduledMarkerForDay(h,today);
 }
 
 // PURE: computes month boundary dates and label

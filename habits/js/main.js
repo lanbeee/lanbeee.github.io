@@ -44,6 +44,20 @@ function syncAddTypeUi(type){
   $('target-help').textContent = rhythmHelp(type);
   $('task-due-row').hidden = type !== 'task';
   $('event-time-row').hidden = type !== 'event';
+  if(type === 'task' && !$('ting-due-date').value){
+    $('ting-due-date').value = dateKey(Date.now());
+    syncTaskDueUi();
+  }
+  if(type === 'event' && !$('ting-event-time').value){
+    $('ting-event-time').value = datetimeInputValue(defaultEventTime());
+  }
+}
+
+// PURE: next clean hour, used to make creating a new event one tap lighter.
+function defaultEventTime(){
+  const d = new Date(Date.now() + 60 * 60000);
+  d.setMinutes(0,0,0);
+  return d.getTime();
 }
 
 $('open-add').addEventListener('click',()=>{
@@ -58,7 +72,9 @@ $('open-add').addEventListener('click',()=>{
 });
 
 $('open-search').addEventListener('click',()=>{
-  if(load().length < 10)return;
+  const data = load();
+  const hasSearchableArchive = data.some(h=>(h.type === 'task' && h.lastLog !== null) || h.type === 'event');
+  if(data.length < 10 && !hasSearchableArchive)return;
   const nav = document.querySelector('.bottom-nav');
   const wide = paneTierActive();
   const isOpen = wide
@@ -68,7 +84,9 @@ $('open-search').addEventListener('click',()=>{
   else setSearchOpen(true);
 });
 $('bar-open-search')?.addEventListener('click',()=>{
-  if(load().length < 10)return;
+  const data = load();
+  const hasSearchableArchive = data.some(h=>(h.type === 'task' && h.lastLog !== null) || h.type === 'event');
+  if(data.length < 10 && !hasSearchableArchive)return;
   const isOpen = !!$('app-bar-search')?.classList.contains('is-open');
   if(isOpen)closeSearch();
   else setSearchOpen(true);
@@ -699,7 +717,7 @@ bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   const h = load()[detailIdx];
   if(!h)return;
   const key = day.dataset.entryDay;
-  if(hasPlannedEntryForDay(h,key)){
+  if(hasPlannedEntryForDay(h,key) || hasScheduledMarkerForDay(h,key)){
     dayLogsKey = key;
     renderCalendar(h);
     renderDayLogs(key);
@@ -737,49 +755,49 @@ $('open-settings').addEventListener('click',()=>{
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('settings-advanced-toggle').addEventListener('click',e=>{
+$('settings-advanced-toggle')?.addEventListener('click',e=>{
   if(suppressNativeButton === e.currentTarget){
     e.preventDefault();
     return;
   }
   toggleAdvancedSettings();
 });
-$('sort-preset-seg').addEventListener('click',e=>{
+$('sort-preset-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-preset]');
   if(!opt)return;
   applySortPreset(opt.dataset.preset);
 });
-$('plan-window-seg').addEventListener('click',e=>{
+$('plan-window-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-window]');
   if(!opt)return;
   updateSortSetting({planWindowDays:parseInt(opt.dataset.window,10),preset:'custom'});
   showToast('order updated');
 });
-$('new-build-seg').addEventListener('click',e=>{
+$('new-build-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-new-build]');
   if(!opt)return;
   updateSortSetting({newBuildMode:opt.dataset.newBuild,preset:'custom'});
   showToast('order updated');
 });
-$('due-mode-seg').addEventListener('click',e=>{
+$('due-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-due-mode]');
   if(!opt)return;
   updateSortSetting({dueMode:opt.dataset.dueMode,preset:'custom'});
   showToast('order updated');
 });
-$('build-window-seg').addEventListener('click',e=>{
+$('build-window-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-build-window]');
   if(!opt)return;
   updateSortSetting({buildLookAheadDays:parseInt(opt.dataset.buildWindow,10),preset:'custom'});
   showToast('order updated');
 });
-$('limit-mode-seg').addEventListener('click',e=>{
+$('limit-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-limit-mode]');
   if(!opt)return;
   updateSortSetting({limitMode:opt.dataset.limitMode,preset:'custom'});
   showToast('order updated');
 });
-$('stop-mode-seg').addEventListener('click',e=>{
+$('stop-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-stop-mode]');
   if(!opt)return;
   updateSortSetting({stopMode:opt.dataset.stopMode,preset:'custom'});
@@ -842,8 +860,8 @@ bindSettingRange('new-weight','newWeight','%');
 bindSettingRange('build-start','buildRiseAt','%');
 bindSettingRange('rhythm-bias','rhythmBias','');
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
-$('add-sort-samples').addEventListener('click',addSortSamples);
-$('remove-sort-samples').addEventListener('click',removeSortSamples);
+$('add-sort-samples')?.addEventListener('click',addSortSamples);
+$('remove-sort-samples')?.addEventListener('click',removeSortSamples);
 $('settings-reset').addEventListener('click',()=>{
   $('settings-reset-confirm').hidden = false;
 });
@@ -861,7 +879,9 @@ $('settings-reset-yes').addEventListener('click',()=>{
 function hasItemsOnDay(key){
   const data = load();
   return data.some(h=>
-    normalizeLogs(h.logs).some(log=>dateKey(logTime(log))===key)
+    normalizeLogs(h.logs).some(log=>dateKey(logTime(log))===key) ||
+    (h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === key) ||
+    (h.type === 'task' && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
   );
 }
 
@@ -930,6 +950,8 @@ $('day-log-add').addEventListener('click',()=>{
   if(!dayLogsKey)return;
   const idx = parseInt($('day-log-ting').value,10);
   if(Number.isNaN(idx))return;
+  const h = load()[idx];
+  if(!h || h.type === 'event' || (h.type === 'task' && h.lastLog !== null))return;
   const ts = new Date(`${dayLogsKey}T12:00:00`).getTime();
   if(!logTingAt(idx,ts))return;
   renderDayLogs(dayLogsKey);
@@ -939,6 +961,13 @@ $('day-availability-save').addEventListener('click',saveDayAvailabilityOverride)
 $('day-availability-minutes').addEventListener('keydown',e=>{if(e.key === 'Enter')saveDayAvailabilityOverride();});
 $('day-availability-clear').addEventListener('click',clearDayAvailabilityOverride);
 $('day-logs-list').addEventListener('click',e=>{
+  const openBtn = e.target.closest('[data-open-day-item]');
+  if(openBtn){
+    const idx = parseInt(openBtn.dataset.openDayItem,10);
+    if(Number.isNaN(idx))return;
+    if(typeof openDetail === 'function')openDetail(idx);
+    return;
+  }
   const removeBtn = e.target.closest('[data-remove-plan]');
   if(removeBtn){
     const idx = parseInt(removeBtn.dataset.removePlan,10);
@@ -1026,6 +1055,7 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
+if(typeof cleanupLegacySortSamples === 'function')cleanupLegacySortSamples();
 render();
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();

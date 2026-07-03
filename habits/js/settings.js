@@ -37,8 +37,6 @@ function syncSettingsControls(){
   sortSettings = loadSortSettings();
   const resetConfirm = $('settings-reset-confirm');
   if(resetConfirm)resetConfirm.hidden = true;
-  updateSortSampleCount();
-  renderSortLabPreview();
   renderTopicList();
   renderAvailabilityControls();
   document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
@@ -80,6 +78,14 @@ function syncSettingsControls(){
   syncSettingRange('build-start',sortSettings.buildRiseAt,'%');
   syncSettingRange('rhythm-bias',sortSettings.rhythmBias,'');
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
+}
+
+// HYBRID: remove old sort-lab sample habits now that the lab is no longer part
+// of the day-to-day app surface.
+function cleanupLegacySortSamples(){
+  const current = load();
+  if(!current.some(h=>h.sample))return false;
+  return save(current.filter(h=>!h.sample));
 }
 
 // RENDER: draw weekday availability inputs
@@ -143,28 +149,9 @@ function toggleAppSettingButton(btn){
   if(!btn)return;
   const key = btn.dataset.settingToggle;
   if(!key)return;
-  if(key === 'reminders'){toggleReminders();return;}
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
   updateSortSetting(patch);
-}
-
-// HANDLER: enable/disable reminders. On enable, ask for notification permission
-// from this user gesture. The in-app banner works without any permission, so we
-// always enable it; system notifications are a best-effort layer on top.
-async function toggleReminders(){
-  const turningOn = !Boolean(sortSettings.reminders);
-  if(!turningOn){
-    updateSortSetting({reminders:false});
-    if(typeof hideReminderBanner === 'function')hideReminderBanner();
-    showToast('reminders off');
-    return;
-  }
-  let perm = 'unsupported';
-  if(typeof requestReminderPermission === 'function')perm = await requestReminderPermission();
-  updateSortSetting({reminders:true});
-  showToast(perm === 'granted' ? 'reminders on' : 'reminders on · in-app banner');
-  setTimeout(()=>{if(typeof checkReminders === 'function')checkReminders();},120);
 }
 
 // PURE: count sample habits in list

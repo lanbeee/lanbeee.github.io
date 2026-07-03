@@ -71,21 +71,31 @@ function buildDayTally(data,included){
   let actual = 0;
   let planned = 0;
   const toneCounts = {hit:0,warn:0,miss:0,plan:0};
+  const addEntry = (ts,entry)=>{
+    if(!included(ts))return;
+    const key = dateKey(ts);
+    if(!map.has(key))map.set(key,[]);
+    map.get(key).push(entry);
+    total += 1;
+    if(entry.planned)planned += 1;
+    else actual += 1;
+    toneCounts[entry.tone] = (toneCounts[entry.tone] || 0) + 1;
+  };
   data.forEach(h=>{
     const toneByDay = logToneMap(h);
     normalizeLogs(h.logs).forEach(log=>{
       const ts = logTime(log);
-      if(!included(ts))return;
-      const key = dateKey(ts);
-      if(!map.has(key))map.set(key,[]);
       const isPlan = isPlanLog(log);
+      const key = dateKey(ts);
       const tone = isPlan ? 'plan' : toneByDay.get(key) || entryTone(h.type);
-      map.get(key).push({name:h.name,type:h.type,tone,planned:isPlan});
-      total += 1;
-      if(isPlan)planned += 1;
-      else actual += 1;
-      toneCounts[tone] = (toneCounts[tone] || 0) + 1;
+      addEntry(ts,{name:h.name,type:h.type,tone,planned:isPlan});
     });
+    if(h.type === 'event' && h.eventTime !== null){
+      addEntry(h.eventTime,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
+    }
+    if(h.type === 'task' && h.dueDate !== null && h.lastLog === null){
+      addEntry(h.dueDate,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
+    }
   });
   return {map,total,actual,planned,toneCounts};
 }
@@ -277,26 +287,38 @@ function renderDayLogs(key){
   data.forEach((h,i)=>{
     if(!matchesOverviewTopic(h,overviewTopicFilter))return;
     const entries = normalizeLogs(h.logs).filter(log=>dateKey(logTime(log)) === key);
+    const scheduled = [];
+    if(h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === key){
+      scheduled.push('event');
+    }
+    if(h.type === 'task' && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key){
+      scheduled.push(h.hardDue ? 'deadline' : 'due');
+    }
     const count = entries.length;
-    if(!count)return;
-    rows.push({h,index:i,count,entries,c:colors(daysSince(h.lastLog),h.target,h.type)});
+    if(!count && !scheduled.length)return;
+    rows.push({h,index:i,count,entries,scheduled,c:colors(daysSince(h.lastLog),h.target,h.type)});
   });
   const ts = new Date(`${key}T12:00:00`).getTime();
+  const itemCount = rows.reduce((sum,row)=>sum + row.count + row.scheduled.length,0);
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
   $('day-logs-sub').textContent = rows.length
-    ? `${rows.reduce((sum,row)=>sum + row.count,0)} entries${topicLabel ? ` · ${topicLabel}` : ''}`
+    ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'}${topicLabel ? ` · ${topicLabel}` : ''}`
     : `no entries${topicLabel ? ` · ${topicLabel}` : ''}`;
   renderDayAvailability(key);
-  $('day-logs-list').innerHTML = rows.length ? rows.map(({h,index,count,entries,c})=>{
+  $('day-logs-list').innerHTML = rows.length ? rows.map(({h,index,count,entries,scheduled,c})=>{
     const plannedCount = entries.filter(isPlanLog).length;
     const actualCount = count - plannedCount;
     const remove = plannedCount ? `<button class="mini-text-btn" data-remove-plan="${index}" data-plan-day="${key}">remove</button>` : '';
     const move = plannedCount ? `<button class="mini-text-btn" data-move-plan="${index}" data-plan-day="${key}">move</button>` : '';
+    const open = scheduled.length ? `<button class="mini-text-btn" data-open-day-item="${index}">open</button>` : '';
+    const entryMeta = plannedCount ? `${plannedCount} planned${actualCount ? `, ${actualCount} done` : ''}` : actualCount ? `${actualCount} ${actualCount === 1 ? 'entry' : 'entries'}` : '';
+    const scheduledMeta = scheduled.join(', ');
+    const meta = [scheduledMeta,entryMeta].filter(Boolean).join(' · ');
     return `
     <div class="overview-item plan-item">
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
-      <span class="overview-meta">${plannedCount ? `${plannedCount} planned${actualCount ? `, ${actualCount} done` : ''}` : `${count} ${count === 1 ? 'entry' : 'entries'}`}</span>
-      <div class="plan-actions">${move}${remove}</div>
+      <span class="overview-meta">${escapeHtml(meta)}</span>
+      <div class="plan-actions">${open}${move}${remove}</div>
       <label class="move-inline" hidden>
         <input type="date" class="move-date" value="${key}" data-move-date="${index}" data-move-from="${key}" />
         <button class="mini-text-btn" type="button" data-move-go="${index}">save</button>
@@ -307,8 +329,9 @@ function renderDayLogs(key){
   const addOptions = data
     .map((h,i)=>({h,i}))
     .filter(({h})=>matchesOverviewTopic(h,overviewTopicFilter))
+    .filter(({h})=>h.type !== 'event' && !(h.type === 'task' && h.lastLog !== null))
     .sort((a,b)=>(a.h.name || '').localeCompare(b.h.name || '',undefined,{sensitivity:'base'}));
-  $('day-log-ting').innerHTML = addOptions.length ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No habits</option>';
+  $('day-log-ting').innerHTML = addOptions.length ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No active items</option>';
   $('day-log-add').disabled = !addOptions.length;
 }
 

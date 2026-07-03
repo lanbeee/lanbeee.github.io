@@ -305,11 +305,13 @@ function renderHomeTopicFilter(data){
 
 // RENDER: toggle sort and search buttons
 function updateSortButton(){
-  const count = load().length;
+  const data = load();
+  const count = data.length;
+  const hasSearchableArchive = data.some(h=>(h.type === 'task' && h.lastLog !== null) || h.type === 'event');
   $('open-overview').classList.toggle('is-hidden',count < 2);
   $('open-overview').disabled = count < 2;
-  $('open-search').classList.toggle('is-hidden',count < 10);
-  $('open-search').disabled = count < 10;
+  $('open-search').classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
+  $('open-search').disabled = count < 10 && !hasSearchableArchive;
   const barOverview = $('bar-open-overview');
   if (barOverview) {
     barOverview.classList.toggle('is-hidden',count < 2);
@@ -317,8 +319,8 @@ function updateSortButton(){
   }
   const barSearch = $('bar-open-search');
   if (barSearch) {
-    barSearch.classList.toggle('is-hidden',count < 10);
-    barSearch.disabled = count < 10;
+    barSearch.classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
+    barSearch.disabled = count < 10 && !hasSearchableArchive;
   }
   const todayBtn = $('open-today');
   if (todayBtn){
@@ -330,7 +332,7 @@ function updateSortButton(){
     barToday.classList.toggle('is-hidden',count < 1);
     barToday.disabled = count < 1;
   }
-  if(count < 10)closeSearch({render:false});
+  if(count < 10 && !hasSearchableArchive)closeSearch({render:false});
 }
 
 // RENDER: sync search bar to query state
@@ -667,7 +669,10 @@ function render(){
 
   const visible = visibleIndices(data);
   const indices = filteredVisibleIndices(data);
-  if(!indices.length){
+  const eventIdxs = searchQuery.trim()
+    ? matchingEventIndices(data,searchQuery,homeTopicFilter)
+    : todayEvents(data);
+  if(!indices.length && !eventIdxs.length){
     empty.style.display = 'block';
     const hasSearch = searchQuery.trim().length > 0;
     const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
@@ -681,13 +686,19 @@ function render(){
         homeTopicFilter = 'all';
         render();
       };
-    }else if(data.length && !sortSettings.showSnoozed && !visible.length){
+    }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){
       empty.innerHTML = 'hidden for now<br><span class="empty-sub">tap to show</span>';
       empty.onclick = ()=>{
         saveSortSettings({...sortSettings,showSnoozed:true});
         syncSettingsControls();
         render();
       };
+    }else if(data.length && !visible.length){
+      const doneTasks = data.filter(h=>h.type === 'task' && h.lastLog !== null).length;
+      const events = data.filter(h=>h.type === 'event').length;
+      empty.innerHTML = doneTasks && doneTasks + events === data.length
+        ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
+        : 'nothing active<br><span class="empty-sub">use Today or Calendar for scheduled items, or + to add a habit</span>';
     }else{
       empty.innerHTML = 'simple habit tracking<br><span class="empty-sub">Saved on this device. Tap Habits for help and settings, or + to add your first habit.</span>';
     }
@@ -699,12 +710,10 @@ function render(){
   const todayFirstActive = sortSettings.preset === 'todayFirst';
   let sectionCat = -1;
 
-  // Today's events — surfaced at the top since they're excluded from ranking.
-  const eventIdxs = todayEvents(data);
   if(eventIdxs.length){
     const header = document.createElement('div');
     header.className = 'section-header events-header';
-    header.innerHTML = '<i class="ti ti-calendar-time" aria-hidden="true"></i> today';
+    header.innerHTML = `<i class="ti ti-calendar-time" aria-hidden="true"></i> ${searchQuery.trim() ? 'events' : 'today'}`;
     list.appendChild(header);
     eventIdxs.forEach(realIdx=>{
       const h = data[realIdx];

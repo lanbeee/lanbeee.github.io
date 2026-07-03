@@ -693,6 +693,7 @@ function visibleIndices(data,settingsOverride = null){
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
     if(h.type === 'event')return false;
+    if(h.type === 'task' && h.lastLog !== null)return false;
     return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
   });
   indices.sort((a,b)=>{
@@ -743,7 +744,17 @@ function filteredVisibleIndices(data){
     ? indices.filter(i=>matchesHomeTopic(data[i],topic))
     : indices;
   if(!query)return base;
-  return base.filter(i=>searchText(data[i]).includes(query));
+  const matches = base.filter(i=>searchText(data[i]).includes(query));
+  const completedTasks = data
+    .map((h,i)=>({h,i}))
+    .filter(({h})=>h.type === 'task' && h.lastLog !== null)
+    .filter(({h})=>!topic || topic === 'all' || typeof matchesHomeTopic !== 'function' || matchesHomeTopic(h,topic))
+    .filter(({h})=>searchText(h).includes(query))
+    .sort(({h:a},{h:b})=>(b.lastLog || 0) - (a.lastLog || 0))
+    .map(({i})=>i);
+  const seen = new Set(matches);
+  completedTasks.forEach(i=>{if(!seen.has(i)){seen.add(i);matches.push(i);}});
+  return matches;
 }
 
 // Events are excluded from visibleIndices (they're placed by time, never
