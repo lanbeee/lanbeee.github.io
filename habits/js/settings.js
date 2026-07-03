@@ -37,6 +37,7 @@ function syncSettingsControls(){
   sortSettings = loadSortSettings();
   const resetConfirm = $('settings-reset-confirm');
   if(resetConfirm)resetConfirm.hidden = true;
+  updateSortSampleCount();
   renderTopicList();
   renderAvailabilityControls();
   document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{

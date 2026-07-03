@@ -1059,7 +1059,6 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
-if(typeof cleanupLegacySortSamples === 'function')cleanupLegacySortSamples();
 render();
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
