@@ -375,7 +375,7 @@
         <section class="about-block calm-block"><span>Not a calendar</span><p>A calendar is for exact appointments. This is lighter: you can plan a day, but the main goal is to notice rhythm, spacing, and progress.</p></section>
         <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
         <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
-        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order weighs plans, rhythm, recent entries, progress, trends, and habit type. Settings lets you pick a preset or fine tune it.</p></section>
+        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order puts today, overdue, and planned items where they are easiest to act on.</p></section>
         <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
         <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon or double tap a card to log. Undo appears after. Swipe right to pin or review activity. Swipe left to snooze or remove.</p></section>
       </div>
@@ -390,68 +390,21 @@
   <div class="sheet-wrap" id="settings-sheet">
     <div class="sheet settings-sheet">
       <p class="sheet-title">settings</p>
-      <p class="about-copy">Choose how the app behaves. These are app-wide settings, not settings for one habit.</p>
+      <p class="about-copy">A short setup for daily use. The home list is always ordered for today.</p>
       <div class="settings-stack">
         <section class="settings-block">
-          <span class="settings-label">home order</span>
-          <p class="field-hint">Pinned habits always stay first. After that, auto order brings up what needs attention.</p>
-          <span class="settings-sublabel">priority preset</span>
-          <div class="seg compact-seg preset-seg" id="sort-preset-seg">
-            <button class="seg-opt" data-preset="balanced">balanced</button>
-            <button class="seg-opt" data-preset="build">build</button>
-            <button class="seg-opt" data-preset="planned">plans</button>
-            <button class="seg-opt" data-preset="todayFirst">today</button>
-            <button class="seg-opt" data-preset="custom">custom</button>
-          </div>
-          <p class="field-hint">Presets move the controls below. Balanced watches everything, build favors routines, plans favors planned days, and today puts today items and overdue items first.</p>
+          <span class="settings-label">today</span>
+          <p class="field-hint">Pinned habits stay first. Everything else is ordered for today, overdue work, and plans due soon.</p>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
-              <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
+              <span><b>show planned items early</b><small>Plans due soon can move near the top.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="autoOpenToday" aria-pressed="false">
+              <span><b>open today from calendar</b><small>Open today's activity when the calendar has entries or plans for today.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
-          <span class="settings-sublabel">stop habits rise</span>
-          <div class="seg compact-seg" id="stop-mode-seg">
-            <button class="seg-opt" data-stop-mode="quiet">quiet</button>
-            <button class="seg-opt" data-stop-mode="watch">watch</button>
-            <button class="seg-opt" data-stop-mode="recent">recent</button>
-            <button class="seg-opt" data-stop-mode="active">strict</button>
-          </div>
-          <p class="field-hint">Quiet keeps quit habits low. Watch gives resets a small nudge. Recent brings them into view. Strict treats resets as urgent.</p>
-          <span class="settings-sublabel">look ahead for plans</span>
-          <div class="seg compact-seg" id="plan-window-seg">
-            <button class="seg-opt" data-window="1">today</button>
-            <button class="seg-opt" data-window="3">3 days</button>
-            <button class="seg-opt" data-window="7">week</button>
-          </div>
-          <span class="settings-sublabel">new build habits</span>
-          <div class="seg compact-seg" id="new-build-seg">
-            <button class="seg-opt" data-new-build="quiet">stay low</button>
-            <button class="seg-opt" data-new-build="gentle">gentle</button>
-            <button class="seg-opt" data-new-build="rise">rise</button>
-          </div>
-          <p class="field-hint">This controls build habits that have no entries yet.</p>
-          <span class="settings-sublabel">compare due build habits</span>
-          <div class="seg compact-seg" id="due-mode-seg">
-            <button class="seg-opt" data-due-mode="relative">rhythm</button>
-            <button class="seg-opt" data-due-mode="date">date</button>
-            <button class="seg-opt" data-due-mode="short">shorter</button>
-          </div>
-          <p class="field-hint">Rhythm favors the habit that is deeper into its cycle. Date treats two habits due on the same day as close. Shorter favors frequent habits.</p>
-          <span class="settings-sublabel">build look ahead</span>
-          <div class="seg compact-seg" id="build-window-seg">
-            <button class="seg-opt" data-build-window="1">1 day</button>
-            <button class="seg-opt" data-build-window="3">3 days</button>
-            <button class="seg-opt" data-build-window="7">week</button>
-          </div>
-          <span class="settings-sublabel">limit habits rise</span>
-          <div class="seg compact-seg" id="limit-mode-seg">
-            <button class="seg-opt" data-limit-mode="quiet">quiet</button>
-            <button class="seg-opt" data-limit-mode="overdue">overdue</button>
-            <button class="seg-opt" data-limit-mode="near">near</button>
-            <button class="seg-opt" data-limit-mode="active">active</button>
-          </div>
-          <p class="field-hint">Overdue waits until the rhythm has passed. Near and active bring limit habits up earlier.</p>
         </section>
         <section class="settings-block">
           <span class="settings-label"><span style="position:relative;display:inline-block">topics <button type="button" class="info-btn" data-tip="settings-topics-help" aria-label="about topics"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
@@ -468,7 +421,7 @@
           <div class="availability-grid" id="availability-grid"></div>
         </section>
         <section class="settings-block">
-          <span class="settings-label">app behavior</span>
+          <span class="settings-label">cards</span>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozed" aria-pressed="false">
               <span><b>show snoozed habits</b><small>Show hidden habits faded on the home screen.</small></span>
@@ -494,14 +447,6 @@
               <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="autoOpenToday" aria-pressed="false">
-              <span><b>auto-open today in calendar</b><small>Open today's activity when opening the calendar, if there are any entries or plans.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
-              <span><b>reminders</b><small>Heads-up for hard deadlines and events starting soon. On iPhone, reminders appear when you open the app.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
           </div>
         </section>
         <section class="settings-block">
@@ -517,82 +462,6 @@
             <input type="range" id="setting-default-target" min="1" max="183" />
             <output id="setting-default-target-label"></output>
           </label>
-        </section>
-        <section class="settings-block settings-advanced" id="settings-advanced">
-          <button class="settings-advanced-toggle" id="settings-advanced-toggle" type="button" aria-expanded="false" aria-controls="settings-advanced-body">
-            <span>
-              <b>fine tune priority</b>
-              <small>Optional. 100 is normal. Tune plans, due timing, progress, trend, rhythm, and habit types.</small>
-            </span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-advanced-body" id="settings-advanced-body" hidden>
-            <label class="settings-range">
-              <span>planned</span>
-              <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
-              <output id="setting-plan-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>due</span>
-              <input type="range" id="setting-due-weight" min="0" max="200" step="10" />
-              <output id="setting-due-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>progress</span>
-              <input type="range" id="setting-progress-weight" min="0" max="200" step="10" />
-              <output id="setting-progress-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>trend</span>
-              <input type="range" id="setting-trend-weight" min="0" max="200" step="10" />
-              <output id="setting-trend-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>rhythm</span>
-              <input type="range" id="setting-rhythm-weight" min="0" max="200" step="10" />
-              <output id="setting-rhythm-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>build</span>
-              <input type="range" id="setting-build-weight" min="0" max="200" step="10" />
-              <output id="setting-build-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>limit</span>
-              <input type="range" id="setting-limit-weight" min="0" max="200" step="10" />
-              <output id="setting-limit-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>stop</span>
-              <input type="range" id="setting-stop-weight" min="0" max="200" step="10" />
-              <output id="setting-stop-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>new</span>
-              <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
-              <output id="setting-new-weight-label"></output>
-            </label>
-            <label class="settings-range wide-label">
-              <span>build starts</span>
-              <input type="range" id="setting-build-start" min="40" max="110" step="5" />
-              <output id="setting-build-start-label"></output>
-            </label>
-            <label class="settings-range wide-label">
-              <span>rhythm bias</span>
-              <input type="range" id="setting-rhythm-bias" min="-100" max="100" step="10" />
-              <output id="setting-rhythm-bias-label"></output>
-            </label>
-          </div>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label">sorting lab</span>
-          <p class="field-hint">Add sample habits with different rhythms, plans, progress, pins, snoozes, and habit types. Use them to see how the home order responds to settings.</p>
-          <div class="sort-lab-preview" id="sort-lab-preview"></div>
-          <div class="sample-actions">
-            <button class="btn" id="add-sort-samples" type="button">add sample habits</button>
-            <button class="btn" id="remove-sort-samples" type="button">remove samples</button>
-          </div>
-          <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
         </section>
         <section class="settings-block settings-danger">
           <span class="settings-label">start over</span>

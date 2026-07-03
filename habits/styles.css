@@ -1087,6 +1087,16 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .graph-caption,.graph-empty{
   color:var(--text2);font-size:11px;line-height:1.3;
 }
+.graph-empty.task-event-summary{
+  display:flex;flex-direction:column;justify-content:center;gap:6px;
+  min-height:108px;padding:6px 4px;
+}
+.graph-empty.task-event-summary b{
+  color:var(--text);font-size:15px;font-weight:650;
+}
+.graph-empty.task-event-summary span{
+  color:var(--text2);font-size:12px;line-height:1.35;
+}
 .bar.hit{background:var(--teal-icon);}
 .bar.warn{background:var(--amber-icon);}
 .bar.miss{background:var(--red-icon);}
