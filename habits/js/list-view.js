@@ -584,9 +584,11 @@ function cardMeta(h,options = {}){
   if(h.sample)parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
   if(h.pinned)parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
   if(h.type === 'task'){
-    const label = h.dueDate === null ? 'someday' : compactDueLabel(h.dueDate,h.hardDue);
-    const title = h.dueDate === null ? 'no due date' : `due ${entryWhen(h.dueDate)}`;
-    parts.push(`<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(title)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
+    if(h.dueDate === null){
+      parts.push('<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>');
+    }else{
+      parts.push(`<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`);
+    }
   }
   else if(h.type === 'event'){
     if(h.eventTime){
@@ -785,10 +787,8 @@ function render(){
             <span class="ting-name">${escapeHtml(h.name)}</span>
             <div class="mini-score-ring ${cardScoreTone}" style="--score:${cardScore ?? 0};--score-color:${accent};" title="${escapeHtml(cue)}" aria-hidden="true"></div>
           </div>
-          <div class="ting-status">
-            <div class="ting-cue">${escapeHtml(cue)}</div>
-            <div class="ting-meta" aria-label="rhythm and plan">${context}</div>
-          </div>
+          <div class="ting-cue">${escapeHtml(cue)}</div>
+          <div class="ting-meta" aria-label="rhythm and plan">${context}</div>
           <div class="ting-visual" aria-hidden="true">
             <div class="ting-trail">${trail}</div>
           </div>

@@ -672,22 +672,29 @@ body.reach-pad #list{padding-top:220px;}
 }
 .detail-mark.emoji-pulse .emoji-mark{font-size:46px;line-height:0.95;}
 .detail-mark .ti{font-size:46px;}
-.ting-info{flex:1;min-width:0;}
-.ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px;}
+.ting-info{
+  flex:1;min-width:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:auto minmax(20px,auto) minmax(20px,auto);
+  align-items:center;
+  column-gap:8px;row-gap:3px;
+}
+.ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;grid-column:1 / -1;}
 .ting-name{
   font-size:15px;font-weight:500;color:var(--text);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.ting-status{
-  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;
-}
 .ting-cue{
+  grid-column:1;grid-row:2;
   color:var(--text2);font-size:12px;font-weight:500;line-height:1.25;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
 }
 .ting-meta{
+  grid-column:2;grid-row:2 / span 2;align-self:start;
   font-size:11.5px;color:var(--text2);display:flex;align-items:center;
-  justify-content:flex-end;gap:5px;min-width:0;max-width:min(42vw,150px);overflow:hidden;
+  justify-content:flex-end;flex-wrap:wrap;gap:4px 5px;min-width:0;
+  max-width:min(42vw,150px);max-height:42px;overflow:hidden;
 }
 .context-pill{
   display:inline-flex;align-items:center;gap:4px;
@@ -716,7 +723,7 @@ body.reach-pad #list{padding-top:220px;}
   width:24px;justify-content:center;padding-left:0;padding-right:0;
 }
 .context-pill.quiet{opacity:0.82;}
-.ting-visual{display:flex;align-items:center;gap:8px;margin-top:9px;}
+.ting-visual{grid-column:1;grid-row:3;display:flex;align-items:center;gap:8px;}
 .ting-trail{display:flex;align-items:center;gap:3px;min-width:0;flex:1;}
 .trail-dot{
   width:8px;height:4px;border-radius:999px;background:var(--bg3);
@@ -1840,12 +1847,12 @@ body[data-pane-count="3"] #undo-toast{
 @media (max-width:340px){
   .app{padding:0 12px;}
   .ting-card{gap:9px;padding-right:9px;}
-  .ting-main{gap:7px;margin-bottom:4px;}
+  .ting-main{gap:7px;}
   .ting-name{font-size:14.5px;}
   .ting-cue{font-size:11.5px;}
-  .ting-meta{gap:4px;max-width:126px;}
+  .ting-meta{flex-wrap:wrap;gap:4px;max-width:126px;}
   .context-pill{font-size:11px;padding:3px 5px;}
-  .ting-visual{margin-top:7px;}
+  .ting-visual{margin-top:0;}
   .trail-week{margin-right:4px;}
   .sheet{padding-left:16px;padding-right:16px;}
   .detail-head{gap:9px;}
