@@ -1042,7 +1042,7 @@ $('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget
 $('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('undo-action').addEventListener('click',undoLastAction);
 $('undo-open')?.addEventListener('click',()=>{
-  if(!pendingUndo || !Number.isInteger(pendingUndo.idx))return;
+  if(!canOpenFromUndo(pendingUndo))return;
   const idx = pendingUndo.idx;
   hideUndo();
   openDetail(idx);

@@ -128,7 +128,7 @@ function doSnoozeUntil(i,until,label = ''){
   const previous = data[i].snoozedUntil || null;
   data[i].snoozedUntil = until;
   if(save(data)){
-    showUndo(snoozeUndoLabel(until,label),{type:'hide',idx:i,snoozedUntil:previous});
+    showUndo(snoozeUndoLabel(until,label),{type:'hide',idx:i,snoozedUntil:previous,openAction:false});
     render();
   }
 }
@@ -282,7 +282,7 @@ function doNuke(i){
   }
   data.splice(i,1);
   if(save(data)){
-    showUndo('Habit removed',{type:'delete',idx:i,habit:removed});
+    showUndo('Habit removed',{type:'delete',idx:i,habit:removed,openAction:false});
     render();
   }
 }
@@ -398,10 +398,11 @@ function showToast(text){
 }
 
 // HYBRID: shows undo toast and stores pending undo state
-function shouldShowUndoOpen(undo){
+function canOpenFromUndo(undo){
   if(!undo || !Number.isInteger(undo.idx))return false;
   if(undo.openAction === false)return false;
   if(undo.type !== 'entry')return false;
+  if(!load()[undo.idx])return false;
   if($('day-logs-sheet')?.classList.contains('open'))return false;
   const detailOpen = $('detail-sheet')?.classList.contains('open');
   const detailPaneOpen = getPane()?.dataset.activeSheet === 'detail-sheet';
@@ -409,16 +410,26 @@ function shouldShowUndoOpen(undo){
   return true;
 }
 
+function undoSecondaryLabel(undo){
+  if(!undo || undo.type !== 'entry')return '';
+  return undo.toastActionLabel || '';
+}
+
 function showUndo(text,undo){
   pendingUndo = undo;
   $('undo-text').textContent = text;
   const openBtn = $('undo-open');
   const planBtn = $('undo-plan');
-  if(openBtn)openBtn.hidden = !shouldShowUndoOpen(undo);
+  if(openBtn){
+    const showOpen = canOpenFromUndo(undo);
+    openBtn.hidden = !showOpen;
+    openBtn.setAttribute('aria-hidden',String(!showOpen));
+  }
   if(planBtn){
-    const label = undo?.toastActionLabel || '';
+    const label = undoSecondaryLabel(undo);
     planBtn.textContent = label;
     planBtn.hidden = !label;
+    planBtn.setAttribute('aria-hidden',String(!label));
   }
   $('undo-toast').classList.add('show');
   clearTimeout(undoTimer);

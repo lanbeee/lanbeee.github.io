@@ -1206,7 +1206,8 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
     toTs,
     toPlan:Boolean(toPlan),
     snoozedUntilBefore,
-    snoozedUntilAfter
+    snoozedUntilAfter,
+    openAction:false
   });
   refreshOpenViews();
   return true;
@@ -1376,7 +1377,7 @@ function removePlansOnDay(idx,key){
   h.lastLog = latestActualLog(h.logs);
   if(!save(data))return false;
   const label = removed.length === 1 ? 'Plan removed' : 'Plans removed';
-  showUndo(label,{type:'remove-plans',idx,key,removed});
+  showUndo(label,{type:'remove-plans',idx,key,removed,openAction:false});
   refreshOpenViews();
   return true;
 }
@@ -1405,7 +1406,7 @@ function movePlanTo(idx,fromKey,toKey){
   data[idx].logs = normalizeLogs(remaining);
   data[idx].lastLog = latestActualLog(data[idx].logs);
   if(save(data)){
-    showUndo('Plan moved',{type:'move',idx,moved});
+    showUndo('Plan moved',{type:'move',idx,moved,openAction:false});
     refreshOpenViews();
   }
 }
