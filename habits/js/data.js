@@ -42,10 +42,8 @@
  *
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
+ * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
  * @property {boolean} hardDue                — true when dueDate is a real deadline (escalates urgency past it)
- *
- * — EventFields (additional semantics when type === 'event') —
- * @property {number|null} eventTime          — ms timestamp at the exact minute the event starts
  */
 
 /**
@@ -141,33 +139,62 @@ function saveSortSettings(settings){
 // ─────────────────────────────────────────────────────────────────────────
 
 function normalize(items){
-  return items.map(h => ({
-    name: h.name || '',
-    type: h.type || 'keepup',
-    target: (h.type === 'zero' || h.type === 'task' || h.type === 'event')
-      ? null
-      : clampRhythmValue(h.target || 7),
-    dueDate: h.type === 'task' ? clampDayTimestamp(h.dueDate) : null,
-    hardDue: h.type === 'task' ? Boolean(h.hardDue) : false,
-    eventTime: h.type === 'event' ? clampTimestamp(h.eventTime) : null,
-    createdAt: h.createdAt || null,
-    logs: normalizeLogs(h.logs),
-    emoji: h.emoji || '',
-    pinned:Boolean(h.pinned),
-    sample:Boolean(h.sample),
-    snoozedUntil: h.snoozedUntil || null,
-    topics:normalizeTopics(h.topics),
-    allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
-    allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
-    preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
-    preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
-    allowedTimeStart:normalizeTimeMinutes(h.allowedTimeStart),
-    allowedTimeEnd:normalizeTimeMinutes(h.allowedTimeEnd),
-    preferredTimeStart:normalizeTimeMinutes(h.preferredTimeStart),
-    preferredTimeEnd:normalizeTimeMinutes(h.preferredTimeEnd),
-    flexibilityDays:clampFlexibility(h.flexibilityDays),
-    durationMinutes:clampDuration(h.durationMinutes)
-  })).map(h => ({...h,lastLog:latestActualLog(h.logs)}));
+  return items.map(raw => {
+    // Tasks and events are now a single one-off type. Legacy 'event' records
+    // migrate to 'task' with eventTime preserved (a timed task = appointment).
+    let type = raw.type || 'keepup';
+    const wasEvent = type === 'event';
+    if(wasEvent)type = 'task';
+    const eventTime = type === 'task' ? clampTimestamp(raw.eventTime) : null;
+    let dueDate = type === 'task' ? clampDayTimestamp(raw.dueDate) : null;
+    if(wasEvent && eventTime !== null && dueDate === null)dueDate = clampDayTimestamp(eventTime);
+    const hardDue = type === 'task' ? Boolean(raw.hardDue) : false;
+    const logs = normalizeLogs(raw.logs);
+    // A past event has already happened — record it as a completed entry so it
+    // fades into history instead of nagging as an overdue task.
+    if(wasEvent && eventTime !== null && eventTime < Date.now() && !logs.some(l=>logTime(l) === eventTime)){
+      logs.push({time:eventTime});
+    }
+    const h = {
+      name: raw.name || '',
+      type,
+      target: (type === 'zero' || type === 'task')
+        ? null
+        : clampRhythmValue(raw.target || 7),
+      dueDate,
+      hardDue,
+      eventTime,
+      createdAt: raw.createdAt || null,
+      logs,
+      emoji: raw.emoji || '',
+      pinned:Boolean(raw.pinned),
+      sample:Boolean(raw.sample),
+      snoozedUntil: raw.snoozedUntil || null,
+      topics:normalizeTopics(raw.topics),
+      allowedWeekdays:normalizeAllowedWeekdays(raw.allowedWeekdays),
+      allowedMonthDays:normalizeAllowedMonthDays(raw.allowedMonthDays),
+      preferredWeekdays:normalizeAllowedWeekdays(raw.preferredWeekdays),
+      preferredMonthDays:normalizeAllowedMonthDays(raw.preferredMonthDays),
+      allowedTimeStart:normalizeTimeMinutes(raw.allowedTimeStart),
+      allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
+      preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
+      preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
+      flexibilityDays:clampFlexibility(raw.flexibilityDays),
+      durationMinutes:clampDuration(raw.durationMinutes)
+    };
+    h.lastLog = latestActualLog(h.logs);
+    return h;
+  });
+}
+
+// PURE: the effective "when" for a one-off task — its fixed time if set, else its due date. null = someday.
+function taskWhen(h){
+  if(h.type !== 'task')return null;
+  return h.eventTime !== null ? h.eventTime : h.dueDate;
+}
+// PURE: a task with a fixed clock time (an appointment), as opposed to dated/someday.
+function isTimedTask(h){
+  return h.type === 'task' && h.eventTime !== null;
 }
 
 function save(data){
@@ -492,13 +519,16 @@ function nextEligibleDistance(h,fromTs = Date.now()){
 // day-of schedule (if any) allows it. flexibilityDays flips direction for
 // tasks: days-before-due it starts surfacing, not a rhythm buffer.
 function taskReadyDate(h){
-  if(h.type !== 'task' || h.dueDate === null)return null;
+  if(h.type !== 'task')return null;
+  const when = taskWhen(h);
+  if(when === null)return null;
   const window = Math.max(0,clampFlexibility(h.flexibilityDays));
-  return h.dueDate - window * 86400000;
+  return when - window * 86400000;
 }
 function isTaskReady(h,ts = Date.now()){
   if(h.type !== 'task')return false;
-  if(h.dueDate === null)return true; // someday tasks are always "ready" (scored separately)
+  if(h.lastLog !== null)return false; // completed tasks are never "ready"
+  if(taskWhen(h) === null)return true; // someday tasks are always "ready" (scored separately)
   const ready = taskReadyDate(h);
   if(ready !== null && dayStart(ts) < ready)return false;
   return !hasDaySchedule(h) || isDateEligibleForHabit(h,ts);

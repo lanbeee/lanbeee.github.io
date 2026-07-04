@@ -95,6 +95,14 @@ function dateInputValue(ts){
   if(!ts)return '';
   return dateKey(ts);
 }
+// PURE: ms timestamp -> "HH:mm" for <input type="time">
+function timeInputValue(ts){
+  if(!ts)return '';
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${hh}:${mm}`;
+}
 // PURE: ms timestamp -> "YYYY-MM-DDTHH:mm" for <input type="datetime-local">
 function datetimeInputValue(ts){
   if(!ts)return '';
@@ -307,7 +315,7 @@ function renderHomeTopicFilter(data){
 function updateSortButton(){
   const data = load();
   const count = data.length;
-  const hasSearchableArchive = data.some(h=>(h.type === 'task' && h.lastLog !== null) || h.type === 'event');
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
   $('open-overview').classList.toggle('is-hidden',count < 2);
   $('open-overview').disabled = count < 2;
   $('open-search').classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
@@ -530,7 +538,6 @@ function cardCue(h){
   const plan = nextPlannedLog(h);
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'Snoozed for now';
   if(h.type === 'task')return taskCue(h);
-  if(h.type === 'event')return eventCue(h);
   if(plan && dateKey(plan) === dateKey(Date.now()) && h.type !== 'zero')return 'Planned today';
   if(days === null){
     if(h.type === 'zero')return 'Nothing logged';
@@ -548,6 +555,10 @@ function cardCue(h){
 // PURE: task status cue
 function taskCue(h){
   if(h.lastLog !== null)return 'Done';
+  if(h.eventTime !== null){
+    if(typeof eventWhenLabel === 'function')return capitalizeFirst(eventWhenLabel(h.eventTime));
+    return 'Scheduled';
+  }
   if(h.dueDate === null)return 'Someday';
   const left = daysUntil(h.dueDate);
   if(left === null)return 'Due';
@@ -584,16 +595,12 @@ function cardMeta(h,options = {}){
   if(h.sample)parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
   if(h.pinned)parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
   if(h.type === 'task'){
-    if(h.dueDate === null){
+    if(h.eventTime !== null){
+      parts.push(`<span class="context-pill event" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(compactEventLabel(h.eventTime))}</span>`);
+    }else if(h.dueDate === null){
       parts.push('<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>');
     }else{
       parts.push(`<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`);
-    }
-  }
-  else if(h.type === 'event'){
-    if(h.eventTime){
-      const label = compactEventLabel(h.eventTime);
-      parts.push(`<span class="context-pill event" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
     }
   }
   else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
@@ -671,10 +678,7 @@ function render(){
 
   const visible = visibleIndices(data);
   const indices = filteredVisibleIndices(data);
-  const eventIdxs = searchQuery.trim()
-    ? matchingEventIndices(data,searchQuery,homeTopicFilter)
-    : todayEvents(data);
-  if(!indices.length && !eventIdxs.length){
+  if(!indices.length){
     empty.style.display = 'block';
     const hasSearch = searchQuery.trim().length > 0;
     const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
@@ -697,8 +701,7 @@ function render(){
       };
     }else if(data.length && !visible.length){
       const doneTasks = data.filter(h=>h.type === 'task' && h.lastLog !== null).length;
-      const events = data.filter(h=>h.type === 'event').length;
-      empty.innerHTML = doneTasks && doneTasks + events === data.length
+      empty.innerHTML = doneTasks && doneTasks === data.length
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Today or Calendar for scheduled items, or + to add a habit</span>';
     }else{
@@ -711,32 +714,6 @@ function render(){
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
   let sectionCat = -1;
-
-  if(eventIdxs.length){
-    const header = document.createElement('div');
-    header.className = 'section-header events-header';
-    header.innerHTML = `<i class="ti ti-calendar-time" aria-hidden="true"></i> ${searchQuery.trim() ? 'events' : 'today'}`;
-    list.appendChild(header);
-    eventIdxs.forEach(realIdx=>{
-      const h = data[realIdx];
-      const c = colors(daysSince(h.lastLog),h.target,h.type);
-      const cue = eventCue(h);
-      const accent = visualClassColor(cardTone(h));
-      const past = h.eventTime && daysUntil(h.eventTime) < 0;
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = `event-row${past ? ' is-past' : ''}`;
-      row.dataset.eventIdx = realIdx;
-      row.innerHTML = `
-        <span class="event-ic" style="background:${c.bg};color:${c.icon};">${iconHtml(h,c)}</span>
-        <span class="event-body">
-          <span class="event-name">${escapeHtml(h.name)}</span>
-          <span class="event-time">${escapeHtml(cue)}</span>
-        </span>
-        <span class="event-when">${escapeHtml(compactEventLabel(h.eventTime))}</span>`;
-      list.appendChild(row);
-    });
-  }
 
   indices.forEach(realIdx=>{
     const h = data[realIdx];
@@ -837,13 +814,6 @@ function render(){
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
-    });
-  });
-  list.querySelectorAll('.event-row').forEach(btn=>{
-    btn.addEventListener('click',e=>{
-      e.stopPropagation();
-      const idx = +btn.dataset.eventIdx;
-      if(typeof openDetail === 'function')openDetail(idx);
     });
   });
 }

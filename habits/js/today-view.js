@@ -18,7 +18,7 @@ function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
   const events = data
     .map((h,i)=>({h,i}))
-    .filter(({h})=>h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === todayKey)
+    .filter(({h})=>h.type === 'task' && h.eventTime !== null && h.lastLog === null && dateKey(h.eventTime) === todayKey)
     .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
   const usedMinutes = events.reduce((sum,{h})=>sum + clampDuration(h.durationMinutes),0);
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
@@ -27,6 +27,7 @@ function buildTodayAgenda(data,settings){
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
     if(h.type === 'task' && h.lastLog !== null)continue;
+    if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
     const cost = clampDuration(h.durationMinutes);
     if(cost > remaining && agendaItems.length)continue; // skip, keep scanning for a smaller fit
     agendaItems.push({h,i});
@@ -107,7 +108,7 @@ function renderTodayAgenda(){
     wrap.innerHTML = `<div class="agenda-empty">
       <i class="ti ti-calendar-off" aria-hidden="true"></i>
       <p>Nothing planned for today.</p>
-      <span>Add an event or task, or mark a habit due today.</span>
+      <span>Add a task or mark a habit due today.</span>
     </div>`;
     return;
   }

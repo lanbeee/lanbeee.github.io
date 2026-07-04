@@ -71,7 +71,7 @@ $('open-add').addEventListener('click',()=>{
 
 $('open-search').addEventListener('click',()=>{
   const data = load();
-  const hasSearchableArchive = data.some(h=>(h.type === 'task' && h.lastLog !== null) || h.type === 'event');
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
   if(data.length < 10 && !hasSearchableArchive)return;
   const nav = document.querySelector('.bottom-nav');
   const wide = paneTierActive();
@@ -83,7 +83,7 @@ $('open-search').addEventListener('click',()=>{
 });
 $('bar-open-search')?.addEventListener('click',()=>{
   const data = load();
-  const hasSearchableArchive = data.some(h=>(h.type === 'task' && h.lastLog !== null) || h.type === 'event');
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
   if(data.length < 10 && !hasSearchableArchive)return;
   const isOpen = !!$('app-bar-search')?.classList.contains('is-open');
   if(isOpen)closeSearch();

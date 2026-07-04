@@ -105,14 +105,10 @@ function openDetailSchedule(i){
 
 // PURE: builds header subtitle from habit state
 function detailHeaderLine(h){
-  if(h.type === 'event'){
-    const parts = [];
-    if(h.eventTime)parts.push(eventWhenLabel(h.eventTime));
-    if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
-    return parts.filter(Boolean).join(' · ');
-  }
   if(h.type === 'task'){
-    const parts = [cardCue(h)];
+    const parts = [];
+    if(h.eventTime !== null)parts.push(eventWhenLabel(h.eventTime));
+    else parts.push(cardCue(h));
     if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
     if(hasDaySchedule(h)){
       const next = nextEligibleShort(h);
@@ -293,30 +289,27 @@ function renderStats(h){
   const avgTone = avg === null ? 'empty' : intervalTone(h,avg);
   const gapTone = days === null || days < 0 ? 'empty' : intervalTone(h,days);
   const scoreName = scoreTitle(h,score);
+  const timed = h.type === 'task' && h.eventTime !== null;
   const targetLine = h.type === 'zero' ? 'avoid'
-    : h.type === 'task' ? (h.dueDate ? 'due task' : 'someday')
-    : h.type === 'event' ? 'fixed event'
+    : h.type === 'task' ? (timed ? 'appointment' : (h.dueDate ? 'due task' : 'someday'))
     : `${target}d rhythm`;
   const rhythmIcon = h.type === 'zero' ? 'ti-ban'
-    : h.type === 'task' ? 'ti-checkbox'
-    : h.type === 'event' ? 'ti-calendar-time'
+    : h.type === 'task' ? (timed ? 'ti-calendar-time' : 'ti-checkbox')
     : 'ti-repeat';
   const planIcon = h.type === 'zero' ? 'ti-list-check'
-    : h.type === 'task' ? 'ti-flag'
-    : h.type === 'event' ? 'ti-clock-hour-4'
+    : h.type === 'task' ? (timed ? 'ti-clock-hour-4' : 'ti-flag')
     : 'ti-calendar-event';
   const planFact = h.type === 'zero' ? `${completed} entries`
-    : h.type === 'task' ? (h.lastLog !== null ? 'completed' : (h.dueDate ? 'has due date' : 'no due date'))
-    : h.type === 'event' ? (h.eventTime ? 'scheduled' : 'no time set')
+    : h.type === 'task' ? (h.lastLog !== null ? 'completed' : (timed ? 'scheduled' : (h.dueDate ? 'has due date' : 'no due date')))
     : `${planned} planned`;
-  if(h.type === 'task' || h.type === 'event'){
-    const primary = h.type === 'task'
-      ? (h.lastLog !== null ? 'completed' : (h.dueDate ? cardCue(h) : 'someday'))
-      : (h.eventTime ? eventWhenLabel(h.eventTime) : 'no time set');
-    const secondary = h.type === 'task'
-      ? (h.hardDue && h.lastLog === null ? 'hard deadline' : 'task')
-      : `${clampDuration(h.durationMinutes)}m`;
-    const completeLabel = h.type === 'task' ? 'done entries' : 'entries';
+  if(h.type === 'task'){
+    const primary = h.lastLog !== null
+      ? 'completed'
+      : (timed ? eventWhenLabel(h.eventTime) : (h.dueDate ? cardCue(h) : 'someday'));
+    const secondary = (timed && h.lastLog === null)
+      ? `${clampDuration(h.durationMinutes)}m`
+      : (h.hardDue && h.lastLog === null ? 'hard deadline' : 'task');
+    const completeLabel = 'done entries';
     $('detail-stats').innerHTML = `
       <div class="score-card ${scoreCls}">
         <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
@@ -406,8 +399,7 @@ function intervalToneSummary(h){
 // PURE: maps score to a label string
 function scoreTitle(h,score){
   if(score === null){
-    if(h.type === 'task')return h.dueDate === null ? 'someday' : 'no due yet';
-    if(h.type === 'event')return 'upcoming';
+    if(h.type === 'task')return taskWhen(h) === null ? 'someday' : 'upcoming';
     return 'no pattern yet';
   }
   if(h.type === 'task'){
@@ -415,9 +407,6 @@ function scoreTitle(h,score){
     if(score >= 80)return 'plenty of time';
     if(score >= 45)return 'coming due';
     return 'due now';
-  }
-  if(h.type === 'event'){
-    return score >= 100 ? 'past' : 'today';
   }
   if(h.type === 'keepup'){
     if(score >= 80)return 'on track';
@@ -438,20 +427,13 @@ function scoreTitle(h,score){
 function progressScore(h){
   if(h.type === 'task'){
     if(h.lastLog !== null)return 100;
-    if(h.dueDate === null)return null;
-    const left = daysUntil(h.dueDate);
+    const when = taskWhen(h);
+    if(when === null)return null;
+    const left = daysUntil(when);
     if(left === null)return null;
     const window = Math.max(1,h.flexibilityDays || 3);
     if(left <= 0)return Math.max(0,Math.round(30 - Math.min(30,Math.abs(left) * 6)));
     return Math.round(Math.min(100,100 - (left / window) * 50));
-  }
-  if(h.type === 'event'){
-    if(h.eventTime === null)return null;
-    const left = daysUntil(h.eventTime);
-    if(left === null)return null;
-    if(left < 0)return 100;
-    if(left === 0)return 50;
-    return null;
   }
   const days = daysSince(h.lastLog);
   if(days === null)return null;
@@ -494,12 +476,9 @@ function progressCopy(h,score){
 // PURE: builds the about blurb string
 function aboutText(h){
   const days = daysSince(h.lastLog);
-  if(h.type === 'event'){
-    if(!h.eventTime)return 'No time set for this event.';
-    return `This event is ${eventWhenLabel(h.eventTime)}. Fixed time — never rescored or reshuffled.`;
-  }
   if(h.type === 'task'){
     if(h.lastLog !== null)return `Done. Logged ${entryWhen(h.lastLog)}.`;
+    if(h.eventTime !== null)return `Scheduled ${eventWhenLabel(h.eventTime)}. Fixed time — never rescheduled.`;
     if(h.dueDate === null)return 'A someday task. Pin it or add a due date to bring it forward.';
     const left = daysUntil(h.dueDate);
     if(left === null)return 'A task with a due date.';
@@ -530,12 +509,9 @@ function aboutText(h){
 function trendText(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
-  if(h.type === 'event'){
-    if(!h.eventTime)return 'no time set';
-    return eventWhenLabel(h.eventTime);
-  }
   if(h.type === 'task'){
     if(h.lastLog !== null)return 'completed';
+    if(h.eventTime !== null)return eventWhenLabel(h.eventTime);
     if(h.dueDate === null)return 'someday';
     const left = daysUntil(h.dueDate);
     if(left === null)return 'due';
@@ -564,13 +540,11 @@ function trendText(h){
 // RENDER: renders gap history bar graph
 function renderGraph(h){
   const graph = $('detail-graph');
-  if(h.type === 'task' || h.type === 'event'){
-    const when = h.type === 'task'
-      ? (h.dueDate ? entryWhen(h.dueDate) : 'no due date')
-      : (h.eventTime ? eventWhenLabel(h.eventTime) : 'no time set');
-    const note = h.type === 'task'
-      ? (h.lastLog !== null ? `Completed ${entryWhen(h.lastLog)}.` : aboutText(h))
-      : aboutText(h);
+  if(h.type === 'task'){
+    const when = h.eventTime !== null
+      ? eventWhenLabel(h.eventTime)
+      : (h.dueDate ? entryWhen(h.dueDate) : 'no due date');
+    const note = h.lastLog !== null ? `Completed ${entryWhen(h.lastLog)}.` : aboutText(h);
     graph.innerHTML = `
       <div class="graph-empty task-event-summary">
         <b>${escapeHtml(when)}</b>
@@ -606,8 +580,7 @@ function renderGraph(h){
 function graphRule(h){
   if(h.type === 'keepup')return 'shorter is better';
   if(h.type === 'reduce')return 'longer is better';
-  if(h.type === 'task')return 'one-off';
-  if(h.type === 'event')return 'fixed time';
+  if(h.type === 'task')return h.eventTime !== null ? 'fixed time' : 'one-off';
   return 'longer is better';
 }
 

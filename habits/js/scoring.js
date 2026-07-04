@@ -18,14 +18,13 @@ function currentRun(h){
   const logs = actualLogs(h.logs).sort((a,b)=>b-a);
   const days = daysSince(h.lastLog);
   if(h.type === 'task'){
-    if(h.lastLog === null)return {num:'-',label:'done'};
-    return {num:Math.max(0,days),label:'since done'};
-  }
-  if(h.type === 'event'){
-    if(!h.eventTime)return {num:'-',label:'set time'};
-    const left = daysUntil(h.eventTime);
+    if(h.lastLog !== null)return {num:Math.max(0,days),label:'since done'};
+    const when = taskWhen(h);
+    if(when === null)return {num:'-',label:'someday'};
+    const left = daysUntil(when);
     if(left === null)return {num:'-',label:'when'};
-    if(left <= 0)return {num:Math.abs(left),label:'days ago'};
+    if(left < 0)return {num:Math.abs(left),label:'days ago'};
+    if(left === 0)return {num:0,label:isTimedTask(h) ? 'today' : 'due'};
     return {num:left,label:'days away'};
   }
   if(h.type !== 'keepup'){
@@ -61,15 +60,10 @@ function defaultIcon(type){
   if(type === 'zero')return 'ti-flame-off';
   if(type === 'reduce')return 'ti-trending-down';
   if(type === 'task')return 'ti-checkbox';
-  if(type === 'event')return 'ti-calendar-time';
   return 'ti-heart';
 }
 
 function tone(days,target,type){
-  if(type === 'event'){
-    if(days === null)return 'quiet';
-    return 'teal';
-  }
   if(type === 'task'){
     if(days === null)return 'quiet';
     return 'teal';
@@ -366,8 +360,10 @@ function rhythmSignal(h,settings){
 // taskUrgency mirrors buildUrgency's shape (0..1+ ramp, escalating past the
 // threshold) so it can reuse buildDueScore directly. null = someday task.
 function taskUrgency(h){
-  if(h.type !== 'task' || h.dueDate === null)return null;
-  const daysLeft = daysUntil(h.dueDate);
+  if(h.type !== 'task')return null;
+  const when = taskWhen(h);
+  if(when === null)return null;
+  const daysLeft = daysUntil(when);
   if(daysLeft === null)return null;
   const window = Math.max(1,h.flexibilityDays || 3);
   if(daysLeft <= 0){
@@ -662,9 +658,12 @@ function todayCategory(h,settings){
 
   if(hasPlannedToday(h) && h.type !== 'zero')return 0;
 
-  if(h.type === 'task' && h.dueDate !== null){
-    const daysLeft = daysUntil(h.dueDate);
-    if(daysLeft !== null && daysLeft <= 0)return isAvailableToday ? 0 : 1;
+  if(h.type === 'task'){
+    const when = taskWhen(h);
+    if(when !== null){
+      const daysLeft = daysUntil(when);
+      if(daysLeft !== null && daysLeft <= 0)return isAvailableToday ? 0 : 1;
+    }
   }
 
   if(h.type === 'keepup' && days !== null && days >= target){
@@ -692,7 +691,6 @@ function visibleIndices(data,settingsOverride = null){
   const todayFirst = settings.preset === 'todayFirst';
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
-    if(h.type === 'event')return false;
     if(h.type === 'task' && h.lastLog !== null)return false;
     return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
   });
@@ -717,16 +715,16 @@ function visibleIndices(data,settingsOverride = null){
 function searchText(h){
   const typeLabel = h.type === 'keepup' ? 'build routine keepup'
     : h.type === 'reduce' ? 'limit reduce less'
-    : h.type === 'task' ? 'task todo one-off due'
-    : h.type === 'event' ? 'event appointment fixed time'
+    : h.type === 'task' ? (isTimedTask(h) ? 'task appointment event fixed time' : 'task todo one-off due someday')
     : 'stop quit zero';
   const schedule = scheduledDays(h);
   const pref = preferredDays(h);
-  const dueText = h.type === 'task' && h.dueDate
-    ? `due ${dateKey(h.dueDate)}`
-    : h.type === 'event' && h.eventTime
-      ? `when ${dateKey(h.eventTime)} ${new Date(h.eventTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
-      : '';
+  const when = taskWhen(h);
+  const dueText = h.type === 'task' && when
+    ? (isTimedTask(h)
+        ? `when ${dateKey(when)} ${new Date(when).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
+        : `due ${dateKey(when)}`)
+    : '';
   const scheduleText = [
     ...schedule.weekdays.flatMap(day=>[weekdayShort(day),new Date(2024,0,7 + day).toLocaleDateString(undefined,{weekday:'long'})]),
     ...schedule.monthDays.flatMap(day=>[String(day),monthOrdinal(day)]),
@@ -755,31 +753,4 @@ function filteredVisibleIndices(data){
   const seen = new Set(matches);
   completedTasks.forEach(i=>{if(!seen.has(i)){seen.add(i);matches.push(i);}});
   return matches;
-}
-
-// Events are excluded from visibleIndices (they're placed by time, never
-// ranked). This selector returns indices of events happening today, in time
-// order, plus a free-text/topic filter for search. Used by the home "today"
-// strip and the agenda view.
-function todayEvents(data){
-  const today = todayIso();
-  return data
-    .map((h,i)=>({h,i}))
-    .filter(({h})=>h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === today)
-    .sort(({h:a},{h:b})=>a.eventTime - b.eventTime)
-    .map(({i})=>i);
-}
-
-function matchingEventIndices(data,query,topic){
-  const q = (query || '').trim().toLowerCase();
-  return data
-    .map((h,i)=>({h,i}))
-    .filter(({h})=>{
-      if(h.type !== 'event')return false;
-      if(topic && topic !== 'all' && typeof matchesHomeTopic === 'function' && !matchesHomeTopic(h,topic))return false;
-      if(q && !searchText(h).includes(q))return false;
-      return true;
-    })
-    .sort(({h:a},{h:b})=>(a.eventTime || 0) - (b.eventTime || 0))
-    .map(({i})=>i);
 }
