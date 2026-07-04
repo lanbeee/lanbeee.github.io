@@ -1376,8 +1376,8 @@ function removePlansOnDay(idx,key){
   h.logs = normalizeLogs(remaining);
   h.lastLog = latestActualLog(h.logs);
   if(!save(data))return false;
-  const label = removed.length === 1 ? 'Plan removed' : 'Plans removed';
-  showUndo(label,{type:'remove-plans',idx,key,removed,openAction:false});
+  const label = removed.length === 1 ? `Removed plan · ${toastItemName(h)}` : `Removed ${removed.length} plans · ${toastItemName(h)}`;
+  showUndo(label,{type:'remove-plans',idx,key,removed,openAction:false,undoLabel:'restore'});
   refreshOpenViews();
   return true;
 }
@@ -1406,7 +1406,7 @@ function movePlanTo(idx,fromKey,toKey){
   data[idx].logs = normalizeLogs(remaining);
   data[idx].lastLog = latestActualLog(data[idx].logs);
   if(save(data)){
-    showUndo('Plan moved',{type:'move',idx,moved,openAction:false});
+    showUndo(`Moved ${toastItemName(h)}`,{type:'move',idx,moved,openAction:false,undoLabel:'move back'});
     refreshOpenViews();
   }
 }

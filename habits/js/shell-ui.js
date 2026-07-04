@@ -126,9 +126,10 @@ function doSnoozeUntil(i,until,label = ''){
   const data = load();
   if(!data[i])return;
   const previous = data[i].snoozedUntil || null;
+  const name = toastItemName(data[i]);
   data[i].snoozedUntil = until;
   if(save(data)){
-    showUndo(snoozeUndoLabel(until,label),{type:'hide',idx:i,snoozedUntil:previous,openAction:false});
+    showUndo(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'show'});
     render();
   }
 }
@@ -282,7 +283,7 @@ function doNuke(i){
   }
   data.splice(i,1);
   if(save(data)){
-    showUndo('Habit removed',{type:'delete',idx:i,habit:removed,openAction:false});
+    showUndo(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
     render();
   }
 }
@@ -418,6 +419,8 @@ function undoSecondaryLabel(undo){
 function showUndo(text,undo){
   pendingUndo = undo;
   $('undo-text').textContent = text;
+  const actionBtn = $('undo-action');
+  if(actionBtn)actionBtn.textContent = undo.undoLabel || 'undo';
   const openBtn = $('undo-open');
   const planBtn = $('undo-plan');
   if(openBtn){
