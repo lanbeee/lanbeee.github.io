@@ -1138,21 +1138,105 @@ function handleCardActivate(realIdx,card,singleAction){
   }
 }
 
+// PURE: short item name for compact toast messages
+function toastItemName(h){
+  const name = (h?.name || '').trim();
+  if(!name)return 'item';
+  return name.length > 28 ? `${name.slice(0,27)}...` : name;
+}
+
+// PURE: secondary toast action for entry changes
+function entryToastAction(undo){
+  if(!undo || undo.type !== 'entry' || !Number.isInteger(undo.idx))return null;
+  if(undo.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
+  if(undo.plan)return {type:'complete-plan',label:'done now'};
+  if(dateKey(undo.ts) === todayIso())return {type:'plan-instead',label:'plan instead'};
+  return {type:'plan-today',label:'plan today'};
+}
+
+// PURE: annotates undo state with the contextual toast action
+function withEntryToastAction(undo){
+  const action = entryToastAction(undo);
+  if(action){
+    undo.toastAction = action.type;
+    undo.toastActionLabel = action.label;
+  }
+  return undo;
+}
+
+// PURE: finds an exact actual/planned log entry
+function findEntryByKind(logs,ts,plan){
+  return logs.findIndex(log=>logTime(log) === ts && isPlanLog(log) === Boolean(plan));
+}
+
+// PURE: picks the plan that should be consumed by a real entry on the same day.
+function planToConsumeForEntry(logs,entryTs){
+  const key = dateKey(entryTs);
+  const planned = normalizeLogs(logs)
+    .filter(log=>isPlanLog(log) && dateKey(logTime(log)) === key)
+    .map(logTime);
+  if(!planned.length)return null;
+  return planned.sort((a,b)=>Math.abs(a - entryTs) - Math.abs(b - entryTs))[0];
+}
+
+// HYBRID: replace an actual entry with a plan, or a plan with an actual entry.
+function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
+  const data = load();
+  if(!data[idx])return false;
+  const logs = normalizeLogs(data[idx].logs);
+  const pos = findEntryByKind(logs,fromTs,fromPlan);
+  if(pos < 0)return false;
+  const snoozedUntilBefore = data[idx].snoozedUntil || null;
+  logs.splice(pos,1);
+  logs.push(toPlan ? {ts:toTs,plan:true} : toTs);
+  data[idx].logs = normalizeLogs(logs);
+  data[idx].lastLog = latestActualLog(data[idx].logs);
+  if(!toPlan)data[idx].snoozedUntil = null;
+  else if(!fromPlan && pendingUndo?.snoozedUntil !== undefined)data[idx].snoozedUntil = pendingUndo.snoozedUntil;
+  const snoozedUntilAfter = data[idx].snoozedUntil || null;
+  if(!save(data))return false;
+  showUndo(label,{
+    type:'replace-entry',
+    idx,
+    fromTs,
+    fromPlan:Boolean(fromPlan),
+    toTs,
+    toPlan:Boolean(toPlan),
+    snoozedUntilBefore,
+    snoozedUntilAfter
+  });
+  refreshOpenViews();
+  return true;
+}
+
 // HYBRID: log entry and show undo
 function logTing(i){
   const data = load();
   const now = Date.now();
   if(!data[i])return false;
-  const undo = {type:'entry',idx:i,ts:now,snoozedUntil:data[i].snoozedUntil || null};
+  const logs = normalizeLogs(data[i].logs);
+  const consumedPlanTs = planToConsumeForEntry(logs,now);
+  const undo = withEntryToastAction({
+    type:'entry',
+    idx:i,
+    ts:now,
+    plan:false,
+    consumedPlanTs,
+    snoozedUntil:data[i].snoozedUntil || null
+  });
   data[i].lastLog = now;
-  data[i].logs = normalizeLogs([...(data[i].logs || []),now]);
+  if(consumedPlanTs !== null){
+    const pos = findEntryByKind(logs,consumedPlanTs,true);
+    if(pos >= 0)logs.splice(pos,1);
+  }
+  data[i].logs = normalizeLogs([...logs,now]);
   data[i].snoozedUntil = null;
   if(!save(data))return false;
   // Cancel any scheduled push for this completed task.
   if(typeof cancelPush === 'function' && data[i].type === 'task'){
     cancelPush(reminderSignature(data[i]));
   }
-  showUndo('Entry logged',undo);
+  showUndo(`Logged ${toastItemName(data[i])}`,undo);
   return true;
 }
 
@@ -1162,12 +1246,26 @@ function logTingAt(i,ts){
   if(!data[i])return false;
   const entryTs = dateKey(ts) <= dateKey(Date.now()) && ts > Date.now() ? Date.now() : ts;
   const log = makeLog(entryTs);
-  const undo = {type:'entry',idx:i,ts:entryTs,plan:isPlanLog(log),snoozedUntil:data[i].snoozedUntil || null};
-  data[i].logs = normalizeLogs([...(data[i].logs || []),log]);
+  const isPlan = isPlanLog(log);
+  const logs = normalizeLogs(data[i].logs);
+  const consumedPlanTs = isPlan ? null : planToConsumeForEntry(logs,entryTs);
+  const undo = withEntryToastAction({
+    type:'entry',
+    idx:i,
+    ts:entryTs,
+    plan:isPlan,
+    consumedPlanTs,
+    snoozedUntil:data[i].snoozedUntil || null
+  });
+  if(consumedPlanTs !== null){
+    const pos = findEntryByKind(logs,consumedPlanTs,true);
+    if(pos >= 0)logs.splice(pos,1);
+  }
+  data[i].logs = normalizeLogs([...logs,log]);
   data[i].lastLog = latestActualLog(data[i].logs);
-  if(!isPlanLog(log))data[i].snoozedUntil = null;
+  if(!isPlan)data[i].snoozedUntil = null;
   if(!save(data))return false;
-  showUndo(isPlanLog(log) ? 'Plan added' : 'Entry added',undo);
+  showUndo(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,undo);
   return true;
 }
 
@@ -1185,18 +1283,55 @@ function planTingOnDay(i,key,timeValue = ''){
     minutes = time % 60;
   }
   const ts = new Date(base.getFullYear(),base.getMonth(),base.getDate(),hours,minutes,0,0).getTime();
-  const undo = {type:'entry',idx:i,ts,plan:true,snoozedUntil:data[i].snoozedUntil || null};
+  const undo = withEntryToastAction({type:'entry',idx:i,ts,plan:true,snoozedUntil:data[i].snoozedUntil || null});
   data[i].logs = normalizeLogs([...(data[i].logs || []),{ts,plan:true}]);
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!save(data))return false;
-  showUndo('Plan added',undo);
+  showUndo(`Planned ${toastItemName(data[i])}`,undo);
   return true;
 }
 
-// HYBRID: undo-toast shortcut after logging an entry.
-function planPendingUndoToday(){
-  if(!pendingUndo || pendingUndo.type !== 'entry' || pendingUndo.plan || !Number.isInteger(pendingUndo.idx))return;
-  if(planTingOnDay(pendingUndo.idx,todayIso()))refreshOpenViews();
+// HYBRID: run the contextual secondary action shown in the undo toast.
+function runPendingUndoAction(){
+  if(!pendingUndo || !Number.isInteger(pendingUndo.idx))return;
+  const action = pendingUndo.toastAction;
+  if(action === 'plan-instead'){
+    replaceEntryKind(
+      pendingUndo.idx,
+      pendingUndo.ts,
+      false,
+      pendingUndo.ts,
+      true,
+      'Planned instead'
+    );
+    return;
+  }
+  if(action === 'plan-today'){
+    if(planTingOnDay(pendingUndo.idx,todayIso()))refreshOpenViews();
+    return;
+  }
+  if(action === 'complete-plan'){
+    replaceEntryKind(
+      pendingUndo.idx,
+      pendingUndo.ts,
+      true,
+      Date.now(),
+      false,
+      'Marked done'
+    );
+    return;
+  }
+  if(action === 'keep-plan'){
+    const data = load();
+    const idx = pendingUndo.idx;
+    if(!data[idx] || !pendingUndo.consumedPlanTs)return;
+    data[idx].logs = normalizeLogs([...(data[idx].logs || []),{ts:pendingUndo.consumedPlanTs,plan:true}]);
+    data[idx].lastLog = latestActualLog(data[idx].logs);
+    if(save(data)){
+      showUndo('Plan kept',{type:'entry',idx,ts:pendingUndo.consumedPlanTs,plan:true,snoozedUntil:data[idx].snoozedUntil || null});
+      refreshOpenViews();
+    }
+  }
 }
 
 // HANDLER: splice entry from habit logs
@@ -1246,11 +1381,12 @@ function undoLastAction(){
   if(!pendingUndo)return;
   const data = load();
   if(pendingUndo.type === 'entry'){
-    const {idx,ts,snoozedUntil} = pendingUndo;
+    const {idx,ts,snoozedUntil,consumedPlanTs} = pendingUndo;
     if(!data[idx])return;
     const logs = normalizeLogs(data[idx].logs);
-    const pos = logs.findIndex(log=>sameLog(log,ts,Boolean(pendingUndo.plan)));
+    const pos = findEntryByKind(logs,ts,Boolean(pendingUndo.plan));
     if(pos >= 0)logs.splice(pos,1);
+    if(consumedPlanTs)logs.push({ts:consumedPlanTs,plan:true});
     data[idx].logs = logs;
     data[idx].lastLog = latestActualLog(logs);
     data[idx].snoozedUntil = snoozedUntil;
@@ -1273,6 +1409,18 @@ function undoLastAction(){
       moved.forEach(m=>filtered.push({ts:m.oldTs,plan:true}));
       data[idx].logs = normalizeLogs(filtered);
       data[idx].lastLog = latestActualLog(data[idx].logs);
+    }
+  }
+  if(pendingUndo.type === 'replace-entry'){
+    const {idx,fromTs,fromPlan,toTs,toPlan,snoozedUntilBefore} = pendingUndo;
+    if(data[idx]){
+      const logs = normalizeLogs(data[idx].logs);
+      const pos = findEntryByKind(logs,toTs,toPlan);
+      if(pos >= 0)logs.splice(pos,1);
+      logs.push(fromPlan ? {ts:fromTs,plan:true} : fromTs);
+      data[idx].logs = normalizeLogs(logs);
+      data[idx].lastLog = latestActualLog(data[idx].logs);
+      data[idx].snoozedUntil = snoozedUntilBefore;
     }
   }
   if(save(data)){

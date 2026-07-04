@@ -404,7 +404,11 @@ function showUndo(text,undo){
   const openBtn = $('undo-open');
   const planBtn = $('undo-plan');
   if(openBtn)openBtn.hidden = !(undo && Number.isInteger(undo.idx));
-  if(planBtn)planBtn.hidden = !(undo && undo.type === 'entry' && !undo.plan && Number.isInteger(undo.idx));
+  if(planBtn){
+    const label = undo?.toastActionLabel || '';
+    planBtn.textContent = label;
+    planBtn.hidden = !label;
+  }
   $('undo-toast').classList.add('show');
   clearTimeout(undoTimer);
   undoTimer = setTimeout(hideUndo,7200);

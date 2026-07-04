@@ -1055,7 +1055,7 @@ $('undo-open')?.addEventListener('click',()=>{
   openDetail(idx);
 });
 $('undo-plan')?.addEventListener('click',()=>{
-  planPendingUndoToday();
+  runPendingUndoAction();
 });
 
 $('list').addEventListener('touchstart',e=>{
