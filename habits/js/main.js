@@ -45,7 +45,10 @@ function syncAddTypeUi(type){
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
   $('scheduled-time-row').hidden = type !== 'task';
-  if(type === 'task')syncTaskDueUi();
+  if(type === 'task'){
+    syncTaskDueUi();
+    syncScheduledTimeUi();
+  }
 }
 
 // PURE: next clean hour, used to make scheduled tasks one tap lighter.
@@ -187,6 +190,7 @@ $('do-save').addEventListener('click',()=>{
     record.dueDate = parseDateInput($('ting-due-date').value);
     record.hardDue = $('ting-hard-due').checked;
     record.eventTime = parseDateTimeInput($('ting-scheduled-time').value);
+    record.markDone = $('ting-mark-done').checked;
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
     record.flexibilityDays = record.dueDate === null ? 0 : 3;
   }
@@ -233,6 +237,18 @@ $('ting-due-clear').addEventListener('click',()=>{
 });
 syncTaskDueUi();
 
+// WIRE: task scheduled-time + mark-done toggle visibility
+function syncScheduledTimeUi(){
+  const timeInput = $('ting-scheduled-time');
+  const toggle = $('ting-mark-done-toggle');
+  if(!timeInput || !toggle)return;
+  const hasTime = Boolean(timeInput.value);
+  toggle.hidden = !hasTime;
+}
+$('ting-scheduled-time').addEventListener('input',syncScheduledTimeUi);
+$('ting-mark-done').addEventListener('change',syncScheduledTimeUi);
+syncScheduledTimeUi();
+
 // PURE: clamp rhythm value to valid range
 function clampRhythm(value){
   return clampRhythmValue(value);
@@ -267,6 +283,7 @@ function setDetailTypeUi(type){
   const exportBtn = $('detail-export');
   if(exportBtn)exportBtn.hidden = type !== 'task';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
+  if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
 }
 
 // HYBRID: sync rhythm field, label, and crown dial state
@@ -527,7 +544,9 @@ $('detail-due-clear').addEventListener('click',()=>{
   setDetailDirty();
 });
 $('detail-hard-due').addEventListener('change',()=>setDetailDirty());
-$('detail-scheduled-time').addEventListener('input',()=>setDetailDirty());
+$('detail-scheduled-time').addEventListener('input',()=>{syncDetailScheduledUi();setDetailDirty();});
+$('detail-mark-done').addEventListener('change',()=>setDetailDirty());
+$('detail-habit-mark-done').addEventListener('change',()=>setDetailDirty());
 $('detail-schedule-view-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-schedule-view]');
   if(!opt)return;
@@ -645,10 +664,13 @@ $('detail-save').addEventListener('click',()=>{
     h.eventTime = current.eventTime;
     h.dueDate = current.dueDate ?? (current.eventTime !== null ? dayStart(current.eventTime) : null);
     h.hardDue = current.hardDue;
+    h.markDone = current.markDone;
   }else{
     h.dueDate = null;
     h.hardDue = false;
     h.eventTime = null;
+    // build habits can be event-style (auto-log on schedule); others stay manual
+    h.markDone = current.type === 'keepup' ? current.markDone : true;
   }
   if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
@@ -1059,3 +1081,8 @@ render();
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
 if (typeof initReminders === 'function') initReminders();
+if (typeof sweepAutoDoneTasks === 'function'){
+  sweepAutoDoneTasks();
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden)setTimeout(sweepAutoDoneTasks,300); });
+  setInterval(sweepAutoDoneTasks,5 * 60 * 1000);
+}

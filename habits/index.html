@@ -121,8 +121,14 @@
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
       <div class="plan-field-row" id="scheduled-time-row" hidden>
-        <label class="plan-date-label" for="ting-scheduled-time">scheduled</label>
-        <input type="datetime-local" id="ting-scheduled-time" class="plan-date-input" />
+        <div class="plan-field-main">
+          <label class="plan-date-label" for="ting-scheduled-time">scheduled</label>
+          <input type="datetime-local" id="ting-scheduled-time" class="plan-date-input" />
+        </div>
+        <label class="hard-due-toggle" id="ting-mark-done-toggle" hidden>
+          <input type="checkbox" id="ting-mark-done" checked />
+          <span>mark done</span>
+        </label>
       </div>
       <div class="add-topics-section" id="add-topics-section">
         <span class="settings-sublabel">topics</span>
@@ -207,8 +213,14 @@
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
           <div class="plan-field-row" id="detail-scheduled-row" hidden>
-            <label class="plan-date-label" for="detail-scheduled-time">scheduled</label>
-            <input type="datetime-local" id="detail-scheduled-time" class="plan-date-input" />
+            <div class="plan-field-main">
+              <label class="plan-date-label" for="detail-scheduled-time">scheduled</label>
+              <input type="datetime-local" id="detail-scheduled-time" class="plan-date-input" />
+            </div>
+            <label class="hard-due-toggle" id="detail-mark-done-toggle" hidden>
+              <input type="checkbox" id="detail-mark-done" checked />
+              <span>mark done</span>
+            </label>
           </div>
           <div class="seg schedule-seg" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
@@ -225,6 +237,13 @@
             <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
             <span class="settings-sublabel compact-label">month days</span>
             <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
+          </div>
+          <div class="plan-field-row habit-mark-done-row" id="detail-habit-mark-done-toggle" hidden>
+            <label class="hard-due-toggle">
+              <input type="checkbox" id="detail-habit-mark-done" checked />
+              <span>mark done</span>
+            </label>
+            <span class="habit-mark-done-hint">off = logs itself on scheduled days</span>
           </div>
           <div class="schedule-time-row">
             <span class="settings-sublabel compact-label">time window</span>

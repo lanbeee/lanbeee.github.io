@@ -1398,6 +1398,8 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .hard-due-toggle input{margin:0;width:18px;height:18px;accent-color:var(--red-icon);}
 .hard-due-toggle[hidden]{display:none;}
+.habit-mark-done-row{justify-content:space-between;}
+.habit-mark-done-hint{color:var(--text3);font-size:11px;font-weight:500;margin-left:auto;}
 .detail-section .plan-field-row{margin:0 0 12px;background:var(--bg);}
 .context-pill.time{color:var(--text2);}
 .context-pill.time i{color:var(--text3);}

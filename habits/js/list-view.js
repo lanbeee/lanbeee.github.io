@@ -121,7 +121,10 @@ function toggleScheduleChip(e){
   if(!btn)return;
   btn.classList.toggle('on');
   btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
-  if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips'))setDetailDirty();
+  if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips')){
+    setDetailDirty();
+    if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
+  }
 }
 
 // RENDER: build the add-topic pill button
@@ -1298,7 +1301,8 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
   data[i].logs = normalizeLogs([...(data[i].logs || []),{ts,plan:true}]);
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!save(data))return false;
-  showUndo(`Planned ${toastItemName(data[i])}`,undo);
+  const timeLabel = timeValue ? ` · ${new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}` : '';
+  showUndo(`Planned ${toastItemName(data[i])}${timeLabel}`,undo);
   return true;
 }
 

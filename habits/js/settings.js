@@ -28,6 +28,7 @@ function applyAddDefaults(){
   if(dueInput)dueInput.value = '';
   if($('ting-hard-due'))$('ting-hard-due').checked = false;
   if(scheduledInput)scheduledInput.value = '';
+  if($('ting-mark-done'))$('ting-mark-done').checked = true;
   syncAddTypeUi(selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
 }

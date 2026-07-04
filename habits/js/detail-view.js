@@ -39,7 +39,11 @@ function openDetail(i){
   $('detail-due-date').value = dateInputValue(h.dueDate);
   $('detail-hard-due').checked = Boolean(h.hardDue);
   $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
+  $('detail-mark-done').checked = h.markDone !== false;
+  $('detail-habit-mark-done').checked = h.markDone !== false;
   syncDetailDueUi();
+  syncDetailScheduledUi();
+  syncDetailHabitMarkDoneUi();
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
@@ -60,7 +64,8 @@ function openDetail(i){
     flexibilityDays:h.flexibilityDays || 0,
     dueDate:h.dueDate ?? null,
     hardDue:Boolean(h.hardDue),
-    eventTime:h.eventTime ?? null
+    eventTime:h.eventTime ?? null,
+    markDone:h.markDone !== false
   };
   syncRhythm('detail',h.target || 7);
   $('detail-mark').style.background = c.bg;
@@ -163,9 +168,11 @@ function syncTimeClearBtn(){
 
 // HYBRID: reads form DOM into tune object
 function currentDetailTune(){
+  const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
+  const markDoneEl = type === 'task' ? $('detail-mark-done') : $('detail-habit-mark-done');
   return {
     name:$('detail-habit-message').value.trim(),
-    type:document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup',
+    type,
     emoji:cleanMark($('detail-emoji').value),
     target:$('detail-days').value || '',
     pinned:$('detail-pinned').checked,
@@ -180,7 +187,8 @@ function currentDetailTune(){
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
     dueDate:parseDateInput($('detail-due-date').value),
     hardDue:$('detail-hard-due').checked,
-    eventTime:parseDateTimeInput($('detail-scheduled-time').value)
+    eventTime:parseDateTimeInput($('detail-scheduled-time').value),
+    markDone:markDoneEl ? markDoneEl.checked : true
   };
 }
 
@@ -200,6 +208,7 @@ function setDetailDirty(force){
       current.dueDate !== detailTuneOriginal.dueDate ||
       current.hardDue !== detailTuneOriginal.hardDue ||
       current.eventTime !== detailTuneOriginal.eventTime ||
+      current.markDone !== detailTuneOriginal.markDone ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
       current.allowedWeekdays.join('|') !== detailTuneOriginal.allowedWeekdays.join('|') ||
       current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|') ||
@@ -222,7 +231,11 @@ function restoreDetailTune(){
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
   $('detail-hard-due').checked = Boolean(detailTuneOriginal.hardDue);
   $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
+  $('detail-mark-done').checked = detailTuneOriginal.markDone !== false;
+  $('detail-habit-mark-done').checked = detailTuneOriginal.markDone !== false;
   syncDetailDueUi();
+  syncDetailScheduledUi();
+  syncDetailHabitMarkDoneUi();
   renderTopicChips('detail-topic-chips',detailTuneOriginal.topics);
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
@@ -244,6 +257,25 @@ function syncDetailDueUi(){
   if(hint)hint.textContent = hasDate
     ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
     : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+}
+
+// RENDER: toggle mark-done visibility based on whether a scheduled time is set
+function syncDetailScheduledUi(){
+  const timeInput = $('detail-scheduled-time');
+  const toggle = $('detail-mark-done-toggle');
+  if(!timeInput || !toggle)return;
+  toggle.hidden = !timeInput.value;
+}
+
+// RENDER: habit mark-done toggle shows only for build habits with a day schedule
+function syncDetailHabitMarkDoneUi(){
+  const toggle = $('detail-habit-mark-done-toggle');
+  if(!toggle)return;
+  const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType;
+  if(type !== 'keepup'){ toggle.hidden = true; return; }
+  const hasSchedule = selectedWeekdaysFrom('detail-weekday-chips').length > 0
+                   || selectedMonthDaysFrom('detail-monthday-chips').length > 0;
+  toggle.hidden = !hasSchedule;
 }
 
 // HYBRID: switches allowed/preferred schedule section

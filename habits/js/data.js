@@ -44,6 +44,7 @@
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
  * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
  * @property {boolean} hardDue                — true when dueDate is a real deadline (escalates urgency past it)
+ * @property {boolean} markDone               — true (default) when you must tap to complete it; false = event-style, auto-completes once eventTime passes
  */
 
 /**
@@ -163,6 +164,11 @@ function normalize(items){
     let dueDate = type === 'task' ? clampDayTimestamp(raw.dueDate) : null;
     if(wasEvent && eventTime !== null && dueDate === null)dueDate = clampDayTimestamp(eventTime);
     const hardDue = type === 'task' ? Boolean(raw.hardDue) : false;
+    // markDone: explicit values are preserved for every type. Default is
+    // event-style (false) for legacy events, manual (true) for everything else.
+    const markDone = Object.prototype.hasOwnProperty.call(raw,'markDone')
+      ? Boolean(raw.markDone)
+      : !wasEvent;
     const logs = normalizeLogs(raw.logs);
     // A past legacy event has already happened — record it as a completed entry so it
     // fades into history instead of nagging as an overdue task.
@@ -177,6 +183,7 @@ function normalize(items){
         : clampRhythmValue(raw.target || 7),
       dueDate,
       hardDue,
+      markDone,
       eventTime,
       createdAt: raw.createdAt || null,
       logs,
@@ -236,6 +243,62 @@ function save(data){
       return false;
     }
   }
+}
+
+// HYBRID: auto-complete event-style items (markDone === false) whose time has
+// passed. Two shapes: timed tasks (log at eventTime) and scheduled build-habits
+// (log each passed scheduled weekday/monthday day). Adds completion logs,
+// cancels scheduled pushes for tasks, and re-renders. Idempotent — safe on a
+// timer. Returns the number of items it completed.
+function sweepAutoDoneTasks(){
+  const data = load();
+  const now = Date.now();
+  const todayStart = dayStart(now);
+  const completedSigs = [];
+  let changed = false;
+  let count = 0;
+  data.forEach(h=>{
+    if(h.markDone !== false)return;
+    if(h.type === 'task'){
+      if(h.eventTime === null || h.eventTime >= now)return;
+      if(h.lastLog !== null)return; // already done (manual check-off or prior sweep)
+      const logs = normalizeLogs(h.logs);
+      logs.push(h.eventTime);
+      h.logs = normalizeLogs(logs);
+      h.lastLog = latestActualLog(h.logs);
+      changed = true;
+      count += 1;
+      if(typeof reminderSignature === 'function')completedSigs.push(reminderSignature(h));
+      return;
+    }
+    if(h.type === 'keepup'){
+      // Recurring-event habit: back-fill a log for each passed scheduled day
+      // that has no entry yet. Only fires when an explicit day schedule is set.
+      if(!hasDaySchedule(h))return;
+      const anchor = h.lastLog !== null ? h.lastLog : (h.createdAt || now);
+      const floor = todayStart - 60 * 86400000; // cap to avoid huge back-fills
+      let cursor = Math.max(dayStart(anchor) + 86400000, floor);
+      const taken = new Set(normalizeLogs(h.logs).map(l=>dateKey(logTime(l))));
+      const toAdd = [];
+      while(cursor < todayStart){
+        if(isDateEligibleForHabit(h,cursor) && !taken.has(dateKey(cursor))){
+          toAdd.push(cursor + 12 * 3600000); // noon, same local day
+        }
+        cursor += 86400000;
+      }
+      if(toAdd.length){
+        h.logs = normalizeLogs([...normalizeLogs(h.logs), ...toAdd]);
+        h.lastLog = latestActualLog(h.logs);
+        changed = true;
+        count += toAdd.length;
+      }
+    }
+  });
+  if(!changed)return 0;
+  save(data);
+  if(typeof cancelPush === 'function')completedSigs.forEach(sig=>cancelPush(sig));
+  if(typeof refreshOpenViews === 'function')refreshOpenViews();
+  return count;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
