@@ -599,6 +599,7 @@ function cardTone(h){
 function cardMeta(h,options = {}){
   const plan = nextPlannedLog(h);
   const parts = [];
+  if(options.extraPills)parts.push(options.extraPills);
   if(h.sample && (options.forceSample || sortSettings.showSampleOnCards))parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
   if(h.pinned && (options.forcePinned || sortSettings.showPinnedOnCards))parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
   if(h.type === 'task' && (options.forceTaskDate || sortSettings.showTaskDateOnCards)){
@@ -663,6 +664,117 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
+// PURE: map today's agenda rows onto existing home cards.
+function homeAgendaMap(data){
+  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return new Map();
+  const rows = buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
+  return rows.reduce((map,row)=>{
+    if(!map.has(row.i))map.set(row.i,row);
+    return map;
+  },new Map());
+}
+
+// PURE: compact right-side agenda marker for a home card
+function agendaCardPill(row){
+  if(!row)return '';
+  const label = agendaTimeLabel(row.start);
+  const end = row.kind === 'fill' ? agendaTimeLabel(row.end) : '';
+  const title = row.kind === 'scheduled'
+    ? `scheduled at ${label}`
+    : `suggested ${label}${end ? ` to ${end}` : ''}`;
+  const cls = row.kind === 'scheduled' ? 'scheduled' : 'agenda-suggested';
+  const icon = row.kind === 'scheduled' ? 'ti-calendar-time' : 'ti-sparkles';
+  return `<span class="context-pill ${cls}" title="${escapeHtml(title)}"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span>`;
+}
+
+function targetDayForEarly(h){
+  if(h.type === 'task'){
+    const when = taskWhen(h);
+    return when === null ? null : dayStart(when);
+  }
+  const plan = nextPlannedLog(h);
+  if(plan)return dayStart(plan);
+  if(h.lastLog === null)return nextEligibleDate(h,Date.now());
+  const target = Math.max(1,parseInt(h.target,10) || 7);
+  const rawTarget = dayStart(h.lastLog) + target * 86400000;
+  if(!hasDaySchedule(h))return rawTarget;
+  return nextEligibleDate(h,rawTarget) || rawTarget;
+}
+
+function nextPreferredOnOrAfter(h,fromTs,limitTs){
+  if(!hasPreferredDays(h))return null;
+  for(let ts = dayStart(fromTs);ts <= limitTs;ts += 86400000){
+    if((!hasDaySchedule(h) || isDateEligibleForHabit(h,ts)) && isPreferredDay(h,ts))return ts;
+  }
+  return null;
+}
+
+function dayPressure(data,key,settings,skipIdx = -1){
+  const capacity = effectiveAvailabilityMinutes(key,settings);
+  let load = 0;
+  data.forEach((h,i)=>{
+    if(i === skipIdx || (h.type === 'task' && h.lastLog !== null))return;
+    const duration = clampDuration(h.durationMinutes);
+    if(h.type === 'task' && h.eventTime !== null && dateKey(h.eventTime) === key){
+      load += duration;
+      return;
+    }
+    normalizeLogs(h.logs).forEach(log=>{
+      if(isPlanLog(log) && dateKey(logTime(log)) === key)load += duration;
+    });
+    if(h.type === 'task' && h.eventTime === null && h.dueDate !== null && dateKey(h.dueDate) === key){
+      load += duration;
+    }
+  });
+  return {capacity,load,remaining:capacity - load,busy:capacity > 0 ? load / capacity : 1};
+}
+
+function canDoEarlyToday(h,targetTs){
+  const today = dayStart(Date.now());
+  if(!targetTs || targetTs <= today)return false;
+  if(hasDaySchedule(h) && !isDateEligibleForHabit(h,today))return false;
+  if(h.type === 'task'){
+    const ready = taskReadyDate(h);
+    return ready !== null && today >= dayStart(ready);
+  }
+  if(h.lastLog === null)return true;
+  const flex = clampFlexibility(h.flexibilityDays);
+  if(flex <= 0)return false;
+  return today >= dayStart(targetTs) - flex * 86400000;
+}
+
+function earlyReason(data,i,settings){
+  const h = data[i];
+  if(!h || h.type === 'zero' || (h.type === 'task' && h.lastLog !== null))return '';
+  if(todayCategory(h,settings) !== 2)return '';
+  const target = targetDayForEarly(h);
+  if(!canDoEarlyToday(h,target))return '';
+  const preferred = nextPreferredOnOrAfter(h,Date.now(),target);
+  const pressureDay = preferred || target;
+  if(!pressureDay)return '';
+  const pressure = dayPressure(data,dateKey(pressureDay),settings,i);
+  const duration = clampDuration(h.durationMinutes);
+  const targetLabel = preferred ? 'preferred day' : 'target day';
+  if(pressure.capacity <= 0)return `${targetLabel} has no open time`;
+  if(pressure.remaining < duration)return `${targetLabel} is short ${duration - pressure.remaining}m`;
+  if(pressure.busy >= 0.75)return `${targetLabel} is busy`;
+  return '';
+}
+
+function homeEarlyMap(data,settings){
+  const map = new Map();
+  data.forEach((_,i)=>{
+    const reason = earlyReason(data,i,settings);
+    if(reason)map.set(i,reason);
+  });
+  return map;
+}
+
+function earlyCardPill(reason){
+  if(!reason)return '';
+  return `<span class="context-pill agenda-suggested" title="${escapeHtml(reason)}"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i>early</span>`;
+}
+
 // PURE: reduce trail tones to one
 function summarizeTrailTone(tones){
   if(!tones.length)return '';
@@ -712,7 +824,7 @@ function render(){
       const doneTasks = data.filter(h=>h.type === 'task' && h.lastLog !== null).length;
       empty.innerHTML = doneTasks && doneTasks === data.length
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
-        : 'nothing active<br><span class="empty-sub">use Today or Calendar for scheduled items, or + to add a habit</span>';
+        : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
     }else{
       empty.innerHTML = 'simple habit tracking<br><span class="empty-sub">Saved on this device. Tap Habits for help and settings, or + to add your first habit.</span>';
     }
@@ -722,22 +834,40 @@ function render(){
   empty.style.display = 'none';
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
+  const agendaMap = homeAgendaMap(data);
+  const earlyMap = homeEarlyMap(data,sortSettings);
+  const renderIndices = todayFirstActive ? [...indices].sort((a,b)=>{
+    const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
+    if(pin)return pin;
+    const catA = todayCategory(data[a],sortSettings);
+    const catB = todayCategory(data[b],sortSettings);
+    if(catA !== catB)return catA - catB;
+    if(catA === 2){
+      const early = Number(Boolean(earlyMap.get(b))) - Number(Boolean(earlyMap.get(a)));
+      if(early)return early;
+    }
+    return indices.indexOf(a) - indices.indexOf(b);
+  }) : indices;
   let sectionCat = -1;
 
-  indices.forEach(realIdx=>{
+  renderIndices.forEach(realIdx=>{
     const h = data[realIdx];
     const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
 
-    if(todayFirstActive && !h.pinned && cat !== sectionCat){
-      const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
-      const label = labels[cat];
-      if(label){
-        const header = document.createElement('div');
-        header.className = 'section-header';
-        header.textContent = label;
-        list.appendChild(header);
+    if(todayFirstActive && !h.pinned){
+      const doEarly = cat === 2 && Boolean(earlyMap.get(realIdx));
+      const sectionKey = doEarly ? 20 : cat;
+      if(sectionKey !== sectionCat){
+        const labels = {0:'today',1:'overdue',20:'do it early',2:'upcoming',3:'others'};
+        const label = labels[sectionKey];
+        if(label){
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          header.textContent = label;
+          list.appendChild(header);
+        }
+        sectionCat = sectionKey;
       }
-      sectionCat = cat;
     }
 
     const days = daysSince(h.lastLog);
@@ -745,7 +875,9 @@ function render(){
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const context = cardMeta(h);
+    const agendaPill = agendaCardPill(agendaMap.get(realIdx));
+    const earlyPill = earlyCardPill(earlyMap.get(realIdx));
+    const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join('')});
     const trail = cardTrail(h);
     const accent = visualClassColor(cardScoreTone);
     const isDoneTask = h.type === 'task' && h.lastLog !== null;
@@ -1037,6 +1169,34 @@ function logTingAt(i,ts){
   if(!save(data))return false;
   showUndo(isPlanLog(log) ? 'Plan added' : 'Entry added',undo);
   return true;
+}
+
+// HYBRID: add a planned entry for a specific date, optionally preserving a time.
+function planTingOnDay(i,key,timeValue = ''){
+  const data = load();
+  if(!data[i])return false;
+  const base = new Date(`${key}T12:00:00`);
+  if(Number.isNaN(base.getTime()))return false;
+  let hours = 12;
+  let minutes = 0;
+  const time = timeInputToMinutes(timeValue);
+  if(time !== null){
+    hours = Math.floor(time / 60);
+    minutes = time % 60;
+  }
+  const ts = new Date(base.getFullYear(),base.getMonth(),base.getDate(),hours,minutes,0,0).getTime();
+  const undo = {type:'entry',idx:i,ts,plan:true,snoozedUntil:data[i].snoozedUntil || null};
+  data[i].logs = normalizeLogs([...(data[i].logs || []),{ts,plan:true}]);
+  data[i].lastLog = latestActualLog(data[i].logs);
+  if(!save(data))return false;
+  showUndo('Plan added',undo);
+  return true;
+}
+
+// HYBRID: undo-toast shortcut after logging an entry.
+function planPendingUndoToday(){
+  if(!pendingUndo || pendingUndo.type !== 'entry' || pendingUndo.plan || !Number.isInteger(pendingUndo.idx))return;
+  if(planTingOnDay(pendingUndo.idx,todayIso()))refreshOpenViews();
 }
 
 // HANDLER: splice entry from habit logs

@@ -40,6 +40,7 @@ function syncSettingsControls(){
   updateSortSampleCount();
   renderTopicList();
   renderAvailabilityControls();
+  renderBlockedTimeControls();
   document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.preset === (sortSettings.preset || 'custom'));
   });
@@ -108,7 +109,56 @@ function saveAvailabilityDay(index,value){
   availability[index] = Math.max(0,Math.min(1440,parseInt(value,10) || 0));
   updateSortSetting({availabilityMinutes:availability},{renderNow:false});
   renderAvailabilityControls();
+  render();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayAvailability(dayLogsKey);
+}
+
+function renderBlockedTimeControls(){
+  const wrap = $('blocked-time-list');
+  if(!wrap)return;
+  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
+    <div class="blocked-time-row" data-blocked-row="${i}">
+      <input type="text" data-blocked-label="${i}" aria-label="blocked time name" maxlength="24" value="${escapeHtml(block.label)}" />
+      <div class="blocked-time-hours">
+        <input type="time" data-blocked-start="${i}" aria-label="${escapeHtml(block.label)} start" value="${minutesToTimeInput(block.start)}" />
+        <span>to</span>
+        <input type="time" data-blocked-end="${i}" aria-label="${escapeHtml(block.label)} end" value="${minutesToTimeInput(block.end)}" />
+      </div>
+      <div class="schedule-chip-row compact-days">
+        ${WEEKDAY_LABELS.map((label,day)=>{
+          const on = !block.days.length || block.days.includes(day);
+          return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-blocked-day="${day}" data-blocked-index="${i}" aria-pressed="${on}">${label}</button>`;
+        }).join('')}
+      </div>
+      <button class="mini-text-btn" type="button" data-blocked-remove="${i}">remove</button>
+    </div>
+  `).join('') : '<p class="field-hint">No blocked time. The plan may use any open time today.</p>';
+}
+
+function saveBlockedTimePatch(index,patch){
+  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  if(!blocks[index])return;
+  blocks[index] = {...blocks[index],...patch};
+  updateSortSetting({blockedTimes:blocks},{renderNow:false});
+  renderBlockedTimeControls();
+  render();
+}
+
+function addBlockedTime(){
+  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  blocks.push({label:'blocked',days:[],start:900,end:960});
+  updateSortSetting({blockedTimes:blocks},{renderNow:false});
+  renderBlockedTimeControls();
+  render();
+}
+
+function removeBlockedTime(index){
+  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  blocks.splice(index,1);
+  updateSortSetting({blockedTimes:blocks},{renderNow:false});
+  renderBlockedTimeControls();
+  render();
 }
 
 // HYBRID: patch sort state and re-sync UI
@@ -280,6 +330,7 @@ function buildSortSamples(){
     sortSampleHabit('movie night just done','keepup',7,sampleLogs([22,15,8,1]),{emoji:'🎬',topics:['rest'],allowedWeekdays:[5,6],durationMinutes:120}),
     sortSampleHabit('new meditation habit','keepup',7,[],{emoji:'🧘',topics:['health','calm'],durationMinutes:10}),
     sortSampleHabit('40 day habit mid cycle','keepup',40,sampleLogs([97,57,17]),{emoji:'🌿',topics:['home'],flexibilityDays:5}),
+    sortSampleHabit('do early because Tuesday is packed','keepup',2,sampleLogs([0]),{emoji:'🧺',topics:['home'],durationMinutes:50,flexibilityDays:2}),
     sortSampleHabit('monthly date night close','keepup',30,sampleLogs([91,61,28]),{emoji:'💙',durationMinutes:150,flexibilityDays:4,topics:['relationships']}),
     sortSampleHabit('quarterly mini trip overdue','keepup',90,sampleLogs([190,91]),{emoji:'🧳',durationMinutes:240,flexibilityDays:14,topics:['adventure']}),
     sortSampleHabit('long flexible home reset','keepup',60,sampleLogs([180,122,68]),{emoji:'🧹',durationMinutes:180,flexibilityDays:10,topics:['home']}),
@@ -305,6 +356,9 @@ function buildSortSamples(){
     sortSampleHabit('overdue hard-deadline task','task',null,[],{emoji:'⚠️',dueDate:sampleActual(2),hardDue:true,topics:['admin'],durationMinutes:20}),
     sortSampleHabit('task due today','task',null,[],{emoji:'📞',dueDate:sampleActual(0),topics:['relationships'],durationMinutes:15}),
     sortSampleHabit('task due next week','task',null,[],{emoji:'📝',dueDate:samplePlan(6),topics:['learning'],durationMinutes:45,flexibilityDays:3}),
+    sortSampleHabit('busy target errand','task',null,[],{emoji:'📦',dueDate:samplePlan(2,10),topics:['admin'],durationMinutes:80}),
+    sortSampleHabit('busy target paperwork','task',null,[],{emoji:'🗂️',dueDate:samplePlan(2,14),topics:['admin'],durationMinutes:80}),
+    sortSampleHabit('busy target call','task',null,[],{emoji:'📱',dueDate:samplePlan(2,16),topics:['admin'],durationMinutes:80}),
     sortSampleHabit('someday task no date','task',null,[],{emoji:'🗂️',topics:['someday']}),
     sortSampleHabit('dentist appointment task','task',null,[],{emoji:'🦷',eventTime:Date.now() + 4 * 3600000,dueDate:dayStart(Date.now()),durationMinutes:60,topics:['health']})
   ];

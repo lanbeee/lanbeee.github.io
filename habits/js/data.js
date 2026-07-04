@@ -92,6 +92,7 @@
  * @property {string[]} topics                                 — master topic list (max 24)
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
+ * @property {{label:string,days:number[],start:number,end:number}[]} blockedTimes — recurring unavailable blocks
  */
 
 /**
@@ -127,6 +128,7 @@ function loadSortSettings(){
     merged.topics = normalizeTopics(merged.topics);
     merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
+    merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
     return merged;
   }catch{
     return {...DEFAULT_SORT_SETTINGS};
@@ -140,6 +142,7 @@ function saveSortSettings(settings){
   next.topics = normalizeTopics(next.topics);
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
+  next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }
@@ -312,6 +315,17 @@ function normalizeAvailabilityOverrides(value){
     acc[key] = Math.max(0,Math.min(1440,parseInt(minutes,10) || 0));
     return acc;
   },{});
+}
+function normalizeBlockedTimes(value){
+  const src = Array.isArray(value) ? value : DEFAULT_BLOCKED_TIMES;
+  return src.map((raw,idx)=>{
+    const label = cleanTopic(raw?.label || `blocked ${idx + 1}`).slice(0,24) || 'blocked';
+    const days = normalizeAllowedWeekdays(raw?.days);
+    const start = normalizeTimeMinutes(raw?.start);
+    const end = normalizeTimeMinutes(raw?.end);
+    if(start === null || end === null || start === end)return null;
+    return {label,days,start,end};
+  }).filter(Boolean).slice(0,24);
 }
 function effectiveAvailabilityMinutes(key,settings = sortSettings){
   const normalized = {...DEFAULT_SORT_SETTINGS,...settings};

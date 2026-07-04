@@ -104,16 +104,14 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   renderOverview();
   openSheet('overview-sheet');
 });
-$('bar-open-today')?.addEventListener('click',openToday);
-$('open-today').addEventListener('click',openToday);
-$('today-close').addEventListener('click',()=>closeSheet('today-sheet'));
-$('today-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('today-overview').addEventListener('click',()=>{
+$('today-close')?.addEventListener('click',()=>closeSheet('today-sheet'));
+$('today-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('today-overview')?.addEventListener('click',()=>{
   closeSheet('today-sheet');
   const btn = paneTierActive() ? $('bar-open-overview') : $('open-overview');
   if(btn)btn.click();
 });
-$('today-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('today-sheet');});
+$('today-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('today-sheet');});
 $('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
@@ -837,6 +835,34 @@ $('availability-grid').addEventListener('change',e=>{
   if(!field)return;
   saveAvailabilityDay(parseInt(field.dataset.availabilityDay,10),field.value);
 });
+$('blocked-time-add')?.addEventListener('click',addBlockedTime);
+$('blocked-time-list')?.addEventListener('change',e=>{
+  const label = e.target.closest('[data-blocked-label]');
+  const start = e.target.closest('[data-blocked-start]');
+  const end = e.target.closest('[data-blocked-end]');
+  if(label)saveBlockedTimePatch(parseInt(label.dataset.blockedLabel,10),{label:cleanTopic(label.value) || 'blocked'});
+  if(start)saveBlockedTimePatch(parseInt(start.dataset.blockedStart,10),{start:timeInputToMinutes(start.value)});
+  if(end)saveBlockedTimePatch(parseInt(end.dataset.blockedEnd,10),{end:timeInputToMinutes(end.value)});
+});
+$('blocked-time-list')?.addEventListener('click',e=>{
+  const remove = e.target.closest('[data-blocked-remove]');
+  if(remove){
+    removeBlockedTime(parseInt(remove.dataset.blockedRemove,10));
+    return;
+  }
+  const day = e.target.closest('[data-blocked-day]');
+  if(!day)return;
+  const index = parseInt(day.dataset.blockedIndex,10);
+  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  const block = blocks[index];
+  if(!block)return;
+  const fullSet = block.days.length ? block.days : [0,1,2,3,4,5,6];
+  const next = new Set(fullSet);
+  const value = parseInt(day.dataset.blockedDay,10);
+  if(next.has(value))next.delete(value);
+  else next.add(value);
+  saveBlockedTimePatch(index,{days:normalizeAllowedWeekdays([...next])});
+});
 bindSettingRange('plan-weight','planWeight','%');
 bindSettingRange('due-weight','dueWeight','%');
 bindSettingRange('progress-weight','progressWeight','%');
@@ -924,8 +950,8 @@ $('day-log-add').addEventListener('click',()=>{
   if(Number.isNaN(idx))return;
   const h = load()[idx];
   if(!h || (h.type === 'task' && h.lastLog !== null))return;
-  const ts = new Date(`${dayLogsKey}T12:00:00`).getTime();
-  if(!logTingAt(idx,ts))return;
+  if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || ''))return;
+  if($('day-log-time'))$('day-log-time').value = '';
   renderDayLogs(dayLogsKey);
   refreshOpenViews();
 });
@@ -1022,6 +1048,15 @@ $('day-logs-home').addEventListener('click',()=>{
 $('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('undo-action').addEventListener('click',undoLastAction);
+$('undo-open')?.addEventListener('click',()=>{
+  if(!pendingUndo || !Number.isInteger(pendingUndo.idx))return;
+  const idx = pendingUndo.idx;
+  hideUndo();
+  openDetail(idx);
+});
+$('undo-plan')?.addEventListener('click',()=>{
+  planPendingUndoToday();
+});
 
 $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();

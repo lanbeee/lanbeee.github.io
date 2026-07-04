@@ -401,9 +401,13 @@ function showToast(text){
 function showUndo(text,undo){
   pendingUndo = undo;
   $('undo-text').textContent = text;
+  const openBtn = $('undo-open');
+  const planBtn = $('undo-plan');
+  if(openBtn)openBtn.hidden = !(undo && Number.isInteger(undo.idx));
+  if(planBtn)planBtn.hidden = !(undo && undo.type === 'entry' && !undo.plan && Number.isInteger(undo.idx));
   $('undo-toast').classList.add('show');
   clearTimeout(undoTimer);
-  undoTimer = setTimeout(hideUndo,5200);
+  undoTimer = setTimeout(hideUndo,7200);
 }
 
 // HYBRID: hides undo toast and clears pending undo state
@@ -412,6 +416,8 @@ function hideUndo(){
   undoTimer = null;
   pendingUndo = null;
   $('undo-toast').classList.remove('show');
+  if($('undo-open'))$('undo-open').hidden = true;
+  if($('undo-plan'))$('undo-plan').hidden = true;
 }
 
 // HYBRID: re-renders currently open views after data change

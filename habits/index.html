@@ -34,9 +34,6 @@
       </button>
     </div>
     <div class="app-bar-actions">
-      <button class="icon-btn" id="bar-open-today" aria-label="today">
-        <i class="ti ti-list-check" aria-hidden="true"></i>
-      </button>
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>
@@ -70,9 +67,6 @@
   <div class="pane-detail" id="pane-detail" hidden></div>
 
   <nav class="bottom-nav" aria-label="main actions">
-    <button class="icon-btn" id="open-today" aria-label="today">
-      <i class="ti ti-list-check" aria-hidden="true"></i>
-    </button>
     <button class="icon-btn" id="open-overview" aria-label="calendar">
       <i class="ti ti-calendar-month" aria-hidden="true"></i>
     </button>
@@ -398,19 +392,19 @@
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showScheduledTasksInAgenda" aria-pressed="false">
-              <span><b>show scheduled tasks in today</b><small>Fixed-time tasks appear in the Today agenda.</small></span>
+              <span><b>show scheduled tasks in plan</b><small>Fixed-time tasks appear in the home plan.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueTasksInAgenda" aria-pressed="false">
-              <span><b>show due tasks in today</b><small>Untimed tasks due today can fill open agenda time.</small></span>
+              <span><b>show due tasks in plan</b><small>Untimed tasks due today can fill open plan time.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPlannedItemsInAgenda" aria-pressed="false">
-              <span><b>show planned items in today</b><small>Entries planned for today can fill open agenda time.</small></span>
+              <span><b>show planned items in plan</b><small>Entries planned for today can fill open plan time.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueHabitsInAgenda" aria-pressed="false">
-              <span><b>show due habits in today</b><small>Habits ready today can fill open agenda time.</small></span>
+              <span><b>show due habits in plan</b><small>Habits ready today can fill open plan time.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
@@ -428,6 +422,12 @@
           <span class="settings-label"><span style="position:relative;display:inline-block">availability <button type="button" class="info-btn" data-tip="settings-avail-help" aria-label="about availability"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
             <div class="info-tooltip" id="settings-avail-help" role="tooltip" hidden>Default time available for habits and planning each weekday.</div></span></span>
           <div class="availability-grid" id="availability-grid"></div>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label"><span style="position:relative;display:inline-block">blocked time <button type="button" class="info-btn" data-tip="settings-blocked-help" aria-label="about blocked time"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-blocked-help" role="tooltip" hidden>Regular time you do not want the home plan to use, such as sleep, meals, work, commute, or school.</div></span></span>
+          <div class="blocked-time-list" id="blocked-time-list"></div>
+          <button class="btn" id="blocked-time-add" type="button">add blocked time</button>
         </section>
         <section class="settings-block">
           <span class="settings-label">cards</span>
@@ -592,7 +592,8 @@
       <div class="overview-list" id="day-logs-list"></div>
       <div class="day-add-row">
         <select id="day-log-ting" aria-label="habit"></select>
-        <button class="btn primary" id="day-log-add">add entry</button>
+        <input type="time" id="day-log-time" class="time-input" aria-label="optional plan time" />
+        <button class="btn primary" id="day-log-add">plan</button>
       </div>
       <div class="btn-row">
         <button class="btn" id="day-logs-overview">calendar</button>
@@ -605,6 +606,8 @@
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="undo-toast" role="status" aria-live="polite">
   <span id="undo-text"></span>
+  <button type="button" id="undo-open" hidden>open</button>
+  <button type="button" id="undo-plan" hidden>plan today</button>
   <button type="button" id="undo-action">undo</button>
 </div>
 

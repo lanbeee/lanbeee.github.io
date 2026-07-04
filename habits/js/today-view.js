@@ -20,9 +20,9 @@ function buildTodayAgenda(data,settings){
     .map((h,i)=>({h,i}))
     .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && h.lastLog === null && dateKey(h.eventTime) === todayKey)
     .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
-  const usedMinutes = scheduled.reduce((sum,{h})=>sum + clampDuration(h.durationMinutes),0);
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
-  let remaining = Math.max(0,totalMinutes - usedMinutes);
+  const slots = buildOpenAgendaSlots(todayKey,scheduled,settings);
+  let remaining = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
   const agendaItems = [];
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
@@ -35,7 +35,7 @@ function buildTodayAgenda(data,settings){
     remaining -= cost;
     if(remaining <= 0)break;
   }
-  return { scheduled, agendaItems, totalMinutes, usedMinutes, remainingMinutes:Math.max(0,remaining) };
+  return { scheduled, agendaItems, totalMinutes, usedMinutes:Math.max(0,totalMinutes - remaining), remainingMinutes:Math.max(0,remaining), slots };
 }
 
 // PURE: applies user-facing Today agenda inclusion settings.
@@ -58,29 +58,84 @@ function includeInTodayAgenda(h,settings){
 // forward; scheduled tasks jump the clock past their slot so nothing overlaps.
 function buildTodayTimeline(agenda,now = Date.now()){
   const rows = [];
-  let clock = ceilToMinutes(now,5);
+  agenda.scheduled.forEach(ev=>{
+    const end = ev.h.eventTime + clampDuration(ev.h.durationMinutes) * 60000;
+    rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true });
+  });
+  const slots = agenda.slots?.length ? agenda.slots : [{start:ceilToMinutes(now,5),end:dayStart(now) + 24 * 3600000}];
   let fillIdx = 0;
-  let scheduledIdx = 0;
-  const scheduled = agenda.scheduled;
-  const fills = agenda.agendaItems;
-  while(fillIdx < fills.length || scheduledIdx < scheduled.length){
-    const ev = scheduled[scheduledIdx];
-    const fill = fills[fillIdx];
-    if(ev && (!fill || ev.h.eventTime <= clock)){
-      const end = ev.h.eventTime + clampDuration(ev.h.durationMinutes) * 60000;
-      rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true });
-      if(end > clock)clock = end;
-      scheduledIdx += 1;
-    }else if(fill){
+  for(const slot of slots){
+    let clock = Math.max(slot.start,ceilToMinutes(now,5));
+    while(fillIdx < agenda.agendaItems.length){
+      const fill = agenda.agendaItems[fillIdx];
       const cost = clampDuration(fill.h.durationMinutes) * 60000;
+      if(clock + cost > slot.end)break;
       rows.push({ kind:'fill', h:fill.h, i:fill.i, start:clock, end:clock + cost, hard:false });
       clock += cost;
       fillIdx += 1;
-    }else{
-      break;
     }
   }
-  return rows;
+  return rows.sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : 1));
+}
+
+function buildOpenAgendaSlots(todayKey,scheduled,settings){
+  const start = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
+  const end = start + 24 * 3600000;
+  const blocks = agendaBlockedIntervals(todayKey,settings,start,end);
+  scheduled.forEach(({h})=>{
+    blocks.push({start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,label:h.name});
+  });
+  const merged = mergeIntervals(blocks
+    .map(b=>({start:Math.max(start,b.start),end:Math.min(end,b.end),label:b.label}))
+    .filter(b=>b.end > b.start));
+  const raw = [];
+  let cursor = start;
+  merged.forEach(block=>{
+    if(block.start > cursor)raw.push({start:cursor,end:block.start});
+    cursor = Math.max(cursor,block.end);
+  });
+  if(cursor < end)raw.push({start:cursor,end});
+  const total = effectiveAvailabilityMinutes(todayKey,settings);
+  let remainingMs = total * 60000;
+  const now = Date.now();
+  return raw
+    .map(slot=>({start:Math.max(slot.start,ceilToMinutes(now,5)),end:slot.end}))
+    .filter(slot=>slot.end > slot.start)
+    .map(slot=>{
+      if(remainingMs <= 0)return null;
+      const length = slot.end - slot.start;
+      const clipped = {start:slot.start,end:slot.start + Math.min(length,remainingMs)};
+      remainingMs -= length;
+      return clipped;
+    })
+    .filter(Boolean);
+}
+
+function agendaBlockedIntervals(todayKey,settings,start,end){
+  const day = new Date(`${todayKey}T12:00:00`).getDay();
+  return normalizeBlockedTimes(settings.blockedTimes).flatMap(block=>{
+    if(block.days.length && !block.days.includes(day))return [];
+    const blockStart = start + block.start * 60000;
+    const blockEnd = start + block.end * 60000;
+    if(block.end > block.start)return [{start:blockStart,end:blockEnd,label:block.label}];
+    return [
+      {start,end:blockEnd,label:block.label},
+      {start:blockStart,end,label:block.label}
+    ];
+  });
+}
+
+function mergeIntervals(intervals){
+  const sorted = intervals.sort((a,b)=>a.start - b.start);
+  return sorted.reduce((acc,item)=>{
+    const last = acc[acc.length - 1];
+    if(!last || item.start > last.end){
+      acc.push({...item});
+    }else{
+      last.end = Math.max(last.end,item.end);
+    }
+    return acc;
+  },[]);
 }
 
 // PURE: round a timestamp up to the next N-minute boundary
