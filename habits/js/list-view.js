@@ -490,8 +490,8 @@ function compactDueLabel(ts,hardDue){
   return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 }
 
-// PURE: compact event time label for card pill / strip
-function compactEventLabel(ts){
+// PURE: compact scheduled time label for card pill / strip
+function compactScheduledLabel(ts){
   const left = daysUntil(ts);
   if(left === null)return '';
   if(left < 0)return 'past';
@@ -500,6 +500,13 @@ function compactEventLabel(ts){
   if(left === 1)return 'tmrw';
   if(left <= 6)return new Date(ts).toLocaleDateString(undefined,{weekday:'short'});
   return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+}
+
+// PURE: keep cue pills narrow; full text remains in title/tooltips.
+function compactPillText(value,max = 10){
+  const text = String(value || '').trim();
+  if(text.length <= max)return text;
+  return `${text.slice(0,Math.max(1,max - 1))}…`;
 }
 
 // PURE: compute keep-up cue text
@@ -556,7 +563,7 @@ function cardCue(h){
 function taskCue(h){
   if(h.lastLog !== null)return 'Done';
   if(h.eventTime !== null){
-    if(typeof eventWhenLabel === 'function')return capitalizeFirst(eventWhenLabel(h.eventTime));
+    if(typeof scheduledWhenLabel === 'function')return capitalizeFirst(scheduledWhenLabel(h.eventTime));
     return 'Scheduled';
   }
   if(h.dueDate === null)return 'Someday';
@@ -569,11 +576,11 @@ function taskCue(h){
   return `Due ${new Date(h.dueDate).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
 }
 
-// PURE: event status cue
-function eventCue(h){
-  if(!h.eventTime)return 'Event';
-  if(typeof eventWhenLabel === 'function')return capitalizeFirst(eventWhenLabel(h.eventTime));
-  return 'Event';
+// PURE: scheduled-task status cue
+function scheduledCue(h){
+  if(!h.eventTime)return 'Scheduled';
+  if(typeof scheduledWhenLabel === 'function')return capitalizeFirst(scheduledWhenLabel(h.eventTime));
+  return 'Scheduled';
 }
 
 // PURE: capitalize the first letter of a string
@@ -592,11 +599,11 @@ function cardTone(h){
 function cardMeta(h,options = {}){
   const plan = nextPlannedLog(h);
   const parts = [];
-  if(h.sample)parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
-  if(h.pinned)parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
-  if(h.type === 'task'){
+  if(h.sample && (options.forceSample || sortSettings.showSampleOnCards))parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
+  if(h.pinned && (options.forcePinned || sortSettings.showPinnedOnCards))parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
+  if(h.type === 'task' && (options.forceTaskDate || sortSettings.showTaskDateOnCards)){
     if(h.eventTime !== null){
-      parts.push(`<span class="context-pill event" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(compactEventLabel(h.eventTime))}</span>`);
+      parts.push(`<span class="context-pill scheduled" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(compactScheduledLabel(h.eventTime))}</span>`);
     }else if(h.dueDate === null){
       parts.push('<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>');
     }else{
@@ -609,27 +616,29 @@ function cardMeta(h,options = {}){
   }
   if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration"><i class="ti ti-clock" aria-hidden="true"></i>${h.durationMinutes}m</span>`);
   if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="flexibility"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
-  if(hasDaySchedule(h)){
+  if(hasDaySchedule(h) && (options.forceDaySchedule || sortSettings.showDayScheduleOnCards)){
     const eligible = nextEligibleShort(h);
     const title = [scheduleSummary(h),nextEligibleCopy(h)].filter(Boolean).join(' · ');
     const prefClass = hasPreferredDays(h) ? ' has-preferred' : '';
     parts.push(`<span class="context-pill schedule${prefClass} ${eligible ? '' : 'icon-only'}" title="${escapeHtml(title)}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(eligible)}</span>`);
   }
-  if(hasTimeWindow(h)){
+  if(hasTimeWindow(h) && (options.forceTimeWindow || sortSettings.showTimeWindowOnCards)){
     parts.push(`<span class="context-pill time" title="time window"><i class="ti ti-clock-hour-4" aria-hidden="true"></i>${escapeHtml(timeWindowSummary(h))}</span>`);
   }
   const topics = normalizeTopics(h.topics);
   if(options.forceTopics || sortSettings.showTopicsOnCards){
     topics.slice(0,2).forEach(topic=>{
-      parts.push(`<span class="context-pill quiet" title="topic"><i class="ti ti-tag" aria-hidden="true"></i>${escapeHtml(topic)}</span>`);
+      parts.push(`<span class="context-pill quiet" title="${escapeHtml(`topic: ${topic}`)}"><i class="ti ti-tag" aria-hidden="true"></i>${escapeHtml(compactPillText(topic,10))}</span>`);
     });
     if(topics.length > 2)parts.push(`<span class="context-pill quiet" title="more topics">+${topics.length - 2}</span>`);
   }
-  if(plan && h.type !== 'zero'){
+  if(plan && h.type !== 'zero' && (options.forcePlans || sortSettings.showPlansOnCards)){
     const label = compactPlanLabel(plan);
     parts.push(`<span class="context-pill plan ${label ? '' : 'icon-only'}" title="${escapeHtml(`planned ${entryWhen(plan)}`)}"><i class="ti ti-calendar-event" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
   }
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)parts.push(`<span class="context-pill quiet" title="snoozed"><i class="ti ti-moon" aria-hidden="true"></i>${escapeHtml(entryWhen(h.snoozedUntil))}</span>`);
+  if(h.snoozedUntil && Date.now() < h.snoozedUntil && (options.forceSnoozedUntil || sortSettings.showSnoozedUntilOnCards)){
+    parts.push(`<span class="context-pill quiet" title="${escapeHtml(`snoozed until ${entryWhen(h.snoozedUntil)}`)}"><i class="ti ti-moon" aria-hidden="true"></i>${escapeHtml(entryWhen(h.snoozedUntil))}</span>`);
+  }
   return parts.join('');
 }
 

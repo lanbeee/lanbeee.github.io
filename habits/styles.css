@@ -701,8 +701,10 @@ body.reach-pad #list{padding-top:220px;}
   color:var(--text2);font-size:11.5px;font-weight:650;
   background:var(--bg2);border:0.5px solid var(--border);
   border-radius:999px;padding:3px 6px;line-height:1;
-  white-space:nowrap;min-width:0;flex:0 1 auto;
+  white-space:nowrap;min-width:0;max-width:92px;overflow:hidden;text-overflow:ellipsis;
+  flex:0 1 auto;
 }
+.context-pill i{flex:0 0 auto;}
 .context-pill i{font-size:13px;color:var(--text3);}
 .context-pill.plan{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
 .context-pill.plan i{color:var(--purple-icon);}
@@ -710,8 +712,8 @@ body.reach-pad #list{padding-top:220px;}
 .context-pill.due i{color:var(--amber-icon);}
 .context-pill.due.hard{color:var(--red-text);background:var(--red-bg);}
 .context-pill.due.hard i{color:var(--red-icon);}
-.context-pill.event{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
-.context-pill.event i{color:var(--purple-icon);}
+.context-pill.scheduled{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
+.context-pill.scheduled i{color:var(--purple-icon);}
 .context-pill.schedule{color:var(--blue-text);background:var(--blue-bg);border-color:transparent;}
 .context-pill.schedule i{color:var(--blue-icon);}
 .context-pill.pin{
@@ -1094,14 +1096,14 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .graph-caption,.graph-empty{
   color:var(--text2);font-size:11px;line-height:1.3;
 }
-.graph-empty.task-event-summary{
+.graph-empty.task-scheduled-summary{
   display:flex;flex-direction:column;justify-content:center;gap:6px;
   min-height:108px;padding:6px 4px;
 }
-.graph-empty.task-event-summary b{
+.graph-empty.task-scheduled-summary b{
   color:var(--text);font-size:15px;font-weight:650;
 }
-.graph-empty.task-event-summary span{
+.graph-empty.task-scheduled-summary span{
   color:var(--text2);font-size:12px;line-height:1.35;
 }
 .bar.hit{background:var(--teal-icon);}
@@ -1348,30 +1350,30 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .reminder-dismiss i{font-size:16px;}
 .reminder-dismiss:active{background:var(--bg3);}
-/* today's events strip (events are excluded from the ranked list) */
-.events-header{display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:0.04em;}
-.events-header i{font-size:14px;color:var(--purple-icon);}
-.event-row{
+/* today's scheduled strip (scheduled tasks are excluded from the ranked list) */
+.scheduled-header{display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:0.04em;}
+.scheduled-header i{font-size:14px;color:var(--purple-icon);}
+.scheduled-row{
   display:flex;align-items:center;gap:12px;width:100%;
   background:var(--bg2);border:0.5px solid var(--border);
   border-radius:var(--radius);padding:12px 14px;margin:0 0 8px;
   text-align:left;font:inherit;cursor:pointer;
   -webkit-tap-highlight-color:transparent;
 }
-.event-row:active{background:var(--bg3);}
-.event-row.is-past{opacity:0.55;}
-.event-ic{
+.scheduled-row:active{background:var(--bg3);}
+.scheduled-row.is-past{opacity:0.55;}
+.scheduled-ic{
   width:38px;height:38px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;font-size:18px;flex-shrink:0;
 }
-.event-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
-.event-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.event-time{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.event-when{
+.scheduled-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.scheduled-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.scheduled-time{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.scheduled-when{
   font-size:12px;font-weight:650;color:var(--purple-icon);flex-shrink:0;
   font-variant-numeric:tabular-nums;
 }
-/* task due-date + event time rows (add sheet + detail schedule) */
+/* task due-date + scheduled-time rows (add sheet + detail schedule) */
 .plan-field-row{
   display:flex;align-items:center;gap:10px;margin:-2px 0 16px;
   padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--radius-sm);
@@ -1915,7 +1917,7 @@ body[data-pane-count="3"] #undo-toast{
   -webkit-tap-highlight-color:transparent;position:relative;
 }
 .agenda-row:active{background:var(--bg3);}
-.agenda-row.event{
+.agenda-row.scheduled{
   grid-template-columns:54px 1fr;
   background:var(--purple-bg);border-color:transparent;
   box-shadow:inset 3px 0 0 var(--purple-icon);
@@ -1929,7 +1931,7 @@ body[data-pane-count="3"] #undo-toast{
 .agenda-clock b{font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;}
 .agenda-clock small{font-size:10px;color:var(--text3);font-variant-numeric:tabular-nums;line-height:1.1;}
 .agenda-dot{width:8px;height:8px;border-radius:50%;justify-self:center;opacity:0.85;}
-.agenda-row.event .agenda-dot{display:none;}
+.agenda-row.scheduled .agenda-dot{display:none;}
 .agenda-body{display:flex;flex-direction:column;gap:3px;min-width:0;}
 .agenda-line{display:flex;align-items:center;gap:8px;min-width:0;}
 .agenda-ic{font-size:15px;display:inline-flex;flex-shrink:0;}

@@ -24,10 +24,10 @@ function applyAddDefaults(){
   if(topicsWrap)topicsWrap.hidden = false;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
   const dueInput = $('ting-due-date');
-  const eventInput = $('ting-event-time');
+  const scheduledInput = $('ting-scheduled-time');
   if(dueInput)dueInput.value = '';
   if($('ting-hard-due'))$('ting-hard-due').checked = false;
-  if(eventInput)eventInput.value = '';
+  if(scheduledInput)scheduledInput.value = '';
   syncAddTypeUi(selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
 }

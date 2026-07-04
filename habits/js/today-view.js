@@ -3,7 +3,7 @@
 // Scheduled tasks are placed at their literal time. Tasks and habits fill the
 // gaps in rank order, each shown with a *soft* estimated range so the
 // list reads as "do these roughly in this order" rather than "be here at this
-// exact minute." This is the one surface that combines events + tasks + habits
+// exact minute." This is the one surface that combines scheduled tasks, tasks, and habits
 // into something that can replace a calendar and a to-do list.
 //
 // Annotated for the React Native port, matching list-view/overview-view:
@@ -11,16 +11,16 @@
 //   - HANDLER -> onPress callback
 //   - PURE    -> plain selector / helper
 
-// PURE: today's events + rank-ordered fill items + remaining capacity. Items
+// PURE: today's scheduled tasks + rank-ordered fill items + remaining capacity. Items
 // carry their index into `data` so the render layer never has to re-resolve a
 // habit's position (which would break by-reference lookups after a re-load).
 function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
-  const events = data
+  const scheduled = data
     .map((h,i)=>({h,i}))
-    .filter(({h})=>h.type === 'task' && h.eventTime !== null && h.lastLog === null && dateKey(h.eventTime) === todayKey)
+    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && h.lastLog === null && dateKey(h.eventTime) === todayKey)
     .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
-  const usedMinutes = events.reduce((sum,{h})=>sum + clampDuration(h.durationMinutes),0);
+  const usedMinutes = scheduled.reduce((sum,{h})=>sum + clampDuration(h.durationMinutes),0);
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
   let remaining = Math.max(0,totalMinutes - usedMinutes);
   const agendaItems = [];
@@ -28,33 +28,49 @@ function buildTodayAgenda(data,settings){
     const h = data[i];
     if(h.type === 'task' && h.lastLog !== null)continue;
     if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
+    if(!includeInTodayAgenda(h,settings))continue;
     const cost = clampDuration(h.durationMinutes);
     if(cost > remaining && agendaItems.length)continue; // skip, keep scanning for a smaller fit
     agendaItems.push({h,i});
     remaining -= cost;
     if(remaining <= 0)break;
   }
-  return { events, agendaItems, totalMinutes, usedMinutes, remainingMinutes:Math.max(0,remaining) };
+  return { scheduled, agendaItems, totalMinutes, usedMinutes, remainingMinutes:Math.max(0,remaining) };
 }
 
-// PURE: interleave events (hard time) and fill items (soft estimate) into a
+// PURE: applies user-facing Today agenda inclusion settings.
+function includeInTodayAgenda(h,settings){
+  if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false)return true;
+  if(h.type === 'task'){
+    const when = taskWhen(h);
+    const left = when !== null ? daysUntil(when) : null;
+    return settings.showDueTasksInAgenda !== false && left !== null && left <= 0;
+  }
+  if(h.type === 'zero')return false;
+  const days = daysSince(h.lastLog);
+  const target = effectiveTarget(h);
+  const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
+  return settings.showDueHabitsInAgenda !== false && days !== null && days >= target && scheduleDistance === 0;
+}
+
+// PURE: interleave scheduled tasks (hard time) and fill items (soft estimate) into a
 // single time-ordered row list. The fill clock starts at "now" and walks
-// forward; events jump the clock past their slot so nothing overlaps.
+// forward; scheduled tasks jump the clock past their slot so nothing overlaps.
 function buildTodayTimeline(agenda,now = Date.now()){
   const rows = [];
   let clock = ceilToMinutes(now,5);
   let fillIdx = 0;
-  let eventIdx = 0;
-  const events = agenda.events;
+  let scheduledIdx = 0;
+  const scheduled = agenda.scheduled;
   const fills = agenda.agendaItems;
-  while(fillIdx < fills.length || eventIdx < events.length){
-    const ev = events[eventIdx];
+  while(fillIdx < fills.length || scheduledIdx < scheduled.length){
+    const ev = scheduled[scheduledIdx];
     const fill = fills[fillIdx];
     if(ev && (!fill || ev.h.eventTime <= clock)){
       const end = ev.h.eventTime + clampDuration(ev.h.durationMinutes) * 60000;
-      rows.push({ kind:'event', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true });
+      rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true });
       if(end > clock)clock = end;
-      eventIdx += 1;
+      scheduledIdx += 1;
     }else if(fill){
       const cost = clampDuration(fill.h.durationMinutes) * 60000;
       rows.push({ kind:'fill', h:fill.h, i:fill.i, start:clock, end:clock + cost, hard:false });
@@ -82,13 +98,13 @@ function agendaTimeLabel(ts){
 function agendaSummary(agenda){
   if(agenda.totalMinutes <= 0)return 'No capacity set for today. Add availability in settings to see a timed plan.';
   const free = agenda.remainingMinutes;
-  if(agenda.events.length && free <= 0){
-    const ev = agenda.events.length === 1 ? '1 scheduled' : `${agenda.events.length} scheduled`;
+  if(agenda.scheduled.length && free <= 0){
+    const ev = agenda.scheduled.length === 1 ? '1 scheduled' : `${agenda.scheduled.length} scheduled`;
     return `${ev} fill the day.`;
   }
   const parts = [];
-  if(agenda.events.length){
-    parts.push(agenda.events.length === 1 ? '1 scheduled' : `${agenda.events.length} scheduled`);
+  if(agenda.scheduled.length){
+    parts.push(agenda.scheduled.length === 1 ? '1 scheduled' : `${agenda.scheduled.length} scheduled`);
   }
   parts.push(`${Math.round(free)}m free`);
   return parts.join(' · ');
@@ -108,7 +124,7 @@ function renderTodayAgenda(){
     wrap.innerHTML = `<div class="agenda-empty">
       <i class="ti ti-calendar-off" aria-hidden="true"></i>
       <p>Nothing planned for today.</p>
-      <span>Add a task or mark a habit due today.</span>
+      <span>Add a scheduled task, plan an entry, or turn on Today agenda items in settings.</span>
     </div>`;
     return;
   }
@@ -143,18 +159,18 @@ function agendaRowMarkup(row,now){
   const toneCls = cardTone(h);
   const accent = visualClassColor(toneCls);
   const isPast = row.end < now;
-  const cue = row.kind === 'event' ? eventCue(h) : cardCue(h);
+  const cue = row.kind === 'scheduled' ? scheduledCue(h) : cardCue(h);
   const dur = clampDuration(h.durationMinutes);
-  const softTag = row.kind === 'event'
+  const softTag = row.kind === 'scheduled'
     ? '<span class="agenda-tag hard">fixed</span>'
     : '<span class="agenda-tag soft">approx</span>';
-  const meta = row.kind === 'event'
+  const meta = row.kind === 'scheduled'
     ? `${dur}m`
     : [h.type === 'task' ? 'task' : 'habit', `${dur}m`].filter(Boolean).join(' · ');
   return `<button class="agenda-row ${row.kind}${isPast ? ' is-past' : ''} ${toneCls}" data-agenda-idx="${row.i}" style="--card-accent:${accent};">
     <span class="agenda-clock">
       <b>${agendaTimeLabel(row.start)}</b>
-      <small>${row.kind === 'event' ? '' : agendaTimeLabel(row.end)}</small>
+      <small>${row.kind === 'scheduled' ? '' : agendaTimeLabel(row.end)}</small>
     </span>
     <span class="agenda-dot" style="background:${c.icon};"></span>
     <span class="agenda-body">

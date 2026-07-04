@@ -1,4 +1,4 @@
-const CACHE = 'habits-v9';
+const CACHE = 'habits-v12';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 
 const PRECACHE = [
@@ -15,6 +15,7 @@ const PRECACHE = [
   './js/detail-view.js',
   './js/overview-view.js',
   './js/today-view.js',
+  './js/push-client.js',
   './js/reminders.js',
   './js/shell-ui.js',
   './js/emoji-suggest.js',

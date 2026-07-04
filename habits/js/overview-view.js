@@ -310,7 +310,7 @@ function renderDayLogs(key){
     const actualCount = count - plannedCount;
     const remove = plannedCount ? `<button class="mini-text-btn" data-remove-plan="${index}" data-plan-day="${key}">remove</button>` : '';
     const move = plannedCount ? `<button class="mini-text-btn" data-move-plan="${index}" data-plan-day="${key}">move</button>` : '';
-    const open = scheduled.length ? `<button class="mini-text-btn" data-open-day-item="${index}">open</button>` : '';
+    const open = `<button class="mini-text-btn" data-open-day-item="${index}">open</button>`;
     const entryMeta = plannedCount ? `${plannedCount} planned${actualCount ? `, ${actualCount} done` : ''}` : actualCount ? `${actualCount} ${actualCount === 1 ? 'entry' : 'entries'}` : '';
     const scheduledMeta = scheduled.join(', ');
     const meta = [scheduledMeta,entryMeta].filter(Boolean).join(' · ');

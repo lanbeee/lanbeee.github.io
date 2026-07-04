@@ -71,10 +71,21 @@
  * @property {'quiet'|'watch'|'recent'|'active'} stopMode      — stop-habit policy selector
  * @property {number} rhythmBias                               — -100 to 100, favours shorter or longer rhythms
  * @property {boolean} showSnoozed                             — render snoozed habits faded on home
+ * @property {boolean} showSampleOnCards                       — show sample marker chip on home cards
+ * @property {boolean} showPinnedOnCards                       — show pinned chip on home cards
+ * @property {boolean} showTaskDateOnCards                     — show task due/scheduled chip on home cards
+ * @property {boolean} showPlansOnCards                        — show planned-entry chip on home cards
+ * @property {boolean} showDayScheduleOnCards                  — show weekday/monthday schedule chip on home cards
+ * @property {boolean} showTimeWindowOnCards                   — show time-window chip on home cards
+ * @property {boolean} showSnoozedUntilOnCards                 — show snoozed-until chip on home cards
  * @property {boolean} showDurationOnCards                     — show duration chip on home cards
  * @property {boolean} showRepetitionOnCards                   — show rhythm chip on home cards
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
+ * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
+ * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
+ * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
+ * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
  * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
@@ -140,7 +151,7 @@ function saveSortSettings(settings){
 
 function normalize(items){
   return items.map(raw => {
-    // Tasks and events are now a single one-off type. Legacy 'event' records
+    // Tasks and legacy events are now a single one-off type. Legacy 'event' records
     // migrate to 'task' with eventTime preserved (a timed task = appointment).
     let type = raw.type || 'keepup';
     const wasEvent = type === 'event';
@@ -150,7 +161,7 @@ function normalize(items){
     if(wasEvent && eventTime !== null && dueDate === null)dueDate = clampDayTimestamp(eventTime);
     const hardDue = type === 'task' ? Boolean(raw.hardDue) : false;
     const logs = normalizeLogs(raw.logs);
-    // A past event has already happened — record it as a completed entry so it
+    // A past legacy event has already happened — record it as a completed entry so it
     // fades into history instead of nagging as an overdue task.
     if(wasEvent && eventTime !== null && eventTime < Date.now() && !logs.some(l=>logTime(l) === eventTime)){
       logs.push(eventTime);

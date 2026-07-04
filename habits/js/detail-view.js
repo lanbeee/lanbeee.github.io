@@ -38,7 +38,7 @@ function openDetail(i){
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
   $('detail-hard-due').checked = Boolean(h.hardDue);
-  $('detail-event-time').value = datetimeInputValue(h.eventTime);
+  $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
   syncDetailDueUi();
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
@@ -107,7 +107,7 @@ function openDetailSchedule(i){
 function detailHeaderLine(h){
   if(h.type === 'task'){
     const parts = [];
-    if(h.eventTime !== null)parts.push(eventWhenLabel(h.eventTime));
+    if(h.eventTime !== null)parts.push(scheduledWhenLabel(h.eventTime));
     else parts.push(cardCue(h));
     if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
     if(hasDaySchedule(h)){
@@ -126,8 +126,8 @@ function detailHeaderLine(h){
   return parts.filter(Boolean).join(' · ');
 }
 
-// PURE: format an event time as a friendly label
-function eventWhenLabel(ts){
+// PURE: format a scheduled time as a friendly label
+function scheduledWhenLabel(ts){
   const left = daysUntil(ts);
   const time = new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
   if(left === null)return '';
@@ -180,7 +180,7 @@ function currentDetailTune(){
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
     dueDate:parseDateInput($('detail-due-date').value),
     hardDue:$('detail-hard-due').checked,
-    eventTime:parseDateTimeInput($('detail-event-time').value)
+    eventTime:parseDateTimeInput($('detail-scheduled-time').value)
   };
 }
 
@@ -221,7 +221,7 @@ function restoreDetailTune(){
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
   $('detail-hard-due').checked = Boolean(detailTuneOriginal.hardDue);
-  $('detail-event-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
+  $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
   syncDetailDueUi();
   renderTopicChips('detail-topic-chips',detailTuneOriginal.topics);
   renderScheduleChips('detail',detailTuneOriginal);
@@ -305,7 +305,7 @@ function renderStats(h){
   if(h.type === 'task'){
     const primary = h.lastLog !== null
       ? 'completed'
-      : (timed ? eventWhenLabel(h.eventTime) : (h.dueDate ? cardCue(h) : 'someday'));
+      : (timed ? scheduledWhenLabel(h.eventTime) : (h.dueDate ? cardCue(h) : 'someday'));
     const secondary = (timed && h.lastLog === null)
       ? `${clampDuration(h.durationMinutes)}m`
       : (h.hardDue && h.lastLog === null ? 'hard deadline' : 'task');
@@ -478,7 +478,7 @@ function aboutText(h){
   const days = daysSince(h.lastLog);
   if(h.type === 'task'){
     if(h.lastLog !== null)return `Done. Logged ${entryWhen(h.lastLog)}.`;
-    if(h.eventTime !== null)return `Scheduled ${eventWhenLabel(h.eventTime)}. Fixed time — never rescheduled.`;
+    if(h.eventTime !== null)return `Scheduled ${scheduledWhenLabel(h.eventTime)}. Fixed time — never rescheduled.`;
     if(h.dueDate === null)return 'A someday task. Pin it or add a due date to bring it forward.';
     const left = daysUntil(h.dueDate);
     if(left === null)return 'A task with a due date.';
@@ -511,7 +511,7 @@ function trendText(h){
   const avg = avgInterval(h.logs);
   if(h.type === 'task'){
     if(h.lastLog !== null)return 'completed';
-    if(h.eventTime !== null)return eventWhenLabel(h.eventTime);
+    if(h.eventTime !== null)return scheduledWhenLabel(h.eventTime);
     if(h.dueDate === null)return 'someday';
     const left = daysUntil(h.dueDate);
     if(left === null)return 'due';
@@ -542,11 +542,11 @@ function renderGraph(h){
   const graph = $('detail-graph');
   if(h.type === 'task'){
     const when = h.eventTime !== null
-      ? eventWhenLabel(h.eventTime)
+      ? scheduledWhenLabel(h.eventTime)
       : (h.dueDate ? entryWhen(h.dueDate) : 'no due date');
     const note = h.lastLog !== null ? `Completed ${entryWhen(h.lastLog)}.` : aboutText(h);
     graph.innerHTML = `
-      <div class="graph-empty task-event-summary">
+      <div class="graph-empty task-scheduled-summary">
         <b>${escapeHtml(when)}</b>
         <span>${escapeHtml(note)}</span>
       </div>`;
@@ -697,7 +697,7 @@ function hasPlannedEntryForDay(h,key){
   return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
 }
 
-// PURE: checks whether a task/event has its own scheduled date on a day.
+// PURE: checks whether a task has its own scheduled date on a day.
 function hasScheduledMarkerForDay(h,key){
   return (
     (isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key) ||
@@ -773,7 +773,7 @@ function exportToCalendar(i){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${(h.name || 'event').replace(/[^a-z0-9]+/gi,'-').slice(0,40)}.ics`;
+  a.download = `${(h.name || 'task').replace(/[^a-z0-9]+/gi,'-').slice(0,40)}.ics`;
   document.body.appendChild(a);
   a.click();
   setTimeout(()=>{if(a.isConnected)document.body.removeChild(a);URL.revokeObjectURL(url);},1000);

@@ -357,6 +357,18 @@ function closeSheet(id){
   if(id === 'add-sheet')updateKeyboardLift();
 }
 
+// HYBRID: opens a day drill-down item in detail without leaving the day sheet
+// covering it on phone layouts. Wide layouts keep the day sheet open because
+// detail mounts into the side pane.
+function openDetailFromDayLogs(idx){
+  if(typeof openDetail !== 'function')return;
+  if(!paneTierActive() && $('day-logs-sheet')?.classList.contains('open')){
+    dayLogsKey = null;
+    closeSheet('day-logs-sheet');
+  }
+  openDetail(idx);
+}
+
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
   return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'today-sheet';

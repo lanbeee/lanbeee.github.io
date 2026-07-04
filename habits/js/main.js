@@ -44,11 +44,11 @@ function syncAddTypeUi(type){
   $('target-help').textContent = rhythmHelp(type);
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
-  $('event-time-row').hidden = type !== 'task';
+  $('scheduled-time-row').hidden = type !== 'task';
   if(type === 'task')syncTaskDueUi();
 }
 
-// PURE: next clean hour, used to make creating a new event one tap lighter.
+// PURE: next clean hour, used to make scheduled tasks one tap lighter.
 function defaultEventTime(){
   const d = new Date(Date.now() + 60 * 60000);
   d.setMinutes(0,0,0);
@@ -188,7 +188,7 @@ $('do-save').addEventListener('click',()=>{
   if(type === 'task'){
     record.dueDate = parseDateInput($('ting-due-date').value);
     record.hardDue = $('ting-hard-due').checked;
-    record.eventTime = parseDateTimeInput($('ting-event-time').value);
+    record.eventTime = parseDateTimeInput($('ting-scheduled-time').value);
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
     record.flexibilityDays = record.dueDate === null ? 0 : 3;
   }
@@ -259,7 +259,7 @@ function setDetailTypeUi(type){
   $('detail-target-help').textContent = rhythmHelp(type);
   $('detail-due-row').hidden = type !== 'task';
   $('detail-due-hint').hidden = type !== 'task';
-  $('detail-event-row').hidden = type !== 'task';
+  $('detail-scheduled-row').hidden = type !== 'task';
   const flexHelp = $('detail-flexibility-help');
   if(flexHelp){
     flexHelp.textContent = type === 'task'
@@ -529,7 +529,7 @@ $('detail-due-clear').addEventListener('click',()=>{
   setDetailDirty();
 });
 $('detail-hard-due').addEventListener('change',()=>setDetailDirty());
-$('detail-event-time').addEventListener('input',()=>setDetailDirty());
+$('detail-scheduled-time').addEventListener('input',()=>setDetailDirty());
 $('detail-schedule-view-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-schedule-view]');
   if(!opt)return;
@@ -937,7 +937,7 @@ $('day-logs-list').addEventListener('click',e=>{
   if(openBtn){
     const idx = parseInt(openBtn.dataset.openDayItem,10);
     if(Number.isNaN(idx))return;
-    if(typeof openDetail === 'function')openDetail(idx);
+    openDetailFromDayLogs(idx);
     return;
   }
   const removeBtn = e.target.closest('[data-remove-plan]');

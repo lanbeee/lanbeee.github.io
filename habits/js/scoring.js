@@ -401,7 +401,7 @@ function typeSettingScale(h,settings){
   if(h.type === 'keepup')return settingScale(settings.buildWeight);
   if(h.type === 'reduce')return settingScale(settings.limitWeight);
   if(h.type === 'zero')return settingScale(settings.stopWeight);
-  return 1; // task / event — not gated by a per-type weight in v1
+  return 1; // task — not gated by a per-type weight in v1
 }
 
 /**
@@ -715,7 +715,7 @@ function visibleIndices(data,settingsOverride = null){
 function searchText(h){
   const typeLabel = h.type === 'keepup' ? 'build routine keepup'
     : h.type === 'reduce' ? 'limit reduce less'
-    : h.type === 'task' ? (isTimedTask(h) ? 'task appointment event fixed time' : 'task todo one-off due someday')
+    : h.type === 'task' ? (isTimedTask(h) ? 'task appointment scheduled fixed time' : 'task todo one-off due someday')
     : 'stop quit zero';
   const schedule = scheduledDays(h);
   const pref = preferredDays(h);
