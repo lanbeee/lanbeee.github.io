@@ -78,7 +78,6 @@
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
- * @property {boolean} autoOpenToday                           — open today's activity when opening the calendar
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
  * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
  * @property {string[]} topics                                 — master topic list (max 24)

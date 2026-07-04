@@ -244,6 +244,10 @@ function syncDetailDueUi(){
   const hasDate = Boolean(dueInput.value);
   if(clearBtn)clearBtn.hidden = !hasDate;
   if(hardToggle)hardToggle.hidden = !hasDate;
+  const hint = $('detail-due-hint');
+  if(hint)hint.textContent = hasDate
+    ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
+    : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
 }
 
 // HYBRID: switches allowed/preferred schedule section

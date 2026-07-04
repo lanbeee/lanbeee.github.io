@@ -40,14 +40,12 @@ $('type-seg').addEventListener('click',e=>{
 function syncAddTypeUi(type){
   const isHabit = type === 'keepup' || type === 'reduce';
   $('target-slider-row').style.display = isHabit ? 'flex' : 'none';
-  $('target-help').style.display = type === 'zero' ? 'none' : 'block';
+  $('target-help').style.display = 'block';
   $('target-help').textContent = rhythmHelp(type);
   $('task-due-row').hidden = type !== 'task';
+  $('task-due-hint').hidden = type !== 'task';
   $('event-time-row').hidden = type !== 'event';
-  if(type === 'task' && !$('ting-due-date').value){
-    $('ting-due-date').value = dateKey(Date.now());
-    syncTaskDueUi();
-  }
+  if(type === 'task')syncTaskDueUi();
   if(type === 'event' && !$('ting-event-time').value){
     $('ting-event-time').value = datetimeInputValue(defaultEventTime());
   }
@@ -106,15 +104,8 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   closeSearch();
   overviewMonthOffset = 0;
   overviewTopicFilter = 'all';
-  const todayKey = todayIso();
-  const autoOpen = sortSettings.autoOpenToday && hasItemsOnDay(todayKey);
-  dayLogsKey = autoOpen ? todayKey : null;
   renderOverview();
   openSheet('overview-sheet');
-  if(autoOpen){
-    renderDayLogs(todayKey);
-    openSheet('day-logs-sheet');
-  }
 });
 $('bar-open-today')?.addEventListener('click',openToday);
 $('open-today').addEventListener('click',openToday);
@@ -239,6 +230,10 @@ function syncTaskDueUi(){
   if(hardToggle && hardToggle.closest('.hard-due-toggle')){
     hardToggle.closest('.hard-due-toggle').hidden = !hasDate;
   }
+  const hint = $('task-due-hint');
+  if(hint)hint.textContent = hasDate
+    ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
+    : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
 }
 $('ting-due-date').addEventListener('input',syncTaskDueUi);
 $('ting-due-clear').addEventListener('click',()=>{
@@ -255,10 +250,11 @@ function clampRhythm(value){
 
 // PURE: return help text for a rhythm type
 function rhythmHelp(type){
-  if(type === 'reduce')return 'Target is the gap you want before it happens again.';
-  if(type === 'task')return 'A one-off to-do. Add a due date, or leave it as a someday task.';
-  if(type === 'event')return 'A fixed point in time, like an appointment. It is never rescheduled.';
-  return 'Target days between entries.';
+  if(type === 'reduce')return 'Something to space out. Target is the gap you want before it can repeat.';
+  if(type === 'zero')return 'Something to avoid. Log it each time it happens; the aim is longer gaps.';
+  if(type === 'task')return 'A one-off to-do. Add a due date, or leave it dateless.';
+  if(type === 'event')return 'A fixed appointment at a set time. It is never rescheduled.';
+  return 'Something to do regularly. Target is the days between entries.';
 }
 
 // RENDER: update detail type segmented control + help
@@ -268,9 +264,10 @@ function setDetailTypeUi(type){
   });
   const isHabit = type === 'keepup' || type === 'reduce';
   $('detail-slider-row').style.display = isHabit ? 'flex' : 'none';
-  $('detail-target-help').style.display = type === 'zero' ? 'none' : 'block';
+  $('detail-target-help').style.display = 'block';
   $('detail-target-help').textContent = rhythmHelp(type);
   $('detail-due-row').hidden = type !== 'task';
+  $('detail-due-hint').hidden = type !== 'task';
   $('detail-event-row').hidden = type !== 'event';
   const flexHelp = $('detail-flexibility-help');
   if(flexHelp){
@@ -879,31 +876,14 @@ $('settings-reset-yes').addEventListener('click',()=>{
   showToast('settings reset');
 });
 
-// PURE: check if any habit logged on a day
-function hasItemsOnDay(key){
-  const data = load();
-  return data.some(h=>
-    normalizeLogs(h.logs).some(log=>dateKey(logTime(log))===key) ||
-    (h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === key) ||
-    (h.type === 'task' && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
-  );
-}
-
 $('open-overview').addEventListener('click',()=>{
   if(!load().length)return;
   closeSearch();
   overviewMonthOffset = 0;
   overviewTopicFilter = 'all';
   overviewRangeFilter = 'recent';
-  const todayKey = todayIso();
-  const autoOpen = sortSettings.autoOpenToday && hasItemsOnDay(todayKey);
-  dayLogsKey = autoOpen ? todayKey : null;
   renderOverview();
   openSheet('overview-sheet');
-  if(autoOpen){
-    renderDayLogs(todayKey);
-    openSheet('day-logs-sheet');
-  }
 });
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});

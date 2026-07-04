@@ -53,7 +53,6 @@ const DEFAULT_SORT_SETTINGS = {
   showFlexibilityOnCards:false,
   showTopicsOnCards:false,
   reachAssist:true,
-  autoOpenToday:true,
   reminders:false,
   pushDetailed:false,
   defaultType:'keepup',

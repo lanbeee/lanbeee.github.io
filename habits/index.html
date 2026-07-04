@@ -119,13 +119,14 @@
         <div class="plan-field-main">
           <label class="plan-date-label" for="ting-due-date">due</label>
           <input type="date" id="ting-due-date" class="plan-date-input" />
-          <button type="button" class="mini-text-btn" id="ting-due-clear" hidden>someday</button>
+          <button type="button" class="mini-text-btn" id="ting-due-clear" hidden>no date</button>
         </div>
         <label class="setting-toggle compact-toggle hard-due-toggle">
           <input type="checkbox" id="ting-hard-due" />
           <span>hard deadline</span>
         </label>
       </div>
+      <p class="field-hint" id="task-due-hint" hidden></p>
       <div class="plan-field-row" id="event-time-row" hidden>
         <label class="plan-date-label" for="ting-event-time">when</label>
         <input type="datetime-local" id="ting-event-time" class="plan-date-input" />
@@ -204,13 +205,14 @@
             <div class="plan-field-main">
               <label class="plan-date-label" for="detail-due-date">due</label>
               <input type="date" id="detail-due-date" class="plan-date-input" />
-              <button type="button" class="mini-text-btn" id="detail-due-clear" hidden>someday</button>
+              <button type="button" class="mini-text-btn" id="detail-due-clear" hidden>no date</button>
             </div>
             <label class="hard-due-toggle">
               <input type="checkbox" id="detail-hard-due" />
               <span>hard deadline</span>
             </label>
           </div>
+          <p class="field-hint" id="detail-due-hint" hidden></p>
           <div class="plan-field-row" id="detail-event-row" hidden>
             <label class="plan-date-label" for="detail-event-time">when</label>
             <input type="datetime-local" id="detail-event-time" class="plan-date-input" />
@@ -398,10 +400,6 @@
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
               <span><b>show planned items early</b><small>Plans due soon can move near the top.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="autoOpenToday" aria-pressed="false">
-              <span><b>open today from calendar</b><small>Open today's activity when the calendar has entries or plans for today.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
