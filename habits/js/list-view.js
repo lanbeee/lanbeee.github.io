@@ -1149,7 +1149,10 @@ function toastItemName(h){
 function entryToastAction(undo){
   if(!undo || undo.type !== 'entry' || !Number.isInteger(undo.idx))return null;
   if(undo.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
-  if(undo.plan)return {type:'complete-plan',label:'done now'};
+  if(undo.plan){
+    if(dateKey(undo.ts) <= todayIso())return {type:'complete-plan',label:'done now'};
+    return null;
+  }
   if(dateKey(undo.ts) === todayIso())return {type:'plan-instead',label:'plan instead'};
   return {type:'plan-today',label:'plan today'};
 }
@@ -1270,7 +1273,7 @@ function logTingAt(i,ts){
 }
 
 // HYBRID: add a planned entry for a specific date, optionally preserving a time.
-function planTingOnDay(i,key,timeValue = ''){
+function planTingOnDay(i,key,timeValue = '',options = {}){
   const data = load();
   if(!data[i])return false;
   const base = new Date(`${key}T12:00:00`);
@@ -1283,7 +1286,14 @@ function planTingOnDay(i,key,timeValue = ''){
     minutes = time % 60;
   }
   const ts = new Date(base.getFullYear(),base.getMonth(),base.getDate(),hours,minutes,0,0).getTime();
-  const undo = withEntryToastAction({type:'entry',idx:i,ts,plan:true,snoozedUntil:data[i].snoozedUntil || null});
+  const undo = withEntryToastAction({
+    type:'entry',
+    idx:i,
+    ts,
+    plan:true,
+    snoozedUntil:data[i].snoozedUntil || null,
+    openAction:options.openAction
+  });
   data[i].logs = normalizeLogs([...(data[i].logs || []),{ts,plan:true}]);
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!save(data))return false;
@@ -1328,7 +1338,7 @@ function runPendingUndoAction(){
     data[idx].logs = normalizeLogs([...(data[idx].logs || []),{ts:pendingUndo.consumedPlanTs,plan:true}]);
     data[idx].lastLog = latestActualLog(data[idx].logs);
     if(save(data)){
-      showUndo('Plan kept',{type:'entry',idx,ts:pendingUndo.consumedPlanTs,plan:true,snoozedUntil:data[idx].snoozedUntil || null});
+      showUndo('Plan kept',{type:'entry',idx,ts:pendingUndo.consumedPlanTs,plan:true,snoozedUntil:data[idx].snoozedUntil || null,openAction:false});
       refreshOpenViews();
     }
   }
@@ -1345,6 +1355,30 @@ function removeEntryAt(i,ts,planOnly = false){
   data[i].logs = logs;
   data[i].lastLog = latestActualLog(logs);
   return save(data);
+}
+
+// HYBRID: remove all planned entries for one item/day with a single undo.
+function removePlansOnDay(idx,key){
+  const data = load();
+  const h = data[idx];
+  if(!h)return false;
+  const logs = normalizeLogs(h.logs);
+  const removed = [];
+  const remaining = logs.filter(log=>{
+    if(isPlanLog(log) && dateKey(logTime(log)) === key){
+      removed.push(logTime(log));
+      return false;
+    }
+    return true;
+  });
+  if(!removed.length)return false;
+  h.logs = normalizeLogs(remaining);
+  h.lastLog = latestActualLog(h.logs);
+  if(!save(data))return false;
+  const label = removed.length === 1 ? 'Plan removed' : 'Plans removed';
+  showUndo(label,{type:'remove-plans',idx,key,removed});
+  refreshOpenViews();
+  return true;
 }
 
 // HYBRID: move all of a habit's planned entries on fromKey to toKey (preserving
@@ -1408,6 +1442,15 @@ function undoLastAction(){
       const filtered = logs.filter(log=>!newSet.has(logTime(log)));
       moved.forEach(m=>filtered.push({ts:m.oldTs,plan:true}));
       data[idx].logs = normalizeLogs(filtered);
+      data[idx].lastLog = latestActualLog(data[idx].logs);
+    }
+  }
+  if(pendingUndo.type === 'remove-plans'){
+    const {idx,removed} = pendingUndo;
+    if(data[idx]){
+      const logs = normalizeLogs(data[idx].logs);
+      removed.forEach(ts=>logs.push({ts,plan:true}));
+      data[idx].logs = normalizeLogs(logs);
       data[idx].lastLog = latestActualLog(data[idx].logs);
     }
   }

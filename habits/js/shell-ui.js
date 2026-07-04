@@ -398,12 +398,23 @@ function showToast(text){
 }
 
 // HYBRID: shows undo toast and stores pending undo state
+function shouldShowUndoOpen(undo){
+  if(!undo || !Number.isInteger(undo.idx))return false;
+  if(undo.openAction === false)return false;
+  if(undo.type !== 'entry')return false;
+  if($('day-logs-sheet')?.classList.contains('open'))return false;
+  const detailOpen = $('detail-sheet')?.classList.contains('open');
+  const detailPaneOpen = getPane()?.dataset.activeSheet === 'detail-sheet';
+  if(detailIdx === undo.idx && (detailOpen || detailPaneOpen))return false;
+  return true;
+}
+
 function showUndo(text,undo){
   pendingUndo = undo;
   $('undo-text').textContent = text;
   const openBtn = $('undo-open');
   const planBtn = $('undo-plan');
-  if(openBtn)openBtn.hidden = !(undo && Number.isInteger(undo.idx));
+  if(openBtn)openBtn.hidden = !shouldShowUndoOpen(undo);
   if(planBtn){
     const label = undo?.toastActionLabel || '';
     planBtn.textContent = label;

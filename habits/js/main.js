@@ -950,7 +950,7 @@ $('day-log-add').addEventListener('click',()=>{
   if(Number.isNaN(idx))return;
   const h = load()[idx];
   if(!h || (h.type === 'task' && h.lastLog !== null))return;
-  if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || ''))return;
+  if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false}))return;
   if($('day-log-time'))$('day-log-time').value = '';
   renderDayLogs(dayLogsKey);
   refreshOpenViews();
@@ -970,14 +970,7 @@ $('day-logs-list').addEventListener('click',e=>{
   if(removeBtn){
     const idx = parseInt(removeBtn.dataset.removePlan,10);
     const key = removeBtn.dataset.planDay;
-    const data = load();
-    const h = data[idx];
-    if(!h)return;
-    const planned = normalizeLogs(h.logs).filter(log=>isPlanLog(log) && dateKey(logTime(log)) === key).map(logTime);
-    if(!planned.length)return;
-    planned.forEach(ts=>removeEntryAt(idx,ts,true));
-    showToast('plan removed');
-    refreshOpenViews();
+    removePlansOnDay(idx,key);
     return;
   }
   const moveBtn = e.target.closest('[data-move-plan]');
