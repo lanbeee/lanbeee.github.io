@@ -316,14 +316,14 @@ function updateSortButton(){
   const data = load();
   const count = data.length;
   const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
-  $('open-overview').classList.toggle('is-hidden',count < 2);
-  $('open-overview').disabled = count < 2;
+  $('open-overview').classList.toggle('is-hidden',count < 1);
+  $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
   $('open-search').disabled = count < 10 && !hasSearchableArchive;
   const barOverview = $('bar-open-overview');
   if (barOverview) {
-    barOverview.classList.toggle('is-hidden',count < 2);
-    barOverview.disabled = count < 2;
+    barOverview.classList.toggle('is-hidden',count < 1);
+    barOverview.disabled = count < 1;
   }
   const barSearch = $('bar-open-search');
   if (barSearch) {

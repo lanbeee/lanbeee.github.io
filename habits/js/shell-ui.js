@@ -277,7 +277,7 @@ function doNuke(i){
   const removed = data[i];
   if(!removed)return;
   // Cancel any scheduled push before removing.
-  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && (removed.type === 'task' || removed.type === 'event')){
+  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && removed.type === 'task'){
     cancelPush(reminderSignature(removed));
   }
   data.splice(i,1);

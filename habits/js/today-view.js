@@ -1,7 +1,7 @@
 // Today agenda — a literal "what does today look like" timeline.
 //
-// Events (type === 'event') are placed at their literal time. Tasks and habits
-// fill the gaps in rank order, each shown with a *soft* estimated range so the
+// Scheduled tasks are placed at their literal time. Tasks and habits fill the
+// gaps in rank order, each shown with a *soft* estimated range so the
 // list reads as "do these roughly in this order" rather than "be here at this
 // exact minute." This is the one surface that combines events + tasks + habits
 // into something that can replace a calendar and a to-do list.
@@ -83,12 +83,12 @@ function agendaSummary(agenda){
   if(agenda.totalMinutes <= 0)return 'No capacity set for today. Add availability in settings to see a timed plan.';
   const free = agenda.remainingMinutes;
   if(agenda.events.length && free <= 0){
-    const ev = agenda.events.length === 1 ? '1 event' : `${agenda.events.length} events`;
+    const ev = agenda.events.length === 1 ? '1 scheduled' : `${agenda.events.length} scheduled`;
     return `${ev} fill the day.`;
   }
   const parts = [];
   if(agenda.events.length){
-    parts.push(agenda.events.length === 1 ? '1 event' : `${agenda.events.length} events`);
+    parts.push(agenda.events.length === 1 ? '1 scheduled' : `${agenda.events.length} scheduled`);
   }
   parts.push(`${Math.round(free)}m free`);
   return parts.join(' · ');

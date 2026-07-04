@@ -16,11 +16,11 @@
 /**
  * A habit. Stored in the habits array under the `tings_v2` localStorage key.
  * The same record shape expresses all four item kinds via `type`; the fields
- * below marked with TaskFields / EventFields only carry meaning for that type.
+ * below marked with TaskFields only carry meaning for that type.
  * @typedef {Object} Habit
  * @property {string} name                    — display name (max 60 chars)
- * @property {'keepup'|'reduce'|'zero'|'task'|'event'} type  — build / limit / stop / one-off / fixed time
- * @property {number|null} target             — rhythm in days; null when type in zero/task/event
+ * @property {'keepup'|'reduce'|'zero'|'task'} type  — build / limit / stop / one-off
+ * @property {number|null} target             — rhythm in days; null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon
  * @property {boolean} pinned                 — stays above auto-sorted habits
@@ -153,7 +153,7 @@ function normalize(items){
     // A past event has already happened — record it as a completed entry so it
     // fades into history instead of nagging as an overdue task.
     if(wasEvent && eventTime !== null && eventTime < Date.now() && !logs.some(l=>logTime(l) === eventTime)){
-      logs.push({time:eventTime});
+      logs.push(eventTime);
     }
     const h = {
       name: raw.name || '',

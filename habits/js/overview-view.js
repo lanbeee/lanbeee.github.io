@@ -90,10 +90,10 @@ function buildDayTally(data,included){
       const tone = isPlan ? 'plan' : toneByDay.get(key) || entryTone(h.type);
       addEntry(ts,{name:h.name,type:h.type,tone,planned:isPlan});
     });
-    if(h.type === 'event' && h.eventTime !== null){
+    if(isTimedTask(h) && h.lastLog === null){
       addEntry(h.eventTime,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
     }
-    if(h.type === 'task' && h.dueDate !== null && h.lastLog === null){
+    if(h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null){
       addEntry(h.dueDate,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
     }
   });
@@ -288,10 +288,10 @@ function renderDayLogs(key){
     if(!matchesOverviewTopic(h,overviewTopicFilter))return;
     const entries = normalizeLogs(h.logs).filter(log=>dateKey(logTime(log)) === key);
     const scheduled = [];
-    if(h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === key){
-      scheduled.push('event');
+    if(isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key){
+      scheduled.push('scheduled');
     }
-    if(h.type === 'task' && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key){
+    if(h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key){
       scheduled.push(h.hardDue ? 'deadline' : 'due');
     }
     const count = entries.length;
@@ -329,7 +329,7 @@ function renderDayLogs(key){
   const addOptions = data
     .map((h,i)=>({h,i}))
     .filter(({h})=>matchesOverviewTopic(h,overviewTopicFilter))
-    .filter(({h})=>h.type !== 'event' && !(h.type === 'task' && h.lastLog !== null))
+    .filter(({h})=>!(h.type === 'task' && h.lastLog !== null))
     .sort((a,b)=>(a.h.name || '').localeCompare(b.h.name || '',undefined,{sensitivity:'base'}));
   $('day-log-ting').innerHTML = addOptions.length ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No active items</option>';
   $('day-log-add').disabled = !addOptions.length;

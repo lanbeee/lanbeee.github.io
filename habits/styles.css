@@ -812,9 +812,9 @@ body[data-pane-count="3"] #settings-sheet{
   border-radius:0;min-height:100dvh;max-height:100dvh;
   padding-top:calc(22px + env(safe-area-inset-top));
   padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + env(safe-area-inset-bottom));
-  transform:none;opacity:0;
-  transition:opacity var(--dur-med) ease;
-  will-change:opacity;
+  transform:none;opacity:1;
+  transition:none;
+  will-change:auto;
 }
 .add-sheet{
   padding-bottom:calc(88px + var(--keyboard-lift) + env(safe-area-inset-bottom));
@@ -1705,10 +1705,12 @@ select{
 .seg{
   display:flex;border:0.5px solid var(--border2);
   border-radius:var(--radius-sm);overflow:hidden;margin-bottom:12px;
+  background:var(--bg);
 }
 .seg-opt{
   flex:1;padding:10px 0;font-size:13px;font-family:inherit;text-align:center;
   cursor:pointer;background:transparent;border:none;color:var(--text2);
+  min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   -webkit-tap-highlight-color:transparent;
   transition:background var(--dur-fast) ease,color var(--dur-fast) ease;
 }
@@ -1914,6 +1916,7 @@ body[data-pane-count="3"] #undo-toast{
 }
 .agenda-row:active{background:var(--bg3);}
 .agenda-row.event{
+  grid-template-columns:54px 1fr;
   background:var(--purple-bg);border-color:transparent;
   box-shadow:inset 3px 0 0 var(--purple-icon);
 }

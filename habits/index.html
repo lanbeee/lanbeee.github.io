@@ -105,7 +105,6 @@
         <button class="seg-opt" data-v="reduce">limit</button>
         <button class="seg-opt" data-v="zero">stop</button>
         <button class="seg-opt" data-v="task">task</button>
-        <button class="seg-opt" data-v="event">event</button>
       </div>
       <p class="field-hint" id="target-help">Target days between entries.</p>
       <div class="range-row" id="target-slider-row">
@@ -128,7 +127,7 @@
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
       <div class="plan-field-row" id="event-time-row" hidden>
-        <label class="plan-date-label" for="ting-event-time">when</label>
+        <label class="plan-date-label" for="ting-event-time">scheduled</label>
         <input type="datetime-local" id="ting-event-time" class="plan-date-input" />
       </div>
       <div class="add-topics-section" id="add-topics-section">
@@ -214,7 +213,7 @@
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
           <div class="plan-field-row" id="detail-event-row" hidden>
-            <label class="plan-date-label" for="detail-event-time">when</label>
+            <label class="plan-date-label" for="detail-event-time">scheduled</label>
             <input type="datetime-local" id="detail-event-time" class="plan-date-input" />
           </div>
           <div class="seg schedule-seg" id="detail-schedule-view-seg">
@@ -266,7 +265,6 @@
             <button class="seg-opt" data-detail-type="reduce">limit</button>
             <button class="seg-opt" data-detail-type="zero">stop</button>
             <button class="seg-opt" data-detail-type="task">task</button>
-            <button class="seg-opt" data-detail-type="event">event</button>
           </div>
           <label class="setting-toggle habit-toggle">
             <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
@@ -446,11 +444,11 @@
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
-              <span><b>reminders</b><small>Heads-up for hard deadlines and events starting soon. On iPhone, reminders appear when you open the app.</small></span>
+              <span><b>reminders</b><small>Heads-up for hard deadlines and scheduled tasks starting soon. On iPhone, reminders appear when you open the app.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="pushDetailed" aria-pressed="false">
-              <span><b>include task names in notifications</b><small>When off, push notifications say "Task due today" without names. When on, the full task or event name is included.</small></span>
+              <span><b>include task names in notifications</b><small>When off, push notifications say "Task due today" without names. When on, the full task name is included.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
@@ -471,7 +469,7 @@
         </section>
         <section class="settings-block">
           <span class="settings-label">test data</span>
-          <p class="field-hint">Add sample habits, tasks, and events to try the app. Samples are marked with a test label and you can remove them in one tap. They stay until you remove them.</p>
+          <p class="field-hint">Add sample habits and tasks to try the app. Samples are marked with a test label and you can remove them in one tap. They stay until you remove them.</p>
           <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
           <div class="btn-row">
             <button class="btn primary" id="add-sort-samples">add samples</button>

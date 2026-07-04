@@ -2,7 +2,7 @@
 //
 // Design constraints:
 //  - The app is anti-nag for rhythm habits by design. Reminders ONLY cover the
-//    two rigid shapes: a hard-due task, or an event starting soon.
+//    two rigid shapes: a hard-due task, or a scheduled task starting soon.
 //  - The in-app banner is the primary channel (works offline, no permissions).
 //  - System notifications (in-app) layer on top where supported (desktop).
 //  - Push notifications (via CF Worker relay) fire at the exact due time even
@@ -16,23 +16,23 @@
 // in-app notification/local-notification scheduler. Push-client becomes native
 // push module; the CF Worker stays unchanged.
 
-const REMINDER_EVENT_WINDOW_MS = 60 * 60 * 1000; // events starting within 1 hour
+const REMINDER_EVENT_WINDOW_MS = 60 * 60 * 1000; // scheduled tasks starting within 1 hour
 const REMINDER_KEY = 'tings_reminders_v1';
 
 // PURE: stable signature for dedupe. Name + type + the fixed timestamp is
 // stable enough for a per-day dedupe set (ids aren't part of the schema).
 function reminderSignature(h){
-  const ts = h.type === 'event' ? h.eventTime : h.dueDate;
-  return `${h.type}|${h.name || ''}|${ts || ''}`;
+  const ts = isTimedTask(h) ? h.eventTime : h.dueDate;
+  return `${h.type}|${isTimedTask(h) ? 'scheduled' : 'due'}|${h.name || ''}|${ts || ''}`;
 }
 
 // PURE: gather actionable reminders. Hard-due tasks that are overdue/due today
-// and not done, plus events starting within the next hour. Sorted: soonest
-// event first, then overdue tasks. Returns [{h, i, kind, title, body, sig}].
+// and not done, plus scheduled tasks starting within the next hour. Sorted:
+// soonest scheduled task first, then overdue tasks.
 function gatherReminders(data,now = Date.now()){
   const out = [];
   data.forEach((h,i)=>{
-    if(h.type === 'task' && h.hardDue && h.dueDate !== null && h.lastLog === null){
+    if(h.type === 'task' && h.eventTime === null && h.hardDue && h.dueDate !== null && h.lastLog === null){
       const left = daysUntil(h.dueDate);
       if(left !== null && left <= 0){
         out.push({
@@ -42,13 +42,13 @@ function gatherReminders(data,now = Date.now()){
         });
       }
     }
-    if(h.type === 'event' && h.eventTime !== null){
+    if(isTimedTask(h) && h.lastLog === null){
       const ms = h.eventTime - now;
       if(ms >= 0 && ms <= REMINDER_EVENT_WINDOW_MS){
         const mins = Math.max(0,Math.round(ms / 60000));
         out.push({
-          h,i,kind:'event',sig:reminderSignature(h),
-          title:mins <= 1 ? 'Event starting now' : `Event in ${mins} min`,
+          h,i,kind:'scheduled',sig:reminderSignature(h),
+          title:mins <= 1 ? 'Scheduled task starting now' : `Scheduled task in ${mins} min`,
           body:h.name + ' · ' + agendaTimeLabel(h.eventTime)
         });
       }
@@ -57,8 +57,8 @@ function gatherReminders(data,now = Date.now()){
   // Events lead (they're time-critical "happening now"), soonest first; then
   // hard-due tasks, most-overdue first.
   out.sort((a,b)=>{
-    if(a.kind !== b.kind)return a.kind === 'event' ? -1 : 1;
-    if(a.kind === 'event')return (a.h.eventTime || 0) - (b.h.eventTime || 0);
+    if(a.kind !== b.kind)return a.kind === 'scheduled' ? -1 : 1;
+    if(a.kind === 'scheduled')return (a.h.eventTime || 0) - (b.h.eventTime || 0);
     return (a.h.dueDate || 0) - (b.h.dueDate || 0);
   });
   return out;
@@ -135,7 +135,7 @@ function checkReminders(options = {}){
     for(const r of reminders){
       if(scheduledPushSigs.has(r.sig))continue;
       scheduledPushSigs.add(r.sig);
-      const fireAt = r.kind === 'event'
+      const fireAt = r.kind === 'scheduled'
         ? r.h.eventTime - REMINDER_EVENT_WINDOW_MS
         : dayStart(r.h.dueDate);
       const body = settings.pushDetailed ? r.body : '';
@@ -143,7 +143,7 @@ function checkReminders(options = {}){
     }
     // Also schedule future-due items not yet in the reminder window.
     data.forEach(h=>{
-      if(h.type === 'task' && h.hardDue && h.dueDate !== null && h.lastLog === null){
+      if(h.type === 'task' && h.eventTime === null && h.hardDue && h.dueDate !== null && h.lastLog === null){
         const days = daysUntil(h.dueDate);
         if(days !== null && days > 0 && !h.lastLog){
           const sig = reminderSignature(h);
@@ -153,14 +153,14 @@ function checkReminders(options = {}){
           schedulePush(sig,'Upcoming task',body,sig,dayStart(h.dueDate));
         }
       }
-      if(h.type === 'event' && h.eventTime !== null){
+      if(isTimedTask(h) && h.lastLog === null){
         const ms = h.eventTime - Date.now();
         if(ms > REMINDER_EVENT_WINDOW_MS){
           const sig = reminderSignature(h);
           if(scheduledPushSigs.has(sig))return;
           scheduledPushSigs.add(sig);
           const body = settings.pushDetailed ? (h.name + ' · ' + agendaTimeLabel(h.eventTime)) : '';
-          schedulePush(sig,'Upcoming event',body,sig,h.eventTime - REMINDER_EVENT_WINDOW_MS);
+          schedulePush(sig,'Upcoming scheduled task',body,sig,h.eventTime - REMINDER_EVENT_WINDOW_MS);
         }
       }
     });
@@ -180,8 +180,8 @@ function renderReminderBanner(items){
   banner.hidden = false;
   const count = items.length;
   const first = items[0];
-  const isEvent = first.kind === 'event';
-  const icon = isEvent ? 'ti-clock-hour-4' : 'ti-alert-triangle';
+  const isScheduled = first.kind === 'scheduled';
+  const icon = isScheduled ? 'ti-clock-hour-4' : 'ti-alert-triangle';
   const summary = count === 1
     ? first.title
     : `${count} items need attention`;

@@ -216,7 +216,7 @@ function renderSortLabPreview(){
       .slice(0,6)
       .map(i=>{
         const h = samples[i];
-        const type = h.type === 'keepup' ? 'build' : h.type === 'reduce' ? 'limit' : h.type === 'task' ? 'task' : h.type === 'event' ? 'event' : 'stop';
+        const type = h.type === 'keepup' ? 'build' : h.type === 'reduce' ? 'limit' : h.type === 'task' ? (isTimedTask(h) ? 'scheduled' : 'task') : 'stop';
         return `<li><span>${escapeHtml(sampleDisplayName(h.name))}</span><b class="${h.type}">${type}</b></li>`;
       }).join('');
     const freshStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && daysSince(samples[i].lastLog) !== null && daysSince(samples[i].lastLog) < 3);
@@ -248,10 +248,10 @@ function sortSampleHabit(name,type,target,logs,options = {}){
   return {
     name:`Sample: ${name}`,
     type,
-    target:(type === 'zero' || type === 'task' || type === 'event') ? null : target,
+    target:(type === 'zero' || type === 'task') ? null : target,
     dueDate:type === 'task' ? (options.dueDate ?? null) : null,
     hardDue:type === 'task' ? Boolean(options.hardDue) : false,
-    eventTime:type === 'event' ? (options.eventTime ?? null) : null,
+    eventTime:type === 'task' ? (options.eventTime ?? null) : null,
     createdAt:options.createdAt || Date.now(),
     logs,
     emoji:options.emoji || '',
@@ -306,7 +306,7 @@ function buildSortSamples(){
     sortSampleHabit('task due today','task',null,[],{emoji:'📞',dueDate:sampleActual(0),topics:['relationships'],durationMinutes:15}),
     sortSampleHabit('task due next week','task',null,[],{emoji:'📝',dueDate:samplePlan(6),topics:['learning'],durationMinutes:45,flexibilityDays:3}),
     sortSampleHabit('someday task no date','task',null,[],{emoji:'🗂️',topics:['someday']}),
-    sortSampleHabit('dentist appointment event','event',null,[],{emoji:'🦷',eventTime:Date.now() + 4 * 3600000,durationMinutes:60,topics:['health']})
+    sortSampleHabit('dentist appointment task','task',null,[],{emoji:'🦷',eventTime:Date.now() + 4 * 3600000,dueDate:dayStart(Date.now()),durationMinutes:60,topics:['health']})
   ];
 }
 

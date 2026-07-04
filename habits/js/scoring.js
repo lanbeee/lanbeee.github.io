@@ -252,7 +252,7 @@ function planSignal(h,settings){
 
 function newHabitSignal(h,settings){
   if(h.lastLog !== null)return 0;
-  if(h.type === 'task' || h.type === 'event')return 0;
+  if(h.type === 'task')return 0;
   if(h.type === 'zero')return 8;
   if(h.type === 'reduce')return 16;
   const mode = settings.newBuildMode || 'gentle';

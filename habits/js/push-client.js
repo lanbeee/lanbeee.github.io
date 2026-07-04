@@ -11,6 +11,16 @@
 const DEVICE_ID_KEY = 'tings_device_id';
 const PUSH_SUB_KEY = 'tings_push_sub';
 
+// PURE: push is disabled until the deployment replaces placeholder config.
+function pushConfigured(){
+  return Boolean(
+    PUSH_WORKER_URL &&
+    VAPID_PUBLIC_KEY &&
+    !PUSH_WORKER_URL.includes('YOUR-ACCOUNT') &&
+    !VAPID_PUBLIC_KEY.includes('YOUR_VAPID_PUBLIC_KEY')
+  );
+}
+
 // PURE: get or create a stable device id stored in localStorage.
 function getDeviceId(){
   try{
@@ -40,6 +50,7 @@ function setPushSubscription(sub){
 // The browser shows a system permission prompt on first call.
 async function subscribeToPush(){
   try{
+    if(!pushConfigured())return null;
     if(!('Notification' in window) || Notification.permission === 'denied')return null;
     if(Notification.permission === 'default'){
       const perm = await Notification.requestPermission();
@@ -58,6 +69,10 @@ async function subscribeToPush(){
 
 // HYBRID: unsubscribe from push notifications and tell the Worker to forget us.
 async function unsubscribeFromPush(){
+  if(!pushConfigured()){
+    setPushSubscription(null);
+    return;
+  }
   try{
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
@@ -78,6 +93,7 @@ async function unsubscribeFromPush(){
 // PURE: send a schedule request to the Worker.
 async function schedulePush(sig,title,body,tag,fireAt){
   try{
+    if(!pushConfigured())return;
     const deviceId = getDeviceId();
     const subscription = getPushSubscription();
     if(!subscription || !fireAt)return;
@@ -93,6 +109,7 @@ async function schedulePush(sig,title,body,tag,fireAt){
 // PURE: cancel a scheduled push for a specific sig.
 async function cancelPush(sig){
   try{
+    if(!pushConfigured())return;
     const deviceId = getDeviceId();
     await fetch(PUSH_WORKER_URL + '/cancel',{
       method:'POST',
@@ -106,6 +123,7 @@ async function cancelPush(sig){
 // HYBRID: try to subscribe if not already subscribed. Called when reminders
 // are enabled and notification permission is already granted.
 async function initPush(){
+  if(!pushConfigured())return;
   const sub = getPushSubscription();
   if(sub)return; // already subscribed
   await subscribeToPush();

@@ -75,9 +75,9 @@ const STOP_MODE_POLICY = {
 };
 const BASE_SORT_MIX = {now:0.82,plan:1.45,due:1.35,progress:0.72,trend:0.7,rhythm:1,newness:1};
 const FOCUS_TYPE_SCALE = {
-  balanced:{keepup:1,reduce:1,zero:1,task:1,event:1},
-  build:{keepup:1.22,reduce:0.78,zero:1,task:0.92,event:1},
-  space:{keepup:0.88,reduce:1.22,zero:1.12,task:0.92,event:1}
+  balanced:{keepup:1,reduce:1,zero:1,task:1},
+  build:{keepup:1.22,reduce:0.78,zero:1,task:0.92},
+  space:{keepup:0.88,reduce:1.22,zero:1.12,task:0.92}
 };
 
 const $ = id => document.getElementById(id);

@@ -623,8 +623,8 @@ function renderCalendar(h){
     if(isPlanLog(log))planned += 1;
     else actual += 1;
   });
-  if(h.type === 'event')addPlannedMarker(h.eventTime);
-  if(h.type === 'task' && h.lastLog === null)addPlannedMarker(h.dueDate);
+  if(isTimedTask(h) && h.lastLog === null)addPlannedMarker(h.eventTime);
+  else if(h.type === 'task' && h.lastLog === null)addPlannedMarker(h.dueDate);
   const monthEntries = actual + planned;
   const activeDays = [...dayCounts.values()].filter(Boolean).length;
   $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
@@ -700,8 +700,8 @@ function hasPlannedEntryForDay(h,key){
 // PURE: checks whether a task/event has its own scheduled date on a day.
 function hasScheduledMarkerForDay(h,key){
   return (
-    (h.type === 'event' && h.eventTime !== null && dateKey(h.eventTime) === key) ||
-    (h.type === 'task' && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
+    (isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key) ||
+    (h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
   );
 }
 
@@ -739,15 +739,15 @@ function icsDate(ts){
 function icsEscape(s){
   return String(s || '').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
 }
-// PURE: build a VCALENDAR string for an event or a due-date task. Events become
-// timed VEVENTs; tasks become all-day VEVENTs with a 1-day VALARM so the system
+// PURE: build a VCALENDAR string for a scheduled or due-date task. Scheduled
+// tasks become timed VEVENTs; due-date tasks become all-day VEVENTs so the system
 // calendar fires a real alert — the bridge to native notifications on iOS.
 function icsForHabit(h){
   const uid = `tings-${h.type}-${h.eventTime || h.dueDate || Date.now()}-${Date.now()}@local`;
   const stamp = icsDateTime(Date.now());
   const summary = icsEscape(h.name || '');
   const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tings//Habits//EN','BEGIN:VEVENT',`UID:${uid}`,`DTSTAMP:${stamp}`];
-  if(h.type === 'event' && h.eventTime){
+  if(isTimedTask(h)){
     lines.push(`DTSTART:${icsDateTime(h.eventTime)}`);
     lines.push(`DTEND:${icsDateTime(h.eventTime + Math.max(1,clampDuration(h.durationMinutes)) * 60000)}`);
     lines.push(`SUMMARY:${summary}`);
@@ -762,7 +762,7 @@ function icsForHabit(h){
   return lines.join('\r\n');
 }
 
-// HYBRID: trigger a .ics download for an event or due-date task
+// HYBRID: trigger a .ics download for a scheduled or due-date task
 function exportToCalendar(i){
   const data = load();
   const h = data[i];

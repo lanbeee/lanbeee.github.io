@@ -44,11 +44,8 @@ function syncAddTypeUi(type){
   $('target-help').textContent = rhythmHelp(type);
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
-  $('event-time-row').hidden = type !== 'event';
+  $('event-time-row').hidden = type !== 'task';
   if(type === 'task')syncTaskDueUi();
-  if(type === 'event' && !$('ting-event-time').value){
-    $('ting-event-time').value = datetimeInputValue(defaultEventTime());
-  }
 }
 
 // PURE: next clean hour, used to make creating a new event one tap lighter.
@@ -191,14 +188,9 @@ $('do-save').addEventListener('click',()=>{
   if(type === 'task'){
     record.dueDate = parseDateInput($('ting-due-date').value);
     record.hardDue = $('ting-hard-due').checked;
-    record.flexibilityDays = record.dueDate === null ? 0 : 3;
-  }
-  if(type === 'event'){
     record.eventTime = parseDateTimeInput($('ting-event-time').value);
-    if(record.eventTime === null){
-      $('ting-event-time').focus();
-      return;
-    }
+    if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
+    record.flexibilityDays = record.dueDate === null ? 0 : 3;
   }
   data.push(record);
   if(save(data)){cancelAdd();render();openDetailSchedule(data.length - 1);}
@@ -252,8 +244,7 @@ function clampRhythm(value){
 function rhythmHelp(type){
   if(type === 'reduce')return 'Something to space out. Target is the gap you want before it can repeat.';
   if(type === 'zero')return 'Something to avoid. Log it each time it happens; the aim is longer gaps.';
-  if(type === 'task')return 'A one-off to-do. Add a due date, or leave it dateless.';
-  if(type === 'event')return 'A fixed appointment at a set time. It is never rescheduled.';
+  if(type === 'task')return 'A one-off to-do. Add a due date, a fixed scheduled time, or leave it dateless.';
   return 'Something to do regularly. Target is the days between entries.';
 }
 
@@ -268,7 +259,7 @@ function setDetailTypeUi(type){
   $('detail-target-help').textContent = rhythmHelp(type);
   $('detail-due-row').hidden = type !== 'task';
   $('detail-due-hint').hidden = type !== 'task';
-  $('detail-event-row').hidden = type !== 'event';
+  $('detail-event-row').hidden = type !== 'task';
   const flexHelp = $('detail-flexibility-help');
   if(flexHelp){
     flexHelp.textContent = type === 'task'
@@ -276,7 +267,7 @@ function setDetailTypeUi(type){
       : 'Adds a buffer to your target for planning purposes.';
   }
   const exportBtn = $('detail-export');
-  if(exportBtn)exportBtn.hidden = !(type === 'event' || type === 'task');
+  if(exportBtn)exportBtn.hidden = type !== 'task';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
 }
 
@@ -629,12 +620,8 @@ $('detail-save').addEventListener('click',()=>{
   if(!h)return;
   const current = currentDetailTune();
   if(!current.name){$('detail-habit-message').focus();return;}
-  if(current.type === 'event' && current.eventTime === null){
-    $('detail-event-time').focus();
-    return;
-  }
   // Cancel scheduled push for the pre-edit state (sig may change after edit).
-  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && (h.type === 'task' || h.type === 'event')){
+  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && h.type === 'task'){
     cancelPush(reminderSignature(h));
   }
   h.name = current.name.slice(0,60);
@@ -657,13 +644,14 @@ $('detail-save').addEventListener('click',()=>{
   const isHabit = current.type === 'keepup' || current.type === 'reduce';
   h.target = isHabit ? clampRhythmValue(current.target || h.target || 7) : null;
   if(current.type === 'task'){
-    h.dueDate = current.dueDate;
+    h.eventTime = current.eventTime;
+    h.dueDate = current.dueDate ?? (current.eventTime !== null ? dayStart(current.eventTime) : null);
     h.hardDue = current.hardDue;
   }else{
     h.dueDate = null;
     h.hardDue = false;
+    h.eventTime = null;
   }
-  h.eventTime = current.type === 'event' ? current.eventTime : null;
   if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
   save(data);
@@ -935,7 +923,7 @@ $('day-log-add').addEventListener('click',()=>{
   const idx = parseInt($('day-log-ting').value,10);
   if(Number.isNaN(idx))return;
   const h = load()[idx];
-  if(!h || h.type === 'event' || (h.type === 'task' && h.lastLog !== null))return;
+  if(!h || (h.type === 'task' && h.lastLog !== null))return;
   const ts = new Date(`${dayLogsKey}T12:00:00`).getTime();
   if(!logTingAt(idx,ts))return;
   renderDayLogs(dayLogsKey);
