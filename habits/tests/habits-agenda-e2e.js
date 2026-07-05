@@ -19,6 +19,7 @@ const { chromium } = require('playwright');
 
   await page.getByRole('button', { name: 'how it works' }).click();
   await page.getByRole('button', { name: 'settings', exact: true }).click();
+  await page.locator('#settings-testdata-head').click();
   await page.getByRole('button', { name: 'add samples' }).click();
   await page.waitForSelector('.ting-card .context-pill.agenda-suggested, .ting-card .context-pill.scheduled');
 
@@ -31,6 +32,7 @@ const { chromium } = require('playwright');
 
   await page.getByRole('button', { name: 'how it works' }).click();
   await page.getByRole('button', { name: 'settings', exact: true }).click();
+  await page.locator('#settings-blocked-head').click();
   await page.waitForSelector('#blocked-time-list');
 
   const blocks = await page.locator('#blocked-time-list .blocked-time-row').count();

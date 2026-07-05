@@ -30,8 +30,31 @@ function applyAddDefaults(){
   if(scheduledInput)scheduledInput.value = '';
   if($('ting-mark-done'))$('ting-mark-done').checked = true;
   document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',parseInt(o.dataset.priority,10) === DEFAULT_PRIORITY));
+  const moreBody = $('add-more-options');
+  const moreToggle = $('add-more-toggle');
+  if(moreBody)moreBody.hidden = true;
+  if(moreToggle)moreToggle.setAttribute('aria-expanded','false');
   syncAddTypeUi(selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
+}
+
+// HYBRID: reset the settings sheet to its fresh-open defaults — collapse
+// every collapsible section and drop any staged import. Called ONLY when the
+// sheet opens (or after a wholesale replace like a reset/import). It must NOT
+// run on every settings mutation, otherwise editing a field that lives inside
+// an open section (blocked time, topics, defaults, …) would collapse that
+// section out from under the user mid-edit.
+function resetSettingsSheetState(){
+  pendingImportPayload = null;
+  const backupConfirm = $('backup-import-confirm');
+  if(backupConfirm)backupConfirm.hidden = true;
+  const backupStatus = $('backup-status');
+  if(backupStatus)backupStatus.textContent = '';
+  document.querySelectorAll('.settings-collapse-head').forEach(head=>{
+    const body = $(head.dataset.collapseTarget);
+    if(body)body.hidden = true;
+    head.setAttribute('aria-expanded','false');
+  });
 }
 
 // HYBRID: sync settings UI from stored state
@@ -82,6 +105,85 @@ function syncSettingsControls(){
   syncSettingRange('build-start',sortSettings.buildRiseAt,'%');
   syncSettingRange('rhythm-bias',sortSettings.rhythmBias,'');
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
+}
+
+// HANDLER: export all habits + settings as a downloadable JSON file. This is
+// the only backup mechanism — everything otherwise lives only in this browser.
+function exportBackupFile(){
+  const backup = buildBackup();
+  const json = JSON.stringify(backup,null,2);
+  const blob = new Blob([json],{type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `habits-backup-${todayIso()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const status = $('backup-status');
+  if(status)status.textContent = 'Backup exported.';
+  if(typeof showToast === 'function')showToast('backup exported');
+}
+
+// HYBRID: read a chosen backup file, validate it, and stage it behind a
+// confirmation (importing replaces everything currently on this device).
+let pendingImportPayload = null;
+function handleBackupFileChosen(file){
+  if(!file)return;
+  const status = $('backup-status');
+  if(status)status.textContent = '';
+  const reader = new FileReader();
+  reader.onload = () => {
+    const parsed = parseBackup(reader.result);
+    if(!parsed.ok){
+      pendingImportPayload = null;
+      if(status)status.textContent = parsed.reason;
+      return;
+    }
+    pendingImportPayload = reader.result;
+    const summary = $('backup-import-summary');
+    if(summary){
+      const current = load().length;
+      summary.textContent = `Replace ${current} habit${current === 1 ? '' : 's'} currently on this device with ${parsed.habits.length} from this file? This cannot be undone — export a backup first if you are not sure.`;
+    }
+    const confirmBox = $('backup-import-confirm');
+    if(confirmBox)confirmBox.hidden = false;
+  };
+  reader.onerror = () => {
+    pendingImportPayload = null;
+    if(status)status.textContent = 'Could not read that file.';
+  };
+  reader.readAsText(file);
+}
+
+// HANDLER: confirm the staged import and replace local data.
+function confirmBackupImport(){
+  if(!pendingImportPayload)return;
+  const result = restoreBackup(pendingImportPayload);
+  pendingImportPayload = null;
+  const confirmBox = $('backup-import-confirm');
+  if(confirmBox)confirmBox.hidden = true;
+  const fileInput = $('backup-file-input');
+  if(fileInput)fileInput.value = '';
+  const status = $('backup-status');
+  if(result.ok){
+    syncSettingsControls();
+    if(typeof render === 'function')render();
+    if(status)status.textContent = `Imported ${result.count} habit${result.count === 1 ? '' : 's'}.`;
+    if(typeof showToast === 'function')showToast('backup imported');
+  }else if(status){
+    status.textContent = result.reason;
+  }
+}
+
+// HANDLER: cancel a staged import without changing anything.
+function cancelBackupImport(){
+  pendingImportPayload = null;
+  const fileInput = $('backup-file-input');
+  if(fileInput)fileInput.value = '';
+  const confirmBox = $('backup-import-confirm');
+  if(confirmBox)confirmBox.hidden = true;
 }
 
 // HYBRID: remove old sort-lab sample habits now that the lab is no longer part

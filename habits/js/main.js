@@ -36,6 +36,18 @@ $('type-seg').addEventListener('click',e=>{
   syncAddTypeUi(selectedType);
 });
 
+// WIRE: add-sheet "more options" disclosure (priority, hard deadline,
+// scheduled time, topics) — collapsed by default so a first-time user only
+// sees name, type, and the one field that matters for that type.
+$('add-more-toggle')?.addEventListener('click',()=>{
+  const body = $('add-more-options');
+  const toggle = $('add-more-toggle');
+  if(!body || !toggle)return;
+  const opening = body.hidden;
+  body.hidden = !opening;
+  toggle.setAttribute('aria-expanded',String(opening));
+});
+
 // PURE: read the selected priority from the add-sheet segmented control
 function selectedAddPriority(){
   const on = document.querySelector('#ting-priority-seg .seg-opt.on');
@@ -57,6 +69,7 @@ function syncAddTypeUi(type){
   $('target-help').textContent = rhythmHelp(type);
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
+  $('task-hard-due-row').hidden = type !== 'task';
   $('scheduled-time-row').hidden = type !== 'task';
   if(type === 'task'){
     syncTaskDueUi();
@@ -788,6 +801,7 @@ $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cl
 $('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('open-settings').addEventListener('click',()=>{
   closeSheet('about-sheet');
+  resetSettingsSheetState();
   syncSettingsControls();
   openSheet('settings-sheet');
 });
@@ -927,6 +941,23 @@ bindSettingRange('new-weight','newWeight','%');
 bindSettingRange('build-start','buildRiseAt','%');
 bindSettingRange('rhythm-bias','rhythmBias','');
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
+document.querySelectorAll('.settings-collapse-head').forEach(head=>{
+  head.addEventListener('click',()=>{
+    const body = $(head.dataset.collapseTarget);
+    if(!body)return;
+    const opening = body.hidden;
+    body.hidden = !opening;
+    head.setAttribute('aria-expanded',String(opening));
+  });
+});
+$('backup-export')?.addEventListener('click',exportBackupFile);
+$('backup-import')?.addEventListener('click',()=>$('backup-file-input')?.click());
+$('backup-file-input')?.addEventListener('change',e=>{
+  const file = e.target.files && e.target.files[0];
+  handleBackupFileChosen(file);
+});
+$('backup-import-yes')?.addEventListener('click',confirmBackupImport);
+$('backup-import-no')?.addEventListener('click',cancelBackupImport);
 $('add-sort-samples')?.addEventListener('click',addSortSamples);
 $('remove-sort-samples')?.addEventListener('click',removeSortSamples);
 $('settings-reset').addEventListener('click',()=>{

@@ -1381,6 +1381,20 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   font-size:12px;font-weight:650;color:var(--purple-icon);flex-shrink:0;
   font-variant-numeric:tabular-nums;
 }
+/* add-sheet progressive disclosure: priority/hard-deadline/scheduled-time/topics
+   stay collapsed until asked for, so a first habit only shows what it needs */
+.add-more-toggle{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  width:100%;margin:0 0 14px;padding:10px 0;
+  background:transparent;border:0;border-top:0.5px solid var(--border);
+  color:var(--text2);font:inherit;font-size:12.5px;font-weight:650;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.add-more-toggle:active{color:var(--text);}
+.add-more-toggle i{font-size:13px;transition:transform var(--dur-fast) ease;}
+.add-more-toggle[aria-expanded="true"] i{transform:rotate(180deg);}
+.add-more-options[hidden]{display:none;}
+.add-more-options{margin:-4px 0 4px;}
 /* task due-date + scheduled-time rows (add sheet + detail schedule) */
 .plan-field-row{
   display:flex;align-items:center;gap:10px;margin:-2px 0 16px;
@@ -1577,6 +1591,17 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .settings-label{
   display:block;color:var(--text);font-size:13px;font-weight:650;margin-bottom:7px;
 }
+.settings-collapse-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;background:transparent;border:0;padding:0;margin:0;
+  cursor:pointer;font:inherit;text-align:left;color:inherit;
+  -webkit-tap-highlight-color:transparent;
+}
+.settings-collapse-head .settings-label{margin-bottom:0;}
+.settings-collapse-head i{font-size:14px;color:var(--text3);flex-shrink:0;transition:transform var(--dur-fast) ease;}
+.settings-collapse-head[aria-expanded="true"] i{transform:rotate(180deg);}
+.settings-collapse-body{margin-top:10px;}
+.settings-collapse-body[hidden]{display:none;}
 .settings-sublabel{
   display:block;color:var(--text2);font-size:11.5px;font-weight:700;
   margin:12px 0 7px;text-transform:none;
