@@ -53,9 +53,24 @@ function includeInTodayAgenda(h,settings){
   return settings.showDueHabitsInAgenda !== false && days !== null && days >= target && scheduleDistance === 0;
 }
 
+// PURE: resolve a fill item's allowed time window for the current day, or null
+// when the item has no restriction. Overnight windows (end <= start) extend
+// into the next day so a 23:00-02:00 window still works as a single span.
+function fillTimeWindow(h,dayBase){
+  if(!hasTimeWindow(h))return null;
+  const start = dayBase + h.allowedTimeStart * 60000;
+  let end = dayBase + h.allowedTimeEnd * 60000;
+  if(end <= start)end += 24 * 3600000;
+  return {start,end};
+}
+
 // PURE: interleave scheduled tasks (hard time) and fill items (soft estimate) into a
 // single time-ordered row list. The fill clock starts at "now" and walks
 // forward; scheduled tasks jump the clock past their slot so nothing overlaps.
+// Fill items honour their per-item allowed time window (allowedTimeStart/End):
+// an item is pushed to its window start if "now" is earlier, and skipped if it
+// cannot fit inside the window within the current slot (so smaller items behind
+// it still get a turn instead of being starved by a too-large leader).
 function buildTodayTimeline(agenda,now = Date.now()){
   const rows = [];
   agenda.scheduled.forEach(ev=>{
@@ -63,16 +78,35 @@ function buildTodayTimeline(agenda,now = Date.now()){
     rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true });
   });
   const slots = agenda.slots?.length ? agenda.slots : [{start:ceilToMinutes(now,5),end:dayStart(now) + 24 * 3600000}];
+  const dayBase = dayStart(now);
+  const nowFloor = ceilToMinutes(now,5);
   let fillIdx = 0;
   for(const slot of slots){
-    let clock = Math.max(slot.start,ceilToMinutes(now,5));
+    let clock = Math.max(slot.start,nowFloor);
     while(fillIdx < agenda.agendaItems.length){
       const fill = agenda.agendaItems[fillIdx];
       const cost = clampDuration(fill.h.durationMinutes) * 60000;
-      if(clock + cost > slot.end)break;
-      rows.push({ kind:'fill', h:fill.h, i:fill.i, start:clock, end:clock + cost, hard:false });
-      clock += cost;
-      fillIdx += 1;
+      const win = fillTimeWindow(fill.h,dayBase);
+      if(win){
+        const placeStart = Math.max(clock,win.start);
+        const placeEnd = placeStart + cost;
+        const slotCap = Math.min(slot.end,win.end);
+        if(placeEnd > slotCap){
+          // Cannot fit this item inside its window within this slot. Advance
+          // past it without consuming the slot clock so the next (possibly
+          // smaller, or window-less) item still gets placed.
+          fillIdx += 1;
+          continue;
+        }
+        rows.push({ kind:'fill', h:fill.h, i:fill.i, start:placeStart, end:placeEnd, hard:false });
+        clock = placeEnd;
+        fillIdx += 1;
+      }else{
+        if(clock + cost > slot.end)break;
+        rows.push({ kind:'fill', h:fill.h, i:fill.i, start:clock, end:clock + cost, hard:false });
+        clock += cost;
+        fillIdx += 1;
+      }
     }
   }
   return rows.sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : 1));

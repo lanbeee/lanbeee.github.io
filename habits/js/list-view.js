@@ -606,7 +606,10 @@ function cardMeta(h,options = {}){
   if(h.sample && (options.forceSample || sortSettings.showSampleOnCards))parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
   if(h.pinned && (options.forcePinned || sortSettings.showPinnedOnCards))parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
   if(h.type === 'task' && (options.forceTaskDate || sortSettings.showTaskDateOnCards)){
-    if(h.eventTime !== null){
+    if(h.eventTime !== null && !options.suppressScheduled){
+      // When today's agenda already renders a "scheduled at HH:MM" pill for
+      // this card (see agendaCardPill), skip the duplicate here so the time
+      // never appears twice with an identical calendar icon.
       parts.push(`<span class="context-pill scheduled" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(compactScheduledLabel(h.eventTime))}</span>`);
     }else if(h.dueDate === null){
       parts.push('<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>');
@@ -878,9 +881,12 @@ function render(){
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const agendaPill = agendaCardPill(agendaMap.get(realIdx));
+    const agendaRow = agendaMap.get(realIdx);
+    const agendaPill = agendaCardPill(agendaRow);
     const earlyPill = earlyCardPill(earlyMap.get(realIdx));
-    const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join('')});
+    // Suppress the cardMeta "scheduled" pill when the agenda already renders
+    // the same time pill for this timed task today (avoids duplicate pills).
+    const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const accent = visualClassColor(cardScoreTone);
     const isDoneTask = h.type === 'task' && h.lastLog !== null;
