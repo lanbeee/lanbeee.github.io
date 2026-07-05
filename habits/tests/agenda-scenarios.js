@@ -621,6 +621,153 @@ function defaultSettings(overrides = {}) {
       cat === 0, `cat=${cat}`);
   }
 
+  // ==========================================================================
+  // ISSUE 6 — "do it early" is no longer its own section. An upcoming item
+  //          whose target day is overloaded (and that is allowed today + has
+  //          flexibility) is pulled into the agenda AND shown under "today"
+  //          with its "early" pill — but ONLY when it actually earns an agenda
+  //          row today. If today's capacity is already spoken for, the item is
+  //          dropped from the agenda and falls back to its native "upcoming"
+  //          section with no early pill.
+  // ==========================================================================
+  console.log('\n[Issue 6] do-early merges into today (capacity-gated)');
+
+  // Helper: walk back from a card to its nearest section-header label. The
+  // card lives inside a .swipe-row, so climb to that row first.
+  async function sectionOf(cardText){
+    return page.locator(`.ting-card:has-text("${cardText}")`).first().evaluate(card => {
+      const row = card.closest('.swipe-row') || card.parentElement;
+      let node = row ? row.previousElementSibling : null;
+      while(node){
+        if(node.classList && node.classList.contains('section-header'))return node.textContent.trim();
+        node = node.previousElementSibling;
+      }
+      return null;
+    });
+  }
+
+  // (a) Pulled forward: target day overloaded, today has room -> the item
+  //     earns an agenda row, lives under "today", and shows BOTH the early
+  //     pill and an agenda-suggested time pill.
+  {
+    const targetTs = atTime(9) + 2 * 86400000;
+    const targetKey = new Date(targetTs); targetKey.setHours(12,0,0,0);
+    const targetKeyStr = targetKey.toISOString().slice(0,10);
+    const todayStr = todayKey();
+    await seed(
+      [
+        base({ name: 'Laundry upcoming', type: 'keepup', target: 2, flexibilityDays: 2, durationMinutes: 30,
+          lastLog: atTime(9), logs: [atTime(9)] }),
+        base({ name: 'Packed day meeting', type: 'task', target: null, durationMinutes: 50,
+          dueDate: targetTs, eventTime: null })
+      ],
+      defaultSettings({ availabilityOverrides: { [todayStr]: 120, [targetKeyStr]: 30 } })
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Laundry upcoming');
+    check('6a do-early item pulled into today agenda', Boolean(fill), fill ? `start=${fill.startLabel}` : 'missing');
+
+    const sec = await sectionOf('Laundry upcoming');
+    check('6a do-early card sits under the today section', sec === 'today', `section=${sec}`);
+
+    const earlyPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill:has-text("early")').count();
+    const suggestedPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill.agenda-suggested').count();
+    check('6a do-early card shows the early pill', earlyPill === 1, `early=${earlyPill}`);
+    check('6a do-early card shows an agenda-suggested time pill', suggestedPill >= 1, `suggested=${suggestedPill}`);
+
+    // The standalone "do it early" header must be gone.
+    const staleHeader = await page.locator('.section-header:text("do it early")').count();
+    check('6a no standalone "do it early" section header remains', staleHeader === 0, `count=${staleHeader}`);
+  }
+
+  // (b) Dropped: today is full, so the early item never gets a row. It must
+  //     fall back to "upcoming" and carry NO early pill (we never promise time
+  //     the day cannot give).
+  {
+    const targetTs = atTime(9) + 2 * 86400000;
+    const targetKey = new Date(targetTs); targetKey.setHours(12,0,0,0);
+    const targetKeyStr = targetKey.toISOString().slice(0,10);
+    const todayStr = todayKey();
+    await seed(
+      [
+        // P0 due-today item that eats all of today's 100 minutes first.
+        base({ name: 'Due today filler', type: 'keepup', target: 1, durationMinutes: 100, priority: 0,
+          lastLog: atTime(9) - 2 * 86400000, logs: [atTime(9) - 2 * 86400000] }),
+        // Low-priority upcoming item that WOULD be do-early but cannot fit.
+        base({ name: 'Laundry upcoming', type: 'keepup', target: 2, flexibilityDays: 2, durationMinutes: 30, priority: 5,
+          lastLog: atTime(9), logs: [atTime(9)] }),
+        base({ name: 'Packed day meeting', type: 'task', target: null, durationMinutes: 50,
+          dueDate: targetTs, eventTime: null })
+      ],
+      defaultSettings({ availabilityOverrides: { [todayStr]: 100, [targetKeyStr]: 30 } })
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Laundry upcoming');
+    check('6b do-early item dropped from agenda when today is full', !fill, fill ? `unexpected start=${fill.startLabel}` : '');
+
+    const sec = await sectionOf('Laundry upcoming');
+    check('6b dropped do-early card falls back to upcoming section', sec === 'upcoming', `section=${sec}`);
+
+    const earlyPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill:has-text("early")').count();
+    check('6b dropped do-early card has no early pill', earlyPill === 0, `early=${earlyPill}`);
+  }
+
+  // ==========================================================================
+  // ISSUE 7 — the agenda SOFTLY honours preferredTimeStart. A fill whose
+  //          preferred time is later than the clock is nudged to that time when
+  //          the whole session still fits; otherwise it falls back to the
+  //          clock placement. The hard allowedTimeStart/End still wins.
+  // ==========================================================================
+  console.log('\n[Issue 7] preferred-time soft nudge in agenda placement');
+
+  // (a) preferredTimeStart at 2pm, now 9am -> placed at 2pm (not 9am).
+  {
+    await seed(
+      [base({ name: 'Prefer afternoon', type: 'keepup', target: 1, durationMinutes: 30,
+        preferredTimeStart: 840, preferredTimeEnd: 1020, // 14:00 - 17:00
+        lastLog: atTime(9) - 2 * 86400000, logs: [atTime(9) - 2 * 86400000] })],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Prefer afternoon');
+    check('7a fill nudged to preferred 2:00 PM start',
+      fill && fill.startLabel === '2:00 PM',
+      fill ? `start=${fill.startLabel}` : 'missing');
+  }
+
+  // (b) preferredTimeStart too late to fit the slot -> falls back to the clock
+  //     (now ceil). The nudge never overrides capacity or the hard window.
+  {
+    await seed(
+      [base({ name: 'Prefer late', type: 'keepup', target: 1, durationMinutes: 30,
+        preferredTimeStart: 1380, preferredTimeEnd: 1440, // 23:00
+        lastLog: atTime(9) - 2 * 86400000, logs: [atTime(9) - 2 * 86400000] })],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Prefer late');
+    check('7b preferred time that does not fit falls back to clock (9:00 AM)',
+      fill && fill.startLabel === '9:00 AM',
+      fill ? `start=${fill.startLabel}` : 'missing');
+  }
+
+  // (c) preferred time never overrides a hard allowed window: an item allowed
+  //     only 10am-11am with a 2pm preferred hint still lands at 10am.
+  {
+    await seed(
+      [base({ name: 'Windowed with pref', type: 'keepup', target: 1, durationMinutes: 30,
+        allowedTimeStart: 600, allowedTimeEnd: 660, // 10:00 - 11:00
+        preferredTimeStart: 840, preferredTimeEnd: 1020, // 14:00 hint (ignored past hard window)
+        lastLog: atTime(9) - 2 * 86400000, logs: [atTime(9) - 2 * 86400000] })],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Windowed with pref');
+    check('7c hard allowed window beats the preferred-time nudge',
+      fill && fill.startLabel === '10:00 AM',
+      fill ? `start=${fill.startLabel}` : 'missing');
+  }
+
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));
   await browser.close();
 

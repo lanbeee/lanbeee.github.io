@@ -670,14 +670,28 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
+// PURE: today's agenda timeline rows, shared by the home card pill map and
+// the chronological "today" section ordering so both stay in lockstep.
+function homeAgendaRows(data){
+  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
+  return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
+}
+
 // PURE: map today's agenda rows onto existing home cards.
 function homeAgendaMap(data){
-  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return new Map();
-  const rows = buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
-  return rows.reduce((map,row)=>{
+  return homeAgendaRows(data).reduce((map,row)=>{
     if(!map.has(row.i))map.set(row.i,row);
     return map;
   },new Map());
+}
+
+// PURE: chronological position of each today-agenda row, used to order the
+// home "today" section the way the agenda timeline reads. Indices not in
+// today's agenda are absent from the map.
+function homeAgendaOrder(data){
+  const map = new Map();
+  homeAgendaRows(data).forEach((row,pos)=>{ if(!map.has(row.i))map.set(row.i,pos); });
+  return map;
 }
 
 // PURE: color for the card's left accent bar by priority. P0 burns red, P1
@@ -853,17 +867,40 @@ function render(){
   empty.style.display = 'none';
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
-  const agendaMap = homeAgendaMap(data);
+  const agendaRows = homeAgendaRows(data);
+  const agendaMap = new Map();
+  const agendaOrder = new Map();
+  agendaRows.forEach((row,pos)=>{
+    if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
+    if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
+  });
   const earlyMap = homeEarlyMap(data,sortSettings);
+  // An upcoming item is pulled into "today" only when it BOTH passes the
+  // do-early gate (allowed today + flexibility + its target day is over-loaded)
+  // AND earns an agenda row today. If it loses its slot to capacity it falls
+  // back to its original "upcoming" section, so the list never promises time
+  // the day cannot give and the card never shows an "early" pill it can't honour.
+  const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
   const renderIndices = todayFirstActive ? [...indices].sort((a,b)=>{
     const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
     if(pin)return pin;
     const catA = todayCategory(data[a],sortSettings);
     const catB = todayCategory(data[b],sortSettings);
-    if(catA !== catB)return catA - catB;
-    if(catA === 2){
-      const early = Number(Boolean(earlyMap.get(b))) - Number(Boolean(earlyMap.get(a)));
-      if(early)return early;
+    const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
+    const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
+    if(dispA !== dispB)return dispA - dispB;
+    if(dispA === 0){
+      // Show the "today" section chronologically — same order the agenda
+      // timeline reads — so priority, planned time, allowed windows and the
+      // preferred-time nudge all surface through one consistent ordering.
+      // Today items without an agenda row (rare: a due item dropped by
+      // capacity) trail after the timed ones.
+      const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
+      if(posA != null || posB != null){
+        if(posA == null)return 1;
+        if(posB == null)return -1;
+        return posA - posB;
+      }
     }
     return indices.indexOf(a) - indices.indexOf(b);
   }) : indices;
@@ -874,10 +911,10 @@ function render(){
     const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
 
     if(todayFirstActive && !h.pinned){
-      const doEarly = cat === 2 && Boolean(earlyMap.get(realIdx));
-      const sectionKey = doEarly ? 20 : cat;
+      const isEarlyToday = cat === 2 && earlyToday(realIdx);
+      const sectionKey = isEarlyToday ? 0 : cat;
       if(sectionKey !== sectionCat){
-        const labels = {0:'today',1:'overdue',20:'do it early',2:'upcoming',3:'others'};
+        const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
         const label = labels[sectionKey];
         if(label){
           const header = document.createElement('div');
@@ -896,7 +933,9 @@ function render(){
     const cue = cardCue(h);
     const agendaRow = agendaMap.get(realIdx);
     const agendaPill = agendaCardPill(agendaRow);
-    const earlyPill = earlyCardPill(earlyMap.get(realIdx));
+    // The "early" pill only marks items actually pulled into today; items that
+    // lost the capacity cut and fell back to upcoming carry no early pill.
+    const earlyPill = earlyCardPill((cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : '');
     // Suppress the cardMeta "scheduled" pill when the agenda already renders
     // the same time pill for this timed task today (avoids duplicate pills).
     const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});

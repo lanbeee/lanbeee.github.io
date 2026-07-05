@@ -37,7 +37,14 @@ function buildTodayAgenda(data,settings){
     const h = data[i];
     if(h.type === 'task' && h.lastLog !== null)continue;
     if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
-    if(!includeInTodayAgenda(h,settings))continue;
+    const dueToday = includeInTodayAgenda(h,settings);
+    // Do-early pull-forward: an upcoming item whose target day is overloaded,
+    // which is allowed today and has flexibility, may be pulled into today's
+    // agenda (earlyReason encodes that gate). It then competes for today's
+    // remaining minutes by priority like any other fill; if it loses the cut
+    // it simply gets no row, and the home list leaves it in "upcoming".
+    const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
+    if(!dueToday && !earlyOk)continue;
     candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
   }
   candidates.sort((a,b)=>a.priority - b.priority || a.rank - b.rank);
@@ -78,6 +85,18 @@ function fillTimeWindow(h,dayBase){
   return {start,end};
 }
 
+// PURE: the soft preferred-time anchor for a fill item today, or null.
+// preferredTimeStart/End is a HINT, not a constraint: the timeline nudges a
+// fill toward this time when it fits, and otherwise falls back to the clock.
+// Only the strict allowedTimeStart/End can drop/close an item. We anchor on
+// preferredTimeStart (the "do it around this time" cue); end is not needed
+// for a soft nudge.
+function fillPreferredStart(h,dayBase){
+  const s = h.preferredTimeStart;
+  if(!Number.isFinite(s))return null;
+  return dayBase + s * 60000;
+}
+
 // PURE: is there still enough unexpired room inside this habit's allowed time
 // window today to fit a full session? Windowless habits are always doable.
 // preferredTimeStart/End is a soft hint and is intentionally NOT consulted
@@ -100,6 +119,12 @@ function windowStillDoableToday(h,now = Date.now()){
 // an item is pushed to its window start if "now" is earlier, and skipped if it
 // cannot fit inside the window within the current slot (so smaller items behind
 // it still get a turn instead of being starved by a too-large leader).
+//
+// Fill items also SOFTLY honour preferredTimeStart (the "do it around this
+// time" hint): when the clock-driven start is earlier than the preferred time
+// and the whole session still fits, the fill is nudged to the preferred start.
+// This is a hint only — it never overrides the hard allowed window, never
+// drops an item, and falls back to the clock placement if it won't fit.
 //
 // Each open slot retries every still-unplaced item, so an item that is too
 // large for one slot can still land in a later, larger one (instead of being
@@ -136,6 +161,18 @@ function buildTodayTimeline(agenda,now = Date.now()){
         placeStart = clock;
         placeEnd = clock + cost;
         cap = slot.end;
+      }
+      // Soft preferred-time nudge: if the fill has a preferredTimeStart that
+      // is later than the current clock-driven start AND the whole session
+      // still fits inside the slot (and inside the hard allowed window when
+      // one is set, since `cap` already folds that in), defer placement to
+      // that time. The nudge only ever pushes later — it never overrides the
+      // hard window, never pulls an item earlier, and falls back silently to
+      // the clock placement if the preferred time won't fit.
+      const prefStartTs = fillPreferredStart(fill.h,dayBase);
+      if(prefStartTs !== null && prefStartTs > placeStart && prefStartTs + cost <= cap){
+        placeStart = prefStartTs;
+        placeEnd = prefStartTs + cost;
       }
       if(placeEnd > cap)continue;
       rows.push({ kind:'fill', h:fill.h, i:fill.i, start:placeStart, end:placeEnd, hard:false });
