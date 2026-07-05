@@ -103,7 +103,9 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   if(!load().length)return;
   closeSearch();
   overviewMonthOffset = 0;
+  overviewRecentOffset = 0;
   overviewTopicFilter = 'all';
+  overviewRangeFilter = 'recent';
   renderOverview();
   openSheet('overview-sheet');
 });
@@ -916,6 +918,7 @@ $('open-overview').addEventListener('click',()=>{
   if(!load().length)return;
   closeSearch();
   overviewMonthOffset = 0;
+  overviewRecentOffset = 0;
   overviewTopicFilter = 'all';
   overviewRangeFilter = 'recent';
   renderOverview();
@@ -925,11 +928,13 @@ $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
 $('overview-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('overview-prev-month').addEventListener('click',()=>{
-  overviewMonthOffset -= 1;
+  if(overviewRangeFilter === 'recent')overviewRecentOffset -= 14;
+  else overviewMonthOffset -= 1;
   renderOverview();
 });
 $('overview-next-month').addEventListener('click',()=>{
-  overviewMonthOffset += 1;
+  if(overviewRangeFilter === 'recent')overviewRecentOffset += 14;
+  else overviewMonthOffset += 1;
   renderOverview();
 });
 $('overview-topic-filter').addEventListener('click',e=>{
@@ -943,6 +948,8 @@ $('overview-range-filter').addEventListener('click',e=>{
   const btn = e.target.closest('[data-overview-range]');
   if(!btn)return;
   overviewRangeFilter = btn.dataset.overviewRange || 'recent';
+  overviewMonthOffset = 0;
+  overviewRecentOffset = 0;
   dayLogsKey = null;
   renderOverview();
 });

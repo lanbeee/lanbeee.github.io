@@ -210,28 +210,43 @@ function renderOverview(){
   else renderOverviewMonth(data,topicLabel,overviewRangeFilter === 'all');
 }
 
-// Default view: a 14-cell strip (today and the 13 days before it), always
-// anchored to "now" rather than whatever month happens to be navigated to.
-// RENDER: renders 14-day strip and stats
+// Default view: a 14-cell strip. With no offset it covers today and the 13
+// days before it ("last 14 days"). The prev/next arrows shift the window in
+// 14-day pages so you can browse earlier or later stretches the same way the
+// month grid does.
+// RENDER: renders 14-day strip, stats, and range nav
 function renderOverviewRecent(data,topicLabel){
-  const end = dayStart(Date.now()) + 86400000; // exclusive: start of tomorrow
+  const baseEnd = dayStart(Date.now()) + 86400000; // exclusive: start of "tomorrow" at offset 0
+  const shift = overviewRecentOffset * 86400000;
+  const end = baseEnd + shift;
   const start = end - 14 * 86400000;
   const {tally,html:cells} = dayStripMarkup(data,start,14);
   const {activeDays,busiest} = dayTallySummary(tally);
   const busiestLabel = busiest ? new Date(`${busiest[0]}T12:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '-';
   const bestTone = overviewToneCopy(tally,'a quiet stretch');
+  const rangeLabel = recentRangeLabel(start,end);
 
   $('overview-copy').textContent = tally.total
-    ? `${topicLabel ? `${topicLabel}: ` : ''}${bestTone}. ${tally.actual} entries${tally.planned ? `, ${tally.planned} planned` : ''} in the last 14 days.`
-    : `${topicLabel ? `${topicLabel}: ` : ''}No entries or plans in the last 14 days.`;
+    ? `${topicLabel ? `${topicLabel}: ` : ''}${bestTone}. ${tally.actual} entries${tally.planned ? `, ${tally.planned} planned` : ''} ${overviewRecentOffset === 0 ? 'in the last 14 days' : 'in this stretch'}.`
+    : `${topicLabel ? `${topicLabel}: ` : ''}No entries or plans ${overviewRecentOffset === 0 ? 'in the last 14 days' : 'in this stretch'}.`;
   renderOverviewStatsRow(activeDays,tally.actual,tally.planned,busiestLabel);
-  setOverviewMonthNav(false,'last 14 days');
+  setOverviewMonthNav(true,rangeLabel);
 
   const grid = $('overview-calendar');
   grid.className = 'month-grid rich-month-grid strip-grid';
   grid.innerHTML = cells;
 
   renderOverviewLists(data,h=>actualLogs(h.logs).filter(ts=>ts >= start && ts < end).length);
+}
+
+// PURE: label for the 14-day window. Offset 0 reads "last 14 days"; any
+// navigation away from today shows the explicit date range instead.
+function recentRangeLabel(start,end){
+  if(overviewRecentOffset === 0)return 'last 14 days';
+  const first = new Date(start);
+  const last = new Date(end - 86400000);
+  const fmt = d => d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  return `${fmt(first)} – ${fmt(last)}`;
 }
 
 // 'month': the original navigable month grid. 'all': same grid for browsing,

@@ -123,6 +123,7 @@ let snoozeFromDetail = false;
 let activityIdx = null;
 let detailMonthOffset = 0;
 let overviewMonthOffset = 0;
+let overviewRecentOffset = 0;
 let overviewTopicFilter = 'all';
 let overviewRangeFilter = 'recent';
 let homeTopicFilter = 'all';

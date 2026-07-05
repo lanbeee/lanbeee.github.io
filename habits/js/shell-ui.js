@@ -601,8 +601,22 @@ document.addEventListener('pointerdown',e=>{
   searchDismissPointer = null;
   const btn = forgivingButtonTarget(e.target);
   if(!btn)return;
-  buttonPointer = {btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+  const scrollHost = btn.closest('.sheet');
+  buttonPointer = {
+    btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),
+    maxMove:0,
+    scrollHost,
+    scrollTop:scrollHost ? scrollHost.scrollTop : 0
+  };
 },true);
+
+// Track the furthest the finger has strayed from the start so a cancelled
+// gesture can still be recognised as a tap (see pointercancel below).
+document.addEventListener('pointermove',e=>{
+  if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
+  const dist = Math.hypot(e.clientX - buttonPointer.x,e.clientY - buttonPointer.y);
+  if(dist > buttonPointer.maxMove)buttonPointer.maxMove = dist;
+},{passive:true});
 
 document.addEventListener('pointerup',e=>{
   if(searchDismissPointer && searchDismissPointer.id === e.pointerId){
@@ -631,8 +645,24 @@ document.addEventListener('pointerup',e=>{
   }
 },true);
 
+// On a phone, a tap inside a scrollable sheet often drifts a few pixels, which
+// makes the browser claim the gesture as the start of a scroll and fire
+// pointercancel instead of pointerup. When that happens but the finger barely
+// moved and the scroll host never actually scrolled, it was really a tap with
+// a little finger drift — recover it by firing the click ourselves. Without
+// this, buttons like "open" in the day-logs sheet are unreachable on touch.
 document.addEventListener('pointercancel',e=>{
   if(searchDismissPointer && searchDismissPointer.id === e.pointerId)searchDismissPointer = null;
+  if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
+  const tap = buttonPointer;
+  buttonPointer = null;
+  if(tap.btn.disabled)return;
+  const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
+  if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && scrolled === 0){
+    suppressNativeButton = tap.btn;
+    tap.btn.click();
+    setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},80);
+  }
 },true);
 
 document.addEventListener('click',e=>{
