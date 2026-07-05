@@ -36,6 +36,14 @@ function openDetail(i){
   renderTopicChips('detail-topic-chips',h.topics);
   renderScheduleChips('detail',h);
   renderTimeWindowInputs(h);
+  $('detail-due-date').value = dateInputValue(h.dueDate);
+  $('detail-hard-due').checked = Boolean(h.hardDue);
+  $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
+  $('detail-mark-done').checked = h.markDone !== false;
+  $('detail-habit-mark-done').checked = h.markDone !== false;
+  syncDetailDueUi();
+  syncDetailScheduledUi();
+  syncDetailHabitMarkDoneUi();
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
@@ -53,7 +61,11 @@ function openDetail(i){
     allowedTimeStart:h.allowedTimeStart ?? null,
     allowedTimeEnd:h.allowedTimeEnd ?? null,
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
-    flexibilityDays:h.flexibilityDays || 0
+    flexibilityDays:h.flexibilityDays || 0,
+    dueDate:h.dueDate ?? null,
+    hardDue:Boolean(h.hardDue),
+    eventTime:h.eventTime ?? null,
+    markDone:h.markDone !== false
   };
   syncRhythm('detail',h.target || 7);
   $('detail-mark').style.background = c.bg;
@@ -98,6 +110,17 @@ function openDetailSchedule(i){
 
 // PURE: builds header subtitle from habit state
 function detailHeaderLine(h){
+  if(h.type === 'task'){
+    const parts = [];
+    if(h.eventTime !== null)parts.push(scheduledWhenLabel(h.eventTime));
+    else parts.push(cardCue(h));
+    if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
+    if(hasDaySchedule(h)){
+      const next = nextEligibleShort(h);
+      if(next)parts.push(next);
+    }
+    return parts.filter(Boolean).join(' · ');
+  }
   const parts = [cardCue(h)];
   if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
   if(hasDaySchedule(h)){
@@ -106,6 +129,18 @@ function detailHeaderLine(h){
   }
   if(hasTimeWindow(h))parts.push(timeWindowSummary(h));
   return parts.filter(Boolean).join(' · ');
+}
+
+// PURE: format a scheduled time as a friendly label
+function scheduledWhenLabel(ts){
+  const left = daysUntil(ts);
+  const time = new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+  if(left === null)return '';
+  if(left < 0)return `ended ${entryWhen(ts)}`;
+  if(left === 0)return `today ${time}`;
+  if(left === 1)return `tomorrow ${time}`;
+  if(left <= 6)return `${new Date(ts).toLocaleDateString(undefined,{weekday:'short'})} ${time}`;
+  return `${new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${time}`;
 }
 
 // RENDER: fills time window input fields
@@ -133,9 +168,11 @@ function syncTimeClearBtn(){
 
 // HYBRID: reads form DOM into tune object
 function currentDetailTune(){
+  const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
+  const markDoneEl = type === 'task' ? $('detail-mark-done') : $('detail-habit-mark-done');
   return {
     name:$('detail-habit-message').value.trim(),
-    type:document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup',
+    type,
     emoji:cleanMark($('detail-emoji').value),
     target:$('detail-days').value || '',
     pinned:$('detail-pinned').checked,
@@ -147,7 +184,11 @@ function currentDetailTune(){
     allowedTimeStart:timeInputToMinutes($('detail-time-start').value),
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
     durationMinutes:clampDuration($('detail-duration').value),
-    flexibilityDays:clampFlexibility($('detail-flexibility').value)
+    flexibilityDays:clampFlexibility($('detail-flexibility').value),
+    dueDate:parseDateInput($('detail-due-date').value),
+    hardDue:$('detail-hard-due').checked,
+    eventTime:parseDateTimeInput($('detail-scheduled-time').value),
+    markDone:markDoneEl ? markDoneEl.checked : true
   };
 }
 
@@ -164,6 +205,10 @@ function setDetailDirty(force){
       current.pinned !== detailTuneOriginal.pinned ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
+      current.dueDate !== detailTuneOriginal.dueDate ||
+      current.hardDue !== detailTuneOriginal.hardDue ||
+      current.eventTime !== detailTuneOriginal.eventTime ||
+      current.markDone !== detailTuneOriginal.markDone ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
       current.allowedWeekdays.join('|') !== detailTuneOriginal.allowedWeekdays.join('|') ||
       current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|') ||
@@ -183,12 +228,54 @@ function restoreDetailTune(){
   $('detail-pinned').checked = detailTuneOriginal.pinned;
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
+  $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
+  $('detail-hard-due').checked = Boolean(detailTuneOriginal.hardDue);
+  $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
+  $('detail-mark-done').checked = detailTuneOriginal.markDone !== false;
+  $('detail-habit-mark-done').checked = detailTuneOriginal.markDone !== false;
+  syncDetailDueUi();
+  syncDetailScheduledUi();
+  syncDetailHabitMarkDoneUi();
   renderTopicChips('detail-topic-chips',detailTuneOriginal.topics);
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
   if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
   setDetailDirty(false);
+}
+
+// RENDER: toggle detail due-date clear button + hard-deadline visibility
+function syncDetailDueUi(){
+  const dueInput = $('detail-due-date');
+  const clearBtn = $('detail-due-clear');
+  const hardToggle = $('detail-hard-due')?.closest('.hard-due-toggle');
+  if(!dueInput)return;
+  const hasDate = Boolean(dueInput.value);
+  if(clearBtn)clearBtn.hidden = !hasDate;
+  if(hardToggle)hardToggle.hidden = !hasDate;
+  const hint = $('detail-due-hint');
+  if(hint)hint.textContent = hasDate
+    ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
+    : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+}
+
+// RENDER: toggle mark-done visibility based on whether a scheduled time is set
+function syncDetailScheduledUi(){
+  const timeInput = $('detail-scheduled-time');
+  const toggle = $('detail-mark-done-toggle');
+  if(!timeInput || !toggle)return;
+  toggle.hidden = !timeInput.value;
+}
+
+// RENDER: habit mark-done toggle shows only for build habits with a day schedule
+function syncDetailHabitMarkDoneUi(){
+  const toggle = $('detail-habit-mark-done-toggle');
+  if(!toggle)return;
+  const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType;
+  if(type !== 'keepup'){ toggle.hidden = true; return; }
+  const hasSchedule = selectedWeekdaysFrom('detail-weekday-chips').length > 0
+                   || selectedMonthDaysFrom('detail-monthday-chips').length > 0;
+  toggle.hidden = !hasSchedule;
 }
 
 // HYBRID: switches allowed/preferred schedule section
@@ -227,17 +314,54 @@ function renderStats(h){
   const scoreCls = scoreTone(score);
   const monthValue = h.type === 'keepup' ? `${recent.good}/${recent.expected}` : recent.count;
   const monthLabel = h.type === 'keepup' ? 'last 30d done' : 'last 30d entries';
-  const runLabel = h.type === 'keepup' ? 'streak' : 'clear days';
+  const runLabel = h.type === 'keepup' ? 'streak'
+    : h.type === 'reduce' ? 'clear days'
+    : (run.label || 'status');
   const intervalSummary = intervalToneSummary(h);
   const avgTone = avg === null ? 'empty' : intervalTone(h,avg);
   const gapTone = days === null || days < 0 ? 'empty' : intervalTone(h,days);
   const scoreName = scoreTitle(h,score);
-  const targetLine = h.type === 'zero' ? 'avoid' : `${target}d rhythm`;
+  const timed = h.type === 'task' && h.eventTime !== null;
+  const targetLine = h.type === 'zero' ? 'avoid'
+    : h.type === 'task' ? (timed ? 'appointment' : (h.dueDate ? 'due task' : 'someday'))
+    : `${target}d rhythm`;
+  const rhythmIcon = h.type === 'zero' ? 'ti-ban'
+    : h.type === 'task' ? (timed ? 'ti-calendar-time' : 'ti-checkbox')
+    : 'ti-repeat';
+  const planIcon = h.type === 'zero' ? 'ti-list-check'
+    : h.type === 'task' ? (timed ? 'ti-clock-hour-4' : 'ti-flag')
+    : 'ti-calendar-event';
+  const planFact = h.type === 'zero' ? `${completed} entries`
+    : h.type === 'task' ? (h.lastLog !== null ? 'completed' : (timed ? 'scheduled' : (h.dueDate ? 'has due date' : 'no due date')))
+    : `${planned} planned`;
+  if(h.type === 'task'){
+    const primary = h.lastLog !== null
+      ? 'completed'
+      : (timed ? scheduledWhenLabel(h.eventTime) : (h.dueDate ? cardCue(h) : 'someday'));
+    const secondary = (timed && h.lastLog === null)
+      ? `${clampDuration(h.durationMinutes)}m`
+      : (h.hardDue && h.lastLog === null ? 'hard deadline' : 'task');
+    const completeLabel = 'done entries';
+    $('detail-stats').innerHTML = `
+      <div class="score-card ${scoreCls}">
+        <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
+        <div class="score-copy">
+          <div class="score-title">${escapeHtml(scoreName)}</div>
+          <div class="score-sub">${escapeHtml(progressCopy(h,score))}</div>
+          <div class="score-facts">
+            <span><i class="ti ${rhythmIcon}" aria-hidden="true"></i>${escapeHtml(targetLine)}</span>
+            <span><i class="ti ${planIcon}" aria-hidden="true"></i>${escapeHtml(planFact)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="stat"><div class="stat-num">${escapeHtml(primary)}</div><div class="stat-label">status</div></div>
+      <div class="stat"><div class="stat-num">${escapeHtml(secondary)}</div><div class="stat-label">type</div></div>
+      <div class="stat"><div class="stat-num">${clampDuration(h.durationMinutes)}<small>m</small></div><div class="stat-label">duration</div></div>
+      <div class="stat compact"><div class="stat-num">${completed}</div><div class="stat-label">${completeLabel}</div></div>`;
+    return;
+  }
   const gapValue = gapNum === '-' ? '-' : `${gapNum}<small>d</small>`;
   const avgValue = avg === null ? '-' : `${avg}<small>d</small>`;
-  const rhythmIcon = h.type === 'zero' ? 'ti-ban' : 'ti-repeat';
-  const planIcon = h.type === 'zero' ? 'ti-list-check' : 'ti-calendar-event';
-  const planFact = h.type === 'zero' ? `${completed} entries` : `${planned} planned`;
   $('detail-stats').innerHTML = `
     <div class="score-card ${scoreCls}">
       <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
@@ -306,7 +430,16 @@ function intervalToneSummary(h){
 
 // PURE: maps score to a label string
 function scoreTitle(h,score){
-  if(score === null)return 'no pattern yet';
+  if(score === null){
+    if(h.type === 'task')return taskWhen(h) === null ? 'someday' : 'upcoming';
+    return 'no pattern yet';
+  }
+  if(h.type === 'task'){
+    if(h.lastLog !== null)return 'done';
+    if(score >= 80)return 'plenty of time';
+    if(score >= 45)return 'coming due';
+    return 'due now';
+  }
   if(h.type === 'keepup'){
     if(score >= 80)return 'on track';
     if(score >= 55)return 'nearly due';
@@ -324,6 +457,16 @@ function scoreTitle(h,score){
 
 // PURE: computes 0-100 progress score
 function progressScore(h){
+  if(h.type === 'task'){
+    if(h.lastLog !== null)return 100;
+    const when = taskWhen(h);
+    if(when === null)return null;
+    const left = daysUntil(when);
+    if(left === null)return null;
+    const window = Math.max(1,h.flexibilityDays || 3);
+    if(left <= 0)return Math.max(0,Math.round(30 - Math.min(30,Math.abs(left) * 6)));
+    return Math.round(Math.min(100,100 - (left / window) * 50));
+  }
   const days = daysSince(h.lastLog);
   if(days === null)return null;
   if(days < 0)return null;
@@ -365,6 +508,16 @@ function progressCopy(h,score){
 // PURE: builds the about blurb string
 function aboutText(h){
   const days = daysSince(h.lastLog);
+  if(h.type === 'task'){
+    if(h.lastLog !== null)return `Done. Logged ${entryWhen(h.lastLog)}.`;
+    if(h.eventTime !== null)return `Scheduled ${scheduledWhenLabel(h.eventTime)}. Fixed time — never rescheduled.`;
+    if(h.dueDate === null)return 'A someday task. Pin it or add a due date to bring it forward.';
+    const left = daysUntil(h.dueDate);
+    if(left === null)return 'A task with a due date.';
+    if(left < 0)return `${Math.abs(left)} days overdue${h.hardDue ? ' (hard deadline)' : ''}.`;
+    if(left === 0)return `Due today${h.hardDue ? ' — hard deadline' : ''}.`;
+    return `Due in ${left} days${h.hardDue ? ' (hard deadline)' : ''}.`;
+  }
   if(h.type === 'zero'){
     if(days === null)return 'You are keeping this off the board.';
     if(days < 0)return `Next entry is ${entryWhen(h.lastLog)}.`;
@@ -388,6 +541,16 @@ function aboutText(h){
 function trendText(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
+  if(h.type === 'task'){
+    if(h.lastLog !== null)return 'completed';
+    if(h.eventTime !== null)return scheduledWhenLabel(h.eventTime);
+    if(h.dueDate === null)return 'someday';
+    const left = daysUntil(h.dueDate);
+    if(left === null)return 'due';
+    if(left < 0)return `${Math.abs(left)}d overdue`;
+    if(left === 0)return 'due today';
+    return `due in ${left}d`;
+  }
   if(days === null)return 'no entries yet';
   if(days < 0)return 'coming up';
   if(h.type === 'zero'){
@@ -409,6 +572,18 @@ function trendText(h){
 // RENDER: renders gap history bar graph
 function renderGraph(h){
   const graph = $('detail-graph');
+  if(h.type === 'task'){
+    const when = h.eventTime !== null
+      ? scheduledWhenLabel(h.eventTime)
+      : (h.dueDate ? entryWhen(h.dueDate) : 'no due date');
+    const note = h.lastLog !== null ? `Completed ${entryWhen(h.lastLog)}.` : aboutText(h);
+    graph.innerHTML = `
+      <div class="graph-empty task-scheduled-summary">
+        <b>${escapeHtml(when)}</b>
+        <span>${escapeHtml(note)}</span>
+      </div>`;
+    return;
+  }
   const logs = actualLogs(h.logs);
   const target = h.target || 7;
   if(!logs.length){
@@ -437,6 +612,7 @@ function renderGraph(h){
 function graphRule(h){
   if(h.type === 'keepup')return 'shorter is better';
   if(h.type === 'reduce')return 'longer is better';
+  if(h.type === 'task')return h.eventTime !== null ? 'fixed time' : 'one-off';
   return 'longer is better';
 }
 
@@ -461,6 +637,15 @@ function renderCalendar(h){
   const toneByDay = logToneMap(h);
   let actual = 0;
   let planned = 0;
+  const addPlannedMarker = ts=>{
+    if(ts === null)return;
+    const d = new Date(ts);
+    if(d.getFullYear() !== year || d.getMonth() !== month)return;
+    const key = dateKey(ts);
+    dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
+    planned += 1;
+    if(!toneByDay.has(key))toneByDay.set(key,'plan');
+  };
   logs.forEach(log=>{
     const ts = logTime(log);
     const d = new Date(ts);
@@ -470,6 +655,8 @@ function renderCalendar(h){
     if(isPlanLog(log))planned += 1;
     else actual += 1;
   });
+  if(isTimedTask(h) && h.lastLog === null)addPlannedMarker(h.eventTime);
+  else if(h.type === 'task' && h.lastLog === null)addPlannedMarker(h.dueDate);
   const monthEntries = actual + planned;
   const activeDays = [...dayCounts.values()].filter(Boolean).length;
   $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
@@ -542,10 +729,18 @@ function hasPlannedEntryForDay(h,key){
   return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
 }
 
+// PURE: checks whether a task has its own scheduled date on a day.
+function hasScheduledMarkerForDay(h,key){
+  return (
+    (isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key) ||
+    (h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
+  );
+}
+
 // PURE: checks a planned entry exists today
 function hasPlannedToday(h){
   const today = dateKey(Date.now());
-  return hasPlannedEntryForDay(h,today);
+  return hasPlannedEntryForDay(h,today) || hasScheduledMarkerForDay(h,today);
 }
 
 // PURE: computes month boundary dates and label
@@ -558,6 +753,63 @@ function monthFrame(offset = 0){
   const last = new Date(year,month + 1,0);
   const label = first.toLocaleDateString(undefined,{month:'short',year:'numeric'});
   return {year,month,first,last,label,today:dateKey(Date.now())};
+}
+
+// PURE: format ms timestamp as ICS local datetime "YYYYMMDDTHHMMSS"
+function icsDateTime(ts){
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+// PURE: format ms timestamp as ICS date "YYYYMMDD"
+function icsDate(ts){
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+}
+// PURE: escape ICS text
+function icsEscape(s){
+  return String(s || '').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+}
+// PURE: build a VCALENDAR string for a scheduled or due-date task. Scheduled
+// tasks become timed VEVENTs; due-date tasks become all-day VEVENTs so the system
+// calendar fires a real alert — the bridge to native notifications on iOS.
+function icsForHabit(h){
+  const uid = `tings-${h.type}-${h.eventTime || h.dueDate || Date.now()}-${Date.now()}@local`;
+  const stamp = icsDateTime(Date.now());
+  const summary = icsEscape(h.name || '');
+  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tings//Habits//EN','BEGIN:VEVENT',`UID:${uid}`,`DTSTAMP:${stamp}`];
+  if(isTimedTask(h)){
+    lines.push(`DTSTART:${icsDateTime(h.eventTime)}`);
+    lines.push(`DTEND:${icsDateTime(h.eventTime + Math.max(1,clampDuration(h.durationMinutes)) * 60000)}`);
+    lines.push(`SUMMARY:${summary}`);
+  }else if(h.type === 'task' && h.dueDate){
+    lines.push(`DTSTART;VALUE=DATE:${icsDate(h.dueDate)}`);
+    lines.push(`SUMMARY:${summary}${h.hardDue ? ' (hard deadline)' : ''}`);
+    lines.push('BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY',`DESCRIPTION:${summary}`,'END:VALARM');
+  }else{
+    return null;
+  }
+  lines.push('END:VEVENT','END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+// HYBRID: trigger a .ics download for a scheduled or due-date task
+function exportToCalendar(i){
+  const data = load();
+  const h = data[i];
+  if(!h)return;
+  const ics = icsForHabit(h);
+  if(!ics){showToast('add a time or due date first');return;}
+  const blob = new Blob([ics],{type:'text/calendar;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(h.name || 'task').replace(/[^a-z0-9]+/gi,'-').slice(0,40)}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{if(a.isConnected)document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+  showToast('exported — open to add to calendar');
 }
 
 document.addEventListener('tierchange',()=>{

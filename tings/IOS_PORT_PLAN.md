@@ -83,7 +83,6 @@ The RN type definitions (`Habit`, `Settings`, `LogEntry`, etc.) are almost entir
  * @property {boolean} showFlexibilityOnCards
  * @property {boolean} showTopicsOnCards
  * @property {boolean} reachAssist
- * @property {boolean} autoOpenToday
  * @property {string} defaultType
  * @property {number} defaultTarget
  * @property {string[]} topics

@@ -56,6 +56,7 @@
         </button>
       </div>
       <div id="quota-bar"></div>
+      <div id="reminder-banner" class="reminder-banner" hidden></div>
       <div id="home-topic-filter" class="topic-filter-row" aria-label="topic filter"></div>
       <div id="list"></div>
       <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
@@ -97,6 +98,7 @@
         <button class="seg-opt on" data-v="keepup">build</button>
         <button class="seg-opt" data-v="reduce">limit</button>
         <button class="seg-opt" data-v="zero">stop</button>
+        <button class="seg-opt" data-v="task">task</button>
       </div>
       <p class="field-hint" id="target-help">Target days between entries.</p>
       <div class="range-row" id="target-slider-row">
@@ -104,6 +106,28 @@
         <label class="range-value" aria-label="day rhythm">
           <input type="text" id="ting-days" inputmode="numeric" maxlength="3" value="7" />
           <span>d</span>
+        </label>
+      </div>
+      <div class="plan-field-row" id="task-due-row" hidden>
+        <div class="plan-field-main">
+          <label class="plan-date-label" for="ting-due-date">due</label>
+          <input type="date" id="ting-due-date" class="plan-date-input" />
+          <button type="button" class="mini-text-btn" id="ting-due-clear" hidden>no date</button>
+        </div>
+        <label class="setting-toggle compact-toggle hard-due-toggle">
+          <input type="checkbox" id="ting-hard-due" />
+          <span>hard deadline</span>
+        </label>
+      </div>
+      <p class="field-hint" id="task-due-hint" hidden></p>
+      <div class="plan-field-row" id="scheduled-time-row" hidden>
+        <div class="plan-field-main">
+          <label class="plan-date-label" for="ting-scheduled-time">scheduled</label>
+          <input type="datetime-local" id="ting-scheduled-time" class="plan-date-input" />
+        </div>
+        <label class="hard-due-toggle" id="ting-mark-done-toggle" hidden>
+          <input type="checkbox" id="ting-mark-done" checked />
+          <span>mark done</span>
         </label>
       </div>
       <div class="add-topics-section" id="add-topics-section">
@@ -176,6 +200,28 @@
               </label>
             </div>
           </div>
+          <div class="plan-field-row" id="detail-due-row" hidden>
+            <div class="plan-field-main">
+              <label class="plan-date-label" for="detail-due-date">due</label>
+              <input type="date" id="detail-due-date" class="plan-date-input" />
+              <button type="button" class="mini-text-btn" id="detail-due-clear" hidden>no date</button>
+            </div>
+            <label class="hard-due-toggle">
+              <input type="checkbox" id="detail-hard-due" />
+              <span>hard deadline</span>
+            </label>
+          </div>
+          <p class="field-hint" id="detail-due-hint" hidden></p>
+          <div class="plan-field-row" id="detail-scheduled-row" hidden>
+            <div class="plan-field-main">
+              <label class="plan-date-label" for="detail-scheduled-time">scheduled</label>
+              <input type="datetime-local" id="detail-scheduled-time" class="plan-date-input" />
+            </div>
+            <label class="hard-due-toggle" id="detail-mark-done-toggle" hidden>
+              <input type="checkbox" id="detail-mark-done" checked />
+              <span>mark done</span>
+            </label>
+          </div>
           <div class="seg schedule-seg" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
             <button class="seg-opt" data-schedule-view="preferred">preferred</button>
@@ -191,6 +237,13 @@
             <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
             <span class="settings-sublabel compact-label">month days</span>
             <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
+          </div>
+          <div class="plan-field-row habit-mark-done-row" id="detail-habit-mark-done-toggle" hidden>
+            <label class="hard-due-toggle">
+              <input type="checkbox" id="detail-habit-mark-done" checked />
+              <span>mark done</span>
+            </label>
+            <span class="habit-mark-done-hint">off = logs itself on scheduled days</span>
           </div>
           <div class="schedule-time-row">
             <span class="settings-sublabel compact-label">time window</span>
@@ -224,6 +277,7 @@
             <button class="seg-opt" data-detail-type="keepup">build</button>
             <button class="seg-opt" data-detail-type="reduce">limit</button>
             <button class="seg-opt" data-detail-type="zero">stop</button>
+            <button class="seg-opt" data-detail-type="task">task</button>
           </div>
           <label class="setting-toggle habit-toggle">
             <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
@@ -233,6 +287,10 @@
           <div class="topic-chip-row" id="detail-topic-chips"></div>
           <div class="habit-actions">
             <span class="settings-label">habit actions</span>
+            <button class="habit-action" id="detail-export" type="button" hidden>
+              <i class="ti ti-calendar-share" aria-hidden="true"></i>
+              <span><b>export to calendar</b><small>Add this to your phone's calendar for a real alert.</small></span>
+            </button>
             <button class="habit-action" id="detail-snooze" type="button">
               <i class="ti ti-moon" aria-hidden="true"></i>
               <span><b>snooze habit</b><small>Hide this habit for a few days.</small></span>
@@ -298,20 +356,38 @@
     </div>
   </div>
 
+  <!-- today agenda sheet -->
+  <div class="sheet-wrap" id="today-sheet">
+    <div class="sheet today-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title">today</p>
+          <p class="about-copy" id="today-summary">Your plan for today.</p>
+        </div>
+      </div>
+      <div class="today-content" id="today-content"></div>
+      <div class="today-week-section">
+        <div class="section-top"><span class="section-label">this week</span><span class="trend-copy" id="today-week-note"></span></div>
+        <div class="month-grid rich-month-grid strip-grid" id="today-week-strip"></div>
+      </div>
+      <div class="btn-row overview-actions">
+        <button class="btn" id="today-overview">calendar</button>
+        <button class="btn primary" id="today-close">done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- about sheet -->
   <div class="sheet-wrap" id="about-sheet">
     <div class="sheet about-sheet">
       <p class="sheet-title">Habits</p>
-      <p class="about-copy">A small place to notice what you want to build, limit, or stop. No account needed. Your entries stay on this device.</p>
+      <p class="about-copy">A small home for habits, tasks, and plans. No account needed. Your data stays on this device.</p>
       <div class="about-stack">
-        <section class="about-block calm-block"><span>Start simple</span><p>Add a habit, select Build, Limit, or Stop, then tap its icon whenever it occurs. Double-tap to log it instantly. Tap Habits at the top any time to come back here or open settings.</p></section>
-        <section class="about-block calm-block"><span>Not a task list</span><p>A to-do list is for finishing one thing. This is for habits that repeat, fade, slip, or improve over time. You are watching the pattern, not clearing an inbox.</p></section>
-        <section class="about-block calm-block"><span>Not a calendar</span><p>A calendar is for exact appointments. This is lighter: you can plan a day, but the main goal is to notice rhythm, spacing, and progress.</p></section>
-        <section class="about-block calm-block"><span>Read the cards</span><p>The ring is the current state. The dash and dots show recent days. Green is good, yellow is close, red needs care, and purple is planned.</p></section>
-        <section class="about-block calm-block"><span>Use the calendar</span><p>Tap any date to see what happened, add something from the past, or plan something ahead.</p></section>
-        <section class="about-block calm-block"><span>Let order help</span><p>Pinned habits stay first. After that, auto order weighs plans, rhythm, recent entries, progress, trends, and habit type. Settings lets you pick a preset or fine tune it.</p></section>
-        <section class="about-block calm-block"><span>Open a habit</span><p>Tap a card for insight, calendar, and habit settings. Swipe across the page to move between them.</p></section>
-        <section class="about-block calm-block"><span>Quick actions</span><p>Tap the big icon or double tap a card to log. Undo appears after. Swipe right to pin or review activity. Swipe left to snooze or remove.</p></section>
+        <section class="about-block calm-block"><span>Add</span><p>Tap + to create a habit, task, or stop item. Give it a rhythm, due date, or planned time when that helps.</p></section>
+        <section class="about-block calm-block"><span>Log</span><p>Tap a card to log progress. If the timing needs to change, the toast gives you a quick next step instead of opening another screen.</p></section>
+        <section class="about-block calm-block"><span>Status</span><p>The card cues show what is pinned, planned, repeated, or needs attention so the home list doubles as your agenda.</p></section>
+        <section class="about-block calm-block"><span>Calendar</span><p>Tap any date to plan ahead, record a past entry, or move plans when the day shifts.</p></section>
+        <section class="about-block calm-block"><span>Organize</span><p>Pin what matters, snooze what can wait, use search to find older items fast, and let the home list keep the order for you.</p></section>
       </div>
       <div class="btn-row about-actions">
         <button class="btn" id="open-settings">settings</button>
@@ -324,68 +400,33 @@
   <div class="sheet-wrap" id="settings-sheet">
     <div class="sheet settings-sheet">
       <p class="sheet-title">settings</p>
-      <p class="about-copy">Choose how the app behaves. These are app-wide settings, not settings for one habit.</p>
+      <p class="about-copy">A short setup for daily use. The home list is always ordered for today.</p>
       <div class="settings-stack">
         <section class="settings-block">
-          <span class="settings-label">home order</span>
-          <p class="field-hint">Pinned habits always stay first. After that, auto order brings up what needs attention.</p>
-          <span class="settings-sublabel">priority preset</span>
-          <div class="seg compact-seg preset-seg" id="sort-preset-seg">
-            <button class="seg-opt" data-preset="balanced">balanced</button>
-            <button class="seg-opt" data-preset="build">build</button>
-            <button class="seg-opt" data-preset="planned">plans</button>
-            <button class="seg-opt" data-preset="todayFirst">today</button>
-            <button class="seg-opt" data-preset="custom">custom</button>
-          </div>
-          <p class="field-hint">Presets move the controls below. Balanced watches everything, build favors routines, plans favors planned days, and today puts today items and overdue items first.</p>
+          <span class="settings-label">today</span>
+          <p class="field-hint">Pinned habits stay first. Everything else is ordered for today, overdue work, and plans due soon.</p>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
-              <span><b>planned habits rise</b><small>Plans due soon can move near the top.</small></span>
+              <span><b>show planned items early</b><small>Plans due soon can move near the top.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showScheduledTasksInAgenda" aria-pressed="false">
+              <span><b>show scheduled tasks in plan</b><small>Fixed-time tasks appear in the home plan.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueTasksInAgenda" aria-pressed="false">
+              <span><b>show due tasks in plan</b><small>Untimed tasks due today can fill open plan time.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPlannedItemsInAgenda" aria-pressed="false">
+              <span><b>show planned items in plan</b><small>Entries planned for today can fill open plan time.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueHabitsInAgenda" aria-pressed="false">
+              <span><b>show due habits in plan</b><small>Habits ready today can fill open plan time.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
-          <span class="settings-sublabel">stop habits rise</span>
-          <div class="seg compact-seg" id="stop-mode-seg">
-            <button class="seg-opt" data-stop-mode="quiet">quiet</button>
-            <button class="seg-opt" data-stop-mode="watch">watch</button>
-            <button class="seg-opt" data-stop-mode="recent">recent</button>
-            <button class="seg-opt" data-stop-mode="active">strict</button>
-          </div>
-          <p class="field-hint">Quiet keeps quit habits low. Watch gives resets a small nudge. Recent brings them into view. Strict treats resets as urgent.</p>
-          <span class="settings-sublabel">look ahead for plans</span>
-          <div class="seg compact-seg" id="plan-window-seg">
-            <button class="seg-opt" data-window="1">today</button>
-            <button class="seg-opt" data-window="3">3 days</button>
-            <button class="seg-opt" data-window="7">week</button>
-          </div>
-          <span class="settings-sublabel">new build habits</span>
-          <div class="seg compact-seg" id="new-build-seg">
-            <button class="seg-opt" data-new-build="quiet">stay low</button>
-            <button class="seg-opt" data-new-build="gentle">gentle</button>
-            <button class="seg-opt" data-new-build="rise">rise</button>
-          </div>
-          <p class="field-hint">This controls build habits that have no entries yet.</p>
-          <span class="settings-sublabel">compare due build habits</span>
-          <div class="seg compact-seg" id="due-mode-seg">
-            <button class="seg-opt" data-due-mode="relative">rhythm</button>
-            <button class="seg-opt" data-due-mode="date">date</button>
-            <button class="seg-opt" data-due-mode="short">shorter</button>
-          </div>
-          <p class="field-hint">Rhythm favors the habit that is deeper into its cycle. Date treats two habits due on the same day as close. Shorter favors frequent habits.</p>
-          <span class="settings-sublabel">build look ahead</span>
-          <div class="seg compact-seg" id="build-window-seg">
-            <button class="seg-opt" data-build-window="1">1 day</button>
-            <button class="seg-opt" data-build-window="3">3 days</button>
-            <button class="seg-opt" data-build-window="7">week</button>
-          </div>
-          <span class="settings-sublabel">limit habits rise</span>
-          <div class="seg compact-seg" id="limit-mode-seg">
-            <button class="seg-opt" data-limit-mode="quiet">quiet</button>
-            <button class="seg-opt" data-limit-mode="overdue">overdue</button>
-            <button class="seg-opt" data-limit-mode="near">near</button>
-            <button class="seg-opt" data-limit-mode="active">active</button>
-          </div>
-          <p class="field-hint">Overdue waits until the rhythm has passed. Near and active bring limit habits up earlier.</p>
         </section>
         <section class="settings-block">
           <span class="settings-label"><span style="position:relative;display:inline-block">topics <button type="button" class="info-btn" data-tip="settings-topics-help" aria-label="about topics"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
@@ -402,10 +443,44 @@
           <div class="availability-grid" id="availability-grid"></div>
         </section>
         <section class="settings-block">
-          <span class="settings-label">app behavior</span>
+          <span class="settings-label"><span style="position:relative;display:inline-block">blocked time <button type="button" class="info-btn" data-tip="settings-blocked-help" aria-label="about blocked time"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-blocked-help" role="tooltip" hidden>Regular time you do not want the home plan to use, such as sleep, meals, work, commute, or school.</div></span></span>
+          <div class="blocked-time-list" id="blocked-time-list"></div>
+          <button class="btn" id="blocked-time-add" type="button">add blocked time</button>
+        </section>
+        <section class="settings-block">
+          <span class="settings-label">cards</span>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozed" aria-pressed="false">
               <span><b>show snoozed habits</b><small>Show hidden habits faded on the home screen.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSampleOnCards" aria-pressed="false">
+              <span><b>show sample label</b><small>Mark test/sample habits in the card cue row.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPinnedOnCards" aria-pressed="false">
+              <span><b>show pinned label</b><small>Show the pin chip on pinned cards.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTaskDateOnCards" aria-pressed="false">
+              <span><b>show task dates</b><small>Show due, someday, and scheduled chips on task cards.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPlansOnCards" aria-pressed="false">
+              <span><b>show planned label</b><small>Show the next planned-entry chip.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDayScheduleOnCards" aria-pressed="false">
+              <span><b>show day schedule</b><small>Show weekday or month-day availability chips.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTimeWindowOnCards" aria-pressed="false">
+              <span><b>show time window</b><small>Show allowed time-of-day chips.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozedUntilOnCards" aria-pressed="false">
+              <span><b>show snooze label</b><small>Show when hidden cards return.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDurationOnCards" aria-pressed="false">
@@ -428,8 +503,12 @@
               <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="autoOpenToday" aria-pressed="false">
-              <span><b>auto-open today in calendar</b><small>Open today's activity when opening the calendar, if there are any entries or plans.</small></span>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
+              <span><b>reminders</b><small>Heads-up for hard deadlines and scheduled tasks starting soon. On iPhone, reminders appear when you open the app.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="pushDetailed" aria-pressed="false">
+              <span><b>include task names in notifications</b><small>When off, push notifications say "Task due today" without names. When on, the full task name is included.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
@@ -448,81 +527,14 @@
             <output id="setting-default-target-label"></output>
           </label>
         </section>
-        <section class="settings-block settings-advanced" id="settings-advanced">
-          <button class="settings-advanced-toggle" id="settings-advanced-toggle" type="button" aria-expanded="false" aria-controls="settings-advanced-body">
-            <span>
-              <b>fine tune priority</b>
-              <small>Optional. 100 is normal. Tune plans, due timing, progress, trend, rhythm, and habit types.</small>
-            </span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-advanced-body" id="settings-advanced-body" hidden>
-            <label class="settings-range">
-              <span>planned</span>
-              <input type="range" id="setting-plan-weight" min="0" max="200" step="10" />
-              <output id="setting-plan-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>due</span>
-              <input type="range" id="setting-due-weight" min="0" max="200" step="10" />
-              <output id="setting-due-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>progress</span>
-              <input type="range" id="setting-progress-weight" min="0" max="200" step="10" />
-              <output id="setting-progress-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>trend</span>
-              <input type="range" id="setting-trend-weight" min="0" max="200" step="10" />
-              <output id="setting-trend-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>rhythm</span>
-              <input type="range" id="setting-rhythm-weight" min="0" max="200" step="10" />
-              <output id="setting-rhythm-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>build</span>
-              <input type="range" id="setting-build-weight" min="0" max="200" step="10" />
-              <output id="setting-build-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>limit</span>
-              <input type="range" id="setting-limit-weight" min="0" max="200" step="10" />
-              <output id="setting-limit-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>stop</span>
-              <input type="range" id="setting-stop-weight" min="0" max="200" step="10" />
-              <output id="setting-stop-weight-label"></output>
-            </label>
-            <label class="settings-range">
-              <span>new</span>
-              <input type="range" id="setting-new-weight" min="0" max="200" step="10" />
-              <output id="setting-new-weight-label"></output>
-            </label>
-            <label class="settings-range wide-label">
-              <span>build starts</span>
-              <input type="range" id="setting-build-start" min="40" max="110" step="5" />
-              <output id="setting-build-start-label"></output>
-            </label>
-            <label class="settings-range wide-label">
-              <span>rhythm bias</span>
-              <input type="range" id="setting-rhythm-bias" min="-100" max="100" step="10" />
-              <output id="setting-rhythm-bias-label"></output>
-            </label>
-          </div>
-        </section>
         <section class="settings-block">
-          <span class="settings-label">sorting lab</span>
-          <p class="field-hint">Add sample habits with different rhythms, plans, progress, pins, snoozes, and habit types. Use them to see how the home order responds to settings.</p>
-          <div class="sort-lab-preview" id="sort-lab-preview"></div>
-          <div class="sample-actions">
-            <button class="btn" id="add-sort-samples" type="button">add sample habits</button>
-            <button class="btn" id="remove-sort-samples" type="button">remove samples</button>
-          </div>
+          <span class="settings-label">test data</span>
+          <p class="field-hint">Add sample habits and tasks to try the app. Samples are marked with a test label and you can remove them in one tap. They stay until you remove them.</p>
           <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
+          <div class="btn-row">
+            <button class="btn primary" id="add-sort-samples">add samples</button>
+            <button class="btn" id="remove-sort-samples">remove samples</button>
+          </div>
         </section>
         <section class="settings-block settings-danger">
           <span class="settings-label">start over</span>
@@ -599,10 +611,11 @@
       <div class="overview-list" id="day-logs-list"></div>
       <div class="day-add-row">
         <select id="day-log-ting" aria-label="habit"></select>
-        <button class="btn primary" id="day-log-add">add entry</button>
+        <input type="time" id="day-log-time" class="time-input" aria-label="optional plan time" />
+        <button class="btn primary" id="day-log-add">plan</button>
       </div>
       <div class="btn-row">
-        <button class="btn" id="day-logs-overview">overview</button>
+        <button class="btn" id="day-logs-overview">calendar</button>
         <button class="btn primary" id="day-logs-home">home</button>
       </div>
     </div>
@@ -612,6 +625,8 @@
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="undo-toast" role="status" aria-live="polite">
   <span id="undo-text"></span>
+  <button type="button" id="undo-open" hidden>open</button>
+  <button type="button" id="undo-plan" hidden>action</button>
   <button type="button" id="undo-action">undo</button>
 </div>
 
@@ -623,6 +638,9 @@
 <script src="./js/list-view.js" defer></script>
 <script src="./js/detail-view.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
+<script src="./js/today-view.js" defer></script>
+<script src="./js/push-client.js" defer></script>
+<script src="./js/reminders.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings.js" defer></script>

@@ -126,9 +126,10 @@ function doSnoozeUntil(i,until,label = ''){
   const data = load();
   if(!data[i])return;
   const previous = data[i].snoozedUntil || null;
+  const name = toastItemName(data[i]);
   data[i].snoozedUntil = until;
   if(save(data)){
-    showUndo(snoozeUndoLabel(until,label),{type:'hide',idx:i,snoozedUntil:previous});
+    showUndo(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'show'});
     render();
   }
 }
@@ -276,9 +277,13 @@ function doNuke(i){
   const data = load();
   const removed = data[i];
   if(!removed)return;
+  // Cancel any scheduled push before removing.
+  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && removed.type === 'task'){
+    cancelPush(reminderSignature(removed));
+  }
   data.splice(i,1);
   if(save(data)){
-    showUndo('Habit removed',{type:'delete',idx:i,habit:removed});
+    showUndo(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
     render();
   }
 }
@@ -353,9 +358,25 @@ function closeSheet(id){
   if(id === 'add-sheet')updateKeyboardLift();
 }
 
+// HYBRID: opens a day drill-down item in detail without leaving the day sheet
+// covering it on phone layouts. Wide layouts keep the day sheet open because
+// detail mounts into the side pane.
+function openDetailFromDayLogs(idx){
+  if(typeof openDetail !== 'function')return;
+  if(!paneTierActive() && $('day-logs-sheet')?.classList.contains('open')){
+    dayLogsKey = null;
+    // Open detail first (it renders behind day-logs due to z-index 110 < 120),
+    // then close day-logs so the detail sheet is revealed as day-logs fades out.
+    openDetail(idx);
+    closeSheet('day-logs-sheet');
+    return;
+  }
+  openDetail(idx);
+}
+
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'today-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -368,7 +389,7 @@ function shouldMountInPane(id) {
 
 // RENDER: toggles body class for full-page sheet state
 function updateFullPageState(){
-  const open = ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].some(id=>$(id).classList.contains('open'));
+  const open = ['detail-sheet','about-sheet','overview-sheet','settings-sheet','today-sheet'].some(id=>$(id).classList.contains('open'));
   document.body.classList.toggle('fullpage-open',open);
 }
 
@@ -382,12 +403,44 @@ function showToast(text){
 }
 
 // HYBRID: shows undo toast and stores pending undo state
+function canOpenFromUndo(undo){
+  if(!undo || !Number.isInteger(undo.idx))return false;
+  if(undo.openAction === false)return false;
+  if(undo.type !== 'entry')return false;
+  if(!load()[undo.idx])return false;
+  if($('day-logs-sheet')?.classList.contains('open'))return false;
+  const detailOpen = $('detail-sheet')?.classList.contains('open');
+  const detailPaneOpen = getPane()?.dataset.activeSheet === 'detail-sheet';
+  if(detailIdx === undo.idx && (detailOpen || detailPaneOpen))return false;
+  return true;
+}
+
+function undoSecondaryLabel(undo){
+  if(!undo || undo.type !== 'entry')return '';
+  return undo.toastActionLabel || '';
+}
+
 function showUndo(text,undo){
   pendingUndo = undo;
   $('undo-text').textContent = text;
+  const actionBtn = $('undo-action');
+  if(actionBtn)actionBtn.textContent = undo.undoLabel || 'undo';
+  const openBtn = $('undo-open');
+  const planBtn = $('undo-plan');
+  if(openBtn){
+    const showOpen = canOpenFromUndo(undo);
+    openBtn.hidden = !showOpen;
+    openBtn.setAttribute('aria-hidden',String(!showOpen));
+  }
+  if(planBtn){
+    const label = undoSecondaryLabel(undo);
+    planBtn.textContent = label;
+    planBtn.hidden = !label;
+    planBtn.setAttribute('aria-hidden',String(!label));
+  }
   $('undo-toast').classList.add('show');
   clearTimeout(undoTimer);
-  undoTimer = setTimeout(hideUndo,5200);
+  undoTimer = setTimeout(hideUndo,7200);
 }
 
 // HYBRID: hides undo toast and clears pending undo state
@@ -396,6 +449,8 @@ function hideUndo(){
   undoTimer = null;
   pendingUndo = null;
   $('undo-toast').classList.remove('show');
+  if($('undo-open'))$('undo-open').hidden = true;
+  if($('undo-plan'))$('undo-plan').hidden = true;
 }
 
 // HYBRID: re-renders currently open views after data change
@@ -413,7 +468,9 @@ function refreshOpenViews(){
     }
   }
   if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
+  if($('today-sheet').classList.contains('open') && typeof renderTodayAgenda === 'function')renderTodayAgenda();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
+  if(typeof checkReminders === 'function')checkReminders();
 }
 
 // RENDER: temporarily suppresses the bottom nav
@@ -548,8 +605,22 @@ document.addEventListener('pointerdown',e=>{
   searchDismissPointer = null;
   const btn = forgivingButtonTarget(e.target);
   if(!btn)return;
-  buttonPointer = {btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+  const scrollHost = btn.closest('.sheet');
+  buttonPointer = {
+    btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),
+    maxMove:0,
+    scrollHost,
+    scrollTop:scrollHost ? scrollHost.scrollTop : 0
+  };
 },true);
+
+// Track the furthest the finger has strayed from the start so a cancelled
+// gesture can still be recognised as a tap (see pointercancel below).
+document.addEventListener('pointermove',e=>{
+  if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
+  const dist = Math.hypot(e.clientX - buttonPointer.x,e.clientY - buttonPointer.y);
+  if(dist > buttonPointer.maxMove)buttonPointer.maxMove = dist;
+},{passive:true});
 
 document.addEventListener('pointerup',e=>{
   if(searchDismissPointer && searchDismissPointer.id === e.pointerId){
@@ -578,8 +649,24 @@ document.addEventListener('pointerup',e=>{
   }
 },true);
 
+// On a phone, a tap inside a scrollable sheet often drifts a few pixels, which
+// makes the browser claim the gesture as the start of a scroll and fire
+// pointercancel instead of pointerup. When that happens but the finger barely
+// moved and the scroll host never actually scrolled, it was really a tap with
+// a little finger drift — recover it by firing the click ourselves. Without
+// this, buttons like "open" in the day-logs sheet are unreachable on touch.
 document.addEventListener('pointercancel',e=>{
   if(searchDismissPointer && searchDismissPointer.id === e.pointerId)searchDismissPointer = null;
+  if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
+  const tap = buttonPointer;
+  buttonPointer = null;
+  if(tap.btn.disabled)return;
+  const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
+  if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && scrolled === 0){
+    suppressNativeButton = tap.btn;
+    tap.btn.click();
+    setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},80);
+  }
 },true);
 
 document.addEventListener('click',e=>{
@@ -624,7 +711,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','today-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
@@ -665,7 +752,7 @@ document.addEventListener('keydown',e=>{
     if (id === 'detail-sheet' && typeof closeDetail === 'function') closeDetail();
   }
   // Also close centered modals on Escape
-  ['add-sheet','about-sheet','settings-sheet','overview-sheet','snooze-sheet','activity-sheet','day-logs-sheet'].forEach(id=>{
+  ['add-sheet','about-sheet','settings-sheet','overview-sheet','today-sheet','snooze-sheet','activity-sheet','day-logs-sheet'].forEach(id=>{
     const el = $(id);
     if (el && el.classList.contains('open')) {
       e.preventDefault();
@@ -674,6 +761,7 @@ document.addEventListener('keydown',e=>{
       else if (id === 'overview-sheet') closeSheet('overview-sheet');
       else if (id === 'settings-sheet') closeSheet('settings-sheet');
       else if (id === 'about-sheet') closeSheet('about-sheet');
+      else if (id === 'today-sheet') closeSheet('today-sheet');
       else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
       else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
       else if (id === 'day-logs-sheet') { dayLogsKey = null; closeSheet('day-logs-sheet'); }

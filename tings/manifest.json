@@ -6,6 +6,11 @@
   "dir": "ltr",
   "start_url": "./index.html",
   "scope": "./",
+  "serviceworker": {
+    "scope": "./",
+    "src": "./sw.js",
+    "use_cache": false
+  },
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f5f4f0",

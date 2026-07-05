@@ -33,10 +33,30 @@ $('type-seg').addEventListener('click',e=>{
   if(!opt)return;
   selectedType = opt.dataset.v;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
-  $('target-slider-row').style.display = selectedType === 'zero' ? 'none' : 'flex';
-  $('target-help').style.display = selectedType === 'zero' ? 'none' : 'block';
-  $('target-help').textContent = rhythmHelp(selectedType);
+  syncAddTypeUi(selectedType);
 });
+
+// RENDER: toggle add-sheet field rows for the active type
+function syncAddTypeUi(type){
+  const isHabit = type === 'keepup' || type === 'reduce';
+  $('target-slider-row').style.display = isHabit ? 'flex' : 'none';
+  $('target-help').style.display = 'block';
+  $('target-help').textContent = rhythmHelp(type);
+  $('task-due-row').hidden = type !== 'task';
+  $('task-due-hint').hidden = type !== 'task';
+  $('scheduled-time-row').hidden = type !== 'task';
+  if(type === 'task'){
+    syncTaskDueUi();
+    syncScheduledTimeUi();
+  }
+}
+
+// PURE: next clean hour, used to make scheduled tasks one tap lighter.
+function defaultEventTime(){
+  const d = new Date(Date.now() + 60 * 60000);
+  d.setMinutes(0,0,0);
+  return d.getTime();
+}
 
 $('open-add').addEventListener('click',()=>{
   closeSearch();
@@ -50,7 +70,9 @@ $('open-add').addEventListener('click',()=>{
 });
 
 $('open-search').addEventListener('click',()=>{
-  if(load().length < 10)return;
+  const data = load();
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
+  if(data.length < 10 && !hasSearchableArchive)return;
   const nav = document.querySelector('.bottom-nav');
   const wide = paneTierActive();
   const isOpen = wide
@@ -60,7 +82,9 @@ $('open-search').addEventListener('click',()=>{
   else setSearchOpen(true);
 });
 $('bar-open-search')?.addEventListener('click',()=>{
-  if(load().length < 10)return;
+  const data = load();
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
+  if(data.length < 10 && !hasSearchableArchive)return;
   const isOpen = !!$('app-bar-search')?.classList.contains('is-open');
   if(isOpen)closeSearch();
   else setSearchOpen(true);
@@ -79,17 +103,20 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   if(!load().length)return;
   closeSearch();
   overviewMonthOffset = 0;
+  overviewRecentOffset = 0;
   overviewTopicFilter = 'all';
-  const todayKey = todayIso();
-  const autoOpen = sortSettings.autoOpenToday && hasItemsOnDay(todayKey);
-  dayLogsKey = autoOpen ? todayKey : null;
+  overviewRangeFilter = 'recent';
   renderOverview();
   openSheet('overview-sheet');
-  if(autoOpen){
-    renderDayLogs(todayKey);
-    openSheet('day-logs-sheet');
-  }
 });
+$('today-close')?.addEventListener('click',()=>closeSheet('today-sheet'));
+$('today-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('today-overview')?.addEventListener('click',()=>{
+  closeSheet('today-sheet');
+  const btn = paneTierActive() ? $('bar-open-overview') : $('open-overview');
+  if(btn)btn.click();
+});
+$('today-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('today-sheet');});
 $('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
@@ -147,21 +174,82 @@ $('do-save').addEventListener('click',()=>{
   if(!name){$('ting-message').focus();return;}
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
-  const target = selectedType === 'zero' ? null : clampRhythmValue($('ting-days').value);
-  data.push({
+  const type = selectedType;
+  const isHabit = type === 'keepup' || type === 'reduce';
+  const target = isHabit ? clampRhythmValue($('ting-days').value) : null;
+  const record = {
     name:name.slice(0,60),
-    type:selectedType,
+    type,
     target,
     lastLog:null,
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
     pinned:false,
-    topics:selectedAddTopics()
-  });
+    topics:selectedAddTopics(),
+    createdAt:Date.now()
+  };
+  if(type === 'task'){
+    record.dueDate = parseDateInput($('ting-due-date').value);
+    record.hardDue = $('ting-hard-due').checked;
+    record.eventTime = parseDateTimeInput($('ting-scheduled-time').value);
+    record.markDone = $('ting-mark-done').checked;
+    if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
+    record.flexibilityDays = record.dueDate === null ? 0 : 3;
+  }
+  data.push(record);
   if(save(data)){cancelAdd();render();openDetailSchedule(data.length - 1);}
 });
 
+// PURE: "YYYY-MM-DD" -> day-start ms timestamp, or null when blank
+function parseDateInput(value){
+  if(!value)return null;
+  const ts = new Date(`${value}T12:00:00`).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+// PURE: datetime-local "YYYY-MM-DDTHH:mm" -> ms timestamp, or null when blank
+function parseDateTimeInput(value){
+  if(!value)return null;
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
 $('ting-message').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
+
+// WIRE: task due-date clear + hard-deadline visibility
+function syncTaskDueUi(){
+  const dueInput = $('ting-due-date');
+  const clearBtn = $('ting-due-clear');
+  const hardToggle = $('ting-hard-due');
+  if(!dueInput)return;
+  const hasDate = Boolean(dueInput.value);
+  if(clearBtn)clearBtn.hidden = !hasDate;
+  if(hardToggle && hardToggle.closest('.hard-due-toggle')){
+    hardToggle.closest('.hard-due-toggle').hidden = !hasDate;
+  }
+  const hint = $('task-due-hint');
+  if(hint)hint.textContent = hasDate
+    ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
+    : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+}
+$('ting-due-date').addEventListener('input',syncTaskDueUi);
+$('ting-due-clear').addEventListener('click',()=>{
+  $('ting-due-date').value = '';
+  $('ting-hard-due').checked = false;
+  syncTaskDueUi();
+});
+syncTaskDueUi();
+
+// WIRE: task scheduled-time + mark-done toggle visibility
+function syncScheduledTimeUi(){
+  const timeInput = $('ting-scheduled-time');
+  const toggle = $('ting-mark-done-toggle');
+  if(!timeInput || !toggle)return;
+  const hasTime = Boolean(timeInput.value);
+  toggle.hidden = !hasTime;
+}
+$('ting-scheduled-time').addEventListener('input',syncScheduledTimeUi);
+$('ting-mark-done').addEventListener('change',syncScheduledTimeUi);
+syncScheduledTimeUi();
 
 // PURE: clamp rhythm value to valid range
 function clampRhythm(value){
@@ -170,8 +258,10 @@ function clampRhythm(value){
 
 // PURE: return help text for a rhythm type
 function rhythmHelp(type){
-  if(type === 'reduce')return 'Target is the gap you want before it happens again.';
-  return 'Target days between entries.';
+  if(type === 'reduce')return 'Something to space out. Target is the gap you want before it can repeat.';
+  if(type === 'zero')return 'Something to avoid. Log it each time it happens; the aim is longer gaps.';
+  if(type === 'task')return 'A one-off to-do. Add a due date, a fixed scheduled time, or leave it dateless.';
+  return 'Something to do regularly. Target is the days between entries.';
 }
 
 // RENDER: update detail type segmented control + help
@@ -179,9 +269,23 @@ function setDetailTypeUi(type){
   document.querySelectorAll('#detail-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.detailType === type);
   });
-  $('detail-slider-row').style.display = type === 'zero' ? 'none' : 'flex';
-  $('detail-target-help').style.display = type === 'zero' ? 'none' : 'block';
+  const isHabit = type === 'keepup' || type === 'reduce';
+  $('detail-slider-row').style.display = isHabit ? 'flex' : 'none';
+  $('detail-target-help').style.display = 'block';
   $('detail-target-help').textContent = rhythmHelp(type);
+  $('detail-due-row').hidden = type !== 'task';
+  $('detail-due-hint').hidden = type !== 'task';
+  $('detail-scheduled-row').hidden = type !== 'task';
+  const flexHelp = $('detail-flexibility-help');
+  if(flexHelp){
+    flexHelp.textContent = type === 'task'
+      ? 'How many days before the due date this task starts surfacing.'
+      : 'Adds a buffer to your target for planning purposes.';
+  }
+  const exportBtn = $('detail-export');
+  if(exportBtn)exportBtn.hidden = type !== 'task';
+  if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
+  if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
 }
 
 // HYBRID: sync rhythm field, label, and crown dial state
@@ -434,6 +538,17 @@ $('detail-time-clear').addEventListener('click',()=>{
   $('detail-time-clear').hidden = true;
   setDetailDirty();
 });
+$('detail-due-date').addEventListener('input',()=>{syncDetailDueUi();setDetailDirty();});
+$('detail-due-clear').addEventListener('click',()=>{
+  $('detail-due-date').value = '';
+  $('detail-hard-due').checked = false;
+  syncDetailDueUi();
+  setDetailDirty();
+});
+$('detail-hard-due').addEventListener('change',()=>setDetailDirty());
+$('detail-scheduled-time').addEventListener('input',()=>{syncDetailScheduledUi();setDetailDirty();});
+$('detail-mark-done').addEventListener('change',()=>setDetailDirty());
+$('detail-habit-mark-done').addEventListener('change',()=>setDetailDirty());
 $('detail-schedule-view-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-schedule-view]');
   if(!opt)return;
@@ -524,6 +639,10 @@ $('detail-save').addEventListener('click',()=>{
   if(!h)return;
   const current = currentDetailTune();
   if(!current.name){$('detail-habit-message').focus();return;}
+  // Cancel scheduled push for the pre-edit state (sig may change after edit).
+  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && h.type === 'task'){
+    cancelPush(reminderSignature(h));
+  }
   h.name = current.name.slice(0,60);
   h.type = current.type;
   h.emoji = current.emoji;
@@ -541,7 +660,21 @@ $('detail-save').addEventListener('click',()=>{
   }
   h.durationMinutes = current.durationMinutes;
   h.flexibilityDays = current.flexibilityDays;
-  h.target = current.type === 'zero' ? null : clampRhythmValue(current.target || h.target || 7);
+  const isHabit = current.type === 'keepup' || current.type === 'reduce';
+  h.target = isHabit ? clampRhythmValue(current.target || h.target || 7) : null;
+  if(current.type === 'task'){
+    h.eventTime = current.eventTime;
+    h.dueDate = current.dueDate ?? (current.eventTime !== null ? dayStart(current.eventTime) : null);
+    h.hardDue = current.hardDue;
+    h.markDone = current.markDone;
+  }else{
+    h.dueDate = null;
+    h.hardDue = false;
+    h.eventTime = null;
+    // build habits can be event-style (auto-log on schedule); others stay manual
+    h.markDone = current.type === 'keepup' ? current.markDone : true;
+  }
+  if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
   save(data);
   showToast('saved');
@@ -569,6 +702,10 @@ $('detail-snooze').addEventListener('click',()=>{
   snoozeFromDetail = true;
   openSnooze(detailIdx);
 });
+$('detail-export').addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  exportToCalendar(detailIdx);
+});
 $('detail-delete').addEventListener('click',()=>{
   $('detail-delete-confirm').hidden = false;
 });
@@ -591,7 +728,7 @@ bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   const h = load()[detailIdx];
   if(!h)return;
   const key = day.dataset.entryDay;
-  if(hasPlannedEntryForDay(h,key)){
+  if(hasPlannedEntryForDay(h,key) || hasScheduledMarkerForDay(h,key)){
     dayLogsKey = key;
     renderCalendar(h);
     renderDayLogs(key);
@@ -629,49 +766,49 @@ $('open-settings').addEventListener('click',()=>{
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('settings-advanced-toggle').addEventListener('click',e=>{
+$('settings-advanced-toggle')?.addEventListener('click',e=>{
   if(suppressNativeButton === e.currentTarget){
     e.preventDefault();
     return;
   }
   toggleAdvancedSettings();
 });
-$('sort-preset-seg').addEventListener('click',e=>{
+$('sort-preset-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-preset]');
   if(!opt)return;
   applySortPreset(opt.dataset.preset);
 });
-$('plan-window-seg').addEventListener('click',e=>{
+$('plan-window-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-window]');
   if(!opt)return;
   updateSortSetting({planWindowDays:parseInt(opt.dataset.window,10),preset:'custom'});
   showToast('order updated');
 });
-$('new-build-seg').addEventListener('click',e=>{
+$('new-build-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-new-build]');
   if(!opt)return;
   updateSortSetting({newBuildMode:opt.dataset.newBuild,preset:'custom'});
   showToast('order updated');
 });
-$('due-mode-seg').addEventListener('click',e=>{
+$('due-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-due-mode]');
   if(!opt)return;
   updateSortSetting({dueMode:opt.dataset.dueMode,preset:'custom'});
   showToast('order updated');
 });
-$('build-window-seg').addEventListener('click',e=>{
+$('build-window-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-build-window]');
   if(!opt)return;
   updateSortSetting({buildLookAheadDays:parseInt(opt.dataset.buildWindow,10),preset:'custom'});
   showToast('order updated');
 });
-$('limit-mode-seg').addEventListener('click',e=>{
+$('limit-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-limit-mode]');
   if(!opt)return;
   updateSortSetting({limitMode:opt.dataset.limitMode,preset:'custom'});
   showToast('order updated');
 });
-$('stop-mode-seg').addEventListener('click',e=>{
+$('stop-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-stop-mode]');
   if(!opt)return;
   updateSortSetting({stopMode:opt.dataset.stopMode,preset:'custom'});
@@ -722,6 +859,34 @@ $('availability-grid').addEventListener('change',e=>{
   if(!field)return;
   saveAvailabilityDay(parseInt(field.dataset.availabilityDay,10),field.value);
 });
+$('blocked-time-add')?.addEventListener('click',addBlockedTime);
+$('blocked-time-list')?.addEventListener('change',e=>{
+  const label = e.target.closest('[data-blocked-label]');
+  const start = e.target.closest('[data-blocked-start]');
+  const end = e.target.closest('[data-blocked-end]');
+  if(label)saveBlockedTimePatch(parseInt(label.dataset.blockedLabel,10),{label:cleanTopic(label.value) || 'blocked'});
+  if(start)saveBlockedTimePatch(parseInt(start.dataset.blockedStart,10),{start:timeInputToMinutes(start.value)});
+  if(end)saveBlockedTimePatch(parseInt(end.dataset.blockedEnd,10),{end:timeInputToMinutes(end.value)});
+});
+$('blocked-time-list')?.addEventListener('click',e=>{
+  const remove = e.target.closest('[data-blocked-remove]');
+  if(remove){
+    removeBlockedTime(parseInt(remove.dataset.blockedRemove,10));
+    return;
+  }
+  const day = e.target.closest('[data-blocked-day]');
+  if(!day)return;
+  const index = parseInt(day.dataset.blockedIndex,10);
+  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  const block = blocks[index];
+  if(!block)return;
+  const fullSet = block.days.length ? block.days : [0,1,2,3,4,5,6];
+  const next = new Set(fullSet);
+  const value = parseInt(day.dataset.blockedDay,10);
+  if(next.has(value))next.delete(value);
+  else next.add(value);
+  saveBlockedTimePatch(index,{days:normalizeAllowedWeekdays([...next])});
+});
 bindSettingRange('plan-weight','planWeight','%');
 bindSettingRange('due-weight','dueWeight','%');
 bindSettingRange('progress-weight','progressWeight','%');
@@ -734,8 +899,8 @@ bindSettingRange('new-weight','newWeight','%');
 bindSettingRange('build-start','buildRiseAt','%');
 bindSettingRange('rhythm-bias','rhythmBias','');
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
-$('add-sort-samples').addEventListener('click',addSortSamples);
-$('remove-sort-samples').addEventListener('click',removeSortSamples);
+$('add-sort-samples')?.addEventListener('click',addSortSamples);
+$('remove-sort-samples')?.addEventListener('click',removeSortSamples);
 $('settings-reset').addEventListener('click',()=>{
   $('settings-reset-confirm').hidden = false;
 });
@@ -749,39 +914,27 @@ $('settings-reset-yes').addEventListener('click',()=>{
   showToast('settings reset');
 });
 
-// PURE: check if any habit logged on a day
-function hasItemsOnDay(key){
-  const data = load();
-  return data.some(h=>
-    normalizeLogs(h.logs).some(log=>dateKey(logTime(log))===key)
-  );
-}
-
 $('open-overview').addEventListener('click',()=>{
   if(!load().length)return;
   closeSearch();
   overviewMonthOffset = 0;
+  overviewRecentOffset = 0;
   overviewTopicFilter = 'all';
   overviewRangeFilter = 'recent';
-  const todayKey = todayIso();
-  const autoOpen = sortSettings.autoOpenToday && hasItemsOnDay(todayKey);
-  dayLogsKey = autoOpen ? todayKey : null;
   renderOverview();
   openSheet('overview-sheet');
-  if(autoOpen){
-    renderDayLogs(todayKey);
-    openSheet('day-logs-sheet');
-  }
 });
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
 $('overview-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('overview-prev-month').addEventListener('click',()=>{
-  overviewMonthOffset -= 1;
+  if(overviewRangeFilter === 'recent')overviewRecentOffset -= 14;
+  else overviewMonthOffset -= 1;
   renderOverview();
 });
 $('overview-next-month').addEventListener('click',()=>{
-  overviewMonthOffset += 1;
+  if(overviewRangeFilter === 'recent')overviewRecentOffset += 14;
+  else overviewMonthOffset += 1;
   renderOverview();
 });
 $('overview-topic-filter').addEventListener('click',e=>{
@@ -795,6 +948,8 @@ $('overview-range-filter').addEventListener('click',e=>{
   const btn = e.target.closest('[data-overview-range]');
   if(!btn)return;
   overviewRangeFilter = btn.dataset.overviewRange || 'recent';
+  overviewMonthOffset = 0;
+  overviewRecentOffset = 0;
   dayLogsKey = null;
   renderOverview();
 });
@@ -811,12 +966,21 @@ bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   renderDayLogs(dayLogsKey);
   openSheet('day-logs-sheet');
 });
+bindCalendarTap($('today-week-strip'),'[data-log-day]',day=>{
+  if(!day)return;
+  dayLogsKey = day.dataset.logDay;
+  if(typeof renderTodayWeekStrip === 'function')renderTodayWeekStrip(load());
+  renderDayLogs(dayLogsKey);
+  openSheet('day-logs-sheet');
+});
 $('day-log-add').addEventListener('click',()=>{
   if(!dayLogsKey)return;
   const idx = parseInt($('day-log-ting').value,10);
   if(Number.isNaN(idx))return;
-  const ts = new Date(`${dayLogsKey}T12:00:00`).getTime();
-  if(!logTingAt(idx,ts))return;
+  const h = load()[idx];
+  if(!h || (h.type === 'task' && h.lastLog !== null))return;
+  if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false}))return;
+  if($('day-log-time'))$('day-log-time').value = '';
   renderDayLogs(dayLogsKey);
   refreshOpenViews();
 });
@@ -824,18 +988,49 @@ $('day-availability-save').addEventListener('click',saveDayAvailabilityOverride)
 $('day-availability-minutes').addEventListener('keydown',e=>{if(e.key === 'Enter')saveDayAvailabilityOverride();});
 $('day-availability-clear').addEventListener('click',clearDayAvailabilityOverride);
 $('day-logs-list').addEventListener('click',e=>{
-  const btn = e.target.closest('[data-remove-plan]');
-  if(!btn)return;
-  const idx = parseInt(btn.dataset.removePlan,10);
-  const key = btn.dataset.planDay;
-  const data = load();
-  const h = data[idx];
-  if(!h)return;
-  const planned = normalizeLogs(h.logs).filter(log=>isPlanLog(log) && dateKey(logTime(log)) === key).map(logTime);
-  if(!planned.length)return;
-  planned.forEach(ts=>removeEntryAt(idx,ts,true));
-  showToast('plan removed');
-  refreshOpenViews();
+  const openBtn = e.target.closest('[data-open-day-item]');
+  if(openBtn){
+    const idx = parseInt(openBtn.dataset.openDayItem,10);
+    if(Number.isNaN(idx))return;
+    openDetailFromDayLogs(idx);
+    return;
+  }
+  const removeBtn = e.target.closest('[data-remove-plan]');
+  if(removeBtn){
+    const idx = parseInt(removeBtn.dataset.removePlan,10);
+    const key = removeBtn.dataset.planDay;
+    removePlansOnDay(idx,key);
+    return;
+  }
+  const moveBtn = e.target.closest('[data-move-plan]');
+  if(moveBtn){
+    const row = moveBtn.closest('.overview-item');
+    if(row){
+      row.querySelector('.plan-actions').hidden = true;
+      const inline = row.querySelector('.move-inline');
+      if(inline){inline.hidden = false;row.querySelector('.move-date')?.focus();}
+    }
+    return;
+  }
+  const cancelBtn = e.target.closest('[data-move-cancel]');
+  if(cancelBtn){
+    const row = cancelBtn.closest('.overview-item');
+    if(row){
+      row.querySelector('.plan-actions').hidden = false;
+      row.querySelector('.move-inline').hidden = true;
+    }
+    return;
+  }
+  const goBtn = e.target.closest('[data-move-go]');
+  if(goBtn){
+    const row = goBtn.closest('.overview-item');
+    if(!row)return;
+    const idx = parseInt(goBtn.dataset.moveGo,10);
+    const fromKey = row.querySelector('.move-date').dataset.moveFrom;
+    const toKey = row.querySelector('.move-date').value;
+    if(!toKey)return;
+    movePlanTo(idx,fromKey,toKey);
+  }
 });
 
 $('snooze-sheet').addEventListener('click',e=>{
@@ -875,6 +1070,15 @@ $('day-logs-home').addEventListener('click',()=>{
 $('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('undo-action').addEventListener('click',undoLastAction);
+$('undo-open')?.addEventListener('click',()=>{
+  if(!canOpenFromUndo(pendingUndo))return;
+  const idx = pendingUndo.idx;
+  hideUndo();
+  openDetail(idx);
+});
+$('undo-plan')?.addEventListener('click',()=>{
+  runPendingUndoAction();
+});
 
 $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
@@ -883,3 +1087,9 @@ $('list').addEventListener('touchstart',e=>{
 render();
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
+if (typeof initReminders === 'function') initReminders();
+if (typeof sweepAutoDoneTasks === 'function'){
+  sweepAutoDoneTasks();
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden)setTimeout(sweepAutoDoneTasks,300); });
+  setInterval(sweepAutoDoneTasks,5 * 60 * 1000);
+}

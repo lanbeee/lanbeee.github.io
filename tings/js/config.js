@@ -6,10 +6,19 @@ const MAX_LOGS = 500;
 const MAX_TINGS = 300;
 const QUOTA_WARN_KB = 4096;
 const QUOTA_HARD_KB = 4800;
+const PUSH_WORKER_URL = 'https://habits-push.YOUR-ACCOUNT.workers.dev';
+const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
 const MAX_RHYTHM_DAYS = 183;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_FLEXIBILITY_DAYS = 0;
 const DEFAULT_AVAILABILITY_MINUTES = [240,90,90,90,90,90,240];
+const DEFAULT_BLOCKED_TIMES = [
+  {label:'sleep',days:[0,1,2,3,4,5,6],start:0,end:420},
+  {label:'breakfast',days:[0,1,2,3,4,5,6],start:480,end:510},
+  {label:'work',days:[1,2,3,4,5],start:540,end:1020},
+  {label:'lunch',days:[0,1,2,3,4,5,6],start:720,end:780},
+  {label:'dinner',days:[0,1,2,3,4,5,6],start:1080,end:1140}
+];
 const WEEKDAY_LABELS = ['sun','mon','tue','wed','thu','fri','sat'];
 const SWIPE_THRESHOLD = 60;
 const SWIPE_ACTION_WIDTH = 68;
@@ -46,17 +55,30 @@ const DEFAULT_SORT_SETTINGS = {
   ...SORT_PRESETS.todayFirst,
   preset:'todayFirst',
   showSnoozed:false,
+  showSampleOnCards:true,
+  showPinnedOnCards:true,
+  showTaskDateOnCards:true,
+  showPlansOnCards:true,
+  showDayScheduleOnCards:true,
+  showTimeWindowOnCards:true,
+  showSnoozedUntilOnCards:true,
   showDurationOnCards:false,
   showRepetitionOnCards:true,
   showFlexibilityOnCards:false,
   showTopicsOnCards:false,
+  showScheduledTasksInAgenda:true,
+  showDueTasksInAgenda:true,
+  showPlannedItemsInAgenda:true,
+  showDueHabitsInAgenda:true,
   reachAssist:true,
-  autoOpenToday:true,
+  reminders:false,
+  pushDetailed:false,
   defaultType:'keepup',
   defaultTarget:7,
   topics:[],
   availabilityMinutes:DEFAULT_AVAILABILITY_MINUTES,
-  availabilityOverrides:{}
+  availabilityOverrides:{},
+  blockedTimes:DEFAULT_BLOCKED_TIMES
 };
 const LIMIT_MODE_POLICY = {
   quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01,trend:0.08,trendEarly:0},
@@ -72,9 +94,9 @@ const STOP_MODE_POLICY = {
 };
 const BASE_SORT_MIX = {now:0.82,plan:1.45,due:1.35,progress:0.72,trend:0.7,rhythm:1,newness:1};
 const FOCUS_TYPE_SCALE = {
-  balanced:{keepup:1,reduce:1,zero:1},
-  build:{keepup:1.22,reduce:0.78,zero:1},
-  space:{keepup:0.88,reduce:1.22,zero:1.12}
+  balanced:{keepup:1,reduce:1,zero:1,task:1},
+  build:{keepup:1.22,reduce:0.78,zero:1,task:0.92},
+  space:{keepup:0.88,reduce:1.22,zero:1.12,task:0.92}
 };
 
 const $ = id => document.getElementById(id);
@@ -101,6 +123,7 @@ let snoozeFromDetail = false;
 let activityIdx = null;
 let detailMonthOffset = 0;
 let overviewMonthOffset = 0;
+let overviewRecentOffset = 0;
 let overviewTopicFilter = 'all';
 let overviewRangeFilter = 'recent';
 let homeTopicFilter = 'all';

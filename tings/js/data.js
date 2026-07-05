@@ -15,10 +15,12 @@
 
 /**
  * A habit. Stored in the habits array under the `tings_v2` localStorage key.
+ * The same record shape expresses all four item kinds via `type`; the fields
+ * below marked with TaskFields only carry meaning for that type.
  * @typedef {Object} Habit
  * @property {string} name                    — display name (max 60 chars)
- * @property {'keepup'|'reduce'|'zero'} type  — build / limit / stop
- * @property {number|null} target             — rhythm in days; null when type === 'zero'
+ * @property {'keepup'|'reduce'|'zero'|'task'} type  — build / limit / stop / one-off
+ * @property {number|null} target             — rhythm in days; null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon
  * @property {boolean} pinned                 — stays above auto-sorted habits
@@ -33,9 +35,16 @@
  * @property {number|null} allowedTimeEnd     — minutes since midnight; null = unrestricted
  * @property {number|null} preferredTimeStart — minutes since midnight; null = unrestricted
  * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
- * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60
+ * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
+ * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
+ *
+ * — TaskFields (additional semantics when type === 'task') —
+ * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
+ * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
+ * @property {boolean} hardDue                — true when dueDate is a real deadline (escalates urgency past it)
+ * @property {boolean} markDone               — true (default) when you must tap to complete it; false = event-style, auto-completes once eventTime passes
  */
 
 /**
@@ -63,17 +72,28 @@
  * @property {'quiet'|'watch'|'recent'|'active'} stopMode      — stop-habit policy selector
  * @property {number} rhythmBias                               — -100 to 100, favours shorter or longer rhythms
  * @property {boolean} showSnoozed                             — render snoozed habits faded on home
+ * @property {boolean} showSampleOnCards                       — show sample marker chip on home cards
+ * @property {boolean} showPinnedOnCards                       — show pinned chip on home cards
+ * @property {boolean} showTaskDateOnCards                     — show task due/scheduled chip on home cards
+ * @property {boolean} showPlansOnCards                        — show planned-entry chip on home cards
+ * @property {boolean} showDayScheduleOnCards                  — show weekday/monthday schedule chip on home cards
+ * @property {boolean} showTimeWindowOnCards                   — show time-window chip on home cards
+ * @property {boolean} showSnoozedUntilOnCards                 — show snoozed-until chip on home cards
  * @property {boolean} showDurationOnCards                     — show duration chip on home cards
  * @property {boolean} showRepetitionOnCards                   — show rhythm chip on home cards
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
+ * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
+ * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
+ * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
+ * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
- * @property {boolean} autoOpenToday                           — open today's activity when opening the calendar
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
  * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
  * @property {string[]} topics                                 — master topic list (max 24)
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
+ * @property {{label:string,days:number[],start:number,end:number}[]} blockedTimes — recurring unavailable blocks
  */
 
 /**
@@ -98,17 +118,18 @@ function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
-    const merged = {...DEFAULT_SORT_SETTINGS,...migrated};
+    const merged = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...migrated,preset:'todayFirst'};
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
-    if(merged.preset && merged.preset !== 'custom' && !SORT_PRESETS[merged.preset])merged.preset = 'custom';
     delete merged.keepStopsQuiet;
     delete merged.requireConfirm;
     delete merged.focusSearchOnOpen;
+    merged.reminders = false;
     merged.topics = normalizeTopics(merged.topics);
     merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
+    merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
     return merged;
   }catch{
     return {...DEFAULT_SORT_SETTINGS};
@@ -116,11 +137,13 @@ function loadSortSettings(){
 }
 
 function saveSortSettings(settings){
-  const next = {...DEFAULT_SORT_SETTINGS,...settings};
+  const next = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...settings,preset:'todayFirst'};
   delete next.keepStopsQuiet;
+  next.reminders = false;
   next.topics = normalizeTopics(next.topics);
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
+  next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }
@@ -131,27 +154,68 @@ function saveSortSettings(settings){
 // ─────────────────────────────────────────────────────────────────────────
 
 function normalize(items){
-  return items.map(h => ({
-    name: h.name || '',
-    type: h.type || 'keepup',
-    target: h.type === 'zero' ? null : clampRhythmValue(h.target || 7),
-    logs: normalizeLogs(h.logs),
-    emoji: h.emoji || '',
-    pinned:Boolean(h.pinned),
-    sample:Boolean(h.sample),
-    snoozedUntil: h.snoozedUntil || null,
-    topics:normalizeTopics(h.topics),
-    allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
-    allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
-    preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
-    preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
-    allowedTimeStart:normalizeTimeMinutes(h.allowedTimeStart),
-    allowedTimeEnd:normalizeTimeMinutes(h.allowedTimeEnd),
-    preferredTimeStart:normalizeTimeMinutes(h.preferredTimeStart),
-    preferredTimeEnd:normalizeTimeMinutes(h.preferredTimeEnd),
-    flexibilityDays:clampFlexibility(h.flexibilityDays),
-    durationMinutes:clampDuration(h.durationMinutes)
-  })).map(h => ({...h,lastLog:latestActualLog(h.logs)}));
+  return items.map(raw => {
+    // Tasks and legacy events are now a single one-off type. Legacy 'event' records
+    // migrate to 'task' with eventTime preserved (a timed task = appointment).
+    let type = raw.type || 'keepup';
+    const wasEvent = type === 'event';
+    if(wasEvent)type = 'task';
+    const eventTime = type === 'task' ? clampTimestamp(raw.eventTime) : null;
+    let dueDate = type === 'task' ? clampDayTimestamp(raw.dueDate) : null;
+    if(wasEvent && eventTime !== null && dueDate === null)dueDate = clampDayTimestamp(eventTime);
+    const hardDue = type === 'task' ? Boolean(raw.hardDue) : false;
+    // markDone: explicit values are preserved for every type. Default is
+    // event-style (false) for legacy events, manual (true) for everything else.
+    const markDone = Object.prototype.hasOwnProperty.call(raw,'markDone')
+      ? Boolean(raw.markDone)
+      : !wasEvent;
+    const logs = normalizeLogs(raw.logs);
+    // A past legacy event has already happened — record it as a completed entry so it
+    // fades into history instead of nagging as an overdue task.
+    if(wasEvent && eventTime !== null && eventTime < Date.now() && !logs.some(l=>logTime(l) === eventTime)){
+      logs.push(eventTime);
+    }
+    const h = {
+      name: raw.name || '',
+      type,
+      target: (type === 'zero' || type === 'task')
+        ? null
+        : clampRhythmValue(raw.target || 7),
+      dueDate,
+      hardDue,
+      markDone,
+      eventTime,
+      createdAt: raw.createdAt || null,
+      logs,
+      emoji: raw.emoji || '',
+      pinned:Boolean(raw.pinned),
+      sample:Boolean(raw.sample),
+      snoozedUntil: raw.snoozedUntil || null,
+      topics:normalizeTopics(raw.topics),
+      allowedWeekdays:normalizeAllowedWeekdays(raw.allowedWeekdays),
+      allowedMonthDays:normalizeAllowedMonthDays(raw.allowedMonthDays),
+      preferredWeekdays:normalizeAllowedWeekdays(raw.preferredWeekdays),
+      preferredMonthDays:normalizeAllowedMonthDays(raw.preferredMonthDays),
+      allowedTimeStart:normalizeTimeMinutes(raw.allowedTimeStart),
+      allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
+      preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
+      preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
+      flexibilityDays:clampFlexibility(raw.flexibilityDays),
+      durationMinutes:clampDuration(raw.durationMinutes)
+    };
+    h.lastLog = latestActualLog(h.logs);
+    return h;
+  });
+}
+
+// PURE: the effective "when" for a one-off task — its fixed time if set, else its due date. null = someday.
+function taskWhen(h){
+  if(h.type !== 'task')return null;
+  return h.eventTime !== null ? h.eventTime : h.dueDate;
+}
+// PURE: a task with a fixed clock time (an appointment), as opposed to dated/someday.
+function isTimedTask(h){
+  return h.type === 'task' && h.eventTime !== null;
 }
 
 function save(data){
@@ -181,6 +245,62 @@ function save(data){
   }
 }
 
+// HYBRID: auto-complete event-style items (markDone === false) whose time has
+// passed. Two shapes: timed tasks (log at eventTime) and scheduled build-habits
+// (log each passed scheduled weekday/monthday day). Adds completion logs,
+// cancels scheduled pushes for tasks, and re-renders. Idempotent — safe on a
+// timer. Returns the number of items it completed.
+function sweepAutoDoneTasks(){
+  const data = load();
+  const now = Date.now();
+  const todayStart = dayStart(now);
+  const completedSigs = [];
+  let changed = false;
+  let count = 0;
+  data.forEach(h=>{
+    if(h.markDone !== false)return;
+    if(h.type === 'task'){
+      if(h.eventTime === null || h.eventTime >= now)return;
+      if(h.lastLog !== null)return; // already done (manual check-off or prior sweep)
+      const logs = normalizeLogs(h.logs);
+      logs.push(h.eventTime);
+      h.logs = normalizeLogs(logs);
+      h.lastLog = latestActualLog(h.logs);
+      changed = true;
+      count += 1;
+      if(typeof reminderSignature === 'function')completedSigs.push(reminderSignature(h));
+      return;
+    }
+    if(h.type === 'keepup'){
+      // Recurring-event habit: back-fill a log for each passed scheduled day
+      // that has no entry yet. Only fires when an explicit day schedule is set.
+      if(!hasDaySchedule(h))return;
+      const anchor = h.lastLog !== null ? h.lastLog : (h.createdAt || now);
+      const floor = todayStart - 60 * 86400000; // cap to avoid huge back-fills
+      let cursor = Math.max(dayStart(anchor) + 86400000, floor);
+      const taken = new Set(normalizeLogs(h.logs).map(l=>dateKey(logTime(l))));
+      const toAdd = [];
+      while(cursor < todayStart){
+        if(isDateEligibleForHabit(h,cursor) && !taken.has(dateKey(cursor))){
+          toAdd.push(cursor + 12 * 3600000); // noon, same local day
+        }
+        cursor += 86400000;
+      }
+      if(toAdd.length){
+        h.logs = normalizeLogs([...normalizeLogs(h.logs), ...toAdd]);
+        h.lastLog = latestActualLog(h.logs);
+        changed = true;
+        count += toAdd.length;
+      }
+    }
+  });
+  if(!changed)return 0;
+  save(data);
+  if(typeof cancelPush === 'function')completedSigs.forEach(sig=>cancelPush(sig));
+  if(typeof refreshOpenViews === 'function')refreshOpenViews();
+  return count;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // NORMALIZATION PRIMITIVES — PURE. Coercion helpers used by normalize() and
 // also called directly from view/settings code. Each is self-contained.
@@ -197,6 +317,17 @@ function clampFlexibility(value){
 }
 function clampDuration(value){
   return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
+}
+function clampTimestamp(value){
+  const n = Number(value);
+  if(!Number.isFinite(n) || n <= 0)return null;
+  const MS_YEAR = 365 * 86400000;
+  if(n < Date.now() - 10 * MS_YEAR || n > Date.now() + 10 * MS_YEAR)return null;
+  return Math.round(n);
+}
+function clampDayTimestamp(value){
+  const ts = clampTimestamp(value);
+  return ts === null ? null : dayStart(ts);
 }
 function cleanTopic(value){
   return String(value || '').trim().replace(/\s+/g,' ').slice(0,32);
@@ -247,6 +378,17 @@ function normalizeAvailabilityOverrides(value){
     acc[key] = Math.max(0,Math.min(1440,parseInt(minutes,10) || 0));
     return acc;
   },{});
+}
+function normalizeBlockedTimes(value){
+  const src = Array.isArray(value) ? value : DEFAULT_BLOCKED_TIMES;
+  return src.map((raw,idx)=>{
+    const label = cleanTopic(raw?.label || `blocked ${idx + 1}`).slice(0,24) || 'blocked';
+    const days = normalizeAllowedWeekdays(raw?.days);
+    const start = normalizeTimeMinutes(raw?.start);
+    const end = normalizeTimeMinutes(raw?.end);
+    if(start === null || end === null || start === end)return null;
+    return {label,days,start,end};
+  }).filter(Boolean).slice(0,24);
 }
 function effectiveAvailabilityMinutes(key,settings = sortSettings){
   const normalized = {...DEFAULT_SORT_SETTINGS,...settings};
@@ -366,6 +508,7 @@ function sampleLogs(actualDays = [],plannedDays = []){
 
 function daysSince(ts){return ts ? Math.floor((Date.now() - ts) / 86400000) : null;}
 function dayDistance(ts){return ts ? Math.round((Date.now() - ts) / 86400000) : null;}
+function daysUntil(ts){return ts ? Math.floor((dayStart(ts) - dayStart(Date.now())) / 86400000) : null;}
 function dayStart(ts){
   const d = new Date(ts);
   return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
@@ -458,6 +601,25 @@ function nextEligibleDate(h,fromTs = Date.now(),lookAheadDays = 370){
 function nextEligibleDistance(h,fromTs = Date.now()){
   const next = nextEligibleDate(h,fromTs);
   return next === null ? null : Math.round((next - dayStart(fromTs)) / 86400000);
+}
+// Task readiness — mirrors nextEligibleDate's composition with day schedules.
+// A task surfaces as relevant once today is on/after its readyDate AND the
+// day-of schedule (if any) allows it. flexibilityDays flips direction for
+// tasks: days-before-due it starts surfacing, not a rhythm buffer.
+function taskReadyDate(h){
+  if(h.type !== 'task')return null;
+  const when = taskWhen(h);
+  if(when === null)return null;
+  const window = Math.max(0,clampFlexibility(h.flexibilityDays));
+  return when - window * 86400000;
+}
+function isTaskReady(h,ts = Date.now()){
+  if(h.type !== 'task')return false;
+  if(h.lastLog !== null)return false; // completed tasks are never "ready"
+  if(taskWhen(h) === null)return true; // someday tasks are always "ready" (scored separately)
+  const ready = taskReadyDate(h);
+  if(ready !== null && dayStart(ts) < ready)return false;
+  return !hasDaySchedule(h) || isDateEligibleForHabit(h,ts);
 }
 function formatTimeShort(minutes){
   const h = Math.floor(minutes / 60);

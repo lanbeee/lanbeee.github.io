@@ -71,21 +71,31 @@ function buildDayTally(data,included){
   let actual = 0;
   let planned = 0;
   const toneCounts = {hit:0,warn:0,miss:0,plan:0};
+  const addEntry = (ts,entry)=>{
+    if(!included(ts))return;
+    const key = dateKey(ts);
+    if(!map.has(key))map.set(key,[]);
+    map.get(key).push(entry);
+    total += 1;
+    if(entry.planned)planned += 1;
+    else actual += 1;
+    toneCounts[entry.tone] = (toneCounts[entry.tone] || 0) + 1;
+  };
   data.forEach(h=>{
     const toneByDay = logToneMap(h);
     normalizeLogs(h.logs).forEach(log=>{
       const ts = logTime(log);
-      if(!included(ts))return;
-      const key = dateKey(ts);
-      if(!map.has(key))map.set(key,[]);
       const isPlan = isPlanLog(log);
+      const key = dateKey(ts);
       const tone = isPlan ? 'plan' : toneByDay.get(key) || entryTone(h.type);
-      map.get(key).push({name:h.name,type:h.type,tone,planned:isPlan});
-      total += 1;
-      if(isPlan)planned += 1;
-      else actual += 1;
-      toneCounts[tone] = (toneCounts[tone] || 0) + 1;
+      addEntry(ts,{name:h.name,type:h.type,tone,planned:isPlan});
     });
+    if(isTimedTask(h) && h.lastLog === null){
+      addEntry(h.eventTime,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
+    }
+    if(h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null){
+      addEntry(h.dueDate,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
+    }
   });
   return {map,total,actual,planned,toneCounts};
 }
@@ -131,6 +141,23 @@ function cellMarkup(key,date,entries,extraSpans = ''){
     'pickable'
   ].filter(Boolean).join(' ');
   return `<button class="cal-day ${cls}" data-log-day="${key}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
+}
+
+// PURE: build an N-day strip's tally + cell HTML starting at startTs. Shared by
+// the overview "last 2 weeks" strip and the today sheet's "this week" strip so
+// the two never diverge in how they render a day cell.
+function dayStripMarkup(data,startTs,days){
+  const end = startTs + days * 86400000;
+  const tally = buildDayTally(data,ts=>ts >= startTs && ts < end);
+  const html = Array.from({length:days},(_,i)=>{
+    const ts = startTs + i * 86400000;
+    const date = new Date(ts);
+    const key = dateKey(ts);
+    const entries = tally.map.get(key) || [];
+    const labelSpans = `<span class="strip-wd">${weekdayShort(date.getDay())}</span><span class="strip-num">${date.getDate()}</span>`;
+    return cellMarkup(key,date,entries,labelSpans);
+  }).join('');
+  return {tally,html};
 }
 
 // Lists shared by every range mode: top habits and topics by entry count.
@@ -183,36 +210,43 @@ function renderOverview(){
   else renderOverviewMonth(data,topicLabel,overviewRangeFilter === 'all');
 }
 
-// Default view: a 14-cell strip (today and the 13 days before it), always
-// anchored to "now" rather than whatever month happens to be navigated to.
-// RENDER: renders 14-day strip and stats
+// Default view: a 14-cell strip. With no offset it covers today and the 13
+// days before it ("last 14 days"). The prev/next arrows shift the window in
+// 14-day pages so you can browse earlier or later stretches the same way the
+// month grid does.
+// RENDER: renders 14-day strip, stats, and range nav
 function renderOverviewRecent(data,topicLabel){
-  const end = dayStart(Date.now()) + 86400000; // exclusive: start of tomorrow
+  const baseEnd = dayStart(Date.now()) + 86400000; // exclusive: start of "tomorrow" at offset 0
+  const shift = overviewRecentOffset * 86400000;
+  const end = baseEnd + shift;
   const start = end - 14 * 86400000;
-  const tally = buildDayTally(data,ts=>ts >= start && ts < end);
+  const {tally,html:cells} = dayStripMarkup(data,start,14);
   const {activeDays,busiest} = dayTallySummary(tally);
   const busiestLabel = busiest ? new Date(`${busiest[0]}T12:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '-';
   const bestTone = overviewToneCopy(tally,'a quiet stretch');
+  const rangeLabel = recentRangeLabel(start,end);
 
   $('overview-copy').textContent = tally.total
-    ? `${topicLabel ? `${topicLabel}: ` : ''}${bestTone}. ${tally.actual} entries${tally.planned ? `, ${tally.planned} planned` : ''} in the last 14 days.`
-    : `${topicLabel ? `${topicLabel}: ` : ''}No entries or plans in the last 14 days.`;
+    ? `${topicLabel ? `${topicLabel}: ` : ''}${bestTone}. ${tally.actual} entries${tally.planned ? `, ${tally.planned} planned` : ''} ${overviewRecentOffset === 0 ? 'in the last 14 days' : 'in this stretch'}.`
+    : `${topicLabel ? `${topicLabel}: ` : ''}No entries or plans ${overviewRecentOffset === 0 ? 'in the last 14 days' : 'in this stretch'}.`;
   renderOverviewStatsRow(activeDays,tally.actual,tally.planned,busiestLabel);
-  setOverviewMonthNav(false,'last 14 days');
+  setOverviewMonthNav(true,rangeLabel);
 
-  const cells = Array.from({length:14},(_,i)=>{
-    const ts = start + i * 86400000;
-    const date = new Date(ts);
-    const key = dateKey(ts);
-    const entries = tally.map.get(key) || [];
-    const labelSpans = `<span class="strip-wd">${weekdayShort(date.getDay())}</span><span class="strip-num">${date.getDate()}</span>`;
-    return cellMarkup(key,date,entries,labelSpans);
-  });
   const grid = $('overview-calendar');
   grid.className = 'month-grid rich-month-grid strip-grid';
-  grid.innerHTML = cells.join('');
+  grid.innerHTML = cells;
 
   renderOverviewLists(data,h=>actualLogs(h.logs).filter(ts=>ts >= start && ts < end).length);
+}
+
+// PURE: label for the 14-day window. Offset 0 reads "last 14 days"; any
+// navigation away from today shows the explicit date range instead.
+function recentRangeLabel(start,end){
+  if(overviewRecentOffset === 0)return 'last 14 days';
+  const first = new Date(start);
+  const last = new Date(end - 86400000);
+  const fmt = d => d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  return `${fmt(first)} – ${fmt(last)}`;
 }
 
 // 'month': the original navigable month grid. 'all': same grid for browsing,
@@ -268,32 +302,51 @@ function renderDayLogs(key){
   data.forEach((h,i)=>{
     if(!matchesOverviewTopic(h,overviewTopicFilter))return;
     const entries = normalizeLogs(h.logs).filter(log=>dateKey(logTime(log)) === key);
+    const scheduled = [];
+    if(isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key){
+      scheduled.push('scheduled');
+    }
+    if(h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key){
+      scheduled.push(h.hardDue ? 'deadline' : 'due');
+    }
     const count = entries.length;
-    if(!count)return;
-    rows.push({h,index:i,count,entries,c:colors(daysSince(h.lastLog),h.target,h.type)});
+    if(!count && !scheduled.length)return;
+    rows.push({h,index:i,count,entries,scheduled,c:colors(daysSince(h.lastLog),h.target,h.type)});
   });
   const ts = new Date(`${key}T12:00:00`).getTime();
+  const itemCount = rows.reduce((sum,row)=>sum + row.count + row.scheduled.length,0);
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
   $('day-logs-sub').textContent = rows.length
-    ? `${rows.reduce((sum,row)=>sum + row.count,0)} entries${topicLabel ? ` · ${topicLabel}` : ''}`
+    ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'}${topicLabel ? ` · ${topicLabel}` : ''}`
     : `no entries${topicLabel ? ` · ${topicLabel}` : ''}`;
   renderDayAvailability(key);
-  $('day-logs-list').innerHTML = rows.length ? rows.map(({h,index,count,entries,c})=>{
+  $('day-logs-list').innerHTML = rows.length ? rows.map(({h,index,count,entries,scheduled,c})=>{
     const plannedCount = entries.filter(isPlanLog).length;
     const actualCount = count - plannedCount;
-    const remove = plannedCount ? `<button class="mini-text-btn" data-remove-plan="${index}" data-plan-day="${key}">remove plan</button>` : '';
+    const remove = plannedCount ? `<button class="mini-text-btn" data-remove-plan="${index}" data-plan-day="${key}">remove</button>` : '';
+    const move = plannedCount ? `<button class="mini-text-btn" data-move-plan="${index}" data-plan-day="${key}">move</button>` : '';
+    const open = `<button class="mini-text-btn" data-open-day-item="${index}">open</button>`;
+    const entryMeta = plannedCount ? `${plannedCount} planned${actualCount ? `, ${actualCount} done` : ''}` : actualCount ? `${actualCount} ${actualCount === 1 ? 'entry' : 'entries'}` : '';
+    const scheduledMeta = scheduled.join(', ');
+    const meta = [scheduledMeta,entryMeta].filter(Boolean).join(' · ');
     return `
-    <div class="overview-item">
+    <div class="overview-item plan-item">
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
-      <span class="overview-meta">${plannedCount ? `${plannedCount} planned${actualCount ? `, ${actualCount} done` : ''}` : `${count} ${count === 1 ? 'entry' : 'entries'}`}</span>
-      ${remove}
+      <span class="overview-meta">${escapeHtml(meta)}</span>
+      <div class="plan-actions">${open}${move}${remove}</div>
+      <label class="move-inline" hidden>
+        <input type="date" class="move-date" value="${key}" data-move-date="${index}" data-move-from="${key}" />
+        <button class="mini-text-btn" type="button" data-move-go="${index}">save</button>
+        <button class="mini-text-btn" type="button" data-move-cancel>cancel</button>
+      </label>
     </div>`;
   }).join('') : '<div class="overview-item"><span class="overview-name">no entries</span><span class="overview-meta">add one below</span></div>';
   const addOptions = data
     .map((h,i)=>({h,i}))
     .filter(({h})=>matchesOverviewTopic(h,overviewTopicFilter))
+    .filter(({h})=>!(h.type === 'task' && h.lastLog !== null))
     .sort((a,b)=>(a.h.name || '').localeCompare(b.h.name || '',undefined,{sensitivity:'base'}));
-  $('day-log-ting').innerHTML = addOptions.length ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No habits</option>';
+  $('day-log-ting').innerHTML = addOptions.length ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No active items</option>';
   $('day-log-add').disabled = !addOptions.length;
 }
 

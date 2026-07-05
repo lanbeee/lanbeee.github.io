@@ -672,33 +672,50 @@ body.reach-pad #list{padding-top:220px;}
 }
 .detail-mark.emoji-pulse .emoji-mark{font-size:46px;line-height:0.95;}
 .detail-mark .ti{font-size:46px;}
-.ting-info{flex:1;min-width:0;}
-.ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px;}
+.ting-info{
+  flex:1;min-width:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:auto minmax(20px,auto) minmax(20px,auto);
+  align-items:center;
+  column-gap:8px;row-gap:3px;
+}
+.ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;grid-column:1 / -1;}
 .ting-name{
   font-size:15px;font-weight:500;color:var(--text);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.ting-status{
-  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;
-}
 .ting-cue{
+  grid-column:1;grid-row:2;
   color:var(--text2);font-size:12px;font-weight:500;line-height:1.25;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
 }
 .ting-meta{
+  grid-column:2;grid-row:2 / span 2;align-self:start;
   font-size:11.5px;color:var(--text2);display:flex;align-items:center;
-  justify-content:flex-end;gap:5px;min-width:0;max-width:min(42vw,150px);overflow:hidden;
+  justify-content:flex-end;flex-wrap:wrap;gap:4px 5px;min-width:0;
+  max-width:min(42vw,150px);max-height:42px;overflow:hidden;
 }
 .context-pill{
   display:inline-flex;align-items:center;gap:4px;
   color:var(--text2);font-size:11.5px;font-weight:650;
   background:var(--bg2);border:0.5px solid var(--border);
   border-radius:999px;padding:3px 6px;line-height:1;
-  white-space:nowrap;min-width:0;flex:0 1 auto;
+  white-space:nowrap;min-width:0;max-width:92px;overflow:hidden;text-overflow:ellipsis;
+  flex:0 1 auto;
 }
+.context-pill i{flex:0 0 auto;}
 .context-pill i{font-size:13px;color:var(--text3);}
 .context-pill.plan{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
 .context-pill.plan i{color:var(--purple-icon);}
+.context-pill.agenda-suggested{color:var(--teal-text);background:var(--teal-bg);border-color:transparent;}
+.context-pill.agenda-suggested i{color:var(--teal-icon);}
+.context-pill.due{color:var(--amber-text);background:var(--amber-bg);border-color:transparent;}
+.context-pill.due i{color:var(--amber-icon);}
+.context-pill.due.hard{color:var(--red-text);background:var(--red-bg);}
+.context-pill.due.hard i{color:var(--red-icon);}
+.context-pill.scheduled{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
+.context-pill.scheduled i{color:var(--purple-icon);}
 .context-pill.schedule{color:var(--blue-text);background:var(--blue-bg);border-color:transparent;}
 .context-pill.schedule i{color:var(--blue-icon);}
 .context-pill.pin{
@@ -710,7 +727,7 @@ body.reach-pad #list{padding-top:220px;}
   width:24px;justify-content:center;padding-left:0;padding-right:0;
 }
 .context-pill.quiet{opacity:0.82;}
-.ting-visual{display:flex;align-items:center;gap:8px;margin-top:9px;}
+.ting-visual{grid-column:1;grid-row:3;display:flex;align-items:center;gap:8px;}
 .ting-trail{display:flex;align-items:center;gap:3px;min-width:0;flex:1;}
 .trail-dot{
   width:8px;height:4px;border-radius:999px;background:var(--bg3);
@@ -764,6 +781,11 @@ body.reach-pad #list{padding-top:220px;}
   transition:opacity var(--dur-med) ease;
 }
 .sheet-wrap.open{opacity:1;pointer-events:auto;}
+/* Stacking tiers so a drilled-in detail sheet always paints above the page
+   sheet it was opened from (overview/today), while transient modals that can
+   open from detail (snooze/activity) and the day drill-down stay on top. */
+#detail-sheet{z-index:110;}
+#snooze-sheet,#activity-sheet,#day-logs-sheet{z-index:120;}
 .sheet{
   background:var(--bg);width:100%;max-width:480px;
   border-radius:20px 20px 0 0;padding:20px 18px calc(36px + env(safe-area-inset-bottom));
@@ -799,9 +821,9 @@ body[data-pane-count="3"] #settings-sheet{
   border-radius:0;min-height:100dvh;max-height:100dvh;
   padding-top:calc(22px + env(safe-area-inset-top));
   padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + env(safe-area-inset-bottom));
-  transform:none;opacity:0;
-  transition:opacity var(--dur-med) ease;
-  will-change:opacity;
+  transform:none;opacity:1;
+  transition:none;
+  will-change:auto;
 }
 .add-sheet{
   padding-bottom:calc(88px + var(--keyboard-lift) + env(safe-area-inset-bottom));
@@ -1081,6 +1103,16 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .graph-caption,.graph-empty{
   color:var(--text2);font-size:11px;line-height:1.3;
 }
+.graph-empty.task-scheduled-summary{
+  display:flex;flex-direction:column;justify-content:center;gap:6px;
+  min-height:108px;padding:6px 4px;
+}
+.graph-empty.task-scheduled-summary b{
+  color:var(--text);font-size:15px;font-weight:650;
+}
+.graph-empty.task-scheduled-summary span{
+  color:var(--text2);font-size:12px;line-height:1.35;
+}
 .bar.hit{background:var(--teal-icon);}
 .bar.warn{background:var(--amber-icon);}
 .bar.miss{background:var(--red-icon);}
@@ -1288,6 +1320,92 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   font-variant-numeric:tabular-nums;min-width:88px;-webkit-appearance:none;appearance:none;
 }
 .time-sep{color:var(--text3);font-size:13px;}
+/* completed tasks on the home list: faded + struck-through name */
+.ting-card.is-done{opacity:0.5;}
+.ting-card.is-done .ting-name{text-decoration:line-through;text-decoration-thickness:1.5px;text-decoration-color:var(--text3);}
+.ting-card.is-done .ting-cue{font-style:italic;}
+/* reminder banner — consolidated, anti-nag heads-up */
+.reminder-banner{
+  display:flex;align-items:stretch;margin:0 0 8px;
+  background:var(--red-bg);border:0.5px solid transparent;border-radius:var(--radius);
+  overflow:hidden;
+}
+
+/* plan move/remove actions + inline move date picker (day-logs sheet) */
+.overview-item.plan-item{flex-wrap:wrap;gap:6px 10px;}
+.plan-actions{display:flex;gap:6px;flex-shrink:0;}
+.plan-actions[hidden]{display:none;}
+.move-inline{display:flex;align-items:center;gap:6px;width:100%;flex-wrap:wrap;}
+.move-inline[hidden]{display:none;}
+.move-inline .move-date{
+  border:0.5px solid var(--border);background:var(--bg);color:var(--text);
+  border-radius:var(--radius-sm);padding:7px 9px;font:inherit;font-size:13px;
+  min-width:0;flex:1;
+}
+.reminder-banner[hidden]{display:none;}
+.reminder-main{
+  flex:1;display:flex;align-items:center;gap:10px;text-align:left;
+  background:transparent;border:0;padding:11px 12px;font:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;min-width:0;
+}
+.reminder-main i{font-size:20px;color:var(--red-icon);flex-shrink:0;}
+.reminder-text{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.reminder-text b{font-size:13px;font-weight:650;color:var(--red-text);line-height:1.2;}
+.reminder-text small{font-size:11.5px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.reminder-dismiss{
+  background:transparent;border:0;border-left:0.5px solid var(--border);
+  padding:0 14px;cursor:pointer;color:var(--text3);-webkit-tap-highlight-color:transparent;
+}
+.reminder-dismiss i{font-size:16px;}
+.reminder-dismiss:active{background:var(--bg3);}
+/* today's scheduled strip (scheduled tasks are excluded from the ranked list) */
+.scheduled-header{display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:0.04em;}
+.scheduled-header i{font-size:14px;color:var(--purple-icon);}
+.scheduled-row{
+  display:flex;align-items:center;gap:12px;width:100%;
+  background:var(--bg2);border:0.5px solid var(--border);
+  border-radius:var(--radius);padding:12px 14px;margin:0 0 8px;
+  text-align:left;font:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.scheduled-row:active{background:var(--bg3);}
+.scheduled-row.is-past{opacity:0.55;}
+.scheduled-ic{
+  width:38px;height:38px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:18px;flex-shrink:0;
+}
+.scheduled-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.scheduled-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.scheduled-time{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.scheduled-when{
+  font-size:12px;font-weight:650;color:var(--purple-icon);flex-shrink:0;
+  font-variant-numeric:tabular-nums;
+}
+/* task due-date + scheduled-time rows (add sheet + detail schedule) */
+.plan-field-row{
+  display:flex;align-items:center;gap:10px;margin:-2px 0 16px;
+  padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--bg2);flex-wrap:wrap;
+}
+.plan-field-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
+.plan-field-row .plan-date-label{
+  color:var(--text2);font-size:12px;font-weight:700;flex-shrink:0;
+}
+.plan-date-input{
+  border:0.5px solid var(--border);background:var(--bg);color:var(--text);
+  border-radius:var(--radius-sm);padding:8px 10px;font:inherit;font-size:14px;
+  min-width:0;flex:1;font-variant-numeric:tabular-nums;
+  -webkit-appearance:none;appearance:none;
+}
+.hard-due-toggle{
+  display:inline-flex;align-items:center;gap:7px;flex-shrink:0;
+  color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;
+}
+.hard-due-toggle input{margin:0;width:18px;height:18px;accent-color:var(--red-icon);}
+.hard-due-toggle[hidden]{display:none;}
+.habit-mark-done-row{justify-content:space-between;}
+.habit-mark-done-hint{color:var(--text3);font-size:11px;font-weight:500;margin-left:auto;}
+.detail-section .plan-field-row{margin:0 0 12px;background:var(--bg);}
 .context-pill.time{color:var(--text2);}
 .context-pill.time i{color:var(--text3);}
 .context-pill.schedule.has-preferred{
@@ -1306,6 +1424,47 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .planning-grid,.availability-grid{
   display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px;
 }
+.blocked-time-list{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.blocked-time-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  padding:10px;
+  border:0.5px solid var(--border);
+  border-radius:8px;
+  background:var(--bg2);
+}
+.blocked-time-row input[type=text]{
+  min-width:0;
+  height:34px;
+  padding:0 9px;
+  border-radius:8px;
+  border:0.5px solid var(--border2);
+  background:var(--bg);
+  color:var(--text);
+}
+.blocked-time-hours{
+  grid-column:1 / -1;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.blocked-time-hours input[type=time]{
+  width:116px;
+  height:34px;
+  padding:0 8px;
+  border-radius:8px;
+  border:0.5px solid var(--border2);
+  background:var(--bg);
+  color:var(--text);
+}
+.blocked-time-hours span{color:var(--text3);font-size:12px;}
+.compact-days{
+  grid-column:1 / -1;
+  gap:5px;
+}
+.compact-days .schedule-chip{min-width:36px;padding:7px 8px;}
+.blocked-time-row .mini-text-btn{align-self:start;}
 .planning-field,.availability-grid label{
   display:grid;gap:5px;color:var(--text2);font-size:11.5px;font-weight:700;
 }
@@ -1599,10 +1758,12 @@ select{
 .seg{
   display:flex;border:0.5px solid var(--border2);
   border-radius:var(--radius-sm);overflow:hidden;margin-bottom:12px;
+  background:var(--bg);
 }
 .seg-opt{
   flex:1;padding:10px 0;font-size:13px;font-family:inherit;text-align:center;
   cursor:pointer;background:transparent;border:none;color:var(--text2);
+  min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   -webkit-tap-highlight-color:transparent;
   transition:background var(--dur-fast) ease,color var(--dur-fast) ease;
 }
@@ -1725,6 +1886,12 @@ select{
   box-shadow:0 10px 30px rgba(0,0,0,0.18);
   transition:opacity var(--dur-med) ease,transform var(--dur-med) var(--ease-snappy);
 }
+#undo-text{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 body[data-pane-count="2"] #toast,
 body[data-pane-count="3"] #toast,
 body[data-pane-count="2"] #undo-toast,
@@ -1732,21 +1899,28 @@ body[data-pane-count="3"] #undo-toast{
   bottom:24px;
 }
 #undo-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto;}
-#undo-action{
+#undo-action,#undo-open,#undo-plan{
   border:0;background:var(--bg);color:var(--text);
   border-radius:999px;padding:8px 12px;font:inherit;font-weight:650;
+  flex:0 0 auto;white-space:nowrap;
   cursor:pointer;-webkit-tap-highlight-color:transparent;
 }
+#undo-open,#undo-plan{
+  background:color-mix(in srgb,var(--bg) 86%,var(--text));
+}
+#undo-open[hidden],#undo-plan[hidden]{display:none;}
 
 @media (max-width:340px){
+  #undo-toast{gap:8px;padding-left:12px;}
+  #undo-action,#undo-open,#undo-plan{padding:8px 10px;}
   .app{padding:0 12px;}
   .ting-card{gap:9px;padding-right:9px;}
-  .ting-main{gap:7px;margin-bottom:4px;}
+  .ting-main{gap:7px;}
   .ting-name{font-size:14.5px;}
   .ting-cue{font-size:11.5px;}
-  .ting-meta{gap:4px;max-width:126px;}
+  .ting-meta{flex-wrap:wrap;gap:4px;max-width:126px;}
   .context-pill{font-size:11px;padding:3px 5px;}
-  .ting-visual{margin-top:7px;}
+  .ting-visual{margin-top:0;}
   .trail-week{margin-right:4px;}
   .sheet{padding-left:16px;padding-right:16px;}
   .detail-head{gap:9px;}
@@ -1793,3 +1967,57 @@ body[data-pane-count="3"] #undo-toast{
     transition-duration:1ms !important;
   }
 }
+
+/* ─── Today agenda ─── */
+.today-sheet{max-width:560px;}
+.today-content{margin-top:4px;}
+.today-week-section{margin-top:20px;}
+.today-week-section .section-top{margin-bottom:8px;}
+.agenda-timeline{display:flex;flex-direction:column;gap:6px;position:relative;padding-left:4px;}
+.agenda-row{
+  display:grid;grid-template-columns:54px 14px 1fr;align-items:center;gap:10px;
+  width:100%;text-align:left;background:var(--bg2);border:0.5px solid var(--border);
+  border-radius:var(--radius);padding:11px 12px;margin:0;font:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;position:relative;
+}
+.agenda-row:active{background:var(--bg3);}
+.agenda-row.scheduled{
+  grid-template-columns:54px 1fr;
+  background:var(--purple-bg);border-color:transparent;
+  box-shadow:inset 3px 0 0 var(--purple-icon);
+}
+.agenda-row.fill::before{
+  content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;
+  border-radius:3px;background:var(--card-accent,var(--text3));opacity:0.5;
+}
+.agenda-row.is-past{opacity:0.5;}
+.agenda-clock{display:flex;flex-direction:column;align-items:flex-start;gap:1px;flex-shrink:0;}
+.agenda-clock b{font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;}
+.agenda-clock small{font-size:10px;color:var(--text3);font-variant-numeric:tabular-nums;line-height:1.1;}
+.agenda-dot{width:8px;height:8px;border-radius:50%;justify-self:center;opacity:0.85;}
+.agenda-row.scheduled .agenda-dot{display:none;}
+.agenda-body{display:flex;flex-direction:column;gap:3px;min-width:0;}
+.agenda-line{display:flex;align-items:center;gap:8px;min-width:0;}
+.agenda-ic{font-size:15px;display:inline-flex;flex-shrink:0;}
+.agenda-ic i{font-size:15px;}
+.agenda-name{
+  font-size:14px;font-weight:600;color:var(--text);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;
+}
+.agenda-tag{
+  font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+  padding:2px 6px;border-radius:999px;flex-shrink:0;
+}
+.agenda-tag.hard{background:var(--purple-icon);color:#fff;}
+.agenda-tag.soft{background:var(--bg);color:var(--text3);border:0.5px solid var(--border);}
+.agenda-sub{
+  font-size:11.5px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.agenda-empty{
+  display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;
+  padding:48px 24px;color:var(--text3);
+}
+.agenda-empty i{font-size:34px;opacity:0.6;}
+.agenda-empty p{font-size:14px;font-weight:600;color:var(--text2);margin:0;}
+.agenda-empty span{font-size:12px;line-height:1.4;max-width:240px;}

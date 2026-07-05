@@ -17,6 +17,16 @@
 function currentRun(h){
   const logs = actualLogs(h.logs).sort((a,b)=>b-a);
   const days = daysSince(h.lastLog);
+  if(h.type === 'task'){
+    if(h.lastLog !== null)return {num:Math.max(0,days),label:'since done'};
+    const when = taskWhen(h);
+    if(when === null)return {num:'-',label:'someday'};
+    const left = daysUntil(when);
+    if(left === null)return {num:'-',label:'when'};
+    if(left < 0)return {num:Math.abs(left),label:'days ago'};
+    if(left === 0)return {num:0,label:isTimedTask(h) ? 'today' : 'due'};
+    return {num:left,label:'days away'};
+  }
   if(h.type !== 'keepup'){
     return {num:days === null ? '-' : Math.max(0,days),label:'clear'};
   }
@@ -49,10 +59,15 @@ function updateQuotaBar(kb){
 function defaultIcon(type){
   if(type === 'zero')return 'ti-flame-off';
   if(type === 'reduce')return 'ti-trending-down';
+  if(type === 'task')return 'ti-checkbox';
   return 'ti-heart';
 }
 
 function tone(days,target,type){
+  if(type === 'task'){
+    if(days === null)return 'quiet';
+    return 'teal';
+  }
   if(type === 'zero'){
     if(days === null)return 'purple';
     if(days === 0)return 'red';
@@ -237,6 +252,7 @@ function planSignal(h,settings){
 
 function newHabitSignal(h,settings){
   if(h.lastLog !== null)return 0;
+  if(h.type === 'task')return 0;
   if(h.type === 'zero')return 8;
   if(h.type === 'reduce')return 16;
   const mode = settings.newBuildMode || 'gentle';
@@ -340,6 +356,42 @@ function rhythmSignal(h,settings){
   return tieBias;
 }
 
+// ─── Task urgency (one-off countdown, not a recurring ratio) ───
+// taskUrgency mirrors buildUrgency's shape (0..1+ ramp, escalating past the
+// threshold) so it can reuse buildDueScore directly. null = someday task.
+function taskUrgency(h){
+  if(h.type !== 'task')return null;
+  const when = taskWhen(h);
+  if(when === null)return null;
+  const daysLeft = daysUntil(when);
+  if(daysLeft === null)return null;
+  const window = Math.max(1,h.flexibilityDays || 3);
+  if(daysLeft <= 0){
+    const overdueBoost = h.hardDue ? 1.4 : 1;
+    return (1 + Math.min(0.75,Math.abs(daysLeft) / window)) * overdueBoost;
+  }
+  return Math.max(0,1 - daysLeft / window);
+}
+
+// Someday tasks (no dueDate) get a quiet baseline with a short "just added"
+// nudge, mirroring the gentle new-build handling. Unscaled by dueWeight so a
+// zero dueWeight setting doesn't erase them entirely.
+function taskSomedayScore(h){
+  const base = 22;
+  if(h.createdAt){
+    const ageDays = (Date.now() - h.createdAt) / 86400000;
+    if(ageDays < 7)return base + (1 - ageDays / 7) * 30;
+  }
+  return base;
+}
+
+function taskDueSignal(h,settings){
+  const urgency = taskUrgency(h);
+  if(urgency === null)return 0;
+  const riseAt = clampNumber(settings.buildRiseAt,40,110,75) / 100;
+  return buildDueScore(urgency,riseAt);
+}
+
 // ─── Priority composition ───
 // priorityComponents gathers every signal for a habit; attentionScore merges
 // them with BASE_SORT_MIX (or stop-mode mix), applies focus/type scaling,
@@ -348,7 +400,8 @@ function rhythmSignal(h,settings){
 function typeSettingScale(h,settings){
   if(h.type === 'keepup')return settingScale(settings.buildWeight);
   if(h.type === 'reduce')return settingScale(settings.limitWeight);
-  return settingScale(settings.stopWeight);
+  if(h.type === 'zero')return settingScale(settings.stopWeight);
+  return 1; // task — not gated by a per-type weight in v1
 }
 
 /**
@@ -360,6 +413,7 @@ function typeSettingScale(h,settings){
  * @returns {Object} {now,plan,due,progress,trend,rhythm,newness,duration,availability,flexibility,schedule,preferred}
  */
 function priorityComponents(h,settings){
+  if(h.type === 'task')return taskPriorityComponents(h,settings);
   const plannerFit = plannerFitSignal(h,settings);
   return {
     now:todayActionSignal(h,settings),
@@ -369,6 +423,41 @@ function priorityComponents(h,settings){
     trend:Math.max(0,trendConcern(h,settings)) * settingScale(settings.trendWeight),
     rhythm:rhythmSignal(h,settings) * settingScale(settings.rhythmWeight),
     newness:newHabitSignal(h,settings) * settingScale(settings.newWeight) * (h.lastLog === null ? 0.75 : 0),
+    duration:plannerFit.duration,
+    availability:plannerFit.availability,
+    flexibility:plannerFit.flexibility,
+    schedule:scheduleSignal(h),
+    preferred:preferredSignal(h)
+  };
+}
+
+// Tasks have no rhythm/history, so only the due signal (or a someday baseline)
+// plus the planner-fit/schedule adjustments contribute. Same shape as the
+// habit components so attentionScore's mix + scaling paths are reused verbatim.
+// Completed tasks (lastLog !== null) sink to the bottom but stay findable.
+function taskPriorityComponents(h,settings){
+  const plannerFit = plannerFitSignal(h,settings);
+  if(h.lastLog !== null){
+    return {
+      now:0,plan:0,due:0,progress:0,trend:0,rhythm:0,newness:0,
+      duration:plannerFit.duration,
+      availability:plannerFit.availability,
+      flexibility:plannerFit.flexibility,
+      schedule:scheduleSignal(h),
+      preferred:preferredSignal(h)
+    };
+  }
+  const due = h.dueDate === null
+    ? taskSomedayScore(h)
+    : taskDueSignal(h,settings) * settingScale(settings.dueWeight);
+  return {
+    now:0,
+    plan:0,
+    due,
+    progress:0,
+    trend:0,
+    rhythm:0,
+    newness:0,
     duration:plannerFit.duration,
     availability:plannerFit.availability,
     flexibility:plannerFit.flexibility,
@@ -569,6 +658,14 @@ function todayCategory(h,settings){
 
   if(hasPlannedToday(h) && h.type !== 'zero')return 0;
 
+  if(h.type === 'task'){
+    const when = taskWhen(h);
+    if(when !== null){
+      const daysLeft = daysUntil(when);
+      if(daysLeft !== null && daysLeft <= 0)return isAvailableToday ? 0 : 1;
+    }
+  }
+
   if(h.type === 'keepup' && days !== null && days >= target){
     return isAvailableToday ? 0 : 1;
   }
@@ -594,6 +691,7 @@ function visibleIndices(data,settingsOverride = null){
   const todayFirst = settings.preset === 'todayFirst';
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
+    if(h.type === 'task' && h.lastLog !== null)return false;
     return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
   });
   indices.sort((a,b)=>{
@@ -615,16 +713,25 @@ function visibleIndices(data,settingsOverride = null){
 // haystack; filtering happens here. In the RN port, pass these as args.
 
 function searchText(h){
-  const typeLabel = h.type === 'keepup' ? 'build routine keepup' : h.type === 'reduce' ? 'limit reduce less' : 'stop quit zero';
+  const typeLabel = h.type === 'keepup' ? 'build routine keepup'
+    : h.type === 'reduce' ? 'limit reduce less'
+    : h.type === 'task' ? (isTimedTask(h) ? 'task appointment scheduled fixed time' : 'task todo one-off due someday')
+    : 'stop quit zero';
   const schedule = scheduledDays(h);
   const pref = preferredDays(h);
+  const when = taskWhen(h);
+  const dueText = h.type === 'task' && when
+    ? (isTimedTask(h)
+        ? `when ${dateKey(when)} ${new Date(when).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
+        : `due ${dateKey(when)}`)
+    : '';
   const scheduleText = [
     ...schedule.weekdays.flatMap(day=>[weekdayShort(day),new Date(2024,0,7 + day).toLocaleDateString(undefined,{weekday:'long'})]),
     ...schedule.monthDays.flatMap(day=>[String(day),monthOrdinal(day)]),
     ...pref.weekdays.flatMap(day=>[weekdayShort(day),'preferred']),
     ...pref.monthDays.flatMap(day=>[String(day),'preferred'])
   ].join(' ');
-  return `${h.name || ''} ${h.emoji || ''} ${typeLabel} ${(h.topics || []).join(' ')} ${scheduleText}`.toLowerCase();
+  return `${h.name || ''} ${h.emoji || ''} ${typeLabel} ${(h.topics || []).join(' ')} ${scheduleText} ${dueText}`.toLowerCase();
 }
 
 function filteredVisibleIndices(data){
@@ -635,5 +742,15 @@ function filteredVisibleIndices(data){
     ? indices.filter(i=>matchesHomeTopic(data[i],topic))
     : indices;
   if(!query)return base;
-  return base.filter(i=>searchText(data[i]).includes(query));
+  const matches = base.filter(i=>searchText(data[i]).includes(query));
+  const completedTasks = data
+    .map((h,i)=>({h,i}))
+    .filter(({h})=>h.type === 'task' && h.lastLog !== null)
+    .filter(({h})=>!topic || topic === 'all' || typeof matchesHomeTopic !== 'function' || matchesHomeTopic(h,topic))
+    .filter(({h})=>searchText(h).includes(query))
+    .sort(({h:a},{h:b})=>(b.lastLog || 0) - (a.lastLog || 0))
+    .map(({i})=>i);
+  const seen = new Set(matches);
+  completedTasks.forEach(i=>{if(!seen.has(i)){seen.add(i);matches.push(i);}});
+  return matches;
 }
