@@ -29,6 +29,7 @@ function applyAddDefaults(){
   if($('ting-hard-due'))$('ting-hard-due').checked = false;
   if(scheduledInput)scheduledInput.value = '';
   if($('ting-mark-done'))$('ting-mark-done').checked = true;
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',parseInt(o.dataset.priority,10) === DEFAULT_PRIORITY));
   syncAddTypeUi(selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
 }

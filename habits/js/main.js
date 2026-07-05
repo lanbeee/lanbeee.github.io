@@ -36,6 +36,19 @@ $('type-seg').addEventListener('click',e=>{
   syncAddTypeUi(selectedType);
 });
 
+// PURE: read the selected priority from the add-sheet segmented control
+function selectedAddPriority(){
+  const on = document.querySelector('#ting-priority-seg .seg-opt.on');
+  return clampPriority(on ? on.dataset.priority : DEFAULT_PRIORITY);
+}
+
+// WIRE: add-sheet priority segmented control
+$('ting-priority-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-priority]');
+  if(!opt)return;
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
+});
+
 // RENDER: toggle add-sheet field rows for the active type
 function syncAddTypeUi(type){
   const isHabit = type === 'keepup' || type === 'reduce';
@@ -185,6 +198,7 @@ $('do-save').addEventListener('click',()=>{
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
     pinned:false,
+    priority:selectedAddPriority(),
     topics:selectedAddTopics(),
     createdAt:Date.now()
   };
@@ -268,8 +282,7 @@ function rhythmHelp(type){
 function setDetailTypeUi(type){
   document.querySelectorAll('#detail-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.detailType === type);
-  });
-  const isHabit = type === 'keepup' || type === 'reduce';
+  });  const isHabit = type === 'keepup' || type === 'reduce';
   $('detail-slider-row').style.display = isHabit ? 'flex' : 'none';
   $('detail-target-help').style.display = 'block';
   $('detail-target-help').textContent = rhythmHelp(type);
@@ -286,6 +299,14 @@ function setDetailTypeUi(type){
   if(exportBtn)exportBtn.hidden = type !== 'task';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
   if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
+}
+
+// RENDER: update detail priority segmented control
+function setDetailPriorityUi(priority){
+  const p = clampPriority(priority);
+  document.querySelectorAll('#detail-priority-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',parseInt(btn.dataset.priority,10) === p);
+  });
 }
 
 // HYBRID: sync rhythm field, label, and crown dial state
@@ -564,6 +585,12 @@ $('detail-type-seg').addEventListener('click',e=>{
 $('detail-pinned').addEventListener('change',()=>setDetailDirty());
 $('detail-duration').addEventListener('input',()=>setDetailDirty());
 $('detail-flexibility').addEventListener('input',()=>setDetailDirty());
+$('detail-priority-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-priority]');
+  if(!opt)return;
+  setDetailPriorityUi(opt.dataset.priority);
+  setDetailDirty();
+});
 document.addEventListener('click',e=>{
   document.querySelectorAll('.info-tooltip:not([hidden])').forEach(tip=>{
     if(e.target.closest(`[data-tip="${tip.id}"]`))return;
@@ -660,6 +687,7 @@ $('detail-save').addEventListener('click',()=>{
   }
   h.durationMinutes = current.durationMinutes;
   h.flexibilityDays = current.flexibilityDays;
+  h.priority = clampPriority(current.priority);
   const isHabit = current.type === 'keepup' || current.type === 'reduce';
   h.target = isHabit ? clampRhythmValue(current.target || h.target || 7) : null;
   if(current.type === 'task'){

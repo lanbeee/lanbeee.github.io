@@ -680,6 +680,19 @@ function homeAgendaMap(data){
   },new Map());
 }
 
+// PURE: color for the card's left accent bar by priority. P0 burns red, P1
+// amber, the mid bands settle into neutral text tones, and the low bands fade
+// so the bar reads as "how urgently does this want today's time" — only the
+// top levels pop, everything else stays quiet. No text label needed.
+function priorityColor(p){
+  if(p <= 0)return 'var(--red-icon)';
+  if(p === 1)return 'var(--amber-icon)';
+  if(p === 2)return 'var(--teal-icon)';
+  if(p === 3)return 'var(--text2)';
+  if(p === 4)return 'var(--text3)';
+  return 'color-mix(in srgb, var(--text3) 35%, transparent)';
+}
+
 // PURE: compact right-side agenda marker for a home card
 function agendaCardPill(row){
   if(!row)return '';
@@ -905,7 +918,7 @@ function render(){
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}" data-real="${realIdx}" style="--card-accent:${accent};">
+      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>

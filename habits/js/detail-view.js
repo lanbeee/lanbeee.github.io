@@ -25,6 +25,7 @@ function openDetail(i){
   $('detail-sub').textContent = detailHeaderLine(h);
   $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
   $('detail-head-card').style.setProperty('--card-accent',accent);
+  $('detail-head-card').style.setProperty('--card-priority',priorityColor(effectivePriority(h)));
   $('detail-about').textContent = aboutText(h);
   $('detail-trend').textContent = trendText(h);
   $('detail-habit-message').value = h.name || '';
@@ -47,6 +48,7 @@ function openDetail(i){
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
+  setDetailPriorityUi(effectivePriority(h));
   detailTuneOriginal = {
     name:h.name || '',
     type:h.type || 'keepup',
@@ -62,6 +64,7 @@ function openDetail(i){
     allowedTimeEnd:h.allowedTimeEnd ?? null,
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     flexibilityDays:h.flexibilityDays || 0,
+    priority:effectivePriority(h),
     dueDate:h.dueDate ?? null,
     hardDue:Boolean(h.hardDue),
     eventTime:h.eventTime ?? null,
@@ -185,6 +188,7 @@ function currentDetailTune(){
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
     durationMinutes:clampDuration($('detail-duration').value),
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
+    priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
     hardDue:$('detail-hard-due').checked,
     eventTime:parseDateTimeInput($('detail-scheduled-time').value),
@@ -205,6 +209,7 @@ function setDetailDirty(force){
       current.pinned !== detailTuneOriginal.pinned ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
+      current.priority !== detailTuneOriginal.priority ||
       current.dueDate !== detailTuneOriginal.dueDate ||
       current.hardDue !== detailTuneOriginal.hardDue ||
       current.eventTime !== detailTuneOriginal.eventTime ||
@@ -240,6 +245,7 @@ function restoreDetailTune(){
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
+  setDetailPriorityUi(detailTuneOriginal.priority);
   if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
   setDetailDirty(false);
 }

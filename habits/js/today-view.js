@@ -14,6 +14,12 @@
 // PURE: today's scheduled tasks + rank-ordered fill items + remaining capacity. Items
 // carry their index into `data` so the render layer never has to re-resolve a
 // habit's position (which would break by-reference lookups after a re-load).
+//
+// When today's capacity is tight, fill items compete for the remaining minutes
+// in PRIORITY ORDER (P0 first, then P1, ...). Within the same priority band the
+// original home rank order is preserved. So the items that lose their slot when
+// the day overflows are always the lowest-priority ones — never an arbitrary
+// cut. Home ordering itself is unchanged; priority only arbitrates capacity.
 function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
   const scheduled = data
@@ -23,12 +29,20 @@ function buildTodayAgenda(data,settings){
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
   const slots = buildOpenAgendaSlots(todayKey,scheduled,settings);
   let remaining = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
-  const agendaItems = [];
+  // Gather every eligible fill candidate in home rank order, then stable-sort
+  // by priority so the capacity cut lands on low-priority items first.
+  const candidates = [];
+  let homeRank = 0;
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
     if(h.type === 'task' && h.lastLog !== null)continue;
     if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
     if(!includeInTodayAgenda(h,settings))continue;
+    candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
+  }
+  candidates.sort((a,b)=>a.priority - b.priority || a.rank - b.rank);
+  const agendaItems = [];
+  for(const {h,i} of candidates){
     const cost = clampDuration(h.durationMinutes);
     if(cost > remaining && agendaItems.length)continue; // skip, keep scanning for a smaller fit
     agendaItems.push({h,i});

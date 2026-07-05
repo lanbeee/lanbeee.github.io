@@ -378,6 +378,93 @@ function defaultSettings(overrides = {}) {
       violating.length === 0, JSON.stringify(violating.map(r => r.startLabel)));
   }
 
+  // ==========================================================================
+  // ISSUE 3 — priority (P0–P5) arbitrates who claims today's limited time
+  // ==========================================================================
+  console.log('\n[Issue 3] priority drives agenda capacity allocation');
+
+  // (a) THE KEY BEHAVIOUR: capacity fits only one item; P0 claims it, P5 drops.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [
+        base({ name: 'P5 reading', type: 'keepup', target: 1, durationMinutes: 50, priority: 5, lastLog: ago, logs: [ago] }),
+        base({ name: 'P0 cardio', type: 'keepup', target: 1, durationMinutes: 50, priority: 0, lastLog: ago, logs: [ago] })
+      ],
+      // 60 min of capacity -> only one 50-min item fits.
+      defaultSettings({ availabilityMinutes: [60, 60, 60, 60, 60, 60, 60] })
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const names = rows.filter(r => r.kind === 'fill').map(r => r.name);
+    check('3a P0 keeps the slot under tight capacity',
+      names.includes('P0 cardio'), JSON.stringify(names));
+    check('3a P5 is the one dropped when capacity overflows',
+      !names.includes('P5 reading'), JSON.stringify(names));
+  }
+
+  // (b) Within the same priority band, home rank order is preserved.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [
+        // Both P2 (default). "First" is created earlier so it ranks first on home.
+        base({ name: 'First', type: 'keepup', target: 1, durationMinutes: 20, priority: 2, lastLog: ago, logs: [ago], createdAt: 1000 }),
+        base({ name: 'Second', type: 'keepup', target: 1, durationMinutes: 20, priority: 2, lastLog: ago, logs: [ago], createdAt: 2000 })
+      ],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fills = rows.filter(r => r.kind === 'fill').map(r => r.name);
+    check('3b same priority preserves home order in agenda fill',
+      fills.indexOf('First') !== -1 && fills.indexOf('Second') !== -1 && fills.indexOf('First') < fills.indexOf('Second'),
+      JSON.stringify(fills));
+  }
+
+  // (c) Legacy records (no priority field) migrate to P2 and compete fairly.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await page.evaluate(({ ago }) => {
+      localStorage.clear();
+      localStorage.setItem('tings_app_settings_v2', JSON.stringify({
+        preset: 'todayFirst', focus: 'balanced',
+        availabilityMinutes: [600, 600, 600, 600, 600, 600, 600], availabilityOverrides: {},
+        blockedTimes: [], showScheduledTasksInAgenda: true, showDueTasksInAgenda: true,
+        showPlannedItemsInAgenda: true, showDueHabitsInAgenda: true, showTaskDateOnCards: true
+      }));
+      // Deliberately OMIT the priority field to exercise migration.
+      localStorage.setItem('tings_v2', JSON.stringify([
+        { name: 'Legacy no priority', type: 'keepup', target: 1, durationMinutes: 20, lastLog: ago, logs: [ago], emoji: '', pinned: false, sample: false, snoozedUntil: null, topics: [], createdAt: 1000 }
+      ]));
+    }, { ago });
+    await page.reload({ waitUntil: 'networkidle' });
+    const normalized = await page.evaluate(() => {
+      const rows = buildTodayTimeline(buildTodayAgenda(JSON.parse(localStorage.getItem('tings_v2')), JSON.parse(localStorage.getItem('tings_app_settings_v2'))), new Date().setHours(9,0,0,0));
+      // The app never reads .priority directly; it goes through effectivePriority,
+      // which is what makes legacy (field-less) records migrate to the default.
+      const item = JSON.parse(localStorage.getItem('tings_v2'))[0];
+      return { effective: effectivePriority(item), rawHasField: Object.prototype.hasOwnProperty.call(item, 'priority'), placed: rows.some(r => r.h.name === 'Legacy no priority') };
+    });
+    check('3c legacy item migrates to default P2', normalized.effective === 2, `effective=${normalized.effective}`);
+    check('3c raw legacy record had no priority field', normalized.rawHasField === false, `rawHasField=${normalized.rawHasField}`);
+    check('3c legacy item still placed in agenda', normalized.placed, '');
+  }
+
+  // (d) Card priority pill renders with the right tone class per level.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [
+        base({ name: 'Crit', type: 'keepup', target: 1, durationMinutes: 20, priority: 0, lastLog: ago, logs: [ago] }),
+        base({ name: 'Low', type: 'keepup', target: 1, durationMinutes: 20, priority: 5, lastLog: ago, logs: [ago] })
+      ],
+      defaultSettings()
+    );
+    const critStyle = await page.locator('.ting-card:has-text("Crit")').first().getAttribute('style');
+    const lowStyle = await page.locator('.ting-card:has-text("Low")').first().getAttribute('style');
+    check('3d P0 card left bar shows --card-priority:var(--red-icon)', Boolean(critStyle && critStyle.includes('--card-priority:var(--red-icon)')), 'style=' + critStyle);
+    check('3d P5 card left bar shows --card-priority:color-mix(...,35%...)', Boolean(lowStyle && lowStyle.includes('--card-priority:color-mix(in srgb, var(--text3) 35%, transparent)')), 'style=' + lowStyle);
+  }
+
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));
   await browser.close();
 

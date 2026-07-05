@@ -100,6 +100,18 @@
         <button class="seg-opt" data-v="zero">stop</button>
         <button class="seg-opt" data-v="task">task</button>
       </div>
+      <div class="priority-field">
+        <span class="priority-label">priority <button type="button" class="info-btn" data-tip="ting-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+          <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
+        <div class="seg priority-seg" id="ting-priority-seg">
+          <button class="seg-opt" data-priority="0">P0</button>
+          <button class="seg-opt" data-priority="1">P1</button>
+          <button class="seg-opt on" data-priority="2">P2</button>
+          <button class="seg-opt" data-priority="3">P3</button>
+          <button class="seg-opt" data-priority="4">P4</button>
+          <button class="seg-opt" data-priority="5">P5</button>
+        </div>
+      </div>
       <p class="field-hint" id="target-help">Target days between entries.</p>
       <div class="range-row" id="target-slider-row">
         <div class="crown-dial" id="ting-days-slider" role="slider" tabindex="0" aria-label="Repetition period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
@@ -278,6 +290,18 @@
             <button class="seg-opt" data-detail-type="reduce">limit</button>
             <button class="seg-opt" data-detail-type="zero">stop</button>
             <button class="seg-opt" data-detail-type="task">task</button>
+          </div>
+          <div class="priority-field">
+            <span class="priority-label">priority <button type="button" class="info-btn" data-tip="detail-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="info-tooltip" id="detail-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
+            <div class="seg priority-seg" id="detail-priority-seg">
+              <button class="seg-opt" data-priority="0">P0</button>
+              <button class="seg-opt" data-priority="1">P1</button>
+              <button class="seg-opt" data-priority="2">P2</button>
+              <button class="seg-opt" data-priority="3">P3</button>
+              <button class="seg-opt" data-priority="4">P4</button>
+              <button class="seg-opt" data-priority="5">P5</button>
+            </div>
           </div>
           <label class="setting-toggle habit-toggle">
             <span><b>pinned</b><small>Keep this habit above auto order.</small></span>

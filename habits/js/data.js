@@ -37,6 +37,7 @@
  * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
+ * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
  * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
  *
@@ -201,7 +202,8 @@ function normalize(items){
       preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
       flexibilityDays:clampFlexibility(raw.flexibilityDays),
-      durationMinutes:clampDuration(raw.durationMinutes)
+      durationMinutes:clampDuration(raw.durationMinutes),
+      priority:clampPriority(raw.priority)
     };
     h.lastLog = latestActualLog(h.logs);
     return h;
@@ -317,6 +319,18 @@ function clampFlexibility(value){
 }
 function clampDuration(value){
   return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
+}
+// PURE: coerce a raw priority into the 0–5 band (P0 critical → P5 someday).
+// Missing/out-of-range values fall back to DEFAULT_PRIORITY so legacy records
+// migrate seamlessly.
+function clampPriority(value){
+  const n = parseInt(value,10);
+  if(Number.isNaN(n))return DEFAULT_PRIORITY;
+  return Math.max(0,Math.min(PRIORITY_LABELS.length - 1,n));
+}
+// PURE: effective priority for an item, bounded to 0..5.
+function effectivePriority(h){
+  return clampPriority(h && h.priority);
 }
 function clampTimestamp(value){
   const n = Number(value);
