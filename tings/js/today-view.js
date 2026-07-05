@@ -44,18 +44,54 @@ function includeInTodayAgenda(h,settings){
   if(h.type === 'task'){
     const when = taskWhen(h);
     const left = when !== null ? daysUntil(when) : null;
-    return settings.showDueTasksInAgenda !== false && left !== null && left <= 0;
+    return settings.showDueTasksInAgenda !== false && left !== null && left <= 0 && windowStillDoableToday(h);
   }
   if(h.type === 'zero')return false;
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
-  return settings.showDueHabitsInAgenda !== false && days !== null && days >= target && scheduleDistance === 0;
+  return settings.showDueHabitsInAgenda !== false && days !== null && days >= target && scheduleDistance === 0 && windowStillDoableToday(h);
+}
+
+// PURE: resolve a fill item's allowed time window for the current day, or null
+// when the item has no restriction. Overnight windows (end <= start) extend
+// into the next day so a 23:00-02:00 window still works as a single span.
+function fillTimeWindow(h,dayBase){
+  if(!hasTimeWindow(h))return null;
+  const start = dayBase + h.allowedTimeStart * 60000;
+  let end = dayBase + h.allowedTimeEnd * 60000;
+  if(end <= start)end += 24 * 3600000;
+  return {start,end};
+}
+
+// PURE: is there still enough unexpired room inside this habit's allowed time
+// window today to fit a full session? Windowless habits are always doable.
+// preferredTimeStart/End is a soft hint and is intentionally NOT consulted
+// here — only the strict allowedTimeStart/End can close a day. Used to keep
+// the home list ("today" vs "overdue") and the Today agenda in agreement:
+// when the window has closed for today the habit is no longer "today", it is
+// overdue, and the agenda stops reserving capacity for it.
+function windowStillDoableToday(h,now = Date.now()){
+  if(!hasTimeWindow(h))return true;
+  const win = fillTimeWindow(h,dayStart(now));
+  if(!win)return true;
+  const cost = clampDuration(h.durationMinutes) * 60000;
+  return win.end - Math.max(now,win.start) >= cost;
 }
 
 // PURE: interleave scheduled tasks (hard time) and fill items (soft estimate) into a
 // single time-ordered row list. The fill clock starts at "now" and walks
 // forward; scheduled tasks jump the clock past their slot so nothing overlaps.
+//
+// Each open slot retries every still-unplaced item, so an item that is too
+// large for one slot can still land in a later, larger one (instead of being
+// dropped the first time it misses). Anything left over — typically items
+// whose duration is larger than every individual open slot even though the
+// day's total availability covers them (the day is fragmented by scheduled
+// tasks or blocked time) — gets a soft suggested time stacked after the last
+// open slot so the home card always has a pill for them. Windowed items keep
+// honouring their own allowedTimeStart/End and stay dropped if no slot can
+// host them inside their window.
 function buildTodayTimeline(agenda,now = Date.now()){
   const rows = [];
   agenda.scheduled.forEach(ev=>{
@@ -63,17 +99,41 @@ function buildTodayTimeline(agenda,now = Date.now()){
     rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true });
   });
   const slots = agenda.slots?.length ? agenda.slots : [{start:ceilToMinutes(now,5),end:dayStart(now) + 24 * 3600000}];
-  let fillIdx = 0;
+  const dayBase = dayStart(now);
+  const nowFloor = ceilToMinutes(now,5);
+  const placed = new Array(agenda.agendaItems.length).fill(false);
   for(const slot of slots){
-    let clock = Math.max(slot.start,ceilToMinutes(now,5));
-    while(fillIdx < agenda.agendaItems.length){
-      const fill = agenda.agendaItems[fillIdx];
+    let clock = Math.max(slot.start,nowFloor);
+    for(let idx = 0; idx < agenda.agendaItems.length; idx += 1){
+      if(placed[idx])continue;
+      const fill = agenda.agendaItems[idx];
       const cost = clampDuration(fill.h.durationMinutes) * 60000;
-      if(clock + cost > slot.end)break;
-      rows.push({ kind:'fill', h:fill.h, i:fill.i, start:clock, end:clock + cost, hard:false });
-      clock += cost;
-      fillIdx += 1;
+      const win = fillTimeWindow(fill.h,dayBase);
+      let placeStart, placeEnd, cap;
+      if(win){
+        placeStart = Math.max(clock,win.start);
+        placeEnd = placeStart + cost;
+        cap = Math.min(slot.end,win.end);
+      }else{
+        placeStart = clock;
+        placeEnd = clock + cost;
+        cap = slot.end;
+      }
+      if(placeEnd > cap)continue;
+      rows.push({ kind:'fill', h:fill.h, i:fill.i, start:placeStart, end:placeEnd, hard:false });
+      clock = placeEnd;
+      placed[idx] = true;
     }
+  }
+  if(placed.some(p=>!p)){
+    let overflowStart = slots.reduce((max,slot)=>Math.max(max,slot.end),Math.max(dayBase,nowFloor));
+    agenda.agendaItems.forEach((fill,idx)=>{
+      if(placed[idx])return;
+      if(fillTimeWindow(fill.h,dayBase))return;
+      const cost = clampDuration(fill.h.durationMinutes) * 60000;
+      rows.push({ kind:'fill', h:fill.h, i:fill.i, start:overflowStart, end:overflowStart + cost, hard:false });
+      overflowStart += cost;
+    });
   }
   return rows.sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : 1));
 }

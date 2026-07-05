@@ -651,7 +651,11 @@ function todayCategory(h,settings){
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
-  const isAvailableToday = scheduleDistance === 0;
+  // isAvailableToday folds in the strict allowedTimeStart/End window so the
+  // home list agrees with the Today agenda: a habit whose window has already
+  // closed for today (e.g. a morning-only walk at 3pm) is not "today", it is
+  // overdue. preferredTimeStart/End is soft and does not affect this.
+  const isAvailableToday = scheduleDistance === 0 && windowStillDoableToday(h);
 
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 3;
   if(h.type === 'zero')return 3;

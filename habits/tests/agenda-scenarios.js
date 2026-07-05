@@ -465,6 +465,162 @@ function defaultSettings(overrides = {}) {
     check('3d P5 card left bar shows --card-priority:color-mix(...,35%...)', Boolean(lowStyle && lowStyle.includes('--card-priority:color-mix(in srgb, var(--text3) 35%, transparent)')), 'style=' + lowStyle);
   }
 
+  // ==========================================================================
+  // ISSUE 4 — planned items must always get a suggested time, even when the
+  //          day is fragmented by scheduled tasks or blocked time so no single
+  //          open slot is large enough. Total availability covers them, so the
+  //          home card should still surface an agenda-suggested pill.
+  // ==========================================================================
+  console.log('\n[Issue 4] fragmented day still suggests a time');
+
+  // (a) THE REPORTED BUG: two 60-min planned items, 120 min of availability,
+  //     but a mid-morning block splits the day into a 30-min slot and a 90-min
+  //     slot. The second item cannot fit in any single open slot after the
+  //     first claims the big one — it must still get a soft suggested time.
+  {
+    const planTs = atTime(9);
+    await seed(
+      [
+        base({ name: 'Plan A 60m', type: 'keepup', target: 7, durationMinutes: 60, logs: [{ ts: planTs, plan: true }] }),
+        base({ name: 'Plan B 60m', type: 'keepup', target: 7, durationMinutes: 60, logs: [{ ts: planTs, plan: true }] })
+      ],
+      // 120 min of availability, but blocked 9:30-10:30 fragments the morning.
+      defaultSettings({
+        availabilityMinutes: [120, 120, 120, 120, 120, 120, 120],
+        blockedTimes: [{ label: 'meeting', days: [], start: 570, end: 630 }] // 9:30-10:30
+      })
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const a = rows.find(r => r.name === 'Plan A 60m');
+    const b = rows.find(r => r.name === 'Plan B 60m');
+    check('4a Plan A gets a suggested time', Boolean(a), a ? `start=${a.startLabel}` : 'missing');
+    check('4a Plan B gets a suggested time even though no single slot fits it',
+      Boolean(b), b ? `start=${b.startLabel}` : 'missing');
+    check('4a Plan B does not overlap Plan A',
+      Boolean(a && b && (b.startMs >= a.endMs || a.startMs >= b.endMs)),
+      a && b ? `A=${a.startLabel}-${a.endLabel} B=${b.startLabel}-${b.endLabel}` : 'missing');
+
+    // DOM: both home cards must surface the agenda-suggested pill.
+    const aPill = await page.locator('.ting-card:has-text("Plan A 60m") .context-pill.agenda-suggested').count();
+    const bPill = await page.locator('.ting-card:has-text("Plan B 60m") .context-pill.agenda-suggested').count();
+    check('4a Plan A card renders agenda-suggested pill', aPill === 1, `count=${aPill}`);
+    check('4a Plan B card renders agenda-suggested pill', bPill === 1, `count=${bPill}`);
+  }
+
+  // (b) Windowed item that cannot fit its own window is STILL dropped (the
+  //     fallback only rescues windowless items, never at the cost of breaking
+  //     a user-set allowedTimeStart/End).
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [base({ name: 'Big windowed', type: 'keepup', target: 1, durationMinutes: 45,
+        allowedTimeStart: 600, allowedTimeEnd: 620, // 10:00-10:20 = 20min, < 45min
+        lastLog: ago, logs: [ago] })],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Big windowed');
+    check('4b windowed item too large for its window stays dropped (no fallback)',
+      !fill, fill ? `unexpected start=${fill.startLabel}` : '');
+  }
+
+  // ==========================================================================
+  // ISSUE 5 — home list and Today agenda must agree on "today". A habit whose
+  //          strict allowedTimeStart/End window has closed for today cannot be
+  //          scheduled, so it must NOT be categorized as "today" nor included
+  //          in the agenda's capacity math. A preferredTimeStart/End window is
+  //          soft and must NOT close the day.
+  // ==========================================================================
+  console.log('\n[Issue 5] closed allowed-time window drops habit from today');
+
+  // (a) Walk allowed 6-9am, overdue, "now"=3pm. Must be overdue (cat 1), not
+  //     today, and excluded from the agenda entirely.
+  {
+    const ago = atTime(9) - 3 * 86400000;
+    await seed(
+      [base({ name: 'Walk strict 6-9', type: 'keepup', target: 1, durationMinutes: 30,
+        allowedTimeStart: 360, allowedTimeEnd: 540, // 6:00-9:00
+        lastLog: ago, logs: [ago] })],
+      defaultSettings()
+    );
+    const cat = await page.evaluate(now => {
+      const RealDate = Date;
+      function FrozenDate(...args) { return args.length === 0 ? new RealDate(now) : new RealDate(...args); }
+      FrozenDate.now = () => now; FrozenDate.parse = RealDate.parse; FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate, RealDate); FrozenDate.prototype = RealDate.prototype;
+      const orig = globalThis.Date; globalThis.Date = FrozenDate;
+      try {
+        const data = JSON.parse(localStorage.getItem('tings_v2'));
+        const s = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
+        return todayCategory(data[0], s);
+      } finally { globalThis.Date = orig; }
+    }, atTime(15, 0));
+    check('5a strict-window habit categorized as overdue (1) once window closes',
+      cat === 1, `cat=${cat}`);
+
+    const rows = await timelineFor(atTime(15, 0));
+    const fill = rows.find(r => r.name === 'Walk strict 6-9');
+    check('5a strict-window habit excluded from Today agenda once window closes',
+      !fill, fill ? `unexpected start=${fill.startLabel}` : '');
+  }
+
+  // (b) Same scenario but with preferredTimeStart/End instead of allowed — the
+  //     day stays open. The habit remains "today" and gets an agenda row even
+  //     at 3pm (just not at the preferred time).
+  {
+    const ago = atTime(9) - 3 * 86400000;
+    await seed(
+      [base({ name: 'Walk preferred 6-9', type: 'keepup', target: 1, durationMinutes: 30,
+        preferredTimeStart: 360, preferredTimeEnd: 540,
+        lastLog: ago, logs: [ago] })],
+      defaultSettings()
+    );
+    const cat = await page.evaluate(now => {
+      const RealDate = Date;
+      function FrozenDate(...args) { return args.length === 0 ? new RealDate(now) : new RealDate(...args); }
+      FrozenDate.now = () => now; FrozenDate.parse = RealDate.parse; FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate, RealDate); FrozenDate.prototype = RealDate.prototype;
+      const orig = globalThis.Date; globalThis.Date = FrozenDate;
+      try {
+        const data = JSON.parse(localStorage.getItem('tings_v2'));
+        const s = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
+        return todayCategory(data[0], s);
+      } finally { globalThis.Date = orig; }
+    }, atTime(15, 0));
+    check('5b preferred-window habit stays today (0) past the preferred time',
+      cat === 0, `cat=${cat}`);
+
+    const rows = await timelineFor(atTime(15, 0));
+    const fill = rows.find(r => r.name === 'Walk preferred 6-9');
+    check('5b preferred-window habit still gets an agenda row late in the day',
+      Boolean(fill), fill ? `start=${fill.startLabel}` : 'missing');
+  }
+
+  // (c) Inside the allowed window the habit is still today and gets placed.
+  {
+    const ago = atTime(9) - 3 * 86400000;
+    await seed(
+      [base({ name: 'Walk strict 6-9', type: 'keepup', target: 1, durationMinutes: 30,
+        allowedTimeStart: 360, allowedTimeEnd: 540,
+        lastLog: ago, logs: [ago] })],
+      defaultSettings()
+    );
+    const cat = await page.evaluate(now => {
+      const RealDate = Date;
+      function FrozenDate(...args) { return args.length === 0 ? new RealDate(now) : new RealDate(...args); }
+      FrozenDate.now = () => now; FrozenDate.parse = RealDate.parse; FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate, RealDate); FrozenDate.prototype = RealDate.prototype;
+      const orig = globalThis.Date; globalThis.Date = FrozenDate;
+      try {
+        const data = JSON.parse(localStorage.getItem('tings_v2'));
+        const s = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
+        return todayCategory(data[0], s);
+      } finally { globalThis.Date = orig; }
+    }, atTime(7, 0));
+    check('5c strict-window habit is today (0) while inside its window',
+      cat === 0, `cat=${cat}`);
+  }
+
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));
   await browser.close();
 
