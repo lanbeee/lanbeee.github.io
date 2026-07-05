@@ -68,7 +68,21 @@ const { chromium } = require('playwright');
 
   const scenarioClock = (() => { const d = new Date(); d.setHours(6, 0, 0, 0); return d.getTime(); })();
   const at = (h, m = 0) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.getTime(); };
-  await page.evaluate(({ clock, morning, scheduledTs }) => {
+  // Freeze wall-clock at 06:00 today for every page load from here on, so the
+  // whole agenda pipeline (slot clipping, now-ceil, window enforcement) agrees
+  // on the same instant regardless of when the suite runs. page.addInitScript
+  // re-installs the freeze before page scripts on every navigation — a plain
+  // page.evaluate freeze would be wiped by the reload below.
+  await page.addInitScript(clock => {
+    const RealDate = window.Date;
+    function FrozenDate(...a) { return a.length ? new RealDate(...a) : new RealDate(clock); }
+    FrozenDate.now = () => clock;
+    FrozenDate.parse = RealDate.parse; FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate, RealDate); FrozenDate.prototype = RealDate.prototype;
+    window.__tingsRealDate = RealDate;
+    window.Date = FrozenDate;
+  }, scenarioClock);
+  await page.evaluate(({ morning, scheduledTs }) => {
     localStorage.clear();
     const settings = {
       preset: 'todayFirst',
@@ -92,7 +106,7 @@ const { chromium } = require('playwright');
         emoji: '', pinned: false, sample: false, snoozedUntil: null, topics: [],
         allowedWeekdays: [], allowedMonthDays: [], preferredWeekdays: [], preferredMonthDays: [],
         preferredTimeStart: null, preferredTimeEnd: null,
-        dueDate: null, eventTime: null, hardDue: false, markDone: true, createdAt: clock
+        dueDate: null, eventTime: null, hardDue: false, markDone: true, createdAt: morning
       },
       {
         name: 'Timed task 1045', type: 'task', target: null, flexibilityDays: 0,
@@ -100,21 +114,12 @@ const { chromium } = require('playwright');
         lastLog: null, logs: [], emoji: '', pinned: false, sample: false, snoozedUntil: null, topics: [],
         allowedWeekdays: [], allowedMonthDays: [], preferredWeekdays: [], preferredMonthDays: [],
         allowedTimeStart: null, allowedTimeEnd: null, preferredTimeStart: null, preferredTimeEnd: null,
-        createdAt: clock
+        createdAt: morning
       }
     ];
     localStorage.setItem('tings_v2', JSON.stringify(data));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
-    // Freeze wall-clock at 06:00 today for everything the agenda pipeline does.
-    const RealDate = Date;
-    const frozen = clock;
-    function FrozenDate(...a) { return a.length ? new RealDate(...a) : new RealDate(frozen); }
-    FrozenDate.now = () => frozen;
-    FrozenDate.parse = RealDate.parse; FrozenDate.UTC = RealDate.UTC;
-    Object.setPrototypeOf(FrozenDate, RealDate); FrozenDate.prototype = RealDate.prototype;
-    window.__tingsRealDate = RealDate;
-    window.Date = FrozenDate;
-  }, { clock: scenarioClock, morning: at(0, 0), scheduledTs: at(10, 45) });
+  }, { morning: at(0, 0), scheduledTs: at(10, 45) });
   await page.reload({ waitUntil: 'networkidle' });
 
   // (A) Issue 2 — exactly one scheduled pill on the timed-task card.

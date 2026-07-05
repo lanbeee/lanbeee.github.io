@@ -129,7 +129,9 @@ function atDay(offset,hour = 12,minute = 0){
   await page.waitForSelector('#day-logs-sheet:not(.open)');
   await page.locator('.ting-card:has-text("Do early laundry") .pulse-btn').click();
   await page.waitForSelector('#undo-toast.show');
-  await page.waitForFunction(() => document.querySelector('#undo-text')?.textContent === 'Entry logged');
+  // The toast reads "Logged <name>" (see logTing -> showUndo), not a literal
+  // "Entry logged", so match the prefix the app actually emits.
+  await page.waitForFunction(() => /^Logged\s/.test(document.querySelector('#undo-text')?.textContent || ''));
   if (!(await page.locator('#undo-open').isVisible())) throw new Error('undo open action missing');
   if (!(await page.locator('#undo-plan').isVisible())) throw new Error('undo plan-today action missing after actual log');
   await page.locator('#undo-plan').click();

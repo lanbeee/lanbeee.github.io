@@ -1206,9 +1206,11 @@ function toastItemName(h){
   return name.length > 28 ? `${name.slice(0,27)}...` : name;
 }
 
-// PURE: secondary toast action for entry changes
+// PURE: secondary toast action for entry changes. Stop habits never get a
+// plan-related action — they cannot be planned, only logged.
 function entryToastAction(undo){
   if(!undo || undo.type !== 'entry' || !Number.isInteger(undo.idx))return null;
+  if(load()[undo.idx]?.type === 'zero')return null;
   if(undo.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
   if(undo.plan){
     if(dateKey(undo.ts) <= todayIso())return {type:'complete-plan',label:'done now'};
@@ -1247,6 +1249,8 @@ function planToConsumeForEntry(logs,entryTs){
 function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   const data = load();
   if(!data[idx])return false;
+  // Never turn a stop habit's entry into a plan — stop habits aren't plannable.
+  if(toPlan && data[idx].type === 'zero')return false;
   const logs = normalizeLogs(data[idx].logs);
   const pos = findEntryByKind(logs,fromTs,fromPlan);
   if(pos < 0)return false;
@@ -1338,6 +1342,9 @@ function logTingAt(i,ts){
 function planTingOnDay(i,key,timeValue = '',options = {}){
   const data = load();
   if(!data[i])return false;
+  // Stop habits ("quit" type) cannot be planned — there is no future session
+  // to schedule, only lapses to log. Bail before creating any plan log.
+  if(data[i].type === 'zero')return false;
   const base = new Date(`${key}T12:00:00`);
   if(Number.isNaN(base.getTime()))return false;
   let hours = 12;
