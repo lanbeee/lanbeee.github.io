@@ -365,7 +365,11 @@ function openDetailFromDayLogs(idx){
   if(typeof openDetail !== 'function')return;
   if(!paneTierActive() && $('day-logs-sheet')?.classList.contains('open')){
     dayLogsKey = null;
+    // Open detail first (it renders behind day-logs due to z-index 110 < 120),
+    // then close day-logs so the detail sheet is revealed as day-logs fades out.
+    openDetail(idx);
     closeSheet('day-logs-sheet');
+    return;
   }
   openDetail(idx);
 }
