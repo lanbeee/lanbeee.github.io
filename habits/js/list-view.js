@@ -333,16 +333,6 @@ function updateSortButton(){
     barSearch.classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
     barSearch.disabled = count < 10 && !hasSearchableArchive;
   }
-  const todayBtn = $('open-today');
-  if (todayBtn){
-    todayBtn.classList.toggle('is-hidden',count < 1);
-    todayBtn.disabled = count < 1;
-  }
-  const barToday = $('bar-open-today');
-  if (barToday){
-    barToday.classList.toggle('is-hidden',count < 1);
-    barToday.disabled = count < 1;
-  }
   if(count < 10 && !hasSearchableArchive)closeSearch({render:false});
 }
 

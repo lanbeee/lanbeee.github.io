@@ -1,4 +1,4 @@
-const CACHE = 'habits-v12';
+const CACHE = 'habits-v13';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 
 const PRECACHE = [
@@ -71,7 +71,7 @@ self.addEventListener('fetch', event => {
         return res;
       })
       .catch(() => cached);
-    return cached || network;
+    return cached || network || new Response('', { status: 503, statusText: 'Offline' });
   })());
 });
 
