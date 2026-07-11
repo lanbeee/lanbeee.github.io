@@ -1198,26 +1198,26 @@ function toastItemName(h){
 
 // PURE: secondary toast action for entry changes. Stop habits never get a
 // plan-related action — they cannot be planned, only logged.
-function entryToastAction(undo){
-  if(!undo || undo.type !== 'entry' || !Number.isInteger(undo.idx))return null;
-  if(load()[undo.idx]?.type === 'zero')return null;
-  if(undo.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
-  if(undo.plan){
-    if(dateKey(undo.ts) <= todayIso())return {type:'complete-plan',label:'done now'};
+function entryToastAction(action){
+  if(!action || action.type !== 'entry' || !Number.isInteger(action.idx))return null;
+  if(load()[action.idx]?.type === 'zero')return null;
+  if(action.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
+  if(action.plan){
+    if(dateKey(action.ts) <= todayIso())return {type:'complete-plan',label:'done now'};
     return null;
   }
-  if(dateKey(undo.ts) === todayIso())return {type:'plan-instead',label:'plan instead'};
+  if(dateKey(action.ts) === todayIso())return {type:'plan-instead',label:'plan instead'};
   return {type:'plan-today',label:'plan today'};
 }
 
-// PURE: annotates undo state with the contextual toast action
-function withEntryToastAction(undo){
-  const action = entryToastAction(undo);
-  if(action){
-    undo.toastAction = action.type;
-    undo.toastActionLabel = action.label;
+// PURE: annotates action state with the contextual toast action
+function withEntryToastAction(action){
+  const toastAction = entryToastAction(action);
+  if(toastAction){
+    action.toastAction = toastAction.type;
+    action.toastActionLabel = toastAction.label;
   }
-  return undo;
+  return action;
 }
 
 // PURE: finds an exact actual/planned log entry
@@ -1250,10 +1250,10 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   data[idx].logs = normalizeLogs(logs);
   data[idx].lastLog = latestActualLog(data[idx].logs);
   if(!toPlan)data[idx].snoozedUntil = null;
-  else if(!fromPlan && pendingUndo?.snoozedUntil !== undefined)data[idx].snoozedUntil = pendingUndo.snoozedUntil;
+  else if(!fromPlan && pendingAction?.snoozedUntil !== undefined)data[idx].snoozedUntil = pendingAction.snoozedUntil;
   const snoozedUntilAfter = data[idx].snoozedUntil || null;
   if(!save(data))return false;
-  showUndo(label,{
+  showActionToast(label,{
     type:'replace-entry',
     idx,
     fromTs,
@@ -1275,7 +1275,7 @@ function logTing(i){
   if(!data[i])return false;
   const logs = normalizeLogs(data[i].logs);
   const consumedPlanTs = planToConsumeForEntry(logs,now);
-  const undo = withEntryToastAction({
+  const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts:now,
@@ -1295,7 +1295,7 @@ function logTing(i){
   if(typeof cancelPush === 'function' && data[i].type === 'task'){
     cancelPush(reminderSignature(data[i]));
   }
-  showUndo(`Logged ${toastItemName(data[i])}`,undo);
+  showActionToast(`Logged ${toastItemName(data[i])}`,action);
   return true;
 }
 
@@ -1308,7 +1308,7 @@ function logTingAt(i,ts){
   const isPlan = isPlanLog(log);
   const logs = normalizeLogs(data[i].logs);
   const consumedPlanTs = isPlan ? null : planToConsumeForEntry(logs,entryTs);
-  const undo = withEntryToastAction({
+  const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts:entryTs,
@@ -1324,7 +1324,7 @@ function logTingAt(i,ts){
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!isPlan)data[i].snoozedUntil = null;
   if(!save(data))return false;
-  showUndo(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,undo);
+  showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
   return true;
 }
 
@@ -1345,7 +1345,7 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
     minutes = time % 60;
   }
   const ts = new Date(base.getFullYear(),base.getMonth(),base.getDate(),hours,minutes,0,0).getTime();
-  const undo = withEntryToastAction({
+  const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts,
@@ -1357,33 +1357,33 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!save(data))return false;
   const timeLabel = timeValue ? ` · ${new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}` : '';
-  showUndo(`Planned ${toastItemName(data[i])}${timeLabel}`,undo);
+  showActionToast(`Planned ${toastItemName(data[i])}${timeLabel}`,action);
   return true;
 }
 
-// HYBRID: run the contextual secondary action shown in the undo toast.
-function runPendingUndoAction(){
-  if(!pendingUndo || !Number.isInteger(pendingUndo.idx))return;
-  const action = pendingUndo.toastAction;
+// HYBRID: run the contextual secondary action shown in the action toast.
+function runPendingAction(){
+  if(!pendingAction || !Number.isInteger(pendingAction.idx))return;
+  const action = pendingAction.toastAction;
   if(action === 'plan-instead'){
     replaceEntryKind(
-      pendingUndo.idx,
-      pendingUndo.ts,
+      pendingAction.idx,
+      pendingAction.ts,
       false,
-      pendingUndo.ts,
+      pendingAction.ts,
       true,
       'Planned instead'
     );
     return;
   }
   if(action === 'plan-today'){
-    if(planTingOnDay(pendingUndo.idx,todayIso()))refreshOpenViews();
+    if(planTingOnDay(pendingAction.idx,todayIso()))refreshOpenViews();
     return;
   }
   if(action === 'complete-plan'){
     replaceEntryKind(
-      pendingUndo.idx,
-      pendingUndo.ts,
+      pendingAction.idx,
+      pendingAction.ts,
       true,
       Date.now(),
       false,
@@ -1393,12 +1393,12 @@ function runPendingUndoAction(){
   }
   if(action === 'keep-plan'){
     const data = load();
-    const idx = pendingUndo.idx;
-    if(!data[idx] || !pendingUndo.consumedPlanTs)return;
-    data[idx].logs = normalizeLogs([...(data[idx].logs || []),{ts:pendingUndo.consumedPlanTs,plan:true}]);
+    const idx = pendingAction.idx;
+    if(!data[idx] || !pendingAction.consumedPlanTs)return;
+    data[idx].logs = normalizeLogs([...(data[idx].logs || []),{ts:pendingAction.consumedPlanTs,plan:true}]);
     data[idx].lastLog = latestActualLog(data[idx].logs);
     if(save(data)){
-      showUndo('Plan kept',{type:'entry',idx,ts:pendingUndo.consumedPlanTs,plan:true,snoozedUntil:data[idx].snoozedUntil || null,openAction:false});
+      showActionToast('Plan kept',{type:'entry',idx,ts:pendingAction.consumedPlanTs,plan:true,snoozedUntil:data[idx].snoozedUntil || null,openAction:false});
       refreshOpenViews();
     }
   }
@@ -1436,7 +1436,7 @@ function removePlansOnDay(idx,key){
   h.lastLog = latestActualLog(h.logs);
   if(!save(data))return false;
   const label = removed.length === 1 ? `Removed plan · ${toastItemName(h)}` : `Removed ${removed.length} plans · ${toastItemName(h)}`;
-  showUndo(label,{type:'remove-plans',idx,key,removed,openAction:false,undoLabel:'restore'});
+  showActionToast(label,{type:'remove-plans',idx,key,removed,openAction:false,undoLabel:'restore'});
   refreshOpenViews();
   return true;
 }
@@ -1465,37 +1465,37 @@ function movePlanTo(idx,fromKey,toKey){
   data[idx].logs = normalizeLogs(remaining);
   data[idx].lastLog = latestActualLog(data[idx].logs);
   if(save(data)){
-    showUndo(`Moved ${toastItemName(h)}`,{type:'move',idx,moved,openAction:false,undoLabel:'move back'});
+    showActionToast(`Moved ${toastItemName(h)}`,{type:'move',idx,moved,openAction:false,undoLabel:'move back'});
     refreshOpenViews();
   }
 }
 
 // HYBRID: revert last action and refresh
-function undoLastAction(){
-  if(!pendingUndo)return;
+function executeUndo(){
+  if(!pendingAction)return;
   const data = load();
-  if(pendingUndo.type === 'entry'){
-    const {idx,ts,snoozedUntil,consumedPlanTs} = pendingUndo;
+  if(pendingAction.type === 'entry'){
+    const {idx,ts,snoozedUntil,consumedPlanTs} = pendingAction;
     if(!data[idx])return;
     const logs = normalizeLogs(data[idx].logs);
-    const pos = findEntryByKind(logs,ts,Boolean(pendingUndo.plan));
+    const pos = findEntryByKind(logs,ts,Boolean(pendingAction.plan));
     if(pos >= 0)logs.splice(pos,1);
     if(consumedPlanTs)logs.push({ts:consumedPlanTs,plan:true});
     data[idx].logs = logs;
     data[idx].lastLog = latestActualLog(logs);
     data[idx].snoozedUntil = snoozedUntil;
   }
-  if(pendingUndo.type === 'hide'){
-    const {idx,snoozedUntil} = pendingUndo;
+  if(pendingAction.type === 'hide'){
+    const {idx,snoozedUntil} = pendingAction;
     if(!data[idx])return;
     data[idx].snoozedUntil = snoozedUntil;
   }
-  if(pendingUndo.type === 'delete'){
-    const {idx,habit} = pendingUndo;
+  if(pendingAction.type === 'delete'){
+    const {idx,habit} = pendingAction;
     data.splice(Math.min(idx,data.length),0,habit);
   }
-  if(pendingUndo.type === 'move'){
-    const {idx,moved} = pendingUndo;
+  if(pendingAction.type === 'move'){
+    const {idx,moved} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
       const newSet = new Set(moved.map(m=>m.newTs));
@@ -1505,8 +1505,8 @@ function undoLastAction(){
       data[idx].lastLog = latestActualLog(data[idx].logs);
     }
   }
-  if(pendingUndo.type === 'remove-plans'){
-    const {idx,removed} = pendingUndo;
+  if(pendingAction.type === 'remove-plans'){
+    const {idx,removed} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
       removed.forEach(ts=>logs.push({ts,plan:true}));
@@ -1514,8 +1514,8 @@ function undoLastAction(){
       data[idx].lastLog = latestActualLog(data[idx].logs);
     }
   }
-  if(pendingUndo.type === 'replace-entry'){
-    const {idx,fromTs,fromPlan,toTs,toPlan,snoozedUntilBefore} = pendingUndo;
+  if(pendingAction.type === 'replace-entry'){
+    const {idx,fromTs,fromPlan,toTs,toPlan,snoozedUntilBefore} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
       const pos = findEntryByKind(logs,toTs,toPlan);
@@ -1527,7 +1527,7 @@ function undoLastAction(){
     }
   }
   if(save(data)){
-    hideUndo();
+    hideActionToast();
     showToast('undone');
     refreshOpenViews();
   }

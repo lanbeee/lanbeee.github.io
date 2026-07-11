@@ -129,7 +129,7 @@ function doSnoozeUntil(i,until,label = ''){
   const name = toastItemName(data[i]);
   data[i].snoozedUntil = until;
   if(save(data)){
-    showUndo(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'show'});
+    showActionToast(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'show'});
     render();
   }
 }
@@ -283,7 +283,7 @@ function doNuke(i){
   }
   data.splice(i,1);
   if(save(data)){
-    showUndo(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
+    showActionToast(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
     render();
   }
 }
@@ -402,61 +402,61 @@ function showToast(text){
   toastTimer = setTimeout(()=>toast.classList.remove('show'),900);
 }
 
-// HYBRID: shows undo toast and stores pending undo state
-function canOpenFromUndo(undo){
-  if(!undo || !Number.isInteger(undo.idx))return false;
-  if(undo.openAction === false)return false;
-  if(undo.type !== 'entry')return false;
-  if(!load()[undo.idx])return false;
+// HYBRID: shows action toast and stores pending action state
+function canOpenFromAction(action){
+  if(!action || !Number.isInteger(action.idx))return false;
+  if(action.openAction === false)return false;
+  if(action.type !== 'entry')return false;
+  if(!load()[action.idx])return false;
   if($('day-logs-sheet')?.classList.contains('open'))return false;
   const detailOpen = $('detail-sheet')?.classList.contains('open');
   const detailPaneOpen = getPane()?.dataset.activeSheet === 'detail-sheet';
-  if(detailIdx === undo.idx && (detailOpen || detailPaneOpen))return false;
+  if(detailIdx === action.idx && (detailOpen || detailPaneOpen))return false;
   return true;
 }
 
-function undoSecondaryLabel(undo){
-  if(!undo || undo.type !== 'entry')return '';
-  return undo.toastActionLabel || '';
+function secondaryActionLabel(action){
+  if(!action || action.type !== 'entry')return '';
+  return action.toastActionLabel || '';
 }
 
-function showUndo(text,undo){
-  pendingUndo = undo;
-  $('undo-text').textContent = text;
-  const actionBtn = $('undo-action');
-  if(actionBtn)actionBtn.textContent = undo.undoLabel || 'undo';
-  const openBtn = $('undo-open');
-  const planBtn = $('undo-plan');
+function showActionToast(text,action){
+  pendingAction = action;
+  $('action-text').textContent = text;
+  const actionBtn = $('action-undo');
+  if(actionBtn)actionBtn.textContent = action.undoLabel || 'undo';
+  const openBtn = $('action-open');
+  const planBtn = $('action-plan');
   if(openBtn){
-    const showOpen = canOpenFromUndo(undo);
+    const showOpen = canOpenFromAction(action);
     openBtn.hidden = !showOpen;
     openBtn.setAttribute('aria-hidden',String(!showOpen));
   }
   if(planBtn){
-    const label = undoSecondaryLabel(undo);
+    const label = secondaryActionLabel(action);
     planBtn.textContent = label;
     planBtn.hidden = !label;
     planBtn.setAttribute('aria-hidden',String(!label));
   }
   const snoozeUntilBtn = $('snooze-until-planned');
   if(snoozeUntilBtn){
-    const showSnooze = undo && undo.plan && undo.ts > Date.now();
+    const showSnooze = action && action.plan && action.ts > Date.now();
     snoozeUntilBtn.hidden = !showSnooze;
     snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));
   }
-  $('undo-toast').classList.add('show');
-  clearTimeout(undoTimer);
-  undoTimer = setTimeout(hideUndo,7200);
+  $('action-toast').classList.add('show');
+  clearTimeout(actionToastTimer);
+  actionToastTimer = setTimeout(hideActionToast,7200);
 }
 
-// HYBRID: hides undo toast and clears pending undo state
-function hideUndo(){
-  clearTimeout(undoTimer);
-  undoTimer = null;
-  pendingUndo = null;
-  $('undo-toast').classList.remove('show');
-  if($('undo-open'))$('undo-open').hidden = true;
-  if($('undo-plan'))$('undo-plan').hidden = true;
+// HYBRID: hides action toast and clears pending action state
+function hideActionToast(){
+  clearTimeout(actionToastTimer);
+  actionToastTimer = null;
+  pendingAction = null;
+  $('action-toast').classList.remove('show');
+  if($('action-open'))$('action-open').hidden = true;
+  if($('action-plan'))$('action-plan').hidden = true;
   if($('snooze-until-planned'))$('snooze-until-planned').hidden = true;
 }
 

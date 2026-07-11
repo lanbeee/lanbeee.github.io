@@ -116,7 +116,7 @@ function atDay(offset,hour = 12,minute = 0){
   await page.locator('#day-log-ting').selectOption({ label: 'Normal upcoming' });
   await page.locator('#day-log-time').fill('09:30');
   await page.locator('#day-log-add').click();
-  await page.waitForSelector('#undo-toast.show');
+  await page.waitForSelector('#action-toast.show');
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
   const planned = stored.find(h => h.name === 'Normal upcoming').logs.find(log => log && log.plan);
   if (!planned) throw new Error('planned log was not created');
@@ -128,14 +128,14 @@ function atDay(offset,hour = 12,minute = 0){
   await page.locator('#day-logs-home').click();
   await page.waitForSelector('#day-logs-sheet:not(.open)');
   await page.locator('.ting-card:has-text("Do early laundry") .pulse-btn').click();
-  await page.waitForSelector('#undo-toast.show');
-  // The toast reads "Logged <name>" (see logTing -> showUndo), not a literal
+  await page.waitForSelector('#action-toast.show');
+  // The toast reads "Logged <name>" (see logTing -> showActionToast), not a literal
   // "Entry logged", so match the prefix the app actually emits.
-  await page.waitForFunction(() => /^Logged\s/.test(document.querySelector('#undo-text')?.textContent || ''));
-  if (!(await page.locator('#undo-open').isVisible())) throw new Error('undo open action missing');
-  if (!(await page.locator('#undo-plan').isVisible())) throw new Error('undo plan-today action missing after actual log');
-  await page.locator('#undo-plan').click();
-  await page.waitForSelector('#undo-toast.show');
+  await page.waitForFunction(() => /^Logged\s/.test(document.querySelector('#action-text')?.textContent || ''));
+  if (!(await page.locator('#action-open').isVisible())) throw new Error('undo open action missing');
+  if (!(await page.locator('#action-plan').isVisible())) throw new Error('undo plan-today action missing after actual log');
+  await page.locator('#action-plan').click();
+  await page.waitForSelector('#action-toast.show');
   const afterPlan = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
   const laundryPlans = afterPlan.find(h => h.name === 'Do early laundry').logs.filter(log => log && log.plan);
   if (!laundryPlans.length) throw new Error('toast plan today action did not add a plan');

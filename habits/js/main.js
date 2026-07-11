@@ -1068,21 +1068,21 @@ $('day-logs-home').addEventListener('click',()=>{
 });
 $('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
-$('undo-action').addEventListener('click',undoLastAction);
-$('undo-open')?.addEventListener('click',()=>{
-  if(!canOpenFromUndo(pendingUndo))return;
-  const idx = pendingUndo.idx;
-  hideUndo();
+$('action-undo').addEventListener('click',executeUndo);
+$('action-open')?.addEventListener('click',()=>{
+  if(!canOpenFromAction(pendingAction))return;
+  const idx = pendingAction.idx;
+  hideActionToast();
   openDetail(idx);
 });
-$('undo-plan')?.addEventListener('click',()=>{
-  runPendingUndoAction();
+$('action-plan')?.addEventListener('click',()=>{
+  runPendingAction();
 });
 $('snooze-until-planned')?.addEventListener('click',()=>{
-  if(!pendingUndo || !pendingUndo.plan || !pendingUndo.ts || pendingUndo.ts <= Date.now())return;
-  const idx = pendingUndo.idx;
-  const until = pendingUndo.ts;
-  hideUndo();
+  if(!pendingAction || !pendingAction.plan || !pendingAction.ts || pendingAction.ts <= Date.now())return;
+  const idx = pendingAction.idx;
+  const until = pendingAction.ts;
+  hideActionToast();
   doSnoozeUntil(idx,until,'Planned');
 });
 

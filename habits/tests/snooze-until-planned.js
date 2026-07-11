@@ -44,7 +44,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   const btnText = await snoozeBtn.textContent();
   if(btnText !== 'snooze until planned')throw new Error(`Unexpected button text: "${btnText}"`);
 
-  const toastVisible = await page.locator('#undo-toast.show').isVisible();
+  const toastVisible = await page.locator('#action-toast.show').isVisible();
   if(!toastVisible)throw new Error('undo toast was not shown');
 
   // ── 4. Click the snooze-until-planned button ──
