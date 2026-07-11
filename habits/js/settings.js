@@ -84,7 +84,7 @@ function exportBackupFile(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `habits-backup-${todayIso()}.json`;
+  a.download = `tings-backup-${todayIso()}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
