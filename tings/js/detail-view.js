@@ -1,8 +1,10 @@
-// Habit detail sheet, stats, graph, and per-habit calendar.
+// Habit detail sheet, per-habit calendar, stats, graph, and schedule editor.
 //
-// This file renders the habit detail sheet: the score ring, stats, the gap
-// graph, the per-habit calendar, and the schedule editor (weekday / monthday /
-// time-window). Functions are tagged by role to guide the React Native port:
+// This file renders the habit detail sheet: the per-habit calendar (the
+// default first pane for habits — tasks default to the schedule pane
+// instead, see openDetail()), the score ring, stats, the gap graph, and the
+// schedule editor (weekday / monthday / time-window). Functions are tagged
+// by role to guide the React Native port:
 //   - RENDER  -> become React functional components (return JSX).
 //   - HANDLER -> become onPress / onChange callbacks.
 //   - WIRE    -> become useEffect setup hooks.
@@ -25,6 +27,7 @@ function openDetail(i){
   $('detail-sub').textContent = detailHeaderLine(h);
   $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
   $('detail-head-card').style.setProperty('--card-accent',accent);
+  $('detail-head-card').style.setProperty('--card-priority',priorityColor(effectivePriority(h)));
   $('detail-about').textContent = aboutText(h);
   $('detail-trend').textContent = trendText(h);
   $('detail-habit-message').value = h.name || '';
@@ -47,6 +50,7 @@ function openDetail(i){
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
+  setDetailPriorityUi(effectivePriority(h));
   detailTuneOriginal = {
     name:h.name || '',
     type:h.type || 'keepup',
@@ -62,6 +66,7 @@ function openDetail(i){
     allowedTimeEnd:h.allowedTimeEnd ?? null,
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     flexibilityDays:h.flexibilityDays || 0,
+    priority:effectivePriority(h),
     dueDate:h.dueDate ?? null,
     hardDue:Boolean(h.hardDue),
     eventTime:h.eventTime ?? null,
@@ -80,19 +85,34 @@ function openDetail(i){
   openSheet('detail-sheet');
   if(changedHabit){
     const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-    if(pager)pager.scrollTo({left:0,behavior:'auto'});
+    if(pager){
+      if(h.type === 'task'){
+        // Tasks are one-off — the calendar pane is just a single dot, so land
+        // on Schedule (the pane with the actual due/scheduled controls)
+        // instead. Deferred a frame so clientWidth is measured after layout,
+        // same as openDetailSchedule() below.
+        requestAnimationFrame(()=>{
+          pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
+          updateDetailPagerDots();
+        });
+      }else{
+        pager.scrollTo({left:0,behavior:'auto'});
+      }
+    }
   }
   renderDetailTabs();
   updateDetailPagerDots();
 }
 
-// HYBRID: opens detail then scrolls to calendar
+// HYBRID: opens detail then scrolls to calendar (now the default first pane —
+// this is kept for callers that need to jump here even when the sheet is
+// already open on a different pane for the same habit).
 function openDetailCalendar(i){
   openDetail(i);
   requestAnimationFrame(()=>{
     const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
     if(!pager)return;
-    pager.scrollTo({left:pager.clientWidth,behavior:'auto'});
+    pager.scrollTo({left:0,behavior:'auto'});
     updateDetailPagerDots();
   });
 }
@@ -185,6 +205,7 @@ function currentDetailTune(){
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
     durationMinutes:clampDuration($('detail-duration').value),
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
+    priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
     hardDue:$('detail-hard-due').checked,
     eventTime:parseDateTimeInput($('detail-scheduled-time').value),
@@ -205,6 +226,7 @@ function setDetailDirty(force){
       current.pinned !== detailTuneOriginal.pinned ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
+      current.priority !== detailTuneOriginal.priority ||
       current.dueDate !== detailTuneOriginal.dueDate ||
       current.hardDue !== detailTuneOriginal.hardDue ||
       current.eventTime !== detailTuneOriginal.eventTime ||
@@ -240,6 +262,7 @@ function restoreDetailTune(){
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
+  setDetailPriorityUi(detailTuneOriginal.priority);
   if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
   setDetailDirty(false);
 }
@@ -335,13 +358,6 @@ function renderStats(h){
     : h.type === 'task' ? (h.lastLog !== null ? 'completed' : (timed ? 'scheduled' : (h.dueDate ? 'has due date' : 'no due date')))
     : `${planned} planned`;
   if(h.type === 'task'){
-    const primary = h.lastLog !== null
-      ? 'completed'
-      : (timed ? scheduledWhenLabel(h.eventTime) : (h.dueDate ? cardCue(h) : 'someday'));
-    const secondary = (timed && h.lastLog === null)
-      ? `${clampDuration(h.durationMinutes)}m`
-      : (h.hardDue && h.lastLog === null ? 'hard deadline' : 'task');
-    const completeLabel = 'done entries';
     $('detail-stats').innerHTML = `
       <div class="score-card ${scoreCls}">
         <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
@@ -353,11 +369,7 @@ function renderStats(h){
             <span><i class="ti ${planIcon}" aria-hidden="true"></i>${escapeHtml(planFact)}</span>
           </div>
         </div>
-      </div>
-      <div class="stat"><div class="stat-num">${escapeHtml(primary)}</div><div class="stat-label">status</div></div>
-      <div class="stat"><div class="stat-num">${escapeHtml(secondary)}</div><div class="stat-label">type</div></div>
-      <div class="stat"><div class="stat-num">${clampDuration(h.durationMinutes)}<small>m</small></div><div class="stat-label">duration</div></div>
-      <div class="stat compact"><div class="stat-num">${completed}</div><div class="stat-label">${completeLabel}</div></div>`;
+      </div>`;
     return;
   }
   const gapValue = gapNum === '-' ? '-' : `${gapNum}<small>d</small>`;
@@ -573,15 +585,7 @@ function trendText(h){
 function renderGraph(h){
   const graph = $('detail-graph');
   if(h.type === 'task'){
-    const when = h.eventTime !== null
-      ? scheduledWhenLabel(h.eventTime)
-      : (h.dueDate ? entryWhen(h.dueDate) : 'no due date');
-    const note = h.lastLog !== null ? `Completed ${entryWhen(h.lastLog)}.` : aboutText(h);
-    graph.innerHTML = `
-      <div class="graph-empty task-scheduled-summary">
-        <b>${escapeHtml(when)}</b>
-        <span>${escapeHtml(note)}</span>
-      </div>`;
+    graph.innerHTML = '';
     return;
   }
   const logs = actualLogs(h.logs);

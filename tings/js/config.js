@@ -11,6 +11,8 @@ const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
 const MAX_RHYTHM_DAYS = 183;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_FLEXIBILITY_DAYS = 0;
+const DEFAULT_PRIORITY = 2; // P0 (critical) .. P5 (someday); new items default to P2
+const PRIORITY_LABELS = ['P0','P1','P2','P3','P4','P5'];
 const DEFAULT_AVAILABILITY_MINUTES = [240,90,90,90,90,90,240];
 const DEFAULT_BLOCKED_TIMES = [
   {label:'sleep',days:[0,1,2,3,4,5,6],start:0,end:420},
@@ -60,12 +62,13 @@ const DEFAULT_SORT_SETTINGS = {
   showTaskDateOnCards:true,
   showPlansOnCards:true,
   showDayScheduleOnCards:true,
-  showTimeWindowOnCards:true,
+  showTimeWindowOnCards:false,
   showSnoozedUntilOnCards:true,
   showDurationOnCards:false,
   showRepetitionOnCards:true,
   showFlexibilityOnCards:false,
   showTopicsOnCards:false,
+
   showScheduledTasksInAgenda:true,
   showDueTasksInAgenda:true,
   showPlannedItemsInAgenda:true,
@@ -136,9 +139,9 @@ let swipeOpenCard = null;
 let tapTimer = null;
 let lastTap = {idx:-1,time:0};
 let toastTimer = null;
-let undoTimer = null;
+let actionToastTimer = null;
 let navSuppressTimer = null;
-let pendingUndo = null;
+let pendingAction = null;
 let reachTimer = null;
 let reachHoldTimer = null;
 let lastScrollY = 0;

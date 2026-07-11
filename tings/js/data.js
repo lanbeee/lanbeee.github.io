@@ -37,6 +37,7 @@
  * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
+ * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
  * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
  *
@@ -201,7 +202,8 @@ function normalize(items){
       preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
       flexibilityDays:clampFlexibility(raw.flexibilityDays),
-      durationMinutes:clampDuration(raw.durationMinutes)
+      durationMinutes:clampDuration(raw.durationMinutes),
+      priority:clampPriority(raw.priority)
     };
     h.lastLog = latestActualLog(h.logs);
     return h;
@@ -243,6 +245,53 @@ function save(data){
       return false;
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BACKUP — export/import the full local dataset as a portable JSON file.
+// Everything else in this app lives only in this browser's localStorage, so
+// this is the sole way data survives clearing site data, a new phone, or a
+// browser switch. Treat the shape as a small versioned contract.
+// ─────────────────────────────────────────────────────────────────────────
+const BACKUP_VERSION = 1;
+
+// PURE: build a plain-object snapshot of everything worth backing up.
+function buildBackup(){
+  return {
+    app:'tings',
+    version:BACKUP_VERSION,
+    exportedAt:Date.now(),
+    habits:load(),
+    settings:loadSortSettings()
+  };
+}
+
+// PURE: validate a parsed backup payload (accepts either the wrapped
+// {habits,settings} shape or a bare habits array from an older export).
+// Returns {ok:true,habits,settings} or {ok:false,reason}.
+function parseBackup(raw){
+  let obj;
+  try{ obj = typeof raw === 'string' ? JSON.parse(raw) : raw; }
+  catch{ return {ok:false,reason:'That file is not valid JSON.'}; }
+  if(!obj || typeof obj !== 'object')return {ok:false,reason:'That file is not a valid backup.'};
+  const habitsRaw = Array.isArray(obj.habits) ? obj.habits : (Array.isArray(obj) ? obj : null);
+  if(!habitsRaw)return {ok:false,reason:'No habits found in that file.'};
+  let habits;
+  try{ habits = normalize(habitsRaw); }
+  catch{ return {ok:false,reason:'That file could not be read as habits.'}; }
+  const settings = obj.settings && typeof obj.settings === 'object' ? obj.settings : null;
+  return {ok:true,habits,settings};
+}
+
+// HYBRID: replace all local data with a validated backup. Returns
+// {ok:true,count} or {ok:false,reason}.
+function restoreBackup(raw){
+  const parsed = parseBackup(raw);
+  if(!parsed.ok)return parsed;
+  const trimmed = parsed.habits.slice(0,MAX_TINGS);
+  if(!save(trimmed))return {ok:false,reason:'Could not save that backup on this device.'};
+  if(parsed.settings)saveSortSettings(parsed.settings);
+  return {ok:true,count:trimmed.length};
 }
 
 // HYBRID: auto-complete event-style items (markDone === false) whose time has
@@ -317,6 +366,18 @@ function clampFlexibility(value){
 }
 function clampDuration(value){
   return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
+}
+// PURE: coerce a raw priority into the 0–5 band (P0 critical → P5 someday).
+// Missing/out-of-range values fall back to DEFAULT_PRIORITY so legacy records
+// migrate seamlessly.
+function clampPriority(value){
+  const n = parseInt(value,10);
+  if(Number.isNaN(n))return DEFAULT_PRIORITY;
+  return Math.max(0,Math.min(PRIORITY_LABELS.length - 1,n));
+}
+// PURE: effective priority for an item, bounded to 0..5.
+function effectivePriority(h){
+  return clampPriority(h && h.priority);
 }
 function clampTimestamp(value){
   const n = Number(value);

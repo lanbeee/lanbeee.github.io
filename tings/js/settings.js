@@ -29,8 +29,32 @@ function applyAddDefaults(){
   if($('ting-hard-due'))$('ting-hard-due').checked = false;
   if(scheduledInput)scheduledInput.value = '';
   if($('ting-mark-done'))$('ting-mark-done').checked = true;
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',parseInt(o.dataset.priority,10) === DEFAULT_PRIORITY));
+  const moreBody = $('add-more-options');
+  const moreToggle = $('add-more-toggle');
+  if(moreBody)moreBody.hidden = true;
+  if(moreToggle)moreToggle.setAttribute('aria-expanded','false');
   syncAddTypeUi(selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
+}
+
+// HYBRID: reset the settings sheet to its fresh-open defaults — collapse
+// every collapsible section and drop any staged import. Called ONLY when the
+// sheet opens (or after a wholesale replace like a reset/import). It must NOT
+// run on every settings mutation, otherwise editing a field that lives inside
+// an open section (blocked time, topics, defaults, …) would collapse that
+// section out from under the user mid-edit.
+function resetSettingsSheetState(){
+  pendingImportPayload = null;
+  const backupConfirm = $('backup-import-confirm');
+  if(backupConfirm)backupConfirm.hidden = true;
+  const backupStatus = $('backup-status');
+  if(backupStatus)backupStatus.textContent = '';
+  document.querySelectorAll('.settings-collapse-head').forEach(head=>{
+    const body = $(head.dataset.collapseTarget);
+    if(body)body.hidden = true;
+    head.setAttribute('aria-expanded','false');
+  });
 }
 
 // HYBRID: sync settings UI from stored state
@@ -42,45 +66,92 @@ function syncSettingsControls(){
   renderTopicList();
   renderAvailabilityControls();
   renderBlockedTimeControls();
-  document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.preset === (sortSettings.preset || 'custom'));
-  });
-  document.querySelectorAll('#plan-window-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',parseInt(btn.dataset.window,10) === (sortSettings.planWindowDays ?? 1));
-  });
-  document.querySelectorAll('#new-build-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.newBuild === (sortSettings.newBuildMode || 'gentle'));
-  });
-  document.querySelectorAll('#due-mode-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.dueMode === (sortSettings.dueMode || 'relative'));
-  });
-  document.querySelectorAll('#build-window-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',parseInt(btn.dataset.buildWindow,10) === (sortSettings.buildLookAheadDays ?? 3));
-  });
-  document.querySelectorAll('#limit-mode-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.limitMode === (sortSettings.limitMode || 'overdue'));
-  });
-  document.querySelectorAll('#stop-mode-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.stopMode === (sortSettings.stopMode || 'quiet'));
-  });
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
   });
   document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
     btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
   });
-  syncSettingRange('plan-weight',sortSettings.planWeight,'%');
-  syncSettingRange('due-weight',sortSettings.dueWeight,'%');
-  syncSettingRange('progress-weight',sortSettings.progressWeight,'%');
-  syncSettingRange('trend-weight',sortSettings.trendWeight,'%');
-  syncSettingRange('rhythm-weight',sortSettings.rhythmWeight,'%');
-  syncSettingRange('build-weight',sortSettings.buildWeight,'%');
-  syncSettingRange('limit-weight',sortSettings.limitWeight,'%');
-  syncSettingRange('stop-weight',sortSettings.stopWeight,'%');
-  syncSettingRange('new-weight',sortSettings.newWeight,'%');
-  syncSettingRange('build-start',sortSettings.buildRiseAt,'%');
-  syncSettingRange('rhythm-bias',sortSettings.rhythmBias,'');
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
+}
+
+// HANDLER: export all habits + settings as a downloadable JSON file. This is
+// the only backup mechanism — everything otherwise lives only in this browser.
+function exportBackupFile(){
+  const backup = buildBackup();
+  const json = JSON.stringify(backup,null,2);
+  const blob = new Blob([json],{type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `tings-backup-${todayIso()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const status = $('backup-status');
+  if(status)status.textContent = 'Backup exported.';
+  if(typeof showToast === 'function')showToast('backup exported');
+}
+
+// HYBRID: read a chosen backup file, validate it, and stage it behind a
+// confirmation (importing replaces everything currently on this device).
+let pendingImportPayload = null;
+function handleBackupFileChosen(file){
+  if(!file)return;
+  const status = $('backup-status');
+  if(status)status.textContent = '';
+  const reader = new FileReader();
+  reader.onload = () => {
+    const parsed = parseBackup(reader.result);
+    if(!parsed.ok){
+      pendingImportPayload = null;
+      if(status)status.textContent = parsed.reason;
+      return;
+    }
+    pendingImportPayload = reader.result;
+    const summary = $('backup-import-summary');
+    if(summary){
+      const current = load().length;
+      summary.textContent = `Replace ${current} habit${current === 1 ? '' : 's'} currently on this device with ${parsed.habits.length} from this file? This cannot be undone — export a backup first if you are not sure.`;
+    }
+    const confirmBox = $('backup-import-confirm');
+    if(confirmBox)confirmBox.hidden = false;
+  };
+  reader.onerror = () => {
+    pendingImportPayload = null;
+    if(status)status.textContent = 'Could not read that file.';
+  };
+  reader.readAsText(file);
+}
+
+// HANDLER: confirm the staged import and replace local data.
+function confirmBackupImport(){
+  if(!pendingImportPayload)return;
+  const result = restoreBackup(pendingImportPayload);
+  pendingImportPayload = null;
+  const confirmBox = $('backup-import-confirm');
+  if(confirmBox)confirmBox.hidden = true;
+  const fileInput = $('backup-file-input');
+  if(fileInput)fileInput.value = '';
+  const status = $('backup-status');
+  if(result.ok){
+    syncSettingsControls();
+    if(typeof render === 'function')render();
+    if(status)status.textContent = `Imported ${result.count} habit${result.count === 1 ? '' : 's'}.`;
+    if(typeof showToast === 'function')showToast('backup imported');
+  }else if(status){
+    status.textContent = result.reason;
+  }
+}
+
+// HANDLER: cancel a staged import without changing anything.
+function cancelBackupImport(){
+  pendingImportPayload = null;
+  const fileInput = $('backup-file-input');
+  if(fileInput)fileInput.value = '';
+  const confirmBox = $('backup-import-confirm');
+  if(confirmBox)confirmBox.hidden = true;
 }
 
 // HYBRID: remove old sort-lab sample habits now that the lab is no longer part
@@ -176,26 +247,6 @@ function isSortSettingKey(key){
   return ['plansFirst','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
 }
 
-// HANDLER: apply a named sort preset
-function applySortPreset(name){
-  if(name === 'custom'){
-    updateSortSetting({preset:'custom'});
-    showToast('custom settings');
-    return;
-  }
-  const preset = SORT_PRESETS[name];
-  if(!preset)return;
-  updateSortSetting({...preset,preset:name});
-  showToast('preset applied');
-}
-
-// RENDER: highlight active preset button
-function markPresetButton(name){
-  document.querySelectorAll('#sort-preset-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.preset === name);
-  });
-}
-
 // HANDLER: toggle a boolean app setting
 function toggleAppSettingButton(btn){
   if(!btn)return;
@@ -237,61 +288,6 @@ function sortSampleCount(){
 function updateSortSampleCount(){
   const label = $('sort-sample-count');
   if(label)label.textContent = sortSampleCount() ? `${sortSampleCount()} sample habits currently in the list.` : 'No sample habits are in the list.';
-}
-
-// PURE: build settings object for preset
-function sortSettingsForPreset(name){
-  if(name === 'custom')return {...DEFAULT_SORT_SETTINGS,...sortSettings,preset:'custom'};
-  return {...DEFAULT_SORT_SETTINGS,...(SORT_PRESETS[name] || SORT_PRESETS.balanced),preset:name};
-}
-
-// PURE: strip sample prefix from name
-function sampleDisplayName(name){
-  return String(name || '').replace(/^Sample:\s*/,'');
-}
-
-// RENDER: draw sort lab preview cards
-function renderSortLabPreview(){
-  const wrap = $('sort-lab-preview');
-  if(!wrap)return;
-  const samples = normalize(buildSortSamples());
-  const previewItems = [
-    {name:'current',settings:{...DEFAULT_SORT_SETTINGS,...sortSettings},note:'your setup'},
-    ...['balanced','build','planned','todayFirst'].map(name=>({name,settings:sortSettingsForPreset(name)}))
-  ];
-  wrap.innerHTML = previewItems.map(item=>{
-    const {name,settings} = item;
-    const orderIndices = visibleIndices(samples,settings)
-      .filter(i=>!samples[i].pinned && !(samples[i].snoozedUntil && Date.now() < samples[i].snoozedUntil));
-    const order = orderIndices
-      .slice(0,6)
-      .map(i=>{
-        const h = samples[i];
-        const type = h.type === 'keepup' ? 'build' : h.type === 'reduce' ? 'limit' : h.type === 'task' ? (isTimedTask(h) ? 'scheduled' : 'task') : 'stop';
-        return `<li><span>${escapeHtml(sampleDisplayName(h.name))}</span><b class="${h.type}">${type}</b></li>`;
-      }).join('');
-    const freshStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && daysSince(samples[i].lastLog) !== null && daysSince(samples[i].lastLog) < 3);
-    const quietStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && daysSince(samples[i].lastLog) !== null && daysSince(samples[i].lastLog) >= 14);
-    const newStop = orderIndices.findIndex(i=>samples[i].type === 'zero' && samples[i].lastLog === null);
-    const stopLine = `fresh reset #${freshStop + 1 || '-'} · clear stretch #${quietStop + 1 || '-'} · no entry #${newStop + 1 || '-'}`;
-    const overdueLimit = orderIndices.findIndex(i=>samples[i].type === 'reduce' && sampleDisplayName(samples[i].name).includes('ready to review'));
-    const tooOftenLimit = orderIndices.findIndex(i=>samples[i].type === 'reduce' && sampleDisplayName(samples[i].name).includes('too often'));
-    const limitLine = `limit overdue #${overdueLimit + 1 || '-'} · too often #${tooOftenLimit + 1 || '-'}`;
-    const note = item.note || (name === 'planned'
-        ? 'plans lead'
-        : name === 'build'
-          ? 'builds lead'
-          : name === 'todayFirst'
-            ? 'today & overdue first'
-            : 'mixed signals');
-    const activeClass = name === 'current' ? 'current' : name === (sortSettings.preset || 'balanced') ? 'on' : '';
-    return `<article class="sort-preview-card ${activeClass}">
-      <div><strong>${escapeHtml(name)}</strong><small>${note}</small></div>
-      <ol>${order}</ol>
-      <p class="sort-stop-line">${escapeHtml(limitLine)}</p>
-      <p class="sort-stop-line">${escapeHtml(stopLine)}</p>
-    </article>`;
-  }).join('');
 }
 
 // PURE: build a sample habit object
@@ -397,20 +393,6 @@ function removeSortSamples(){
   }
 }
 
-// RENDER: expand or collapse advanced settings
-function setAdvancedSettingsOpen(open){
-  const block = $('settings-advanced');
-  const body = $('settings-advanced-body');
-  body.hidden = !open;
-  block.classList.toggle('open',open);
-  $('settings-advanced-toggle').setAttribute('aria-expanded',String(open));
-}
-
-// HANDLER: toggle advanced settings section
-function toggleAdvancedSettings(){
-  setAdvancedSettingsOpen($('settings-advanced-body').hidden);
-}
-
 // RENDER: sync range field value and label
 function syncSettingRange(name,value,suffix){
   const field = $(`setting-${name}`);
@@ -435,8 +417,6 @@ function bindSettingRange(name,key,suffix,options = {}){
     const patch = {[key]:value};
     if(options.custom !== false && isSortSettingKey(key))patch.preset = 'custom';
     updateSortSetting(patch,{sync:false,renderNow:false});
-    if(patch.preset)markPresetButton(patch.preset);
-    renderSortLabPreview();
   });
   field.addEventListener('change',()=>{
     render();

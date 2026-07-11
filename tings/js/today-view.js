@@ -14,6 +14,12 @@
 // PURE: today's scheduled tasks + rank-ordered fill items + remaining capacity. Items
 // carry their index into `data` so the render layer never has to re-resolve a
 // habit's position (which would break by-reference lookups after a re-load).
+//
+// When today's capacity is tight, fill items compete for the remaining minutes
+// in PRIORITY ORDER (P0 first, then P1, ...). Within the same priority band the
+// original home rank order is preserved. So the items that lose their slot when
+// the day overflows are always the lowest-priority ones — never an arbitrary
+// cut. Home ordering itself is unchanged; priority only arbitrates capacity.
 function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
   const scheduled = data
@@ -23,12 +29,27 @@ function buildTodayAgenda(data,settings){
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
   const slots = buildOpenAgendaSlots(todayKey,scheduled,settings);
   let remaining = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
-  const agendaItems = [];
+  // Gather every eligible fill candidate in home rank order, then stable-sort
+  // by priority so the capacity cut lands on low-priority items first.
+  const candidates = [];
+  let homeRank = 0;
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
     if(h.type === 'task' && h.lastLog !== null)continue;
     if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
-    if(!includeInTodayAgenda(h,settings))continue;
+    const dueToday = includeInTodayAgenda(h,settings);
+    // Do-early pull-forward: an upcoming item whose target day is overloaded,
+    // which is allowed today and has flexibility, may be pulled into today's
+    // agenda (earlyReason encodes that gate). It then competes for today's
+    // remaining minutes by priority like any other fill; if it loses the cut
+    // it simply gets no row, and the home list leaves it in "upcoming".
+    const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
+    if(!dueToday && !earlyOk)continue;
+    candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
+  }
+  candidates.sort((a,b)=>a.priority - b.priority || a.rank - b.rank);
+  const agendaItems = [];
+  for(const {h,i} of candidates){
     const cost = clampDuration(h.durationMinutes);
     if(cost > remaining && agendaItems.length)continue; // skip, keep scanning for a smaller fit
     agendaItems.push({h,i});
@@ -64,6 +85,18 @@ function fillTimeWindow(h,dayBase){
   return {start,end};
 }
 
+// PURE: the soft preferred-time anchor for a fill item today, or null.
+// preferredTimeStart/End is a HINT, not a constraint: the timeline nudges a
+// fill toward this time when it fits, and otherwise falls back to the clock.
+// Only the strict allowedTimeStart/End can drop/close an item. We anchor on
+// preferredTimeStart (the "do it around this time" cue); end is not needed
+// for a soft nudge.
+function fillPreferredStart(h,dayBase){
+  const s = h.preferredTimeStart;
+  if(!Number.isFinite(s))return null;
+  return dayBase + s * 60000;
+}
+
 // PURE: is there still enough unexpired room inside this habit's allowed time
 // window today to fit a full session? Windowless habits are always doable.
 // preferredTimeStart/End is a soft hint and is intentionally NOT consulted
@@ -82,12 +115,22 @@ function windowStillDoableToday(h,now = Date.now()){
 // PURE: interleave scheduled tasks (hard time) and fill items (soft estimate) into a
 // single time-ordered row list. The fill clock starts at "now" and walks
 // forward; scheduled tasks jump the clock past their slot so nothing overlaps.
+// Fill items honour their per-item allowed time window (allowedTimeStart/End):
+// an item is pushed to its window start if "now" is earlier, and skipped if it
+// cannot fit inside the window within the current slot (so smaller items behind
+// it still get a turn instead of being starved by a too-large leader).
+//
+// Fill items also SOFTLY honour preferredTimeStart (the "do it around this
+// time" hint): when the clock-driven start is earlier than the preferred time
+// and the whole session still fits, the fill is nudged to the preferred start.
+// This is a hint only — it never overrides the hard allowed window, never
+// drops an item, and falls back to the clock placement if it won't fit.
 //
 // Each open slot retries every still-unplaced item, so an item that is too
 // large for one slot can still land in a later, larger one (instead of being
-// dropped the first time it misses). Anything left over — typically items
-// whose duration is larger than every individual open slot even though the
-// day's total availability covers them (the day is fragmented by scheduled
+// dropped the first time it misses). Anything left over — typically windowless
+// items whose duration is larger than every individual open slot even though
+// the day's total availability covers them (the day is fragmented by scheduled
 // tasks or blocked time) — gets a soft suggested time stacked after the last
 // open slot so the home card always has a pill for them. Windowed items keep
 // honouring their own allowedTimeStart/End and stay dropped if no slot can
@@ -118,6 +161,18 @@ function buildTodayTimeline(agenda,now = Date.now()){
         placeStart = clock;
         placeEnd = clock + cost;
         cap = slot.end;
+      }
+      // Soft preferred-time nudge: if the fill has a preferredTimeStart that
+      // is later than the current clock-driven start AND the whole session
+      // still fits inside the slot (and inside the hard allowed window when
+      // one is set, since `cap` already folds that in), defer placement to
+      // that time. The nudge only ever pushes later — it never overrides the
+      // hard window, never pulls an item earlier, and falls back silently to
+      // the clock placement if the preferred time won't fit.
+      const prefStartTs = fillPreferredStart(fill.h,dayBase);
+      if(prefStartTs !== null && prefStartTs > placeStart && prefStartTs + cost <= cap){
+        placeStart = prefStartTs;
+        placeEnd = prefStartTs + cost;
       }
       if(placeEnd > cap)continue;
       rows.push({ kind:'fill', h:fill.h, i:fill.i, start:placeStart, end:placeEnd, hard:false });

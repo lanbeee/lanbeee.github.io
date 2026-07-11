@@ -6,10 +6,10 @@
 <meta name="color-scheme" content="light dark" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="Habits" />
+<meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <link rel="manifest" href="./manifest.json" />
-<title>Habits</title>
+<title>Tings</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <style>
@@ -28,7 +28,7 @@
   <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
     <button class="app-bar-logo" id="bar-open-about" aria-label="how it works">
       <img src="./favicon.svg" alt="" aria-hidden="true" />
-      <span class="app-bar-title">Habits</span>
+      <span class="app-bar-title">Tings</span>
     </button>
     <div class="app-bar-search" id="app-bar-search" aria-hidden="true">
       <input type="search" id="habit-search" aria-label="search habits" placeholder="search habits" autocomplete="off" autocorrect="off" spellcheck="false" />
@@ -54,7 +54,7 @@
         <button class="wordmark" id="open-about" aria-label="how it works">
           <img src="./favicon.svg" alt="" aria-hidden="true" />
           <span class="wordmark-copy">
-            <span>Habits</span>
+            <span>Tings</span>
           </span>
         </button>
       </div>
@@ -90,7 +90,7 @@
       <p class="sheet-title">new habit</p>
       <span id="emoji-suggestion" class="emoji-suggestion" hidden role="button" tabindex="0"></span>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <label class="emoji-field">
           <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
             <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. Use an emoji like 🏃 or 📚; blank uses the default habit icon.</div></span></span>
@@ -117,26 +117,48 @@
           <input type="date" id="ting-due-date" class="plan-date-input" />
           <button type="button" class="mini-text-btn" id="ting-due-clear" hidden>no date</button>
         </div>
-        <label class="setting-toggle compact-toggle hard-due-toggle">
-          <input type="checkbox" id="ting-hard-due" />
-          <span>hard deadline</span>
-        </label>
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
-      <div class="plan-field-row" id="scheduled-time-row" hidden>
-        <div class="plan-field-main">
-          <label class="plan-date-label" for="ting-scheduled-time">scheduled</label>
-          <input type="datetime-local" id="ting-scheduled-time" class="plan-date-input" />
+
+      <button type="button" class="add-more-toggle" id="add-more-toggle" aria-expanded="false" aria-controls="add-more-options">
+        <span>more options</span>
+        <i class="ti ti-chevron-down" aria-hidden="true"></i>
+      </button>
+      <div class="add-more-options" id="add-more-options" hidden>
+        <div class="priority-field">
+          <span class="priority-label">priority <button type="button" class="info-btn" data-tip="ting-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
+          <div class="seg priority-seg" id="ting-priority-seg">
+            <button class="seg-opt" data-priority="0">P0</button>
+            <button class="seg-opt" data-priority="1">P1</button>
+            <button class="seg-opt on" data-priority="2">P2</button>
+            <button class="seg-opt" data-priority="3">P3</button>
+            <button class="seg-opt" data-priority="4">P4</button>
+            <button class="seg-opt" data-priority="5">P5</button>
+          </div>
         </div>
-        <label class="hard-due-toggle" id="ting-mark-done-toggle" hidden>
-          <input type="checkbox" id="ting-mark-done" checked />
-          <span>mark done</span>
-        </label>
+        <div class="plan-field-row" id="task-hard-due-row" hidden>
+          <label class="setting-toggle compact-toggle hard-due-toggle">
+            <input type="checkbox" id="ting-hard-due" />
+            <span>hard deadline</span>
+          </label>
+        </div>
+        <div class="plan-field-row" id="scheduled-time-row" hidden>
+          <div class="plan-field-main">
+            <label class="plan-date-label" for="ting-scheduled-time">scheduled</label>
+            <input type="datetime-local" id="ting-scheduled-time" class="plan-date-input" />
+          </div>
+          <label class="hard-due-toggle" id="ting-mark-done-toggle" hidden>
+            <input type="checkbox" id="ting-mark-done" checked />
+            <span>mark done</span>
+          </label>
+        </div>
+        <div class="add-topics-section" id="add-topics-section">
+          <span class="settings-sublabel">topics</span>
+          <div class="topic-chip-row" id="ting-topic-chips"></div>
+        </div>
       </div>
-      <div class="add-topics-section" id="add-topics-section">
-        <span class="settings-sublabel">topics</span>
-        <div class="topic-chip-row" id="ting-topic-chips"></div>
-      </div>
+
       <div class="btn-row add-actions">
         <button class="btn primary" id="do-save">add</button>
         <button class="btn" id="do-cancel">cancel</button>
@@ -157,15 +179,6 @@
         </div>
       </div>
       <div class="detail-pager" aria-label="habit details">
-        <section class="detail-page detail-card">
-          <p class="detail-about" id="detail-about"></p>
-          <div class="section-top">
-            <span class="section-label">insight</span>
-            <span class="trend-copy" id="detail-trend"></span>
-          </div>
-          <div class="stats-row" id="detail-stats"></div>
-          <div class="graph" id="detail-graph"></div>
-        </section>
         <section class="detail-page month-card">
           <div class="section-top">
             <span class="section-label">month</span>
@@ -183,6 +196,15 @@
             <span><b class="miss"></b>care</span>
             <span><b class="plan"></b>planned</span>
           </div>
+        </section>
+        <section class="detail-page detail-card">
+          <p class="detail-about" id="detail-about"></p>
+          <div class="section-top">
+            <span class="section-label">insight</span>
+            <span class="trend-copy" id="detail-trend"></span>
+          </div>
+          <div class="stats-row" id="detail-stats"></div>
+          <div class="graph" id="detail-graph"></div>
         </section>
         <section class="detail-page detail-section tune-section">
           <span class="section-label">schedule</span>
@@ -269,7 +291,7 @@
         <section class="detail-page detail-section tune-section">
           <span class="section-label">identity</span>
           <div class="name-icon-row">
-            <input type="text" id="detail-habit-message" name="message" aria-label="habit name" placeholder="habit name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+            <input type="text" id="detail-habit-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
             <label class="emoji-field">
               <span>emoji</span>
               <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
@@ -281,6 +303,18 @@
             <button class="seg-opt" data-detail-type="reduce">limit</button>
             <button class="seg-opt" data-detail-type="zero">stop</button>
             <button class="seg-opt" data-detail-type="task">task</button>
+          </div>
+          <div class="priority-field">
+            <span class="priority-label">priority <button type="button" class="info-btn" data-tip="detail-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="info-tooltip" id="detail-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
+            <div class="seg priority-seg" id="detail-priority-seg">
+              <button class="seg-opt" data-priority="0">P0</button>
+              <button class="seg-opt" data-priority="1">P1</button>
+              <button class="seg-opt" data-priority="2">P2</button>
+              <button class="seg-opt" data-priority="3">P3</button>
+              <button class="seg-opt" data-priority="4">P4</button>
+              <button class="seg-opt" data-priority="5">P5</button>
+            </div>
           </div>
           <label class="setting-toggle habit-toggle">
             <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
@@ -383,7 +417,7 @@
   <!-- about sheet -->
   <div class="sheet-wrap" id="about-sheet">
     <div class="sheet about-sheet">
-      <p class="sheet-title">Habits</p>
+      <p class="sheet-title">Tings</p>
       <p class="about-copy">A small home for habits, tasks, and plans. No account needed. Your data stays on this device.</p>
       <div class="about-stack">
         <section class="about-block calm-block"><span>Add</span><p>Tap + to create a habit, task, or stop item. Give it a rhythm, due date, or planned time when that helps.</p></section>
@@ -430,29 +464,77 @@
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>
-        </section>
-        <section class="settings-block">
-          <span class="settings-label"><span style="position:relative;display:inline-block">topics <button type="button" class="info-btn" data-tip="settings-topics-help" aria-label="about topics"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="settings-topics-help" role="tooltip" hidden>Use topics for search and activity reporting. Topics do not affect sorting.</div></span></span>
-          <div class="topic-manage-row">
-            <input type="text" id="topic-name" placeholder="new topic" maxlength="32" autocomplete="off" />
-            <button class="btn primary" id="topic-add" type="button">add</button>
+          <span class="settings-sublabel compact-label">reminders</span>
+          <div class="settings-grid">
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
+              <span><b>reminders</b><small>Heads-up for hard deadlines and scheduled tasks starting soon. On iPhone, reminders appear when you open the app.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="pushDetailed" aria-pressed="false">
+              <span><b>include task names in notifications</b><small>When off, push notifications say "Task due today" without names. When on, the full task name is included.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </div>
-          <div class="topic-list" id="topic-list"></div>
         </section>
         <section class="settings-block">
-          <span class="settings-label"><span style="position:relative;display:inline-block">availability <button type="button" class="info-btn" data-tip="settings-avail-help" aria-label="about availability"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="settings-avail-help" role="tooltip" hidden>Default time available for habits and planning each weekday.</div></span></span>
-          <div class="availability-grid" id="availability-grid"></div>
+          <span class="settings-label"><span style="position:relative;display:inline-block">backup <button type="button" class="info-btn" data-tip="settings-backup-help" aria-label="about backup"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+            <div class="info-tooltip" id="settings-backup-help" role="tooltip" hidden>Everything is saved only on this device. Export a backup file now and then, and especially before clearing browser data or moving to a new phone.</div></span></span>
+          <p class="field-hint">Your habits live only on this device — there is no account and nothing syncs. Export a backup file you can keep safe or move to a new device.</p>
+          <div class="btn-row">
+            <button class="btn primary" id="backup-export" type="button">export backup</button>
+            <button class="btn" id="backup-import" type="button">import backup</button>
+          </div>
+          <input type="file" id="backup-file-input" accept="application/json,.json" hidden />
+          <p class="field-hint sample-count" id="backup-status"></p>
+          <div class="reset-confirm" id="backup-import-confirm" hidden>
+            <p id="backup-import-summary">Replace everything on this device with this backup?</p>
+            <div class="btn-row">
+              <button class="btn primary" id="backup-import-yes">replace</button>
+              <button class="btn" id="backup-import-no">cancel</button>
+            </div>
+          </div>
         </section>
-        <section class="settings-block">
-          <span class="settings-label"><span style="position:relative;display:inline-block">blocked time <button type="button" class="info-btn" data-tip="settings-blocked-help" aria-label="about blocked time"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="settings-blocked-help" role="tooltip" hidden>Regular time you do not want the home plan to use, such as sleep, meals, work, commute, or school.</div></span></span>
-          <div class="blocked-time-list" id="blocked-time-list"></div>
-          <button class="btn" id="blocked-time-add" type="button">add blocked time</button>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-topics-head" data-collapse-target="settings-topics-body" aria-expanded="false" aria-controls="settings-topics-body">
+            <span class="settings-label">topics</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-topics-body" hidden>
+            <p class="field-hint">Use topics for search and activity reporting — they do not affect sorting.</p>
+            <div class="topic-manage-row">
+              <input type="text" id="topic-name" placeholder="new topic" maxlength="32" autocomplete="off" />
+              <button class="btn primary" id="topic-add" type="button">add</button>
+            </div>
+            <div class="topic-list" id="topic-list"></div>
+          </div>
         </section>
-        <section class="settings-block">
-          <span class="settings-label">cards</span>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-availability-head" data-collapse-target="settings-availability-body" aria-expanded="false" aria-controls="settings-availability-body">
+            <span class="settings-label">availability</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-availability-body" hidden>
+            <p class="field-hint">Default time available for habits and planning each weekday.</p>
+            <div class="availability-grid" id="availability-grid"></div>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-blocked-head" data-collapse-target="settings-blocked-body" aria-expanded="false" aria-controls="settings-blocked-body">
+            <span class="settings-label">blocked time</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-blocked-body" hidden>
+            <p class="field-hint">Regular time you do not want the home plan to use, such as sleep, meals, work, commute, or school.</p>
+            <div class="blocked-time-list" id="blocked-time-list"></div>
+            <button class="btn" id="blocked-time-add" type="button">add blocked time</button>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-cards-head" data-collapse-target="settings-cards-body" aria-expanded="false" aria-controls="settings-cards-body">
+            <span class="settings-label">customize cards</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-cards-body" hidden>
           <div class="settings-grid">
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozed" aria-pressed="false">
               <span><b>show snoozed habits</b><small>Show hidden habits faded on the home screen.</small></span>
@@ -506,37 +588,40 @@
               <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
-              <span><b>reminders</b><small>Heads-up for hard deadlines and scheduled tasks starting soon. On iPhone, reminders appear when you open the app.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="pushDetailed" aria-pressed="false">
-              <span><b>include task names in notifications</b><small>When off, push notifications say "Task due today" without names. When on, the full task name is included.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
+          </div>
           </div>
         </section>
-        <section class="settings-block">
-          <span class="settings-label"><span style="position:relative;display:inline-block">new habit defaults <button type="button" class="info-btn" data-tip="settings-defaults-help" aria-label="about defaults"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="settings-defaults-help" role="tooltip" hidden>Used only when you tap + to create a new habit.</div></span></span>
-          <div class="seg compact-seg" id="default-type-seg">
-            <button class="seg-opt" data-default-type="keepup">build</button>
-            <button class="seg-opt" data-default-type="reduce">limit</button>
-            <button class="seg-opt" data-default-type="zero">stop</button>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-defaults-head" data-collapse-target="settings-defaults-body" aria-expanded="false" aria-controls="settings-defaults-body">
+            <span class="settings-label">new habit defaults</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-defaults-body" hidden>
+            <p class="field-hint">Used only when you tap + to create a new habit.</p>
+            <div class="seg compact-seg" id="default-type-seg">
+              <button class="seg-opt" data-default-type="keepup">build</button>
+              <button class="seg-opt" data-default-type="reduce">limit</button>
+              <button class="seg-opt" data-default-type="zero">stop</button>
+            </div>
+            <label class="settings-range simple-range">
+              <span>rhythm</span>
+              <input type="range" id="setting-default-target" min="1" max="183" />
+              <output id="setting-default-target-label"></output>
+            </label>
           </div>
-          <label class="settings-range simple-range">
-            <span>rhythm</span>
-            <input type="range" id="setting-default-target" min="1" max="183" />
-            <output id="setting-default-target-label"></output>
-          </label>
         </section>
-        <section class="settings-block">
-          <span class="settings-label">test data</span>
-          <p class="field-hint">Add sample habits and tasks to try the app. Samples are marked with a test label and you can remove them in one tap. They stay until you remove them.</p>
-          <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
-          <div class="btn-row">
-            <button class="btn primary" id="add-sort-samples">add samples</button>
-            <button class="btn" id="remove-sort-samples">remove samples</button>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-testdata-head" data-collapse-target="settings-testdata-body" aria-expanded="false" aria-controls="settings-testdata-body">
+            <span class="settings-label">test data</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-testdata-body" hidden>
+            <p class="field-hint">Add sample habits and tasks to try the app. Samples are marked with a test label and you can remove them in one tap. They stay until you remove them.</p>
+            <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
+            <div class="btn-row">
+              <button class="btn primary" id="add-sort-samples">add samples</button>
+              <button class="btn" id="remove-sort-samples">remove samples</button>
+            </div>
           </div>
         </section>
         <section class="settings-block settings-danger">
@@ -626,11 +711,12 @@
 
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
-<div id="undo-toast" role="status" aria-live="polite">
-  <span id="undo-text"></span>
-  <button type="button" id="undo-open" hidden>open</button>
-  <button type="button" id="undo-plan" hidden>action</button>
-  <button type="button" id="undo-action">undo</button>
+<div id="action-toast" role="status" aria-live="polite">
+  <span id="action-text"></span>
+  <button type="button" id="action-open" hidden>open</button>
+  <button type="button" id="action-plan" hidden>action</button>
+  <button type="button" id="snooze-until-planned" hidden>snooze until planned</button>
+  <button type="button" id="action-undo">undo</button>
 </div>
 
 <script src="./js/config.js" defer></script>

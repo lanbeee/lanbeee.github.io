@@ -36,6 +36,31 @@ $('type-seg').addEventListener('click',e=>{
   syncAddTypeUi(selectedType);
 });
 
+// WIRE: add-sheet "more options" disclosure (priority, hard deadline,
+// scheduled time, topics) — collapsed by default so a first-time user only
+// sees name, type, and the one field that matters for that type.
+$('add-more-toggle')?.addEventListener('click',()=>{
+  const body = $('add-more-options');
+  const toggle = $('add-more-toggle');
+  if(!body || !toggle)return;
+  const opening = body.hidden;
+  body.hidden = !opening;
+  toggle.setAttribute('aria-expanded',String(opening));
+});
+
+// PURE: read the selected priority from the add-sheet segmented control
+function selectedAddPriority(){
+  const on = document.querySelector('#ting-priority-seg .seg-opt.on');
+  return clampPriority(on ? on.dataset.priority : DEFAULT_PRIORITY);
+}
+
+// WIRE: add-sheet priority segmented control
+$('ting-priority-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-priority]');
+  if(!opt)return;
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
+});
+
 // RENDER: toggle add-sheet field rows for the active type
 function syncAddTypeUi(type){
   const isHabit = type === 'keepup' || type === 'reduce';
@@ -44,6 +69,7 @@ function syncAddTypeUi(type){
   $('target-help').textContent = rhythmHelp(type);
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
+  $('task-hard-due-row').hidden = type !== 'task';
   $('scheduled-time-row').hidden = type !== 'task';
   if(type === 'task'){
     syncTaskDueUi();
@@ -185,6 +211,7 @@ $('do-save').addEventListener('click',()=>{
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
     pinned:false,
+    priority:selectedAddPriority(),
     topics:selectedAddTopics(),
     createdAt:Date.now()
   };
@@ -268,8 +295,7 @@ function rhythmHelp(type){
 function setDetailTypeUi(type){
   document.querySelectorAll('#detail-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.detailType === type);
-  });
-  const isHabit = type === 'keepup' || type === 'reduce';
+  });  const isHabit = type === 'keepup' || type === 'reduce';
   $('detail-slider-row').style.display = isHabit ? 'flex' : 'none';
   $('detail-target-help').style.display = 'block';
   $('detail-target-help').textContent = rhythmHelp(type);
@@ -286,6 +312,14 @@ function setDetailTypeUi(type){
   if(exportBtn)exportBtn.hidden = type !== 'task';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
   if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
+}
+
+// RENDER: update detail priority segmented control
+function setDetailPriorityUi(priority){
+  const p = clampPriority(priority);
+  document.querySelectorAll('#detail-priority-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',parseInt(btn.dataset.priority,10) === p);
+  });
 }
 
 // HYBRID: sync rhythm field, label, and crown dial state
@@ -564,6 +598,12 @@ $('detail-type-seg').addEventListener('click',e=>{
 $('detail-pinned').addEventListener('change',()=>setDetailDirty());
 $('detail-duration').addEventListener('input',()=>setDetailDirty());
 $('detail-flexibility').addEventListener('input',()=>setDetailDirty());
+$('detail-priority-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-priority]');
+  if(!opt)return;
+  setDetailPriorityUi(opt.dataset.priority);
+  setDetailDirty();
+});
 document.addEventListener('click',e=>{
   document.querySelectorAll('.info-tooltip:not([hidden])').forEach(tip=>{
     if(e.target.closest(`[data-tip="${tip.id}"]`))return;
@@ -660,6 +700,7 @@ $('detail-save').addEventListener('click',()=>{
   }
   h.durationMinutes = current.durationMinutes;
   h.flexibilityDays = current.flexibilityDays;
+  h.priority = clampPriority(current.priority);
   const isHabit = current.type === 'keepup' || current.type === 'reduce';
   h.target = isHabit ? clampRhythmValue(current.target || h.target || 7) : null;
   if(current.type === 'task'){
@@ -760,60 +801,13 @@ $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cl
 $('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('open-settings').addEventListener('click',()=>{
   closeSheet('about-sheet');
+  resetSettingsSheetState();
   syncSettingsControls();
   openSheet('settings-sheet');
 });
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('settings-advanced-toggle')?.addEventListener('click',e=>{
-  if(suppressNativeButton === e.currentTarget){
-    e.preventDefault();
-    return;
-  }
-  toggleAdvancedSettings();
-});
-$('sort-preset-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-preset]');
-  if(!opt)return;
-  applySortPreset(opt.dataset.preset);
-});
-$('plan-window-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-window]');
-  if(!opt)return;
-  updateSortSetting({planWindowDays:parseInt(opt.dataset.window,10),preset:'custom'});
-  showToast('order updated');
-});
-$('new-build-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-new-build]');
-  if(!opt)return;
-  updateSortSetting({newBuildMode:opt.dataset.newBuild,preset:'custom'});
-  showToast('order updated');
-});
-$('due-mode-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-due-mode]');
-  if(!opt)return;
-  updateSortSetting({dueMode:opt.dataset.dueMode,preset:'custom'});
-  showToast('order updated');
-});
-$('build-window-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-build-window]');
-  if(!opt)return;
-  updateSortSetting({buildLookAheadDays:parseInt(opt.dataset.buildWindow,10),preset:'custom'});
-  showToast('order updated');
-});
-$('limit-mode-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-limit-mode]');
-  if(!opt)return;
-  updateSortSetting({limitMode:opt.dataset.limitMode,preset:'custom'});
-  showToast('order updated');
-});
-$('stop-mode-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-stop-mode]');
-  if(!opt)return;
-  updateSortSetting({stopMode:opt.dataset.stopMode,preset:'custom'});
-  showToast('order updated');
-});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
   if(!opt)return;
@@ -829,7 +823,7 @@ document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   });
 });
 $('settings-sheet').addEventListener('pointerdown',e=>{
-  const control = e.target.closest('[data-setting-toggle],#settings-advanced-toggle');
+  const control = e.target.closest('[data-setting-toggle]');
   if(!control)return;
   settingsPointer = {control,id:e.pointerId,x:e.clientX,y:e.clientY};
 },{passive:true});
@@ -841,8 +835,7 @@ $('settings-sheet').addEventListener('pointerup',e=>{
   if(moved > 18)return;
   e.preventDefault();
   e.stopPropagation();
-  if(control.matches('[data-setting-toggle]'))toggleAppSettingButton(control);
-  else toggleAdvancedSettings();
+  toggleAppSettingButton(control);
   suppressNativeButton = control;
   setTimeout(()=>{if(suppressNativeButton === control)suppressNativeButton = null;},80);
 });
@@ -887,18 +880,24 @@ $('blocked-time-list')?.addEventListener('click',e=>{
   else next.add(value);
   saveBlockedTimePatch(index,{days:normalizeAllowedWeekdays([...next])});
 });
-bindSettingRange('plan-weight','planWeight','%');
-bindSettingRange('due-weight','dueWeight','%');
-bindSettingRange('progress-weight','progressWeight','%');
-bindSettingRange('trend-weight','trendWeight','%');
-bindSettingRange('rhythm-weight','rhythmWeight','%');
-bindSettingRange('build-weight','buildWeight','%');
-bindSettingRange('limit-weight','limitWeight','%');
-bindSettingRange('stop-weight','stopWeight','%');
-bindSettingRange('new-weight','newWeight','%');
-bindSettingRange('build-start','buildRiseAt','%');
-bindSettingRange('rhythm-bias','rhythmBias','');
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
+document.querySelectorAll('.settings-collapse-head').forEach(head=>{
+  head.addEventListener('click',()=>{
+    const body = $(head.dataset.collapseTarget);
+    if(!body)return;
+    const opening = body.hidden;
+    body.hidden = !opening;
+    head.setAttribute('aria-expanded',String(opening));
+  });
+});
+$('backup-export')?.addEventListener('click',exportBackupFile);
+$('backup-import')?.addEventListener('click',()=>$('backup-file-input')?.click());
+$('backup-file-input')?.addEventListener('change',e=>{
+  const file = e.target.files && e.target.files[0];
+  handleBackupFileChosen(file);
+});
+$('backup-import-yes')?.addEventListener('click',confirmBackupImport);
+$('backup-import-no')?.addEventListener('click',cancelBackupImport);
 $('add-sort-samples')?.addEventListener('click',addSortSamples);
 $('remove-sort-samples')?.addEventListener('click',removeSortSamples);
 $('settings-reset').addEventListener('click',()=>{
@@ -1069,15 +1068,22 @@ $('day-logs-home').addEventListener('click',()=>{
 });
 $('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
-$('undo-action').addEventListener('click',undoLastAction);
-$('undo-open')?.addEventListener('click',()=>{
-  if(!canOpenFromUndo(pendingUndo))return;
-  const idx = pendingUndo.idx;
-  hideUndo();
+$('action-undo').addEventListener('click',executeUndo);
+$('action-open')?.addEventListener('click',()=>{
+  if(!canOpenFromAction(pendingAction))return;
+  const idx = pendingAction.idx;
+  hideActionToast();
   openDetail(idx);
 });
-$('undo-plan')?.addEventListener('click',()=>{
-  runPendingUndoAction();
+$('action-plan')?.addEventListener('click',()=>{
+  runPendingAction();
+});
+$('snooze-until-planned')?.addEventListener('click',()=>{
+  if(!pendingAction || !pendingAction.plan || !pendingAction.ts || pendingAction.ts <= Date.now())return;
+  const idx = pendingAction.idx;
+  const until = pendingAction.ts;
+  hideActionToast();
+  doSnoozeUntil(idx,until,'Planned');
 });
 
 $('list').addEventListener('touchstart',e=>{

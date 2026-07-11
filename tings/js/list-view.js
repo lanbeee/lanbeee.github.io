@@ -596,7 +596,10 @@ function cardMeta(h,options = {}){
   if(h.sample && (options.forceSample || sortSettings.showSampleOnCards))parts.push('<span class="context-pill quiet" title="sample habit"><i class="ti ti-test-pipe" aria-hidden="true"></i>sample</span>');
   if(h.pinned && (options.forcePinned || sortSettings.showPinnedOnCards))parts.push('<span class="context-pill pin" title="pinned"><i class="ti ti-pin" aria-hidden="true"></i></span>');
   if(h.type === 'task' && (options.forceTaskDate || sortSettings.showTaskDateOnCards)){
-    if(h.eventTime !== null){
+    if(h.eventTime !== null && !options.suppressScheduled){
+      // When today's agenda already renders a "scheduled at HH:MM" pill for
+      // this card (see agendaCardPill), skip the duplicate here so the time
+      // never appears twice with an identical calendar icon.
       parts.push(`<span class="context-pill scheduled" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(compactScheduledLabel(h.eventTime))}</span>`);
     }else if(h.dueDate === null){
       parts.push('<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>');
@@ -657,14 +660,41 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
+// PURE: today's agenda timeline rows, shared by the home card pill map and
+// the chronological "today" section ordering so both stay in lockstep.
+function homeAgendaRows(data){
+  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
+  return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
+}
+
 // PURE: map today's agenda rows onto existing home cards.
 function homeAgendaMap(data){
-  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return new Map();
-  const rows = buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
-  return rows.reduce((map,row)=>{
+  return homeAgendaRows(data).reduce((map,row)=>{
     if(!map.has(row.i))map.set(row.i,row);
     return map;
   },new Map());
+}
+
+// PURE: chronological position of each today-agenda row, used to order the
+// home "today" section the way the agenda timeline reads. Indices not in
+// today's agenda are absent from the map.
+function homeAgendaOrder(data){
+  const map = new Map();
+  homeAgendaRows(data).forEach((row,pos)=>{ if(!map.has(row.i))map.set(row.i,pos); });
+  return map;
+}
+
+// PURE: color for the card's left accent bar by priority. P0 burns red, P1
+// amber, the mid bands settle into neutral text tones, and the low bands fade
+// so the bar reads as "how urgently does this want today's time" — only the
+// top levels pop, everything else stays quiet. No text label needed.
+function priorityColor(p){
+  if(p <= 0)return 'var(--red-icon)';
+  if(p === 1)return 'var(--amber-icon)';
+  if(p === 2)return 'var(--teal-icon)';
+  if(p === 3)return 'var(--text2)';
+  if(p === 4)return 'var(--text3)';
+  return 'color-mix(in srgb, var(--text3) 35%, transparent)';
 }
 
 // PURE: compact right-side agenda marker for a home card
@@ -819,7 +849,7 @@ function render(){
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
     }else{
-      empty.innerHTML = 'simple habit tracking<br><span class="empty-sub">Saved on this device. Tap Habits for help and settings, or + to add your first habit.</span>';
+      empty.innerHTML = 'simple habit tracking<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, or + to add your first habit.</span>';
     }
     return;
   }
@@ -827,17 +857,40 @@ function render(){
   empty.style.display = 'none';
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
-  const agendaMap = homeAgendaMap(data);
+  const agendaRows = homeAgendaRows(data);
+  const agendaMap = new Map();
+  const agendaOrder = new Map();
+  agendaRows.forEach((row,pos)=>{
+    if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
+    if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
+  });
   const earlyMap = homeEarlyMap(data,sortSettings);
+  // An upcoming item is pulled into "today" only when it BOTH passes the
+  // do-early gate (allowed today + flexibility + its target day is over-loaded)
+  // AND earns an agenda row today. If it loses its slot to capacity it falls
+  // back to its original "upcoming" section, so the list never promises time
+  // the day cannot give and the card never shows an "early" pill it can't honour.
+  const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
   const renderIndices = todayFirstActive ? [...indices].sort((a,b)=>{
     const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
     if(pin)return pin;
     const catA = todayCategory(data[a],sortSettings);
     const catB = todayCategory(data[b],sortSettings);
-    if(catA !== catB)return catA - catB;
-    if(catA === 2){
-      const early = Number(Boolean(earlyMap.get(b))) - Number(Boolean(earlyMap.get(a)));
-      if(early)return early;
+    const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
+    const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
+    if(dispA !== dispB)return dispA - dispB;
+    if(dispA === 0){
+      // Show the "today" section chronologically — same order the agenda
+      // timeline reads — so priority, planned time, allowed windows and the
+      // preferred-time nudge all surface through one consistent ordering.
+      // Today items without an agenda row (rare: a due item dropped by
+      // capacity) trail after the timed ones.
+      const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
+      if(posA != null || posB != null){
+        if(posA == null)return 1;
+        if(posB == null)return -1;
+        return posA - posB;
+      }
     }
     return indices.indexOf(a) - indices.indexOf(b);
   }) : indices;
@@ -848,10 +901,10 @@ function render(){
     const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
 
     if(todayFirstActive && !h.pinned){
-      const doEarly = cat === 2 && Boolean(earlyMap.get(realIdx));
-      const sectionKey = doEarly ? 20 : cat;
+      const isEarlyToday = cat === 2 && earlyToday(realIdx);
+      const sectionKey = isEarlyToday ? 0 : cat;
       if(sectionKey !== sectionCat){
-        const labels = {0:'today',1:'overdue',20:'do it early',2:'upcoming',3:'others'};
+        const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
         const label = labels[sectionKey];
         if(label){
           const header = document.createElement('div');
@@ -868,9 +921,14 @@ function render(){
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const agendaPill = agendaCardPill(agendaMap.get(realIdx));
-    const earlyPill = earlyCardPill(earlyMap.get(realIdx));
-    const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join('')});
+    const agendaRow = agendaMap.get(realIdx);
+    const agendaPill = agendaCardPill(agendaRow);
+    // The "early" pill only marks items actually pulled into today; items that
+    // lost the capacity cut and fell back to upcoming carry no early pill.
+    const earlyPill = earlyCardPill((cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : '');
+    // Suppress the cardMeta "scheduled" pill when the agenda already renders
+    // the same time pill for this timed task today (avoids duplicate pills).
+    const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const accent = visualClassColor(cardScoreTone);
     const isDoneTask = h.type === 'task' && h.lastLog !== null;
@@ -889,7 +947,7 @@ function render(){
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}" data-real="${realIdx}" style="--card-accent:${accent};">
+      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
@@ -1138,26 +1196,28 @@ function toastItemName(h){
   return name.length > 28 ? `${name.slice(0,27)}...` : name;
 }
 
-// PURE: secondary toast action for entry changes
-function entryToastAction(undo){
-  if(!undo || undo.type !== 'entry' || !Number.isInteger(undo.idx))return null;
-  if(undo.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
-  if(undo.plan){
-    if(dateKey(undo.ts) <= todayIso())return {type:'complete-plan',label:'done now'};
+// PURE: secondary toast action for entry changes. Stop habits never get a
+// plan-related action — they cannot be planned, only logged.
+function entryToastAction(action){
+  if(!action || action.type !== 'entry' || !Number.isInteger(action.idx))return null;
+  if(load()[action.idx]?.type === 'zero')return null;
+  if(action.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
+  if(action.plan){
+    if(dateKey(action.ts) <= todayIso())return {type:'complete-plan',label:'done now'};
     return null;
   }
-  if(dateKey(undo.ts) === todayIso())return {type:'plan-instead',label:'plan instead'};
+  if(dateKey(action.ts) === todayIso())return {type:'plan-instead',label:'plan instead'};
   return {type:'plan-today',label:'plan today'};
 }
 
-// PURE: annotates undo state with the contextual toast action
-function withEntryToastAction(undo){
-  const action = entryToastAction(undo);
-  if(action){
-    undo.toastAction = action.type;
-    undo.toastActionLabel = action.label;
+// PURE: annotates action state with the contextual toast action
+function withEntryToastAction(action){
+  const toastAction = entryToastAction(action);
+  if(toastAction){
+    action.toastAction = toastAction.type;
+    action.toastActionLabel = toastAction.label;
   }
-  return undo;
+  return action;
 }
 
 // PURE: finds an exact actual/planned log entry
@@ -1179,6 +1239,8 @@ function planToConsumeForEntry(logs,entryTs){
 function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   const data = load();
   if(!data[idx])return false;
+  // Never turn a stop habit's entry into a plan — stop habits aren't plannable.
+  if(toPlan && data[idx].type === 'zero')return false;
   const logs = normalizeLogs(data[idx].logs);
   const pos = findEntryByKind(logs,fromTs,fromPlan);
   if(pos < 0)return false;
@@ -1188,10 +1250,10 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   data[idx].logs = normalizeLogs(logs);
   data[idx].lastLog = latestActualLog(data[idx].logs);
   if(!toPlan)data[idx].snoozedUntil = null;
-  else if(!fromPlan && pendingUndo?.snoozedUntil !== undefined)data[idx].snoozedUntil = pendingUndo.snoozedUntil;
+  else if(!fromPlan && pendingAction?.snoozedUntil !== undefined)data[idx].snoozedUntil = pendingAction.snoozedUntil;
   const snoozedUntilAfter = data[idx].snoozedUntil || null;
   if(!save(data))return false;
-  showUndo(label,{
+  showActionToast(label,{
     type:'replace-entry',
     idx,
     fromTs,
@@ -1213,7 +1275,7 @@ function logTing(i){
   if(!data[i])return false;
   const logs = normalizeLogs(data[i].logs);
   const consumedPlanTs = planToConsumeForEntry(logs,now);
-  const undo = withEntryToastAction({
+  const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts:now,
@@ -1233,7 +1295,7 @@ function logTing(i){
   if(typeof cancelPush === 'function' && data[i].type === 'task'){
     cancelPush(reminderSignature(data[i]));
   }
-  showUndo(`Logged ${toastItemName(data[i])}`,undo);
+  showActionToast(`Logged ${toastItemName(data[i])}`,action);
   return true;
 }
 
@@ -1246,7 +1308,7 @@ function logTingAt(i,ts){
   const isPlan = isPlanLog(log);
   const logs = normalizeLogs(data[i].logs);
   const consumedPlanTs = isPlan ? null : planToConsumeForEntry(logs,entryTs);
-  const undo = withEntryToastAction({
+  const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts:entryTs,
@@ -1262,7 +1324,7 @@ function logTingAt(i,ts){
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!isPlan)data[i].snoozedUntil = null;
   if(!save(data))return false;
-  showUndo(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,undo);
+  showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
   return true;
 }
 
@@ -1270,6 +1332,9 @@ function logTingAt(i,ts){
 function planTingOnDay(i,key,timeValue = '',options = {}){
   const data = load();
   if(!data[i])return false;
+  // Stop habits ("quit" type) cannot be planned — there is no future session
+  // to schedule, only lapses to log. Bail before creating any plan log.
+  if(data[i].type === 'zero')return false;
   const base = new Date(`${key}T12:00:00`);
   if(Number.isNaN(base.getTime()))return false;
   let hours = 12;
@@ -1280,7 +1345,7 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
     minutes = time % 60;
   }
   const ts = new Date(base.getFullYear(),base.getMonth(),base.getDate(),hours,minutes,0,0).getTime();
-  const undo = withEntryToastAction({
+  const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts,
@@ -1292,33 +1357,33 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!save(data))return false;
   const timeLabel = timeValue ? ` · ${new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}` : '';
-  showUndo(`Planned ${toastItemName(data[i])}${timeLabel}`,undo);
+  showActionToast(`Planned ${toastItemName(data[i])}${timeLabel}`,action);
   return true;
 }
 
-// HYBRID: run the contextual secondary action shown in the undo toast.
-function runPendingUndoAction(){
-  if(!pendingUndo || !Number.isInteger(pendingUndo.idx))return;
-  const action = pendingUndo.toastAction;
+// HYBRID: run the contextual secondary action shown in the action toast.
+function runPendingAction(){
+  if(!pendingAction || !Number.isInteger(pendingAction.idx))return;
+  const action = pendingAction.toastAction;
   if(action === 'plan-instead'){
     replaceEntryKind(
-      pendingUndo.idx,
-      pendingUndo.ts,
+      pendingAction.idx,
+      pendingAction.ts,
       false,
-      pendingUndo.ts,
+      pendingAction.ts,
       true,
       'Planned instead'
     );
     return;
   }
   if(action === 'plan-today'){
-    if(planTingOnDay(pendingUndo.idx,todayIso()))refreshOpenViews();
+    if(planTingOnDay(pendingAction.idx,todayIso()))refreshOpenViews();
     return;
   }
   if(action === 'complete-plan'){
     replaceEntryKind(
-      pendingUndo.idx,
-      pendingUndo.ts,
+      pendingAction.idx,
+      pendingAction.ts,
       true,
       Date.now(),
       false,
@@ -1328,12 +1393,12 @@ function runPendingUndoAction(){
   }
   if(action === 'keep-plan'){
     const data = load();
-    const idx = pendingUndo.idx;
-    if(!data[idx] || !pendingUndo.consumedPlanTs)return;
-    data[idx].logs = normalizeLogs([...(data[idx].logs || []),{ts:pendingUndo.consumedPlanTs,plan:true}]);
+    const idx = pendingAction.idx;
+    if(!data[idx] || !pendingAction.consumedPlanTs)return;
+    data[idx].logs = normalizeLogs([...(data[idx].logs || []),{ts:pendingAction.consumedPlanTs,plan:true}]);
     data[idx].lastLog = latestActualLog(data[idx].logs);
     if(save(data)){
-      showUndo('Plan kept',{type:'entry',idx,ts:pendingUndo.consumedPlanTs,plan:true,snoozedUntil:data[idx].snoozedUntil || null,openAction:false});
+      showActionToast('Plan kept',{type:'entry',idx,ts:pendingAction.consumedPlanTs,plan:true,snoozedUntil:data[idx].snoozedUntil || null,openAction:false});
       refreshOpenViews();
     }
   }
@@ -1371,7 +1436,7 @@ function removePlansOnDay(idx,key){
   h.lastLog = latestActualLog(h.logs);
   if(!save(data))return false;
   const label = removed.length === 1 ? `Removed plan · ${toastItemName(h)}` : `Removed ${removed.length} plans · ${toastItemName(h)}`;
-  showUndo(label,{type:'remove-plans',idx,key,removed,openAction:false,undoLabel:'restore'});
+  showActionToast(label,{type:'remove-plans',idx,key,removed,openAction:false,undoLabel:'restore'});
   refreshOpenViews();
   return true;
 }
@@ -1400,37 +1465,37 @@ function movePlanTo(idx,fromKey,toKey){
   data[idx].logs = normalizeLogs(remaining);
   data[idx].lastLog = latestActualLog(data[idx].logs);
   if(save(data)){
-    showUndo(`Moved ${toastItemName(h)}`,{type:'move',idx,moved,openAction:false,undoLabel:'move back'});
+    showActionToast(`Moved ${toastItemName(h)}`,{type:'move',idx,moved,openAction:false,undoLabel:'move back'});
     refreshOpenViews();
   }
 }
 
 // HYBRID: revert last action and refresh
-function undoLastAction(){
-  if(!pendingUndo)return;
+function executeUndo(){
+  if(!pendingAction)return;
   const data = load();
-  if(pendingUndo.type === 'entry'){
-    const {idx,ts,snoozedUntil,consumedPlanTs} = pendingUndo;
+  if(pendingAction.type === 'entry'){
+    const {idx,ts,snoozedUntil,consumedPlanTs} = pendingAction;
     if(!data[idx])return;
     const logs = normalizeLogs(data[idx].logs);
-    const pos = findEntryByKind(logs,ts,Boolean(pendingUndo.plan));
+    const pos = findEntryByKind(logs,ts,Boolean(pendingAction.plan));
     if(pos >= 0)logs.splice(pos,1);
     if(consumedPlanTs)logs.push({ts:consumedPlanTs,plan:true});
     data[idx].logs = logs;
     data[idx].lastLog = latestActualLog(logs);
     data[idx].snoozedUntil = snoozedUntil;
   }
-  if(pendingUndo.type === 'hide'){
-    const {idx,snoozedUntil} = pendingUndo;
+  if(pendingAction.type === 'hide'){
+    const {idx,snoozedUntil} = pendingAction;
     if(!data[idx])return;
     data[idx].snoozedUntil = snoozedUntil;
   }
-  if(pendingUndo.type === 'delete'){
-    const {idx,habit} = pendingUndo;
+  if(pendingAction.type === 'delete'){
+    const {idx,habit} = pendingAction;
     data.splice(Math.min(idx,data.length),0,habit);
   }
-  if(pendingUndo.type === 'move'){
-    const {idx,moved} = pendingUndo;
+  if(pendingAction.type === 'move'){
+    const {idx,moved} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
       const newSet = new Set(moved.map(m=>m.newTs));
@@ -1440,8 +1505,8 @@ function undoLastAction(){
       data[idx].lastLog = latestActualLog(data[idx].logs);
     }
   }
-  if(pendingUndo.type === 'remove-plans'){
-    const {idx,removed} = pendingUndo;
+  if(pendingAction.type === 'remove-plans'){
+    const {idx,removed} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
       removed.forEach(ts=>logs.push({ts,plan:true}));
@@ -1449,8 +1514,8 @@ function undoLastAction(){
       data[idx].lastLog = latestActualLog(data[idx].logs);
     }
   }
-  if(pendingUndo.type === 'replace-entry'){
-    const {idx,fromTs,fromPlan,toTs,toPlan,snoozedUntilBefore} = pendingUndo;
+  if(pendingAction.type === 'replace-entry'){
+    const {idx,fromTs,fromPlan,toTs,toPlan,snoozedUntilBefore} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
       const pos = findEntryByKind(logs,toTs,toPlan);
@@ -1462,7 +1527,7 @@ function undoLastAction(){
     }
   }
   if(save(data)){
-    hideUndo();
+    hideActionToast();
     showToast('undone');
     refreshOpenViews();
   }

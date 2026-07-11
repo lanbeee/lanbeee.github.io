@@ -1,4 +1,4 @@
-const CACHE = 'habits-v13';
+const CACHE = 'tings-v13';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 
 const PRECACHE = [
@@ -79,7 +79,7 @@ self.addEventListener('fetch', event => {
 const PUSH_VAPID_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
 
 self.addEventListener('push', event => {
-  let data = { title: 'Habits', body: '' };
+  let data = { title: 'Tings', body: '' };
   try {
     if (event.data) data = Object.assign(data, event.data.json());
   } catch (_) {

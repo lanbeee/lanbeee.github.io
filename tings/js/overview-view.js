@@ -344,6 +344,7 @@ function renderDayLogs(key){
   const addOptions = data
     .map((h,i)=>({h,i}))
     .filter(({h})=>matchesOverviewTopic(h,overviewTopicFilter))
+    .filter(({h})=>h.type !== 'zero') // stop habits aren't plannable
     .filter(({h})=>!(h.type === 'task' && h.lastLog !== null))
     .sort((a,b)=>(a.h.name || '').localeCompare(b.h.name || '',undefined,{sensitivity:'base'}));
   $('day-log-ting').innerHTML = addOptions.length ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('') : '<option value="">No active items</option>';
