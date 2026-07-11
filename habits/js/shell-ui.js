@@ -438,6 +438,12 @@ function showUndo(text,undo){
     planBtn.hidden = !label;
     planBtn.setAttribute('aria-hidden',String(!label));
   }
+  const snoozeUntilBtn = $('snooze-until-planned');
+  if(snoozeUntilBtn){
+    const showSnooze = undo && undo.plan && undo.ts > Date.now();
+    snoozeUntilBtn.hidden = !showSnooze;
+    snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));
+  }
   $('undo-toast').classList.add('show');
   clearTimeout(undoTimer);
   undoTimer = setTimeout(hideUndo,7200);
@@ -451,6 +457,7 @@ function hideUndo(){
   $('undo-toast').classList.remove('show');
   if($('undo-open'))$('undo-open').hidden = true;
   if($('undo-plan'))$('undo-plan').hidden = true;
+  if($('snooze-until-planned'))$('snooze-until-planned').hidden = true;
 }
 
 // HYBRID: re-renders currently open views after data change

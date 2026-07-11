@@ -1078,6 +1078,13 @@ $('undo-open')?.addEventListener('click',()=>{
 $('undo-plan')?.addEventListener('click',()=>{
   runPendingUndoAction();
 });
+$('snooze-until-planned')?.addEventListener('click',()=>{
+  if(!pendingUndo || !pendingUndo.plan || !pendingUndo.ts || pendingUndo.ts <= Date.now())return;
+  const idx = pendingUndo.idx;
+  const until = pendingUndo.ts;
+  hideUndo();
+  doSnoozeUntil(idx,until,'Planned');
+});
 
 $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();

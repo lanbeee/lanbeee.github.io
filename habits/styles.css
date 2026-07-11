@@ -1875,20 +1875,20 @@ body[data-pane-count="3"] #undo-toast{
   bottom:24px;
 }
 #undo-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto;}
-#undo-action,#undo-open,#undo-plan{
+#undo-action,#undo-open,#undo-plan,#snooze-until-planned{
   border:0;background:var(--bg);color:var(--text);
   border-radius:999px;padding:8px 12px;font:inherit;font-weight:650;
   flex:0 0 auto;white-space:nowrap;
   cursor:pointer;-webkit-tap-highlight-color:transparent;
 }
-#undo-open,#undo-plan{
+#undo-open,#undo-plan,#snooze-until-planned{
   background:color-mix(in srgb,var(--bg) 86%,var(--text));
 }
-#undo-open[hidden],#undo-plan[hidden]{display:none;}
+#undo-open[hidden],#undo-plan[hidden],#snooze-until-planned[hidden]{display:none;}
 
 @media (max-width:340px){
   #undo-toast{gap:8px;padding-left:12px;}
-  #undo-action,#undo-open,#undo-plan{padding:8px 10px;}
+  #undo-action,#undo-open,#undo-plan,#snooze-until-planned{padding:8px 10px;}
   .app{padding:0 12px;}
   .ting-card{gap:9px;padding-right:9px;}
   .ting-main{gap:7px;}
