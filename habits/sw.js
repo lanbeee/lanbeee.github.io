@@ -1,4 +1,4 @@
-const CACHE = 'tings-v13';
+const CACHE = 'tings-v14';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 
 const PRECACHE = [

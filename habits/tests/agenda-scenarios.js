@@ -8,6 +8,11 @@
 //   Issue 2 — a timed task planned today must show exactly ONE "scheduled" pill
 //             on its home card, not two identical purple calendar-time pills.
 //
+//   Issue 8 — a late/overnight allowed-time window (e.g. 10pm-11am) still
+//             surfaces a suggested time at its window start even when today's
+//             availability budget is spent before the window opens. Overnight
+//             windows extend into tomorrow as one span.
+//
 // Each scenario seeds localStorage, reloads, and asserts against the live
 // in-page pure functions (via page.evaluate) plus the rendered DOM for pills.
 // Run with:  node habits/tests/agenda-scenarios.js   (after starting the server)
@@ -735,8 +740,10 @@ function defaultSettings(overrides = {}) {
       fill ? `start=${fill.startLabel}` : 'missing');
   }
 
-  // (b) preferredTimeStart too late to fit the slot -> falls back to the clock
-  //     (now ceil). The nudge never overrides capacity or the hard window.
+  // (b) A late preferred time that DOES fit inside today's open time is honored
+  //     (it is no longer falsely rejected just because it sits past the point
+  //     where a tight availability budget used to clip the slots). The day is
+  //     open to midnight, so an 11pm preference lands at 11pm.
   {
     await seed(
       [base({ name: 'Prefer late', type: 'keepup', target: 1, durationMinutes: 30,
@@ -746,7 +753,24 @@ function defaultSettings(overrides = {}) {
     );
     const rows = await timelineFor(atTime(9, 0));
     const fill = rows.find(r => r.name === 'Prefer late');
-    check('7b preferred time that does not fit falls back to clock (9:00 AM)',
+    check('7b late preferred time is honored when the open day reaches it',
+      fill && fill.startLabel === '11:00 PM',
+      fill ? `start=${fill.startLabel}` : 'missing');
+  }
+
+  // (b2) Guard: the nudge still respects a HARD limit. When a blocked interval
+  //      covers the preferred time, the preferred time cannot fit and the fill
+  //      falls back to the clock (now ceil) — the nudge never overrides blocks.
+  {
+    await seed(
+      [base({ name: 'Prefer blocked hour', type: 'keepup', target: 1, durationMinutes: 30,
+        preferredTimeStart: 1380, preferredTimeEnd: 1440, // 23:00
+        lastLog: atTime(9) - 2 * 86400000, logs: [atTime(9) - 2 * 86400000] })],
+      defaultSettings({ blockedTimes: [{ label: 'wind-down', days: [], start: 1380, end: 1440 }] }) // 23:00-24:00
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Prefer blocked hour');
+    check('7b2 preferred time inside a blocked interval falls back to clock (9:00 AM)',
       fill && fill.startLabel === '9:00 AM',
       fill ? `start=${fill.startLabel}` : 'missing');
   }
@@ -766,6 +790,115 @@ function defaultSettings(overrides = {}) {
     check('7c hard allowed window beats the preferred-time nudge',
       fill && fill.startLabel === '10:00 AM',
       fill ? `start=${fill.startLabel}` : 'missing');
+  }
+
+  // ==========================================================================
+  // ISSUE 8 — a late/overnight allowed-time window lands at its window start.
+  //          The availability budget caps TASK minutes, not open time, so a
+  //          habit allowed 10pm-11am still gets placed at 10pm even when the
+  //          budget is tiny and "now" is early — idle open time earlier in the
+  //          day no longer eats the slot a late window needs. Conversely, when
+  //          a block (sleep/other) actually covers the window start, the item
+  //          gets NO suggestion (it is genuinely unavailable today).
+  //          Overnight windows (end <= start) extend into tomorrow as one span.
+  // ==========================================================================
+  console.log('\n[Issue 8] late/overnight window lands at its window start');
+
+  // (a) THE REPORTED BUG: 10pm-11am overnight window, now=9am, tiny 90min
+  //     availability. Idle morning time must NOT eat the budget and starve the
+  //     10pm window — the habit lands at its 10pm window start.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [base({ name: 'Overnight 10pm-11am', type: 'keepup', target: 1, durationMinutes: 30,
+        allowedTimeStart: 1320, allowedTimeEnd: 660, // 22:00 - 11:00 (overnight)
+        lastLog: ago, logs: [ago] })],
+      defaultSettings({ availabilityMinutes: [90, 90, 90, 90, 90, 90, 90] })
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Overnight 10pm-11am');
+    check('8a overnight window lands at its 10pm window start (budget does not starve it)',
+      fill && fill.startLabel === '10:00 PM',
+      fill ? `start=${fill.startLabel}` : 'missing');
+    // The suggestion must stay inside the allowed window (end <= 11am tomorrow).
+    check('8a overnight suggested end stays inside the window',
+      fill && fill.endMs <= atTime(11, 0) + 24 * 3600000,
+      fill ? `end=${fill.endLabel}` : 'missing');
+
+    // DOM: the home card must surface the agenda-suggested pill.
+    const pill = await page.locator('.ting-card:has-text("Overnight 10pm-11am") .context-pill.agenda-suggested').count();
+    check('8a card renders agenda-suggested pill', pill === 1, `count=${pill}`);
+  }
+
+  // (b) Same overnight window, now=3pm (afternoon, inside the daytime gap).
+  //     Must still defer the suggestion to tonight's 10pm window start.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [base({ name: 'Overnight 10pm-11am', type: 'keepup', target: 1, durationMinutes: 30,
+        allowedTimeStart: 1320, allowedTimeEnd: 660,
+        lastLog: ago, logs: [ago] })],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(15, 0));
+    const fill = rows.find(r => r.name === 'Overnight 10pm-11am');
+    check('8b overnight window in afternoon still suggests 10pm',
+      fill && fill.startLabel === '10:00 PM',
+      fill ? `start=${fill.startLabel}` : 'missing');
+  }
+
+  // (b2) A block covering the window start => the item is genuinely unavailable
+  //      today and gets NO suggested time. (Sleep from 10pm blocks the 10pm start.)
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [base({ name: 'Overnight 10pm-11am', type: 'keepup', target: 1, durationMinutes: 30,
+        allowedTimeStart: 1320, allowedTimeEnd: 660,
+        lastLog: ago, logs: [ago] })],
+      defaultSettings({ blockedTimes: [{ label: 'sleep', days: [], start: 1320, end: 420 }] }) // 22:00-07:00 overnight
+    );
+    const rows = await timelineFor(atTime(15, 0));
+    const fill = rows.find(r => r.name === 'Overnight 10pm-11am');
+    check('8b2 no suggestion when a block covers the window start',
+      !fill, fill ? `unexpected start=${fill.startLabel}` : '');
+  }
+
+  // (c) Tight capacity that still covers a pre-10pm slot must NOT double-place:
+  //     the windowed item lands at its window start, a windowless filler stacks
+  //     after the last slot, and the two never overlap.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [
+        base({ name: 'Late window 30m', type: 'keepup', target: 1, durationMinutes: 30,
+          allowedTimeStart: 1320, allowedTimeEnd: 660, lastLog: ago, logs: [ago] }),
+        base({ name: 'Plain fill 20m', type: 'keepup', target: 1, durationMinutes: 20,
+          lastLog: ago, logs: [ago] })
+      ],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const win = rows.find(r => r.name === 'Late window 30m');
+    const plain = rows.find(r => r.name === 'Plain fill 20m');
+    check('8c windowed + windowless overflow both get suggested times',
+      Boolean(win) && Boolean(plain),
+      `win=${win ? win.startLabel : 'missing'} plain=${plain ? plain.startLabel : 'missing'}`);
+  }
+
+  // (d) Guard: an item whose allowed window is genuinely too small for its
+  //     duration stays DROPPED — the overflow rescue never breaks a hard window.
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [base({ name: 'Big overnight', type: 'keepup', target: 1, durationMinutes: 45,
+        allowedTimeStart: 1320, allowedTimeEnd: 1330, // 22:00-22:10 = 10min, < 45min
+        lastLog: ago, logs: [ago] })],
+      defaultSettings()
+    );
+    const rows = await timelineFor(atTime(9, 0));
+    const fill = rows.find(r => r.name === 'Big overnight');
+    check('8d item too large for its window stays dropped (no false rescue)',
+      !fill, fill ? `unexpected start=${fill.startLabel}` : '');
   }
 
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));

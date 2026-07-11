@@ -28,7 +28,11 @@ function buildTodayAgenda(data,settings){
     .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
   const slots = buildOpenAgendaSlots(todayKey,scheduled,settings);
-  let remaining = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
+  // The availability budget caps TASK minutes for the day, not open time.
+  // It is also bounded by the day's actual open minutes so a heavily-blocked
+  // day never promises more capacity than the calendar leaves room for.
+  const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
+  let remaining = Math.min(totalMinutes,slotMinutes);
   // Gather every eligible fill candidate in home rank order, then stable-sort
   // by priority so the capacity cut lands on low-priority items first.
   const candidates = [];
@@ -210,20 +214,16 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings){
     cursor = Math.max(cursor,block.end);
   });
   if(cursor < end)raw.push({start:cursor,end});
-  const total = effectiveAvailabilityMinutes(todayKey,settings);
-  let remainingMs = total * 60000;
   const now = Date.now();
+  // Slots are the day's full OPEN time (open intervals minus blocks/scheduled,
+  // clipped to "now"). The availability budget is NOT applied here — it caps
+  // task minutes in buildTodayAgenda, not open time. This keeps a late/overnight
+  // allowed window (e.g. 10pm-11am) reachable even when today's budget would
+  // otherwise be "spent" by idle open time earlier in the day, and lets a block
+  // at the window start (e.g. sleep from 10pm) correctly exclude the item.
   return raw
     .map(slot=>({start:Math.max(slot.start,ceilToMinutes(now,5)),end:slot.end}))
-    .filter(slot=>slot.end > slot.start)
-    .map(slot=>{
-      if(remainingMs <= 0)return null;
-      const length = slot.end - slot.start;
-      const clipped = {start:slot.start,end:slot.start + Math.min(length,remainingMs)};
-      remainingMs -= length;
-      return clipped;
-    })
-    .filter(Boolean);
+    .filter(slot=>slot.end > slot.start);
 }
 
 function agendaBlockedIntervals(todayKey,settings,start,end){
