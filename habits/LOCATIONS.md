@@ -51,11 +51,14 @@ matters day-to-day.
    twice. The app never *blocks* on a network call — if nothing is cached and
    the network is slow, the agenda sequences on haversine and silently refines
    once a real result lands.
-4. **Stay anti-rigid.** The temptation with "the app knows where you are" is to
-   turn the home list into a location-graded feed. Resist it. Only the Today
-   agenda — which is already the one surface that sequences items through time
-   — gets location-aware ordering. Everything else (home ranking, attention
-   score, reminders) treats locations as a tag, not a weight.
+4. **Location-aware placement, location-blind scoring.** Geography shapes the
+   Today timeline (and therefore the home *today* section order, which already
+   mirrors that timeline) and inserts thin travel cards between consecutive
+   items at different places. It does **not** rewrite `attentionScore` or the
+   overdue/upcoming/others sections — those stay a normal priority list.
+   Sequencing is nearest-neighbour with time windows and **may revisit** a
+   location later in the day (Loc1 → Loc2 → Loc1 remaining); it is not a hard
+   "cluster all Home then all Gym" pass.
 5. **Privacy: on-device, opt-in geolocation.** The app's core promise is that
    habit data never leaves the device. Geolocation is **opt-in**, requested
    from a user gesture, used only to pick which saved location you are nearest
@@ -374,13 +377,13 @@ behaviour change.
   entry). Locations with no hours (the default "Home" case) short-circuit to
   "24h, never closed" and skip all window math — keeps zero-cost locations
   literally zero-cost.
-- `intersectWindows(a, b)` — PURE: returns the overlap `{start,end}` of two
-  minute-windows (handling overnight wrap on either side) or `null` if they
-  don't overlap. The core composition primitive.
+- `intersectWindows(a, b)` — PURE: returns the overlap of two minute-windows
+  (handling overnight wrap on either side) as a merged list of `{start,end}`
+  intervals. Empty array = no overlap. The core composition primitive.
 - `effectiveLocationWindow(h, loc, weekday)` — PURE: the habit's window ∩ the
-  location's resolved window. Returns `{start,end}` or `null`. This is the one
-  function the Today agenda and `windowStillDoableToday()` both call instead of
-  the habit's window alone.
+  location's resolved window. Returns a merged interval list (possibly empty =
+  not placeable here today). This is the one function the Today agenda and
+  `windowStillDoableToday()` both call instead of the habit's window alone.
 
 ### Settings load/save
 
@@ -561,76 +564,74 @@ every `travel` edge that referenced the removed id.
 
 ## Today agenda — location-aware sequencing
 
-This is the part that makes locations *useful* rather than decorative, and the
-only place locations change ordering. `buildTodayTimeline()` (today-view.js:142)
-currently walks open slots in priority order, placing each fill item at the
-walking clock. That walk is location-blind.
+This is the part that makes locations *useful* rather than decorative.
+`buildTodayTimeline()` currently walks open slots in priority order, placing
+each fill item at the walking clock. That walk is location-blind.
+
+The home **today** section already re-sorts to match this timeline, so
+location-aware placement surfaces on home as order + time pills — without
+changing home layout. A thin travel card is inserted between consecutive today
+cards whose resolved locations differ.
 
 ### The change
 
 After the existing priority sort produces the candidate fill order, we add a
-**location-clustering pass** that, within each priority band, re-orders items
-to minimise total travel **and** respect each location's hours. This is now a
-joint spatial-temporal optimisation, not just nearest-neighbour:
+**location-aware placement pass** (greedy nearest-neighbour with time windows)
+that re-orders *within* priority bands to minimise travel **and** respect each
+location's hours. It is **not** a hard "cluster all Loc1 then all Loc2" pass —
+revisiting a location later in the day (Loc1 → Loc2 → Loc1 remaining) is a
+normal, allowed outcome when that is cheaper or the only hours-feasible path.
 
 1. **Anchor:** if geolocation is on and you are currently at a known location,
-   that location is the starting anchor. Otherwise the anchor is the
-   `preferredLocationId` of the first item in the band (or "anywhere" if it has
-   none).
-2. **Greedy nearest-neighbour within the band, gated by hours:** starting from
-   the anchor at the current clock time, repeatedly pick the next item whose
-   chosen location is **(a) reachable and (b) open at the arrival time** — i.e.
-   `effectiveLocationWindow(h, loc, todayWeekday)` must contain the arrival
-   timestamp. Among the feasible candidates, pick the **cheapest to reach**
-   (preferred location breaks ties, then travel seconds). This is the classic
-   TSP-heuristic with a time-window constraint; with ≤ a dozen agenda items in
-   a band it's trivially fast and near-optimal.
+   that location is the starting anchor. Otherwise the anchor is
+   `lastKnownLocationId`, else the `preferredLocationId` of the first item (or
+   "anywhere" if it has none).
+2. **Greedy nearest-neighbour, gated by hours:** starting from the anchor at
+   the current clock time, repeatedly pick the next unplaced item whose chosen
+   location is **(a) reachable and (b) open at the arrival time** — i.e. some
+   interval in `effectiveLocationWindow(h, loc, todayWeekday)` contains the
+   arrival minute. Among feasible candidates, pick the **cheapest to reach**
+   (preferred location breaks ties, then travel seconds). After placing,
+   current location becomes the chosen one so a later return trip is just
+   another step. With ≤ a dozen agenda items this is trivially fast.
 3. **Closed-now deferral:** if an item's only open-able location is closed at
    the current clock time, the item is deferred to the **earliest minute its
-   window opens** (e.g. a "Gym" habit deferred to 6am tomorrow if the gym
-   already closed). The clock jumps forward to that opening time, a travel row
-   is inserted to cover the gap, and sequencing continues. An item with *no*
-   feasible window today (closed all day) is dropped from today's agenda and
-   left on the home list as overdue — exactly how `windowStillDoableToday()`
-   already treats a habit whose own window has closed.
-4. **Multi-location choice:** when a habit allows several locations, the pass
-   evaluates each allowed location's `effectiveLocationWindow` at the arrival
-   time and picks the one that is (open → preferred → cheapest). This is what
-   makes the layered hours model pay off: "Call mom" can happen at Home (24h)
-   now, or be deferred to Mom's house (11am–5pm) later — the agenda picks Home.
-5. **"Anywhere" items** (no location constraint) are treated as zero-cost to
-   place anywhere and slotted freely — they neither cause nor avoid travel and
-   ignore hours (no location = no location hours).
+   window opens**. The clock jumps forward, a wait/travel row is inserted, and
+   sequencing continues. An item with *no* feasible window today is dropped
+   from today's agenda and left on the home list as overdue — exactly how
+   `windowStillDoableToday()` already treats a habit whose own window closed.
+4. **Multi-location choice:** when a habit allows several locations, evaluate
+   each allowed location's `effectiveLocationWindow` at arrival and pick
+   (open → preferred → cheapest). "Call mom" can happen at Home (24h) now, or
+   be deferred to Mom's house (11am–5pm) later — the agenda picks Home.
+5. **"Anywhere" items** (`locationIds: []`) cost zero travel, keep the current
+   location unchanged, and ignore location hours.
 6. **Insert travel rows:** when two consecutive placed items have different
-   non-null locations, the timeline inserts a synthetic `{kind:'travel', from,
-   to, seconds, metres}` row, rendered as a distinct (lighter, dashed) band
-   between the two agenda rows with copy like `"12 min · 3.1 km · driving"`.
-   This makes the spatial cost **visible** without forcing a rigid schedule.
-   Travel rows are also inserted across a *wait* (closed-now deferral) so a
-   "Gym opens 6am" gap reads correctly on the timeline.
+   non-null locations, the timeline inserts a synthetic
+   `{kind:'travel', from, to, seconds, metres}` row. On the Today sheet this is
+   a dashed band (`"12 min · 3.1 km · driving"`). On home, a **thin travel
+   card** appears between the two habit cards — no other home UI change.
+7. **Travel eats capacity:** travel minutes are subtracted from
+   `availabilityMinutes` alongside task duration. An item whose duration fits
+   but whose inbound travel would blow the budget is skipped like any other
+   capacity miss. Closed-now *wait* gaps remain display-only (do not charge
+   capacity) in v1.
 
 ### What does *not* change
 
-- The **home list** (`visibleIndices` / `attentionScore`) is untouched. A
-  habit's location never moves it up or down the home ranking. This preserves
-  every existing scoring test and the "locations are like topics — non-scoring"
-  guarantee.
-- The **capacity budget** (`availabilityMinutes`) still only counts task
-  minutes; travel minutes and closed-now *wait* gaps are *displayed* but do not
-  consume the day's task budget in v1 (a travel minute is not a work minute,
-  but it isn't free either — see [Open design decisions](#open-design-decisions)
-  for whether travel should eat availability).
+- **`attentionScore` / overdue / upcoming / others** stay location-blind. A
+  habit's location never moves it up or down the global attention ranking —
+  only today *placement* (via the shared timeline) is geography-aware.
+- **Home layout** is unchanged aside from the thin travel cards inside the
+  today section. No location group headers, no new section structure.
 - Scheduled (fixed-time) tasks keep their literal placement; travel rows are
-  only inserted between *soft fill* items, never around a scheduled block.
-  Scheduled tasks still consult their location's hours at *creation/edit* time
-  (a warning is shown if you book a 3pm event at a location closed at 3pm), but
-  the agenda never silently moves a scheduled block — its placement is rigid by
-  design.
-- `windowStillDoableToday()` is *widened* (not replaced) to consult
-  `effectiveLocationWindow(h, loc, weekday)` instead of the habit's window
-  alone, but its return semantics and every existing caller are unchanged: a
-  habit whose only open location just closed returns `false` and falls out of
-  "today" exactly as a window-closed habit already does today.
+  only inserted between *soft fill* items (and between fill and a scheduled
+  block when locations differ). Scheduled tasks still consult location hours at
+  creation/edit time (warning if booked while closed), but the agenda never
+  silently moves a scheduled block.
+- `windowStillDoableToday()` is *widened* (not replaced) in Phase 6 to consult
+  `effectiveLocationWindow` instead of the habit's window alone; return
+  semantics and callers are unchanged.
 
 ### Geolocation integration
 
@@ -692,11 +693,11 @@ Minimal, opt-in, mirrors the topic handling:
 |---|---|---|---|
 | 0 ✅ | `Location` (incl. hours fields) / `LocationFields` typedefs, `normalize()` clamps, `normalizeLocationHours` / `resolveLocationWindow` / `intersectWindows` / `effectiveLocationWindow` pure helpers, config constants, registry normalisation | `data.js`, `config.js` | none |
 | 1 ✅ | `locations.js` module: haversine, provider interface, OSRM fetcher, edge cache, geocode helper | new `js/locations.js`, `index.html` (script tag), `sw.js` (precache + maps cache) | 0 |
-| 2 | Google Maps Directions + Geocoding provider behind `mapsConfigured()` | `js/locations.js`, `config.js` (`MAPS_API_KEY`) | 1 |
-| 3 | Settings-manager locations section: registry CRUD, add-via-geocode, remove-with-sweep, **per-location hours editor** (default window + closed-days + per-day overrides + preferred) | `js/settings.js`, `js/list-view.js`, `index.html`, `styles.css` | 0, 1 |
-| 4 | Add-sheet + detail-sheet location chip rows, preferred-location picker | `js/list-view.js`, `js/detail-view.js`, `js/main.js`, `index.html` | 0, 3 |
-| 5 | Home + overview location filter bars, `searchText` + `filteredVisibleIndices` wiring, `showLocationOnCards`, widen `windowStillDoableToday` to `effectiveLocationWindow` | `js/list-view.js`, `js/overview-view.js`, `js/scoring.js`, `js/today-view.js`, `index.html` | 4 |
-| 6 | Today agenda: **hours-gated** location-clustering pass (open-at-arrival filter + closed-now deferral), travel-row + wait-row rendering, capacity display | `js/today-view.js`, `js/locations.js`, `styles.css` | 4, 5 |
+| 2 | Google Maps Directions + Geocoding provider behind `mapsConfigured()` *(skipped for now)* | `js/locations.js`, `config.js` (`MAPS_API_KEY`) | 1 |
+| 3 ✅ | Settings-manager locations section: registry CRUD, add-via-geocode, remove-with-sweep, **per-location hours editor**, **default travel-mode control** | `js/settings.js`, `index.html`, `styles.css` | 0, 1 |
+| 4 | Add-sheet + detail-sheet location chip rows, preferred-location picker (explicit second chip row) | `js/list-view.js`, `js/detail-view.js`, `js/main.js`, `index.html` | 0, 3 |
+| 5 | Home + overview location filter bars, `searchText` + `filteredVisibleIndices` wiring, `showLocationOnCards` *(does not yet widen `windowStillDoableToday`)* | `js/list-view.js`, `js/overview-view.js`, `js/scoring.js`, `index.html` | 4 |
+| 6 | Today agenda: hours-gated **revisit-allowed** placement, travel **eats capacity**, travel/wait rows in Today sheet, **thin travel cards on home**, widen `windowStillDoableToday` | `js/today-view.js`, `js/list-view.js`, `js/locations.js`, `styles.css` | 4, 5 |
 | 7 | Geolocation: opt-in `requestLocationAccess`, `watchPosition`, `currentLocationId`, manual "I am at" fallback, `lastKnownLocationId` | `js/locations.js`, `js/today-view.js`, `js/main.js`, `index.html`, `styles.css` | 6 |
 | 8 | Reminder body location append (opt-in via `pushDetailed`) | `js/reminders.js` | 4 |
 | 9 (stretch) | Travel-aware "leave by" reminders (accounts for location hours when computing departure time) | `js/reminders.js`, `js/locations.js` | 7, 8 |
@@ -725,59 +726,26 @@ isn't free." Everything else is refinement and can ship independently.
 These need a decision before or while building — flagged rather than silently
 assumed:
 
-1. **Should travel minutes eat the day's availability budget?** v1 says no —
-   travel is displayed but doesn't consume task capacity. The alternative
-   (travel counts against `availabilityMinutes`) is more honest about a day's
-   real capacity but risks the agenda constantly "filling up" on commutes,
-   which feels punishing. Worth deciding from real usage after Phase 6 ships.
-2. **Asymmetric routing.** v1 caches one edge per pair (A→B === B→A). OSRM and
-   Google both *can* return direction-aware durations. If one-way-street
-   asymmetry matters in practice, switch the cache key to an ordered pair and
-   double the edge budget. Probably not worth it for a habits app.
-3. **Walking/cycling routing on OSRM.** The public OSRM demo server only
-   routes driving. For a `walking` travel mode, v1 uses driving-distance + a
-   walked-time heuristic (haversine-style). A more accurate option is a
-   foot-routing service (e.g. self-hosted OSRM with a foot profile, or
-   GraphHopper) — out of scope for v1, but the provider interface makes it a
-   drop-in addition.
-4. **Preferred-location picker UX.** Long-press-to-promote (no new UI, but
-   discoverable?) vs. a dedicated second chip row (clear, but more clutter)?
-   Recommend shipping the explicit second row first and A/B-ing long-press
-   later — consistency with the chip-row vocabulary beats a hidden gesture.
-5. **Travel-aware "leave by" reminders (Phase 9).** Fire a reminder at
-   `eventTime − travelSeconds − buffer` instead of a flat 1 h. Powerful, but
-   requires a reliable travel edge cached ahead of time and a decision about
-   which origin (home? last known? calendar-predicted?). Defer until Phases
-   6–7 prove the travel cache is dependable.
-6. **Location sharing with the push relay.** The `pushDetailed` setting
-   already leaks habit names to the Worker. Appending the location name
-   (`"· Home"`) leaks slightly more context. Default off, opt-in only —
-   matches the existing posture, but worth calling out explicitly.
-7. **Registry cap (32).** Enough for a personal set of meaningful places; the
-   travel matrix stays bounded at 1024 edges. If power users want more, raise
-   `MAX_LOCATIONS` and `MAX_TRAVEL_EDGES` together — there's no algorithmic
-   cost, only a storage-budget one (`QUOTA_HARD_KB` already enforces a hard
-   ceiling).
-8. **Should closed-now *wait* gaps consume availability?** v1 displays them
-   (like travel rows) but doesn't charge them against `availabilityMinutes`.
-   A 3-hour wait for the gym to open is arguably "used capacity" even though
-   you weren't working. Symmetric to decision 1 — decide both together after
-   Phase 6 shows real days.
-9. **Per-day hours granularity.** v1's `hoursByDay` is keyed by weekday
-   (0–6), so "open 11a–5p Mon–Fri, closed weekends" is two entries. It cannot
-   express date-specific exceptions ("closed Dec 25" or "open late Jul 4").
-   Date-exception support is a clean future addition (`hoursByDate:
-   {'YYYY-MM-DD': {start,end}|null}`) layered on the same resolver, but adds
-   a migration/refresh concern (exceptions expire). Deferred unless real usage
-   demands it.
-10. **Habit-window vs location-window precedence when they don't overlap.**
-    v1 intersects them — if they don't overlap at all, the habit is simply
-    unschedulable at that location today (drops to overdue). The alternative
-    (habit window wins, location hours become a soft warning) is more lenient
-    but undermines the point of location hours. Intersection is recommended;
-    revisit if it feels too strict in practice.
-11. **Preferred time: location's vs habit's.** When both a habit and its chosen
-    location have a `preferredTimeStart`, v1 lets the **location's** preferred
-    win (you're optimising the location's best hours, e.g. off-peak café). The
-    habit's preferred is used only for anywhere/24h locations. This is a soft
-    hint so either choice is low-stakes; flagged for explicitness.
+1. **Travel minutes eat availability — LOCKED.** Travel counts against
+   `availabilityMinutes` alongside task duration. Closed-now *wait* gaps stay
+   display-only (do not charge capacity) in v1.
+2. **Asymmetric routing.** v1 caches one edge per pair (A→B === B→A). Deferred
+   unless one-way-street asymmetry matters in practice.
+3. **Walking/cycling routing on OSRM.** Public OSRM demo is driving-only; non-
+   driving modes use haversine + mode speed. Better foot routing is a drop-in
+   later.
+4. **Preferred-location picker UX — LOCKED.** Explicit second chip row when 2+
+   locations are selected (not long-press).
+5. **Travel-aware "leave by" reminders (Phase 9).** Deferred until Phases 6–7
+   prove the travel cache is dependable.
+6. **Location sharing with the push relay.** Appending location name when
+   `pushDetailed` is on — default off, opt-in only (matches existing posture).
+7. **Registry cap (32).** Enough for personal use; raise with `MAX_TRAVEL_EDGES`
+   together if needed.
+8. **Closed-now wait gaps vs availability — LOCKED for v1.** Display only; do
+   not charge. Revisit after real usage.
+9. **Per-day hours granularity.** Weekday-keyed only; date exceptions deferred.
+10. **Habit-window vs location-window — LOCKED.** Hard intersection; no overlap
+    → not placeable today.
+11. **Preferred time: location's vs habit's — LOCKED.** Location preferred wins
+    when both set; habit preferred only for anywhere/24h locations.

@@ -32,9 +32,9 @@ function buildTodayAgenda(data,settings){
   // It is also bounded by the day's actual open minutes so a heavily-blocked
   // day never promises more capacity than the calendar leaves room for.
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
-  let remaining = Math.min(totalMinutes,slotMinutes);
+  const totalCap = Math.min(totalMinutes,slotMinutes);
   // Gather every eligible fill candidate in home rank order, then stable-sort
-  // by priority so the capacity cut lands on low-priority items first.
+  // by priority so location-aware placement processes high priority first.
   const candidates = [];
   let homeRank = 0;
   for(const i of visibleIndices(data,settings)){
@@ -42,25 +42,15 @@ function buildTodayAgenda(data,settings){
     if(h.type === 'task' && h.lastLog !== null)continue;
     if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
     const dueToday = includeInTodayAgenda(h,settings);
-    // Do-early pull-forward: an upcoming item whose target day is overloaded,
-    // which is allowed today and has flexibility, may be pulled into today's
-    // agenda (earlyReason encodes that gate). It then competes for today's
-    // remaining minutes by priority like any other fill; if it loses the cut
-    // it simply gets no row, and the home list leaves it in "upcoming".
     const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
     if(!dueToday && !earlyOk)continue;
     candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
   }
   candidates.sort((a,b)=>a.priority - b.priority || a.rank - b.rank);
-  const agendaItems = [];
-  for(const {h,i} of candidates){
-    const cost = clampDuration(h.durationMinutes);
-    if(cost > remaining && agendaItems.length)continue; // skip, keep scanning for a smaller fit
-    agendaItems.push({h,i});
-    remaining -= cost;
-    if(remaining <= 0)break;
-  }
-  return { scheduled, agendaItems, totalMinutes, usedMinutes:Math.max(0,totalMinutes - remaining), remainingMinutes:Math.max(0,remaining), slots };
+  // Capacity (including travel) is charged during location-aware placement in
+  // buildTodayTimeline — duration-only pre-cuts would under-count travel.
+  const agendaItems = candidates.map(({h,i,priority})=>({h,i,priority}));
+  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots };
 }
 
 // PURE: applies user-facing Today agenda inclusion settings.
@@ -101,100 +91,233 @@ function fillPreferredStart(h,dayBase){
   return dayBase + s * 60000;
 }
 
-// PURE: is there still enough unexpired room inside this habit's allowed time
-// window today to fit a full session? Windowless habits are always doable.
-// preferredTimeStart/End is a soft hint and is intentionally NOT consulted
-// here — only the strict allowedTimeStart/End can close a day. Used to keep
-// the home list ("today" vs "overdue") and the Today agenda in agreement:
-// when the window has closed for today the habit is no longer "today", it is
-// overdue, and the agenda stops reserving capacity for it.
+// PURE: is there still enough unexpired room today to fit a full session,
+// considering the habit's own window ∩ each allowed location's hours? Habits
+// with no time window and no location hours are always doable. preferred*
+// hints are intentionally NOT consulted — only strict allowed windows can
+// close a day. Keeps the home list ("today" vs "overdue") in sync with the
+// location-aware agenda.
 function windowStillDoableToday(h,now = Date.now()){
-  if(!hasTimeWindow(h))return true;
-  const win = fillTimeWindow(h,dayStart(now));
-  if(!win)return true;
   const cost = clampDuration(h.durationMinutes) * 60000;
-  return win.end - Math.max(now,win.start) >= cost;
+  const dayBase = dayStart(now);
+  const weekday = new Date(now).getDay();
+  const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  const locIds = normalizeLocationIds(h.locationIds,registry);
+  if(!locIds.length){
+    if(!hasTimeWindow(h))return true;
+    const win = fillTimeWindow(h,dayBase);
+    if(!win)return true;
+    return win.end - Math.max(now,win.start) >= cost;
+  }
+  return locIds.some(id=>{
+    const loc = registry.find(l=>l.id === id);
+    const intervals = effectiveLocationWindow(h,loc,weekday);
+    if(!intervals.length)return false;
+    return intervals.some(iv=>{
+      const start = dayBase + iv.start * 60000;
+      const end = dayBase + iv.end * 60000;
+      return end - Math.max(now,start) >= cost;
+    });
+  });
 }
 
-// PURE: interleave scheduled tasks (hard time) and fill items (soft estimate) into a
-// single time-ordered row list. The fill clock starts at "now" and walks
-// forward; scheduled tasks jump the clock past their slot so nothing overlaps.
-// Fill items honour their per-item allowed time window (allowedTimeStart/End):
-// an item is pushed to its window start if "now" is earlier, and skipped if it
-// cannot fit inside the window within the current slot (so smaller items behind
-// it still get a turn instead of being starved by a too-large leader).
-//
-// Fill items also SOFTLY honour preferredTimeStart (the "do it around this
-// time" hint): when the clock-driven start is earlier than the preferred time
-// and the whole session still fits, the fill is nudged to the preferred start.
-// This is a hint only — it never overrides the hard allowed window, never
-// drops an item, and falls back to the clock placement if it won't fit.
-//
-// Each open slot retries every still-unplaced item, so an item that is too
-// large for one slot can still land in a later, larger one (instead of being
-// dropped the first time it misses). Anything left over — typically windowless
-// items whose duration is larger than every individual open slot even though
-// the day's total availability covers them (the day is fragmented by scheduled
-// tasks or blocked time) — gets a soft suggested time stacked after the last
-// open slot so the home card always has a pill for them. Windowed items keep
-// honouring their own allowedTimeStart/End and stay dropped if no slot can
-// host them inside their window.
+// PURE: travel edge between two location ids (or zero when either is null/same).
+function travelEdgeBetweenIds(fromId,toId,registry,mode){
+  if(!fromId || !toId || fromId === toId)return {seconds:0,metres:0,provider:'none'};
+  const a = registry.find(l=>l.id === fromId);
+  const b = registry.find(l=>l.id === toId);
+  if(!a || !b || typeof travelBetween !== 'function')return {seconds:0,metres:0,provider:'haversine'};
+  return travelBetween(a,b,mode);
+}
+
+// PURE: choose a location id for a habit given the current anchor. Anywhere
+// items return null (no travel, anchor unchanged). When several are allowed,
+// prefer preferredLocationId, then cheapest travel from the anchor.
+function pickHabitLocationId(h,anchorId,registry,mode){
+  const ids = normalizeLocationIds(h.locationIds,registry);
+  if(!ids.length)return null;
+  const pref = normalizePreferredLocation(h.preferredLocationId,ids);
+  if(pref && (!anchorId || pref === anchorId))return pref;
+  let best = pref || ids[0];
+  let bestSec = Infinity;
+  for(const id of ids){
+    const edge = travelEdgeBetweenIds(anchorId,id,registry,mode);
+    const preferredBoost = pref === id ? -1 : 0;
+    const score = edge.seconds + preferredBoost;
+    if(score < bestSec){ bestSec = score; best = id; }
+  }
+  return best;
+}
+
+// PURE: within each priority band, greedy nearest-neighbour reorder. Revisiting
+// a location later in the day is allowed — this is NOT a hard cluster-by-place
+// pass. Items with no location stay zero-cost floaters.
+function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
+  const registry = normalizeLocationRegistry(settings.locations);
+  const mode = normalizeTravelMode(settings.defaultTravelMode);
+  let anchor = (typeof currentLocationId === 'function' && currentLocationId())
+    || settings.lastKnownLocationId
+    || null;
+  const bands = [];
+  for(const item of items){
+    const p = item.priority ?? effectivePriority(item.h);
+    let band = bands.find(b=>b.priority === p);
+    if(!band){ band = {priority:p,items:[]}; bands.push(band); }
+    band.items.push(item);
+  }
+  bands.sort((a,b)=>a.priority - b.priority);
+  const out = [];
+  for(const band of bands){
+    const left = [...band.items];
+    while(left.length){
+      let bestIdx = 0;
+      let bestScore = Infinity;
+      for(let i = 0;i < left.length;i += 1){
+        const locId = pickHabitLocationId(left[i].h,anchor,registry,mode);
+        const edge = travelEdgeBetweenIds(anchor,locId,registry,mode);
+        const score = edge.seconds;
+        if(score < bestScore){ bestScore = score; bestIdx = i; }
+      }
+      const picked = left.splice(bestIdx,1)[0];
+      const locationId = pickHabitLocationId(picked.h,anchor,registry,mode);
+      out.push({...picked,locationId});
+      if(locationId)anchor = locationId;
+    }
+  }
+  return out;
+}
+
+// PURE: interleave scheduled tasks (hard time) and fill items (soft estimate)
+// into a time-ordered row list. Fill items are first reordered within priority
+// bands to reduce travel (revisits allowed). Travel advances the clock and
+// consumes availability; wait gaps for closed locations are display-only.
 function buildTodayTimeline(agenda,now = Date.now()){
+  const settings = sortSettings || loadSortSettings();
+  const registry = normalizeLocationRegistry(settings.locations);
+  const mode = normalizeTravelMode(settings.defaultTravelMode);
+  const dayBase = dayStart(now);
+  const weekday = new Date(now).getDay();
+  const nowFloor = ceilToMinutes(now,5);
+  const slots = agenda.slots?.length ? agenda.slots : [{start:nowFloor,end:dayBase + 24 * 3600000}];
   const rows = [];
+
   agenda.scheduled.forEach(ev=>{
     const end = ev.h.eventTime + clampDuration(ev.h.durationMinutes) * 60000;
-    rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true });
+    const locIds = normalizeLocationIds(ev.h.locationIds,registry);
+    const locationId = normalizePreferredLocation(ev.h.preferredLocationId,locIds) || locIds[0] || null;
+    rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true, locationId });
   });
-  const slots = agenda.slots?.length ? agenda.slots : [{start:ceilToMinutes(now,5),end:dayStart(now) + 24 * 3600000}];
-  const dayBase = dayStart(now);
-  const nowFloor = ceilToMinutes(now,5);
-  const placed = new Array(agenda.agendaItems.length).fill(false);
+
+  const ordered = reorderAgendaItemsByLocation(agenda.agendaItems,settings,now);
+  let remaining = Math.max(0, Number(agenda.totalMinutes) || 0);
+  let usedMinutes = 0;
+  let prevLocId = (typeof currentLocationId === 'function' && currentLocationId())
+    || settings.lastKnownLocationId
+    || null;
+  const placed = new Array(ordered.length).fill(false);
+
+  const tryPlace = (fill,idx,slot,clock)=>{
+    const durMin = clampDuration(fill.h.durationMinutes);
+    const cost = durMin * 60000;
+    const locId = fill.locationId || pickHabitLocationId(fill.h,prevLocId,registry,mode);
+    // Location hours ∩ habit window must contain the session.
+    if(locId){
+      const loc = registry.find(l=>l.id === locId);
+      const intervals = effectiveLocationWindow(fill.h,loc,weekday);
+      if(!intervals.length)return null;
+    }
+    const edge = travelEdgeBetweenIds(prevLocId,locId,registry,mode);
+    const travelMin = Math.ceil((edge.seconds || 0) / 60);
+    if(durMin + travelMin > remaining && usedMinutes > 0)return null;
+
+    let placeStart = clock + (edge.seconds || 0) * 1000;
+    let cap = slot.end;
+    if(locId){
+      const loc = registry.find(l=>l.id === locId);
+      const intervals = effectiveLocationWindow(fill.h,loc,weekday);
+      const arriveMin = Math.floor((placeStart - dayBase) / 60000);
+      let iv = intervals.find(x=>arriveMin >= x.start && arriveMin < x.end);
+      if(!iv){
+        iv = intervals.find(x=>x.start >= arriveMin) || intervals.find(x=>x.end > arriveMin);
+        if(!iv)return null;
+        placeStart = Math.max(placeStart, dayBase + iv.start * 60000);
+      }
+      cap = Math.min(cap, dayBase + iv.end * 60000);
+    }else{
+      const win = fillTimeWindow(fill.h,dayBase);
+      if(win){
+        placeStart = Math.max(placeStart,win.start);
+        cap = Math.min(cap,win.end);
+      }
+    }
+    let placeEnd = placeStart + cost;
+    const loc = locId ? registry.find(l=>l.id === locId) : null;
+    const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
+    const habitPref = fillPreferredStart(fill.h,dayBase);
+    const prefTs = locPref || habitPref;
+    if(prefTs !== null && prefTs > placeStart && prefTs + cost <= cap){
+      placeStart = prefTs;
+      placeEnd = prefTs + cost;
+    }
+    if(placeEnd > cap)return null;
+    return {placeStart,placeEnd,locId,edge,travelMin,durMin};
+  };
+
   for(const slot of slots){
     let clock = Math.max(slot.start,nowFloor);
-    for(let idx = 0; idx < agenda.agendaItems.length; idx += 1){
+    for(let idx = 0; idx < ordered.length; idx += 1){
       if(placed[idx])continue;
-      const fill = agenda.agendaItems[idx];
-      const cost = clampDuration(fill.h.durationMinutes) * 60000;
-      const win = fillTimeWindow(fill.h,dayBase);
-      let placeStart, placeEnd, cap;
-      if(win){
-        placeStart = Math.max(clock,win.start);
-        placeEnd = placeStart + cost;
-        cap = Math.min(slot.end,win.end);
-      }else{
-        placeStart = clock;
-        placeEnd = clock + cost;
-        cap = slot.end;
+      const fill = ordered[idx];
+      const fit = tryPlace(fill,idx,slot,clock);
+      if(!fit)continue;
+      if(fit.edge.seconds > 0 && prevLocId && fit.locId && prevLocId !== fit.locId){
+        const from = registry.find(l=>l.id === prevLocId);
+        const to = registry.find(l=>l.id === fit.locId);
+        rows.push({
+          kind:'travel',
+          from:prevLocId,
+          to:fit.locId,
+          fromName:from ? from.name : '',
+          toName:to ? to.name : '',
+          seconds:fit.edge.seconds,
+          metres:fit.edge.metres || 0,
+          start:Math.max(clock, fit.placeStart - fit.edge.seconds * 1000),
+          end:fit.placeStart,
+          provider:fit.edge.provider || mode
+        });
       }
-      // Soft preferred-time nudge: if the fill has a preferredTimeStart that
-      // is later than the current clock-driven start AND the whole session
-      // still fits inside the slot (and inside the hard allowed window when
-      // one is set, since `cap` already folds that in), defer placement to
-      // that time. The nudge only ever pushes later — it never overrides the
-      // hard window, never pulls an item earlier, and falls back silently to
-      // the clock placement if the preferred time won't fit.
-      const prefStartTs = fillPreferredStart(fill.h,dayBase);
-      if(prefStartTs !== null && prefStartTs > placeStart && prefStartTs + cost <= cap){
-        placeStart = prefStartTs;
-        placeEnd = prefStartTs + cost;
-      }
-      if(placeEnd > cap)continue;
-      rows.push({ kind:'fill', h:fill.h, i:fill.i, start:placeStart, end:placeEnd, hard:false });
-      clock = placeEnd;
+      rows.push({
+        kind:'fill', h:fill.h, i:fill.i, start:fit.placeStart, end:fit.placeEnd, hard:false,
+        locationId:fit.locId
+      });
+      clock = fit.placeEnd;
+      remaining -= (fit.travelMin + fit.durMin);
+      usedMinutes += fit.travelMin + fit.durMin;
+      if(fit.locId)prevLocId = fit.locId;
       placed[idx] = true;
     }
   }
+
   if(placed.some(p=>!p)){
     let overflowStart = slots.reduce((max,slot)=>Math.max(max,slot.end),Math.max(dayBase,nowFloor));
-    agenda.agendaItems.forEach((fill,idx)=>{
+    ordered.forEach((fill,idx)=>{
       if(placed[idx])return;
+      if(fill.locationId)return;
       if(fillTimeWindow(fill.h,dayBase))return;
-      const cost = clampDuration(fill.h.durationMinutes) * 60000;
-      rows.push({ kind:'fill', h:fill.h, i:fill.i, start:overflowStart, end:overflowStart + cost, hard:false });
+      const durMin = clampDuration(fill.h.durationMinutes);
+      if(durMin > remaining && usedMinutes > 0)return;
+      const cost = durMin * 60000;
+      rows.push({ kind:'fill', h:fill.h, i:fill.i, start:overflowStart, end:overflowStart + cost, hard:false, locationId:null });
       overflowStart += cost;
+      remaining -= durMin;
+      usedMinutes += durMin;
+      placed[idx] = true;
     });
   }
-  return rows.sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : 1));
+
+  agenda.usedMinutes = usedMinutes;
+  agenda.remainingMinutes = Math.max(0,(Number(agenda.totalMinutes) || 0) - usedMinutes);
+  return rows.sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
 }
 
 function buildOpenAgendaSlots(todayKey,scheduled,settings){
@@ -289,6 +412,7 @@ function renderTodayAgenda(){
   const agenda = buildTodayAgenda(data,settings);
   const rows = buildTodayTimeline(agenda);
   $('today-summary').textContent = agendaSummary(agenda);
+  if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
 
   if(!rows.length){
     wrap.innerHTML = `<div class="agenda-empty">
@@ -324,6 +448,14 @@ function renderTodayWeekStrip(data){
 
 // PURE: build one agenda row's HTML
 function agendaRowMarkup(row,now){
+  if(row.kind === 'travel' || row.kind === 'wait'){
+    const mins = Math.max(1,Math.round((row.seconds || 0) / 60));
+    const km = row.metres ? `${(row.metres / 1000).toFixed(row.metres >= 1000 ? 1 : 2)} km` : '';
+    const label = row.kind === 'wait'
+      ? `wait · ${escapeHtml(row.toName || 'opens')} · ${mins} min`
+      : `${mins} min${km ? ` · ${km}` : ''} · ${escapeHtml(row.toName || 'next')}`;
+    return `<div class="today-travel-row" aria-hidden="true"><i class="ti ti-route" aria-hidden="true"></i><span>${label}</span></div>`;
+  }
   const h = row.h;
   const c = colors(daysSince(h.lastLog),h.target,h.type);
   const toneCls = cardTone(h);
@@ -334,9 +466,10 @@ function agendaRowMarkup(row,now){
   const softTag = row.kind === 'scheduled'
     ? '<span class="agenda-tag hard">fixed</span>'
     : '<span class="agenda-tag soft">approx</span>';
+  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
   const meta = row.kind === 'scheduled'
     ? `${dur}m`
-    : [h.type === 'task' ? 'task' : 'habit', `${dur}m`].filter(Boolean).join(' · ');
+    : [h.type === 'task' ? 'task' : 'habit', `${dur}m`, loc ? loc.name : ''].filter(Boolean).join(' · ');
   return `<button class="agenda-row ${row.kind}${isPast ? ' is-past' : ''} ${toneCls}" data-agenda-idx="${row.i}" style="--card-accent:${accent};">
     <span class="agenda-clock">
       <b>${agendaTimeLabel(row.start)}</b>

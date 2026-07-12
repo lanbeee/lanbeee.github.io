@@ -735,22 +735,38 @@ function searchText(h){
     ...pref.weekdays.flatMap(day=>[weekdayShort(day),'preferred']),
     ...pref.monthDays.flatMap(day=>[String(day),'preferred'])
   ].join(' ');
-  return `${h.name || ''} ${h.emoji || ''} ${typeLabel} ${(h.topics || []).join(' ')} ${scheduleText} ${dueText}`.toLowerCase();
+  return `${h.name || ''} ${h.emoji || ''} ${typeLabel} ${(h.topics || []).join(' ')} ${locationSearchNames(h)} ${scheduleText} ${dueText}`.toLowerCase();
+}
+
+function locationSearchNames(h){
+  const registry = typeof locationOptions === 'function' ? locationOptions() : normalizeLocationRegistry((sortSettings || {}).locations);
+  return normalizeLocationIds(h.locationIds,registry)
+    .map(id=>{
+      const loc = registry.find(l=>l.id === id);
+      return loc ? `${loc.name} ${loc.address || ''}` : '';
+    })
+    .join(' ');
 }
 
 function filteredVisibleIndices(data){
   const indices = visibleIndices(data);
   const query = searchQuery.trim().toLowerCase();
   const topic = typeof homeTopicFilter !== 'undefined' ? homeTopicFilter : 'all';
-  const base = topic && topic !== 'all' && typeof matchesHomeTopic === 'function'
-    ? indices.filter(i=>matchesHomeTopic(data[i],topic))
-    : indices;
+  const location = typeof homeLocationFilter !== 'undefined' ? homeLocationFilter : 'all';
+  let base = indices;
+  if(topic && topic !== 'all' && typeof matchesHomeTopic === 'function'){
+    base = base.filter(i=>matchesHomeTopic(data[i],topic));
+  }
+  if(location && location !== 'all' && typeof matchesHomeLocation === 'function'){
+    base = base.filter(i=>matchesHomeLocation(data[i],location));
+  }
   if(!query)return base;
   const matches = base.filter(i=>searchText(data[i]).includes(query));
   const completedTasks = data
     .map((h,i)=>({h,i}))
     .filter(({h})=>h.type === 'task' && h.lastLog !== null)
     .filter(({h})=>!topic || topic === 'all' || typeof matchesHomeTopic !== 'function' || matchesHomeTopic(h,topic))
+    .filter(({h})=>!location || location === 'all' || typeof matchesHomeLocation !== 'function' || matchesHomeLocation(h,location))
     .filter(({h})=>searchText(h).includes(query))
     .sort(({h:a},{h:b})=>(b.lastLog || 0) - (a.lastLog || 0))
     .map(({i})=>i);

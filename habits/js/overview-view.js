@@ -32,15 +32,60 @@ function matchesOverviewTopic(h,topic){
   return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
 }
 
-// HYBRID: renders topic pills, fixes invalid selection
-function renderOverviewTopicFilter(data){
-  const wrap = $('overview-topic-filter');
+// PURE: builds location filter choice list for overview
+function overviewLocationChoices(data){
+  const registry = normalizeLocationRegistry(sortSettings?.locations);
+  const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
+  const locs = registry.filter(loc=>used.has(loc.id));
+  const hasNone = data.some(h=>!normalizeLocationIds(h.locationIds,registry).length);
+  return [
+    {key:'all',label:'all places'},
+    ...locs.map(loc=>({key:loc.id,label:loc.name})),
+    ...(hasNone ? [{key:'__none__',label:'anywhere'}] : [])
+  ];
+}
+
+// PURE: tests habit against overview location filter
+function matchesOverviewLocation(h,id){
+  if(!id || id === 'all')return true;
+  const ids = normalizeLocationIds(h.locationIds);
+  if(id === '__none__')return !ids.length;
+  return ids.includes(id);
+}
+
+// HYBRID: one overview filter row — topics (neutral) + places (teal)
+function renderOverviewTagFilter(data){
+  const wrap = $('overview-tag-filter');
   if(!wrap)return;
-  const choices = overviewTopicChoices(data);
-  if(!choices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
-  wrap.innerHTML = choices.map(choice=>`
+  const topicChoices = overviewTopicChoices(data);
+  const locChoices = overviewLocationChoices(data);
+  const hasTopics = topicChoices.length > 0;
+  const hasLocs = locChoices.length > 1;
+  if(!hasTopics && !hasLocs){
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
+  if(hasTopics && !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
+  if(hasLocs && !locChoices.some(choice=>choice.key === overviewLocationFilter))overviewLocationFilter = 'all';
+  wrap.hidden = false;
+  const topicHtml = hasTopics ? topicChoices.map(choice=>`
     <button type="button" class="topic-filter ${choice.key === overviewTopicFilter ? 'on' : ''}" data-overview-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
-  `).join('');
+  `).join('') : '';
+  const locHtml = hasLocs ? locChoices.map(choice=>`
+    <button type="button" class="topic-filter location-filter ${choice.key === overviewLocationFilter ? 'on' : ''}" data-overview-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
+  `).join('') : '';
+  wrap.innerHTML = topicHtml + locHtml;
+}
+
+// HYBRID: renders overview location pills (compat — routes to unified row)
+function renderOverviewLocationFilter(data){
+  renderOverviewTagFilter(data);
+}
+
+// HYBRID: renders topic pills (compat — routes to unified row)
+function renderOverviewTopicFilter(data){
+  renderOverviewTagFilter(data);
 }
 
 // "When" pills for the calendar page, independent of the topic ("what") filter
@@ -202,12 +247,17 @@ function setOverviewMonthNav(showNav,label){
 // RENDER: orchestrates full overview sheet render
 function renderOverview(){
   const allData = load();
-  renderOverviewTopicFilter(allData);
+  renderOverviewTagFilter(allData);
   renderOverviewRangeFilter();
-  const data = allData.filter(h=>matchesOverviewTopic(h,overviewTopicFilter));
+  const data = allData
+    .filter(h=>matchesOverviewTopic(h,overviewTopicFilter))
+    .filter(h=>matchesOverviewLocation(h,overviewLocationFilter));
   const topicLabel = overviewTopicFilter === 'all' ? '' : overviewTopicFilter === '__none__' ? 'No topic' : overviewTopicFilter;
-  if(overviewRangeFilter === 'recent')renderOverviewRecent(data,topicLabel);
-  else renderOverviewMonth(data,topicLabel,overviewRangeFilter === 'all');
+  const loc = normalizeLocationRegistry(sortSettings?.locations).find(l=>l.id === overviewLocationFilter);
+  const locLabel = overviewLocationFilter === 'all' ? '' : overviewLocationFilter === '__none__' ? 'Anywhere' : (loc ? loc.name : '');
+  const filterLabel = [topicLabel,locLabel].filter(Boolean).join(' · ');
+  if(overviewRangeFilter === 'recent')renderOverviewRecent(data,filterLabel);
+  else renderOverviewMonth(data,filterLabel,overviewRangeFilter === 'all');
 }
 
 // Default view: a 14-cell strip. With no offset it covers today and the 13

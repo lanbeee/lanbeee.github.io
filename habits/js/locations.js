@@ -204,3 +204,99 @@ function flushTravelCache(){
   if(persistTravelTimer){ clearTimeout(persistTravelTimer); persistTravelTimer = null; }
   try{ if(typeof saveSortSettings === 'function')saveSortSettings(sortSettings); }catch{ /* best-effort */ }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// GEOLOCATION — opt-in live position → matched location id. Raw coords are
+// ephemeral (never persisted); only the matched id is written as
+// lastKnownLocationId.
+// ─────────────────────────────────────────────────────────────────────────
+
+let currentCoord = null;
+let geoWatchId = null;
+
+// PURE: nearest registry location within its radiusM, or null.
+function matchLocationId(lat,lng,registry){
+  const locs = normalizeLocationRegistry(registry);
+  let best = null;
+  let bestDist = Infinity;
+  for(const loc of locs){
+    const d = haversineMetres(lat,lng,loc.lat,loc.lng);
+    const radius = Number.isFinite(loc.radiusM) ? loc.radiusM : DEFAULT_LOCATION_RADIUS_M;
+    if(d <= radius && d < bestDist){
+      bestDist = d;
+      best = loc.id;
+    }
+  }
+  return best;
+}
+
+// PURE: current matched location id (from live coord or lastKnown fallback).
+function currentLocationId(){
+  if(currentCoord){
+    const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
+    if(id)return id;
+  }
+  return cleanLocationId((sortSettings || {}).lastKnownLocationId) || null;
+}
+
+// IMPURE: set the manual "I am at" anchor (persists id only).
+function setManualLocationId(id){
+  const clean = cleanLocationId(id) || null;
+  const s = sortSettings || loadSortSettings();
+  if(s.lastKnownLocationId === clean)return;
+  if(typeof updateSortSetting === 'function')updateSortSetting({lastKnownLocationId:clean},{renderNow:false});
+  else saveSortSettings({...s,lastKnownLocationId:clean});
+  if(typeof onTravelRefresh === 'function')onTravelRefresh({manual:true});
+}
+
+// IMPURE: request permission + start a low-power watch. On deny, falls back to
+// the manual picker (caller renders it). Returns a promise of
+// 'granted' | 'denied' | 'unsupported'.
+function requestLocationAccess(){
+  if(!navigator.geolocation)return Promise.resolve('unsupported');
+  return new Promise(resolve=>{
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        currentCoord = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+        const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
+        if(id)setManualLocationId(id);
+        if(geoWatchId == null){
+          geoWatchId = navigator.geolocation.watchPosition(
+            p=>{
+              currentCoord = { lat:p.coords.latitude, lng:p.coords.longitude };
+              const matched = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
+              if(matched && matched !== (sortSettings || {}).lastKnownLocationId){
+                setManualLocationId(matched);
+                if(typeof renderTodayAgenda === 'function')renderTodayAgenda();
+                if(typeof render === 'function')render();
+              }
+            },
+            ()=>{},
+            {enableHighAccuracy:false, maximumAge:120000, timeout:15000}
+          );
+        }
+        resolve('granted');
+      },
+      ()=>resolve('denied'),
+      {enableHighAccuracy:false, timeout:10000, maximumAge:60000}
+    );
+  });
+}
+
+// RENDER: "I am at" chip row for the Today sheet (manual fallback / override).
+function renderIAmAtPicker(){
+  const wrap = $('iam-at-row');
+  if(!wrap)return;
+  const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  if(!registry.length){
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
+  const current = currentLocationId();
+  wrap.hidden = false;
+  wrap.innerHTML = `<span class="loc-field-label">I am at</span>` + registry.map(loc=>{
+    const on = current === loc.id;
+    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-iam-at="${escapeHtml(loc.id)}">${escapeHtml(loc.name)}</button>`;
+  }).join('') + `<button type="button" class="mini-text-btn" id="iam-at-gps">use GPS</button>`;
+}

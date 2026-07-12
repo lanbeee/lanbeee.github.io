@@ -36,7 +36,7 @@ function openDetail(i){
   $('detail-pinned').checked = Boolean(h.pinned);
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-flexibility').value = h.flexibilityDays || 0;
-  renderTopicChips('detail-topic-chips',h.topics);
+  renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId);
   renderScheduleChips('detail',h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
@@ -58,6 +58,8 @@ function openDetail(i){
     target:h.target || '',
     pinned:Boolean(h.pinned),
     topics:normalizeTopics(h.topics),
+    locationIds:normalizeLocationIds(h.locationIds),
+    preferredLocationId:h.preferredLocationId || null,
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
     preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
@@ -196,7 +198,9 @@ function currentDetailTune(){
     emoji:cleanMark($('detail-emoji').value),
     target:$('detail-days').value || '',
     pinned:$('detail-pinned').checked,
-    topics:selectedTopicsFrom('detail-topic-chips'),
+    topics:selectedTopicsFrom('detail-tag-chips'),
+    locationIds:selectedLocationIdsFrom('detail-tag-chips'),
+    preferredLocationId:selectedPreferredLocationIdFrom('detail-tag-chips'),
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
     allowedMonthDays:selectedMonthDaysFrom('detail-monthday-chips'),
     preferredWeekdays:selectedWeekdaysFrom('detail-preferred-weekday-chips'),
@@ -232,6 +236,8 @@ function setDetailDirty(force){
       current.eventTime !== detailTuneOriginal.eventTime ||
       current.markDone !== detailTuneOriginal.markDone ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
+      current.locationIds.join('|') !== (detailTuneOriginal.locationIds || []).join('|') ||
+      (current.preferredLocationId || null) !== (detailTuneOriginal.preferredLocationId || null) ||
       current.allowedWeekdays.join('|') !== detailTuneOriginal.allowedWeekdays.join('|') ||
       current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|') ||
       current.preferredWeekdays.join('|') !== detailTuneOriginal.preferredWeekdays.join('|') ||
@@ -258,7 +264,7 @@ function restoreDetailTune(){
   syncDetailDueUi();
   syncDetailScheduledUi();
   syncDetailHabitMarkDoneUi();
-  renderTopicChips('detail-topic-chips',detailTuneOriginal.topics);
+  renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null);
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);

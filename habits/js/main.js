@@ -27,6 +27,14 @@
 // ─────────────────────────────────────────────────────────────────
 
 sortSettings = loadSortSettings();
+{
+  const reconciled = reconcileLocations(load(),sortSettings);
+  if(reconciled.changed)save(reconciled.data);
+}
+onTravelRefresh = ()=>{
+  if(typeof render === 'function')render();
+  if(typeof renderTodayAgenda === 'function' && $('today-sheet')?.classList.contains('open'))renderTodayAgenda();
+};
 
 $('type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-v]');
@@ -131,12 +139,32 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   overviewMonthOffset = 0;
   overviewRecentOffset = 0;
   overviewTopicFilter = 'all';
+  overviewLocationFilter = 'all';
   overviewRangeFilter = 'recent';
   renderOverview();
   openSheet('overview-sheet');
 });
 $('today-close')?.addEventListener('click',()=>closeSheet('today-sheet'));
 $('today-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('iam-at-row')?.addEventListener('click',async e=>{
+  const gps = e.target.closest('#iam-at-gps');
+  if(gps){
+    const status = await requestLocationAccess();
+    if(status === 'denied')showToast('location permission denied — pick manually');
+    else if(status === 'unsupported')showToast('location not supported');
+    else showToast('location on');
+    renderIAmAtPicker();
+    renderTodayAgenda();
+    render();
+    return;
+  }
+  const btn = e.target.closest('[data-iam-at]');
+  if(!btn)return;
+  setManualLocationId(btn.dataset.iamAt);
+  renderIAmAtPicker();
+  renderTodayAgenda();
+  render();
+});
 $('today-overview')?.addEventListener('click',()=>{
   closeSheet('today-sheet');
   const btn = paneTierActive() ? $('bar-open-overview') : $('open-overview');
@@ -213,6 +241,8 @@ $('do-save').addEventListener('click',()=>{
     pinned:false,
     priority:selectedAddPriority(),
     topics:selectedAddTopics(),
+    locationIds:selectedLocationIds(),
+    preferredLocationId:selectedPreferredLocationId(),
     createdAt:Date.now()
   };
   if(type === 'task'){
@@ -546,16 +576,24 @@ function bindCompactNumber(id,clamp,options={}){
 
 bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
 bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
-$('ting-topic-chips').addEventListener('click',e=>{
+$('ting-tag-chips')?.addEventListener('click',e=>{
   if(e.target.closest('[data-topic-add]')){
-    beginNewTopicInput('ting-topic-chips');
+    beginNewTopicInput('ting-tag-chips');
+    return;
+  }
+  if(e.target.closest('.location-chip[data-location-id]')){
+    toggleLocationChip(e);
     return;
   }
   toggleTopicChip(e);
 });
-$('detail-topic-chips').addEventListener('click',e=>{
+$('detail-tag-chips')?.addEventListener('click',e=>{
   if(e.target.closest('[data-topic-add]')){
-    beginNewTopicInput('detail-topic-chips');
+    beginNewTopicInput('detail-tag-chips');
+    return;
+  }
+  if(e.target.closest('.location-chip[data-location-id]')){
+    toggleLocationChip(e);
     return;
   }
   toggleTopicChip(e);
@@ -688,6 +726,8 @@ $('detail-save').addEventListener('click',()=>{
   h.emoji = current.emoji;
   h.pinned = current.pinned;
   h.topics = normalizeTopics(current.topics);
+  h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
+  h.preferredLocationId = normalizePreferredLocation(current.preferredLocationId,h.locationIds);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
   h.allowedMonthDays = normalizeAllowedMonthDays(current.allowedMonthDays);
   h.preferredWeekdays = normalizeAllowedWeekdays(current.preferredWeekdays);
@@ -812,6 +852,11 @@ $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
   if(!opt)return;
   updateSortSetting({defaultType:opt.dataset.defaultType});
+});
+$('travel-mode-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-travel-mode]');
+  if(!opt)return;
+  updateSortSetting({defaultTravelMode:normalizeTravelMode(opt.dataset.travelMode)});
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{
@@ -987,6 +1032,7 @@ $('open-overview').addEventListener('click',()=>{
   overviewMonthOffset = 0;
   overviewRecentOffset = 0;
   overviewTopicFilter = 'all';
+  overviewLocationFilter = 'all';
   overviewRangeFilter = 'recent';
   renderOverview();
   openSheet('overview-sheet');
@@ -1004,12 +1050,20 @@ $('overview-next-month').addEventListener('click',()=>{
   else overviewMonthOffset += 1;
   renderOverview();
 });
-$('overview-topic-filter').addEventListener('click',e=>{
-  const btn = e.target.closest('[data-overview-topic]');
-  if(!btn)return;
-  overviewTopicFilter = btn.dataset.overviewTopic || 'all';
-  dayLogsKey = null;
-  renderOverview();
+$('overview-tag-filter')?.addEventListener('click',e=>{
+  const topicBtn = e.target.closest('[data-overview-topic]');
+  if(topicBtn){
+    overviewTopicFilter = topicBtn.dataset.overviewTopic || 'all';
+    dayLogsKey = null;
+    renderOverview();
+    return;
+  }
+  const locBtn = e.target.closest('[data-overview-location]');
+  if(locBtn){
+    overviewLocationFilter = locBtn.dataset.overviewLocation || 'all';
+    dayLogsKey = null;
+    renderOverview();
+  }
 });
 $('overview-range-filter').addEventListener('click',e=>{
   const btn = e.target.closest('[data-overview-range]');
@@ -1020,11 +1074,18 @@ $('overview-range-filter').addEventListener('click',e=>{
   dayLogsKey = null;
   renderOverview();
 });
-$('home-topic-filter').addEventListener('click',e=>{
-  const btn = e.target.closest('[data-home-topic]');
-  if(!btn)return;
-  homeTopicFilter = btn.dataset.homeTopic || 'all';
-  render();
+$('home-tag-filter')?.addEventListener('click',e=>{
+  const topicBtn = e.target.closest('[data-home-topic]');
+  if(topicBtn){
+    homeTopicFilter = topicBtn.dataset.homeTopic || 'all';
+    render();
+    return;
+  }
+  const locBtn = e.target.closest('[data-home-location]');
+  if(locBtn){
+    homeLocationFilter = locBtn.dataset.homeLocation || 'all';
+    render();
+  }
 });
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   if(!day)return;

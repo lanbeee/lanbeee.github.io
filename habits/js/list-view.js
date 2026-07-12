@@ -21,15 +21,192 @@ function topicOptions(){
 
 // PURE: read selected topics from DOM
 function selectedTopicsFrom(containerId){
-  return [...$(containerId).querySelectorAll('.topic-chip.on')].map(btn=>btn.dataset.topic);
+  const wrap = $(containerId);
+  if(!wrap)return [];
+  return [...wrap.querySelectorAll('.topic-chip.on[data-topic]')].map(btn=>btn.dataset.topic);
 }
 
 // PURE: read selected add-topic chips
 function selectedAddTopics(){
-  return selectedTopicsFrom('ting-topic-chips');
+  return selectedTopicsFrom('ting-tag-chips');
 }
 
-// PURE: read selected weekday chips
+// PURE: registry locations from settings
+function locationOptions(){
+  return normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+}
+
+// PURE: look up a location by id
+function locationById(id,registry = locationOptions()){
+  const clean = cleanLocationId(id);
+  if(!clean)return null;
+  return registry.find(loc=>loc.id === clean) || null;
+}
+
+// PURE: read selected location ids from a chip row
+function selectedLocationIdsFrom(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return [];
+  return [...wrap.querySelectorAll('.location-chip.on[data-location-id]')].map(btn=>btn.dataset.locationId);
+}
+
+// PURE: selected locations on the add sheet
+function selectedLocationIds(){
+  return selectedLocationIdsFrom('ting-tag-chips');
+}
+
+// PURE: preferred location id from a unified chip row (or null)
+function selectedPreferredLocationIdFrom(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return null;
+  const on = wrap.querySelector('.location-chip.on.preferred[data-location-id]');
+  return on ? on.dataset.locationId : null;
+}
+
+function selectedPreferredLocationId(){
+  return selectedPreferredLocationIdFrom('ting-tag-chips');
+}
+
+// RENDER: one shared chip row — topics (neutral) then places (teal). Preferred
+// is marked with a star on the location chip (second tap when 2+ selected).
+function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null){
+  const wrap = $(containerId);
+  if(!wrap)return;
+  const topics = topicOptions();
+  const locations = locationOptions();
+  const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
+  const selectedLocs = normalizeLocationIds(selectedLocIds,locations);
+  const preferred = normalizePreferredLocation(preferredLocId,selectedLocs);
+  const topicHtml = topics.map(topic=>{
+    const on = selectedSet.has(topic.toLowerCase());
+    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
+  }).join('');
+  const locHtml = locations.map(loc=>{
+    const on = selectedLocs.includes(loc.id);
+    const pref = preferred === loc.id;
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${pref ? 'preferred' : ''}" data-location-id="${escapeHtml(loc.id)}" title="${pref ? 'preferred place' : 'place'}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${pref ? ' ★' : ''}</button>`;
+  }).join('');
+  wrap.innerHTML = topicHtml + locHtml;
+  wrap.appendChild(createAddTopicPill());
+}
+
+// RENDER: draw selectable topic chips (legacy name — now renders the unified row)
+function renderTopicChips(containerId,selected = []){
+  // Map old container ids to the unified tag row.
+  const unified = containerId === 'ting-topic-chips' || containerId === 'ting-location-chips'
+    ? 'ting-tag-chips'
+    : containerId === 'detail-topic-chips' || containerId === 'detail-location-chips'
+      ? 'detail-tag-chips'
+      : containerId;
+  const locContainer = unified;
+  const locs = selectedLocationIdsFrom(locContainer);
+  const pref = selectedPreferredLocationIdFrom(locContainer);
+  renderTagChips(unified,selected,locs,pref);
+}
+
+// RENDER: location side of the unified row (keeps topics intact)
+function renderLocationChips(containerId,selectedIds = [],opts = {}){
+  const unified = containerId === 'ting-location-chips' || containerId === 'ting-topic-chips'
+    ? 'ting-tag-chips'
+    : containerId === 'detail-location-chips' || containerId === 'detail-topic-chips'
+      ? 'detail-tag-chips'
+      : containerId;
+  const topics = selectedTopicsFrom(unified);
+  renderTagChips(unified,topics,selectedIds,opts.preferred || null);
+}
+
+// HANDLER: toggle a location chip in the unified row.
+// off → on → (if 2+ selected) preferred → off
+function toggleLocationChip(e){
+  const btn = e.target.closest('.location-chip[data-location-id]');
+  if(!btn)return;
+  const wrap = btn.closest('.topic-chip-row');
+  if(!wrap)return;
+  const isOn = btn.classList.contains('on');
+  const isPref = btn.classList.contains('preferred');
+  const selectedBefore = selectedLocationIdsFrom(wrap.id);
+  if(!isOn){
+    btn.classList.add('on');
+  }else if(!isPref && selectedBefore.length >= 2){
+    wrap.querySelectorAll('.location-chip').forEach(b=>b.classList.remove('preferred'));
+    btn.classList.add('preferred');
+  }else{
+    btn.classList.remove('on','preferred');
+  }
+  const selected = selectedLocationIdsFrom(wrap.id);
+  let preferred = selectedPreferredLocationIdFrom(wrap.id);
+  preferred = normalizePreferredLocation(preferred,selected);
+  // If preferred was cleared and 2+ remain, leave preferred null (soft).
+  renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,preferred);
+  if(wrap.id === 'detail-tag-chips')setDetailDirty();
+}
+
+// PURE: resolve the place a home/agenda card is treated as being at.
+function cardLocationId(h,agendaRow){
+  if(agendaRow && agendaRow.locationId)return agendaRow.locationId;
+  const registry = locationOptions();
+  const ids = normalizeLocationIds(h && h.locationIds,registry);
+  if(!ids.length)return null;
+  return normalizePreferredLocation(h.preferredLocationId,ids) || ids[0];
+}
+
+// PURE: compute home location filter choices
+function homeLocationChoices(data){
+  const registry = locationOptions();
+  const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
+  const locs = registry.filter(loc=>used.has(loc.id));
+  const hasNone = data.some(h=>!normalizeLocationIds(h.locationIds,registry).length);
+  return [
+    {key:'all',label:'all places'},
+    ...locs.map(loc=>({key:loc.id,label:loc.name})),
+    ...(hasNone ? [{key:'__none__',label:'anywhere'}] : [])
+  ];
+}
+
+// PURE: test habit matches home location filter
+function matchesHomeLocation(h,id){
+  if(!id || id === 'all')return true;
+  const ids = normalizeLocationIds(h.locationIds);
+  if(id === '__none__')return !ids.length;
+  return ids.includes(id);
+}
+
+// HYBRID: one home filter row — topics (neutral) + places (teal)
+function renderHomeTagFilter(data){
+  const wrap = $('home-tag-filter');
+  if(!wrap)return;
+  const topicChoices = homeTopicChoices(data);
+  const locChoices = homeLocationChoices(data);
+  const hasTopics = topicChoices.length > 1;
+  const hasLocs = locChoices.length > 1;
+  if(!hasTopics && !hasLocs){
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
+  if(hasTopics && !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
+  if(hasLocs && !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
+  wrap.hidden = false;
+  const topicHtml = hasTopics ? topicChoices.map(choice=>`
+    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
+  `).join('') : '';
+  const locHtml = hasLocs ? locChoices.map(choice=>`
+    <button type="button" class="topic-filter location-filter ${choice.key === homeLocationFilter ? 'on' : ''}" data-home-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
+  `).join('') : '';
+  wrap.innerHTML = topicHtml + locHtml;
+}
+
+// HYBRID: draw home location filter (compat — routes to unified row)
+function renderHomeLocationFilter(data){
+  renderHomeTagFilter(data);
+}
+
+// HYBRID: draw home topic filter (compat — routes to unified row)
+function renderHomeTopicFilter(data){
+  renderHomeTagFilter(data);
+}
+
+// PURE: build weekday and month-day chips
 function selectedWeekdaysFrom(containerId){
   return [...$(containerId).querySelectorAll('.schedule-chip.on')].map(btn=>parseInt(btn.dataset.weekday,10));
 }
@@ -138,19 +315,6 @@ function createAddTopicPill(){
   return btn;
 }
 
-// RENDER: draw selectable topic chips
-function renderTopicChips(containerId,selected = []){
-  const topics = topicOptions();
-  const selectedSet = new Set(normalizeTopics(selected).map(topic=>topic.toLowerCase()));
-  const wrap = $(containerId);
-  if(!wrap)return;
-  wrap.innerHTML = topics.map(topic=>{
-    const on = selectedSet.has(topic.toLowerCase());
-    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
-  }).join('');
-  wrap.appendChild(createAddTopicPill());
-}
-
 // HYBRID: swap pill for input and wire commit
 function beginNewTopicInput(containerId){
   const wrap = $(containerId);
@@ -191,9 +355,11 @@ function beginNewTopicInput(containerId){
       updateSortSetting({topics:normalizeTopics([...existing,topic])},{renderNow:false});
     }
     const nextSelected = normalizeTopics([...selectedTopicsFrom(containerId),topic]);
-    renderTopicChips(containerId,nextSelected);
+    const locs = selectedLocationIdsFrom(containerId);
+    const pref = selectedPreferredLocationIdFrom(containerId);
+    renderTagChips(containerId,nextSelected,locs,pref);
     renderTopicList();
-    if(containerId === 'detail-topic-chips')setDetailDirty();
+    if(containerId === 'detail-tag-chips')setDetailDirty();
     render();
   };
   input.addEventListener('blur',()=>{
@@ -221,7 +387,7 @@ function toggleTopicChip(e){
   const btn = e.target.closest('.topic-chip[data-topic]');
   if(!btn)return;
   btn.classList.toggle('on');
-  if(btn.closest('#detail-topic-chips'))setDetailDirty();
+  if(btn.closest('#detail-tag-chips'))setDetailDirty();
 }
 
 // RENDER: draw removable topic list
@@ -247,12 +413,12 @@ function addTopicFromInput(inputId,options = {}){
   renderTopicList();
   const autoSelect = options.autoSelect;
   const addSelected = autoSelect ? normalizeTopics([...selectedAddTopics(),topic]) : selectedAddTopics();
-  renderTopicChips('ting-topic-chips',addSelected);
+  renderTagChips('ting-tag-chips',addSelected,selectedLocationIds(),selectedPreferredLocationId());
   if(detailIdx !== null){
     const detailSelected = autoSelect
-      ? normalizeTopics([...selectedTopicsFrom('detail-topic-chips'),topic])
+      ? normalizeTopics([...selectedTopicsFrom('detail-tag-chips'),topic])
       : currentDetailTune().topics;
-    renderTopicChips('detail-topic-chips',detailSelected);
+    renderTagChips('detail-tag-chips',detailSelected,selectedLocationIdsFrom('detail-tag-chips'),selectedPreferredLocationIdFrom('detail-tag-chips'));
     if(autoSelect)setDetailDirty();
   }
   render();
@@ -274,8 +440,11 @@ function removeTopic(topic){
   }));
   save(data);
   renderTopicList();
-  renderTopicChips('ting-topic-chips',selectedAddTopics());
-  if(detailIdx !== null)renderTopicChips('detail-topic-chips',currentDetailTune().topics);
+  renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),selectedPreferredLocationId());
+  if(detailIdx !== null){
+    const tune = currentDetailTune();
+    renderTagChips('detail-tag-chips',tune.topics,tune.locationIds,tune.preferredLocationId);
+  }
   if(typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key){
     homeTopicFilter = 'all';
   }
@@ -295,23 +464,6 @@ function matchesHomeTopic(h,topic){
   const topics = normalizeTopics(h.topics);
   if(topic === '__none__')return !topics.length;
   return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
-}
-
-// HYBRID: draw filter and reset invalid state
-function renderHomeTopicFilter(data){
-  const wrap = $('home-topic-filter');
-  if(!wrap)return;
-  const choices = homeTopicChoices(data);
-  if(choices.length <= 1){
-    wrap.innerHTML = '';
-    wrap.hidden = true;
-    return;
-  }
-  if(!choices.some(choice=>choice.key === homeTopicFilter))homeTopicFilter = 'all';
-  wrap.hidden = false;
-  wrap.innerHTML = choices.map(choice=>`
-    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
-  `).join('');
 }
 
 // RENDER: toggle sort and search buttons
@@ -629,6 +781,16 @@ function cardMeta(h,options = {}){
     });
     if(topics.length > 2)parts.push(`<span class="context-pill quiet" title="more topics">+${topics.length - 2}</span>`);
   }
+  if(options.forceLocation || sortSettings.showLocationOnCards){
+    const registry = locationOptions();
+    const locIds = normalizeLocationIds(h.locationIds,registry);
+    locIds.slice(0,2).forEach(id=>{
+      const loc = locationById(id,registry);
+      if(!loc)return;
+      parts.push(`<span class="context-pill quiet" title="${escapeHtml(`location: ${loc.name}`)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(compactPillText(loc.name,10))}</span>`);
+    });
+    if(locIds.length > 2)parts.push(`<span class="context-pill quiet" title="more locations">+${locIds.length - 2}</span>`);
+  }
   if(plan && h.type !== 'zero' && (options.forcePlans || sortSettings.showPlansOnCards)){
     const label = compactPlanLabel(plan);
     parts.push(`<span class="context-pill plan ${label ? '' : 'icon-only'}" title="${escapeHtml(`planned ${entryWhen(plan)}`)}"><i class="ti ti-calendar-event" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
@@ -662,7 +824,15 @@ function cardTrail(h){
 
 // PURE: today's agenda timeline rows, shared by the home card pill map and
 // the chronological "today" section ordering so both stay in lockstep.
+// Travel/wait rows are excluded here — home inserts thin travel cards itself.
 function homeAgendaRows(data){
+  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
+  return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()))
+    .filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
+}
+
+// PURE: full timeline including travel rows (for thin home travel cards).
+function homeAgendaTimeline(data){
   if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
   return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
 }
@@ -818,7 +988,7 @@ function render(){
   updateQuotaBar(sizeKb(data));
   updateSortButton();
   updateSearchUi();
-  renderHomeTopicFilter(data);
+  renderHomeTagFilter(data);
 
   const visible = visibleIndices(data);
   const indices = filteredVisibleIndices(data);
@@ -826,14 +996,21 @@ function render(){
     empty.style.display = 'block';
     const hasSearch = searchQuery.trim().length > 0;
     const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
+    const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
     empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
     if(hasSearch){
       empty.innerHTML = 'no matches<br><span class="empty-sub">try another habit name or icon</span>';
-    }else if(hasTopicFilter){
-      const label = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
-      empty.innerHTML = `no habits in ${escapeHtml(label)}<br><span class="empty-sub">tap a topic above to change the filter</span>`;
+    }else if(hasTopicFilter || hasLocationFilter){
+      const topicLabel = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
+      const loc = typeof locationById === 'function' ? locationById(homeLocationFilter) : null;
+      const locLabel = homeLocationFilter === '__none__' ? 'anywhere' : (loc ? loc.name : homeLocationFilter);
+      const label = hasTopicFilter && hasLocationFilter
+        ? `${topicLabel} · ${locLabel}`
+        : (hasTopicFilter ? topicLabel : locLabel);
+      empty.innerHTML = `no habits in ${escapeHtml(label)}<br><span class="empty-sub">tap a filter above to change it</span>`;
       empty.onclick = ()=>{
         homeTopicFilter = 'all';
+        homeLocationFilter = 'all';
         render();
       };
     }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){
@@ -895,13 +1072,15 @@ function render(){
     return indices.indexOf(a) - indices.indexOf(b);
   }) : indices;
   let sectionCat = -1;
+  let prevTodayLocId = null;
 
   renderIndices.forEach(realIdx=>{
     const h = data[realIdx];
     const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
+    const isEarlyToday = todayFirstActive && cat === 2 && earlyToday(realIdx);
+    const inTodaySection = todayFirstActive && !h.pinned && (cat === 0 || isEarlyToday);
 
     if(todayFirstActive && !h.pinned){
-      const isEarlyToday = cat === 2 && earlyToday(realIdx);
       const sectionKey = isEarlyToday ? 0 : cat;
       if(sectionKey !== sectionCat){
         const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
@@ -913,15 +1092,34 @@ function render(){
           list.appendChild(header);
         }
         sectionCat = sectionKey;
+        if(sectionKey !== 0)prevTodayLocId = null;
       }
     }
+
+    const agendaRow = agendaMap.get(realIdx);
+    const locId = cardLocationId(h,agendaRow);
+    if(inTodaySection && prevTodayLocId && locId && prevTodayLocId !== locId){
+      const from = locationById(prevTodayLocId);
+      const to = locationById(locId);
+      const edge = (from && to && typeof travelBetween === 'function')
+        ? travelBetween(from,to,normalizeTravelMode((sortSettings || {}).defaultTravelMode))
+        : {seconds:0};
+      const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
+      const fromName = from ? from.name : 'here';
+      const toName = to ? to.name : 'next';
+      const travelEl = document.createElement('div');
+      travelEl.className = 'travel-card';
+      travelEl.setAttribute('role','note');
+      travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>`;
+      list.appendChild(travelEl);
+    }
+    if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
 
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const agendaRow = agendaMap.get(realIdx);
     const agendaPill = agendaCardPill(agendaRow);
     // The "early" pill only marks items actually pulled into today; items that
     // lost the capacity cut and fell back to upcoming carry no early pill.

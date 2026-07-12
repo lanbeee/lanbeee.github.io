@@ -19,7 +19,7 @@ function applyAddDefaults(){
   selectedType = settings.defaultType || 'keepup';
   const target = clampRhythm(settings.defaultTarget || 7);
   syncRhythm('ting',target);
-  renderTopicChips('ting-topic-chips',[]);
+  renderTagChips('ting-tag-chips',[],[],null);
   const topicsWrap = $('add-topics-section');
   if(topicsWrap)topicsWrap.hidden = false;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
@@ -69,6 +69,10 @@ function syncSettingsControls(){
   renderLocationControls();
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
+  });
+  const travelMode = normalizeTravelMode(sortSettings.defaultTravelMode);
+  document.querySelectorAll('#travel-mode-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.travelMode === travelMode);
   });
   document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
     btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
@@ -588,6 +592,7 @@ function updateSortSampleCount(){
 
 // PURE: build a sample habit object
 function sortSampleHabit(name,type,target,logs,options = {}){
+  const locationIds = Array.isArray(options.locationIds) ? options.locationIds.map(cleanLocationId).filter(Boolean) : [];
   return {
     name:`Sample: ${name}`,
     type,
@@ -602,6 +607,8 @@ function sortSampleHabit(name,type,target,logs,options = {}){
     sample:true,
     snoozedUntil:options.snoozedUntil || null,
     topics:normalizeTopics(options.topics),
+    locationIds,
+    preferredLocationId:normalizePreferredLocation(options.preferredLocationId,locationIds),
     allowedWeekdays:normalizeAllowedWeekdays(options.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(options.allowedMonthDays),
     preferredWeekdays:normalizeAllowedWeekdays(options.preferredWeekdays),
@@ -611,53 +618,113 @@ function sortSampleHabit(name,type,target,logs,options = {}){
     preferredTimeStart:normalizeTimeMinutes(options.preferredTimeStart),
     preferredTimeEnd:normalizeTimeMinutes(options.preferredTimeEnd),
     flexibilityDays:clampFlexibility(options.flexibilityDays),
-    durationMinutes:clampDuration(options.durationMinutes)
+    durationMinutes:clampDuration(options.durationMinutes),
+    priority:options.priority != null ? clampPriority(options.priority) : undefined
   };
+}
+
+// PURE: NYC-area sample places — close enough that travel is visible but short.
+// Stable ids so re-adding samples doesn't orphan habit references.
+function buildSampleLocations(){
+  return [
+    {
+      id:'sample-home', name:'Home', address:'West Village, NYC',
+      lat:40.7359, lng:-74.0036, radiusM:100,
+      emoji:'🏠'
+    },
+    {
+      id:'sample-office', name:'Office', address:'Midtown, NYC',
+      lat:40.7549, lng:-73.9840, radiusM:80,
+      emoji:'🏢',
+      allowedTimeStart:540, allowedTimeEnd:1080, // 9a–6p
+      closedDays:[0,6]
+    },
+    {
+      id:'sample-gym', name:'Gym', address:'Chelsea, NYC',
+      lat:40.7465, lng:-73.9972, radiusM:75,
+      emoji:'🏋️',
+      allowedTimeStart:360, allowedTimeEnd:1320, // 6a–10p
+      closedDays:[0],
+      preferredTimeStart:420, preferredTimeEnd:540 // best early
+    },
+    {
+      id:'sample-cafe', name:'Cafe', address:'East Village, NYC',
+      lat:40.7265, lng:-73.9815, radiusM:60,
+      emoji:'☕',
+      allowedTimeStart:480, allowedTimeEnd:1020, // 8a–5p
+      preferredTimeStart:840, preferredTimeEnd:960, // 2–4p off-peak
+      hoursByDay:{6:{start:540,end:900}} // Sat 9a–3p
+    },
+    {
+      id:'sample-moms', name:"Mom's house", address:'Park Slope, Brooklyn',
+      lat:40.6701, lng:-73.9778, radiusM:90,
+      emoji:'🏡',
+      allowedTimeStart:660, allowedTimeEnd:1020 // 11a–5p
+    },
+    {
+      // 24h second anchor so travel between places is visible even late at night.
+      id:'sample-park', name:'Park', address:'Washington Square Park, NYC',
+      lat:40.7308, lng:-73.9973, radiusM:120,
+      emoji:'🌳'
+    }
+  ];
 }
 
 // PURE: build array of sample habits
 function buildSortSamples(){
+  const H = 'sample-home';
+  const O = 'sample-office';
+  const G = 'sample-gym';
+  const C = 'sample-cafe';
+  const M = 'sample-moms';
+  const P = 'sample-park';
   return [
-    sortSampleHabit('daily walk overdue','keepup',1,sampleLogs([9,7,5,2]),{emoji:'🚶',topics:['health'],durationMinutes:25,allowedTimeStart:390,allowedTimeEnd:600}),
-    sortSampleHabit('call family due soon','keepup',7,sampleLogs([34,21,14,6]),{emoji:'☎️',topics:['relationships'],allowedWeekdays:[2,4]}),
-    sortSampleHabit('movie night just done','keepup',7,sampleLogs([22,15,8,1]),{emoji:'🎬',topics:['rest'],allowedWeekdays:[5,6],durationMinutes:120}),
-    sortSampleHabit('new meditation habit','keepup',7,[],{emoji:'🧘',topics:['health','calm'],durationMinutes:10}),
-    sortSampleHabit('40 day habit mid cycle','keepup',40,sampleLogs([97,57,17]),{emoji:'🌿',topics:['home'],flexibilityDays:5}),
-    sortSampleHabit('do early because Tuesday is packed','keepup',2,sampleLogs([0]),{emoji:'🧺',topics:['home'],durationMinutes:50,flexibilityDays:2}),
-    sortSampleHabit('monthly date night close','keepup',30,sampleLogs([91,61,28]),{emoji:'💙',durationMinutes:150,flexibilityDays:4,topics:['relationships']}),
+    sortSampleHabit('daily walk overdue','keepup',1,sampleLogs([9,7,5,2]),{emoji:'🚶',topics:['health'],durationMinutes:25,allowedTimeStart:390,allowedTimeEnd:600,locationIds:[H,P],preferredLocationId:P,priority:1}),
+    sortSampleHabit('call family due soon','keepup',7,sampleLogs([34,21,14,6]),{emoji:'☎️',topics:['relationships'],allowedWeekdays:[2,4],locationIds:[H,M],preferredLocationId:M,durationMinutes:20,priority:1}),
+    sortSampleHabit('movie night just done','keepup',7,sampleLogs([22,15,8,1]),{emoji:'🎬',topics:['rest'],allowedWeekdays:[5,6],durationMinutes:120,locationIds:[H]}),
+    sortSampleHabit('new meditation habit','keepup',7,[],{emoji:'🧘',topics:['health','calm'],durationMinutes:10,locationIds:[H]}),
+    sortSampleHabit('40 day habit mid cycle','keepup',40,sampleLogs([97,57,17]),{emoji:'🌿',topics:['home'],flexibilityDays:5,locationIds:[H]}),
+    sortSampleHabit('do early because Tuesday is packed','keepup',2,sampleLogs([0]),{emoji:'🧺',topics:['home'],durationMinutes:50,flexibilityDays:2,locationIds:[H],priority:2}),
+    sortSampleHabit('monthly date night close','keepup',30,sampleLogs([91,61,28]),{emoji:'💙',durationMinutes:150,flexibilityDays:4,topics:['relationships'],locationIds:[C,H],preferredLocationId:C}),
     sortSampleHabit('quarterly mini trip overdue','keepup',90,sampleLogs([190,91]),{emoji:'🧳',durationMinutes:240,flexibilityDays:14,topics:['adventure']}),
-    sortSampleHabit('long flexible home reset','keepup',60,sampleLogs([180,122,68]),{emoji:'🧹',durationMinutes:180,flexibilityDays:10,topics:['home']}),
-    sortSampleHabit('planned today workout','keepup',3,sampleLogs([11,8,5],[0]),{emoji:'🏋️',topics:['health'],durationMinutes:50}),
-    sortSampleHabit('planned weekend check-in','keepup',14,sampleLogs([42,28,15],[3]),{emoji:'🗓️',topics:['planning'],allowedWeekdays:[0,6]}),
-    sortSampleHabit('weekend-only yard work','keepup',7,sampleLogs([17,10]),{emoji:'🌱',allowedWeekdays:[0,6],durationMinutes:90}),
-    sortSampleHabit('first of month money review','keepup',30,sampleLogs([92,61,31]),{emoji:'💵',allowedMonthDays:[1],durationMinutes:45}),
-    sortSampleHabit('15th-only insurance paperwork','keepup',30,sampleLogs([104,74,44]),{emoji:'📄',allowedMonthDays:[15],topics:['admin'],durationMinutes:35}),
-    sortSampleHabit('weekday guitar practice with long title','keepup',2,sampleLogs([12,9,6,3]),{emoji:'🎸',allowedWeekdays:[1,2,3,4,5],preferredWeekdays:[1,3,5],topics:['creative','practice'],durationMinutes:20}),
+    sortSampleHabit('long flexible home reset','keepup',60,sampleLogs([180,122,68]),{emoji:'🧹',durationMinutes:45,flexibilityDays:10,topics:['home'],locationIds:[H],priority:2}),
+    sortSampleHabit('planned today workout','keepup',3,sampleLogs([11,8,5],[0]),{emoji:'🏋️',topics:['health'],durationMinutes:40,locationIds:[G],priority:0}),
+    sortSampleHabit('planned weekend check-in','keepup',14,sampleLogs([42,28,15],[3]),{emoji:'🗓️',topics:['planning'],allowedWeekdays:[0,6],locationIds:[H,C],preferredLocationId:C,durationMinutes:25}),
+    sortSampleHabit('weekend-only yard work','keepup',7,sampleLogs([17,10]),{emoji:'🌱',allowedWeekdays:[0,6],durationMinutes:40,locationIds:[H]}),
+    sortSampleHabit('first of month money review','keepup',30,sampleLogs([92,61,31]),{emoji:'💵',allowedMonthDays:[1],durationMinutes:45,locationIds:[H,O],preferredLocationId:H}),
+    sortSampleHabit('15th-only insurance paperwork','keepup',30,sampleLogs([104,74,44]),{emoji:'📄',allowedMonthDays:[15],topics:['admin'],durationMinutes:35,locationIds:[O]}),
+    sortSampleHabit('weekday guitar practice with long title','keepup',2,sampleLogs([12,9,6,3]),{emoji:'🎸',allowedWeekdays:[1,2,3,4,5],preferredWeekdays:[1,3,5],topics:['creative','practice'],durationMinutes:20,locationIds:[H]}),
     sortSampleHabit('pinned water habit','keepup',1,sampleLogs([4,3,1]),{emoji:'💧',pinned:true,topics:['health']}),
-    sortSampleHabit('slipping reading rhythm','keepup',7,sampleLogs([45,34,23,13,8]),{emoji:'📖',topics:['learning']}),
-    sortSampleHabit('improving stretch routine','keepup',7,sampleLogs([32,20,11,5,1]),{emoji:'🤸',topics:['health'],durationMinutes:15}),
-    sortSampleHabit('video games too recent','reduce',7,sampleLogs([1]),{emoji:'🎮',topics:['screen time']}),
-    sortSampleHabit('limit habit too often','reduce',7,sampleLogs([5,3,1]),{emoji:'🎯',topics:['focus'],allowedWeekdays:[1,3,5]}),
-    sortSampleHabit('takeout good spacing','reduce',14,sampleLogs([42,25,18]),{emoji:'🥡',topics:['food','budget']}),
-    sortSampleHabit('social media ready to review','reduce',3,sampleLogs([11,8,5]),{emoji:'📱',topics:['screen time'],durationMinutes:20}),
-    sortSampleHabit('late-night snacks close','reduce',5,sampleLogs([9,6,3]),{emoji:'🍪',topics:['food']}),
-    sortSampleHabit('coffee only on office days','reduce',2,sampleLogs([6,4,2]),{emoji:'☕',topics:['health'],allowedWeekdays:[1,3],durationMinutes:5}),
+    sortSampleHabit('slipping reading rhythm','keepup',7,sampleLogs([45,34,23,13,8]),{emoji:'📖',topics:['learning'],locationIds:[C,H],preferredLocationId:C,durationMinutes:30}),
+    sortSampleHabit('improving stretch routine','keepup',7,sampleLogs([32,20,11,5,1]),{emoji:'🤸',topics:['health'],durationMinutes:15,locationIds:[G,H],preferredLocationId:G}),
+    sortSampleHabit('video games too recent','reduce',7,sampleLogs([1]),{emoji:'🎮',topics:['screen time'],locationIds:[H]}),
+    sortSampleHabit('limit habit too often','reduce',7,sampleLogs([5,3,1]),{emoji:'🎯',topics:['focus'],allowedWeekdays:[1,3,5],locationIds:[O]}),
+    sortSampleHabit('takeout good spacing','reduce',14,sampleLogs([42,25,18]),{emoji:'🥡',topics:['food','budget'],locationIds:[C]}),
+    sortSampleHabit('social media ready to review','reduce',3,sampleLogs([11,8,5]),{emoji:'📱',topics:['screen time'],durationMinutes:15}),
+    sortSampleHabit('late-night snacks close','reduce',5,sampleLogs([9,6,3]),{emoji:'🍪',topics:['food'],locationIds:[H]}),
+    sortSampleHabit('coffee only on office days','reduce',2,sampleLogs([6,4,2]),{emoji:'☕',topics:['health'],allowedWeekdays:[1,3],durationMinutes:5,locationIds:[O,C],preferredLocationId:O}),
     sortSampleHabit('stop smoking reset today','zero',null,sampleLogs([0]),{emoji:'🚭'}),
     sortSampleHabit('no soda clear stretch','zero',null,sampleLogs([35,18]),{emoji:'🥤',topics:['health']}),
     sortSampleHabit('old stop habit no entries','zero',null,[],{emoji:'⛔',topics:['avoid']}),
-    sortSampleHabit('snoozed build habit','keepup',7,sampleLogs([12]),{emoji:'😴',snoozedUntil:samplePlan(3,8),topics:['rest']}),
-    sortSampleHabit('overdue hard-deadline task','task',null,[],{emoji:'⚠️',dueDate:sampleActual(2),hardDue:true,topics:['admin'],durationMinutes:20}),
-    sortSampleHabit('task due today','task',null,[],{emoji:'📞',dueDate:sampleActual(0),topics:['relationships'],durationMinutes:15}),
-    sortSampleHabit('task due next week','task',null,[],{emoji:'📝',dueDate:samplePlan(6),topics:['learning'],durationMinutes:45,flexibilityDays:3}),
-    sortSampleHabit('busy target errand','task',null,[],{emoji:'📦',dueDate:samplePlan(2,10),topics:['admin'],durationMinutes:80}),
-    sortSampleHabit('busy target paperwork','task',null,[],{emoji:'🗂️',dueDate:samplePlan(2,14),topics:['admin'],durationMinutes:80}),
-    sortSampleHabit('busy target call','task',null,[],{emoji:'📱',dueDate:samplePlan(2,16),topics:['admin'],durationMinutes:80}),
+    sortSampleHabit('snoozed build habit','keepup',7,sampleLogs([12]),{emoji:'😴',snoozedUntil:samplePlan(3,8),topics:['rest'],locationIds:[H]}),
+    sortSampleHabit('overdue hard-deadline task','task',null,[],{emoji:'⚠️',dueDate:sampleActual(2),hardDue:true,topics:['admin'],durationMinutes:20,locationIds:[O],priority:0}),
+    sortSampleHabit('task due today','task',null,[],{emoji:'📞',dueDate:sampleActual(0),topics:['relationships'],durationMinutes:15,locationIds:[H,M],preferredLocationId:H,priority:1}),
+    sortSampleHabit('task due next week','task',null,[],{emoji:'📝',dueDate:samplePlan(6),topics:['learning'],durationMinutes:45,flexibilityDays:3,locationIds:[C]}),
+    sortSampleHabit('busy target errand','task',null,[],{emoji:'📦',dueDate:samplePlan(2,10),topics:['admin'],durationMinutes:40,locationIds:[O],priority:2}),
+    sortSampleHabit('busy target paperwork','task',null,[],{emoji:'🗂️',dueDate:samplePlan(2,14),topics:['admin'],durationMinutes:40,locationIds:[O],priority:2}),
+    sortSampleHabit('busy target call','task',null,[],{emoji:'📱',dueDate:samplePlan(2,16),topics:['admin'],durationMinutes:25,locationIds:[H,O],preferredLocationId:H,priority:3}),
     sortSampleHabit('someday task no date','task',null,[],{emoji:'🗂️',topics:['someday']}),
-    sortSampleHabit('dentist appointment task','task',null,[],{emoji:'🦷',eventTime:Date.now() + 4 * 3600000,dueDate:dayStart(Date.now()),durationMinutes:60,topics:['health']})
+    sortSampleHabit('dentist appointment task','task',null,[],{emoji:'🦷',eventTime:Date.now() + 4 * 3600000,dueDate:dayStart(Date.now()),durationMinutes:60,topics:['health'],locationIds:[O],priority:0}),
+    sortSampleHabit('grocery run today','task',null,[],{emoji:'🛒',dueDate:sampleActual(0),durationMinutes:25,topics:['home'],locationIds:[C],priority:2}),
+    sortSampleHabit('gym session due','keepup',2,sampleLogs([5,3]),{emoji:'💪',topics:['health'],durationMinutes:35,locationIds:[G],priority:1}),
+    // Evening-friendly pair (both 24h) so travel cards show even after shops close.
+    // Short + high priority so they still fit when only a thin late-night slot remains.
+    sortSampleHabit('evening park stroll','task',null,[],{emoji:'🌙',dueDate:sampleActual(0),durationMinutes:12,topics:['health','rest'],locationIds:[P],priority:0}),
+    sortSampleHabit('tidy desk tonight','task',null,[],{emoji:'🧹',dueDate:sampleActual(0),durationMinutes:12,topics:['home'],locationIds:[H],priority:0})
   ];
 }
 
-// HANDLER: add sample habits to list
+// HANDLER: add sample habits to list (+ seed sample locations into the registry)
 function addSortSamples(){
   const current = load().filter(h=>!h.sample);
   const samples = buildSortSamples();
@@ -665,16 +732,29 @@ function addSortSamples(){
     alert(`${MAX_TINGS} habits max`);
     return;
   }
+  // Merge sample places into the registry (stable ids → idempotent re-add).
+  const sampleLocs = buildSampleLocations();
+  const existing = normalizeLocationRegistry(sortSettings.locations);
+  const byId = new Map(existing.map(l=>[l.id,l]));
+  sampleLocs.forEach(loc=>{ if(!byId.has(loc.id))byId.set(loc.id,loc); });
+  const locations = normalizeLocationRegistry([...byId.values()]);
+  updateSortSetting({
+    locations,
+    lastKnownLocationId:sortSettings.lastKnownLocationId || 'sample-home',
+    showLocationOnCards:true,
+    defaultTravelMode:sortSettings.defaultTravelMode || 'walking'
+  },{renderNow:false,sync:false});
   const next = [...current,...samples].map(h=>({...h,lastLog:latestActualLog(h.logs)}));
   if(save(next)){
     updateSortSampleCount();
+    syncSettingsControls();
     closeSheet('settings-sheet');
     render();
-    showToast('samples added');
+    showToast('samples added · 6 places');
   }
 }
 
-// HANDLER: remove sample habits from list
+// HANDLER: remove sample habits from list (+ drop sample-* locations)
 function removeSortSamples(){
   const current = load();
   const next = current.filter(h=>!h.sample);
@@ -682,8 +762,20 @@ function removeSortSamples(){
     showToast('no samples');
     return;
   }
-  if(save(next)){
+  const locations = normalizeLocationRegistry(sortSettings.locations)
+    .filter(loc=>!(loc.id || '').startsWith('sample-'));
+  const travel = {};
+  for(const [key,edge] of Object.entries(sortSettings.travel || {})){
+    if(!(String(edge.a || '').startsWith('sample-') || String(edge.b || '').startsWith('sample-')))travel[key] = edge;
+  }
+  const lastKnown = (sortSettings.lastKnownLocationId || '').startsWith('sample-')
+    ? null
+    : sortSettings.lastKnownLocationId;
+  updateSortSetting({locations,travel,lastKnownLocationId:lastKnown},{renderNow:false,sync:false});
+  const reconciled = reconcileLocations(next,{...sortSettings,locations,travel});
+  if(save(reconciled.data)){
     updateSortSampleCount();
+    syncSettingsControls();
     render();
     showToast('samples removed');
   }

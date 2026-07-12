@@ -60,7 +60,7 @@
       </div>
       <div id="quota-bar"></div>
       <div id="reminder-banner" class="reminder-banner" hidden></div>
-      <div id="home-topic-filter" class="topic-filter-row" aria-label="topic filter"></div>
+      <div id="home-tag-filter" class="topic-filter-row" aria-label="topic and location filter"></div>
       <div id="list"></div>
       <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
     </div>
@@ -154,8 +154,8 @@
           </label>
         </div>
         <div class="add-topics-section" id="add-topics-section">
-          <span class="settings-sublabel">topics</span>
-          <div class="topic-chip-row" id="ting-topic-chips"></div>
+          <span class="settings-sublabel">topics &amp; places</span>
+          <div class="topic-chip-row" id="ting-tag-chips"></div>
         </div>
       </div>
 
@@ -320,8 +320,8 @@
             <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
             <input type="checkbox" id="detail-pinned" />
           </label>
-          <span class="settings-sublabel">topics</span>
-          <div class="topic-chip-row" id="detail-topic-chips"></div>
+          <span class="settings-sublabel">topics &amp; places</span>
+          <div class="topic-chip-row" id="detail-tag-chips"></div>
           <div class="habit-actions">
             <span class="settings-label">habit actions</span>
             <button class="habit-action" id="detail-export" type="button" hidden>
@@ -366,7 +366,7 @@
           <p class="about-copy" id="overview-copy">Entries and plans by day.</p>
           <div class="overview-stats" id="overview-stats"></div>
           <div class="topic-filter-row range-filter-row" id="overview-range-filter" aria-label="calendar range filter"></div>
-          <div class="topic-filter-row" id="overview-topic-filter" aria-label="topic activity filter"></div>
+          <div class="topic-filter-row" id="overview-tag-filter" aria-label="topic and location filter"></div>
         </div>
       </div>
       <div class="month-card overview-card">
@@ -400,6 +400,7 @@
         <div>
           <p class="sheet-title">today</p>
           <p class="about-copy" id="today-summary">Your plan for today.</p>
+          <div class="iam-at-row" id="iam-at-row" aria-label="current location" hidden></div>
         </div>
       </div>
       <div class="today-content" id="today-content"></div>
@@ -526,6 +527,15 @@
             <div class="location-results" id="loc-results" hidden></div>
             <div class="location-list" id="location-list"></div>
             <p class="field-hint location-empty-hint" id="location-empty-hint" hidden>No locations yet. A habit with no location works anywhere.</p>
+            <div class="location-travel-mode">
+              <span class="settings-sublabel">default travel mode</span>
+              <div class="seg travel-mode-seg" id="travel-mode-seg" role="group" aria-label="default travel mode">
+                <button type="button" class="seg-opt" data-travel-mode="driving">drive</button>
+                <button type="button" class="seg-opt" data-travel-mode="walking">walk</button>
+                <button type="button" class="seg-opt" data-travel-mode="bicycling">bike</button>
+                <button type="button" class="seg-opt" data-travel-mode="transit">transit</button>
+              </div>
+            </div>
           </div>
         </section>
         <section class="settings-block settings-collapsible">
@@ -640,7 +650,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-testdata-body" hidden>
-            <p class="field-hint">Add sample habits and tasks to try the app. Samples are marked with a test label and you can remove them in one tap. They stay until you remove them.</p>
+            <p class="field-hint">Add sample habits, tasks, and 6 NYC places (Home, Office, Gym, Cafe, Mom's, Park) with hours and travel. Samples are marked and removable in one tap. Turn on Today to see travel between places.</p>
             <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
             <div class="btn-row">
               <button class="btn primary" id="add-sort-samples">add samples</button>
