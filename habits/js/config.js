@@ -89,7 +89,7 @@ const DEFAULT_SORT_SETTINGS = {
   showDueTasksInAgenda:true,
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
-  showWeekOnHome:false,
+  showWeekOnHome:true,
   reachAssist:true,
   reminders:false,
   pushDetailed:false,

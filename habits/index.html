@@ -260,12 +260,31 @@
             <div class="schedule-chip-row" id="detail-weekday-chips"></div>
             <span class="settings-sublabel compact-label">month days</span>
             <div class="monthday-chip-row" id="detail-monthday-chips"></div>
+            <div class="schedule-time-row">
+              <span class="settings-sublabel compact-label">time window</span>
+              <div class="time-inputs">
+                <input type="time" id="detail-time-start" class="time-input" aria-label="allowed start time" />
+                <span class="time-sep">—</span>
+                <input type="time" id="detail-time-end" class="time-input" aria-label="allowed end time" />
+              </div>
+              <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
+            </div>
           </div>
           <div id="detail-schedule-preferred" hidden>
             <span class="settings-sublabel">days</span>
             <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
             <span class="settings-sublabel compact-label">month days</span>
             <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
+            <div class="schedule-time-row preferred">
+              <span class="settings-sublabel compact-label">best time</span>
+              <div class="time-inputs">
+                <input type="time" id="detail-preferred-time-start" class="time-input" aria-label="preferred start time" />
+                <span class="time-sep">—</span>
+                <input type="time" id="detail-preferred-time-end" class="time-input" aria-label="preferred end time" />
+              </div>
+              <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
+            </div>
+            <!-- <p class="field-hint schedule-time-hint">Soft hint — nudges agenda placement when it fits. Does not block the habit outside this range.</p> -->
           </div>
           <div class="plan-field-row habit-mark-done-row" id="detail-habit-mark-done-toggle" hidden>
             <label class="hard-due-toggle">
@@ -273,15 +292,6 @@
               <span>mark done</span>
             </label>
             <span class="habit-mark-done-hint">off = logs itself on scheduled days</span>
-          </div>
-          <div class="schedule-time-row">
-            <span class="settings-sublabel compact-label">time window</span>
-            <div class="time-inputs">
-              <input type="time" id="detail-time-start" class="time-input" aria-label="start time" />
-              <span class="time-sep">—</span>
-              <input type="time" id="detail-time-end" class="time-input" aria-label="end time" />
-            </div>
-            <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
           </div>
           <p class="field-hint" id="detail-target-help">Target days between entries.</p>
           <div class="range-row" id="detail-slider-row">

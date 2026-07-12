@@ -630,6 +630,14 @@ $('detail-time-clear').addEventListener('click',()=>{
   $('detail-time-clear').hidden = true;
   setDetailDirty();
 });
+$('detail-preferred-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
+$('detail-preferred-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
+$('detail-preferred-time-clear').addEventListener('click',()=>{
+  $('detail-preferred-time-start').value = '';
+  $('detail-preferred-time-end').value = '';
+  $('detail-preferred-time-clear').hidden = true;
+  setDetailDirty();
+});
 $('detail-due-date').addEventListener('input',()=>{syncDetailDueUi();setDetailDirty();});
 $('detail-due-clear').addEventListener('click',()=>{
   $('detail-due-date').value = '';
@@ -757,6 +765,12 @@ $('detail-save').addEventListener('click',()=>{
   if(h.allowedTimeStart === null || h.allowedTimeEnd === null){
     h.allowedTimeStart = null;
     h.allowedTimeEnd = null;
+  }
+  h.preferredTimeStart = current.preferredTimeStart;
+  h.preferredTimeEnd = current.preferredTimeEnd;
+  if(h.preferredTimeStart === null || h.preferredTimeEnd === null){
+    h.preferredTimeStart = null;
+    h.preferredTimeEnd = null;
   }
   h.durationMinutes = current.durationMinutes;
   h.flexibilityDays = current.flexibilityDays;

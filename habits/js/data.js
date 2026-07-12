@@ -929,6 +929,9 @@ function hasPreferredDays(h){
 function hasTimeWindow(h){
   return Number.isFinite(h.allowedTimeStart) && Number.isFinite(h.allowedTimeEnd);
 }
+function hasPreferredTimeWindow(h){
+  return Number.isFinite(h.preferredTimeStart) && Number.isFinite(h.preferredTimeEnd);
+}
 function isPreferredDay(h,ts = Date.now()){
   const pref = preferredDays(h);
   if(!pref.weekdays.length && !pref.monthDays.length)return false;

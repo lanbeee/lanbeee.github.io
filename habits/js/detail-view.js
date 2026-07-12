@@ -66,6 +66,8 @@ function openDetail(i){
     preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
     allowedTimeStart:h.allowedTimeStart ?? null,
     allowedTimeEnd:h.allowedTimeEnd ?? null,
+    preferredTimeStart:h.preferredTimeStart ?? null,
+    preferredTimeEnd:h.preferredTimeEnd ?? null,
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     flexibilityDays:h.flexibilityDays || 0,
     priority:effectivePriority(h),
@@ -165,27 +167,43 @@ function scheduledWhenLabel(ts){
   return `${new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${time}`;
 }
 
-// RENDER: fills time window input fields
+// RENDER: fills allowed/preferred time window input fields
 function renderTimeWindowInputs(h = {}){
   const start = $('detail-time-start');
   const end = $('detail-time-end');
   const clear = $('detail-time-clear');
-  if(!start || !end)return;
-  if(hasTimeWindow(h)){
-    start.value = minutesToTimeInput(h.allowedTimeStart);
-    end.value = minutesToTimeInput(h.allowedTimeEnd);
-    if(clear)clear.hidden = false;
-  }else{
-    start.value = '';
-    end.value = '';
-    if(clear)clear.hidden = true;
+  if(start && end){
+    if(hasTimeWindow(h)){
+      start.value = minutesToTimeInput(h.allowedTimeStart);
+      end.value = minutesToTimeInput(h.allowedTimeEnd);
+      if(clear)clear.hidden = false;
+    }else{
+      start.value = '';
+      end.value = '';
+      if(clear)clear.hidden = true;
+    }
+  }
+  const prefStart = $('detail-preferred-time-start');
+  const prefEnd = $('detail-preferred-time-end');
+  const prefClear = $('detail-preferred-time-clear');
+  if(prefStart && prefEnd){
+    if(hasPreferredTimeWindow(h)){
+      prefStart.value = minutesToTimeInput(h.preferredTimeStart);
+      prefEnd.value = minutesToTimeInput(h.preferredTimeEnd);
+      if(prefClear)prefClear.hidden = false;
+    }else{
+      prefStart.value = '';
+      prefEnd.value = '';
+      if(prefClear)prefClear.hidden = true;
+    }
   }
 }
 // RENDER: toggles time-clear button visibility
 function syncTimeClearBtn(){
   const clear = $('detail-time-clear');
-  if(!clear)return;
-  clear.hidden = !$('detail-time-start').value && !$('detail-time-end').value;
+  if(clear)clear.hidden = !$('detail-time-start')?.value && !$('detail-time-end')?.value;
+  const prefClear = $('detail-preferred-time-clear');
+  if(prefClear)prefClear.hidden = !$('detail-preferred-time-start')?.value && !$('detail-preferred-time-end')?.value;
 }
 
 // HYBRID: reads form DOM into tune object
@@ -207,6 +225,8 @@ function currentDetailTune(){
     preferredMonthDays:selectedMonthDaysFrom('detail-preferred-monthday-chips'),
     allowedTimeStart:timeInputToMinutes($('detail-time-start').value),
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
+    preferredTimeStart:timeInputToMinutes($('detail-preferred-time-start').value),
+    preferredTimeEnd:timeInputToMinutes($('detail-preferred-time-end').value),
     durationMinutes:clampDuration($('detail-duration').value),
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
     priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
@@ -243,7 +263,9 @@ function setDetailDirty(force){
       current.preferredWeekdays.join('|') !== detailTuneOriginal.preferredWeekdays.join('|') ||
       current.preferredMonthDays.join('|') !== detailTuneOriginal.preferredMonthDays.join('|') ||
       current.allowedTimeStart !== detailTuneOriginal.allowedTimeStart ||
-      current.allowedTimeEnd !== detailTuneOriginal.allowedTimeEnd)
+      current.allowedTimeEnd !== detailTuneOriginal.allowedTimeEnd ||
+      current.preferredTimeStart !== detailTuneOriginal.preferredTimeStart ||
+      current.preferredTimeEnd !== detailTuneOriginal.preferredTimeEnd)
   );
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }
