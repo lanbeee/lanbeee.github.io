@@ -694,7 +694,7 @@ Minimal, opt-in, mirrors the topic handling:
 | 0 ✅ | `Location` (incl. hours fields) / `LocationFields` typedefs, `normalize()` clamps, `normalizeLocationHours` / `resolveLocationWindow` / `intersectWindows` / `effectiveLocationWindow` pure helpers, config constants, registry normalisation | `data.js`, `config.js` | none |
 | 1 ✅ | `locations.js` module: haversine, provider interface, OSRM fetcher, edge cache, geocode helper | new `js/locations.js`, `index.html` (script tag), `sw.js` (precache + maps cache) | 0 |
 | 2 | Google Maps Directions + Geocoding provider behind `mapsConfigured()` *(skipped for now)* | `js/locations.js`, `config.js` (`MAPS_API_KEY`) | 1 |
-| 3 ✅ | Settings locations: Leaflet pin-drop picker (search / GPS / pan + drop-at-center / optional lat-lng), registry CRUD, hours editor, travel-mode control | `js/settings.js`, `index.html`, `styles.css`, `js/locations.js` | 0, 1 |
+| 3 ✅ | Settings locations: clearer place cards (hours + radius + All day; closed/advanced in More), Leaflet pin picker, registry CRUD, travel-mode control | `js/settings.js`, `index.html`, `styles.css`, `js/locations.js` | 0, 1 |
 | 4 ✅ | Unified places-then-topics chip rows; preferred via second tap | `js/list-view.js`, `js/detail-view.js`, `js/main.js`, `index.html` | 0, 3 |
 | 5 ✅ | Home/overview filters (places first); home presence status chip (agenda anchor only) | `js/list-view.js`, `js/overview-view.js`, `js/scoring.js` | 4 |
 | 6 ✅ | Today agenda location reorder + travel capacity; thin tappable travel cards; manual travel overrides (`provider:'manual'`) | `js/today-view.js`, `js/list-view.js`, `js/locations.js` | 4, 5 |

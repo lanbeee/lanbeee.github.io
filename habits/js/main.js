@@ -952,23 +952,14 @@ $('location-list')?.addEventListener('change',e=>{
   const start = e.target.closest('[data-loc-start]');
   const end = e.target.closest('[data-loc-end]');
   if(start || end){ commitLocationHours(parseInt((start?.dataset.locStart || end?.dataset.locEnd),10)); return; }
-  const h24 = e.target.closest('[data-loc-24h]');
-  if(h24){
-    const idx = parseInt(h24.dataset.loc24h,10);
-    if(h24.checked){
-      // turning 24h ON → clear the window (re-render disables + clears inputs)
-      saveLocationPatch(idx,{allowedTimeStart:null,allowedTimeEnd:null});
-    }else{
-      // turning 24h OFF → just enable the inputs in place (no data patch yet, so
-      // no re-render that would re-check the box; the user types the window next)
-      const row = document.querySelector(`[data-location-row="${idx}"]`);
-      if(row){
-        const s = row.querySelector('[data-loc-start]');
-        const en = row.querySelector('[data-loc-end]');
-        if(s)s.disabled = false;
-        if(en)en.disabled = false;
-      }
-    }
+  const rad = e.target.closest('[data-loc-radius]');
+  if(rad){
+    const idx = parseInt(rad.dataset.locRadius,10);
+    const raw = Number(rad.value);
+    const radiusM = Number.isFinite(raw)
+      ? Math.max(10,Math.min(2000,Math.round(raw)))
+      : DEFAULT_LOCATION_RADIUS_M;
+    saveLocationPatch(idx,{radiusM});
     return;
   }
   const ps = e.target.closest('[data-loc-pref-start]');
@@ -987,6 +978,21 @@ $('location-list')?.addEventListener('change',e=>{
   }
 });
 $('location-list')?.addEventListener('click',e=>{
+  // All day toggle (button). Use data-loc-allday — data-* names with digits
+  // (e.g. data-loc-24h) do not map onto element.dataset reliably.
+  const allDayBtn = e.target.closest('[data-loc-allday]');
+  if(allDayBtn){
+    const idx = parseInt(allDayBtn.getAttribute('data-loc-allday'),10);
+    if(!Number.isInteger(idx))return;
+    clearLocationHoursEditing(idx);
+    const isAllDay = allDayBtn.classList.contains('on') || allDayBtn.getAttribute('aria-pressed') === 'true';
+    if(isAllDay){
+      saveLocationPatch(idx,{allowedTimeStart:9 * 60,allowedTimeEnd:17 * 60});
+    }else{
+      saveLocationPatch(idx,{allowedTimeStart:null,allowedTimeEnd:null});
+    }
+    return;
+  }
   const editPin = e.target.closest('[data-loc-edit-pin]');
   if(editPin){
     const idx = parseInt(editPin.dataset.locEditPin,10);

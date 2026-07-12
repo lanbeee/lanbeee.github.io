@@ -248,8 +248,31 @@ function removeBlockedTime(index){
 // Tracks which location rows have their "per-day / best time" expander open, so
 // the state survives the list re-render that follows each patch.
 const expandedLocationMores = new Set();
+// Tracks locations where "24h" was just unchecked but a full custom window
+// hasn't been committed yet, so a patch elsewhere on the sheet (this row or
+// another) doesn't silently flip the checkbox back on and hide the inputs
+// out from under the user mid-edit.
+const pendingLocationHoursEdit = new Set();
 // Stash of the last geocode results so the tap handler can resolve a pick.
 let pendingLocationResults = [];
+
+// HANDLER: mark/unmark a location row as mid-edit on its open-hours window.
+function markLocationHoursEditing(index){
+  pendingLocationHoursEdit.add(index);
+}
+function clearLocationHoursEditing(index){
+  pendingLocationHoursEdit.delete(index);
+}
+
+// PURE: keep a Set of row indices aligned with the locations array after a
+// removal — drops the removed index and shifts every later index down by
+// one. Shared by every per-row transient UI state (expanders, mid-edit
+// flags) so none of them can point at the wrong row after a delete.
+function reindexSetAfterRemoval(set,removedIndex){
+  const shifted = [...set].filter(i=>i !== removedIndex).map(i=>i > removedIndex ? i - 1 : i);
+  set.clear();
+  shifted.forEach(i=>set.add(i));
+}
 
 // PURE: 4-decimal coordinate for compact display.
 function formatCoord(v){ return Number(v).toFixed(4); }
@@ -282,53 +305,85 @@ function renderLocationControls(){
   });
 }
 
-// RENDER: one location row. Always-visible: name, address, coords, default
-// hours, closed-days. The per-day overrides + preferred time live behind a
-// "more" expander (rendered but hidden) for the rare power-user case.
+// RENDER: rebuild ONE location row in place. Used after every field-level
+// patch so editing location B can never disturb whatever the user is
+// mid-typing into location A (or into a different field on this same row —
+// expandedLocationMores / pendingLocationHoursEdit are consulted by
+// locationRowMarkup so that state survives the rebuild). Falls back to a
+// full-list render if the row isn't there yet, which should not normally
+// happen since add/remove already re-render the whole list themselves.
+function rerenderLocationRow(index){
+  const wrap = $('location-list');
+  const row = wrap && wrap.querySelector(`[data-location-row="${index}"]`);
+  const loc = normalizeLocationRegistry(sortSettings.locations)[index];
+  if(!wrap || !row || !loc){ renderLocationControls(); return; }
+  row.outerHTML = locationRowMarkup(loc,index);
+}
+
+// RENDER: one location row — name, pin, hours, radius always visible;
+// closed days + preferred/per-day hours live behind More.
 function locationRowMarkup(loc,i){
-  const winSet = Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd);
-  const startVal = winSet ? minutesToTimeInput(loc.allowedTimeStart) : '';
-  const endVal = winSet ? minutesToTimeInput(loc.allowedTimeEnd) : '';
+  // hoursSaved: is there an actual saved window? Controls the values shown.
+  // hoursOpenUI: should the fields render enabled / checkbox unchecked? Also
+  // true while the user has unchecked "All day" but not yet committed a window,
+  // so a patch elsewhere on the sheet can't silently re-collapse this row.
+  const hoursSaved = Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd);
+  const hoursOpenUI = hoursSaved || pendingLocationHoursEdit.has(i);
+  const startVal = hoursSaved ? minutesToTimeInput(loc.allowedTimeStart) : '';
+  const endVal = hoursSaved ? minutesToTimeInput(loc.allowedTimeEnd) : '';
   const closedSet = new Set(Array.isArray(loc.closedDays) ? loc.closedDays : []);
   const prefSet = Number.isFinite(loc.preferredTimeStart) && Number.isFinite(loc.preferredTimeEnd);
   const prefStart = prefSet ? minutesToTimeInput(loc.preferredTimeStart) : '';
   const prefEnd = prefSet ? minutesToTimeInput(loc.preferredTimeEnd) : '';
   const moreOpen = expandedLocationMores.has(i);
+  const radius = Number.isFinite(loc.radiusM) ? Math.round(loc.radiusM) : DEFAULT_LOCATION_RADIUS_M;
+  const closedCount = closedSet.size;
+  const moreSummary = [
+    closedCount ? `closed ${closedCount}d` : null,
+    prefSet ? 'best time' : null
+  ].filter(Boolean).join(' · ');
   return `<div class="location-row" data-location-row="${i}">
     <div class="location-row-head">
       <input type="text" class="location-name" data-loc-name="${i}" aria-label="location name" maxlength="48" value="${escapeHtml(loc.name)}" />
-      <button class="mini-text-btn location-coords-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map">
-        <i class="ti ti-map-pin" aria-hidden="true"></i>
-        <span class="location-coords dim">${formatCoord(loc.lat)}, ${formatCoord(loc.lng)}</span>
+      <button class="mini-text-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}">remove</button>
+    </div>
+    <div class="location-meta">
+      <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)" />
+      <button class="mini-text-btn location-pin-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map">
+        <i class="ti ti-map-pin" aria-hidden="true"></i> pin
       </button>
-      <button class="mini-text-btn" type="button" data-loc-remove="${i}">remove</button>
     </div>
-    <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)" />
     <div class="location-hours">
-      <span class="loc-field-label">open</span>
-      <input type="time" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${winSet ? '' : 'disabled'} />
-      <span>to</span>
-      <input type="time" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${winSet ? '' : 'disabled'} />
-      <span class="loc-24h"><input type="checkbox" data-loc-24h="${i}" ${winSet ? '' : 'checked'} /> 24h</span>
+      <span class="loc-field-label">hours</span>
+      <input type="time" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <span class="loc-sep">–</span>
+      <input type="time" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}">All day</button>
     </div>
-    <div class="location-days">
-      <span class="loc-field-label">closed</span>
-      ${WEEKDAY_LABELS.map((label,day)=>{
-        const on = closedSet.has(day);
-        return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-loc-closed-day="${day}" data-loc-index="${i}" aria-pressed="${on}">${label}</button>`;
-      }).join('')}
+    <div class="location-radius">
+      <span class="loc-field-label">radius</span>
+      <input type="number" data-loc-radius="${i}" aria-label="match radius in metres" min="10" max="2000" step="5" inputmode="numeric" value="${radius}" />
+      <span class="loc-unit">m</span>
+      <span class="loc-hint">how close counts as here</span>
     </div>
-    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} per-day hours &amp; best time</button>
+    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} more${moreSummary ? ` · ${moreSummary}` : ''}</button>
     <div class="location-more" data-location-more="${i}" ${moreOpen ? '' : 'hidden'}>
+      <div class="location-days">
+        <span class="loc-field-label">closed</span>
+        ${WEEKDAY_LABELS.map((label,day)=>{
+          const on = closedSet.has(day);
+          return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-loc-closed-day="${day}" data-loc-index="${i}" aria-pressed="${on}">${label}</button>`;
+        }).join('')}
+      </div>
       <div class="loc-pref">
-        <span class="loc-field-label">best time</span>
+        <span class="loc-field-label">best</span>
         <input type="time" data-loc-pref-start="${i}" aria-label="best from" value="${prefStart}" />
-        <span>to</span>
+        <span class="loc-sep">–</span>
         <input type="time" data-loc-pref-end="${i}" aria-label="best until" value="${prefEnd}" />
         <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
       </div>
       <div class="loc-perday">
-        <span class="loc-field-label">different hours some days</span>
+        <span class="loc-field-label">by day</span>
         ${WEEKDAY_LABELS.map((label,day)=>{
           const hd = loc.hoursByDay && loc.hoursByDay[day];
           const isClosed = hd === null;
@@ -337,9 +392,9 @@ function locationRowMarkup(loc,i){
           return `<div class="perday-row">
             <span class="perday-label">${label}</span>
             <input type="time" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
-            <span class="perday-sep">–</span>
+            <span class="loc-sep">–</span>
             <input type="time" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
-            <span class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</span>
+            <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</label>
           </div>`;
         }).join('')}
       </div>
@@ -347,16 +402,15 @@ function locationRowMarkup(loc,i){
   </div>`;
 }
 
-// HYBRID: patch one location and persist. Re-renders only that row's fields are
-// already in the DOM, so most patches skip a full re-render — but structural
-// flips (24h toggle, per-day closed) need the row rebuilt to enable/disable
-// inputs, so we re-render the list (expansion state is preserved).
+// HYBRID: patch one location and persist. Re-renders only that row — sibling
+// rows (and any mid-edit state on this one, like an unchecked-but-uncommitted
+// "24h" box) are left completely alone.
 function saveLocationPatch(index,patch){
   const locations = normalizeLocationRegistry(sortSettings.locations);
   if(!locations[index])return;
   locations[index] = {...locations[index],...patch};
   updateSortSetting({locations},{renderNow:false});
-  renderLocationControls();
+  rerenderLocationRow(index);
   render();
 }
 
@@ -390,7 +444,8 @@ function removeLocation(index){
   const locations = normalizeLocationRegistry(sortSettings.locations);
   const removed = locations[index];
   if(!removed)return;
-  expandedLocationMores.delete(index);
+  reindexSetAfterRemoval(expandedLocationMores,index);
+  reindexSetAfterRemoval(pendingLocationHoursEdit,index);
   locations.splice(index,1);
   const travel = {};
   for(const [key,edge] of Object.entries(sortSettings.travel || {})){
@@ -688,8 +743,15 @@ function commitLocationHours(index){
   const eEl = row.querySelector('[data-loc-end]');
   const s = timeInputToMinutes(sEl ? sEl.value : '');
   const e = timeInputToMinutes(eEl ? eEl.value : '');
-  if(s !== null && e !== null)saveLocationPatch(index,{allowedTimeStart:s,allowedTimeEnd:e});
-  else if(s === null && e === null)saveLocationPatch(index,{allowedTimeStart:null,allowedTimeEnd:null});
+  if(s !== null && e !== null){
+    clearLocationHoursEditing(index);
+    saveLocationPatch(index,{allowedTimeStart:s,allowedTimeEnd:e});
+  }else if(s === null && e === null){
+    clearLocationHoursEditing(index);
+    saveLocationPatch(index,{allowedTimeStart:null,allowedTimeEnd:null});
+  }
+  // else: exactly one filled — hold. pendingLocationHoursEdit keeps the
+  // fields open/enabled through any unrelated re-render until this resolves.
 }
 
 // HYBRID: commit the preferred-time pair (same incomplete-pair rule).

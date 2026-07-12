@@ -31,6 +31,19 @@ async function openSettings(page){
   page.on('pageerror', e => pageErrors.push(String(e)));
 
   await page.addInitScript(() => {
+    // Avoid stale SW-cached JS during local test runs.
+    try{
+      if(navigator.serviceWorker){
+        navigator.serviceWorker.register = () => Promise.resolve({
+          unregister:() => Promise.resolve(true),
+          update:() => Promise.resolve()
+        });
+        navigator.serviceWorker.getRegistrations?.().then(rs => rs.forEach(r => r.unregister()));
+      }
+      if(window.caches?.keys){
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+      }
+    }catch{ /* ignore */ }
     localStorage.setItem('tings_v2', JSON.stringify([]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', topics:[], locations:[], travel:{}, defaultTravelMode:'driving'
@@ -111,22 +124,24 @@ async function openSettings(page){
   assert(Math.abs(persisted.lat - 51.5034) < 0.001, 'lat from geocode result');
   assert(persisted.id && persisted.id.length > 8, 'stable id generated');
 
-  // ── C. Set the default open window ──
+  // ── C. Uncheck All day → default 09–17, then set 11:00–17:00 ──
   console.log('\n[C] default open window (11:00–17:00)');
-  await page.evaluate(() => {
-    const c = document.querySelector('[data-loc-24h="0"]');
-    if(c.checked){
-      c.click();
-      const row = document.querySelector('[data-location-row="0"]');
-      if(row){
-        const s = row.querySelector('[data-loc-start]');
-        const en = row.querySelector('[data-loc-end]');
-        if(s)s.disabled = false;
-        if(en)en.disabled = false;
-      }
-    }
+  await page.locator('[data-loc-allday="0"]').click();
+  await page.waitForTimeout(150);
+  const afterUncheck = await page.evaluate(() => {
+    const loc = loadSortSettings().locations[0];
+    const btn = document.querySelector('[data-loc-allday="0"]');
+    return {
+      start:loc.allowedTimeStart,
+      end:loc.allowedTimeEnd,
+      on:!!(btn && btn.classList.contains('on')),
+      startDisabled:!!document.querySelector('[data-loc-start="0"]')?.disabled
+    };
   });
-  await page.waitForTimeout(100);
+  console.log(afterUncheck);
+  assert(afterUncheck.on === false, 'All day turns off and stays off');
+  assert(afterUncheck.start === 540 && afterUncheck.end === 1020, 'uncheck applies default 09:00–17:00');
+  assert(afterUncheck.startDisabled === false, 'hours inputs enabled after uncheck');
   await page.locator('[data-loc-start="0"]').fill('11:00');
   await page.locator('[data-loc-end="0"]').fill('17:00');
   await page.locator('[data-loc-end="0"]').blur();
@@ -138,8 +153,20 @@ async function openSettings(page){
   console.log(hrs);
   assert(hrs.start === 660 && hrs.end === 1020, 'open window persisted as 660/1020');
 
-  // ── D. Toggle a closed day (Sunday) ──
+  // ── C2. Radius is editable ──
+  console.log('\n[C2] radius edit');
+  const radiusBefore = await page.evaluate(() => loadSortSettings().locations[0].radiusM);
+  assert(radiusBefore === 75, 'default radius is 75m (got ' + radiusBefore + ')');
+  await page.locator('[data-loc-radius="0"]').fill('120');
+  await page.locator('[data-loc-radius="0"]').blur();
+  await page.waitForTimeout(150);
+  const radiusAfter = await page.evaluate(() => loadSortSettings().locations[0].radiusM);
+  assert(radiusAfter === 120, 'radius persisted as 120m');
+
+  // ── D. Toggle a closed day (Sunday) — behind More ──
   console.log('\n[D] closed day (Sunday)');
+  await page.locator('[data-loc-more="0"]').click();
+  await page.waitForSelector('[data-location-more="0"]:not([hidden])');
   await page.locator('[data-loc-closed-day="0"][data-loc-index="0"]').click();   // Sun = 0
   await page.waitForTimeout(150);
   const cd = await page.evaluate(() => loadSortSettings().locations[0].closedDays);
@@ -151,10 +178,12 @@ async function openSettings(page){
   const cdOff = await page.evaluate(() => loadSortSettings().locations[0].closedDays);
   assert(JSON.stringify(cdOff) === JSON.stringify([]), 'Sunday removed from closedDays');
 
-  // ── E. Per-day override + preferred time (the "more" expander) ──
+  // ── E. Per-day override + preferred time (More already open) ──
   console.log('\n[E] per-day override + preferred time');
-  await page.locator('[data-loc-more="0"]').click();
-  await page.waitForSelector('[data-location-more="0"]:not([hidden])');
+  if(await page.locator('[data-location-more="0"]').isHidden()){
+    await page.locator('[data-loc-more="0"]').click();
+    await page.waitForSelector('[data-location-more="0"]:not([hidden])');
+  }
   // Saturday (6) override: 12:00–15:00
   await page.locator('[data-loc-day-start="6"][data-loc-day-idx="0"]').fill('12:00');
   await page.locator('[data-loc-day-end="6"][data-loc-day-idx="0"]').fill('15:00');
@@ -191,37 +220,28 @@ async function openSettings(page){
   const wedOff = await page.evaluate(() => loadSortSettings().locations[0].hoursByDay[3]);
   assert(wedOff === undefined, 'Wednesday override dropped after uncheck');
 
-  // ── G. 24h toggle clears the window ──
-  console.log('\n[G] 24h toggle clears window');
-  await page.evaluate(() => {
-    const c = document.querySelector('[data-loc-24h="0"]');
-    if(!c.checked){
-      c.click();
-      saveLocationPatch(0,{allowedTimeStart:null,allowedTimeEnd:null});
-    }
-  });
+  // ── G. All day toggle clears / restores a window ──
+  console.log('\n[G] All day toggle');
+  await page.locator('[data-loc-allday="0"]').click(); // turn on all day
   await page.waitForTimeout(200);
   const cleared = await page.evaluate(() => {
     const loc = loadSortSettings().locations[0];
-    return { start:loc.allowedTimeStart, end:loc.allowedTimeEnd, hasHours:hasLocationHours(loc) };
+    const btn = document.querySelector('[data-loc-allday="0"]');
+    return { start:loc.allowedTimeStart, end:loc.allowedTimeEnd, on:!!(btn && btn.classList.contains('on')) };
   });
   console.log(cleared);
-  assert(cleared.start === null && cleared.end === null, '24h check clears the window');
-  // Note: hasLocationHours is still true because hoursByDay[6] still set — that's correct.
-  // Turn 24h back off and re-set the window for the remaining tests.
-  await page.evaluate(() => {
-    const c = document.querySelector('[data-loc-24h="0"]');
-    if(c.checked){
-      c.click();
-      const row = document.querySelector('[data-location-row="0"]');
-      if(row){
-        const s = row.querySelector('[data-loc-start]');
-        const en = row.querySelector('[data-loc-end]');
-        if(s)s.disabled = false;
-        if(en)en.disabled = false;
-      }
-    }
+  assert(cleared.on === true, 'All day turns on');
+  assert(cleared.start === null && cleared.end === null, 'All day clears the window');
+  // Turn off → default 09:00–17:00
+  await page.locator('[data-loc-allday="0"]').click();
+  await page.waitForTimeout(200);
+  const restored = await page.evaluate(() => {
+    const loc = loadSortSettings().locations[0];
+    const btn = document.querySelector('[data-loc-allday="0"]');
+    return { start:loc.allowedTimeStart, end:loc.allowedTimeEnd, on:!!(btn && btn.classList.contains('on')) };
   });
+  assert(restored.on === false, 'All day turns off again');
+  assert(restored.start === 540 && restored.end === 1020, 'turning off restores 09:00–17:00');
   await page.locator('[data-loc-start="0"]').fill('09:00');
   await page.locator('[data-loc-end="0"]').fill('21:00');
   await page.locator('[data-loc-end="0"]').blur();
