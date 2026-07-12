@@ -440,6 +440,12 @@ body[data-pane-count="3"] .app-bar{
 }
 .app-bar-search.is-open{
   display:flex;
+  max-width:none;
+}
+/* Search mode: field takes the bar; calendar/+ step aside. */
+.app-bar-search.is-open ~ .app-bar-actions #bar-open-overview,
+.app-bar-search.is-open ~ .app-bar-actions #bar-open-add{
+  display:none;
 }
 .app-bar-search input{
   flex:1 1 auto;min-width:0;height:38px;border-radius:999px;
@@ -453,10 +459,12 @@ body[data-pane-count="3"] .app-bar{
   box-shadow:0 0 0 3px rgba(15,110,86,0.15);
 }
 .app-bar-search .search-clear{
+  display:none;
   width:36px;height:36px;flex:0 0 36px;
   background:var(--bg2);border-color:var(--border);
   box-shadow:none;
 }
+.app-bar-search:not(.is-empty) .search-clear{display:flex;}
 .app-bar-search .search-clear i{font-size:18px;}
 
 .bottom-nav{
@@ -494,7 +502,7 @@ body.fullpage-open .bottom-nav{
 .bottom-nav .nav-add{background:var(--text);color:var(--bg);border-color:var(--text);}
 .nav-search{
   flex:1 1 auto;
-  display:none;grid-template-columns:minmax(0,1fr);
+  display:none;grid-template-columns:minmax(0,1fr) auto;
   align-items:center;gap:0;
   min-width:0;overflow:hidden;
   opacity:0;pointer-events:none;
@@ -505,12 +513,21 @@ body.fullpage-open .bottom-nav{
 }
 .bottom-nav.search-open .nav-search{
   display:grid;
+  order:1;
   width:auto;
   gap:6px;opacity:1;pointer-events:auto;
 }
 .bottom-nav.search-open{
   width:calc(100vw - 24px);
   max-width:456px;
+}
+/* Search mode: just the field + close — calendar/+ aren't useful mid-lookup. */
+.bottom-nav.search-open #open-overview,
+.bottom-nav.search-open #open-add{
+  display:none;
+}
+.bottom-nav.search-open #open-search{
+  order:2;
 }
 .nav-search input{
   width:100%;min-width:0;height:44px;border-radius:999px;
@@ -526,6 +543,7 @@ body.fullpage-open .bottom-nav{
   width:36px;height:36px;align-self:center;
   background:var(--bg);box-shadow:none;
 }
+.nav-search:not(.is-empty) .search-clear{display:flex;}
 .nav-search .search-clear i{font-size:18px;}
 .bottom-nav button,
 .detail-actions button,

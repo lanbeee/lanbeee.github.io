@@ -515,27 +515,36 @@ function updateSearchUi(){
   const open = wide
     ? !!($('app-bar-search') && $('app-bar-search').classList.contains('is-open'))
     : !!nav?.classList.contains('search-open');
+  const empty = !searchQuery.trim();
   input.value = searchQuery;
   document.body.classList.toggle('search-active',open);
-  if (searchBtn) {
-    searchBtn.classList.toggle('is-on',open);
-    searchBtn.setAttribute('aria-pressed',String(open));
-  }
-  if (barSearchBtn) {
-    barSearchBtn.classList.toggle('is-on',open);
-    barSearchBtn.setAttribute('aria-pressed',String(open));
-  }
+  const syncSearchToggle = (btn)=>{
+    if(!btn)return;
+    btn.classList.toggle('is-on',open);
+    btn.setAttribute('aria-pressed',String(open));
+    btn.setAttribute('aria-label',open ? 'close search' : 'search habits');
+    const icon = btn.querySelector('i');
+    if(icon){
+      icon.className = open ? 'ti ti-x' : 'ti ti-search';
+      icon.setAttribute('aria-hidden','true');
+    }
+  };
+  syncSearchToggle(searchBtn);
+  syncSearchToggle(barSearchBtn);
   const navSearchWrap = $('nav-search');
-  if (navSearchWrap) navSearchWrap.setAttribute('aria-hidden',String(!open));
+  if (navSearchWrap){
+    navSearchWrap.setAttribute('aria-hidden',String(!open));
+    navSearchWrap.classList.toggle('is-empty',empty);
+  }
   const barSearchWrap = $('app-bar-search');
   if (barSearchWrap) {
     barSearchWrap.setAttribute('aria-hidden',String(!open));
     barSearchWrap.classList.toggle('is-open',open);
+    barSearchWrap.classList.toggle('is-empty',empty);
   }
   if(clearBtn){
-    const empty = !searchQuery.trim();
-    if (navSearchWrap) navSearchWrap.classList.toggle('is-empty',empty);
-    clearBtn.hidden = true;
+    clearBtn.hidden = empty;
+    clearBtn.setAttribute('aria-label',empty ? 'close search' : 'clear search');
   }
 }
 
@@ -597,7 +606,7 @@ function shouldDismissSearchFromTap(target){
     : !!nav?.classList.contains('search-open');
   if(!target?.closest)return false;
   if(!searchOpen)return false;
-  if(target.closest('#habit-search'))return false;
+  if(target.closest('#habit-search,#clear-search'))return false;
   if(target.closest('.bottom-nav'))return target.closest('#open-search');
   if(target.closest('.app-bar'))return target.closest('#bar-open-search');
   if(target.closest('.sheet-wrap.open'))return false;
@@ -1086,7 +1095,7 @@ function render(){
     const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
     empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
     if(hasSearch){
-      empty.innerHTML = 'no matches<br><span class="empty-sub">try another habit name or icon</span>';
+      empty.innerHTML = 'no matches<br><span class="empty-sub">try a habit name, topic, or place</span>';
     }else if(hasTopicFilter || hasLocationFilter){
       const topicLabel = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
       const loc = typeof locationById === 'function' ? locationById(homeLocationFilter) : null;
@@ -1121,8 +1130,12 @@ function render(){
   empty.style.display = 'none';
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
+  // Search is habit lookup — skip week-plan chrome (blocked times, travel,
+  // day sections) so results are just matching habits, ranked by relevance.
+  const searching = searchQuery.trim().length > 0;
   const weekMode = todayFirstActive
     && sortSettings.showWeekOnHome
+    && !searching
     && typeof buildWeekAgenda === 'function'
     && typeof homeDaySequence === 'function';
   const earlyMap = homeEarlyMap(data,sortSettings);
@@ -1261,7 +1274,7 @@ function render(){
     // back to its original "upcoming" section, so the list never promises time
     // the day cannot give and the card never shows an "early" pill it can't honour.
     const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
-    const renderIndices = todayFirstActive ? [...indices].sort((a,b)=>{
+    const renderIndices = todayFirstActive && !searching ? [...indices].sort((a,b)=>{
       const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
       if(pin)return pin;
       const catA = todayCategory(data[a],sortSettings);
@@ -1286,9 +1299,9 @@ function render(){
       const h = data[realIdx];
       const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
       const isEarlyToday = todayFirstActive && cat === 2 && earlyToday(realIdx);
-      const inTodaySection = todayFirstActive && !h.pinned && (cat === 0 || isEarlyToday);
+      const inTodaySection = !searching && todayFirstActive && !h.pinned && (cat === 0 || isEarlyToday);
 
-      if(todayFirstActive && !h.pinned){
+      if(!searching && todayFirstActive && !h.pinned){
         const sectionKey = isEarlyToday ? 0 : cat;
         if(sectionKey !== sectionCat){
           const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
@@ -1309,7 +1322,7 @@ function render(){
       appendHabitCard(
         realIdx,
         agendaRow,
-        (cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : ''
+        (!searching && cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : ''
       );
     });
   }

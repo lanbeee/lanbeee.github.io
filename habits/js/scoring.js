@@ -835,6 +835,19 @@ function locationSearchNames(h){
     .join(' ');
 }
 
+// PURE: lower is better — exact/prefix name hits before fuzzy field matches.
+function searchRank(h,query){
+  const name = (h.name || '').toLowerCase();
+  if(name === query)return 0;
+  if(name.startsWith(query))return 1;
+  if(name.includes(query))return 2;
+  const emoji = (h.emoji || '').toLowerCase();
+  if(emoji && emoji.includes(query))return 3;
+  const topics = (h.topics || []).join(' ').toLowerCase();
+  if(topics.includes(query))return 4;
+  return 5;
+}
+
 function filteredVisibleIndices(data){
   const indices = visibleIndices(data);
   const query = searchQuery.trim().toLowerCase();
@@ -848,14 +861,26 @@ function filteredVisibleIndices(data){
     base = base.filter(i=>matchesHomeLocation(data[i],location));
   }
   if(!query)return base;
-  const matches = base.filter(i=>searchText(data[i]).includes(query));
+  const matches = base
+    .filter(i=>searchText(data[i]).includes(query))
+    .sort((a,b)=>{
+      const ra = searchRank(data[a],query);
+      const rb = searchRank(data[b],query);
+      if(ra !== rb)return ra - rb;
+      return indices.indexOf(a) - indices.indexOf(b);
+    });
   const completedTasks = data
     .map((h,i)=>({h,i}))
     .filter(({h})=>h.type === 'task' && h.lastLog !== null)
     .filter(({h})=>!topic || topic === 'all' || typeof matchesHomeTopic !== 'function' || matchesHomeTopic(h,topic))
     .filter(({h})=>!location || location === 'all' || typeof matchesHomeLocation !== 'function' || matchesHomeLocation(h,location))
     .filter(({h})=>searchText(h).includes(query))
-    .sort(({h:a},{h:b})=>(b.lastLog || 0) - (a.lastLog || 0))
+    .sort(({h:a},{h:b})=>{
+      const ra = searchRank(a,query);
+      const rb = searchRank(b,query);
+      if(ra !== rb)return ra - rb;
+      return (b.lastLog || 0) - (a.lastLog || 0);
+    })
     .map(({i})=>i);
   const seen = new Set(matches);
   completedTasks.forEach(i=>{if(!seen.has(i)){seen.add(i);matches.push(i);}});
