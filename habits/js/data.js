@@ -46,6 +46,10 @@
  * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
  * @property {boolean} hardDue                — true when dueDate is a real deadline (escalates urgency past it)
  * @property {boolean} markDone               — true (default) when you must tap to complete it; false = event-style, auto-completes once eventTime passes
+ *
+ * — LocationFields (optional, on every type; empty locationIds = anywhere) —
+ * @property {string[]} locationIds           — allowed Location ids (empty = anywhere, the default)
+ * @property {string|null} preferredLocationId — the preferred id when multiple are allowed (null = none); must be a member of locationIds
  */
 
 /**
@@ -84,6 +88,7 @@
  * @property {boolean} showRepetitionOnCards                   — show rhythm chip on home cards
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
+ * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
  * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
  * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
@@ -92,6 +97,10 @@
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
  * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
  * @property {string[]} topics                                 — master topic list (max 24)
+ * @property {Location[]} locations                            — master location registry (max 32)
+ * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
+ * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
+ * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
  * @property {{label:string,days:number[],start:number,end:number}[]} blockedTimes — recurring unavailable blocks
@@ -103,6 +112,41 @@
  * @typedef {Object} DaySchedule
  * @property {number[]} weekdays    — 0=Sun … 6=Sat
  * @property {number[]} monthDays   — 1-31
+ */
+
+/**
+ * A physical location. Entries live in the `locations` array on Settings.
+ * Habits reference these by `id` via their `locationIds` field. The hours
+ * fields reuse the exact encoding habits already use (minutes-from-midnight;
+ * `allowedTimeEnd <= allowedTimeStart` means an overnight wrap). A location
+ * with no hours fields is treated as open 24h every day.
+ * @typedef {Object} Location
+ * @property {string} id                    — stable opaque id, never user-displayed
+ * @property {string} name                  — display name ("Home"), max 48 chars
+ * @property {string} address               — optional human address, max 120 chars ('' when none)
+ * @property {number} lat                   — WGS84 latitude, -90..90
+ * @property {number} lng                   — WGS84 longitude, -180..180
+ * @property {number} radiusM               — geofence radius in metres for "you are here" matching
+ * @property {string} emoji                 — optional pin emoji ('' when none)
+ * @property {number|null} allowedTimeStart — minutes-from-midnight, open-window start (null = no window / 24h)
+ * @property {number|null} allowedTimeEnd   — minutes-from-midnight, open-window end (null = no window / 24h)
+ * @property {number|null} preferredTimeStart — soft hint: best arrival-time start
+ * @property {number|null} preferredTimeEnd   — soft hint: best arrival-time end
+ * @property {number[]} closedDays          — weekday numbers (0=Sun..6=Sat) entirely closed, [] = none
+ * @property {Object<string,{start:number,end:number}|null>} hoursByDay — per-weekday override {0..6:{start,end}|null}; absent day falls back to the default window
+ */
+
+/**
+ * Cached travel time + distance between two locations. Stored in the `travel`
+ * map on Settings, keyed `"${a}|${b}"` with the two ids lexically ordered so
+ * A→B and B→A hit the same edge (routing is assumed symmetric in v1).
+ * @typedef {Object} TravelEdge
+ * @property {string} a          — location id (lexically smaller of the pair)
+ * @property {string} b          — location id (lexically larger of the pair)
+ * @property {number} seconds    — travel time in seconds
+ * @property {number} metres     — travel distance in metres
+ * @property {'osrm'|'google'|'haversine'} provider — which provider produced this edge
+ * @property {number} fetchedAt  — ms timestamp of the fetch (used for TTL)
  */
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -128,6 +172,10 @@ function loadSortSettings(){
     delete merged.focusSearchOnOpen;
     merged.reminders = false;
     merged.topics = normalizeTopics(merged.topics);
+    merged.locations = normalizeLocationRegistry(merged.locations);
+    merged.travel = normalizeTravelCache(merged.travel);
+    merged.defaultTravelMode = normalizeTravelMode(merged.defaultTravelMode);
+    merged.lastKnownLocationId = cleanLocationId(merged.lastKnownLocationId) || null;
     merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
@@ -142,6 +190,10 @@ function saveSortSettings(settings){
   delete next.keepStopsQuiet;
   next.reminders = false;
   next.topics = normalizeTopics(next.topics);
+  next.locations = normalizeLocationRegistry(next.locations);
+  next.travel = normalizeTravelCache(next.travel);
+  next.defaultTravelMode = normalizeTravelMode(next.defaultTravelMode);
+  next.lastKnownLocationId = cleanLocationId(next.lastKnownLocationId) || null;
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
   next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
@@ -176,6 +228,10 @@ function normalize(items){
     if(wasEvent && eventTime !== null && eventTime < Date.now() && !logs.some(l=>logTime(l) === eventTime)){
       logs.push(eventTime);
     }
+    // Location ids are de-duped here; the dangling-id sweep (dropping ids no
+    // longer present in the registry) happens once at startup via
+    // reconcileLocations(), after both habits and settings have loaded.
+    const locationIds = normalizeLocationIds(raw.locationIds);
     const h = {
       name: raw.name || '',
       type,
@@ -203,7 +259,9 @@ function normalize(items){
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
       flexibilityDays:clampFlexibility(raw.flexibilityDays),
       durationMinutes:clampDuration(raw.durationMinutes),
-      priority:clampPriority(raw.priority)
+      priority:clampPriority(raw.priority),
+      locationIds,
+      preferredLocationId:normalizePreferredLocation(raw.preferredLocationId,locationIds)
     };
     h.lastLog = latestActualLog(h.logs);
     return h;
@@ -450,6 +508,229 @@ function normalizeBlockedTimes(value){
     if(start === null || end === null || start === end)return null;
     return {label,days,start,end};
   }).filter(Boolean).slice(0,24);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LOCATIONS — PURE. Registry validation, the layered hours model, and the
+// habit∩location window composition. No I/O; these port verbatim to RN.
+// ─────────────────────────────────────────────────────────────────────────
+
+// PURE: trim + cap a location id. Empty string when falsy.
+function cleanLocationId(value){
+  return String(value || '').trim().slice(0,64);
+}
+// PURE: coerce raw locationIds into a de-duped array. When `registry` is
+// provided, ids absent from it are dropped (the dangling-id sweep); when it is
+// omitted (as during normalize(), before settings have loaded), only de-dupe
+// runs and reconcileLocations() finishes the job at startup.
+function normalizeLocationIds(value,registry){
+  const items = Array.isArray(value) ? value : String(value || '').split(',');
+  const valid = Array.isArray(registry) ? new Set(registry.map(l=>l && l.id).filter(Boolean)) : null;
+  const seen = new Set();
+  return items.map(id=>cleanLocationId(id)).filter(id=>{
+    if(!id || seen.has(id))return false;
+    if(valid && !valid.has(id))return false;
+    seen.add(id);
+    return true;
+  });
+}
+// PURE: null unless `value` is an id present in `ids`.
+function normalizePreferredLocation(value,ids){
+  const id = cleanLocationId(value);
+  if(!id)return null;
+  const allowed = Array.isArray(ids) ? ids : [];
+  return allowed.includes(id) ? id : null;
+}
+// PURE: weekday list for closedDays. Unlike normalizeAllowedWeekdays this does
+// NOT collapse all-7 to [] (a location closed every day is valid, if unusual).
+function normalizeClosedDays(value){
+  const items = Array.isArray(value) ? value : String(value || '').split(',');
+  const seen = new Set();
+  return items.map(day=>parseInt(day,10)).filter(day=>{
+    if(!Number.isInteger(day) || day < 0 || day > 6 || seen.has(day))return false;
+    seen.add(day);
+    return true;
+  }).sort((a,b)=>a-b);
+}
+// PURE: coerce one location's hours fields into canonical shape. A window is
+// kept only when both endpoints are finite; otherwise both endpoints null out.
+function normalizeLocationHours(raw){
+  const r = raw && typeof raw === 'object' ? raw : {};
+  let start = normalizeTimeMinutes(r.allowedTimeStart);
+  let end = normalizeTimeMinutes(r.allowedTimeEnd);
+  if(start === null || end === null){ start = null; end = null; }
+  let prefStart = normalizeTimeMinutes(r.preferredTimeStart);
+  let prefEnd = normalizeTimeMinutes(r.preferredTimeEnd);
+  if(prefStart === null || prefEnd === null){ prefStart = null; prefEnd = null; }
+  const closedDays = normalizeClosedDays(r.closedDays);
+  const hoursByDay = {};
+  if(r.hoursByDay && typeof r.hoursByDay === 'object' && !Array.isArray(r.hoursByDay)){
+    for(const key of Object.keys(r.hoursByDay)){
+      const day = Number(key);
+      if(!Number.isInteger(day) || day < 0 || day > 6)continue;
+      const hd = r.hoursByDay[key];
+      if(hd === null){ hoursByDay[day] = null; continue; }
+      const hs = normalizeTimeMinutes(hd && hd.start);
+      const he = normalizeTimeMinutes(hd && hd.end);
+      if(hs === null || he === null)continue;       // invalid override -> fall back to default
+      hoursByDay[day] = {start:hs,end:he};
+    }
+  }
+  return {allowedTimeStart:start,allowedTimeEnd:end,preferredTimeStart:prefStart,preferredTimeEnd:prefEnd,closedDays,hoursByDay};
+}
+// PURE: coerce the raw locations array into the canonical registry. Invalid
+// entries (no id, no name, bad coords) are dropped; duplicates by id collapse.
+function normalizeLocationRegistry(value){
+  if(!Array.isArray(value))return [];
+  const seen = new Set();
+  const out = [];
+  for(const raw of value){
+    if(!raw || typeof raw !== 'object')continue;
+    const id = cleanLocationId(raw.id);
+    if(!id || seen.has(id))continue;
+    const name = String(raw.name || '').trim().slice(0,48);
+    if(!name)continue;
+    const lat = Number(raw.lat);
+    const lng = Number(raw.lng);
+    if(!Number.isFinite(lat) || lat < -90 || lat > 90)continue;
+    if(!Number.isFinite(lng) || lng < -180 || lng > 180)continue;
+    seen.add(id);
+    const radius = Number(raw.radiusM);
+    const address = String(raw.address || '').trim().slice(0,120);
+    const emoji = String(raw.emoji || '').slice(0,4);
+    out.push({
+      id,
+      name,
+      address,
+      lat:Math.round(lat * 1e6) / 1e6,
+      lng:Math.round(lng * 1e6) / 1e6,
+      radiusM:Number.isFinite(radius) ? Math.max(10,Math.min(5000,radius)) : DEFAULT_LOCATION_RADIUS_M,
+      emoji,
+      ...normalizeLocationHours(raw)
+    });
+  }
+  return out.slice(0,MAX_LOCATIONS);
+}
+// PURE: coerce the cached travel map. Drops edges with bad numbers, stale
+// fetchedAt (older than 2× TTL), or malformed keys; re-keys each edge with the
+// lexically-ordered pair so A→B and B→A collide. Caps at MAX_TRAVEL_EDGES.
+function normalizeTravelCache(value){
+  if(!value || typeof value !== 'object' || Array.isArray(value))return {};
+  const cutoff = Date.now() - TRAVEL_TTL_MS * 2;
+  const out = {};
+  let count = 0;
+  for(const key of Object.keys(value)){
+    if(count >= MAX_TRAVEL_EDGES)break;
+    const edge = value[key];
+    if(!edge || typeof edge !== 'object')continue;
+    const a = cleanLocationId(edge.a);
+    const b = cleanLocationId(edge.b);
+    if(!a || !b || a === b)continue;
+    const seconds = Number(edge.seconds);
+    const metres = Number(edge.metres);
+    if(!Number.isFinite(seconds) || seconds < 0 || !Number.isFinite(metres) || metres < 0)continue;
+    const provider = edge.provider === 'osrm' || edge.provider === 'google' ? edge.provider : 'haversine';
+    const fetchedAt = Number(edge.fetchedAt);
+    if(!Number.isFinite(fetchedAt) || fetchedAt < cutoff)continue;
+    const [lo,hi] = a < b ? [a,b] : [b,a];
+    out[`${lo}|${hi}`] = {a:lo,b:hi,seconds:Math.round(seconds),metres:Math.round(metres),provider,fetchedAt:Math.round(fetchedAt)};
+    count += 1;
+  }
+  return out;
+}
+// PURE: clamp a travel mode to the known set.
+function normalizeTravelMode(value){
+  return TRAVEL_MODES.includes(value) ? value : DEFAULT_TRAVEL_MODE;
+}
+// PURE: true iff the location has any hours constraint at all. Locations with
+// no hours resolve to 24h every day and skip all window math — the "Home"
+// case stays literally zero-cost.
+function hasLocationHours(loc){
+  if(!loc)return false;
+  if(Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd))return true;
+  if(Array.isArray(loc.closedDays) && loc.closedDays.length)return true;
+  if(loc.hoursByDay && typeof loc.hoursByDay === 'object' && Object.keys(loc.hoursByDay).length)return true;
+  return false;
+}
+// PURE: resolve a location's open window for a given weekday (0=Sun..6=Sat),
+// implementing the layered model: hoursByDay[day] → closedDays → default
+// allowedTimeStart/End → 24h. Returns {start,end} minutes (0..1440) or null
+// when the location is closed that day. A 24h result is {start:0,end:1440}.
+function resolveLocationWindow(loc,weekday){
+  if(!loc || !hasLocationHours(loc))return {start:0,end:1440};
+  if(loc.hoursByDay && Object.prototype.hasOwnProperty.call(loc.hoursByDay,weekday)){
+    const hd = loc.hoursByDay[weekday];
+    return hd ? {start:hd.start,end:hd.end} : null;
+  }
+  if(Array.isArray(loc.closedDays) && loc.closedDays.includes(weekday))return null;
+  if(Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd)){
+    return {start:loc.allowedTimeStart,end:loc.allowedTimeEnd};
+  }
+  return {start:0,end:1440};
+}
+// PURE: unwrap a minutes window (which may wrap overnight, end <= start) into
+// a list of plain [0,1440) intervals with end > start.
+function unwrapMinuteWindow(win){
+  if(!win || !Number.isFinite(win.start) || !Number.isFinite(win.end))return [];
+  if(win.end > win.start)return [{start:win.start,end:win.end}];
+  if(win.end === win.start)return [];                 // zero-length
+  return [{start:win.start,end:1440},{start:0,end:win.end}];
+}
+// PURE: merge a list of minute intervals (sorted, non-overlapping).
+function mergeMinuteIntervals(intervals){
+  if(!intervals.length)return [];
+  const sorted = [...intervals].sort((a,b)=>a.start - b.start);
+  const merged = [{start:sorted[0].start,end:sorted[0].end}];
+  for(let i = 1;i < sorted.length;i += 1){
+    const last = merged[merged.length - 1];
+    if(sorted[i].start <= last.end)last.end = Math.max(last.end,sorted[i].end);
+    else merged.push({start:sorted[i].start,end:sorted[i].end});
+  }
+  return merged;
+}
+// PURE: intersection of two minutes windows (each possibly overnight), as a
+// merged list of {start,end} intervals. Empty array = no overlap at all.
+function intersectWindows(a,b){
+  const ai = unwrapMinuteWindow(a);
+  const bi = unwrapMinuteWindow(b);
+  const out = [];
+  for(const x of ai){
+    for(const y of bi){
+      const start = Math.max(x.start,y.start);
+      const end = Math.min(x.end,y.end);
+      if(end > start)out.push({start,end});
+    }
+  }
+  return mergeMinuteIntervals(out);
+}
+// PURE: the feasible minute-intervals today for a habit at a location — the
+// intersection of the habit's own window and the location's resolved window.
+// Returns a merged interval list (possibly empty = not placeable here today).
+// A habit with no own window inherits the location's window; a location with
+// no hours is 24h. Pass loc=null to get the habit's own window only.
+function effectiveLocationWindow(h,loc,weekday){
+  const locWin = loc ? resolveLocationWindow(loc,weekday) : {start:0,end:1440};
+  if(!locWin)return [];
+  if(!hasTimeWindow(h))return locWin.end > locWin.start ? [locWin] : unwrapMinuteWindow(locWin);
+  return intersectWindows({start:h.allowedTimeStart,end:h.allowedTimeEnd},locWin);
+}
+// PURE: startup sweep — drop any locationIds from each habit that are no longer
+// in the registry, and null out preferredLocationId if it's no longer allowed.
+// Returns {data,changed} so the caller persists only when something moved.
+function reconcileLocations(data,settings){
+  const registry = normalizeLocationRegistry(settings && settings.locations);
+  const valid = new Set(registry.map(l=>l.id));
+  let changed = false;
+  const next = (Array.isArray(data) ? data : []).map(h=>{
+    const prev = Array.isArray(h.locationIds) ? h.locationIds : [];
+    const locationIds = prev.filter(id=>valid.has(id));
+    const prevPref = h.preferredLocationId || null;
+    const preferredLocationId = prevPref && locationIds.includes(prevPref) ? prevPref : null;
+    const moved = locationIds.length !== prev.length || preferredLocationId !== prevPref;
+    if(moved)changed = true;
+    return moved ? {...h,locationIds,preferredLocationId} : h;
+  });
+  return {data:next,changed};
 }
 function effectiveAvailabilityMinutes(key,settings = sortSettings){
   const normalized = {...DEFAULT_SORT_SETTINGS,...settings};

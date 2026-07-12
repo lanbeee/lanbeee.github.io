@@ -509,6 +509,26 @@
           </div>
         </section>
         <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-locations-head" data-collapse-target="settings-locations-body" aria-expanded="false" aria-controls="settings-locations-body">
+            <span class="settings-label">locations</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-locations-body" hidden>
+            <p class="field-hint">Places where habits can happen. A habit with no location works anywhere; one tied to a location is constrained by its hours. Travel time between locations shapes the Today agenda.</p>
+            <div class="location-add-row">
+              <input type="text" id="loc-name-input" placeholder="name (e.g. Gym)" maxlength="48" autocomplete="off" />
+              <input type="text" id="loc-address-input" placeholder="address to search" maxlength="120" autocomplete="off" />
+              <button class="btn primary" id="loc-search" type="button">search</button>
+            </div>
+            <div class="location-add-actions">
+              <button class="btn" id="loc-use-gps" type="button">use my location</button>
+            </div>
+            <div class="location-results" id="loc-results" hidden></div>
+            <div class="location-list" id="location-list"></div>
+            <p class="field-hint location-empty-hint" id="location-empty-hint" hidden>No locations yet. A habit with no location works anywhere.</p>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-availability-head" data-collapse-target="settings-availability-body" aria-expanded="false" aria-controls="settings-availability-body">
             <span class="settings-label">availability</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -582,6 +602,10 @@
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTopicsOnCards" aria-pressed="false">
               <span><b>show topics on cards</b><small>Show topic labels in the home list.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showLocationOnCards" aria-pressed="false">
+              <span><b>show location on cards</b><small>Show a pin label for each item's location.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reachAssist" aria-pressed="false">
@@ -723,6 +747,7 @@
 <script src="./js/storage.js" defer></script>
 <script src="./js/viewport.js" defer></script>
 <script src="./js/data.js" defer></script>
+<script src="./js/locations.js" defer></script>
 <script src="./js/scoring.js" defer></script>
 <script src="./js/list-view.js" defer></script>
 <script src="./js/detail-view.js" defer></script>

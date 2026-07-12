@@ -1,5 +1,11 @@
-const CACHE = 'tings-v14';
+const CACHE = 'tings-v15';
+const MAPS_CACHE = 'tings-maps-v1';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
+const MAPS_ORIGINS = [
+  'https://router.project-osrm.org',
+  'https://nominatim.openstreetmap.org',
+  'https://maps.googleapis.com'
+];
 
 const PRECACHE = [
   './',
@@ -10,6 +16,7 @@ const PRECACHE = [
   './js/storage.js',
   './js/viewport.js',
   './js/data.js',
+  './js/locations.js',
   './js/scoring.js',
   './js/list-view.js',
   './js/detail-view.js',
@@ -42,7 +49,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k !== CACHE && k !== MAPS_CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -57,6 +64,25 @@ self.addEventListener('fetch', event => {
         (await caches.match(req)) || (await caches.match('./index.html'))
       )
     );
+    return;
+  }
+
+  // Map/directions API responses: cache-first into a dedicated cache that
+  // survives app-shell version bumps (travel data is far more static than app
+  // assets — a 30-day TTL is correct here, where SWR is right for the shell).
+  if (MAPS_ORIGINS.some(origin => req.url.startsWith(origin))) {
+    event.respondWith((async () => {
+      const mapsCache = await caches.open(MAPS_CACHE);
+      const hit = await mapsCache.match(req);
+      if (hit) return hit;
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) mapsCache.put(req, res.clone());
+        return res;
+      } catch {
+        return hit || new Response('', { status: 504, statusText: 'Gateway Timeout' });
+      }
+    })());
     return;
   }
 

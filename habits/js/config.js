@@ -8,6 +8,19 @@ const QUOTA_WARN_KB = 4096;
 const QUOTA_HARD_KB = 4800;
 const PUSH_WORKER_URL = 'https://habits-push.YOUR-ACCOUNT.workers.dev';
 const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+
+// ── Locations / travel-time ──
+const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())
+const OSRM_BASE = 'https://router.project-osrm.org';
+const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+const MAX_LOCATIONS = 32;
+const MAX_TRAVEL_EDGES = 1024;                     // 32² upper bound
+const TRAVEL_TTL_MS = 30 * 86400000;               // cached edges revalidate after 30 days
+const TRAVEL_FETCH_TIMEOUT_MS = 3000;              // hard cap on any single provider call
+const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
+const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
+const DEFAULT_TRAVEL_MODE = 'driving';
+
 const MAX_RHYTHM_DAYS = 183;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_FLEXIBILITY_DAYS = 0;
@@ -68,6 +81,7 @@ const DEFAULT_SORT_SETTINGS = {
   showRepetitionOnCards:true,
   showFlexibilityOnCards:false,
   showTopicsOnCards:false,
+  showLocationOnCards:false,
 
   showScheduledTasksInAgenda:true,
   showDueTasksInAgenda:true,
@@ -79,6 +93,10 @@ const DEFAULT_SORT_SETTINGS = {
   defaultType:'keepup',
   defaultTarget:7,
   topics:[],
+  locations:[],
+  travel:{},
+  defaultTravelMode:DEFAULT_TRAVEL_MODE,
+  lastKnownLocationId:null,
   availabilityMinutes:DEFAULT_AVAILABILITY_MINUTES,
   availabilityOverrides:{},
   blockedTimes:DEFAULT_BLOCKED_TIMES
@@ -103,6 +121,12 @@ const FOCUS_TYPE_SCALE = {
 };
 
 const $ = id => document.getElementById(id);
+
+// TRUE when a Google Maps API key has been configured. Mirrors pushConfigured()
+// in push-client.js: the 'YOUR_' prefix is the disabled sentinel.
+function mapsConfigured(){
+  return Boolean(MAPS_API_KEY) && !MAPS_API_KEY.includes('YOUR_');
+}
 
 // "Is the layout wide enough to mount sheets in side panes?"  True whenever
 // the viewport can fit 2+ panes (>= 960px). Driven by body[data-pane-count]

@@ -1479,6 +1479,73 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .compact-days .schedule-chip{min-width:36px;padding:7px 8px;}
 .blocked-time-row .mini-text-btn{align-self:start;}
+
+/* Locations (settings manager) */
+.location-add-row{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;
+}
+.location-add-row input[type=text]{
+  min-width:0;flex:1 1 140px;height:36px;padding:0 10px;border-radius:8px;
+  border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
+}
+.location-add-actions{display:flex;gap:8px;margin-bottom:10px;}
+.location-add-actions .btn{padding:9px 12px;font-size:13px;}
+.location-results{
+  display:flex;flex-direction:column;gap:6px;margin-bottom:12px;
+  padding:8px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg2);
+}
+.location-result{
+  display:flex;flex-direction:column;gap:2px;text-align:left;padding:9px 10px;
+  border-radius:7px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
+}
+.location-result:hover{border-color:var(--text3);}
+.location-result .dim{color:var(--text3);font-size:12px;}
+.location-list{display:flex;flex-direction:column;gap:10px;}
+.location-row{
+  display:flex;flex-direction:column;gap:8px;padding:10px;
+  border:0.5px solid var(--border);border-radius:8px;background:var(--bg2);
+}
+.location-row-head{display:flex;align-items:center;gap:8px;}
+.location-name{
+  min-width:0;flex:1 1 auto;height:34px;padding:0 9px;border-radius:8px;
+  border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-weight:650;
+}
+.location-coords{font-size:11px;white-space:nowrap;}
+.location-address{
+  min-width:0;height:30px;padding:0 9px;border-radius:8px;font-size:12px;
+  border:0.5px solid var(--border2);background:var(--bg);color:var(--text2);
+}
+.location-hours,.location-days,.loc-pref,.loc-perday{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+}
+.loc-field-label{font-size:11px;font-weight:700;color:var(--text2);min-width:42px;}
+.location-hours input[type=time],.loc-pref input[type=time]{
+  width:108px;height:32px;padding:0 8px;border-radius:7px;
+  border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
+}
+.location-hours input[type=time]:disabled,.loc-pref input[type=time]:disabled{
+  opacity:0.45;
+}
+.location-hours span,.loc-pref span,.perday-sep{color:var(--text3);font-size:12px;}
+.loc-24h{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);}
+.location-days .schedule-chip{min-width:36px;padding:7px 8px;}
+.loc-more-toggle{align-self:flex-start;margin-top:2px;}
+.location-more{
+  display:flex;flex-direction:column;gap:10px;padding-top:8px;
+  border-top:0.5px dashed var(--border);
+}
+.loc-perday{flex-direction:column;align-items:stretch;gap:6px;}
+.perday-row{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+.perday-label{font-size:11px;font-weight:700;color:var(--text2);width:30px;text-transform:capitalize;}
+.perday-row input[type=time]{
+  width:100px;height:30px;padding:0 7px;border-radius:7px;font-size:12px;
+  border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
+}
+.perday-row input[type=time]:disabled{opacity:0.45;}
+.perday-closed{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text3);}
+.location-empty-hint{margin-top:4px;}
 .planning-field,.availability-grid label{
   display:grid;gap:5px;color:var(--text2);font-size:11.5px;font-weight:700;
 }

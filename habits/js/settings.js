@@ -66,6 +66,7 @@ function syncSettingsControls(){
   renderTopicList();
   renderAvailabilityControls();
   renderBlockedTimeControls();
+  renderLocationControls();
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
   });
@@ -231,6 +232,301 @@ function removeBlockedTime(index){
   updateSortSetting({blockedTimes:blocks},{renderNow:false});
   renderBlockedTimeControls();
   render();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LOCATIONS — registry CRUD + per-location hours editor (settings sheet).
+// Mirrors the blocked-time controls: an inline list of richly-structured
+// rows, each editable in place, persisted through updateSortSetting.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Tracks which location rows have their "per-day / best time" expander open, so
+// the state survives the list re-render that follows each patch.
+const expandedLocationMores = new Set();
+// Stash of the last geocode results so the tap handler can resolve a pick.
+let pendingLocationResults = [];
+
+// PURE: 4-decimal coordinate for compact display.
+function formatCoord(v){ return Number(v).toFixed(4); }
+
+// PURE: compact one-line hours summary ("11a–5p · closed sun" / "24h").
+function locationHoursSummary(loc){
+  if(!loc || !hasLocationHours(loc))return '24h';
+  const parts = [];
+  if(Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd)){
+    parts.push(`${formatTimeShort(loc.allowedTimeStart)}–${formatTimeShort(loc.allowedTimeEnd)}`);
+  }
+  if(Array.isArray(loc.closedDays) && loc.closedDays.length){
+    parts.push('closed ' + loc.closedDays.map(weekdayShort).join('/'));
+  }
+  return parts.join(' · ') || '24h';
+}
+
+// RENDER: the full location registry list.
+function renderLocationControls(){
+  const wrap = $('location-list');
+  if(!wrap)return;
+  const locations = normalizeLocationRegistry(sortSettings.locations);
+  const empty = $('location-empty-hint');
+  if(empty)empty.hidden = locations.length > 0;
+  wrap.innerHTML = locations.map((loc,i)=>locationRowMarkup(loc,i)).join('');
+  // Restore "more" expansion across re-renders.
+  expandedLocationMores.forEach(i=>{
+    const body = wrap.querySelector(`[data-location-more="${i}"]`);
+    if(body)body.hidden = false;
+  });
+}
+
+// RENDER: one location row. Always-visible: name, address, coords, default
+// hours, closed-days. The per-day overrides + preferred time live behind a
+// "more" expander (rendered but hidden) for the rare power-user case.
+function locationRowMarkup(loc,i){
+  const winSet = Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd);
+  const startVal = winSet ? minutesToTimeInput(loc.allowedTimeStart) : '';
+  const endVal = winSet ? minutesToTimeInput(loc.allowedTimeEnd) : '';
+  const closedSet = new Set(Array.isArray(loc.closedDays) ? loc.closedDays : []);
+  const prefSet = Number.isFinite(loc.preferredTimeStart) && Number.isFinite(loc.preferredTimeEnd);
+  const prefStart = prefSet ? minutesToTimeInput(loc.preferredTimeStart) : '';
+  const prefEnd = prefSet ? minutesToTimeInput(loc.preferredTimeEnd) : '';
+  const moreOpen = expandedLocationMores.has(i);
+  return `<div class="location-row" data-location-row="${i}">
+    <div class="location-row-head">
+      <input type="text" class="location-name" data-loc-name="${i}" aria-label="location name" maxlength="48" value="${escapeHtml(loc.name)}" />
+      <span class="location-coords dim">${formatCoord(loc.lat)}, ${formatCoord(loc.lng)}</span>
+      <button class="mini-text-btn" type="button" data-loc-remove="${i}">remove</button>
+    </div>
+    <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)" />
+    <div class="location-hours">
+      <span class="loc-field-label">open</span>
+      <input type="time" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${winSet ? '' : 'disabled'} />
+      <span>to</span>
+      <input type="time" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${winSet ? '' : 'disabled'} />
+      <span class="loc-24h"><input type="checkbox" data-loc-24h="${i}" ${winSet ? '' : 'checked'} /> 24h</span>
+    </div>
+    <div class="location-days">
+      <span class="loc-field-label">closed</span>
+      ${WEEKDAY_LABELS.map((label,day)=>{
+        const on = closedSet.has(day);
+        return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-loc-closed-day="${day}" data-loc-index="${i}" aria-pressed="${on}">${label}</button>`;
+      }).join('')}
+    </div>
+    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} per-day hours &amp; best time</button>
+    <div class="location-more" data-location-more="${i}" ${moreOpen ? '' : 'hidden'}>
+      <div class="loc-pref">
+        <span class="loc-field-label">best time</span>
+        <input type="time" data-loc-pref-start="${i}" aria-label="best from" value="${prefStart}" />
+        <span>to</span>
+        <input type="time" data-loc-pref-end="${i}" aria-label="best until" value="${prefEnd}" />
+        <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
+      </div>
+      <div class="loc-perday">
+        <span class="loc-field-label">different hours some days</span>
+        ${WEEKDAY_LABELS.map((label,day)=>{
+          const hd = loc.hoursByDay && loc.hoursByDay[day];
+          const isClosed = hd === null;
+          const ds = hd && Number.isFinite(hd.start) ? minutesToTimeInput(hd.start) : '';
+          const de = hd && Number.isFinite(hd.end) ? minutesToTimeInput(hd.end) : '';
+          return `<div class="perday-row">
+            <span class="perday-label">${label}</span>
+            <input type="time" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
+            <span class="perday-sep">–</span>
+            <input type="time" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
+            <span class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+// HYBRID: patch one location and persist. Re-renders only that row's fields are
+// already in the DOM, so most patches skip a full re-render — but structural
+// flips (24h toggle, per-day closed) need the row rebuilt to enable/disable
+// inputs, so we re-render the list (expansion state is preserved).
+function saveLocationPatch(index,patch){
+  const locations = normalizeLocationRegistry(sortSettings.locations);
+  if(!locations[index])return;
+  locations[index] = {...locations[index],...patch};
+  updateSortSetting({locations},{renderNow:false});
+  renderLocationControls();
+  render();
+}
+
+// HYBRID: add a location to the registry (called by the geocode pick, GPS, or a
+// manual entry). Generates a stable opaque id. Enforces MAX_LOCATIONS.
+function addLocation({name,address,lat,lng,emoji}){
+  const cleanName = String(name || '').trim().slice(0,48);
+  if(!cleanName){ showToast('enter a name'); return false; }
+  if(!Number.isFinite(lat) || !Number.isFinite(lng)){ showToast('missing coordinates'); return false; }
+  const locations = normalizeLocationRegistry(sortSettings.locations);
+  if(locations.length >= MAX_LOCATIONS){ showToast(`limit ${MAX_LOCATIONS} locations`); return false; }
+  const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `loc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  locations.push({
+    id, name:cleanName,
+    address:String(address || '').trim().slice(0,120),
+    lat, lng,
+    emoji:String(emoji || '').slice(0,4),
+    radiusM:DEFAULT_LOCATION_RADIUS_M
+  });
+  updateSortSetting({locations},{renderNow:false});
+  renderLocationControls();
+  render();
+  showToast(`added ${cleanName}`);
+  return true;
+}
+
+// HYBRID: remove a location, prune its travel edges, and sweep the dangling id
+// off every habit (locationIds + preferredLocationId). Resets any location
+// filter that pointed at it (Phase 5 globals, guarded).
+function removeLocation(index){
+  const locations = normalizeLocationRegistry(sortSettings.locations);
+  const removed = locations[index];
+  if(!removed)return;
+  expandedLocationMores.delete(index);
+  locations.splice(index,1);
+  const travel = {};
+  for(const [key,edge] of Object.entries(sortSettings.travel || {})){
+    if(edge.a !== removed.id && edge.b !== removed.id)travel[key] = edge;
+  }
+  updateSortSetting({locations,travel},{renderNow:false});
+  const {data,changed} = reconcileLocations(load(),{...sortSettings,locations,travel});
+  if(changed)save(data);
+  if(typeof homeLocationFilter !== 'undefined' && homeLocationFilter === removed.id)homeLocationFilter = 'all';
+  if(typeof overviewLocationFilter !== 'undefined' && overviewLocationFilter === removed.id)overviewLocationFilter = 'all';
+  renderLocationControls();
+  refreshOpenViews();
+}
+
+// HYBRID: update one location's hoursByDay[weekday] from the per-day editor.
+// closed=true → null (closed that day); both times set → {start,end}; otherwise
+// the override is dropped so the day falls back to the default window.
+function saveLocationDayPatch(index,weekday,{start,end,closed}){
+  const locations = normalizeLocationRegistry(sortSettings.locations);
+  const loc = locations[index];
+  if(!loc)return;
+  const hoursByDay = {...(loc.hoursByDay || {})};
+  if(closed){
+    hoursByDay[weekday] = null;
+  }else if(start !== null && end !== null){
+    hoursByDay[weekday] = {start,end};
+  }else{
+    delete hoursByDay[weekday];
+  }
+  saveLocationPatch(index,{hoursByDay});
+}
+
+// HANDLER: toggle the "more" expander on a location row.
+function toggleLocationMore(index){
+  const body = document.querySelector(`[data-location-more="${index}"]`);
+  const btn = document.querySelector(`[data-loc-more="${index}"]`);
+  if(!body)return;
+  const opening = body.hidden;
+  body.hidden = !opening;
+  if(opening)expandedLocationMores.add(index); else expandedLocationMores.delete(index);
+  if(btn){
+    btn.setAttribute('aria-expanded',String(opening));
+    btn.innerHTML = (opening ? '▾' : '▸') + ' per-day hours &amp; best time';
+  }
+}
+
+// ASYNC: geocode the typed address and render candidates to pick from.
+async function searchLocations(){
+  const addressInput = $('loc-address-input');
+  const resultsWrap = $('loc-results');
+  if(!addressInput || !resultsWrap)return;
+  const q = addressInput.value.trim();
+  if(!q){ showToast('enter an address to search'); addressInput.focus(); return; }
+  resultsWrap.hidden = false;
+  resultsWrap.innerHTML = '<p class="field-hint">searching…</p>';
+  pendingLocationResults = await geocodeSearch(q);
+  if(!pendingLocationResults.length){
+    resultsWrap.innerHTML = '<p class="field-hint">no matches — try a different address, or use "my location".</p>';
+    return;
+  }
+  resultsWrap.innerHTML = pendingLocationResults.map((r,idx)=>`<button type="button" class="location-result" data-loc-result="${idx}">
+    <b>${escapeHtml(r.name)}</b><span class="dim">${escapeHtml(r.address)}</span>
+  </button>`).join('');
+}
+
+// HANDLER: a geocode candidate was tapped → create the location.
+function pickLocationResult(idx){
+  const r = pendingLocationResults[idx];
+  if(!r)return;
+  const typed = ($('loc-name-input') && $('loc-name-input').value || '').trim();
+  const ok = addLocation({name:typed || r.name, address:r.address, lat:r.lat, lng:r.lng});
+  if(ok)clearLocationAddForm();
+}
+
+// HANDLER: one-shot geolocation — drops a pin at the live coordinate with the
+// typed name. The live watchPosition for agenda anchoring is Phase 7; this is
+// just the add-flow convenience.
+function useMyLocationForAdd(){
+  const nameInput = $('loc-name-input');
+  if(!nameInput)return;
+  const name = nameInput.value.trim();
+  if(!name){ showToast('enter a name first'); nameInput.focus(); return; }
+  if(!navigator.geolocation){ showToast('location not supported on this device'); return; }
+  showToast('finding your location…');
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const ok = addLocation({name, address:'', lat:pos.coords.latitude, lng:pos.coords.longitude});
+      if(ok)clearLocationAddForm();
+    },
+    () => showToast('could not get your location'),
+    {enableHighAccuracy:false, timeout:10000, maximumAge:60000}
+  );
+}
+
+// HYBRID: clear the add-location form + results panel.
+function clearLocationAddForm(){
+  pendingLocationResults = [];
+  const resultsWrap = $('loc-results');
+  if(resultsWrap){ resultsWrap.hidden = true; resultsWrap.innerHTML = ''; }
+  const nameInput = $('loc-name-input');
+  const addressInput = $('loc-address-input');
+  if(nameInput)nameInput.value = '';
+  if(addressInput)addressInput.value = '';
+}
+
+// HYBRID: commit the default open-window pair. Both present → set both; both
+// empty → 24h; exactly one present → hold (leave the DOM as-is so the user can
+// finish typing the other half, since an incomplete window normalizes to 24h).
+function commitLocationHours(index){
+  const row = document.querySelector(`[data-location-row="${index}"]`);
+  if(!row)return;
+  const sEl = row.querySelector('[data-loc-start]');
+  const eEl = row.querySelector('[data-loc-end]');
+  const s = timeInputToMinutes(sEl ? sEl.value : '');
+  const e = timeInputToMinutes(eEl ? eEl.value : '');
+  if(s !== null && e !== null)saveLocationPatch(index,{allowedTimeStart:s,allowedTimeEnd:e});
+  else if(s === null && e === null)saveLocationPatch(index,{allowedTimeStart:null,allowedTimeEnd:null});
+}
+
+// HYBRID: commit the preferred-time pair (same incomplete-pair rule).
+function commitLocationPref(index){
+  const row = document.querySelector(`[data-location-row="${index}"]`);
+  if(!row)return;
+  const sEl = row.querySelector('[data-loc-pref-start]');
+  const eEl = row.querySelector('[data-loc-pref-end]');
+  const s = timeInputToMinutes(sEl ? sEl.value : '');
+  const e = timeInputToMinutes(eEl ? eEl.value : '');
+  if(s !== null && e !== null)saveLocationPatch(index,{preferredTimeStart:s,preferredTimeEnd:e});
+  else if(s === null && e === null)saveLocationPatch(index,{preferredTimeStart:null,preferredTimeEnd:null});
+}
+
+// HYBRID: commit one per-day override pair. Both present → {start,end}; both
+// empty → override dropped (falls back to default); exactly one → hold.
+function commitLocationDayHours(index,weekday){
+  const row = document.querySelector(`[data-location-row="${index}"]`);
+  if(!row)return;
+  const sEl = row.querySelector(`[data-loc-day-start="${weekday}"]`);
+  const eEl = row.querySelector(`[data-loc-day-end="${weekday}"]`);
+  const cEl = row.querySelector(`[data-loc-day-closed="${weekday}"]`);
+  if(cEl && cEl.checked){ saveLocationDayPatch(index,weekday,{closed:true}); return; }
+  const s = timeInputToMinutes(sEl ? sEl.value : '');
+  const e = timeInputToMinutes(eEl ? eEl.value : '');
+  if(s !== null && e !== null)saveLocationDayPatch(index,weekday,{start:s,end:e,closed:false});
+  else if(s === null && e === null)saveLocationDayPatch(index,weekday,{closed:false});
 }
 
 // HYBRID: patch sort state and re-sync UI

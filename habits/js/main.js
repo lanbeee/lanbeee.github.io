@@ -880,6 +880,74 @@ $('blocked-time-list')?.addEventListener('click',e=>{
   else next.add(value);
   saveBlockedTimePatch(index,{days:normalizeAllowedWeekdays([...next])});
 });
+// ── Locations (settings sheet) ──
+$('loc-search')?.addEventListener('click',searchLocations);
+$('loc-address-input')?.addEventListener('keydown',e=>{ if(e.key === 'Enter')searchLocations(); });
+$('loc-use-gps')?.addEventListener('click',useMyLocationForAdd);
+$('loc-results')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-loc-result]');
+  if(btn)pickLocationResult(parseInt(btn.dataset.locResult,10));
+});
+$('location-list')?.addEventListener('change',e=>{
+  const name = e.target.closest('[data-loc-name]');
+  if(name){ saveLocationPatch(parseInt(name.dataset.locName,10),{name:name.value}); return; }
+  const addr = e.target.closest('[data-loc-address]');
+  if(addr){ saveLocationPatch(parseInt(addr.dataset.locAddress,10),{address:addr.value}); return; }
+  const start = e.target.closest('[data-loc-start]');
+  const end = e.target.closest('[data-loc-end]');
+  if(start || end){ commitLocationHours(parseInt((start?.dataset.locStart || end?.dataset.locEnd),10)); return; }
+  const h24 = e.target.closest('[data-loc-24h]');
+  if(h24){
+    const idx = parseInt(h24.dataset.loc24h,10);
+    if(h24.checked){
+      // turning 24h ON → clear the window (re-render disables + clears inputs)
+      saveLocationPatch(idx,{allowedTimeStart:null,allowedTimeEnd:null});
+    }else{
+      // turning 24h OFF → just enable the inputs in place (no data patch yet, so
+      // no re-render that would re-check the box; the user types the window next)
+      const row = document.querySelector(`[data-location-row="${idx}"]`);
+      if(row){
+        const s = row.querySelector('[data-loc-start]');
+        const en = row.querySelector('[data-loc-end]');
+        if(s)s.disabled = false;
+        if(en)en.disabled = false;
+      }
+    }
+    return;
+  }
+  const ps = e.target.closest('[data-loc-pref-start]');
+  const pe = e.target.closest('[data-loc-pref-end]');
+  if(ps || pe){ commitLocationPref(parseInt((ps?.dataset.locPrefStart || pe?.dataset.locPrefEnd),10)); return; }
+  const ds = e.target.closest('[data-loc-day-start]');
+  const de = e.target.closest('[data-loc-day-end]');
+  if(ds || de){ commitLocationDayHours(parseInt((ds||de).dataset.locDayIdx,10),parseInt((ds||de).dataset.locDayStart || (ds||de).dataset.locDayEnd,10)); return; }
+  const dc = e.target.closest('[data-loc-day-closed]');
+  if(dc){
+    const weekday = parseInt(dc.dataset.locDayClosed,10);
+    const idx = parseInt(dc.dataset.locDayIdx,10);
+    if(dc.checked)saveLocationDayPatch(idx,weekday,{closed:true});
+    else commitLocationDayHours(idx,weekday);
+    return;
+  }
+});
+$('location-list')?.addEventListener('click',e=>{
+  const remove = e.target.closest('[data-loc-remove]');
+  if(remove){ removeLocation(parseInt(remove.dataset.locRemove,10)); return; }
+  const more = e.target.closest('[data-loc-more]');
+  if(more){ toggleLocationMore(parseInt(more.dataset.locMore,10)); return; }
+  const prefClear = e.target.closest('[data-loc-pref-clear]');
+  if(prefClear){ saveLocationPatch(parseInt(prefClear.dataset.locPrefClear,10),{preferredTimeStart:null,preferredTimeEnd:null}); return; }
+  const closedDay = e.target.closest('[data-loc-closed-day]');
+  if(closedDay){
+    const idx = parseInt(closedDay.dataset.locIndex,10);
+    const day = parseInt(closedDay.dataset.locClosedDay,10);
+    const locations = normalizeLocationRegistry(sortSettings.locations);
+    const set = new Set(locations[idx] ? (locations[idx].closedDays || []) : []);
+    if(set.has(day))set.delete(day); else set.add(day);
+    saveLocationPatch(idx,{closedDays:[...set].sort((a,b)=>a-b)});
+    return;
+  }
+});
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
 document.querySelectorAll('.settings-collapse-head').forEach(head=>{
   head.addEventListener('click',()=>{
