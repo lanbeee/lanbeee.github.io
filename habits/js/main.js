@@ -31,9 +31,26 @@ sortSettings = loadSortSettings();
   const reconciled = reconcileLocations(load(),sortSettings);
   if(reconciled.changed)save(reconciled.data);
 }
+// A single travel-edge refresh triggers a re-render so the new time lands on
+// screen — but warming a matrix fires many refreshes in a burst, and for
+// non-driving modes fetchEdge is fully synchronous (pure haversine, no await),
+// so one-refresh-per-edge becomes a microtask-only render loop that never
+// yields. Debounce: a burst coalesces into one render ~120ms after the last
+// edge lands. The agenda's stale-while-revalidate reads are unaffected (they
+// already return the best-available edge synchronously and let the next render
+// pick up the refined value).
+let _travelRefreshTimer = null;
+let _travelRefreshPending = false;
 onTravelRefresh = ()=>{
-  if(typeof render === 'function')render();
-  if(typeof renderTodayAgenda === 'function' && $('today-sheet')?.classList.contains('open'))renderTodayAgenda();
+  _travelRefreshPending = true;
+  if(_travelRefreshTimer)return;
+  _travelRefreshTimer = setTimeout(() => {
+    _travelRefreshTimer = null;
+    if(!_travelRefreshPending)return;
+    _travelRefreshPending = false;
+    if(typeof render === 'function')render();
+    if(typeof renderTodayAgenda === 'function' && $('today-sheet')?.classList.contains('open'))renderTodayAgenda();
+  },120);
 };
 
 $('type-seg').addEventListener('click',e=>{
@@ -146,6 +163,11 @@ $('bar-open-overview')?.addEventListener('click',()=>{
 });
 $('today-close')?.addEventListener('click',()=>closeSheet('today-sheet'));
 $('today-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('today-range-seg')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-today-range]');
+  if(!btn)return;
+  setTodayRange(btn.dataset.todayRange);
+});
 $('iam-at-row')?.addEventListener('click',async e=>{
   const gps = e.target.closest('#iam-at-gps');
   if(gps){

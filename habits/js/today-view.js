@@ -191,14 +191,20 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
 // into a time-ordered row list. Fill items are first reordered within priority
 // bands to reduce travel (revisits allowed). Travel advances the clock and
 // consumes availability; wait gaps for closed locations are display-only.
-function buildTodayTimeline(agenda,now = Date.now()){
+//
+// Generalised for any day via opts: {dayBase, weekday, startClock, now}. Today
+// passes only `now` and the day context is derived from it; future days pass
+// an explicit dayBase/weekday/startClock so a 7-day agenda can build each day's
+// timeline from that day's first open minute rather than wall-clock "now".
+function buildDayTimeline(agenda,opts = {}){
+  const now = opts.now != null ? opts.now : Date.now();
   const settings = sortSettings || loadSortSettings();
   const registry = normalizeLocationRegistry(settings.locations);
   const mode = normalizeTravelMode(settings.defaultTravelMode);
-  const dayBase = dayStart(now);
-  const weekday = new Date(now).getDay();
-  const nowFloor = ceilToMinutes(now,5);
-  const slots = agenda.slots?.length ? agenda.slots : [{start:nowFloor,end:dayBase + 24 * 3600000}];
+  const dayBase = opts.dayBase != null ? opts.dayBase : dayStart(now);
+  const weekday = opts.weekday != null ? opts.weekday : new Date(now).getDay();
+  const startClock = opts.startClock != null ? opts.startClock : ceilToMinutes(now,5);
+  const slots = agenda.slots?.length ? agenda.slots : [{start:startClock,end:dayBase + 24 * 3600000}];
   const rows = [];
 
   agenda.scheduled.forEach(ev=>{
@@ -264,7 +270,7 @@ function buildTodayTimeline(agenda,now = Date.now()){
   };
 
   for(const slot of slots){
-    let clock = Math.max(slot.start,nowFloor);
+    let clock = Math.max(slot.start,startClock);
     for(let idx = 0; idx < ordered.length; idx += 1){
       if(placed[idx])continue;
       const fill = ordered[idx];
@@ -299,7 +305,7 @@ function buildTodayTimeline(agenda,now = Date.now()){
   }
 
   if(placed.some(p=>!p)){
-    let overflowStart = slots.reduce((max,slot)=>Math.max(max,slot.end),Math.max(dayBase,nowFloor));
+    let overflowStart = slots.reduce((max,slot)=>Math.max(max,slot.end),Math.max(dayBase,startClock));
     ordered.forEach((fill,idx)=>{
       if(placed[idx])return;
       if(fill.locationId)return;
@@ -320,7 +326,51 @@ function buildTodayTimeline(agenda,now = Date.now()){
   return rows.sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
 }
 
-function buildOpenAgendaSlots(todayKey,scheduled,settings){
+// PURE: today's timeline — thin wrapper over buildDayTimeline so the existing
+// single-day callers are unchanged. Derives the day context from `now`.
+function buildTodayTimeline(agenda,now = Date.now()){
+  return buildDayTimeline(agenda,{ now });
+}
+
+// PURE: the location the user is already commited to at a given minute within
+// a day, derived from location-tied blocked times (sleep→Home, work→Office).
+// Returns the locationId or null. Lets the week agenda start each day anchored
+// to a known place ("you wake at Home") instead of an unknown starting point.
+function blockLocationAtMinute(blocks,minute,weekday){
+  if(!Array.isArray(blocks))return null;
+  for(const block of blocks){
+    if(block.days.length && !block.days.includes(weekday))continue;
+    if(!block.locationId)continue;
+    const s = block.start, e = block.end;
+    const inSimple = e > s && minute >= s && minute < e;
+    const inOvernight = e <= s && (minute >= s || minute < e);
+    if(inSimple || inOvernight)return block.locationId;
+  }
+  return null;
+}
+
+// PURE: the first open minute of a day (after the last early block ends), used
+// as the startClock for future-day timelines so the agenda begins placing at
+// the day's first genuinely-free minute rather than midnight.
+function dayFirstOpenMinute(blocks,weekday){
+  if(!Array.isArray(blocks) || !blocks.length)return 0;
+  // Collect end-minutes of blocks that start at/before midnight-ish (early).
+  // The day's first open minute is after the latest-ending pre-dawn block.
+  let latestEarlyEnd = 0;
+  for(const block of blocks){
+    if(block.days.length && !block.days.includes(weekday))continue;
+    const s = block.start, e = block.end;
+    // Overnight block wrapping past midnight counts its morning tail.
+    if(e <= s){ // overnight — its tail ends at `e` in the morning
+      if(e > latestEarlyEnd)latestEarlyEnd = e;
+    }else if(s < 720 && e <= 720){ // same-day block entirely in the AM half
+      if(e > latestEarlyEnd)latestEarlyEnd = e;
+    }
+  }
+  return latestEarlyEnd;
+}
+
+function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
   const start = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
   const end = start + 24 * 3600000;
   const blocks = agendaBlockedIntervals(todayKey,settings,start,end);
@@ -337,15 +387,16 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings){
     cursor = Math.max(cursor,block.end);
   });
   if(cursor < end)raw.push({start:cursor,end});
-  const now = Date.now();
   // Slots are the day's full OPEN time (open intervals minus blocks/scheduled,
-  // clipped to "now"). The availability budget is NOT applied here — it caps
-  // task minutes in buildTodayAgenda, not open time. This keeps a late/overnight
+  // clipped to "now" for today, or to the day's start for future days). The
+  // availability budget is NOT applied here — it caps task minutes in
+  // buildTodayAgenda/buildDayAgenda, not open time. This keeps a late/overnight
   // allowed window (e.g. 10pm-11am) reachable even when today's budget would
   // otherwise be "spent" by idle open time earlier in the day, and lets a block
   // at the window start (e.g. sleep from 10pm) correctly exclude the item.
+  const clip = clipAfter != null ? clipAfter : ceilToMinutes(Date.now(),5);
   return raw
-    .map(slot=>({start:Math.max(slot.start,ceilToMinutes(now,5)),end:slot.end}))
+    .map(slot=>({start:Math.max(slot.start,clip),end:slot.end}))
     .filter(slot=>slot.end > slot.start);
 }
 
@@ -382,6 +433,212 @@ function ceilToMinutes(ts,step){
   return Math.ceil(ts / ms) * ms;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 7-DAY AGENDA — location-aware day-by-day plan.
+//
+// buildDayAgenda generalises buildTodayAgenda to any day. buildWeekAgenda
+// stitches 7 days together and runs a travel-minimising day-assignment pass:
+// "movable" candidates (habits/tasks eligible within the window but not
+// strictly due today) are each placed on the day where they add the least
+// travel. Co-located habits cluster onto the same day so it's one trip, not
+// many — "two far-from-home but next-to-each-other errands land together."
+//
+// Location-tied blocked times (sleep→Home, work→Office) seed each day's
+// location set, so the cluster bonus already credits the places you'll be in
+// anyway. Travel is symmetric (the cached edge A→B === B→A) and uses the same
+// stale-while-revalidate travelBetween() the today agenda uses.
+// ─────────────────────────────────────────────────────────────────────────
+
+// PURE: a day's scheduled tasks + capacity + open slots. Today also collects
+// its due-item candidates via the existing eligibility; future days leave
+// agendaItems empty for the week-assignment pass to fill.
+function buildDayAgenda(data,settings,dayBase){
+  const dayKey = dateKey(dayBase);
+  const weekday = new Date(dayBase).getDay();
+  const isToday = dayStart(Date.now()) === dayBase;
+  const scheduled = data
+    .map((h,i)=>({h,i}))
+    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && h.lastLog === null && dateKey(h.eventTime) === dayKey)
+    .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
+  const totalMinutes = effectiveAvailabilityMinutes(dayKey,settings);
+  const clipAfter = isToday ? ceilToMinutes(Date.now(),5) : dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday) * 60000;
+  const slots = buildOpenAgendaSlots(dayKey,scheduled,settings,{clipAfter});
+  const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
+  const totalCap = Math.min(totalMinutes,slotMinutes);
+  const agendaItems = [];
+  if(isToday){
+    // Reuse the existing today eligibility so day-0 behaviour is identical to
+    // buildTodayAgenda. We replicate the candidate walk rather than delegate so
+    // the returned object carries the day metadata the week view needs.
+    const candidates = [];
+    let homeRank = 0;
+    for(const i of visibleIndices(data,settings)){
+      const h = data[i];
+      if(h.type === 'task' && h.lastLog !== null)continue;
+      if(h.type === 'task' && h.eventTime !== null)continue;
+      const dueToday = includeInTodayAgenda(h,settings);
+      const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
+      if(!dueToday && !earlyOk)continue;
+      candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
+    }
+    candidates.sort((a,b)=>a.priority - b.priority || a.rank - b.rank);
+    agendaItems.push(...candidates.map(({h,i,priority})=>({h,i,priority})));
+  }
+  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday };
+}
+
+// PURE: is a habit/task a viable candidate for assignment to a future day in
+// the week window? Excludes items already due-today (the today agenda owns
+// those) and respects weekday schedules + due-by-that-day logic.
+function isWeekCandidate(h,settings,dayBase,weekday){
+  if(h.type === 'zero')return false;
+  if(h.type === 'task'){
+    if(h.lastLog !== null)return false;
+    if(h.eventTime !== null)return false;         // timed → fixed to its day
+    if(h.dueDate === null)return false;            // someday → today only
+    const left = Math.round((dayStart(h.dueDate) - dayBase) / 86400000);
+    if(left < 0 || left > 6)return false;          // outside the 7-day window
+    return settings.showDueTasksInAgenda !== false;
+  }
+  // Habit: schedule must allow this weekday, and it must be due by this day.
+  if(hasDaySchedule(h)){
+    const schedule = scheduledDays(h);
+    if(schedule.weekdays.length && !schedule.weekdays.includes(weekday))return false;
+  }
+  if(hasPlannedForDay(h,dayBase))return settings.showPlannedItemsInAgenda !== false;
+  const days = daysSince(h.lastLog);
+  const target = effectiveTarget(h);
+  if(days === null || days < 0)return false;
+  const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
+  if(days + offsetDays < target)return false;      // not due by this day
+  return settings.showDueHabitsInAgenda !== false;
+}
+
+// PURE helper: planned-for-day predicate. hasPlannedToday checks today; this
+// generalises to any day. Mirrors the actualLogs/plannedLogs intersection.
+function hasPlannedForDay(h,dayBase){
+  const key = dateKey(dayBase);
+  const planned = plannedLogs(h.logs || []);
+  if(!planned.length)return false;
+  return planned.some(ts=>dateKey(ts) === key);
+}
+
+// PURE: the locations already committed on a day before any fill item is
+// placed — scheduled-task locations + location-tied block locations. This is
+// the seed for the cluster bonus: a habit at a place you'll already be costs
+// zero incremental travel.
+function daySeedLocationSet(day,settings,registry){
+  const set = new Set();
+  for(const ev of day.scheduled){
+    const ids = normalizeLocationIds(ev.h.locationIds,registry);
+    const locId = normalizePreferredLocation(ev.h.preferredLocationId,ids) || ids[0];
+    if(locId)set.add(locId);
+  }
+  for(const block of normalizeBlockedTimes(settings.blockedTimes)){
+    if(block.days.length && !block.days.includes(day.weekday))continue;
+    if(block.locationId)set.add(block.locationId);
+  }
+  return set;
+}
+
+// PURE: for a habit on a given day, the best (lowest incremental travel)
+// allowed location, or {placeable:false} if no allowed location is open that
+// weekday. Returns {placeable, locId, incTravel}.
+function pickHabitLocationForDay(h,day,locSet,registry,mode){
+  const ids = normalizeLocationIds(h.locationIds,registry);
+  if(!ids.length)return { placeable:true, locId:null, incTravel:0 };  // anywhere
+  let best = null;
+  for(const id of ids){
+    const loc = registry.find(l=>l.id === id);
+    const intervals = effectiveLocationWindow(h,loc,day.weekday);
+    if(!intervals.length)continue;                  // closed / no overlap today
+    let inc;
+    if(locSet.has(id))inc = 0;                      // already there → free
+    else if(!locSet.size)inc = 0;                   // empty day → first item free
+    else inc = Math.min(...[...locSet].map(e=>travelEdgeBetweenIds(e,id,registry,mode).seconds));
+    if(!best || inc < best.inc)best = { placeable:true, locId:id, incTravel:inc };
+  }
+  return best || { placeable:false, locId:null, incTravel:Infinity };
+}
+
+// PURE: assign movable week-candidates to days, minimising total travel.
+// Greedy by priority then attentionScore: each candidate is placed on the
+// feasible day (location open + capacity remaining) whose locSet already
+// contains its location (cluster, zero travel) or is cheapest to reach.
+// Respects day capacity (duration + travel minutes) and location hours.
+function assignWeekCandidates(candidates,days,settings,registry){
+  const mode = normalizeTravelMode(settings.defaultTravelMode);
+  for(const day of days){
+    day._locSet = daySeedLocationSet(day,settings,registry);
+    day._remaining = Math.max(0,Number(day.totalMinutes) || 0);
+    for(const ev of day.scheduled)day._remaining = Math.max(0,day._remaining - clampDuration(ev.h.durationMinutes));
+  }
+  candidates.sort((a,b)=>a.priority - b.priority || b.score - a.score);
+  let totalAssigned = 0;
+  for(const c of candidates){
+    let best = null;
+    for(const day of days){
+      const pick = pickHabitLocationForDay(c.h,day,day._locSet,registry,mode);
+      if(!pick.placeable)continue;
+      const dur = clampDuration(c.h.durationMinutes);
+      const travelMin = Math.ceil(pick.incTravel / 60);
+      if(dur + travelMin > day._remaining && day._remaining < day.totalMinutes)continue;
+      // Score: prefer clustering (zero), then low travel. Subtract a flat
+      // cluster bonus so an existing-location slot beats a near-miss edge.
+      const score = pick.incTravel - (pick.incTravel === 0 ? 600 : 0);
+      if(!best || score < best.score)best = { day, pick, dur, travelMin, score };
+    }
+    if(!best)continue;
+    const assigned = { h:c.h, i:c.i, priority:c.priority, locationId:best.pick.locId };
+    best.day.agendaItems.push(assigned);
+    if(best.pick.locId)best.day._locSet.add(best.pick.locId);
+    best.day._remaining = Math.max(0,best.day._remaining - best.dur - best.travelMin);
+    totalAssigned += 1;
+  }
+  return totalAssigned;
+}
+
+// PURE: build a 7-day agenda. Day 0 is today (existing due-item logic); days
+// 1..n-1 receive movable candidates via the travel-minimising assignment. Each
+// day carries a built timeline (rows) + a travel summary.
+function buildWeekAgenda(data,settings,numDays = 7){
+  const todayBase = dayStart(Date.now());
+  const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
+  const days = [];
+  for(let offset = 0;offset < count;offset += 1){
+    const dayBase = todayBase + offset * 86400000;
+    days.push(buildDayAgenda(data,settings,dayBase));
+  }
+  // Collect movable candidates eligible on at least one future day.
+  const movable = [];
+  const seen = new Set();
+  for(let offset = 1;offset < count;offset += 1){
+    const day = days[offset];
+    for(let i = 0;i < data.length;i += 1){
+      if(seen.has(i))continue;
+      const h = data[i];
+      if(!isWeekCandidate(h,settings,day.dayBase,day.weekday))continue;
+      // Skip if it's already due today (today agenda owns it).
+      if(includeInTodayAgenda(h,settings))continue;
+      seen.add(i);
+      movable.push({ h, i, priority:effectivePriority(h), score:attentionScore(h,i,settings) });
+    }
+  }
+  const registry = normalizeLocationRegistry(settings.locations);
+  assignWeekCandidates(movable,days.slice(1),settings,registry);
+  // Build each day's timeline + travel roll-up.
+  let totalTravelSeconds = 0;
+  for(const day of days){
+    const startClock = day.isToday
+      ? ceilToMinutes(Date.now(),5)
+      : day.dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),day.weekday) * 60000;
+    day.timeline = buildDayTimeline(day,{ dayBase:day.dayBase, weekday:day.weekday, startClock });
+    day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
+    totalTravelSeconds += day.travelSeconds;
+  }
+  return { days, totalTravelSeconds, candidateCount:movable.length };
+}
+
 // PURE: format a timestamp as a short clock label
 function agendaTimeLabel(ts){
   return new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
@@ -407,6 +664,8 @@ function agendaSummary(agenda){
 function renderTodayAgenda(){
   const wrap = $('today-content');
   if(!wrap)return;
+  syncTodayRangeSeg();
+  if(todayRange === 'week')return renderWeekAgenda();
   const data = load();
   const settings = sortSettings || loadSortSettings();
   const agenda = buildTodayAgenda(data,settings);
@@ -427,6 +686,74 @@ function renderTodayAgenda(){
   wrap.innerHTML = `<div class="agenda-timeline">${rows.map(row => agendaRowMarkup(row,now)).join('')}</div>`;
   bindAgendaTaps();
   renderTodayWeekStrip(data);
+}
+
+// RENDER: keep the today/week segmented control in sync with the view state.
+function syncTodayRangeSeg(){
+  const seg = $('today-range-seg');
+  if(!seg)return;
+  seg.querySelectorAll('[data-today-range]').forEach(btn=>{
+    const on = btn.dataset.todayRange === todayRange;
+    btn.classList.toggle('on',on);
+    btn.setAttribute('aria-selected',on ? 'true' : 'false');
+  });
+}
+
+// HANDLER: today/week segmented control click.
+function setTodayRange(range){
+  if(range !== 'today' && range !== 'week')return;
+  if(todayRange === range)return;
+  todayRange = range;
+  renderTodayAgenda();
+}
+
+// RENDER: the 7-day agenda. Each day is a card with its timeline rows; travel
+// between consecutive different-location items shows as a dashed band, same as
+// today. A header chip per day carries the date, weekday, fill count, and that
+// day's travel total so the clustering trade-off is visible at a glance.
+function renderWeekAgenda(){
+  const data = load();
+  const settings = sortSettings || loadSortSettings();
+  const week = buildWeekAgenda(data,settings,7);
+  const travelMin = Math.round(week.totalTravelSeconds / 60);
+  $('today-summary').textContent = travelMin > 0
+    ? `Next 7 days · ${travelMin} min travel · ${week.candidateCount} planned`
+    : `Next 7 days · ${week.candidateCount} planned`;
+  if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
+  const now = Date.now();
+  const cards = week.days.map(day => weekDayMarkup(day,now)).join('');
+  const wrap = $('today-content');
+  if(!week.days.some(d=>d.timeline.length)){
+    wrap.innerHTML = `<div class="agenda-empty">
+      <i class="ti ti-calendar-week" aria-hidden="true"></i>
+      <p>Nothing planned this week.</p>
+      <span>Add due dates to tasks or schedule entries to see them sequenced across the week.</span>
+    </div>`;
+    return;
+  }
+  wrap.innerHTML = `<div class="week-agenda">${cards}</div>`;
+  bindAgendaTaps();
+  renderTodayWeekStrip(data);
+}
+
+// RENDER: one day card inside the week agenda.
+function weekDayMarkup(day,now){
+  const date = new Date(day.dayBase);
+  const label = `${weekdayShort(day.weekday)} ${date.getDate()}`;
+  const isToday = day.isToday;
+  const fills = day.agendaItems.length + day.scheduled.length;
+  const travelMin = Math.round(day.travelSeconds / 60);
+  const headExtra = [
+    fills ? `${fills} ${fills === 1 ? 'item' : 'items'}` : 'open',
+    travelMin ? `${travelMin} min travel` : '',
+  ].filter(Boolean).join(' · ');
+  const body = day.timeline.length
+    ? day.timeline.map(row => agendaRowMarkup(row,now)).join('')
+    : `<div class="agenda-empty slim"><span>nothing scheduled</span></div>`;
+  return `<section class="week-day${isToday ? ' is-today' : ''}">
+    <header class="week-day-head"><b>${escapeHtml(label)}</b>${isToday ? '<span class="context-pill quiet">today</span>' : ''}<span class="trend-copy">${escapeHtml(headExtra)}</span></header>
+    <div class="agenda-timeline">${body}</div>
+  </section>`;
 }
 
 // RENDER: forward-looking 7-day strip — the complement to "just today".

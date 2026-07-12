@@ -47,25 +47,25 @@ const SORT_PRESETS = {
     focus:'balanced',plansFirst:true,planWindowDays:3,
     planWeight:100,dueWeight:100,progressWeight:70,trendWeight:55,rhythmWeight:55,
     buildWeight:100,limitWeight:70,stopWeight:130,newWeight:90,
-    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'watch',rhythmBias:0
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:70
   },
   build:{
     focus:'build',plansFirst:true,planWindowDays:3,
     planWeight:95,dueWeight:135,progressWeight:105,trendWeight:75,rhythmWeight:60,
     buildWeight:140,limitWeight:50,stopWeight:12,newWeight:125,
-    newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12
+    newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12,locationWeight:60
   },
   planned:{
     focus:'balanced',plansFirst:true,planWindowDays:7,
     planWeight:175,dueWeight:85,progressWeight:55,trendWeight:40,rhythmWeight:40,
     buildWeight:95,limitWeight:65,stopWeight:35,newWeight:70,
-    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0
+    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0,locationWeight:75
   },
   todayFirst:{
     focus:'balanced',plansFirst:true,planWindowDays:3,
     planWeight:120,dueWeight:140,progressWeight:60,trendWeight:50,rhythmWeight:50,
     buildWeight:110,limitWeight:80,stopWeight:110,newWeight:100,
-    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:70,limitMode:'overdue',stopMode:'watch',rhythmBias:0
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:70,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:80
   }
 };
 const DEFAULT_SORT_SETTINGS = {
@@ -116,7 +116,7 @@ const STOP_MODE_POLICY = {
   recent:{steps:[[1,58],[2,44],[4,28],[7,14]],fallback:3,progress:0.34,mix:{due:0.78,progress:0.28,trend:0.3},focus:1},
   active:{steps:[[1,92],[2,78],[4,58],[7,34]],fallback:8,progress:0.62,mix:{due:1.5,progress:0.85,trend:0.65},focus:1}
 };
-const BASE_SORT_MIX = {now:0.82,plan:1.45,due:1.35,progress:0.72,trend:0.7,rhythm:1,newness:1};
+const BASE_SORT_MIX = {now:0.82,plan:1.45,due:1.35,progress:0.72,trend:0.7,rhythm:1,newness:1,location:0.85};
 const FOCUS_TYPE_SCALE = {
   balanced:{keepup:1,reduce:1,zero:1,task:1},
   build:{keepup:1.22,reduce:0.78,zero:1,task:0.92},
@@ -157,6 +157,7 @@ let overviewRecentOffset = 0;
 let overviewTopicFilter = 'all';
 let overviewLocationFilter = 'all';
 let overviewRangeFilter = 'recent';
+let todayRange = 'today';           // 'today' | 'week' — the today-sheet range toggle
 let homeTopicFilter = 'all';
 let homeLocationFilter = 'all';
 let dayLogsKey = null;

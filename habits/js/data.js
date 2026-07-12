@@ -509,7 +509,11 @@ function normalizeBlockedTimes(value){
     const start = normalizeTimeMinutes(raw?.start);
     const end = normalizeTimeMinutes(raw?.end);
     if(start === null || end === null || start === end)return null;
-    return {label,days,start,end};
+    // Optional location tie: a block tagged with a location tells the week
+    // agenda where you already are during that span (sleep→Home, work→Office).
+    // Stripped to a clean id; absent = location-agnostic (busy, place unknown).
+    const locationId = cleanLocationId(raw?.locationId) || null;
+    return {label,days,start,end,locationId};
   }).filter(Boolean).slice(0,24);
 }
 

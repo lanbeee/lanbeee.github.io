@@ -236,7 +236,90 @@ function calendarDayDiff(ts){
   return Math.round((dayStart(ts) - dayStart(Date.now())) / 86400000);
 }
 
-// ─── Score components: plan / new / due / progress / trend / rhythm ───
+// ─── Location signal — the one geography-aware score component ───
+// Modest, capped, opt-in via settings.locationWeight (0..200 → 0..2 scale).
+// Three effects, all small so this nudges rather than dominates the home order:
+//   • cluster bonus  — other due/active habits share this location → +per peer
+//   • open bonus     — at least one allowed location is open right now → +
+//   • closed penalty — every allowed location is closed today → −
+// "anywhere" habits (no locationIds) score 0: locations stay invisible for
+// users who never set them up, matching the LOCATIONS.md design principle that
+// home scoring changes should be a tiebreaker near the agenda, not a rewrite.
+//
+// IMPURE: reads `load()` for the cluster map (same posture as the sortSettings
+// global read). Memoised by a cheap data+settings fingerprint so a single
+// visibleIndices() pass pays the cluster computation once.
+
+let _locationAffinityCache = { key:null, byId:null };
+
+function locationAffinityFingerprint(data,settings){
+  let h = (data?.length || 0) * 1000003;
+  // Last 64 entries are enough to detect a re-sort after a log/plan/snooze.
+  for(let i = Math.max(0,(data?.length || 0) - 64);i < (data?.length || 0);i += 1){
+    h = (h * 31 + (data[i].lastLog || 0)) | 0;
+    h = (h * 31 + (data[i].preferredLocationId ? 1 : 0)) | 0;
+  }
+  h = (h * 31 + ((settings.locations || []).length)) | 0;
+  return h;
+}
+
+// Returns Map<locationId, number> — the sum of each peer habit's dueSignal/100,
+// so a location shared by two overdue habits carries roughly 2× the weight of
+// one with a single mid-cycle habit. Tasks count via their urgency; someday
+// tasks (null urgency) contribute nothing.
+function locationAffinityMap(data,settings){
+  const key = locationAffinityFingerprint(data,settings);
+  if(_locationAffinityCache.key === key && _locationAffinityCache.byId)return _locationAffinityCache.byId;
+  const registry = normalizeLocationRegistry(settings.locations);
+  const byId = new Map();
+  if(!registry.length){ _locationAffinityCache = { key, byId }; return byId; }
+  for(const h of (Array.isArray(data) ? data : [])){
+    if(h.type === 'zero')continue;
+    const ids = normalizeLocationIds(h.locationIds,registry);
+    if(!ids.length)continue;
+    let weight = 0;
+    if(h.type === 'task'){
+      const u = taskUrgency(h);
+      weight = u === null ? 0 : Math.max(0,u);
+    }else{
+      weight = Math.max(0,dueSignal(h,settings)) / 100;
+    }
+    if(weight <= 0)continue;
+    for(const id of ids)byId.set(id,(byId.get(id) || 0) + weight);
+  }
+  _locationAffinityCache = { key, byId };
+  return byId;
+}
+
+// Reset the affinity cache (used by tests + after a save() that changes data).
+function invalidateLocationAffinity(){ _locationAffinityCache = { key:null, byId:null }; }
+
+// PURE-ish: the per-habit location score, in the same 0..~110 range as the
+// other components. Capped to [-12, +14] so it can only break ties / nudge.
+function locationSignal(h,settings){
+  if(h.type === 'zero')return 0;
+  const registry = normalizeLocationRegistry(settings.locations);
+  const ids = normalizeLocationIds(h.locationIds,registry);
+  if(!ids.length)return 0;                                // anywhere → neutral
+  const weekday = new Date().getDay();
+  const aff = locationAffinityMap(typeof load === 'function' ? load() : [],settings);
+  let signal = 0;
+  let anyOpen = false, allClosed = true;
+  for(const id of ids){
+    const loc = registry.find(l=>l.id === id);
+    const win = loc ? resolveLocationWindow(loc,weekday) : {start:0,end:1440};
+    if(win){ anyOpen = true; allClosed = false; }
+    const peers = aff.get(id) || 0;
+    signal += Math.min(12,peers * 3);                      // cluster bonus (gradual, cap 12)
+  }
+  if(anyOpen)signal += 2;                                  // reachable bonus
+  if(allClosed)signal -= 8;                                // unreachable penalty
+  // Average over allowed locations so multi-location habits don't double-count.
+  signal = signal / ids.length;
+  return Math.max(-12,Math.min(16,signal));
+}
+
+// ─── Score components: plan / new / due / progress / trend / rhythm / location ───
 // Each returns a 0..~110 contribution for one habit. Mixed together by
 // priorityComponents() and weighted by the user's setting scales.
 
@@ -410,7 +493,7 @@ function typeSettingScale(h,settings){
  * and by debug tooling.
  * @param {Habit} h
  * @param {Settings} settings
- * @returns {Object} {now,plan,due,progress,trend,rhythm,newness,duration,availability,flexibility,schedule,preferred}
+ * @returns {Object} {now,plan,due,progress,trend,rhythm,newness,duration,availability,flexibility,schedule,preferred,location}
  */
 function priorityComponents(h,settings){
   if(h.type === 'task')return taskPriorityComponents(h,settings);
@@ -427,7 +510,8 @@ function priorityComponents(h,settings){
     availability:plannerFit.availability,
     flexibility:plannerFit.flexibility,
     schedule:scheduleSignal(h),
-    preferred:preferredSignal(h)
+    preferred:preferredSignal(h),
+    location:locationSignal(h,settings) * settingScale(settings.locationWeight)
   };
 }
 
@@ -437,6 +521,7 @@ function priorityComponents(h,settings){
 // Completed tasks (lastLog !== null) sink to the bottom but stay findable.
 function taskPriorityComponents(h,settings){
   const plannerFit = plannerFitSignal(h,settings);
+  const location = locationSignal(h,settings) * settingScale(settings.locationWeight);
   if(h.lastLog !== null){
     return {
       now:0,plan:0,due:0,progress:0,trend:0,rhythm:0,newness:0,
@@ -444,7 +529,8 @@ function taskPriorityComponents(h,settings){
       availability:plannerFit.availability,
       flexibility:plannerFit.flexibility,
       schedule:scheduleSignal(h),
-      preferred:preferredSignal(h)
+      preferred:preferredSignal(h),
+      location
     };
   }
   const due = h.dueDate === null
@@ -462,7 +548,8 @@ function taskPriorityComponents(h,settings){
     availability:plannerFit.availability,
     flexibility:plannerFit.flexibility,
     schedule:scheduleSignal(h),
-    preferred:preferredSignal(h)
+    preferred:preferredSignal(h),
+    location
   };
 }
 
@@ -618,7 +705,7 @@ function attentionScore(h,index,settingsOverride = null){
     if(Number.isFinite(policy.cap))score = Math.min(score,policy.cap);
     score += policy.offset || 0;
   }
-  score += parts.duration + parts.availability + parts.flexibility + parts.schedule + parts.preferred;
+  score += parts.duration + parts.availability + parts.flexibility + parts.schedule + parts.preferred + parts.location;
 
   const focusScale = FOCUS_TYPE_SCALE[focus] || FOCUS_TYPE_SCALE.balanced;
   score *= focusScale[h.type] || 1;
