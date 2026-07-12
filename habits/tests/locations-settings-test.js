@@ -68,23 +68,27 @@ async function openSettings(page){
   const emptyVisible = await page.locator('#location-empty-hint').isVisible();
   assert(emptyVisible, 'empty hint shown when no locations');
 
-  // ── B. Add a location via geocode ──
-  console.log('\n[B] add via geocode (mocked Nominatim)');
+  // ── B. Add a location via map picker + geocode ──
+  console.log('\n[B] add via map picker (mocked Nominatim)');
   await page.evaluate(() => { window.__mockRoutes = {
     'nominatim.openstreetmap.org': { json:[
       { display_name:'10 Downing Street, Westminster, London', lat:'51.5034', lon:'-0.1276' },
       { display_name:'Downing College, Cambridge', lat:'52.1227', lon:'0.1178' }
     ]}
   };});
-  await page.locator('#loc-name-input').fill('Office');
-  await page.locator('#loc-address-input').fill('10 Downing Street');
-  await page.locator('#loc-search').click();
-  await page.waitForSelector('#loc-results .location-result');
-  const resultCount = await page.locator('#loc-results .location-result').count();
+  await page.locator('#loc-open-picker').click();
+  await page.waitForSelector('#location-picker-sheet.open');
+  await page.locator('#picker-name').fill('Office');
+  await page.locator('#picker-search').fill('10 Downing Street');
+  await page.locator('#picker-search-btn').click();
+  await page.waitForSelector('#picker-results .location-result');
+  const resultCount = await page.locator('#picker-results .location-result').count();
   assert(resultCount === 2, 'geocode returned 2 candidates');
   // Pick the first (London).
-  await page.locator('#loc-results .location-result').first().click();
+  await page.locator('#picker-results .location-result').first().click();
   await page.waitForTimeout(200);
+  await page.locator('#picker-save').click();
+  await page.waitForTimeout(300);
   const rows = await page.locator('#location-list .location-row').count();
   assert(rows === 1, 'one location row rendered after pick');
   const name0 = await page.locator('[data-loc-name="0"]').inputValue();
@@ -215,10 +219,14 @@ async function openSettings(page){
   await page.locator('[data-loc-end="0"]').blur();
   await page.waitForTimeout(150);
 
-  // ── H. GPS add ──
-  console.log('\n[H] add via GPS (mocked geolocation)');
-  await page.locator('#loc-name-input').fill('Gym');
-  await page.locator('#loc-use-gps').click();
+  // ── H. GPS add via picker ──
+  console.log('\n[H] add via GPS (mocked geolocation) in picker');
+  await page.locator('#loc-open-picker').click();
+  await page.waitForSelector('#location-picker-sheet.open');
+  await page.locator('#picker-name').fill('Gym');
+  await page.locator('#picker-gps').click();
+  await page.waitForTimeout(300);
+  await page.locator('#picker-save').click();
   await page.waitForTimeout(300);
   const gps = await page.evaluate(() => {
     const s = loadSortSettings();

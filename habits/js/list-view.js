@@ -67,7 +67,7 @@ function selectedPreferredLocationId(){
   return selectedPreferredLocationIdFrom('ting-tag-chips');
 }
 
-// RENDER: one shared chip row — topics (neutral) then places (teal). Preferred
+// RENDER: one shared chip row — places (teal) then topics (neutral). Preferred
 // is marked with a star on the location chip (second tap when 2+ selected).
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null){
   const wrap = $(containerId);
@@ -77,16 +77,16 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
   const selectedLocs = normalizeLocationIds(selectedLocIds,locations);
   const preferred = normalizePreferredLocation(preferredLocId,selectedLocs);
-  const topicHtml = topics.map(topic=>{
-    const on = selectedSet.has(topic.toLowerCase());
-    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
-  }).join('');
   const locHtml = locations.map(loc=>{
     const on = selectedLocs.includes(loc.id);
     const pref = preferred === loc.id;
     return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${pref ? 'preferred' : ''}" data-location-id="${escapeHtml(loc.id)}" title="${pref ? 'preferred place' : 'place'}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${pref ? ' ★' : ''}</button>`;
   }).join('');
-  wrap.innerHTML = topicHtml + locHtml;
+  const topicHtml = topics.map(topic=>{
+    const on = selectedSet.has(topic.toLowerCase());
+    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
+  }).join('');
+  wrap.innerHTML = locHtml + topicHtml;
   wrap.appendChild(createAddTopicPill());
 }
 
@@ -171,15 +171,17 @@ function matchesHomeLocation(h,id){
   return ids.includes(id);
 }
 
-// HYBRID: one home filter row — topics (neutral) + places (teal)
+// HYBRID: one home filter row — presence status, then places, then topics
 function renderHomeTagFilter(data){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
+  const registry = locationOptions();
   const topicChoices = homeTopicChoices(data);
   const locChoices = homeLocationChoices(data);
   const hasTopics = topicChoices.length > 1;
   const hasLocs = locChoices.length > 1;
-  if(!hasTopics && !hasLocs){
+  const hasPresence = registry.length > 0;
+  if(!hasTopics && !hasLocs && !hasPresence){
     wrap.innerHTML = '';
     wrap.hidden = true;
     return;
@@ -187,13 +189,26 @@ function renderHomeTagFilter(data){
   if(hasTopics && !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
   if(hasLocs && !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
   wrap.hidden = false;
-  const topicHtml = hasTopics ? topicChoices.map(choice=>`
-    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
-  `).join('') : '';
+  let statusHtml = '';
+  if(hasPresence && typeof locationPresence === 'function'){
+    const presence = locationPresence(registry);
+    const anchor = typeof currentLocationId === 'function' ? currentLocationId() : null;
+    const anchorLoc = anchor ? locationById(anchor,registry) : null;
+    let label = 'set place';
+    let kind = presence.kind || 'away';
+    if(presence.kind === 'at')label = `at ${presence.name}`;
+    else if(presence.kind === 'near')label = `near ${presence.name}`;
+    else if(anchorLoc){ label = `at ${anchorLoc.name}`; kind = 'at'; }
+    const gpsClass = presence.gps && presence.kind === 'at' ? 'gps-matched' : '';
+    statusHtml = `<button type="button" class="topic-filter presence-filter ${kind} ${gpsClass}" data-home-presence="1" title="set agenda starting place"><i class="ti ti-current-location" aria-hidden="true"></i>${escapeHtml(label)}</button>`;
+  }
   const locHtml = hasLocs ? locChoices.map(choice=>`
     <button type="button" class="topic-filter location-filter ${choice.key === homeLocationFilter ? 'on' : ''}" data-home-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
   `).join('') : '';
-  wrap.innerHTML = topicHtml + locHtml;
+  const topicHtml = hasTopics ? topicChoices.map(choice=>`
+    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
+  `).join('') : '';
+  wrap.innerHTML = statusHtml + locHtml + topicHtml;
 }
 
 // HYBRID: draw home location filter (compat — routes to unified row)
@@ -1107,10 +1122,14 @@ function render(){
       const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
       const fromName = from ? from.name : 'here';
       const toName = to ? to.name : 'next';
-      const travelEl = document.createElement('div');
-      travelEl.className = 'travel-card';
-      travelEl.setAttribute('role','note');
-      travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>`;
+      const edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(edge);
+      const travelEl = document.createElement('button');
+      travelEl.type = 'button';
+      travelEl.className = `travel-card${edited ? ' is-edited' : ''}`;
+      travelEl.dataset.travelFrom = prevTodayLocId;
+      travelEl.dataset.travelTo = locId;
+      travelEl.setAttribute('aria-label',`edit travel time ${fromName} to ${toName}`);
+      travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
       list.appendChild(travelEl);
     }
     if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;

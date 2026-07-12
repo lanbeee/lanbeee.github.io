@@ -296,7 +296,10 @@ function locationRowMarkup(loc,i){
   return `<div class="location-row" data-location-row="${i}">
     <div class="location-row-head">
       <input type="text" class="location-name" data-loc-name="${i}" aria-label="location name" maxlength="48" value="${escapeHtml(loc.name)}" />
-      <span class="location-coords dim">${formatCoord(loc.lat)}, ${formatCoord(loc.lng)}</span>
+      <button class="mini-text-btn location-coords-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map">
+        <i class="ti ti-map-pin" aria-hidden="true"></i>
+        <span class="location-coords dim">${formatCoord(loc.lat)}, ${formatCoord(loc.lng)}</span>
+      </button>
       <button class="mini-text-btn" type="button" data-loc-remove="${i}">remove</button>
     </div>
     <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)" />
@@ -433,64 +436,178 @@ function toggleLocationMore(index){
   }
 }
 
-// ASYNC: geocode the typed address and render candidates to pick from.
-async function searchLocations(){
-  const addressInput = $('loc-address-input');
-  const resultsWrap = $('loc-results');
-  if(!addressInput || !resultsWrap)return;
-  const q = addressInput.value.trim();
-  if(!q){ showToast('enter an address to search'); addressInput.focus(); return; }
+// ── Location map picker (Leaflet) ───────────────────────────────────────
+let pickerMap = null;
+let pickerMarker = null;
+let pickerEditIndex = null;
+let pickerReverseTimer = null;
+let pickerSuppressReverse = false;
+let pendingPickerResults = [];
+
+function destroyLocationPickerMap(){
+  if(pickerReverseTimer){ clearTimeout(pickerReverseTimer); pickerReverseTimer = null; }
+  if(pickerMap){
+    try{ pickerMap.remove(); }catch{ /* ignore */ }
+    pickerMap = null;
+    pickerMarker = null;
+  }
+}
+
+function pickerSetCoords(lat,lng,{ reverse = true, nameFromSearch = null, addressFromSearch = null } = {}){
+  if(!Number.isFinite(lat) || !Number.isFinite(lng))return;
+  const latEl = $('picker-lat');
+  const lngEl = $('picker-lng');
+  if(latEl)latEl.value = String(Math.round(lat * 1e6) / 1e6);
+  if(lngEl)lngEl.value = String(Math.round(lng * 1e6) / 1e6);
+  if(pickerMarker)pickerMarker.setLatLng([lat,lng]);
+  if(pickerMap)pickerMap.panTo([lat,lng]);
+  if(addressFromSearch){
+    const hint = $('picker-address-hint');
+    if(hint)hint.textContent = addressFromSearch;
+  }
+  if(nameFromSearch){
+    const nameEl = $('picker-name');
+    if(nameEl && !nameEl.value.trim())nameEl.value = nameFromSearch;
+  }
+  if(!reverse || pickerSuppressReverse)return;
+  if(pickerReverseTimer)clearTimeout(pickerReverseTimer);
+  pickerReverseTimer = setTimeout(async ()=>{
+    pickerReverseTimer = null;
+    const result = await reverseGeocode(lat,lng);
+    if(!result)return;
+    const hint = $('picker-address-hint');
+    if(hint)hint.textContent = result.address || '';
+    const nameEl = $('picker-name');
+    if(nameEl && !nameEl.value.trim() && result.name)nameEl.value = result.name;
+  },450);
+}
+
+function ensureLocationPickerMap(lat,lng){
+  const el = $('picker-map');
+  if(!el || typeof L === 'undefined')return;
+  const startLat = Number.isFinite(lat) ? lat : 40.7359;
+  const startLng = Number.isFinite(lng) ? lng : -74.0036;
+  if(!pickerMap){
+    pickerMap = L.map(el,{ zoomControl:true, attributionControl:true }).setView([startLat,startLng],15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      maxZoom:19,
+      attribution:'&copy; OpenStreetMap'
+    }).addTo(pickerMap);
+    pickerMarker = L.marker([startLat,startLng],{ draggable:true }).addTo(pickerMap);
+    pickerMarker.on('dragend',()=>{
+      const p = pickerMarker.getLatLng();
+      pickerSetCoords(p.lat,p.lng,{reverse:true});
+    });
+    pickerMap.on('click',e=>{
+      pickerSetCoords(e.latlng.lat,e.latlng.lng,{reverse:true});
+    });
+  }else{
+    pickerMap.setView([startLat,startLng],pickerMap.getZoom() || 15);
+    if(pickerMarker)pickerMarker.setLatLng([startLat,startLng]);
+  }
+  setTimeout(()=>{ try{ pickerMap.invalidateSize(); }catch{ /* ignore */ } },80);
+  setTimeout(()=>{ try{ pickerMap.invalidateSize(); }catch{ /* ignore */ } },320);
+}
+
+// HYBRID: open add/edit place picker with map pin.
+function openLocationPicker(opts = {}){
+  pickerEditIndex = Number.isInteger(opts.index) ? opts.index : null;
+  const title = $('location-picker-title');
+  if(title)title.textContent = pickerEditIndex != null ? 'edit pin' : 'add place';
+  const nameEl = $('picker-name');
+  const searchEl = $('picker-search');
+  const results = $('picker-results');
+  const hint = $('picker-address-hint');
+  if(nameEl)nameEl.value = opts.name || '';
+  if(searchEl)searchEl.value = '';
+  if(results){ results.hidden = true; results.innerHTML = ''; }
+  if(hint)hint.textContent = opts.address || '';
+  pendingPickerResults = [];
+  pickerSuppressReverse = true;
+  openSheet('location-picker-sheet');
+  const lat = Number.isFinite(opts.lat) ? opts.lat : (currentCoord ? currentCoord.lat : 40.7359);
+  const lng = Number.isFinite(opts.lng) ? opts.lng : (currentCoord ? currentCoord.lng : -74.0036);
+  ensureLocationPickerMap(lat,lng);
+  pickerSetCoords(lat,lng,{reverse:!Number.isFinite(opts.lat),addressFromSearch:opts.address || null});
+  pickerSuppressReverse = false;
+}
+
+function closeLocationPicker(){
+  closeSheet('location-picker-sheet');
+  destroyLocationPickerMap();
+  pickerEditIndex = null;
+}
+
+async function searchPickerLocations(){
+  const searchEl = $('picker-search');
+  const resultsWrap = $('picker-results');
+  if(!searchEl || !resultsWrap)return;
+  const q = searchEl.value.trim();
+  if(!q){ showToast('enter an address to search'); searchEl.focus(); return; }
   resultsWrap.hidden = false;
   resultsWrap.innerHTML = '<p class="field-hint">searching…</p>';
-  pendingLocationResults = await geocodeSearch(q);
-  if(!pendingLocationResults.length){
-    resultsWrap.innerHTML = '<p class="field-hint">no matches — try a different address, or use "my location".</p>';
+  pendingPickerResults = await geocodeSearch(q);
+  if(!pendingPickerResults.length){
+    resultsWrap.innerHTML = '<p class="field-hint">no matches — try another address, or drop the pin.</p>';
     return;
   }
-  resultsWrap.innerHTML = pendingLocationResults.map((r,idx)=>`<button type="button" class="location-result" data-loc-result="${idx}">
+  resultsWrap.innerHTML = pendingPickerResults.map((r,idx)=>`<button type="button" class="location-result" data-picker-result="${idx}">
     <b>${escapeHtml(r.name)}</b><span class="dim">${escapeHtml(r.address)}</span>
   </button>`).join('');
 }
 
-// HANDLER: a geocode candidate was tapped → create the location.
-function pickLocationResult(idx){
-  const r = pendingLocationResults[idx];
+function pickPickerResult(idx){
+  const r = pendingPickerResults[idx];
   if(!r)return;
-  const typed = ($('loc-name-input') && $('loc-name-input').value || '').trim();
-  const ok = addLocation({name:typed || r.name, address:r.address, lat:r.lat, lng:r.lng});
-  if(ok)clearLocationAddForm();
+  const nameEl = $('picker-name');
+  if(nameEl && !nameEl.value.trim())nameEl.value = r.name;
+  pickerSetCoords(r.lat,r.lng,{reverse:false,nameFromSearch:r.name,addressFromSearch:r.address});
+  const resultsWrap = $('picker-results');
+  if(resultsWrap){ resultsWrap.hidden = true; resultsWrap.innerHTML = ''; }
 }
 
-// HANDLER: one-shot geolocation — drops a pin at the live coordinate with the
-// typed name. The live watchPosition for agenda anchoring is Phase 7; this is
-// just the add-flow convenience.
-function useMyLocationForAdd(){
-  const nameInput = $('loc-name-input');
-  if(!nameInput)return;
-  const name = nameInput.value.trim();
-  if(!name){ showToast('enter a name first'); nameInput.focus(); return; }
+function applyPickerCoordsInputs(){
+  const lat = Number(($('picker-lat') && $('picker-lat').value) || NaN);
+  const lng = Number(($('picker-lng') && $('picker-lng').value) || NaN);
+  if(!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180){
+    showToast('enter valid lat / lng');
+    return;
+  }
+  pickerSetCoords(lat,lng,{reverse:true});
+}
+
+function centerPickerOnGps(){
   if(!navigator.geolocation){ showToast('location not supported on this device'); return; }
   showToast('finding your location…');
   navigator.geolocation.getCurrentPosition(
-    pos => {
-      const ok = addLocation({name, address:'', lat:pos.coords.latitude, lng:pos.coords.longitude});
-      if(ok)clearLocationAddForm();
-    },
+    pos => pickerSetCoords(pos.coords.latitude,pos.coords.longitude,{reverse:true}),
     () => showToast('could not get your location'),
     {enableHighAccuracy:false, timeout:10000, maximumAge:60000}
   );
 }
 
-// HYBRID: clear the add-location form + results panel.
-function clearLocationAddForm(){
-  pendingLocationResults = [];
-  const resultsWrap = $('loc-results');
-  if(resultsWrap){ resultsWrap.hidden = true; resultsWrap.innerHTML = ''; }
-  const nameInput = $('loc-name-input');
-  const addressInput = $('loc-address-input');
-  if(nameInput)nameInput.value = '';
-  if(addressInput)addressInput.value = '';
+function saveLocationPicker(){
+  const name = (($('picker-name') && $('picker-name').value) || '').trim();
+  const lat = Number(($('picker-lat') && $('picker-lat').value) || NaN);
+  const lng = Number(($('picker-lng') && $('picker-lng').value) || NaN);
+  const address = (($('picker-address-hint') && $('picker-address-hint').textContent) || '').trim().slice(0,120);
+  if(!name){ showToast('enter a name'); $('picker-name')?.focus(); return; }
+  if(!Number.isFinite(lat) || !Number.isFinite(lng)){ showToast('drop a pin on the map'); return; }
+  if(pickerEditIndex != null){
+    saveLocationPatch(pickerEditIndex,{name,address,lat,lng});
+    showToast('pin updated');
+    closeLocationPicker();
+    return;
+  }
+  const ok = addLocation({name,address,lat,lng});
+  if(ok)closeLocationPicker();
 }
+
+// Legacy stubs kept so old wiring does not throw if referenced.
+function searchLocations(){ openLocationPicker(); }
+function pickLocationResult(){}
+function useMyLocationForAdd(){ openLocationPicker(); centerPickerOnGps(); }
+function clearLocationAddForm(){}
 
 // HYBRID: commit the default open-window pair. Both present → set both; both
 // empty → 24h; exactly one present → hold (leave the DOM as-is so the user can

@@ -145,7 +145,7 @@
  * @property {string} b          — location id (lexically larger of the pair)
  * @property {number} seconds    — travel time in seconds
  * @property {number} metres     — travel distance in metres
- * @property {'osrm'|'google'|'haversine'} provider — which provider produced this edge
+ * @property {'osrm'|'google'|'haversine'|'manual'} provider — which provider produced this edge (manual = user override)
  * @property {number} fetchedAt  — ms timestamp of the fetch (used for TTL)
  */
 
@@ -629,9 +629,16 @@ function normalizeTravelCache(value){
     const seconds = Number(edge.seconds);
     const metres = Number(edge.metres);
     if(!Number.isFinite(seconds) || seconds < 0 || !Number.isFinite(metres) || metres < 0)continue;
-    const provider = edge.provider === 'osrm' || edge.provider === 'google' ? edge.provider : 'haversine';
-    const fetchedAt = Number(edge.fetchedAt);
-    if(!Number.isFinite(fetchedAt) || fetchedAt < cutoff)continue;
+    const provider = edge.provider === 'osrm' || edge.provider === 'google' || edge.provider === 'manual'
+      ? edge.provider
+      : 'haversine';
+    let fetchedAt = Number(edge.fetchedAt);
+    // Manual overrides never expire; network edges drop after 2× TTL.
+    if(provider === 'manual'){
+      if(!Number.isFinite(fetchedAt))fetchedAt = Date.now();
+    }else if(!Number.isFinite(fetchedAt) || fetchedAt < cutoff){
+      continue;
+    }
     const [lo,hi] = a < b ? [a,b] : [b,a];
     out[`${lo}|${hi}`] = {a:lo,b:hi,seconds:Math.round(seconds),metres:Math.round(metres),provider,fetchedAt:Math.round(fetchedAt)};
     count += 1;

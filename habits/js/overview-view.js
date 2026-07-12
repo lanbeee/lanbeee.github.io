@@ -69,13 +69,13 @@ function renderOverviewTagFilter(data){
   if(hasTopics && !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
   if(hasLocs && !locChoices.some(choice=>choice.key === overviewLocationFilter))overviewLocationFilter = 'all';
   wrap.hidden = false;
-  const topicHtml = hasTopics ? topicChoices.map(choice=>`
-    <button type="button" class="topic-filter ${choice.key === overviewTopicFilter ? 'on' : ''}" data-overview-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
-  `).join('') : '';
   const locHtml = hasLocs ? locChoices.map(choice=>`
     <button type="button" class="topic-filter location-filter ${choice.key === overviewLocationFilter ? 'on' : ''}" data-overview-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
   `).join('') : '';
-  wrap.innerHTML = topicHtml + locHtml;
+  const topicHtml = hasTopics ? topicChoices.map(choice=>`
+    <button type="button" class="topic-filter ${choice.key === overviewTopicFilter ? 'on' : ''}" data-overview-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
+  `).join('') : '';
+  wrap.innerHTML = locHtml + topicHtml;
 }
 
 // HYBRID: renders overview location pills (compat — routes to unified row)

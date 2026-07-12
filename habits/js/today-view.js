@@ -451,10 +451,13 @@ function agendaRowMarkup(row,now){
   if(row.kind === 'travel' || row.kind === 'wait'){
     const mins = Math.max(1,Math.round((row.seconds || 0) / 60));
     const km = row.metres ? `${(row.metres / 1000).toFixed(row.metres >= 1000 ? 1 : 2)} km` : '';
-    const label = row.kind === 'wait'
-      ? `wait · ${escapeHtml(row.toName || 'opens')} · ${mins} min`
-      : `${mins} min${km ? ` · ${km}` : ''} · ${escapeHtml(row.toName || 'next')}`;
-    return `<div class="today-travel-row" aria-hidden="true"><i class="ti ti-route" aria-hidden="true"></i><span>${label}</span></div>`;
+    if(row.kind === 'wait'){
+      const label = `wait · ${escapeHtml(row.toName || 'opens')} · ${mins} min`;
+      return `<div class="today-travel-row" aria-hidden="true"><i class="ti ti-route" aria-hidden="true"></i><span>${label}</span></div>`;
+    }
+    const edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(row);
+    const label = `${mins} min${km ? ` · ${km}` : ''} · ${escapeHtml(row.fromName || 'here')} → ${escapeHtml(row.toName || 'next')}`;
+    return `<button type="button" class="today-travel-row${edited ? ' is-edited' : ''}" data-travel-from="${escapeHtml(row.from || '')}" data-travel-to="${escapeHtml(row.to || '')}" aria-label="edit travel time"><i class="ti ti-route" aria-hidden="true"></i><span>${label}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}</button>`;
   }
   const h = row.h;
   const c = colors(daysSince(h.lastLog),h.target,h.type);

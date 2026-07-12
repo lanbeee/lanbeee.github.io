@@ -89,6 +89,18 @@ async function openSettings(page){
   await page.waitForTimeout(300);
   const filterVisible = await page.locator('#home-tag-filter').isVisible().catch(()=>false);
   assert(filterVisible, 'home tag filter visible');
+  const presenceChip = await page.locator('#home-tag-filter [data-home-presence]').count();
+  assert(presenceChip === 1, 'presence status chip present');
+  const firstFilterKind = await page.evaluate(() => {
+    const kids = [...document.querySelectorAll('#home-tag-filter > button')];
+    return {
+      firstIsPresence:kids[0] && kids[0].hasAttribute('data-home-presence'),
+      firstLocationIdx:kids.findIndex(b=>b.hasAttribute('data-home-location')),
+      firstTopicIdx:kids.findIndex(b=>b.hasAttribute('data-home-topic'))
+    };
+  });
+  assert(firstFilterKind.firstIsPresence, 'presence chip is first');
+  assert(firstFilterKind.firstLocationIdx >= 0 && firstFilterKind.firstLocationIdx < firstFilterKind.firstTopicIdx, 'places before topics');
   const filterCount = await page.locator('#home-tag-filter .location-filter').count();
   assert(filterCount >= 3, 'location filters present (got ' + filterCount + ')');
   // Filter to Gym.
@@ -103,6 +115,16 @@ async function openSettings(page){
   const pinVisible = await page.locator('.ting-card .ti-map-pin').count();
   assert(pinVisible > 0, 'location pin labels on cards (got ' + pinVisible + ')');
   await page.locator('#home-tag-filter [data-home-location="all"]').click();
+
+  // Presence picker sets agenda anchor without filtering.
+  await page.locator('#home-tag-filter [data-home-presence]').click();
+  await page.waitForSelector('#presence-picker-sheet.open');
+  await page.locator('#presence-picker-chips [data-presence-pick="sample-gym"]').click();
+  await page.waitForTimeout(150);
+  const anchored = await page.evaluate(() => loadSortSettings().lastKnownLocationId);
+  assert(anchored === 'sample-gym', 'presence pick sets lastKnownLocationId');
+  await page.locator('#presence-picker-close').click();
+  await page.waitForTimeout(100);
 
   // ── C. Add-sheet location chips ──
   console.log('\n[C] add-sheet location chips + preferred');
@@ -196,6 +218,24 @@ async function openSettings(page){
   });
   console.log(homeTravel);
   assert(homeTravel.travelCards >= 1, 'home today shows travel card(s) (got ' + homeTravel.travelCards + ')');
+
+  // Edit a travel card → manual override persists.
+  await page.locator('#list .travel-card').first().click();
+  await page.waitForSelector('#travel-edit-sheet.open');
+  await page.locator('#travel-edit-minutes').fill('42');
+  await page.locator('#travel-edit-save').click();
+  await page.waitForTimeout(250);
+  const manual = await page.evaluate(() => {
+    const card = document.querySelector('#list .travel-card.is-edited');
+    if(!card)return null;
+    const from = locationById(card.dataset.travelFrom);
+    const to = locationById(card.dataset.travelTo);
+    const edge = travelBetween(from,to,loadSortSettings().defaultTravelMode);
+    return { provider:edge.provider, mins:Math.round(edge.seconds/60), editedUi:!!card };
+  });
+  console.log(manual);
+  assert(manual && manual.provider === 'manual' && manual.mins === 42, 'manual travel override saved');
+  assert(manual.editedUi, 'edited travel card shows edited affordance');
   assert(pageErrors.length === 0, 'no pageerrors (got: ' + JSON.stringify(pageErrors) + ')');
 
   // ── E. Travel mode control in settings ──

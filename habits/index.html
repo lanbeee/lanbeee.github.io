@@ -20,7 +20,9 @@
 <script>
 (function(l){l.media='not all';l.onload=function(){l.media='all'};l.onerror=function(){l.remove()}})(document.querySelector('link[href*="tabler-icons"]'));
 </script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <link rel="stylesheet" href="./styles.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 <div class="app">
@@ -515,16 +517,10 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-locations-body" hidden>
-            <p class="field-hint">Places where habits can happen. A habit with no location works anywhere; one tied to a location is constrained by its hours. Travel time between locations shapes the Today agenda.</p>
-            <div class="location-add-row">
-              <input type="text" id="loc-name-input" placeholder="name (e.g. Gym)" maxlength="48" autocomplete="off" />
-              <input type="text" id="loc-address-input" placeholder="address to search" maxlength="120" autocomplete="off" />
-              <button class="btn primary" id="loc-search" type="button">search</button>
-            </div>
+            <p class="field-hint">Places where habits can happen. Drop a pin on the map or search an address — you should not need raw coordinates.</p>
             <div class="location-add-actions">
-              <button class="btn" id="loc-use-gps" type="button">use my location</button>
+              <button class="btn primary" id="loc-open-picker" type="button"><i class="ti ti-map-pin" aria-hidden="true"></i> add place</button>
             </div>
-            <div class="location-results" id="loc-results" hidden></div>
             <div class="location-list" id="location-list"></div>
             <p class="field-hint location-empty-hint" id="location-empty-hint" hidden>No locations yet. A habit with no location works anywhere.</p>
             <div class="location-travel-mode">
@@ -739,6 +735,82 @@
       <div class="btn-row">
         <button class="btn" id="day-logs-overview">calendar</button>
         <button class="btn primary" id="day-logs-home">home</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- location map picker -->
+  <div class="sheet-wrap" id="location-picker-sheet">
+    <div class="sheet location-picker-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title" id="location-picker-title">add place</p>
+          <p class="about-copy">Search an address, or drop the pin on the map.</p>
+        </div>
+      </div>
+      <label class="field-label" for="picker-name">name</label>
+      <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />
+      <div class="picker-search-row">
+        <input type="text" id="picker-search" maxlength="120" placeholder="search address" autocomplete="off" />
+        <button class="btn" type="button" id="picker-search-btn">search</button>
+      </div>
+      <div class="location-results" id="picker-results" hidden></div>
+      <div class="picker-map-wrap">
+        <div id="picker-map" class="picker-map" role="application" aria-label="map pin"></div>
+        <button type="button" class="btn picker-gps-btn" id="picker-gps"><i class="ti ti-current-location" aria-hidden="true"></i> my location</button>
+      </div>
+      <details class="picker-coords-details">
+        <summary>enter coordinates</summary>
+        <div class="picker-coords-row">
+          <input type="text" id="picker-lat" inputmode="decimal" placeholder="lat" aria-label="latitude" />
+          <input type="text" id="picker-lng" inputmode="decimal" placeholder="lng" aria-label="longitude" />
+          <button class="btn" type="button" id="picker-apply-coords">apply</button>
+        </div>
+      </details>
+      <p class="field-hint" id="picker-address-hint"></p>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="picker-save">save place</button>
+        <button class="btn" type="button" id="picker-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- presence / I-am-at from home -->
+  <div class="sheet-wrap" id="presence-picker-sheet">
+    <div class="sheet presence-picker-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title">where are you?</p>
+          <p class="about-copy">This sets the agenda starting place. It does not filter the list.</p>
+        </div>
+      </div>
+      <div class="topic-chip-row presence-picker-chips" id="presence-picker-chips"></div>
+      <div class="btn-row">
+        <button class="btn" type="button" id="presence-picker-close">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- travel time editor -->
+  <div class="sheet-wrap" id="travel-edit-sheet">
+    <div class="sheet travel-edit-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title">travel time</p>
+          <p class="about-copy" id="travel-edit-copy">Home → Gym</p>
+        </div>
+      </div>
+      <p class="field-hint" id="travel-edit-mode"></p>
+      <div class="travel-edit-row">
+        <button type="button" class="icon-btn" id="travel-edit-minus" aria-label="fewer minutes"><i class="ti ti-minus" aria-hidden="true"></i></button>
+        <input type="number" id="travel-edit-minutes" min="1" max="240" step="1" inputmode="numeric" aria-label="travel minutes" />
+        <span class="travel-edit-unit">min</span>
+        <button type="button" class="icon-btn" id="travel-edit-plus" aria-label="more minutes"><i class="ti ti-plus" aria-hidden="true"></i></button>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="travel-edit-save">save</button>
+        <button class="btn" type="button" id="travel-edit-reset">reset to estimate</button>
+        <button class="btn" type="button" id="travel-edit-cancel">cancel</button>
       </div>
     </div>
   </div>

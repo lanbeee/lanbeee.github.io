@@ -71,8 +71,11 @@ function haversineEdge(locA,locB,mode){
 }
 
 // PURE: is the given cached edge still fresh enough to use without a refresh?
+// Manual overrides stay fresh forever until the user resets them.
 function edgeIsFresh(edge,now = Date.now()){
-  return Boolean(edge) && Number.isFinite(edge.fetchedAt) && (now - edge.fetchedAt) < TRAVEL_TTL_MS;
+  if(!edge)return false;
+  if(edge.provider === 'manual')return true;
+  return Number.isFinite(edge.fetchedAt) && (now - edge.fetchedAt) < TRAVEL_TTL_MS;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -111,14 +114,17 @@ async function fetchEdge(locA,locB,mode){
 // ASYNC: fetch a fresh edge and write it into the in-memory cache + persist.
 // Returns the stored TravelEdge (with a/b ids and fetchedAt). Fire-and-forget
 // from travelBetween(); may also be awaited to warm the cache explicitly.
-async function refreshEdge(locA,locB,mode){
+async function refreshEdge(locA,locB,mode,{force = false} = {}){
   const m = normalizeTravelMode(mode);
-  const result = await fetchEdge(locA,locB,m);
   const [a,b] = locA.id < locB.id ? [locA.id,locB.id] : [locB.id,locA.id];
-  const stored = { a, b, seconds:result.seconds, metres:result.metres, provider:result.provider, fetchedAt:Date.now() };
+  const key = edgeKey(a,b);
   const s = sortSettings || (sortSettings = {});
   if(!s.travel)s.travel = {};
-  s.travel[edgeKey(a,b)] = stored;
+  // Never overwrite a user-edited travel time unless force (reset to estimate).
+  if(!force && s.travel[key] && s.travel[key].provider === 'manual')return s.travel[key];
+  const result = await fetchEdge(locA,locB,m);
+  const stored = { a, b, seconds:result.seconds, metres:result.metres, provider:result.provider, fetchedAt:Date.now() };
+  s.travel[key] = stored;
   persistTravelDebounced();
   if(typeof onTravelRefresh === 'function')onTravelRefresh(stored);
   return stored;
@@ -135,8 +141,42 @@ function travelBetween(locA,locB,mode){
   const s = sortSettings || {};
   const cached = s.travel && s.travel[edgeKey(locA.id,locB.id)];
   if(edgeIsFresh(cached))return cached;
+  // Manual edges are always fresh; do not kick a network refresh over them.
+  if(cached && cached.provider === 'manual')return cached;
   if(locA && locB && locA.id && locB.id && locA.id !== locB.id)refreshEdge(locA,locB,m);
   return cached || haversineEdge(locA,locB,m);
+}
+
+// PURE: whether a cached edge is a user override.
+function isManualTravelEdge(edge){
+  return Boolean(edge && edge.provider === 'manual');
+}
+
+// IMPURE: save a user-edited travel time (minutes) between two locations.
+function setManualTravelMinutes(locA,locB,minutes){
+  if(!locA || !locB || locA.id === locB.id)return null;
+  const secs = Math.max(60,Math.round(Number(minutes) * 60));
+  const [a,b] = locA.id < locB.id ? [locA.id,locB.id] : [locB.id,locA.id];
+  const key = edgeKey(a,b);
+  const s = sortSettings || (sortSettings = {});
+  if(!s.travel)s.travel = {};
+  const prev = s.travel[key];
+  const metres = (prev && Number.isFinite(prev.metres))
+    ? prev.metres
+    : haversineMetres(locA.lat,locA.lng,locB.lat,locB.lng);
+  const stored = { a, b, seconds:secs, metres, provider:'manual', fetchedAt:Date.now() };
+  s.travel[key] = stored;
+  if(typeof saveSortSettings === 'function')saveSortSettings(s);
+  if(typeof onTravelRefresh === 'function')onTravelRefresh(stored);
+  return stored;
+}
+
+// IMPURE: clear a manual override and re-fetch an estimate.
+async function resetTravelEdge(locA,locB,mode){
+  if(!locA || !locB)return null;
+  const s = sortSettings || (sortSettings = {});
+  if(s.travel)delete s.travel[edgeKey(locA.id,locB.id)];
+  return refreshEdge(locA,locB,mode,{force:true});
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -173,6 +213,30 @@ async function geocodeSearch(query,{ limit = 5 } = {}){
     }).filter(r => Number.isFinite(r.lat) && r.lat >= -90 && r.lat <= 90 && Number.isFinite(r.lng) && r.lng >= -180 && r.lng <= 180);
   }catch{
     return [];
+  }
+}
+
+// ASYNC: reverse-geocode a pin into {name,address,lat,lng} (or null).
+async function reverseGeocode(lat,lng){
+  if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
+  try{
+    const url = `${NOMINATIM_BASE}/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`;
+    const res = await Promise.race([
+      fetch(url,{ headers:{ 'Accept':'application/json' } }),
+      new Promise((_,reject) => setTimeout(() => reject(new Error('nominatim-timeout')),TRAVEL_FETCH_TIMEOUT_MS))
+    ]);
+    if(!res.ok)return null;
+    const json = await res.json();
+    const display = String(json && json.display_name || '');
+    if(!display)return { name:'', address:'', lat, lng };
+    const comma = display.indexOf(',');
+    return {
+      name:(comma >= 0 ? display.slice(0,comma) : display).trim().slice(0,48),
+      address:display.slice(0,120),
+      lat, lng
+    };
+  }catch{
+    return null;
   }
 }
 
@@ -230,13 +294,62 @@ function matchLocationId(lat,lng,registry){
   return best;
 }
 
+// PURE: closest registry location by haversine (ignores radius), or null.
+function closestLocation(lat,lng,registry){
+  const locs = normalizeLocationRegistry(registry);
+  let best = null;
+  let bestDist = Infinity;
+  for(const loc of locs){
+    const d = haversineMetres(lat,lng,loc.lat,loc.lng);
+    if(d < bestDist){
+      bestDist = d;
+      best = loc;
+    }
+  }
+  return best ? { loc:best, metres:bestDist } : null;
+}
+
+// PURE: presence for UI — at (inside radius or manual lastKnown), near (GPS
+// outside all radii), or away. Shared by home status chip + I-am-at picker.
+function locationPresence(registry){
+  const locs = normalizeLocationRegistry(registry != null ? registry : (sortSettings || {}).locations);
+  const lastKnown = cleanLocationId((sortSettings || {}).lastKnownLocationId);
+  if(currentCoord){
+    const atId = matchLocationId(currentCoord.lat,currentCoord.lng,locs);
+    if(atId){
+      const loc = locs.find(l=>l.id === atId);
+      const metres = loc ? haversineMetres(currentCoord.lat,currentCoord.lng,loc.lat,loc.lng) : 0;
+      return { kind:'at', id:atId, name:loc ? loc.name : 'place', metres, gps:true };
+    }
+    const near = closestLocation(currentCoord.lat,currentCoord.lng,locs);
+    if(near){
+      return { kind:'near', id:near.loc.id, name:near.loc.name, metres:near.metres, gps:true };
+    }
+    return { kind:'away', id:null, name:null, metres:null, gps:true };
+  }
+  if(lastKnown){
+    const loc = locs.find(l=>l.id === lastKnown);
+    if(loc)return { kind:'at', id:loc.id, name:loc.name, metres:null, gps:false };
+  }
+  return { kind:'away', id:null, name:null, metres:null, gps:false };
+}
+
 // PURE: current matched location id (from live coord or lastKnown fallback).
+// Inside a geofence → that place. Otherwise prefer lastKnown (manual pick /
+// previous match). Only if neither exists, fall back to the nearest place so
+// a first GPS fix can still seed the agenda.
 function currentLocationId(){
   if(currentCoord){
     const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
     if(id)return id;
   }
-  return cleanLocationId((sortSettings || {}).lastKnownLocationId) || null;
+  const last = cleanLocationId((sortSettings || {}).lastKnownLocationId);
+  if(last)return last;
+  if(currentCoord){
+    const near = closestLocation(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
+    if(near)return near.loc.id;
+  }
+  return null;
 }
 
 // IMPURE: set the manual "I am at" anchor (persists id only).
@@ -293,10 +406,99 @@ function renderIAmAtPicker(){
     wrap.hidden = true;
     return;
   }
+  const presence = locationPresence(registry);
   const current = currentLocationId();
   wrap.hidden = false;
-  wrap.innerHTML = `<span class="loc-field-label">I am at</span>` + registry.map(loc=>{
+  const status = presence.kind === 'at'
+    ? `at ${presence.name}`
+    : presence.kind === 'near'
+      ? `near ${presence.name}`
+      : 'away';
+  wrap.innerHTML = `<span class="loc-field-label">I am at <b class="iam-at-status ${presence.kind}">${escapeHtml(status)}</b></span>` + registry.map(loc=>{
     const on = current === loc.id;
-    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-iam-at="${escapeHtml(loc.id)}">${escapeHtml(loc.name)}</button>`;
+    const gpsAt = presence.gps && presence.kind === 'at' && presence.id === loc.id;
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${gpsAt ? 'gps-matched' : ''}" data-iam-at="${escapeHtml(loc.id)}">${escapeHtml(loc.name)}</button>`;
   }).join('') + `<button type="button" class="mini-text-btn" id="iam-at-gps">use GPS</button>`;
+}
+
+// RENDER: compact presence picker used from the home status chip.
+function renderPresencePickerBody(){
+  const wrap = $('presence-picker-chips');
+  if(!wrap)return;
+  const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  const current = currentLocationId();
+  const presence = locationPresence(registry);
+  if(!registry.length){
+    wrap.innerHTML = '<p class="field-hint">Add places in settings first.</p>';
+    return;
+  }
+  wrap.innerHTML = registry.map(loc=>{
+    const on = current === loc.id;
+    const gpsAt = presence.gps && presence.kind === 'at' && presence.id === loc.id;
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${gpsAt ? 'gps-matched' : ''}" data-presence-pick="${escapeHtml(loc.id)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}</button>`;
+  }).join('') + `<button type="button" class="topic-chip location-chip" data-presence-gps="1"><i class="ti ti-current-location" aria-hidden="true"></i>use GPS</button>`;
+}
+
+// ── Travel-time editor sheet ─────────────────────────────────────────────
+let travelEditFromId = null;
+let travelEditToId = null;
+
+function openTravelEditSheet(fromId,toId){
+  const from = typeof locationById === 'function' ? locationById(fromId) : null;
+  const to = typeof locationById === 'function' ? locationById(toId) : null;
+  if(!from || !to || from.id === to.id)return;
+  travelEditFromId = from.id;
+  travelEditToId = to.id;
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  const edge = travelBetween(from,to,mode);
+  const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
+  const copy = $('travel-edit-copy');
+  if(copy)copy.textContent = `${from.name} → ${to.name}`;
+  const modeEl = $('travel-edit-mode');
+  if(modeEl){
+    const label = edge.provider === 'manual' ? 'edited time' : `${mode} estimate`;
+    modeEl.textContent = label;
+  }
+  const input = $('travel-edit-minutes');
+  if(input)input.value = String(mins);
+  openSheet('travel-edit-sheet');
+}
+
+function closeTravelEditSheet(){
+  closeSheet('travel-edit-sheet');
+  travelEditFromId = null;
+  travelEditToId = null;
+}
+
+function saveTravelEditFromSheet(){
+  const from = typeof locationById === 'function' ? locationById(travelEditFromId) : null;
+  const to = typeof locationById === 'function' ? locationById(travelEditToId) : null;
+  const mins = Number(($('travel-edit-minutes') && $('travel-edit-minutes').value) || NaN);
+  if(!from || !to || !Number.isFinite(mins) || mins < 1){ showToast('enter minutes'); return; }
+  setManualTravelMinutes(from,to,Math.min(240,Math.round(mins)));
+  showToast('travel time saved');
+  closeTravelEditSheet();
+  if(typeof render === 'function')render();
+  if(typeof renderTodayAgenda === 'function')renderTodayAgenda();
+}
+
+async function resetTravelEditFromSheet(){
+  const from = typeof locationById === 'function' ? locationById(travelEditFromId) : null;
+  const to = typeof locationById === 'function' ? locationById(travelEditToId) : null;
+  if(!from || !to)return;
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  showToast('updating estimate…');
+  const edge = await resetTravelEdge(from,to,mode);
+  const input = $('travel-edit-minutes');
+  if(input && edge)input.value = String(Math.max(1,Math.round((edge.seconds || 0) / 60)));
+  const modeEl = $('travel-edit-mode');
+  if(modeEl)modeEl.textContent = `${mode} estimate`;
+  showToast('estimate restored');
+  if(typeof render === 'function')render();
+  if(typeof renderTodayAgenda === 'function')renderTodayAgenda();
+}
+
+function openPresencePicker(){
+  renderPresencePickerBody();
+  openSheet('presence-picker-sheet');
 }

@@ -1,10 +1,15 @@
-const CACHE = 'tings-v17';
-const MAPS_CACHE = 'tings-maps-v1';
+const CACHE = 'tings-v18';
+const MAPS_CACHE = 'tings-maps-v2';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const MAPS_ORIGINS = [
   'https://router.project-osrm.org',
   'https://nominatim.openstreetmap.org',
-  'https://maps.googleapis.com'
+  'https://maps.googleapis.com',
+  'https://tile.openstreetmap.org',
+  'https://a.tile.openstreetmap.org',
+  'https://b.tile.openstreetmap.org',
+  'https://c.tile.openstreetmap.org',
+  'https://unpkg.com'
 ];
 
 const PRECACHE = [

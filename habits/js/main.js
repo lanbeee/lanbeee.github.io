@@ -926,12 +926,19 @@ $('blocked-time-list')?.addEventListener('click',e=>{
   saveBlockedTimePatch(index,{days:normalizeAllowedWeekdays([...next])});
 });
 // ── Locations (settings sheet) ──
-$('loc-search')?.addEventListener('click',searchLocations);
-$('loc-address-input')?.addEventListener('keydown',e=>{ if(e.key === 'Enter')searchLocations(); });
-$('loc-use-gps')?.addEventListener('click',useMyLocationForAdd);
-$('loc-results')?.addEventListener('click',e=>{
-  const btn = e.target.closest('[data-loc-result]');
-  if(btn)pickLocationResult(parseInt(btn.dataset.locResult,10));
+$('loc-open-picker')?.addEventListener('click',()=>openLocationPicker());
+$('picker-search-btn')?.addEventListener('click',searchPickerLocations);
+$('picker-search')?.addEventListener('keydown',e=>{ if(e.key === 'Enter'){ e.preventDefault(); searchPickerLocations(); } });
+$('picker-results')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-picker-result]');
+  if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
+});
+$('picker-gps')?.addEventListener('click',centerPickerOnGps);
+$('picker-apply-coords')?.addEventListener('click',applyPickerCoordsInputs);
+$('picker-save')?.addEventListener('click',saveLocationPicker);
+$('picker-cancel')?.addEventListener('click',closeLocationPicker);
+$('location-picker-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget)closeLocationPicker();
 });
 $('location-list')?.addEventListener('change',e=>{
   const name = e.target.closest('[data-loc-name]');
@@ -976,6 +983,13 @@ $('location-list')?.addEventListener('change',e=>{
   }
 });
 $('location-list')?.addEventListener('click',e=>{
+  const editPin = e.target.closest('[data-loc-edit-pin]');
+  if(editPin){
+    const idx = parseInt(editPin.dataset.locEditPin,10);
+    const loc = normalizeLocationRegistry(sortSettings.locations)[idx];
+    if(loc)openLocationPicker({index:idx,name:loc.name,address:loc.address,lat:loc.lat,lng:loc.lng});
+    return;
+  }
   const remove = e.target.closest('[data-loc-remove]');
   if(remove){ removeLocation(parseInt(remove.dataset.locRemove,10)); return; }
   const more = e.target.closest('[data-loc-more]');
@@ -1075,6 +1089,10 @@ $('overview-range-filter').addEventListener('click',e=>{
   renderOverview();
 });
 $('home-tag-filter')?.addEventListener('click',e=>{
+  if(e.target.closest('[data-home-presence]')){
+    openPresencePicker();
+    return;
+  }
   const topicBtn = e.target.closest('[data-home-topic]');
   if(topicBtn){
     homeTopicFilter = topicBtn.dataset.homeTopic || 'all';
@@ -1086,6 +1104,59 @@ $('home-tag-filter')?.addEventListener('click',e=>{
     homeLocationFilter = locBtn.dataset.homeLocation || 'all';
     render();
   }
+});
+$('presence-picker-chips')?.addEventListener('click',async e=>{
+  const gps = e.target.closest('[data-presence-gps]');
+  if(gps){
+    const status = await requestLocationAccess();
+    if(status === 'denied')showToast('location permission denied — pick manually');
+    else if(status === 'unsupported')showToast('location not supported');
+    else showToast('location on');
+    renderPresencePickerBody();
+    renderIAmAtPicker();
+    renderTodayAgenda();
+    render();
+    return;
+  }
+  const btn = e.target.closest('[data-presence-pick]');
+  if(!btn)return;
+  setManualLocationId(btn.dataset.presencePick);
+  renderPresencePickerBody();
+  renderIAmAtPicker();
+  renderTodayAgenda();
+  render();
+});
+$('presence-picker-close')?.addEventListener('click',()=>closeSheet('presence-picker-sheet'));
+$('presence-picker-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget)closeSheet('presence-picker-sheet');
+});
+$('list')?.addEventListener('click',e=>{
+  const card = e.target.closest('.travel-card[data-travel-from]');
+  if(!card)return;
+  e.preventDefault();
+  e.stopPropagation();
+  openTravelEditSheet(card.dataset.travelFrom,card.dataset.travelTo);
+});
+$('today-content')?.addEventListener('click',e=>{
+  const row = e.target.closest('.today-travel-row[data-travel-from]');
+  if(!row)return;
+  openTravelEditSheet(row.dataset.travelFrom,row.dataset.travelTo);
+});
+$('travel-edit-minus')?.addEventListener('click',()=>{
+  const input = $('travel-edit-minutes');
+  if(!input)return;
+  input.value = String(Math.max(1,(Number(input.value) || 1) - 1));
+});
+$('travel-edit-plus')?.addEventListener('click',()=>{
+  const input = $('travel-edit-minutes');
+  if(!input)return;
+  input.value = String(Math.min(240,(Number(input.value) || 1) + 1));
+});
+$('travel-edit-save')?.addEventListener('click',saveTravelEditFromSheet);
+$('travel-edit-reset')?.addEventListener('click',()=>{ resetTravelEditFromSheet(); });
+$('travel-edit-cancel')?.addEventListener('click',closeTravelEditSheet);
+$('travel-edit-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget)closeTravelEditSheet();
 });
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   if(!day)return;
