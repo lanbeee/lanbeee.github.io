@@ -42,8 +42,8 @@ function openDetail(i){
   $('detail-due-date').value = dateInputValue(h.dueDate);
   $('detail-hard-due').checked = Boolean(h.hardDue);
   $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
-  $('detail-mark-done').checked = h.markDone !== false;
-  $('detail-habit-mark-done').checked = h.markDone !== false;
+  $('detail-mark-done').setAttribute('aria-pressed',h.markDone !== false ? 'true' : 'false');
+  $('detail-habit-mark-done').setAttribute('aria-pressed',h.markDone !== false ? 'true' : 'false');
   syncDetailDueUi();
   syncDetailScheduledUi();
   syncDetailHabitMarkDoneUi();
@@ -233,7 +233,7 @@ function currentDetailTune(){
     dueDate:parseDateInput($('detail-due-date').value),
     hardDue:$('detail-hard-due').checked,
     eventTime:parseDateTimeInput($('detail-scheduled-time').value),
-    markDone:markDoneEl ? markDoneEl.checked : true
+    markDone:markDoneEl ? markDoneEl.getAttribute('aria-pressed') === 'true' : true
   };
 }
 
@@ -281,8 +281,8 @@ function restoreDetailTune(){
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
   $('detail-hard-due').checked = Boolean(detailTuneOriginal.hardDue);
   $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
-  $('detail-mark-done').checked = detailTuneOriginal.markDone !== false;
-  $('detail-habit-mark-done').checked = detailTuneOriginal.markDone !== false;
+  $('detail-mark-done').setAttribute('aria-pressed',detailTuneOriginal.markDone !== false ? 'true' : 'false');
+  $('detail-habit-mark-done').setAttribute('aria-pressed',detailTuneOriginal.markDone !== false ? 'true' : 'false');
   syncDetailDueUi();
   syncDetailScheduledUi();
   syncDetailHabitMarkDoneUi();

@@ -28,7 +28,7 @@ function applyAddDefaults(){
   if(dueInput)dueInput.value = '';
   if($('ting-hard-due'))$('ting-hard-due').checked = false;
   if(scheduledInput)scheduledInput.value = '';
-  if($('ting-mark-done'))$('ting-mark-done').checked = true;
+  if($('ting-mark-done'))$('ting-mark-done').setAttribute('aria-pressed','true');
   document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',parseInt(o.dataset.priority,10) === DEFAULT_PRIORITY));
   const moreBody = $('add-more-options');
   const moreToggle = $('add-more-toggle');

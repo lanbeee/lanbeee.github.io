@@ -1418,6 +1418,25 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .hard-due-toggle input{margin:0;width:18px;height:18px;accent-color:var(--red-icon);}
 .hard-due-toggle[hidden]{display:none;}
+.hard-due-toggle.setting-switch{
+  display:inline-flex;align-items:center;gap:7px;flex-shrink:0;
+  color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;
+  background:none;border:none;padding:0;font:inherit;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.hard-due-toggle.setting-switch .switch-ui{
+  width:34px;height:22px;flex:0 0 34px;
+}
+.hard-due-toggle.setting-switch .switch-ui::after{
+  width:17px;height:17px;left:2px;top:2px;
+}
+.hard-due-toggle.setting-switch[aria-pressed="true"] .switch-ui{
+  background:var(--text);border-color:var(--text);
+}
+.hard-due-toggle.setting-switch[aria-pressed="true"] .switch-ui::after{
+  transform:translateX(12px);
+}
+.hard-due-toggle-wrap[hidden]{display:none;}
 .habit-mark-done-row{justify-content:space-between;}
 .habit-mark-done-hint{color:var(--text3);font-size:11px;font-weight:500;margin-left:auto;}
 .detail-section .plan-field-row{margin:0 0 12px;background:var(--bg);}

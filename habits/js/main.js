@@ -269,7 +269,7 @@ $('do-save').addEventListener('click',()=>{
     record.dueDate = parseDateInput($('ting-due-date').value);
     record.hardDue = $('ting-hard-due').checked;
     record.eventTime = parseDateTimeInput($('ting-scheduled-time').value);
-    record.markDone = $('ting-mark-done').checked;
+    record.markDone = $('ting-mark-done').getAttribute('aria-pressed') === 'true';
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
     record.flexibilityDays = record.dueDate === null ? 0 : 3;
   }
@@ -325,7 +325,11 @@ function syncScheduledTimeUi(){
   toggle.hidden = !hasTime;
 }
 $('ting-scheduled-time').addEventListener('input',syncScheduledTimeUi);
-$('ting-mark-done').addEventListener('change',syncScheduledTimeUi);
+$('ting-mark-done').addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+  syncScheduledTimeUi();
+});
 syncScheduledTimeUi();
 
 // PURE: clamp rhythm value to valid range
@@ -647,8 +651,16 @@ $('detail-due-clear').addEventListener('click',()=>{
 });
 $('detail-hard-due').addEventListener('change',()=>setDetailDirty());
 $('detail-scheduled-time').addEventListener('input',()=>{syncDetailScheduledUi();setDetailDirty();});
-$('detail-mark-done').addEventListener('change',()=>setDetailDirty());
-$('detail-habit-mark-done').addEventListener('change',()=>setDetailDirty());
+$('detail-mark-done').addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+  setDetailDirty();
+});
+$('detail-habit-mark-done').addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+  setDetailDirty();
+});
 $('detail-schedule-view-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-schedule-view]');
   if(!opt)return;

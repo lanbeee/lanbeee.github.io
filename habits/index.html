@@ -152,10 +152,12 @@
             <label class="plan-date-label" for="ting-scheduled-time">scheduled</label>
             <input type="datetime-local" id="ting-scheduled-time" class="plan-date-input" />
           </div>
-          <label class="hard-due-toggle" id="ting-mark-done-toggle" hidden>
-            <input type="checkbox" id="ting-mark-done" checked />
-            <span>mark done</span>
-          </label>
+          <div class="hard-due-toggle-wrap" id="ting-mark-done-toggle" hidden>
+            <button class="hard-due-toggle setting-switch" id="ting-mark-done" type="button" aria-pressed="true">
+              <span>mark done</span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+          </div>
         </div>
         <div class="add-topics-section" id="add-topics-section">
           <span class="settings-sublabel">topics &amp; places</span>
@@ -246,10 +248,12 @@
               <label class="plan-date-label" for="detail-scheduled-time">scheduled</label>
               <input type="datetime-local" id="detail-scheduled-time" class="plan-date-input" />
             </div>
-            <label class="hard-due-toggle" id="detail-mark-done-toggle" hidden>
-              <input type="checkbox" id="detail-mark-done" checked />
-              <span>mark done</span>
-            </label>
+            <div class="hard-due-toggle-wrap" id="detail-mark-done-toggle" hidden>
+              <button class="hard-due-toggle setting-switch" id="detail-mark-done" type="button" aria-pressed="true">
+                <span>mark done</span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </div>
           </div>
           <div class="seg schedule-seg" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
@@ -287,10 +291,10 @@
             <!-- <p class="field-hint schedule-time-hint">Soft hint — nudges agenda placement when it fits. Does not block the habit outside this range.</p> -->
           </div>
           <div class="plan-field-row habit-mark-done-row" id="detail-habit-mark-done-toggle" hidden>
-            <label class="hard-due-toggle">
-              <input type="checkbox" id="detail-habit-mark-done" checked />
+            <button class="hard-due-toggle setting-switch" id="detail-habit-mark-done" type="button" aria-pressed="true">
               <span>mark done</span>
-            </label>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
             <span class="habit-mark-done-hint">off = logs itself on scheduled days</span>
           </div>
           <p class="field-hint" id="detail-target-help">Target days between entries.</p>
