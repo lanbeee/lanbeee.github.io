@@ -89,6 +89,7 @@ const DEFAULT_SORT_SETTINGS = {
   showDueTasksInAgenda:true,
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
+  showWeekOnHome:false,
   reachAssist:true,
   reminders:false,
   pushDetailed:false,
@@ -157,7 +158,6 @@ let overviewRecentOffset = 0;
 let overviewTopicFilter = 'all';
 let overviewLocationFilter = 'all';
 let overviewRangeFilter = 'recent';
-let todayRange = 'today';           // 'today' | 'week' — the today-sheet range toggle
 let homeTopicFilter = 'all';
 let homeLocationFilter = 'all';
 let dayLogsKey = null;

@@ -983,6 +983,50 @@ function earlyCardPill(reason){
   return `<span class="context-pill agenda-suggested" title="${escapeHtml(reason)}"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i>early</span>`;
 }
 
+// RENDER: thin travel card between home list items (same surface as today).
+function appendHomeTravelCard(list,fromId,toId){
+  if(!list || !fromId || !toId || fromId === toId)return;
+  const from = typeof locationById === 'function' ? locationById(fromId) : null;
+  const to = typeof locationById === 'function' ? locationById(toId) : null;
+  const edge = (from && to && typeof travelBetween === 'function')
+    ? travelBetween(from,to,normalizeTravelMode((sortSettings || {}).defaultTravelMode))
+    : {seconds:0};
+  const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
+  const fromName = from ? from.name : 'here';
+  const toName = to ? to.name : 'next';
+  const edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(edge);
+  const travelEl = document.createElement('button');
+  travelEl.type = 'button';
+  travelEl.className = `travel-card${edited ? ' is-edited' : ''}`;
+  travelEl.dataset.travelFrom = fromId;
+  travelEl.dataset.travelTo = toId;
+  travelEl.setAttribute('aria-label',`edit travel time ${fromName} to ${toName}`);
+  travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
+  list.appendChild(travelEl);
+}
+
+// RENDER: blocked-time card on home — mirrors travel-card weight, shows place.
+function appendHomeBlockedCard(list,row){
+  if(!list || !row)return;
+  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
+  const start = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.start) : '';
+  const end = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.end) : '';
+  const place = loc ? ` · ${loc.name}` : '';
+  const el = document.createElement('div');
+  el.className = 'blocked-card';
+  el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
+  el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span>`;
+  list.appendChild(el);
+}
+
+function appendSectionHeader(list,label){
+  if(!list || !label)return;
+  const header = document.createElement('div');
+  header.className = 'section-header';
+  header.textContent = label;
+  list.appendChild(header);
+}
+
 // PURE: reduce trail tones to one
 function summarizeTrailTone(tones){
   if(!tones.length)return '';
@@ -1009,6 +1053,7 @@ function render(){
   const indices = filteredVisibleIndices(data);
   if(!indices.length){
     empty.style.display = 'block';
+    if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
     const hasSearch = searchQuery.trim().length > 0;
     const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
     const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
@@ -1049,102 +1094,22 @@ function render(){
   empty.style.display = 'none';
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
-  const agendaRows = homeAgendaRows(data);
-  const agendaMap = new Map();
-  const agendaOrder = new Map();
-  agendaRows.forEach((row,pos)=>{
-    if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
-    if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
-  });
+  const weekMode = todayFirstActive
+    && sortSettings.showWeekOnHome
+    && typeof buildWeekAgenda === 'function'
+    && typeof homeDaySequence === 'function';
   const earlyMap = homeEarlyMap(data,sortSettings);
-  // An upcoming item is pulled into "today" only when it BOTH passes the
-  // do-early gate (allowed today + flexibility + its target day is over-loaded)
-  // AND earns an agenda row today. If it loses its slot to capacity it falls
-  // back to its original "upcoming" section, so the list never promises time
-  // the day cannot give and the card never shows an "early" pill it can't honour.
-  const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
-  const renderIndices = todayFirstActive ? [...indices].sort((a,b)=>{
-    const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
-    if(pin)return pin;
-    const catA = todayCategory(data[a],sortSettings);
-    const catB = todayCategory(data[b],sortSettings);
-    const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
-    const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
-    if(dispA !== dispB)return dispA - dispB;
-    if(dispA === 0){
-      // Show the "today" section chronologically — same order the agenda
-      // timeline reads — so priority, planned time, allowed windows and the
-      // preferred-time nudge all surface through one consistent ordering.
-      // Today items without an agenda row (rare: a due item dropped by
-      // capacity) trail after the timed ones.
-      const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
-      if(posA != null || posB != null){
-        if(posA == null)return 1;
-        if(posB == null)return -1;
-        return posA - posB;
-      }
-    }
-    return indices.indexOf(a) - indices.indexOf(b);
-  }) : indices;
-  let sectionCat = -1;
-  let prevTodayLocId = null;
+  const visibleSet = new Set(indices);
 
-  renderIndices.forEach(realIdx=>{
+  const appendHabitCard = (realIdx,agendaRow,earlyReasonText)=>{
     const h = data[realIdx];
-    const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
-    const isEarlyToday = todayFirstActive && cat === 2 && earlyToday(realIdx);
-    const inTodaySection = todayFirstActive && !h.pinned && (cat === 0 || isEarlyToday);
-
-    if(todayFirstActive && !h.pinned){
-      const sectionKey = isEarlyToday ? 0 : cat;
-      if(sectionKey !== sectionCat){
-        const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
-        const label = labels[sectionKey];
-        if(label){
-          const header = document.createElement('div');
-          header.className = 'section-header';
-          header.textContent = label;
-          list.appendChild(header);
-        }
-        sectionCat = sectionKey;
-        if(sectionKey !== 0)prevTodayLocId = null;
-      }
-    }
-
-    const agendaRow = agendaMap.get(realIdx);
-    const locId = cardLocationId(h,agendaRow);
-    if(inTodaySection && prevTodayLocId && locId && prevTodayLocId !== locId){
-      const from = locationById(prevTodayLocId);
-      const to = locationById(locId);
-      const edge = (from && to && typeof travelBetween === 'function')
-        ? travelBetween(from,to,normalizeTravelMode((sortSettings || {}).defaultTravelMode))
-        : {seconds:0};
-      const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
-      const fromName = from ? from.name : 'here';
-      const toName = to ? to.name : 'next';
-      const edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(edge);
-      const travelEl = document.createElement('button');
-      travelEl.type = 'button';
-      travelEl.className = `travel-card${edited ? ' is-edited' : ''}`;
-      travelEl.dataset.travelFrom = prevTodayLocId;
-      travelEl.dataset.travelTo = locId;
-      travelEl.setAttribute('aria-label',`edit travel time ${fromName} to ${toName}`);
-      travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
-      list.appendChild(travelEl);
-    }
-    if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
-
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
     const agendaPill = agendaCardPill(agendaRow);
-    // The "early" pill only marks items actually pulled into today; items that
-    // lost the capacity cut and fell back to upcoming carry no early pill.
-    const earlyPill = earlyCardPill((cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : '');
-    // Suppress the cardMeta "scheduled" pill when the agenda already renders
-    // the same time pill for this timed task today (avoids duplicate pills).
+    const earlyPill = earlyCardPill(earlyReasonText || '');
     const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const accent = visualClassColor(cardScoreTone);
@@ -1189,7 +1154,138 @@ function render(){
     list.appendChild(row);
     setupSwipe(row);
     setupCardTap(row,realIdx);
-  });
+  };
+
+  if(weekMode){
+    const week = buildWeekAgenda(data,sortSettings,7);
+    const agendaMap = new Map();
+    const weekAssigned = new Set();
+    const dayPlans = week.days.map(day=>{
+      const seq = homeDaySequence(day,sortSettings,{visibleSet});
+      for(const row of seq){
+        if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
+          weekAssigned.add(row.i);
+          if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
+        }
+      }
+      return {day,seq};
+    });
+
+    indices.filter(i=>data[i].pinned).forEach(realIdx=>{
+      const agendaRow = agendaMap.get(realIdx);
+      const cat = todayCategory(data[realIdx],sortSettings);
+      const earlyText = (cat === 2 && earlyMap.get(realIdx) && agendaMap.has(realIdx)) ? earlyMap.get(realIdx) : '';
+      appendHabitCard(realIdx,agendaRow,earlyText);
+    });
+
+    dayPlans.forEach(({day,seq})=>{
+      if(!seq.length)return;
+      appendSectionHeader(list,homeWeekDayLabel(day));
+      seq.forEach(row=>{
+        if(row.kind === 'travel'){
+          appendHomeTravelCard(list,row.from,row.to);
+          return;
+        }
+        if(row.kind === 'blocked'){
+          appendHomeBlockedCard(list,row);
+          return;
+        }
+        if(row.kind !== 'fill' && row.kind !== 'scheduled')return;
+        if(data[row.i]?.pinned)return;
+        const cat = todayCategory(data[row.i],sortSettings);
+        const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
+        appendHabitCard(row.i,row,earlyText);
+      });
+    });
+
+    // Timed-only day sections: anything without a suggested time goes to
+    // overdue / upcoming — never as an untimed card under a day.
+    const leftoverKey = (h)=>{
+      const cat = todayCategory(h,sortSettings);
+      if(cat === 3)return 3;
+      if(cat === 1 || cat === 0)return 1; // due/overdue that didn't place
+      return 2;
+    };
+    const leftovers = indices
+      .filter(i=>!data[i].pinned && !weekAssigned.has(i))
+      .sort((a,b)=>leftoverKey(data[a]) - leftoverKey(data[b]) || indices.indexOf(a) - indices.indexOf(b));
+    let leftoverCat = -1;
+    leftovers.forEach(realIdx=>{
+      const key = leftoverKey(data[realIdx]);
+      if(key !== leftoverCat){
+        const labels = {1:'overdue',2:'upcoming',3:'others'};
+        const label = labels[key];
+        if(label)appendSectionHeader(list,label);
+        leftoverCat = key;
+      }
+      appendHabitCard(realIdx,null,'');
+    });
+  }else{
+    const agendaRows = homeAgendaRows(data);
+    const agendaMap = new Map();
+    const agendaOrder = new Map();
+    agendaRows.forEach((row,pos)=>{
+      if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
+      if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
+    });
+    // An upcoming item is pulled into "today" only when it BOTH passes the
+    // do-early gate (allowed today + flexibility + its target day is over-loaded)
+    // AND earns an agenda row today. If it loses its slot to capacity it falls
+    // back to its original "upcoming" section, so the list never promises time
+    // the day cannot give and the card never shows an "early" pill it can't honour.
+    const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
+    const renderIndices = todayFirstActive ? [...indices].sort((a,b)=>{
+      const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
+      if(pin)return pin;
+      const catA = todayCategory(data[a],sortSettings);
+      const catB = todayCategory(data[b],sortSettings);
+      const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
+      const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
+      if(dispA !== dispB)return dispA - dispB;
+      if(dispA === 0){
+        const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
+        if(posA != null || posB != null){
+          if(posA == null)return 1;
+          if(posB == null)return -1;
+          return posA - posB;
+        }
+      }
+      return indices.indexOf(a) - indices.indexOf(b);
+    }) : indices;
+    let sectionCat = -1;
+    let prevTodayLocId = null;
+
+    renderIndices.forEach(realIdx=>{
+      const h = data[realIdx];
+      const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
+      const isEarlyToday = todayFirstActive && cat === 2 && earlyToday(realIdx);
+      const inTodaySection = todayFirstActive && !h.pinned && (cat === 0 || isEarlyToday);
+
+      if(todayFirstActive && !h.pinned){
+        const sectionKey = isEarlyToday ? 0 : cat;
+        if(sectionKey !== sectionCat){
+          const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
+          const label = labels[sectionKey];
+          if(label)appendSectionHeader(list,label);
+          sectionCat = sectionKey;
+          if(sectionKey !== 0)prevTodayLocId = null;
+        }
+      }
+
+      const agendaRow = agendaMap.get(realIdx);
+      const locId = cardLocationId(h,agendaRow);
+      if(inTodaySection && prevTodayLocId && locId && prevTodayLocId !== locId){
+        appendHomeTravelCard(list,prevTodayLocId,locId);
+      }
+      if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
+
+      appendHabitCard(
+        realIdx,
+        agendaRow,
+        (cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : ''
+      );
+    });
+  }
 
   list.querySelectorAll('[data-pulse]').forEach(btn=>{
     btn.addEventListener('click',e=>{
@@ -1225,6 +1321,7 @@ function render(){
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
   });
+  if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
 }
 
 // WIRE: attach swipe gesture listeners

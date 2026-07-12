@@ -163,11 +163,6 @@ $('bar-open-overview')?.addEventListener('click',()=>{
 });
 $('today-close')?.addEventListener('click',()=>closeSheet('today-sheet'));
 $('today-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('today-range-seg')?.addEventListener('click',e=>{
-  const btn = e.target.closest('[data-today-range]');
-  if(!btn)return;
-  setTodayRange(btn.dataset.todayRange);
-});
 $('iam-at-row')?.addEventListener('click',async e=>{
   const gps = e.target.closest('#iam-at-gps');
   if(gps){
@@ -927,9 +922,11 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   const label = e.target.closest('[data-blocked-label]');
   const start = e.target.closest('[data-blocked-start]');
   const end = e.target.closest('[data-blocked-end]');
+  const loc = e.target.closest('[data-blocked-location]');
   if(label)saveBlockedTimePatch(parseInt(label.dataset.blockedLabel,10),{label:cleanTopic(label.value) || 'blocked'});
   if(start)saveBlockedTimePatch(parseInt(start.dataset.blockedStart,10),{start:timeInputToMinutes(start.value)});
   if(end)saveBlockedTimePatch(parseInt(end.dataset.blockedEnd,10),{end:timeInputToMinutes(end.value)});
+  if(loc)saveBlockedTimePatch(parseInt(loc.dataset.blockedLocation,10),{locationId:loc.value || null});
 });
 $('blocked-time-list')?.addEventListener('click',e=>{
   const remove = e.target.closest('[data-blocked-remove]');

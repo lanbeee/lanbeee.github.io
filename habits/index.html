@@ -65,6 +65,7 @@
       <div id="reminder-banner" class="reminder-banner" hidden></div>
       <div id="home-tag-filter" class="topic-filter-row" aria-label="topic and location filter"></div>
       <div id="list"></div>
+      <div id="home-week-plan" class="home-week-plan" hidden></div>
       <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
     </div>
 
@@ -400,15 +401,9 @@
   <div class="sheet-wrap" id="today-sheet">
     <div class="sheet today-sheet">
       <div class="page-head">
-        <div>
-          <p class="sheet-title">today</p>
-          <p class="about-copy" id="today-summary">Your plan for today.</p>
-          <div class="iam-at-row" id="iam-at-row" aria-label="current location" hidden></div>
-        </div>
-        <div class="seg" id="today-range-seg" role="tablist" aria-label="agenda range">
-          <button type="button" class="seg-opt on" data-today-range="today" role="tab" aria-selected="true">today</button>
-          <button type="button" class="seg-opt" data-today-range="week" role="tab" aria-selected="false">week</button>
-        </div>
+        <p class="sheet-title">today</p>
+        <p class="about-copy" id="today-summary">Your plan for today.</p>
+        <div class="iam-at-row" id="iam-at-row" aria-label="current location" hidden></div>
       </div>
       <div class="today-content" id="today-content"></div>
       <div class="today-week-section">
@@ -469,6 +464,10 @@
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueHabitsInAgenda" aria-pressed="false">
               <span><b>show due habits in plan</b><small>Habits ready today can fill open plan time.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showWeekOnHome" aria-pressed="false">
+              <span><b>plan the week on home</b><small>Replace today / overdue / upcoming with a day-by-day week plan on home, including blocked times and travel between places.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>

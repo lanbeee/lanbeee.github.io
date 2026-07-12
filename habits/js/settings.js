@@ -195,6 +195,7 @@ function renderBlockedTimeControls(){
   const wrap = $('blocked-time-list');
   if(!wrap)return;
   const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  const locs = typeof locationOptions === 'function' ? locationOptions() : [];
   wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
     <div class="blocked-time-row" data-blocked-row="${i}">
       <input type="text" data-blocked-label="${i}" aria-label="blocked time name" maxlength="24" value="${escapeHtml(block.label)}" />
@@ -208,6 +209,12 @@ function renderBlockedTimeControls(){
           const on = !block.days.length || block.days.includes(day);
           return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-blocked-day="${day}" data-blocked-index="${i}" aria-pressed="${on}">${label}</button>`;
         }).join('')}
+      </div>
+      <div class="compact-days" style="margin-top:6px;align-items:center;gap:6px;">
+        <select data-blocked-location="${i}" aria-label="${escapeHtml(block.label)} location" class="mini-select">
+          <option value="">no location</option>
+          ${locs.map(loc=>`<option value="${escapeHtml(loc.id)}"${block.locationId === loc.id ? ' selected' : ''}>${escapeHtml(loc.label || loc.name)}</option>`).join('')}
+        </select>
       </div>
       <button class="mini-text-btn" type="button" data-blocked-remove="${i}">remove</button>
     </div>
@@ -986,11 +993,24 @@ function addSortSamples(){
   const byId = new Map(existing.map(l=>[l.id,l]));
   sampleLocs.forEach(loc=>{ if(!byId.has(loc.id))byId.set(loc.id,loc); });
   const locations = normalizeLocationRegistry([...byId.values()]);
+  // Patch blocked times so sleep → Home, work → Office.
+  const patchedBlocks = normalizeBlockedTimes(sortSettings.blockedTimes).map(b=>{
+    const label = (b.label || '').toLowerCase();
+    if(label === 'sleep' && !b.locationId)return {...b,locationId:'sample-home'};
+    if(label === 'work' && !b.locationId)return {...b,locationId:'sample-office'};
+    return b;
+  });
+  // Collect topics from sample habits into the global topic list.
+  const existingTopics = new Set(normalizeTopics(sortSettings.topics || []));
+  samples.forEach(h=>(h.topics || []).forEach(t=>{ if(t)existingTopics.add(t); }));
+  const topics = normalizeTopics([...existingTopics]);
   updateSortSetting({
     locations,
+    topics,
     lastKnownLocationId:sortSettings.lastKnownLocationId || 'sample-home',
     showLocationOnCards:true,
-    defaultTravelMode:sortSettings.defaultTravelMode || 'walking'
+    defaultTravelMode:sortSettings.defaultTravelMode || 'walking',
+    blockedTimes:patchedBlocks
   },{renderNow:false,sync:false});
   const next = [...current,...samples].map(h=>({...h,lastLog:latestActualLog(h.logs)}));
   if(save(next)){
@@ -998,7 +1018,8 @@ function addSortSamples(){
     syncSettingsControls();
     closeSheet('settings-sheet');
     render();
-    showToast('samples added · 6 places');
+    const topicCount = topics.length;
+    showToast(`samples added · 6 places · ${topicCount} topic${topicCount === 1 ? '' : 's'}`);
   }
 }
 

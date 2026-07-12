@@ -201,35 +201,62 @@ function seedScript(extraHabits, extraSettings){
   assert(blocks.blockLoc[1].loc === 'office', 'work block carries office locationId');
   assert(blocks.seedHasHome, 'day seed includes home (from sleep block)');
 
-  // ── F. Today/Week toggle renders ──
-  console.log('\n[F] Today/Week toggle renders both views');
-  await page.evaluate(() => openToday());
-  await page.waitForSelector('#today-sheet.open');
-  await page.waitForTimeout(200);
-  const todaySeg = await page.locator('#today-range-seg .seg-opt.on').getAttribute('data-today-range');
-  assert(todaySeg === 'today', 'defaults to today view');
-  const todayHasTimeline = await page.locator('#today-content .agenda-timeline').count();
-  assert(todayHasTimeline > 0 || await page.locator('#today-content .agenda-empty').count() > 0, 'today view renders timeline or empty state');
-  // Switch to week.
-  await page.locator('#today-range-seg [data-today-range="week"]').click();
+  // ── F. Week plan on home screen (showWeekOnHome setting) ──
+  console.log('\n[F] showWeekOnHome integrates day sections into #list');
+  // Enable showWeekOnHome via settings.
+  await page.evaluate(() => {
+    const s = loadSortSettings();
+    s.showWeekOnHome = true;
+    saveSortSettings(s);
+  });
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { if(typeof render === 'function')render(); });
   await page.waitForTimeout(300);
-  const weekState = await page.evaluate(() => ({
-    segOn: document.querySelector('#today-range-seg .seg-opt.on')?.dataset.todayRange,
-    dayCards: document.querySelectorAll('#today-content .week-day').length,
-    todayCard: document.querySelectorAll('#today-content .week-day.is-today').length,
-    summary: document.getElementById('today-summary').textContent,
-  }));
-  console.log(weekState);
-  assert(weekState.segOn === 'week', 'toggle switches to week');
-  assert(weekState.dayCards === 7, 'week view shows 7 day cards');
-  assert(weekState.todayCard === 1, 'exactly one day marked as today');
-  assert(/7 days/i.test(weekState.summary), 'summary mentions 7 days');
-  // Switch back.
-  await page.locator('#today-range-seg [data-today-range="today"]').click();
+  const homeWeek = await page.evaluate(() => {
+    const wrap = document.getElementById('home-week-plan');
+    const list = document.getElementById('list');
+    const headers = [...(list?.querySelectorAll('.section-header') || [])].map(el => el.textContent.trim());
+    return {
+      exists: !!wrap,
+      separateHidden: wrap ? wrap.hidden : true,
+      separateEmpty: wrap ? wrap.innerHTML.trim() === '' : true,
+      headers,
+      hasToday: headers.includes('today'),
+      hasTomorrow: headers.includes('tomorrow'),
+      blockedCards: list ? list.querySelectorAll('.blocked-card').length : 0,
+      travelCards: list ? list.querySelectorAll('.travel-card').length : 0,
+    };
+  });
+  console.log(homeWeek);
+  assert(homeWeek.exists, '#home-week-plan element still exists (cleared)');
+  assert(homeWeek.separateHidden, 'separate week plan block stays hidden');
+  assert(homeWeek.separateEmpty, 'separate week plan block stays empty');
+  assert(homeWeek.hasToday, 'home list has a today section');
+  assert(homeWeek.hasTomorrow, 'home list has a tomorrow section');
+  assert(homeWeek.blockedCards > 0, 'blocked times render as home cards');
+  // Disable the setting → classic today/overdue/upcoming sections return.
+  await page.evaluate(() => {
+    const s = loadSortSettings();
+    s.showWeekOnHome = false;
+    saveSortSettings(s);
+  });
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { if(typeof render === 'function')render(); });
   await page.waitForTimeout(200);
-  const backSeg = await page.locator('#today-range-seg .seg-opt.on').getAttribute('data-today-range');
-  const weekGone = await page.locator('#today-content .week-day').count();
-  assert(backSeg === 'today' && weekGone === 0, 'toggle back to today removes week cards');
+  const classicHome = await page.evaluate(() => {
+    const wrap = document.getElementById('home-week-plan');
+    const list = document.getElementById('list');
+    const headers = [...(list?.querySelectorAll('.section-header') || [])].map(el => el.textContent.trim());
+    return {
+      separateHidden: wrap ? wrap.hidden : true,
+      headers,
+      hasToday: headers.includes('today'),
+      hasTomorrow: headers.includes('tomorrow'),
+    };
+  });
+  assert(classicHome.separateHidden, 'week plan block stays hidden after toggle off');
+  assert(classicHome.hasToday, 'classic home still has today');
+  assert(!classicHome.hasTomorrow, 'classic home does not use tomorrow sections');
 
   // ── G. Week respects location hours (closed weekday defers) ──
   console.log('\n[G] buildWeekAgenda respects location closed-days');
@@ -257,7 +284,140 @@ function seedScript(extraHabits, extraSettings){
   const placedDays = hours.filter(d => d.placed);
   assert(placedDays.length >= 1, 'gym habit placed on at least one day');
   assert(placedDays.every(d => d.weekday !== 1), 'never placed on Monday (closed)');
-  assert(placedDays.every(d => d.offset > 0), 'movable items never placed on today (today owns its own)');
+  // Due in 2 days → eligible from ready day through due day; may land on
+  // today only if capacity+travel win, otherwise a later open day.
+  assert(placedDays.every(d => d.offset >= 0 && d.offset <= 2), 'placed on or before due day');
+
+  // ── G2. Soft due-today work spreads into the week (not all dumped on today) ──
+  console.log('\n[G2] soft due items spread across the week');
+  await page.addInitScript(seedScript([
+    { name:'soft A', type:'keepup', target:1, logs:[Date.now()-2*86400000], durationMinutes:120, locationIds:['home'], priority:2 },
+    { name:'soft B', type:'keepup', target:1, logs:[Date.now()-2*86400000], durationMinutes:120, locationIds:['home'], priority:2 },
+    { name:'soft C', type:'keepup', target:1, logs:[Date.now()-2*86400000], durationMinutes:120, locationIds:['office'], priority:2 },
+    { name:'soft D', type:'keepup', target:1, logs:[Date.now()-2*86400000], durationMinutes:120, locationIds:['office'], priority:2 },
+    { name:'soft E', type:'keepup', target:1, logs:[Date.now()-2*86400000], durationMinutes:120, locationIds:['farA'], priority:2 },
+  ], {
+    availabilityMinutes:[150,600,600,600,600,600,600],
+    blockedTimes:[{ label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' }],
+  }));
+  await page.goto(baseUrl, { waitUntil:'load' });
+  await page.waitForTimeout(300);
+  const spread = await page.evaluate(() => {
+    const data = load(); const settings = loadSortSettings();
+    const w = buildWeekAgenda(data, settings, 7);
+    const byDay = w.days.map(d => ({
+      offset: Math.round((d.dayBase - dayStart(Date.now())) / 86400000),
+      timed: d.timeline.filter(r => r.kind === 'fill' || r.kind === 'scheduled').map(r => r.h.name),
+    }));
+    const timedNames = byDay.flatMap(d => d.timed);
+    const soft = ['soft A','soft B','soft C','soft D','soft E'];
+    return {
+      byDay,
+      timedCount: soft.filter(n => timedNames.includes(n)).length,
+      todayCount: byDay[0].timed.filter(n => soft.includes(n)).length,
+      laterCount: byDay.slice(1).reduce((n,d) => n + d.timed.filter(x => soft.includes(x)).length, 0),
+    };
+  });
+  console.log(spread);
+  assert(spread.timedCount >= 4, `most soft items get a suggested time (got ${spread.timedCount}/5)`);
+  assert(spread.laterCount >= 1, 'at least one soft item deferred past today');
+  assert(spread.todayCount < 5, 'today does not keep every soft due item');
+
+  // ── G3. Sample-shaped overload: timed-only day cards on home ──
+  console.log('\n[G3] sample overload — every day-section card has a time pill');
+  await page.addInitScript(seedScript([
+    { name:'home A', type:'keepup', target:1, logs:[Date.now()-3*86400000], durationMinutes:40, locationIds:['home'], priority:2, flexibilityDays:10 },
+    { name:'home B', type:'keepup', target:1, logs:[Date.now()-3*86400000], durationMinutes:40, locationIds:['home'], priority:2, flexibilityDays:10 },
+    { name:'home C', type:'keepup', target:1, logs:[Date.now()-3*86400000], durationMinutes:40, locationIds:['home'], priority:2, flexibilityDays:8 },
+    { name:'office A', type:'keepup', target:1, logs:[Date.now()-3*86400000], durationMinutes:35, locationIds:['office'], priority:2, flexibilityDays:7 },
+    { name:'office B', type:'keepup', target:1, logs:[Date.now()-3*86400000], durationMinutes:35, locationIds:['office'], priority:2, flexibilityDays:7 },
+    { name:'far pair 1', type:'task', dueDate: dayStartOf(3), durationMinutes:30, locationIds:['farA'], priority:0 },
+    { name:'far pair 2', type:'task', dueDate: dayStartOf(3), durationMinutes:30, locationIds:['farB'], priority:0 },
+    { name:'hard pin', type:'task', dueDate: dayStartOf(0), hardDue:true, durationMinutes:20, locationIds:['office'], priority:0 },
+    { name:'planned pin', type:'keepup', target:3, logs:[Date.now()-10*86400000, {ts:Date.now(),plan:true}], durationMinutes:40, locationIds:['home'], priority:0 },
+  ], {
+    availabilityMinutes:[240,90,90,90,90,90,240],
+    blockedTimes:[
+      { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' },
+      { label:'work', days:[1,2,3,4,5], start:540, end:1020, locationId:'office' },
+    ],
+    showWeekOnHome:true,
+  }));
+  await page.goto(baseUrl, { waitUntil:'load' });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const s = loadSortSettings();
+    s.showWeekOnHome = true;
+    saveSortSettings(s);
+    if(typeof render === 'function')render();
+  });
+  await page.waitForTimeout(300);
+  const overload = await page.evaluate(() => {
+    const list = document.getElementById('list');
+    const headers = [...list.querySelectorAll('.section-header')].map(el => el.textContent.trim());
+    const dayLabels = new Set(['today','tomorrow','others','overdue','upcoming']);
+    // Walk children: section headers bound day vs leftover sections.
+    let section = '';
+    let inDay = false;
+    let todayUntimed = 0;
+    let dayCardsMissingPill = 0;
+    let dayCards = 0;
+    let daysWithFills = 0;
+    const fillsByDay = {};
+    const children = [...list.children];
+    for(const el of children){
+      if(el.classList.contains('section-header')){
+        section = el.textContent.trim();
+        inDay = !['overdue','upcoming','others'].includes(section);
+        if(inDay)fillsByDay[section] = fillsByDay[section] || 0;
+        continue;
+      }
+      if(el.classList.contains('swipe-row')){
+        const pill = el.querySelector('.context-pill.agenda-suggested, .context-pill.scheduled');
+        if(inDay){
+          dayCards += 1;
+          fillsByDay[section] = (fillsByDay[section] || 0) + 1;
+          if(!pill)dayCardsMissingPill += 1;
+          if(section === 'today' && !pill)todayUntimed += 1;
+        }
+      }
+    }
+    daysWithFills = Object.values(fillsByDay).filter(n => n > 0).length;
+    const w = buildWeekAgenda(load(), loadSortSettings(), 7);
+    const timedDays = w.days.filter(d => d.timeline.some(r => r.kind === 'fill')).length;
+    const farDays = w.days
+      .map((d,idx) => ({
+        idx,
+        has1: d.timeline.some(r => r.kind === 'fill' && r.h.name === 'far pair 1'),
+        has2: d.timeline.some(r => r.kind === 'fill' && r.h.name === 'far pair 2'),
+      }))
+      .filter(d => d.has1 || d.has2);
+    const farClustered = farDays.length > 0 && farDays.every(d => !d.has1 || !d.has2 || (d.has1 && d.has2))
+      && new Set(farDays.filter(d => d.has1 && d.has2).map(d => d.idx)).size <= 1
+      && farDays.filter(d => d.has1 && d.has2).length >= (farDays.some(d => d.has1) && farDays.some(d => d.has2) ? 1 : 0);
+    // If both far errands earned a timed slot, they must share one day.
+    const bothPlaced = farDays.some(d => d.has1) && farDays.some(d => d.has2);
+    const shared = farDays.some(d => d.has1 && d.has2);
+    return {
+      headers,
+      todayUntimed,
+      dayCardsMissingPill,
+      dayCards,
+      daysWithFills,
+      timedDays,
+      bothFarPlaced: bothPlaced,
+      farSharedDay: shared,
+      leftoverHeaders: headers.filter(h => h === 'overdue' || h === 'upcoming' || h === 'others'),
+    };
+  });
+  console.log(overload);
+  assert(overload.todayUntimed === 0, 'no untimed cards under today');
+  assert(overload.dayCardsMissingPill === 0, `every day-section habit card has a time pill (missing ${overload.dayCardsMissingPill})`);
+  assert(overload.timedDays >= 2, `soft work spreads across multiple days (got ${overload.timedDays})`);
+  if(overload.bothFarPlaced){
+    assert(overload.farSharedDay, 'co-located far errands share a day when both place');
+  }
+  assert(overload.leftoverHeaders.every(h => h === 'overdue' || h === 'upcoming' || h === 'others'), 'leftovers only use overdue/upcoming/others');
 
   // ── H. Boot cleanliness ──
   console.log('\n[H] boot cleanliness');
