@@ -188,29 +188,69 @@ async function resetTravelEdge(locA,locB,mode){
 // candidates. Returns [] on any failure so the caller can show "no matches".
 // The caller confirms the right candidate before creating the location —
 // geocoding ambiguity is common and a silent wrong pin corrupts every edge.
+// ASYNC: turn a typed address into a ranked list of {name,address,lat,lng}
+// candidates. Tries Photon first (browser-friendly), then Nominatim. Returns
+// [] on any failure so the caller can show "no matches".
 async function geocodeSearch(query,{ limit = 5 } = {}){
   const q = String(query || '').trim();
   if(!q)return [];
+  const photon = await geocodeSearchPhoton(q,limit);
+  if(photon.length)return photon;
+  return geocodeSearchNominatim(q,limit);
+}
+
+async function fetchJsonWithTimeout(url,timeoutMs = GEOCODE_FETCH_TIMEOUT_MS){
+  const res = await Promise.race([
+    fetch(url,{ headers:{ 'Accept':'application/json' } }),
+    new Promise((_,reject) => setTimeout(() => reject(new Error('geocode-timeout')),timeoutMs))
+  ]);
+  if(!res || !res.ok)throw new Error('geocode-http');
+  return res.json();
+}
+
+function normalizeGeocodeHit(name,address,lat,lng){
+  const la = Number(lat);
+  const ln = Number(lng);
+  if(!Number.isFinite(la) || la < -90 || la > 90 || !Number.isFinite(ln) || ln < -180 || ln > 180)return null;
+  return {
+    name:String(name || '').trim().slice(0,48) || 'Place',
+    address:String(address || '').trim().slice(0,120),
+    lat:la, lng:ln
+  };
+}
+
+async function geocodeSearchPhoton(query,limit){
   try{
-    const url = `${NOMINATIM_BASE}/search?format=json&limit=${limit}&addressdetails=1&q=${encodeURIComponent(q)}`;
-    const res = await Promise.race([
-      fetch(url,{ headers:{ 'Accept':'application/json' } }),
-      new Promise((_,reject) => setTimeout(() => reject(new Error('nominatim-timeout')),TRAVEL_FETCH_TIMEOUT_MS))
-    ]);
-    if(!res.ok)return [];
-    const json = await res.json();
+    const url = `${PHOTON_BASE}/api/?q=${encodeURIComponent(query)}&limit=${limit}&lang=en`;
+    const json = await fetchJsonWithTimeout(url);
+    const features = json && Array.isArray(json.features) ? json.features : [];
+    return features.map(f=>{
+      const props = f && f.properties || {};
+      const coords = f && f.geometry && f.geometry.coordinates;
+      const lng = coords && coords[0];
+      const lat = coords && coords[1];
+      const parts = [props.name, props.street, props.housenumber, props.city || props.town || props.village, props.state, props.country]
+        .filter(Boolean);
+      const address = parts.join(', ') || props.name || '';
+      const name = props.name || props.street || (address.split(',')[0] || 'Place');
+      return normalizeGeocodeHit(name,address,lat,lng);
+    }).filter(Boolean);
+  }catch{
+    return [];
+  }
+}
+
+async function geocodeSearchNominatim(query,limit){
+  try{
+    const url = `${NOMINATIM_BASE}/search?format=json&limit=${limit}&addressdetails=1&q=${encodeURIComponent(query)}`;
+    const json = await fetchJsonWithTimeout(url);
     if(!Array.isArray(json))return [];
     return json.map(r=>{
       const display = String(r.display_name || '');
       const comma = display.indexOf(',');
-      const lat = Number(r.lat);
-      const lng = Number(r.lon);
-      return {
-        name:(comma >= 0 ? display.slice(0,comma) : display).trim().slice(0,48),
-        address:display.slice(0,120),
-        lat, lng
-      };
-    }).filter(r => Number.isFinite(r.lat) && r.lat >= -90 && r.lat <= 90 && Number.isFinite(r.lng) && r.lng >= -180 && r.lng <= 180);
+      const name = (comma >= 0 ? display.slice(0,comma) : display).trim();
+      return normalizeGeocodeHit(name,display,r.lat,r.lon);
+    }).filter(Boolean);
   }catch{
     return [];
   }
@@ -219,22 +259,40 @@ async function geocodeSearch(query,{ limit = 5 } = {}){
 // ASYNC: reverse-geocode a pin into {name,address,lat,lng} (or null).
 async function reverseGeocode(lat,lng){
   if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
+  const photon = await reverseGeocodePhoton(lat,lng);
+  if(photon)return photon;
+  return reverseGeocodeNominatim(lat,lng);
+}
+
+async function reverseGeocodePhoton(lat,lng){
+  try{
+    const url = `${PHOTON_BASE}/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&lang=en`;
+    const json = await fetchJsonWithTimeout(url);
+    const f = json && Array.isArray(json.features) && json.features[0];
+    if(!f)return null;
+    const props = f.properties || {};
+    const parts = [props.name, props.street, props.housenumber, props.city || props.town || props.village, props.state, props.country]
+      .filter(Boolean);
+    const address = parts.join(', ') || '';
+    const name = props.name || props.street || (address.split(',')[0] || '');
+    return normalizeGeocodeHit(name || 'Place',address,lat,lng);
+  }catch{
+    return null;
+  }
+}
+
+async function reverseGeocodeNominatim(lat,lng){
   try{
     const url = `${NOMINATIM_BASE}/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`;
-    const res = await Promise.race([
-      fetch(url,{ headers:{ 'Accept':'application/json' } }),
-      new Promise((_,reject) => setTimeout(() => reject(new Error('nominatim-timeout')),TRAVEL_FETCH_TIMEOUT_MS))
-    ]);
-    if(!res.ok)return null;
-    const json = await res.json();
+    const json = await fetchJsonWithTimeout(url);
     const display = String(json && json.display_name || '');
     if(!display)return { name:'', address:'', lat, lng };
     const comma = display.indexOf(',');
-    return {
-      name:(comma >= 0 ? display.slice(0,comma) : display).trim().slice(0,48),
-      address:display.slice(0,120),
+    return normalizeGeocodeHit(
+      (comma >= 0 ? display.slice(0,comma) : display).trim(),
+      display,
       lat, lng
-    };
+    );
   }catch{
     return null;
   }
@@ -273,10 +331,225 @@ function flushTravelCache(){
 // GEOLOCATION — opt-in live position → matched location id. Raw coords are
 // ephemeral (never persisted); only the matched id is written as
 // lastKnownLocationId.
+//
+// iOS / PWA notes:
+//   • Must run in a secure context (HTTPS or localhost).
+//   • The first prompt must be triggered by a direct user gesture (tap).
+//     Do not await network/UI work before calling getCurrentPosition.
+//   • Once granted, later quiet resumes (watch / page load) are allowed.
+//   • navigator.permissions.query({name:'geolocation'}) is unreliable on iOS
+//     — we treat it as optional and always fall back to getCurrentPosition.
 // ─────────────────────────────────────────────────────────────────────────
 
 let currentCoord = null;
 let geoWatchId = null;
+let locationPermissionPending = null;
+let locationAllowCallback = null;
+
+function isIosDevice(){
+  const ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function isStandalonePwa(){
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+}
+
+// PURE: optional Permissions API probe (often "unknown" on iOS).
+async function queryLocationPermission(){
+  try{
+    if(!navigator.permissions || !navigator.permissions.query)return 'unknown';
+    const result = await navigator.permissions.query({name:'geolocation'});
+    return result && result.state ? result.state : 'unknown';
+  }catch{
+    return 'unknown';
+  }
+}
+
+// PURE: human help when the OS blocks location.
+function locationDeniedHelpMessage(){
+  if(isIosDevice()){
+    if(isStandalonePwa()){
+      return 'Location is off for Tings. On iPhone: Settings → Privacy & Security → Location Services → enable for this app (or Safari Websites → your site), then tap Enable location again.';
+    }
+    return 'Location is off. On iPhone: Settings → Safari → Location (or Settings → Privacy & Security → Location Services → Safari Websites), allow access, then try again.';
+  }
+  return 'Location permission denied. Enable it for this site in your browser settings, then try again.';
+}
+
+function setLocationOptIn(on){
+  const s = sortSettings || loadSortSettings();
+  const next = Boolean(on);
+  if(s.locationOptIn === next)return;
+  if(typeof updateSortSetting === 'function')updateSortSetting({locationOptIn:next},{renderNow:false});
+  else saveSortSettings({...s,locationOptIn:next});
+}
+
+function applyGeoPosition(pos,{updateAnchor = true} = {}){
+  if(!pos || !pos.coords)return null;
+  currentCoord = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+  if(updateAnchor){
+    const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
+    if(id)setManualLocationId(id);
+  }
+  return currentCoord;
+}
+
+function startLocationWatch(){
+  if(!navigator.geolocation || geoWatchId != null)return;
+  geoWatchId = navigator.geolocation.watchPosition(
+    p=>{
+      applyGeoPosition(p,{updateAnchor:true});
+      const matched = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
+      if(matched){
+        if(typeof renderTodayAgenda === 'function' && $('today-sheet')?.classList.contains('open'))renderTodayAgenda();
+        if(typeof render === 'function')render();
+        if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
+        if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+      }
+    },
+    ()=>{},
+    {enableHighAccuracy:false, maximumAge:120000, timeout:20000}
+  );
+}
+
+function stopLocationWatch(){
+  if(geoWatchId != null && navigator.geolocation){
+    try{ navigator.geolocation.clearWatch(geoWatchId); }catch{ /* ignore */ }
+  }
+  geoWatchId = null;
+}
+
+// IMPURE: request permission + one-shot fix + start a low-power watch.
+// MUST be called from a user-gesture handler on the first ask (iOS/PWA).
+// Returns: 'granted' | 'denied' | 'unavailable' | 'timeout' | 'insecure' | 'unsupported'
+function requestLocationAccess(opts = {}){
+  const quiet = Boolean(opts.quiet);
+  if(!window.isSecureContext){
+    if(!quiet && typeof showToast === 'function')showToast('Location needs HTTPS (or localhost)');
+    return Promise.resolve('insecure');
+  }
+  if(!navigator.geolocation){
+    if(!quiet && typeof showToast === 'function')showToast('Location not supported on this device');
+    return Promise.resolve('unsupported');
+  }
+  if(locationPermissionPending)return locationPermissionPending;
+
+  // Call getCurrentPosition immediately — do not await anything first (iOS
+  // requires the prompt to stay inside the user-gesture chain). Clear the
+  // pending slot in finally so a sync success/error mock cannot leave a
+  // resolved promise stuck here (assignment runs after the sync callback).
+  const pending = new Promise(resolve=>{
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        applyGeoPosition(pos,{updateAnchor:opts.updateAnchor !== false});
+        setLocationOptIn(true);
+        startLocationWatch();
+        if(!quiet && typeof showToast === 'function')showToast('location on');
+        if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+        if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
+        if(typeof render === 'function')render();
+        resolve('granted');
+      },
+      err=>{
+        const code = err && err.code;
+        let status = 'denied';
+        if(code === 2)status = 'unavailable';
+        else if(code === 3)status = 'timeout';
+        if(status === 'denied')setLocationOptIn(false);
+        if(!quiet && typeof showToast === 'function'){
+          if(status === 'denied')showToast(locationDeniedHelpMessage());
+          else if(status === 'timeout')showToast('location timed out — try again outdoors or with Wi‑Fi');
+          else showToast('could not read your location');
+        }
+        if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+        resolve(status);
+      },
+      {
+        // First fix: allow a bit more time; high accuracy helps outdoor pins.
+        enableHighAccuracy:opts.enableHighAccuracy !== false,
+        timeout:opts.timeout || 20000,
+        maximumAge:opts.maximumAge != null ? opts.maximumAge : 15000
+      }
+    );
+  });
+  locationPermissionPending = pending;
+  pending.finally(()=>{
+    if(locationPermissionPending === pending)locationPermissionPending = null;
+  });
+  return pending;
+}
+
+// IMPURE: after a prior grant, quietly resume watching (safe on iOS).
+function resumeLocationWatchIfOptedIn(){
+  const s = sortSettings || loadSortSettings();
+  if(!s.locationOptIn)return;
+  if(!window.isSecureContext || !navigator.geolocation)return;
+  requestLocationAccess({quiet:true,enableHighAccuracy:false,maximumAge:120000,timeout:15000});
+}
+
+// HYBRID: first-time rationale sheet, then request on the Allow tap (keeps
+// the user-gesture chain intact for iOS). If already opted in, requests now.
+function ensureLocationAccess(opts = {}){
+  const s = sortSettings || loadSortSettings();
+  if(s.locationOptIn || currentCoord){
+    return requestLocationAccess({...opts,quiet:opts.quiet});
+  }
+  // Show rationale; Allow button calls requestLocationAccess in its click.
+  locationAllowCallback = typeof opts.onGranted === 'function' ? opts.onGranted : null;
+  openLocationPermissionSheet();
+  return Promise.resolve('prompt');
+}
+
+function openLocationPermissionSheet(){
+  const sheet = $('location-permission-sheet');
+  if(!sheet || typeof openSheet !== 'function'){
+    // No sheet — fall through to direct prompt (still needs a gesture).
+    requestLocationAccess();
+    return;
+  }
+  const copy = $('location-permission-copy');
+  if(copy){
+    copy.textContent = isStandalonePwa()
+      ? 'Tings uses your location to mark where you are and shape today’s plan. Coordinates stay on this device and are never uploaded.'
+      : 'Tings uses your location to mark where you are and shape today’s plan. Your browser will ask for permission next. Coordinates stay on this device.';
+  }
+  openSheet('location-permission-sheet');
+}
+
+function closeLocationPermissionSheet(){
+  if(typeof closeSheet === 'function')closeSheet('location-permission-sheet');
+  locationAllowCallback = null;
+}
+
+async function confirmLocationPermissionAllow(){
+  // Still inside the Allow tap — call Geolocation immediately.
+  const status = await requestLocationAccess({quiet:false});
+  const cb = locationAllowCallback;
+  closeLocationPermissionSheet();
+  if(status === 'granted' && typeof cb === 'function')cb();
+  return status;
+}
+
+// RENDER: settings row showing location access state + enable button.
+function renderLocationAccessControl(){
+  const statusEl = $('location-access-status');
+  const btn = $('location-access-enable');
+  if(!statusEl && !btn)return;
+  const s = sortSettings || loadSortSettings();
+  let label = 'not enabled';
+  if(!window.isSecureContext)label = 'needs HTTPS';
+  else if(!navigator.geolocation)label = 'not supported';
+  else if(currentCoord)label = 'on · reading location';
+  else if(s.locationOptIn)label = 'on · waiting for fix';
+  else label = 'off · tap to enable';
+  if(statusEl)statusEl.textContent = label;
+  if(btn){
+    btn.hidden = !window.isSecureContext || !navigator.geolocation;
+    btn.textContent = (s.locationOptIn || currentCoord) ? 'refresh location' : 'enable location';
+  }
+}
 
 // PURE: nearest registry location within its radiusM, or null.
 function matchLocationId(lat,lng,registry){
@@ -360,40 +633,6 @@ function setManualLocationId(id){
   if(typeof updateSortSetting === 'function')updateSortSetting({lastKnownLocationId:clean},{renderNow:false});
   else saveSortSettings({...s,lastKnownLocationId:clean});
   if(typeof onTravelRefresh === 'function')onTravelRefresh({manual:true});
-}
-
-// IMPURE: request permission + start a low-power watch. On deny, falls back to
-// the manual picker (caller renders it). Returns a promise of
-// 'granted' | 'denied' | 'unsupported'.
-function requestLocationAccess(){
-  if(!navigator.geolocation)return Promise.resolve('unsupported');
-  return new Promise(resolve=>{
-    navigator.geolocation.getCurrentPosition(
-      pos=>{
-        currentCoord = { lat:pos.coords.latitude, lng:pos.coords.longitude };
-        const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
-        if(id)setManualLocationId(id);
-        if(geoWatchId == null){
-          geoWatchId = navigator.geolocation.watchPosition(
-            p=>{
-              currentCoord = { lat:p.coords.latitude, lng:p.coords.longitude };
-              const matched = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
-              if(matched && matched !== (sortSettings || {}).lastKnownLocationId){
-                setManualLocationId(matched);
-                if(typeof renderTodayAgenda === 'function')renderTodayAgenda();
-                if(typeof render === 'function')render();
-              }
-            },
-            ()=>{},
-            {enableHighAccuracy:false, maximumAge:120000, timeout:15000}
-          );
-        }
-        resolve('granted');
-      },
-      ()=>resolve('denied'),
-      {enableHighAccuracy:false, timeout:10000, maximumAge:60000}
-    );
-  });
 }
 
 // RENDER: "I am at" chip row for the Today sheet (manual fallback / override).

@@ -67,6 +67,7 @@ function syncSettingsControls(){
   renderAvailabilityControls();
   renderBlockedTimeControls();
   renderLocationControls();
+  if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
   });
@@ -442,25 +443,49 @@ let pickerMarker = null;
 let pickerEditIndex = null;
 let pickerReverseTimer = null;
 let pickerSuppressReverse = false;
+let pickerDragging = false;
 let pendingPickerResults = [];
+let pickerMapGen = 0;
 
 function destroyLocationPickerMap(){
+  pickerMapGen += 1;
   if(pickerReverseTimer){ clearTimeout(pickerReverseTimer); pickerReverseTimer = null; }
+  pickerDragging = false;
   if(pickerMap){
-    try{ pickerMap.remove(); }catch{ /* ignore */ }
+    try{
+      pickerMap.stop();
+      pickerMap.off();
+      pickerMap.remove();
+    }catch{ /* ignore */ }
     pickerMap = null;
     pickerMarker = null;
   }
+  const el = $('picker-map');
+  if(el){
+    el.innerHTML = '';
+    if(el._leaflet_id)delete el._leaflet_id;
+  }
 }
 
-function pickerSetCoords(lat,lng,{ reverse = true, nameFromSearch = null, addressFromSearch = null } = {}){
+function pickerPanTo(lat,lng,zoom){
+  if(!pickerMap || !Number.isFinite(lat) || !Number.isFinite(lng))return;
+  try{
+    const opts = { animate:false };
+    if(Number.isFinite(zoom))pickerMap.setView([lat,lng],zoom,opts);
+    else pickerMap.panTo([lat,lng],opts);
+  }catch{ /* map mid-teardown */ }
+}
+
+function pickerSetCoords(lat,lng,{ reverse = true, pan = true, nameFromSearch = null, addressFromSearch = null } = {}){
   if(!Number.isFinite(lat) || !Number.isFinite(lng))return;
   const latEl = $('picker-lat');
   const lngEl = $('picker-lng');
   if(latEl)latEl.value = String(Math.round(lat * 1e6) / 1e6);
   if(lngEl)lngEl.value = String(Math.round(lng * 1e6) / 1e6);
-  if(pickerMarker)pickerMarker.setLatLng([lat,lng]);
-  if(pickerMap)pickerMap.panTo([lat,lng]);
+  try{
+    if(pickerMarker)pickerMarker.setLatLng([lat,lng]);
+  }catch{ /* ignore */ }
+  if(pan)pickerPanTo(lat,lng);
   if(addressFromSearch){
     const hint = $('picker-address-hint');
     if(hint)hint.textContent = addressFromSearch;
@@ -471,15 +496,28 @@ function pickerSetCoords(lat,lng,{ reverse = true, nameFromSearch = null, addres
   }
   if(!reverse || pickerSuppressReverse)return;
   if(pickerReverseTimer)clearTimeout(pickerReverseTimer);
+  const gen = pickerMapGen;
   pickerReverseTimer = setTimeout(async ()=>{
     pickerReverseTimer = null;
+    if(gen !== pickerMapGen)return;
     const result = await reverseGeocode(lat,lng);
-    if(!result)return;
+    if(gen !== pickerMapGen || !result)return;
     const hint = $('picker-address-hint');
     if(hint)hint.textContent = result.address || '';
     const nameEl = $('picker-name');
     if(nameEl && !nameEl.value.trim() && result.name)nameEl.value = result.name;
   },450);
+}
+
+function syncPickerPinToMapCenter({ reverse = true } = {}){
+  if(!pickerMap || pickerDragging)return;
+  let center = null;
+  try{ center = pickerMap.getCenter(); }catch{ return; }
+  if(!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng))return;
+  let cur = null;
+  try{ cur = pickerMarker && pickerMarker.getLatLng(); }catch{ cur = null; }
+  if(cur && Math.abs(cur.lat - center.lat) < 1e-7 && Math.abs(cur.lng - center.lng) < 1e-7)return;
+  pickerSetCoords(center.lat,center.lng,{reverse,pan:false});
 }
 
 function ensureLocationPickerMap(lat,lng){
@@ -488,25 +526,36 @@ function ensureLocationPickerMap(lat,lng){
   const startLat = Number.isFinite(lat) ? lat : 40.7359;
   const startLng = Number.isFinite(lng) ? lng : -74.0036;
   if(!pickerMap){
-    pickerMap = L.map(el,{ zoomControl:true, attributionControl:true }).setView([startLat,startLng],15);
+    pickerMap = L.map(el,{
+      zoomControl:true,
+      attributionControl:true,
+      zoomAnimation:false,
+      fadeAnimation:false,
+      markerZoomAnimation:false
+    }).setView([startLat,startLng],15,{animate:false});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
       maxZoom:19,
       attribution:'&copy; OpenStreetMap'
     }).addTo(pickerMap);
     pickerMarker = L.marker([startLat,startLng],{ draggable:true }).addTo(pickerMap);
+    pickerMarker.on('dragstart',()=>{ pickerDragging = true; });
     pickerMarker.on('dragend',()=>{
+      pickerDragging = false;
       const p = pickerMarker.getLatLng();
       pickerSetCoords(p.lat,p.lng,{reverse:true});
     });
     pickerMap.on('click',e=>{
       pickerSetCoords(e.latlng.lat,e.latlng.lng,{reverse:true});
     });
+    // After a pan/zoom, snap the pin to the crosshair (map center).
+    pickerMap.on('moveend',()=>syncPickerPinToMapCenter({reverse:true}));
   }else{
-    pickerMap.setView([startLat,startLng],pickerMap.getZoom() || 15);
-    if(pickerMarker)pickerMarker.setLatLng([startLat,startLng]);
+    pickerPanTo(startLat,startLng,pickerMap.getZoom() || 15);
+    try{ if(pickerMarker)pickerMarker.setLatLng([startLat,startLng]); }catch{ /* ignore */ }
   }
-  setTimeout(()=>{ try{ pickerMap.invalidateSize(); }catch{ /* ignore */ } },80);
-  setTimeout(()=>{ try{ pickerMap.invalidateSize(); }catch{ /* ignore */ } },320);
+  const gen = pickerMapGen;
+  setTimeout(()=>{ try{ if(pickerMap && gen === pickerMapGen)pickerMap.invalidateSize(); }catch{ /* ignore */ } },80);
+  setTimeout(()=>{ try{ if(pickerMap && gen === pickerMapGen)pickerMap.invalidateSize(); }catch{ /* ignore */ } },320);
 }
 
 // HYBRID: open add/edit place picker with map pin.
@@ -541,19 +590,28 @@ function closeLocationPicker(){
 async function searchPickerLocations(){
   const searchEl = $('picker-search');
   const resultsWrap = $('picker-results');
+  const btn = $('picker-search-btn');
   if(!searchEl || !resultsWrap)return;
   const q = searchEl.value.trim();
   if(!q){ showToast('enter an address to search'); searchEl.focus(); return; }
   resultsWrap.hidden = false;
   resultsWrap.innerHTML = '<p class="field-hint">searching…</p>';
-  pendingPickerResults = await geocodeSearch(q);
+  if(btn)btn.disabled = true;
+  try{
+    pendingPickerResults = await geocodeSearch(q);
+  }catch{
+    pendingPickerResults = [];
+  }
+  if(btn)btn.disabled = false;
   if(!pendingPickerResults.length){
-    resultsWrap.innerHTML = '<p class="field-hint">no matches — try another address, or drop the pin.</p>';
+    resultsWrap.innerHTML = '<p class="field-hint">no matches — try another address, or move the pin on the map.</p>';
+    showToast('no address matches');
     return;
   }
   resultsWrap.innerHTML = pendingPickerResults.map((r,idx)=>`<button type="button" class="location-result" data-picker-result="${idx}">
     <b>${escapeHtml(r.name)}</b><span class="dim">${escapeHtml(r.address)}</span>
   </button>`).join('');
+  resultsWrap.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 
 function pickPickerResult(idx){
@@ -562,8 +620,10 @@ function pickPickerResult(idx){
   const nameEl = $('picker-name');
   if(nameEl && !nameEl.value.trim())nameEl.value = r.name;
   pickerSetCoords(r.lat,r.lng,{reverse:false,nameFromSearch:r.name,addressFromSearch:r.address});
+  pickerPanTo(r.lat,r.lng,Math.max((pickerMap && pickerMap.getZoom()) || 15,16));
   const resultsWrap = $('picker-results');
   if(resultsWrap){ resultsWrap.hidden = true; resultsWrap.innerHTML = ''; }
+  showToast(`pin moved to ${r.name}`);
 }
 
 function applyPickerCoordsInputs(){
@@ -577,13 +637,22 @@ function applyPickerCoordsInputs(){
 }
 
 function centerPickerOnGps(){
-  if(!navigator.geolocation){ showToast('location not supported on this device'); return; }
-  showToast('finding your location…');
-  navigator.geolocation.getCurrentPosition(
-    pos => pickerSetCoords(pos.coords.latitude,pos.coords.longitude,{reverse:true}),
-    () => showToast('could not get your location'),
-    {enableHighAccuracy:false, timeout:10000, maximumAge:60000}
-  );
+  // Direct request from this tap — the button itself is the user gesture +
+  // rationale ("move pin to my location"). Avoid stacking a second sheet over
+  // the map picker (breaks iOS hit-testing).
+  requestLocationAccess({quiet:false,updateAnchor:false,enableHighAccuracy:true}).then(status=>{
+    if(status !== 'granted' || !currentCoord)return;
+    pickerSetCoords(currentCoord.lat,currentCoord.lng,{reverse:true});
+    pickerPanTo(currentCoord.lat,currentCoord.lng,Math.max((pickerMap && pickerMap.getZoom()) || 15,16));
+    showToast('pin moved to your location');
+  });
+}
+
+// Snap pin to map center (crosshair). Stops inertia first so getCenter is stable.
+function dropPinAtMapCenter(){
+  if(!pickerMap)return;
+  try{ pickerMap.stop(); }catch{ /* ignore */ }
+  syncPickerPinToMapCenter({reverse:true});
 }
 
 function saveLocationPicker(){

@@ -1,15 +1,20 @@
-const CACHE = 'tings-v18';
-const MAPS_CACHE = 'tings-maps-v2';
+const CACHE = 'tings-v23';
+const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const MAPS_ORIGINS = [
   'https://router.project-osrm.org',
   'https://nominatim.openstreetmap.org',
+  'https://photon.komoot.io',
   'https://maps.googleapis.com',
   'https://tile.openstreetmap.org',
   'https://a.tile.openstreetmap.org',
   'https://b.tile.openstreetmap.org',
   'https://c.tile.openstreetmap.org',
   'https://unpkg.com'
+];
+const GEOCODE_ORIGINS = [
+  'https://nominatim.openstreetmap.org',
+  'https://photon.komoot.io'
 ];
 
 const PRECACHE = [
@@ -69,6 +74,26 @@ self.addEventListener('fetch', event => {
         (await caches.match(req)) || (await caches.match('./index.html'))
       )
     );
+    return;
+  }
+
+  // Geocode search/reverse: network-first so address queries stay fresh
+  // (cache-first can stick a failed/empty response across retries).
+  if (GEOCODE_ORIGINS.some(origin => req.url.startsWith(origin))) {
+    event.respondWith((async () => {
+      const mapsCache = await caches.open(MAPS_CACHE);
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) mapsCache.put(req, res.clone());
+        return res;
+      } catch {
+        return (await mapsCache.match(req)) || new Response('[]', {
+          status: 504,
+          statusText: 'Gateway Timeout',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    })());
     return;
   }
 

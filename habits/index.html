@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
+<meta http-equiv="Permissions-Policy" content="geolocation=(self)" />
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
@@ -518,6 +519,13 @@
           </button>
           <div class="settings-collapse-body" id="settings-locations-body" hidden>
             <p class="field-hint">Places where habits can happen. Drop a pin on the map or search an address — you should not need raw coordinates.</p>
+            <div class="location-access-row" id="location-access-row">
+              <div>
+                <span class="settings-sublabel">device location</span>
+                <p class="field-hint" id="location-access-status">off · tap to enable</p>
+              </div>
+              <button class="btn" type="button" id="location-access-enable">enable location</button>
+            </div>
             <div class="location-add-actions">
               <button class="btn primary" id="loc-open-picker" type="button"><i class="ti ti-map-pin" aria-hidden="true"></i> add place</button>
             </div>
@@ -739,25 +747,51 @@
     </div>
   </div>
 
+  <!-- location permission rationale (iOS / PWA: keep gesture → Allow → getCurrentPosition) -->
+  <div class="sheet-wrap" id="location-permission-sheet">
+    <div class="sheet location-permission-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title">use your location?</p>
+          <p class="about-copy" id="location-permission-copy">Tings uses your location to mark where you are and shape today’s plan. Coordinates stay on this device.</p>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="location-permission-allow">allow location</button>
+        <button class="btn" type="button" id="location-permission-cancel">not now</button>
+      </div>
+    </div>
+  </div>
+
   <!-- location map picker -->
   <div class="sheet-wrap" id="location-picker-sheet">
     <div class="sheet location-picker-sheet">
       <div class="page-head">
         <div>
           <p class="sheet-title" id="location-picker-title">add place</p>
-          <p class="about-copy">Search an address, or drop the pin on the map.</p>
+          <p class="about-copy">Search or pan — pin follows the crosshair.</p>
         </div>
       </div>
       <label class="field-label" for="picker-name">name</label>
       <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />
       <div class="picker-search-row">
-        <input type="text" id="picker-search" maxlength="120" placeholder="search address" autocomplete="off" />
-        <button class="btn" type="button" id="picker-search-btn">search</button>
+        <input type="text" id="picker-search" maxlength="120" placeholder="search address" autocomplete="off" enterkeyhint="search" />
+        <button class="btn primary" type="button" id="picker-search-btn">search</button>
       </div>
       <div class="location-results" id="picker-results" hidden></div>
       <div class="picker-map-wrap">
         <div id="picker-map" class="picker-map" role="application" aria-label="map pin"></div>
-        <button type="button" class="btn picker-gps-btn" id="picker-gps"><i class="ti ti-current-location" aria-hidden="true"></i> my location</button>
+        <div class="picker-map-crosshair" aria-hidden="true">
+          <span class="picker-map-crosshair-ring"></span>
+          <span class="picker-map-crosshair-dot"></span>
+        </div>
+      </div>
+      <div class="picker-map-actions">
+        <button type="button" class="btn" id="picker-gps">
+          <i class="ti ti-current-location" aria-hidden="true"></i>
+          My location
+        </button>
+        <button type="button" class="btn primary" id="picker-drop-pin">Pin</button>
       </div>
       <details class="picker-coords-details">
         <summary>enter coordinates</summary>

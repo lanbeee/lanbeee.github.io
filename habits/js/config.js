@@ -13,10 +13,12 @@ const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
 const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())
 const OSRM_BASE = 'https://router.project-osrm.org';
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+const PHOTON_BASE = 'https://photon.komoot.io';
 const MAX_LOCATIONS = 32;
 const MAX_TRAVEL_EDGES = 1024;                     // 32² upper bound
 const TRAVEL_TTL_MS = 30 * 86400000;               // cached edges revalidate after 30 days
-const TRAVEL_FETCH_TIMEOUT_MS = 3000;              // hard cap on any single provider call
+const TRAVEL_FETCH_TIMEOUT_MS = 3000;              // hard cap on travel routing calls
+const GEOCODE_FETCH_TIMEOUT_MS = 8000;             // address search / reverse can be slower
 const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
@@ -97,6 +99,7 @@ const DEFAULT_SORT_SETTINGS = {
   travel:{},
   defaultTravelMode:DEFAULT_TRAVEL_MODE,
   lastKnownLocationId:null,
+  locationOptIn:false,           // user granted geolocation (coords never persisted)
   availabilityMinutes:DEFAULT_AVAILABILITY_MINUTES,
   availabilityOverrides:{},
   blockedTimes:DEFAULT_BLOCKED_TIMES

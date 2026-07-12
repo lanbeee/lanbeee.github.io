@@ -69,11 +69,19 @@ async function openSettings(page){
   assert(emptyVisible, 'empty hint shown when no locations');
 
   // ── B. Add a location via map picker + geocode ──
-  console.log('\n[B] add via map picker (mocked Nominatim)');
+  console.log('\n[B] add via map picker (mocked Photon)');
   await page.evaluate(() => { window.__mockRoutes = {
+    'photon.komoot.io': { json:{
+      type:'FeatureCollection',
+      features:[
+        { type:'Feature', geometry:{ type:'Point', coordinates:[-0.1276,51.5034] },
+          properties:{ name:'10 Downing Street', city:'London', country:'United Kingdom', street:'Downing Street' } },
+        { type:'Feature', geometry:{ type:'Point', coordinates:[0.1178,52.1227] },
+          properties:{ name:'Downing College', city:'Cambridge', country:'United Kingdom' } }
+      ]
+    }},
     'nominatim.openstreetmap.org': { json:[
-      { display_name:'10 Downing Street, Westminster, London', lat:'51.5034', lon:'-0.1276' },
-      { display_name:'Downing College, Cambridge', lat:'52.1227', lon:'0.1178' }
+      { display_name:'10 Downing Street, Westminster, London', lat:'51.5034', lon:'-0.1276' }
     ]}
   };});
   await page.locator('#loc-open-picker').click();
@@ -225,17 +233,92 @@ async function openSettings(page){
   await page.waitForSelector('#location-picker-sheet.open');
   await page.locator('#picker-name').fill('Gym');
   await page.locator('#picker-gps').click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
   await page.locator('#picker-save').click();
   await page.waitForTimeout(300);
   const gps = await page.evaluate(() => {
     const s = loadSortSettings();
     const gym = s.locations.find(l => l.name === 'Gym');
-    return gym ? { lat:gym.lat, lng:gym.lng } : null;
+    return gym ? { lat:gym.lat, lng:gym.lng, optIn:s.locationOptIn } : null;
   });
   console.log(gps);
   assert(gps && Math.abs(gps.lat - 40.7589) < 0.001, 'GPS location added with mocked coords');
+  assert(gps.optIn === true, 'locationOptIn persisted after grant');
   assert(await page.locator('#location-list .location-row').count() === 2, 'two locations now in registry');
+
+  // ── H1. Pan map → pin follows center; Pin button snaps ──
+  console.log('\n[H1] drop pin at map center after pan');
+  await page.locator('#loc-open-picker').click();
+  await page.waitForSelector('#location-picker-sheet.open');
+  await page.waitForTimeout(200);
+  const beforeDrop = await page.evaluate(() => ({
+    lat:Number(document.querySelector('#picker-lat')?.value),
+    lng:Number(document.querySelector('#picker-lng')?.value)
+  }));
+  // Pan only — moveend should auto-sync the pin to the crosshair.
+  await page.evaluate(() => {
+    if(!pickerMap)throw new Error('no map');
+    pickerMap.setView([41.8781,-87.6298],15,{animate:false});
+  });
+  await page.waitForTimeout(200);
+  const afterPan = await page.evaluate(() => ({
+    lat:Number(document.querySelector('#picker-lat')?.value),
+    lng:Number(document.querySelector('#picker-lng')?.value),
+    marker:pickerMarker ? pickerMarker.getLatLng() : null
+  }));
+  console.log({ beforeDrop, afterPan });
+  assert(Math.abs(afterPan.lat - 41.8781) < 0.002, 'pan moveend snaps pin lat');
+  assert(Math.abs(afterPan.lng - (-87.6298)) < 0.002, 'pan moveend snaps pin lng');
+  assert(await page.locator('#picker-drop-pin').textContent().then(t => t.trim() === 'Pin'), 'Pin button label is short');
+  // Explicit Pin after another pan (with stop) still works.
+  await page.evaluate(() => {
+    pickerMap.setView([34.0522,-118.2437],14,{animate:false});
+  });
+  await page.waitForTimeout(100);
+  await page.locator('#picker-drop-pin').click();
+  await page.waitForTimeout(100);
+  const afterDrop = await page.evaluate(() => ({
+    lat:Number(document.querySelector('#picker-lat')?.value),
+    lng:Number(document.querySelector('#picker-lng')?.value)
+  }));
+  assert(Math.abs(afterDrop.lat - 34.0522) < 0.002, 'Pin button uses map center lat');
+  assert(Math.abs(afterDrop.lng - (-118.2437)) < 0.002, 'Pin button uses map center lng');
+  await page.locator('#picker-cancel').click();
+  await page.waitForTimeout(100);
+
+  // Settings enable-location control + rationale sheet.
+  console.log('\n[H2] settings enable location control');
+  await page.evaluate(() => {
+    // Reset opt-in so the rationale sheet shows again.
+    if(typeof stopLocationWatch === 'function')stopLocationWatch();
+    currentCoord = null;
+    updateSortSetting({locationOptIn:false},{renderNow:false,sync:false});
+    renderLocationAccessControl();
+  });
+  await page.waitForTimeout(100);
+  const before = await page.evaluate(() => ({
+    optIn:loadSortSettings().locationOptIn,
+    hasCoord:!!currentCoord,
+    btn:document.querySelector('#location-access-enable')?.textContent
+  }));
+  console.log(before);
+  assert(before.optIn === false && !before.hasCoord, 'opt-in cleared before re-enable');
+  await page.locator('#location-access-enable').click();
+  await page.waitForSelector('#location-permission-sheet.open');
+  // Click Allow (user-gesture path iOS requires); mock geo resolves sync.
+  await page.locator('#location-permission-allow').click();
+  await page.waitForTimeout(150);
+  const accessAfter = await page.evaluate(() => ({
+    optIn:loadSortSettings().locationOptIn,
+    hasCoord:!!currentCoord,
+    statusText:document.querySelector('#location-access-status')?.textContent || '',
+    sheetOpen:document.querySelector('#location-permission-sheet')?.classList.contains('open')
+  }));
+  console.log(accessAfter);
+  assert(accessAfter.optIn === true, 'enable location → allow sets locationOptIn');
+  assert(accessAfter.hasCoord === true, 'enable location → allow sets currentCoord');
+  assert(/on/i.test(accessAfter.statusText), 'access status shows on');
+  assert(accessAfter.sheetOpen === false, 'permission sheet closes after allow');
 
   // ── I. Dangling-id sweep on remove ──
   console.log('\n[I] remove location → dangling-id sweep');

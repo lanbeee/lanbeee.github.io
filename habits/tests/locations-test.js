@@ -211,23 +211,35 @@ async function setMock(page, routes){
   const revalidated = await page.evaluate(([a,b]) => sortSettings.travel[edgeKey(a.id,b.id)].seconds, [LOC_A,LOC_B]);
   assert(revalidated === 4321, 'stale edge revalidated to 4321 in background');
 
-  // ── L. ASYNC: geocodeSearch — parses Nominatim results ──
-  console.log('\n[L] geocodeSearch — Nominatim parsing + filtering');
-  await setMock(page, { 'nominatim.openstreetmap.org': { status:200, json:[
-    { display_name:'10 Downing Street, Westminster, London', lat:'51.5034', lon:'-0.1276' },
-    { display_name:'Eiffel Tower, Paris', lat:'48.8584', lon:'2.2945' },
-    { display_name:'Bad', lat:'not-a-number', lon:'0' }   // invalid lat -> filtered
-  ]}});
+  // ── L. ASYNC: geocodeSearch — parses Photon results (primary) ──
+  console.log('\n[L] geocodeSearch — Photon parsing + filtering');
+  await setMock(page, {
+    'photon.komoot.io': { status:200, json:{
+      type:'FeatureCollection',
+      features:[
+        { type:'Feature', geometry:{ type:'Point', coordinates:[-0.1276,51.5034] },
+          properties:{ name:'10 Downing Street', city:'London', country:'UK' } },
+        { type:'Feature', geometry:{ type:'Point', coordinates:[2.2945,48.8584] },
+          properties:{ name:'Eiffel Tower', city:'Paris', country:'France' } },
+        { type:'Feature', geometry:{ type:'Point', coordinates:['bad',0] },
+          properties:{ name:'Bad' } }
+      ]
+    }},
+    'nominatim.openstreetmap.org': { status:200, json:[] }
+  });
   const geo = await page.evaluate(q => geocodeSearch(q), '10 downing');
   console.log(geo);
   assert(geo.length === 2, 'invalid-lat result filtered (2 survive)');
-  assert(geo[0].name === '10 Downing Street', 'name = first comma segment');
+  assert(geo[0].name === '10 Downing Street', 'name from Photon properties');
   assert(geo[0].lat === 51.5034 && geo[0].lng === -0.1276, 'lat/lng parsed as numbers');
   assert(geo[0].address.length > 0, 'address carried through');
 
   // ── M. ASYNC: geocodeSearch — empty query + failure both return [] ──
   console.log('\n[M] geocodeSearch — empty query + failure');
-  await setMock(page, { 'nominatim.openstreetmap.org':'REJECT' });
+  await setMock(page, {
+    'photon.komoot.io':'REJECT',
+    'nominatim.openstreetmap.org':'REJECT'
+  });
   const empty = await page.evaluate(() => geocodeSearch('   '));
   const failed = await page.evaluate(() => geocodeSearch('anything'));
   assert(empty.length === 0, 'empty query → []');

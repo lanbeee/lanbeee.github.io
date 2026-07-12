@@ -101,6 +101,7 @@
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
+ * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
  * @property {{label:string,days:number[],start:number,end:number}[]} blockedTimes — recurring unavailable blocks
@@ -176,6 +177,7 @@ function loadSortSettings(){
     merged.travel = normalizeTravelCache(merged.travel);
     merged.defaultTravelMode = normalizeTravelMode(merged.defaultTravelMode);
     merged.lastKnownLocationId = cleanLocationId(merged.lastKnownLocationId) || null;
+    merged.locationOptIn = Boolean(merged.locationOptIn);
     merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
@@ -194,6 +196,7 @@ function saveSortSettings(settings){
   next.travel = normalizeTravelCache(next.travel);
   next.defaultTravelMode = normalizeTravelMode(next.defaultTravelMode);
   next.lastKnownLocationId = cleanLocationId(next.lastKnownLocationId) || null;
+  next.locationOptIn = Boolean(next.locationOptIn);
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
   next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);

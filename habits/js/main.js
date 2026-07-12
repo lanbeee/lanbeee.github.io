@@ -149,10 +149,13 @@ $('today-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passiv
 $('iam-at-row')?.addEventListener('click',async e=>{
   const gps = e.target.closest('#iam-at-gps');
   if(gps){
-    const status = await requestLocationAccess();
-    if(status === 'denied')showToast('location permission denied — pick manually');
-    else if(status === 'unsupported')showToast('location not supported');
-    else showToast('location on');
+    const s = sortSettings || loadSortSettings();
+    if(s.locationOptIn || currentCoord){
+      await requestLocationAccess({quiet:false});
+    }else{
+      locationAllowCallback = null;
+      openLocationPermissionSheet();
+    }
     renderIAmAtPicker();
     renderTodayAgenda();
     render();
@@ -934,6 +937,7 @@ $('picker-results')?.addEventListener('click',e=>{
   if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
 });
 $('picker-gps')?.addEventListener('click',centerPickerOnGps);
+$('picker-drop-pin')?.addEventListener('click',dropPinAtMapCenter);
 $('picker-apply-coords')?.addEventListener('click',applyPickerCoordsInputs);
 $('picker-save')?.addEventListener('click',saveLocationPicker);
 $('picker-cancel')?.addEventListener('click',closeLocationPicker);
@@ -1108,10 +1112,18 @@ $('home-tag-filter')?.addEventListener('click',e=>{
 $('presence-picker-chips')?.addEventListener('click',async e=>{
   const gps = e.target.closest('[data-presence-gps]');
   if(gps){
-    const status = await requestLocationAccess();
-    if(status === 'denied')showToast('location permission denied — pick manually');
-    else if(status === 'unsupported')showToast('location not supported');
-    else showToast('location on');
+    const s = sortSettings || loadSortSettings();
+    if(s.locationOptIn || currentCoord){
+      await requestLocationAccess({quiet:false});
+    }else{
+      locationAllowCallback = ()=>{
+        renderPresencePickerBody();
+        renderIAmAtPicker();
+        renderTodayAgenda();
+        render();
+      };
+      openLocationPermissionSheet();
+    }
     renderPresencePickerBody();
     renderIAmAtPicker();
     renderTodayAgenda();
@@ -1125,6 +1137,28 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
   renderIAmAtPicker();
   renderTodayAgenda();
   render();
+});
+$('location-access-enable')?.addEventListener('click',()=>{
+  const s = sortSettings || loadSortSettings();
+  if(s.locationOptIn || currentCoord){
+    requestLocationAccess({quiet:false,enableHighAccuracy:true});
+    return;
+  }
+  locationAllowCallback = ()=>{
+    renderLocationAccessControl();
+    renderIAmAtPicker();
+    render();
+  };
+  openLocationPermissionSheet();
+});
+$('location-permission-allow')?.addEventListener('click',()=>{
+  confirmLocationPermissionAllow();
+});
+$('location-permission-cancel')?.addEventListener('click',()=>{
+  closeLocationPermissionSheet();
+});
+$('location-permission-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget)closeLocationPermissionSheet();
 });
 $('presence-picker-close')?.addEventListener('click',()=>closeSheet('presence-picker-sheet'));
 $('presence-picker-sheet')?.addEventListener('click',e=>{
@@ -1294,6 +1328,7 @@ render();
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
 if (typeof initReminders === 'function') initReminders();
+if (typeof resumeLocationWatchIfOptedIn === 'function') resumeLocationWatchIfOptedIn();
 if (typeof sweepAutoDoneTasks === 'function'){
   sweepAutoDoneTasks();
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden)setTimeout(sweepAutoDoneTasks,300); });
