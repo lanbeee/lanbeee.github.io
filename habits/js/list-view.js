@@ -984,7 +984,7 @@ function earlyCardPill(reason){
 }
 
 // RENDER: thin travel card between home list items (same surface as today).
-function appendHomeTravelCard(list,fromId,toId){
+function appendHomeTravelCard(list,fromId,toId,startTs){
   if(!list || !fromId || !toId || fromId === toId)return;
   const from = typeof locationById === 'function' ? locationById(fromId) : null;
   const to = typeof locationById === 'function' ? locationById(toId) : null;
@@ -995,14 +995,41 @@ function appendHomeTravelCard(list,fromId,toId){
   const fromName = from ? from.name : 'here';
   const toName = to ? to.name : 'next';
   const edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(edge);
+  const depart = startTs && typeof agendaTimeLabel === 'function' ? `leave by ${agendaTimeLabel(startTs)} · ` : '';
   const travelEl = document.createElement('button');
   travelEl.type = 'button';
   travelEl.className = `travel-card${edited ? ' is-edited' : ''}`;
   travelEl.dataset.travelFrom = fromId;
   travelEl.dataset.travelTo = toId;
   travelEl.setAttribute('aria-label',`edit travel time ${fromName} to ${toName}`);
-  travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
+  travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
   list.appendChild(travelEl);
+  let travelPointer = null;
+  travelEl.addEventListener('pointerdown',e=>{
+    travelPointer = {el:travelEl,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+  },{passive:true});
+  travelEl.addEventListener('pointerup',e=>{
+    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
+    const tap = travelPointer;
+    travelPointer = null;
+    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
+    if(moved > 10 || Date.now() - tap.time > 800)return;
+    suppressCardClick = travelEl;
+    openTravelEditSheet(fromId,toId);
+    setTimeout(()=>{if(suppressCardClick === travelEl)suppressCardClick = null;},120);
+  });
+  travelEl.addEventListener('pointercancel',e=>{
+    if(travelPointer && travelPointer.el === travelEl && travelPointer.id === e.pointerId)travelPointer = null;
+  });
+  travelEl.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(suppressCardClick === travelEl){
+      suppressCardClick = null;
+      return;
+    }
+    openTravelEditSheet(fromId,toId);
+  });
 }
 
 // RENDER: blocked-time card on home — mirrors travel-card weight, shows place.
@@ -1183,7 +1210,7 @@ function render(){
       appendSectionHeader(list,homeWeekDayLabel(day));
       seq.forEach(row=>{
         if(row.kind === 'travel'){
-          appendHomeTravelCard(list,row.from,row.to);
+          appendHomeTravelCard(list,row.from,row.to,row.start);
           return;
         }
         if(row.kind === 'blocked'){
