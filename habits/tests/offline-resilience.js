@@ -90,6 +90,29 @@ const { chromium } = require('playwright');
   const cardCount = await page.locator('.ting-card').count();
   if (cardCount < 1) throw new Error(`no cards rendered offline, saw ${cardCount}`);
 
+  // Core shell scripts must resolve from cache (not fail open as empty 503s)
+  const shellScriptsOk = await page.evaluate(async () => {
+    const paths = [
+      './js/config.js',
+      './js/storage.js',
+      './js/data.js',
+      './js/list-view.js',
+      './js/main.js',
+      './styles.css'
+    ];
+    const results = await Promise.all(paths.map(async (path) => {
+      try {
+        const res = await fetch(path, { cache: 'reload' });
+        return { path, ok: res.ok, status: res.status, type: res.headers.get('content-type') || '' };
+      } catch (error) {
+        return { path, ok: false, status: 0, error: String(error) };
+      }
+    }));
+    return results;
+  });
+  const badShell = shellScriptsOk.filter(r => !r.ok);
+  if (badShell.length) throw new Error(`offline shell assets failed: ${JSON.stringify(badShell)}`);
+
   // Phase 3 — go back online, verify the app still works
   await page.context().setOffline(false);
   await page.reload({ waitUntil: 'networkidle' });
@@ -105,7 +128,7 @@ const { chromium } = require('playwright');
   if (!tablerLoaded) throw new Error('tabler icons CSS not loaded after coming back online');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(JSON.stringify({ appBarHidden, bottomNavVisible, navButtons, cardCount, onlineCards, tablerLoaded }));
+  console.log(JSON.stringify({ appBarHidden, bottomNavVisible, navButtons, cardCount, onlineCards, tablerLoaded, shellScriptsOk }));
 
   await browser.close();
 })().catch(error => {

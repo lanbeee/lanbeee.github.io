@@ -124,20 +124,14 @@ $('open-search').addEventListener('click',()=>{
   const data = load();
   const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
   if(data.length < 10 && !hasSearchableArchive)return;
-  const nav = document.querySelector('.bottom-nav');
-  const wide = paneTierActive();
-  const isOpen = wide
-    ? !!$('app-bar-search')?.classList.contains('is-open')
-    : !!nav?.classList.contains('search-open');
-  if(isOpen)closeSearch();
+  if(isSearchOpen())closeSearch();
   else setSearchOpen(true);
 });
 $('bar-open-search')?.addEventListener('click',()=>{
   const data = load();
   const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
   if(data.length < 10 && !hasSearchableArchive)return;
-  const isOpen = !!$('app-bar-search')?.classList.contains('is-open');
-  if(isOpen)closeSearch();
+  if(isSearchOpen())closeSearch();
   else setSearchOpen(true);
 });
 $('bar-open-add')?.addEventListener('click',()=>{
@@ -236,8 +230,15 @@ document.addEventListener('keydown',e=>{
   e.preventDefault();
 });
 $('clear-search').addEventListener('click',()=>{
-  if(searchQuery.trim())setSearchOpen(true,{clear:true});
-  else closeSearch();
+  if(searchQuery.trim()){
+    searchQuery = '';
+    $('habit-search').value = '';
+    updateSearchUi();
+    render();
+    $('habit-search').focus({preventScroll:true});
+    return;
+  }
+  closeSearch();
 });
 
 $('do-cancel').addEventListener('click',cancelAdd);

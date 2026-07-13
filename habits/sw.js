@@ -1,6 +1,9 @@
-const CACHE = 'tings-v26';
+const CACHE = 'tings-v27';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
+const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
+const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 const MAPS_ORIGINS = [
   'https://router.project-osrm.org',
   'https://nominatim.openstreetmap.org',
@@ -44,14 +47,20 @@ const PRECACHE = [
   './manifest.json'
 ];
 
+const PRECACHE_CDN = [TABLER_CSS, TABLER_WOFF2, LEAFLET_CSS, LEAFLET_JS];
+
+async function cachePutOk(cache, url) {
+  try {
+    const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    if (res && res.ok) await cache.put(url, res);
+  } catch (_) {}
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(PRECACHE);
-    try {
-      const res = await fetch(TABLER_CSS, { mode: 'no-cors' });
-      await cache.put(TABLER_CSS, res);
-    } catch (_) {}
+    await Promise.all(PRECACHE_CDN.map(url => cachePutOk(cache, url)));
     await self.skipWaiting();
   })());
 });
@@ -69,11 +78,21 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET') return;
 
   if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req).catch(async () =>
-        (await caches.match(req)) || (await caches.match('./index.html'))
-      )
-    );
+    event.respondWith((async () => {
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put(req, res.clone());
+        }
+        return res;
+      } catch {
+        return (await caches.match(req))
+          || (await caches.match('./index.html'))
+          || (await caches.match('./'))
+          || new Response('Offline', { status: 503, statusText: 'Offline' });
+      }
+    })());
     return;
   }
 
@@ -116,18 +135,24 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Stale-while-revalidate for app shell + CDN assets. Must always resolve to a
+  // Response — returning a Promise that settles to undefined breaks offline.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req);
-    const network = fetch(req)
-      .then(res => {
-        if (res && (res.ok || res.type === 'opaque')) {
-          cache.put(req, res.clone());
-        }
-        return res;
-      })
-      .catch(() => cached);
-    return cached || network || new Response('', { status: 503, statusText: 'Offline' });
+    if (cached) {
+      fetch(req).then(res => {
+        if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+      }).catch(() => {});
+      return cached;
+    }
+    try {
+      const res = await fetch(req);
+      if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+      return res;
+    } catch {
+      return new Response('', { status: 503, statusText: 'Offline' });
+    }
   })());
 });
 

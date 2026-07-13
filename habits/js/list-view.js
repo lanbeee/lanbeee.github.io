@@ -503,6 +503,13 @@ function updateSortButton(){
   if(count < 10 && !hasSearchableArchive)closeSearch({render:false});
 }
 
+// PURE: whether the search chrome is open (phone nav or wide app bar).
+function isSearchOpen(){
+  const wide = paneTierActive();
+  if(wide)return !!$('app-bar-search')?.classList.contains('is-open');
+  return !!document.querySelector('.bottom-nav')?.classList.contains('search-open');
+}
+
 // RENDER: sync search bar to query state
 function updateSearchUi(){
   const nav = document.querySelector('.bottom-nav');
@@ -511,10 +518,7 @@ function updateSearchUi(){
   const barSearchBtn = $('bar-open-search');
   const clearBtn = $('clear-search');
   if(!input || (!nav && !barSearchBtn))return;
-  const wide = paneTierActive();
-  const open = wide
-    ? !!($('app-bar-search') && $('app-bar-search').classList.contains('is-open'))
-    : !!nav?.classList.contains('search-open');
+  const open = isSearchOpen();
   const empty = !searchQuery.trim();
   input.value = searchQuery;
   document.body.classList.toggle('search-active',open);
@@ -543,7 +547,7 @@ function updateSearchUi(){
     barSearchWrap.classList.toggle('is-empty',empty);
   }
   if(clearBtn){
-    clearBtn.hidden = empty;
+    clearBtn.hidden = !open;
     clearBtn.setAttribute('aria-label',empty ? 'close search' : 'clear search');
   }
 }
@@ -587,8 +591,8 @@ function setSearchOpen(open,options = {}){
 
 // HYBRID: close and clear search UI
 function closeSearch(options = {}){
-  const nav = document.querySelector('.bottom-nav');
-  const active = Boolean(searchQuery.trim()) || Boolean(nav?.classList.contains('search-open'));
+  const open = isSearchOpen();
+  const active = Boolean(searchQuery.trim()) || open;
   setSearchOpen(false,{
     clear:options.clear !== false,
     focus:false,
@@ -598,17 +602,11 @@ function closeSearch(options = {}){
 
 // PURE: decide if tap dismisses search
 function shouldDismissSearchFromTap(target){
-  const nav = document.querySelector('.bottom-nav');
-  const barSearch = $('app-bar-search');
-  const wide = paneTierActive();
-  const searchOpen = wide
-    ? !!barSearch?.classList.contains('is-open')
-    : !!nav?.classList.contains('search-open');
   if(!target?.closest)return false;
-  if(!searchOpen)return false;
-  if(target.closest('#habit-search,#clear-search'))return false;
-  if(target.closest('.bottom-nav'))return target.closest('#open-search');
-  if(target.closest('.app-bar'))return target.closest('#bar-open-search');
+  if(!isSearchOpen())return false;
+  // Close/clear controls handle their own clicks — don't double-fire dismiss
+  // here or the follow-up click reopens search (toggle sees it already closed).
+  if(target.closest('#habit-search,#clear-search,#open-search,#bar-open-search'))return false;
   if(target.closest('.sheet-wrap.open'))return false;
   if(searchQuery.trim() && target.closest('.swipe-row,.ting-card,.swipe-actions'))return false;
   return true;
@@ -1041,6 +1039,9 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   });
 }
 
+// Module state: which consecutive blocked groups are expanded on the home list.
+const expandedBlockedGroups = new Set();
+
 // RENDER: blocked-time card on home — mirrors travel-card weight, shows place.
 function appendHomeBlockedCard(list,row){
   if(!list || !row)return;
@@ -1053,6 +1054,88 @@ function appendHomeBlockedCard(list,row){
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
   el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span>`;
   list.appendChild(el);
+}
+
+// RENDER: one card for a run of consecutive blocked times. Tap expands to the
+// individual rows (and tap again collapses) so week-home stays quieter.
+function appendHomeBlockedGroup(list,blocks,groupKey){
+  if(!list || !blocks || !blocks.length)return;
+  if(blocks.length === 1){
+    appendHomeBlockedCard(list,blocks[0]);
+    return;
+  }
+  const expanded = expandedBlockedGroups.has(groupKey);
+  const start = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(blocks[0].start) : '';
+  const end = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(blocks[blocks.length - 1].end) : '';
+  const labels = blocks.map(b => b.label || 'blocked').filter(Boolean);
+  const summary = labels.length <= 3
+    ? labels.join(', ')
+    : `${labels.slice(0,2).join(', ')} +${labels.length - 2}`;
+  const wrap = document.createElement('div');
+  wrap.className = `blocked-group${expanded ? ' is-expanded' : ''}`;
+  wrap.dataset.blockedGroup = groupKey;
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'blocked-card blocked-card-merge';
+  toggle.setAttribute('aria-expanded',String(expanded));
+  toggle.setAttribute(
+    'aria-label',
+    expanded
+      ? `collapse ${blocks.length} blocked times`
+      : `${blocks.length} blocked times ${start} to ${end}, tap to expand`
+  );
+  toggle.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)} · ${blocks.length}</span><i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
+  let mergePointer = null;
+  toggle.addEventListener('pointerdown',e=>{
+    mergePointer = {el:toggle,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+  },{passive:true});
+  toggle.addEventListener('pointerup',e=>{
+    if(!mergePointer || mergePointer.el !== toggle || mergePointer.id !== e.pointerId)return;
+    const tap = mergePointer;
+    mergePointer = null;
+    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
+    if(moved > 10 || Date.now() - tap.time > 800)return;
+    suppressCardClick = toggle;
+    if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
+    else expandedBlockedGroups.add(groupKey);
+    if(typeof render === 'function')render();
+    setTimeout(()=>{if(suppressCardClick === toggle)suppressCardClick = null;},120);
+  });
+  toggle.addEventListener('pointercancel',e=>{
+    if(mergePointer && mergePointer.el === toggle && mergePointer.id === e.pointerId)mergePointer = null;
+  });
+  toggle.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(suppressCardClick === toggle){
+      suppressCardClick = null;
+      return;
+    }
+    if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
+    else expandedBlockedGroups.add(groupKey);
+    if(typeof render === 'function')render();
+  });
+  wrap.appendChild(toggle);
+
+  if(expanded){
+    const detail = document.createElement('div');
+    detail.className = 'blocked-group-detail';
+    blocks.forEach(row => appendHomeBlockedCard(detail,row));
+    wrap.appendChild(detail);
+  }
+  list.appendChild(wrap);
+}
+
+// PURE: walk a day sequence and fold back-to-back blocked rows into groups.
+function consumeBlockedRun(seq,startIdx){
+  const blocks = [];
+  let i = startIdx;
+  while(i < seq.length && seq[i].kind === 'blocked'){
+    blocks.push(seq[i]);
+    i += 1;
+  }
+  return {blocks,nextIdx:i};
 }
 
 function appendSectionHeader(list,label){
@@ -1221,21 +1304,27 @@ function render(){
     dayPlans.forEach(({day,seq})=>{
       if(!seq.length)return;
       appendSectionHeader(list,homeWeekDayLabel(day));
-      seq.forEach(row=>{
+      for(let i = 0;i < seq.length;){
+        const row = seq[i];
         if(row.kind === 'travel'){
           appendHomeTravelCard(list,row.from,row.to,row.start);
-          return;
+          i += 1;
+          continue;
         }
         if(row.kind === 'blocked'){
-          appendHomeBlockedCard(list,row);
-          return;
+          const {blocks,nextIdx} = consumeBlockedRun(seq,i);
+          const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
+          appendHomeBlockedGroup(list,blocks,groupKey);
+          i = nextIdx;
+          continue;
         }
-        if(row.kind !== 'fill' && row.kind !== 'scheduled')return;
-        if(data[row.i]?.pinned)return;
+        i += 1;
+        if(row.kind !== 'fill' && row.kind !== 'scheduled')continue;
+        if(data[row.i]?.pinned)continue;
         const cat = todayCategory(data[row.i],sortSettings);
         const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
         appendHabitCard(row.i,row,earlyText);
-      });
+      }
     });
 
     // Timed-only day sections: anything without a suggested time goes to

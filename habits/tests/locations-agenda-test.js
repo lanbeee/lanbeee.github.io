@@ -179,6 +179,7 @@ function seedScript(extraHabits, extraSettings){
   ], {
     blockedTimes:[
       { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' },
+      { label:'breakfast', days:[0,1,2,3,4,5,6], start:480, end:510, locationId:'home' },
       { label:'work',  days:[1,2,3,4,5],     start:540, end:1020, locationId:'office' },
     ],
   }));
@@ -198,7 +199,7 @@ function seedScript(extraHabits, extraSettings){
   });
   console.log(blocks);
   assert(blocks.blockLoc[0].loc === 'home', 'sleep block carries home locationId');
-  assert(blocks.blockLoc[1].loc === 'office', 'work block carries office locationId');
+  assert(blocks.blockLoc.find(b => b.label === 'work')?.loc === 'office', 'work block carries office locationId');
   assert(blocks.seedHasHome, 'day seed includes home (from sleep block)');
 
   // ── F. Week plan on home screen (showWeekOnHome setting) ──
@@ -234,6 +235,34 @@ function seedScript(extraHabits, extraSettings){
   assert(homeWeek.hasToday, 'home list has a today section');
   assert(homeWeek.hasTomorrow, 'home list has a tomorrow section');
   assert(homeWeek.blockedCards > 0, 'blocked times render as home cards');
+  // Consecutive blocked times collapse into one tappable group on home.
+  const blockedMerge = await page.evaluate(() => {
+    const list = document.getElementById('list');
+    const groups = [...(list?.querySelectorAll('.blocked-group') || [])];
+    const merges = [...(list?.querySelectorAll('.blocked-card-merge') || [])];
+    let expandedDetail = 0;
+    if (merges[0]) {
+      merges[0].click();
+      expandedDetail = list.querySelectorAll('.blocked-group.is-expanded .blocked-group-detail .blocked-card').length;
+    }
+    return {
+      groups: groups.length,
+      merges: merges.length,
+      expandedDetail,
+      stickyTop: (() => {
+        const header = list?.querySelector('.section-header');
+        if (!header) return null;
+        return getComputedStyle(header).position;
+      })()
+    };
+  });
+  console.log(blockedMerge);
+  if (blockedMerge.merges > 0) {
+    assert(blockedMerge.expandedDetail > 1, 'expanded blocked group shows separate cards');
+  } else {
+    assert(false, 'expected at least one merged blocked group (sleep+breakfast)');
+  }
+  assert(blockedMerge.stickyTop === 'sticky', 'section headers are sticky');
   // Disable the setting → classic today/overdue/upcoming sections return.
   await page.evaluate(() => {
     const s = loadSortSettings();
