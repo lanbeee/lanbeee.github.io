@@ -1575,9 +1575,13 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .blocked-group{display:flex;flex-direction:column;gap:6px;width:100%;}
 .blocked-card-merge{
   cursor:pointer;-webkit-tap-highlight-color:transparent;
-  text-align:center;
+  text-align:center;flex-wrap:nowrap;overflow:hidden;
 }
-.blocked-card-merge .blocked-card-chevron{margin-left:2px;opacity:0.7;}
+.blocked-card-merge .blocked-card-chevron{flex-shrink:0;margin-left:2px;opacity:0.7;}
+.blocked-card-merge i:first-child{flex-shrink:0;}
+.blocked-card-merge span{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 .blocked-group-detail{
   display:flex;flex-direction:column;gap:6px;
   padding-left:2px;
