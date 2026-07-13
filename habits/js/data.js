@@ -40,6 +40,7 @@
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
  * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
+ * @property {number|null} planByDate         — keepup/reduce only: one-off soft "do by" day (ms day-start). Week planner may place it any day on/before this date; cleared on the next actual log. null = none.
  *
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
@@ -235,6 +236,7 @@ function normalize(items){
     // longer present in the registry) happens once at startup via
     // reconcileLocations(), after both habits and settings have loaded.
     const locationIds = normalizeLocationIds(raw.locationIds);
+    const isRhythmHabit = type === 'keepup' || type === 'reduce';
     const h = {
       name: raw.name || '',
       type,
@@ -245,6 +247,7 @@ function normalize(items){
       hardDue,
       markDone,
       eventTime,
+      planByDate: isRhythmHabit ? clampDayTimestamp(raw.planByDate) : null,
       createdAt: raw.createdAt || null,
       logs,
       emoji: raw.emoji || '',
@@ -279,6 +282,23 @@ function taskWhen(h){
 // PURE: a task with a fixed clock time (an appointment), as opposed to dated/someday.
 function isTimedTask(h){
   return h.type === 'task' && h.eventTime !== null;
+}
+// PURE: one-off soft "plan by" date on a rhythm habit (keepup/reduce).
+function habitPlanByDate(h){
+  if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return null;
+  return h.planByDate != null ? clampDayTimestamp(h.planByDate) : null;
+}
+// PURE: Sunday (or today if already Sunday) — handy "end of this week" preset.
+function endOfWeekDate(now = Date.now()){
+  const base = dayStart(now);
+  const weekday = new Date(base).getDay();
+  const add = weekday === 0 ? 0 : 7 - weekday;
+  return base + add * 86400000;
+}
+// HYBRID-safe: clear a habit's one-off plan-by after an actual log fulfills it.
+function clearPlanByDateOnLog(h){
+  if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return;
+  if(h.planByDate != null)h.planByDate = null;
 }
 
 function save(data){

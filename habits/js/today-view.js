@@ -62,9 +62,18 @@ function includeInTodayAgenda(h,settings){
     return settings.showDueTasksInAgenda !== false && left !== null && left <= 0 && windowStillDoableToday(h);
   }
   if(h.type === 'zero')return false;
+  const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
+  if(settings.showDueHabitsInAgenda !== false && scheduleDistance === 0 && windowStillDoableToday(h)){
+    const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+    if(planBy != null){
+      const left = daysUntil(planBy);
+      // Soft plan-by: once the deadline day arrives (or is overdue), treat like
+      // a due habit so today can absorb it — without needing the rhythm due.
+      if(left !== null && left <= 0)return true;
+    }
+  }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
-  const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
   return settings.showDueHabitsInAgenda !== false && days !== null && days >= target && scheduleDistance === 0 && windowStillDoableToday(h);
 }
 
@@ -696,6 +705,15 @@ function weekUrgency(h){
     if(left <= 2)return 70;
     return 30;
   }
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null){
+    const left = daysUntil(planBy);
+    if(left === null)return 30;
+    if(left < 0)return 140;
+    if(left === 0)return 110;
+    if(left <= 2)return 70;
+    return 35;
+  }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   if(days === null)return 10;
@@ -747,6 +765,17 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   }
   if(hasPlannedForDay(h,dayBase))return settings.showPlannedItemsInAgenda !== false;
   if(settings.showDueHabitsInAgenda === false)return false;
+  // One-off soft plan-by: eligible any day from today through the deadline
+  // (and any remaining week day once overdue) — week placement picks the day.
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null){
+    const dueBase = dayStart(planBy);
+    const todayBase = dayStart(Date.now());
+    if(dueBase < todayBase)return true;
+    if(dayBase > dueBase)return false;
+    if(dayBase < todayBase)return false;
+    return true;
+  }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   if(days === null || days < 0)return false;

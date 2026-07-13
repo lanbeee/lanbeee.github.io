@@ -357,6 +357,10 @@ function setDetailTypeUi(type){
   $('detail-due-row').hidden = type !== 'task';
   $('detail-due-hint').hidden = type !== 'task';
   $('detail-scheduled-row').hidden = type !== 'task';
+  const planByRow = $('detail-plan-by-row');
+  const planByHint = $('detail-plan-by-hint');
+  if(planByRow)planByRow.hidden = !isHabit;
+  if(planByHint)planByHint.hidden = !isHabit;
   const flexHelp = $('detail-flexibility-help');
   if(flexHelp){
     flexHelp.textContent = type === 'task'
@@ -366,6 +370,7 @@ function setDetailTypeUi(type){
   const exportBtn = $('detail-export');
   if(exportBtn)exportBtn.hidden = type !== 'task';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
+  if(typeof syncDetailPlanByUi === 'function')syncDetailPlanByUi();
   if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
 }
 
@@ -651,6 +656,18 @@ $('detail-due-clear').addEventListener('click',()=>{
   setDetailDirty();
 });
 $('detail-hard-due').addEventListener('change',()=>setDetailDirty());
+$('detail-plan-by-date')?.addEventListener('input',()=>{syncDetailPlanByUi();setDetailDirty();});
+$('detail-plan-by-clear')?.addEventListener('click',()=>{
+  $('detail-plan-by-date').value = '';
+  syncDetailPlanByUi();
+  setDetailDirty();
+});
+$('detail-plan-by-week')?.addEventListener('click',()=>{
+  const end = typeof endOfWeekDate === 'function' ? endOfWeekDate() : dayStart(Date.now()) + 6 * 86400000;
+  $('detail-plan-by-date').value = dateInputValue(end);
+  syncDetailPlanByUi();
+  setDetailDirty();
+});
 $('detail-scheduled-time').addEventListener('input',()=>{syncDetailScheduledUi();setDetailDirty();});
 $('detail-mark-done').addEventListener('click',function(){
   const pressed = this.getAttribute('aria-pressed') === 'true';
@@ -795,10 +812,12 @@ $('detail-save').addEventListener('click',()=>{
     h.dueDate = current.dueDate ?? (current.eventTime !== null ? dayStart(current.eventTime) : null);
     h.hardDue = current.hardDue;
     h.markDone = current.markDone;
+    h.planByDate = null;
   }else{
     h.dueDate = null;
     h.hardDue = false;
     h.eventTime = null;
+    h.planByDate = isHabit ? (current.planByDate ?? null) : null;
     // build habits can be event-style (auto-log on schedule); others stay manual
     h.markDone = current.type === 'keepup' ? current.markDone : true;
   }

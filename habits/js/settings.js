@@ -855,6 +855,7 @@ function sortSampleHabit(name,type,target,logs,options = {}){
     dueDate:type === 'task' ? (options.dueDate ?? null) : null,
     hardDue:type === 'task' ? Boolean(options.hardDue) : false,
     eventTime:type === 'task' ? (options.eventTime ?? null) : null,
+    planByDate:(type === 'keepup' || type === 'reduce') ? (options.planByDate ?? null) : null,
     createdAt:options.createdAt || Date.now(),
     logs,
     emoji:options.emoji || '',

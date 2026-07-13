@@ -42,9 +42,11 @@ function openDetail(i){
   $('detail-due-date').value = dateInputValue(h.dueDate);
   $('detail-hard-due').checked = Boolean(h.hardDue);
   $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
+  if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(h.planByDate);
   $('detail-mark-done').setAttribute('aria-pressed',h.markDone !== false ? 'true' : 'false');
   $('detail-habit-mark-done').setAttribute('aria-pressed',h.markDone !== false ? 'true' : 'false');
   syncDetailDueUi();
+  syncDetailPlanByUi();
   syncDetailScheduledUi();
   syncDetailHabitMarkDoneUi();
   setScheduleView('allowed');
@@ -74,6 +76,7 @@ function openDetail(i){
     dueDate:h.dueDate ?? null,
     hardDue:Boolean(h.hardDue),
     eventTime:h.eventTime ?? null,
+    planByDate:h.planByDate ?? null,
     markDone:h.markDone !== false
   };
   syncRhythm('detail',h.target || 7);
@@ -233,6 +236,7 @@ function currentDetailTune(){
     dueDate:parseDateInput($('detail-due-date').value),
     hardDue:$('detail-hard-due').checked,
     eventTime:parseDateTimeInput($('detail-scheduled-time').value),
+    planByDate:parseDateInput($('detail-plan-by-date')?.value || ''),
     markDone:markDoneEl ? markDoneEl.getAttribute('aria-pressed') === 'true' : true
   };
 }
@@ -254,6 +258,7 @@ function setDetailDirty(force){
       current.dueDate !== detailTuneOriginal.dueDate ||
       current.hardDue !== detailTuneOriginal.hardDue ||
       current.eventTime !== detailTuneOriginal.eventTime ||
+      current.planByDate !== detailTuneOriginal.planByDate ||
       current.markDone !== detailTuneOriginal.markDone ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
       current.locationIds.join('|') !== (detailTuneOriginal.locationIds || []).join('|') ||
@@ -281,9 +286,11 @@ function restoreDetailTune(){
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
   $('detail-hard-due').checked = Boolean(detailTuneOriginal.hardDue);
   $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
+  if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(detailTuneOriginal.planByDate);
   $('detail-mark-done').setAttribute('aria-pressed',detailTuneOriginal.markDone !== false ? 'true' : 'false');
   $('detail-habit-mark-done').setAttribute('aria-pressed',detailTuneOriginal.markDone !== false ? 'true' : 'false');
   syncDetailDueUi();
+  syncDetailPlanByUi();
   syncDetailScheduledUi();
   syncDetailHabitMarkDoneUi();
   renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null);
@@ -308,6 +315,21 @@ function syncDetailDueUi(){
   if(hint)hint.textContent = hasDate
     ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
     : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+}
+
+// RENDER: toggle habit one-off plan-by controls + hint
+function syncDetailPlanByUi(){
+  const input = $('detail-plan-by-date');
+  const clearBtn = $('detail-plan-by-clear');
+  const weekBtn = $('detail-plan-by-week');
+  if(!input)return;
+  const hasDate = Boolean(input.value);
+  if(clearBtn)clearBtn.hidden = !hasDate;
+  if(weekBtn)weekBtn.hidden = hasDate;
+  const hint = $('detail-plan-by-hint');
+  if(hint)hint.textContent = hasDate
+    ? 'Soft one-off target — the week planner will place this habit on a free day on or before this date. Cleared when you log it.'
+    : 'Optional. Set a one-off “plan by” date to pull this habit into the week planner without picking a specific day.';
 }
 
 // RENDER: toggle mark-done visibility based on whether a scheduled time is set
@@ -566,6 +588,28 @@ function aboutText(h){
   }
   const target = effectiveTarget(h);
   const rhythm = h.target || 7;
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null){
+    const left = daysUntil(planBy);
+    const planLabel = left === null
+      ? 'Plan by date set'
+      : left < 0
+        ? `Plan-by was ${Math.abs(left)} days ago`
+        : left === 0
+          ? 'Plan by today'
+          : `Plan by in ${left} days`;
+    if(days === null)return `${planLabel}. Aim for about every ${rhythm} days.`;
+    if(days < 0)return `${planLabel}. Next entry is ${entryWhen(h.lastLog)}.`;
+    const when = entryWhen(h.lastLog);
+    if(h.type === 'keepup'){
+      if(days < target)return `${planLabel}. Last entry was ${when}.`;
+      if(days === target)return `${planLabel}. Last entry was ${when}. Rhythm is also due today.`;
+      return `${planLabel}. Last entry was ${when}. Rhythm is ${days - target} days overdue.`;
+    }
+    return days >= target
+      ? `${planLabel}. ${days} days since the last entry.`
+      : `${planLabel}. Entry was ${when}.`;
+  }
   if(days === null)return `Aim for about every ${rhythm} days.`;
   if(days < 0)return `Next entry is ${entryWhen(h.lastLog)}.`;
   const when = entryWhen(h.lastLog);
@@ -597,6 +641,15 @@ function trendText(h){
     if(days === 0)return 'entry today';
     if(days < 3)return 'recent entry';
     return 'on track';
+  }
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null){
+    const left = daysUntil(planBy);
+    if(left !== null){
+      if(left < 0)return `plan by ${Math.abs(left)}d overdue`;
+      if(left === 0)return 'plan by today';
+      return `plan by in ${left}d`;
+    }
   }
   const target = effectiveTarget(h);
   const pace = avg || days;
@@ -689,6 +742,7 @@ function renderCalendar(h){
   });
   if(isTimedTask(h) && h.lastLog === null)addPlannedMarker(h.eventTime);
   else if(h.type === 'task' && h.lastLog === null)addPlannedMarker(h.dueDate);
+  else if((h.type === 'keepup' || h.type === 'reduce') && h.planByDate)addPlannedMarker(h.planByDate);
   const monthEntries = actual + planned;
   const activeDays = [...dayCounts.values()].filter(Boolean).length;
   $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;

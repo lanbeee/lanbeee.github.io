@@ -448,6 +448,58 @@ function seedScript(extraHabits, extraSettings){
   }
   assert(overload.leftoverHeaders.every(h => h === 'overdue' || h === 'upcoming' || h === 'others'), 'leftovers only use overdue/upcoming/others');
 
+  // ── G4. Habit one-off planByDate pulls a not-yet-due habit into the week ──
+  console.log('\n[G4] habit planByDate soft deadline');
+  const planByEnd = dayStartOf(5);
+  await page.addInitScript(seedScript([
+    // Long rhythm — not due for ~25 more days — but plan-by end of week.
+    { name:'plan-by habit', type:'keepup', target:30, logs:[Date.now()-5*86400000], durationMinutes:30, locationIds:['home'], priority:2, planByDate: planByEnd },
+  ], {
+    availabilityMinutes:[600,600,600,600,600,600,600],
+    showWeekOnHome:true,
+  }));
+  await page.goto(baseUrl, { waitUntil:'load' });
+  await page.waitForTimeout(300);
+  const planBy = await page.evaluate((endTs) => {
+    const data = load();
+    const settings = loadSortSettings();
+    const h = data.find(x => x.name === 'plan-by habit');
+    const w = buildWeekAgenda(data, settings, 7);
+    const placed = w.days
+      .map(d => ({
+        offset: Math.round((d.dayBase - dayStart(Date.now())) / 86400000),
+        has: d.timeline.some(r => (r.kind === 'fill' || r.kind === 'scheduled') && r.h.name === 'plan-by habit'),
+      }))
+      .filter(d => d.has);
+    const eligibleDays = w.days.filter(d => isWeekCandidate(h, settings, d.dayBase, d.weekday)).length;
+    return {
+      planByDate: h?.planByDate ?? null,
+      normalized: habitPlanByDate(h),
+      eligibleDays,
+      placedOffsets: placed.map(d => d.offset),
+      placed: placed.length > 0,
+      pastDeadline: placed.every(d => d.offset <= Math.round((dayStart(endTs) - dayStart(Date.now())) / 86400000)),
+      cue: typeof cardCue === 'function' ? cardCue(h) : '',
+    };
+  }, planByEnd);
+  console.log(planBy);
+  assert(planBy.normalized === planByEnd || planBy.planByDate === planByEnd, 'planByDate survives normalize');
+  assert(planBy.eligibleDays >= 2, `plan-by habit eligible on multiple week days (got ${planBy.eligibleDays})`);
+  assert(planBy.placed, 'plan-by habit gets a timed week slot');
+  assert(planBy.pastDeadline, 'plan-by habit placed on or before the deadline');
+  assert(/plan by/i.test(planBy.cue), `card cue mentions plan by (got "${planBy.cue}")`);
+
+  // Logging clears the one-off plan-by.
+  const cleared = await page.evaluate(() => {
+    const data = load();
+    const idx = data.findIndex(x => x.name === 'plan-by habit');
+    logTing(idx);
+    const next = load()[idx];
+    return { planByDate: next.planByDate, lastLog: next.lastLog };
+  });
+  assert(cleared.planByDate == null, 'logging clears planByDate');
+  assert(cleared.lastLog != null, 'logging sets lastLog');
+
   // ── H. Boot cleanliness ──
   console.log('\n[H] boot cleanliness');
   assert(pageErrors.length === 0, 'no pageerrors (got: ' + JSON.stringify(pageErrors) + ')');

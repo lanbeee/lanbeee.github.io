@@ -141,6 +141,9 @@ function buildDayTally(data,included){
     if(h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null){
       addEntry(h.dueDate,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
     }
+    if((h.type === 'keepup' || h.type === 'reduce') && h.planByDate){
+      addEntry(h.planByDate,{name:h.name,type:h.type,tone:'plan',planned:true,scheduled:true});
+    }
   });
   return {map,total,actual,planned,toneCounts};
 }

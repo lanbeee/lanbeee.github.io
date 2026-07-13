@@ -713,6 +713,17 @@ function cardCue(h){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'Snoozed for now';
   if(h.type === 'task')return taskCue(h);
   if(plan && dateKey(plan) === dateKey(Date.now()) && h.type !== 'zero')return 'Planned today';
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
+    const left = daysUntil(planBy);
+    if(left !== null){
+      if(left < 0)return `Plan by ${Math.abs(left)}d overdue`;
+      if(left === 0)return 'Plan by today';
+      if(left === 1)return 'Plan by tomorrow';
+      if(left <= 7)return `Plan by in ${left}d`;
+      return `Plan by ${new Date(planBy).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+    }
+  }
   if(days === null){
     if(h.type === 'zero')return 'Nothing logged';
     return 'Ready to start';
@@ -780,10 +791,14 @@ function cardMeta(h,options = {}){
     }else{
       parts.push(`<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`);
     }
-  }
-  else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
-    if(h.type !== 'zero')parts.push(`<span class="context-pill" title="target rhythm"><i class="ti ti-repeat" aria-hidden="true"></i>${h.target || 7}d</span>`);
-    else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
+  }else{
+    const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+    if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
+      parts.push(`<span class="context-pill due" title="${escapeHtml(`plan by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
+    }else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
+      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="target rhythm"><i class="ti ti-repeat" aria-hidden="true"></i>${h.target || 7}d</span>`);
+      else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
+    }
   }
   if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration"><i class="ti ti-clock" aria-hidden="true"></i>${h.durationMinutes}m</span>`);
   if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="flexibility"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
@@ -1733,6 +1748,7 @@ function logTing(i){
   }
   data[i].logs = normalizeLogs([...logs,now]);
   data[i].snoozedUntil = null;
+  if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(data[i]);
   if(!save(data))return false;
   // Cancel any scheduled push for this completed task.
   if(typeof cancelPush === 'function' && data[i].type === 'task'){
@@ -1765,7 +1781,10 @@ function logTingAt(i,ts){
   }
   data[i].logs = normalizeLogs([...logs,log]);
   data[i].lastLog = latestActualLog(data[i].logs);
-  if(!isPlan)data[i].snoozedUntil = null;
+  if(!isPlan){
+    data[i].snoozedUntil = null;
+    if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(data[i]);
+  }
   if(!save(data))return false;
   showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
   return true;

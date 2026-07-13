@@ -757,6 +757,14 @@ function todayCategory(h,settings){
     }
   }
 
+  if((h.type === 'keepup' || h.type === 'reduce')){
+    const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+    if(planBy != null){
+      const daysLeft = daysUntil(planBy);
+      if(daysLeft !== null && daysLeft <= 0)return isAvailableToday ? 0 : 1;
+    }
+  }
+
   if(h.type === 'keepup' && days !== null && days >= target){
     return isAvailableToday ? 0 : 1;
   }
