@@ -802,6 +802,7 @@ body.reach-pad #list{padding-top:220px;}
    sheet it was opened from (overview/today), while transient modals that can
    open from detail (snooze/activity) and the day drill-down stay on top. */
 #detail-sheet{z-index:110;}
+#value-log-sheet{z-index:115;}
 #snooze-sheet,#activity-sheet,#day-logs-sheet{z-index:120;}
 .sheet{
   background:var(--bg);width:100%;max-width:480px;
