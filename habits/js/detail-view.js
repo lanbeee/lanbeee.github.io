@@ -34,18 +34,18 @@ function openDetail(i){
   $('detail-emoji').value = h.emoji || '';
   $('detail-days').value = h.target || '';
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
-  $('detail-pinned').checked = Boolean(h.pinned);
+  $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-flexibility').value = h.flexibilityDays || 0;
-  if($('detail-breakable'))$('detail-breakable').checked = Boolean(h.breakable);
+  if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',h.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
-  if($('detail-track-value'))$('detail-track-value').checked = Boolean(h.trackValue);
+  if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs);
   renderScheduleChips('detail',h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
-  $('detail-hard-due').checked = Boolean(h.hardDue);
+  $('detail-hard-due').setAttribute('aria-pressed',h.hardDue ? 'true' : 'false');
   $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
   if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(h.planByDate);
   $('detail-mark-done').setAttribute('aria-pressed',h.markDone !== false ? 'true' : 'false');
@@ -231,7 +231,7 @@ function currentDetailTune(){
     type,
     emoji:cleanMark($('detail-emoji').value),
     target:currentRhythmTarget('detail'),
-    pinned:$('detail-pinned').checked,
+    pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
     topics:selectedTopicsFrom('detail-tag-chips'),
     locationIds,
     locationPrefs,
@@ -245,14 +245,14 @@ function currentDetailTune(){
     preferredTimeStart:timeInputToMinutes($('detail-preferred-time-start').value),
     preferredTimeEnd:timeInputToMinutes($('detail-preferred-time-end').value),
     durationMinutes:clampDuration($('detail-duration').value),
-    breakable:Boolean($('detail-breakable')?.checked),
+    breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
     timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
-    trackValue:Boolean($('detail-track-value')?.checked),
+    trackValue:$('detail-track-value')?.getAttribute('aria-pressed') === 'true',
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
     priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
-    hardDue:$('detail-hard-due').checked,
+    hardDue:$('detail-hard-due').getAttribute('aria-pressed') === 'true',
     eventTime:parseDateTimeInput($('detail-scheduled-time').value),
     planByDate:parseDateInput($('detail-plan-by-date')?.value || ''),
     markDone:markDoneEl ? markDoneEl.getAttribute('aria-pressed') === 'true' : true
@@ -260,7 +260,7 @@ function currentDetailTune(){
 }
 
 function syncBreakableUi(){
-  const on = Boolean($('detail-breakable')?.checked);
+  const on = $('detail-breakable')?.getAttribute('aria-pressed') === 'true';
   const row = $('detail-min-chunk-row');
   if(row)row.hidden = !on;
 }
@@ -309,11 +309,11 @@ function restoreDetailTune(){
   if(!detailTuneOriginal)return;
   $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;
-  $('detail-pinned').checked = detailTuneOriginal.pinned;
+  $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
-  $('detail-hard-due').checked = Boolean(detailTuneOriginal.hardDue);
+  $('detail-hard-due').setAttribute('aria-pressed',detailTuneOriginal.hardDue ? 'true' : 'false');
   $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
   if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(detailTuneOriginal.planByDate);
   $('detail-mark-done').setAttribute('aria-pressed',detailTuneOriginal.markDone !== false ? 'true' : 'false');
@@ -323,9 +323,9 @@ function restoreDetailTune(){
   syncDetailScheduledUi();
   syncDetailHabitMarkDoneUi();
   renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null);
-  if($('detail-breakable'))$('detail-breakable').checked = Boolean(detailTuneOriginal.breakable);
+  if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
-  if($('detail-track-value'))$('detail-track-value').checked = Boolean(detailTuneOriginal.trackValue);
+  if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = detailTuneOriginal.timerAutoStopMinutes != null ? detailTuneOriginal.timerAutoStopMinutes : '';
   syncBreakableUi();
   renderScheduleChips('detail',detailTuneOriginal);

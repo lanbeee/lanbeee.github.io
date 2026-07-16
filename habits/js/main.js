@@ -240,7 +240,7 @@ $('do-save').addEventListener('click',()=>{
   };
   if(type === 'task'){
     record.dueDate = parseDateInput($('ting-due-date').value);
-    record.hardDue = $('ting-hard-due').checked;
+    record.hardDue = $('ting-hard-due').getAttribute('aria-pressed') === 'true';
     record.eventTime = parseDateTimeInput($('ting-scheduled-time').value);
     record.markDone = $('ting-mark-done').getAttribute('aria-pressed') === 'true';
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
@@ -282,9 +282,13 @@ function syncTaskDueUi(){
     : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
 }
 $('ting-due-date').addEventListener('input',syncTaskDueUi);
+$('ting-hard-due').addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+});
 $('ting-due-clear').addEventListener('click',()=>{
   $('ting-due-date').value = '';
-  $('ting-hard-due').checked = false;
+  $('ting-hard-due').setAttribute('aria-pressed','false');
   syncTaskDueUi();
 });
 syncTaskDueUi();
@@ -651,11 +655,15 @@ $('detail-preferred-time-clear').addEventListener('click',()=>{
 $('detail-due-date').addEventListener('input',()=>{syncDetailDueUi();setDetailDirty();});
 $('detail-due-clear').addEventListener('click',()=>{
   $('detail-due-date').value = '';
-  $('detail-hard-due').checked = false;
+  $('detail-hard-due').setAttribute('aria-pressed','false');
   syncDetailDueUi();
   setDetailDirty();
 });
-$('detail-hard-due').addEventListener('change',()=>setDetailDirty());
+$('detail-hard-due').addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+  setDetailDirty();
+});
 $('detail-plan-by-date')?.addEventListener('input',()=>{syncDetailPlanByUi();setDetailDirty();});
 $('detail-plan-by-clear')?.addEventListener('click',()=>{
   $('detail-plan-by-date').value = '';
@@ -691,7 +699,11 @@ $('detail-type-seg').addEventListener('click',e=>{
   setDetailTypeUi(opt.dataset.detailType);
   setDetailDirty();
 });
-$('detail-pinned').addEventListener('change',()=>setDetailDirty());
+$('detail-pinned').addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+  setDetailDirty();
+});
 $('detail-duration').addEventListener('input',()=>setDetailDirty());
 $('detail-flexibility').addEventListener('input',()=>setDetailDirty());
 $('detail-priority-seg').addEventListener('click',e=>{
@@ -1277,27 +1289,57 @@ $('travel-edit-sheet')?.addEventListener('click',e=>{
 // Value log sheet
 let valueLogIdx = null;
 let valueLogAfter = null;
-function openValueLogSheet(idx,after){
+let valueLogMinutes = null;
+function openValueLogSheet(idx,after,sessionMinutes){
   valueLogIdx = idx;
   valueLogAfter = after || null;
+  valueLogMinutes = Number.isFinite(sessionMinutes) && sessionMinutes > 0 ? sessionMinutes : null;
   const h = load()[idx];
+  const sheet = $('value-log-sheet');
   const copy = $('value-log-copy');
-  if(copy)copy.textContent = h ? `Number for ${h.name}` : 'Optional number for this entry.';
+  const title = sheet ? sheet.querySelector('.sheet-title') : null;
+  const valueField = sheet ? sheet.querySelector('[aria-label="value"]') : null;
+  const skipBtn = $('value-log-skip');
+  const cancelBtn = $('value-log-cancel');
+  const saveBtn = $('value-log-save');
+  if(valueLogMinutes != null){
+    // Timer-session confirm: log the timed session, optionally with a value
+    // or note, or discard. Discard creates no entry — an accidental stop
+    // never silently completes a task.
+    if(title)title.textContent = 'log session';
+    if(copy)copy.textContent = `${valueLogMinutes}m session${h ? ' for ' + h.name : ''}. Add a note or value, or discard.`;
+    if(valueField)valueField.style.display = h && h.trackValue ? '' : 'none';
+    if(skipBtn)skipBtn.hidden = true;
+    if(cancelBtn){ cancelBtn.hidden = false; cancelBtn.textContent = 'discard'; }
+    if(saveBtn)saveBtn.textContent = 'log';
+  }else{
+    if(title)title.textContent = 'log value';
+    if(copy)copy.textContent = h ? `Number for ${h.name}` : 'Optional number for this entry.';
+    if(valueField)valueField.style.display = '';
+    if(skipBtn)skipBtn.hidden = false;
+    if(cancelBtn){ cancelBtn.hidden = false; cancelBtn.textContent = 'cancel'; }
+    if(saveBtn)saveBtn.textContent = 'log';
+  }
   const input = $('value-log-input');
   if(input)input.value = '';
   const noteEl = $('value-log-note');
   if(noteEl)noteEl.value = '';
   openSheet('value-log-sheet');
-  requestAnimationFrame(()=>input?.focus());
+  const focusTarget = (valueLogMinutes != null && (!h || !h.trackValue)) ? noteEl : input;
+  requestAnimationFrame(()=>focusTarget?.focus());
 }
 function finishValueLog(opts){
   const idx = valueLogIdx;
   const after = valueLogAfter;
+  const minutes = valueLogMinutes;
   valueLogIdx = null;
   valueLogAfter = null;
+  valueLogMinutes = null;
   closeSheet('value-log-sheet');
   if(idx == null)return;
-  if(!logTing(idx,opts || {}))return;
+  const full = {...(opts || {})};
+  if(minutes != null)full.minutes = minutes;
+  if(!logTing(idx,full))return;
   if(typeof after === 'function')after();
 }
 $('value-log-save')?.addEventListener('click',()=>{
@@ -1314,12 +1356,14 @@ $('value-log-skip')?.addEventListener('click',()=>finishValueLog({}));
 $('value-log-cancel')?.addEventListener('click',()=>{
   valueLogIdx = null;
   valueLogAfter = null;
+  valueLogMinutes = null;
   closeSheet('value-log-sheet');
 });
 $('value-log-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget){
     valueLogIdx = null;
     valueLogAfter = null;
+    valueLogMinutes = null;
     closeSheet('value-log-sheet');
   }
 });
@@ -1338,7 +1382,7 @@ function requestLogTing(idx,after){
 
 // Habit session timer (auto-stops, then prompts to log)
 let habitTimer = null;
-function stopHabitTimer(promptLog){
+function stopHabitTimer(promptLog,manual){
   const btn = $('detail-timer-toggle');
   const display = $('detail-timer-display');
   if(habitTimer){
@@ -1350,7 +1394,18 @@ function stopHabitTimer(promptLog){
     if(display)display.hidden = true;
     if(promptLog && idx != null){
       const h = load()[idx];
-      if(h && h.trackValue)openValueLogSheet(idx,()=>{ openDetail(idx); render(); });
+      if(!h)return;
+      const after = ()=>{ if(detailIdx === idx)openDetail(idx); render(); };
+      if(manual){
+        // Manual stop: confirm before logging. An accidental tap never
+        // silently completes a task — the sheet offers a discard path that
+        // creates no entry, plus an optional note/value for the session.
+        openValueLogSheet(idx,after,elapsedMin);
+        return;
+      }
+      // Auto-stop (timer ran its course): log the session automatically.
+      // trackValue habits still get their value prompt with elapsed minutes; undo is available.
+      if(h.trackValue)openValueLogSheet(idx,after,elapsedMin);
       else{
         logTing(idx,h && h.breakable && h.markDone !== false ? {minutes:elapsedMin} : {});
         if(detailIdx === idx)openDetail(idx);
@@ -1379,7 +1434,7 @@ function tickHabitTimer(){
 $('detail-timer-toggle')?.addEventListener('click',()=>{
   if(detailIdx === null)return;
   if(habitTimer){
-    stopHabitTimer(true);
+    stopHabitTimer(true,true); // manual stop → confirm before logging
     return;
   }
   const h = load()[detailIdx];
@@ -1395,10 +1450,11 @@ $('detail-timer-toggle')?.addEventListener('click',()=>{
   if(btn)btn.textContent = 'stop timer';
   tickHabitTimer();
 });
-$('detail-breakable')?.addEventListener('change',()=>{
+$('detail-breakable')?.addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
   syncBreakableUi();
-  // Default mark-done off when enabling breakable for the first time.
-  if($('detail-breakable').checked){
+  if(this.getAttribute('aria-pressed') === 'true'){
     const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType;
     if(type === 'task'){
       $('detail-mark-done')?.setAttribute('aria-pressed','false');
@@ -1409,7 +1465,11 @@ $('detail-breakable')?.addEventListener('change',()=>{
   setDetailDirty();
 });
 $('detail-min-chunk')?.addEventListener('input',()=>setDetailDirty());
-$('detail-track-value')?.addEventListener('change',()=>setDetailDirty());
+$('detail-track-value')?.addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+  setDetailDirty();
+});
 $('detail-timer-auto-stop')?.addEventListener('input',()=>setDetailDirty());
 bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{

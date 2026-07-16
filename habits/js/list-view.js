@@ -1896,10 +1896,17 @@ function logTing(i,opts = {}){
   if(typeof cancelPush === 'function' && h.type === 'task' && isTaskDone(h)){
     cancelPush(reminderSignature(h));
   }
-  const chunkNote = minutes ? ` · ${minutes}m` : '';
-  const valueNote = opts.value != null && Number.isFinite(Number(opts.value)) ? ` · ${opts.value}` : '';
-  const noteText = (()=>{ const n = String(opts.note || '').slice(0,40); return n ? ` · ${n}` : ''; })();
-  showActionToast(`Logged ${toastItemName(h)}${chunkNote}${valueNote}${noteText}`,action);
+  // Toast shows minutes + one detail (note preferred over value) so it never
+  // overflows; the full value+note history lives in the activity sheet.
+  const detail = (()=>{
+    const parts = [];
+    if(minutes)parts.push(`${minutes}m`);
+    const noteStr = String(opts.note || '').trim();
+    if(noteStr)parts.push(noteStr.slice(0,32));
+    else if(opts.value != null && Number.isFinite(Number(opts.value)))parts.push(`${opts.value}`);
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
+  })();
+  showActionToast(`Logged ${toastItemName(h)}${detail}`,action);
   return true;
 }
 

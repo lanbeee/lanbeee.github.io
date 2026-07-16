@@ -1990,6 +1990,12 @@ button.setting-toggle{
   box-shadow:0 2px 6px rgba(0,0,0,0.18);
   transition:transform var(--dur-fast) var(--ease-tight),background var(--dur-fast) ease;
 }
+.setting-switch[aria-pressed="true"] .switch-ui{
+  background:var(--text);border-color:var(--text);
+}
+.setting-switch[aria-pressed="true"] .switch-ui::after{
+  transform:translateX(18px);
+}
 .settings-sheet .setting-switch[aria-pressed="true"] .switch-ui{
   background:var(--text);border-color:var(--text);
 }

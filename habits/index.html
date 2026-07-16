@@ -148,8 +148,10 @@
         </div>
         <div class="plan-field-row" id="task-hard-due-row" hidden>
           <label class="setting-toggle compact-toggle hard-due-toggle">
-            <input type="checkbox" id="ting-hard-due" />
             <span>hard deadline</span>
+            <button class="setting-switch" id="ting-hard-due" type="button" aria-pressed="false">
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </label>
         </div>
         <div class="plan-field-row" id="scheduled-time-row" hidden>
@@ -246,8 +248,10 @@
             </div>
           </div>
           <label class="setting-toggle compact-toggle" id="detail-breakable-row">
-            <input type="checkbox" id="detail-breakable" />
             <span>breakable into chunks</span>
+            <button class="setting-switch" id="detail-breakable" type="button" aria-pressed="false">
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </label>
           <div class="planning-grid" id="detail-min-chunk-row" hidden>
             <div class="planning-field">
@@ -259,8 +263,10 @@
             </div>
           </div>
           <label class="setting-toggle compact-toggle">
-            <input type="checkbox" id="detail-track-value" />
             <span>log a value or note (e.g. weight)</span>
+            <button class="setting-switch" id="detail-track-value" type="button" aria-pressed="false">
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </label>
           <div class="planning-grid">
             <div class="planning-field">
@@ -281,10 +287,10 @@
               <input type="date" id="detail-due-date" class="plan-date-input" />
               <button type="button" class="mini-text-btn" id="detail-due-clear" hidden>no date</button>
             </div>
-            <label class="hard-due-toggle">
-              <input type="checkbox" id="detail-hard-due" />
+            <button class="hard-due-toggle setting-switch" id="detail-hard-due" type="button" aria-pressed="false">
               <span>hard deadline</span>
-            </label>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
           <div class="plan-field-row" id="detail-scheduled-row" hidden>
@@ -385,7 +391,9 @@
           </div>
           <label class="setting-toggle habit-toggle">
             <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
-            <input type="checkbox" id="detail-pinned" />
+            <button class="setting-switch" id="detail-pinned" type="button" aria-pressed="false">
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </label>
           <span class="settings-sublabel">topics &amp; places</span>
           <div class="topic-chip-row" id="detail-tag-chips"></div>
