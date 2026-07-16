@@ -33,10 +33,15 @@ function openDetail(i){
   $('detail-habit-message').value = h.name || '';
   $('detail-emoji').value = h.emoji || '';
   $('detail-days').value = h.target || '';
+  if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').checked = Boolean(h.pinned);
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-flexibility').value = h.flexibilityDays || 0;
-  renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId);
+  if($('detail-breakable'))$('detail-breakable').checked = Boolean(h.breakable);
+  if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-track-value'))$('detail-track-value').checked = Boolean(h.trackValue);
+  if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
+  renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs);
   renderScheduleChips('detail',h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
@@ -61,6 +66,7 @@ function openDetail(i){
     pinned:Boolean(h.pinned),
     topics:normalizeTopics(h.topics),
     locationIds:normalizeLocationIds(h.locationIds),
+    locationPrefs:normalizeLocationPrefs(h.locationPrefs,h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
@@ -71,6 +77,10 @@ function openDetail(i){
     preferredTimeStart:h.preferredTimeStart ?? null,
     preferredTimeEnd:h.preferredTimeEnd ?? null,
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
+    breakable:Boolean(h.breakable),
+    minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
+    timerAutoStopMinutes:h.timerAutoStopMinutes ?? null,
+    trackValue:Boolean(h.trackValue),
     flexibilityDays:h.flexibilityDays || 0,
     priority:effectivePriority(h),
     dueDate:h.dueDate ?? null,
@@ -80,6 +90,7 @@ function openDetail(i){
     markDone:h.markDone !== false
   };
   syncRhythm('detail',h.target || 7);
+  syncBreakableUi();
   $('detail-mark').style.background = c.bg;
   $('detail-mark').style.color = c.icon;
   $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
@@ -213,15 +224,18 @@ function syncTimeClearBtn(){
 function currentDetailTune(){
   const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
   const markDoneEl = type === 'task' ? $('detail-mark-done') : $('detail-habit-mark-done');
+  const locationIds = selectedLocationIdsFrom('detail-tag-chips');
+  const locationPrefs = selectedLocationPrefsFrom('detail-tag-chips');
   return {
     name:$('detail-habit-message').value.trim(),
     type,
     emoji:cleanMark($('detail-emoji').value),
-    target:$('detail-days').value || '',
+    target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').checked,
     topics:selectedTopicsFrom('detail-tag-chips'),
-    locationIds:selectedLocationIdsFrom('detail-tag-chips'),
-    preferredLocationId:selectedPreferredLocationIdFrom('detail-tag-chips'),
+    locationIds,
+    locationPrefs,
+    preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
     allowedMonthDays:selectedMonthDaysFrom('detail-monthday-chips'),
     preferredWeekdays:selectedWeekdaysFrom('detail-preferred-weekday-chips'),
@@ -231,6 +245,10 @@ function currentDetailTune(){
     preferredTimeStart:timeInputToMinutes($('detail-preferred-time-start').value),
     preferredTimeEnd:timeInputToMinutes($('detail-preferred-time-end').value),
     durationMinutes:clampDuration($('detail-duration').value),
+    breakable:Boolean($('detail-breakable')?.checked),
+    minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
+    timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
+    trackValue:Boolean($('detail-track-value')?.checked),
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
     priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
@@ -239,6 +257,12 @@ function currentDetailTune(){
     planByDate:parseDateInput($('detail-plan-by-date')?.value || ''),
     markDone:markDoneEl ? markDoneEl.getAttribute('aria-pressed') === 'true' : true
   };
+}
+
+function syncBreakableUi(){
+  const on = Boolean($('detail-breakable')?.checked);
+  const row = $('detail-min-chunk-row');
+  if(row)row.hidden = !on;
 }
 
 // HYBRID: compares form to original, toggles dirty class
@@ -262,7 +286,12 @@ function setDetailDirty(force){
       current.markDone !== detailTuneOriginal.markDone ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
       current.locationIds.join('|') !== (detailTuneOriginal.locationIds || []).join('|') ||
+      JSON.stringify(current.locationPrefs || {}) !== JSON.stringify(detailTuneOriginal.locationPrefs || {}) ||
       (current.preferredLocationId || null) !== (detailTuneOriginal.preferredLocationId || null) ||
+      current.breakable !== detailTuneOriginal.breakable ||
+      current.minChunkMinutes !== detailTuneOriginal.minChunkMinutes ||
+      current.timerAutoStopMinutes !== detailTuneOriginal.timerAutoStopMinutes ||
+      current.trackValue !== detailTuneOriginal.trackValue ||
       current.allowedWeekdays.join('|') !== detailTuneOriginal.allowedWeekdays.join('|') ||
       current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|') ||
       current.preferredWeekdays.join('|') !== detailTuneOriginal.preferredWeekdays.join('|') ||
@@ -293,7 +322,12 @@ function restoreDetailTune(){
   syncDetailPlanByUi();
   syncDetailScheduledUi();
   syncDetailHabitMarkDoneUi();
-  renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null);
+  renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null);
+  if($('detail-breakable'))$('detail-breakable').checked = Boolean(detailTuneOriginal.breakable);
+  if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-track-value'))$('detail-track-value').checked = Boolean(detailTuneOriginal.trackValue);
+  if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = detailTuneOriginal.timerAutoStopMinutes != null ? detailTuneOriginal.timerAutoStopMinutes : '';
+  syncBreakableUi();
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
@@ -520,6 +554,12 @@ function scoreTitle(h,score){
 // PURE: computes 0-100 progress score
 function progressScore(h){
   if(h.type === 'task'){
+    if(h.breakable && h.lastLog !== null){
+      const total = clampDuration(h.durationMinutes);
+      const done = loggedChunkMinutes(h);
+      if(total <= 0)return 100;
+      return Math.max(0,Math.min(100,Math.round((done / total) * 100)));
+    }
     if(h.lastLog !== null)return 100;
     const when = taskWhen(h);
     if(when === null)return null;

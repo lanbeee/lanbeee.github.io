@@ -179,7 +179,18 @@ function renderActivity(h){
   const actual = actualLogs(h.logs);
   const past = logs
     .filter(log=>!isPlanLog(log) && dateKey(logTime(log)) <= nowKey)
-    .map(log=>({ts:logTime(log),kind:'entry',detail:activityEntryDetail(actual,logTime(log))}))
+    .map(log=>{
+      const ts = logTime(log);
+      const obj = typeof log === 'object' ? log : null;
+      return {
+        ts,
+        kind:'entry',
+        detail:activityEntryDetail(actual,ts),
+        value:obj ? logValue(obj) : null,
+        minutes:obj ? logMinutes(obj) : null,
+        note:obj ? logNote(obj) : ''
+      };
+    })
     .sort((a,b)=>b.ts-a.ts);
   const future = logs
     .filter(log=>isPlanLog(log) && dateKey(logTime(log)) >= nowKey)
@@ -263,13 +274,27 @@ function activitySection(title,items,moreCount = 0){
       const label = d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
       const detail = item.kind === 'plan' ? entryWhen(item.ts) : item.detail || d.toLocaleDateString(undefined,{year:'numeric'});
       const icon = item.kind === 'plan' ? 'ti-calendar-event' : 'ti-check';
+      const extras = item.kind === 'entry' ? activityEntryExtras(item) : '';
       return `<div class="activity-item ${item.kind}">
         <span class="overview-name"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span>
         <span class="overview-meta">${escapeHtml(detail)}</span>
+        ${extras}
       </div>`;
     }).join('')}
     ${moreCount > 0 ? `<div class="activity-more">${moreCount} older ${moreCount === 1 ? 'entry' : 'entries'}</div>` : ''}
   </section>`;
+}
+
+// PURE: optional value/minutes/note line for an activity entry.
+function activityEntryExtras(item){
+  if(!item)return '';
+  const bits = [];
+  if(item.minutes != null)bits.push(`${item.minutes}m`);
+  if(item.value != null && Number.isFinite(Number(item.value)))bits.push(`${item.value}`);
+  const note = String(item.note || '').trim();
+  const meta = bits.length ? `<span class="activity-extras-meta">${escapeHtml(bits.join(' · '))}</span>` : '';
+  const noteHtml = note ? `<span class="activity-extras-note">${escapeHtml(note)}</span>` : '';
+  return (meta || noteHtml) ? `<div class="activity-extras">${meta}${noteHtml}</div>` : '';
 }
 
 // HANDLER: deletes a habit and shows undo
@@ -376,7 +401,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'today-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -389,7 +414,7 @@ function shouldMountInPane(id) {
 
 // RENDER: toggles body class for full-page sheet state
 function updateFullPageState(){
-  const open = ['detail-sheet','about-sheet','overview-sheet','settings-sheet','today-sheet'].some(id=>$(id).classList.contains('open'));
+  const open = ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].some(id=>$(id).classList.contains('open'));
   document.body.classList.toggle('fullpage-open',open);
 }
 
@@ -475,7 +500,6 @@ function refreshOpenViews(){
     }
   }
   if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
-  if($('today-sheet').classList.contains('open') && typeof renderTodayAgenda === 'function')renderTodayAgenda();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
   if(typeof checkReminders === 'function')checkReminders();
 }
@@ -540,6 +564,7 @@ function forgivingButtonTarget(target){
 
 // WIRE: attaches forgiving pointer tap handlers to a calendar
 function bindCalendarTap(container,selector,handler){
+  if(!container)return; // calendar element not present (e.g. retired strip)
   // Any horizontally-scrollable pager this calendar lives inside of (the
   // detail sheet's info/calendar/schedule pager). Swiping between those pages
   // often starts the gesture on top of a calendar cell, so a tap here has to
@@ -718,7 +743,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','today-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
@@ -759,7 +784,7 @@ document.addEventListener('keydown',e=>{
     if (id === 'detail-sheet' && typeof closeDetail === 'function') closeDetail();
   }
   // Also close centered modals on Escape
-  ['add-sheet','about-sheet','settings-sheet','overview-sheet','today-sheet','snooze-sheet','activity-sheet','day-logs-sheet'].forEach(id=>{
+  ['add-sheet','about-sheet','settings-sheet','overview-sheet','snooze-sheet','activity-sheet','day-logs-sheet'].forEach(id=>{
     const el = $(id);
     if (el && el.classList.contains('open')) {
       e.preventDefault();
@@ -768,7 +793,6 @@ document.addEventListener('keydown',e=>{
       else if (id === 'overview-sheet') closeSheet('overview-sheet');
       else if (id === 'settings-sheet') closeSheet('settings-sheet');
       else if (id === 'about-sheet') closeSheet('about-sheet');
-      else if (id === 'today-sheet') closeSheet('today-sheet');
       else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
       else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
       else if (id === 'day-logs-sheet') { dayLogsKey = null; closeSheet('day-logs-sheet'); }

@@ -24,7 +24,7 @@ function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
   const scheduled = data
     .map((h,i)=>({h,i}))
-    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && h.lastLog === null && dateKey(h.eventTime) === todayKey)
+    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && !isTaskDone(h) && dateKey(h.eventTime) === todayKey)
     .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
   const slots = buildOpenAgendaSlots(todayKey,scheduled,settings);
@@ -39,7 +39,7 @@ function buildTodayAgenda(data,settings){
   let homeRank = 0;
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
-    if(h.type === 'task' && h.lastLog !== null)continue;
+    if(h.type === 'task' && isTaskDone(h))continue;
     if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
     const dueToday = includeInTodayAgenda(h,settings);
     const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
@@ -141,19 +141,20 @@ function travelEdgeBetweenIds(fromId,toId,registry,mode){
 
 // PURE: choose a location id for a habit given the current anchor. Anywhere
 // items return null (no travel, anchor unchanged). When several are allowed,
-// prefer preferredLocationId, then cheapest travel from the anchor.
+// prefer high/little preference, avoid last, then cheapest travel from anchor.
 function pickHabitLocationId(h,anchorId,registry,mode){
   const ids = normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return null;
-  const pref = normalizePreferredLocation(h.preferredLocationId,ids);
-  if(pref && (!anchorId || pref === anchorId))return pref;
-  let best = pref || ids[0];
-  let bestSec = Infinity;
+  if(ids.length === 1)return ids[0];
+  let best = ids[0];
+  let bestScore = Infinity;
   for(const id of ids){
     const edge = travelEdgeBetweenIds(anchorId,id,registry,mode);
-    const preferredBoost = pref === id ? -1 : 0;
-    const score = edge.seconds + preferredBoost;
-    if(score < bestSec){ bestSec = score; best = id; }
+    const pref = locationPrefLevel(h,id);
+    // Convert preference into seconds-equivalent bias (negative = better).
+    const prefBias = -locationPrefScore(pref) * 30;
+    const score = (edge.seconds || 0) + prefBias + (anchorId && id === anchorId ? -60 : 0);
+    if(score < bestScore){ bestScore = score; best = id; }
   }
   return best;
 }
@@ -208,6 +209,19 @@ function buildDayTimeline(agenda,opts = {}){
   const now = opts.now != null ? opts.now : Date.now();
   const ordered = reorderAgendaItemsByLocation(agenda.agendaItems || [],settings,now);
   for(const fill of ordered){
+    if(fill.h && fill.h.breakable){
+      const chunks = remainingChunks(fill.h);
+      let placedAny = false;
+      for(let c = 0; c < chunks.length; c += 1){
+        const chunkFill = {...fill, chunkMinutes:chunks[c], chunkIndex:c, placeKey:`${fill.i}:${c}`};
+        const fit = tryPlaceOnDay(state,chunkFill);
+        if(!fit)break;
+        commitPlacement(state,chunkFill,fit);
+        placedAny = true;
+      }
+      if(placedAny)state.placed.add(fill.i);
+      continue;
+    }
     const fit = tryPlaceOnDay(state,fill);
     if(fit)commitPlacement(state,fill,fit);
   }
@@ -218,7 +232,10 @@ function buildDayTimeline(agenda,opts = {}){
       if(state.placed.has(fill.i))continue;
       if(fill.locationId)continue;
       if(fillTimeWindow(fill.h,state.dayBase))continue;
-      const durMin = clampDuration(fill.h.durationMinutes);
+      const durMin = fill.h && fill.h.breakable
+        ? (remainingChunks(fill.h)[0] || 0)
+        : clampDuration(fill.h.durationMinutes);
+      if(durMin <= 0)continue;
       if(durMin > state.remaining && state.usedMinutes > 0)continue;
       const overflowStart = state.slots.reduce((max,slot)=>Math.max(max,slot.end),Math.max(state.dayBase,state.startClock));
       const cost = durMin * 60000;
@@ -230,7 +247,8 @@ function buildDayTimeline(agenda,opts = {}){
         travelMin:0,
         durMin,
         slotClock:overflowStart,
-        preferredHit:false
+        preferredHit:false,
+        placeKey:fill.i
       };
       commitPlacement(state,fill,fit);
     }
@@ -269,7 +287,7 @@ function createDayPlacementState(day,settings,opts = {}){
   (day.scheduled || []).forEach(ev=>{
     const end = ev.h.eventTime + clampDuration(ev.h.durationMinutes) * 60000;
     const locIds = normalizeLocationIds(ev.h.locationIds,registry);
-    const locationId = normalizePreferredLocation(ev.h.preferredLocationId,locIds) || locIds[0] || null;
+    const locationId = pickHabitLocationId(ev.h,null,registry,mode) || locIds[0] || null;
     rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true, locationId });
   });
   let prevLocId = isTodayDay
@@ -317,7 +335,8 @@ function clonePlacementState(state){
 // location hours ∩ habit allowed window, and preferred-time nudge (soft).
 function tryPlaceOnDay(state,fill){
   if(!state || !fill || !fill.h)return null;
-  if(state.placed.has(fill.i))return null;
+  const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
+  if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
   const remaining = state.remaining;
   const usedMinutes = state.usedMinutes;
@@ -346,7 +365,12 @@ function tryPlaceOnDay(state,fill){
     }
     const edge = travelEdgeBetweenIds(anchor,locId,registry,mode);
     const travelMin = Math.ceil((edge.seconds || 0) / 60);
-    const durMin = clampDuration(fill.h.durationMinutes);
+    const durMin = fill.chunkMinutes != null
+      ? Math.max(1,Math.round(fill.chunkMinutes))
+      : (fill.h.breakable
+        ? (remainingChunks(fill.h)[0] || clampDuration(fill.h.durationMinutes))
+        : clampDuration(fill.h.durationMinutes));
+    if(durMin <= 0)return null;
     // Hard availability budget. The first fill of a day may still place when
     // travel+duration exceeds the remaining budget (same rule as the classic
     // timeline) — otherwise a long commute can never open a day. Later fills
@@ -399,7 +423,8 @@ function tryPlaceOnDay(state,fill){
       durMin,
       slotStart:slot.start,
       preferredHit,
-      prevLocId:anchor
+      prevLocId:anchor,
+      placeKey
     };
   }
   return null;
@@ -427,13 +452,15 @@ function commitPlacement(state,fill,fit){
   }
   state.rows.push({
     kind:'fill', h:fill.h, i:fill.i, start:fit.placeStart, end:fit.placeEnd, hard:false,
-    locationId:fit.locId
+    locationId:fit.locId,
+    chunkMinutes:fit.durMin,
+    chunkIndex:fill.chunkIndex != null ? fill.chunkIndex : null
   });
   state.fills.push({ fill, fit, slotStart:fit.slotStart });
   state.remaining = Math.max(0,state.remaining - fit.travelMin - fit.durMin);
   state.usedMinutes += fit.travelMin + fit.durMin;
   if(fit.locId)state.prevLocId = fit.locId;
-  state.placed.add(fill.i);
+  state.placed.add(fit.placeKey != null ? fit.placeKey : fill.i);
 }
 
 function finalizePlacementRows(state){
@@ -512,13 +539,14 @@ function agendaBlockedIntervals(todayKey,settings,start,end){
   const day = new Date(`${todayKey}T12:00:00`).getDay();
   return normalizeBlockedTimes(settings.blockedTimes).flatMap(block=>{
     if(block.days.length && !block.days.includes(day))return [];
+    if(isBlockedCancelled(todayKey,block.label,block.start,block.end,settings))return [];
     const locationId = block.locationId || null;
     const blockStart = start + block.start * 60000;
     const blockEnd = start + block.end * 60000;
-    if(block.end > block.start)return [{start:blockStart,end:blockEnd,label:block.label,locationId}];
+    if(block.end > block.start)return [{start:blockStart,end:blockEnd,label:block.label,locationId,startMin:block.start,endMin:block.end,blockStartMin:block.start,blockEndMin:block.end}];
     return [
-      {start,end:blockEnd,label:block.label,locationId},
-      {start:blockStart,end,label:block.label,locationId}
+      {start,end:blockEnd,label:block.label,locationId,startMin:0,endMin:block.end,blockStartMin:block.start,blockEndMin:block.end},
+      {start:blockStart,end,label:block.label,locationId,startMin:block.start,endMin:1440,blockStartMin:block.start,blockEndMin:block.end}
     ];
   });
 }
@@ -535,7 +563,11 @@ function blockedTimelineRows(dayKey,settings,dayBase,{clipAfter} = {}){
       label:b.label,
       start:b.start,
       end:b.end,
-      locationId:b.locationId || null
+      locationId:b.locationId || null,
+      startMin:b.startMin,
+      endMin:b.endMin,
+      blockStartMin:b.blockStartMin,
+      blockEndMin:b.blockEndMin
     }))
     .filter(b=>b.end > b.start && (clip == null || b.end > clip));
 }
@@ -598,6 +630,14 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
     out.push(row);
     if(locId)prevLocId = locId;
   }
+  // Cleanup levels: under the 12h modes, drop blocked/travel rows that start
+  // beyond the next 12 hours so only the near-future extras reach the home list
+  // (future-day blocks in week mode naturally fall outside this window).
+  const extraMode = (typeof normalizeHomeExtraMode === 'function' && normalizeHomeExtraMode(settings.homeExtraMode)) || 'cards';
+  if(extraMode !== 'cards'){
+    const windowEnd = Date.now() + 12 * 60 * 60 * 1000;
+    return out.filter(r => (r.kind !== 'blocked' && r.kind !== 'travel') || r.start < windowEnd);
+  }
   return out;
 }
 
@@ -652,7 +692,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
   const isToday = dayStart(Date.now()) === dayBase;
   const scheduled = data
     .map((h,i)=>({h,i}))
-    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && h.lastLog === null && dateKey(h.eventTime) === dayKey)
+    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && !isTaskDone(h) && dateKey(h.eventTime) === dayKey)
     .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
   const totalMinutes = effectiveAvailabilityMinutes(dayKey,settings);
   const clipAfter = isToday ? ceilToMinutes(Date.now(),5) : dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday) * 60000;
@@ -666,7 +706,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
     let homeRank = 0;
     for(const i of visibleIndices(data,settings)){
       const h = data[i];
-      if(h.type === 'task' && h.lastLog !== null)continue;
+      if(h.type === 'task' && isTaskDone(h))continue;
       if(h.type === 'task' && h.eventTime !== null)continue;
       const dueToday = includeInTodayAgenda(h,settings);
       const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
@@ -683,7 +723,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
 // hard-deadline tasks that are already due. Soft work can slide freely.
 function isWeekPinnedToday(h,settings){
   if(!h || h.type === 'zero')return false;
-  if(h.type === 'task' && h.lastLog !== null)return false;
+  if(h.type === 'task' && isTaskDone(h))return false;
   if(h.type === 'task' && h.eventTime !== null)return false;
   if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false)return true;
   if(h.type === 'task' && h.hardDue && h.dueDate !== null && settings.showDueTasksInAgenda !== false){
@@ -743,7 +783,7 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(h.type === 'zero')return false;
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
   if(h.type === 'task'){
-    if(h.lastLog !== null)return false;
+    if(isTaskDone(h))return false;
     if(h.eventTime !== null)return false;         // timed → fixed to its day
     if(h.dueDate === null)return false;            // someday → not week-planned
     if(settings.showDueTasksInAgenda === false)return false;
@@ -803,7 +843,7 @@ function daySeedLocationSet(day,settings,registry){
   const set = new Set();
   for(const ev of day.scheduled || []){
     const ids = normalizeLocationIds(ev.h.locationIds,registry);
-    const locId = normalizePreferredLocation(ev.h.preferredLocationId,ids) || ids[0];
+    const locId = primaryPreferredLocationId(ev.h.locationPrefs,ids) || normalizePreferredLocation(ev.h.preferredLocationId,ids) || ids[0];
     if(locId)set.add(locId);
   }
   for(const block of normalizeBlockedTimes(settings.blockedTimes)){
@@ -817,8 +857,15 @@ function daySeedLocationSet(day,settings,registry){
 function weekPreferencePenalty(h,fit,day,registry){
   let penalty = 0;
   const ids = normalizeLocationIds(h.locationIds,registry);
-  const pref = normalizePreferredLocation(h.preferredLocationId,ids);
+  const pref = primaryPreferredLocationId(h.locationPrefs,ids) || normalizePreferredLocation(h.preferredLocationId,ids);
   if(pref && fit.locId && pref !== fit.locId)penalty += 120;
+  // Honor avoid/little/high levels: reward high/little, strongly penalize avoid.
+  if(fit.locId){
+    const level = locationPrefLevel(h,fit.locId);
+    if(level === 'high')penalty -= 60;
+    else if(level === 'little')penalty -= 20;
+    else if(level === 'avoid')penalty += 80;
+  }
   if(fit.preferredHit)penalty -= 40;
   else{
     const loc = fit.locId ? registry.find(l=>l.id === fit.locId) : null;
@@ -836,35 +883,44 @@ function weekPreferencePenalty(h,fit,day,registry){
 
 // PURE: place-then-commit week assignment. A day wins only if tryPlaceOnDay
 // succeeds under hard constraints; score then picks among feasible days.
+// Breakable tasks place one chunk per pass — each chunk is scored and
+// committed independently so a long task can spread across days/time.
 function assignWeekCandidatesByPlacement(candidates,dayStates,settings){
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
   candidates.sort((a,b)=>a.priority - b.priority || b.urgency - a.urgency || b.score - a.score);
   let totalAssigned = 0;
   for(const c of candidates){
-    let best = null;
     const pinned = c.pinned === true;
-    for(const state of dayStates){
-      if(c.eligible && !c.eligible.has(state.dayBase))continue;
-      if(pinned && !state.isTodayDay)continue; // hard pins: today only
-      const fill = { h:c.h, i:c.i, priority:c.priority };
-      const fit = tryPlaceOnDay(state,fill);
-      if(!fit)continue;
-      const offset = Math.round((state.dayBase - todayBase) / 86400000);
-      const travel = fit.edge.seconds || 0;
-      const clusterBonus = travel === 0 ? 600 : 0;
-      const score = travel
-        - clusterBonus
-        + flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
-        + weekPreferencePenalty(c.h,fit,state,registry);
-      if(!best || score < best.score)best = { state, fill, fit, score };
+    const chunkSizes = (c.h && c.h.breakable) ? remainingChunks(c.h) : [null];
+    for(let ci = 0;ci < chunkSizes.length;ci += 1){
+      let best = null;
+      for(const state of dayStates){
+        if(c.eligible && !c.eligible.has(state.dayBase))continue;
+        if(pinned && !state.isTodayDay)continue; // hard pins: today only
+        const fill = { h:c.h, i:c.i, priority:c.priority };
+        const cm = chunkSizes[ci];
+        if(cm != null){ fill.chunkMinutes = cm; fill.chunkIndex = ci; fill.placeKey = `${c.i}:${ci}`; }
+        const fit = tryPlaceOnDay(state,fill);
+        if(!fit)continue;
+        const offset = Math.round((state.dayBase - todayBase) / 86400000);
+        const travel = fit.edge.seconds || 0;
+        const clusterBonus = travel === 0 ? 600 : 0;
+        const score = travel
+          - clusterBonus
+          + flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
+          + weekPreferencePenalty(c.h,fit,state,registry);
+        if(!best || score < best.score)best = { state, fill, fit, score };
+      }
+      if(!best)break; // this chunk can't be placed → stop placing the rest
+      commitPlacement(best.state,best.fill,best.fit);
+      best.state.day.agendaItems.push({
+        h:c.h, i:c.i, priority:c.priority, locationId:best.fit.locId,
+        chunkMinutes:best.fill.chunkMinutes != null ? best.fill.chunkMinutes : null,
+        chunkIndex:best.fill.chunkIndex != null ? best.fill.chunkIndex : null
+      });
+      totalAssigned += 1;
     }
-    if(!best)continue;
-    commitPlacement(best.state,best.fill,best.fit);
-    best.state.day.agendaItems.push({
-      h:c.h, i:c.i, priority:c.priority, locationId:best.fit.locId
-    });
-    totalAssigned += 1;
   }
   return totalAssigned;
 }
@@ -930,78 +986,6 @@ function agendaTimeLabel(ts){
   return new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
 }
 
-// PURE: build the capacity summary copy
-function agendaSummary(agenda){
-  if(agenda.totalMinutes <= 0)return 'No capacity set for today. Add availability in settings to see a timed plan.';
-  const free = agenda.remainingMinutes;
-  if(agenda.scheduled.length && free <= 0){
-    const ev = agenda.scheduled.length === 1 ? '1 scheduled' : `${agenda.scheduled.length} scheduled`;
-    return `${ev} fill the day.`;
-  }
-  const parts = [];
-  if(agenda.scheduled.length){
-    parts.push(agenda.scheduled.length === 1 ? '1 scheduled' : `${agenda.scheduled.length} scheduled`);
-  }
-  parts.push(`${Math.round(free)}m free`);
-  return parts.join(' · ');
-}
-
-// RENDER: renders the full today agenda into #today-sheet
-function renderTodayAgenda(){
-  const wrap = $('today-content');
-  if(!wrap)return;
-  const data = load();
-  const settings = sortSettings || loadSortSettings();
-  const day = buildDayAgenda(data,settings,dayStart(Date.now()));
-  day.timeline = buildDayTimeline(day,{ now:Date.now() });
-  const rows = homeDaySequence(day,settings);
-  $('today-summary').textContent = agendaSummary(day);
-  if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
-
-  if(!rows.length){
-    wrap.innerHTML = `<div class="agenda-empty">
-      <i class="ti ti-calendar-off" aria-hidden="true"></i>
-      <p>Nothing planned for today.</p>
-      <span>Add a scheduled task, plan an entry, or turn on Today agenda items in settings.</span>
-    </div>`;
-    return;
-  }
-
-  const now = Date.now();
-  wrap.innerHTML = `<div class="agenda-timeline">${rows.map(row => agendaRowMarkup(row,now)).join('')}</div>`;
-  bindAgendaTaps();
-  renderTodayWeekStrip(data);
-}
-
-// RENDER: the 7-day agenda. Each day is a card with its timeline rows; travel
-// between consecutive different-location items shows as a dashed band, same as
-// today. A header chip per day carries the date, weekday, fill count, and that
-// day's travel total so the clustering trade-off is visible at a glance.
-function renderWeekAgenda(){
-  const data = load();
-  const settings = sortSettings || loadSortSettings();
-  const week = buildWeekAgenda(data,settings,7);
-  const travelMin = Math.round(week.totalTravelSeconds / 60);
-  $('today-summary').textContent = travelMin > 0
-    ? `Next 7 days · ${travelMin} min travel · ${week.candidateCount} planned`
-    : `Next 7 days · ${week.candidateCount} planned`;
-  if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
-  const now = Date.now();
-  const cards = week.days.map(day => weekDayMarkup(day,now)).join('');
-  const wrap = $('today-content');
-  if(!week.days.some(d=>d.timeline.length)){
-    wrap.innerHTML = `<div class="agenda-empty">
-      <i class="ti ti-calendar-week" aria-hidden="true"></i>
-      <p>Nothing planned this week.</p>
-      <span>Add due dates to tasks or schedule entries to see them sequenced across the week.</span>
-    </div>`;
-    return;
-  }
-  wrap.innerHTML = `<div class="week-agenda">${cards}</div>`;
-  bindAgendaTaps();
-  renderTodayWeekStrip(data);
-}
-
 // RENDER: the separate #home-week-plan block is retired — week planning now
 // lives inside the main home list as day sections (today / tomorrow / …).
 // Keep this as a no-op clearer so older callers and empty-state paths stay safe.
@@ -1012,112 +996,4 @@ function renderWeekOnHome(){
   wrap.hidden = true;
 }
 
-// RENDER: one day card inside the week agenda.
-function weekDayMarkup(day,now){
-  const date = new Date(day.dayBase);
-  const label = `${weekdayShort(day.weekday)} ${date.getDate()}`;
-  const isToday = day.isToday;
-  const fills = day.agendaItems.length + day.scheduled.length;
-  const travelMin = Math.round(day.travelSeconds / 60);
-  const headExtra = [
-    fills ? `${fills} ${fills === 1 ? 'item' : 'items'}` : 'open',
-    travelMin ? `${travelMin} min travel` : '',
-  ].filter(Boolean).join(' · ');
-  const settings = sortSettings || loadSortSettings();
-  const rows = typeof homeDaySequence === 'function' ? homeDaySequence(day,settings) : (day.timeline || []);
-  const body = rows.length
-    ? rows.map(row => agendaRowMarkup(row,now)).join('')
-    : `<div class="agenda-empty slim"><span>nothing scheduled</span></div>`;
-  return `<section class="week-day${isToday ? ' is-today' : ''}">
-    <header class="week-day-head"><b>${escapeHtml(label)}</b>${isToday ? '<span class="context-pill quiet">today</span>' : ''}<span class="trend-copy">${escapeHtml(headExtra)}</span></header>
-    <div class="agenda-timeline">${body}</div>
-  </section>`;
-}
 
-// RENDER: forward-looking 7-day strip — the complement to "just today".
-// Reuses the shared dayStripMarkup so cells match the overview exactly. Tapping
-// a day opens the day-logs sheet so you can plan ahead.
-function renderTodayWeekStrip(data){
-  const strip = $('today-week-strip');
-  if(!strip)return;
-  const start = dayStart(Date.now());
-  const {tally,html} = dayStripMarkup(data,start,7);
-  strip.className = 'month-grid rich-month-grid strip-grid';
-  strip.innerHTML = html;
-  const note = $('today-week-note');
-  if(note){
-    const upcoming = tally.total;
-    note.textContent = upcoming ? `${upcoming} ${upcoming === 1 ? 'entry' : 'entries'} planned` : 'open for plans';
-  }
-}
-
-// PURE: build one agenda row's HTML
-function agendaRowMarkup(row,now){
-  if(row.kind === 'blocked'){
-    const label = agendaTimeLabel(row.start);
-    const end = agendaTimeLabel(row.end);
-    const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
-    const place = loc ? ` · ${escapeHtml(loc.name)}` : '';
-    return `<div class="today-blocked-row" aria-hidden="true"><i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${label}–${end}${place}</span></div>`;
-  }
-  if(row.kind === 'travel' || row.kind === 'wait'){
-    const mins = Math.max(1,Math.round((row.seconds || 0) / 60));
-    const km = row.metres ? `${(row.metres / 1000).toFixed(row.metres >= 1000 ? 1 : 2)} km` : '';
-    if(row.kind === 'wait'){
-      const label = `wait · ${escapeHtml(row.toName || 'opens')} · ${mins} min`;
-      return `<div class="today-travel-row" aria-hidden="true"><i class="ti ti-route" aria-hidden="true"></i><span>${label}</span></div>`;
-    }
-    const edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(row);
-    const depart = row.start ? agendaTimeLabel(row.start) : '';
-    const label = `leave by ${depart} · ${mins} min${km ? ` · ${km}` : ''} · ${escapeHtml(row.fromName || 'here')} → ${escapeHtml(row.toName || 'next')}`;
-    return `<button type="button" class="today-travel-row${edited ? ' is-edited' : ''}" data-travel-from="${escapeHtml(row.from || '')}" data-travel-to="${escapeHtml(row.to || '')}" aria-label="edit travel time"><i class="ti ti-route" aria-hidden="true"></i><span>${label}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}</button>`;
-  }
-  const h = row.h;
-  const c = colors(daysSince(h.lastLog),h.target,h.type);
-  const toneCls = cardTone(h);
-  const accent = visualClassColor(toneCls);
-  const isPast = row.end < now;
-  const cue = row.kind === 'scheduled' ? scheduledCue(h) : cardCue(h);
-  const dur = clampDuration(h.durationMinutes);
-  const softTag = row.kind === 'scheduled'
-    ? '<span class="agenda-tag hard">fixed</span>'
-    : '<span class="agenda-tag soft">approx</span>';
-  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
-  const meta = row.kind === 'scheduled'
-    ? `${dur}m`
-    : [h.type === 'task' ? 'task' : 'habit', `${dur}m`, loc ? loc.name : ''].filter(Boolean).join(' · ');
-  return `<button class="agenda-row ${row.kind}${isPast ? ' is-past' : ''} ${toneCls}" data-agenda-idx="${row.i}" style="--card-accent:${accent};">
-    <span class="agenda-clock">
-      <b>${agendaTimeLabel(row.start)}</b>
-      <small>${row.kind === 'scheduled' ? '' : agendaTimeLabel(row.end)}</small>
-    </span>
-    <span class="agenda-dot" style="background:${c.icon};"></span>
-    <span class="agenda-body">
-      <span class="agenda-line">
-        <span class="agenda-ic">${iconHtml(h,c)}</span>
-        <span class="agenda-name">${escapeHtml(h.name)}</span>
-        ${softTag}
-      </span>
-      <span class="agenda-sub">${escapeHtml(cue)} · ${escapeHtml(meta)}</span>
-    </span>
-  </button>`;
-}
-
-// HANDLER: wire agenda row taps to open detail
-function bindAgendaTaps(){
-  document.querySelectorAll('#today-content .agenda-row').forEach(btn=>{
-    btn.addEventListener('click',e=>{
-      e.stopPropagation();
-      const idx = parseInt(btn.dataset.agendaIdx,10);
-      if(Number.isNaN(idx))return;
-      if(typeof openDetail === 'function')openDetail(idx);
-    });
-  });
-}
-
-// HYBRID: open the today agenda sheet
-function openToday(){
-  closeSearch();
-  renderTodayAgenda();
-  openSheet('today-sheet');
-}

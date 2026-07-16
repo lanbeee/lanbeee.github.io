@@ -403,7 +403,6 @@ function startLocationWatch(){
       applyGeoPosition(p,{updateAnchor:true});
       const matched = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
       if(matched){
-        if(typeof renderTodayAgenda === 'function' && $('today-sheet')?.classList.contains('open'))renderTodayAgenda();
         if(typeof render === 'function')render();
         if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
         if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
@@ -698,9 +697,26 @@ function openTravelEditSheet(fromId,toId){
     const label = edge.provider === 'manual' ? 'edited time' : `${mode} estimate`;
     modeEl.textContent = label;
   }
+  const dest = $('travel-edit-dest');
+  if(dest){
+    const addr = to.address ? escapeHtml(to.address) : '';
+    const coords = `${Number(to.lat).toFixed(5)}, ${Number(to.lng).toFixed(5)}`;
+    dest.innerHTML = `<div class="travel-dest-name">${escapeHtml(to.name)}</div>${addr ? `<div class="travel-dest-addr">${addr}</div>` : ''}<div class="travel-dest-coords">${escapeHtml(coords)}</div>`;
+  }
   const input = $('travel-edit-minutes');
   if(input)input.value = String(mins);
   openSheet('travel-edit-sheet');
+}
+
+/** HANDLER: open destination in system maps. */
+function openTravelDestinationInMaps(){
+  const to = typeof locationById === 'function' ? locationById(travelEditToId) : null;
+  if(!to)return;
+  const q = to.address
+    ? encodeURIComponent(to.address)
+    : `${to.lat},${to.lng}`;
+  const url = `https://maps.apple.com/?daddr=${q}`;
+  window.open(url,'_blank','noopener');
 }
 
 function closeTravelEditSheet(){
@@ -718,7 +734,6 @@ function saveTravelEditFromSheet(){
   showToast('travel time saved');
   closeTravelEditSheet();
   if(typeof render === 'function')render();
-  if(typeof renderTodayAgenda === 'function')renderTodayAgenda();
 }
 
 async function resetTravelEditFromSheet(){
@@ -734,7 +749,6 @@ async function resetTravelEditFromSheet(){
   if(modeEl)modeEl.textContent = `${mode} estimate`;
   showToast('estimate restored');
   if(typeof render === 'function')render();
-  if(typeof renderTodayAgenda === 'function')renderTodayAgenda();
 }
 
 function openPresencePicker(){

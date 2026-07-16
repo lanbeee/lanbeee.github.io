@@ -55,32 +55,52 @@ function selectedLocationIds(){
   return selectedLocationIdsFrom('ting-tag-chips');
 }
 
-// PURE: preferred location id from a unified chip row (or null)
+// PURE: preferred location id from a unified chip row (highest preference), or null
 function selectedPreferredLocationIdFrom(containerId){
-  const wrap = $(containerId);
-  if(!wrap)return null;
-  const on = wrap.querySelector('.location-chip.on.preferred[data-location-id]');
-  return on ? on.dataset.locationId : null;
+  const prefs = selectedLocationPrefsFrom(containerId);
+  const ids = selectedLocationIdsFrom(containerId);
+  return primaryPreferredLocationId(prefs,ids);
 }
 
 function selectedPreferredLocationId(){
   return selectedPreferredLocationIdFrom('ting-tag-chips');
 }
 
-// RENDER: one shared chip row — places (teal) then topics (neutral). Preferred
-// is marked with a star on the location chip (second tap when 2+ selected).
-function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null){
+/** PURE: read locationPrefs map from chip data-pref attributes. */
+function selectedLocationPrefsFrom(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return {};
+  const out = {};
+  wrap.querySelectorAll('.location-chip.on[data-location-id]').forEach(btn=>{
+    const level = btn.dataset.pref;
+    if(LOCATION_PREF_LEVELS.includes(level))out[btn.dataset.locationId] = level;
+  });
+  return out;
+}
+
+function selectedLocationPrefs(){
+  return selectedLocationPrefsFrom('ting-tag-chips');
+}
+
+// RENDER: one shared chip row — places (teal) then topics (neutral).
+// Location cycle: off → on → little → high → avoid → off
+function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null){
   const wrap = $(containerId);
   if(!wrap)return;
   const topics = topicOptions();
   const locations = locationOptions();
   const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
   const selectedLocs = normalizeLocationIds(selectedLocIds,locations);
-  const preferred = normalizePreferredLocation(preferredLocId,selectedLocs);
+  const prefs = normalizeLocationPrefs(locationPrefs,selectedLocs,preferredLocId);
   const locHtml = locations.map(loc=>{
     const on = selectedLocs.includes(loc.id);
-    const pref = preferred === loc.id;
-    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${pref ? 'preferred' : ''}" data-location-id="${escapeHtml(loc.id)}" title="${pref ? 'preferred place' : 'place'}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${pref ? ' ★' : ''}</button>`;
+    const level = prefs[loc.id] || '';
+    const mark = level === 'high' ? ' ★' : level === 'little' ? ' ☆' : level === 'avoid' ? ' –' : '';
+    const title = level === 'high' ? 'high preference'
+      : level === 'little' ? 'little preference'
+      : level === 'avoid' ? 'avoid if possible'
+      : 'place';
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${mark}</button>`;
   }).join('');
   const topicHtml = topics.map(topic=>{
     const on = selectedSet.has(topic.toLowerCase());
@@ -100,8 +120,8 @@ function renderTopicChips(containerId,selected = []){
       : containerId;
   const locContainer = unified;
   const locs = selectedLocationIdsFrom(locContainer);
-  const pref = selectedPreferredLocationIdFrom(locContainer);
-  renderTagChips(unified,selected,locs,pref);
+  const prefs = selectedLocationPrefsFrom(locContainer);
+  renderTagChips(unified,selected,locs,null,prefs);
 }
 
 // RENDER: location side of the unified row (keeps topics intact)
@@ -112,32 +132,33 @@ function renderLocationChips(containerId,selectedIds = [],opts = {}){
       ? 'detail-tag-chips'
       : containerId;
   const topics = selectedTopicsFrom(unified);
-  renderTagChips(unified,topics,selectedIds,opts.preferred || null);
+  renderTagChips(unified,topics,selectedIds,opts.preferred || null,opts.prefs || null);
 }
 
-// HANDLER: toggle a location chip in the unified row.
-// off → on → (if 2+ selected) preferred → off
+// HANDLER: toggle a location chip — off → on → little → high → avoid → off
 function toggleLocationChip(e){
   const btn = e.target.closest('.location-chip[data-location-id]');
   if(!btn)return;
   const wrap = btn.closest('.topic-chip-row');
   if(!wrap)return;
+  const level = btn.dataset.pref || '';
   const isOn = btn.classList.contains('on');
-  const isPref = btn.classList.contains('preferred');
-  const selectedBefore = selectedLocationIdsFrom(wrap.id);
   if(!isOn){
     btn.classList.add('on');
-  }else if(!isPref && selectedBefore.length >= 2){
-    wrap.querySelectorAll('.location-chip').forEach(b=>b.classList.remove('preferred'));
-    btn.classList.add('preferred');
+    btn.dataset.pref = '';
+  }else if(level === ''){
+    btn.dataset.pref = 'little';
+  }else if(level === 'little'){
+    btn.dataset.pref = 'high';
+  }else if(level === 'high'){
+    btn.dataset.pref = 'avoid';
   }else{
-    btn.classList.remove('on','preferred');
+    btn.classList.remove('on');
+    btn.dataset.pref = '';
   }
   const selected = selectedLocationIdsFrom(wrap.id);
-  let preferred = selectedPreferredLocationIdFrom(wrap.id);
-  preferred = normalizePreferredLocation(preferred,selected);
-  // If preferred was cleared and 2+ remain, leave preferred null (soft).
-  renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,preferred);
+  const prefs = selectedLocationPrefsFrom(wrap.id);
+  renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,prefs);
   if(wrap.id === 'detail-tag-chips')setDetailDirty();
 }
 
@@ -147,7 +168,7 @@ function cardLocationId(h,agendaRow){
   const registry = locationOptions();
   const ids = normalizeLocationIds(h && h.locationIds,registry);
   if(!ids.length)return null;
-  return normalizePreferredLocation(h.preferredLocationId,ids) || ids[0];
+  return pickHabitLocationId(h,null,registry,normalizeTravelMode((sortSettings || {}).defaultTravelMode)) || ids[0];
 }
 
 // PURE: compute home location filter choices
@@ -275,12 +296,12 @@ function minutesToTimeInput(minutes){
   const m = minutes % 60;
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
-// PURE: parse HH:MM into minutes
+// PURE: parse HH:MM into minutes, snapped to the 15-minute picker grid
 function timeInputToMinutes(value){
   if(!value)return null;
   const [h,m] = value.split(':').map(Number);
   if(Number.isNaN(h) || Number.isNaN(m))return null;
-  return h * 60 + m;
+  return snapTimeMinutes(h * 60 + m);
 }
 // PURE: ms timestamp -> "YYYY-MM-DD" for <input type="date">
 function dateInputValue(ts){
@@ -371,8 +392,8 @@ function beginNewTopicInput(containerId){
     }
     const nextSelected = normalizeTopics([...selectedTopicsFrom(containerId),topic]);
     const locs = selectedLocationIdsFrom(containerId);
-    const pref = selectedPreferredLocationIdFrom(containerId);
-    renderTagChips(containerId,nextSelected,locs,pref);
+    const prefs = selectedLocationPrefsFrom(containerId);
+    renderTagChips(containerId,nextSelected,locs,null,prefs);
     renderTopicList();
     if(containerId === 'detail-tag-chips')setDetailDirty();
     render();
@@ -428,12 +449,12 @@ function addTopicFromInput(inputId,options = {}){
   renderTopicList();
   const autoSelect = options.autoSelect;
   const addSelected = autoSelect ? normalizeTopics([...selectedAddTopics(),topic]) : selectedAddTopics();
-  renderTagChips('ting-tag-chips',addSelected,selectedLocationIds(),selectedPreferredLocationId());
+  renderTagChips('ting-tag-chips',addSelected,selectedLocationIds(),null,selectedLocationPrefs());
   if(detailIdx !== null){
     const detailSelected = autoSelect
       ? normalizeTopics([...selectedTopicsFrom('detail-tag-chips'),topic])
       : currentDetailTune().topics;
-    renderTagChips('detail-tag-chips',detailSelected,selectedLocationIdsFrom('detail-tag-chips'),selectedPreferredLocationIdFrom('detail-tag-chips'));
+    renderTagChips('detail-tag-chips',detailSelected,selectedLocationIdsFrom('detail-tag-chips'),null,selectedLocationPrefsFrom('detail-tag-chips'));
     if(autoSelect)setDetailDirty();
   }
   render();
@@ -455,10 +476,10 @@ function removeTopic(topic){
   }));
   save(data);
   renderTopicList();
-  renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),selectedPreferredLocationId());
+  renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),null,selectedLocationPrefs());
   if(detailIdx !== null){
     const tune = currentDetailTune();
-    renderTagChips('detail-tag-chips',tune.topics,tune.locationIds,tune.preferredLocationId);
+    renderTagChips('detail-tag-chips',tune.topics,tune.locationIds,tune.preferredLocationId,tune.locationPrefs);
   }
   if(typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key){
     homeTopicFilter = 'all';
@@ -485,7 +506,7 @@ function matchesHomeTopic(h,topic){
 function updateSortButton(){
   const data = load();
   const count = data.length;
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
@@ -796,7 +817,7 @@ function cardMeta(h,options = {}){
     if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
       parts.push(`<span class="context-pill due" title="${escapeHtml(`plan by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
     }else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
-      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="target rhythm"><i class="ti ti-repeat" aria-hidden="true"></i>${h.target || 7}d</span>`);
+      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="target rhythm"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`);
       else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
     }
   }
@@ -909,12 +930,15 @@ function agendaCardPill(row){
   if(!row)return '';
   const label = agendaTimeLabel(row.start);
   const end = row.kind === 'fill' ? agendaTimeLabel(row.end) : '';
+  const chunk = (row.chunkIndex != null && Number.isFinite(row.chunkMinutes))
+    ? ` · ${Math.round(row.chunkMinutes)}m`
+    : '';
   const title = row.kind === 'scheduled'
     ? `scheduled at ${label}`
-    : `suggested ${label}${end ? ` to ${end}` : ''}`;
+    : `suggested ${label}${end ? ` to ${end}` : ''}${chunk}`;
   const cls = row.kind === 'scheduled' ? 'scheduled' : 'agenda-suggested';
   const icon = row.kind === 'scheduled' ? 'ti-calendar-time' : 'ti-sparkles';
-  return `<span class="context-pill ${cls}" title="${escapeHtml(title)}"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span>`;
+  return `<span class="context-pill ${cls}" title="${escapeHtml(title)}"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}${escapeHtml(chunk)}</span>`;
 }
 
 function targetDayForEarly(h){
@@ -925,7 +949,7 @@ function targetDayForEarly(h){
   const plan = nextPlannedLog(h);
   if(plan)return dayStart(plan);
   if(h.lastLog === null)return nextEligibleDate(h,Date.now());
-  const target = Math.max(1,parseInt(h.target,10) || 7);
+  const target = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
   const rawTarget = dayStart(h.lastLog) + target * 86400000;
   if(!hasDaySchedule(h))return rawTarget;
   return nextEligibleDate(h,rawTarget) || rawTarget;
@@ -1057,18 +1081,100 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
 // Module state: which consecutive blocked groups are expanded on the home list.
 const expandedBlockedGroups = new Set();
 
-// RENDER: blocked-time card on home — mirrors travel-card weight, shows place.
-function appendHomeBlockedCard(list,row){
+// Visible window (ms) for the "next 12 hours" cleanup levels.
+const HOME_EXTRA_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+// PURE: normalized home blocked/travel presentation mode.
+function homeExtraMode(){
+  return (typeof normalizeHomeExtraMode === 'function' && normalizeHomeExtraMode(sortSettings.homeExtraMode))
+    || 'cards';
+}
+
+// PURE: whether a blocked/travel row (keyed by its start ts) is shown under the
+// current homeExtraMode. 'cards' shows everything; the 12h modes hide anything
+// whose start lies past the next 12 hours (still-active blocks keep their past
+// start, so an in-progress block stays visible).
+function homeExtraRowVisible(ts){
+  if(homeExtraMode() === 'cards')return true;
+  return Number.isFinite(ts) && ts < Date.now() + HOME_EXTRA_WINDOW_MS;
+}
+
+// RENDER: plain muted background line for a home travel leg (text cleanup level).
+function appendHomeTravelText(list,fromId,toId,startTs){
+  if(!list || !fromId || !toId || fromId === toId)return;
+  const from = typeof locationById === 'function' ? locationById(fromId) : null;
+  const to = typeof locationById === 'function' ? locationById(toId) : null;
+  const edge = (from && to && typeof travelBetween === 'function')
+    ? travelBetween(from,to,normalizeTravelMode((sortSettings || {}).defaultTravelMode))
+    : {seconds:0};
+  const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
+  const depart = startTs && typeof agendaTimeLabel === 'function' ? `leave by ${agendaTimeLabel(startTs)} · ` : '';
+  const el = document.createElement('div');
+  el.className = 'extra-text-line travel-text';
+  el.textContent = `${depart}${mins} min · ${from ? from.name : 'here'} → ${to ? to.name : 'next'}`;
+  list.appendChild(el);
+}
+
+// RENDER: plain muted background line for a blocked-time instance (text level).
+function appendHomeBlockedText(list,row){
   if(!list || !row)return;
   const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
   const start = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.start) : '';
   const end = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.end) : '';
   const place = loc ? ` · ${loc.name}` : '';
   const el = document.createElement('div');
+  el.className = 'extra-text-line blocked-text';
+  el.textContent = `${row.label || 'blocked'} · ${start}–${end}${place}`;
+  list.appendChild(el);
+}
+
+// RENDER: dispatch a blocked row to a card or a muted line per homeExtraMode.
+function appendHomeExtraBlocked(list,row){
+  if(homeExtraMode() === 'text12h')appendHomeBlockedText(list,row);
+  else appendHomeBlockedCard(list,row);
+}
+
+// RENDER: dispatch a travel leg to a card or a muted line per homeExtraMode.
+function appendHomeExtraTravel(list,fromId,toId,startTs){
+  if(homeExtraMode() === 'text12h')appendHomeTravelText(list,fromId,toId,startTs);
+  else appendHomeTravelCard(list,fromId,toId,startTs);
+}
+
+// RENDER: blocked-time card on home — tap cancels this instance for today.
+function appendHomeBlockedCard(list,row){
+  if(!list || !row)return;
+  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
+  const start = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.start) : '';
+  const end = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.end) : '';
+  const place = loc ? ` · ${loc.name}` : '';
+  // The card body is non-interactive background surface; only the X frees the
+  // block for today (cancel + undo toast). Tapping anywhere else does nothing.
+  const el = document.createElement('div');
   el.className = 'blocked-card';
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
-  el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span>`;
+  el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span><button type="button" class="blocked-cancel-mark" aria-label="free ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
+  const xBtn = el.querySelector('.blocked-cancel-mark');
+  if(xBtn)xBtn.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    cancelHomeBlockedRow(row);
+  });
   list.appendChild(el);
+}
+
+/** HANDLER: cancel one blocked instance for its day and refresh, with undo. */
+function cancelHomeBlockedRow(row){
+  if(!row)return;
+  const dayKey = dateKey(row.start);
+  const startMin = row.blockStartMin != null ? row.blockStartMin : (row.startMin != null ? row.startMin : Math.round((row.start - dayStart(row.start)) / 60000));
+  const endMin = row.blockEndMin != null ? row.blockEndMin : (row.endMin != null ? row.endMin : Math.round((row.end - dayStart(row.start)) / 60000));
+  cancelBlockedInstance(dayKey,row.label,startMin,endMin);
+  showActionToast(`Freed ${row.label || 'blocked'} for today`,{
+    type:'restore-blocked',
+    dayKey,label:row.label,startMin,endMin,
+    undoLabel:'undo'
+  });
+  if(typeof render === 'function')render();
 }
 
 // RENDER: one card for a run of consecutive blocked times. Tap expands to the
@@ -1215,7 +1321,7 @@ function render(){
         render();
       };
     }else if(data.length && !visible.length){
-      const doneTasks = data.filter(h=>h.type === 'task' && h.lastLog !== null).length;
+      const doneTasks = data.filter(h=>h.type === 'task' && isTaskDone(h)).length;
       empty.innerHTML = doneTasks && doneTasks === data.length
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
@@ -1251,7 +1357,7 @@ function render(){
     const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const accent = visualClassColor(cardScoreTone);
-    const isDoneTask = h.type === 'task' && h.lastLog !== null;
+    const isDoneTask = h.type === 'task' && isTaskDone(h);
     const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
 
@@ -1322,14 +1428,20 @@ function render(){
       for(let i = 0;i < seq.length;){
         const row = seq[i];
         if(row.kind === 'travel'){
-          appendHomeTravelCard(list,row.from,row.to,row.start);
+          if(homeExtraRowVisible(row.start))appendHomeExtraTravel(list,row.from,row.to,row.start);
           i += 1;
           continue;
         }
         if(row.kind === 'blocked'){
           const {blocks,nextIdx} = consumeBlockedRun(seq,i);
-          const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
-          appendHomeBlockedGroup(list,blocks,groupKey);
+          if(homeExtraRowVisible(blocks[0].start)){
+            if(homeExtraMode() === 'text12h'){
+              blocks.forEach(b=>appendHomeBlockedText(list,b));
+            }else{
+              const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
+              appendHomeBlockedGroup(list,blocks,groupKey);
+            }
+          }
           i = nextIdx;
           continue;
         }
@@ -1368,9 +1480,12 @@ function render(){
     const agendaRows = homeAgendaRows(data);
     const agendaMap = new Map();
     const agendaOrder = new Map();
+    const chunksByIndex = new Map();
     agendaRows.forEach((row,pos)=>{
       if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
       if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
+      if(!chunksByIndex.has(row.i))chunksByIndex.set(row.i,[]);
+      chunksByIndex.get(row.i).push(row);
     });
     // An upcoming item is pulled into "today" only when it BOTH passes the
     // do-early gate (allowed today + flexibility + its target day is over-loaded)
@@ -1416,10 +1531,29 @@ function render(){
         }
       }
 
+      // Breakable tasks placed in the today section expand to one card per
+      // chunk so each time block is visible on the timeline.
+      if(inTodaySection){
+        const chunkRows = chunksByIndex.get(realIdx);
+        if(chunkRows && chunkRows.length > 1){
+          chunkRows.forEach((chunkRow,ci)=>{
+            const cLocId = cardLocationId(h,chunkRow);
+            if(prevTodayLocId && cLocId && prevTodayLocId !== cLocId){
+              const travelTs = Number.isFinite(chunkRow.start) ? chunkRow.start : Date.now();
+              if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs);
+            }
+            prevTodayLocId = cLocId || prevTodayLocId;
+            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '');
+          });
+          return;
+        }
+      }
+
       const agendaRow = agendaMap.get(realIdx);
       const locId = cardLocationId(h,agendaRow);
       if(inTodaySection && prevTodayLocId && locId && prevTodayLocId !== locId){
-        appendHomeTravelCard(list,prevTodayLocId,locId);
+        const travelTs = agendaRow && Number.isFinite(agendaRow.start) ? agendaRow.start : Date.now();
+        if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs);
       }
       if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
 
@@ -1726,35 +1860,46 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   return true;
 }
 
-// HYBRID: log entry and show undo
-function logTing(i){
+// HYBRID: log entry and show undo. opts: {value, minutes, note} for numeric / chunk / note logs.
+function logTing(i,opts = {}){
   const data = load();
   const now = Date.now();
   if(!data[i])return false;
-  const logs = normalizeLogs(data[i].logs);
+  const h = data[i];
+  const logs = normalizeLogs(h.logs);
   const consumedPlanTs = planToConsumeForEntry(logs,now);
+  let minutes = opts.minutes;
+  if(minutes == null && h.breakable && h.markDone !== false){
+    const next = remainingChunks(h)[0];
+    if(next)minutes = next;
+  }
+  const entry = makeActualLog(now,{value:opts.value,minutes,note:opts.note});
   const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts:now,
     plan:false,
     consumedPlanTs,
-    snoozedUntil:data[i].snoozedUntil || null
+    snoozedUntil:h.snoozedUntil || null,
+    entry
   });
-  data[i].lastLog = now;
   if(consumedPlanTs !== null){
     const pos = findEntryByKind(logs,consumedPlanTs,true);
     if(pos >= 0)logs.splice(pos,1);
   }
-  data[i].logs = normalizeLogs([...logs,now]);
-  data[i].snoozedUntil = null;
-  if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(data[i]);
+  h.logs = normalizeLogs([...logs,entry]);
+  h.lastLog = latestActualLog(h.logs);
+  h.snoozedUntil = null;
+  if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(h);
   if(!save(data))return false;
   // Cancel any scheduled push for this completed task.
-  if(typeof cancelPush === 'function' && data[i].type === 'task'){
-    cancelPush(reminderSignature(data[i]));
+  if(typeof cancelPush === 'function' && h.type === 'task' && isTaskDone(h)){
+    cancelPush(reminderSignature(h));
   }
-  showActionToast(`Logged ${toastItemName(data[i])}`,action);
+  const chunkNote = minutes ? ` · ${minutes}m` : '';
+  const valueNote = opts.value != null && Number.isFinite(Number(opts.value)) ? ` · ${opts.value}` : '';
+  const noteText = (()=>{ const n = String(opts.note || '').slice(0,40); return n ? ` · ${n}` : ''; })();
+  showActionToast(`Logged ${toastItemName(h)}${chunkNote}${valueNote}${noteText}`,action);
   return true;
 }
 
@@ -1988,6 +2133,10 @@ function executeUndo(){
       data[idx].snoozedUntil = snoozedUntilBefore;
     }
   }
+  if(pendingAction.type === 'restore-blocked'){
+    const {dayKey,label,startMin,endMin} = pendingAction;
+    if(typeof restoreBlockedInstance === 'function')restoreBlockedInstance(dayKey,label,startMin,endMin);
+  }
   if(save(data)){
     hideActionToast();
     showToast('undone');
@@ -1997,12 +2146,19 @@ function executeUndo(){
 
 // HYBRID: log entry and flash card
 function quickLog(i,card){
-  if(!logTing(i))return;
-  if(card){
-    card.classList.add('logged');
-    setTimeout(()=>card.classList.remove('logged'),380);
+  const go = ()=>{
+    if(card){
+      card.classList.add('logged');
+      setTimeout(()=>card.classList.remove('logged'),380);
+    }
+    setTimeout(refreshOpenViews, 260);
+  };
+  if(typeof requestLogTing === 'function'){
+    requestLogTing(i,go);
+    return;
   }
-  setTimeout(refreshOpenViews, 260);
+  if(!logTing(i))return;
+  go();
 }
 
 // PURE: compute next plan timestamp

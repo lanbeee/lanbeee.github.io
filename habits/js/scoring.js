@@ -147,7 +147,7 @@ function metaLine(h){
     parts.push(`hidden ${Math.ceil((h.snoozedUntil - Date.now()) / 86400000)}d`);
   }else{
     parts.push(entryWhen(h.lastLog));
-    if(h.type !== 'zero' && h.target)parts.push(`every ${h.target}d`);
+    if(h.type !== 'zero' && h.target)parts.push(`every ${formatRhythmLabel(h.target)}`);
   }
   if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
   if(hasDaySchedule(h)){
@@ -316,6 +316,9 @@ function locationSignal(h,settings){
   if(allClosed)signal -= 8;                                // unreachable penalty
   // Average over allowed locations so multi-location habits don't double-count.
   signal = signal / ids.length;
+  // Soft preference among allowed places (avoid / little / high).
+  const prefs = ids.map(id=>locationPrefScore(locationPrefLevel(h,id)));
+  if(prefs.length)signal += prefs.reduce((a,b)=>a + b,0) / prefs.length / 6;
   return Math.max(-12,Math.min(16,signal));
 }
 
@@ -518,11 +521,11 @@ function priorityComponents(h,settings){
 // Tasks have no rhythm/history, so only the due signal (or a someday baseline)
 // plus the planner-fit/schedule adjustments contribute. Same shape as the
 // habit components so attentionScore's mix + scaling paths are reused verbatim.
-// Completed tasks (lastLog !== null) sink to the bottom but stay findable.
+// Completed tasks sink to the bottom but stay findable.
 function taskPriorityComponents(h,settings){
   const plannerFit = plannerFitSignal(h,settings);
   const location = locationSignal(h,settings) * settingScale(settings.locationWeight);
-  if(h.lastLog !== null){
+  if(isTaskDone(h)){
     return {
       now:0,plan:0,due:0,progress:0,trend:0,rhythm:0,newness:0,
       duration:plannerFit.duration,
@@ -790,7 +793,7 @@ function visibleIndices(data,settingsOverride = null){
   const todayFirst = settings.preset === 'todayFirst';
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
-    if(h.type === 'task' && h.lastLog !== null)return false;
+    if(h.type === 'task' && isTaskDone(h))return false;
     return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
   });
   indices.sort((a,b)=>{
@@ -879,7 +882,7 @@ function filteredVisibleIndices(data){
     });
   const completedTasks = data
     .map((h,i)=>({h,i}))
-    .filter(({h})=>h.type === 'task' && h.lastLog !== null)
+    .filter(({h})=>h.type === 'task' && isTaskDone(h))
     .filter(({h})=>!topic || topic === 'all' || typeof matchesHomeTopic !== 'function' || matchesHomeTopic(h,topic))
     .filter(({h})=>!location || location === 'all' || typeof matchesHomeLocation !== 'function' || matchesHomeLocation(h,location))
     .filter(({h})=>searchText(h).includes(query))

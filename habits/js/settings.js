@@ -75,6 +75,10 @@ function syncSettingsControls(){
   document.querySelectorAll('#travel-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.travelMode === travelMode);
   });
+  const homeExtraMode = normalizeHomeExtraMode(sortSettings.homeExtraMode);
+  document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === homeExtraMode);
+  });
   document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
     btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
   });
@@ -200,9 +204,9 @@ function renderBlockedTimeControls(){
     <div class="blocked-time-row" data-blocked-row="${i}">
       <input type="text" data-blocked-label="${i}" aria-label="blocked time name" maxlength="24" value="${escapeHtml(block.label)}" />
       <div class="blocked-time-hours">
-        <input type="time" data-blocked-start="${i}" aria-label="${escapeHtml(block.label)} start" value="${minutesToTimeInput(block.start)}" />
+        <input type="time" step="900" data-blocked-start="${i}" aria-label="${escapeHtml(block.label)} start" value="${minutesToTimeInput(block.start)}" />
         <span>to</span>
-        <input type="time" data-blocked-end="${i}" aria-label="${escapeHtml(block.label)} end" value="${minutesToTimeInput(block.end)}" />
+        <input type="time" step="900" data-blocked-end="${i}" aria-label="${escapeHtml(block.label)} end" value="${minutesToTimeInput(block.end)}" />
       </div>
       <div class="schedule-chip-row compact-days">
         ${WEEKDAY_LABELS.map((label,day)=>{
@@ -362,9 +366,9 @@ function locationRowMarkup(loc,i){
     </div>
     <div class="location-hours">
       <span class="loc-field-label">hours</span>
-      <input type="time" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <input type="time" step="900" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
       <span class="loc-sep">–</span>
-      <input type="time" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <input type="time" step="900" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
       <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}">All day</button>
     </div>
     <div class="location-radius">
@@ -384,9 +388,9 @@ function locationRowMarkup(loc,i){
       </div>
       <div class="loc-pref">
         <span class="loc-field-label">best</span>
-        <input type="time" data-loc-pref-start="${i}" aria-label="best from" value="${prefStart}" />
+        <input type="time" step="900" data-loc-pref-start="${i}" aria-label="best from" value="${prefStart}" />
         <span class="loc-sep">–</span>
-        <input type="time" data-loc-pref-end="${i}" aria-label="best until" value="${prefEnd}" />
+        <input type="time" step="900" data-loc-pref-end="${i}" aria-label="best until" value="${prefEnd}" />
         <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
       </div>
       <div class="loc-perday">
@@ -398,9 +402,9 @@ function locationRowMarkup(loc,i){
           const de = hd && Number.isFinite(hd.end) ? minutesToTimeInput(hd.end) : '';
           return `<div class="perday-row">
             <span class="perday-label">${label}</span>
-            <input type="time" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="900" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
             <span class="loc-sep">–</span>
-            <input type="time" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="900" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
             <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</label>
           </div>`;
         }).join('')}
@@ -994,11 +998,15 @@ function addSortSamples(){
   const byId = new Map(existing.map(l=>[l.id,l]));
   sampleLocs.forEach(loc=>{ if(!byId.has(loc.id))byId.set(loc.id,loc); });
   const locations = normalizeLocationRegistry([...byId.values()]);
-  // Patch blocked times so sleep → Home, work → Office.
+  // Patch blocked times so each section gets an appropriate sample location.
+  const BLOCK_LOCATION = {
+    sleep:'sample-home', breakfast:'sample-home', dinner:'sample-home',
+    work:'sample-office', lunch:'sample-office'
+  };
   const patchedBlocks = normalizeBlockedTimes(sortSettings.blockedTimes).map(b=>{
     const label = (b.label || '').toLowerCase();
-    if(label === 'sleep' && !b.locationId)return {...b,locationId:'sample-home'};
-    if(label === 'work' && !b.locationId)return {...b,locationId:'sample-office'};
+    const loc = BLOCK_LOCATION[label];
+    if(loc && !b.locationId)return {...b,locationId:loc};
     return b;
   });
   // Collect topics from sample habits into the global topic list.

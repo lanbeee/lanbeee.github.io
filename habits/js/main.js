@@ -49,7 +49,6 @@ onTravelRefresh = ()=>{
     if(!_travelRefreshPending)return;
     _travelRefreshPending = false;
     if(typeof render === 'function')render();
-    if(typeof renderTodayAgenda === 'function' && $('today-sheet')?.classList.contains('open'))renderTodayAgenda();
   },120);
 };
 
@@ -122,14 +121,14 @@ $('open-add').addEventListener('click',()=>{
 
 $('open-search').addEventListener('click',()=>{
   const data = load();
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
   if(data.length < 10 && !hasSearchableArchive)return;
   if(isSearchOpen())closeSearch();
   else setSearchOpen(true);
 });
 $('bar-open-search')?.addEventListener('click',()=>{
   const data = load();
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
   if(data.length < 10 && !hasSearchableArchive)return;
   if(isSearchOpen())closeSearch();
   else setSearchOpen(true);
@@ -155,36 +154,6 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   renderOverview();
   openSheet('overview-sheet');
 });
-$('today-close')?.addEventListener('click',()=>closeSheet('today-sheet'));
-$('today-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('iam-at-row')?.addEventListener('click',async e=>{
-  const gps = e.target.closest('#iam-at-gps');
-  if(gps){
-    const s = sortSettings || loadSortSettings();
-    if(s.locationOptIn || currentCoord){
-      await requestLocationAccess({quiet:false});
-    }else{
-      locationAllowCallback = null;
-      openLocationPermissionSheet();
-    }
-    renderIAmAtPicker();
-    renderTodayAgenda();
-    render();
-    return;
-  }
-  const btn = e.target.closest('[data-iam-at]');
-  if(!btn)return;
-  setManualLocationId(btn.dataset.iamAt);
-  renderIAmAtPicker();
-  renderTodayAgenda();
-  render();
-});
-$('today-overview')?.addEventListener('click',()=>{
-  closeSheet('today-sheet');
-  const btn = paneTierActive() ? $('bar-open-overview') : $('open-overview');
-  if(btn)btn.click();
-});
-$('today-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('today-sheet');});
 $('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
@@ -251,7 +220,9 @@ $('do-save').addEventListener('click',()=>{
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
   const type = selectedType;
   const isHabit = type === 'keepup' || type === 'reduce';
-  const target = isHabit ? clampRhythmValue($('ting-days').value) : null;
+  const target = isHabit ? targetFromRhythmParts($('ting-times')?.value || 1,$('ting-days').value) : null;
+  const locationIds = selectedLocationIds();
+  const locationPrefs = selectedLocationPrefs();
   const record = {
     name:name.slice(0,60),
     type,
@@ -262,8 +233,9 @@ $('do-save').addEventListener('click',()=>{
     pinned:false,
     priority:selectedAddPriority(),
     topics:selectedAddTopics(),
-    locationIds:selectedLocationIds(),
-    preferredLocationId:selectedPreferredLocationId(),
+    locationIds,
+    locationPrefs,
+    preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
     createdAt:Date.now()
   };
   if(type === 'task'){
@@ -340,10 +312,10 @@ function clampRhythm(value){
 
 // PURE: return help text for a rhythm type
 function rhythmHelp(type){
-  if(type === 'reduce')return 'Something to space out. Target is the gap you want before it can repeat.';
+  if(type === 'reduce')return 'Something to space out. Use times in N days (e.g. 1× in 3d).';
   if(type === 'zero')return 'Something to avoid. Log it each time it happens; the aim is longer gaps.';
   if(type === 'task')return 'A one-off to-do. Add a due date, a fixed scheduled time, or leave it dateless.';
-  return 'Something to do regularly. Target is the days between entries.';
+  return 'Something to do regularly. Use times in N days — e.g. 2× in 7d is every 3.5 days.';
 }
 
 // RENDER: update detail type segmented control + help
@@ -382,14 +354,20 @@ function setDetailPriorityUi(priority){
   });
 }
 
-// HYBRID: sync rhythm field, label, and crown dial state
+// HYBRID: sync rhythm fields (times × days), label, and crown dial state
 function syncRhythm(prefix,value){
   const field = $(`${prefix}-days`);
+  const timesField = $(`${prefix}-times`);
+  const parts = typeof value === 'object' && value && value.days != null
+    ? {times:Math.max(1,parseInt(value.times,10) || 1),days:Math.max(1,parseInt(value.days,10) || 7)}
+    : rhythmParts(clampRhythmValue(value));
   const prev = parseInt(field.dataset.orig || field.value,10) || 7;
-  const days = clampRhythm(value);
+  const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parts.days));
+  const times = Math.max(1,Math.min(30,parts.times));
   field.value = days;
+  if(timesField)timesField.value = times;
   const label = $(`${prefix}-days-label`);
-  if(label)label.textContent = `${days}d`;
+  if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(times,days));
   const crown = $(`${prefix}-days-slider`);
   if(crown){
     const target = (crown._scroll || 0) + (days - prev) * 10;
@@ -400,6 +378,12 @@ function syncRhythm(prefix,value){
       if(canvas)drawCrownRidges(canvas, crown._scroll);
     }
   }
+}
+
+function currentRhythmTarget(prefix){
+  const days = parseInt($(`${prefix}-days`)?.value,10) || 7;
+  const times = parseInt($(`${prefix}-times`)?.value,10) || 1;
+  return targetFromRhythmParts(times,days);
 }
 
 // RENDER: draw crown dial ridges onto canvas
@@ -452,7 +436,10 @@ function bindRhythm(prefix){
     e.target.dataset.orig = e.target.value;
     e.target.value = '';
   });
-  field.addEventListener('blur',e=>syncRhythm(prefix,e.target.value));
+  field.addEventListener('blur',e=>{
+    const times = parseInt($(`${prefix}-times`)?.value,10) || 1;
+    syncRhythm(prefix,{times,days:e.target.value || 7});
+  });
 
   let startVal,prevX,velX = 0,momentumId = null,smoothAnimId = null;
   crown._scroll = 0;
@@ -482,9 +469,10 @@ function bindRhythm(prefix){
   };
 
   const setVal = val => {
-    const days = clampRhythm(val);
+    const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt(val,10) || 7));
     field.value = days;
-    if(label)label.textContent = `${days}d`;
+    const times = parseInt($(`${prefix}-times`)?.value,10) || 1;
+    if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(times,days));
     crown.setAttribute('aria-valuenow',days);
     if(prefix === 'detail')setDetailDirty();
   };
@@ -582,6 +570,18 @@ function bindRhythm(prefix){
 
 bindRhythm('ting');
 bindRhythm('detail');
+['ting','detail'].forEach(prefix=>{
+  const times = $(`${prefix}-times`);
+  if(!times)return;
+  times.addEventListener('input',()=>{
+    const days = parseInt($(`${prefix}-days`)?.value,10) || 7;
+    const t = Math.max(1,Math.min(30,parseInt(times.value,10) || 1));
+    times.value = t;
+    const label = $(`${prefix}-days-label`);
+    if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(t,days));
+    if(prefix === 'detail')setDetailDirty();
+  });
+});
 requestAnimationFrame(()=>{
   drawCrownRidges($('ting-days-slider')?.querySelector('.crown-canvas'),0);
   drawCrownRidges($('detail-days-slider')?.querySelector('.crown-canvas'),0);
@@ -785,7 +785,8 @@ $('detail-save').addEventListener('click',()=>{
   h.pinned = current.pinned;
   h.topics = normalizeTopics(current.topics);
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
-  h.preferredLocationId = normalizePreferredLocation(current.preferredLocationId,h.locationIds);
+  h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,h.locationIds,current.preferredLocationId);
+  h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,h.locationIds);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
   h.allowedMonthDays = normalizeAllowedMonthDays(current.allowedMonthDays);
   h.preferredWeekdays = normalizeAllowedWeekdays(current.preferredWeekdays);
@@ -803,10 +804,14 @@ $('detail-save').addEventListener('click',()=>{
     h.preferredTimeEnd = null;
   }
   h.durationMinutes = current.durationMinutes;
+  h.breakable = Boolean(current.breakable);
+  h.minChunkMinutes = clampMinChunk(current.minChunkMinutes);
+  h.timerAutoStopMinutes = normalizeTimerAutoStop(current.timerAutoStopMinutes);
+  h.trackValue = Boolean(current.trackValue);
   h.flexibilityDays = current.flexibilityDays;
   h.priority = clampPriority(current.priority);
   const isHabit = current.type === 'keepup' || current.type === 'reduce';
-  h.target = isHabit ? clampRhythmValue(current.target || h.target || 7) : null;
+  h.target = isHabit ? currentRhythmTarget('detail') : null;
   if(current.type === 'task'){
     h.eventTime = current.eventTime;
     h.dueDate = current.dueDate ?? (current.eventTime !== null ? dayStart(current.eventTime) : null);
@@ -832,15 +837,17 @@ $('detail-save').addEventListener('click',()=>{
 });
 $('detail-mark').addEventListener('click',()=>{
   if(detailIdx === null)return;
-  if(!logTing(detailIdx))return;
-  openDetail(detailIdx);
-  render();
+  requestLogTing(detailIdx,()=>{
+    openDetail(detailIdx);
+    render();
+  });
 });
 if($('detail-add'))$('detail-add').addEventListener('click',()=>{
   if(detailIdx === null)return;
-  if(!logTing(detailIdx))return;
-  openDetail(detailIdx);
-  render();
+  requestLogTing(detailIdx,()=>{
+    openDetail(detailIdx);
+    render();
+  });
 });
 $('detail-cool').addEventListener('click',closeDetail);
 $('detail-close').addEventListener('click',()=>{restoreDetailTune();closeDetail();});
@@ -923,6 +930,11 @@ $('travel-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-travel-mode]');
   if(!opt)return;
   updateSortSetting({defaultTravelMode:normalizeTravelMode(opt.dataset.travelMode)});
+});
+$('home-extra-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  updateSortSetting({homeExtraMode:normalizeHomeExtraMode(opt.dataset.segValue)});
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{
@@ -1190,14 +1202,12 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
       locationAllowCallback = ()=>{
         renderPresencePickerBody();
         renderIAmAtPicker();
-        renderTodayAgenda();
         render();
       };
       openLocationPermissionSheet();
     }
     renderPresencePickerBody();
     renderIAmAtPicker();
-    renderTodayAgenda();
     render();
     return;
   }
@@ -1206,7 +1216,6 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
   setManualLocationId(btn.dataset.presencePick);
   renderPresencePickerBody();
   renderIAmAtPicker();
-  renderTodayAgenda();
   render();
 });
 $('location-access-enable')?.addEventListener('click',()=>{
@@ -1258,11 +1267,151 @@ $('travel-edit-plus')?.addEventListener('click',()=>{
   input.value = String(Math.min(240,(Number(input.value) || 1) + 1));
 });
 $('travel-edit-save')?.addEventListener('click',saveTravelEditFromSheet);
+$('travel-edit-maps')?.addEventListener('click',openTravelDestinationInMaps);
 $('travel-edit-reset')?.addEventListener('click',()=>{ resetTravelEditFromSheet(); });
 $('travel-edit-cancel')?.addEventListener('click',closeTravelEditSheet);
 $('travel-edit-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeTravelEditSheet();
 });
+
+// Value log sheet
+let valueLogIdx = null;
+let valueLogAfter = null;
+function openValueLogSheet(idx,after){
+  valueLogIdx = idx;
+  valueLogAfter = after || null;
+  const h = load()[idx];
+  const copy = $('value-log-copy');
+  if(copy)copy.textContent = h ? `Number for ${h.name}` : 'Optional number for this entry.';
+  const input = $('value-log-input');
+  if(input)input.value = '';
+  const noteEl = $('value-log-note');
+  if(noteEl)noteEl.value = '';
+  openSheet('value-log-sheet');
+  requestAnimationFrame(()=>input?.focus());
+}
+function finishValueLog(opts){
+  const idx = valueLogIdx;
+  const after = valueLogAfter;
+  valueLogIdx = null;
+  valueLogAfter = null;
+  closeSheet('value-log-sheet');
+  if(idx == null)return;
+  if(!logTing(idx,opts || {}))return;
+  if(typeof after === 'function')after();
+}
+$('value-log-save')?.addEventListener('click',()=>{
+  const raw = $('value-log-input')?.value?.trim();
+  const note = $('value-log-note')?.value?.trim() || '';
+  const n = raw === '' ? undefined : Number(raw);
+  if(raw !== '' && !Number.isFinite(n)){ showToast('enter a number'); return; }
+  const opts = {};
+  if(raw !== '')opts.value = n;
+  if(note)opts.note = note;
+  finishValueLog(opts);
+});
+$('value-log-skip')?.addEventListener('click',()=>finishValueLog({}));
+$('value-log-cancel')?.addEventListener('click',()=>{
+  valueLogIdx = null;
+  valueLogAfter = null;
+  closeSheet('value-log-sheet');
+});
+$('value-log-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget){
+    valueLogIdx = null;
+    valueLogAfter = null;
+    closeSheet('value-log-sheet');
+  }
+});
+
+/** Prompt for a value when trackValue is on, otherwise log immediately. */
+function requestLogTing(idx,after){
+  const h = load()[idx];
+  if(!h)return;
+  if(h.trackValue){
+    openValueLogSheet(idx,after);
+    return;
+  }
+  if(!logTing(idx))return;
+  if(typeof after === 'function')after();
+}
+
+// Habit session timer (auto-stops, then prompts to log)
+let habitTimer = null;
+function stopHabitTimer(promptLog){
+  const btn = $('detail-timer-toggle');
+  const display = $('detail-timer-display');
+  if(habitTimer){
+    clearInterval(habitTimer.interval);
+    const elapsedMin = Math.max(1,Math.round((Date.now() - habitTimer.startedAt) / 60000));
+    const idx = habitTimer.idx;
+    habitTimer = null;
+    if(btn)btn.textContent = 'start timer';
+    if(display)display.hidden = true;
+    if(promptLog && idx != null){
+      const h = load()[idx];
+      if(h && h.trackValue)openValueLogSheet(idx,()=>{ openDetail(idx); render(); });
+      else{
+        logTing(idx,h && h.breakable && h.markDone !== false ? {minutes:elapsedMin} : {});
+        if(detailIdx === idx)openDetail(idx);
+        render();
+      }
+    }
+  }
+}
+function tickHabitTimer(){
+  if(!habitTimer)return;
+  const elapsed = Date.now() - habitTimer.startedAt;
+  const left = Math.max(0,habitTimer.autoStopMs - elapsed);
+  const display = $('detail-timer-display');
+  if(display){
+    const sec = Math.ceil(left / 1000);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    display.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    display.hidden = false;
+  }
+  if(left <= 0){
+    showToast('timer done');
+    stopHabitTimer(true);
+  }
+}
+$('detail-timer-toggle')?.addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  if(habitTimer){
+    stopHabitTimer(true);
+    return;
+  }
+  const h = load()[detailIdx];
+  if(!h)return;
+  const autoMin = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : clampDuration(h.durationMinutes);
+  habitTimer = {
+    idx:detailIdx,
+    startedAt:Date.now(),
+    autoStopMs:autoMin * 60000,
+    interval:setInterval(tickHabitTimer,250)
+  };
+  const btn = $('detail-timer-toggle');
+  if(btn)btn.textContent = 'stop timer';
+  tickHabitTimer();
+});
+$('detail-breakable')?.addEventListener('change',()=>{
+  syncBreakableUi();
+  // Default mark-done off when enabling breakable for the first time.
+  if($('detail-breakable').checked){
+    const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType;
+    if(type === 'task'){
+      $('detail-mark-done')?.setAttribute('aria-pressed','false');
+    }else{
+      $('detail-habit-mark-done')?.setAttribute('aria-pressed','false');
+    }
+  }
+  setDetailDirty();
+});
+$('detail-min-chunk')?.addEventListener('input',()=>setDetailDirty());
+$('detail-track-value')?.addEventListener('change',()=>setDetailDirty());
+$('detail-timer-auto-stop')?.addEventListener('input',()=>setDetailDirty());
+bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   if(!day)return;
   dayLogsKey = day.dataset.logDay;
@@ -1273,7 +1422,6 @@ bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
 bindCalendarTap($('today-week-strip'),'[data-log-day]',day=>{
   if(!day)return;
   dayLogsKey = day.dataset.logDay;
-  if(typeof renderTodayWeekStrip === 'function')renderTodayWeekStrip(load());
   renderDayLogs(dayLogsKey);
   openSheet('day-logs-sheet');
 });

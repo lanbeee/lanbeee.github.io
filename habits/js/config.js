@@ -24,8 +24,15 @@ const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
 
 const MAX_RHYTHM_DAYS = 183;
+const MIN_RHYTHM_DAYS = 0.5;
 const DEFAULT_DURATION_MINUTES = 30;
+const DEFAULT_MIN_CHUNK_MINUTES = 30;
 const DEFAULT_FLEXIBILITY_DAYS = 0;
+const TIME_PICKER_STEP_MINUTES = 15;
+const MAX_NOTE_CHARS = 200;
+/** Soft location preference among allowed places. */
+const LOCATION_PREF_LEVELS = ['avoid','little','high'];
+const LOCATION_PREF_SCORE = {avoid:-40, little:12, high:36};
 const DEFAULT_PRIORITY = 2; // P0 (critical) .. P5 (someday); new items default to P2
 const PRIORITY_LABELS = ['P0','P1','P2','P3','P4','P5'];
 const DEFAULT_AVAILABILITY_MINUTES = [240,90,90,90,90,90,240];
@@ -90,6 +97,11 @@ const DEFAULT_SORT_SETTINGS = {
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
   showWeekOnHome:true,
+  // How blocked times + travel between places appear on home:
+  //   'cards'     → card surfaces for the whole day (default)
+  //   'cards12h'  → same cards, but only for the next 12 hours
+  //   'text12h'   → plain muted background lines for the next 12 hours
+  homeExtraMode:'cards12h',
   reachAssist:true,
   reminders:false,
   pushDetailed:false,
@@ -103,7 +115,9 @@ const DEFAULT_SORT_SETTINGS = {
   locationOptIn:false,           // user granted geolocation (coords never persisted)
   availabilityMinutes:DEFAULT_AVAILABILITY_MINUTES,
   availabilityOverrides:{},
-  blockedTimes:DEFAULT_BLOCKED_TIMES
+  blockedTimes:DEFAULT_BLOCKED_TIMES,
+  /** Per-day cancelled block instances: {'YYYY-MM-DD':['label|start|end', ...]} */
+  cancelledBlocks:{}
 };
 const LIMIT_MODE_POLICY = {
   quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01,trend:0.08,trendEarly:0},

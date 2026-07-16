@@ -8,9 +8,11 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
- * A single log entry. Either a timestamp (ms since epoch) for an actual
- * occurrence, or a planned-future entry wrapping that timestamp.
- * @typedef {(number|{ts:number,plan:true})} LogEntry
+ * A single log entry. Either a bare timestamp (ms) for an actual occurrence,
+ * a planned-future entry, or an enriched actual with optional numeric value
+ * (e.g. weight), minutes (chunk progress on breakable items), and/or a
+ * free-form text note.
+ * @typedef {(number|{ts:number,plan:true}|{ts:number,value?:number,minutes?:number,note?:string})} LogEntry
  */
 
 /**
@@ -20,7 +22,7 @@
  * @typedef {Object} Habit
  * @property {string} name                    — display name (max 60 chars)
  * @property {'keepup'|'reduce'|'zero'|'task'} type  — build / limit / stop / one-off
- * @property {number|null} target             — rhythm in days; null when type in zero/task
+ * @property {number|null} target             — rhythm in days (may be fractional, e.g. 3.5 = 2×/7d); null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon
  * @property {boolean} pinned                 — stays above auto-sorted habits
@@ -37,6 +39,10 @@
  * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
+ * @property {boolean} breakable              — when true, planner may split duration into chunks of at least minChunkMinutes
+ * @property {number} minChunkMinutes         — minimum chunk length when breakable; 15-720
+ * @property {number|null} timerAutoStopMinutes — optional live-timer auto-stop (null = use durationMinutes)
+ * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
  * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
@@ -50,7 +56,8 @@
  *
  * — LocationFields (optional, on every type; empty locationIds = anywhere) —
  * @property {string[]} locationIds           — allowed Location ids (empty = anywhere, the default)
- * @property {string|null} preferredLocationId — the preferred id when multiple are allowed (null = none); must be a member of locationIds
+ * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
+ * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
  */
 
 /**
@@ -106,6 +113,7 @@
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
  * @property {{label:string,days:number[],start:number,end:number}[]} blockedTimes — recurring unavailable blocks
+ * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
  */
 
 /**
@@ -182,6 +190,7 @@ function loadSortSettings(){
     merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
+    merged.cancelledBlocks = normalizeCancelledBlocks(merged.cancelledBlocks);
     return merged;
   }catch{
     return {...DEFAULT_SORT_SETTINGS};
@@ -201,6 +210,7 @@ function saveSortSettings(settings){
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
   next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
+  next.cancelledBlocks = normalizeCancelledBlocks(next.cancelledBlocks);
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }
@@ -236,7 +246,10 @@ function normalize(items){
     // longer present in the registry) happens once at startup via
     // reconcileLocations(), after both habits and settings have loaded.
     const locationIds = normalizeLocationIds(raw.locationIds);
+    const locationPrefs = normalizeLocationPrefs(raw.locationPrefs, locationIds, raw.preferredLocationId);
+    const preferredLocationId = primaryPreferredLocationId(locationPrefs, locationIds);
     const isRhythmHabit = type === 'keepup' || type === 'reduce';
+    const breakable = Boolean(raw.breakable);
     const h = {
       name: raw.name || '',
       type,
@@ -245,7 +258,9 @@ function normalize(items){
         : clampRhythmValue(raw.target || 7),
       dueDate,
       hardDue,
-      markDone,
+      markDone: breakable && !Object.prototype.hasOwnProperty.call(raw,'markDone')
+        ? false
+        : markDone,
       eventTime,
       planByDate: isRhythmHabit ? clampDayTimestamp(raw.planByDate) : null,
       createdAt: raw.createdAt || null,
@@ -265,9 +280,14 @@ function normalize(items){
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
       flexibilityDays:clampFlexibility(raw.flexibilityDays),
       durationMinutes:clampDuration(raw.durationMinutes),
+      breakable,
+      minChunkMinutes:clampMinChunk(raw.minChunkMinutes),
+      timerAutoStopMinutes:normalizeTimerAutoStop(raw.timerAutoStopMinutes),
+      trackValue:Boolean(raw.trackValue),
       priority:clampPriority(raw.priority),
       locationIds,
-      preferredLocationId:normalizePreferredLocation(raw.preferredLocationId,locationIds)
+      locationPrefs,
+      preferredLocationId
     };
     h.lastLog = latestActualLog(h.logs);
     return h;
@@ -438,15 +458,97 @@ function sweepAutoDoneTasks(){
 
 function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024);}
 function clampRhythmValue(value){
-  const n = parseInt(value,10);
-  if(isNaN(n))return 7;
-  return Math.max(1,Math.min(MAX_RHYTHM_DAYS,n));
+  const n = Number(value);
+  if(!Number.isFinite(n))return 7;
+  const rounded = Math.round(n * 2) / 2;
+  return Math.max(MIN_RHYTHM_DAYS,Math.min(MAX_RHYTHM_DAYS,rounded));
+}
+/** PURE: split a (possibly fractional) target into {times, days} for UI. */
+function rhythmParts(target){
+  const t = clampRhythmValue(target);
+  if(Math.abs(t - Math.round(t)) < 0.01)return {times:1,days:Math.max(1,Math.round(t))};
+  for(let times = 2; times <= 14; times += 1){
+    const days = Math.round(t * times);
+    if(days >= 1 && days <= MAX_RHYTHM_DAYS && Math.abs(days / times - t) < 0.051){
+      return {times,days};
+    }
+  }
+  const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,Math.round(t * 2)));
+  return {times:2,days};
+}
+/** PURE: build target days from "times in N days". */
+function targetFromRhythmParts(times,days){
+  const t = Math.max(1,Math.min(30,parseInt(times,10) || 1));
+  const d = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt(days,10) || 7));
+  return clampRhythmValue(d / t);
+}
+/** PURE: card/meta label for a rhythm target. */
+function formatRhythmLabel(target){
+  if(target == null)return '';
+  const {times,days} = rhythmParts(target);
+  return times === 1 ? `${days}d` : `${times}×/${days}d`;
 }
 function clampFlexibility(value){
   return Math.max(0,Math.min(60,parseInt(value,10) || DEFAULT_FLEXIBILITY_DAYS));
 }
 function clampDuration(value){
   return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
+}
+function clampMinChunk(value){
+  return Math.max(TIME_PICKER_STEP_MINUTES,Math.min(720,parseInt(value,10) || DEFAULT_MIN_CHUNK_MINUTES));
+}
+function normalizeTimerAutoStop(value){
+  if(value === null || value === undefined || value === '')return null;
+  const n = parseInt(value,10);
+  if(!Number.isFinite(n) || n <= 0)return null;
+  return Math.max(1,Math.min(720,n));
+}
+/** PURE: split total minutes into chunks; leftover below min stays as last chunk. */
+function planChunks(totalMinutes,minChunkMinutes){
+  const total = clampDuration(totalMinutes);
+  const min = clampMinChunk(minChunkMinutes);
+  if(total <= min)return [total];
+  const chunks = [];
+  let left = total;
+  while(left > min){
+    chunks.push(min);
+    left -= min;
+  }
+  if(left > 0)chunks.push(left);
+  return chunks;
+}
+/** PURE: minutes already logged toward a breakable session (sum of log.minutes). */
+function loggedChunkMinutes(h){
+  if(!h)return 0;
+  return normalizeLogs(h.logs).reduce((sum,log)=>{
+    if(isPlanLog(log))return sum;
+    const m = Number(log && log.minutes);
+    return sum + (Number.isFinite(m) && m > 0 ? m : 0);
+  },0);
+}
+/** PURE: remaining minutes for a breakable item (full duration when nothing logged). */
+function remainingDurationMinutes(h){
+  const total = clampDuration(h && h.durationMinutes);
+  if(!h || !h.breakable)return total;
+  return Math.max(0,total - loggedChunkMinutes(h));
+}
+/** PURE: next chunk sizes still needed for a breakable item. */
+function remainingChunks(h){
+  const left = remainingDurationMinutes(h);
+  if(left <= 0)return [];
+  if(!h || !h.breakable)return [left];
+  return planChunks(left,h.minChunkMinutes);
+}
+/** PURE: task fully complete? Breakable tasks need chunk minutes to cover duration
+ *  (or a full log without minutes). Non-breakable: any actual log. */
+function isTaskDone(h){
+  if(!h || h.type !== 'task')return false;
+  if(h.lastLog === null)return false;
+  if(!h.breakable)return true;
+  const logs = normalizeLogs(h.logs).filter(log=>!isPlanLog(log));
+  if(!logs.length)return false;
+  if(logs.some(log=>logMinutes(log) === null))return true;
+  return remainingDurationMinutes(h) <= 0;
 }
 // PURE: coerce a raw priority into the 0–5 band (P0 critical → P5 someday).
 // Missing/out-of-range values fall back to DEFAULT_PRIORITY so legacy records
@@ -536,6 +638,57 @@ function normalizeBlockedTimes(value){
     return {label,days,start,end,locationId};
   }).filter(Boolean).slice(0,24);
 }
+/** PURE: stable signature for a blocked-time instance on a given day. */
+function blockedInstanceKey(label,startMin,endMin){
+  return `${String(label || 'blocked').slice(0,24)}|${startMin}|${endMin}`;
+}
+/** PURE: coerce cancelled block map; drop keys older than 21 days. */
+function normalizeCancelledBlocks(value){
+  if(!value || typeof value !== 'object' || Array.isArray(value))return {};
+  const cutoff = dayStart(Date.now()) - 21 * 86400000;
+  const out = {};
+  for(const [key,list] of Object.entries(value)){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(key))continue;
+    const ts = Date.parse(`${key}T12:00:00`);
+    if(!Number.isFinite(ts) || ts < cutoff)continue;
+    const items = Array.isArray(list) ? list : [];
+    const seen = new Set();
+    out[key] = items.map(String).filter(sig=>{
+      if(!sig || seen.has(sig))return false;
+      seen.add(sig);
+      return true;
+    }).slice(0,48);
+  }
+  return out;
+}
+/** PURE: true if this block instance was cancelled for dayKey. */
+function isBlockedCancelled(dayKey,label,startMin,endMin,settings){
+  const map = normalizeCancelledBlocks(settings && settings.cancelledBlocks);
+  const list = map[dayKey] || [];
+  return list.includes(blockedInstanceKey(label,startMin,endMin));
+}
+/** HYBRID: cancel one block occurrence for a day; frees agenda for that instance. */
+function cancelBlockedInstance(dayKey,label,startMin,endMin){
+  const settings = loadSortSettings();
+  const map = normalizeCancelledBlocks(settings.cancelledBlocks);
+  const key = blockedInstanceKey(label,startMin,endMin);
+  const list = new Set(map[dayKey] || []);
+  list.add(key);
+  map[dayKey] = [...list];
+  saveSortSettings({...settings,cancelledBlocks:map});
+  return true;
+}
+/** HYBRID: undo a cancel — re-block the instance so the agenda avoids that time again. */
+function restoreBlockedInstance(dayKey,label,startMin,endMin){
+  const settings = loadSortSettings();
+  const map = normalizeCancelledBlocks(settings.cancelledBlocks);
+  if(!map[dayKey])return false;
+  const key = blockedInstanceKey(label,startMin,endMin);
+  map[dayKey] = map[dayKey].filter(k=>k !== key);
+  if(!map[dayKey].length)delete map[dayKey];
+  saveSortSettings({...settings,cancelledBlocks:map});
+  return true;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // LOCATIONS — PURE. Registry validation, the layered hours model, and the
@@ -567,6 +720,49 @@ function normalizePreferredLocation(value,ids){
   if(!id)return null;
   const allowed = Array.isArray(ids) ? ids : [];
   return allowed.includes(id) ? id : null;
+}
+/** PURE: coerce locationPrefs; migrates legacy preferredLocationId → high. */
+function normalizeLocationPrefs(rawPrefs,ids,legacyPreferred){
+  const allowed = Array.isArray(ids) ? ids : [];
+  const allowedSet = new Set(allowed);
+  const out = {};
+  if(rawPrefs && typeof rawPrefs === 'object' && !Array.isArray(rawPrefs)){
+    for(const [id,level] of Object.entries(rawPrefs)){
+      const clean = cleanLocationId(id);
+      if(!clean || !allowedSet.has(clean))continue;
+      if(LOCATION_PREF_LEVELS.includes(level))out[clean] = level;
+    }
+  }
+  const legacy = normalizePreferredLocation(legacyPreferred,allowed);
+  if(legacy && !out[legacy])out[legacy] = 'high';
+  return out;
+}
+/** PURE: preference level for a location id on a habit (null = neutral allowed). */
+function locationPrefLevel(h,locationId){
+  const id = cleanLocationId(locationId);
+  if(!id || !h)return null;
+  const level = h.locationPrefs && h.locationPrefs[id];
+  return LOCATION_PREF_LEVELS.includes(level) ? level : null;
+}
+/** PURE: soft score nudge for a location preference level. */
+function locationPrefScore(level){
+  return LOCATION_PREF_SCORE[level] || 0;
+}
+/** PURE: best single preferred id (high > little); null if none. */
+function primaryPreferredLocationId(prefs,ids){
+  const allowed = Array.isArray(ids) ? ids : [];
+  const map = prefs && typeof prefs === 'object' ? prefs : {};
+  const high = allowed.find(id=>map[id] === 'high');
+  if(high)return high;
+  const little = allowed.find(id=>map[id] === 'little');
+  return little || null;
+}
+/** PURE: snap minutes-from-midnight to the time-picker grid (15 min). */
+function snapTimeMinutes(value,step = TIME_PICKER_STEP_MINUTES){
+  const n = normalizeTimeMinutes(value);
+  if(n === null)return null;
+  const s = Math.max(1,parseInt(step,10) || TIME_PICKER_STEP_MINUTES);
+  return Math.max(0,Math.min(1439,Math.round(n / s) * s));
 }
 // PURE: weekday list for closedDays. Unlike normalizeAllowedWeekdays this does
 // NOT collapse all-7 to [] (a location closed every day is valid, if unusual).
@@ -676,6 +872,10 @@ function normalizeTravelCache(value){
 function normalizeTravelMode(value){
   return TRAVEL_MODES.includes(value) ? value : DEFAULT_TRAVEL_MODE;
 }
+// PURE: normalize the home blocked/travel presentation mode.
+function normalizeHomeExtraMode(value){
+  return (value === 'cards12h' || value === 'text12h') ? value : 'cards';
+}
 // PURE: true iff the location has any hours constraint at all. Locations with
 // no hours resolve to 24h every day and skip all window math — the "Home"
 // case stays literally zero-cost.
@@ -749,7 +949,7 @@ function effectiveLocationWindow(h,loc,weekday){
   return intersectWindows({start:h.allowedTimeStart,end:h.allowedTimeEnd},locWin);
 }
 // PURE: startup sweep — drop any locationIds from each habit that are no longer
-// in the registry, and null out preferredLocationId if it's no longer allowed.
+// in the registry, and prune locationPrefs / preferredLocationId accordingly.
 // Returns {data,changed} so the caller persists only when something moved.
 function reconcileLocations(data,settings){
   const registry = normalizeLocationRegistry(settings && settings.locations);
@@ -758,11 +958,15 @@ function reconcileLocations(data,settings){
   const next = (Array.isArray(data) ? data : []).map(h=>{
     const prev = Array.isArray(h.locationIds) ? h.locationIds : [];
     const locationIds = prev.filter(id=>valid.has(id));
+    const locationPrefs = normalizeLocationPrefs(h.locationPrefs,locationIds,h.preferredLocationId);
+    const preferredLocationId = primaryPreferredLocationId(locationPrefs,locationIds);
     const prevPref = h.preferredLocationId || null;
-    const preferredLocationId = prevPref && locationIds.includes(prevPref) ? prevPref : null;
-    const moved = locationIds.length !== prev.length || preferredLocationId !== prevPref;
+    const prevPrefs = JSON.stringify(h.locationPrefs || {});
+    const moved = locationIds.length !== prev.length
+      || preferredLocationId !== prevPref
+      || JSON.stringify(locationPrefs) !== prevPrefs;
     if(moved)changed = true;
-    return moved ? {...h,locationIds,preferredLocationId} : h;
+    return moved ? {...h,locationIds,locationPrefs,preferredLocationId} : h;
   });
   return {data:next,changed};
 }
@@ -819,6 +1023,21 @@ function logTime(log){
 function isPlanLog(log){
   return Boolean(log && typeof log === 'object' && log.plan);
 }
+function logValue(log){
+  if(!log || typeof log !== 'object' || isPlanLog(log))return null;
+  const n = Number(log.value);
+  return Number.isFinite(n) ? n : null;
+}
+function logMinutes(log){
+  if(!log || typeof log !== 'object' || isPlanLog(log))return null;
+  const n = Number(log.minutes);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+/** PURE: free-form text note on an actual log entry (trimmed, max 200 chars). */
+function logNote(log){
+  if(!log || typeof log !== 'object' || isPlanLog(log))return '';
+  return String((log && log.note) || '').slice(0,MAX_NOTE_CHARS).trim();
+}
 function normalizeLogs(logs){
   if(!Array.isArray(logs))return [];
   return logs
@@ -826,11 +1045,33 @@ function normalizeLogs(logs){
       const ts = logTime(log);
       if(!ts)return null;
       if(isPlanLog(log) || (typeof log === 'number' && ts > Date.now()))return {ts,plan:true};
+      if(typeof log === 'object'){
+        const entry = {ts};
+        const value = logValue(log);
+        const minutes = logMinutes(log);
+        const note = logNote(log);
+        if(value !== null)entry.value = value;
+        if(minutes !== null)entry.minutes = minutes;
+        if(note)entry.note = note;
+        if(entry.value !== undefined || entry.minutes !== undefined || entry.note !== undefined)return entry;
+      }
       return ts;
     })
     .filter(Boolean)
     .sort((a,b)=>logTime(a)-logTime(b))
     .slice(-MAX_LOGS);
+}
+/** PURE: build an actual log entry, optionally with value / chunk minutes / note. */
+function makeActualLog(ts,opts = {}){
+  const entry = {ts};
+  const value = Number(opts.value);
+  const minutes = Number(opts.minutes);
+  if(Number.isFinite(value))entry.value = value;
+  if(Number.isFinite(minutes) && minutes > 0)entry.minutes = Math.round(minutes);
+  const note = String(opts.note || opts.text || '').slice(0,MAX_NOTE_CHARS).trim();
+  if(note)entry.note = note;
+  if(entry.value === undefined && entry.minutes === undefined && entry.note === undefined)return ts;
+  return entry;
 }
 function makeLog(ts){
   return dateKey(ts) > dateKey(Date.now()) ? {ts,plan:true} : ts;

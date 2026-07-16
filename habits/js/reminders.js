@@ -31,8 +31,11 @@ function reminderLocationSuffix(h){
   const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
   const ids = normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return '';
-  const pref = normalizePreferredLocation(h.preferredLocationId,ids);
-  const id = pref || ids[0];
+  const pref = primaryPreferredLocationId(h.locationPrefs,ids) || normalizePreferredLocation(h.preferredLocationId,ids);
+  // Prefer a non-avoid location for the label when no explicit preference.
+  const nonAvoid = ids.filter(id=>locationPrefLevel(h,id) !== 'avoid');
+  const pool = nonAvoid.length ? nonAvoid : ids;
+  const id = pref || pool[0];
   const loc = registry.find(l=>l.id === id);
   return loc ? ` · ${loc.name}` : '';
 }
@@ -207,7 +210,6 @@ function renderReminderBanner(items){
     </button>`;
   $('reminder-go').addEventListener('click',()=>{
     if(count === 1 && typeof openDetail === 'function')openDetail(first.i);
-    else if(typeof openToday === 'function')openToday();
   });
   $('reminder-dismiss').addEventListener('click',()=>dismissReminderBanner(items));
 }
