@@ -885,9 +885,19 @@ function weekPreferencePenalty(h,fit,day,registry){
 // succeeds under hard constraints; score then picks among feasible days.
 // Breakable tasks place one chunk per pass — each chunk is scored and
 // committed independently so a long task can spread across days/time.
-function assignWeekCandidatesByPlacement(candidates,dayStates,settings){
+//
+// locHints (optional): Map<dayBase, Array<{locId, idx}>> captured from a prior
+// greedy pass. When set, a co-location bonus pulls each candidate toward a day
+// where that pass already sent a NEARBY place — so two far-from-home but close-
+// to-each-other errands share one trip even when one is day-pinned and the
+// flexible one is processed before its partner (the case a single greedy pass
+// can't see). The bonus is the commute saved (daySeed→loc minus the inter-hop),
+// and only fires when the partner is genuinely closer than the day's origin, so
+// near-home work is completely unaffected.
+function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints){
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
+  const mode = dayStates[0] ? dayStates[0].mode : normalizeTravelMode(settings.defaultTravelMode);
   candidates.sort((a,b)=>a.priority - b.priority || b.urgency - a.urgency || b.score - a.score);
   let totalAssigned = 0;
   for(const c of candidates){
@@ -905,9 +915,14 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings){
         if(!fit)continue;
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const travel = fit.edge.seconds || 0;
-        const clusterBonus = travel === 0 ? 600 : 0;
+        // Smooth cluster bonus: strongest at zero travel (already on-site) and
+        // tapering so a short hop between near-each-other places still earns a
+        // nudge — not just an exact same-location match.
+        const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
+        const coLocHint = colocateHintBonus(state,fit.locId,c.i,locHints,registry,mode);
         const score = travel
           - clusterBonus
+          - coLocHint
           + flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
           + weekPreferencePenalty(c.h,fit,state,registry);
         if(!best || score < best.score)best = { state, fill, fit, score };
@@ -925,8 +940,57 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings){
   return totalAssigned;
 }
 
+// PURE: co-location hint bonus for placing at locId on this day. Rewards joining
+// a day where a prior pass placed a NEARBY place (a different candidate), by the
+// commute that would be saved. Ignores the candidate's own prior placement so it
+// can move toward a partner rather than just staying put. Returns 0 when there
+// is no day origin to measure a commute against.
+function colocateHintBonus(state,locId,ownIdx,locHints,registry,mode){
+  if(!locId || !locHints)return 0;
+  const arr = locHints.get(state.dayBase);
+  if(!arr || !arr.length)return 0;
+  const origin = state.seedLocId;
+  if(!origin)return 0;
+  const homeCommute = travelEdgeBetweenIds(origin,locId,registry,mode).seconds;
+  if(homeCommute <= 0)return 0;
+  let best = 0;
+  for(const ent of arr){
+    if(ent.idx === ownIdx)continue;               // ignore our own prior placement
+    if(ent.locId === locId){ best = Math.max(best, homeCommute); continue; }
+    const inter = travelEdgeBetweenIds(ent.locId,locId,registry,mode).seconds;
+    // Co-located only when the partner is much closer than the day's origin.
+    if(inter < homeCommute * 0.5)best = Math.max(best, homeCommute - inter);
+  }
+  return best;
+}
+
+// PURE: capture, per day, the locations a placement pass committed (with the
+// candidate data-index so a candidate can ignore its own prior spot). Feeds the
+// co-location hint used by the second pass.
+function collectLocationHints(dayStates){
+  const map = new Map();
+  for(const state of dayStates){
+    for(const f of state.fills){
+      if(!f.fit.locId)continue;
+      let arr = map.get(state.dayBase);
+      if(!arr){ arr = []; map.set(state.dayBase, arr); }
+      arr.push({ locId:f.fit.locId, idx:f.fill.i });
+    }
+  }
+  return map;
+}
+
 // PURE: build a 7-day agenda via placement-backed assignment. Every timed row
 // on a day satisfied hard constraints at commit time.
+//
+// Two passes: (1) a greedy placement to discover where each location tends to
+// land, then (2) a fresh placement biased toward days that sent a co-located
+// partner. The second pass is what makes two far-from-home but close-together
+// errands share one trip even when one errand is day-pinned and the flexible
+// one is processed first — a single greedy pass cannot see a partner that has
+// not been placed yet. Pass 2 reuses the same eligibility/priority/feasibility
+// gates, only the day-preference score changes, so nothing gets placed that
+// wouldn't have been placeable before.
 function buildWeekAgenda(data,settings,numDays = 7){
   const todayBase = dayStart(Date.now());
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
@@ -935,7 +999,7 @@ function buildWeekAgenda(data,settings,numDays = 7){
     const dayBase = todayBase + offset * 86400000;
     days.push(buildDayAgenda(data,settings,dayBase,{weekMode:true}));
   }
-  const dayStates = days.map(day=>createDayPlacementState(day,settings,{
+  const makeStates = () => days.map(day=>createDayPlacementState(day,settings,{
     dayBase:day.dayBase,
     weekday:day.weekday,
     weekMode:true
@@ -966,7 +1030,16 @@ function buildWeekAgenda(data,settings,numDays = 7){
       eligible
     });
   }
-  assignWeekCandidatesByPlacement(candidates,dayStates,settings);
+
+  // Pass 1 — greedy discovery of each location's natural day.
+  let dayStates = makeStates();
+  assignWeekCandidatesByPlacement(candidates,dayStates,settings,null);
+  const locHints = collectLocationHints(dayStates);
+
+  // Pass 2 — re-place from clean states, pulled toward co-located partners.
+  days.forEach(d=>{ d.agendaItems = []; });
+  dayStates = makeStates();
+  assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints);
 
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){
