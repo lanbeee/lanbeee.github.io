@@ -1213,13 +1213,11 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
     }else{
       locationAllowCallback = ()=>{
         renderPresencePickerBody();
-        renderIAmAtPicker();
         render();
       };
       openLocationPermissionSheet();
     }
     renderPresencePickerBody();
-    renderIAmAtPicker();
     render();
     return;
   }
@@ -1227,7 +1225,6 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
   if(!btn)return;
   setManualLocationId(btn.dataset.presencePick);
   renderPresencePickerBody();
-  renderIAmAtPicker();
   render();
 });
 $('location-access-enable')?.addEventListener('click',()=>{
@@ -1238,7 +1235,6 @@ $('location-access-enable')?.addEventListener('click',()=>{
   }
   locationAllowCallback = ()=>{
     renderLocationAccessControl();
-    renderIAmAtPicker();
     render();
   };
   openLocationPermissionSheet();

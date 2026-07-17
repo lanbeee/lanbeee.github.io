@@ -708,7 +708,7 @@ function defaultSettings(overrides = {}) {
       ],
       defaultSettings({ availabilityOverrides: { [todayStr]: 100, [targetKeyStr]: 30 } })
     );
-    const rows = await timelineFor(atTime(9, 0));
+    const rows = await timelineFor(atTime(9, 0), true);
     const fill = rows.find(r => r.name === 'Laundry upcoming');
     check('6b do-early item dropped from agenda when today is full', !fill, fill ? `unexpected start=${fill.startLabel}` : '');
 

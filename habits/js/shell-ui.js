@@ -554,6 +554,7 @@ function updateHeaderOnScroll(){
 
 // PURE: resolves forgiving button target from an event target
 function forgivingButtonTarget(target){
+  if(!target || typeof target.closest !== "function")return null;
   const btn = target.closest('button');
   if(!btn || btn.closest('.ting-card'))return null;
   if(btn.closest('#settings-sheet'))return null;

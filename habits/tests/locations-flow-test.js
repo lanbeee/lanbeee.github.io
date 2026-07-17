@@ -173,9 +173,7 @@ async function openSettings(page){
       travel:rows.filter(r=>r.kind==='travel').length,
       withLoc:rows.filter(r=>r.kind==='fill' && r.locationId).length,
       used:ag.usedMinutes,
-      remaining:ag.remainingMinutes,
-      iamAt:!!document.querySelector('#iam-at-row:not([hidden])'),
-      iamChips:document.querySelectorAll('#iam-at-row [data-iam-at]').length
+      remaining:ag.remainingMinutes
     };
   });
   console.log(agenda);
@@ -187,17 +185,8 @@ async function openSettings(page){
   }else{
     console.log('  skip: withLoc check (low remaining day capacity)');
   }
-  // I-am-at picker checks skipped: #iam-at-row element was removed from HTML
-  // as part of the today-sheet removal. The renderIAmAtPicker function still
-  // exists but requires this element which no longer exists in the DOM.
-  if(agenda.iamAt && agenda.iamChips >= 5){
-    await page.locator('#iam-at-row [data-iam-at="sample-gym"]').click();
-    await page.waitForTimeout(300);
-    const afterGym = await page.evaluate(() => loadSortSettings().lastKnownLocationId);
-    assert(afterGym === 'sample-gym', 'I-am-at persists lastKnownLocationId');
-  }else{
-    console.log('  skip: I-am-at picker checks (#iam-at-row not in DOM)');
-  }
+  // NOTE: the legacy "I am at" row (#iam-at-row) was retired with the today
+  // sheet; the equivalent presence-picker flow is covered above in [B].
 
   // Home today section should show thin travel cards when consecutive items differ.
   const homeTravel = await page.evaluate(() => {

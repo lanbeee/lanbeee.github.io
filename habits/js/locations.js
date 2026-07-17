@@ -404,7 +404,6 @@ function startLocationWatch(){
       const matched = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
       if(matched){
         if(typeof render === 'function')render();
-        if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
         if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
       }
     },
@@ -447,7 +446,6 @@ function requestLocationAccess(opts = {}){
         startLocationWatch();
         if(!quiet && typeof showToast === 'function')showToast('location on');
         if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
-        if(typeof renderIAmAtPicker === 'function')renderIAmAtPicker();
         if(typeof render === 'function')render();
         resolve('granted');
       },
@@ -632,31 +630,6 @@ function setManualLocationId(id){
   if(typeof updateSortSetting === 'function')updateSortSetting({lastKnownLocationId:clean},{renderNow:false});
   else saveSortSettings({...s,lastKnownLocationId:clean});
   if(typeof onTravelRefresh === 'function')onTravelRefresh({manual:true});
-}
-
-// RENDER: "I am at" chip row for the Today sheet (manual fallback / override).
-function renderIAmAtPicker(){
-  const wrap = $('iam-at-row');
-  if(!wrap)return;
-  const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
-  if(!registry.length){
-    wrap.innerHTML = '';
-    wrap.hidden = true;
-    return;
-  }
-  const presence = locationPresence(registry);
-  const current = currentLocationId();
-  wrap.hidden = false;
-  const status = presence.kind === 'at'
-    ? `at ${presence.name}`
-    : presence.kind === 'near'
-      ? `near ${presence.name}`
-      : 'away';
-  wrap.innerHTML = `<span class="loc-field-label">I am at <b class="iam-at-status ${presence.kind}">${escapeHtml(status)}</b></span>` + registry.map(loc=>{
-    const on = current === loc.id;
-    const gpsAt = presence.gps && presence.kind === 'at' && presence.id === loc.id;
-    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${gpsAt ? 'gps-matched' : ''}" data-iam-at="${escapeHtml(loc.id)}">${escapeHtml(loc.name)}</button>`;
-  }).join('') + `<button type="button" class="mini-text-btn" id="iam-at-gps">use GPS</button>`;
 }
 
 // RENDER: compact presence picker used from the home status chip.
