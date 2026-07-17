@@ -110,6 +110,7 @@
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
  * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch
+ * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
  * @property {{label:string,days:number[],start:number,end:number}[]} blockedTimes — recurring unavailable blocks
@@ -187,6 +188,7 @@ function loadSortSettings(){
     merged.defaultTravelMode = normalizeTravelMode(merged.defaultTravelMode);
     merged.lastKnownLocationId = cleanLocationId(merged.lastKnownLocationId) || null;
     merged.locationOptIn = Boolean(merged.locationOptIn);
+    merged.pinnedLocationId = cleanLocationId(merged.pinnedLocationId) || null;
     merged.availabilityMinutes = normalizeAvailability(merged.availabilityMinutes);
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
@@ -207,6 +209,7 @@ function saveSortSettings(settings){
   next.defaultTravelMode = normalizeTravelMode(next.defaultTravelMode);
   next.lastKnownLocationId = cleanLocationId(next.lastKnownLocationId) || null;
   next.locationOptIn = Boolean(next.locationOptIn);
+  next.pinnedLocationId = cleanLocationId(next.pinnedLocationId) || null;
   next.availabilityMinutes = normalizeAvailability(next.availabilityMinutes);
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
   next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
@@ -493,6 +496,9 @@ function clampFlexibility(value){
 }
 function clampDuration(value){
   return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
+}
+function clampTimes(value){
+  return Math.max(1,Math.min(30,parseInt(value,10) || 1));
 }
 function clampMinChunk(value){
   return Math.max(TIME_PICKER_STEP_MINUTES,Math.min(720,parseInt(value,10) || DEFAULT_MIN_CHUNK_MINUTES));

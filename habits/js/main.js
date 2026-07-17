@@ -610,9 +610,14 @@ function bindCompactNumber(id,clamp,options={}){
 
 bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
 bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
+bindCompactNumber('detail-times',clampTimes,{maxLength:2});
 $('ting-tag-chips')?.addEventListener('click',e=>{
   if(e.target.closest('[data-topic-add]')){
     beginNewTopicInput('ting-tag-chips');
+    return;
+  }
+  if(e.target.closest('[data-location-add]')){
+    if(typeof openLocationPicker === 'function')openLocationPicker();
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){
@@ -624,6 +629,21 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
 $('detail-tag-chips')?.addEventListener('click',e=>{
   if(e.target.closest('[data-topic-add]')){
     beginNewTopicInput('detail-tag-chips');
+    return;
+  }
+  if(e.target.closest('[data-location-add]')){
+    // Open the place picker; on save, auto-select the new place on this habit.
+    if(typeof openLocationPicker === 'function'){
+      openLocationPicker({
+        onCreated:id=>{
+          const wrap = 'detail-tag-chips';
+          const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
+          const prefs = selectedLocationPrefsFrom(wrap);
+          renderTagChips(wrap,selectedTopicsFrom(wrap),selected,null,prefs);
+          setDetailDirty();
+        }
+      });
+    }
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){
@@ -1207,6 +1227,8 @@ $('home-tag-filter')?.addEventListener('click',e=>{
 $('presence-picker-chips')?.addEventListener('click',async e=>{
   const gps = e.target.closest('[data-presence-gps]');
   if(gps){
+    // "use GPS" = abandon any manual pin and let auto detection take over.
+    if(typeof clearPinnedLocation === 'function')clearPinnedLocation();
     const s = sortSettings || loadSortSettings();
     if(s.locationOptIn || currentCoord){
       await requestLocationAccess({quiet:false});
@@ -1229,8 +1251,11 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
 });
 $('location-access-enable')?.addEventListener('click',()=>{
   const s = sortSettings || loadSortSettings();
+  // Toggle behavior: if already on, this click turns auto detection off
+  // (the manual pin still applies for the home presence picker). Otherwise
+  // request permission + start the watch as before.
   if(s.locationOptIn || currentCoord){
-    requestLocationAccess({quiet:false,enableHighAccuracy:true});
+    if(typeof disableLocationAccess === 'function')disableLocationAccess();
     return;
   }
   locationAllowCallback = ()=>{

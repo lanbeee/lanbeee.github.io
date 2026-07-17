@@ -82,8 +82,12 @@ function selectedLocationPrefs(){
   return selectedLocationPrefsFrom('ting-tag-chips');
 }
 
-// RENDER: one shared chip row — places (teal) then topics (neutral).
-// Location cycle: off → on → little → high → avoid → off
+// RENDER: split chip layout — places on one horizontal-scroll row, topics on
+// another. Each row starts with its own "+ new" pill so a place or topic can
+// be created inline. The container keeps its id so the existing
+// selectedTopicsFrom / selectedLocationIdsFrom helpers (which walk by data
+// attribute, not by row) keep working unchanged.
+// Location pref cycle: off → on → little → high → avoid → off
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null){
   const wrap = $(containerId);
   if(!wrap)return;
@@ -106,8 +110,19 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     const on = selectedSet.has(topic.toLowerCase());
     return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
   }).join('');
-  wrap.innerHTML = locHtml + topicHtml;
-  wrap.appendChild(createAddTopicPill());
+  // Build via DOM (not innerHTML) so the pill buttons retain their dataset and
+  // event-less state cleanly. Order: place pill first, then topic pill.
+  wrap.innerHTML = '';
+  const locRow = document.createElement('div');
+  locRow.className = 'tag-row tag-row-places';
+  locRow.appendChild(createAddLocationPill());
+  locRow.insertAdjacentHTML('beforeend',locHtml);
+  const topicRow = document.createElement('div');
+  topicRow.className = 'tag-row tag-row-topics';
+  topicRow.appendChild(createAddTopicPill());
+  topicRow.insertAdjacentHTML('beforeend',topicHtml);
+  wrap.appendChild(locRow);
+  wrap.appendChild(topicRow);
 }
 
 // RENDER: draw selectable topic chips (legacy name — now renders the unified row)
@@ -192,23 +207,33 @@ function matchesHomeLocation(h,id){
   return ids.includes(id);
 }
 
-// HYBRID: one home filter row — presence status, then places, then topics
+// HYBRID: one home filter row — presence status, then places, then topics.
+// Each group only renders when at least one habit actually uses that
+// dimension — otherwise the row would just show redundant "all/no" chips.
 function renderHomeTagFilter(data){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
   const registry = locationOptions();
-  const topicChoices = homeTopicChoices(data);
-  const locChoices = homeLocationChoices(data);
-  const hasTopics = topicChoices.length > 1;
-  const hasLocs = locChoices.length > 1;
-  const hasPresence = registry.length > 0;
+  // "Real" usage = at least one habit carries this dimension. Without this
+  // gate, the row shows filler like "all places" + "anywhere" even when no
+  // habit has any location, which is just visual noise.
+  const usedTopicSet = new Set();
+  data.forEach(h=>normalizeTopics(h.topics).forEach(t=>usedTopicSet.add(t.toLowerCase())));
+  const usedLocSet = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
+  const hasTopics = usedTopicSet.size > 0;
+  const hasLocs = usedLocSet.size > 0;
+  const hasPresence = registry.length > 0 && hasLocs;
   if(!hasTopics && !hasLocs && !hasPresence){
     wrap.innerHTML = '';
     wrap.hidden = true;
     return;
   }
-  if(hasTopics && !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
-  if(hasLocs && !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
+  const topicChoices = homeTopicChoices(data);
+  const locChoices = homeLocationChoices(data);
+  // Reset stale filters: if the dimension is unused (or the chosen key is no
+  // longer present), fall back to 'all' so we never silently hide everything.
+  if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
+  if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
   wrap.hidden = false;
   let statusHtml = '';
   if(hasPresence && typeof locationPresence === 'function'){
@@ -348,6 +373,17 @@ function createAddTopicPill(){
   btn.dataset.topicAdd = '';
   btn.setAttribute('aria-label','new topic');
   btn.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i>new topic';
+  return btn;
+}
+
+// RENDER: build the add-place pill button (opens the location picker).
+function createAddLocationPill(){
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'topic-chip topic-chip-add location-chip-add';
+  btn.dataset.locationAdd = '';
+  btn.setAttribute('aria-label','new place');
+  btn.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i>new place';
   return btn;
 }
 

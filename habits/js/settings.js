@@ -427,12 +427,14 @@ function saveLocationPatch(index,patch){
 
 // HYBRID: add a location to the registry (called by the geocode pick, GPS, or a
 // manual entry). Generates a stable opaque id. Enforces MAX_LOCATIONS.
+// Returns the new id on success, or null on failure (so callers — e.g. the
+// detail-pane "+ new place" flow — can auto-select the freshly created place).
 function addLocation({name,address,lat,lng,emoji}){
   const cleanName = String(name || '').trim().slice(0,48);
-  if(!cleanName){ showToast('enter a name'); return false; }
-  if(!Number.isFinite(lat) || !Number.isFinite(lng)){ showToast('missing coordinates'); return false; }
+  if(!cleanName){ showToast('enter a name'); return null; }
+  if(!Number.isFinite(lat) || !Number.isFinite(lng)){ showToast('missing coordinates'); return null; }
   const locations = normalizeLocationRegistry(sortSettings.locations);
-  if(locations.length >= MAX_LOCATIONS){ showToast(`limit ${MAX_LOCATIONS} locations`); return false; }
+  if(locations.length >= MAX_LOCATIONS){ showToast(`limit ${MAX_LOCATIONS} locations`); return null; }
   const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `loc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   locations.push({
     id, name:cleanName,
@@ -445,7 +447,7 @@ function addLocation({name,address,lat,lng,emoji}){
   renderLocationControls();
   render();
   showToast(`added ${cleanName}`);
-  return true;
+  return id;
 }
 
 // HYBRID: remove a location, prune its travel edges, and sweep the dangling id
@@ -624,9 +626,13 @@ function ensureLocationPickerMap(lat,lng){
   setTimeout(()=>{ try{ if(pickerMap && gen === pickerMapGen)pickerMap.invalidateSize(); }catch{ /* ignore */ } },320);
 }
 
-// HYBRID: open add/edit place picker with map pin.
+// HYBRID: open add/edit place picker with map pin. `opts.onCreated(id)` fires
+// once after a brand-new place is saved, so callers (e.g. the detail-pane
+// "+ new place" pill) can auto-select it on the habit they came from.
+let pickerOnCreated = null;
 function openLocationPicker(opts = {}){
   pickerEditIndex = Number.isInteger(opts.index) ? opts.index : null;
+  pickerOnCreated = typeof opts.onCreated === 'function' ? opts.onCreated : null;
   const title = $('location-picker-title');
   if(title)title.textContent = pickerEditIndex != null ? 'edit pin' : 'add place';
   const nameEl = $('picker-name');
@@ -651,6 +657,7 @@ function closeLocationPicker(){
   closeSheet('location-picker-sheet');
   destroyLocationPickerMap();
   pickerEditIndex = null;
+  pickerOnCreated = null;
 }
 
 async function searchPickerLocations(){
@@ -734,8 +741,15 @@ function saveLocationPicker(){
     closeLocationPicker();
     return;
   }
-  const ok = addLocation({name,address,lat,lng});
-  if(ok)closeLocationPicker();
+  const id = addLocation({name,address,lat,lng});
+  if(id){
+    closeLocationPicker();
+    if(typeof pickerOnCreated === 'function'){
+      const cb = pickerOnCreated;
+      pickerOnCreated = null;
+      cb(id);
+    }
+  }
 }
 
 // Legacy stubs kept so old wiring does not throw if referenced.

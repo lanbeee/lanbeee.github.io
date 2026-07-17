@@ -390,8 +390,10 @@ function applyGeoPosition(pos,{updateAnchor = true} = {}){
   if(!pos || !pos.coords)return null;
   currentCoord = { lat:pos.coords.latitude, lng:pos.coords.longitude };
   if(updateAnchor){
+    // Seed lastKnown with the auto-detected match — but do NOT touch the
+    // manual pin (a pinned "I am at" still wins in currentLocationId).
     const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
-    if(id)setManualLocationId(id);
+    if(id)setAutoLocationId(id);
   }
   return currentCoord;
 }
@@ -529,23 +531,37 @@ async function confirmLocationPermissionAllow(){
   return status;
 }
 
-// RENDER: settings row showing location access state + enable button.
+// RENDER: settings row showing location access state + enable/turn-off button.
+// The button is a true toggle: when off it requests permission, when on it
+// stops the watch and clears the opt-in so the next session doesn't resume.
 function renderLocationAccessControl(){
   const statusEl = $('location-access-status');
   const btn = $('location-access-enable');
   if(!statusEl && !btn)return;
   const s = sortSettings || loadSortSettings();
-  let label = 'not enabled';
+  const on = s.locationOptIn || !!currentCoord;
+  let label = 'off · tap to enable';
   if(!window.isSecureContext)label = 'needs HTTPS';
   else if(!navigator.geolocation)label = 'not supported';
   else if(currentCoord)label = 'on · reading location';
   else if(s.locationOptIn)label = 'on · waiting for fix';
-  else label = 'off · tap to enable';
   if(statusEl)statusEl.textContent = label;
   if(btn){
     btn.hidden = !window.isSecureContext || !navigator.geolocation;
-    btn.textContent = (s.locationOptIn || currentCoord) ? 'refresh location' : 'enable location';
+    btn.textContent = on ? 'turn off' : 'enable location';
+    btn.dataset.on = on ? '1' : '';
   }
+}
+
+// IMPURE: turn auto detection off — stop the watch and clear opt-in. The
+// manual pin (if any) still applies, so the user keeps whatever place they
+// last picked from the home presence picker.
+function disableLocationAccess(){
+  stopLocationWatch();
+  currentCoord = null;
+  setLocationOptIn(false);
+  if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+  if(typeof render === 'function')render();
 }
 
 // PURE: nearest registry location within its radiusM, or null.
@@ -581,8 +597,16 @@ function closestLocation(lat,lng,registry){
 
 // PURE: presence for UI — at (inside radius or manual lastKnown), near (GPS
 // outside all radii), or away. Shared by home status chip + I-am-at picker.
+// A manually-pinned place (pinnedLocationId) wins over everything — that's
+// the whole point of pinning: a manual pick shouldn't be instantly undone by
+// the next GPS fix.
 function locationPresence(registry){
   const locs = normalizeLocationRegistry(registry != null ? registry : (sortSettings || {}).locations);
+  const pinned = cleanLocationId((sortSettings || {}).pinnedLocationId);
+  if(pinned){
+    const loc = locs.find(l=>l.id === pinned);
+    if(loc)return { kind:'at', id:loc.id, name:loc.name, metres:null, gps:false, pinned:true };
+  }
   const lastKnown = cleanLocationId((sortSettings || {}).lastKnownLocationId);
   if(currentCoord){
     const atId = matchLocationId(currentCoord.lat,currentCoord.lng,locs);
@@ -604,11 +628,14 @@ function locationPresence(registry){
   return { kind:'away', id:null, name:null, metres:null, gps:false };
 }
 
-// PURE: current matched location id (from live coord or lastKnown fallback).
-// Inside a geofence → that place. Otherwise prefer lastKnown (manual pick /
-// previous match). Only if neither exists, fall back to the nearest place so
-// a first GPS fix can still seed the agenda.
+// PURE: current matched location id (from pin, live coord, or lastKnown).
+// Precedence: pin (manual) → GPS geofence match → lastKnown (previous fix or
+// manual pick on older builds) → nearest place (so a first GPS fix can still
+// seed the agenda). Pinning is sticky: a manual "I am at" pick from the home
+// presence picker overrides auto detection until cleared.
 function currentLocationId(){
+  const pinned = cleanLocationId((sortSettings || {}).pinnedLocationId);
+  if(pinned)return pinned;
   if(currentCoord){
     const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
     if(id)return id;
@@ -622,14 +649,39 @@ function currentLocationId(){
   return null;
 }
 
-// IMPURE: set the manual "I am at" anchor (persists id only).
+// IMPURE: pin a manual "I am at" choice. The pin is sticky — it overrides
+// auto detection so a manual pick from the home presence picker isn't
+// immediately overwritten by the next GPS fix. Clear with clearPinnedLocation.
 function setManualLocationId(id){
+  const clean = cleanLocationId(id) || null;
+  const s = sortSettings || loadSortSettings();
+  if(s.pinnedLocationId === clean)return;
+  if(typeof updateSortSetting === 'function')updateSortSetting({pinnedLocationId:clean},{renderNow:false});
+  else saveSortSettings({...s,pinnedLocationId:clean});
+  if(typeof onTravelRefresh === 'function')onTravelRefresh({manual:true});
+}
+
+// IMPURE: clear the manual pin so auto detection takes over again (used by
+// the home picker's "use GPS" button).
+function clearPinnedLocation(){
+  const s = sortSettings || loadSortSettings();
+  if(s.pinnedLocationId == null)return;
+  if(typeof updateSortSetting === 'function')updateSortSetting({pinnedLocationId:null},{renderNow:false});
+  else saveSortSettings({...s,pinnedLocationId:null});
+  if(typeof onTravelRefresh === 'function')onTravelRefresh({manual:true});
+}
+
+// IMPURE: store an auto-detected (GPS) match as the lastKnown id. This does
+// NOT touch the manual pin — the pin still wins in currentLocationId(). Used
+// by applyGeoPosition so the watch can keep seeding lastKnown without
+// trampling a user's explicit "I am at" pick.
+function setAutoLocationId(id){
   const clean = cleanLocationId(id) || null;
   const s = sortSettings || loadSortSettings();
   if(s.lastKnownLocationId === clean)return;
   if(typeof updateSortSetting === 'function')updateSortSetting({lastKnownLocationId:clean},{renderNow:false});
   else saveSortSettings({...s,lastKnownLocationId:clean});
-  if(typeof onTravelRefresh === 'function')onTravelRefresh({manual:true});
+  if(typeof onTravelRefresh === 'function')onTravelRefresh({manual:false});
 }
 
 // RENDER: compact presence picker used from the home status chip.

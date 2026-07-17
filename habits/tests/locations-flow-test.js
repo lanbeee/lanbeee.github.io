@@ -116,13 +116,15 @@ async function openSettings(page){
   assert(pinVisible > 0, 'location pin labels on cards (got ' + pinVisible + ')');
   await page.locator('#home-tag-filter [data-home-location="all"]').click();
 
-  // Presence picker sets agenda anchor without filtering.
+  // Presence picker sets agenda anchor without filtering. Manual picks now
+  // pin into pinnedLocationId (sticky override of auto detection) rather
+  // than lastKnownLocationId, so they survive subsequent GPS fixes.
   await page.locator('#home-tag-filter [data-home-presence]').click();
   await page.waitForSelector('#presence-picker-sheet.open');
   await page.locator('#presence-picker-chips [data-presence-pick="sample-gym"]').click();
   await page.waitForTimeout(150);
-  const anchored = await page.evaluate(() => loadSortSettings().lastKnownLocationId);
-  assert(anchored === 'sample-gym', 'presence pick sets lastKnownLocationId');
+  const anchored = await page.evaluate(() => loadSortSettings().pinnedLocationId);
+  assert(anchored === 'sample-gym', 'presence pick pins pinnedLocationId');
   await page.locator('#presence-picker-close').click();
   await page.waitForTimeout(100);
 

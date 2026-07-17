@@ -549,9 +549,9 @@ body.fullpage-open .bottom-nav{
 
 #list{display:flex;flex-direction:column;gap:8px;padding:14px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
 .section-header{
-  display:block;color:var(--text3);font-size:11px;font-weight:700;
-  letter-spacing:0.04em;text-transform:uppercase;
-  padding:12px 3px 8px;line-height:1;margin-top:4px;
+  display:block;color:var(--text);font-size:11px;font-weight:800;
+  letter-spacing:0.06em;text-transform:uppercase;
+  padding:14px 3px 8px;line-height:1;margin-top:4px;
   border-top:0.5px solid var(--border);
   position:sticky;top:0;z-index:5;
   background:var(--bg);
@@ -989,6 +989,7 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .detail-page{
   flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;
   min-height:min(432px,calc(100dvh - 218px));margin-bottom:0;
+  min-width:0;
 }
 .detail-dots{display:flex;align-items:center;justify-content:center;gap:5px;margin:2px 0 12px;}
 .detail-dots span{width:6px;height:6px;border-radius:50%;background:var(--border2);opacity:0.7;}
@@ -1292,7 +1293,22 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .emoji-suggestion[hidden]{display:none;}
 .topic-chip-row,.topic-list{
   display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:-2px 0 12px;
+  min-width:0;
 }
+/* Split tag layout: one horizontal-scroll row for places, one for topics.
+   No wrapping inside each row — long lists scroll sideways like the home
+   filter row. The rows themselves stack (parent .topic-chip-row wraps). */
+.tag-row{
+  display:flex;align-items:center;gap:7px;flex-wrap:nowrap;
+  flex:0 0 100%;min-width:0;
+  overflow-x:auto;scroll-snap-type:x proximity;
+  -webkit-overflow-scrolling:touch;
+  margin:0 0 8px;padding:2px 0;
+  scrollbar-width:none;
+}
+.tag-row::-webkit-scrollbar{display:none;}
+.tag-row > .topic-chip{scroll-snap-align:start;flex-shrink:0;}
+.tag-row .topic-chip-add{flex-shrink:0;}
 .topic-chip,.schedule-chip,.monthday-chip{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text2);
   border-radius:999px;padding:7px 10px;font:inherit;font-size:12px;font-weight:650;
@@ -1314,12 +1330,12 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .topic-chip-input::placeholder{color:var(--text3);}
 .schedule-chip-row{
-  display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-2px 0 10px;
+  display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:-2px 0 10px;
 }
 .monthday-chip-row{
   display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:-2px 0 10px;
 }
-.schedule-chip{text-transform:lowercase;min-width:42px;}
+.schedule-chip{text-transform:lowercase;}
 .monthday-chip{
   width:100%;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;
   font-size:11.5px;font-variant-numeric:tabular-nums;
@@ -1515,7 +1531,7 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   grid-column:1 / -1;
   gap:5px;
 }
-.compact-days .schedule-chip{min-width:36px;padding:7px 8px;}
+.compact-days .schedule-chip{padding:7px 8px;}
 .blocked-time-row .mini-text-btn{align-self:start;}
 
 /* Locations (settings manager) */
@@ -2269,7 +2285,7 @@ body[data-pane-count="3"] #action-toast{
   .detail-page{min-height:min(392px,calc(100dvh - 210px));}
   .monthday-chip-row{gap:5px;}
   .monthday-chip{height:30px;font-size:11px;}
-  .schedule-chip{min-width:38px;padding-left:8px;padding-right:8px;}
+  .schedule-chip{padding-left:8px;padding-right:8px;}
   .about-block{padding:9px 10px;}
   .about-block p{font-size:12px;line-height:1.32;}
   .day-availability{grid-template-columns:1fr 72px;align-items:end;}

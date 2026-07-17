@@ -113,6 +113,7 @@ const DEFAULT_SORT_SETTINGS = {
   defaultTravelMode:DEFAULT_TRAVEL_MODE,
   lastKnownLocationId:null,
   locationOptIn:false,           // user granted geolocation (coords never persisted)
+  pinnedLocationId:null,         // a manually-pinned "I am at" id; takes precedence over auto detection
   availabilityMinutes:DEFAULT_AVAILABILITY_MINUTES,
   availabilityOverrides:{},
   blockedTimes:DEFAULT_BLOCKED_TIMES,
