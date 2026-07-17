@@ -18,11 +18,11 @@ async function addTestHabit(page, name, type, opts = {}){
   await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
 }
 
-async function scrollDetailToSchedule(page){
-  await page.evaluate(() => {
+async function scrollDetailToSchedule(page, paneIndex = 2){
+  await page.evaluate((idx) => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager) pager.scrollTo({ left: pager.clientWidth * 2, behavior: 'instant' });
-  });
+    if(pager) pager.scrollTo({ left: pager.clientWidth * idx, behavior: 'instant' });
+  }, paneIndex);
   await page.waitForTimeout(200);
 }
 
@@ -50,8 +50,9 @@ async function assertAttr(page, selector, attr, expected, msg){
   await addTestHabit(page, runId, 'keepup');
   await page.waitForTimeout(300);
 
-  // Navigate to schedule tab (pager page index 2)
-  await scrollDetailToSchedule(page);
+  // Navigate to effort pane (pager index 3) — duration/breakable/timer/etc.
+  // moved here after the schedule/effort pane split.
+  await scrollDetailToSchedule(page, 3);
 
   // Test breakable toggle
   console.log('Testing breakable toggle...');
@@ -144,7 +145,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // SECTION 3: Persistence after save
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 3: Persistence ---');
-  await scrollDetailToSchedule(page);
+  await scrollDetailToSchedule(page, 3);
   // Re-enable breakable and track-value (we toggled them off with the timer)
   if((await breakableBtn.getAttribute('aria-pressed')) !== 'true') {
     await breakableBtn.click();
@@ -161,7 +162,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // Reopen detail
   await page.locator('#list .ting-card', { hasText: runId }).click();
   await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
-  await scrollDetailToSchedule(page);
+  await scrollDetailToSchedule(page, 3);
   await page.waitForTimeout(200);
 
   await assertAttr(page, '#detail-breakable', 'aria-pressed', 'true', 'breakable persisted');
@@ -182,7 +183,9 @@ async function assertAttr(page, selector, attr, expected, msg){
   const taskName = `${runId} task`;
   const tomorrow = new Date(Date.now() + 86400000);
   await addTestHabit(page, taskName, 'task', { dueDate: dateInput(tomorrow) });
-  await scrollDetailToSchedule(page);
+  // Tasks land on the Effort pane (index 3) — that's where due/scheduled
+  // controls live after the schedule/effort pane split.
+  await scrollDetailToSchedule(page, 3);
   await page.waitForTimeout(200);
 
   // Due row should be visible for tasks
@@ -243,7 +246,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // Reopen the build habit (task detail may have been saved and closed)
   await page.locator('#list .ting-card', { hasText: runId }).first().click();
   await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
-  await scrollDetailToSchedule(page);
+  await scrollDetailToSchedule(page, 3);
   await page.waitForTimeout(200);
 
   // ═══════════════════════════════════════════════

@@ -1245,7 +1245,6 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .tune-section .section-label{margin-bottom:12px;}
 .habit-actions{
-  margin-top:16px;padding-top:12px;border-top:0.5px solid var(--border);
   display:flex;flex-direction:column;gap:8px;
 }
 .habit-action{
@@ -2292,7 +2291,6 @@ body[data-pane-count="3"] #action-toast{
   .rich-month-grid .cal-day{height:31px;}
   .month-grid.strip-grid .cal-day{height:40px;}
   .calendar-legend{margin-top:7px;}
-  .habit-actions{margin-top:12px;padding-top:10px;}
   .habit-action{min-height:50px;padding-top:8px;padding-bottom:8px;}
 }
 

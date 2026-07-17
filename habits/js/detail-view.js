@@ -104,13 +104,14 @@ function openDetail(i){
   if(changedHabit){
     const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
     if(pager){
+      // Tasks are one-off — the calendar pane is just a single dot, so land
+      // on Effort (the pane with the actual due/scheduled controls) instead
+      // of the default Calendar. Habits land on Calendar (index 0). Deferred
+      // a frame so clientWidth is measured after layout, same as
+      // openDetailSchedule() below.
       if(h.type === 'task'){
-        // Tasks are one-off — the calendar pane is just a single dot, so land
-        // on Schedule (the pane with the actual due/scheduled controls)
-        // instead. Deferred a frame so clientWidth is measured after layout,
-        // same as openDetailSchedule() below.
         requestAnimationFrame(()=>{
-          pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
+          pager.scrollTo({left:pager.clientWidth * 3,behavior:'auto'});
           updateDetailPagerDots();
         });
       }else{
@@ -135,13 +136,16 @@ function openDetailCalendar(i){
   });
 }
 
-// HYBRID: opens detail then scrolls to schedule
+// HYBRID: opens detail then scrolls to schedule. For tasks the relevant
+// controls (due / scheduled) live in the Effort pane, so route by type.
 function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
     const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
     if(!pager)return;
-    pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
+    const h = load()[i];
+    const paneIndex = h && h.type === 'task' ? 3 : 2;
+    pager.scrollTo({left:pager.clientWidth * paneIndex,behavior:'auto'});
     updateDetailPagerDots();
   });
 }

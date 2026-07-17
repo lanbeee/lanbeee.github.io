@@ -230,6 +230,63 @@
         </section>
         <section class="detail-page detail-section tune-section">
           <span class="section-label">schedule</span>
+          <p class="field-hint" id="detail-target-help">How often — times in N days.</p>
+          <div class="range-row" id="detail-slider-row">
+            <div class="crown-dial" id="detail-days-slider" role="slider" tabindex="0" aria-label="Period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
+            <label class="range-value" aria-label="times">
+              <input type="text" id="detail-times" inputmode="numeric" maxlength="2" value="1" />
+              <span>×</span>
+            </label>
+            <span class="rhythm-in">in</span>
+            <label class="range-value" aria-label="day period">
+              <input type="text" id="detail-days" inputmode="numeric" maxlength="3" value="7" />
+              <span>d</span>
+            </label>
+          </div>
+          <div class="seg schedule-seg" id="detail-schedule-view-seg">
+            <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
+            <button class="seg-opt" data-schedule-view="preferred">preferred</button>
+          </div>
+          <div id="detail-schedule-allowed">
+            <span class="settings-sublabel">days</span>
+            <div class="schedule-chip-row" id="detail-weekday-chips"></div>
+            <span class="settings-sublabel compact-label">month days</span>
+            <div class="monthday-chip-row" id="detail-monthday-chips"></div>
+            <div class="schedule-time-row">
+              <span class="settings-sublabel compact-label">time window</span>
+              <div class="time-inputs">
+                <input type="time" id="detail-time-start" class="time-input" step="900" aria-label="allowed start time" />
+                <span class="time-sep">—</span>
+                <input type="time" id="detail-time-end" class="time-input" step="900" aria-label="allowed end time" />
+              </div>
+              <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
+            </div>
+          </div>
+          <div id="detail-schedule-preferred" hidden>
+            <span class="settings-sublabel">days</span>
+            <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
+            <span class="settings-sublabel compact-label">month days</span>
+            <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
+            <div class="schedule-time-row preferred">
+              <span class="settings-sublabel compact-label">best time</span>
+              <div class="time-inputs">
+                <input type="time" id="detail-preferred-time-start" class="time-input" step="900" aria-label="preferred start time" />
+                <span class="time-sep">—</span>
+                <input type="time" id="detail-preferred-time-end" class="time-input" step="900" aria-label="preferred end time" />
+              </div>
+              <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
+            </div>
+          </div>
+          <div class="plan-field-row habit-mark-done-row" id="detail-habit-mark-done-toggle" hidden>
+            <button class="hard-due-toggle setting-switch" id="detail-habit-mark-done" type="button" aria-pressed="true">
+              <span>mark done</span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <span class="habit-mark-done-hint">off = logs itself on scheduled days</span>
+          </div>
+        </section>
+        <section class="detail-page detail-section tune-section">
+          <span class="section-label">effort</span>
           <div class="planning-grid">
             <div class="planning-field">
               <span>duration</span>
@@ -305,61 +362,6 @@
               </button>
             </div>
           </div>
-          <div class="seg schedule-seg" id="detail-schedule-view-seg">
-            <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
-            <button class="seg-opt" data-schedule-view="preferred">preferred</button>
-          </div>
-          <div id="detail-schedule-allowed">
-            <span class="settings-sublabel">days</span>
-            <div class="schedule-chip-row" id="detail-weekday-chips"></div>
-            <span class="settings-sublabel compact-label">month days</span>
-            <div class="monthday-chip-row" id="detail-monthday-chips"></div>
-            <div class="schedule-time-row">
-              <span class="settings-sublabel compact-label">time window</span>
-              <div class="time-inputs">
-                <input type="time" id="detail-time-start" class="time-input" step="900" aria-label="allowed start time" />
-                <span class="time-sep">—</span>
-                <input type="time" id="detail-time-end" class="time-input" step="900" aria-label="allowed end time" />
-              </div>
-              <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
-            </div>
-          </div>
-          <div id="detail-schedule-preferred" hidden>
-            <span class="settings-sublabel">days</span>
-            <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
-            <span class="settings-sublabel compact-label">month days</span>
-            <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
-            <div class="schedule-time-row preferred">
-              <span class="settings-sublabel compact-label">best time</span>
-              <div class="time-inputs">
-                <input type="time" id="detail-preferred-time-start" class="time-input" step="900" aria-label="preferred start time" />
-                <span class="time-sep">—</span>
-                <input type="time" id="detail-preferred-time-end" class="time-input" step="900" aria-label="preferred end time" />
-              </div>
-              <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
-            </div>
-            <!-- <p class="field-hint schedule-time-hint">Soft hint — nudges agenda placement when it fits. Does not block the habit outside this range.</p> -->
-          </div>
-          <div class="plan-field-row habit-mark-done-row" id="detail-habit-mark-done-toggle" hidden>
-            <button class="hard-due-toggle setting-switch" id="detail-habit-mark-done" type="button" aria-pressed="true">
-              <span>mark done</span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <span class="habit-mark-done-hint">off = logs itself on scheduled days</span>
-          </div>
-          <p class="field-hint" id="detail-target-help">How often — times in N days.</p>
-          <div class="range-row" id="detail-slider-row">
-            <div class="crown-dial" id="detail-days-slider" role="slider" tabindex="0" aria-label="Period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
-            <label class="range-value" aria-label="times">
-              <input type="text" id="detail-times" inputmode="numeric" maxlength="2" value="1" />
-              <span>×</span>
-            </label>
-            <span class="rhythm-in">in</span>
-            <label class="range-value" aria-label="day period">
-              <input type="text" id="detail-days" inputmode="numeric" maxlength="3" value="7" />
-              <span>d</span>
-            </label>
-          </div>
         </section>
         <section class="detail-page detail-section tune-section">
           <span class="section-label">identity</span>
@@ -397,8 +399,10 @@
           </label>
           <span class="settings-sublabel">topics &amp; places</span>
           <div class="topic-chip-row" id="detail-tag-chips"></div>
+        </section>
+        <section class="detail-page detail-section tune-section">
+          <span class="section-label">actions</span>
           <div class="habit-actions">
-            <span class="settings-label">habit actions</span>
             <button class="habit-action" id="detail-export" type="button" hidden>
               <i class="ti ti-calendar-share" aria-hidden="true"></i>
               <span><b>export to calendar</b><small>Add this to your phone's calendar for a real alert.</small></span>
