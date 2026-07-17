@@ -28,6 +28,7 @@ function atDay(offset,hour = 12,minute = 0){
     localStorage.clear();
     const settings = {
       preset: 'todayFirst',
+      showWeekOnHome: false,
       availabilityMinutes: [240,240,240,240,240,240,240],
       availabilityOverrides: { [today]: 240, [target]: 60 },
       blockedTimes: [],

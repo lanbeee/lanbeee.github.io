@@ -68,6 +68,7 @@ function base(props) {
 function defaultSettings(overrides = {}) {
   return Object.assign({
     preset: 'todayFirst',
+    showWeekOnHome: false,
     focus: 'balanced',
     availabilityMinutes: [600, 600, 600, 600, 600, 600, 600],
     availabilityOverrides: {},
@@ -114,8 +115,8 @@ function defaultSettings(overrides = {}) {
   // Date.now()/new Date() (slot clipping, todayIso, daysSince, ...) agrees on
   // the same instant — otherwise buildOpenAgendaSlots secretly uses real
   // wall-clock time and tests become time-of-day flaky.
-  async function timelineFor(nowTs) {
-    return page.evaluate(now => {
+  async function timelineFor(nowTs, reRenderDom = false) {
+    return page.evaluate(({ now, reRenderDom }) => {
       const RealDate = Date;
       function FrozenDate(...args) {
         if (args.length === 0) return new RealDate(now);
@@ -143,11 +144,12 @@ function defaultSettings(overrides = {}) {
           startLabel: new RealDate(r.start).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }),
           endLabel: new RealDate(r.end).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
         }));
+        if (reRenderDom && typeof render === 'function') render();
       } finally {
         globalThis.Date = orig;
       }
       return out;
-    }, nowTs);
+    }, { now: nowTs, reRenderDom });
   }
 
   function toMs(date) { return date.getTime(); }
@@ -173,7 +175,7 @@ function defaultSettings(overrides = {}) {
       })],
       defaultSettings({ blockedTimes: [{ label: 'sleep', days: [], start: 0, end: 420 }] })
     );
-    const rows = await timelineFor(atTime(9, 0));
+    const rows = await timelineFor(atTime(9, 0), true);
     const fill = rows.find(r => r.name === 'Workout windowed');
     check('1a window pushes fill to 10am (not 7am/9am)',
       Boolean(fill) && fill.startLabel === '10:00 AM',
@@ -495,7 +497,7 @@ function defaultSettings(overrides = {}) {
         blockedTimes: [{ label: 'meeting', days: [], start: 570, end: 630 }] // 9:30-10:30
       })
     );
-    const rows = await timelineFor(atTime(9, 0));
+    const rows = await timelineFor(atTime(9, 0), true);
     const a = rows.find(r => r.name === 'Plan A 60m');
     const b = rows.find(r => r.name === 'Plan B 60m');
     check('4a Plan A gets a suggested time', Boolean(a), a ? `start=${a.startLabel}` : 'missing');
@@ -668,7 +670,7 @@ function defaultSettings(overrides = {}) {
       ],
       defaultSettings({ availabilityOverrides: { [todayStr]: 120, [targetKeyStr]: 30 } })
     );
-    const rows = await timelineFor(atTime(9, 0));
+    const rows = await timelineFor(atTime(9, 0), true);
     const fill = rows.find(r => r.name === 'Laundry upcoming');
     check('6a do-early item pulled into today agenda', Boolean(fill), fill ? `start=${fill.startLabel}` : 'missing');
 
@@ -815,7 +817,7 @@ function defaultSettings(overrides = {}) {
         lastLog: ago, logs: [ago] })],
       defaultSettings({ availabilityMinutes: [90, 90, 90, 90, 90, 90, 90] })
     );
-    const rows = await timelineFor(atTime(9, 0));
+    const rows = await timelineFor(atTime(9, 0), true);
     const fill = rows.find(r => r.name === 'Overnight 10pm-11am');
     check('8a overnight window lands at its 10pm window start (budget does not starve it)',
       fill && fill.startLabel === '10:00 PM',

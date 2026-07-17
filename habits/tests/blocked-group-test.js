@@ -19,12 +19,9 @@ function assert(cond, msg){
   page.on('pageerror', e => pageErrors.push(String(e)));
 
   // Seed 4 consecutive blocked times (long labels) + a couple habits so the
-  // week plan renders. Times are relative to the current wall clock so blocks
-  // aren't clipped by the "already ended" filter.
+  // week plan renders. Times are fixed morning times so blocks aren't clipped.
   await page.addInitScript(() => {
-    const now = new Date();
-    const cur = now.getHours() * 60 + now.getMinutes();
-    const blockStart = Math.max(60, Math.min(1260, cur + 60));
+    const blockStart = 480; // 8:00 AM
 
     localStorage.setItem('tings_v2', JSON.stringify([
       { name:'Morning exercise', type:'keepup', target:7, logs:[Date.now() - 86400000], durationMinutes:30, locationIds:['home'], priority:1 },
@@ -38,6 +35,7 @@ function assert(cond, msg){
       travel:{},
       defaultTravelMode:'walking',
       availabilityMinutes:[600,600,600,600,600,600,600],
+      homeExtraMode:'cards',
       blockedTimes:[
         { label:'Morning Routine & Preparation Work', days:[0,1,2,3,4,5,6], start:blockStart, end:blockStart + 30, locationId:'home' },
         { label:'Deep Work Session Project Alpha', days:[0,1,2,3,4,5,6], start:blockStart + 30, end:blockStart + 60, locationId:'home' },

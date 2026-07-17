@@ -179,7 +179,7 @@ function seedScript(extraHabits, extraSettings){
   ], {
     blockedTimes:[
       { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' },
-      { label:'breakfast', days:[0,1,2,3,4,5,6], start:480, end:510, locationId:'home' },
+      { label:'breakfast', days:[0,1,2,3,4,5,6], start:420, end:450, locationId:'home' },
       { label:'work',  days:[1,2,3,4,5],     start:540, end:1020, locationId:'office' },
     ],
   }));
@@ -204,10 +204,12 @@ function seedScript(extraHabits, extraSettings){
 
   // ── F. Week plan on home screen (showWeekOnHome setting) ──
   console.log('\n[F] showWeekOnHome integrates day sections into #list');
-  // Enable showWeekOnHome via settings.
+  // Enable showWeekOnHome and switch to 'cards' extra mode so all blocked
+  // times (including future-day blocks) are visible regardless of the clock.
   await page.evaluate(() => {
     const s = loadSortSettings();
     s.showWeekOnHome = true;
+    s.homeExtraMode = 'cards';
     saveSortSettings(s);
   });
   await page.waitForTimeout(100);

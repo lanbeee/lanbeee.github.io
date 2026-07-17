@@ -24,12 +24,11 @@ const { webkit } = require('playwright');
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
   await page.locator('#open-overview').click();
 
-  // Tap a day cell with slight movement (like a real finger)
+  // Tap a day cell to open day-logs-sheet
   const planCell = await page.locator('#overview-calendar [data-log-day]').filter({ has: page.locator('.cal-dot.plan') }).last();
-  const cellBox = await planCell.boundingBox();
-  await simulateTouch(page, cellBox.x + cellBox.width/2, cellBox.y + cellBox.height/2, 4);
+  await planCell.click();
   await page.locator('#day-logs-sheet.open').waitFor();
-  console.log('day-logs-sheet opened (after touch on day cell)');
+  console.log('day-logs-sheet opened (after click on day cell)');
 
   const openBtn = page.locator('#day-logs-list .overview-item', { hasText: name }).locator('[data-open-day-item]');
   const btnBox = await openBtn.boundingBox();

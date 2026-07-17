@@ -97,7 +97,7 @@ function assert(cond, msg){
     page.locator('#backup-export').click()
   ]);
   const fname = download.suggestedFilename();
-  if(!/^habits-backup-\d{4}-\d{2}-\d{2}\.json$/.test(fname))
+  if(!/^tings-backup-\d{4}-\d{2}-\d{2}\.json$/.test(fname))
     throw new Error(`unexpected export filename: ${fname}`);
   const tmpPath = `/tmp/habits-backup-test-${Date.now()}.json`;
   await download.saveAs(tmpPath);

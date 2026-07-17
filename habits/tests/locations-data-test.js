@@ -286,7 +286,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   console.log('\n[K] reconcileLocations no-op');
   const noop = await page.evaluate(() => {
     const settings = { locations:[{id:'a',name:'A',lat:0,lng:0}] };
-    const data = [{ name:'h', locationIds:['a'], preferredLocationId:'a' }];
+    const data = [{ name:'h', locationIds:['a'], preferredLocationId:'a', locationPrefs:{ a:'high' } }];
     return reconcileLocations(data, settings);
   });
   assert(noop.changed === false, 'no change reported when nothing moved');

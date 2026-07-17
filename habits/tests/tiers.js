@@ -13,17 +13,10 @@ const { chromium } = require('playwright');
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
   const topAt = (x=195,y=400)=>page.evaluate(({x,y})=>{const el=document.elementFromPoint(x,y);return el?el.closest('.sheet-wrap')?.id||el.id||el.tagName:'nothing';},{x,y});
 
-  // today -> detail (today should be covered by detail now)
-  await page.locator('#open-today').click().catch(()=>{});
-  // fallback: open via bar button if present on this tier
-  if(await page.locator('#today-sheet.open').count()===0){
-    await page.evaluate(()=>document.getElementById('today-sheet').classList.add('open'));
-  }
-  await page.waitForTimeout(150);
-  // open detail directly
+  // Open detail directly
   await page.evaluate(()=>{ if(typeof openDetail==='function')openDetail(0); });
   await page.waitForTimeout(250);
-  console.log('today->detail top:', await topAt());
+  console.log('detail top:', await topAt());
 
   // snooze over detail
   await page.evaluate(()=>document.getElementById('snooze-sheet').classList.add('open'));
