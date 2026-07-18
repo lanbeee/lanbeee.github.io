@@ -24,11 +24,10 @@ function applyAddDefaults(){
   if(topicsWrap)topicsWrap.hidden = false;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
   const dueInput = $('ting-due-date');
-  const scheduledInput = $('ting-scheduled-time');
+  const timeInput = $('ting-due-time');
   if(dueInput)dueInput.value = '';
-  if($('ting-hard-due'))$('ting-hard-due').setAttribute('aria-pressed','false');
-  if(scheduledInput)scheduledInput.value = '';
-  if($('ting-mark-done'))$('ting-mark-done').setAttribute('aria-pressed','true');
+  if(timeInput)timeInput.value = '';
+  if($('ting-auto-mark'))$('ting-auto-mark').value = '';
   document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',parseInt(o.dataset.priority,10) === DEFAULT_PRIORITY));
   const moreBody = $('add-more-options');
   const moreToggle = $('add-more-toggle');

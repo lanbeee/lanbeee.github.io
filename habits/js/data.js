@@ -42,6 +42,7 @@
  * @property {boolean} breakable              — when true, planner may split duration into chunks of at least minChunkMinutes
  * @property {number} minChunkMinutes         — minimum chunk length when breakable; 15-720
  * @property {number|null} timerAutoStopMinutes — optional live-timer auto-stop (null = use durationMinutes)
+ * @property {number|null} autoMarkMinutes — when set, the item logs itself this many minutes after its scheduled time (or timer start). null = manual.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
@@ -51,8 +52,7 @@
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
  * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
- * @property {boolean} hardDue                — true when dueDate is a real deadline (escalates urgency past it)
- * @property {boolean} markDone               — true (default) when you must tap to complete it; false = event-style, auto-completes once eventTime passes
+ * @property {boolean} hardDue                — computed: true when dueDate is set and flexibilityDays is 0 (firm deadline, escalates urgency past it)
  *
  * — LocationFields (optional, on every type; empty locationIds = anywhere) —
  * @property {string[]} locationIds           — allowed Location ids (empty = anywhere, the default)
@@ -233,12 +233,19 @@ function normalize(items){
     const eventTime = type === 'task' ? clampTimestamp(raw.eventTime) : null;
     let dueDate = type === 'task' ? clampDayTimestamp(raw.dueDate) : null;
     if(wasEvent && eventTime !== null && dueDate === null)dueDate = clampDayTimestamp(eventTime);
-    const hardDue = type === 'task' ? Boolean(raw.hardDue) : false;
-    // markDone: explicit values are preserved for every type. Default is
-    // event-style (false) for legacy events, manual (true) for everything else.
-    const markDone = Object.prototype.hasOwnProperty.call(raw,'markDone')
-      ? Boolean(raw.markDone)
-      : !wasEvent;
+    const flexibilityDays = clampFlexibility(raw.flexibilityDays);
+    // hardDue is now inferred: a task with a due date and no flexibility is a
+    // firm deadline (escalates urgency past it and fires reminders). Any
+    // flexibility > 0 means the deadline is soft.
+    const hardDue = type === 'task' && dueDate !== null && flexibilityDays === 0;
+    // autoMarkMinutes replaces the legacy markDone toggle. null/empty = manual;
+    // a number = the item logs itself that many minutes after its scheduled
+    // time (tasks) or timer start. Legacy markDone:false maps to 0 (auto at
+    // the trigger); legacy events default to 0 too.
+    const legacyAuto = wasEvent || raw.markDone === false;
+    const autoMarkMinutes = raw.autoMarkMinutes != null
+      ? normalizeAutoMark(raw.autoMarkMinutes)
+      : (legacyAuto ? 0 : null);
     const logs = normalizeLogs(raw.logs);
     // A past legacy event has already happened — record it as a completed entry so it
     // fades into history instead of nagging as an overdue task.
@@ -261,9 +268,7 @@ function normalize(items){
         : clampRhythmValue(raw.target || 7),
       dueDate,
       hardDue,
-      markDone: breakable && !Object.prototype.hasOwnProperty.call(raw,'markDone')
-        ? false
-        : markDone,
+      autoMarkMinutes,
       eventTime,
       planByDate: isRhythmHabit ? clampDayTimestamp(raw.planByDate) : null,
       createdAt: raw.createdAt || null,
@@ -281,7 +286,7 @@ function normalize(items){
       allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
       preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
-      flexibilityDays:clampFlexibility(raw.flexibilityDays),
+      flexibilityDays,
       durationMinutes:clampDuration(raw.durationMinutes),
       breakable,
       minChunkMinutes:clampMinChunk(raw.minChunkMinutes),
@@ -295,6 +300,12 @@ function normalize(items){
     h.lastLog = latestActualLog(h.logs);
     return h;
   });
+}
+
+// PURE: true when this item will log itself (no tap required) once its trigger
+// fires. Replaces direct checks against the old markDone === false flag.
+function isAutoMark(h){
+  return Boolean(h) && h.autoMarkMinutes !== null;
 }
 
 // PURE: the effective "when" for a one-off task — its fixed time if set, else its due date. null = someday.
@@ -411,12 +422,17 @@ function sweepAutoDoneTasks(){
   let changed = false;
   let count = 0;
   data.forEach(h=>{
-    if(h.markDone !== false)return;
+    if(h.autoMarkMinutes === null)return;
     if(h.type === 'task'){
-      if(h.eventTime === null || h.eventTime >= now)return;
+      // Trigger: fixed time, or when the task enters the agenda window.
+      const trigger = h.eventTime ?? (h.dueDate !== null
+        ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+        : null);
+      if(trigger === null)return;
+      if(trigger + (h.autoMarkMinutes || 0) * 60000 >= now)return;
       if(h.lastLog !== null)return; // already done (manual check-off or prior sweep)
       const logs = normalizeLogs(h.logs);
-      logs.push(h.eventTime);
+      logs.push(trigger);
       h.logs = normalizeLogs(logs);
       h.lastLog = latestActualLog(h.logs);
       changed = true;
@@ -508,6 +524,13 @@ function normalizeTimerAutoStop(value){
   const n = parseInt(value,10);
   if(!Number.isFinite(n) || n <= 0)return null;
   return Math.max(1,Math.min(720,n));
+}
+// PURE: coercion for the auto-mark-minutes field. Empty/invalid → null (manual).
+function normalizeAutoMark(value){
+  if(value === null || value === undefined || value === '')return null;
+  const n = parseInt(value,10);
+  if(!Number.isFinite(n) || n < 0)return null;
+  return Math.min(10080,n); // up to a week, in minutes
 }
 /** PURE: split total minutes into chunks; leftover below min stays as last chunk. */
 function planChunks(totalMinutes,minChunkMinutes){

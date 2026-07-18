@@ -24,9 +24,9 @@ function assert(cond, msg){
   await page.waitForSelector('#add-sheet.open');
   assert(await page.locator('#add-more-options').isHidden(), 'more-options hidden on first open');
   assert((await page.locator('#add-more-toggle').getAttribute('aria-expanded')) === 'false', 'toggle aria-expanded=false');
-  // priority, hard-deadline, scheduled-time, and topics all live behind it
+  // priority and topics live behind it
   assert(await page.locator('#ting-priority-seg').isHidden(), 'priority seg hidden behind toggle');
-  assert(await page.locator('#ting-hard-due').isHidden(), 'hard-deadline hidden behind toggle');
+  assert(await page.locator('#ting-auto-mark').isHidden(), 'auto-mark hidden behind toggle');
   assert(await page.locator('#add-topics-section').isHidden(), 'topics hidden behind toggle');
 
   // ── 2. default type (keepup) shows the rhythm slider but not task-only rows ──
@@ -39,17 +39,15 @@ function assert(cond, msg){
   assert((await page.locator('#add-more-toggle').getAttribute('aria-expanded')) === 'true', 'toggle aria-expanded=true');
   assert(await page.locator('#ting-priority-seg').isVisible(), 'priority seg visible after expand');
 
-  // ── 4. switching to task surfaces due date + scheduled time correctly ──
+  // ── 4. switching to task surfaces due date row (date + optional time) ──
   await page.locator('#type-seg [data-v="task"]').click();
   assert(await page.locator('#task-due-row').isVisible(), 'task due row visible for task type');
-  assert(await page.locator('#task-hard-due-row').isVisible(), 'hard-deadline row visible for task type after expand');
-  assert(await page.locator('#scheduled-time-row').isVisible(), 'scheduled-time row visible for task type after expand');
+  assert(await page.locator('#ting-due-time').isVisible(), 'due time input visible on task row');
 
   // collapsing again re-hides everything
   await page.locator('#add-more-toggle').click();
   assert(await page.locator('#add-more-options').isHidden(), 'more-options hidden after collapse');
   assert(await page.locator('#ting-priority-seg').isHidden(), 'priority seg hidden after collapse');
-  assert(await page.locator('#scheduled-time-row').isHidden(), 'scheduled-time row hidden after collapse');
 
   // ── 5. reopening the sheet always re-collapses more-options ──
   await page.locator('#do-cancel').click();

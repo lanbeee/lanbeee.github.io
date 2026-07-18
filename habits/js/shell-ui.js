@@ -673,7 +673,8 @@ document.addEventListener('pointerup',e=>{
   const dx = Math.abs(e.clientX - x);
   const dy = Math.abs(e.clientY - y);
   const moved = Math.hypot(dx,dy);
-  if(moved > 8 && moved <= 160 && Date.now() - time < 1200){
+  if(btn.disabled)return;
+  if(moved > 8 && moved <= 160 && Date.now() - time < 1200 && !btn.classList.contains('timer-start-btn')){
     suppressNativeButton = btn;
     e.preventDefault();
     e.stopPropagation();
@@ -694,6 +695,7 @@ document.addEventListener('pointercancel',e=>{
   const tap = buttonPointer;
   buttonPointer = null;
   if(tap.btn.disabled)return;
+  if(tap.btn.classList.contains('timer-start-btn'))return;
   const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
   if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && scrolled === 0){
     suppressNativeButton = tap.btn;

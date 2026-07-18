@@ -124,7 +124,7 @@
         <div class="plan-field-main">
           <label class="plan-date-label" for="ting-due-date">due</label>
           <input type="date" id="ting-due-date" class="plan-date-input" />
-          <button type="button" class="mini-text-btn" id="ting-due-clear" hidden>no date</button>
+          <input type="time" id="ting-due-time" class="plan-time-input" title="add a time to make this a fixed appointment" />
         </div>
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
@@ -146,24 +146,14 @@
             <button class="seg-opt" data-priority="5">P5</button>
           </div>
         </div>
-        <div class="plan-field-row" id="task-hard-due-row" hidden>
-          <label class="setting-toggle compact-toggle hard-due-toggle">
-            <span>hard deadline</span>
-            <button class="setting-switch" id="ting-hard-due" type="button" aria-pressed="false">
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-          </label>
-        </div>
-        <div class="plan-field-row" id="scheduled-time-row" hidden>
-          <div class="plan-field-main">
-            <label class="plan-date-label" for="ting-scheduled-time">scheduled</label>
-            <input type="datetime-local" id="ting-scheduled-time" class="plan-date-input" />
-          </div>
-          <div class="hard-due-toggle-wrap" id="ting-mark-done-toggle" hidden>
-            <button class="hard-due-toggle setting-switch" id="ting-mark-done" type="button" aria-pressed="true">
-              <span>mark done</span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
+        <div class="planning-grid">
+          <div class="planning-field">
+            <span>auto mark done <button type="button" class="info-btn" data-tip="ting-auto-mark-help" aria-label="about auto mark done"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and the item logs itself that long after its scheduled time (or after you start a timer).</div></span>
+            <label class="range-value" aria-label="auto mark done minutes, blank = manual">
+              <input type="text" id="ting-auto-mark" inputmode="numeric" maxlength="4" placeholder="—" />
+              <span>min</span>
+            </label>
           </div>
         </div>
         <div class="add-topics-section" id="add-topics-section">
@@ -277,13 +267,6 @@
               <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
             </div>
           </div>
-          <div class="plan-field-row habit-mark-done-row" id="detail-habit-mark-done-toggle" hidden>
-            <button class="hard-due-toggle setting-switch" id="detail-habit-mark-done" type="button" aria-pressed="true">
-              <span>mark done</span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <span class="habit-mark-done-hint">off = logs itself on scheduled days</span>
-          </div>
         </section>
         <section class="detail-page detail-section tune-section">
           <span class="section-label">effort</span>
@@ -327,41 +310,31 @@
           </label>
           <div class="planning-grid">
             <div class="planning-field">
-              <span>timer auto-stop</span>
-              <label class="range-value" aria-label="timer auto-stop minutes, blank uses duration">
-                <input type="text" id="detail-timer-auto-stop" inputmode="numeric" maxlength="3" placeholder="—" />
+              <span>auto mark done <button type="button" class="info-btn" data-tip="detail-auto-mark-help" aria-label="about auto mark done"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and the item logs itself that long after its scheduled time (or after you start a timer).</div></span>
+              <label class="range-value" aria-label="auto mark done minutes, blank = manual">
+                <input type="text" id="detail-auto-mark" inputmode="numeric" maxlength="4" placeholder="—" />
                 <span>min</span>
               </label>
             </div>
           </div>
           <div class="timer-row" id="detail-timer-row">
-            <button type="button" class="btn" id="detail-timer-toggle">start timer</button>
+            <button type="button" class="btn timer-start-btn" id="detail-timer-toggle" aria-pressed="false">start timer</button>
             <span class="timer-display" id="detail-timer-display" hidden>0:00</span>
+            <label class="range-value timer-auto-stop-field" aria-label="timer auto-stop minutes, blank uses duration">
+              <span class="timer-auto-stop-label">auto-stop</span>
+              <input type="text" id="detail-timer-auto-stop" inputmode="numeric" maxlength="3" placeholder="—" />
+              <span>min</span>
+            </label>
           </div>
           <div class="plan-field-row" id="detail-due-row" hidden>
             <div class="plan-field-main">
               <label class="plan-date-label" for="detail-due-date">due</label>
               <input type="date" id="detail-due-date" class="plan-date-input" />
-              <button type="button" class="mini-text-btn" id="detail-due-clear" hidden>no date</button>
+              <input type="time" id="detail-due-time" class="plan-time-input" title="add a time to make this a fixed appointment" />
             </div>
-            <button class="hard-due-toggle setting-switch" id="detail-hard-due" type="button" aria-pressed="false">
-              <span>hard deadline</span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
-          <div class="plan-field-row" id="detail-scheduled-row" hidden>
-            <div class="plan-field-main">
-              <label class="plan-date-label" for="detail-scheduled-time">scheduled</label>
-              <input type="datetime-local" id="detail-scheduled-time" class="plan-date-input" />
-            </div>
-            <div class="hard-due-toggle-wrap" id="detail-mark-done-toggle" hidden>
-              <button class="hard-due-toggle setting-switch" id="detail-mark-done" type="button" aria-pressed="true">
-                <span>mark done</span>
-                <span class="switch-ui" aria-hidden="true"></span>
-              </button>
-            </div>
-          </div>
         </section>
         <section class="detail-page detail-section tune-section">
           <span class="section-label">identity</span>

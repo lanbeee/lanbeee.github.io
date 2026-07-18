@@ -93,12 +93,7 @@ function syncAddTypeUi(type){
   $('target-help').textContent = rhythmHelp(type);
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
-  $('task-hard-due-row').hidden = type !== 'task';
-  $('scheduled-time-row').hidden = type !== 'task';
-  if(type === 'task'){
-    syncTaskDueUi();
-    syncScheduledTimeUi();
-  }
+  if(type === 'task')syncTaskDueUi();
 }
 
 // PURE: next clean hour, used to make scheduled tasks one tap lighter.
@@ -240,12 +235,11 @@ $('do-save').addEventListener('click',()=>{
   };
   if(type === 'task'){
     record.dueDate = parseDateInput($('ting-due-date').value);
-    record.hardDue = $('ting-hard-due').getAttribute('aria-pressed') === 'true';
-    record.eventTime = parseDateTimeInput($('ting-scheduled-time').value);
-    record.markDone = $('ting-mark-done').getAttribute('aria-pressed') === 'true';
+    record.eventTime = parseTaskWhen($('ting-due-date').value,$('ting-due-time')?.value || '');
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
     record.flexibilityDays = record.dueDate === null ? 0 : 3;
   }
+  record.autoMarkMinutes = normalizeAutoMark($('ting-auto-mark')?.value);
   data.push(record);
   if(save(data)){cancelAdd();render();openDetailSchedule(data.length - 1);}
 });
@@ -265,49 +259,23 @@ function parseDateTimeInput(value){
 
 $('ting-message').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
 
-// WIRE: task due-date clear + hard-deadline visibility
+// WIRE: task due-date hint
 function syncTaskDueUi(){
   const dueInput = $('ting-due-date');
-  const clearBtn = $('ting-due-clear');
-  const hardToggle = $('ting-hard-due');
+  const timeInput = $('ting-due-time');
   if(!dueInput)return;
   const hasDate = Boolean(dueInput.value);
-  if(clearBtn)clearBtn.hidden = !hasDate;
-  if(hardToggle && hardToggle.closest('.hard-due-toggle')){
-    hardToggle.closest('.hard-due-toggle').hidden = !hasDate;
-  }
+  const hasTime = Boolean(timeInput?.value);
   const hint = $('task-due-hint');
-  if(hint)hint.textContent = hasDate
-    ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
-    : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+  if(hint){
+    if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+    else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
+    else hint.textContent = 'Due on this date — set flexibility to 0 for a firm deadline.';
+  }
 }
 $('ting-due-date').addEventListener('input',syncTaskDueUi);
-$('ting-hard-due').addEventListener('click',function(){
-  const pressed = this.getAttribute('aria-pressed') === 'true';
-  this.setAttribute('aria-pressed',String(!pressed));
-});
-$('ting-due-clear').addEventListener('click',()=>{
-  $('ting-due-date').value = '';
-  $('ting-hard-due').setAttribute('aria-pressed','false');
-  syncTaskDueUi();
-});
+$('ting-due-time')?.addEventListener('input',syncTaskDueUi);
 syncTaskDueUi();
-
-// WIRE: task scheduled-time + mark-done toggle visibility
-function syncScheduledTimeUi(){
-  const timeInput = $('ting-scheduled-time');
-  const toggle = $('ting-mark-done-toggle');
-  if(!timeInput || !toggle)return;
-  const hasTime = Boolean(timeInput.value);
-  toggle.hidden = !hasTime;
-}
-$('ting-scheduled-time').addEventListener('input',syncScheduledTimeUi);
-$('ting-mark-done').addEventListener('click',function(){
-  const pressed = this.getAttribute('aria-pressed') === 'true';
-  this.setAttribute('aria-pressed',String(!pressed));
-  syncScheduledTimeUi();
-});
-syncScheduledTimeUi();
 
 // PURE: clamp rhythm value to valid range
 function clampRhythm(value){
@@ -332,7 +300,6 @@ function setDetailTypeUi(type){
   $('detail-target-help').textContent = rhythmHelp(type);
   $('detail-due-row').hidden = type !== 'task';
   $('detail-due-hint').hidden = type !== 'task';
-  $('detail-scheduled-row').hidden = type !== 'task';
   const planByRow = $('detail-plan-by-row');
   const planByHint = $('detail-plan-by-hint');
   if(planByRow)planByRow.hidden = !isHabit;
@@ -347,7 +314,6 @@ function setDetailTypeUi(type){
   if(exportBtn)exportBtn.hidden = type !== 'task';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
   if(typeof syncDetailPlanByUi === 'function')syncDetailPlanByUi();
-  if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
 }
 
 // RENDER: update detail priority segmented control
@@ -608,9 +574,47 @@ function bindCompactNumber(id,clamp,options={}){
   });
 }
 
+function bindAutoMarkField(id,onDirty){
+  const field = $(id);
+  if(!field)return;
+  field.addEventListener('input',e=>{
+    e.target.value = e.target.value.replace(/\D/g,'').slice(0,4);
+    if(onDirty)onDirty();
+  });
+  field.addEventListener('focus',e=>{
+    e.target.dataset.was = e.target.value;
+    e.target.value = '';
+  });
+  field.addEventListener('blur',e=>{
+    const n = normalizeAutoMark(e.target.value);
+    e.target.value = n != null ? String(n) : '';
+    if(onDirty)onDirty();
+  });
+}
+
 bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
 bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
 bindCompactNumber('detail-times',clampTimes,{maxLength:2});
+bindAutoMarkField('detail-auto-mark',()=>setDetailDirty());
+bindAutoMarkField('ting-auto-mark');
+function bindTimerAutoStopField(id,onDirty){
+  const field = $(id);
+  if(!field)return;
+  field.addEventListener('input',e=>{
+    e.target.value = e.target.value.replace(/\D/g,'').slice(0,3);
+    if(onDirty)onDirty();
+  });
+  field.addEventListener('focus',e=>{
+    e.target.dataset.was = e.target.value;
+    e.target.value = '';
+  });
+  field.addEventListener('blur',e=>{
+    const n = normalizeTimerAutoStop(e.target.value);
+    e.target.value = n != null ? String(n) : '';
+    if(onDirty)onDirty();
+  });
+}
+bindTimerAutoStopField('detail-timer-auto-stop',()=>setDetailDirty());
 $('ting-tag-chips')?.addEventListener('click',e=>{
   if(e.target.closest('[data-topic-add]')){
     beginNewTopicInput('ting-tag-chips');
@@ -672,18 +676,12 @@ $('detail-preferred-time-clear').addEventListener('click',()=>{
   $('detail-preferred-time-clear').hidden = true;
   setDetailDirty();
 });
-$('detail-due-date').addEventListener('input',()=>{syncDetailDueUi();setDetailDirty();});
-$('detail-due-clear').addEventListener('click',()=>{
-  $('detail-due-date').value = '';
-  $('detail-hard-due').setAttribute('aria-pressed','false');
+$('detail-due-date').addEventListener('input',()=>{
+  if(!$('detail-due-date').value && $('detail-due-time'))$('detail-due-time').value = '';
   syncDetailDueUi();
   setDetailDirty();
 });
-$('detail-hard-due').addEventListener('click',function(){
-  const pressed = this.getAttribute('aria-pressed') === 'true';
-  this.setAttribute('aria-pressed',String(!pressed));
-  setDetailDirty();
-});
+$('detail-due-time')?.addEventListener('input',()=>{syncDetailDueUi();setDetailDirty();});
 $('detail-plan-by-date')?.addEventListener('input',()=>{syncDetailPlanByUi();setDetailDirty();});
 $('detail-plan-by-clear')?.addEventListener('click',()=>{
   $('detail-plan-by-date').value = '';
@@ -694,17 +692,6 @@ $('detail-plan-by-week')?.addEventListener('click',()=>{
   const end = typeof endOfWeekDate === 'function' ? endOfWeekDate() : dayStart(Date.now()) + 6 * 86400000;
   $('detail-plan-by-date').value = dateInputValue(end);
   syncDetailPlanByUi();
-  setDetailDirty();
-});
-$('detail-scheduled-time').addEventListener('input',()=>{syncDetailScheduledUi();setDetailDirty();});
-$('detail-mark-done').addEventListener('click',function(){
-  const pressed = this.getAttribute('aria-pressed') === 'true';
-  this.setAttribute('aria-pressed',String(!pressed));
-  setDetailDirty();
-});
-$('detail-habit-mark-done').addEventListener('click',function(){
-  const pressed = this.getAttribute('aria-pressed') === 'true';
-  this.setAttribute('aria-pressed',String(!pressed));
   setDetailDirty();
 });
 $('detail-schedule-view-seg').addEventListener('click',e=>{
@@ -839,6 +826,7 @@ $('detail-save').addEventListener('click',()=>{
   h.breakable = Boolean(current.breakable);
   h.minChunkMinutes = clampMinChunk(current.minChunkMinutes);
   h.timerAutoStopMinutes = normalizeTimerAutoStop(current.timerAutoStopMinutes);
+  h.autoMarkMinutes = normalizeAutoMark(current.autoMarkMinutes);
   h.trackValue = Boolean(current.trackValue);
   h.flexibilityDays = current.flexibilityDays;
   h.priority = clampPriority(current.priority);
@@ -847,17 +835,13 @@ $('detail-save').addEventListener('click',()=>{
   if(current.type === 'task'){
     h.eventTime = current.eventTime;
     h.dueDate = current.dueDate ?? (current.eventTime !== null ? dayStart(current.eventTime) : null);
-    h.hardDue = current.hardDue;
-    h.markDone = current.markDone;
     h.planByDate = null;
   }else{
     h.dueDate = null;
-    h.hardDue = false;
     h.eventTime = null;
     h.planByDate = isHabit ? (current.planByDate ?? null) : null;
-    // build habits can be event-style (auto-log on schedule); others stay manual
-    h.markDone = current.type === 'keepup' ? current.markDone : true;
   }
+  h.hardDue = h.type === 'task' && h.dueDate !== null && h.flexibilityDays === 0;
   if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
   save(data);
@@ -1428,7 +1412,7 @@ function stopHabitTimer(promptLog,manual){
       // trackValue habits still get their value prompt with elapsed minutes; undo is available.
       if(h.trackValue)openValueLogSheet(idx,after,elapsedMin);
       else{
-        logTing(idx,h && h.breakable && h.markDone !== false ? {minutes:elapsedMin} : {});
+        logTing(idx,h && h.breakable && isAutoMark(h) ? {minutes:elapsedMin} : {});
         if(detailIdx === idx)openDetail(idx);
         render();
       }
@@ -1450,9 +1434,67 @@ function tickHabitTimer(){
   if(left <= 0){
     showToast('timer done');
     stopHabitTimer(true);
+    return;
+  }
+  if(habitTimer.autoMarkAt && Date.now() >= habitTimer.autoMarkAt){
+    const idx = habitTimer.idx;
+    const startedAt = habitTimer.startedAt;
+    habitTimer.autoMarkAt = null;
+    const h = load()[idx];
+    if(h && (h.type !== 'task' || h.lastLog === null)){
+      const elapsedMin = Math.max(1,Math.round((Date.now() - startedAt) / 60000));
+      logTing(idx,h.breakable && isAutoMark(h) ? {minutes:elapsedMin} : {});
+      if(detailIdx === idx)openDetail(idx);
+      render();
+    }
   }
 }
-$('detail-timer-toggle')?.addEventListener('click',()=>{
+function bindScrollSafeTap(btn,handler){
+  if(!btn)return;
+  let ptr = null;
+  btn.addEventListener('pointerdown',e=>{
+    if(e.button !== 0 && e.pointerType === 'mouse')return;
+    const scrollHost = btn.closest('.sheet');
+    const pager = btn.closest('.detail-pager');
+    ptr = {
+      id:e.pointerId,
+      x:e.clientX,
+      y:e.clientY,
+      maxMove:0,
+      scrollHost,
+      scrollTop:scrollHost ? scrollHost.scrollTop : 0,
+      pager,
+      pagerScrollLeft:pager ? pager.scrollLeft : 0,
+      time:Date.now()
+    };
+  },{passive:true});
+  btn.addEventListener('pointermove',e=>{
+    if(!ptr || ptr.id !== e.pointerId)return;
+    const dist = Math.hypot(e.clientX - ptr.x,e.clientY - ptr.y);
+    if(dist > ptr.maxMove)ptr.maxMove = dist;
+  },{passive:true});
+  const finish = e=>{
+    if(!ptr || ptr.id !== e.pointerId)return;
+    const tap = ptr;
+    ptr = null;
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
+    const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
+    const pagerScrolled = tap.pager ? Math.abs(tap.pager.scrollLeft - tap.pagerScrollLeft) : 0;
+    if(moved > 6 || scrolled > 1 || pagerScrolled > 1 || Date.now() - tap.time > 650)return;
+    handler(e);
+  };
+  btn.addEventListener('pointerup',finish,{passive:true});
+  btn.addEventListener('pointercancel',e=>{
+    if(!ptr || ptr.id !== e.pointerId)return;
+    ptr = null;
+  },{passive:true});
+  btn.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+  });
+}
+window.stopHabitTimer = stopHabitTimer;
+bindScrollSafeTap($('detail-timer-toggle'),()=>{
   if(detailIdx === null)return;
   if(habitTimer){
     stopHabitTimer(true,true); // manual stop → confirm before logging
@@ -1461,10 +1503,12 @@ $('detail-timer-toggle')?.addEventListener('click',()=>{
   const h = load()[detailIdx];
   if(!h)return;
   const autoMin = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : clampDuration(h.durationMinutes);
+  const autoMarkAt = isAutoMark(h) ? Date.now() + (h.autoMarkMinutes || 0) * 60000 : null;
   habitTimer = {
     idx:detailIdx,
     startedAt:Date.now(),
     autoStopMs:autoMin * 60000,
+    autoMarkAt,
     interval:setInterval(tickHabitTimer,250)
   };
   const btn = $('detail-timer-toggle');
@@ -1475,14 +1519,6 @@ $('detail-breakable')?.addEventListener('click',function(){
   const pressed = this.getAttribute('aria-pressed') === 'true';
   this.setAttribute('aria-pressed',String(!pressed));
   syncBreakableUi();
-  if(this.getAttribute('aria-pressed') === 'true'){
-    const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType;
-    if(type === 'task'){
-      $('detail-mark-done')?.setAttribute('aria-pressed','false');
-    }else{
-      $('detail-habit-mark-done')?.setAttribute('aria-pressed','false');
-    }
-  }
   setDetailDirty();
 });
 $('detail-min-chunk')?.addEventListener('input',()=>setDetailDirty());
@@ -1491,7 +1527,6 @@ $('detail-track-value')?.addEventListener('click',function(){
   this.setAttribute('aria-pressed',String(!pressed));
   setDetailDirty();
 });
-$('detail-timer-auto-stop')?.addEventListener('input',()=>setDetailDirty());
 bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   if(!day)return;

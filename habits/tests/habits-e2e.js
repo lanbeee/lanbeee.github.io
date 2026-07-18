@@ -34,12 +34,11 @@ function datetimeInput(d){
     await page.locator('#ting-message').fill(scheduledName);
     await page.locator('#type-seg [data-v="task"]').click();
     await page.locator('#ting-due-date').fill(dateInput(when));
-    await page.locator('#add-more-toggle').click();
-    await page.locator('#ting-scheduled-time').fill(datetimeInput(when));
+    await page.locator('#ting-due-time').fill(`${pad(when.getHours())}:${pad(when.getMinutes())}`);
     await page.locator('#do-save').click();
     await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet', { timeout:5000 });
-    await page.locator('#detail-scheduled-row').waitFor({ state:'visible' });
     await page.locator('#detail-due-row').waitFor({ state:'visible' });
+    await page.locator('#detail-due-time').waitFor({ state:'visible' });
     const typeOn = await page.locator('#detail-type-seg [data-detail-type="task"]').evaluate(el => el.classList.contains('on'));
     if(!typeOn)throw new Error('Scheduled task did not stay on task type');
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));

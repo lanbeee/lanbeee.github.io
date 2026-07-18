@@ -100,6 +100,12 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(flexAfter !== '3') throw new Error(`flexibility should be 3, got ${flexAfter}`);
   console.log('  OK');
 
+  // Timer auto-stop on same row as start button
+  console.log('Testing timer row layout...');
+  const timerRow = page.locator('#detail-timer-row');
+  if(!(await timerRow.locator('#detail-timer-auto-stop').isVisible())) throw new Error('timer auto-stop should be on timer row');
+  console.log('  Timer row layout: OK');
+
   // ═══════════════════════════════════════════════
   // SECTION 2: Timer toggle + value-log-sheet
   // ═══════════════════════════════════════════════
@@ -190,29 +196,46 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Due row should be visible for tasks
   if(!(await page.locator('#detail-due-row').isVisible())) throw new Error('due row should show for tasks');
-  await assertAttr(page, '#detail-hard-due', 'aria-pressed', 'false', 'hard-due default off');
-  await page.locator('#detail-hard-due').click();
-  await page.waitForTimeout(100);
-  await assertAttr(page, '#detail-hard-due', 'aria-pressed', 'true', 'hard-due on');
-  console.log('  Hard due toggle: OK');
+  const autoMarkField = page.locator('#detail-auto-mark');
+  await autoMarkField.waitFor({ state:'visible' });
+  await autoMarkField.fill('30');
+  await autoMarkField.blur();
+  const autoMarkVal = await autoMarkField.inputValue();
+  if(autoMarkVal !== '30') throw new Error(`auto-mark should be 30, got ${autoMarkVal}`);
+  console.log('  Auto mark done field: OK');
 
-  // Mark-done toggle
-  const markDoneBtn = page.locator('#detail-mark-done');
-  if(await markDoneBtn.isVisible()){
-    await assertAttr(page, '#detail-mark-done', 'aria-pressed', 'true', 'mark-done default on');
-    await markDoneBtn.click();
-    await page.waitForTimeout(100);
-    await assertAttr(page, '#detail-mark-done', 'aria-pressed', 'false', 'mark-done off');
-    await markDoneBtn.click();
-    await page.waitForTimeout(100);
-    await assertAttr(page, '#detail-mark-done', 'aria-pressed', 'true', 'mark-done restored');
-  }
-  console.log('  Mark done toggle: OK');
+  // Due date + time → eventTime; date-only → dueDate without eventTime
+  await page.locator('#detail-due-time').fill('14:30');
+  await page.waitForTimeout(100);
+  await page.locator('#detail-save').click();
+  await page.waitForTimeout(400);
+  let stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
+  let taskItem = stored.find(h => h.name === taskName);
+  if(!taskItem?.eventTime) throw new Error('task with due time should have eventTime');
+  await page.locator('#list .ting-card', { hasText: taskName }).click();
+  await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
+  await scrollDetailToSchedule(page, 3);
+  await page.locator('#detail-due-time').fill('');
+  await page.locator('#detail-flexibility').fill('0');
+  await page.locator('#detail-flexibility').blur();
+  await page.locator('#detail-save').click();
+  await page.waitForTimeout(400);
+  stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
+  taskItem = stored.find(h => h.name === taskName);
+  if(taskItem?.eventTime) throw new Error('date-only task should not have eventTime');
+  if(!taskItem?.hardDue) throw new Error('flexibility 0 should infer hardDue');
+  console.log('  Due/time + inferred hardDue: OK');
+
+  // Save closes the sheet — reopen for schedule-pane tests.
+  await page.locator('#list .ting-card', { hasText: taskName }).click();
+  await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
 
   // ═══════════════════════════════════════════════
   // SECTION 5: Schedule view seg + chips
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 5: Schedule seg + chips ---');
+  await scrollDetailToSchedule(page, 2);
+  await page.waitForTimeout(200);
   const prefSeg = page.locator('#detail-schedule-view-seg [data-schedule-view="preferred"]');
   if(await prefSeg.isVisible()){
     await prefSeg.click();
@@ -235,9 +258,12 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(nowOn === wasOn) throw new Error(`chip should toggle: was ${wasOn} now ${nowOn}`);
   console.log('  Schedule chip toggle: OK');
 
-  // Save task and close to keep state clean for next sections
-  await page.locator('#detail-save').click();
-  await page.waitForTimeout(400);
+  // Close task detail to keep state clean for next sections
+  await page.evaluate(() => {
+    if(typeof closeDetail === 'function')closeDetail();
+    else document.getElementById('detail-sheet')?.classList.remove('open');
+  });
+  await page.waitForTimeout(300);
 
   // ═══════════════════════════════════════════════
   // SECTION 6: Reopen build habit for timer + touch tests
@@ -319,44 +345,16 @@ async function assertAttr(page, selector, attr, expected, msg){
   }
 
   // ═══════════════════════════════════════════════
-  // SECTION 8: Build habit weekdays + mark-done
+  // SECTION 8: Build habit auto mark done
   // ═══════════════════════════════════════════════
-  console.log('\n--- SECTION 8: Build habit weekdays + mark-done ---');
+  console.log('\n--- SECTION 8: Build habit auto mark done ---');
 
-  // Turn on all weekday chips
-  const allChips = page.locator('#detail-weekday-chips .schedule-chip');
-  const chipCount = await allChips.count();
-  for(let i = 0; i < chipCount; i++){
-    const c = allChips.nth(i);
-    const cls = await c.getAttribute('class');
-    if(!cls || !cls.includes('on')){
-      await c.click();
-      await page.waitForTimeout(30);
-    }
-  }
-
-  // habit-mark-done should now be visible
-  const habitMarkDone = page.locator('#detail-habit-mark-done');
-  if(await habitMarkDone.isVisible()){
-    await assertAttr(page, '#detail-habit-mark-done', 'aria-pressed', 'false', 'habit-mark-done default off');
-    await habitMarkDone.click();
-    await page.waitForTimeout(100);
-    await assertAttr(page, '#detail-habit-mark-done', 'aria-pressed', 'true', 'habit-mark-done on');
-    await habitMarkDone.click();
-    await page.waitForTimeout(100);
-    await assertAttr(page, '#detail-habit-mark-done', 'aria-pressed', 'false', 'habit-mark-done restored');
-  } else {
-    const typeOn = await page.locator('#detail-type-seg [data-detail-type="keepup"]').getAttribute('class');
-    const weekdays = await page.evaluate(() => {
-      const chips = document.querySelectorAll('#detail-weekday-chips .schedule-chip');
-      return [...chips].map(c => c.classList.contains('on'));
-    });
-    console.log(`  type=keepup: ${typeOn}, weekdays on: ${JSON.stringify(weekdays)}`);
-    if(typeOn?.includes('on') && weekdays.some(Boolean)) {
-      errors.push('habit-mark-done should be visible but is not');
-    }
-  }
-  console.log('  habit-mark-done toggle: OK');
+  // Auto mark field visible for build habits on effort pane
+  const buildAutoMark = page.locator('#detail-auto-mark');
+  if(!(await buildAutoMark.isVisible())) throw new Error('auto-mark should be visible for build habits');
+  await buildAutoMark.fill('15');
+  await buildAutoMark.blur();
+  console.log('  build habit auto-mark: OK');
 
   // ═══════════════════════════════════════════════
   // SECTION 9: Time input fields
@@ -375,8 +373,8 @@ async function assertAttr(page, selector, attr, expected, msg){
   console.log('\n--- CLEANUP ---');
   await page.locator('#detail-save').click();
   await page.waitForTimeout(300);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2') || '[]'));
-  const filtered = stored.filter(h => !String(h.name || '').startsWith('DetailTest'));
+  const allStored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2') || '[]'));
+  const filtered = allStored.filter(h => !String(h.name || '').startsWith('DetailTest'));
   await page.evaluate((data) => { localStorage.setItem('tings_v2', JSON.stringify(data)); }, filtered);
 
   if(errors.length) throw new Error('FAILED checks:\n' + errors.join('\n'));

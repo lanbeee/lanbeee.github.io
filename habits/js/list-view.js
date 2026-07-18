@@ -341,6 +341,13 @@ function timeInputValue(ts){
   const mm = String(d.getMinutes()).padStart(2,'0');
   return `${hh}:${mm}`;
 }
+// PURE: task due row — date + optional time → eventTime ms, or null when no time set.
+function parseTaskWhen(dateValue,timeValue){
+  if(!timeValue || !String(timeValue).trim())return null;
+  if(!dateValue)return null;
+  const ts = new Date(`${dateValue}T${timeValue}`).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
 // PURE: ms timestamp -> "YYYY-MM-DDTHH:mm" for <input type="datetime-local">
 function datetimeInputValue(ts){
   if(!ts)return '';
@@ -361,7 +368,6 @@ function toggleScheduleChip(e){
   btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
   if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips')){
     setDetailDirty();
-    if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
   }
 }
 
@@ -1905,7 +1911,7 @@ function logTing(i,opts = {}){
   const logs = normalizeLogs(h.logs);
   const consumedPlanTs = planToConsumeForEntry(logs,now);
   let minutes = opts.minutes;
-  if(minutes == null && h.breakable && h.markDone !== false){
+  if(minutes == null && h.breakable && !isAutoMark(h)){
     const next = remainingChunks(h)[0];
     if(next)minutes = next;
   }

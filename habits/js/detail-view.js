@@ -41,19 +41,15 @@ function openDetail(i){
   if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
+  if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs);
   renderScheduleChips('detail',h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
-  $('detail-hard-due').setAttribute('aria-pressed',h.hardDue ? 'true' : 'false');
-  $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
+  if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
   if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(h.planByDate);
-  $('detail-mark-done').setAttribute('aria-pressed',h.markDone !== false ? 'true' : 'false');
-  $('detail-habit-mark-done').setAttribute('aria-pressed',h.markDone !== false ? 'true' : 'false');
   syncDetailDueUi();
   syncDetailPlanByUi();
-  syncDetailScheduledUi();
-  syncDetailHabitMarkDoneUi();
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
@@ -80,14 +76,13 @@ function openDetail(i){
     breakable:Boolean(h.breakable),
     minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
     timerAutoStopMinutes:h.timerAutoStopMinutes ?? null,
+    autoMarkMinutes:h.autoMarkMinutes ?? null,
     trackValue:Boolean(h.trackValue),
     flexibilityDays:h.flexibilityDays || 0,
     priority:effectivePriority(h),
     dueDate:h.dueDate ?? null,
-    hardDue:Boolean(h.hardDue),
     eventTime:h.eventTime ?? null,
-    planByDate:h.planByDate ?? null,
-    markDone:h.markDone !== false
+    planByDate:h.planByDate ?? null
   };
   syncRhythm('detail',h.target || 7);
   syncBreakableUi();
@@ -227,7 +222,6 @@ function syncTimeClearBtn(){
 // HYBRID: reads form DOM into tune object
 function currentDetailTune(){
   const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
-  const markDoneEl = type === 'task' ? $('detail-mark-done') : $('detail-habit-mark-done');
   const locationIds = selectedLocationIdsFrom('detail-tag-chips');
   const locationPrefs = selectedLocationPrefsFrom('detail-tag-chips');
   return {
@@ -252,14 +246,13 @@ function currentDetailTune(){
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
     timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
+    autoMarkMinutes:normalizeAutoMark($('detail-auto-mark')?.value),
     trackValue:$('detail-track-value')?.getAttribute('aria-pressed') === 'true',
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
     priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
-    hardDue:$('detail-hard-due').getAttribute('aria-pressed') === 'true',
-    eventTime:parseDateTimeInput($('detail-scheduled-time').value),
-    planByDate:parseDateInput($('detail-plan-by-date')?.value || ''),
-    markDone:markDoneEl ? markDoneEl.getAttribute('aria-pressed') === 'true' : true
+    eventTime:parseTaskWhen($('detail-due-date').value,$('detail-due-time')?.value || ''),
+    planByDate:parseDateInput($('detail-plan-by-date')?.value || '')
   };
 }
 
@@ -284,10 +277,9 @@ function setDetailDirty(force){
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
       current.priority !== detailTuneOriginal.priority ||
       current.dueDate !== detailTuneOriginal.dueDate ||
-      current.hardDue !== detailTuneOriginal.hardDue ||
       current.eventTime !== detailTuneOriginal.eventTime ||
       current.planByDate !== detailTuneOriginal.planByDate ||
-      current.markDone !== detailTuneOriginal.markDone ||
+      current.autoMarkMinutes !== detailTuneOriginal.autoMarkMinutes ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
       current.locationIds.join('|') !== (detailTuneOriginal.locationIds || []).join('|') ||
       JSON.stringify(current.locationPrefs || {}) !== JSON.stringify(detailTuneOriginal.locationPrefs || {}) ||
@@ -317,20 +309,16 @@ function restoreDetailTune(){
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
-  $('detail-hard-due').setAttribute('aria-pressed',detailTuneOriginal.hardDue ? 'true' : 'false');
-  $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
+  if($('detail-due-time'))$('detail-due-time').value = detailTuneOriginal.eventTime !== null ? timeInputValue(detailTuneOriginal.eventTime) : '';
   if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(detailTuneOriginal.planByDate);
-  $('detail-mark-done').setAttribute('aria-pressed',detailTuneOriginal.markDone !== false ? 'true' : 'false');
-  $('detail-habit-mark-done').setAttribute('aria-pressed',detailTuneOriginal.markDone !== false ? 'true' : 'false');
   syncDetailDueUi();
   syncDetailPlanByUi();
-  syncDetailScheduledUi();
-  syncDetailHabitMarkDoneUi();
   renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null);
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = detailTuneOriginal.timerAutoStopMinutes != null ? detailTuneOriginal.timerAutoStopMinutes : '';
+  if($('detail-auto-mark'))$('detail-auto-mark').value = detailTuneOriginal.autoMarkMinutes != null ? detailTuneOriginal.autoMarkMinutes : '';
   syncBreakableUi();
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
@@ -340,19 +328,19 @@ function restoreDetailTune(){
   setDetailDirty(false);
 }
 
-// RENDER: toggle detail due-date clear button + hard-deadline visibility
+// RENDER: task due row hint — date-only vs fixed appointment
 function syncDetailDueUi(){
   const dueInput = $('detail-due-date');
-  const clearBtn = $('detail-due-clear');
-  const hardToggle = $('detail-hard-due')?.closest('.hard-due-toggle');
+  const timeInput = $('detail-due-time');
   if(!dueInput)return;
   const hasDate = Boolean(dueInput.value);
-  if(clearBtn)clearBtn.hidden = !hasDate;
-  if(hardToggle)hardToggle.hidden = !hasDate;
+  const hasTime = Boolean(timeInput?.value);
   const hint = $('detail-due-hint');
-  if(hint)hint.textContent = hasDate
-    ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
-    : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+  if(hint){
+    if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+    else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
+    else hint.textContent = 'Due on this date — set flexibility to 0 for a firm deadline.';
+  }
 }
 
 // RENDER: toggle habit one-off plan-by controls + hint
@@ -368,25 +356,6 @@ function syncDetailPlanByUi(){
   if(hint)hint.textContent = hasDate
     ? 'Soft one-off target — the week planner will place this habit on a free day on or before this date. Cleared when you log it.'
     : 'Optional. Set a one-off “plan by” date to pull this habit into the week planner without picking a specific day.';
-}
-
-// RENDER: toggle mark-done visibility based on whether a scheduled time is set
-function syncDetailScheduledUi(){
-  const timeInput = $('detail-scheduled-time');
-  const toggle = $('detail-mark-done-toggle');
-  if(!timeInput || !toggle)return;
-  toggle.hidden = !timeInput.value;
-}
-
-// RENDER: habit mark-done toggle shows only for build habits with a day schedule
-function syncDetailHabitMarkDoneUi(){
-  const toggle = $('detail-habit-mark-done-toggle');
-  if(!toggle)return;
-  const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType;
-  if(type !== 'keepup'){ toggle.hidden = true; return; }
-  const hasSchedule = selectedWeekdaysFrom('detail-weekday-chips').length > 0
-                   || selectedMonthDaysFrom('detail-monthday-chips').length > 0;
-  toggle.hidden = !hasSchedule;
 }
 
 // HYBRID: switches allowed/preferred schedule section

@@ -1445,6 +1445,12 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   min-width:0;flex:1;font-variant-numeric:tabular-nums;
   -webkit-appearance:none;appearance:none;
 }
+.plan-time-input{
+  border:0.5px solid var(--border);background:var(--bg);color:var(--text);
+  border-radius:var(--radius-sm);padding:8px 10px;font:inherit;font-size:14px;
+  width:7.5em;flex-shrink:0;font-variant-numeric:tabular-nums;
+  -webkit-appearance:none;appearance:none;
+}
 .hard-due-toggle{
   display:inline-flex;align-items:center;gap:7px;flex-shrink:0;
   color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;
@@ -1751,7 +1757,10 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .blocked-cancel-mark:hover{border-color:color-mix(in srgb,var(--text3) 45%,var(--border));opacity:1;}
 .blocked-cancel-mark:active{background:color-mix(in srgb,var(--text3) 12%,var(--bg));}
-.timer-row{display:flex;align-items:center;gap:10px;margin:8px 0 4px;}
+.timer-row{display:flex;align-items:center;gap:10px;margin:8px 0 4px;flex-wrap:wrap;}
+.timer-start-btn{flex:0 0 auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+.timer-auto-stop-field{margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:4px;width:auto;padding:0 10px;height:38px;border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);}
+.timer-auto-stop-label{font-size:12px;color:var(--text2);font-weight:600;white-space:nowrap;}
 .timer-display{font-variant-numeric:tabular-nums;font-weight:700;color:var(--text);}
 .value-log-field{display:flex;width:100%;margin:8px 0 14px;}
 .value-log-field input{flex:1;height:42px;font-size:20px;font-weight:700;text-align:center;}
@@ -1908,6 +1917,7 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   appearance:textfield;-webkit-appearance:none;font-variant-numeric:tabular-nums;
 }
 .range-value input[type=text]:focus{box-shadow:none;border:0;}
+.timer-auto-stop-field{display:flex;width:auto;padding:0 10px;height:38px;border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);}
 .crown-dial{
   flex:1;min-width:60px;height:34px;
   border-radius:0;
