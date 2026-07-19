@@ -121,6 +121,29 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   topicRow.className = 'tag-row tag-row-topics';
   topicRow.appendChild(createAddTopicPill());
   topicRow.insertAdjacentHTML('beforeend',topicHtml);
+  // Scroll guard: prevents accidental chip taps during horizontal scroll.
+  // Sets a flag on the row as soon as touch displacement (finger movement)
+  // is detected. The flag lingers for 500ms to cover the synthetic click
+  // that mobile browsers fire after touchend. The click handlers in main.js
+  // check this flag and bail if set.
+  function addScrollGuard(row){
+    var timer;
+    function arm(){ row._sg = 1; clearTimeout(timer); timer = setTimeout(function(){ row._sg = 0; },500); }
+    (function(){
+      var sx,sy;
+      row.addEventListener('touchstart',function(e){
+        var t = e.changedTouches[0];
+        sx = t.clientX; sy = t.clientY;
+      },{passive:true});
+      row.addEventListener('touchmove',function(e){
+        var t = e.changedTouches[0];
+        if(Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8)arm();
+      },{passive:true});
+    })();
+    row.addEventListener('scroll',arm,{passive:true});
+  }
+  addScrollGuard(locRow);
+  addScrollGuard(topicRow);
   wrap.appendChild(locRow);
   wrap.appendChild(topicRow);
 }

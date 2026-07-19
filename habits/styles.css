@@ -1309,6 +1309,7 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .tag-row::-webkit-scrollbar{display:none;}
 .tag-row > .topic-chip{scroll-snap-align:start;flex-shrink:0;}
 .tag-row .topic-chip-add{flex-shrink:0;}
+.tag-row.scrolling > *{pointer-events:none;}
 .topic-chip,.schedule-chip,.monthday-chip{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text2);
   border-radius:999px;padding:7px 10px;font:inherit;font-size:12px;font-weight:650;

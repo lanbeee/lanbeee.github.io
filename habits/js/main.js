@@ -619,6 +619,7 @@ function bindTimerAutoStopField(id,onDirty){
 }
 bindTimerAutoStopField('detail-timer-auto-stop',()=>setDetailDirty());
 $('ting-tag-chips')?.addEventListener('click',e=>{
+  if(e.target.closest('.tag-row')?._sg)return;
   if(e.target.closest('[data-topic-add]')){
     beginNewTopicInput('ting-tag-chips');
     return;
@@ -634,6 +635,8 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
   toggleTopicChip(e);
 });
 $('detail-tag-chips')?.addEventListener('click',e=>{
+  // Bail if the user was just scrolling the tag row (prevents accidental taps)
+  if(e.target.closest('.tag-row')?._sg)return;
   if(e.target.closest('[data-topic-add]')){
     beginNewTopicInput('detail-tag-chips');
     return;
