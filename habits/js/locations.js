@@ -398,6 +398,13 @@ function applyGeoPosition(pos,{updateAnchor = true} = {}){
   return currentCoord;
 }
 
+function backgroundListRender(){
+  // Background location/travel refreshes — paint the basic list first, then
+  // fold in agenda math on the next frame so GPS-driven updates stay smooth.
+  if(typeof renderProgressive === 'function')renderProgressive();
+  else if(typeof render === 'function')render();
+}
+
 function startLocationWatch(){
   if(!navigator.geolocation || geoWatchId != null)return;
   geoWatchId = navigator.geolocation.watchPosition(
@@ -405,7 +412,7 @@ function startLocationWatch(){
       applyGeoPosition(p,{updateAnchor:true});
       const matched = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
       if(matched){
-        if(typeof render === 'function')render();
+        backgroundListRender();
         if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
       }
     },
@@ -448,7 +455,8 @@ function requestLocationAccess(opts = {}){
         startLocationWatch();
         if(!quiet && typeof showToast === 'function')showToast('location on');
         if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
-        if(typeof render === 'function')render();
+        if(quiet)backgroundListRender();
+        else if(typeof render === 'function')render();
         resolve('granted');
       },
       err=>{
@@ -481,11 +489,18 @@ function requestLocationAccess(opts = {}){
 }
 
 // IMPURE: after a prior grant, quietly resume watching (safe on iOS).
-function resumeLocationWatchIfOptedIn(){
+// `fresh` (reopen path): prefer a new GPS fix over a cached coord so travel
+// from "here" to the next task reflects the user's current place.
+function resumeLocationWatchIfOptedIn(opts = {}){
   const s = sortSettings || loadSortSettings();
   if(!s.locationOptIn)return;
   if(!window.isSecureContext || !navigator.geolocation)return;
-  requestLocationAccess({quiet:true,enableHighAccuracy:false,maximumAge:120000,timeout:15000});
+  requestLocationAccess({
+    quiet:true,
+    enableHighAccuracy:false,
+    maximumAge:opts.fresh ? 0 : 120000,
+    timeout:15000
+  });
 }
 
 // HYBRID: first-time rationale sheet, then request on the Allow tap (keeps

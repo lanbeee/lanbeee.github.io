@@ -292,7 +292,7 @@ function seedScript(extraHabits, extraSettings){
   // ── G. Week respects location hours (closed weekday defers) ──
   console.log('\n[G] buildWeekAgenda respects location closed-days');
   await page.addInitScript(seedScript([
-    { name:'gym-only habit', type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['gymClosedMon'], priority:2 },
+    { name:'gym-only habit', type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['gymClosedMon'], priority:2, flexibilityDays:2 },
   ], {
     locations:[
       { id:'home',  name:'Home',  lat:40.700, lng:-74.000 },

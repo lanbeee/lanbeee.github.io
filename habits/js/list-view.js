@@ -1211,9 +1211,21 @@ function cancelHomeBlockedRow(row){
   const startMin = row.blockStartMin != null ? row.blockStartMin : (row.startMin != null ? row.startMin : Math.round((row.start - dayStart(row.start)) / 60000));
   const endMin = row.blockEndMin != null ? row.blockEndMin : (row.endMin != null ? row.endMin : Math.round((row.end - dayStart(row.start)) / 60000));
   cancelBlockedInstance(dayKey,row.label,startMin,endMin);
+  // Overnight blocks (end <= start) wrap past midnight: their full minute span
+  // is (1440 − start + end), and cancelling the signature frees BOTH halves of
+  // the day's interval at once. Plain `end − start` would go negative here and
+  // wrongly *subtract* from the day's capacity.
+  const freedMin = typeof blockDurationMinutes === 'function'
+    ? blockDurationMinutes(startMin,endMin)
+    : (endMin > startMin ? endMin - startMin : (1440 - startMin) + endMin);
+  const s = loadSortSettings();
+  const overrides = normalizeAvailabilityOverrides(s.availabilityOverrides);
+  const current = effectiveAvailabilityMinutes(dayKey,s);
+  overrides[dayKey] = Math.max(0,current + freedMin);
+  saveSortSettings({...s,availabilityOverrides:overrides});
   showActionToast(`Freed ${row.label || 'blocked'} for today`,{
     type:'restore-blocked',
-    dayKey,label:row.label,startMin,endMin,
+    dayKey,label:row.label,startMin,endMin,freedMin,
     undoLabel:'undo'
   });
   if(typeof render === 'function')render();
@@ -1319,11 +1331,21 @@ function summarizeTrailTone(tones){
   return '';
 }
 
-// RENDER: render the full habit list
-function render(){
-  const data = load();
+// RENDER: render the full habit list.
+//
+// `opts.deferAgenda` (default false): when true, skip the expensive
+// buildWeekAgenda / homeAgendaRows / homeEarlyMap work and emit a basic
+// pinned + todayCategory-bucketed list with no agenda pills, day sections,
+// or travel/blocked extras. Used by renderProgressive() so the list paints
+// within a frame; the full agenda replaces it on the next idle paint. Direct
+// user-action renders (taps, swipes, saves) keep deferAgenda:false so the
+// user sees the complete picture immediately after their gesture.
+let _progressiveRenderToken = 0;
+function render(opts){
+  const o = opts || {};
   const list = $('list');
   const empty = $('empty');
+  const data = load();
   list.innerHTML = '';
   empty.onclick = null;
   updateQuotaBar(sizeKb(data));
@@ -1379,12 +1401,17 @@ function render(){
   // Search is habit lookup — skip week-plan chrome (blocked times, travel,
   // day sections) so results are just matching habits, ranked by relevance.
   const searching = searchQuery.trim().length > 0;
-  const weekMode = todayFirstActive
+  const deferAgenda = Boolean(o.deferAgenda);
+  const weekMode = !deferAgenda && todayFirstActive
     && sortSettings.showWeekOnHome
     && !searching
     && typeof buildWeekAgenda === 'function'
     && typeof homeDaySequence === 'function';
-  const earlyMap = homeEarlyMap(data,sortSettings);
+  // homeEarlyMap calls earlyReason per item, which in turn may invoke the
+  // today agenda pipeline. Defer it on progressive renders — it is only used
+  // to surface an "early" pill on cards that pulled forward, and that pill is
+  // not part of the first paint.
+  const earlyMap = deferAgenda ? new Map() : homeEarlyMap(data,sortSettings);
   const visibleSet = new Set(indices);
 
   const appendHabitCard = (realIdx,agendaRow,earlyReasonText)=>{
@@ -1442,7 +1469,45 @@ function render(){
     setupCardTap(row,realIdx);
   };
 
-  if(weekMode){
+  if(deferAgenda){
+    // PROGRESSIVE FIRST PAINT — no buildWeekAgenda, no homeAgendaRows, no
+    // homeEarlyMap. Show pinned first, then everyone in todayCategory order
+    // (today / overdue / upcoming / others) so the list is sensible within a
+    // frame. Full agenda replaces this on the next idle paint.
+    list.classList.add('is-progressive');
+    const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
+    const fastOrder = todayFirstActive && !searching
+      ? [...indices].sort((a,b)=>{
+        const pa = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
+        if(pa)return pa;
+        const ca = todayCategory(data[a],sortSettings);
+        const cb = todayCategory(data[b],sortSettings);
+        if(ca !== cb)return ca - cb;
+        return indices.indexOf(a) - indices.indexOf(b);
+      })
+      : [...indices].sort((a,b)=>Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned)) || indices.indexOf(a) - indices.indexOf(b));
+    let fastCat = -1;
+    let fastHeaderForPinned = false;
+    fastOrder.forEach(realIdx=>{
+      const h = data[realIdx];
+      if(h.pinned){
+        if(!fastHeaderForPinned){ appendSectionHeader(list,'pinned'); fastHeaderForPinned = true; }
+        appendHabitCard(realIdx,null,'');
+        return;
+      }
+      if(todayFirstActive && !searching){
+        const cat = todayCategory(h,sortSettings);
+        if(cat !== fastCat){
+          const label = labels[cat];
+          if(label)appendSectionHeader(list,label);
+          fastCat = cat;
+        }
+      }
+      appendHabitCard(realIdx,null,'');
+    });
+  }else{
+    list.classList.remove('is-progressive');
+    if(weekMode){
     const week = buildWeekAgenda(data,sortSettings,7);
     const agendaMap = new Map();
     const weekAssigned = new Set();
@@ -1606,6 +1671,7 @@ function render(){
       );
     });
   }
+  } // end of the `else` (non-deferred) branch
 
   list.querySelectorAll('[data-pulse]').forEach(btn=>{
     btn.addEventListener('click',e=>{
@@ -1642,6 +1708,27 @@ function render(){
     });
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+}
+
+// RENDER: progressive two-phase render — fast paint (no agenda math), then a
+// deferred full render once the browser has painted the chrome. Used for cold
+// load, visibilitychange (reopen), and travel/location refreshes where the
+// user is not actively waiting on a gesture. A token cancels stale passes so
+// rapid re-entries (e.g. multiple travel refreshes) never thrash the DOM.
+function renderProgressive(){
+  const token = ++_progressiveRenderToken;
+  render({deferAgenda:true});
+  // Double-rAF so the fast paint commits before the heavy work starts. On the
+  // fallback path (no rAF), a short setTimeout still yields to the event loop.
+  const runSecond = ()=>{
+    if(token !== _progressiveRenderToken)return;
+    render({deferAgenda:false});
+  };
+  if(typeof requestAnimationFrame === 'function'){
+    requestAnimationFrame(()=>requestAnimationFrame(runSecond));
+  }else{
+    setTimeout(runSecond,16);
+  }
 }
 
 // WIRE: attach swipe gesture listeners
@@ -2183,8 +2270,23 @@ function executeUndo(){
     }
   }
   if(pendingAction.type === 'restore-blocked'){
-    const {dayKey,label,startMin,endMin} = pendingAction;
+    const {dayKey,label,startMin,endMin,freedMin} = pendingAction;
     if(typeof restoreBlockedInstance === 'function')restoreBlockedInstance(dayKey,label,startMin,endMin);
+    const s = loadSortSettings();
+    const overrides = normalizeAvailabilityOverrides(s.availabilityOverrides);
+    if(Object.prototype.hasOwnProperty.call(overrides,dayKey)){
+      // Reuse the same wraparound math as cancelHomeBlockedRow so overnight
+      // blocks restore the exact minutes that were freed (not end−start < 0).
+      const back = freedMin != null && Number.isFinite(freedMin)
+        ? freedMin
+        : (typeof blockDurationMinutes === 'function'
+          ? blockDurationMinutes(startMin,endMin)
+          : (endMin > startMin ? endMin - startMin : (1440 - startMin) + endMin));
+      const restored = overrides[dayKey] - back;
+      if(restored > 0)overrides[dayKey] = restored;
+      else delete overrides[dayKey];
+      saveSortSettings({...s,availabilityOverrides:overrides});
+    }
   }
   if(save(data)){
     hideActionToast();

@@ -48,7 +48,11 @@ onTravelRefresh = ()=>{
     _travelRefreshTimer = null;
     if(!_travelRefreshPending)return;
     _travelRefreshPending = false;
-    if(typeof render === 'function')render();
+    // Travel matrix updates are background refreshes — use the progressive
+    // render so the user sees the existing list immediately and the refreshed
+    // travel pills land on the next paint.
+    if(typeof renderProgressive === 'function')renderProgressive();
+    else if(typeof render === 'function')render();
   },120);
 };
 
@@ -775,9 +779,6 @@ document.addEventListener('wheel',e=>{
   if(window.scrollY <= 1 && e.deltaY < -120)showReachPad();
 },{passive:true});
 window.addEventListener('pageshow',closeAllSwipes);
-document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden)closeAllSwipes();
-});
 
 if(window.visualViewport){
   window.visualViewport.addEventListener('resize',()=>{
@@ -1659,7 +1660,11 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
-render();
+// Cold load: progressive render so the list paints fast (chrome + cards in
+// todayCategory order) and the full week agenda / travel pills / blocked
+// extras land on the next paint. Falls back to a sync render on older engines.
+if(typeof renderProgressive === 'function')renderProgressive();
+else render();
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
 if (typeof initReminders === 'function') initReminders();
@@ -1669,3 +1674,36 @@ if (typeof sweepAutoDoneTasks === 'function'){
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden)setTimeout(sweepAutoDoneTasks,300); });
   setInterval(sweepAutoDoneTasks,5 * 60 * 1000);
 }
+
+// REOPEN: when the user returns to the PWA / tab, refresh the agenda so the
+// suggested times, capacity, and travel reflect the new "now" and the latest
+// current location. Visibility fires on tab-switch, app foreground, unlock;
+// pageshow (with bfcache) fires on history navigation back to the page. A
+// light debounce keeps rapid events from thrashing the DOM.
+let _reopenRefreshTimer = null;
+function scheduleReopenRefresh(){
+  if(_reopenRefreshTimer)return;
+  _reopenRefreshTimer = setTimeout(()=>{
+    _reopenRefreshTimer = null;
+    // Re-trigger a GPS fix if the user has opted in (fresh fix, not a stale
+    // cache) so currentLocationId() and the first travel row reflect where
+    // the user actually is. Cheap no-op when already current. Then
+    // progressive-render for fast paint + fresh agenda.
+    if(typeof requestLocationAccess === 'function' && typeof resumeLocationWatchIfOptedIn === 'function'){
+      resumeLocationWatchIfOptedIn({fresh:true});
+    }
+    if(typeof renderProgressive === 'function')renderProgressive();
+    else if(typeof render === 'function')render();
+    if(typeof checkReminders === 'function')checkReminders();
+  },200);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)return;
+  closeAllSwipes();
+  scheduleReopenRefresh();
+});
+window.addEventListener('pageshow',e=>{
+  // bfcache restore (back/forward) — also refresh, since a lot of wall-clock
+  // time may have passed while the page was frozen.
+  if(e && e.persisted)scheduleReopenRefresh();
+});

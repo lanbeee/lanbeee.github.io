@@ -671,6 +671,15 @@ function normalizeBlockedTimes(value){
 function blockedInstanceKey(label,startMin,endMin){
   return `${String(label || 'blocked').slice(0,24)}|${startMin}|${endMin}`;
 }
+/** PURE: actual minute span of a blocked-time instance. Overnight blocks
+ *  (end <= start, e.g. 22:00→02:00) wrap past midnight and occupy the
+ *  complement (1440 − start + end). Same-day blocks are just end − start. */
+function blockDurationMinutes(startMin,endMin){
+  const s = Math.max(0,Math.min(1440,Number(startMin) || 0));
+  const e = Math.max(0,Math.min(1440,Number(endMin) || 0));
+  if(s === e)return 0;
+  return e > s ? e - s : (1440 - s) + e;
+}
 /** PURE: coerce cancelled block map; drop keys older than 21 days. */
 function normalizeCancelledBlocks(value){
   if(!value || typeof value !== 'object' || Array.isArray(value))return {};
