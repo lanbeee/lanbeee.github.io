@@ -398,23 +398,16 @@ function applyGeoPosition(pos,{updateAnchor = true} = {}){
   return currentCoord;
 }
 
-function backgroundListRender(){
-  // Background location/travel refreshes — paint the basic list first, then
-  // fold in agenda math on the next frame so GPS-driven updates stay smooth.
-  if(typeof renderProgressive === 'function')renderProgressive();
-  else if(typeof render === 'function')render();
-}
-
 function startLocationWatch(){
   if(!navigator.geolocation || geoWatchId != null)return;
   geoWatchId = navigator.geolocation.watchPosition(
     p=>{
       applyGeoPosition(p,{updateAnchor:true});
-      const matched = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
-      if(matched){
-        backgroundListRender();
-        if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
-      }
+      // applyGeoPosition → setAutoLocationId only when the matched place
+      // changes, which fires onTravelRefresh → one sync render. Do NOT
+      // re-render on every GPS tick (~30s) — that was causing visible flicker
+      // when progressive render briefly showed the fast-phase order.
+      if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
     },
     ()=>{},
     {enableHighAccuracy:false, maximumAge:120000, timeout:20000}
@@ -455,8 +448,10 @@ function requestLocationAccess(opts = {}){
         startLocationWatch();
         if(!quiet && typeof showToast === 'function')showToast('location on');
         if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
-        if(quiet)backgroundListRender();
-        else if(typeof render === 'function')render();
+        // User gesture: sync render for immediate feedback. Quiet reopen path:
+        // scheduleReopenRefresh already progressive-renders; location changes
+        // land via setAutoLocationId → onTravelRefresh.
+        if(!quiet && typeof render === 'function')render();
         resolve('granted');
       },
       err=>{

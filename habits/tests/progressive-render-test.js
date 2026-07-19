@@ -1,4 +1,4 @@
-// Progressive render — fast first paint, full agenda on the next frame.
+// Smooth home refresh — no progressive flicker, fingerprint skip for no-ops.
 //
 //   HABITS_URL=http://127.0.0.1:4173/ node tests/progressive-render-test.js
 //
@@ -18,14 +18,13 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   }
 
   await page.addInitScript(()=>{
-    window.__progressiveObs = { saw:false, final:false };
+    window.__progressiveObs = { saw:false };
     const attachObs = ()=>{
       const list = document.getElementById('list');
       if(!list || list.__progressiveObsAttached)return;
       list.__progressiveObsAttached = true;
       new MutationObserver(()=>{
         if(list.classList.contains('is-progressive'))window.__progressiveObs.saw = true;
-        else if(window.__progressiveObs.saw)window.__progressiveObs.final = true;
       }).observe(list,{ attributes:true, attributeFilter:['class'] });
     };
     attachObs();
@@ -54,24 +53,35 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   });
 
   await page.goto(BASE,{ waitUntil:'load' });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
 
-  const sawProgressive = await page.evaluate(()=>{
-    const obs = window.__progressiveObs || {};
+  const loadState = await page.evaluate(()=>{
     const list = document.getElementById('list');
     return {
-      saw:Boolean(obs.saw),
-      final:Boolean(obs.final) || !list?.classList.contains('is-progressive'),
-      cards:list ? list.querySelectorAll('.ting-card').length : 0
+      sawProgressive:Boolean(window.__progressiveObs && window.__progressiveObs.saw),
+      progressiveNow:Boolean(list && list.classList.contains('is-progressive')),
+      cards:list ? list.querySelectorAll('.ting-card').length : 0,
+      hasFingerprint:typeof homeListFingerprint === 'function',
+      hasRenderIfChanged:typeof renderHomeIfChanged === 'function'
     };
   });
+  check('cold load does not use is-progressive', !loadState.sawProgressive && !loadState.progressiveNow, JSON.stringify(loadState));
+  check('cards render on cold load', loadState.cards >= 3, JSON.stringify(loadState));
+  check('homeListFingerprint + renderHomeIfChanged exist', loadState.hasFingerprint && loadState.hasRenderIfChanged, JSON.stringify(loadState));
 
-  check('progressive class appeared during load', sawProgressive.saw, JSON.stringify(sawProgressive));
-  check('progressive class cleared after full render', sawProgressive.final, JSON.stringify(sawProgressive));
-  check('cards rendered after progressive pass', sawProgressive.cards >= 3, JSON.stringify(sawProgressive));
+  const skip = await page.evaluate(()=>{
+    const before = document.querySelectorAll('#list .ting-card').length;
+    const skipped = renderHomeIfChanged() === false;
+    const after = document.querySelectorAll('#list .ting-card').length;
+    const forced = renderHomeIfChanged(true) === true;
+    return { before, after, skipped, forced, cardsAfterForce:document.querySelectorAll('#list .ting-card').length };
+  });
+  check('unchanged fingerprint skips re-render', skip.skipped && skip.before === skip.after, JSON.stringify(skip));
+  check('force:true still re-renders', skip.forced && skip.cardsAfterForce >= 3, JSON.stringify(skip));
 
-  // Reopen path: visibilitychange should schedule another progressive refresh.
+  // Reopen should stay sync (no progressive class).
   await page.evaluate(()=>{
+    window.__progressiveObs.saw = false;
     Object.defineProperty(document,'hidden',{ configurable:true, get:()=>true });
     document.dispatchEvent(new Event('visibilitychange'));
     Object.defineProperty(document,'hidden',{ configurable:true, get:()=>false });
@@ -79,11 +89,12 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   });
   await page.waitForTimeout(350);
   const afterReopen = await page.evaluate(()=>({
+    sawProgressive:Boolean(window.__progressiveObs && window.__progressiveObs.saw),
     progressive:document.getElementById('list')?.classList.contains('is-progressive'),
     cards:document.querySelectorAll('#list .ting-card').length
   }));
-  check('reopen refresh leaves cards on screen', afterReopen.cards >= 3, JSON.stringify(afterReopen));
-  check('reopen refresh finishes (not stuck progressive)', !afterReopen.progressive, JSON.stringify(afterReopen));
+  check('reopen does not use is-progressive', !afterReopen.sawProgressive && !afterReopen.progressive, JSON.stringify(afterReopen));
+  check('reopen keeps cards on screen', afterReopen.cards >= 3, JSON.stringify(afterReopen));
 
   check('no pageerrors', pageErrors.length === 0, JSON.stringify(pageErrors));
 
@@ -93,6 +104,6 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
     failures.forEach(f=>console.log(' • ' + f));
     process.exit(1);
   }
-  console.log('\nPASS — progressive render behaviour verified');
+  console.log('\nPASS — smooth home refresh verified');
   process.exit(0);
 })().catch(e=>{ console.error(e); process.exit(1); });

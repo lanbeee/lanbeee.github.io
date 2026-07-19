@@ -48,10 +48,9 @@ onTravelRefresh = ()=>{
     _travelRefreshTimer = null;
     if(!_travelRefreshPending)return;
     _travelRefreshPending = false;
-    // Travel matrix updates are background refreshes — use the progressive
-    // render so the user sees the existing list immediately and the refreshed
-    // travel pills land on the next paint.
-    if(typeof renderProgressive === 'function')renderProgressive();
+    // Background travel refresh — skip the DOM wipe when travel/place/clock
+    // fingerprint is unchanged (avoids jitter from no-op rebuilds).
+    if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged();
     else if(typeof render === 'function')render();
   },120);
 };
@@ -1660,11 +1659,9 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
-// Cold load: progressive render so the list paints fast (chrome + cards in
-// todayCategory order) and the full week agenda / travel pills / blocked
-// extras land on the next paint. Falls back to a sync render on older engines.
-if(typeof renderProgressive === 'function')renderProgressive();
-else render();
+// Cold load: single sync render. Progressive (fast-then-full) was retired —
+// the interim card order differed from the agenda and felt jittery.
+if(typeof render === 'function')render();
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
 if (typeof initReminders === 'function') initReminders();
@@ -1679,20 +1676,19 @@ if (typeof sweepAutoDoneTasks === 'function'){
 // suggested times, capacity, and travel reflect the new "now" and the latest
 // current location. Visibility fires on tab-switch, app foreground, unlock;
 // pageshow (with bfcache) fires on history navigation back to the page. A
-// light debounce keeps rapid events from thrashing the DOM.
+// light debounce keeps rapid events from thrashing the DOM. Sync-only (no
+// progressive) so returning never flashes a different card order.
 let _reopenRefreshTimer = null;
 function scheduleReopenRefresh(){
   if(_reopenRefreshTimer)return;
   _reopenRefreshTimer = setTimeout(()=>{
     _reopenRefreshTimer = null;
-    // Re-trigger a GPS fix if the user has opted in (fresh fix, not a stale
-    // cache) so currentLocationId() and the first travel row reflect where
-    // the user actually is. Cheap no-op when already current. Then
-    // progressive-render for fast paint + fresh agenda.
     if(typeof requestLocationAccess === 'function' && typeof resumeLocationWatchIfOptedIn === 'function'){
       resumeLocationWatchIfOptedIn({fresh:true});
     }
-    if(typeof renderProgressive === 'function')renderProgressive();
+    // Force on reopen: wall-clock / place may have moved while we were hidden
+    // even if the minute-bucket fingerprint has not rolled yet.
+    if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true);
     else if(typeof render === 'function')render();
     if(typeof checkReminders === 'function')checkReminders();
   },200);
@@ -1707,3 +1703,44 @@ window.addEventListener('pageshow',e=>{
   // time may have passed while the page was frozen.
   if(e && e.persisted)scheduleReopenRefresh();
 });
+
+// WHILE OPEN: keep the home agenda fresh without rebuilding the DOM when
+// nothing placement-relevant changed (minute, place, travel, habits).
+const HOME_AGENDA_REFRESH_MS = 60 * 1000;
+let _homeAgendaRefreshId = null;
+let _homeAgendaRefreshTick = 0;
+
+function refreshHomeAgendaWhileOpen(){
+  if(document.hidden)return;
+  if(typeof swipeOpenCard !== 'undefined' && swipeOpenCard)return;
+  if(typeof sweepAutoDoneTasks === 'function'){
+    const swept = sweepAutoDoneTasks();
+    if(swept > 0)return; // refreshOpenViews already re-rendered
+  }
+  if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged();
+  else if(typeof render === 'function')render();
+}
+
+function startHomeAgendaRefreshLoop(){
+  if(_homeAgendaRefreshId != null)return;
+  _homeAgendaRefreshId = setInterval(()=>{
+    _homeAgendaRefreshTick += 1;
+    // Every ~5 min, nudge the location watch in case the OS paused it.
+    if(_homeAgendaRefreshTick % 5 === 0 && typeof resumeLocationWatchIfOptedIn === 'function'){
+      resumeLocationWatchIfOptedIn();
+    }
+    refreshHomeAgendaWhileOpen();
+  },HOME_AGENDA_REFRESH_MS);
+}
+
+function stopHomeAgendaRefreshLoop(){
+  if(_homeAgendaRefreshId == null)return;
+  clearInterval(_homeAgendaRefreshId);
+  _homeAgendaRefreshId = null;
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)stopHomeAgendaRefreshLoop();
+  else startHomeAgendaRefreshLoop();
+});
+startHomeAgendaRefreshLoop();

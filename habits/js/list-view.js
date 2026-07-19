@@ -1340,7 +1340,6 @@ function summarizeTrailTone(tones){
 // within a frame; the full agenda replaces it on the next idle paint. Direct
 // user-action renders (taps, swipes, saves) keep deferAgenda:false so the
 // user sees the complete picture immediately after their gesture.
-let _progressiveRenderToken = 0;
 function render(opts){
   const o = opts || {};
   const list = $('list');
@@ -1392,6 +1391,7 @@ function render(opts){
     }else{
       empty.innerHTML = 'simple habit tracking<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, or + to add your first habit.</span>';
     }
+    _homeListFingerprint = homeListFingerprint();
     return;
   }
   empty.classList.remove('is-action');
@@ -1708,27 +1708,71 @@ function render(opts){
     });
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+  _homeListFingerprint = homeListFingerprint();
 }
 
-// RENDER: progressive two-phase render — fast paint (no agenda math), then a
-// deferred full render once the browser has painted the chrome. Used for cold
-// load, visibilitychange (reopen), and travel/location refreshes where the
-// user is not actively waiting on a gesture. A token cancels stale passes so
-// rapid re-entries (e.g. multiple travel refreshes) never thrash the DOM.
+// PURE: lightweight freshness key for the home list. Used to skip background
+// re-renders when nothing that affects order/pills/travel has changed — avoids
+// wiping #list (and the visual jitter that causes) on GPS ticks, travel-cache
+// writes that didn't move numbers, and the while-open refresh loop.
+function homeListFingerprint(now = Date.now()){
+  const data = typeof load === 'function' ? load() : [];
+  const s = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const loc = typeof currentLocationId === 'function' ? currentLocationId() : null;
+  const travel = s.travel || {};
+  const travelSig = Object.keys(travel).sort().map(k=>{
+    const e = travel[k] || {};
+    return `${k}:${e.seconds || 0}:${e.provider || ''}`;
+  }).join('|');
+  const habitSig = data.map(h=>[
+    h.name, h.type, h.lastLog, h.dueDate, h.eventTime,
+    h.pinned ? 1 : 0, h.snoozedUntil || '',
+    (h.locationIds || []).join(','),
+    h.durationMinutes, h.priority, h.flexibilityDays,
+    h.breakable ? 1 : 0,
+    h.allowedTimeStart, h.allowedTimeEnd,
+    (h.allowedWeekdays || []).join(','),
+    (h.preferredWeekdays || []).join(',')
+  ].join('~')).join(';');
+  return [
+    Math.floor(now / 60000),
+    loc || '',
+    s.pinnedLocationId || '',
+    s.lastKnownLocationId || '',
+    s.preset || '',
+    s.showWeekOnHome ? 1 : 0,
+    s.showSnoozed ? 1 : 0,
+    typeof searchQuery === 'string' ? searchQuery : '',
+    typeof homeTopicFilter === 'string' ? homeTopicFilter : '',
+    typeof homeLocationFilter === 'string' ? homeLocationFilter : '',
+    travelSig,
+    habitSig,
+    JSON.stringify(s.cancelledBlocks || {}),
+    JSON.stringify(s.availabilityOverrides || {}),
+    JSON.stringify(s.availabilityMinutes || []),
+    JSON.stringify(s.blockedTimes || [])
+  ].join('\n');
+}
+
+let _homeListFingerprint = '';
+
+// RENDER: sync home list only when the freshness key moved. Background paths
+// (travel refresh, while-open loop, quiet location updates) should call this
+// instead of render() so an unchanged agenda never rebuilds the DOM.
+function renderHomeIfChanged(force){
+  const fp = homeListFingerprint();
+  if(!force && fp === _homeListFingerprint)return false;
+  render();
+  _homeListFingerprint = homeListFingerprint();
+  return true;
+}
+
+// Compat alias — progressive two-phase paint was retired because phase-1 order
+// differed from agenda order and caused visible flicker. Callers that still
+// name renderProgressive get a single sync render.
 function renderProgressive(){
-  const token = ++_progressiveRenderToken;
-  render({deferAgenda:true});
-  // Double-rAF so the fast paint commits before the heavy work starts. On the
-  // fallback path (no rAF), a short setTimeout still yields to the event loop.
-  const runSecond = ()=>{
-    if(token !== _progressiveRenderToken)return;
-    render({deferAgenda:false});
-  };
-  if(typeof requestAnimationFrame === 'function'){
-    requestAnimationFrame(()=>requestAnimationFrame(runSecond));
-  }else{
-    setTimeout(runSecond,16);
-  }
+  render();
+  _homeListFingerprint = homeListFingerprint();
 }
 
 // WIRE: attach swipe gesture listeners
