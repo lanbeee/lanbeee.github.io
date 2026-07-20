@@ -96,16 +96,26 @@ function prayerParams(settings){
 //   1. habit's preferred (high/little/legacy) location, if it's still allowed
 //   2. first entry in habit.locationIds
 //   3. null — caller decides (save path blocks; reader treats anchor as unset)
-function habitPrayerLocation(h, settings){
+//
+// "Anywhere" habits (empty locationIds) with prayer anchors resolve against
+// `contextLocId` — the running agenda anchor (last location before the task) —
+// then fall back to the user's last known GPS location, then the first saved
+// location. This lets a habit be place-agnostic yet still tie its dynamic
+// time to wherever the user actually is in the day's plan.
+function habitPrayerLocation(h, settings, contextLocId){
   if(!h)return null;
   const s = settings || sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const registry = normalizeLocationRegistry(s.locations);
   const ids = normalizeLocationIds(h.locationIds, registry);
-  if(!ids.length)return null;
-  const prefId = primaryPreferredLocationId(h.locationPrefs, ids)
-    || normalizePreferredLocation(h.preferredLocationId, ids);
-  const id = prefId || ids[0];
-  return registry.find(l => l.id === id) || null;
+  if(ids.length){
+    const prefId = primaryPreferredLocationId(h.locationPrefs, ids)
+      || normalizePreferredLocation(h.preferredLocationId, ids);
+    const id = prefId || ids[0];
+    return registry.find(l => l.id === id) || null;
+  }
+  const fbId = cleanLocationId(contextLocId) || cleanLocationId(s.lastKnownLocationId) || null;
+  const fb = fbId ? registry.find(l => l.id === fbId) : null;
+  return fb || registry[0] || null;
 }
 
 // ── PrayerTimes cache ───────────────────────────────────────────────────
@@ -198,8 +208,9 @@ function combineResolvedMinutes(a, b, combine){
 
 // IMPURE (reads load/settings): resolve a single expression (primary or
 // secondary) for a habit endpoint. `suffix` is '' for primary or '2' for the
-// optional second expression used by later/earlier-of.
-function resolveHabitExprMinutes(h, fieldName, suffix, dayBase){
+// optional second expression used by later/earlier-of. `contextLocId` is the
+// running agenda anchor used to resolve "anywhere" habits (see habitPrayerLocation).
+function resolveHabitExprMinutes(h, fieldName, suffix, dayBase, contextLocId){
   const anchor = cleanAnchor(h[fieldName + 'Anchor' + suffix]);
   if(!anchor)return null;
   const offset = h[fieldName + 'OffsetMin' + suffix];
@@ -217,7 +228,7 @@ function resolveHabitExprMinutes(h, fieldName, suffix, dayBase){
     );
   }
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
-  const loc = habitPrayerLocation(h, settings);
+  const loc = habitPrayerLocation(h, settings, contextLocId);
   if(!loc)return null;
   return resolvePrayerExprMinutes(
     {latitude:loc.lat, longitude:loc.lng},
@@ -237,17 +248,21 @@ function resolveHabitExprMinutes(h, fieldName, suffix, dayBase){
 //
 // `dayBase` is a ms day-start timestamp (from dayStart()). Pass null/now to
 // mean "today". Result is minutes relative to dayBase (may be <0 or >1440).
-function resolveHabitTimeField(h, fieldName, dayBase){
+//
+// `contextLocId` optionally carries the running agenda anchor so "anywhere"
+// habits with prayer anchors resolve against the last location before the
+// task. Non-agenda callers omit it and get the lastKnown/registry fallback.
+function resolveHabitTimeField(h, fieldName, dayBase, contextLocId){
   if(!h)return null;
   const anchor = cleanAnchor(h[fieldName + 'Anchor']);
   if(!anchor){
     const n = Number(h[fieldName]);
     return Number.isFinite(n) ? n : null;
   }
-  const primary = resolveHabitExprMinutes(h, fieldName, '', dayBase);
+  const primary = resolveHabitExprMinutes(h, fieldName, '', dayBase, contextLocId);
   const combine = cleanTimeCombine(h[fieldName + 'Combine']);
   if(!combine || !cleanAnchor(h[fieldName + 'Anchor2']))return primary;
-  const secondary = resolveHabitExprMinutes(h, fieldName, '2', dayBase);
+  const secondary = resolveHabitExprMinutes(h, fieldName, '2', dayBase, contextLocId);
   return combineResolvedMinutes(primary, secondary, combine);
 }
 

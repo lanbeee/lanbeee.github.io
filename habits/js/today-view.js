@@ -82,13 +82,13 @@ function includeInTodayAgenda(h,settings){
 // into the next day so a 23:00-02:00 window still works as a single span.
 //
 // Prayer anchors: when start or end is tied to an anchor, the resolved minute
-// is read via resolveHabitTimeField (which uses the habit's own resolved
-// location, not a passed-in one). A window with one anchor endpoint and one
-// fixed endpoint works fine — only the resolved side is dynamic.
-function fillTimeWindow(h,dayBase){
+// is read via resolveHabitTimeField. `contextLocId` carries the running agenda
+// anchor so "anywhere" habits resolve their prayer times against the last
+// location before the task; absent it they fall back to lastKnown/registry.
+function fillTimeWindow(h,dayBase,contextLocId){
   if(!hasTimeWindow(h))return null;
-  const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayBase);
-  const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayBase);
+  const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
+  const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
   if(startMin == null || endMin == null)return null;
   const start = dayBase + startMin * 60000;
   let end = dayBase + endMin * 60000;
@@ -102,8 +102,8 @@ function fillTimeWindow(h,dayBase){
 // Only the strict allowedTimeStart/End can drop/close an item. We anchor on
 // preferredTimeStart (the "do it around this time" cue); end is not needed
 // for a soft nudge.
-function fillPreferredStart(h,dayBase){
-  const s = resolveHabitTimeField(h,'preferredTimeStart',dayBase);
+function fillPreferredStart(h,dayBase,contextLocId){
+  const s = resolveHabitTimeField(h,'preferredTimeStart',dayBase,contextLocId);
   if(s == null)return null;
   return dayBase + s * 60000;
 }
@@ -400,7 +400,7 @@ function tryPlaceOnDay(state,fill){
       }
       cap = Math.min(cap, dayBase + iv.end * 60000);
     }else{
-      const win = fillTimeWindow(fill.h,dayBase);
+      const win = fillTimeWindow(fill.h,dayBase,anchor);
       if(win){
         placeStart = Math.max(placeStart,win.start);
         cap = Math.min(cap,win.end);
@@ -413,7 +413,7 @@ function tryPlaceOnDay(state,fill){
     let placeEnd = placeStart + cost;
     const loc = locId ? registry.find(l=>l.id === locId) : null;
     const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
-    const habitPref = fillPreferredStart(fill.h,dayBase);
+    const habitPref = fillPreferredStart(fill.h,dayBase,anchor);
     const prefTs = locPref || habitPref;
     if(prefTs !== null && prefTs >= placeStart && prefTs + cost <= cap && prefTs + cost <= slot.end){
       placeStart = prefTs;

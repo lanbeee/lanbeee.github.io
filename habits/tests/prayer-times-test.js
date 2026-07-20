@@ -7,8 +7,10 @@
 //     (legacy migration + zero behaviour change for users who don't opt in);
 //   • each of the four endpoints can be independently switched to dynamic;
 //   • the resolver returns a finite minutes-from-midnight for a habit with
-//     a valid location + anchor, null when no location;
-//   • the save path blocks when a habit uses anchors without a location.
+//     a valid location + anchor; "anywhere" habits resolve via the running
+//     agenda anchor / lastKnown / registry[0] fallback, null only when the
+//     user has no saved location at all;
+//   • the save path blocks prayer anchors only when the registry is empty.
 //
 //   HABITS_URL=http://127.0.0.1:4173/ node tests/prayer-times-test.js
 //
@@ -164,19 +166,36 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     saveSortSettings(s);
   });
   const loc = await page.evaluate(() => ({
-    none: habitPrayerLocation({locationIds:[]}),
+    none: habitPrayerLocation({locationIds:[]})?.id,
     one: habitPrayerLocation({locationIds:['gym']})?.id,
     first: habitPrayerLocation({locationIds:['gym','home']})?.id,
     preferred: habitPrayerLocation({locationIds:['gym','home'], locationPrefs:{home:'high'}})?.id,
     legacyPref: habitPrayerLocation({locationIds:['gym','home'], preferredLocationId:'gym'})?.id,
-    dangling: habitPrayerLocation({locationIds:['xxx']}),
+    dangling: habitPrayerLocation({locationIds:['xxx']})?.id,
+    // "Anywhere" fallback chain: contextLocId wins, then lastKnown, then registry[0].
+    ctxWins: habitPrayerLocation({locationIds:[]}, null, 'gym')?.id,
+    lastKnown: (() => {
+      const s = loadSortSettings(); s.lastKnownLocationId = 'office'; saveSortSettings(s);
+      const id = habitPrayerLocation({locationIds:[]})?.id;
+      const s2 = loadSortSettings(); s2.lastKnownLocationId = null; saveSortSettings(s2);
+      return id;
+    })(),
+    emptyRegistry: (() => {
+      const s = loadSortSettings(); const saved = s.locations; s.locations = []; saveSortSettings(s);
+      const r = habitPrayerLocation({locationIds:[]});
+      s.locations = saved; saveSortSettings(s);
+      return r;
+    })()
   }));
-  assert(loc.none === null, 'no locations → null');
+  assert(loc.none === 'home', 'anywhere habit falls back to first registry location');
   assert(loc.one === 'gym', 'single location returned');
   assert(loc.first === 'gym', 'first allowed when no preference');
   assert(loc.preferred === 'home', 'preferred wins over first');
   assert(loc.legacyPref === 'gym', 'legacy preferredLocationId honoured');
-  assert(loc.dangling === null, 'dangling id → null (not in registry)');
+  assert(loc.dangling === 'home', 'dangling id → anywhere fallback (registry[0])');
+  assert(loc.ctxWins === 'gym', 'contextLocId (running anchor) wins for anywhere habits');
+  assert(loc.lastKnown === 'office', 'lastKnownLocationId used when no context');
+  assert(loc.emptyRegistry === null, 'anywhere + empty registry → null');
 
   // ── G. resolveHabitTimeField with real adhan.js ──
   console.log('\n[G] resolveHabitTimeField against adhan');
@@ -190,15 +209,20 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     const sunrisePlusHour = resolveHabitTimeField(hOffset, 'allowedTimeStart', today);
     // Fixed (no anchor) should return the literal number.
     const fixed = resolveHabitTimeField({allowedTimeStart:600}, 'allowedTimeStart', today);
-    // No location → null even with anchor.
+    // Anywhere habit + prayer anchor: resolves via the registry fallback now.
+    const anywhere = resolveHabitTimeField({allowedTimeStartAnchor:'fajr'}, 'allowedTimeStart', today);
+    // Truly no location anywhere (empty registry + no lastKnown) → null.
+    const s = loadSortSettings(); const savedLocs = s.locations; s.locations = []; saveSortSettings(s);
     const noLoc = resolveHabitTimeField({allowedTimeStartAnchor:'fajr'}, 'allowedTimeStart', today);
-    return {sunriseMin, sunrisePlusHour, fixed, noLoc};
+    s.locations = savedLocs; saveSortSettings(s);
+    return {sunriseMin, sunrisePlusHour, fixed, anywhere, noLoc};
   });
   assert(Number.isFinite(resolved.sunriseMin), 'sunrise resolved to a finite minute');
   assert(resolved.sunriseMin >= 240 && resolved.sunriseMin <= 540, 'sunrise lands 4am–9am (' + resolved.sunriseMin + ')');
   assert(resolved.sunrisePlusHour - resolved.sunriseMin === 30, 'offset shifts by (60−30)=30 min (' + (resolved.sunrisePlusHour - resolved.sunriseMin) + ')');
   assert(resolved.fixed === 600, 'fixed minutes returned unchanged');
-  assert(resolved.noLoc === null, 'anchor without location → null');
+  assert(Number.isFinite(resolved.anywhere), 'anywhere + prayer resolves via fallback (' + resolved.anywhere + ')');
+  assert(resolved.noLoc === null, 'prayer anchor + empty registry → null');
 
   // ── H. timeWindowSummary uses anchor labels ──
   console.log('\n[H] timeWindowSummary shows anchor labels');

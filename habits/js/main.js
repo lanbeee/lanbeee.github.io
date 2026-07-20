@@ -1022,11 +1022,17 @@ $('detail-save').addEventListener('click',()=>{
     showToast('pick a second time for later/earlier of');
     return;
   }
-  // Block: dynamic prayer anchors require at least one location on the habit.
-  // Habit-anchors don't need a location (they resolve from another habit's log).
+  // Block: dynamic prayer anchors need a location to resolve against. The
+  // habit's own locations are preferred, but "anywhere" habits may resolve
+  // against the running agenda anchor / last known GPS location — so we only
+  // block when the user has NO saved location at all. Habit-anchors don't need
+  // a location (they resolve from another habit's log).
   if(habitUsesPrayerAnchors(h) && !(h.locationIds && h.locationIds.length)){
-    showToast('add a location to use prayer times');
-    return;
+    const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+    if(!registry.length){
+      showToast('add a location to use prayer times');
+      return;
+    }
   }
   // Block: habit-anchor cycles (A starts after B, B starts after A) would
   // deadlock the agenda — refuse with a toast naming the chain.

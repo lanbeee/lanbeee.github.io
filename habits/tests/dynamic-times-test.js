@@ -455,10 +455,18 @@ async function toastText(page){
   await page.waitForTimeout(100);
   const habitWrapHidden = await startEp2.locator('.time-habit-wrap').evaluate(el => el.hidden);
   assert(habitWrapHidden === true, 'habit picker hides when switching to prayer');
+  // Clear the registry so the prayer-without-location guard fires. With a
+  // saved location present, anywhere+prayer is now allowed (it resolves via
+  // the lastKnown/registry fallback); the guard only blocks when the user
+  // has no location at all.
+  await page.evaluate(() => {
+    const s = loadSortSettings(); s.locations = []; saveSortSettings(s);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
+  });
   await page.locator('#detail-save').click();
   await page.waitForTimeout(400);
   toast = await toastText(page);
-  assert(toast.indexOf('location') >= 0, 'prayer without location → toast (' + toast + ')');
+  assert(toast.indexOf('location') >= 0, 'prayer without location + empty registry → toast (' + toast + ')');
   // Force-close so settings tests aren't blocked by an open sheet.
   await page.evaluate(() => {
     if(typeof closeDetail === 'function')closeDetail();
