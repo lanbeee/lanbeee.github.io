@@ -949,6 +949,174 @@ function defaultSettings(overrides = {}) {
     }
   }
 
+  // ==========================================================================
+  // ISSUE 10 — prayer-anchored habits roll to future days in the week plan
+  // When a prayer-anchored habit's morning window has already passed today,
+  // it should still appear on tomorrow's (and future) agenda at the next
+  // prayer window. Two regressions guarded here:
+  //   (a) never-logged habits were excluded from the week planner by a
+  //       daysSince(null) guard in isWeekCandidate — newly created habits
+  //       vanished from all 7 days;
+  //   (b) habits with logs whose today-window closed should place on future
+  //       days, not disappear entirely.
+  // ==========================================================================
+  console.log('\n[Issue 10] prayer-anchored habits roll to future days');
+  {
+    const ago3d = atTime(9) - 3 * 86400000;
+    await seed(
+      [
+        base({ name:'Fajr overdue', type:'keepup', target:1, durationMinutes:5,
+          locationIds:[], allowedTimeStartAnchor:'fajr',
+          allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:-5,
+          lastLog:ago3d, logs:[ago3d] }),
+        base({ name:'Fajr new', type:'keepup', target:1, durationMinutes:5,
+          locationIds:[], allowedTimeStartAnchor:'fajr',
+          allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:-5,
+          lastLog:null, logs:[] })
+      ],
+      defaultSettings({
+        locations:[{id:'home', name:'Home', lat:40.7, lng:-74.0}],
+        lastKnownLocationId:'home',
+        blockedTimes:[{label:'sleep', days:[], locationId:'home',
+          start:1320, end:420,
+          startAnchor:'isha', startOffsetMin:15,
+          startCombine:'later', startAnchor2:'sunrise', startOffsetMin2:-480, startDayOffset2:1,
+          endAnchor:'sunrise', endOffsetMin:-30}]
+      })
+    );
+
+    // Check at noon — today's Fajr window has long passed.
+    const weekResult = await page.evaluate(({ now }) => {
+      const RealDate = Date;
+      function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+      FD.now = () => now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FD, RealDate); FD.prototype = RealDate.prototype;
+      const orig = globalThis.Date; globalThis.Date = FD;
+      let out;
+      try {
+        const data = JSON.parse(localStorage.getItem('tings_v2'));
+        const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
+        const week = buildWeekAgenda(data, settings, 7);
+        const days = week.days.map(d => ({
+          label: new RealDate(d.dayBase).toLocaleDateString(),
+          fills: (d.timeline || []).filter(r => r.kind === 'fill').map(r => r.h.name)
+        }));
+        // Also verify isWeekCandidate no longer blocks never-logged habits.
+        const todayBase = dayStart(now);
+        const fajrNew = data.find(h => h.name === 'Fajr new');
+        const newCandidateTomorrow = isWeekCandidate(fajrNew, settings, todayBase + 86400000, new RealDate(todayBase + 86400000).getDay());
+        return { days, newCandidateTomorrow };
+      } finally { globalThis.Date = orig; }
+    }, { now: atTime(12) });
+
+    // Never-logged habit is now a week candidate (was false pre-fix).
+    check('10a never-logged prayer habit is a week candidate',
+      weekResult.newCandidateTomorrow === true,
+      `got ${weekResult.newCandidateTomorrow}`);
+
+    // Both habits should place on future days (not today — window passed).
+    const tomorrow = weekResult.days[1];
+    check('10b overdue prayer habit places on tomorrow',
+      tomorrow && tomorrow.fills.includes('Fajr overdue'),
+      tomorrow ? `tomorrow fills: ${tomorrow.fills.join(', ')}` : 'no tomorrow');
+    check('10c never-logged prayer habit places on tomorrow',
+      tomorrow && tomorrow.fills.includes('Fajr new'),
+      tomorrow ? `tomorrow fills: ${tomorrow.fills.join(', ')}` : 'no tomorrow');
+
+    // Today (window passed) should NOT place — today is genuinely missed.
+    const today = weekResult.days[0];
+    check('10d today (window passed) does not place the prayer habit',
+      today && !today.fills.includes('Fajr overdue'),
+      today ? `today fills: ${today.fills.join(', ')}` : 'no today');
+  }
+
+  // ==========================================================================
+  // ISSUE 11 — sunrise-window habit between overnight sleep and breakfast
+  // A habit allowed sunrise+5…sunrise+35 must place in the morning gap between
+  // an overnight sleep block (ends sunrise−30) and a fixed breakfast block
+  // (8:00–9:00). Pre-fix, dayFirstOpenMinute treated breakfast as the day's
+  // "wake" boundary, clipping future-day open slots to 9:00 AM and wiping the
+  // gap — so after today's sunrise window closed the habit fell to overdue
+  // and never appeared on tomorrow's agenda.
+  // ==========================================================================
+  console.log('\n[Issue 11] sunrise habit between sleep and breakfast');
+  {
+    const ago1d = atTime(6) - 1 * 86400000;
+    await seed(
+      [
+        base({ name:'Sunrise Exercise', type:'keepup', target:1, durationMinutes:5,
+          locationIds:[],
+          allowedTimeStartAnchor:'sunrise', allowedTimeStartOffsetMin:5,
+          allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:35,
+          lastLog:ago1d, logs:[ago1d] })
+      ],
+      defaultSettings({
+        showWeekOnHome:true,
+        locations:[{id:'home', name:'Charles Street', lat:40.734852, lng:-74.003584}],
+        lastKnownLocationId:'home',
+        blockedTimes:[
+          {label:'blocked', days:[], locationId:'home',
+            start:900, end:960,
+            startAnchor:'sunrise', startOffsetMin:-480,
+            startCombine:'later', startAnchor2:'isha', startOffsetMin2:15,
+            startDayOffset:1, startDayOffset2:0,
+            endAnchor:'sunrise', endOffsetMin:-30},
+          {label:'breakfast', days:[], locationId:null,
+            start:480, end:540}
+        ]
+      })
+    );
+
+    // Afternoon — today's sunrise+5…+35 window has closed.
+    const issue11 = await page.evaluate(({ now }) => {
+      const RealDate = Date;
+      function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+      FD.now = () => now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FD, RealDate); FD.prototype = RealDate.prototype;
+      const orig = globalThis.Date; globalThis.Date = FD;
+      try {
+        const data = JSON.parse(localStorage.getItem('tings_v2'));
+        const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
+        const blocks = normalizeBlockedTimes(settings.blockedTimes);
+        const tomorrowBase = dayStart(now) + 86400000;
+        const tomorrowWeekday = new RealDate(tomorrowBase).getDay();
+        const firstOpen = dayFirstOpenMinute(blocks, tomorrowWeekday);
+        const week = buildWeekAgenda(data, settings, 7);
+        const tomorrow = week.days[1];
+        const fills = (tomorrow?.timeline || []).filter(r => r.kind === 'fill');
+        const exercise = fills.find(r => r.h && r.h.name === 'Sunrise Exercise');
+        const placeMin = exercise
+          ? Math.round((exercise.start - tomorrow.dayBase) / 60000)
+          : null;
+        const tomorrowSlots = (tomorrow?.slots || []).map(s => ({
+          startMin: Math.round((s.start - tomorrow.dayBase) / 60000),
+          endMin: Math.round((s.end - tomorrow.dayBase) / 60000)
+        }));
+        return {
+          firstOpen,
+          fillNames: fills.map(r => r.h.name),
+          placeMin,
+          tomorrowSlots,
+          hasExercise: !!exercise
+        };
+      } finally { globalThis.Date = orig; }
+    }, { now: atTime(15) });
+
+    // dayFirstOpenMinute must end at the overnight sleep tail, NOT breakfast (540).
+    check('11a dayFirstOpenMinute is before breakfast (not clipped to 9am)',
+      issue11.firstOpen > 0 && issue11.firstOpen < 480,
+      `firstOpen=${issue11.firstOpen}`);
+
+    check('11b Sunrise Exercise places on tomorrow',
+      issue11.hasExercise,
+      `tomorrow fills: ${issue11.fillNames.join(', ') || '(none)'}; slots=${JSON.stringify(issue11.tomorrowSlots)}`);
+
+    // Placed inside the sunrise window, before breakfast starts at 8:00.
+    check('11c placed before breakfast in the morning gap',
+      issue11.placeMin != null && issue11.placeMin < 480,
+      `placeMin=${issue11.placeMin}`);
+  }
+
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));
   await browser.close();
 

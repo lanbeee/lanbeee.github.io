@@ -74,7 +74,11 @@ function includeInTodayAgenda(h,settings){
   }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
-  return settings.showDueHabitsInAgenda !== false && days !== null && days >= target && scheduleDistance === 0 && windowStillDoableToday(h);
+  // Never-logged habits (days === null) are treated as due today: a freshly
+  // created habit should enter the agenda so the user can do it, rather than
+  // silently waiting for the first log. After the first log the normal
+  // rhythm (days >= target) applies.
+  return settings.showDueHabitsInAgenda !== false && (days === null || days >= target) && scheduleDistance === 0 && windowStillDoableToday(h);
 }
 
 // PURE: resolve a fill item's allowed time window for the current day, or null
@@ -495,28 +499,36 @@ function blockLocationAtMinute(blocks,minute,weekday){
   return null;
 }
 
-// PURE: the first open minute of a day (after the last early block ends), used
-// as the startClock for future-day timelines so the agenda begins placing at
-// the day's first genuinely-free minute rather than midnight.
+// PURE: the first open minute of a day after contiguous blocked coverage from
+// midnight, used as the startClock / clipAfter for future-day timelines.
+// Only overnight tails and blocks that touch midnight advance the cursor —
+// an isolated mid-morning block (e.g. breakfast 8:00–9:00) must NOT, or the
+// gap between sleep wake and breakfast is clipped away and morning habits
+// (sunrise windows) never place on future days.
 function dayFirstOpenMinute(blocks,weekday){
   if(!Array.isArray(blocks) || !blocks.length)return 0;
-  // Collect end-minutes of blocks that start at/before midnight-ish (early).
-  // The day's first open minute is after the latest-ending pre-dawn block.
-  let latestEarlyEnd = 0;
+  const intervals = [];
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
     const rawS = resolveBlockedTimeMinutes(block,'start') ?? block.start;
     const rawE = resolveBlockedTimeMinutes(block,'end') ?? block.end;
     const {startMin:s, endMin:e} = typeof foldBlockedMinutes === 'function'
       ? foldBlockedMinutes(rawS, rawE) : {startMin:rawS, endMin:rawE};
-    // Overnight block wrapping past midnight counts its morning tail.
-    if(e <= s){ // overnight — its tail ends at `e` in the morning
-      if(e > latestEarlyEnd)latestEarlyEnd = e;
-    }else if(s < 720 && e <= 720){ // same-day block entirely in the AM half
-      if(e > latestEarlyEnd)latestEarlyEnd = e;
+    if(!Number.isFinite(s) || !Number.isFinite(e))continue;
+    if(e <= s){
+      // Overnight — morning tail [0, e) is contiguous from midnight.
+      if(e > 0)intervals.push({start:0, end:e});
+    }else{
+      intervals.push({start:s, end:e});
     }
   }
-  return latestEarlyEnd;
+  intervals.sort((a,b)=>a.start - b.start || a.end - b.end);
+  let cursor = 0;
+  for(const iv of intervals){
+    if(iv.start > cursor)break; // first gap from midnight
+    if(iv.end > cursor)cursor = iv.end;
+  }
+  return cursor;
 }
 
 function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
@@ -909,7 +921,11 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
-  if(days === null || days < 0)return false;
+  // Never-logged habits are due immediately (treated as infinitely overdue) so
+  // a freshly created habit enters the week plan. Future-dated logs (days < 0)
+  // are not yet due. After the first log, the normal rhythm applies.
+  if(days !== null && days < 0)return false;
+  if(days === null)return true;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
   if(ageOnDay >= target)return true;               // due/overdue by this day
