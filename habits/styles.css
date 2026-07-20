@@ -1397,7 +1397,13 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 }
 .mini-time-input::-webkit-outer-spin-button,
 .mini-time-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
-.time-offset-sign{color:var(--text3);font-size:11px;}
+.time-offset-sign-btn{
+  background:none;border:0.5px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);font:inherit;font-size:11px;padding:0 3px;cursor:pointer;
+  line-height:1.6;min-width:18px;text-align:center;
+}
+.time-offset-sign-btn:hover{background:var(--hover);}
+.time-offset-unit{color:var(--text3);font-size:11px;}
 .time-resolved{
   font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums;
   padding:0 4px;min-width:60px;

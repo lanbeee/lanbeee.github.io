@@ -757,7 +757,15 @@ function clearTimeEndpoint(endpoint){
   const sel = endpoint.querySelector('.time-anchor');
   if(sel)sel.value = '';
   const off = endpoint.querySelector('.time-offset');
-  if(off)off.value = '';
+  if(off){
+    off.value = '';
+    const btn = off.nextElementSibling;
+    if(btn && btn.classList.contains('time-offset-sign-btn')){
+      btn.dataset.sign = '+';
+      btn.textContent = '+';
+      btn.setAttribute('aria-label','positive offset');
+    }
+  }
   const habitSel = endpoint.querySelector('.time-habit');
   if(habitSel)habitSel.value = '';
   const habitWrap = endpoint.querySelector('.time-habit-wrap');
@@ -851,6 +859,18 @@ document.addEventListener('click',e=>{
   if(!btn)return;
   const tip = $(btn.dataset.tip);
   if(tip)tip.toggleAttribute('hidden');
+});
+document.addEventListener('click',e=>{
+  const btn = e.target.closest('.time-offset-sign-btn');
+  if(!btn)return;
+  const input = btn.previousElementSibling;
+  if(!input || !input.classList.contains('mini-time-input'))return;
+  const neg = btn.dataset.sign !== '-';
+  btn.dataset.sign = neg ? '-' : '+';
+  btn.textContent = neg ? '−' : '+';
+  btn.setAttribute('aria-label', (neg ? 'negative' : 'positive') + ' offset');
+  // Trigger input/change event on the offset input so listeners update state.
+  input.dispatchEvent(new Event('input', {bubbles:true}));
 });
 $('detail-days').addEventListener('input',()=>setDetailDirty());
 $('detail-days').addEventListener('blur',()=>setDetailDirty());
@@ -1202,8 +1222,8 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   if(loc)saveBlockedTimePatch(parseInt(loc.dataset.blockedLocation,10),{locationId:loc.value || null});
   if(startAnchor)saveBlockedTimePatch(parseInt(startAnchor.dataset.blockedStartAnchor,10),{startAnchor:cleanPrayerAnchor(startAnchor.value)});
   if(endAnchor)saveBlockedTimePatch(parseInt(endAnchor.dataset.blockedEndAnchor,10),{endAnchor:cleanPrayerAnchor(endAnchor.value)});
-  if(startOffset)saveBlockedTimePatch(parseInt(startOffset.dataset.blockedStartOffset,10),{startOffsetMin:normalizePrayerOffset(startOffset.value)});
-  if(endOffset)saveBlockedTimePatch(parseInt(endOffset.dataset.blockedEndOffset,10),{endOffsetMin:normalizePrayerOffset(endOffset.value)});
+  if(startOffset)saveBlockedTimePatch(parseInt(startOffset.dataset.blockedStartOffset,10),{startOffsetMin:readSignedOffset(startOffset)});
+  if(endOffset)saveBlockedTimePatch(parseInt(endOffset.dataset.blockedEndOffset,10),{endOffsetMin:readSignedOffset(endOffset)});
   if(startCombine){
     const v = cleanTimeCombine(startCombine.value);
     saveBlockedTimePatch(parseInt(startCombine.dataset.blockedStartCombine,10),{
@@ -1218,8 +1238,8 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   }
   if(startAnchor2)saveBlockedTimePatch(parseInt(startAnchor2.dataset.blockedStartAnchor2,10),{startAnchor2:cleanPrayerAnchor(startAnchor2.value)});
   if(endAnchor2)saveBlockedTimePatch(parseInt(endAnchor2.dataset.blockedEndAnchor2,10),{endAnchor2:cleanPrayerAnchor(endAnchor2.value)});
-  if(startOffset2)saveBlockedTimePatch(parseInt(startOffset2.dataset.blockedStartOffset2,10),{startOffsetMin2:normalizePrayerOffset(startOffset2.value)});
-  if(endOffset2)saveBlockedTimePatch(parseInt(endOffset2.dataset.blockedEndOffset2,10),{endOffsetMin2:normalizePrayerOffset(endOffset2.value)});
+  if(startOffset2)saveBlockedTimePatch(parseInt(startOffset2.dataset.blockedStartOffset2,10),{startOffsetMin2:readSignedOffset(startOffset2)});
+  if(endOffset2)saveBlockedTimePatch(parseInt(endOffset2.dataset.blockedEndOffset2,10),{endOffsetMin2:readSignedOffset(endOffset2)});
 });
 $('blocked-time-list')?.addEventListener('click',e=>{
   const remove = e.target.closest('[data-blocked-remove]');

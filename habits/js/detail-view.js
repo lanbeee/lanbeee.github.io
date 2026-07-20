@@ -292,14 +292,22 @@ function renderTimeEndpoint(endpoint, field, h){
     if(fixedInput)fixedInput.hidden = true;
     if(dynWrap)dynWrap.hidden = false;
     if(anchorSel)anchorSel.value = anchor;
-    if(offsetInput)offsetInput.value = normalizePrayerOffset(h[field + 'OffsetMin']) || '';
+    if(offsetInput){
+      const off = normalizePrayerOffset(h[field + 'OffsetMin']);
+      offsetInput.value = Math.abs(off) || '';
+      syncOffsetSign(offsetInput, off);
+    }
     syncExprControls(endpoint, field, h, '');
     const combine = cleanTimeCombine(h && h[field + 'Combine']);
     if(combineSel)combineSel.value = combine || '';
     if(expr2)expr2.hidden = !combine;
     if(combine){
       if(anchor2Sel)anchor2Sel.value = cleanAnchor(h[field + 'Anchor2']) || '';
-      if(offset2Input)offset2Input.value = normalizePrayerOffset(h[field + 'OffsetMin2']) || '';
+      if(offset2Input){
+        const off2 = normalizePrayerOffset(h[field + 'OffsetMin2']);
+        offset2Input.value = Math.abs(off2) || '';
+        syncOffsetSign(offset2Input, off2);
+      }
       syncExprControls(endpoint, field, h, '2');
     }
   }else{
@@ -380,6 +388,28 @@ function endpointHasValue(endpoint){
   const fixed = endpoint.querySelector('.time-fixed');
   return Boolean(fixed && fixed.value);
 }
+// RENDER: sync the sign toggle button next to an offset input to reflect a
+// signed numeric value. The input stores the absolute value.
+function syncOffsetSign(input, signedVal){
+  if(!input)return;
+  const btn = input.nextElementSibling;
+  if(!btn || !btn.classList.contains('time-offset-sign-btn'))return;
+  const neg = signedVal < 0;
+  btn.dataset.sign = neg ? '-' : '+';
+  btn.textContent = neg ? '−' : '+';
+  btn.setAttribute('aria-label', (neg ? 'negative' : 'positive') + ' offset');
+}
+// PURE: read the signed offset from an input element by combining its value
+// with the sign from the adjacent .time-offset-sign-btn.
+function readSignedOffset(input){
+  const raw = normalizePrayerOffset(input ? input.value : 0);
+  if(!input)return raw;
+  const btn = input.nextElementSibling;
+  if(btn && btn.classList.contains('time-offset-sign-btn') && btn.dataset.sign === '-'){
+    return -Math.abs(raw);
+  }
+  return Math.abs(raw);
+}
 // PURE: read the anchor value (or null) from a per-endpoint editor, addressed
 // by its fixed-input id. Returns null when the endpoint is in fixed mode.
 function readAnchorFromEndpoint(fixedInputId){
@@ -397,7 +427,7 @@ function readOffsetFromEndpoint(fixedInputId){
   const endpoint = el.closest('.time-endpoint');
   if(!endpoint || !endpoint.classList.contains('is-dynamic'))return 0;
   const input = endpoint.querySelector('.time-offset');
-  return normalizePrayerOffset(input ? input.value : 0);
+  return readSignedOffset(input);
 }
 // PURE: read the referenced habit id (or null) from a per-endpoint editor.
 // Returns null when the endpoint isn't in 'habit' anchor mode.
@@ -429,7 +459,7 @@ function readCombineFromEndpoint(fixedInputId){
     return {combine:null, anchor2:null, offset2:0, habitId2:null, dayOffset, dayOffset2:0};
   }
   const anchor2 = cleanAnchor(endpoint.querySelector('.time-anchor2')?.value);
-  const offset2 = normalizePrayerOffset(endpoint.querySelector('.time-offset2')?.value);
+  const offset2 = readSignedOffset(endpoint.querySelector('.time-offset2'));
   const dayOffset2 = endpoint.querySelector('.time-day-next2')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
   return {
     combine: anchor2 ? combine : null,
