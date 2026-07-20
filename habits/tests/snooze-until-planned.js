@@ -22,8 +22,10 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   await page.waitForSelector('#open-add');
 
   // ── 1. Habit card visible before snooze ──
-  const card = page.locator('#list .ting-card', { hasText: habitName });
-  if(!(await card.isVisible()))throw new Error('habit card should be visible before snooze');
+  // Daily rhythm habits can appear under multiple week-day sections; any one
+  // card is enough to prove the habit is on the home list.
+  const cards = page.locator('#list .ting-card', { hasText: habitName });
+  if((await cards.count()) < 1)throw new Error('habit card should be visible before snooze');
 
   // ── 2. Add a plan for a future date ──
   await page.evaluate(({ name, futureKey }) => {
@@ -62,8 +64,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 
   // ── 6. Habit card is hidden from home screen ──
   await page.waitForTimeout(500);
-  const cardHidden = await card.isVisible();
-  if(cardHidden)throw new Error('habit card should be hidden after snooze');
+  if((await cards.count()) > 0)throw new Error('habit card should be hidden after snooze');
 
   // Confirm empty state shows "hidden for now"
   const empty = page.locator('#empty');
@@ -85,8 +86,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   await page.waitForTimeout(500);
 
   // ── 8. Habit card is visible again after snooze expires ──
-  const cardBack = await card.isVisible();
-  if(!cardBack)throw new Error('habit card should be visible after snooze expires');
+  if((await cards.count()) < 1)throw new Error('habit card should be visible after snooze expires');
 
   const snoozedAfter = await page.evaluate(({ name }) => {
     const data = JSON.parse(localStorage.getItem('tings_v2'));
