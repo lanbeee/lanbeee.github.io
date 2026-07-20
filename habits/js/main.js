@@ -869,8 +869,16 @@ document.addEventListener('click',e=>{
   btn.dataset.sign = neg ? '-' : '+';
   btn.textContent = neg ? '−' : '+';
   btn.setAttribute('aria-label', (neg ? 'negative' : 'positive') + ' offset');
-  // Trigger input/change event on the offset input so listeners update state.
-  input.dispatchEvent(new Event('input', {bubbles:true}));
+  // Update preview for detail view endpoints directly (avoids relying on
+  // synthetic input events on number inputs which are unreliable on some
+  // mobile browsers).
+  const endpoint = input.closest('.time-endpoint');
+  if(endpoint && typeof refreshTimeResolvedFor === 'function'){
+    setDetailDirty();
+    refreshTimeResolvedFor(endpoint);
+  }
+  // For blocked times, trigger change so the delegated handler saves.
+  input.dispatchEvent(new Event('change', {bubbles:true}));
 });
 $('detail-days').addEventListener('input',()=>setDetailDirty());
 $('detail-days').addEventListener('blur',()=>setDetailDirty());
