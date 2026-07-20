@@ -249,22 +249,28 @@
                   <input type="time" class="time-input time-fixed" id="detail-time-start" step="900" aria-label="allowed start time" />
                   <div class="time-dynamic" hidden>
                     <select class="time-anchor mini-select" aria-label="allowed start anchor"></select>
+                    <span class="time-habit-wrap" hidden>
+                      <select class="time-habit mini-select" aria-label="allowed start anchor habit"></select>
+                    </span>
                     <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="allowed start offset minutes" />
                     <span class="time-offset-sign min">min</span>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
                 </div>
                 <span class="time-sep">—</span>
                 <div class="time-endpoint" data-field="allowedTimeEnd">
                   <input type="time" class="time-input time-fixed" id="detail-time-end" step="900" aria-label="allowed end time" />
                   <div class="time-dynamic" hidden>
                     <select class="time-anchor mini-select" aria-label="allowed end anchor"></select>
+                    <span class="time-habit-wrap" hidden>
+                      <select class="time-habit mini-select" aria-label="allowed end anchor habit"></select>
+                    </span>
                     <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="allowed end offset minutes" />
                     <span class="time-offset-sign min">min</span>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
                 </div>
               </div>
               <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
@@ -282,22 +288,28 @@
                   <input type="time" class="time-input time-fixed" id="detail-preferred-time-start" step="900" aria-label="preferred start time" />
                   <div class="time-dynamic" hidden>
                     <select class="time-anchor mini-select" aria-label="preferred start anchor"></select>
+                    <span class="time-habit-wrap" hidden>
+                      <select class="time-habit mini-select" aria-label="preferred start anchor habit"></select>
+                    </span>
                     <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="preferred start offset minutes" />
                     <span class="time-offset-sign min">min</span>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
                 </div>
                 <span class="time-sep">—</span>
                 <div class="time-endpoint" data-field="preferredTimeEnd">
                   <input type="time" class="time-input time-fixed" id="detail-preferred-time-end" step="900" aria-label="preferred end time" />
                   <div class="time-dynamic" hidden>
                     <select class="time-anchor mini-select" aria-label="preferred end anchor"></select>
+                    <span class="time-habit-wrap" hidden>
+                      <select class="time-habit mini-select" aria-label="preferred end anchor habit"></select>
+                    </span>
                     <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="preferred end offset minutes" />
                     <span class="time-offset-sign min">min</span>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
                 </div>
               </div>
               <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>

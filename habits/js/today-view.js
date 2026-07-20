@@ -484,7 +484,8 @@ function blockLocationAtMinute(blocks,minute,weekday){
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
     if(!block.locationId)continue;
-    const s = block.start, e = block.end;
+    const s = resolveBlockedTimeMinutes(block,'start') ?? block.start;
+    const e = resolveBlockedTimeMinutes(block,'end') ?? block.end;
     const inSimple = e > s && minute >= s && minute < e;
     const inOvernight = e <= s && (minute >= s || minute < e);
     if(inSimple || inOvernight)return block.locationId;
@@ -502,7 +503,8 @@ function dayFirstOpenMinute(blocks,weekday){
   let latestEarlyEnd = 0;
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
-    const s = block.start, e = block.end;
+    const s = resolveBlockedTimeMinutes(block,'start') ?? block.start;
+    const e = resolveBlockedTimeMinutes(block,'end') ?? block.end;
     // Overnight block wrapping past midnight counts its morning tail.
     if(e <= s){ // overnight — its tail ends at `e` in the morning
       if(e > latestEarlyEnd)latestEarlyEnd = e;
@@ -545,16 +547,20 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
 
 function agendaBlockedIntervals(todayKey,settings,start,end){
   const day = new Date(`${todayKey}T12:00:00`).getDay();
+  const dayBase = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
   return normalizeBlockedTimes(settings.blockedTimes).flatMap(block=>{
     if(block.days.length && !block.days.includes(day))return [];
-    if(isBlockedCancelled(todayKey,block.label,block.start,block.end,settings))return [];
+    // Resolve dynamic start/end (prayer anchors only on blocked times).
+    const startMin = resolveBlockedTimeMinutes(block,'start',dayBase) ?? block.start;
+    const endMin = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
+    if(isBlockedCancelled(todayKey,block.label,startMin,endMin,settings))return [];
     const locationId = block.locationId || null;
-    const blockStart = start + block.start * 60000;
-    const blockEnd = start + block.end * 60000;
-    if(block.end > block.start)return [{start:blockStart,end:blockEnd,label:block.label,locationId,startMin:block.start,endMin:block.end,blockStartMin:block.start,blockEndMin:block.end}];
+    const blockStart = start + startMin * 60000;
+    const blockEnd = start + endMin * 60000;
+    if(endMin > startMin)return [{start:blockStart,end:blockEnd,label:block.label,locationId,startMin,endMin,blockStartMin:startMin,blockEndMin:endMin}];
     return [
-      {start,end:blockEnd,label:block.label,locationId,startMin:0,endMin:block.end,blockStartMin:block.start,blockEndMin:block.end},
-      {start:blockStart,end,label:block.label,locationId,startMin:block.start,endMin:1440,blockStartMin:block.start,blockEndMin:block.end}
+      {start,end:blockEnd,label:block.label,locationId,startMin:0,endMin:endMin,blockStartMin:startMin,blockEndMin:endMin},
+      {start:blockStart,end,label:block.label,locationId,startMin,endMin:1440,blockStartMin:startMin,blockEndMin:endMin}
     ];
   });
 }

@@ -195,6 +195,47 @@ function saveAvailabilityDay(index,value){
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayAvailability(dayLogsKey);
 }
 
+// PURE: <option> list for a blocked-time prayer-anchor picker.
+function blockedAnchorOptions(selected){
+  const sel = cleanPrayerAnchor(selected) || '';
+  return '<option value="">— anchor —</option>'
+    + PRAYER_ANCHORS.map(a => `<option value="${a}"${a === sel ? ' selected' : ''}>${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+}
+
+// PURE: live preview text for one blocked-time endpoint (resolved clock time,
+// or a muted hint when the anchor can't resolve yet).
+function blockedResolvedLabel(block, field){
+  if(!block || !cleanPrayerAnchor(block[field + 'Anchor']))return '';
+  if(!block.locationId)return 'pick a location';
+  const min = typeof resolveBlockedTimeMinutes === 'function'
+    ? resolveBlockedTimeMinutes(block, field, dayStart(Date.now()))
+    : null;
+  if(min == null)return '—';
+  return formatTimeShort(((min % 1440) + 1440) % 1440);
+}
+
+// RENDER: one blocked-time endpoint (start or end) — fixed clock OR prayer
+// anchor + offset, toggled by the gear. Mirrors the habit time-endpoint UI
+// but prayer-anchors only (no habit-relative option on settings blocks).
+function blockedEndpointHtml(block, i, field){
+  const anchor = cleanPrayerAnchor(block[field + 'Anchor']);
+  const isDyn = Boolean(anchor);
+  const fixedVal = minutesToTimeInput(block[field]);
+  const offsetVal = normalizePrayerOffset(block[field + 'OffsetMin']) || '';
+  const resolved = isDyn ? blockedResolvedLabel(block, field) : '';
+  const aria = escapeHtml(block.label) + ' ' + field;
+  return `<div class="time-endpoint blocked-endpoint${isDyn ? ' is-dynamic' : ''}" data-blocked-field="${field}" data-blocked-index="${i}">
+    <input type="time" class="time-fixed" step="900" data-blocked-${field}="${i}" aria-label="${aria}" value="${fixedVal}"${isDyn ? ' hidden' : ''} />
+    <div class="time-dynamic"${isDyn ? '' : ' hidden'}>
+      <select class="time-anchor mini-select" data-blocked-${field}-anchor="${i}" aria-label="${aria} anchor">${blockedAnchorOptions(anchor)}</select>
+      <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset="${i}" aria-label="${aria} offset minutes" value="${offsetVal}" />
+      <span class="time-offset-sign min">min</span>
+      <span class="time-resolved" aria-live="polite">${escapeHtml(resolved)}</span>
+    </div>
+    <button type="button" class="time-mode-toggle mini-text-btn" data-blocked-${field}-mode="${i}" title="use prayer time" aria-label="use prayer time">⚙</button>
+  </div>`;
+}
+
 function renderBlockedTimeControls(){
   const wrap = $('blocked-time-list');
   if(!wrap)return;
@@ -203,10 +244,10 @@ function renderBlockedTimeControls(){
   wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
     <div class="blocked-time-row" data-blocked-row="${i}">
       <input type="text" data-blocked-label="${i}" aria-label="blocked time name" maxlength="24" value="${escapeHtml(block.label)}" />
-      <div class="blocked-time-hours">
-        <input type="time" step="900" data-blocked-start="${i}" aria-label="${escapeHtml(block.label)} start" value="${minutesToTimeInput(block.start)}" />
-        <span>to</span>
-        <input type="time" step="900" data-blocked-end="${i}" aria-label="${escapeHtml(block.label)} end" value="${minutesToTimeInput(block.end)}" />
+      <div class="blocked-time-hours time-endpoints">
+        ${blockedEndpointHtml(block, i, 'start')}
+        <span class="time-sep">to</span>
+        ${blockedEndpointHtml(block, i, 'end')}
       </div>
       <div class="schedule-chip-row compact-days">
         ${WEEKDAY_LABELS.map((label,day)=>{

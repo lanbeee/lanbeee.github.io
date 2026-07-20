@@ -20,6 +20,7 @@
  * The same record shape expresses all four item kinds via `type`; the fields
  * below marked with TaskFields only carry meaning for that type.
  * @typedef {Object} Habit
+ * @property {string} hid                     — stable opaque id (crypto.randomUUID()), never user-displayed. Used by other habits' time anchors. Generated on first normalize; legacy records get one transparently.
  * @property {string} name                    — display name (max 60 chars)
  * @property {'keepup'|'reduce'|'zero'|'task'} type  — build / limit / stop / one-off
  * @property {number|null} target             — rhythm in days (may be fractional, e.g. 3.5 = 2×/7d); null when type in zero/task
@@ -41,7 +42,7 @@
  * — Prayer-time anchors (optional; mutually exclusive per-endpoint with the fixed minutes above) —
  * When `*Anchor` is set it overrides the matching fixed-minutes field for that endpoint, and the
  * resolved minute is computed from the habit's location for the current day (see js/prayer-times.js).
- * @property {string|null} allowedTimeStartAnchor   — 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|null
+ * @property {string|null} allowedTimeStartAnchor   — 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'habit'|null
  * @property {number}      allowedTimeStartOffsetMin — signed minutes vs the anchor (e.g. +60 = an hour after)
  * @property {string|null} allowedTimeEndAnchor
  * @property {number}      allowedTimeEndOffsetMin
@@ -49,6 +50,16 @@
  * @property {number}      preferredTimeStartOffsetMin
  * @property {string|null} preferredTimeEndAnchor
  * @property {number}      preferredTimeEndOffsetMin
+ *
+ * — Habit-relative anchors (optional; only meaningful when *Anchor = 'habit') —
+ * When an anchor field is set to 'habit', the matching *AnchorHabitId references another habit's
+ * stable `hid`. The endpoint resolves to that habit's most-recent log time + the signed offset,
+ * with one rule that prevents re-firing: if THIS habit's own last log is on/after the anchor
+ * habit's last log, the window collapses (the anchor has already been "consumed"). See js/prayer-times.js.
+ * @property {string|null} allowedTimeStartAnchorHabitId
+ * @property {string|null} allowedTimeEndAnchorHabitId
+ * @property {string|null} preferredTimeStartAnchorHabitId
+ * @property {string|null} preferredTimeEndAnchorHabitId
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split duration into chunks of at least minChunkMinutes
@@ -127,7 +138,7 @@
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
- * @property {{label:string,days:number[],start:number,end:number}[]} blockedTimes — recurring unavailable blocks
+ * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,endAnchor:?string,endOffsetMin:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits: when set, the matching start/end is computed from the block's locationId (prayer anchors only on blocked times — habit-anchors are habit-only).
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
  */
 
@@ -278,7 +289,12 @@ function normalize(items){
     const preferredLocationId = primaryPreferredLocationId(locationPrefs, locationIds);
     const isRhythmHabit = type === 'keepup' || type === 'reduce';
     const breakable = Boolean(raw.breakable);
+    // Stable habit id. Used by other habits' time anchors ("habit B's window opens
+    // when habit A is logged"). Generated once on first normalize; legacy records
+    // get one transparently so the feature can opt-in on any habit.
+    const hid = cleanHabitId(raw.hid) || generateHabitId();
     const h = {
+      hid,
       name: raw.name || '',
       type,
       target: (type === 'zero' || type === 'task')
@@ -304,14 +320,21 @@ function normalize(items){
       allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
       preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
-      allowedTimeStartAnchor:cleanPrayerAnchor(raw.allowedTimeStartAnchor),
+      // cleanAnchor accepts prayer keys AND 'habit'. Falls back to cleanPrayerAnchor
+      // only if prayer-times.js hasn't loaded yet (shouldn't happen at runtime).
+      allowedTimeStartAnchor:typeof cleanAnchor === 'function' ? cleanAnchor(raw.allowedTimeStartAnchor) : cleanPrayerAnchor(raw.allowedTimeStartAnchor),
       allowedTimeStartOffsetMin:normalizePrayerOffset(raw.allowedTimeStartOffsetMin),
-      allowedTimeEndAnchor:cleanPrayerAnchor(raw.allowedTimeEndAnchor),
+      allowedTimeEndAnchor:typeof cleanAnchor === 'function' ? cleanAnchor(raw.allowedTimeEndAnchor) : cleanPrayerAnchor(raw.allowedTimeEndAnchor),
       allowedTimeEndOffsetMin:normalizePrayerOffset(raw.allowedTimeEndOffsetMin),
-      preferredTimeStartAnchor:cleanPrayerAnchor(raw.preferredTimeStartAnchor),
+      preferredTimeStartAnchor:typeof cleanAnchor === 'function' ? cleanAnchor(raw.preferredTimeStartAnchor) : cleanPrayerAnchor(raw.preferredTimeStartAnchor),
       preferredTimeStartOffsetMin:normalizePrayerOffset(raw.preferredTimeStartOffsetMin),
-      preferredTimeEndAnchor:cleanPrayerAnchor(raw.preferredTimeEndAnchor),
+      preferredTimeEndAnchor:typeof cleanAnchor === 'function' ? cleanAnchor(raw.preferredTimeEndAnchor) : cleanPrayerAnchor(raw.preferredTimeEndAnchor),
       preferredTimeEndOffsetMin:normalizePrayerOffset(raw.preferredTimeEndOffsetMin),
+      // Habit-id refs only stick when the matching anchor is actually 'habit'.
+      allowedTimeStartAnchorHabitId:(raw.allowedTimeStartAnchor === 'habit' ? cleanHabitId(raw.allowedTimeStartAnchorHabitId) : '') || null,
+      allowedTimeEndAnchorHabitId:(raw.allowedTimeEndAnchor === 'habit' ? cleanHabitId(raw.allowedTimeEndAnchorHabitId) : '') || null,
+      preferredTimeStartAnchorHabitId:(raw.preferredTimeStartAnchor === 'habit' ? cleanHabitId(raw.preferredTimeStartAnchorHabitId) : '') || null,
+      preferredTimeEndAnchorHabitId:(raw.preferredTimeEndAnchor === 'habit' ? cleanHabitId(raw.preferredTimeEndAnchorHabitId) : '') || null,
       flexibilityDays,
       durationMinutes:clampDuration(raw.durationMinutes),
       breakable,
@@ -690,7 +713,23 @@ function normalizeBlockedTimes(value){
     // agenda where you already are during that span (sleep→Home, work→Office).
     // Stripped to a clean id; absent = location-agnostic (busy, place unknown).
     const locationId = cleanLocationId(raw?.locationId) || null;
-    return {label,days,start,end,locationId};
+    // Prayer anchors mirror habits: when set, the matching start/end is
+    // resolved via adhan against the block's locationId. Blocked times do NOT
+    // support habit-anchors (they're a settings-level recurring block, not
+    // tied to a habit's log stream).
+    const startAnchor = cleanPrayerAnchor(raw?.startAnchor);
+    const endAnchor = cleanPrayerAnchor(raw?.endAnchor);
+    // Require a locationId when an anchor is set — no coords, no computation.
+    // If the user toggles dynamic without a location, the anchor silently drops.
+    const safeStartAnchor = startAnchor && locationId ? startAnchor : null;
+    const safeEndAnchor = endAnchor && locationId ? endAnchor : null;
+    return {
+      label,days,start,end,locationId,
+      startAnchor:safeStartAnchor,
+      startOffsetMin:normalizePrayerOffset(raw?.startOffsetMin),
+      endAnchor:safeEndAnchor,
+      endOffsetMin:normalizePrayerOffset(raw?.endOffsetMin)
+    };
   }).filter(Boolean).slice(0,24);
 }
 /** PURE: stable signature for a blocked-time instance on a given day. */
@@ -762,6 +801,18 @@ function restoreBlockedInstance(dayKey,label,startMin,endMin){
 // PURE: trim + cap a location id. Empty string when falsy.
 function cleanLocationId(value){
   return String(value || '').trim().slice(0,64);
+}
+// PURE: trim + cap a stable habit id. Empty string when falsy.
+function cleanHabitId(value){
+  return String(value || '').trim().slice(0,64);
+}
+// IMPURE (reads crypto + Date): mint a fresh habit id. Mirrors the location-id
+// pattern in settings.js — crypto.randomUUID when available, temporal fallback
+// otherwise. The fallback is unique enough for personal use; the cost of a
+// collision would be a habit anchor silently pointing at the wrong habit.
+function generateHabitId(){
+  if(typeof crypto !== 'undefined' && crypto.randomUUID)return crypto.randomUUID();
+  return `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
 }
 // PURE: coerce raw locationIds into a de-duped array. When `registry` is
 // provided, ids absent from it are dropped (the dangling-id sweep); when it is
@@ -1015,8 +1066,12 @@ function intersectWindows(a,b){
 function effectiveLocationWindow(h,loc,weekday){
   const locWin = loc ? resolveLocationWindow(loc,weekday) : {start:0,end:1440};
   if(!locWin)return [];
-  const startAnchor = cleanPrayerAnchor(h && h.allowedTimeStartAnchor);
-  const endAnchor = cleanPrayerAnchor(h && h.allowedTimeEndAnchor);
+  // Both prayer anchors and habit anchors are dynamic; resolve through the
+  // shared resolver. Habit anchors ignore the passed-in location (they use
+  // the anchor habit's log); prayer anchors use the habit's resolved location
+  // — NOT the location passed in here, which may be a different allowed one.
+  const startAnchor = cleanAnchor(h && h.allowedTimeStartAnchor);
+  const endAnchor = cleanAnchor(h && h.allowedTimeEndAnchor);
   if(startAnchor || endAnchor){
     const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayStart(Date.now()));
     const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayStart(Date.now()));
@@ -1266,15 +1321,15 @@ function hasPreferredDays(h){
   return Boolean(pref.weekdays.length || pref.monthDays.length);
 }
 function hasTimeWindow(h){
-  // Dynamic (anchor) endpoints count as a set window even when the fixed
-  // minutes are null — they'll resolve to a real minute at render time.
-  const startSet = Number.isFinite(h.allowedTimeStart) || cleanPrayerAnchor(h.allowedTimeStartAnchor);
-  const endSet = Number.isFinite(h.allowedTimeEnd) || cleanPrayerAnchor(h.allowedTimeEndAnchor);
+  // Dynamic (prayer or habit) anchors count as a set window even when the
+  // fixed minutes are null — they'll resolve to a real minute at render time.
+  const startSet = Number.isFinite(h.allowedTimeStart) || cleanAnchor(h.allowedTimeStartAnchor);
+  const endSet = Number.isFinite(h.allowedTimeEnd) || cleanAnchor(h.allowedTimeEndAnchor);
   return Boolean(startSet && endSet);
 }
 function hasPreferredTimeWindow(h){
-  const startSet = Number.isFinite(h.preferredTimeStart) || cleanPrayerAnchor(h.preferredTimeStartAnchor);
-  const endSet = Number.isFinite(h.preferredTimeEnd) || cleanPrayerAnchor(h.preferredTimeEndAnchor);
+  const startSet = Number.isFinite(h.preferredTimeStart) || cleanAnchor(h.preferredTimeStartAnchor);
+  const endSet = Number.isFinite(h.preferredTimeEnd) || cleanAnchor(h.preferredTimeEndAnchor);
   return Boolean(startSet && endSet);
 }
 function isPreferredDay(h,ts = Date.now()){
@@ -1334,17 +1389,21 @@ function formatTimeShort(minutes){
 }
 function timeWindowSummary(h){
   if(!hasTimeWindow(h))return '';
-  // When either endpoint is a prayer anchor, show the anchor labels (e.g.
-  // "sunrise +30 – sunset"). Resolved clock times would mislead the moment
-  // the date or location changes; the anchor label is the stable truth.
-  const startAnchor = cleanPrayerAnchor(h.allowedTimeStartAnchor);
-  const endAnchor = cleanPrayerAnchor(h.allowedTimeEndAnchor);
+  // When either endpoint is an anchor (prayer OR habit), show anchor labels
+  // (e.g. "sunrise +30 – after gym"). Resolved clock times would mislead the
+  // moment the date, location, or anchor habit's log changes; the anchor
+  // label is the stable truth.
+  const startAnchor = cleanAnchor(h.allowedTimeStartAnchor);
+  const endAnchor = cleanAnchor(h.allowedTimeEndAnchor);
   if(startAnchor || endAnchor){
+    const data = typeof load === 'function' ? load() : [];
+    const startName = startAnchor === 'habit' ? (findHabitByHid(h.allowedTimeStartAnchorHabitId, data) || {}).name : null;
+    const endName = endAnchor === 'habit' ? (findHabitByHid(h.allowedTimeEndAnchorHabitId, data) || {}).name : null;
     const s = startAnchor
-      ? prayerAnchorLabel(startAnchor, h.allowedTimeStartOffsetMin)
+      ? prayerAnchorLabel(startAnchor, h.allowedTimeStartOffsetMin, startName)
       : formatTimeShort(h.allowedTimeStart);
     const e = endAnchor
-      ? prayerAnchorLabel(endAnchor, h.allowedTimeEndOffsetMin)
+      ? prayerAnchorLabel(endAnchor, h.allowedTimeEndOffsetMin, endName)
       : formatTimeShort(h.allowedTimeEnd);
     return `${s}–${e}`;
   }

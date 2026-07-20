@@ -271,6 +271,194 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   });
   assert(cacheOk === true, 'clearPrayerTimesCache exists + runs');
 
+  // ── M. stable habit ids (hid) ──
+  console.log('\n[M] stable habit ids');
+  const hids = await page.evaluate(() => {
+    const a = normalize([{name:'gym', type:'keepup', target:7}])[0];
+    const b = normalize([{name:'gym', type:'keepup', target:7, hid:a.hid}])[0];
+    const c = normalize([{name:'run', type:'keepup', target:7, hid:'  bad id!!!  '}])[0];
+    return {
+      hasHid: typeof a.hid === 'string' && a.hid.length > 0,
+      stable: a.hid === b.hid,
+      cleaned: c.hid === 'bad id!!!' || c.hid.length > 0, // cleanHabitId trims; generate if empty after clean
+      different: a.hid !== c.hid || true
+    };
+  });
+  assert(hids.hasHid === true, 'normalize generates hid');
+  assert(hids.stable === true, 'existing hid preserved across normalize');
+
+  // ── N. habit-relative anchors ──
+  console.log('\n[N] habit-relative anchors');
+  const habitAnchor = await page.evaluate(() => {
+    const today = dayStart(Date.now());
+    const anchorTs = today + 8 * 3600000; // 8am today
+    const gym = normalize([{
+      name:'gym', type:'keepup', target:7,
+      logs:[anchorTs], lastLog:anchorTs
+    }])[0];
+    const stretch = normalize([{
+      name:'stretch', type:'keepup', target:7,
+      allowedTimeStartAnchor:'habit',
+      allowedTimeStartAnchorHabitId:gym.hid,
+      allowedTimeStartOffsetMin:30,
+      allowedTimeEnd:720, // noon fixed end so hasTimeWindow is true
+      logs:[]
+    }])[0];
+    // Seed both into storage so findHabitByHid / resolveHabitAnchorMinutes can see them.
+    save([gym, stretch]);
+    const startMin = resolveHabitTimeField(stretch, 'allowedTimeStart', today);
+    // Consumed: stretch already logged after gym → start collapses.
+    const stretchDone = {...stretch, lastLog: anchorTs + 3600000, logs:[anchorTs + 3600000]};
+    const consumed = resolveHabitTimeField(stretchDone, 'allowedTimeStart', today);
+    // Never-logged anchor → null.
+    const never = normalize([{
+      name:'yoga', type:'keepup', target:7,
+      allowedTimeStartAnchor:'habit',
+      allowedTimeStartAnchorHabitId:gym.hid,
+      allowedTimeEnd:720,
+      logs:[]
+    }])[0];
+    // Point never at a habit with no logs.
+    const empty = normalize([{name:'empty', type:'keepup', target:7, logs:[]}])[0];
+    save([gym, stretch, empty]);
+    const neverMin = resolveHabitTimeField({
+      ...never,
+      allowedTimeStartAnchorHabitId:empty.hid
+    }, 'allowedTimeStart', today);
+    // Prior-day anchor log → minute maps to 0 (open since midnight) + offset.
+    const yesterday = today - 86400000 + 10 * 3600000; // 10am yesterday
+    const gymY = {...gym, lastLog:yesterday, logs:[yesterday]};
+    save([gymY, stretch]);
+    const priorMin = resolveHabitTimeField(stretch, 'allowedTimeStart', today);
+    // normalize preserves 'habit' + habitId.
+    const round = normalize([{
+      name:'x', type:'keepup', target:7,
+      allowedTimeStartAnchor:'habit',
+      allowedTimeStartAnchorHabitId:gym.hid,
+      allowedTimeStartOffsetMin:15,
+      allowedTimeEndAnchor:'sunrise'
+    }])[0];
+    return {
+      startMin,
+      consumed,
+      neverMin,
+      priorMin,
+      roundAnchor: round.allowedTimeStartAnchor,
+      roundHid: round.allowedTimeStartAnchorHabitId,
+      roundOff: round.allowedTimeStartOffsetMin,
+      prayerKept: round.allowedTimeEndAnchor,
+      usesHabit: habitUsesHabitAnchors(stretch),
+      usesPrayer: habitUsesPrayerAnchors(stretch),
+      summary: timeWindowSummary(stretch)
+    };
+  });
+  assert(habitAnchor.startMin === 8 * 60 + 30, 'habit anchor = 8am + 30m (' + habitAnchor.startMin + ')');
+  assert(habitAnchor.consumed === null, 'consumed start → null');
+  assert(habitAnchor.neverMin === null, 'never-logged anchor → null');
+  assert(habitAnchor.priorMin === 30, 'prior-day anchor → 0 + offset (' + habitAnchor.priorMin + ')');
+  assert(habitAnchor.roundAnchor === 'habit', "normalize keeps 'habit' anchor");
+  assert(typeof habitAnchor.roundHid === 'string' && habitAnchor.roundHid.length > 0, 'normalize keeps AnchorHabitId');
+  assert(habitAnchor.roundOff === 15, 'normalize keeps habit offset');
+  assert(habitAnchor.prayerKept === 'sunrise', 'prayer anchor still kept alongside habit');
+  assert(Boolean(habitAnchor.usesHabit) === true, 'habitUsesHabitAnchors true');
+  assert(habitAnchor.usesPrayer === false, 'habit-only → habitUsesPrayerAnchors false');
+  assert(habitAnchor.summary.indexOf('after gym') === 0 || habitAnchor.summary.indexOf('after') >= 0, 'summary shows after-habit label (' + habitAnchor.summary + ')');
+
+  // ── O. cycle detection ──
+  console.log('\n[O] detectHabitAnchorCycle');
+  const cycles = await page.evaluate(() => {
+    const a = normalize([{name:'A', type:'keepup', target:7}])[0];
+    const b = normalize([{name:'B', type:'keepup', target:7}])[0];
+    const c = normalize([{name:'C', type:'keepup', target:7}])[0];
+    // A → B → A
+    a.allowedTimeStartAnchor = 'habit';
+    a.allowedTimeStartAnchorHabitId = b.hid;
+    b.allowedTimeStartAnchor = 'habit';
+    b.allowedTimeStartAnchorHabitId = a.hid;
+    save([a, b, c]);
+    const ab = detectHabitAnchorCycle(a.hid, {[a.hid]:a, [b.hid]:b});
+    // Self-cycle A → A
+    const self = {...a, allowedTimeStartAnchorHabitId:a.hid};
+    const selfCycle = detectHabitAnchorCycle(self.hid, {[self.hid]:self});
+    // A → B → C (no cycle)
+    b.allowedTimeStartAnchorHabitId = c.hid;
+    c.allowedTimeStartAnchor = null;
+    c.allowedTimeStartAnchorHabitId = null;
+    save([a, b, c]);
+    const open = detectHabitAnchorCycle(a.hid, {[a.hid]:a, [b.hid]:b, [c.hid]:c});
+    // Prayer-only start doesn't count as a cycle edge
+    const prayer = {...a, allowedTimeStartAnchor:'fajr', allowedTimeStartAnchorHabitId:b.hid};
+    const prayerEdge = detectHabitAnchorCycle(prayer.hid, {[prayer.hid]:prayer, [b.hid]:b});
+    return {
+      ab: ab && ab.length > 0,
+      abNames: ab,
+      self: selfCycle && selfCycle.length > 0,
+      open: open,
+      prayerEdge: prayerEdge
+    };
+  });
+  assert(cycles.ab === true, 'A↔B cycle detected');
+  assert(cycles.self === true, 'self-cycle detected');
+  assert(cycles.open === null, 'open chain → null');
+  assert(cycles.prayerEdge === null, 'prayer anchor does not form habit cycle');
+
+  // ── P. blocked-time prayer anchors ──
+  console.log('\n[P] blocked-time prayer anchors');
+  const blocked = await page.evaluate(() => {
+    const s = loadSortSettings();
+    s.locations = [{id:'home', name:'Home', lat:40.7, lng:-74.0}];
+    s.blockedTimes = [
+      {label:'sleep', days:[], start:1320, end:420, locationId:'home', startAnchor:'isha', startOffsetMin:0, endAnchor:'sunrise', endOffsetMin:0},
+      {label:'work', days:[1,2,3,4,5], start:540, end:1020}, // fixed, no anchors
+      {label:'bad', days:[], start:600, end:720, startAnchor:'fajr'} // anchor without location → stripped
+    ];
+    saveSortSettings(s);
+    const blocks = normalizeBlockedTimes(loadSortSettings().blockedTimes);
+    const sleep = blocks.find(b => b.label === 'sleep');
+    const work = blocks.find(b => b.label === 'work');
+    const bad = blocks.find(b => b.label === 'bad');
+    const today = dayStart(Date.now());
+    const sleepStart = resolveBlockedTimeMinutes(sleep, 'start', today);
+    const sleepEnd = resolveBlockedTimeMinutes(sleep, 'end', today);
+    const workStart = resolveBlockedTimeMinutes(work, 'start', today);
+    return {
+      sleepStartAnchor: sleep && sleep.startAnchor,
+      sleepEndAnchor: sleep && sleep.endAnchor,
+      sleepStart,
+      sleepEnd,
+      workStart,
+      workStartAnchor: work && work.startAnchor,
+      badAnchor: bad && bad.startAnchor,
+      badKept: Boolean(bad)
+    };
+  });
+  assert(blocked.sleepStartAnchor === 'isha', 'sleep startAnchor kept');
+  assert(blocked.sleepEndAnchor === 'sunrise', 'sleep endAnchor kept');
+  assert(Number.isFinite(blocked.sleepStart), 'sleep start resolved (' + blocked.sleepStart + ')');
+  assert(Number.isFinite(blocked.sleepEnd), 'sleep end resolved (' + blocked.sleepEnd + ')');
+  // Isha is evening, sunrise is morning — overnight block.
+  assert(blocked.sleepStart > 720, 'isha lands after noon (' + blocked.sleepStart + ')');
+  assert(blocked.sleepEnd < 720, 'sunrise lands before noon (' + blocked.sleepEnd + ')');
+  assert(blocked.workStart === 540, 'fixed block returns literal start');
+  assert(blocked.workStartAnchor == null, 'fixed block has no startAnchor');
+  assert(blocked.badAnchor == null, 'anchor without locationId stripped');
+  assert(blocked.badKept === true, 'block itself still kept (fixed fallback)');
+
+  // ── Q. cleanAnchor accepts both kinds ──
+  console.log('\n[Q] cleanAnchor');
+  const cleaned = await page.evaluate(() => ({
+    fajr: cleanAnchor('fajr'),
+    habit: cleanAnchor('habit'),
+    sunset: cleanAnchor('sunset'),
+    junk: cleanAnchor('nope'),
+    empty: cleanAnchor('')
+  }));
+  assert(cleaned.fajr === 'fajr', 'cleanAnchor fajr');
+  assert(cleaned.habit === 'habit', "cleanAnchor 'habit'");
+  assert(cleaned.sunset === 'maghrib', 'cleanAnchor sunset→maghrib');
+  assert(cleaned.junk === null, 'cleanAnchor junk→null');
+  assert(cleaned.empty === null, 'cleanAnchor empty→null');
+
   await browser.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);

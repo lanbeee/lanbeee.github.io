@@ -72,14 +72,18 @@ function openDetail(i){
     allowedTimeEnd:h.allowedTimeEnd ?? null,
     preferredTimeStart:h.preferredTimeStart ?? null,
     preferredTimeEnd:h.preferredTimeEnd ?? null,
-    allowedTimeStartAnchor:cleanPrayerAnchor(h.allowedTimeStartAnchor),
+    allowedTimeStartAnchor:cleanAnchor(h.allowedTimeStartAnchor),
     allowedTimeStartOffsetMin:normalizePrayerOffset(h.allowedTimeStartOffsetMin),
-    allowedTimeEndAnchor:cleanPrayerAnchor(h.allowedTimeEndAnchor),
+    allowedTimeEndAnchor:cleanAnchor(h.allowedTimeEndAnchor),
     allowedTimeEndOffsetMin:normalizePrayerOffset(h.allowedTimeEndOffsetMin),
-    preferredTimeStartAnchor:cleanPrayerAnchor(h.preferredTimeStartAnchor),
+    preferredTimeStartAnchor:cleanAnchor(h.preferredTimeStartAnchor),
     preferredTimeStartOffsetMin:normalizePrayerOffset(h.preferredTimeStartOffsetMin),
-    preferredTimeEndAnchor:cleanPrayerAnchor(h.preferredTimeEndAnchor),
+    preferredTimeEndAnchor:cleanAnchor(h.preferredTimeEndAnchor),
     preferredTimeEndOffsetMin:normalizePrayerOffset(h.preferredTimeEndOffsetMin),
+    allowedTimeStartAnchorHabitId:cleanHabitId(h.allowedTimeStartAnchorHabitId) || null,
+    allowedTimeEndAnchorHabitId:cleanHabitId(h.allowedTimeEndAnchorHabitId) || null,
+    preferredTimeStartAnchorHabitId:cleanHabitId(h.preferredTimeStartAnchorHabitId) || null,
+    preferredTimeEndAnchorHabitId:cleanHabitId(h.preferredTimeEndAnchorHabitId) || null,
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     breakable:Boolean(h.breakable),
     minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
@@ -207,14 +211,34 @@ function renderTimeWindowInputs(h = {}){
 }
 
 // RENDER (idempotent): populate every anchor <select> with the standard list.
-// Re-running on every openDetail is harmless — the options are stable.
+// Re-running on every openDetail is harmless — the options are stable. Includes
+// the 'habit' anchor option, which (when selected) reveals a habit picker.
 function populateAnchorOptions(){
   document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
     if(sel.dataset.populated === '1')return;
-    sel.innerHTML = '<option value="">— prayer —</option>'
-      + PRAYER_ANCHORS.map(a => `<option value="${a}">${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+    sel.innerHTML = '<option value="">— anchor —</option>'
+      + PRAYER_ANCHORS.map(a => `<option value="${a}">${PRAYER_ANCHOR_LABELS[a]}</option>`).join('')
+      + '<option value="habit">after another habit…</option>';
     sel.dataset.populated = '1';
   });
+}
+
+// RENDER: build/rebuild the habit-picker dropdown shown when an endpoint is
+// in 'habit' mode. Excludes the current habit (can't anchor on yourself).
+function populateHabitPickerFor(endpoint, field, h){
+  if(!endpoint)return;
+  const picker = endpoint.querySelector('.time-habit');
+  if(!picker)return;
+  const selected = cleanHabitId(h && h[field + 'AnchorHabitId']) || '';
+  const data = typeof load === 'function' ? load() : [];
+  const currentHid = cleanHabitId(h && h.hid);
+  const options = ['<option value="">— pick a habit —</option>']
+    .concat(data.filter(x => x && cleanHabitId(x.hid) !== currentHid).map(x => {
+      const hid = cleanHabitId(x.hid);
+      const name = (x.name || 'untitled').slice(0,60);
+      return `<option value="${escapeHtml(hid)}"${hid === selected ? ' selected' : ''}>${escapeHtml(name)}</option>`;
+    }));
+  picker.innerHTML = options.join('');
 }
 
 // RENDER: sync a single time endpoint DOM block from the habit's stored state.
@@ -224,14 +248,18 @@ function renderTimeEndpoint(endpoint, field, h){
   const dynWrap = endpoint.querySelector('.time-dynamic');
   const anchorSel = endpoint.querySelector('.time-anchor');
   const offsetInput = endpoint.querySelector('.time-offset');
-  const resolved = endpoint.querySelector('.time-resolved');
-  const anchor = cleanPrayerAnchor(h[field + 'Anchor']);
+  const habitWrap = endpoint.querySelector('.time-habit-wrap');
+  const anchor = cleanAnchor(h && h[field + 'Anchor']);
   if(anchor){
     endpoint.classList.add('is-dynamic');
     if(fixedInput)fixedInput.hidden = true;
     if(dynWrap)dynWrap.hidden = false;
     if(anchorSel)anchorSel.value = anchor;
     if(offsetInput)offsetInput.value = normalizePrayerOffset(h[field + 'OffsetMin']) || '';
+    if(habitWrap){
+      habitWrap.hidden = anchor !== 'habit';
+      if(anchor === 'habit')populateHabitPickerFor(endpoint, field, h);
+    }
   }else{
     endpoint.classList.remove('is-dynamic');
     if(fixedInput){
@@ -242,18 +270,42 @@ function renderTimeEndpoint(endpoint, field, h){
     if(dynWrap)dynWrap.hidden = true;
     if(anchorSel)anchorSel.value = '';
     if(offsetInput)offsetInput.value = '';
+    if(habitWrap)habitWrap.hidden = true;
   }
   updateTimeResolved(endpoint, field, h);
 }
 
 // RENDER: live preview of the resolved clock time for a dynamic endpoint.
 // Falls back to a muted "—" when there's no location on the habit (the save
-// path will block, but the preview explains why).
+// path will block, but the preview explains why). For 'habit' anchors, shows
+// contextual hints: "pick a habit", "never logged", "done · waiting".
 function updateTimeResolved(endpoint, field, h){
   const node = endpoint && endpoint.querySelector('.time-resolved');
   if(!node)return;
-  const anchor = cleanPrayerAnchor(h && h[field + 'Anchor']);
+  const anchor = cleanAnchor(h && h[field + 'Anchor']);
   if(!anchor){ node.textContent = ''; return; }
+  if(anchor === 'habit'){
+    const data = typeof load === 'function' ? load() : [];
+    const anchorHabit = findHabitByHid(h && h[field + 'AnchorHabitId'], data);
+    if(!anchorHabit){ node.textContent = 'pick a habit'; return; }
+    const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
+    if(min == null){
+      const role = field.endsWith('Start') ? 'start' : 'end';
+      const anchorLast = anchorHabit.lastLog;
+      const ownLast = h && h.lastLog;
+      if(role === 'start' && ownLast != null && anchorLast != null && ownLast >= anchorLast){
+        node.textContent = 'done · waiting';
+      }else if(anchorLast == null){
+        node.textContent = 'never logged';
+      }else{
+        node.textContent = '—';
+      }
+      return;
+    }
+    node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
+    return;
+  }
+  // Prayer anchor — needs a location.
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const loc = habitPrayerLocation(h, settings);
   if(!loc){
@@ -293,7 +345,7 @@ function readAnchorFromEndpoint(fixedInputId){
   const endpoint = el.closest('.time-endpoint');
   if(!endpoint || !endpoint.classList.contains('is-dynamic'))return null;
   const sel = endpoint.querySelector('.time-anchor');
-  return cleanPrayerAnchor(sel ? sel.value : '');
+  return cleanAnchor(sel ? sel.value : '');
 }
 // PURE: read the signed offset (default 0) from a per-endpoint editor.
 function readOffsetFromEndpoint(fixedInputId){
@@ -303,6 +355,19 @@ function readOffsetFromEndpoint(fixedInputId){
   if(!endpoint || !endpoint.classList.contains('is-dynamic'))return 0;
   const input = endpoint.querySelector('.time-offset');
   return normalizePrayerOffset(input ? input.value : 0);
+}
+// PURE: read the referenced habit id (or null) from a per-endpoint editor.
+// Returns null when the endpoint isn't in 'habit' anchor mode.
+function readHabitIdFromEndpoint(fixedInputId){
+  const el = document.getElementById(fixedInputId);
+  if(!el)return null;
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return null;
+  const sel = endpoint.querySelector('.time-anchor');
+  if(!sel || sel.value !== 'habit')return null;
+  const picker = endpoint.querySelector('.time-habit');
+  const id = picker ? cleanHabitId(picker.value) : '';
+  return id || null;
 }
 
 // HYBRID: reads form DOM into tune object
@@ -336,6 +401,10 @@ function currentDetailTune(){
     preferredTimeStartOffsetMin:readOffsetFromEndpoint('detail-preferred-time-start'),
     preferredTimeEndAnchor:readAnchorFromEndpoint('detail-preferred-time-end'),
     preferredTimeEndOffsetMin:readOffsetFromEndpoint('detail-preferred-time-end'),
+    allowedTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-time-start'),
+    allowedTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-time-end'),
+    preferredTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-start'),
+    preferredTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-end'),
     durationMinutes:clampDuration($('detail-duration').value),
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
@@ -397,7 +466,11 @@ function setDetailDirty(force){
       current.preferredTimeStartAnchor !== detailTuneOriginal.preferredTimeStartAnchor ||
       current.preferredTimeStartOffsetMin !== detailTuneOriginal.preferredTimeStartOffsetMin ||
       current.preferredTimeEndAnchor !== detailTuneOriginal.preferredTimeEndAnchor ||
-      current.preferredTimeEndOffsetMin !== detailTuneOriginal.preferredTimeEndOffsetMin)
+      current.preferredTimeEndOffsetMin !== detailTuneOriginal.preferredTimeEndOffsetMin ||
+      (current.allowedTimeStartAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId || null) ||
+      (current.allowedTimeEndAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId || null) ||
+      (current.preferredTimeStartAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId || null) ||
+      (current.preferredTimeEndAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId || null))
   );
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }

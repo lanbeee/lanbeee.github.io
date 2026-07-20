@@ -683,13 +683,14 @@ $('detail-preferred-time-clear').addEventListener('click',()=>{
   setDetailDirty();
 });
 
-// Prayer-anchor mode toggle, anchor select, and offset input. Each endpoint
-// (allowed start/end, preferred start/end) carries its own gear toggle that
-// swaps the fixed <input type="time"> for an anchor+offset picker.
+// Dynamic-time mode toggle, anchor select, habit picker, and offset input.
+// Each endpoint (allowed start/end, preferred start/end) carries its own gear
+// toggle that swaps the fixed <input type="time"> for an anchor+offset picker.
 document.querySelectorAll('.time-endpoint').forEach(endpoint => {
   const toggle = endpoint.querySelector('.time-mode-toggle');
   const anchorSel = endpoint.querySelector('.time-anchor');
   const offsetInput = endpoint.querySelector('.time-offset');
+  const habitSel = endpoint.querySelector('.time-habit');
   if(toggle)toggle.addEventListener('click',()=>{
     const turningDynamic = !endpoint.classList.contains('is-dynamic');
     if(turningDynamic){
@@ -710,6 +711,10 @@ document.querySelectorAll('.time-endpoint').forEach(endpoint => {
     refreshTimeResolvedFor(endpoint);
   });
   if(offsetInput)offsetInput.addEventListener('input',()=>{
+    setDetailDirty();
+    refreshTimeResolvedFor(endpoint);
+  });
+  if(habitSel)habitSel.addEventListener('change',()=>{
     setDetailDirty();
     refreshTimeResolvedFor(endpoint);
   });
@@ -736,24 +741,37 @@ function clearTimeEndpoint(endpoint){
   if(sel)sel.value = '';
   const off = endpoint.querySelector('.time-offset');
   if(off)off.value = '';
+  const habitSel = endpoint.querySelector('.time-habit');
+  if(habitSel)habitSel.value = '';
+  const habitWrap = endpoint.querySelector('.time-habit-wrap');
+  if(habitWrap)habitWrap.hidden = true;
   syncTimeModeVisibility(endpoint);
 }
 
-// RENDER: refresh the live "6:23am" preview on one endpoint by re-resolving
-// against the current habit + settings. Reads from currentDetailTune() so the
-// preview matches what save will persist.
+// RENDER: refresh the live preview on one endpoint. Merges lastLog/logs/hid
+// from the saved habit so habit-anchor "consumed" previews stay accurate
+// while the form is mid-edit. Delegates to updateTimeResolved for the
+// prayer vs habit branching.
 function refreshTimeResolvedFor(endpoint){
   if(!endpoint || !endpoint.classList.contains('is-dynamic'))return;
   const field = endpoint.dataset.field;
   if(!field)return;
-  const node = endpoint.querySelector('.time-resolved');
-  if(!node)return;
   const h = currentDetailTune();
-  const settings = sortSettings || loadSortSettings();
-  const loc = habitPrayerLocation(h, settings);
-  if(!loc){ node.textContent = 'add a location'; return; }
-  const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
-  node.textContent = min == null ? '—' : formatTimeShort(((min % 1440) + 1440) % 1440);
+  if(detailIdx != null){
+    const loaded = load()[detailIdx];
+    if(loaded){
+      h.hid = loaded.hid;
+      h.lastLog = loaded.lastLog;
+      h.logs = loaded.logs;
+    }
+  }
+  const habitWrap = endpoint.querySelector('.time-habit-wrap');
+  const anchor = cleanAnchor(h[field + 'Anchor']);
+  if(habitWrap){
+    habitWrap.hidden = anchor !== 'habit';
+    if(anchor === 'habit')populateHabitPickerFor(endpoint, field, h);
+  }
+  updateTimeResolved(endpoint, field, h);
 }
 $('detail-due-date').addEventListener('input',()=>{
   if(!$('detail-due-date').value && $('detail-due-time'))$('detail-due-time').value = '';
@@ -886,31 +904,58 @@ $('detail-save').addEventListener('click',()=>{
   h.allowedMonthDays = normalizeAllowedMonthDays(current.allowedMonthDays);
   h.preferredWeekdays = normalizeAllowedWeekdays(current.preferredWeekdays);
   h.preferredMonthDays = normalizeAllowedMonthDays(current.preferredMonthDays);
+  // Anchors override fixed minutes per-endpoint. Only wipe an incomplete
+  // FIXED pair when neither endpoint is anchored — otherwise a mixed window
+  // (e.g. start=sunrise, end=12pm) would lose its fixed end on save.
+  const startAnchored = Boolean(cleanAnchor(current.allowedTimeStartAnchor));
+  const endAnchored = Boolean(cleanAnchor(current.allowedTimeEndAnchor));
   h.allowedTimeStart = current.allowedTimeStart;
   h.allowedTimeEnd = current.allowedTimeEnd;
-  if(h.allowedTimeStart === null || h.allowedTimeEnd === null){
+  if(!startAnchored && !endAnchored && (h.allowedTimeStart === null || h.allowedTimeEnd === null)){
     h.allowedTimeStart = null;
     h.allowedTimeEnd = null;
   }
+  const prefStartAnchored = Boolean(cleanAnchor(current.preferredTimeStartAnchor));
+  const prefEndAnchored = Boolean(cleanAnchor(current.preferredTimeEndAnchor));
   h.preferredTimeStart = current.preferredTimeStart;
   h.preferredTimeEnd = current.preferredTimeEnd;
-  if(h.preferredTimeStart === null || h.preferredTimeEnd === null){
+  if(!prefStartAnchored && !prefEndAnchored && (h.preferredTimeStart === null || h.preferredTimeEnd === null)){
     h.preferredTimeStart = null;
     h.preferredTimeEnd = null;
   }
-  h.allowedTimeStartAnchor = cleanPrayerAnchor(current.allowedTimeStartAnchor);
+  h.allowedTimeStartAnchor = cleanAnchor(current.allowedTimeStartAnchor);
   h.allowedTimeStartOffsetMin = normalizePrayerOffset(current.allowedTimeStartOffsetMin);
-  h.allowedTimeEndAnchor = cleanPrayerAnchor(current.allowedTimeEndAnchor);
+  h.allowedTimeEndAnchor = cleanAnchor(current.allowedTimeEndAnchor);
   h.allowedTimeEndOffsetMin = normalizePrayerOffset(current.allowedTimeEndOffsetMin);
-  h.preferredTimeStartAnchor = cleanPrayerAnchor(current.preferredTimeStartAnchor);
+  h.preferredTimeStartAnchor = cleanAnchor(current.preferredTimeStartAnchor);
   h.preferredTimeStartOffsetMin = normalizePrayerOffset(current.preferredTimeStartOffsetMin);
-  h.preferredTimeEndAnchor = cleanPrayerAnchor(current.preferredTimeEndAnchor);
+  h.preferredTimeEndAnchor = cleanAnchor(current.preferredTimeEndAnchor);
   h.preferredTimeEndOffsetMin = normalizePrayerOffset(current.preferredTimeEndOffsetMin);
+  // Habit-id refs only stick when the matching endpoint is in 'habit' mode.
+  h.allowedTimeStartAnchorHabitId = h.allowedTimeStartAnchor === 'habit' ? (cleanHabitId(current.allowedTimeStartAnchorHabitId) || null) : null;
+  h.allowedTimeEndAnchorHabitId = h.allowedTimeEndAnchor === 'habit' ? (cleanHabitId(current.allowedTimeEndAnchorHabitId) || null) : null;
+  h.preferredTimeStartAnchorHabitId = h.preferredTimeStartAnchor === 'habit' ? (cleanHabitId(current.preferredTimeStartAnchorHabitId) || null) : null;
+  h.preferredTimeEndAnchorHabitId = h.preferredTimeEndAnchor === 'habit' ? (cleanHabitId(current.preferredTimeEndAnchorHabitId) || null) : null;
+  // Block: a 'habit' endpoint without a picked habit is incomplete.
+  const habitAnchorFields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
+  if(habitAnchorFields.some(f => h[f + 'Anchor'] === 'habit' && !h[f + 'AnchorHabitId'])){
+    showToast('pick a habit for the dynamic time');
+    return;
+  }
   // Block: dynamic prayer anchors require at least one location on the habit.
-  // We have nowhere else to put the prayer-time coordinate without it.
+  // Habit-anchors don't need a location (they resolve from another habit's log).
   if(habitUsesPrayerAnchors(h) && !(h.locationIds && h.locationIds.length)){
     showToast('add a location to use prayer times');
     return;
+  }
+  // Block: habit-anchor cycles (A starts after B, B starts after A) would
+  // deadlock the agenda — refuse with a toast naming the chain.
+  if(typeof detectHabitAnchorCycle === 'function' && h.hid){
+    const cycle = detectHabitAnchorCycle(h.hid, {[h.hid]:h});
+    if(cycle && cycle.length){
+      showToast('cycle: ' + cycle.filter(Boolean).join(' → '));
+      return;
+    }
   }
   h.durationMinutes = current.durationMinutes;
   h.breakable = Boolean(current.breakable);
@@ -1098,15 +1143,47 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   const start = e.target.closest('[data-blocked-start]');
   const end = e.target.closest('[data-blocked-end]');
   const loc = e.target.closest('[data-blocked-location]');
+  const startAnchor = e.target.closest('[data-blocked-start-anchor]');
+  const endAnchor = e.target.closest('[data-blocked-end-anchor]');
+  const startOffset = e.target.closest('[data-blocked-start-offset]');
+  const endOffset = e.target.closest('[data-blocked-end-offset]');
   if(label)saveBlockedTimePatch(parseInt(label.dataset.blockedLabel,10),{label:cleanTopic(label.value) || 'blocked'});
   if(start)saveBlockedTimePatch(parseInt(start.dataset.blockedStart,10),{start:timeInputToMinutes(start.value)});
   if(end)saveBlockedTimePatch(parseInt(end.dataset.blockedEnd,10),{end:timeInputToMinutes(end.value)});
   if(loc)saveBlockedTimePatch(parseInt(loc.dataset.blockedLocation,10),{locationId:loc.value || null});
+  if(startAnchor)saveBlockedTimePatch(parseInt(startAnchor.dataset.blockedStartAnchor,10),{startAnchor:cleanPrayerAnchor(startAnchor.value)});
+  if(endAnchor)saveBlockedTimePatch(parseInt(endAnchor.dataset.blockedEndAnchor,10),{endAnchor:cleanPrayerAnchor(endAnchor.value)});
+  if(startOffset)saveBlockedTimePatch(parseInt(startOffset.dataset.blockedStartOffset,10),{startOffsetMin:normalizePrayerOffset(startOffset.value)});
+  if(endOffset)saveBlockedTimePatch(parseInt(endOffset.dataset.blockedEndOffset,10),{endOffsetMin:normalizePrayerOffset(endOffset.value)});
 });
 $('blocked-time-list')?.addEventListener('click',e=>{
   const remove = e.target.closest('[data-blocked-remove]');
   if(remove){
     removeBlockedTime(parseInt(remove.dataset.blockedRemove,10));
+    return;
+  }
+  // Gear toggle: swap fixed ↔ prayer-anchor mode for one endpoint. Requires
+  // a location on the block (normalize would strip the anchor otherwise).
+  const startMode = e.target.closest('[data-blocked-start-mode]');
+  const endMode = e.target.closest('[data-blocked-end-mode]');
+  if(startMode || endMode){
+    const field = startMode ? 'start' : 'end';
+    const index = parseInt((startMode || endMode).dataset[field === 'start' ? 'blockedStartMode' : 'blockedEndMode'],10);
+    const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+    const block = blocks[index];
+    if(!block)return;
+    const anchorKey = field + 'Anchor';
+    const offsetKey = field + 'OffsetMin';
+    if(block[anchorKey]){
+      // Leave dynamic → clear the anchor; keep fixed minutes as-is.
+      saveBlockedTimePatch(index,{[anchorKey]:null,[offsetKey]:0});
+    }else{
+      if(!block.locationId){
+        showToast('pick a location to use prayer times');
+        return;
+      }
+      saveBlockedTimePatch(index,{[anchorKey]:'fajr',[offsetKey]:0});
+    }
     return;
   }
   const day = e.target.closest('[data-blocked-day]');

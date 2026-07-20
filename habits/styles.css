@@ -1359,15 +1359,20 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
  * picker + signed-minute offset when the user taps the gear toggle. */
 .time-endpoints{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .time-endpoint{display:inline-flex;align-items:center;gap:4px;}
-.time-endpoint .time-dynamic{display:inline-flex;align-items:center;gap:4px;}
+.time-endpoint .time-dynamic{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;}
 .time-endpoint .time-dynamic[hidden]{display:none;}
 .time-endpoint .time-fixed[hidden]{display:none;}
+.time-endpoint .time-habit-wrap{display:inline-flex;align-items:center;}
+.time-endpoint .time-habit-wrap[hidden]{display:none;}
+.time-endpoint .time-habit{max-width:140px;}
 .time-endpoint .time-mode-toggle{
   padding:4px 7px;font-size:12px;line-height:1;border-radius:999px;
 }
 .time-endpoint.is-dynamic .time-mode-toggle{
   background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
 }
+.blocked-time-hours.time-endpoints{flex-wrap:wrap;gap:6px;}
+.blocked-endpoint .time-anchor{max-width:120px;}
 .mini-time-input{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text);
   border-radius:var(--radius-sm);padding:5px 6px;font:inherit;font-size:12px;

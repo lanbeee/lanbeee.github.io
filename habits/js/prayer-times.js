@@ -42,16 +42,18 @@ function normalizePrayerMadhab(value){
   return value === 'hanafi' ? 'hanafi' : DEFAULT_PRAYER_MADHAB;
 }
 
-// PURE: true iff any of the four anchor fields on the habit is set. Used by
-// the save path to enforce "dynamic times require a location on the habit."
+// PURE: true iff any of the four anchor fields on the habit is set (prayer OR
+// 'habit'). Used by the save path to enforce "dynamic times require a
+// location on the habit" — but only when the anchors are prayer anchors
+// (habit anchors don't need a location; the save path gates on this helper
+// and then disambiguates with habitUsesHabitAnchors).
 function habitUsesPrayerAnchors(h){
   if(!h)return false;
-  return Boolean(
-    cleanPrayerAnchor(h.allowedTimeStartAnchor)
+  const prayer = cleanPrayerAnchor(h.allowedTimeStartAnchor)
     || cleanPrayerAnchor(h.allowedTimeEndAnchor)
     || cleanPrayerAnchor(h.preferredTimeStartAnchor)
-    || cleanPrayerAnchor(h.preferredTimeEndAnchor)
-  );
+    || cleanPrayerAnchor(h.preferredTimeEndAnchor);
+  return Boolean(prayer);
 }
 
 // PURE: build the adhan.CalculationMethod params object from settings. Each
@@ -156,20 +158,32 @@ function anchorMs(times, anchor, offsetMin){
 //
 // `fieldName` is one of: 'allowedTimeStart' | 'allowedTimeEnd' |
 // 'preferredTimeStart' | 'preferredTimeEnd'. The function checks the matching
-// `fieldName + 'Anchor'` field first; if an anchor is set, it computes the
-// prayer time + offset for the habit's resolved location on that day. When no
-// anchor is set it falls back to the fixed numeric field — preserving the
-// existing behaviour byte-for-byte for habits that don't use dynamic times.
+// `fieldName + 'Anchor'` field first; if an anchor is set (prayer OR 'habit'),
+// it computes the resolved minute. When no anchor is set it falls back to the
+// fixed numeric field — preserving the existing behaviour byte-for-byte for
+// habits that don't use dynamic times.
 //
 // `dayBase` is a ms day-start timestamp (from dayStart()). Pass null/now to
 // mean "today".
 function resolveHabitTimeField(h, fieldName, dayBase){
   if(!h)return null;
-  const anchor = cleanPrayerAnchor(h[fieldName + 'Anchor']);
+  const anchor = cleanAnchor(h[fieldName + 'Anchor']);
   if(!anchor){
     const n = Number(h[fieldName]);
     return Number.isFinite(n) ? n : null;
   }
+  if(anchor === 'habit'){
+    // 'start' anchor consumes; 'end' anchor is a plain closing event.
+    const role = fieldName.endsWith('Start') ? 'start' : 'end';
+    return resolveHabitAnchorMinutes(
+      h,
+      h[fieldName + 'AnchorHabitId'],
+      h[fieldName + 'OffsetMin'],
+      role,
+      dayBase
+    );
+  }
+  // Prayer anchor — needs a location.
   const base = dayBase != null ? dayBase : dayStart(Date.now());
   const date = new Date(base);
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
@@ -190,11 +204,14 @@ function resolveHabitTimeField(h, fieldName, dayBase){
 
 // PURE: a short, stable label for an anchor+offset, used in card chips and the
 // detail header so the user sees "sunrise +30" instead of "6:23am" (which
-// would lie the moment the date or location changes).
-function prayerAnchorLabel(anchor, offsetMin){
-  const a = cleanPrayerAnchor(anchor);
+// would lie the moment the date or location changes). Accepts both prayer
+// anchors and 'habit' (which renders as the anchor habit's name).
+function prayerAnchorLabel(anchor, offsetMin, anchorHabitName){
+  const a = cleanAnchor(anchor);
   if(!a)return '';
-  const label = a === 'maghrib' ? 'sunset' : a;
+  const label = a === 'maghrib' ? 'sunset'
+    : a === 'habit' ? (anchorHabitName ? `after ${anchorHabitName}` : 'after anchor')
+    : a;
   const off = normalizePrayerOffset(offsetMin);
   if(off === 0)return label;
   const sign = off > 0 ? '+' : '−';
@@ -205,7 +222,151 @@ function prayerAnchorLabel(anchor, offsetMin){
 
 // PURE: true if the anchor field is set on the habit for this endpoint (i.e.
 // the endpoint is in dynamic mode). Used by the renderer to decide which UI
-// (fixed input vs anchor picker) to show.
+// (fixed input vs anchor picker) to show. Accepts both prayer anchors and
+// the 'habit' anchor.
 function endpointIsDynamic(h, fieldName){
-  return Boolean(cleanPrayerAnchor(h && h[fieldName + 'Anchor']));
+  return Boolean(cleanAnchor(h && h[fieldName + 'Anchor']));
+}
+
+// ── Habit-relative anchors ───────────────────────────────────────────────
+// A second anchor kind: "habit". When *Anchor === 'habit', the endpoint
+// resolves to the most-recent-log time of another habit (referenced by hid
+// via *AnchorHabitId), plus the signed offset, with one rule that prevents
+// re-firing: if THIS habit's own lastLog is on/after the anchor habit's
+// lastLog, the window collapses — the anchor has already been "consumed".
+// Per the user's design: most-recent-today wins; else most-recent-ever; the
+// consumed-since check is what keeps a dependent habit from re-triggering
+// every render after the anchor log lands.
+
+// PURE: true iff any of the four anchor fields is set to 'habit'. Used by
+// the save path to gate cycle detection + the no-location check (habit
+// anchors don't need a location, unlike prayer anchors).
+function habitUsesHabitAnchors(h){
+  if(!h)return false;
+  return Boolean(
+    (h.allowedTimeStartAnchor === 'habit' && h.allowedTimeStartAnchorHabitId)
+    || (h.allowedTimeEndAnchor === 'habit' && h.allowedTimeEndAnchorHabitId)
+    || (h.preferredTimeStartAnchor === 'habit' && h.preferredTimeStartAnchorHabitId)
+    || (h.preferredTimeEndAnchor === 'habit' && h.preferredTimeEndAnchorHabitId)
+  );
+}
+
+// PURE: cleanPrayerAnchor returns null for 'habit' (it's not in PRAYER_ANCHORS).
+// This helper accepts both kinds: returns 'fajr'|'sunrise'|...|'isha' OR 'habit'.
+function cleanAnchor(value){
+  const prayer = cleanPrayerAnchor(value);
+  if(prayer)return prayer;
+  return value === 'habit' ? 'habit' : null;
+}
+
+// IMPURE (reads load()): find a habit by hid in the current dataset. Returns
+// null when missing (deleted anchor target). Used by the resolver.
+function findHabitByHid(hid, data){
+  const id = cleanHabitId(hid);
+  if(!id)return null;
+  const arr = data || (typeof load === 'function' ? load() : []);
+  return (Array.isArray(arr) ? arr : []).find(h => h && cleanHabitId(h.hid) === id) || null;
+}
+
+// PURE: resolve a 'habit' anchor for one endpoint of habit h. Returns minutes-
+// from-midnight (0..1440 for today; could be negative / >1440 with offset) or
+// null when:
+//   • the anchor habit can't be found (deleted)
+//   • the anchor habit has never been logged
+//   • (start anchor only) h has been logged at/after the anchor habit's last
+//     log → the anchor has already fired + been consumed by h, window collapses
+// Per the user's design, this rule prevents a dependent habit from being
+// perpetually "open" once it has fired in response to the anchor.
+//
+// `fieldRole` is 'start' or 'end' — only the start anchor consumes; the end
+// anchor is a plain closing event.
+function resolveHabitAnchorMinutes(h, anchorHabitId, offsetMin, fieldRole, dayBase){
+  const data = typeof load === 'function' ? load() : [];
+  const anchor = findHabitByHid(anchorHabitId, data);
+  if(!anchor)return null;
+  const anchorLastLog = anchor.lastLog != null ? anchor.lastLog : latestActualLog(anchor.logs);
+  if(anchorLastLog == null)return null; // anchor has never fired
+  // "Already consumed" check — only for start anchors.
+  if(fieldRole === 'start'){
+    const ownLast = h && (h.lastLog != null ? h.lastLog : latestActualLog(h.logs));
+    if(ownLast != null && ownLast >= anchorLastLog)return null;
+  }
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
+  const anchorDayStart = dayStart(anchorLastLog);
+  // Map the anchor log onto today. If it was today → minute-of-day. If from a
+  // prior day → 0 (window has been open since midnight; dependent is overdue).
+  const minuteOnToday = anchorDayStart === base
+    ? Math.round((anchorLastLog - anchorDayStart) / 60000)
+    : 0;
+  return minuteOnToday + normalizePrayerOffset(offsetMin);
+}
+
+// PURE (with sortSettings global + load()): cycle detection across the habit
+// dataset. Returns the first cycle found as a list of habit names (for the
+// toast), or null when the proposed patch doesn't create a cycle.
+//
+// A cycle is: starting from `subjectHid`, follow start-anchor pointers
+// (habit-anchors only); if we revisit a hid we've already walked, it's a
+// cycle. End/preferred anchors don't enter the start chain — they only close
+// windows, they don't "open" anything, so a cycle through them can't
+// deadlock the agenda. (We still walk them defensively to surface genuinely
+// degenerate loops like A.start→B.start.)
+function detectHabitAnchorCycle(subjectHid, proposedPatches){
+  // proposedPatches: { [hid]: habitObject } — overrides for in-flight edits.
+  const data = typeof load === 'function' ? load() : [];
+  const patches = proposedPatches || {};
+  const hidOf = cleanHabitId(subjectHid);
+  if(!hidOf)return null;
+  const visited = [];
+  let currentHid = hidOf;
+  let guard = 0;
+  while(currentHid && guard < 64){
+    guard += 1;
+    const h = patches[currentHid] || findHabitByHid(currentHid, data);
+    if(!h)break;
+    // Only follow start-anchor edges that are actually in habit mode.
+    if(h.allowedTimeStartAnchor !== 'habit')break;
+    const nextId = cleanHabitId(h.allowedTimeStartAnchorHabitId);
+    if(!nextId)break;
+    if(nextId === hidOf){
+      // Cycle closes back to the subject — return name chain for the toast.
+      return [...visited.map(v => v.name), h.name || 'this', (patches[nextId] || findHabitByHid(nextId, data) || {}).name || 'this'];
+    }
+    if(visited.some(v => v.hid === nextId))return [...visited.map(v => v.name), h.name || '?'];
+    visited.push({hid:currentHid, name:h.name || '?'});
+    currentHid = nextId;
+  }
+  return null;
+}
+
+// ── Blocked-time anchors ─────────────────────────────────────────────────
+// Blocked times live on Settings (recurring schedule blocks). They support
+// prayer anchors only — habit-anchors are a habit-only concept. The block's
+// own locationId provides the coords. When the anchor is set but the block
+// has no locationId, normalize strips the anchor (defensive).
+
+// PURE (with sortSettings global): resolve a blocked time endpoint to minutes-
+// from-midnight for the given day, or null when the block has no anchor.
+// Mirrors resolveHabitTimeField's contract for the agenda callers.
+function resolveBlockedTimeMinutes(block, fieldName, dayBase){
+  if(!block)return null;
+  const anchor = cleanPrayerAnchor(block[fieldName + 'Anchor']);
+  if(!anchor){
+    const n = Number(block[fieldName]);
+    return Number.isFinite(n) ? n : null;
+  }
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const registry = normalizeLocationRegistry(settings.locations);
+  const loc = block.locationId ? (registry.find(l => l.id === block.locationId) || null) : null;
+  if(!loc)return null;
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
+  const date = new Date(base);
+  const params = prayerParams(settings);
+  const times = prayerTimesFor({latitude:loc.lat, longitude:loc.lng}, date, params);
+  if(!times)return null;
+  const ms = anchorMs(times, anchor, block[fieldName + 'OffsetMin']);
+  if(ms == null)return null;
+  const midnight = new Date(ms);
+  const midnightBase = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate()).getTime();
+  return Math.round((ms - midnightBase) / 60000);
 }
