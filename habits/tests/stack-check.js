@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -11,7 +12,7 @@ const { chromium } = require('playwright');
     ex.push({ name, type:'task', target:null, dueDate:dayStart, hardDue:false, eventTime:scheduled, logs:[], emoji:'🧪', pinned:false, sample:false, snoozedUntil:null, topics:['qa'], durationMinutes:25, flexibilityDays:0, createdAt:Date.now() });
     localStorage.setItem('tings_v2', JSON.stringify(ex));
   }, { name, scheduled, dayStart });
-  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('#open-overview').click();
   await page.waitForTimeout(200);
   await page.locator('#overview-calendar [data-log-day]').filter({ has: page.locator('.cal-dot.plan') }).last().tap();

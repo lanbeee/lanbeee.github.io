@@ -628,6 +628,10 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     if(typeof openLocationPicker === 'function')openLocationPicker();
     return;
   }
+  if(e.target.closest('[data-anywhere]')){
+    renderTagChips('ting-tag-chips',selectedTopicsFrom('ting-tag-chips'),[],null,{});
+    return;
+  }
   if(e.target.closest('.location-chip[data-location-id]')){
     toggleLocationChip(e);
     return;
@@ -654,6 +658,11 @@ $('detail-tag-chips')?.addEventListener('click',e=>{
         }
       });
     }
+    return;
+  }
+  if(e.target.closest('[data-anywhere]')){
+    renderTagChips('detail-tag-chips',selectedTopicsFrom('detail-tag-chips'),[],null,{});
+    setDetailDirty();
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){

@@ -20,7 +20,7 @@
 
 const { chromium } = require('playwright');
 
-const BASE = process.env.AGENDA_URL || 'http://127.0.0.1:4176/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 
 // ---- time helpers (all anchored to "today, local") ----
 function atTime(hour, minute = 0) {

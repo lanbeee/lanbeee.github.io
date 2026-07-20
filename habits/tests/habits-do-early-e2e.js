@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 
 function dateKey(offset){
   const d = new Date();
@@ -23,7 +24,7 @@ function atDay(offset,hour = 12,minute = 0){
     if (message.type() === 'error') errors.push(message.text());
   });
 
-  await page.goto('http://127.0.0.1:4175/', { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.evaluate(({ today, target, targetTs }) => {
     localStorage.clear();
     const settings = {

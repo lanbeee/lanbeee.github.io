@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -9,7 +10,7 @@ const { chromium } = require('playwright');
     if (message.type() === 'error') errors.push(message.text());
   });
 
-  await page.goto('http://127.0.0.1:4174/', { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle' });
 

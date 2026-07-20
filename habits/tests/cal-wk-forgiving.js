@@ -1,4 +1,5 @@
 const { webkit } = require('playwright');
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 
 (async () => {
   const name = `CalMoveWK ${Date.now()}`;
@@ -21,7 +22,7 @@ const { webkit } = require('playwright');
     });
     localStorage.setItem(key, JSON.stringify(filtered));
   }, { name, scheduled, dayStart });
-  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('#open-overview').click();
   await page.waitForTimeout(300);
 

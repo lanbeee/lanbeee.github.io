@@ -91,11 +91,19 @@ function selectedLocationPrefs(){
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null){
   const wrap = $(containerId);
   if(!wrap)return;
+  // Preserve horizontal scroll position across the rebuild so toggling a chip
+  // doesn't snap the row back to the start.
+  const prevPlaceScroll = wrap.querySelector('.tag-row-places')?.scrollLeft ?? 0;
+  const prevTopicScroll = wrap.querySelector('.tag-row-topics')?.scrollLeft ?? 0;
   const topics = topicOptions();
   const locations = locationOptions();
   const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
   const selectedLocs = normalizeLocationIds(selectedLocIds,locations);
   const prefs = normalizeLocationPrefs(locationPrefs,selectedLocs,preferredLocId);
+  const anywhereOn = selectedLocs.length === 0;
+  const anywhereHtml = locations.length > 0
+    ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="no specific place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
+    : '';
   const locHtml = locations.map(loc=>{
     const on = selectedLocs.includes(loc.id);
     const level = prefs[loc.id] || '';
@@ -111,12 +119,12 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
   }).join('');
   // Build via DOM (not innerHTML) so the pill buttons retain their dataset and
-  // event-less state cleanly. Order: place pill first, then topic pill.
+  // event-less state cleanly. Order: place pill, anywhere option, then real places.
   wrap.innerHTML = '';
   const locRow = document.createElement('div');
   locRow.className = 'tag-row tag-row-places';
   locRow.appendChild(createAddLocationPill());
-  locRow.insertAdjacentHTML('beforeend',locHtml);
+  locRow.insertAdjacentHTML('beforeend',anywhereHtml + locHtml);
   const topicRow = document.createElement('div');
   topicRow.className = 'tag-row tag-row-topics';
   topicRow.appendChild(createAddTopicPill());
@@ -146,6 +154,13 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   addScrollGuard(topicRow);
   wrap.appendChild(locRow);
   wrap.appendChild(topicRow);
+  // Restore horizontal scroll position saved before rebuild.
+  locRow.scrollLeft = prevPlaceScroll;
+  topicRow.scrollLeft = prevTopicScroll;
+  // Setting scrollLeft fires an async scroll event that arms the scroll guard,
+  // which would swallow the next click within 500ms. Disarm on the next tick
+  // (the scroll event is queued before this timeout so it fires first).
+  setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
 }
 
 // RENDER: draw selectable topic chips (legacy name — now renders the unified row)

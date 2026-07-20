@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -10,7 +11,7 @@ const { chromium } = require('playwright');
     ex.push({ name, type:'keepup', target:7, logs:[dayStart-86400000], emoji:'', pinned:false, sample:false, snoozedUntil:null, topics:[], allowedWeekdays:[], allowedMonthDays:[], flexibilityDays:0, durationMinutes:30, createdAt:Date.now()-5*86400000, lastLog:dayStart-86400000 });
     localStorage.setItem('tings_v2', JSON.stringify(ex));
   }, { name, dayStart });
-  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
   const topAt = (x=195,y=400)=>page.evaluate(({x,y})=>{const el=document.elementFromPoint(x,y);return el?el.closest('.sheet-wrap')?.id||el.id||el.tagName:'nothing';},{x,y});
 
   // Open detail directly

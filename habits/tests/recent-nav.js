@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -23,7 +24,7 @@ const { chromium } = require('playwright');
     localStorage.setItem('tings_v2', JSON.stringify(existing));
   }, { twentyDaysAgo, yesterday });
 
-  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('#open-overview').click();
   await page.waitForTimeout(300);
 

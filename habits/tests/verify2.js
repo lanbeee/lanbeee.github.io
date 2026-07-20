@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 (async () => {
   const name = `Verify2 ${Date.now()}`;
   const now = new Date();
@@ -12,7 +13,7 @@ const { chromium } = require('playwright');
     existing.push({ name, type:'task', target:null, dueDate:dayStart, hardDue:false, eventTime:scheduled, logs:[], emoji:'🧪', pinned:false, sample:false, snoozedUntil:null, topics:['qa'], durationMinutes:25, flexibilityDays:0, createdAt:Date.now() });
     localStorage.setItem('tings_v2', JSON.stringify(existing));
   }, { name, scheduled, dayStart });
-  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('#open-overview').click();
   await page.waitForTimeout(200);
   const planCell = page.locator('#overview-calendar [data-log-day]').filter({ has: page.locator('.cal-dot.plan') }).last();
