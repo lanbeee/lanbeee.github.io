@@ -669,19 +669,92 @@ $('detail-preferred-monthday-chips').addEventListener('click',toggleScheduleChip
 $('detail-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-time-clear').addEventListener('click',()=>{
-  $('detail-time-start').value = '';
-  $('detail-time-end').value = '';
+  clearTimeEndpoint($('detail-time-start').closest('.time-endpoint'));
+  clearTimeEndpoint($('detail-time-end').closest('.time-endpoint'));
   $('detail-time-clear').hidden = true;
   setDetailDirty();
 });
 $('detail-preferred-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-preferred-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-preferred-time-clear').addEventListener('click',()=>{
-  $('detail-preferred-time-start').value = '';
-  $('detail-preferred-time-end').value = '';
+  clearTimeEndpoint($('detail-preferred-time-start').closest('.time-endpoint'));
+  clearTimeEndpoint($('detail-preferred-time-end').closest('.time-endpoint'));
   $('detail-preferred-time-clear').hidden = true;
   setDetailDirty();
 });
+
+// Prayer-anchor mode toggle, anchor select, and offset input. Each endpoint
+// (allowed start/end, preferred start/end) carries its own gear toggle that
+// swaps the fixed <input type="time"> for an anchor+offset picker.
+document.querySelectorAll('.time-endpoint').forEach(endpoint => {
+  const toggle = endpoint.querySelector('.time-mode-toggle');
+  const anchorSel = endpoint.querySelector('.time-anchor');
+  const offsetInput = endpoint.querySelector('.time-offset');
+  if(toggle)toggle.addEventListener('click',()=>{
+    const turningDynamic = !endpoint.classList.contains('is-dynamic');
+    if(turningDynamic){
+      // First time switching to dynamic: default anchor to fajr and offset 0
+      // so the user sees immediately how it resolves; they can change after.
+      endpoint.classList.add('is-dynamic');
+      if(anchorSel && !anchorSel.value)anchorSel.value = 'fajr';
+    }else{
+      endpoint.classList.remove('is-dynamic');
+    }
+    syncTimeModeVisibility(endpoint);
+    setDetailDirty();
+    syncTimeClearBtn();
+  });
+  if(anchorSel)anchorSel.addEventListener('change',()=>{
+    setDetailDirty();
+    syncTimeClearBtn();
+    refreshTimeResolvedFor(endpoint);
+  });
+  if(offsetInput)offsetInput.addEventListener('input',()=>{
+    setDetailDirty();
+    refreshTimeResolvedFor(endpoint);
+  });
+});
+
+// RENDER: show fixed input vs anchor picker to match .is-dynamic class.
+function syncTimeModeVisibility(endpoint){
+  if(!endpoint)return;
+  const dyn = endpoint.classList.contains('is-dynamic');
+  const fixed = endpoint.querySelector('.time-fixed');
+  const dynWrap = endpoint.querySelector('.time-dynamic');
+  if(fixed)fixed.hidden = dyn;
+  if(dynWrap)dynWrap.hidden = !dyn;
+  refreshTimeResolvedFor(endpoint);
+}
+
+// RENDER: clear one endpoint back to empty (fixed mode, no value).
+function clearTimeEndpoint(endpoint){
+  if(!endpoint)return;
+  endpoint.classList.remove('is-dynamic');
+  const fixed = endpoint.querySelector('.time-fixed');
+  if(fixed)fixed.value = '';
+  const sel = endpoint.querySelector('.time-anchor');
+  if(sel)sel.value = '';
+  const off = endpoint.querySelector('.time-offset');
+  if(off)off.value = '';
+  syncTimeModeVisibility(endpoint);
+}
+
+// RENDER: refresh the live "6:23am" preview on one endpoint by re-resolving
+// against the current habit + settings. Reads from currentDetailTune() so the
+// preview matches what save will persist.
+function refreshTimeResolvedFor(endpoint){
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return;
+  const field = endpoint.dataset.field;
+  if(!field)return;
+  const node = endpoint.querySelector('.time-resolved');
+  if(!node)return;
+  const h = currentDetailTune();
+  const settings = sortSettings || loadSortSettings();
+  const loc = habitPrayerLocation(h, settings);
+  if(!loc){ node.textContent = 'add a location'; return; }
+  const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
+  node.textContent = min == null ? '—' : formatTimeShort(((min % 1440) + 1440) % 1440);
+}
 $('detail-due-date').addEventListener('input',()=>{
   if(!$('detail-due-date').value && $('detail-due-time'))$('detail-due-time').value = '';
   syncDetailDueUi();
@@ -825,6 +898,20 @@ $('detail-save').addEventListener('click',()=>{
     h.preferredTimeStart = null;
     h.preferredTimeEnd = null;
   }
+  h.allowedTimeStartAnchor = cleanPrayerAnchor(current.allowedTimeStartAnchor);
+  h.allowedTimeStartOffsetMin = normalizePrayerOffset(current.allowedTimeStartOffsetMin);
+  h.allowedTimeEndAnchor = cleanPrayerAnchor(current.allowedTimeEndAnchor);
+  h.allowedTimeEndOffsetMin = normalizePrayerOffset(current.allowedTimeEndOffsetMin);
+  h.preferredTimeStartAnchor = cleanPrayerAnchor(current.preferredTimeStartAnchor);
+  h.preferredTimeStartOffsetMin = normalizePrayerOffset(current.preferredTimeStartOffsetMin);
+  h.preferredTimeEndAnchor = cleanPrayerAnchor(current.preferredTimeEndAnchor);
+  h.preferredTimeEndOffsetMin = normalizePrayerOffset(current.preferredTimeEndOffsetMin);
+  // Block: dynamic prayer anchors require at least one location on the habit.
+  // We have nowhere else to put the prayer-time coordinate without it.
+  if(habitUsesPrayerAnchors(h) && !(h.locationIds && h.locationIds.length)){
+    showToast('add a location to use prayer times');
+    return;
+  }
   h.durationMinutes = current.durationMinutes;
   h.breakable = Boolean(current.breakable);
   h.minChunkMinutes = clampMinChunk(current.minChunkMinutes);
@@ -949,6 +1036,17 @@ $('travel-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-travel-mode]');
   if(!opt)return;
   updateSortSetting({defaultTravelMode:normalizeTravelMode(opt.dataset.travelMode)});
+});
+$('prayer-madhab-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-prayer-madhab]');
+  if(!opt)return;
+  // Method/madhab changes invalidate every cached prayer computation.
+  if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+  updateSortSetting({prayerMadhab:normalizePrayerMadhab(opt.dataset.prayerMadhab)});
+});
+document.getElementById('setting-prayer-method')?.addEventListener('change',e=>{
+  if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+  updateSortSetting({prayerMethod:normalizePrayerMethod(e.target.value)});
 });
 $('home-extra-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');

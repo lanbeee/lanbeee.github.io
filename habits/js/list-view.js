@@ -1754,6 +1754,8 @@ function homeListFingerprint(now = Date.now()){
     h.durationMinutes, h.priority, h.flexibilityDays,
     h.breakable ? 1 : 0,
     h.allowedTimeStart, h.allowedTimeEnd,
+    h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
+    h.allowedTimeEndAnchor || '', h.allowedTimeEndOffsetMin || 0,
     (h.allowedWeekdays || []).join(','),
     (h.preferredWeekdays || []).join(',')
   ].join('~')).join(';');
@@ -1773,7 +1775,8 @@ function homeListFingerprint(now = Date.now()){
     JSON.stringify(s.cancelledBlocks || {}),
     JSON.stringify(s.availabilityOverrides || {}),
     JSON.stringify(s.availabilityMinutes || []),
-    JSON.stringify(s.blockedTimes || [])
+    JSON.stringify(s.blockedTimes || []),
+    s.prayerMethod || '', s.prayerMadhab || ''
   ].join('\n');
 }
 

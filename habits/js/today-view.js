@@ -80,10 +80,18 @@ function includeInTodayAgenda(h,settings){
 // PURE: resolve a fill item's allowed time window for the current day, or null
 // when the item has no restriction. Overnight windows (end <= start) extend
 // into the next day so a 23:00-02:00 window still works as a single span.
+//
+// Prayer anchors: when start or end is tied to an anchor, the resolved minute
+// is read via resolveHabitTimeField (which uses the habit's own resolved
+// location, not a passed-in one). A window with one anchor endpoint and one
+// fixed endpoint works fine — only the resolved side is dynamic.
 function fillTimeWindow(h,dayBase){
   if(!hasTimeWindow(h))return null;
-  const start = dayBase + h.allowedTimeStart * 60000;
-  let end = dayBase + h.allowedTimeEnd * 60000;
+  const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayBase);
+  const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayBase);
+  if(startMin == null || endMin == null)return null;
+  const start = dayBase + startMin * 60000;
+  let end = dayBase + endMin * 60000;
   if(end <= start)end += 24 * 3600000;
   return {start,end};
 }
@@ -95,8 +103,8 @@ function fillTimeWindow(h,dayBase){
 // preferredTimeStart (the "do it around this time" cue); end is not needed
 // for a soft nudge.
 function fillPreferredStart(h,dayBase){
-  const s = h.preferredTimeStart;
-  if(!Number.isFinite(s))return null;
+  const s = resolveHabitTimeField(h,'preferredTimeStart',dayBase);
+  if(s == null)return null;
   return dayBase + s * 60000;
 }
 

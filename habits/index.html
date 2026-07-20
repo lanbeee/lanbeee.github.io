@@ -244,10 +244,28 @@
             <div class="monthday-chip-row" id="detail-monthday-chips"></div>
             <div class="schedule-time-row">
               <span class="settings-sublabel compact-label">time window</span>
-              <div class="time-inputs">
-                <input type="time" id="detail-time-start" class="time-input" step="900" aria-label="allowed start time" />
+              <div class="time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed">
+                <div class="time-endpoint" data-field="allowedTimeStart">
+                  <input type="time" class="time-input time-fixed" id="detail-time-start" step="900" aria-label="allowed start time" />
+                  <div class="time-dynamic" hidden>
+                    <select class="time-anchor mini-select" aria-label="allowed start anchor"></select>
+                    <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="allowed start offset minutes" />
+                    <span class="time-offset-sign min">min</span>
+                    <span class="time-resolved" aria-live="polite"></span>
+                  </div>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                </div>
                 <span class="time-sep">—</span>
-                <input type="time" id="detail-time-end" class="time-input" step="900" aria-label="allowed end time" />
+                <div class="time-endpoint" data-field="allowedTimeEnd">
+                  <input type="time" class="time-input time-fixed" id="detail-time-end" step="900" aria-label="allowed end time" />
+                  <div class="time-dynamic" hidden>
+                    <select class="time-anchor mini-select" aria-label="allowed end anchor"></select>
+                    <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="allowed end offset minutes" />
+                    <span class="time-offset-sign min">min</span>
+                    <span class="time-resolved" aria-live="polite"></span>
+                  </div>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                </div>
               </div>
               <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
             </div>
@@ -259,10 +277,28 @@
             <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
             <div class="schedule-time-row preferred">
               <span class="settings-sublabel compact-label">best time</span>
-              <div class="time-inputs">
-                <input type="time" id="detail-preferred-time-start" class="time-input" step="900" aria-label="preferred start time" />
+              <div class="time-endpoints" id="detail-preferred-time-row" data-field-prefix="preferred">
+                <div class="time-endpoint" data-field="preferredTimeStart">
+                  <input type="time" class="time-input time-fixed" id="detail-preferred-time-start" step="900" aria-label="preferred start time" />
+                  <div class="time-dynamic" hidden>
+                    <select class="time-anchor mini-select" aria-label="preferred start anchor"></select>
+                    <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="preferred start offset minutes" />
+                    <span class="time-offset-sign min">min</span>
+                    <span class="time-resolved" aria-live="polite"></span>
+                  </div>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                </div>
                 <span class="time-sep">—</span>
-                <input type="time" id="detail-preferred-time-end" class="time-input" step="900" aria-label="preferred end time" />
+                <div class="time-endpoint" data-field="preferredTimeEnd">
+                  <input type="time" class="time-input time-fixed" id="detail-preferred-time-end" step="900" aria-label="preferred end time" />
+                  <div class="time-dynamic" hidden>
+                    <select class="time-anchor mini-select" aria-label="preferred end anchor"></select>
+                    <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" aria-label="preferred end offset minutes" />
+                    <span class="time-offset-sign min">min</span>
+                    <span class="time-resolved" aria-live="polite"></span>
+                  </div>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use prayer time" aria-label="use prayer time">⚙</button>
+                </div>
               </div>
               <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
             </div>
@@ -576,6 +612,21 @@
                 <button type="button" class="seg-opt" data-travel-mode="walking">walk</button>
                 <button type="button" class="seg-opt" data-travel-mode="bicycling">bike</button>
                 <button type="button" class="seg-opt" data-travel-mode="transit">transit</button>
+              </div>
+            </div>
+            <div class="prayer-times-settings">
+              <span class="settings-sublabel">prayer times</span>
+              <p class="field-hint">Used when a habit's time window is tied to a prayer time. Method defaults to North America (ISNA).</p>
+              <div class="prayer-times-row">
+                <label for="setting-prayer-method">method</label>
+                <select id="setting-prayer-method" class="mini-select prayer-method-select"></select>
+              </div>
+              <div class="prayer-times-row">
+                <label for="setting-prayer-madhab">asr school</label>
+                <div class="seg compact-seg prayer-madhab-seg" id="prayer-madhab-seg" role="group" aria-label="asr school">
+                  <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi</button>
+                  <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi</button>
+                </div>
               </div>
             </div>
           </div>
@@ -925,8 +976,10 @@
 <script src="./js/config.js" defer></script>
 <script src="./js/storage.js" defer></script>
 <script src="./js/viewport.js" defer></script>
+<script src="./lib/js/adhan.umd.min.js" defer></script>
 <script src="./js/data.js" defer></script>
 <script src="./js/locations.js" defer></script>
+<script src="./js/prayer-times.js" defer></script>
 <script src="./js/scoring.js" defer></script>
 <script src="./js/list-view.js" defer></script>
 <script src="./js/detail-view.js" defer></script>

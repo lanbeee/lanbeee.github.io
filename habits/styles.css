@@ -1355,6 +1355,42 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   font-variant-numeric:tabular-nums;min-width:88px;-webkit-appearance:none;appearance:none;
 }
 .time-sep{color:var(--text3);font-size:13px;}
+/* Per-endpoint time editor: fixed-time input swaps to a prayer-anchor
+ * picker + signed-minute offset when the user taps the gear toggle. */
+.time-endpoints{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.time-endpoint{display:inline-flex;align-items:center;gap:4px;}
+.time-endpoint .time-dynamic{display:inline-flex;align-items:center;gap:4px;}
+.time-endpoint .time-dynamic[hidden]{display:none;}
+.time-endpoint .time-fixed[hidden]{display:none;}
+.time-endpoint .time-mode-toggle{
+  padding:4px 7px;font-size:12px;line-height:1;border-radius:999px;
+}
+.time-endpoint.is-dynamic .time-mode-toggle{
+  background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
+}
+.mini-time-input{
+  border:0.5px solid var(--border);background:var(--bg);color:var(--text);
+  border-radius:var(--radius-sm);padding:5px 6px;font:inherit;font-size:12px;
+  width:44px;text-align:right;font-variant-numeric:tabular-nums;-moz-appearance:textfield;
+}
+.mini-time-input::-webkit-outer-spin-button,
+.mini-time-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.time-offset-sign{color:var(--text3);font-size:11px;}
+.time-resolved{
+  font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums;
+  padding:0 4px;min-width:60px;
+}
+/* Settings → locations → prayer times sub-block */
+.prayer-times-settings{
+  margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);
+}
+.prayer-times-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:8px 0;
+}
+.prayer-times-row label{font-size:13px;color:var(--text2);}
+.prayer-times-row .mini-select{max-width:220px;}
+.prayer-madhab-seg .seg-opt{padding:6px 12px;}
 /* completed tasks on the home list: faded + struck-through name */
 .ting-card.is-done{opacity:0.5;}
 .ting-card.is-done .ting-name{text-decoration:line-through;text-decoration-thickness:1.5px;text-decoration-color:var(--text3);}

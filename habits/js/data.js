@@ -37,6 +37,18 @@
  * @property {number|null} allowedTimeEnd     — minutes since midnight; null = unrestricted
  * @property {number|null} preferredTimeStart — minutes since midnight; null = unrestricted
  * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
+ *
+ * — Prayer-time anchors (optional; mutually exclusive per-endpoint with the fixed minutes above) —
+ * When `*Anchor` is set it overrides the matching fixed-minutes field for that endpoint, and the
+ * resolved minute is computed from the habit's location for the current day (see js/prayer-times.js).
+ * @property {string|null} allowedTimeStartAnchor   — 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|null
+ * @property {number}      allowedTimeStartOffsetMin — signed minutes vs the anchor (e.g. +60 = an hour after)
+ * @property {string|null} allowedTimeEndAnchor
+ * @property {number}      allowedTimeEndOffsetMin
+ * @property {string|null} preferredTimeStartAnchor
+ * @property {number}      preferredTimeStartOffsetMin
+ * @property {string|null} preferredTimeEndAnchor
+ * @property {number}      preferredTimeEndOffsetMin
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split duration into chunks of at least minChunkMinutes
@@ -108,6 +120,8 @@
  * @property {Location[]} locations                            — master location registry (max 32)
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
+ * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
+ * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
  * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
@@ -186,6 +200,8 @@ function loadSortSettings(){
     merged.locations = normalizeLocationRegistry(merged.locations);
     merged.travel = normalizeTravelCache(merged.travel);
     merged.defaultTravelMode = normalizeTravelMode(merged.defaultTravelMode);
+    merged.prayerMethod = normalizePrayerMethod(merged.prayerMethod);
+    merged.prayerMadhab = normalizePrayerMadhab(merged.prayerMadhab);
     merged.lastKnownLocationId = cleanLocationId(merged.lastKnownLocationId) || null;
     merged.locationOptIn = Boolean(merged.locationOptIn);
     merged.pinnedLocationId = cleanLocationId(merged.pinnedLocationId) || null;
@@ -207,6 +223,8 @@ function saveSortSettings(settings){
   next.locations = normalizeLocationRegistry(next.locations);
   next.travel = normalizeTravelCache(next.travel);
   next.defaultTravelMode = normalizeTravelMode(next.defaultTravelMode);
+  next.prayerMethod = normalizePrayerMethod(next.prayerMethod);
+  next.prayerMadhab = normalizePrayerMadhab(next.prayerMadhab);
   next.lastKnownLocationId = cleanLocationId(next.lastKnownLocationId) || null;
   next.locationOptIn = Boolean(next.locationOptIn);
   next.pinnedLocationId = cleanLocationId(next.pinnedLocationId) || null;
@@ -286,6 +304,14 @@ function normalize(items){
       allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
       preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
+      allowedTimeStartAnchor:cleanPrayerAnchor(raw.allowedTimeStartAnchor),
+      allowedTimeStartOffsetMin:normalizePrayerOffset(raw.allowedTimeStartOffsetMin),
+      allowedTimeEndAnchor:cleanPrayerAnchor(raw.allowedTimeEndAnchor),
+      allowedTimeEndOffsetMin:normalizePrayerOffset(raw.allowedTimeEndOffsetMin),
+      preferredTimeStartAnchor:cleanPrayerAnchor(raw.preferredTimeStartAnchor),
+      preferredTimeStartOffsetMin:normalizePrayerOffset(raw.preferredTimeStartOffsetMin),
+      preferredTimeEndAnchor:cleanPrayerAnchor(raw.preferredTimeEndAnchor),
+      preferredTimeEndOffsetMin:normalizePrayerOffset(raw.preferredTimeEndOffsetMin),
       flexibilityDays,
       durationMinutes:clampDuration(raw.durationMinutes),
       breakable,
@@ -980,9 +1006,23 @@ function intersectWindows(a,b){
 // Returns a merged interval list (possibly empty = not placeable here today).
 // A habit with no own window inherits the location's window; a location with
 // no hours is 24h. Pass loc=null to get the habit's own window only.
+//
+// Prayer anchors: when the habit's allowedTimeStart/End are tied to a prayer
+// anchor, the resolved minute is computed for the habit's resolved location
+// (NOT the location passed in here — that may be a different allowed
+// location). If the habit has no usable location yet (e.g. mid-save), the
+// anchor endpoints degrade to "unset" and the window collapses to empty.
 function effectiveLocationWindow(h,loc,weekday){
   const locWin = loc ? resolveLocationWindow(loc,weekday) : {start:0,end:1440};
   if(!locWin)return [];
+  const startAnchor = cleanPrayerAnchor(h && h.allowedTimeStartAnchor);
+  const endAnchor = cleanPrayerAnchor(h && h.allowedTimeEndAnchor);
+  if(startAnchor || endAnchor){
+    const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayStart(Date.now()));
+    const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayStart(Date.now()));
+    if(startMin == null || endMin == null)return [];
+    return intersectWindows({start:startMin,end:endMin},locWin);
+  }
   if(!hasTimeWindow(h))return locWin.end > locWin.start ? [locWin] : unwrapMinuteWindow(locWin);
   return intersectWindows({start:h.allowedTimeStart,end:h.allowedTimeEnd},locWin);
 }
@@ -1226,10 +1266,16 @@ function hasPreferredDays(h){
   return Boolean(pref.weekdays.length || pref.monthDays.length);
 }
 function hasTimeWindow(h){
-  return Number.isFinite(h.allowedTimeStart) && Number.isFinite(h.allowedTimeEnd);
+  // Dynamic (anchor) endpoints count as a set window even when the fixed
+  // minutes are null — they'll resolve to a real minute at render time.
+  const startSet = Number.isFinite(h.allowedTimeStart) || cleanPrayerAnchor(h.allowedTimeStartAnchor);
+  const endSet = Number.isFinite(h.allowedTimeEnd) || cleanPrayerAnchor(h.allowedTimeEndAnchor);
+  return Boolean(startSet && endSet);
 }
 function hasPreferredTimeWindow(h){
-  return Number.isFinite(h.preferredTimeStart) && Number.isFinite(h.preferredTimeEnd);
+  const startSet = Number.isFinite(h.preferredTimeStart) || cleanPrayerAnchor(h.preferredTimeStartAnchor);
+  const endSet = Number.isFinite(h.preferredTimeEnd) || cleanPrayerAnchor(h.preferredTimeEndAnchor);
+  return Boolean(startSet && endSet);
 }
 function isPreferredDay(h,ts = Date.now()){
   const pref = preferredDays(h);
@@ -1288,6 +1334,20 @@ function formatTimeShort(minutes){
 }
 function timeWindowSummary(h){
   if(!hasTimeWindow(h))return '';
+  // When either endpoint is a prayer anchor, show the anchor labels (e.g.
+  // "sunrise +30 – sunset"). Resolved clock times would mislead the moment
+  // the date or location changes; the anchor label is the stable truth.
+  const startAnchor = cleanPrayerAnchor(h.allowedTimeStartAnchor);
+  const endAnchor = cleanPrayerAnchor(h.allowedTimeEndAnchor);
+  if(startAnchor || endAnchor){
+    const s = startAnchor
+      ? prayerAnchorLabel(startAnchor, h.allowedTimeStartOffsetMin)
+      : formatTimeShort(h.allowedTimeStart);
+    const e = endAnchor
+      ? prayerAnchorLabel(endAnchor, h.allowedTimeEndOffsetMin)
+      : formatTimeShort(h.allowedTimeEnd);
+    return `${s}–${e}`;
+  }
   return `${formatTimeShort(h.allowedTimeStart)}–${formatTimeShort(h.allowedTimeEnd)}`;
 }
 function scheduleSummary(h){

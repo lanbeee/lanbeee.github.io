@@ -1,4 +1,4 @@
-const CACHE = 'tings-v29';
+const CACHE = 'tings-v30';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -28,8 +28,10 @@ const PRECACHE = [
   './js/config.js',
   './js/storage.js',
   './js/viewport.js',
+  './lib/js/adhan.umd.min.js',
   './js/data.js',
   './js/locations.js',
+  './js/prayer-times.js',
   './js/scoring.js',
   './js/list-view.js',
   './js/detail-view.js',

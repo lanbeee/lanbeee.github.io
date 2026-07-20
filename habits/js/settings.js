@@ -74,6 +74,7 @@ function syncSettingsControls(){
   document.querySelectorAll('#travel-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.travelMode === travelMode);
   });
+  renderPrayerTimesControls();
   const homeExtraMode = normalizeHomeExtraMode(sortSettings.homeExtraMode);
   document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === homeExtraMode);
@@ -833,6 +834,23 @@ function toggleAppSettingButton(btn){
 // HANDLER: enable/disable reminders. On enable, ask for notification permission
 // from this user gesture. The in-app banner works without any permission, so we
 // always enable it; system notifications are a best-effort layer on top.
+// RENDER: populate + sync the prayer-times sub-section (method dropdown and
+// madhab seg). Idempotent — options are populated once, then values synced.
+function renderPrayerTimesControls(){
+  const sel = document.getElementById('setting-prayer-method');
+  if(sel){
+    if(!sel.dataset.populated){
+      sel.innerHTML = PRAYER_METHODS.map(m => `<option value="${m.key}">${m.label}</option>`).join('');
+      sel.dataset.populated = '1';
+    }
+    sel.value = normalizePrayerMethod(sortSettings.prayerMethod);
+  }
+  const madhab = normalizePrayerMadhab(sortSettings.prayerMadhab);
+  document.querySelectorAll('#prayer-madhab-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.prayerMadhab === madhab);
+  });
+}
+
 async function toggleReminders(){
   const turningOn = !Boolean(sortSettings.reminders);
   if(!turningOn){

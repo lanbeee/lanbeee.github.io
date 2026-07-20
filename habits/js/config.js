@@ -23,6 +23,44 @@ const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you a
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
 
+// ── Prayer times (dynamic habit windows) ──
+// Prayer-time anchors a habit's allowed/preferred time endpoint can be tied to.
+// 'maghrib' is the same moment as sunset; both keys are accepted as aliases.
+const PRAYER_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
+const PRAYER_ANCHOR_LABELS = {
+  fajr:'Fajr', sunrise:'Sunrise', dhuhr:'Dhuhr',
+  asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha'
+};
+// Calculation methods exposed in Settings. Keys mirror adhan.CalculationMethod
+// factory names; labels are the friendly strings users recognise. The default
+// matches the user's request: North American (ISNA).
+const PRAYER_METHODS = [
+  {key:'NorthAmerica',  label:'North America (ISNA)'},
+  {key:'MuslimWorldLeague', label:'Muslim World League'},
+  {key:'Egyptian',      label:'Egyptian General Authority'},
+  {key:'Karachi',       label:'University of Karachi'},
+  {key:'UmmAlQura',     label:'Umm al-Qura (Makkah)'},
+  {key:'Dubai',         label:'Dubai'},
+  {key:'MoonsightingCommittee', label:'Moonsighting Committee Worldwide'},
+  {key:'Kuwait',        label:'Kuwait'},
+  {key:'Qatar',         label:'Qatar'},
+  {key:'Singapore',     label:'Singapore'},
+  {key:'Tehran',        label:'Tehran'},
+  {key:'Turkey',        label:'Turkey (Diyanet)'},
+  {key:'Other',         label:'Other'}
+];
+const DEFAULT_PRAYER_METHOD = 'NorthAmerica';
+// Madhab affects only Asr time. Shafi = standard; Hanafi = later Asr.
+const PRAYER_MADHABS = [
+  {key:'shafi',  label:'Shafi (standard)'},
+  {key:'hanafi', label:'Hanafi (later Asr)'}
+];
+const DEFAULT_PRAYER_MADHAB = 'shafi';
+// Cap on the offset (signed minutes) a user can attach to an anchor. ±12 h is
+// well past any sane "sunrise + a few hours" / "isha - 30 min" use case but
+// keeps typos from producing nonsense like 99999.
+const PRAYER_OFFSET_MAX_MIN = 720;
+
 const MAX_RHYTHM_DAYS = 183;
 const MIN_RHYTHM_DAYS = 0.5;
 const DEFAULT_DURATION_MINUTES = 30;
@@ -111,6 +149,8 @@ const DEFAULT_SORT_SETTINGS = {
   locations:[],
   travel:{},
   defaultTravelMode:DEFAULT_TRAVEL_MODE,
+  prayerMethod:DEFAULT_PRAYER_METHOD,           // adhan.CalculationMethod key
+  prayerMadhab:DEFAULT_PRAYER_MADHAB,           // 'shafi' | 'hanafi'
   lastKnownLocationId:null,
   locationOptIn:false,           // user granted geolocation (coords never persisted)
   pinnedLocationId:null,         // a manually-pinned "I am at" id; takes precedence over auto detection

@@ -72,6 +72,14 @@ function openDetail(i){
     allowedTimeEnd:h.allowedTimeEnd ?? null,
     preferredTimeStart:h.preferredTimeStart ?? null,
     preferredTimeEnd:h.preferredTimeEnd ?? null,
+    allowedTimeStartAnchor:cleanPrayerAnchor(h.allowedTimeStartAnchor),
+    allowedTimeStartOffsetMin:normalizePrayerOffset(h.allowedTimeStartOffsetMin),
+    allowedTimeEndAnchor:cleanPrayerAnchor(h.allowedTimeEndAnchor),
+    allowedTimeEndOffsetMin:normalizePrayerOffset(h.allowedTimeEndOffsetMin),
+    preferredTimeStartAnchor:cleanPrayerAnchor(h.preferredTimeStartAnchor),
+    preferredTimeStartOffsetMin:normalizePrayerOffset(h.preferredTimeStartOffsetMin),
+    preferredTimeEndAnchor:cleanPrayerAnchor(h.preferredTimeEndAnchor),
+    preferredTimeEndOffsetMin:normalizePrayerOffset(h.preferredTimeEndOffsetMin),
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     breakable:Boolean(h.breakable),
     minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
@@ -181,42 +189,120 @@ function scheduledWhenLabel(ts){
 }
 
 // RENDER: fills allowed/preferred time window input fields
+//
+// Each of the four endpoints (allowed start/end, preferred start/end) is a
+// per-endpoint editor that swaps between two modes:
+//   • fixed  → a single <input type="time"> (the legacy behaviour)
+//   • dynamic → a <select> of prayer anchors + signed-minute offset + live
+//              preview of the resolved clock time
+// The gear button toggles modes; the underlying time-endpoint element holds
+// both controls and shows the one that matches the habit's current state.
 function renderTimeWindowInputs(h = {}){
-  const start = $('detail-time-start');
-  const end = $('detail-time-end');
-  const clear = $('detail-time-clear');
-  if(start && end){
-    if(hasTimeWindow(h)){
-      start.value = minutesToTimeInput(h.allowedTimeStart);
-      end.value = minutesToTimeInput(h.allowedTimeEnd);
-      if(clear)clear.hidden = false;
-    }else{
-      start.value = '';
-      end.value = '';
-      if(clear)clear.hidden = true;
-    }
-  }
-  const prefStart = $('detail-preferred-time-start');
-  const prefEnd = $('detail-preferred-time-end');
-  const prefClear = $('detail-preferred-time-clear');
-  if(prefStart && prefEnd){
-    if(hasPreferredTimeWindow(h)){
-      prefStart.value = minutesToTimeInput(h.preferredTimeStart);
-      prefEnd.value = minutesToTimeInput(h.preferredTimeEnd);
-      if(prefClear)prefClear.hidden = false;
-    }else{
-      prefStart.value = '';
-      prefEnd.value = '';
-      if(prefClear)prefClear.hidden = true;
-    }
-  }
+  populateAnchorOptions();
+  renderTimeEndpoint($('detail-time-start').closest('.time-endpoint'), 'allowedTimeStart', h);
+  renderTimeEndpoint($('detail-time-end').closest('.time-endpoint'), 'allowedTimeEnd', h);
+  renderTimeEndpoint($('detail-preferred-time-start').closest('.time-endpoint'), 'preferredTimeStart', h);
+  renderTimeEndpoint($('detail-preferred-time-end').closest('.time-endpoint'), 'preferredTimeEnd', h);
+  syncTimeClearBtn();
 }
-// RENDER: toggles time-clear button visibility
+
+// RENDER (idempotent): populate every anchor <select> with the standard list.
+// Re-running on every openDetail is harmless — the options are stable.
+function populateAnchorOptions(){
+  document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
+    if(sel.dataset.populated === '1')return;
+    sel.innerHTML = '<option value="">— prayer —</option>'
+      + PRAYER_ANCHORS.map(a => `<option value="${a}">${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+    sel.dataset.populated = '1';
+  });
+}
+
+// RENDER: sync a single time endpoint DOM block from the habit's stored state.
+function renderTimeEndpoint(endpoint, field, h){
+  if(!endpoint)return;
+  const fixedInput = endpoint.querySelector('.time-fixed');
+  const dynWrap = endpoint.querySelector('.time-dynamic');
+  const anchorSel = endpoint.querySelector('.time-anchor');
+  const offsetInput = endpoint.querySelector('.time-offset');
+  const resolved = endpoint.querySelector('.time-resolved');
+  const anchor = cleanPrayerAnchor(h[field + 'Anchor']);
+  if(anchor){
+    endpoint.classList.add('is-dynamic');
+    if(fixedInput)fixedInput.hidden = true;
+    if(dynWrap)dynWrap.hidden = false;
+    if(anchorSel)anchorSel.value = anchor;
+    if(offsetInput)offsetInput.value = normalizePrayerOffset(h[field + 'OffsetMin']) || '';
+  }else{
+    endpoint.classList.remove('is-dynamic');
+    if(fixedInput){
+      fixedInput.hidden = false;
+      const num = Number(h[field]);
+      fixedInput.value = Number.isFinite(num) ? minutesToTimeInput(num) : '';
+    }
+    if(dynWrap)dynWrap.hidden = true;
+    if(anchorSel)anchorSel.value = '';
+    if(offsetInput)offsetInput.value = '';
+  }
+  updateTimeResolved(endpoint, field, h);
+}
+
+// RENDER: live preview of the resolved clock time for a dynamic endpoint.
+// Falls back to a muted "—" when there's no location on the habit (the save
+// path will block, but the preview explains why).
+function updateTimeResolved(endpoint, field, h){
+  const node = endpoint && endpoint.querySelector('.time-resolved');
+  if(!node)return;
+  const anchor = cleanPrayerAnchor(h && h[field + 'Anchor']);
+  if(!anchor){ node.textContent = ''; return; }
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const loc = habitPrayerLocation(h, settings);
+  if(!loc){
+    node.textContent = 'add a location';
+    return;
+  }
+  const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
+  if(min == null){
+    node.textContent = '—';
+    return;
+  }
+  node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
+}
+// RENDER: toggles time-clear button visibility. A clear is offered whenever
+// any of the four endpoints has a value (fixed or dynamic).
 function syncTimeClearBtn(){
+  const allowedOn = endpointHasValue($('detail-time-start').closest('.time-endpoint'))
+    || endpointHasValue($('detail-time-end').closest('.time-endpoint'));
+  const prefOn = endpointHasValue($('detail-preferred-time-start').closest('.time-endpoint'))
+    || endpointHasValue($('detail-preferred-time-end').closest('.time-endpoint'));
   const clear = $('detail-time-clear');
-  if(clear)clear.hidden = !$('detail-time-start')?.value && !$('detail-time-end')?.value;
+  if(clear)clear.hidden = !allowedOn;
   const prefClear = $('detail-preferred-time-clear');
-  if(prefClear)prefClear.hidden = !$('detail-preferred-time-start')?.value && !$('detail-preferred-time-end')?.value;
+  if(prefClear)prefClear.hidden = !prefOn;
+}
+function endpointHasValue(endpoint){
+  if(!endpoint)return false;
+  if(endpoint.classList.contains('is-dynamic'))return true;
+  const fixed = endpoint.querySelector('.time-fixed');
+  return Boolean(fixed && fixed.value);
+}
+// PURE: read the anchor value (or null) from a per-endpoint editor, addressed
+// by its fixed-input id. Returns null when the endpoint is in fixed mode.
+function readAnchorFromEndpoint(fixedInputId){
+  const el = document.getElementById(fixedInputId);
+  if(!el)return null;
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return null;
+  const sel = endpoint.querySelector('.time-anchor');
+  return cleanPrayerAnchor(sel ? sel.value : '');
+}
+// PURE: read the signed offset (default 0) from a per-endpoint editor.
+function readOffsetFromEndpoint(fixedInputId){
+  const el = document.getElementById(fixedInputId);
+  if(!el)return 0;
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return 0;
+  const input = endpoint.querySelector('.time-offset');
+  return normalizePrayerOffset(input ? input.value : 0);
 }
 
 // HYBRID: reads form DOM into tune object
@@ -242,6 +328,14 @@ function currentDetailTune(){
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
     preferredTimeStart:timeInputToMinutes($('detail-preferred-time-start').value),
     preferredTimeEnd:timeInputToMinutes($('detail-preferred-time-end').value),
+    allowedTimeStartAnchor:readAnchorFromEndpoint('detail-time-start'),
+    allowedTimeStartOffsetMin:readOffsetFromEndpoint('detail-time-start'),
+    allowedTimeEndAnchor:readAnchorFromEndpoint('detail-time-end'),
+    allowedTimeEndOffsetMin:readOffsetFromEndpoint('detail-time-end'),
+    preferredTimeStartAnchor:readAnchorFromEndpoint('detail-preferred-time-start'),
+    preferredTimeStartOffsetMin:readOffsetFromEndpoint('detail-preferred-time-start'),
+    preferredTimeEndAnchor:readAnchorFromEndpoint('detail-preferred-time-end'),
+    preferredTimeEndOffsetMin:readOffsetFromEndpoint('detail-preferred-time-end'),
     durationMinutes:clampDuration($('detail-duration').value),
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
@@ -295,7 +389,15 @@ function setDetailDirty(force){
       current.allowedTimeStart !== detailTuneOriginal.allowedTimeStart ||
       current.allowedTimeEnd !== detailTuneOriginal.allowedTimeEnd ||
       current.preferredTimeStart !== detailTuneOriginal.preferredTimeStart ||
-      current.preferredTimeEnd !== detailTuneOriginal.preferredTimeEnd)
+      current.preferredTimeEnd !== detailTuneOriginal.preferredTimeEnd ||
+      current.allowedTimeStartAnchor !== detailTuneOriginal.allowedTimeStartAnchor ||
+      current.allowedTimeStartOffsetMin !== detailTuneOriginal.allowedTimeStartOffsetMin ||
+      current.allowedTimeEndAnchor !== detailTuneOriginal.allowedTimeEndAnchor ||
+      current.allowedTimeEndOffsetMin !== detailTuneOriginal.allowedTimeEndOffsetMin ||
+      current.preferredTimeStartAnchor !== detailTuneOriginal.preferredTimeStartAnchor ||
+      current.preferredTimeStartOffsetMin !== detailTuneOriginal.preferredTimeStartOffsetMin ||
+      current.preferredTimeEndAnchor !== detailTuneOriginal.preferredTimeEndAnchor ||
+      current.preferredTimeEndOffsetMin !== detailTuneOriginal.preferredTimeEndOffsetMin)
   );
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }
