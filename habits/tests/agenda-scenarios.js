@@ -1117,6 +1117,83 @@ function defaultSettings(overrides = {}) {
       `placeMin=${issue11.placeMin}`);
   }
 
+  // ==========================================================================
+  // ISSUE 12 — scarcity overrides priority
+  // A flexible P0 (all-day, 60m) must not steal the only sunrise morning gap
+  // from a narrow P2 sunrise habit. Scarcity-first placement puts the tight
+  // window first; the P0 still places in a wide afternoon/evening slot.
+  // ==========================================================================
+  console.log('\n[Issue 12] scarcity overrides priority (sunrise vs flexible P0)');
+  {
+    const ago1d = atTime(6) - 1 * 86400000;
+    await seed(
+      [
+        base({ name:'Flexible Deep Work', type:'keepup', target:1, durationMinutes:60,
+          priority:0, locationIds:[],
+          lastLog:ago1d, logs:[ago1d] }),
+        base({ name:'Sunrise Exercise', type:'keepup', target:1, durationMinutes:5,
+          priority:2, locationIds:[],
+          allowedTimeStartAnchor:'sunrise', allowedTimeStartOffsetMin:5,
+          allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:35,
+          lastLog:ago1d, logs:[ago1d] })
+      ],
+      defaultSettings({
+        showWeekOnHome:true,
+        locations:[{id:'home', name:'Charles Street', lat:40.734852, lng:-74.003584}],
+        lastKnownLocationId:'home',
+        blockedTimes:[
+          {label:'blocked', days:[], locationId:'home',
+            start:900, end:960,
+            startAnchor:'sunrise', startOffsetMin:-480,
+            startCombine:'later', startAnchor2:'isha', startOffsetMin2:15,
+            startDayOffset:1, startDayOffset2:0,
+            endAnchor:'sunrise', endOffsetMin:-30},
+          {label:'breakfast', days:[], locationId:null, start:480, end:540}
+        ]
+      })
+    );
+
+    const issue12 = await page.evaluate(({ now }) => {
+      const RealDate = Date;
+      function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+      FD.now = () => now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FD, RealDate); FD.prototype = RealDate.prototype;
+      const orig = globalThis.Date; globalThis.Date = FD;
+      try {
+        const data = JSON.parse(localStorage.getItem('tings_v2'));
+        const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
+        const week = buildWeekAgenda(data, settings, 7);
+        const tomorrow = week.days[1];
+        const fills = (tomorrow?.timeline || []).filter(r => r.kind === 'fill');
+        const byName = Object.fromEntries(fills.map(r => {
+          const placeMin = Math.round((r.start - tomorrow.dayBase) / 60000);
+          return [r.h.name, placeMin];
+        }));
+        return {
+          names: fills.map(r => r.h.name),
+          byName,
+          hasSunrise: !!byName['Sunrise Exercise'],
+          hasFlexible: !!byName['Flexible Deep Work'],
+          sunriseMin: byName['Sunrise Exercise'] ?? null,
+          flexibleMin: byName['Flexible Deep Work'] ?? null
+        };
+      } finally { globalThis.Date = orig; }
+    }, { now: atTime(15) });
+
+    check('12a Sunrise Exercise places on tomorrow despite lower priority',
+      issue12.hasSunrise,
+      `fills: ${issue12.names.join(', ') || '(none)'}`);
+    check('12b Flexible Deep Work still places on tomorrow',
+      issue12.hasFlexible,
+      `fills: ${issue12.names.join(', ') || '(none)'}`);
+    check('12c sunrise stays in morning gap (before breakfast)',
+      issue12.sunriseMin != null && issue12.sunriseMin < 480,
+      `sunriseMin=${issue12.sunriseMin}`);
+    check('12d flexible P0 places outside the scarce morning gap',
+      issue12.flexibleMin != null && issue12.flexibleMin >= 480,
+      `flexibleMin=${issue12.flexibleMin}, sunriseMin=${issue12.sunriseMin}`);
+  }
+
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));
   await browser.close();
 

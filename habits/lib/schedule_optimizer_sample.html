@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BCBA Scheduling</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 15px;
+            background-color: #f1f3f4;
+        }
+
+        .sheet-container {
+            overflow-x : auto;
+            max-width: 100%;
+            border: 1px solid #dfe1e5;
+            background-color: #ffffff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            scroll-behavior: smooth;
+        }
+
+        .sheet {
+            border-collapse: collapse;
+                
+        }
+
+        .sheet td {
+            border: .9px solid rgb(210, 210, 210);
+            padding: 2px;  
+            min-width: 15px;
+            height: 15px;
+            text-align: left;
+            vertical-align: middle;
+            background-color: #ffffff;
+        }
+
+            
+        .sheet .day td{
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .sheet td:focus {
+            outline: none;
+            background-color: #e8f0fe;
+        }
+
+            
+        .sheet td:nth-child(n+5):not(.day):not(.vertext):not(.drp-cell) {
+            max-width: 15px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sheet td.schedule-available:hover {
+            background-color: #006909;
+        }
+        .sheet td.schedule-available.schedule-assigned:hover {
+            background-color: #dfdfdf;
+        }
+        .sheet td.schedule-na:hover {
+            background-color: #adcb96;
+        }
+        .sheet td.schedule-na.schedule-assigned:hover {
+            background-color: #f0f0f0;
+        }
+
+            
+        .sheet td.vertext {
+            font-weight: bold;
+            text-align: center;
+            vertical-align: middle;
+            padding: 0;
+            height: 50px;
+            width: 15px;
+            max-width: 15px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;  
+        }
+
+            
+        .sheet td.vertext .vertext-content,
+        .sheet td.drp-cell .vertext-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-90deg);
+            transform-origin: center;
+            white-space: nowrap;
+            font-size: 12px;
+            pointer-events: none;
+        }
+
+            
+        .sheet td.drp-cell {
+            position: relative;
+            height: 75px;
+            width: 15px;
+            overflow: visible;
+            padding: 0;
+            cursor: pointer;  
+        }
+
+            
+        .sheet td:nth-child(1),
+        .sheet td:nth-child(2),
+        .sheet td:nth-child(3),
+        .sheet td:nth-child(4),
+        .sheet th:nth-child(1),
+        .sheet th:nth-child(2),
+        .sheet th:nth-child(3),
+        .sheet th:nth-child(4) {
+            position: sticky;
+            left: 0;
+            background-color: #fff;
+            z-index: 2;
+        }
+
+            
+        .sheet td:nth-child(1), .sheet th:nth-child(1) {
+            left: 0;
+            z-index: 3;
+        }
+
+        .sheet td:nth-child(2), .sheet th:nth-child(2) {
+            left: 22px;  
+            z-index: 3;
+        }
+
+        .sheet td:nth-child(3), .sheet th:nth-child(3) {
+            left: 95px;  
+            z-index: 3;
+        }
+
+        .sheet td:nth-child(4), .sheet th:nth-child(4) {
+            left: 155px;  
+            z-index: 3;
+        }
+
+            
+        .sheet td:nth-child(1), .sheet th:nth-child(1){
+            width: 22px;
+            min-width: 22px;
+            max-width: 22px;
+        }
+
+        .sheet td:nth-child(2), .sheet th:nth-child(2){
+            width: 73px;
+            min-width: 73px;
+            max-width: 73px;
+        }
+
+        .sheet td:nth-child(3), .sheet th:nth-child(3),
+        .sheet td:nth-child(4), .sheet th:nth-child(4) {
+            width: 60px;
+            min-width: 60px;
+            max-width: 60px;
+        }
+
+            
+        .sheet td.schedule-available {
+            background-color: #cfcfcf;
+            border: .9px solid #a7a7a7;
+        }
+        .sheet td.schedule-assigned {
+            background-color: #008f11;
+            border: .9px solid #006909;
+            color: white;
+        }
+            
+        .sheet td.schedule-available.schedule-assigned {
+            background-color: #008f11;
+            border: .9px solid #006909;
+            color: white;
+        }
+        .sheet td.schedule-na.schedule-assigned {
+            background-color: #71bb7a;
+            border: .9px solid #56925d;
+            color: white;
+        }
+        .schedule-available, .schedule-assigned {
+            cursor: pointer;
+        }
+        .sheet td.right-thick-border {
+            border-right: 2px solid #000;
+        }
+        .control-buttons {
+            margin: 15px 0;
+        }
+        .control-buttons button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        #loadInput {
+            display: none;
+        }
+        .hover-highlight-row {
+            background-color: black !important;
+            color: white !important;
+        }
+        .hover-highlight-column {
+            font-weight: bold !important;
+            text-align: center !important;
+            border: .9px solid black !important;
+        }
+        #summary-hours {
+            font-weight: bold;
+        }
+            
+        .sheet td.vertext.blocked {
+            background-color: #FF0000;  
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="control-buttons">
+        <button id="saveButton">Save Schedule</button>
+        <button id="loadButton">Load Schedule</button>
+        <button id="clearButton">Clear Assignments</button>
+        <button id="autoAssignButton">Auto Assign Remaining Schedule</button>
+        
+        
+        <button id="reshuffleButton">Improve Continuity</button>
+        
+        <label for="timezoneSelector">Select Timezone:</label>
+        <select id="timezoneSelector" onchange="adjustTimeSlotLabels(this.value)">
+            <option value="EST">Eastern</option>
+            <option value="CST">Central</option>
+            <option value="MST">Mountain</option>
+            <option value="PST">Pacific</option>
+        </select>
+
+        <input type="file" id="loadInput" accept=".json">
+    </div>
+    <div class="sheet-container">
+        <table class="sheet">
+            <tbody>
+                <tr class="day">
+                    <td></td><td></td><td></td><td class="right-thick-border"></td>
+                    
+                    <td class="right-thick-border" colspan="16">Monday</td>
+                    <td class="right-thick-border" colspan="16">Tuesday</td>
+                    <td class="right-thick-border" colspan="16">Wednesday</td>
+                    <td class="right-thick-border" colspan="16">Thursday</td>
+                    <td class="right-thick-border" colspan="16">Friday</td>
+                    <td class="right-thick-border" colspan="16">Saturday</td>
+                    <td colspan="16">Sunday</td>
+                </tr>
+                <tr class="drp-row">
+                    <td></td><td></td><td></td><td class="right-thick-border"></td>
+                    
+                </tr>
+                <tr class="summary-row">
+                    <td><input type="checkbox" id="select-deselect-all"></td>
+                    <td>Acronym</td>
+                    <td id="summary-hours">0 of 0</td>
+                    <td class="right-thick-border">Auth Hours</td>
+                    
+                </tr>
+                
+            </tbody>
+        </table>
+    </div>
+    <div class="overall-summary">
+        <h2>Overall Summary</h2>
+        <p>BCBA Schedule: <span id="bcba-schedule"></span></p>
+    </div>
+
+    
+
+    
+    <script>
+    window.globalAssignments = {};
+    window.blockedTimeslots = {};
+    window.allacr = [];
+    window.checkedAcronyms = [];
+    window.authhours = [];
+    window.availibility_data = {};
+    window.acronymColors = {};
+    window.timeSlots = ['7-8', '8-9', '9-10', '10-11', '11-12', '12-1', '1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9','9-10', '10-11'];
+    window.isMouseDownOnDrpRow = false;
+    window.isMouseDownOnVertext = false;
+    
+    
+    function getTextColor(backgroundColor) {
+        var color = backgroundColor.substring(1);
+        var r = parseInt(color.substring(0,2), 16);
+        var g = parseInt(color.substring(2,4), 16);
+        var b = parseInt(color.substring(4,6), 16);
+        var luminance = 0.299*r + 0.587*g + 0.114*b;
+        return luminance > 150 ? 'black' : 'white';
+    }
+    
+    
+    function handleScheduleCellMouseEnter(td) {
+        const tr = td.parentNode;
+        const secondTd = tr.querySelector('td:nth-child(2)');
+        secondTd.classList.add('hover-highlight-column');
+        const acronym = secondTd.textContent;
+    
+        const cellIndex = td.cellIndex;
+        const vertextCellIndex = cellIndex;
+    
+        const drp_row = document.querySelector('.drp-row');
+        const drpRowCells = drp_row.querySelectorAll('td');
+    
+        const summaryRow = document.querySelector('.summary-row');
+        const summaryTds = summaryRow.querySelectorAll('td');
+        if (summaryTds[vertextCellIndex]) {
+            summaryTds[vertextCellIndex].classList.add('hover-highlight-row');
+            
+            drpRowCells[vertextCellIndex].dataset.prevacronym = drpRowCells[vertextCellIndex].textContent;
+    
+            const cell = drpRowCells[vertextCellIndex]
+            
+            cell.innerHTML = `<span class="vertext-content">${acronym}</span>`;
+        }
+    }
+    
+    // Function to handle mouse leave on schedule cells
+    function handleScheduleCellMouseLeave(td) {
+        const tr = td.parentNode;
+        const secondTd = tr.querySelector('td:nth-child(2)');
+        secondTd.classList.remove('hover-highlight-column');
+    
+        const cellIndex = td.cellIndex;
+        const vertextCellIndex = cellIndex;
+    
+        const drp_row = document.querySelector('.drp-row');
+        const drpRowCells = drp_row.querySelectorAll('td');
+    
+        const summaryRow = document.querySelector('.summary-row');
+        const summaryTds = summaryRow.querySelectorAll('td');
+        if (summaryTds[vertextCellIndex]) {
+            summaryTds[vertextCellIndex].classList.remove('hover-highlight-row');
+    
+            
+            const cell = drpRowCells[vertextCellIndex];
+            
+            cell.innerHTML = `<span class="vertext-content">${cell.dataset.prevacronym}</span>`;
+        }
+    }
+    
+    // Function to generate acronym rows
+    function generateAcronymRows(allacr, checkedAcronyms, authhours, acronymColors, getTextColor) {
+        const tbody = document.querySelector('tbody');
+    
+        allacr.forEach(function(acronym, index) {
+            const tr = document.createElement('tr');
+            const checkTd = document.createElement('td');
+            
+            if (checkedAcronyms.includes(index)) {
+                checkTd.innerHTML = `<input type="checkbox" id="${acronym}" name="${acronym}" value="${acronym}" checked>`;
+            } else {
+                checkTd.innerHTML = `<input type="checkbox" id="${acronym}" name="${acronym}" value="${acronym}">`;
+            }
+    
+            
+            checkTd.addEventListener('change', function() {
+                updateAssignedHours();
+            });
+    
+            const acronymTd = document.createElement('td');
+            acronymTd.classList.add(`acr-${acronym.toLowerCase()}`, 'acr');
+            acronymTd.textContent = acronym;
+            acronymTd.style.backgroundColor = acronymColors[acronym];
+            acronymTd.style.color = getTextColor(acronymColors[acronym]);
+    
+            const assignedHoursTd = document.createElement('td');
+            assignedHoursTd.classList.add(`assigned-hours`, `acr-${acronym.toLowerCase()}`);
+            assignedHoursTd.textContent = '0';
+    
+            const authHoursTd = document.createElement('td');
+            authHoursTd.classList.add(`auth-hours`, `acr-${acronym.toLowerCase()}`, 'right-thick-border');
+            authHoursTd.textContent = authhours[index] || '0';
+    
+            tr.appendChild(checkTd);
+            tr.appendChild(acronymTd);
+            tr.appendChild(assignedHoursTd);
+            tr.appendChild(authHoursTd);
+    
+            for (let i = 0; i < 112; i++) {
+                const td = document.createElement('td');
+                td.dataset.columnIndex = i;
+    
+                if (i >= 0) {
+                    if (globalAssignments[i] === acronym) {
+                        td.classList.add('schedule-assigned');
+                    }
+                    if (availibility_data[i] && availibility_data[i].includes(acronym)) {
+                        td.classList.add('schedule-available');
+                    } else {
+                        td.classList.add('schedule-na');
+                    }
+    
+                    td.addEventListener('click', function() {
+                        handleScheduleCellClick(td, acronym);
+                    });
+                } else {
+                    td.classList.add('schedule-na');
+                }
+    
+                if (i % 16 === 15 && i !== 111) {
+                    td.classList.add('right-thick-border');
+                }
+                td.addEventListener('mouseenter', function() {
+                    handleScheduleCellMouseEnter(td);
+                });
+    
+                td.addEventListener('mouseleave', function() {
+                    handleScheduleCellMouseLeave(td);
+                });
+    
+                tr.appendChild(td);
+            }
+    
+            tbody.appendChild(tr);
+        });
+    }
+    
+    
+    function handleScheduleCellClick(cell, acronym) {
+        const columnIndex = cell.dataset.columnIndex;
+    
+        if (blockedTimeslots[columnIndex]) {
+            alert('This timeslot is blocked.');
+            return;
+        }
+    
+        if (cell.classList.contains('schedule-assigned')) {
+            if (globalAssignments[columnIndex] === acronym) {
+                delete globalAssignments[columnIndex];
+                const drpRowCell = document.querySelector(`.drp-row td:nth-child(${parseInt(columnIndex) + 5})`);
+                updateDrpRowCell(drpRowCell, columnIndex);
+    
+                cell.classList.remove('schedule-assigned');
+    
+                updateAssignedHours();
+                updateScheduleAssignedClasses(columnIndex);
+            }
+        } else {
+            globalAssignments[columnIndex] = acronym;
+            const drpRowCell = document.querySelector(`.drp-row td:nth-child(${parseInt(columnIndex) + 5})`);
+            updateDrpRowCell(drpRowCell, columnIndex);
+    
+            cell.classList.add('schedule-assigned');
+    
+            updateAssignedHours();
+            updateScheduleAssignedClasses(columnIndex);
+        }
+    }
+    
+    
+    function updateDrpRowCell(td, columnIndex) {
+        td.innerHTML = '';
+    
+        if (globalAssignments.hasOwnProperty(columnIndex)) {
+            const acr = globalAssignments[columnIndex];
+            const bgColor = acronymColors[acr];
+            td.style.backgroundColor = bgColor;
+            td.style.color = getTextColor(bgColor);
+    
+            const span = document.createElement('span');
+            span.classList.add('vertext-content');
+            span.textContent = acr;
+            td.appendChild(span);
+            td.dataset.prevacronym = acr;
+        } else {
+            td.style.backgroundColor = '';
+            td.style.color = '';
+            td.dataset.prevacronym = '';
+        }
+    }
+    
+    
+    function generateCells(assignments, acronymColors, getTextColor) {
+        const dataRow = document.querySelector('.drp-row');
+    
+        for (let i = 0; i <112; i++) {
+            const td = document.createElement('td');
+            td.classList.add('drp-cell');
+            td.style.height = '75px';
+            td.style.width = '15px';
+            td.style.overflow = 'visible';
+            td.style.padding = '0';
+            td.style.position = 'relative';
+    
+            td.dataset.columnIndex = i;
+    
+            if (assignments.hasOwnProperty(i)) {
+                const acr = assignments[i];
+                const bgColor = acronymColors[acr];
+                td.style.backgroundColor = bgColor;
+                td.style.color = getTextColor(bgColor);
+    
+                const span = document.createElement('span');
+                span.classList.add('vertext-content');
+                span.textContent = acr;
+                td.appendChild(span);
+            }
+    
+            if (i % 16 === 15 && i !== 111) {
+                td.classList.add('right-thick-border');
+            }
+    
+            td.addEventListener('mousedown', function(e) {
+                isMouseDownOnDrpRow = true;
+                handleDrpRowCellClick(td);
+                e.preventDefault();
+            });
+    
+            td.addEventListener('mouseenter', function(e) {
+                if (isMouseDownOnDrpRow) {
+                    handleDrpRowCellClick(td);
+                }
+            });
+    
+            td.addEventListener('mouseup', function(e) {
+                if (isMouseDownOnDrpRow) {
+                    isMouseDownOnDrpRow = false;
+                }
+            });
+    
+            dataRow.appendChild(td);
+        }
+    }
+    
+    
+    function scheduleArrayToText(scheduleArray) {
+        const dayOrder = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
+        const indexToDay = dayOrder;
+        const selectedTimezone = document.getElementById("timezoneSelector").value;
+        const timezoneOffsets = {
+          'EST': 0,
+          'CST': -1,
+          'MST': -2,
+          'PST': -3
+        };
+        const offsetHours = timezoneOffsets[selectedTimezone] || 0;
+    
+        
+        const dayIntervals = {};
+        for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+            const intervals = [];
+            let inInterval = false;
+            let startSlotIndex = null;
+            for (let slotIndex = 0; slotIndex < 16; slotIndex++) { 
+                const index = dayIndex * 16 + slotIndex; 
+                if (scheduleArray[index] === 1) {
+                    if (!inInterval) {
+                        startSlotIndex = slotIndex;
+                        inInterval = true;
+                    }
+                } else {
+                    if (inInterval) {
+                        const endSlotIndex = slotIndex - 1;
+                        intervals.push([startSlotIndex, endSlotIndex]);
+                        inInterval = false;
+                    }
+                }
+            }
+            
+            if (inInterval) {
+                const endSlotIndex = 15; 
+                intervals.push([startSlotIndex, endSlotIndex]);
+            }
+            if (intervals.length > 0) {
+                dayIntervals[dayIndex] = intervals;
+            }
+        }
+    
+        
+        const intervalsToDays = {};
+        for (const dayIndex in dayIntervals) {
+            const intervals = dayIntervals[dayIndex]; 
+            
+            const intervalStrings = intervals.map(interval => interval.join('-'));
+            const intervalsKey = intervalStrings.join('|');
+            if (!intervalsToDays[intervalsKey]) {
+                intervalsToDays[intervalsKey] = [];
+            }
+            intervalsToDays[intervalsKey].push(parseInt(dayIndex));
+        }
+    
+        
+        const scheduleEntries = [];
+        for (const intervalsKey in intervalsToDays) {
+            const dayIndices = intervalsToDays[intervalsKey]; 
+            
+            const dayAbbrs = dayIndices.map(dayIndex => indexToDay[dayIndex]);
+            const dayStr = combineDayAbbreviations(dayAbbrs);
+            
+            const intervalStrings = intervalsKey.split('|');
+            const intervals = intervalStrings.map(intervalStr => {
+                const [startStr, endStr] = intervalStr.split('-');
+                return [parseInt(startStr), parseInt(endStr)];
+            });
+            
+            const timeRanges = intervals.map(interval => {
+                const [startSlotIndex, endSlotIndex] = interval;
+                
+                
+                
+                
+                
+                const startMinutes = (420 + 60 * startSlotIndex) + (offsetHours * 60);
+                const endMinutes   = (420 + 60 * (endSlotIndex + 1)) + (offsetHours * 60);
+
+                const startTimeStr = formatTimeWithOffset(startMinutes);
+                const endTimeStr   = formatTimeWithOffset(endMinutes);
+
+                return `${startTimeStr}-${endTimeStr}`;
+            });
+            const timeRangesStr = timeRanges.join(', ');
+            
+            const entry = `${dayStr}: ${timeRangesStr}`;
+            scheduleEntries.push(entry);
+        }
+    
+        
+        const scheduleString = scheduleEntries.join(' + ');
+        return scheduleString;
+    }
+    
+    function formatTimeWithOffset(minutes) {
+      
+      minutes = minutes % 1440;
+      if (minutes < 0) {
+          minutes += 1440;
+      }
+
+      let hour = Math.floor(minutes / 60);
+      let minute = minutes % 60;
+      let meridiem = 'AM';
+
+      if (hour >= 12) {
+          meridiem = 'PM';
+          if (hour > 12) hour -= 12;
+      }
+      if (hour === 0) {
+          hour = 12;
+      }
+      
+      if (minute === 0) {
+          return `${hour}${meridiem}`;
+      } else {
+          return `${hour}:${minute.toString().padStart(2, '0')}${meridiem}`;
+      }
+    }
+
+    
+    function combineDayAbbreviations(dayAbbrs) {
+        const dayOrder = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
+        const dayIndexMap = {};
+        dayOrder.forEach((abbr, idx) => { dayIndexMap[abbr] = idx; });
+        
+        const dayIndices = dayAbbrs.map(abbr => dayIndexMap[abbr]);
+        dayIndices.sort((a, b) => a - b);
+        const ranges = [];
+        let i = 0;
+        const n = dayIndices.length;
+        while (i < n) {
+            let startIdx = dayIndices[i];
+            let endIdx = startIdx;
+            while (i + 1 < n && dayIndices[i + 1] === dayIndices[i] + 1) {
+                i++;
+                endIdx = dayIndices[i];
+            }
+            
+            if (startIdx === endIdx) {
+                ranges.push(dayOrder[startIdx]);
+            } else {
+                ranges.push(`${dayOrder[startIdx]}-${dayOrder[endIdx]}`);
+            }
+            i++;
+        }
+        return ranges.join(',');
+    }
+    
+    
+    function formatTime(minutes) {
+        let hour = Math.floor(minutes / 60);
+        const minute = minutes % 60;
+        let meridiem = 'AM';
+        if (hour >= 12) {
+            meridiem = 'PM';
+            if (hour > 12) hour -= 12;
+        }
+        if (hour === 0) {
+            hour = 12;
+        }
+        
+        if (minute === 0) {
+            return `${hour}${meridiem}`;
+        } else {
+            return `${hour}:${minute.toString().padStart(2, '0')}${meridiem}`;
+        }
+    }
+    
+    
+    function updateAssignedHours() {
+        const counts = {};
+        allacr.forEach(acr => counts[acr] = 0);
+    
+        for (const [cellIndex, acr] of Object.entries(globalAssignments)) {
+            if (counts.hasOwnProperty(acr)) {
+                counts[acr] += 1;
+            }
+        }
+    
+        let sumMinAssignedAuth = 0;
+        let sumAuthHours = 0;
+    
+        allacr.forEach((acr, index) => {
+            
+            if (!document.getElementById(acr).checked) {
+                return;
+            }
+            const assignedHours = counts[acr];
+            const authHour = authhours[index] || 0;
+            const minAssignedAuth = Math.min(assignedHours, authHour);
+    
+            const assignedHoursTd = document.querySelector(`.assigned-hours.acr-${acr.toLowerCase()}`);
+            if (assignedHoursTd) {
+                assignedHoursTd.textContent = assignedHours;
+            }
+    
+            sumMinAssignedAuth += minAssignedAuth;
+            sumAuthHours += authHour;
+        });
+    
+        const summaryCell = document.getElementById('summary-hours');
+        summaryCell.textContent = `${sumMinAssignedAuth} of ${sumAuthHours}`;
+    
+        updateOverallSummary();
+    }
+    
+    
+    function updateOverallSummary() {
+        
+        const scheduleArray = new Array(112).fill(0);
+        for (const index in globalAssignments) {
+            
+            const acr = globalAssignments[index];
+            
+            if (document.getElementById(acr).checked) {
+                scheduleArray[index] = 1;
+            }
+        }
+    
+        const overallScheduleText = scheduleArrayToText(scheduleArray);
+    
+        document.getElementById('bcba-schedule').textContent = overallScheduleText;
+    
+        const clientSchedules = {}; 
+        allacr.forEach(acr => {
+            clientSchedules[acr] = new Array(112).fill(0);
+        });
+    
+        for (const index in globalAssignments) {
+            const acr = globalAssignments[index];
+            if (clientSchedules[acr]) {
+                clientSchedules[acr][index] = 1;
+            }
+        }
+    
+        const clientScheduleTexts = {};
+        allacr.forEach(acr => {
+            const scheduleArray = clientSchedules[acr];
+            const scheduleText = scheduleArrayToText(scheduleArray);
+            clientScheduleTexts[acr] = scheduleText;
+        });
+    
+        const overallSummaryDiv = document.querySelector('.overall-summary');
+    
+        const existingClientSchedules = overallSummaryDiv.querySelector('#client-schedules');
+        if (existingClientSchedules) {
+            overallSummaryDiv.removeChild(existingClientSchedules);
+        }
+    
+        const clientSchedulesDiv = document.createElement('div');
+        clientSchedulesDiv.id = 'client-schedules';
+    
+        const clientSchedulesTitle = document.createElement('h2');
+        clientSchedulesTitle.textContent = 'Schedule by Client';
+        clientSchedulesDiv.appendChild(clientSchedulesTitle);
+    
+        const clientSchedulesList = document.createElement('ul');
+    
+        for (const acr of allacr) {
+            const checkbox = document.getElementById(acr);
+            if (checkbox && checkbox.checked && clientScheduleTexts[acr]) { 
+                const scheduleText = clientScheduleTexts[acr];
+                const listItem = document.createElement('li');
+                listItem.textContent = `${acr}: ${scheduleText}`;
+                clientSchedulesList.appendChild(listItem);
+            }
+        }
+    
+        clientSchedulesDiv.appendChild(clientSchedulesList);
+    
+        overallSummaryDiv.appendChild(clientSchedulesDiv);
+    }
+    
+    
+    function updateScheduleAssignedClasses(columnIndex) {
+        allacr.forEach(acronym => {
+            const acronymRow = Array.from(document.querySelectorAll('tbody tr')).find(tr => {
+                return tr.querySelector(`.acr-${acronym.toLowerCase()}`) !== null;
+            });
+            if (acronymRow) {
+                const cells = acronymRow.querySelectorAll('td');
+                const targetCell = cells[4 + parseInt(columnIndex, 10)];
+    
+                if (targetCell) {
+                    targetCell.classList.remove('schedule-assigned');
+    
+                    const assignedAcronym = globalAssignments[columnIndex];
+                    if (assignedAcronym === acronym) {
+                        targetCell.classList.add('schedule-assigned');
+                    }
+                }
+            }
+        });
+    }
+    
+    
+    function updateUIWithBlockedSlots() {
+        
+        const drpRowCells = document.querySelectorAll('.summary-row td');
+        
+        drpRowCells.forEach((td, index) => {
+            if (index >= 4) { 
+                const timeslotIndex = index - 4;
+                
+                if (blockedTimeslots[timeslotIndex]) {
+                    td.classList.add('blocked');
+                } else {
+                    td.classList.remove('blocked');
+                }
+            }
+        });
+    }
+    
+    
+    function saveSchedule() {
+        const selectedTimezone = document.getElementById("timezoneSelector").value;
+        const data = {
+            globalAssignments: globalAssignments,
+            blockedTimeslots: blockedTimeslots,
+            selectedTimezone: selectedTimezone
+        };
+        const dataStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+    
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "schedule_with_blocked_slots.json"; 
+        document.body.appendChild(a);
+        a.click();
+    
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    
+    
+    function loadSchedule(event) {
+        const file = event.target.files[0];
+        if (!file) {
+            alert("No file selected.");
+            return;
+        }
+    
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const loadedData = JSON.parse(e.target.result);
+                
+                if (typeof loadedData !== 'object' || loadedData === null) {
+                    throw new Error("Invalid data format.");
+                }
+    
+                const loadedAssignments = loadedData.globalAssignments || {};
+                const loadedBlockedTimeslots = loadedData.blockedTimeslots || {};
+                const loadedTimezone = loadedData.selectedTimezone || "EST";
+    
+                
+                for (const key in globalAssignments) {
+                    if (globalAssignments.hasOwnProperty(key)) {
+                        delete globalAssignments[key];
+                    }
+                }
+                for (const key in blockedTimeslots) {
+                    if (blockedTimeslots.hasOwnProperty(key)) {
+                        delete blockedTimeslots[key];
+                    }
+                }
+    
+                
+                Object.assign(globalAssignments, loadedAssignments);
+                Object.assign(blockedTimeslots, loadedBlockedTimeslots);
+                
+    
+                
+                updateUIWithAssignments();
+                updateUIWithBlockedSlots();
+                updateAssignedHours();
+                const timezoneSelector = document.getElementById("timezoneSelector");
+                timezoneSelector.value = loadedTimezone;
+                adjustTimeSlotLabels(loadedTimezone);
+                
+            } catch (error) {
+                alert("Failed to load schedule: " + error.message);
+                console.error("Load Schedule Error:", error);
+            }
+        };
+    
+        reader.readAsText(file);
+    }
+    
+    
+    function updateUIWithAssignments() {
+        const drpRowCells = document.querySelectorAll('.drp-row td');
+        drpRowCells.forEach((td, index) => {
+            if (index >= 4) {
+                const cellIndex = index - 4;
+                updateDrpRowCell(td, cellIndex);
+            }
+        });
+        
+        const scheduleCells = document.querySelectorAll('.sheet tr:not(.day):not(.drp-row):not(.summary-row) td:nth-child(n+5)');
+        scheduleCells.forEach(cell => {
+            cell.classList.remove('schedule-assigned');
+        });
+    
+        Object.keys(globalAssignments).forEach(columnIndex => {
+            updateScheduleAssignedClasses(columnIndex);
+        });
+    }
+    
+    
+    function handleVertextCellClick(td, timeslotIndex) {
+        if (blockedTimeslots[timeslotIndex]) {
+            delete blockedTimeslots[timeslotIndex];
+            td.classList.remove('blocked');
+        } else {
+            blockedTimeslots[timeslotIndex] = true;
+            td.classList.add('blocked');
+            
+            if (globalAssignments[timeslotIndex]) {
+                delete globalAssignments[timeslotIndex];
+                updateAssignedHours();
+                updateScheduleAssignedClasses(timeslotIndex);
+                
+                const drpRowCell = document.querySelector(`.drp-row td:nth-child(${parseInt(timeslotIndex) + 5})`);
+                updateDrpRowCell(drpRowCell, timeslotIndex);
+            }
+        }
+    }
+    
+    
+    function handleDrpRowCellClick(td) {
+        const columnIndex = td.dataset.columnIndex;
+    
+        if (globalAssignments[columnIndex]) {
+            delete globalAssignments[columnIndex];
+            updateAssignedHours();
+            updateScheduleAssignedClasses(columnIndex);
+            updateDrpRowCell(td, columnIndex);
+        }
+    }
+    
+    function generateVertextCells(timeSlots, daysCount) {
+        const summaryRow = document.querySelector('.summary-row');
+    
+        for (let day = 0; day < daysCount; day++) {
+            timeSlots.forEach((slot, index) => {
+                const td = document.createElement('td');
+                td.classList.add('vertext');
+    
+                
+                const timeslotIndex = day * timeSlots.length + index;
+                td.dataset.timeslotIndex = timeslotIndex;
+    
+                const span = document.createElement('span');
+                span.classList.add('vertext-content');
+                span.textContent = slot;
+    
+                td.appendChild(span);
+    
+                if (index === timeSlots.length - 1) {
+                    td.classList.add('right-thick-border');
+                }
+    
+                
+                td.addEventListener('mousedown', function(e) {
+                    isMouseDownOnVertext = true;
+                    handleVertextCellClick(td, timeslotIndex);
+                    e.preventDefault();
+                });
+    
+                td.addEventListener('mouseenter', function(e) {
+                    if (isMouseDownOnVertext) {
+                        handleVertextCellClick(td, timeslotIndex);
+                    }
+                });
+    
+                td.addEventListener('mouseup', function(e) {
+                    if (isMouseDownOnVertext) {
+                        isMouseDownOnVertext = false;
+                    }
+                });
+    
+                summaryRow.appendChild(td);
+            });
+        }
+    }
+    
+    
+    window.generateVertextCells = generateVertextCells;
+    function adjustTimeSlotLabels(targetTimezone) {
+        const timezoneOffsets = {
+            'EST': 0, 
+            'CST': -1, 
+            'MST': -2, 
+            'PST': -3  
+        };
+
+        if (!timezoneOffsets.hasOwnProperty(targetTimezone)) {
+            console.error(`Unsupported timezone: ${targetTimezone}`);
+            return;
+        }
+
+        
+        const targetOffset = timezoneOffsets[targetTimezone];
+
+        
+        const convertedTimeSlots = timeSlots.map(slot => {
+            const [start, end] = slot.split('-').map(time => parseInt(time));
+            const adjustedStart = (start + targetOffset + 24) % 24;
+            const adjustedEnd = (end + targetOffset + 24) % 24;
+            return `${formatTimeSlots(adjustedStart)}-${formatTimeSlots(adjustedEnd)}`;
+        });
+
+        
+        const vertexCells = document.querySelectorAll('.vertext .vertext-content');
+        const daysCount = vertexCells.length / timeSlots.length;
+
+        vertexCells.forEach((cell, index) => {
+            const dayIndex = Math.floor(index / timeSlots.length);
+            const slotIndex = index % timeSlots.length;
+            if (dayIndex < daysCount && slotIndex < convertedTimeSlots.length) {
+                cell.textContent = convertedTimeSlots[slotIndex];
+            }
+        });
+        updateOverallSummary();
+    }
+
+    
+    function formatTimeSlots(hour) {
+        const suffix = hour >= 12 ? 'PM' : 'AM';
+        const adjustedHour = hour % 12 || 12; 
+        return `${adjustedHour}`;
+    }
+    window.adjustTimeSlotLabels = adjustTimeSlotLabels;
+    </script>
+
+    
+
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        
+        console.log("Initializing scheduler...");
+        window.allacr = ["LuWo","KerRu","KeaRu","NiNa","ViNa","EmMac","DuCo","NiDi","EvTha","NoLa","AmAn","OlMo","JaPa","AyDod","Driving"];
+        window.checkedAcronyms = [0,3,4,5,7,8,9,10,12,13];
+        window.authhours = [10,0,0,7,7,6,0,5,4,6,9,0,6,7.5,0];
+        window.availibility_data = {"2":["LuWo","NiDi","AmAn","JaPa"],"3":["LuWo","NiDi","AmAn","JaPa"],"4":["LuWo","NiDi","AmAn","JaPa","AyDod"],"5":["LuWo","NiDi","AmAn","JaPa","AyDod"],"6":["LuWo","NiDi","AmAn","JaPa","AyDod"],"7":["LuWo","NiDi","AmAn","JaPa","AyDod"],"8":["LuWo","AmAn","OlMo","AyDod"],"9":["LuWo","NiNa","ViNa","AmAn","OlMo","AyDod"],"10":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","AmAn","OlMo","AyDod"],"11":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","OlMo"],"12":["KerRu","KeaRu","NiNa","ViNa","EvTha","NoLa"],"13":["NiNa","ViNa"],"18":["LuWo","AmAn","JaPa"],"19":["LuWo","AmAn","JaPa"],"20":["LuWo","AmAn","JaPa","AyDod"],"21":["LuWo","AmAn","JaPa","AyDod"],"22":["LuWo","AmAn","JaPa","AyDod"],"23":["LuWo","AmAn","JaPa","AyDod"],"24":["LuWo","AmAn","OlMo","AyDod"],"25":["LuWo","NiNa","ViNa","AmAn","OlMo","AyDod"],"26":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","AmAn","OlMo","AyDod"],"27":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","OlMo"],"28":["KerRu","KeaRu","NiNa","ViNa","EvTha","NoLa"],"29":["NiNa","ViNa"],"34":["LuWo","NiDi","AmAn","JaPa"],"35":["LuWo","NiDi","AmAn","JaPa"],"36":["LuWo","NiDi","AmAn","JaPa","AyDod"],"37":["LuWo","NiDi","AmAn","JaPa","AyDod"],"38":["LuWo","NiDi","AmAn","JaPa","AyDod"],"39":["LuWo","NiDi","AmAn","JaPa","AyDod"],"40":["LuWo","AmAn","OlMo","AyDod"],"41":["LuWo","NiNa","ViNa","AmAn","OlMo","AyDod"],"42":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","AmAn","OlMo","AyDod"],"43":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","OlMo"],"44":["KerRu","KeaRu","NiNa","ViNa","EvTha","NoLa"],"45":["NiNa","ViNa"],"50":["LuWo","AmAn","JaPa"],"51":["LuWo","AmAn","JaPa"],"52":["LuWo","AmAn","JaPa","AyDod"],"53":["LuWo","AmAn","JaPa","AyDod"],"54":["LuWo","AmAn","JaPa","AyDod"],"55":["LuWo","AmAn","JaPa","AyDod"],"56":["LuWo","AmAn","OlMo","AyDod"],"57":["LuWo","NiNa","ViNa","AmAn","OlMo","AyDod"],"58":["KerRu","KeaRu","NiNa","ViNa","EvTha","NoLa","AmAn","OlMo","AyDod"],"59":["KerRu","KeaRu","NiNa","ViNa","EvTha","NoLa","OlMo"],"60":["KerRu","KeaRu","NiNa","ViNa","EvTha","NoLa"],"61":["NiNa","ViNa"],"66":["LuWo","NiDi","AmAn","JaPa"],"67":["LuWo","NiDi","AmAn","JaPa"],"68":["LuWo","NiDi","AmAn","JaPa","AyDod"],"69":["LuWo","NiDi","AmAn","JaPa","AyDod"],"70":["LuWo","NiDi","AmAn","JaPa","AyDod"],"71":["LuWo","NiDi","AmAn","JaPa","AyDod"],"72":["LuWo","AmAn","OlMo","AyDod"],"73":["LuWo","NiNa","ViNa","AmAn","OlMo","AyDod"],"74":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","AmAn","OlMo","AyDod"],"75":["KerRu","KeaRu","NiNa","ViNa","EmMac","EvTha","NoLa","OlMo"],"76":["KerRu","KeaRu","NiNa","ViNa","EvTha","NoLa"],"77":["NiNa","ViNa"],"83":["EmMac"],"84":["EmMac","NoLa","OlMo"],"85":["EmMac","NoLa","OlMo"],"86":["EmMac","NoLa","OlMo"],"87":["EmMac","NoLa","OlMo"],"88":["OlMo"],"90":["KerRu","KeaRu"],"91":["KerRu","KeaRu"],"92":["KerRu","KeaRu"],"93":["KerRu","KeaRu"],"99":["KerRu","KeaRu"],"100":["KerRu","KeaRu","NoLa"],"101":["KerRu","KeaRu","NoLa"],"102":["NoLa"],"103":["NoLa"]};
+        window.globalAssignments = {};
+        window.timeSlots = ['7-8', '8-9', '9-10', '10-11', '11-12', '12-1', '1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9','9-10', '10-11'];
+        window.isMouseDownOnVertext = false;
+        window.isMouseDownOnDrpRow = false;
+        window.dayConstraints = [];
+        const daysCount = 7; 
+    
+        window.dailyClients = ["LuWo","KerRu","KeaRu"];
+        console.log("Daily clients:", dailyClients);
+    
+        const daySlots = {};
+        for (let d = 0; d < daysCount; d++) {
+            daySlots[d] = Array.from({length: 16}, (_, i) => i + 16*d);
+        }
+        
+        const colors = ['#070045', '#3357FF', '#6466D7', '#A3A7F2', '#bdd435', '#8EB021', '#56B870', '#006400', '#2F4F4F', '#696969', '#A9A9A9', '#D3D3D3', '#FF8C00', '#FFA500', '#FFD700', '#FF4500', '#33FF57', '#FF33A8', '#FFD700', '#8C33FF', '#00CED1', '#FF3333', '#FF69B4', '#FFB533', '#B5FF33', '#DC143C', '#FFFF33', '#A52A2A', '#800000', '#FF7045'];
+    
+        window.blockedTimeslots = {};
+        window.acronymColors = {};
+        allacr.forEach((acr, index) => {
+            acronymColors[acr] = colors[index % colors.length];
+        });
+    
+        console.log("Generating UI components...");
+        generateVertextCells(timeSlots, daysCount);
+        generateAcronymRows(allacr, checkedAcronyms, authhours, acronymColors, getTextColor);
+        generateCells(globalAssignments, acronymColors, getTextColor);
+        updateAssignedHours();
+    
+        document.getElementById('select-deselect-all').addEventListener('change', function() {
+            console.log(`Select/Deselect All changed to ${this.checked}`);
+            const checked = this.checked;
+            const checkboxes = document.querySelectorAll('.sheet input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = checked;
+            });
+            updateAssignedHours();
+        });
+    
+        document.getElementById('clearButton').addEventListener('click', function() {
+            console.log("Clear Assignments button clicked.");
+            const checkboxes = document.querySelectorAll('.sheet input[type="checkbox"]');
+            
+            checkboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    const acronym = checkbox.value;
+                    console.log(`Clearing globalAssignments for ${acronym}`);
+                    
+                    const drpRowCells = document.querySelectorAll('.drp-row td');
+                    drpRowCells.forEach((td, index) => {
+                        if (index >= 4) {
+                            const cellIndex = index - 4;
+                            if (globalAssignments[cellIndex] === acronym) {
+                                console.log(`Removing assignment from timeslot ${cellIndex} for ${acronym}`);
+                                delete globalAssignments[cellIndex];
+                                updateDrpRowCell(td, cellIndex);
+                            }
+                        }
+                    });
+                }
+            });
+            updateUIWithAssignments();
+            updateAssignedHours();
+        });
+    
+        const saveButton = document.getElementById('saveButton');
+        saveButton.addEventListener('click', function() {
+            console.log("Save Schedule button clicked.");
+            saveSchedule();
+        });
+    
+        const loadButton = document.getElementById('loadButton');
+        const loadInput = document.getElementById('loadInput');
+        loadButton.addEventListener('click', () => {
+            console.log("Load Schedule button clicked.");
+            loadInput.click();
+        });
+    
+        loadInput.addEventListener('change', function(event) {
+            console.log("File selected for loading schedule.");
+            loadSchedule(event);
+        });
+    
+        const autoAssignButton = document.getElementById('autoAssignButton');
+        autoAssignButton.addEventListener('click', function() {
+            console.log("Auto Assign button clicked.");
+            autoAssignSchedule();
+        });
+    
+        document.addEventListener('mouseup', function() {
+            if (isMouseDownOnVertext || isMouseDownOnDrpRow) {
+                console.log("Mouse button released.");
+            }
+            isMouseDownOnVertext = false;
+            isMouseDownOnDrpRow = false;
+        });
+    
+        const dayConstraintsSet = new Set();
+        let GLP_DB, GLP_FX;
+    
+        function generateDayConstraints(newAddedAssignments, GLPK) {
+            console.log("Generating day constraints...");
+            
+            const assignmentsByClient = {};
+            for (const [slot, client] of Object.entries(globalAssignments)) {
+                if (!assignmentsByClient[client]) {
+                    assignmentsByClient[client] = [];
+                }
+                assignmentsByClient[client].push(parseInt(slot));
+            }
+    
+    
+            console.log("Assignments by client:", assignmentsByClient);
+    
+            const newConstraints = [];
+            GLP_DB = GLP_DB || GLPK.GLP_DB;
+            GLP_FX = GLP_FX || GLPK.GLP_FX;
+    
+            for (const client of dailyClients) {
+                const clientAuth = authhours[allacr.indexOf(client)];
+    
+                const dayCountConstraint = Math.round(clientAuth / 3);
+                const desiredDays = Math.min(3, clientAuth);
+    
+                const assignedDays = new Set();
+                for (const t of newAddedAssignments[client] || []) {
+                    const dayIndex = Math.floor(t / 16);
+                    assignedDays.add(dayIndex);
+                }
+    
+                const assignedDaysArray = Array.from(assignedDays);
+                const daysToConstrain = assignedDaysArray.slice(0, desiredDays);
+    
+                for (const d of daysToConstrain) {
+                    const constraintName = `dailyClient_${client}_day${d}`;
+                    if (!dayConstraintsSet.has(constraintName)) {
+                        const conVarsDay = daySlots[d].map(slot => ({
+                            name: `x_${allacr.indexOf(client)}_${slot}`,
+                            coef: 1
+                        }));
+    
+                        const lb = (dayCountConstraint > 0) ? 1 : 0;
+                        const ub = Math.min(3,(dayCountConstraint > 0) ? dayCountConstraint : 0);
+                    
+                        let constraintType = GLP_DB;
+                        if (lb === ub) {
+                            constraintType = GLP_FX;
+                        }
+    
+                        if (lb <= ub && lb > 0) {
+                            newConstraints.push({
+                                name: constraintName,
+                                vars: conVarsDay,
+                                bnds: {
+                                    type: constraintType,
+                                    lb: lb,
+                                    ub: ub
+                                }
+                            });
+                            dayConstraintsSet.add(constraintName);
+                        }
+                    }
+                }
+            }
+            return newConstraints;
+        }
+    
+        function addDayConstraintsWithLimit(newDayConstraints, maxConstraintsPerIteration = 2) {
+            
+            const constraintsByClient = {};
+            for (const constraint of newDayConstraints) {
+                const match = constraint.name.match(/dailyClient_(.+?)_day(\d+)/);
+                if (match) {
+                    const client = match[1];
+                    if (!constraintsByClient[client]) constraintsByClient[client] = [];
+                    constraintsByClient[client].push(constraint);
+                } else {
+                    dayConstraints.push(constraint);
+                }
+            }
+    
+            for (const [client, cons] of Object.entries(constraintsByClient)) {
+                const toAdd = cons.slice(0, maxConstraintsPerIteration);
+                for (const c of toAdd) {
+                    dayConstraints.push(c);
+                }
+            }
+        }
+    
+    
+        async function autoAssignSchedule() {
+            console.log("Starting auto-assignment using GLPK (with day constraints logic)...");
+    
+            const numClients = allacr.length;
+            const numTimeSlots = daysCount * timeSlots.length; 
+            console.log(`Number of clients: ${numClients}, Number of timeslots: ${numTimeSlots}`);
+    
+            const blocked_slots = {};
+            for (const index in blockedTimeslots) {
+                blocked_slots[index] = true;
+            }
+            for (const index in globalAssignments) {
+                blocked_slots[index] = true;
+            }
+            console.log(`Blocked timeslots: ${JSON.stringify(blocked_slots)}`);
+    
+            const activeClients = allacr.filter(acr => {
+                const checkbox = document.getElementById(acr);
+                return checkbox && checkbox.checked;
+            });
+            console.log(`Active clients: ${activeClients}`);
+    
+            const authHoursObj = {};
+            allacr.forEach((acr, i) => {
+                const assignedHours = Object.values(globalAssignments).filter(assignedAcr => assignedAcr === acr).length;
+                const remainingHours = Math.ceil(authhours[i] - assignedHours);
+                authHoursObj[acr] = remainingHours > 0 ? remainingHours : 0;
+            });
+            console.log(`Authorized hours per client after subtracting assigned hours: ${JSON.stringify(authHoursObj)}`);
+    
+            console.log("First solve (no day constraints)...");
+            dayConstraints = [];
+            dayConstraintsSet.clear();
+    
+            let {result, newAssignments, GLPK} = await solveUsingGLPK(allacr, activeClients, authHoursObj, availibility_data, blocked_slots, 112, dayConstraints);
+            
+            console.log("Generating day constraints after first solve...");
+            let additionalConstraints = generateDayConstraints(newAssignments, GLPK);
+            if (additionalConstraints.length > 0) {
+                console.log(`Adding ${additionalConstraints.length} new day constraints...`);
+                addDayConstraintsWithLimit(additionalConstraints);
+    
+                console.log("Second solve (with day constraints)...");
+                console.log(newAssignments);
+                ({result, newAssignments, GLPK} = await solveUsingGLPK(allacr, activeClients, authHoursObj, availibility_data, blocked_slots, 112, dayConstraints));
+                
+                console.log("Generating day constraints after second solve...");
+                additionalConstraints = generateDayConstraints(newAssignments, GLPK);
+                if (additionalConstraints.length > 0) {
+                    console.log(`Adding ${additionalConstraints.length} more day constraints...`);
+                    addDayConstraintsWithLimit(additionalConstraints);
+    
+                    console.log("Third solve (with updated day constraints)...");
+                    ({result, newAssignments, GLPK} = await solveUsingGLPK(allacr, activeClients, authHoursObj, availibility_data, blocked_slots, 112, dayConstraints));
+                    handleGLPKResult(result, newAssignments);
+                } else {
+                    console.log("No additional day constraints were added after the second solve.");
+                    handleGLPKResult(result, newAssignments);
+                }
+            } else {
+                console.log("No day constraints were added after the first solve.");
+                handleGLPKResult(result, newAssignments);
+    
+            }
+            return Promise.resolve(); 
+        }
+        
+        autoAssignSchedule().then(() => {
+            console.log("Automatically running reshuffleAssignments...");
+            reshuffleAssignments();
+        }).catch(err => {
+            console.error("Error in autoAssignSchedule:", err);
+        });
+    
+        function handleGLPKResult(result, assignmentsFromLP) {
+            console.log("Handling GLPK result...");
+            console.log(`GLPK status: ${result.result.status}`);
+            console.log(`GLPK objective value: ${result.result.z}`);
+        
+            let solutionFound = (result.result.status === 5 || result.result.status === 2);
+        
+            if (solutionFound) {
+                console.log("Feasible or optimal solution found.");
+                
+                console.log("Applying new assignments from GLPK:");
+                for (const c in assignmentsFromLP) {
+                    const acr = c;
+                    const assignedSlots = assignmentsFromLP[c];
+                    console.log(`${acr}: Assigned slots ${assignedSlots}`);
+                    assignedSlots.forEach(t => {
+                        globalAssignments[t] = acr;
+                    });
+                }
+        
+                updateUIWithAssignments();
+                updateAssignedHours();
+                console.log("UI updated with new assignments.");
+            } else {
+                console.warn("No feasible solution found by GLPK.");
+                alert("No feasible solution found by GLPK.");
+            }
+        }
+        
+    
+        async function solveUsingGLPK(allacr, activeClients, authHoursObj, availibility_data, blocked_slots, Tcount, dayConstraints) {
+            console.log("Loading GLPK.js module...");
+            const glpkModule = await import("https://cdn.jsdelivr.net/npm/glpk.js@4.0.2/+esm");
+            const GLPK = await glpkModule.default();
+            console.log("GLPK.js module loaded.");
+    
+            const C = allacr;
+            console.log(`Clients: ${C}`);
+    
+            const available = {};
+            for (const c of C) {
+                available[c] = {};
+                for (let t = 0; t < Tcount; t++) {
+                    available[c][t] = (availibility_data[t] && availibility_data[t].includes(c)) ? 1 : 0;
+                }
+            }
+    
+            console.log("Building LP problem with any day constraints...");
+            const problem = buildLPProblem(C, activeClients, authHoursObj, available, blocked_slots, Tcount, GLPK, dayConstraints);
+            console.log("LP problem built successfully.");
+    
+            console.log("Solving LP problem with GLPK...");
+            const options = { msglev: GLPK.GLP_MSG_OFF, presol: true };
+            const result = await GLPK.solve(problem, options);
+            console.log("LP problem solved.");
+            console.log("GLPK Result:", result);
+    
+            console.log("Extracting assignments from GLPK result...");
+            const assignments = {};
+            for (const c of C) {
+                assignments[c] = [];
+            }
+            for (const [name, val] of Object.entries(result.result.vars)) {
+                if (val > 0.5) {
+                    const parts = name.split('_');
+                    const cIndex = parseInt(parts[1], 10);
+                    const t = parseInt(parts[2], 10);
+                    const client = C[cIndex];
+                    
+                    assignments[client].push(t);
+                }
+            }
+    
+            console.log("Assignments extracted:", assignments);
+    
+            return {result, newAssignments: assignments, GLPK};
+        }
+    
+        function buildLPProblem(C, activeClients, authHoursObj, available, blocked_slots, Tcount, GLPK, dayConstraints) {
+            console.log("Constructing LP problem constraints and variables...");
+    
+            
+            const vars = [];
+            for (let c = 0; c < C.length; c++) {
+                for (let t = 0; t < Tcount; t++) {
+                    vars.push({ name: `x_${c}_${t}`, coef: 1 });
+                }
+            }
+            console.log(`Total variables: ${vars.length}`);
+    
+            const subjectTo = [];
+    
+            
+            console.log("Adding timeslot capacity constraints...");
+            for (let t = 0; t < Tcount; t++) {
+                const conVars = [];
+                for (let c = 0; c < C.length; c++) {
+                    conVars.push({ name: `x_${c}_${t}`, coef: 1 });
+                }
+                subjectTo.push({
+                    name: `slotCap_${t}`,
+                    vars: conVars,
+                    bnds: { type: GLPK.GLP_UP, ub: 1, lb: 0 }
+                });
+            }
+            console.log(`Added ${Tcount} timeslot capacity constraints.`);
+    
+            
+            console.log("Adding client maximum hours constraints...");
+            for (let c = 0; c < C.length; c++) {
+                const client = C[c];
+                const conVars = [];
+                for (let t = 0; t < Tcount; t++) {
+                    conVars.push({ name: `x_${c}_${t}`, coef: 1 });
+                }
+                const maxH = authHoursObj[client] || 0;
+                subjectTo.push({
+                    name: `maxHours_${client}`,
+                    vars: conVars,
+                    bnds: { type: GLPK.GLP_UP, ub: maxH, lb: 0 }
+                });
+            }
+            console.log(`Added ${C.length} client maximum hours constraints.`);
+    
+            
+            if (dayConstraints && dayConstraints.length > 0) {
+                console.log(`Adding ${dayConstraints.length} day constraints...`);
+                for (const dc of dayConstraints) {
+                    subjectTo.push(dc);
+                }
+            }
+    
+            
+            console.log("Setting variable bounds based on availability and blocked timeslots...");
+            const varBounds = [];
+            for (let c = 0; c < C.length; c++) {
+                const client = C[c];
+                const isActive = activeClients.includes(client);
+                for (let t = 0; t < Tcount; t++) {
+                    let ub = 0;
+                    if (isActive && available[client][t] === 1 && !blocked_slots[t]) {
+                        ub = 1;
+                    }
+                    varBounds.push({
+                        name: `x_${c}_${t}`,
+                        type: GLPK.GLP_DB,
+                        lb: 0,
+                        ub: ub
+                    });
+                }
+            }
+            console.log(`Set bounds for ${varBounds.length} variables.`);
+    
+            const problem = {
+                name: "SchedulingLP",
+                objective: {
+                    direction: GLPK.GLP_MAX,
+                    name: "obj",
+                    vars: vars
+                },
+                subjectTo: subjectTo,
+                bounds: varBounds
+            };
+    
+            console.log("LP problem construction complete.");
+            return problem;
+        }
+
+        const reshuffleButton = document.getElementById('reshuffleButton');
+reshuffleButton.addEventListener('click', function () {
+    console.log("Reshuffle Assignments button clicked.");
+    reshuffleAssignments();
+});
+
+function reshuffleAssignments() {
+    console.log("Reshuffling assignments for better continuity...");
+
+    const maxSingleSlotPasses = 5; 
+    const maxBlockPasses = 3;
+    const maxRandomAttempts = 2; 
+
+    for (let d = 0; d < daysCount; d++) {
+        const slots = daySlots[d];
+
+        
+        const originalAssignmentsForDay = {};
+        const clientAssignments = {};
+        const clientAvailability = {};
+
+        for (const slot of slots) {
+            const client = globalAssignments[slot];
+            if (client) {
+                originalAssignmentsForDay[slot] = client;
+                if (!clientAssignments[client]) clientAssignments[client] = [];
+                clientAssignments[client].push(slot);
+            }
+        }
+
+        
+        if (Object.keys(clientAssignments).length === 0) continue;
+
+        
+        for (const client in clientAssignments) {
+            const availability = slots.filter(s =>
+                availibility_data[s] && availibility_data[s].includes(client)
+            );
+            clientAvailability[client] = availability;
+        }
+
+        let daySchedule = slots.map(slot => ({
+            slot: slot,
+            assignedClient: originalAssignmentsForDay[slot] || null
+        }));
+
+        refreshClientAssignments(daySchedule, clientAssignments);
+
+        
+        let improved = runImprovements(daySchedule, clientAssignments, clientAvailability, maxSingleSlotPasses, maxBlockPasses);
+
+        
+        if (!improved) {
+            console.log("No deterministic improvement found, attempting random perturbation...");
+            const originalSnapshot = snapshotAssignments(daySchedule);
+
+            let randomImproved = false;
+            let randomAttempts = 0;
+
+            while (!randomImproved && randomAttempts < maxRandomAttempts) {
+                randomAttempts++;
+
+                
+                randomizeSchedule(daySchedule, clientAssignments, clientAvailability);
+
+                
+                refreshClientAssignments(daySchedule, clientAssignments);
+                randomImproved = runImprovements(daySchedule, clientAssignments, clientAvailability, maxSingleSlotPasses, maxBlockPasses);
+
+                if (!randomImproved) {
+                    
+                    restoreAssignments(daySchedule, originalSnapshot);
+                    refreshClientAssignments(daySchedule, clientAssignments);
+                    console.log("Random perturbation did not improve continuity, reverted.");
+                } else {
+                    console.log("Random perturbation led to an improvement!");
+                }
+            }
+
+            
+            if (!randomImproved) {
+                console.log("No improvement after random attempts, trying full-day rebuild...");
+                const beforeRebuildBlockCount = totalBlockCount(clientAssignments);
+                const rebuildSnapshot = snapshotAssignments(daySchedule);
+
+                const rebuildImproved = tryFullDayRebuild(daySchedule, clientAssignments, clientAvailability);
+
+                if (rebuildImproved) {
+                    console.log("Full-day rebuild improved continuity!");
+                } else {
+                    console.log("Full-day rebuild did not improve continuity, reverting to original.");
+                    restoreAssignments(daySchedule, rebuildSnapshot);
+                    refreshClientAssignments(daySchedule, clientAssignments);
+                }
+            }
+        }
+
+        
+        const finalCounts = {};
+        for (const entry of daySchedule) {
+            if (entry.assignedClient) {
+                if (!finalCounts[entry.assignedClient]) finalCounts[entry.assignedClient] = 0;
+                finalCounts[entry.assignedClient]++;
+            }
+        }
+
+        let mismatch = false;
+        for (const client in clientAssignments) {
+            const originalCount = Object.values(originalAssignmentsForDay).filter(x => x === client).length;
+            const newCount = finalCounts[client] || 0;
+            if (newCount !== originalCount) {
+                console.error(`Mismatch in assignment count for ${client} on day ${d + 1}. Reverting to original assignments.`);
+                mismatch = true;
+                break;
+            }
+        }
+
+        if (mismatch) {
+            
+            for (const slot of slots) {
+                if (originalAssignmentsForDay[slot]) {
+                    globalAssignments[slot] = originalAssignmentsForDay[slot];
+                } else {
+                    delete globalAssignments[slot];
+                }
+            }
+        } else {
+            
+            for (const entry of daySchedule) {
+                if (entry.assignedClient) {
+                    globalAssignments[entry.slot] = entry.assignedClient;
+                } else {
+                    delete globalAssignments[entry.slot];
+                }
+            }
+        }
+    }
+
+    updateUIWithAssignments();
+    updateAssignedHours();
+    console.log("Reshuffling completed with full-day rebuild fallback if needed.");
+}
+
+
+
+function runImprovements(daySchedule, clientAssignments, clientAvailability, maxSingleSlotPasses, maxBlockPasses) {
+    const originalBlockCount = totalBlockCount(clientAssignments);
+    singleSlotSwaps(daySchedule, clientAssignments, clientAvailability, maxSingleSlotPasses);
+    enhanceContinuityWithBlockMoves(daySchedule, clientAssignments, clientAvailability, maxBlockPasses);
+    const newBlockCount = totalBlockCount(clientAssignments);
+    const improved = (newBlockCount < originalBlockCount);
+    console.log(`Improvements: Original blocks = ${originalBlockCount}, New blocks = ${newBlockCount}, Improved = ${improved}`);
+    return improved;
+}
+
+
+
+function tryFullDayRebuild(daySchedule, clientAssignments, clientAvailability) {
+    const originalBlockCount = totalBlockCount(clientAssignments);
+
+    
+    const originalClientAssignments = JSON.parse(JSON.stringify(clientAssignments));
+
+    
+    for (const entry of daySchedule) {
+        entry.assignedClient = null;
+    }
+    refreshClientAssignments(daySchedule, clientAssignments);
+
+    
+    const neededPerClient = {};
+    for (const c in originalClientAssignments) {
+        neededPerClient[c] = originalClientAssignments[c].length;
+    }
+    const clientsSorted = Object.keys(neededPerClient).sort((a, b) => neededPerClient[b] - neededPerClient[a]);
+
+    
+    for (const client of clientsSorted) {
+        let needed = neededPerClient[client];
+
+        
+        const slots = daySchedule.map(e => e.slot);
+        const availableSlots = slots.filter(s =>
+            availibility_data[s] && availibility_data[s].includes(client) &&
+            !daySchedule.find(e => e.slot === s && e.assignedClient)
+        );
+
+        const contiguousBlocks = getContiguousBlocks(availableSlots, slots);
+        
+        contiguousBlocks.sort((a, b) => b.length - a.length);
+
+        
+        for (const block of contiguousBlocks) {
+            if (needed <= 0) break;
+            const toAssign = Math.min(block.length, needed);
+            for (let i = 0; i < toAssign; i++) {
+                const slotEntry = daySchedule.find(e => e.slot === block[i]);
+                slotEntry.assignedClient = client;
+            }
+            needed -= toAssign;
+        }
+
+        
+        if (needed > 0) {
+            const fallbackSlots = slots.filter(s =>
+                availibility_data[s] && availibility_data[s].includes(client) &&
+                !daySchedule.find(e => e.slot === s && e.assignedClient)
+            );
+            for (let i = 0; i < needed && i < fallbackSlots.length; i++) {
+                const slotEntry = daySchedule.find(e => e.slot === fallbackSlots[i]);
+                slotEntry.assignedClient = client;
+            }
+            needed = 0;
+        }
+    }
+
+    
+    refreshClientAssignments(daySchedule, clientAssignments);
+    const newBlockCount = totalBlockCount(clientAssignments);
+    const improved = (newBlockCount < originalBlockCount);
+    console.log(`Full-day rebuild: Original blocks = ${originalBlockCount}, New blocks = ${newBlockCount}, Improved = ${improved}`);
+    return improved;
+}
+
+
+
+function randomizeSchedule(daySchedule, clientAssignments, clientAvailability) {
+    const assignedEntries = daySchedule.filter(e => e.assignedClient);
+    if (assignedEntries.length === 0) return;
+
+    const randomEntryIndex = Math.floor(Math.random() * assignedEntries.length);
+    const chosenEntry = assignedEntries[randomEntryIndex];
+    const chosenClient = chosenEntry.assignedClient;
+
+    const possibleClients = (availibility_data[chosenEntry.slot] || []).filter(c => c !== chosenClient);
+    if (possibleClients.length === 0) return;
+
+    const randomClientIndex = Math.floor(Math.random() * possibleClients.length);
+    const swapClient = possibleClients[randomClientIndex];
+
+    const swapClientSlots = clientAssignments[swapClient] || [];
+    const candidateSlots = swapClientSlots.filter(s =>
+        availibility_data[s] && availibility_data[s].includes(chosenClient)
+    );
+
+    if (candidateSlots.length === 0) return;
+
+    const randomSlotIndex = Math.floor(Math.random() * candidateSlots.length);
+    const swapSlot = candidateSlots[randomSlotIndex];
+
+    const swapSlotEntry = daySchedule.find(e => e.slot === swapSlot);
+
+    
+    const originalA = chosenEntry.assignedClient;
+    const originalB = swapSlotEntry.assignedClient;
+
+    chosenEntry.assignedClient = swapClient;
+    swapSlotEntry.assignedClient = chosenClient;
+
+    console.log(`Randomization: swapped ${originalA} (slot ${chosenEntry.slot}) with ${originalB} (slot ${swapSlotEntry.slot}).`);
+}
+
+
+
+function totalBlockCount(clientAssignments) {
+    let total = 0;
+    for (const c in clientAssignments) {
+        total += countContiguousBlocks(clientAssignments[c]);
+    }
+    return total;
+}
+
+function snapshotAssignments(daySchedule) {
+    return daySchedule.map(e => ({ slot: e.slot, assignedClient: e.assignedClient }));
+}
+
+function restoreAssignments(daySchedule, snapshot) {
+    for (let i = 0; i < daySchedule.length; i++) {
+        daySchedule[i].assignedClient = snapshot[i].assignedClient;
+    }
+}
+
+function singleSlotSwaps(daySchedule, clientAssignments, clientAvailability, maxPasses) {
+    let improvementFound = true;
+    let passCount = 0;
+
+    while (improvementFound && passCount < maxPasses) {
+        improvementFound = false;
+        passCount++;
+
+        const allClients = Object.keys(clientAssignments);
+
+        for (const clientA of allClients) {
+            const slotsA = clientAssignments[clientA];
+            const blocksA = countContiguousBlocks(slotsA);
+            const desiredSlotsA = clientAvailability[clientA].filter(s => !slotsA.includes(s));
+
+            for (const desiredSlot of desiredSlotsA) {
+                const desiredSlotEntry = daySchedule.find(e => e.slot === desiredSlot);
+                const clientB = desiredSlotEntry.assignedClient;
+                if (!clientB || clientB === clientA) continue;
+
+                const possibleSlotsForB = clientAssignments[clientA].filter(s =>
+                    clientAvailability[clientB].includes(s)
+                );
+
+                for (const slotA of possibleSlotsForB) {
+                    const slotAEntry = daySchedule.find(e => e.slot === slotA);
+                    const originalA = slotAEntry.assignedClient;
+                    const originalB = desiredSlotEntry.assignedClient;
+
+                    
+                    slotAEntry.assignedClient = clientB;
+                    desiredSlotEntry.assignedClient = clientA;
+
+                    refreshClientAssignments(daySchedule, clientAssignments);
+                    const newSlotsA = clientAssignments[clientA];
+                    const newSlotsB = clientAssignments[clientB];
+                    const newBlocksA = countContiguousBlocks(newSlotsA);
+                    const newBlocksB = countContiguousBlocks(newSlotsB);
+                    const blockChangeA = blocksA - newBlocksA;
+
+                    const blocksBOriginal = countContiguousBlocks(clientAssignments[clientB].filter(s => s !== desiredSlot));
+                    const blockChangeB = blocksBOriginal - newBlocksB;
+
+                    if (blockChangeA > 0 && blockChangeB >= 0) {
+                        improvementFound = true;
+                        console.log(`Single-slot swap improved continuity: ${clientA} got ${desiredSlot}, ${clientB} took ${slotA}.`);
+                        break;
+                    } else {
+                        
+                        slotAEntry.assignedClient = originalA;
+                        desiredSlotEntry.assignedClient = originalB;
+                        refreshClientAssignments(daySchedule, clientAssignments);
+                    }
+                }
+
+                if (improvementFound) break;
+            }
+
+            if (improvementFound) break;
+        }
+    }
+
+    if (!improvementFound) {
+        console.log("No further single-slot swap improvements found.");
+    }
+}
+
+function enhanceContinuityWithBlockMoves(daySchedule, clientAssignments, clientAvailability, maxPasses) {
+    let improvementFound = true;
+    let passCount = 0;
+
+    while (improvementFound && passCount < maxPasses) {
+        improvementFound = false;
+        passCount++;
+
+        const clientsWithMultipleBlocks = [];
+        for (const client in clientAssignments) {
+            const blocks = getContiguousBlocksOfClient(clientAssignments[client]);
+            if (blocks.length > 1) {
+                clientsWithMultipleBlocks.push({ client: client, blocks: blocks });
+            }
+        }
+
+        clientsWithMultipleBlocks.sort((a, b) => b.blocks.length - a.blocks.length);
+
+        for (const { client: primaryClient, blocks } of clientsWithMultipleBlocks) {
+            for (let i = 0; i < blocks.length - 1; i++) {
+                const firstBlock = blocks[i];
+                const secondBlock = blocks[i + 1];
+
+                const endOfFirst = Math.max(...firstBlock);
+                const startOfSecond = Math.min(...secondBlock);
+                const gapSlots = daySchedule.filter(e => e.slot > endOfFirst && e.slot < startOfSecond).map(e => e.slot);
+
+                const interveningClientsMap = {};
+                for (const slot of gapSlots) {
+                    const entry = daySchedule.find(e => e.slot === slot);
+                    const assignedClient = entry.assignedClient;
+                    if (assignedClient && assignedClient !== primaryClient) {
+                        if (!interveningClientsMap[assignedClient]) {
+                            interveningClientsMap[assignedClient] = [];
+                        }
+                        interveningClientsMap[assignedClient].push(slot);
+                    }
+                }
+
+                if (Object.keys(interveningClientsMap).length === 0) continue;
+
+                let canMerge = true;
+                const swapsToPerform = [];
+
+                for (const [interveningClient, slotsToMove] of Object.entries(interveningClientsMap)) {
+                    const requiredLength = slotsToMove.length;
+                    const availableRegions = findAvailableContiguousRegions(daySchedule, interveningClient, requiredLength, clientAvailability);
+
+                    if (availableRegions.length === 0) {
+                        canMerge = false;
+                        break;
+                    }
+
+                    const targetRegion = availableRegions[0];
+                    swapsToPerform.push({
+                        client: interveningClient,
+                        fromSlots: slotsToMove,
+                        toSlots: targetRegion
+                    });
+                }
+
+                if (canMerge) {
+                    for (const swap of swapsToPerform) {
+                        const { client, fromSlots, toSlots } = swap;
+                        for (let j = 0; j < fromSlots.length; j++) {
+                            const fromSlotEntry = daySchedule.find(e => e.slot === fromSlots[j]);
+                            const toSlotEntry = daySchedule.find(e => e.slot === toSlots[j]);
+
+                            fromSlotEntry.assignedClient = null;
+                            toSlotEntry.assignedClient = client;
+
+                            console.log(`Block swap: Moved ${client} from slot ${fromSlots[j]} to slot ${toSlots[j]} to help merge ${primaryClient}'s blocks.`);
+                        }
+                    }
+                    refreshClientAssignments(daySchedule, clientAssignments);
+                    improvementFound = true;
+                    break;
+                }
+            }
+            if (improvementFound) break;
+        }
+    }
+
+    if (!improvementFound) {
+        console.log("No further block-level improvements found.");
+    }
+}
+
+function findAvailableContiguousRegions(daySchedule, client, requiredLength, clientAvailability) {
+    const availableSlots = daySchedule
+        .filter(e => 
+            (availibility_data[e.slot] && availibility_data[e.slot].includes(client)) &&
+            (!e.assignedClient || e.assignedClient === client)
+        )
+        .map(e => e.slot)
+        .sort((a, b) => a - b);
+
+    const contiguousBlocks = getContiguousBlocks(availableSlots, daySchedule.map(e => e.slot));
+
+    const suitableRegions = [];
+    for (const block of contiguousBlocks) {
+        if (block.length >= requiredLength) {
+            for (let i = 0; i <= block.length - requiredLength; i++) {
+                const region = block.slice(i, i + requiredLength);
+                const canUse = region.every(slot => {
+                    const entry = daySchedule.find(e => e.slot === slot);
+                    return !entry.assignedClient || entry.assignedClient === client;
+                });
+                if (canUse) {
+                    suitableRegions.push(region);
+                }
+            }
+        }
+    }
+
+    return suitableRegions;
+}
+
+function countContiguousBlocks(slots) {
+    if (!slots || slots.length === 0) return 0;
+    const sortedSlots = [...slots].sort((a, b) => a - b);
+    let blocks = 1;
+    for (let i = 1; i < sortedSlots.length; i++) {
+        if (sortedSlots[i] !== sortedSlots[i - 1] + 1) {
+            blocks++;
+        }
+    }
+    return blocks;
+}
+
+function getContiguousBlocks(available, slots) {
+    const slotIndex = {};
+    slots.forEach((s, i) => { slotIndex[s] = i; });
+
+    available.sort((a, b) => slotIndex[a] - slotIndex[b]);
+
+    const blocks = [];
+    let currentBlock = [];
+
+    for (let i = 0; i < available.length; i++) {
+        if (currentBlock.length === 0) {
+            currentBlock.push(available[i]);
+        } else {
+            const prevSlot = currentBlock[currentBlock.length - 1];
+            if (slotIndex[available[i]] === slotIndex[prevSlot] + 1) {
+                currentBlock.push(available[i]);
+            } else {
+                blocks.push(currentBlock);
+                currentBlock = [available[i]];
+            }
+        }
+    }
+
+    if (currentBlock.length > 0) {
+        blocks.push(currentBlock);
+    }
+
+    return blocks;
+}
+
+function getContiguousBlocksOfClient(slots) {
+    return getContiguousBlocks(slots, slots);
+}
+
+function refreshClientAssignments(daySchedule, clientAssignments) {
+    for (const client in clientAssignments) {
+        clientAssignments[client] = [];
+    }
+    for (const entry of daySchedule) {
+        if (entry.assignedClient) {
+            const c = entry.assignedClient;
+            if (!clientAssignments[c]) clientAssignments[c] = [];
+            clientAssignments[c].push(entry.slot);
+        }
+    }
+}
+
+
+
+    });
+    
+    </script>
+</body>
+</html>

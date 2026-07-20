@@ -111,6 +111,11 @@ async function fetchEdge(locA,locB,mode){
   }
 }
 
+// In-flight dedupe so parallel agenda probes don't stampede OSRM for the
+// same edge (samples + scarcity scoring used to fire hundreds of identical
+// route requests when the public demo returned 504s).
+const _refreshEdgeInflight = new Map();
+
 // ASYNC: fetch a fresh edge and write it into the in-memory cache + persist.
 // Returns the stored TravelEdge (with a/b ids and fetchedAt). Fire-and-forget
 // from travelBetween(); may also be awaited to warm the cache explicitly.
@@ -122,12 +127,21 @@ async function refreshEdge(locA,locB,mode,{force = false} = {}){
   if(!s.travel)s.travel = {};
   // Never overwrite a user-edited travel time unless force (reset to estimate).
   if(!force && s.travel[key] && s.travel[key].provider === 'manual')return s.travel[key];
-  const result = await fetchEdge(locA,locB,m);
-  const stored = { a, b, seconds:result.seconds, metres:result.metres, provider:result.provider, fetchedAt:Date.now() };
-  s.travel[key] = stored;
-  persistTravelDebounced();
-  if(typeof onTravelRefresh === 'function')onTravelRefresh(stored);
-  return stored;
+  if(!force && _refreshEdgeInflight.has(key))return _refreshEdgeInflight.get(key);
+  const pending = (async()=>{
+    try{
+      const result = await fetchEdge(locA,locB,m);
+      const stored = { a, b, seconds:result.seconds, metres:result.metres, provider:result.provider, fetchedAt:Date.now() };
+      s.travel[key] = stored;
+      persistTravelDebounced();
+      if(typeof onTravelRefresh === 'function')onTravelRefresh(stored);
+      return stored;
+    }finally{
+      _refreshEdgeInflight.delete(key);
+    }
+  })();
+  if(!force)_refreshEdgeInflight.set(key,pending);
+  return pending;
 }
 
 // SYNC (the public read path): best-available edge for a pair, right now.
@@ -136,15 +150,29 @@ async function refreshEdge(locA,locB,mode,{force = false} = {}){
 //   no cache     → kick background refreshEdge, return a haversine floor
 // Never throws, never blocks, never returns null. The agenda reads this on
 // every render; refreshed edges land on the next render via onTravelRefresh.
-function travelBetween(locA,locB,mode){
+//
+// opts.allowNetwork === false  → never kick refreshEdge (scarcity dry-runs /
+// feasibility probes). Returns cache or haversine only so scoring cannot
+// stampede OSRM when samples load.
+function travelBetween(locA,locB,mode,opts = {}){
   const m = normalizeTravelMode(mode);
   const s = sortSettings || {};
   const cached = s.travel && s.travel[edgeKey(locA.id,locB.id)];
   if(edgeIsFresh(cached))return cached;
   // Manual edges are always fresh; do not kick a network refresh over them.
   if(cached && cached.provider === 'manual')return cached;
-  if(locA && locB && locA.id && locB.id && locA.id !== locB.id)refreshEdge(locA,locB,m);
+  const allowNetwork = opts.allowNetwork !== false && _travelNetworkAllowed !== false;
+  if(allowNetwork && locA && locB && locA.id && locB.id && locA.id !== locB.id)refreshEdge(locA,locB,m);
   return cached || haversineEdge(locA,locB,m);
+}
+
+// Pause OSRM refresh for nested travelBetween calls (scarcity dry-runs).
+let _travelNetworkAllowed = true;
+function withTravelNetworkPaused(fn){
+  const prev = _travelNetworkAllowed;
+  _travelNetworkAllowed = false;
+  try{ return fn(); }
+  finally{ _travelNetworkAllowed = prev; }
 }
 
 // PURE: whether a cached edge is a user override.

@@ -15,11 +15,11 @@
 // carry their index into `data` so the render layer never has to re-resolve a
 // habit's position (which would break by-reference lookups after a re-load).
 //
-// When today's capacity is tight, fill items compete for the remaining minutes
-// in PRIORITY ORDER (P0 first, then P1, ...). Within the same priority band the
-// original home rank order is preserved. So the items that lose their slot when
-// the day overflows are always the lowest-priority ones — never an arbitrary
-// cut. Home ordering itself is unchanged; priority only arbitrates capacity.
+// Fill items compete in SCARCITY ORDER first (tight allowed windows before
+// flexible all-day work), then priority within the same scarcity band. That way
+// a narrow sunrise habit keeps its only gap even when a flexible P0 also wants
+// the morning. Home list ranking is unchanged; scarcity only arbitrates agenda
+// capacity and clock slots.
 function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
   const scheduled = data
@@ -33,8 +33,8 @@ function buildTodayAgenda(data,settings){
   // day never promises more capacity than the calendar leaves room for.
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
   const totalCap = Math.min(totalMinutes,slotMinutes);
-  // Gather every eligible fill candidate in home rank order, then stable-sort
-  // by priority so location-aware placement processes high priority first.
+  // Gather every eligible fill candidate in home rank order, score scarcity
+  // against today's open slots, then sort scarcity → priority → home rank.
   const candidates = [];
   let homeRank = 0;
   for(const i of visibleIndices(data,settings)){
@@ -46,10 +46,17 @@ function buildTodayAgenda(data,settings){
     if(!dueToday && !earlyOk)continue;
     candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
   }
-  candidates.sort((a,b)=>a.priority - b.priority || a.rank - b.rank);
+  const dayBase = dayStart(Date.now());
+  const scarcityState = createDayPlacementState(
+    {scheduled,agendaItems:[],totalMinutes:totalCap,slots,dayBase,weekday:new Date(dayBase).getDay(),isToday:true},
+    settings,
+    {dayBase,now:Date.now()}
+  );
+  for(const c of candidates)c.scarcity = scarcityScore(c,[scarcityState]);
+  candidates.sort(compareScarcityThenPriority);
   // Capacity (including travel) is charged during location-aware placement in
   // buildTodayTimeline — duration-only pre-cuts would under-count travel.
-  const agendaItems = candidates.map(({h,i,priority})=>({h,i,priority}));
+  const agendaItems = candidates.map(({h,i,priority,scarcity})=>({h,i,priority,scarcity}));
   return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots };
 }
 
@@ -143,12 +150,13 @@ function windowStillDoableToday(h,now = Date.now()){
 }
 
 // PURE: travel edge between two location ids (or zero when either is null/same).
-function travelEdgeBetweenIds(fromId,toId,registry,mode){
+// opts.allowNetwork === false skips OSRM refresh (used by scarcity dry-runs).
+function travelEdgeBetweenIds(fromId,toId,registry,mode,opts = {}){
   if(!fromId || !toId || fromId === toId)return {seconds:0,metres:0,provider:'none'};
   const a = registry.find(l=>l.id === fromId);
   const b = registry.find(l=>l.id === toId);
   if(!a || !b || typeof travelBetween !== 'function')return {seconds:0,metres:0,provider:'haversine'};
-  return travelBetween(a,b,mode);
+  return travelBetween(a,b,mode,opts);
 }
 
 // PURE: choose a location id for a habit given the current anchor. Anywhere
@@ -175,6 +183,7 @@ function pickHabitLocationId(h,anchorId,registry,mode){
 // a location later in the day is allowed — this is NOT a hard cluster-by-place
 // pass. Items with no location stay zero-cost floaters.
 function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
+  if(!Array.isArray(items) || !items.length)return [];
   const registry = normalizeLocationRegistry(settings.locations);
   const mode = normalizeTravelMode(settings.defaultTravelMode);
   let anchor = (typeof currentLocationId === 'function' && currentLocationId())
@@ -182,12 +191,14 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
     || null;
   const bands = [];
   for(const item of items){
+    const scarce = isScarceScore(item.scarcity) || (typeof hasTimeWindow === 'function' && hasTimeWindow(item.h));
+    const scarcityKey = scarce ? 0 : 1;
     const p = item.priority ?? effectivePriority(item.h);
-    let band = bands.find(b=>b.priority === p);
-    if(!band){ band = {priority:p,items:[]}; bands.push(band); }
+    let band = bands.find(b=>b.scarcityKey === scarcityKey && b.priority === p);
+    if(!band){ band = {scarcityKey,priority:p,items:[]}; bands.push(band); }
     band.items.push(item);
   }
-  bands.sort((a,b)=>a.priority - b.priority);
+  bands.sort((a,b)=>a.scarcityKey - b.scarcityKey || a.priority - b.priority);
   const out = [];
   for(const band of bands){
     const left = [...band.items];
@@ -221,12 +232,20 @@ function buildDayTimeline(agenda,opts = {}){
   const now = opts.now != null ? opts.now : Date.now();
   const ordered = reorderAgendaItemsByLocation(agenda.agendaItems || [],settings,now);
   for(const fill of ordered){
+    const placeOpts = {};
+    if(!isScarceScore(fill.scarcity) && !(typeof hasTimeWindow === 'function' && hasTimeWindow(fill.h))){
+      const spare = scarceWindowsToSpare(ordered,state.dayBase,state.seedLocId,state.dayBase);
+      if(spare.length){
+        placeOpts.spareWindows = spare;
+        placeOpts.preferLatest = true;
+      }
+    }
     if(fill.h && fill.h.breakable){
       const chunks = remainingChunks(fill.h);
       let placedAny = false;
       for(let c = 0; c < chunks.length; c += 1){
         const chunkFill = {...fill, chunkMinutes:chunks[c], chunkIndex:c, placeKey:`${fill.i}:${c}`};
-        const fit = tryPlaceOnDay(state,chunkFill);
+        const fit = tryPlaceOnDay(state,chunkFill,placeOpts);
         if(!fit)break;
         commitPlacement(state,chunkFill,fit);
         placedAny = true;
@@ -234,7 +253,7 @@ function buildDayTimeline(agenda,opts = {}){
       if(placedAny)state.placed.add(fill.i);
       continue;
     }
-    const fit = tryPlaceOnDay(state,fill);
+    const fit = tryPlaceOnDay(state,fill,placeOpts);
     if(fit)commitPlacement(state,fill,fit);
   }
   // Classic today path: location-less, window-less leftovers may overflow past
@@ -342,10 +361,139 @@ function clonePlacementState(state){
   };
 }
 
+// Sentinel: no hard window / unbounded slack. Scarcity sorts put these last.
+const SCARCITY_UNBOUNDED = 1e9;
+
+// PURE: session duration for a fill (chunk-aware).
+function fillDurationMinutes(fill){
+  if(!fill || !fill.h)return 0;
+  if(fill.chunkMinutes != null)return Math.max(1,Math.round(fill.chunkMinutes));
+  if(fill.h.breakable){
+    const chunks = typeof remainingChunks === 'function' ? remainingChunks(fill.h) : [];
+    return chunks[0] || clampDuration(fill.h.durationMinutes);
+  }
+  return clampDuration(fill.h.durationMinutes);
+}
+
+// PURE: minutes of allowed-window slack beyond the session duration, or
+// SCARCITY_UNBOUNDED when the habit has no hard time window.
+function windowSlackMinutes(h,dayState,contextLocId){
+  if(!h || !dayState)return SCARCITY_UNBOUNDED;
+  if(typeof hasTimeWindow === 'function' && !hasTimeWindow(h))return SCARCITY_UNBOUNDED;
+  const win = fillTimeWindow(h,dayState.dayBase,contextLocId != null ? contextLocId : dayState.seedLocId);
+  if(!win)return SCARCITY_UNBOUNDED;
+  const span = Math.max(0,(win.end - win.start) / 60000);
+  return Math.max(0,span - clampDuration(h.durationMinutes));
+}
+
+// PURE: how many distinct open slots could still fit this fill (dry-run).
+// Pauses OSRM so scarcity scoring cannot stampede the travel network.
+function feasibleStartCount(h,dayState,fillExtras = {}){
+  if(!h || !dayState || !Array.isArray(dayState.slots))return 0;
+  const fill = Object.assign({h,i:-1},fillExtras);
+  const run = ()=>{
+    let count = 0;
+    for(const slot of dayState.slots){
+      const clone = clonePlacementState(dayState);
+      clone.slots = [slot];
+      if(tryPlaceOnDay(clone,fill,{allowNetwork:false}))count += 1;
+    }
+    return count;
+  };
+  return typeof withTravelNetworkPaused === 'function' ? withTravelNetworkPaused(run) : run();
+}
+
+// PURE: lower = tighter. Combines feasible-slot count (primary) with window
+// slack (secondary). Windowless habits sort as least scarce.
+function scarcityScore(candidate,dayStates){
+  const run = ()=>scarcityScoreInner(candidate,dayStates);
+  return typeof withTravelNetworkPaused === 'function' ? withTravelNetworkPaused(run) : run();
+}
+function scarcityScoreInner(candidate,dayStates){
+  const h = candidate && candidate.h;
+  if(!h)return SCARCITY_UNBOUNDED;
+  if(typeof hasTimeWindow === 'function' && !hasTimeWindow(h))return SCARCITY_UNBOUNDED;
+  const states = Array.isArray(dayStates) ? dayStates : [];
+  if(!states.length){
+    const todayBase = dayStart(Date.now());
+    const win = fillTimeWindow(h,todayBase,null);
+    if(!win)return SCARCITY_UNBOUNDED;
+    const slack = Math.max(0,(win.end - win.start) / 60000 - clampDuration(h.durationMinutes));
+    return Math.min(slack,9999);
+  }
+  let minFeasible = Infinity;
+  let minSlack = Infinity;
+  let any = false;
+  for(const state of states){
+    if(candidate.eligible && !candidate.eligible.has(state.dayBase))continue;
+    any = true;
+    const fill = {h,i:candidate.i,priority:candidate.priority};
+    const n = feasibleStartCount(h,state,fill);
+    if(n < minFeasible)minFeasible = n;
+    const slack = windowSlackMinutes(h,state);
+    if(slack < minSlack)minSlack = slack;
+  }
+  if(!any)return SCARCITY_UNBOUNDED;
+  if(minFeasible === Infinity)minFeasible = 0;
+  if(minSlack === Infinity)minSlack = SCARCITY_UNBOUNDED;
+  return minFeasible * 10000 + Math.min(minSlack,9999);
+}
+
+function isScarceScore(score){
+  return Number.isFinite(score) && score < SCARCITY_UNBOUNDED;
+}
+
+// PURE: scarcity ASC, then priority ASC, then urgency/score/rank.
+function compareScarcityThenPriority(a,b){
+  const sa = a.scarcity != null ? a.scarcity : SCARCITY_UNBOUNDED;
+  const sb = b.scarcity != null ? b.scarcity : SCARCITY_UNBOUNDED;
+  if(sa !== sb)return sa - sb;
+  const pa = a.priority != null ? a.priority : 2;
+  const pb = b.priority != null ? b.priority : 2;
+  if(pa !== pb)return pa - pb;
+  const ua = a.urgency != null ? a.urgency : 0;
+  const ub = b.urgency != null ? b.urgency : 0;
+  if(ua !== ub)return ub - ua;
+  const sca = a.score != null ? a.score : 0;
+  const scb = b.score != null ? b.score : 0;
+  if(sca !== scb)return scb - sca;
+  return (a.rank || 0) - (b.rank || 0);
+}
+
+// PURE: allowed windows of scarce candidates on this day — flexible placement
+// prefers slots that least overlap these so tight habits keep their gap even
+// after they have already been committed (or while still waiting).
+function scarceWindowsToSpare(candidates,dayBase,seedLocId,eligibleDayBase){
+  const windows = [];
+  if(!Array.isArray(candidates))return windows;
+  for(const c of candidates){
+    if(!c || !c.h)continue;
+    if(!isScarceScore(c.scarcity) && !(typeof hasTimeWindow === 'function' && hasTimeWindow(c.h)))continue;
+    if(eligibleDayBase != null && c.eligible && !c.eligible.has(eligibleDayBase))continue;
+    const win = fillTimeWindow(c.h,dayBase,seedLocId);
+    if(win)windows.push(win);
+  }
+  return windows;
+}
+
+function fitOverlapWithWindows(fit,windows){
+  if(!fit || !windows || !windows.length)return 0;
+  let overlap = 0;
+  for(const w of windows){
+    const start = Math.max(fit.placeStart,w.start);
+    const end = Math.min(fit.placeEnd,w.end);
+    if(end > start)overlap += end - start;
+  }
+  return overlap;
+}
+
 // PURE: attempt to place a fill into this day's open slots under hard
 // constraints — availability budget, blocked/scheduled slots, travel time,
 // location hours ∩ habit allowed window, and preferred-time nudge (soft).
-function tryPlaceOnDay(state,fill){
+// opts.spareWindows: when set, among feasible fits prefer the one that least
+// overlaps those scarce windows (flexible items yield to tight ones).
+// opts.preferLatest: among ties / when no spareWindows, prefer later clock.
+function tryPlaceOnDay(state,fill,opts = {}){
   if(!state || !fill || !fill.h)return null;
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
@@ -353,6 +501,7 @@ function tryPlaceOnDay(state,fill){
   const remaining = state.remaining;
   const usedMinutes = state.usedMinutes;
   const resolveLoc = (anchor)=>fill.locationId || pickHabitLocationId(fill.h,anchor,registry,mode);
+  const fits = [];
 
   for(const slot of slots){
     let clock = Math.max(slot.start,startClock);
@@ -375,13 +524,9 @@ function tryPlaceOnDay(state,fill){
       const intervals = effectiveLocationWindow(fill.h,loc,weekday);
       if(!intervals.length)continue;
     }
-    const edge = travelEdgeBetweenIds(anchor,locId,registry,mode);
+    const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
     const travelMin = Math.ceil((edge.seconds || 0) / 60);
-    const durMin = fill.chunkMinutes != null
-      ? Math.max(1,Math.round(fill.chunkMinutes))
-      : (fill.h.breakable
-        ? (remainingChunks(fill.h)[0] || clampDuration(fill.h.durationMinutes))
-        : clampDuration(fill.h.durationMinutes));
+    const durMin = fillDurationMinutes(fill);
     if(durMin <= 0)return null;
     // Hard availability budget. The first fill of a day may still place when
     // travel+duration exceeds the remaining budget (same rule as the classic
@@ -426,7 +571,7 @@ function tryPlaceOnDay(state,fill){
     }
     if(placeEnd > cap || placeEnd > slot.end)continue;
     if(placeStart < slot.start || placeStart >= slot.end)continue;
-    return {
+    fits.push({
       placeStart,
       placeEnd,
       locId,
@@ -437,9 +582,25 @@ function tryPlaceOnDay(state,fill){
       preferredHit,
       prevLocId:anchor,
       placeKey
-    };
+    });
   }
-  return null;
+  if(!fits.length)return null;
+  const spare = opts.spareWindows;
+  if(spare && spare.length){
+    let best = fits[0];
+    let bestOverlap = fitOverlapWithWindows(best,spare);
+    for(let i = 1;i < fits.length;i += 1){
+      const f = fits[i];
+      const ov = fitOverlapWithWindows(f,spare);
+      if(ov < bestOverlap || (ov === bestOverlap && f.placeStart > best.placeStart)){
+        best = f;
+        bestOverlap = ov;
+      }
+    }
+    return best;
+  }
+  if(opts.preferLatest)return fits[fits.length - 1];
+  return fits[0];
 }
 
 // PURE: commit a successful fit into day state (travel row + fill row + budgets).
@@ -816,8 +977,14 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
       if(!dueToday && !earlyOk)continue;
       candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
     }
-    candidates.sort((a,b)=>a.priority - b.priority || a.rank - b.rank);
-    agendaItems.push(...candidates.map(({h,i,priority})=>({h,i,priority})));
+    const scarcityState = createDayPlacementState(
+      {scheduled,agendaItems:[],totalMinutes:totalCap,slots,dayBase,weekday,isToday:true},
+      settings,
+      {dayBase,now:Date.now()}
+    );
+    for(const c of candidates)c.scarcity = scarcityScore(c,[scarcityState]);
+    candidates.sort(compareScarcityThenPriority);
+    agendaItems.push(...candidates.map(({h,i,priority,scarcity})=>({h,i,priority,scarcity})));
   }
   return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday };
 }
@@ -1033,7 +1200,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
   const mode = dayStates[0] ? dayStates[0].mode : normalizeTravelMode(settings.defaultTravelMode);
-  candidates.sort((a,b)=>a.priority - b.priority || b.urgency - a.urgency || b.score - a.score);
+  for(const c of candidates){
+    if(c.scarcity == null)c.scarcity = scarcityScore(c,dayStates);
+  }
+  candidates.sort(compareScarcityThenPriority);
   let totalAssigned = 0;
   for(const c of candidates){
     const pinned = c.pinned === true;
@@ -1047,6 +1217,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       && Number.isFinite(Number(c.h && c.h.target)));
     let virtualLastLog = rhythmHabit && c.h ? c.h.lastLog : null;
     let rhythmPlacementCount = 0;
+    const placeOpts = {};
     for(let ci = 0;ci < chunkSizes.length;ci += 1){
       // For rhythm habits this loops once per placement opportunity (advancing
       // virtualLastLog each time); for one-shots it runs exactly once.
@@ -1063,10 +1234,18 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           // when its raw target would say "not due for weeks".
           if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null
             && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday))continue;
-          const fill = { h:c.h, i:c.i, priority:c.priority };
+          const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
           const cm = chunkSizes[ci];
           if(cm != null){ fill.chunkMinutes = cm; fill.chunkIndex = ci; fill.placeKey = `${c.i}:${ci}`; }
-          const fit = tryPlaceOnDay(state,fill);
+          const dayOpts = {...placeOpts};
+          if(!isScarceScore(c.scarcity)){
+            const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
+            if(spare.length){
+              dayOpts.spareWindows = spare;
+              dayOpts.preferLatest = true;
+            }
+          }
+          const fit = tryPlaceOnDay(state,fill,dayOpts);
           if(!fit)continue;
           const offset = Math.round((state.dayBase - todayBase) / 86400000);
           const travel = fit.edge.seconds || 0;
@@ -1085,7 +1264,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(!best)break; // this chunk can't be placed → stop placing the rest
         commitPlacement(best.state,best.fill,best.fit);
         best.state.day.agendaItems.push({
-          h:c.h, i:c.i, priority:c.priority, locationId:best.fit.locId,
+          h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity, locationId:best.fit.locId,
           chunkMinutes:best.fill.chunkMinutes != null ? best.fill.chunkMinutes : null,
           chunkIndex:best.fill.chunkIndex != null ? best.fill.chunkIndex : null
         });
@@ -1098,7 +1277,82 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       }
     }
   }
+  totalAssigned += rebalanceScarcePlacements(candidates,dayStates,settings,locHints);
   return totalAssigned;
+}
+
+// PURE: after greedy scarcity placement, try to free a scarce unplaced item by
+// temporarily removing one flexible fill and re-fitting both. Bounded attempts.
+function rebalanceScarcePlacements(candidates,dayStates,_settings,_locHints){
+  const MAX_ATTEMPTS = 8;
+  let gained = 0;
+  let attempts = 0;
+  const scarce = candidates.filter(c=>isScarceScore(c.scarcity));
+  for(const c of scarce){
+    if(attempts >= MAX_ATTEMPTS)break;
+    for(const state of dayStates){
+      if(attempts >= MAX_ATTEMPTS)break;
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(state.placed.has(c.i))continue;
+      const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+      const earlyFit = tryPlaceOnDay(state,fill);
+      if(earlyFit){
+        commitPlacement(state,fill,earlyFit);
+        state.day.agendaItems.push({h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:earlyFit.locId});
+        gained += 1;
+        continue;
+      }
+      const flexibleFills = state.fills.filter(f=>f.fill && !isScarceScore(f.fill.scarcity)
+        && !(typeof hasTimeWindow === 'function' && hasTimeWindow(f.fill.h)));
+      for(const victim of flexibleFills){
+        if(attempts >= MAX_ATTEMPTS)break;
+        attempts += 1;
+        const others = state.fills.filter(f=>f !== victim).map(f=>f.fill);
+        const clean = clonePlacementState(state);
+        clean.rows = state.rows.filter(r=>r.kind === 'scheduled');
+        clean.fills = [];
+        clean.placed = new Set();
+        // Restore remaining from scheduled-only baseline.
+        let used = 0;
+        for(const r of clean.rows){
+          if(r.kind === 'scheduled')used += Math.max(0,(r.end - r.start) / 60000);
+        }
+        clean.usedMinutes = 0;
+        clean.remaining = Math.max(0,(Number(state.totalMinutes) || 0));
+        clean.prevLocId = state.seedLocId;
+        let ok = true;
+        for(const other of others){
+          const refit = tryPlaceOnDay(clean,other,{preferLatest:!isScarceScore(other.scarcity)});
+          if(!refit){ ok = false; break; }
+          commitPlacement(clean,other,refit);
+        }
+        if(!ok)continue;
+        const scarceFit = tryPlaceOnDay(clean,fill);
+        if(!scarceFit)continue;
+        commitPlacement(clean,fill,scarceFit);
+        const victimFit = tryPlaceOnDay(clean,victim.fill,{
+          preferLatest:true,
+          spareWindows:scarceWindowsToSpare(candidates,clean.dayBase,clean.seedLocId,clean.dayBase)
+        });
+        if(victimFit)commitPlacement(clean,victim.fill,victimFit);
+        state.rows = clean.rows;
+        state.fills = clean.fills;
+        state.placed = clean.placed;
+        state.remaining = clean.remaining;
+        state.usedMinutes = clean.usedMinutes;
+        state.prevLocId = clean.prevLocId;
+        state.day.agendaItems = state.fills.map(f=>({
+          h:f.fill.h,i:f.fill.i,priority:f.fill.priority,scarcity:f.fill.scarcity,
+          locationId:f.fit.locId,
+          chunkMinutes:f.fill.chunkMinutes != null ? f.fill.chunkMinutes : null,
+          chunkIndex:f.fill.chunkIndex != null ? f.fill.chunkIndex : null
+        }));
+        gained += 1;
+        break;
+      }
+    }
+  }
+  return gained;
 }
 
 // PURE: co-location hint bonus for placing at locId on this day. Rewards joining

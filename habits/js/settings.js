@@ -897,6 +897,9 @@ function toggleAppSettingButton(btn){
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
   updateSortSetting(patch);
+  if(key === 'agendaOptimizer' && patch.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
+    preloadAgendaOptimizer();
+  }
 }
 
 // HANDLER: enable/disable reminders. On enable, ask for notification permission

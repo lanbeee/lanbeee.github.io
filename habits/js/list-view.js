@@ -1578,7 +1578,20 @@ function render(opts){
   }else{
     list.classList.remove('is-progressive');
     if(weekMode){
-    const week = buildWeekAgenda(data,sortSettings,7);
+    const useOptimizer = Boolean(sortSettings.agendaOptimizer)
+      && typeof buildWeekAgendaAsync === 'function'
+      && !o.__fromOptimizer;
+    const week = (o.__optimizedWeek && o.__optimizedWeek.days)
+      ? o.__optimizedWeek
+      : buildWeekAgenda(data,sortSettings,7);
+    if(useOptimizer && !o.__optimizedWeek){
+      const snapData = data;
+      const snapSettings = sortSettings;
+      void buildWeekAgendaAsync(snapData,snapSettings,7).then(optimized=>{
+        if(!optimized || !optimized.optimized)return;
+        if(typeof render === 'function')render({deferAgenda:false,__fromOptimizer:true,__optimizedWeek:optimized});
+      }).catch(()=>{});
+    }
     const agendaMap = new Map();
     const weekAssigned = new Set();
     const dayPlans = week.days.map(day=>{

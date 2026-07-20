@@ -153,6 +153,8 @@
  * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
  * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
+ * @property {boolean} showWeekOnHome                          — day-by-day week plan on home
+ * @property {boolean} agendaOptimizer                         — optional ILP packer for tight windows (lazy GLPK)
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
  * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
@@ -249,6 +251,10 @@ function loadSortSettings(){
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
     merged.cancelledBlocks = normalizeCancelledBlocks(merged.cancelledBlocks);
+    merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
+    if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
+      try{ preloadAgendaOptimizer(); }catch(_){}
+    }
     return merged;
   }catch{
     return {...DEFAULT_SORT_SETTINGS};

@@ -135,6 +135,9 @@ const DEFAULT_SORT_SETTINGS = {
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
   showWeekOnHome:true,
+  // Exact ILP packer for tight windows (lazy-loads GLPK). Default off — the
+  // scarcity-first heuristic is the light PWA path; turn this on for harder days.
+  agendaOptimizer:false,
   // How blocked times + travel between places appear on home:
   //   'cards'     → card surfaces for the whole day (default)
   //   'cards12h'  → same cards, but only for the next 12 hours

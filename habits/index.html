@@ -622,6 +622,10 @@
               <span><b>plan the week on home</b><small>Replace today / overdue / upcoming with a day-by-day week plan on home, including blocked times and travel between places.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="agendaOptimizer" aria-pressed="false">
+              <span><b>exact schedule optimizer</b><small>Packs tight windows more carefully with an ILP solver. Uses more battery; loads the solver the first time you turn it on. Scarcity-first heuristics stay on either way.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </div>
           <span class="settings-sublabel compact-label">blocked time &amp; travel</span>
           <div class="seg home-extra-seg" id="home-extra-seg" data-setting-seg="homeExtraMode" role="group" aria-label="how blocked time and travel appear on home">
@@ -1073,6 +1077,7 @@
 <script src="./js/detail-view.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
 <script src="./js/today-view.js" defer></script>
+<script src="./js/agenda-optimizer.js" defer></script>
 <script src="./js/push-client.js" defer></script>
 <script src="./js/reminders.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
