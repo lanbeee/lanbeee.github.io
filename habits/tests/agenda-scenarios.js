@@ -13,6 +13,11 @@
 //             availability budget is spent before the window opens. Overnight
 //             windows extend into tomorrow as one span.
 //
+//   Issue 9 — an "anywhere" habit (no locationIds) with a dynamic prayer
+//             anchor resolves its window against the running agenda anchor /
+//             lastKnown fallback and places in the agenda. Pre-fix this habit
+//             was blocked at save time and couldn't resolve a prayer time.
+//
 // Each scenario seeds localStorage, reloads, and asserts against the live
 // in-page pure functions (via page.evaluate) plus the rendered DOM for pills.
 // Run with:  node habits/tests/agenda-scenarios.js   (after starting the server)
@@ -901,6 +906,47 @@ function defaultSettings(overrides = {}) {
     const fill = rows.find(r => r.name === 'Big overnight');
     check('8d item too large for its window stays dropped (no false rescue)',
       !fill, fill ? `unexpected start=${fill.startLabel}` : '');
+  }
+
+  // ==========================================================================
+  // ISSUE 9 — "anywhere" habit with a dynamic prayer anchor resolves + places
+  // An anywhere habit (empty locationIds) with a sunrise-anchored window must
+  // still place in the agenda: the running anchor / lastKnown fallback gives
+  // the resolver a location. Pre-fix this habit couldn't even be saved.
+  // ==========================================================================
+  console.log('\n[Issue 9] anywhere + dynamic prayer anchor places');
+  {
+    const ago = atTime(9) - 2 * 86400000;
+    await seed(
+      [base({
+        name: 'Sunrise anywhere', type: 'keepup', target: 1, durationMinutes: 30,
+        locationIds: [],
+        allowedTimeStartAnchor: 'sunrise',
+        allowedTimeEnd: 1200, // 8pm fixed end so hasTimeWindow is true
+        lastLog: ago, logs: [ago]
+      })],
+      defaultSettings({
+        locations: [{ id: 'home', name: 'Home', lat: 40.7, lng: -74.0 }],
+        lastKnownLocationId: 'home'
+      })
+    );
+    // Freeze "now" to 3am so the sunrise window is ahead of us and places.
+    const rows = await timelineFor(atTime(3, 0));
+    const fill = rows.find(r => r.name === 'Sunrise anywhere');
+    check('9a anywhere+prayer habit gets placed',
+      Boolean(fill), fill ? `start=${fill.startLabel}` : 'fill missing');
+    // The placed start must equal the context-resolved window (lastKnown=home
+    // seeds the day's anchor). If the threading breaks the start drifts.
+    if (fill) {
+      const match = await page.evaluate(({ startMs }) => {
+        const today = dayStart(Date.now());
+        const h = load().find(x => x.name === 'Sunrise anywhere');
+        if (!h) return false;
+        const win = fillTimeWindow(h, today, 'home');
+        return Boolean(win) && win.start === startMs;
+      }, { startMs: fill.startMs });
+      check('9b placed start matches the context-resolved sunrise window', match);
+    }
   }
 
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));

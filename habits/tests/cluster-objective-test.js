@@ -159,9 +159,14 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // The two-pass core: an overdue habit (eligible any day) should follow its
   // co-located task that is only eligible later in the week, instead of greedily
   // grabbing today and forcing two commutes.
+  //
+  // Uses target:7 (weekly) so the habit places exactly once and the assertion
+  // on total travel isolates the clustering decision. target:1 habits now place
+  // on every rhythm-eligible day (see dynamic-times week tests), which would
+  // legitimately multiply travel and obscure the cluster check.
   await run('4. flexible far item defers to join day-pinned far partner', [
     homeRoutine,
-    { name:'farA habit', type:'keepup', target:1, logs:[today-2*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
+    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
     { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2 },
   ], { locations:PLACES }, async () => {
     const w = await week();
@@ -235,9 +240,14 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // farA habit has a soft preferred weekday = today; farB task is due +4d. The
   // preferred-weekday nudge would keep farA on today, but joining farB saves a
   // whole commute. Min-travel must win → farA defers to cluster with farB.
+  //
+  // target:7 (weekly) so the habit places once and the total-travel check
+  // isolates the cluster decision (target:1 would legitimately place on every
+  // rhythm-eligible day and inflate travel — that behaviour is covered by the
+  // dynamic-times week tests instead).
   await run('9. soft preferred-weekday yields to min-travel clustering', [
     homeRoutine,
-    { name:'farA habit', type:'keepup', target:1, logs:[today-2*86400000], durationMinutes:30, locationIds:['farA'], priority:2, preferredWeekdays:[new Date(sixAm).getDay()] },
+    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2, preferredWeekdays:[new Date(sixAm).getDay()] },
     { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2 },
   ], { locations:PLACES }, async () => {
     const w = await week();

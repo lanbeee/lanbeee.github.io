@@ -985,6 +985,34 @@ function weekPreferencePenalty(h,fit,day,registry){
 // can't see). The bonus is the commute saved (daySeed→loc minus the inter-hop),
 // and only fires when the partner is genuinely closer than the day's origin, so
 // near-home work is completely unaffected.
+//
+// Rhythm habits (non-task, non-breakable keepup/reduce) are placed on EACH
+// eligible day their rhythm allows, not just their single best day. After every
+// commit the virtual lastLog advances to that day, so target:1 lands on every
+// day of the week, target:3 every third day, etc. Tasks and breakable habits
+// keep the one-shot behaviour (tasks carry an explicit dueDate; breakables
+// already split one occurrence per chunk).
+
+// PURE: rhythm check for multi-day week placement. Given a habit and the
+// timestamp it was last "completed" (real lastLog, or a virtual one advanced
+// after each prior placement this pass), is it due again on dayBase? Mirrors
+// the rhythm logic in isWeekCandidate but accepts a lastLog override so the
+// placement loop can simulate "if I did this on Tuesday, am I due again on
+// Wednesday?". Schedule weekday-gates still apply. Flexibility pull-forward
+// is intentionally NOT consulted here — flex only widens the INITIAL eligible
+// set (via isWeekCandidate); spacing between successive placements uses the
+// raw target so a daily habit lands on every day, not every (target+flex) days.
+function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday){
+  if(!h)return false;
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)){
+    const schedule = typeof scheduledDays === 'function' ? scheduledDays(h) : null;
+    if(schedule && schedule.weekdays && schedule.weekdays.length && !schedule.weekdays.includes(weekday))return false;
+  }
+  const target = Math.max(1,Number(h && h.target) || 7);
+  if(lastLogTs == null)return true; // never completed → due immediately
+  const ageDays = Math.round((dayBase - dayStart(lastLogTs)) / 86400000);
+  return ageDays >= target;
+}
 function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints){
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
@@ -994,38 +1022,64 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   for(const c of candidates){
     const pinned = c.pinned === true;
     const chunkSizes = (c.h && c.h.breakable) ? remainingChunks(c.h) : [null];
+    // Rhythm habits (target-based keepup/reduce without chunks) place on
+    // every eligible day their rhythm allows, not just one. The virtual
+    // lastLog advances after each commit so target:1 → every day, target:3
+    // → every third day, etc. Tasks/breakables keep one-shot placement
+    // (tasks carry an explicit dueDate; breakables already split per chunk).
+    const rhythmHabit = !!(c.h && c.h.type !== 'task' && !c.h.breakable
+      && Number.isFinite(Number(c.h && c.h.target)));
+    let virtualLastLog = rhythmHabit && c.h ? c.h.lastLog : null;
+    let rhythmPlacementCount = 0;
     for(let ci = 0;ci < chunkSizes.length;ci += 1){
-      let best = null;
-      for(const state of dayStates){
-        if(c.eligible && !c.eligible.has(state.dayBase))continue;
-        if(pinned && !state.isTodayDay)continue; // hard pins: today only
-        const fill = { h:c.h, i:c.i, priority:c.priority };
-        const cm = chunkSizes[ci];
-        if(cm != null){ fill.chunkMinutes = cm; fill.chunkIndex = ci; fill.placeKey = `${c.i}:${ci}`; }
-        const fit = tryPlaceOnDay(state,fill);
-        if(!fit)continue;
-        const offset = Math.round((state.dayBase - todayBase) / 86400000);
-        const travel = fit.edge.seconds || 0;
-        // Smooth cluster bonus: strongest at zero travel (already on-site) and
-        // tapering so a short hop between near-each-other places still earns a
-        // nudge — not just an exact same-location match.
-        const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
-        const coLocHint = colocateHintBonus(state,fit.locId,c.i,locHints,registry,mode);
-        const score = travel
-          - clusterBonus
-          - coLocHint
-          + flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
-          + weekPreferencePenalty(c.h,fit,state,registry);
-        if(!best || score < best.score)best = { state, fill, fit, score };
+      // For rhythm habits this loops once per placement opportunity (advancing
+      // virtualLastLog each time); for one-shots it runs exactly once.
+      while(true){
+        let best = null;
+        for(const state of dayStates){
+          if(c.eligible && !c.eligible.has(state.dayBase))continue;
+          if(pinned && !state.isTodayDay)continue; // hard pins: today only
+          // After the FIRST placement, only consider days whose rhythm is
+          // satisfied relative to the virtual lastLog. The first placement
+          // is left to isWeekCandidate's full eligibility logic (which also
+          // covers plan-by deadlines, flexibility pull-forward, schedules)
+          // so a plan-by-date habit still gets its single timed slot even
+          // when its raw target would say "not due for weeks".
+          if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null
+            && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday))continue;
+          const fill = { h:c.h, i:c.i, priority:c.priority };
+          const cm = chunkSizes[ci];
+          if(cm != null){ fill.chunkMinutes = cm; fill.chunkIndex = ci; fill.placeKey = `${c.i}:${ci}`; }
+          const fit = tryPlaceOnDay(state,fill);
+          if(!fit)continue;
+          const offset = Math.round((state.dayBase - todayBase) / 86400000);
+          const travel = fit.edge.seconds || 0;
+          // Smooth cluster bonus: strongest at zero travel (already on-site) and
+          // tapering so a short hop between near-each-other places still earns a
+          // nudge — not just an exact same-location match.
+          const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
+          const coLocHint = colocateHintBonus(state,fit.locId,c.i,locHints,registry,mode);
+          const score = travel
+            - clusterBonus
+            - coLocHint
+            + flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
+            + weekPreferencePenalty(c.h,fit,state,registry);
+          if(!best || score < best.score)best = { state, fill, fit, score };
+        }
+        if(!best)break; // this chunk can't be placed → stop placing the rest
+        commitPlacement(best.state,best.fill,best.fit);
+        best.state.day.agendaItems.push({
+          h:c.h, i:c.i, priority:c.priority, locationId:best.fit.locId,
+          chunkMinutes:best.fill.chunkMinutes != null ? best.fill.chunkMinutes : null,
+          chunkIndex:best.fill.chunkIndex != null ? best.fill.chunkIndex : null
+        });
+        totalAssigned += 1;
+        if(rhythmHabit){
+          virtualLastLog = best.state.dayBase;
+          rhythmPlacementCount += 1;
+        }
+        if(!rhythmHabit)break; // one-shot: a single placement per chunk
       }
-      if(!best)break; // this chunk can't be placed → stop placing the rest
-      commitPlacement(best.state,best.fill,best.fit);
-      best.state.day.agendaItems.push({
-        h:c.h, i:c.i, priority:c.priority, locationId:best.fit.locId,
-        chunkMinutes:best.fill.chunkMinutes != null ? best.fill.chunkMinutes : null,
-        chunkIndex:best.fill.chunkIndex != null ? best.fill.chunkIndex : null
-      });
-      totalAssigned += 1;
     }
   }
   return totalAssigned;

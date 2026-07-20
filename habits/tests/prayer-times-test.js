@@ -491,6 +491,44 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(cleaned.junk === null, 'cleanAnchor junk→null');
   assert(cleaned.empty === null, 'cleanAnchor empty→null');
 
+  // ── R. anywhere + prayer: contextLocId flows through fillTimeWindow ──
+  // Regression guard for "anywhere" habits with dynamic prayer anchors. The
+  // running agenda anchor (last location before the task) is threaded through
+  // fillTimeWindow → resolveHabitTimeField → habitPrayerLocation. Two locations
+  // at different longitudes are guaranteed to have different sunrise minutes on
+  // any day and in any runner timezone (the offset ≈ the longitude/timezone
+  // gap), so this never flakes at equinox or across hemispheres.
+  console.log('\n[R] anywhere + contextLocId threading');
+  const ctx = await page.evaluate(() => {
+    const today = dayStart(Date.now());
+    const s = loadSortSettings();
+    s.locations = [
+      {id:'east', name:'East', lat:40.7, lng:-74.0},
+      {id:'west', name:'West', lat:40.7, lng:-105.0}
+    ];
+    s.lastKnownLocationId = null;
+    saveSortSettings(s);
+    // Anywhere habit (empty locationIds) with a sunrise-anchored window.
+    const h = {locationIds:[], allowedTimeStartAnchor:'sunrise', allowedTimeEnd:1200};
+    const winEast = fillTimeWindow(h, today, 'east');
+    const winWest = fillTimeWindow(h, today, 'west');
+    const winNone = fillTimeWindow(h, today);              // fallback → registry[0] (east)
+    // Empty registry + no context → can't resolve → null.
+    const savedLocs = s.locations; s.locations = []; saveSortSettings(s);
+    const winEmpty = fillTimeWindow(h, today);
+    s.locations = savedLocs; saveSortSettings(s);
+    return {
+      eastStart: winEast ? Math.round((winEast.start - today) / 60000) : null,
+      westStart: winWest ? Math.round((winWest.start - today) / 60000) : null,
+      noneStart: winNone ? Math.round((winNone.start - today) / 60000) : null,
+      emptyWin: winEmpty
+    };
+  });
+  assert(ctx.eastStart !== null && ctx.westStart !== null, 'both contexts resolve a sunrise start');
+  assert(Math.abs(ctx.eastStart - ctx.westStart) > 60, 'different contextLocId → different sunrise (east ' + ctx.eastStart + ' vs west ' + ctx.westStart + ')');
+  assert(ctx.noneStart === ctx.eastStart, 'no context → registry[0] fallback (east)');
+  assert(ctx.emptyWin === null, 'empty registry + no context → null window');
+
   await browser.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);
