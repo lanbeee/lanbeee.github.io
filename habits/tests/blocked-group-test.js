@@ -19,9 +19,12 @@ function assert(cond, msg){
   page.on('pageerror', e => pageErrors.push(String(e)));
 
   // Seed 4 consecutive blocked times (long labels) + a couple habits so the
-  // week plan renders. Times are fixed morning times so blocks aren't clipped.
+  // week plan renders. Block start is anchored 1 hour ahead of "now" so the
+  // blocks are always in the future for today (otherwise today's clip-after
+  // window filters some of them out and the merge group comes up short).
   await page.addInitScript(() => {
-    const blockStart = 480; // 8:00 AM
+    const now = new Date();
+    const blockStart = (Math.floor((now.getHours() * 60 + now.getMinutes()) / 30) + 2) * 30; // next 30-min boundary, +1h
 
     localStorage.setItem('tings_v2', JSON.stringify([
       { name:'Morning exercise', type:'keepup', target:7, logs:[Date.now() - 86400000], durationMinutes:30, locationIds:['home'], priority:1 },

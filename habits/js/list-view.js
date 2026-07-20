@@ -1095,26 +1095,46 @@ function earlyCardPill(reason){
 }
 
 // RENDER: thin travel card between home list items (same surface as today).
+// When fromId is CURRENT_COORD_ID the edge is computed from the live GPS coord
+// via travelFromCurrent() (movement-thresholded cache) and the card is a non-
+// interactive label — editing an edge anchored to an ephemeral coord would
+// store an override that's stale on the next GPS tick, so the synthetic leg
+// is informational only. Saved-place → saved-place legs remain tappable.
 function appendHomeTravelCard(list,fromId,toId,startTs){
   if(!list || !fromId || !toId || fromId === toId)return;
-  const from = typeof locationById === 'function' ? locationById(fromId) : null;
+  const fromCurrent = fromId === CURRENT_COORD_ID;
   const to = typeof locationById === 'function' ? locationById(toId) : null;
-  const edge = (from && to && typeof travelBetween === 'function')
-    ? travelBetween(from,to,normalizeTravelMode((sortSettings || {}).defaultTravelMode))
-    : {seconds:0};
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  let edge, fromName, edited;
+  if(fromCurrent){
+    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+    edge = (here && to && typeof travelFromCurrent === 'function')
+      ? travelFromCurrent(to,mode)
+      : { seconds:0, metres:0, provider:'none' };
+    fromName = 'here';
+    edited = false;
+  }else{
+    const from = typeof locationById === 'function' ? locationById(fromId) : null;
+    edge = (from && to && typeof travelBetween === 'function')
+      ? travelBetween(from,to,mode)
+      : { seconds:0 };
+    fromName = from ? from.name : 'here';
+    edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(edge);
+  }
   const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
-  const fromName = from ? from.name : 'here';
   const toName = to ? to.name : 'next';
-  const edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(edge);
   const depart = startTs && typeof agendaTimeLabel === 'function' ? `leave by ${agendaTimeLabel(startTs)} · ` : '';
   const travelEl = document.createElement('button');
   travelEl.type = 'button';
-  travelEl.className = `travel-card${edited ? ' is-edited' : ''}`;
+  travelEl.className = `travel-card${edited ? ' is-edited' : ''}${fromCurrent ? ' is-from-current' : ''}`;
   travelEl.dataset.travelFrom = fromId;
   travelEl.dataset.travelTo = toId;
-  travelEl.setAttribute('aria-label',`edit travel time ${fromName} to ${toName}`);
+  travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
+  if(fromCurrent)travelEl.setAttribute('aria-disabled','true');
   travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
   list.appendChild(travelEl);
+  // Synthetic current-coord legs are not editable — skip all gesture wiring.
+  if(fromCurrent)return;
   let travelPointer = null;
   travelEl.addEventListener('pointerdown',e=>{
     travelPointer = {el:travelEl,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
@@ -1167,16 +1187,28 @@ function homeExtraRowVisible(ts){
 // RENDER: plain muted background line for a home travel leg (text cleanup level).
 function appendHomeTravelText(list,fromId,toId,startTs){
   if(!list || !fromId || !toId || fromId === toId)return;
-  const from = typeof locationById === 'function' ? locationById(fromId) : null;
+  const fromCurrent = fromId === CURRENT_COORD_ID;
   const to = typeof locationById === 'function' ? locationById(toId) : null;
-  const edge = (from && to && typeof travelBetween === 'function')
-    ? travelBetween(from,to,normalizeTravelMode((sortSettings || {}).defaultTravelMode))
-    : {seconds:0};
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  let edge, fromName;
+  if(fromCurrent){
+    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+    edge = (here && to && typeof travelFromCurrent === 'function')
+      ? travelFromCurrent(to,mode)
+      : { seconds:0 };
+    fromName = 'here';
+  }else{
+    const from = typeof locationById === 'function' ? locationById(fromId) : null;
+    edge = (from && to && typeof travelBetween === 'function')
+      ? travelBetween(from,to,mode)
+      : { seconds:0 };
+    fromName = from ? from.name : 'here';
+  }
   const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
   const depart = startTs && typeof agendaTimeLabel === 'function' ? `leave by ${agendaTimeLabel(startTs)} · ` : '';
   const el = document.createElement('div');
   el.className = 'extra-text-line travel-text';
-  el.textContent = `${depart}${mins} min · ${from ? from.name : 'here'} → ${to ? to.name : 'next'}`;
+  el.textContent = `${depart}${mins} min · ${fromName} → ${to ? to.name : 'next'}`;
   list.appendChild(el);
 }
 
@@ -1644,6 +1676,42 @@ function render(opts){
     let sectionCat = -1;
     let prevTodayLocId = null;
 
+    // Precompute: should today's first location-bearing item be preceded by a
+    // synthetic "from current location" leg? Mirrors what homeDaySequence
+    // inserts at the top of today for the week branch — when the user has a
+    // live GPS fix that isn't inside any saved location, the regular seed
+    // (currentLocationId → nearest saved) would mis-anchor the first leg.
+    // Returning CURRENT_COORD_ID here lets the existing prevTodayLocId check
+    // render the leg via appendHomeExtraTravel (which routes the synthetic id
+    // through travelFromCurrent's movement-thresholded cache).
+    let currentCoordSeed = null;
+    if(todayFirstActive && !searching
+      && typeof currentCoordLocation === 'function'
+      && typeof isCurrentCoordAwayFromSaved === 'function'
+      && typeof CURRENT_COORD_ID !== 'undefined'
+      && typeof CURRENT_COORD_TRAVEL_CARD_MIN_METRES !== 'undefined'){
+      const here = currentCoordLocation();
+      if(here && isCurrentCoordAwayFromSaved()){
+        const registry = locationOptions();
+        for(const seedIdx of renderIndices){
+          const sh = data[seedIdx];
+          if(!sh || sh.pinned)continue;
+          const scat = todayCategory(sh,sortSettings);
+          const sEarly = scat === 2 && earlyToday(seedIdx);
+          if(scat !== 0 && !sEarly)continue;
+          const sRow = agendaMap.get(seedIdx);
+          const sLoc = cardLocationId(sh,sRow);
+          if(!sLoc)continue;
+          const sTo = locationById(sLoc,registry);
+          if(!sTo)continue;
+          if(haversineMetres(here.lat,here.lng,sTo.lat,sTo.lng) >= CURRENT_COORD_TRAVEL_CARD_MIN_METRES){
+            currentCoordSeed = CURRENT_COORD_ID;
+          }
+          break; // first location-bearing today item decides; stop scanning
+        }
+      }
+    }
+
     renderIndices.forEach(realIdx=>{
       const h = data[realIdx];
       const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
@@ -1666,6 +1734,7 @@ function render(opts){
       if(inTodaySection){
         const chunkRows = chunksByIndex.get(realIdx);
         if(chunkRows && chunkRows.length > 1){
+          if(prevTodayLocId === null && currentCoordSeed)prevTodayLocId = currentCoordSeed;
           chunkRows.forEach((chunkRow,ci)=>{
             const cLocId = cardLocationId(h,chunkRow);
             if(prevTodayLocId && cLocId && prevTodayLocId !== cLocId){
@@ -1681,6 +1750,9 @@ function render(opts){
 
       const agendaRow = agendaMap.get(realIdx);
       const locId = cardLocationId(h,agendaRow);
+      if(inTodaySection && prevTodayLocId === null && currentCoordSeed && locId){
+        prevTodayLocId = currentCoordSeed;
+      }
       if(inTodaySection && prevTodayLocId && locId && prevTodayLocId !== locId){
         const travelTs = agendaRow && Number.isFinite(agendaRow.start) ? agendaRow.start : Date.now();
         if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs);
@@ -1747,6 +1819,15 @@ function homeListFingerprint(now = Date.now()){
     const e = travel[k] || {};
     return `${k}:${e.seconds || 0}:${e.provider || ''}`;
   }).join('|');
+  // Live-coord freshness — only changes when the user has crossed a coarse
+  // ~100m bucket or the current-coord travel cache updated (e.g., an OSRM
+  // result refined a haversine floor). Skips renders for sub-bucket GPS
+  // jitter so the list doesn't thrash on every watch tick.
+  const coord = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+  const coordSig = coord
+    ? `${Math.round(coord.lat * 1000)},${Math.round(coord.lng * 1000)}`
+    : '';
+  const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
   const habitSig = data.map(h=>[
     h.name, h.type, h.lastLog, h.dueDate, h.eventTime,
     h.pinned ? 1 : 0, h.snoozedUntil || '',
@@ -1771,6 +1852,8 @@ function homeListFingerprint(now = Date.now()){
     typeof homeTopicFilter === 'string' ? homeTopicFilter : '',
     typeof homeLocationFilter === 'string' ? homeLocationFilter : '',
     travelSig,
+    coordSig,
+    currentEdgeSig,
     habitSig,
     JSON.stringify(s.cancelledBlocks || {}),
     JSON.stringify(s.availabilityOverrides || {}),

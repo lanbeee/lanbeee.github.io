@@ -16,6 +16,12 @@ const LOC_B = { id:'loc-b', name:'B', lat:48.8566, lng:2.3522 };    // Paris  (~
 const LOC_C = { id:'loc-c', name:'C', lat:40.7128, lng:-74.0060 };  // NYC City Hall
 const LOC_D = { id:'loc-d', name:'D', lat:40.7589, lng:-73.9851 };  // NYC Times Sq (~5.4 km)
 
+// Mirror of the constants defined in js/locations.js. Top-level `const`
+// declarations live in the page's lexical scope but aren't surfaced on
+// `window`, so the Node test runner can't read them by name — duplicate the
+// literal values here and assert against the duplicates.
+const CURRENT_COORD_ID = '__current__';
+
 let pass = 0, fail = 0;
 function assert(cond, msg){
   if(cond){ pass += 1; console.log('  ok: ' + msg); }
@@ -255,8 +261,208 @@ async function setMock(page, routes){
   console.log(persisted);
   assert(persisted.hasA, 'travel cache persisted to localStorage via flushTravelCache');
 
-  // ── O. Boot cleanliness ──
-  console.log('\n[O] boot cleanliness');
+  // ── P. CURRENT-COORD: pure helpers (currentCoordLocation, isCurrentCoordAwayFromSaved) ──
+  console.log('\n[P] currentCoordLocation + isCurrentCoordAwayFromSaved');
+  // Test locations used for the current-coord scenarios.
+  const HOME = { id:'loc-home', name:'Home', lat:40.7400, lng:-74.0000 };
+  const OFFICE = { id:'loc-office', name:'Office', lat:40.7500, lng:-74.0100 };  // ~1.3 km from Home
+  await page.evaluate(([home,office]) => {
+    sortSettings.locations = [home,office];
+    sortSettings.lastKnownLocationId = null;
+    sortSettings.pinnedLocationId = null;
+    currentCoord = null;
+  }, [HOME,OFFICE]);
+  const noCoord = await page.evaluate(() => ({
+    loc: currentCoordLocation(),
+    away: isCurrentCoordAwayFromSaved()
+  }));
+  console.log(noCoord);
+  assert(noCoord.loc === null, 'no currentCoord → currentCoordLocation() null');
+  assert(noCoord.away === false, 'no currentCoord → not "away" (no fix to anchor with)');
+
+  // GPS fix 30 m from Home — inside the 75 m geofence → matched, not away.
+  await page.evaluate(home => {
+    applyGeoPosition({ coords:{ latitude:home.lat + 0.00027, longitude:home.lng } },{ updateAnchor:false });
+  }, HOME);
+  const atHome = await page.evaluate(() => ({
+    loc: currentCoordLocation(),
+    away: isCurrentCoordAwayFromSaved()
+  }));
+  console.log(atHome);
+  assert(atHome.loc && atHome.loc.id === CURRENT_COORD_ID, 'currentCoordLocation returns synthetic id');
+  assert(atHome.away === false, 'inside Home radius → not away from saved');
+
+  // GPS fix ~5 km away from both — outside every radius → away.
+  await page.evaluate(() => {
+    applyGeoPosition({ coords:{ latitude:40.7900, longitude:-73.9700 } },{ updateAnchor:false }); // ~5-6 km NE
+  });
+  const away = await page.evaluate(() => ({
+    loc: currentCoordLocation(),
+    away: isCurrentCoordAwayFromSaved()
+  }));
+  console.log(away);
+  assert(away.loc && Number.isFinite(away.loc.lat), 'currentCoordLocation carries the live lat');
+  assert(away.away === true, '5+ km from any saved → away');
+
+  // ── Q. CURRENT-COORD: travelFromCurrent — haversine floor + bg OSRM refresh ──
+  console.log('\n[Q] travelFromCurrent — haversine floor + background OSRM');
+  await page.evaluate(() => { clearCurrentCoordEdgeCache(); });
+  await setMock(page, { 'router.project-osrm.org': { status:200, json:{ routes:[{ duration:999, distance:9123 }] } } });
+  const firstRead = await page.evaluate(([office]) => {
+    const here = currentCoordLocation();
+    const refMetres = haversineMetres(here.lat,here.lng,office.lat,office.lng);
+    const refSecs = haversineTravelSeconds(refMetres,'driving');
+    const got = travelFromCurrent(office,'driving');
+    return { got_provider:got.provider, got_seconds:got.seconds, refMetres, refSecs };
+  }, [OFFICE]);
+  console.log(firstRead);
+  assert(firstRead.got_provider === 'haversine', 'first read returns haversine floor synchronously');
+  assert(firstRead.got_seconds === firstRead.refSecs, 'floor seconds match great-circle distance');
+  // Background OSRM lands and overwrites the cache.
+  await page.waitForTimeout(150);
+  const sigAfter = await page.evaluate(() => currentCoordEdgeSignature(), []);
+  console.log('  sig after bg refresh: ' + sigAfter);
+  assert(/osrm/.test(sigAfter), 'signature reflects OSRM provider after refresh');
+  // Second read at the same coord → cached OSRM edge, NO new fetch.
+  await setMock(page, { 'router.project-osrm.org':'REJECT' }); // any new call would fail
+  const secondRead = await page.evaluate(([office]) => {
+    const got = travelFromCurrent(office,'driving');
+    return { provider:got.provider, seconds:got.seconds };
+  }, [OFFICE]);
+  console.log(secondRead);
+  assert(secondRead.provider === 'osrm' && secondRead.seconds === 999, 'second read returns cached OSRM edge (no refetch)');
+
+  // ── R. CURRENT-COORD: travelFromCurrent — movement threshold reuses cache ──
+  console.log('\n[R] travelFromCurrent — small movement reuses cache');
+  // Move the user ~50 m (well under CURRENT_COORD_RECOMPUTE_METRES=500).
+  await page.evaluate(() => {
+    const here = currentCoordLocation();
+    applyGeoPosition({ coords:{ latitude:here.lat + 0.0005, longitude:here.lng } },{ updateAnchor:false });
+  });
+  await setMock(page, { 'router.project-osrm.org':'REJECT' }); // would fail if it tried to refetch
+  const smallMove = await page.evaluate(([office]) => {
+    const got = travelFromCurrent(office,'driving');
+    return { provider:got.provider, seconds:got.seconds };
+  }, [OFFICE]);
+  console.log(smallMove);
+  assert(smallMove.provider === 'osrm' && smallMove.seconds === 999, 'small movement reuses cached OSRM edge');
+
+  // ── S. CURRENT-COORD: travelFromCurrent — significant movement invalidates cache ──
+  console.log('\n[S] travelFromCurrent — significant movement recomputes');
+  // Move the user ~700 m (beyond CURRENT_COORD_RECOMPUTE_METRES=500).
+  await page.evaluate(() => {
+    const here = currentCoordLocation();
+    applyGeoPosition({ coords:{ latitude:here.lat + 0.0063, longitude:here.lng } },{ updateAnchor:false });
+  });
+  await setMock(page, { 'router.project-osrm.org': { status:200, json:{ routes:[{ duration:2222, distance:14000 }] } } });
+  const bigMoveSync = await page.evaluate(([office]) => {
+    const here = currentCoordLocation();
+    const refMetres = haversineMetres(here.lat,here.lng,office.lat,office.lng);
+    const refSecs = haversineTravelSeconds(refMetres,'driving');
+    const got = travelFromCurrent(office,'driving');
+    return { got_provider:got.provider, got_seconds:got.seconds, refSecs };
+  }, [OFFICE]);
+  console.log(bigMoveSync);
+  assert(bigMoveSync.got_provider === 'haversine', 'beyond threshold → haversine floor returned synchronously');
+  assert(bigMoveSync.got_seconds === bigMoveSync.refSecs, 'recomputed floor reflects new distance');
+  await page.waitForTimeout(150);
+  const bigMoveBg = await page.evaluate(([office]) => {
+    const got = travelFromCurrent(office,'driving');
+    return { provider:got.provider, seconds:got.seconds };
+  }, [OFFICE]);
+  console.log(bigMoveBg);
+  assert(bigMoveBg.provider === 'osrm' && bigMoveBg.seconds === 2222, 'background refresh lands new OSRM edge');
+
+  // ── T. CURRENT-COORD: non-driving modes skip OSRM entirely ──
+  console.log('\n[T] travelFromCurrent — walking skips OSRM');
+  await page.evaluate(() => { clearCurrentCoordEdgeCache(); });
+  await setMock(page, { 'router.project-osrm.org':'REJECT' }); // would fail if called
+  const walkEdge = await page.evaluate(([office]) => {
+    const here = currentCoordLocation();
+    const refMetres = haversineMetres(here.lat,here.lng,office.lat,office.lng);
+    const refSecs = haversineTravelSeconds(refMetres,'walking');
+    const got = travelFromCurrent(office,'walking');
+    return { provider:got.provider, seconds:got.seconds, refSecs };
+  }, [OFFICE]);
+  console.log(walkEdge);
+  assert(walkEdge.provider === 'haversine', 'walking → haversine (no OSRM call)');
+  assert(walkEdge.seconds === walkEdge.refSecs, 'walking uses walking-speed seconds');
+
+  // ── U. CURRENT-COORD: clearCurrentCoordEdgeCache drops the in-memory cache ──
+  console.log('\n[U] clearCurrentCoordEdgeCache — cache eviction');
+  await page.evaluate(() => { clearCurrentCoordEdgeCache(); });
+  const sigCleared = await page.evaluate(() => currentCoordEdgeSignature());
+  assert(sigCleared === '', 'signature empty after clear');
+  // Cache is NOT persisted to localStorage.
+  const lsPeek = await page.evaluate(cid => {
+    const raw = JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}');
+    return Object.keys(raw.travel || {}).filter(k => k.indexOf(cid) >= 0);
+  }, CURRENT_COORD_ID);
+  console.log('  persisted current-coord keys: ' + JSON.stringify(lsPeek));
+  assert(lsPeek.length === 0, 'current-coord edges never persisted to localStorage');
+
+  // ── V. CURRENT-COORD: buildCurrentCoordTravelLeg — week-branch leg builder ──
+  console.log('\n[V] buildCurrentCoordTravelLeg — synthetic-leg decision tree');
+  await page.evaluate(() => { clearCurrentCoordEdgeCache(); });
+  const legAway = await page.evaluate(([office,home]) => {
+    const here = currentCoordLocation();
+    const registry = normalizeLocationRegistry(sortSettings.locations);
+    const mode = normalizeTravelMode(sortSettings.defaultTravelMode);
+    // First location-bearing row in chronological order.
+    const seq = [{ kind:'fill', i:0, locationId:office.id, start:Date.now() + 3600000 }];
+    const leg = buildCurrentCoordTravelLeg(seq,registry,mode,Date.now());
+    return { here, leg, mode };
+  }, [OFFICE,HOME]);
+  console.log(legAway);
+  assert(legAway.leg !== null, 'leg built when user is away from saved locations');
+  assert(legAway.leg.row.from === CURRENT_COORD_ID, 'leg.from is the synthetic current-coord id');
+  assert(legAway.leg.row.to === OFFICE.id, 'leg.to is the first row\'s location');
+  assert(legAway.leg.row.fromCurrentCoord === true, 'leg carries the fromCurrentCoord flag');
+  assert(legAway.leg.row.seconds > 0, 'leg has a positive travel time');
+
+  // User walks up to the office (inside its radius) → leg suppressed.
+  const legAtOffice = await page.evaluate(([office]) => {
+    applyGeoPosition({ coords:{ latitude:office.lat + 0.0002, longitude:office.lng } },{ updateAnchor:false });
+    const registry = normalizeLocationRegistry(sortSettings.locations);
+    const mode = normalizeTravelMode(sortSettings.defaultTravelMode);
+    const seq = [{ kind:'fill', i:0, locationId:office.id, start:Date.now() + 3600000 }];
+    return buildCurrentCoordTravelLeg(seq,registry,mode,Date.now());
+  }, [OFFICE]);
+  console.log(legAtOffice);
+  assert(legAtOffice === null, 'leg suppressed when user is inside a saved location (regular chain handles it)');
+
+  // User away but next task too close (< 250 m) → leg suppressed.
+  const legTooClose = await page.evaluate(([office]) => {
+    applyGeoPosition({ coords:{ latitude:office.lat + 0.001, longitude:office.lng } },{ updateAnchor:false }); // ~110 m E
+    const registry = normalizeLocationRegistry(sortSettings.locations);
+    const mode = normalizeTravelMode(sortSettings.defaultTravelMode);
+    const seq = [{ kind:'fill', i:0, locationId:office.id, start:Date.now() + 3600000 }];
+    return buildCurrentCoordTravelLeg(seq,registry,mode,Date.now());
+  }, [OFFICE]);
+  console.log(legTooClose);
+  assert(legTooClose === null, 'leg suppressed when distance < CURRENT_COORD_TRAVEL_CARD_MIN_METRES');
+
+  // No location-bearing row → nothing to anchor to.
+  const legNoTarget = await page.evaluate(() => {
+    const registry = normalizeLocationRegistry(sortSettings.locations);
+    const mode = normalizeTravelMode(sortSettings.defaultTravelMode);
+    const seq = [{ kind:'fill', i:0, locationId:null, start:Date.now() + 3600000 }];
+    return buildCurrentCoordTravelLeg(seq,registry,mode,Date.now());
+  });
+  assert(legNoTarget === null, 'leg suppressed when no row carries a saved location');
+
+  // No currentCoord → no leg.
+  await page.evaluate(() => { currentCoord = null; });
+  const legNoGps = await page.evaluate(([office]) => {
+    const registry = normalizeLocationRegistry(sortSettings.locations);
+    const mode = normalizeTravelMode(sortSettings.defaultTravelMode);
+    const seq = [{ kind:'fill', i:0, locationId:office.id, start:Date.now() + 3600000 }];
+    return buildCurrentCoordTravelLeg(seq,registry,mode,Date.now());
+  }, [OFFICE]);
+  assert(legNoGps === null, 'leg suppressed when no live GPS fix');
+
+  // ── W. Boot cleanliness ──
+  console.log('\n[W] boot cleanliness');
   assert(pageErrors.length === 0, 'no pageerrors during run (got: ' + JSON.stringify(pageErrors) + ')');
 
   await browser.close();

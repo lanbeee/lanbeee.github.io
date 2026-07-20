@@ -180,6 +180,132 @@ async function resetTravelEdge(locA,locB,mode){
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// CURRENT-COORD TRAVEL — edges from the live GPS coord to a saved location.
+//
+// The persistent travel cache (sortSettings.travel) is keyed by saved-location
+// id pairs. The live GPS coord is ephemeral and constantly moving, so a
+// separate *in-memory* cache backs "current → saved" edges. A movement
+// threshold (Haversine) avoids re-fetching OSRM on every GPS tick: while the
+// user stays within CURRENT_COORD_RECOMPUTE_METRES of the coord that produced
+// the last calc, the cached edge is reused. Beyond the threshold the cache
+// refreshes — haversine immediately (always available), OSRM in the background
+// for driving. This bounds OSRM usage to roughly one call per significant
+// movement and falls through to haversine for everything in between.
+//
+// This layer is what lets the Home list show a Travel card when the user is
+// far from the next task and not standing at any saved location — the regular
+// seed (currentLocationId → nearest saved) would otherwise mis-anchor the
+// first leg to whichever saved place happens to be closest.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Synthetic location id representing the user's live GPS coord. Used as the
+// "from" id on travel rows anchored to "here" rather than a saved place.
+const CURRENT_COORD_ID = '__current__';
+
+// Reuse a cached current-coord edge while the user remains within this radius
+// of the coord that produced it. ~2 city blocks — far enough to absorb GPS
+// jitter and a short walk, close enough that the estimate stays honest when
+// the user genuinely moves.
+const CURRENT_COORD_RECOMPUTE_METRES = 500;
+
+// Don't surface a Travel card for trivial distances — the user is effectively
+// already at the next task. Below this floor the synthetic row is suppressed.
+const CURRENT_COORD_TRAVEL_CARD_MIN_METRES = 250;
+
+// In-memory cache: toId → { originLat, originLng, edge:{seconds,metres,provider}, at }.
+// Never persisted — coords are ephemeral and never written to localStorage.
+let _currentCoordEdgeCache = new Map();
+
+// PURE: a synthetic location object for the live GPS coord, or null when no
+// fix is available. Pairs with travelFromCurrent() to anchor a Travel card to
+// "here" instead of the nearest saved location.
+function currentCoordLocation(){
+  if(!currentCoord)return null;
+  return {
+    id:CURRENT_COORD_ID,
+    name:'here',
+    lat:currentCoord.lat,
+    lng:currentCoord.lng,
+    address:'',
+    radiusM:0
+  };
+}
+
+// PURE: true when the user has a live GPS coord that doesn't fall inside any
+// saved location's radius. This is the case where the existing travel chain
+// (seeded from currentLocationId → nearest saved) would mis-anchor the first
+// leg, and a current-coord Travel card should be considered instead.
+function isCurrentCoordAwayFromSaved(registry){
+  if(!currentCoord)return false;
+  const locs = normalizeLocationRegistry(registry != null ? registry : (sortSettings || {}).locations);
+  if(!locs.length)return false;
+  return matchLocationId(currentCoord.lat,currentCoord.lng,locs) == null;
+}
+
+// SYNC (the public read path for current-coord → fixed location): best-
+// available edge from the live GPS coord to a saved location. Mirrors
+// travelBetween's stale-while-revalidate shape with a movement threshold:
+//   user within CURRENT_COORD_RECOMPUTE_METRES of last origin → reuse cached
+//   otherwise                                   → haversine now, OSRM in bg
+// Never blocks, never throws, never returns null. Driving is the only mode
+// that hits OSRM (matches fetchEdge); other modes keep their haversine floor.
+function travelFromCurrent(toLoc,mode){
+  const m = normalizeTravelMode(mode);
+  if(!currentCoord || !toLoc || !toLoc.id || toLoc.id === CURRENT_COORD_ID){
+    return { seconds:0, metres:0, provider:'none' };
+  }
+  const here = currentCoordLocation();
+  const cached = _currentCoordEdgeCache.get(toLoc.id);
+  if(cached){
+    const moved = haversineMetres(cached.originLat,cached.originLng,here.lat,here.lng);
+    if(moved <= CURRENT_COORD_RECOMPUTE_METRES)return cached.edge;
+  }
+  // Beyond the threshold (or first calc): compute haversine immediately,
+  // cache it provisionally so the next read is consistent, and kick a routed
+  // refresh in the background. The refresh overwrites the cache when it lands
+  // and fires onTravelRefresh so the next render picks up the refined value.
+  const metres = haversineMetres(here.lat,here.lng,toLoc.lat,toLoc.lng);
+  const floor = { seconds:haversineTravelSeconds(metres,m), metres, provider:'haversine' };
+  _currentCoordEdgeCache.set(toLoc.id,{ originLat:here.lat, originLng:here.lng, edge:floor, at:Date.now() });
+  if(m === 'driving')refreshCurrentCoordEdge(here,toLoc,m);
+  return floor;
+}
+
+// ASYNC: routed refresh of the current-coord edge. Driving only (matches
+// fetchEdge). Updates the in-memory cache only if the user is still near the
+// origin we queried with — avoids caching a stale route after the user moves
+// on. Signals onTravelRefresh so the refined value lands on the next render.
+async function refreshCurrentCoordEdge(here,toLoc,mode){
+  try{
+    const result = await fetchEdge(here,toLoc,mode);
+    if(!currentCoord)return;
+    const moved = haversineMetres(here.lat,here.lng,currentCoord.lat,currentCoord.lng);
+    if(moved > CURRENT_COORD_RECOMPUTE_METRES)return;
+    const edge = { seconds:result.seconds, metres:result.metres, provider:result.provider };
+    _currentCoordEdgeCache.set(toLoc.id,{ originLat:here.lat, originLng:here.lng, edge, at:Date.now() });
+    if(typeof onTravelRefresh === 'function')onTravelRefresh({ currentCoordEdge:true });
+  }catch{ /* best-effort; provisional haversine floor stays cached */ }
+}
+
+// PURE: compact signature of the current-coord cache, for the home list
+// freshness fingerprint so renders fire when an OSRM result refines a
+// haversine floor (or the cache drops on location disable).
+function currentCoordEdgeSignature(){
+  if(!_currentCoordEdgeCache.size || !currentCoord)return '';
+  const parts = [];
+  for(const [id,entry] of _currentCoordEdgeCache){
+    parts.push(`${id}:${entry.edge.seconds}:${entry.edge.provider}`);
+  }
+  return parts.join('|');
+}
+
+// IMPURE: drop the in-memory current-coord cache. Called when location access
+// is disabled — no point keeping edges anchored to a stale fix.
+function clearCurrentCoordEdgeCache(){
+  _currentCoordEdgeCache.clear();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // ASYNC — geocoding (address → lat/lng). Used by the add-location flow in the
 // settings manager. Default Nominatim (no key); Google fallback slot reserved.
 // ─────────────────────────────────────────────────────────────────────────
@@ -569,6 +695,7 @@ function renderLocationAccessControl(){
 function disableLocationAccess(){
   stopLocationWatch();
   currentCoord = null;
+  clearCurrentCoordEdgeCache();
   setLocationOptIn(false);
   if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
   if(typeof render === 'function')render();

@@ -614,6 +614,57 @@ function dayTimelineSeedLocation(day,settings){
     || null;
 }
 
+// PURE: decide whether to prepend a synthetic "from current location" travel
+// leg to today's home sequence, and return {row,toId} when it should fire.
+// Returns null when any condition isn't met:
+//   • no live GPS fix, OR the user is standing inside a saved location's radius
+//     (the regular chain handles that case correctly already)
+//   • no upcoming row with a saved location to anchor the leg to
+//   • the user is within CURRENT_COORD_TRAVEL_CARD_MIN_METRES of that location
+//     (no point showing a card for a trivial gap)
+//
+// The synthetic leg uses CURRENT_COORD_ID as its `from` so the renderer knows
+// to compute the edge via travelFromCurrent() (movement-thresholded cache)
+// instead of looking up a saved-location pair in sortSettings.travel.
+function buildCurrentCoordTravelLeg(sequence,registry,mode,dayBase){
+  if(typeof currentCoordLocation !== 'function' || typeof isCurrentCoordAwayFromSaved !== 'function')return null;
+  if(typeof CURRENT_COORD_ID === 'undefined' || typeof CURRENT_COORD_TRAVEL_CARD_MIN_METRES === 'undefined')return null;
+  const here = currentCoordLocation();
+  if(!here)return null;
+  if(!isCurrentCoordAwayFromSaved(registry))return null;
+  // First row in chronological order that carries a saved location id.
+  let target = null;
+  for(const r of sequence){
+    const id = r && r.locationId || null;
+    if(id && registry.some(l=>l.id === id)){ target = r; break; }
+  }
+  if(!target)return null;
+  const to = registry.find(l=>l.id === target.locationId);
+  if(!to)return null;
+  const metres = haversineMetres(here.lat,here.lng,to.lat,to.lng);
+  if(metres < CURRENT_COORD_TRAVEL_CARD_MIN_METRES)return null;
+  const edge = (typeof travelFromCurrent === 'function')
+    ? travelFromCurrent(to,mode)
+    : { seconds:haversineTravelSeconds(metres,mode), metres, provider:'haversine' };
+  const start = Math.max(target.start - (edge.seconds || 0) * 1000, Date.now());
+  return {
+    toId:to.id,
+    row:{
+      kind:'travel',
+      from:CURRENT_COORD_ID,
+      to:to.id,
+      fromName:'here',
+      toName:to.name,
+      seconds:edge.seconds || 0,
+      metres:edge.metres || 0,
+      start,
+      end:target.start,
+      provider:edge.provider || mode,
+      fromCurrentCoord:true
+    }
+  };
+}
+
 // PURE: chronological home-day sequence — habit/scheduled rows + blocked times,
 // with travel inserted whenever consecutive location-bearing rows differ.
 // Strips any travel rows already on the day timeline and rebuilds them so
@@ -633,6 +684,21 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
   const sequence = [...items,...blocks].sort((a,b)=>a.start - b.start || (a.kind === 'blocked' ? -1 : 1));
   let prevLocId = dayTimelineSeedLocation(day,settings);
   const out = [];
+
+  // Today-only: when the user has a live GPS fix that isn't inside any saved
+  // location, the seed above falls back to lastKnown or nearest saved —
+  // neither reflects where the user actually is. Replace that misleading
+  // anchor with a synthetic "from current location" leg to the first
+  // location-bearing row, gated by a minimum distance so we don't surface a
+  // card for trivial gaps. Without this, no Travel card appears when the user
+  // is far from the next task and not at a saved place (the regular chain
+  // only fires between two saved ids).
+  const currentLeg = day.isToday ? buildCurrentCoordTravelLeg(sequence,registry,mode,day.dayBase) : null;
+  if(currentLeg){
+    out.push(currentLeg.row);
+    prevLocId = currentLeg.toId; // chain continues from the leg's destination
+  }
+
   for(const row of sequence){
     const locId = row.locationId || null;
     if(prevLocId && locId && prevLocId !== locId){
