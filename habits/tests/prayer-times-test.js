@@ -291,10 +291,13 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   console.log('\n[N] habit-relative anchors');
   const habitAnchor = await page.evaluate(() => {
     const today = dayStart(Date.now());
-    const anchorTs = today + 8 * 3600000; // 8am today
+    // Prefer 8am today when already past; otherwise a recent past ts.
+    // Future timestamps become plan logs and have no lastLog.
+    let anchorTs = today + 8 * 3600000;
+    if(anchorTs >= Date.now()) anchorTs = Date.now() - 2 * 3600000;
     const gym = normalize([{
       name:'gym', type:'keepup', target:7,
-      logs:[anchorTs], lastLog:anchorTs
+      logs:[anchorTs]
     }])[0];
     const stretch = normalize([{
       name:'stretch', type:'keepup', target:7,
@@ -307,8 +310,12 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     // Seed both into storage so findHabitByHid / resolveHabitAnchorMinutes can see them.
     save([gym, stretch]);
     const startMin = resolveHabitTimeField(stretch, 'allowedTimeStart', today);
+    const expectedStart = (dayStart(anchorTs) === today
+      ? Math.round((anchorTs - today) / 60000)
+      : 0) + 30;
     // Consumed: stretch already logged after gym → start collapses.
-    const stretchDone = {...stretch, lastLog: anchorTs + 3600000, logs:[anchorTs + 3600000]};
+    const afterTs = Math.min(anchorTs + 3600000, Date.now() - 1000);
+    const stretchDone = {...stretch, lastLog: afterTs, logs:[afterTs]};
     const consumed = resolveHabitTimeField(stretchDone, 'allowedTimeStart', today);
     // Never-logged anchor → null.
     const never = normalize([{
@@ -340,6 +347,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     }])[0];
     return {
       startMin,
+      expectedStart,
       consumed,
       neverMin,
       priorMin,
@@ -352,7 +360,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
       summary: timeWindowSummary(stretch)
     };
   });
-  assert(habitAnchor.startMin === 8 * 60 + 30, 'habit anchor = 8am + 30m (' + habitAnchor.startMin + ')');
+  assert(habitAnchor.startMin === habitAnchor.expectedStart, 'habit anchor = log + 30m (' + habitAnchor.startMin + ' vs ' + habitAnchor.expectedStart + ')');
   assert(habitAnchor.consumed === null, 'consumed start → null');
   assert(habitAnchor.neverMin === null, 'never-logged anchor → null');
   assert(habitAnchor.priorMin === 30, 'prior-day anchor → 0 + offset (' + habitAnchor.priorMin + ')');

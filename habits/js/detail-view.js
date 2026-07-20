@@ -84,6 +84,10 @@ function openDetail(i){
     allowedTimeEndAnchorHabitId:cleanHabitId(h.allowedTimeEndAnchorHabitId) || null,
     preferredTimeStartAnchorHabitId:cleanHabitId(h.preferredTimeStartAnchorHabitId) || null,
     preferredTimeEndAnchorHabitId:cleanHabitId(h.preferredTimeEndAnchorHabitId) || null,
+    ...snapshotCombineFields(h, 'allowedTimeStart'),
+    ...snapshotCombineFields(h, 'allowedTimeEnd'),
+    ...snapshotCombineFields(h, 'preferredTimeStart'),
+    ...snapshotCombineFields(h, 'preferredTimeEnd'),
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     breakable:Boolean(h.breakable),
     minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
@@ -210,11 +214,23 @@ function renderTimeWindowInputs(h = {}){
   syncTimeClearBtn();
 }
 
+// PURE: snapshot the later/earlier-of fields for one endpoint into the tune object.
+function snapshotCombineFields(h, prefix){
+  return {
+    [prefix + 'Combine']:cleanTimeCombine(h && h[prefix + 'Combine']),
+    [prefix + 'Anchor2']:cleanAnchor(h && h[prefix + 'Anchor2']),
+    [prefix + 'OffsetMin2']:normalizePrayerOffset(h && h[prefix + 'OffsetMin2']),
+    [prefix + 'AnchorHabitId2']:cleanHabitId(h && h[prefix + 'AnchorHabitId2']) || null,
+    [prefix + 'DayOffset']:normalizeAnchorDayOffset(h && h[prefix + 'DayOffset']),
+    [prefix + 'DayOffset2']:normalizeAnchorDayOffset(h && h[prefix + 'DayOffset2'])
+  };
+}
+
 // RENDER (idempotent): populate every anchor <select> with the standard list.
 // Re-running on every openDetail is harmless — the options are stable. Includes
 // the 'habit' anchor option, which (when selected) reveals a habit picker.
 function populateAnchorOptions(){
-  document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
+  document.querySelectorAll('.time-endpoint .time-anchor, .time-endpoint .time-anchor2').forEach(sel => {
     if(sel.dataset.populated === '1')return;
     sel.innerHTML = '<option value="">— anchor —</option>'
       + PRAYER_ANCHORS.map(a => `<option value="${a}">${PRAYER_ANCHOR_LABELS[a]}</option>`).join('')
@@ -223,13 +239,13 @@ function populateAnchorOptions(){
   });
 }
 
-// RENDER: build/rebuild the habit-picker dropdown shown when an endpoint is
-// in 'habit' mode. Excludes the current habit (can't anchor on yourself).
-function populateHabitPickerFor(endpoint, field, h){
+// RENDER: build/rebuild a habit-picker dropdown. `which` is '' (primary) or '2'.
+// Excludes the current habit (can't anchor on yourself).
+function populateHabitPickerFor(endpoint, field, h, which = ''){
   if(!endpoint)return;
-  const picker = endpoint.querySelector('.time-habit');
+  const picker = endpoint.querySelector(which === '2' ? '.time-habit2' : '.time-habit');
   if(!picker)return;
-  const selected = cleanHabitId(h && h[field + 'AnchorHabitId']) || '';
+  const selected = cleanHabitId(h && h[field + 'AnchorHabitId' + which]) || '';
   const data = typeof load === 'function' ? load() : [];
   const currentHid = cleanHabitId(h && h.hid);
   const options = ['<option value="">— pick a habit —</option>']
@@ -241,6 +257,24 @@ function populateHabitPickerFor(endpoint, field, h){
   picker.innerHTML = options.join('');
 }
 
+// RENDER: sync habit-wrap + day-next visibility for one expression row.
+function syncExprControls(endpoint, field, h, which = ''){
+  const suffix = which === '2' ? '2' : '';
+  const anchor = cleanAnchor(h && h[field + 'Anchor' + suffix]);
+  const habitWrap = endpoint.querySelector(which === '2' ? '.time-habit-wrap2' : '.time-habit-wrap');
+  const dayBtn = endpoint.querySelector(which === '2' ? '.time-day-next2' : '.time-day-next');
+  if(habitWrap){
+    habitWrap.hidden = anchor !== 'habit';
+    if(anchor === 'habit')populateHabitPickerFor(endpoint, field, h, which);
+  }
+  if(dayBtn){
+    const on = normalizeAnchorDayOffset(h && h[field + 'DayOffset' + suffix]) === 1;
+    dayBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    // +1d only applies to prayer anchors (habit logs are absolute).
+    dayBtn.hidden = !anchor || anchor === 'habit';
+  }
+}
+
 // RENDER: sync a single time endpoint DOM block from the habit's stored state.
 function renderTimeEndpoint(endpoint, field, h){
   if(!endpoint)return;
@@ -248,7 +282,10 @@ function renderTimeEndpoint(endpoint, field, h){
   const dynWrap = endpoint.querySelector('.time-dynamic');
   const anchorSel = endpoint.querySelector('.time-anchor');
   const offsetInput = endpoint.querySelector('.time-offset');
-  const habitWrap = endpoint.querySelector('.time-habit-wrap');
+  const combineSel = endpoint.querySelector('.time-combine');
+  const expr2 = endpoint.querySelector('.time-expr2');
+  const anchor2Sel = endpoint.querySelector('.time-anchor2');
+  const offset2Input = endpoint.querySelector('.time-offset2');
   const anchor = cleanAnchor(h && h[field + 'Anchor']);
   if(anchor){
     endpoint.classList.add('is-dynamic');
@@ -256,9 +293,14 @@ function renderTimeEndpoint(endpoint, field, h){
     if(dynWrap)dynWrap.hidden = false;
     if(anchorSel)anchorSel.value = anchor;
     if(offsetInput)offsetInput.value = normalizePrayerOffset(h[field + 'OffsetMin']) || '';
-    if(habitWrap){
-      habitWrap.hidden = anchor !== 'habit';
-      if(anchor === 'habit')populateHabitPickerFor(endpoint, field, h);
+    syncExprControls(endpoint, field, h, '');
+    const combine = cleanTimeCombine(h && h[field + 'Combine']);
+    if(combineSel)combineSel.value = combine || '';
+    if(expr2)expr2.hidden = !combine;
+    if(combine){
+      if(anchor2Sel)anchor2Sel.value = cleanAnchor(h[field + 'Anchor2']) || '';
+      if(offset2Input)offset2Input.value = normalizePrayerOffset(h[field + 'OffsetMin2']) || '';
+      syncExprControls(endpoint, field, h, '2');
     }
   }else{
     endpoint.classList.remove('is-dynamic');
@@ -270,7 +312,8 @@ function renderTimeEndpoint(endpoint, field, h){
     if(dynWrap)dynWrap.hidden = true;
     if(anchorSel)anchorSel.value = '';
     if(offsetInput)offsetInput.value = '';
-    if(habitWrap)habitWrap.hidden = true;
+    if(combineSel)combineSel.value = '';
+    if(expr2)expr2.hidden = true;
   }
   updateTimeResolved(endpoint, field, h);
 }
@@ -358,16 +401,44 @@ function readOffsetFromEndpoint(fixedInputId){
 }
 // PURE: read the referenced habit id (or null) from a per-endpoint editor.
 // Returns null when the endpoint isn't in 'habit' anchor mode.
-function readHabitIdFromEndpoint(fixedInputId){
+// `which` is '' (primary) or '2' (secondary expression).
+function readHabitIdFromEndpoint(fixedInputId, which = ''){
   const el = document.getElementById(fixedInputId);
   if(!el)return null;
   const endpoint = el.closest('.time-endpoint');
   if(!endpoint || !endpoint.classList.contains('is-dynamic'))return null;
-  const sel = endpoint.querySelector('.time-anchor');
+  const sel = endpoint.querySelector(which === '2' ? '.time-anchor2' : '.time-anchor');
   if(!sel || sel.value !== 'habit')return null;
-  const picker = endpoint.querySelector('.time-habit');
+  const picker = endpoint.querySelector(which === '2' ? '.time-habit2' : '.time-habit');
   const id = picker ? cleanHabitId(picker.value) : '';
   return id || null;
+}
+// PURE: read combine mode / secondary expression / day offsets from an endpoint.
+function readCombineFromEndpoint(fixedInputId){
+  const el = document.getElementById(fixedInputId);
+  if(!el)return {
+    combine:null, anchor2:null, offset2:0, habitId2:null, dayOffset:0, dayOffset2:0
+  };
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic')){
+    return {combine:null, anchor2:null, offset2:0, habitId2:null, dayOffset:0, dayOffset2:0};
+  }
+  const combine = cleanTimeCombine(endpoint.querySelector('.time-combine')?.value);
+  const dayOffset = endpoint.querySelector('.time-day-next')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
+  if(!combine){
+    return {combine:null, anchor2:null, offset2:0, habitId2:null, dayOffset, dayOffset2:0};
+  }
+  const anchor2 = cleanAnchor(endpoint.querySelector('.time-anchor2')?.value);
+  const offset2 = normalizePrayerOffset(endpoint.querySelector('.time-offset2')?.value);
+  const dayOffset2 = endpoint.querySelector('.time-day-next2')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
+  return {
+    combine: anchor2 ? combine : null,
+    anchor2,
+    offset2,
+    habitId2: readHabitIdFromEndpoint(fixedInputId, '2'),
+    dayOffset,
+    dayOffset2
+  };
 }
 
 // HYBRID: reads form DOM into tune object
@@ -405,6 +476,38 @@ function currentDetailTune(){
     allowedTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-time-end'),
     preferredTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-start'),
     preferredTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-end'),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-time-start');
+      return {
+        allowedTimeStartCombine:c.combine, allowedTimeStartAnchor2:c.anchor2,
+        allowedTimeStartOffsetMin2:c.offset2, allowedTimeStartAnchorHabitId2:c.habitId2,
+        allowedTimeStartDayOffset:c.dayOffset, allowedTimeStartDayOffset2:c.dayOffset2
+      };
+    })(),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-time-end');
+      return {
+        allowedTimeEndCombine:c.combine, allowedTimeEndAnchor2:c.anchor2,
+        allowedTimeEndOffsetMin2:c.offset2, allowedTimeEndAnchorHabitId2:c.habitId2,
+        allowedTimeEndDayOffset:c.dayOffset, allowedTimeEndDayOffset2:c.dayOffset2
+      };
+    })(),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-preferred-time-start');
+      return {
+        preferredTimeStartCombine:c.combine, preferredTimeStartAnchor2:c.anchor2,
+        preferredTimeStartOffsetMin2:c.offset2, preferredTimeStartAnchorHabitId2:c.habitId2,
+        preferredTimeStartDayOffset:c.dayOffset, preferredTimeStartDayOffset2:c.dayOffset2
+      };
+    })(),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-preferred-time-end');
+      return {
+        preferredTimeEndCombine:c.combine, preferredTimeEndAnchor2:c.anchor2,
+        preferredTimeEndOffsetMin2:c.offset2, preferredTimeEndAnchorHabitId2:c.habitId2,
+        preferredTimeEndDayOffset:c.dayOffset, preferredTimeEndDayOffset2:c.dayOffset2
+      };
+    })(),
     durationMinutes:clampDuration($('detail-duration').value),
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
@@ -470,7 +573,31 @@ function setDetailDirty(force){
       (current.allowedTimeStartAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId || null) ||
       (current.allowedTimeEndAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId || null) ||
       (current.preferredTimeStartAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId || null) ||
-      (current.preferredTimeEndAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId || null))
+      (current.preferredTimeEndAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId || null) ||
+      (current.allowedTimeStartCombine || null) !== (detailTuneOriginal.allowedTimeStartCombine || null) ||
+      (current.allowedTimeStartAnchor2 || null) !== (detailTuneOriginal.allowedTimeStartAnchor2 || null) ||
+      current.allowedTimeStartOffsetMin2 !== detailTuneOriginal.allowedTimeStartOffsetMin2 ||
+      (current.allowedTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId2 || null) ||
+      current.allowedTimeStartDayOffset !== detailTuneOriginal.allowedTimeStartDayOffset ||
+      current.allowedTimeStartDayOffset2 !== detailTuneOriginal.allowedTimeStartDayOffset2 ||
+      (current.allowedTimeEndCombine || null) !== (detailTuneOriginal.allowedTimeEndCombine || null) ||
+      (current.allowedTimeEndAnchor2 || null) !== (detailTuneOriginal.allowedTimeEndAnchor2 || null) ||
+      current.allowedTimeEndOffsetMin2 !== detailTuneOriginal.allowedTimeEndOffsetMin2 ||
+      (current.allowedTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId2 || null) ||
+      current.allowedTimeEndDayOffset !== detailTuneOriginal.allowedTimeEndDayOffset ||
+      current.allowedTimeEndDayOffset2 !== detailTuneOriginal.allowedTimeEndDayOffset2 ||
+      (current.preferredTimeStartCombine || null) !== (detailTuneOriginal.preferredTimeStartCombine || null) ||
+      (current.preferredTimeStartAnchor2 || null) !== (detailTuneOriginal.preferredTimeStartAnchor2 || null) ||
+      current.preferredTimeStartOffsetMin2 !== detailTuneOriginal.preferredTimeStartOffsetMin2 ||
+      (current.preferredTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId2 || null) ||
+      current.preferredTimeStartDayOffset !== detailTuneOriginal.preferredTimeStartDayOffset ||
+      current.preferredTimeStartDayOffset2 !== detailTuneOriginal.preferredTimeStartDayOffset2 ||
+      (current.preferredTimeEndCombine || null) !== (detailTuneOriginal.preferredTimeEndCombine || null) ||
+      (current.preferredTimeEndAnchor2 || null) !== (detailTuneOriginal.preferredTimeEndAnchor2 || null) ||
+      current.preferredTimeEndOffsetMin2 !== detailTuneOriginal.preferredTimeEndOffsetMin2 ||
+      (current.preferredTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId2 || null) ||
+      current.preferredTimeEndDayOffset !== detailTuneOriginal.preferredTimeEndDayOffset ||
+      current.preferredTimeEndDayOffset2 !== detailTuneOriginal.preferredTimeEndDayOffset2)
   );
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }

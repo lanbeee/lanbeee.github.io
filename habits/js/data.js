@@ -60,6 +60,35 @@
  * @property {string|null} allowedTimeEndAnchorHabitId
  * @property {string|null} preferredTimeStartAnchorHabitId
  * @property {string|null} preferredTimeEndAnchorHabitId
+ *
+ * — Combined expressions (optional; "later of" / "earlier of" two anchors) —
+ * When `*Combine` is 'later' or 'earlier' and `*Anchor2` is set, the endpoint resolves to
+ * max/min of the primary and secondary expressions. `*DayOffset` / `*DayOffset2` are 0 or 1
+ * (next calendar day) so "sunrise − 8h +1d" means tonight relative to tomorrow's sunrise.
+ * @property {'later'|'earlier'|null} allowedTimeStartCombine
+ * @property {string|null} allowedTimeStartAnchor2
+ * @property {number}      allowedTimeStartOffsetMin2
+ * @property {string|null} allowedTimeStartAnchorHabitId2
+ * @property {number}      allowedTimeStartDayOffset
+ * @property {number}      allowedTimeStartDayOffset2
+ * @property {'later'|'earlier'|null} allowedTimeEndCombine
+ * @property {string|null} allowedTimeEndAnchor2
+ * @property {number}      allowedTimeEndOffsetMin2
+ * @property {string|null} allowedTimeEndAnchorHabitId2
+ * @property {number}      allowedTimeEndDayOffset
+ * @property {number}      allowedTimeEndDayOffset2
+ * @property {'later'|'earlier'|null} preferredTimeStartCombine
+ * @property {string|null} preferredTimeStartAnchor2
+ * @property {number}      preferredTimeStartOffsetMin2
+ * @property {string|null} preferredTimeStartAnchorHabitId2
+ * @property {number}      preferredTimeStartDayOffset
+ * @property {number}      preferredTimeStartDayOffset2
+ * @property {'later'|'earlier'|null} preferredTimeEndCombine
+ * @property {string|null} preferredTimeEndAnchor2
+ * @property {number}      preferredTimeEndOffsetMin2
+ * @property {string|null} preferredTimeEndAnchorHabitId2
+ * @property {number}      preferredTimeEndDayOffset
+ * @property {number}      preferredTimeEndDayOffset2
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split duration into chunks of at least minChunkMinutes
@@ -138,7 +167,7 @@
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
- * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,endAnchor:?string,endOffsetMin:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits: when set, the matching start/end is computed from the block's locationId (prayer anchors only on blocked times — habit-anchors are habit-only).
+ * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,startCombine:?string,startAnchor2:?string,startOffsetMin2:number,startDayOffset:number,startDayOffset2:number,endAnchor:?string,endOffsetMin:number,endCombine:?string,endAnchor2:?string,endOffsetMin2:number,endDayOffset:number,endDayOffset2:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits (prayer only; later/earlier-of + +1d supported).
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
  */
 
@@ -335,6 +364,11 @@ function normalize(items){
       allowedTimeEndAnchorHabitId:(raw.allowedTimeEndAnchor === 'habit' ? cleanHabitId(raw.allowedTimeEndAnchorHabitId) : '') || null,
       preferredTimeStartAnchorHabitId:(raw.preferredTimeStartAnchor === 'habit' ? cleanHabitId(raw.preferredTimeStartAnchorHabitId) : '') || null,
       preferredTimeEndAnchorHabitId:(raw.preferredTimeEndAnchor === 'habit' ? cleanHabitId(raw.preferredTimeEndAnchorHabitId) : '') || null,
+      // Combined expressions (later/earlier of two) + optional +1d day shift.
+      ...normalizeCombineFields(raw, 'allowedTimeStart'),
+      ...normalizeCombineFields(raw, 'allowedTimeEnd'),
+      ...normalizeCombineFields(raw, 'preferredTimeStart'),
+      ...normalizeCombineFields(raw, 'preferredTimeEnd'),
       flexibilityDays,
       durationMinutes:clampDuration(raw.durationMinutes),
       breakable,
@@ -723,12 +757,29 @@ function normalizeBlockedTimes(value){
     // If the user toggles dynamic without a location, the anchor silently drops.
     const safeStartAnchor = startAnchor && locationId ? startAnchor : null;
     const safeEndAnchor = endAnchor && locationId ? endAnchor : null;
+    const startCombine = safeStartAnchor && typeof cleanTimeCombine === 'function'
+      ? cleanTimeCombine(raw?.startCombine) : null;
+    const startAnchor2 = startCombine && locationId ? cleanPrayerAnchor(raw?.startAnchor2) : null;
+    const endCombine = safeEndAnchor && typeof cleanTimeCombine === 'function'
+      ? cleanTimeCombine(raw?.endCombine) : null;
+    const endAnchor2 = endCombine && locationId ? cleanPrayerAnchor(raw?.endAnchor2) : null;
+    const dayOff = typeof normalizeAnchorDayOffset === 'function' ? normalizeAnchorDayOffset : (v => 0);
     return {
       label,days,start,end,locationId,
       startAnchor:safeStartAnchor,
       startOffsetMin:normalizePrayerOffset(raw?.startOffsetMin),
+      startCombine:startCombine && startAnchor2 ? startCombine : null,
+      startAnchor2,
+      startOffsetMin2:normalizePrayerOffset(raw?.startOffsetMin2),
+      startDayOffset:dayOff(raw?.startDayOffset),
+      startDayOffset2:dayOff(raw?.startDayOffset2),
       endAnchor:safeEndAnchor,
-      endOffsetMin:normalizePrayerOffset(raw?.endOffsetMin)
+      endOffsetMin:normalizePrayerOffset(raw?.endOffsetMin),
+      endCombine:endCombine && endAnchor2 ? endCombine : null,
+      endAnchor2,
+      endOffsetMin2:normalizePrayerOffset(raw?.endOffsetMin2),
+      endDayOffset:dayOff(raw?.endDayOffset),
+      endDayOffset2:dayOff(raw?.endDayOffset2)
     };
   }).filter(Boolean).slice(0,24);
 }
@@ -805,6 +856,28 @@ function cleanLocationId(value){
 // PURE: trim + cap a stable habit id. Empty string when falsy.
 function cleanHabitId(value){
   return String(value || '').trim().slice(0,64);
+}
+
+// PURE: coerce the later/earlier-of + dayOffset fields for one habit endpoint
+// prefix (e.g. 'allowedTimeStart'). Secondary fields only stick when Combine
+// is set and Anchor2 is a real anchor; otherwise they're cleared so stale
+// secondaries don't linger after the user picks "just this".
+function normalizeCombineFields(raw, prefix){
+  const cleanA = typeof cleanAnchor === 'function' ? cleanAnchor : cleanPrayerAnchor;
+  const combine = typeof cleanTimeCombine === 'function' ? cleanTimeCombine(raw[prefix + 'Combine']) : null;
+  const anchor2 = combine ? cleanA(raw[prefix + 'Anchor2']) : null;
+  const dayOff = typeof normalizeAnchorDayOffset === 'function'
+    ? normalizeAnchorDayOffset(raw[prefix + 'DayOffset']) : 0;
+  const dayOff2 = typeof normalizeAnchorDayOffset === 'function'
+    ? normalizeAnchorDayOffset(raw[prefix + 'DayOffset2']) : 0;
+  return {
+    [prefix + 'Combine']: combine && anchor2 ? combine : null,
+    [prefix + 'Anchor2']: anchor2,
+    [prefix + 'OffsetMin2']: normalizePrayerOffset(raw[prefix + 'OffsetMin2']),
+    [prefix + 'AnchorHabitId2']: (anchor2 === 'habit' ? cleanHabitId(raw[prefix + 'AnchorHabitId2']) : '') || null,
+    [prefix + 'DayOffset']: dayOff,
+    [prefix + 'DayOffset2']: dayOff2
+  };
 }
 // IMPURE (reads crypto + Date): mint a fresh habit id. Mirrors the location-id
 // pattern in settings.js — crypto.randomUUID when available, temporal fallback
@@ -1390,20 +1463,16 @@ function formatTimeShort(minutes){
 function timeWindowSummary(h){
   if(!hasTimeWindow(h))return '';
   // When either endpoint is an anchor (prayer OR habit), show anchor labels
-  // (e.g. "sunrise +30 – after gym"). Resolved clock times would mislead the
-  // moment the date, location, or anchor habit's log changes; the anchor
-  // label is the stable truth.
+  // (e.g. "sunrise +30 – after gym", or "later of isha +15m · sunrise −8h +1d").
+  // Resolved clock times would mislead the moment the date or location changes.
   const startAnchor = cleanAnchor(h.allowedTimeStartAnchor);
   const endAnchor = cleanAnchor(h.allowedTimeEndAnchor);
   if(startAnchor || endAnchor){
-    const data = typeof load === 'function' ? load() : [];
-    const startName = startAnchor === 'habit' ? (findHabitByHid(h.allowedTimeStartAnchorHabitId, data) || {}).name : null;
-    const endName = endAnchor === 'habit' ? (findHabitByHid(h.allowedTimeEndAnchorHabitId, data) || {}).name : null;
     const s = startAnchor
-      ? prayerAnchorLabel(startAnchor, h.allowedTimeStartOffsetMin, startName)
+      ? (typeof habitEndpointLabel === 'function' ? habitEndpointLabel(h, 'allowedTimeStart') : prayerAnchorLabel(startAnchor, h.allowedTimeStartOffsetMin))
       : formatTimeShort(h.allowedTimeStart);
     const e = endAnchor
-      ? prayerAnchorLabel(endAnchor, h.allowedTimeEndOffsetMin, endName)
+      ? (typeof habitEndpointLabel === 'function' ? habitEndpointLabel(h, 'allowedTimeEnd') : prayerAnchorLabel(endAnchor, h.allowedTimeEndOffsetMin))
       : formatTimeShort(h.allowedTimeEnd);
     return `${s}–${e}`;
   }

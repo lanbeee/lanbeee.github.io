@@ -31,6 +31,22 @@ function normalizePrayerOffset(value){
   return Math.max(-PRAYER_OFFSET_MAX_MIN, Math.min(PRAYER_OFFSET_MAX_MIN, n));
 }
 
+// PURE: how two dynamic expressions combine on one endpoint.
+//   null      — use the primary expression only (legacy / default)
+//   'later'   — max(primary, secondary)  e.g. sleep = later of isha+15 · sunrise−8h
+//   'earlier' — min(primary, secondary)
+function cleanTimeCombine(value){
+  const v = String(value || '').trim().toLowerCase();
+  return v === 'later' || v === 'earlier' ? v : null;
+}
+
+// PURE: 0 = prayer on the agenda day, 1 = prayer on the next calendar day.
+// Lets "sunrise − 8h" mean tonight (next morning's sunrise) rather than last night.
+function normalizeAnchorDayOffset(value){
+  const n = parseInt(value,10);
+  return n === 1 ? 1 : 0;
+}
+
 // PURE: validate the method key; falls back to DEFAULT_PRAYER_METHOD.
 function normalizePrayerMethod(value){
   const v = String(value || '').trim();
@@ -49,11 +65,10 @@ function normalizePrayerMadhab(value){
 // and then disambiguates with habitUsesHabitAnchors).
 function habitUsesPrayerAnchors(h){
   if(!h)return false;
-  const prayer = cleanPrayerAnchor(h.allowedTimeStartAnchor)
-    || cleanPrayerAnchor(h.allowedTimeEndAnchor)
-    || cleanPrayerAnchor(h.preferredTimeStartAnchor)
-    || cleanPrayerAnchor(h.preferredTimeEndAnchor);
-  return Boolean(prayer);
+  const fields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
+  return fields.some(f =>
+    cleanPrayerAnchor(h[f + 'Anchor']) || cleanPrayerAnchor(h[f + 'Anchor2'])
+  );
 }
 
 // PURE: build the adhan.CalculationMethod params object from settings. Each
@@ -153,18 +168,75 @@ function anchorMs(times, anchor, offsetMin){
   return t.getTime() + normalizePrayerOffset(offsetMin) * 60000;
 }
 
+// PURE (with sortSettings global): resolve one prayer expression to minutes
+// relative to dayBase (may be negative or >1440 when offset crosses midnight).
+// `dayOffset` 1 means compute the prayer on the next calendar day — the usual
+// way to say "8h before tomorrow's sunrise" for a tonight bedtime.
+function resolvePrayerExprMinutes(coords, anchor, offsetMin, dayBase, dayOffset){
+  if(!coords || !cleanPrayerAnchor(anchor))return null;
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
+  const date = new Date(base + normalizeAnchorDayOffset(dayOffset) * 86400000);
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const params = prayerParams(settings);
+  const times = prayerTimesFor({latitude:coords.latitude, longitude:coords.longitude}, date, params);
+  if(!times)return null;
+  const ms = anchorMs(times, anchor, offsetMin);
+  if(ms == null)return null;
+  return Math.round((ms - base) / 60000);
+}
+
+// PURE: combine two resolved minutes with 'later' (max) or 'earlier' (min).
+// If either side is null, fall back to the other (partial combine still works).
+function combineResolvedMinutes(a, b, combine){
+  const mode = cleanTimeCombine(combine);
+  if(a == null)return b;
+  if(b == null)return a;
+  if(mode === 'earlier')return Math.min(a, b);
+  if(mode === 'later')return Math.max(a, b);
+  return a;
+}
+
+// IMPURE (reads load/settings): resolve a single expression (primary or
+// secondary) for a habit endpoint. `suffix` is '' for primary or '2' for the
+// optional second expression used by later/earlier-of.
+function resolveHabitExprMinutes(h, fieldName, suffix, dayBase){
+  const anchor = cleanAnchor(h[fieldName + 'Anchor' + suffix]);
+  if(!anchor)return null;
+  const offset = h[fieldName + 'OffsetMin' + suffix];
+  const dayOff = h[fieldName + 'DayOffset' + suffix];
+  if(anchor === 'habit'){
+    // Habit-relative: dayOffset is ignored (logs are absolute timestamps).
+    // Consume rule only applies to the primary start expression.
+    const role = (suffix === '' && fieldName.endsWith('Start')) ? 'start' : 'end';
+    return resolveHabitAnchorMinutes(
+      h,
+      h[fieldName + 'AnchorHabitId' + suffix],
+      offset,
+      role,
+      dayBase
+    );
+  }
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const loc = habitPrayerLocation(h, settings);
+  if(!loc)return null;
+  return resolvePrayerExprMinutes(
+    {latitude:loc.lat, longitude:loc.lng},
+    anchor, offset, dayBase, dayOff
+  );
+}
+
 // PURE (with sortSettings global): resolve a habit time endpoint to a
 // minutes-from-midnight value for the given day, or null when nothing is set.
 //
 // `fieldName` is one of: 'allowedTimeStart' | 'allowedTimeEnd' |
 // 'preferredTimeStart' | 'preferredTimeEnd'. The function checks the matching
 // `fieldName + 'Anchor'` field first; if an anchor is set (prayer OR 'habit'),
-// it computes the resolved minute. When no anchor is set it falls back to the
-// fixed numeric field — preserving the existing behaviour byte-for-byte for
-// habits that don't use dynamic times.
+// it computes the resolved minute. When `*Combine` is 'later'/'earlier' and
+// `*Anchor2` is set, the secondary expression is folded in (max/min).
+// When no anchor is set it falls back to the fixed numeric field.
 //
 // `dayBase` is a ms day-start timestamp (from dayStart()). Pass null/now to
-// mean "today".
+// mean "today". Result is minutes relative to dayBase (may be <0 or >1440).
 function resolveHabitTimeField(h, fieldName, dayBase){
   if(!h)return null;
   const anchor = cleanAnchor(h[fieldName + 'Anchor']);
@@ -172,52 +244,50 @@ function resolveHabitTimeField(h, fieldName, dayBase){
     const n = Number(h[fieldName]);
     return Number.isFinite(n) ? n : null;
   }
-  if(anchor === 'habit'){
-    // 'start' anchor consumes; 'end' anchor is a plain closing event.
-    const role = fieldName.endsWith('Start') ? 'start' : 'end';
-    return resolveHabitAnchorMinutes(
-      h,
-      h[fieldName + 'AnchorHabitId'],
-      h[fieldName + 'OffsetMin'],
-      role,
-      dayBase
-    );
-  }
-  // Prayer anchor — needs a location.
-  const base = dayBase != null ? dayBase : dayStart(Date.now());
-  const date = new Date(base);
-  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
-  const loc = habitPrayerLocation(h, settings);
-  if(!loc)return null; // no usable location → treat as unset (save path blocks)
-  const params = prayerParams(settings);
-  const times = prayerTimesFor({latitude:loc.lat, longitude:loc.lng}, date, params);
-  if(!times)return null;
-  const ms = anchorMs(times, anchor, h[fieldName + 'OffsetMin']);
-  if(ms == null)return null;
-  // Convert absolute ms → minutes-from-midnight for this day, preserving
-  // out-of-range values so overnight wrap (e.g. isha + 90 can land after
-  // midnight) composes correctly with the existing window math.
-  const midnight = new Date(ms);
-  const midnightBase = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate()).getTime();
-  return Math.round((ms - midnightBase) / 60000);
+  const primary = resolveHabitExprMinutes(h, fieldName, '', dayBase);
+  const combine = cleanTimeCombine(h[fieldName + 'Combine']);
+  if(!combine || !cleanAnchor(h[fieldName + 'Anchor2']))return primary;
+  const secondary = resolveHabitExprMinutes(h, fieldName, '2', dayBase);
+  return combineResolvedMinutes(primary, secondary, combine);
 }
 
 // PURE: a short, stable label for an anchor+offset, used in card chips and the
 // detail header so the user sees "sunrise +30" instead of "6:23am" (which
 // would lie the moment the date or location changes). Accepts both prayer
 // anchors and 'habit' (which renders as the anchor habit's name).
-function prayerAnchorLabel(anchor, offsetMin, anchorHabitName){
+// `dayOffset` 1 appends " +1d" so "sunrise −8h +1d" reads clearly.
+function prayerAnchorLabel(anchor, offsetMin, anchorHabitName, dayOffset){
   const a = cleanAnchor(anchor);
   if(!a)return '';
   const label = a === 'maghrib' ? 'sunset'
     : a === 'habit' ? (anchorHabitName ? `after ${anchorHabitName}` : 'after anchor')
     : a;
   const off = normalizePrayerOffset(offsetMin);
-  if(off === 0)return label;
-  const sign = off > 0 ? '+' : '−';
-  const abs = Math.abs(off);
-  if(abs % 60 === 0)return `${label} ${sign}${abs / 60}h`;
-  return `${label} ${sign}${abs}m`;
+  let out = label;
+  if(off !== 0){
+    const sign = off > 0 ? '+' : '−';
+    const abs = Math.abs(off);
+    out = abs % 60 === 0 ? `${label} ${sign}${abs / 60}h` : `${label} ${sign}${abs}m`;
+  }
+  if(normalizeAnchorDayOffset(dayOffset) === 1 && a !== 'habit')out += ' +1d';
+  return out;
+}
+
+// PURE: label for a (possibly combined) habit endpoint.
+function habitEndpointLabel(h, fieldName){
+  if(!h)return '';
+  const data = typeof load === 'function' ? load() : [];
+  const a1 = cleanAnchor(h[fieldName + 'Anchor']);
+  if(!a1)return '';
+  const name1 = a1 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId'], data) || {}).name : null;
+  const primary = prayerAnchorLabel(a1, h[fieldName + 'OffsetMin'], name1, h[fieldName + 'DayOffset']);
+  const combine = cleanTimeCombine(h[fieldName + 'Combine']);
+  const a2 = cleanAnchor(h[fieldName + 'Anchor2']);
+  if(!combine || !a2)return primary;
+  const name2 = a2 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId2'], data) || {}).name : null;
+  const secondary = prayerAnchorLabel(a2, h[fieldName + 'OffsetMin2'], name2, h[fieldName + 'DayOffset2']);
+  const word = combine === 'earlier' ? 'earlier of' : 'later of';
+  return `${word} ${primary} · ${secondary}`;
 }
 
 // PURE: true if the anchor field is set on the habit for this endpoint (i.e.
@@ -243,11 +313,10 @@ function endpointIsDynamic(h, fieldName){
 // anchors don't need a location, unlike prayer anchors).
 function habitUsesHabitAnchors(h){
   if(!h)return false;
-  return Boolean(
-    (h.allowedTimeStartAnchor === 'habit' && h.allowedTimeStartAnchorHabitId)
-    || (h.allowedTimeEndAnchor === 'habit' && h.allowedTimeEndAnchorHabitId)
-    || (h.preferredTimeStartAnchor === 'habit' && h.preferredTimeStartAnchorHabitId)
-    || (h.preferredTimeEndAnchor === 'habit' && h.preferredTimeEndAnchorHabitId)
+  const fields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
+  return fields.some(f =>
+    (h[f + 'Anchor'] === 'habit' && h[f + 'AnchorHabitId'])
+    || (h[f + 'Anchor2'] === 'habit' && h[f + 'AnchorHabitId2'])
   );
 }
 
@@ -345,9 +414,35 @@ function detectHabitAnchorCycle(subjectHid, proposedPatches){
 // own locationId provides the coords. When the anchor is set but the block
 // has no locationId, normalize strips the anchor (defensive).
 
+// PURE: fold dayBase-relative start/end (may be negative or >1440 from
+// offsets / +1d) into a same-day overnight encoding the agenda already
+// understands: both in roughly [0,1440), with end <= start meaning wrap.
+//
+// Examples:
+//   sunrise−8h → sunrise     (−138, 342)  → (1302, 342) overnight
+//   later-of … → sunrise+1d  (1332, 1782) → (1332, 342) overnight
+//   10am → noon              (600, 720)   → (600, 720) same-day
+function foldBlockedMinutes(startMin, endMin){
+  const s0 = Number(startMin);
+  const e0 = Number(endMin);
+  if(!Number.isFinite(s0) || !Number.isFinite(e0))return {startMin:s0, endMin:e0};
+  const dur = e0 - s0;
+  if(dur > 0 && dur < 1440){
+    if(s0 < 0 && e0 <= 1440)return {startMin:s0 + 1440, endMin:e0};
+    if(s0 >= 0 && e0 > 1440)return {startMin:s0, endMin:e0 - 1440};
+    if(s0 >= 0 && e0 <= 1440)return {startMin:s0, endMin:e0};
+  }
+  // Degenerate / multi-day: clock-wrap each side independently.
+  const wrap = m => ((m % 1440) + 1440) % 1440;
+  return {startMin:wrap(s0), endMin:wrap(e0)};
+}
+
 // PURE (with sortSettings global): resolve a blocked time endpoint to minutes-
-// from-midnight for the given day, or null when the block has no anchor.
-// Mirrors resolveHabitTimeField's contract for the agenda callers.
+// relative to dayBase for the given day, or null when the block has no anchor.
+// Supports the same later/earlier-of combine + +1d dayOffset as habits
+// (prayer anchors only — no habit-relative option on blocked times).
+// Callers that need overnight agenda segments should run the pair through
+// foldBlockedMinutes() so negative / >1440 values become a wrap encoding.
 function resolveBlockedTimeMinutes(block, fieldName, dayBase){
   if(!block)return null;
   const anchor = cleanPrayerAnchor(block[fieldName + 'Anchor']);
@@ -359,14 +454,15 @@ function resolveBlockedTimeMinutes(block, fieldName, dayBase){
   const registry = normalizeLocationRegistry(settings.locations);
   const loc = block.locationId ? (registry.find(l => l.id === block.locationId) || null) : null;
   if(!loc)return null;
-  const base = dayBase != null ? dayBase : dayStart(Date.now());
-  const date = new Date(base);
-  const params = prayerParams(settings);
-  const times = prayerTimesFor({latitude:loc.lat, longitude:loc.lng}, date, params);
-  if(!times)return null;
-  const ms = anchorMs(times, anchor, block[fieldName + 'OffsetMin']);
-  if(ms == null)return null;
-  const midnight = new Date(ms);
-  const midnightBase = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate()).getTime();
-  return Math.round((ms - midnightBase) / 60000);
+  const coords = {latitude:loc.lat, longitude:loc.lng};
+  const primary = resolvePrayerExprMinutes(
+    coords, anchor, block[fieldName + 'OffsetMin'], dayBase, block[fieldName + 'DayOffset']
+  );
+  const combine = cleanTimeCombine(block[fieldName + 'Combine']);
+  const anchor2 = cleanPrayerAnchor(block[fieldName + 'Anchor2']);
+  if(!combine || !anchor2)return primary;
+  const secondary = resolvePrayerExprMinutes(
+    coords, anchor2, block[fieldName + 'OffsetMin2'], dayBase, block[fieldName + 'DayOffset2']
+  );
+  return combineResolvedMinutes(primary, secondary, combine);
 }

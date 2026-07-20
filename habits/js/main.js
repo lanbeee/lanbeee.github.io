@@ -691,6 +691,12 @@ document.querySelectorAll('.time-endpoint').forEach(endpoint => {
   const anchorSel = endpoint.querySelector('.time-anchor');
   const offsetInput = endpoint.querySelector('.time-offset');
   const habitSel = endpoint.querySelector('.time-habit');
+  const combineSel = endpoint.querySelector('.time-combine');
+  const anchor2Sel = endpoint.querySelector('.time-anchor2');
+  const offset2Input = endpoint.querySelector('.time-offset2');
+  const habit2Sel = endpoint.querySelector('.time-habit2');
+  const dayBtn = endpoint.querySelector('.time-day-next');
+  const day2Btn = endpoint.querySelector('.time-day-next2');
   if(toggle)toggle.addEventListener('click',()=>{
     const turningDynamic = !endpoint.classList.contains('is-dynamic');
     if(turningDynamic){
@@ -705,18 +711,29 @@ document.querySelectorAll('.time-endpoint').forEach(endpoint => {
     setDetailDirty();
     syncTimeClearBtn();
   });
-  if(anchorSel)anchorSel.addEventListener('change',()=>{
-    setDetailDirty();
-    syncTimeClearBtn();
-    refreshTimeResolvedFor(endpoint);
+  const onDynChange = ()=>{ setDetailDirty(); syncTimeClearBtn(); refreshTimeResolvedFor(endpoint); };
+  if(anchorSel)anchorSel.addEventListener('change', onDynChange);
+  if(offsetInput)offsetInput.addEventListener('input',()=>{ setDetailDirty(); refreshTimeResolvedFor(endpoint); });
+  if(habitSel)habitSel.addEventListener('change', onDynChange);
+  if(combineSel)combineSel.addEventListener('change',()=>{
+    const expr2 = endpoint.querySelector('.time-expr2');
+    if(expr2)expr2.hidden = !cleanTimeCombine(combineSel.value);
+    // Default second anchor to sunrise when first enabling combine.
+    if(cleanTimeCombine(combineSel.value) && anchor2Sel && !anchor2Sel.value)anchor2Sel.value = 'sunrise';
+    onDynChange();
   });
-  if(offsetInput)offsetInput.addEventListener('input',()=>{
-    setDetailDirty();
-    refreshTimeResolvedFor(endpoint);
+  if(anchor2Sel)anchor2Sel.addEventListener('change', onDynChange);
+  if(offset2Input)offset2Input.addEventListener('input',()=>{ setDetailDirty(); refreshTimeResolvedFor(endpoint); });
+  if(habit2Sel)habit2Sel.addEventListener('change', onDynChange);
+  if(dayBtn)dayBtn.addEventListener('click',()=>{
+    const on = dayBtn.getAttribute('aria-pressed') === 'true';
+    dayBtn.setAttribute('aria-pressed', on ? 'false' : 'true');
+    onDynChange();
   });
-  if(habitSel)habitSel.addEventListener('change',()=>{
-    setDetailDirty();
-    refreshTimeResolvedFor(endpoint);
+  if(day2Btn)day2Btn.addEventListener('click',()=>{
+    const on = day2Btn.getAttribute('aria-pressed') === 'true';
+    day2Btn.setAttribute('aria-pressed', on ? 'false' : 'true');
+    onDynChange();
   });
 });
 
@@ -745,13 +762,21 @@ function clearTimeEndpoint(endpoint){
   if(habitSel)habitSel.value = '';
   const habitWrap = endpoint.querySelector('.time-habit-wrap');
   if(habitWrap)habitWrap.hidden = true;
+  const combine = endpoint.querySelector('.time-combine');
+  if(combine)combine.value = '';
+  const expr2 = endpoint.querySelector('.time-expr2');
+  if(expr2)expr2.hidden = true;
+  const dayBtn = endpoint.querySelector('.time-day-next');
+  if(dayBtn)dayBtn.setAttribute('aria-pressed','false');
+  const day2Btn = endpoint.querySelector('.time-day-next2');
+  if(day2Btn)day2Btn.setAttribute('aria-pressed','false');
   syncTimeModeVisibility(endpoint);
 }
 
 // RENDER: refresh the live preview on one endpoint. Merges lastLog/logs/hid
 // from the saved habit so habit-anchor "consumed" previews stay accurate
-// while the form is mid-edit. Delegates to updateTimeResolved for the
-// prayer vs habit branching.
+// while the form is mid-edit. Also syncs habit-picker / +1d / second-expr
+// visibility from the live form state.
 function refreshTimeResolvedFor(endpoint){
   if(!endpoint || !endpoint.classList.contains('is-dynamic'))return;
   const field = endpoint.dataset.field;
@@ -765,12 +790,11 @@ function refreshTimeResolvedFor(endpoint){
       h.logs = loaded.logs;
     }
   }
-  const habitWrap = endpoint.querySelector('.time-habit-wrap');
-  const anchor = cleanAnchor(h[field + 'Anchor']);
-  if(habitWrap){
-    habitWrap.hidden = anchor !== 'habit';
-    if(anchor === 'habit')populateHabitPickerFor(endpoint, field, h);
-  }
+  syncExprControls(endpoint, field, h, '');
+  const combine = cleanTimeCombine(h[field + 'Combine']);
+  const expr2 = endpoint.querySelector('.time-expr2');
+  if(expr2)expr2.hidden = !combine;
+  if(combine)syncExprControls(endpoint, field, h, '2');
   updateTimeResolved(endpoint, field, h);
 }
 $('detail-due-date').addEventListener('input',()=>{
@@ -936,10 +960,29 @@ $('detail-save').addEventListener('click',()=>{
   h.allowedTimeEndAnchorHabitId = h.allowedTimeEndAnchor === 'habit' ? (cleanHabitId(current.allowedTimeEndAnchorHabitId) || null) : null;
   h.preferredTimeStartAnchorHabitId = h.preferredTimeStartAnchor === 'habit' ? (cleanHabitId(current.preferredTimeStartAnchorHabitId) || null) : null;
   h.preferredTimeEndAnchorHabitId = h.preferredTimeEndAnchor === 'habit' ? (cleanHabitId(current.preferredTimeEndAnchorHabitId) || null) : null;
+  // Later/earlier-of + +1d day shift fields.
+  for(const f of ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd']){
+    const combine = cleanTimeCombine(current[f + 'Combine']);
+    const anchor2 = combine ? cleanAnchor(current[f + 'Anchor2']) : null;
+    h[f + 'Combine'] = combine && anchor2 ? combine : null;
+    h[f + 'Anchor2'] = anchor2;
+    h[f + 'OffsetMin2'] = normalizePrayerOffset(current[f + 'OffsetMin2']);
+    h[f + 'AnchorHabitId2'] = anchor2 === 'habit' ? (cleanHabitId(current[f + 'AnchorHabitId2']) || null) : null;
+    h[f + 'DayOffset'] = normalizeAnchorDayOffset(current[f + 'DayOffset']);
+    h[f + 'DayOffset2'] = normalizeAnchorDayOffset(current[f + 'DayOffset2']);
+  }
   // Block: a 'habit' endpoint without a picked habit is incomplete.
   const habitAnchorFields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
-  if(habitAnchorFields.some(f => h[f + 'Anchor'] === 'habit' && !h[f + 'AnchorHabitId'])){
+  if(habitAnchorFields.some(f =>
+    (h[f + 'Anchor'] === 'habit' && !h[f + 'AnchorHabitId'])
+    || (h[f + 'Anchor2'] === 'habit' && !h[f + 'AnchorHabitId2'])
+  )){
     showToast('pick a habit for the dynamic time');
+    return;
+  }
+  // Block: later/earlier-of without a second anchor.
+  if(habitAnchorFields.some(f => cleanTimeCombine(current[f + 'Combine']) && !h[f + 'Anchor2'])){
+    showToast('pick a second time for later/earlier of');
     return;
   }
   // Block: dynamic prayer anchors require at least one location on the habit.
@@ -1147,6 +1190,12 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   const endAnchor = e.target.closest('[data-blocked-end-anchor]');
   const startOffset = e.target.closest('[data-blocked-start-offset]');
   const endOffset = e.target.closest('[data-blocked-end-offset]');
+  const startCombine = e.target.closest('[data-blocked-start-combine]');
+  const endCombine = e.target.closest('[data-blocked-end-combine]');
+  const startAnchor2 = e.target.closest('[data-blocked-start-anchor2]');
+  const endAnchor2 = e.target.closest('[data-blocked-end-anchor2]');
+  const startOffset2 = e.target.closest('[data-blocked-start-offset2]');
+  const endOffset2 = e.target.closest('[data-blocked-end-offset2]');
   if(label)saveBlockedTimePatch(parseInt(label.dataset.blockedLabel,10),{label:cleanTopic(label.value) || 'blocked'});
   if(start)saveBlockedTimePatch(parseInt(start.dataset.blockedStart,10),{start:timeInputToMinutes(start.value)});
   if(end)saveBlockedTimePatch(parseInt(end.dataset.blockedEnd,10),{end:timeInputToMinutes(end.value)});
@@ -1155,11 +1204,45 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   if(endAnchor)saveBlockedTimePatch(parseInt(endAnchor.dataset.blockedEndAnchor,10),{endAnchor:cleanPrayerAnchor(endAnchor.value)});
   if(startOffset)saveBlockedTimePatch(parseInt(startOffset.dataset.blockedStartOffset,10),{startOffsetMin:normalizePrayerOffset(startOffset.value)});
   if(endOffset)saveBlockedTimePatch(parseInt(endOffset.dataset.blockedEndOffset,10),{endOffsetMin:normalizePrayerOffset(endOffset.value)});
+  if(startCombine){
+    const v = cleanTimeCombine(startCombine.value);
+    saveBlockedTimePatch(parseInt(startCombine.dataset.blockedStartCombine,10),{
+      startCombine:v, startAnchor2:v ? (cleanPrayerAnchor(startCombine.closest('.time-dynamic')?.querySelector('.time-anchor2')?.value) || 'sunrise') : null
+    });
+  }
+  if(endCombine){
+    const v = cleanTimeCombine(endCombine.value);
+    saveBlockedTimePatch(parseInt(endCombine.dataset.blockedEndCombine,10),{
+      endCombine:v, endAnchor2:v ? (cleanPrayerAnchor(endCombine.closest('.time-dynamic')?.querySelector('.time-anchor2')?.value) || 'sunrise') : null
+    });
+  }
+  if(startAnchor2)saveBlockedTimePatch(parseInt(startAnchor2.dataset.blockedStartAnchor2,10),{startAnchor2:cleanPrayerAnchor(startAnchor2.value)});
+  if(endAnchor2)saveBlockedTimePatch(parseInt(endAnchor2.dataset.blockedEndAnchor2,10),{endAnchor2:cleanPrayerAnchor(endAnchor2.value)});
+  if(startOffset2)saveBlockedTimePatch(parseInt(startOffset2.dataset.blockedStartOffset2,10),{startOffsetMin2:normalizePrayerOffset(startOffset2.value)});
+  if(endOffset2)saveBlockedTimePatch(parseInt(endOffset2.dataset.blockedEndOffset2,10),{endOffsetMin2:normalizePrayerOffset(endOffset2.value)});
 });
 $('blocked-time-list')?.addEventListener('click',e=>{
   const remove = e.target.closest('[data-blocked-remove]');
   if(remove){
     removeBlockedTime(parseInt(remove.dataset.blockedRemove,10));
+    return;
+  }
+  // +1d toggles on blocked-time expressions.
+  const startDay = e.target.closest('[data-blocked-start-day]');
+  const endDay = e.target.closest('[data-blocked-end-day]');
+  const startDay2 = e.target.closest('[data-blocked-start-day2]');
+  const endDay2 = e.target.closest('[data-blocked-end-day2]');
+  if(startDay || endDay || startDay2 || endDay2){
+    const btn = startDay || endDay || startDay2 || endDay2;
+    const field = (startDay || startDay2) ? 'start' : 'end';
+    const which2 = Boolean(startDay2 || endDay2);
+    const dsKey = which2
+      ? (field === 'start' ? 'blockedStartDay2' : 'blockedEndDay2')
+      : (field === 'start' ? 'blockedStartDay' : 'blockedEndDay');
+    const index = parseInt(btn.dataset[dsKey],10);
+    const patchKey = field + (which2 ? 'DayOffset2' : 'DayOffset');
+    const on = btn.getAttribute('aria-pressed') === 'true';
+    saveBlockedTimePatch(index,{[patchKey]: on ? 0 : 1});
     return;
   }
   // Gear toggle: swap fixed ↔ prayer-anchor mode for one endpoint. Requires
@@ -1175,8 +1258,12 @@ $('blocked-time-list')?.addEventListener('click',e=>{
     const anchorKey = field + 'Anchor';
     const offsetKey = field + 'OffsetMin';
     if(block[anchorKey]){
-      // Leave dynamic → clear the anchor; keep fixed minutes as-is.
-      saveBlockedTimePatch(index,{[anchorKey]:null,[offsetKey]:0});
+      // Leave dynamic → clear the anchor + combine; keep fixed minutes as-is.
+      saveBlockedTimePatch(index,{
+        [anchorKey]:null,[offsetKey]:0,
+        [field + 'Combine']:null,[field + 'Anchor2']:null,[field + 'OffsetMin2']:0,
+        [field + 'DayOffset']:0,[field + 'DayOffset2']:0
+      });
     }else{
       if(!block.locationId){
         showToast('pick a location to use prayer times');

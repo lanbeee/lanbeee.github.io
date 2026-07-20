@@ -1362,9 +1362,23 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .time-endpoint .time-dynamic{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;}
 .time-endpoint .time-dynamic[hidden]{display:none;}
 .time-endpoint .time-fixed[hidden]{display:none;}
-.time-endpoint .time-habit-wrap{display:inline-flex;align-items:center;}
-.time-endpoint .time-habit-wrap[hidden]{display:none;}
-.time-endpoint .time-habit{max-width:140px;}
+.time-endpoint .time-expr{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;}
+.time-endpoint .time-expr2[hidden]{display:none;}
+.time-endpoint .time-habit-wrap,
+.time-endpoint .time-habit-wrap2{display:inline-flex;align-items:center;}
+.time-endpoint .time-habit-wrap[hidden],
+.time-endpoint .time-habit-wrap2[hidden]{display:none;}
+.time-endpoint .time-habit,
+.time-endpoint .time-habit2{max-width:140px;}
+.time-endpoint .time-combine{max-width:110px;}
+.time-endpoint .time-day-next,
+.time-endpoint .time-day-next2{
+  padding:3px 6px;font-size:11px;line-height:1;border-radius:999px;opacity:0.55;
+}
+.time-endpoint .time-day-next[aria-pressed="true"],
+.time-endpoint .time-day-next2[aria-pressed="true"]{
+  opacity:1;background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
+}
 .time-endpoint .time-mode-toggle{
   padding:4px 7px;font-size:12px;line-height:1;border-radius:999px;
 }
@@ -1372,7 +1386,10 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
   background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
 }
 .blocked-time-hours.time-endpoints{flex-wrap:wrap;gap:6px;}
-.blocked-endpoint .time-anchor{max-width:120px;}
+.blocked-endpoint .time-anchor,
+.blocked-endpoint .time-anchor2{max-width:120px;}
+.blocked-endpoint .time-dynamic{flex-direction:column;align-items:flex-start;}
+.blocked-endpoint .time-combine{max-width:110px;}
 .mini-time-input{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text);
   border-radius:var(--radius-sm);padding:5px 6px;font:inherit;font-size:12px;

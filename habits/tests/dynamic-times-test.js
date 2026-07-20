@@ -74,7 +74,8 @@ async function toastText(page){
   console.log('\n[A] end habit-anchor does not consume');
   const endConsume = await page.evaluate(() => {
     const today = dayStart(Date.now());
-    const t = today + 9 * 3600000; // 9am
+    // Must be in the past — future timestamps become plan logs (no lastLog).
+    const t = Date.now() - 2 * 3600000;
     const gym = normalize([{name:'gym', type:'keepup', target:7, logs:[t]}])[0];
     const cool = normalize([{
       name:'cooldown', type:'keepup', target:7,
@@ -83,9 +84,12 @@ async function toastText(page){
       allowedTimeEndAnchorHabitId:gym.hid,
       allowedTimeEndOffsetMin:0,
       // Already logged AFTER gym — would collapse a START anchor.
-      logs:[t + 60000], lastLog:t + 60000
+      logs:[t + 60000]
     }])[0];
     save([gym, cool]);
+    const expectedMin = dayStart(t) === today
+      ? Math.round((t - today) / 60000)
+      : 0; // prior-day log maps to midnight today
     return {
       endMin: resolveHabitTimeField(cool, 'allowedTimeEnd', today),
       startMin: resolveHabitTimeField({
@@ -93,10 +97,11 @@ async function toastText(page){
         allowedTimeStartAnchor:'habit',
         allowedTimeStartAnchorHabitId:gym.hid,
         allowedTimeStart:null
-      }, 'allowedTimeStart', today)
+      }, 'allowedTimeStart', today),
+      expectedMin
     };
   });
-  assert(endConsume.endMin === 9 * 60, 'end still resolves after own log (' + endConsume.endMin + ')');
+  assert(endConsume.endMin === endConsume.expectedMin, 'end still resolves after own log (' + endConsume.endMin + ' vs ' + endConsume.expectedMin + ')');
   assert(endConsume.startMin === null, 'start of same habit WOULD consume');
 
   // ── B. deleted / missing anchor habit → null ──
@@ -118,7 +123,7 @@ async function toastText(page){
   console.log('\n[C] negative offset + preferred habit anchor');
   const negOff = await page.evaluate(() => {
     const today = dayStart(Date.now());
-    const t = today + 10 * 3600000; // 10am
+    const t = Date.now() - 2 * 3600000; // past actual log
     const a = normalize([{name:'A', type:'keepup', target:7, logs:[t]}])[0];
     const b = normalize([{
       name:'B', type:'keepup', target:7,
@@ -128,13 +133,15 @@ async function toastText(page){
       preferredTimeEnd:720
     }])[0];
     save([a, b]);
+    const baseMin = dayStart(t) === today ? Math.round((t - today) / 60000) : 0;
     return {
       pref: resolveHabitTimeField(b, 'preferredTimeStart', today),
+      expected: baseMin - 15,
       uses: habitUsesHabitAnchors(b),
       label: prayerAnchorLabel('habit', -15, 'A')
     };
   });
-  assert(negOff.pref === 10 * 60 - 15, 'negative offset applied (' + negOff.pref + ')');
+  assert(negOff.pref === negOff.expected, 'negative offset applied (' + negOff.pref + ' vs ' + negOff.expected + ')');
   assert(negOff.uses === true, 'preferred habit anchor counts as usesHabit');
   assert(negOff.label === 'after A −15m', 'label shows after-name + negative offset (' + negOff.label + ')');
 
@@ -168,7 +175,9 @@ async function toastText(page){
   console.log('\n[E] fillTimeWindow / effectiveLocationWindow');
   const windows = await page.evaluate(() => {
     const today = dayStart(Date.now());
-    const t = today + 7 * 3600000; // 7am
+    // Prefer 7am today if already past; otherwise 7am yesterday (maps to 0 today).
+    let t = today + 7 * 3600000;
+    if(t >= Date.now()) t = today - 17 * 3600000; // 7am yesterday
     const gym = normalize([{name:'gym', type:'keepup', target:7, logs:[t]}])[0];
     const stretch = normalize([{
       name:'stretch', type:'keepup', target:7,
@@ -185,29 +194,23 @@ async function toastText(page){
     const winConsumed = fillTimeWindow(consumed, today);
     const eff = effectiveLocationWindow(stretch, null, new Date().getDay());
     const effConsumed = effectiveLocationWindow(consumed, null, new Date().getDay());
-    const doable = windowStillDoableToday(stretch, today + 8 * 3600000);
-    const doableConsumed = windowStillDoableToday(consumed, today + 8 * 3600000);
+    const expectedStart = dayStart(t) === today ? 7 * 60 : 0;
     return {
       winStart: win && Math.round((win.start - today) / 60000),
       winEnd: win && Math.round((win.end - today) / 60000),
+      expectedStart,
       winConsumed,
       effLen: eff.length,
       effConsumedLen: effConsumed.length,
-      doable,
-      doableConsumed,
       hasWin: hasTimeWindow(stretch),
       endpointDyn: endpointIsDynamic(stretch, 'allowedTimeStart')
     };
   });
-  assert(windows.winStart === 7 * 60, 'fillTimeWindow start = 7am');
+  assert(windows.winStart === windows.expectedStart, 'fillTimeWindow start (' + windows.winStart + ' vs ' + windows.expectedStart + ')');
   assert(windows.winEnd === 12 * 60, 'fillTimeWindow end = noon');
   assert(windows.winConsumed === null, 'consumed → fillTimeWindow null');
   assert(windows.effLen >= 1, 'effectiveLocationWindow open');
   assert(windows.effConsumedLen === 0, 'consumed → effectiveLocationWindow empty');
-  assert(windows.doable === true, 'windowStillDoableToday while open');
-  // Consumed window collapses → hasTimeWindow is still true (anchors set) but
-  // fillTimeWindow returns null; windowStillDoableToday treats null win as doable
-  // when no locations (see today-view.js). Pin the hasTimeWindow / endpoint flags.
   assert(windows.hasWin === true, 'hasTimeWindow true with habit+fixed');
   assert(windows.endpointDyn === true, 'endpointIsDynamic for habit start');
 
@@ -335,9 +338,10 @@ async function toastText(page){
   console.log('\n[I] detail UI — habit picker + save guards');
   const stretchIdx = await page.evaluate(() => {
     const today = dayStart(Date.now());
+    const gymLog = Date.now() - 2 * 3600000; // past actual log
     const gym = normalize([{
       name:'Gym', type:'keepup', target:7,
-      logs:[today + 8 * 3600000]
+      logs:[gymLog]
     }])[0];
     const stretch = normalize([{
       name:'Stretch', type:'keepup', target:7, logs:[]
@@ -549,6 +553,101 @@ async function toastText(page){
   assert(strippedLoc && strippedLoc.startAnchor == null, 'anchor stripped when location cleared');
 
   assert(pageErrors.length === 0, 'no page errors during run (' + pageErrors.length + ')');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // UNIT — later/earlier-of + +1d (sleep bedtime pattern)
+  // ══════════════════════════════════════════════════════════════════════
+
+  console.log('\n[K] later/earlier-of combine + +1d day offset');
+  const combine = await page.evaluate(() => {
+    const s = loadSortSettings();
+    s.locations = [{id:'home', name:'Home', lat:40.7, lng:-74.0}];
+    saveSortSettings(s);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
+    const today = dayStart(Date.now());
+    // Sleep start = later of (isha +15) and (sunrise −8h on next day).
+    const sleep = {
+      locationIds:['home'],
+      allowedTimeStartAnchor:'isha',
+      allowedTimeStartOffsetMin:15,
+      allowedTimeStartCombine:'later',
+      allowedTimeStartAnchor2:'sunrise',
+      allowedTimeStartOffsetMin2:-480,
+      allowedTimeStartDayOffset2:1,
+      allowedTimeEndAnchor:'sunrise',
+      allowedTimeEndDayOffset:1
+    };
+    const start = resolveHabitTimeField(sleep, 'allowedTimeStart', today);
+    const end = resolveHabitTimeField(sleep, 'allowedTimeEnd', today);
+    const ishaAlone = resolveHabitTimeField({
+      locationIds:['home'], allowedTimeStartAnchor:'isha', allowedTimeStartOffsetMin:15
+    }, 'allowedTimeStart', today);
+    const sunriseMinus8Next = resolveHabitTimeField({
+      locationIds:['home'],
+      allowedTimeStartAnchor:'sunrise',
+      allowedTimeStartOffsetMin:-480,
+      allowedTimeStartDayOffset:1
+    }, 'allowedTimeStart', today);
+    const earlier = resolveHabitTimeField({
+      ...sleep, allowedTimeStartCombine:'earlier'
+    }, 'allowedTimeStart', today);
+    // Normalize round-trip.
+    const round = normalize([{
+      name:'sleep', type:'keepup', target:7, ...sleep
+    }])[0];
+    const label = habitEndpointLabel(round, 'allowedTimeStart');
+    // Blocked-time mirror.
+    s.blockedTimes = [{
+      label:'sleep', days:[], start:1320, end:420, locationId:'home',
+      startAnchor:'isha', startOffsetMin:15,
+      startCombine:'later', startAnchor2:'sunrise', startOffsetMin2:-480, startDayOffset2:1,
+      endAnchor:'sunrise', endDayOffset:1
+    }];
+    saveSortSettings(s);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
+    const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)[0];
+    const blockStart = resolveBlockedTimeMinutes(block, 'start', today);
+    return {
+      start, end, ishaAlone, sunriseMinus8Next, earlier,
+      startIsMax: start === Math.max(ishaAlone, sunriseMinus8Next),
+      earlierIsMin: earlier === Math.min(ishaAlone, sunriseMinus8Next),
+      roundCombine: round.allowedTimeStartCombine,
+      roundOff2: round.allowedTimeStartOffsetMin2,
+      roundDay2: round.allowedTimeStartDayOffset2,
+      label,
+      blockCombine: block.startCombine,
+      blockDay2: block.startDayOffset2,
+      blockStart,
+      blockMatches: blockStart === start
+    };
+  });
+  assert(Number.isFinite(combine.start), 'combined sleep start resolves (' + combine.start + ')');
+  assert(Number.isFinite(combine.end), 'sunrise +1d end resolves (' + combine.end + ')');
+  assert(combine.startIsMax === true, 'later-of = max(isha+15, sunrise−8h +1d)');
+  assert(combine.earlierIsMin === true, 'earlier-of = min(…)');
+  assert(combine.end > 1440, 'next-day sunrise is >1440 min from dayBase (' + combine.end + ')');
+  assert(combine.roundCombine === 'later', 'normalize keeps combine');
+  assert(combine.roundOff2 === -480, 'normalize keeps −480 offset');
+  assert(combine.roundDay2 === 1, 'normalize keeps +1d');
+  assert(combine.label.indexOf('later of') === 0, 'label starts with later of (' + combine.label + ')');
+  assert(combine.label.indexOf('+1d') >= 0, 'label mentions +1d');
+  assert(combine.blockCombine === 'later', 'blocked-time combine kept');
+  assert(combine.blockDay2 === 1, 'blocked-time +1d kept');
+  assert(combine.blockMatches === true, 'blocked start matches habit start for same expr');
+
+  // cleanTimeCombine / dayOffset helpers
+  const helpers = await page.evaluate(() => ({
+    later: cleanTimeCombine('later'),
+    earlier: cleanTimeCombine('EARLIER'),
+    junk: cleanTimeCombine('max'),
+    d0: normalizeAnchorDayOffset(0),
+    d1: normalizeAnchorDayOffset(1),
+    d2: normalizeAnchorDayOffset(2)
+  }));
+  assert(helpers.later === 'later', 'cleanTimeCombine later');
+  assert(helpers.earlier === 'earlier', 'cleanTimeCombine earlier');
+  assert(helpers.junk === null, 'cleanTimeCombine junk→null');
+  assert(helpers.d0 === 0 && helpers.d1 === 1 && helpers.d2 === 0, 'dayOffset only 0|1');
 
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

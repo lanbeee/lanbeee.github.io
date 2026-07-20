@@ -214,22 +214,47 @@ function blockedResolvedLabel(block, field){
   return formatTimeShort(((min % 1440) + 1440) % 1440);
 }
 
+// PURE: <option> list for later/earlier-of combine picker.
+function blockedCombineOptions(selected){
+  const sel = cleanTimeCombine(selected) || '';
+  return [
+    ['', 'just this'],
+    ['later', 'later of…'],
+    ['earlier', 'earlier of…']
+  ].map(([v, label]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${label}</option>`).join('');
+}
+
 // RENDER: one blocked-time endpoint (start or end) — fixed clock OR prayer
-// anchor + offset, toggled by the gear. Mirrors the habit time-endpoint UI
-// but prayer-anchors only (no habit-relative option on settings blocks).
+// anchor + offset (+ optional later/earlier-of second expression), toggled by
+// the gear. Prayer-anchors only (no habit-relative option on settings blocks).
 function blockedEndpointHtml(block, i, field){
   const anchor = cleanPrayerAnchor(block[field + 'Anchor']);
   const isDyn = Boolean(anchor);
   const fixedVal = minutesToTimeInput(block[field]);
   const offsetVal = normalizePrayerOffset(block[field + 'OffsetMin']) || '';
+  const combine = cleanTimeCombine(block[field + 'Combine']);
+  const anchor2 = cleanPrayerAnchor(block[field + 'Anchor2']);
+  const offset2Val = normalizePrayerOffset(block[field + 'OffsetMin2']) || '';
+  const dayOn = normalizeAnchorDayOffset(block[field + 'DayOffset']) === 1;
+  const day2On = normalizeAnchorDayOffset(block[field + 'DayOffset2']) === 1;
   const resolved = isDyn ? blockedResolvedLabel(block, field) : '';
   const aria = escapeHtml(block.label) + ' ' + field;
   return `<div class="time-endpoint blocked-endpoint${isDyn ? ' is-dynamic' : ''}" data-blocked-field="${field}" data-blocked-index="${i}">
     <input type="time" class="time-fixed" step="900" data-blocked-${field}="${i}" aria-label="${aria}" value="${fixedVal}"${isDyn ? ' hidden' : ''} />
     <div class="time-dynamic"${isDyn ? '' : ' hidden'}>
-      <select class="time-anchor mini-select" data-blocked-${field}-anchor="${i}" aria-label="${aria} anchor">${blockedAnchorOptions(anchor)}</select>
-      <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset="${i}" aria-label="${aria} offset minutes" value="${offsetVal}" />
-      <span class="time-offset-sign min">min</span>
+      <div class="time-expr">
+        <select class="time-anchor mini-select" data-blocked-${field}-anchor="${i}" aria-label="${aria} anchor">${blockedAnchorOptions(anchor)}</select>
+        <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset="${i}" aria-label="${aria} offset minutes" value="${offsetVal}" />
+        <span class="time-offset-sign min">min</span>
+        <button type="button" class="time-day-next mini-text-btn" data-blocked-${field}-day="${i}" aria-pressed="${dayOn ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day">+1d</button>
+      </div>
+      <select class="time-combine mini-select" data-blocked-${field}-combine="${i}" aria-label="${aria} combine">${blockedCombineOptions(combine)}</select>
+      <div class="time-expr time-expr2"${combine ? '' : ' hidden'}>
+        <select class="time-anchor2 mini-select" data-blocked-${field}-anchor2="${i}" aria-label="${aria} second anchor">${blockedAnchorOptions(anchor2)}</select>
+        <input type="number" class="time-offset2 mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset2="${i}" aria-label="${aria} second offset minutes" value="${offset2Val}" />
+        <span class="time-offset-sign min">min</span>
+        <button type="button" class="time-day-next2 mini-text-btn" data-blocked-${field}-day2="${i}" aria-pressed="${day2On ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day">+1d</button>
+      </div>
       <span class="time-resolved" aria-live="polite">${escapeHtml(resolved)}</span>
     </div>
     <button type="button" class="time-mode-toggle mini-text-btn" data-blocked-${field}-mode="${i}" title="use prayer time" aria-label="use prayer time">⚙</button>

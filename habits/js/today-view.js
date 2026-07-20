@@ -484,8 +484,10 @@ function blockLocationAtMinute(blocks,minute,weekday){
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
     if(!block.locationId)continue;
-    const s = resolveBlockedTimeMinutes(block,'start') ?? block.start;
-    const e = resolveBlockedTimeMinutes(block,'end') ?? block.end;
+    const rawS = resolveBlockedTimeMinutes(block,'start') ?? block.start;
+    const rawE = resolveBlockedTimeMinutes(block,'end') ?? block.end;
+    const {startMin:s, endMin:e} = typeof foldBlockedMinutes === 'function'
+      ? foldBlockedMinutes(rawS, rawE) : {startMin:rawS, endMin:rawE};
     const inSimple = e > s && minute >= s && minute < e;
     const inOvernight = e <= s && (minute >= s || minute < e);
     if(inSimple || inOvernight)return block.locationId;
@@ -503,8 +505,10 @@ function dayFirstOpenMinute(blocks,weekday){
   let latestEarlyEnd = 0;
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
-    const s = resolveBlockedTimeMinutes(block,'start') ?? block.start;
-    const e = resolveBlockedTimeMinutes(block,'end') ?? block.end;
+    const rawS = resolveBlockedTimeMinutes(block,'start') ?? block.start;
+    const rawE = resolveBlockedTimeMinutes(block,'end') ?? block.end;
+    const {startMin:s, endMin:e} = typeof foldBlockedMinutes === 'function'
+      ? foldBlockedMinutes(rawS, rawE) : {startMin:rawS, endMin:rawE};
     // Overnight block wrapping past midnight counts its morning tail.
     if(e <= s){ // overnight — its tail ends at `e` in the morning
       if(e > latestEarlyEnd)latestEarlyEnd = e;
@@ -551,8 +555,15 @@ function agendaBlockedIntervals(todayKey,settings,start,end){
   return normalizeBlockedTimes(settings.blockedTimes).flatMap(block=>{
     if(block.days.length && !block.days.includes(day))return [];
     // Resolve dynamic start/end (prayer anchors only on blocked times).
-    const startMin = resolveBlockedTimeMinutes(block,'start',dayBase) ?? block.start;
-    const endMin = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
+    // Fold dayBase-relative values (negative / >1440 from offsets or +1d)
+    // into overnight clock form so a sunrise−8h → sunrise block becomes
+    // evening→midnight + midnight→sunrise on every day it applies.
+    const rawStart = resolveBlockedTimeMinutes(block,'start',dayBase) ?? block.start;
+    const rawEnd = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
+    const folded = typeof foldBlockedMinutes === 'function'
+      ? foldBlockedMinutes(rawStart, rawEnd) : {startMin:rawStart, endMin:rawEnd};
+    const startMin = folded.startMin;
+    const endMin = folded.endMin;
     if(isBlockedCancelled(todayKey,block.label,startMin,endMin,settings))return [];
     const locationId = block.locationId || null;
     const blockStart = start + startMin * 60000;
