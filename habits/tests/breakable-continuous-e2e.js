@@ -833,6 +833,66 @@ async function breakableFillRows(page, name){
   assert(fingerprint.changed, 'fingerprint must change when breakable progress minutes change');
   console.log('  fingerprint includes progress minutes: OK');
 
+  // Week-on-home timeline: blocked lunch before Work — Work is still the first
+  // breakable instance today and must get the slider (lunch must not steal it).
+  console.log('  week timeline lunch-then-work...');
+  const weekClock = at(8, 0);
+  await freezeClock(page, weekClock);
+  await seedAndReload(page, {
+    clockTs:weekClock,
+    settings:defaultSettings({
+      showWeekOnHome:true,
+      blockedTimes:[
+        { label:'sleep', days:[], start:0, end:420 },
+        { label:'lunch', days:[], start:720, end:780 }
+      ]
+    }),
+    data:[
+      base({
+        name:'Week work',
+        type:'keepup',
+        target:1,
+        durationMinutes:420,
+        breakable:true,
+        minChunkMinutes:60,
+        dueDate:null,
+        lastLog:at(0, 0) - 2 * 86400000,
+        logs:[at(0, 0) - 2 * 86400000],
+        priority:0
+      })
+    ]
+  });
+  // Wait for full (non-progressive) week paint.
+  await page.waitForFunction(() => {
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Week work'));
+    return cards.length >= 1 && !document.getElementById('list')?.classList.contains('is-progressive');
+  }, null, { timeout:8000 });
+  const weekUi = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Week work'));
+    const listText = document.getElementById('list')?.innerText || '';
+    const lunchAt = listText.toLowerCase().indexOf('lunch');
+    const workAt = listText.indexOf('Week work');
+    return {
+      cardCount:cards.length,
+      sliders:cards.map(c => !!c.querySelector('.breakable-slider')),
+      trails:cards.map(c => !!c.querySelector('.ting-trail')),
+      lunchBeforeWork:lunchAt >= 0 && workAt >= 0 ? lunchAt < workAt : null,
+      hasLunch:lunchAt >= 0
+    };
+  });
+  assert(weekUi.cardCount >= 1, `Week work should appear, got ${weekUi.cardCount}`);
+  assert(weekUi.sliders.filter(Boolean).length === 1,
+    `exactly one Week work slider (first today timeline instance), got ${JSON.stringify(weekUi.sliders)}`);
+  assert(weekUi.sliders[0] === true,
+    `first Week work card on the timeline must have the slider, got ${JSON.stringify(weekUi)}`);
+  if(weekUi.cardCount > 1){
+    assert(weekUi.sliders.slice(1).every(v => v === false),
+      `later Week work chunks must keep trail, got ${JSON.stringify(weekUi.sliders)}`);
+  }
+  console.log('  week lunch-then-work first breakable has slider: OK');
+
   // ═══════════════════════════════════════════════════════════
   // H. Detail toggle persistence
   // ═══════════════════════════════════════════════════════════

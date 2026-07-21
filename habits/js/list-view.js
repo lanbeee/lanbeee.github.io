@@ -1497,11 +1497,49 @@ function render(opts){
   // not part of the first paint.
   const earlyMap = deferAgenda ? new Map() : homeEarlyMap(data,sortSettings);
   const visibleSet = new Set(indices);
-  // Only the first today instance of a breakable habit gets the progress slider;
-  // later chunk cards keep the activity trail and still log via suggested chunk.
-  const breakableSliderShown = new Set();
+  // Earliest today-timeline fill/scheduled row per breakable habit. The slider
+  // belongs on that row only — not on later chunks, and not on a pinned/
+  // leftover card that happens to render earlier in the DOM.
+  const breakablePrimaries = new Map();
+  const breakableCatchupShown = new Set();
 
-  const appendHabitCard = (realIdx,agendaRow,earlyReasonText,opts={})=>{
+  const noteBreakablePrimary = (realIdx,row)=>{
+    if(realIdx == null || !row || !data[realIdx]?.breakable)return;
+    const prev = breakablePrimaries.get(realIdx);
+    if(!prev){
+      breakablePrimaries.set(realIdx,row);
+      return;
+    }
+    if(Number.isFinite(row.start) && Number.isFinite(prev.start) && row.start < prev.start){
+      breakablePrimaries.set(realIdx,row);
+    }
+  };
+
+  const isBreakableSliderRow = (realIdx,agendaRow)=>{
+    const h = data[realIdx];
+    if(!h || !h.breakable)return false;
+    const primary = breakablePrimaries.get(realIdx);
+    if(primary){
+      if(!agendaRow)return false;
+      // Start time uniquely identifies the today timeline instance (chunkIndex
+      // alone collides across week days — every day can have chunkIndex 0).
+      if(Number.isFinite(primary.start) && Number.isFinite(agendaRow.start)){
+        return primary.start === agendaRow.start;
+      }
+      if(primary.chunkIndex != null && agendaRow.chunkIndex != null){
+        return primary.chunkIndex === agendaRow.chunkIndex;
+      }
+      return primary === agendaRow;
+    }
+    // No today timeline placement (progressive paint / unplaced leftover):
+    // allow one catch-up slider on a lone card.
+    if(agendaRow != null)return false;
+    if(breakableCatchupShown.has(realIdx))return false;
+    breakableCatchupShown.add(realIdx);
+    return true;
+  };
+
+  const appendHabitCard = (realIdx,agendaRow,earlyReasonText)=>{
     const h = data[realIdx];
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
@@ -1512,12 +1550,7 @@ function render(opts){
     const earlyPill = earlyCardPill(earlyReasonText || '');
     const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
-    let showBreakableSlider = false;
-    if(h.breakable){
-      const eligible = opts.isPrimaryBreakable !== false;
-      showBreakableSlider = eligible && !breakableSliderShown.has(realIdx);
-      if(showBreakableSlider)breakableSliderShown.add(realIdx);
-    }
+    const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
     const visualHtml = showBreakableSlider
       ? cardBreakableSlider(h)
       : `<div class="ting-trail">${trail}</div>`;
@@ -1636,6 +1669,7 @@ function render(opts){
         if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
           weekAssigned.add(row.i);
           if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
+          if(day.isToday)noteBreakablePrimary(row.i,row);
         }
       }
       return {day,seq};
@@ -1676,9 +1710,7 @@ function render(opts){
         if(data[row.i]?.pinned)continue;
         const cat = todayCategory(data[row.i],sortSettings);
         const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
-        // Slider only on the first today instance; later days / later chunks
-        // keep the trail and still pulse suggested chunks.
-        appendHabitCard(row.i,row,earlyText,{ isPrimaryBreakable:Boolean(day.isToday) });
+        appendHabitCard(row.i,row,earlyText);
       }
     });
 
@@ -1714,6 +1746,7 @@ function render(opts){
       if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
       if(!chunksByIndex.has(row.i))chunksByIndex.set(row.i,[]);
       chunksByIndex.get(row.i).push(row);
+      noteBreakablePrimary(row.i,row);
     });
     // An upcoming item is pulled into "today" only when it BOTH passes the
     // do-early gate (allowed today + flexibility + its target day is over-loaded)
@@ -1809,9 +1842,7 @@ function render(opts){
             }
             prevTodayLocId = cLocId || prevTodayLocId;
             const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
-            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '',{
-              isPrimaryBreakable:ci === 0
-            });
+            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '');
           });
           return;
         }
