@@ -28,10 +28,10 @@
 //   - asserts fills stay outside blocks, habits land in resolved windows,
 //     and a manual plan still fits when the planner left a due habit unplaced
 //
-// Plus a big breakable task under the same tight daily budget:
-//   - 90m breakable / min chunk 30 shares 35m residual slack with dailies
-//   - dailies still land all 7 days; breakable splits into valid pieces
-//   - after a 40m partial log, leftover 50m re-packs without starving dailies
+// Plus breakable work under the same tight daily budget:
+//   - 90m breakable *task* shares residual slack with dailies (one-shot pool)
+//   - 420m breakable *daily keepup* (Work deep) must rhythm today+week —
+//     not land once on tomorrow as a continuous block (the reported bug)
 //
 // Freeze the clock to Monday 06:00 so today is clipped mid-morning while
 // future days open at midnight — this is exactly when a bogus midnight
@@ -1655,6 +1655,168 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
   check('partial leftover respects min-chunk floor / finish-up',
     breakableTogether.partial.floorViolations.length === 0,
     JSON.stringify(breakableTogether.partial.floorViolations));
+
+  // ── Eighth scenario: long daily breakable keepup (work 7h/day) ─────────
+  // Reproduces: expanded capacity + packed dailies, breakable daily work
+  // must still land TODAY (afternoon clip) and every other day — not once
+  // on the emptiest tomorrow as a one-shot continuous block.
+  console.log('\n[tight-rhythm + breakable daily] long work keepup every day incl. today');
+  const longDaily = await page.evaluate(({ frozen, dailies }) => {
+    const RealDate = Date;
+    function FrozenDate(...args) {
+      if (args.length === 0) return new RealDate(frozen);
+      return new RealDate(...args);
+    }
+    FrozenDate.now = () => frozen;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate, RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const orig = globalThis.Date;
+    globalThis.Date = FrozenDate;
+
+    try {
+      // Monday 13:00 — afternoon clip, like the reported "already 1pm" case.
+      const afternoon = frozen + 7 * 3600000; // 06:00 + 7h = 13:00
+      globalThis.Date.now = () => afternoon;
+      function FrozenAfternoon(...args) {
+        if (args.length === 0) return new RealDate(afternoon);
+        return new RealDate(...args);
+      }
+      FrozenAfternoon.now = () => afternoon;
+      FrozenAfternoon.parse = RealDate.parse;
+      FrozenAfternoon.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenAfternoon, RealDate);
+      FrozenAfternoon.prototype = RealDate.prototype;
+      globalThis.Date = FrozenAfternoon;
+
+      const ago = frozen - 2 * 86400000;
+      function mk(props) {
+        return Object.assign({
+          type: 'keepup', flexibilityDays: 0, durationMinutes: 15,
+          allowedTimeStart: null, allowedTimeEnd: null,
+          preferredTimeStart: null, preferredTimeEnd: null,
+          lastLog: ago, logs: [ago], emoji: '', pinned: false, sample: false,
+          snoozedUntil: null, topics: [], allowedWeekdays: [], allowedMonthDays: [],
+          preferredWeekdays: [], preferredMonthDays: [], dueDate: null, eventTime: null,
+          hardDue: false, markDone: true, createdAt: frozen, priority: 2, locationIds: [],
+          breakable: false, minChunkMinutes: 30
+        }, props);
+      }
+
+      const raw = [
+        mk({ name: 'D1 stretch', target: 1, durationMinutes: 15, priority: 1 }),
+        mk({ name: 'D2 meditate', target: 1, durationMinutes: 15, priority: 1 }),
+        mk({ name: 'D3 journal', target: 1, durationMinutes: 15, priority: 2 }),
+        mk({ name: 'D4 floss', target: 1, durationMinutes: 10, priority: 2 }),
+        mk({ name: 'D5 vitamins', target: 1, durationMinutes: 5, priority: 2 }),
+        mk({ name: 'D6 review', target: 1, durationMinutes: 15, priority: 2 }),
+        // 7h daily work — breakable, min chunk 60m. Must rhythm every day.
+        mk({
+          name: 'Work deep',
+          target: 1,
+          durationMinutes: 420,
+          breakable: true,
+          minChunkMinutes: 60,
+          priority: 1,
+          lastLog: ago,
+          logs: [ago]
+        })
+      ];
+
+      // Expanded capacity (user said they raised it) — still tight vs 7h+dailies.
+      const settings = Object.assign({}, loadSortSettings(), {
+        availabilityMinutes: [540, 540, 540, 540, 540, 540, 540], // 9h/day
+        availabilityOverrides: {},
+        blockedTimes: [],
+        showWeekOnHome: true,
+        showDueHabitsInAgenda: true,
+        showPlannedItemsInAgenda: true,
+        showScheduledTasksInAgenda: true,
+        showDueTasksInAgenda: true,
+        locations: [],
+        lastKnownLocationId: null,
+        agendaOptimizer: false
+      });
+
+      const data = normalize(raw);
+      const week = buildWeekAgenda(data, settings, 7);
+      const byDay = week.days.map((d, i) => {
+        const fills = (d.timeline || []).filter(r => r.kind === 'fill');
+        const workPieces = fills
+          .filter(r => r.h && r.h.name === 'Work deep')
+          .map(r => Math.round((r.end - r.start) / 60000));
+        const names = fills.map(r => r.h.name);
+        return {
+          day: i,
+          isToday: !!d.isToday,
+          rem: d.remainingMinutes,
+          used: d.usedMinutes,
+          workPieces,
+          workMinutes: workPieces.reduce((s, m) => s + m, 0),
+          dailiesMissing: dailies.filter(n => !names.includes(n)),
+          hasWork: workPieces.length > 0
+        };
+      });
+
+      const workDays = byDay.filter(d => d.hasWork).map(d => d.day);
+      const today = byDay[0];
+      const floorViolations = [];
+      for (const d of byDay) {
+        let left = 420;
+        for (const p of d.workPieces) {
+          if (left >= 60 && p < 60) floorViolations.push({ day: d.day, left, p });
+          left -= p;
+        }
+      }
+
+      return {
+        byDay,
+        workDays,
+        todayHasWork: today.hasWork,
+        todayWorkMinutes: today.workMinutes,
+        todayPieces: today.workPieces,
+        daysWithWork: workDays.length,
+        allDailiesOk: byDay.every(d => d.dailiesMissing.length === 0),
+        floorViolations,
+        isBreakableRhythm: typeof isBreakableRhythmHabit === 'function'
+          ? isBreakableRhythmHabit(data.find(h => h.name === 'Work deep'))
+          : null,
+        todayBudget: typeof breakableBudgetMinutes === 'function'
+          ? breakableBudgetMinutes(data.find(h => h.name === 'Work deep'), dayStart(afternoon))
+          : null
+      };
+    } finally {
+      globalThis.Date = orig;
+    }
+  }, { frozen: FROZEN, dailies: DAILIES });
+
+  console.log('  long-daily:', JSON.stringify({
+    todayHasWork: longDaily.todayHasWork,
+    todayPieces: longDaily.todayPieces,
+    daysWithWork: longDaily.daysWithWork,
+    workDays: longDaily.workDays,
+    todayBudget: longDaily.todayBudget
+  }));
+
+  check('Work deep is classified as a breakable rhythm habit',
+    longDaily.isBreakableRhythm === true,
+    `isBreakableRhythm=${longDaily.isBreakableRhythm}`);
+  check('Work deep daily budget is full 420m (not lifetime-drained)',
+    longDaily.todayBudget === 420,
+    `budget=${longDaily.todayBudget}`);
+  check('Work deep places on today (afternoon), not only tomorrow',
+    longDaily.todayHasWork === true,
+    `todayPieces=${JSON.stringify(longDaily.todayPieces)} workDays=${JSON.stringify(longDaily.workDays)}`);
+  check('Work deep places on most weekdays (rhythm daily, not one-shot)',
+    longDaily.daysWithWork >= 5,
+    `daysWithWork=${longDaily.daysWithWork} workDays=${JSON.stringify(longDaily.workDays)}`);
+  check('Work deep never schedules a piece < min chunk while day budget remains ≥ min',
+    longDaily.floorViolations.length === 0,
+    JSON.stringify(longDaily.floorViolations));
+  check('packed dailies still place every day alongside long Work deep',
+    longDaily.allDailiesOk === true,
+    JSON.stringify(longDaily.byDay.map(d => ({ day: d.day, missing: d.dailiesMissing }))));
 
   await browser.close();
   if (failures.length) {

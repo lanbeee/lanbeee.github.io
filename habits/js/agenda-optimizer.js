@@ -192,19 +192,28 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     for(const c of candidates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(c.pinned && !state.isTodayDay)continue;
-      const rhythmHabit = !!(c.h && c.h.type !== 'task' && !c.h.breakable
+      const rhythmHabit = !!(c.h && c.h.type !== 'task'
         && Number.isFinite(Number(c.h && c.h.target)));
+      const breakableRhythm = !!(c.h && c.h.breakable && rhythmHabit);
       if(rhythmHabit && virtualLogs.has(c.i)){
         const vLog = virtualLogs.get(c.i);
         if(typeof rhythmEligibleOnDay === 'function'
           && !rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday))continue;
       }
-      // Breakables may already have a continuous piece elsewhere; still allow
-      // a continuous attempt on this day when leftover work remains.
-      if(c.h && c.h.breakable){
+      if(c.h && c.h.breakable && c.h.type === 'task'){
         const left = typeof breakableMinutesLeft === 'function'
           ? breakableMinutesLeft(c.h,c.i,dayStates)
           : (typeof remainingDurationMinutes === 'function' ? remainingDurationMinutes(c.h) : 0);
+        if(left <= 0)continue;
+        dayCands.push(c);
+        continue;
+      }
+      if(breakableRhythm){
+        if(state.placed.has(c.i))continue;
+        const left = typeof breakableMinutesLeft === 'function'
+          ? breakableMinutesLeft(c.h,c.i,state)
+          : (typeof breakableBudgetMinutes === 'function'
+            ? breakableBudgetMinutes(c.h,state.dayBase) : 0);
         if(left <= 0)continue;
         dayCands.push(c);
         continue;
@@ -238,29 +247,59 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       });
       total += 1;
       const c = candidates.find(x=>x.i === fill.i);
-      if(c && c.h && c.h.type !== 'task' && !c.h.breakable){
+      if(c && c.h && c.h.type !== 'task'
+        && Number.isFinite(Number(c.h.target))){
         virtualLogs.set(c.i,state.dayBase);
       }
     }
   }
-  // Adaptive leftover pass for breakables that still have remaining work
-  // after the continuous ILP attempts (min-floor splits across gaps/days).
-  if(typeof placeBreakableAcrossWeek === 'function'){
-    const registry = dayStates[0] ? dayStates[0].registry
-      : (typeof normalizeLocationRegistry === 'function'
-        ? normalizeLocationRegistry(settings.locations) : []);
-    const mode = dayStates[0] ? dayStates[0].mode
-      : (typeof normalizeTravelMode === 'function'
-        ? normalizeTravelMode(settings.defaultTravelMode) : 'walk');
-    const weights = typeof resolveAgendaScoreWeights === 'function'
-      ? resolveAgendaScoreWeights(settings) : null;
-    const todayBase = dayStates[0] ? dayStates[0].dayBase
-      : (typeof dayStart === 'function' ? dayStart(Date.now()) : Date.now());
-    for(const c of candidates){
-      if(!c || !c.h || !c.h.breakable)continue;
+  // Leftover: tasks keep cross-day adaptive pool; rhythm breakables fill
+  // remaining gaps on each eligible day with that day's budget.
+  const registry = dayStates[0] ? dayStates[0].registry
+    : (typeof normalizeLocationRegistry === 'function'
+      ? normalizeLocationRegistry(settings.locations) : []);
+  const mode = dayStates[0] ? dayStates[0].mode
+    : (typeof normalizeTravelMode === 'function'
+      ? normalizeTravelMode(settings.defaultTravelMode) : 'walk');
+  const weights = typeof resolveAgendaScoreWeights === 'function'
+    ? resolveAgendaScoreWeights(settings) : null;
+  const todayBase = dayStates[0] ? dayStates[0].dayBase
+    : (typeof dayStart === 'function' ? dayStart(Date.now()) : Date.now());
+  for(const c of candidates){
+    if(!c || !c.h || !c.h.breakable)continue;
+    if(c.h.type === 'task' && typeof placeBreakableAcrossWeek === 'function'){
       total += placeBreakableAcrossWeek(c,dayStates,settings,null,{
         todayBase,registry,mode,weights,candidates,pinned:c.pinned === true
       });
+      continue;
+    }
+    if(typeof isBreakableRhythmHabit === 'function' && isBreakableRhythmHabit(c.h)
+      && typeof placeBreakableSessions === 'function'){
+      let vLog = virtualLogs.has(c.i) ? virtualLogs.get(c.i) : c.h.lastLog;
+      for(const state of dayStates){
+        if(c.eligible && !c.eligible.has(state.dayBase))continue;
+        if(c.pinned && !state.isTodayDay)continue;
+        if(state.placed.has(c.i)){
+          vLog = state.dayBase;
+          continue;
+        }
+        if(vLog != null && typeof rhythmEligibleOnDay === 'function'
+          && !rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday))continue;
+        const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+        const before = state.fills.length;
+        if(!placeBreakableSessions(state,fill,{settings,weights,allowNetwork:true}))continue;
+        const added = state.fills.slice(before);
+        for(const entry of added){
+          state.day.agendaItems.push({
+            h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:entry.fit.locId,
+            chunkMinutes:entry.fit.durMin,
+            chunkIndex:entry.fill.chunkIndex != null ? entry.fill.chunkIndex : null
+          });
+          total += 1;
+        }
+        vLog = state.dayBase;
+        virtualLogs.set(c.i,state.dayBase);
+      }
     }
   }
   return total >= 0;

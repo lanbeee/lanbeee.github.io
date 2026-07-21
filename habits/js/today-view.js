@@ -753,10 +753,20 @@ function placedBreakableMinutes(state,habitIndex){
 
 /** PURE: remaining breakable work not yet placed on this day (or across dayStates). */
 function breakableMinutesLeft(h,habitIndex,stateOrStates){
-  const totalLeft = typeof remainingDurationMinutes === 'function'
-    ? remainingDurationMinutes(h) : clampDuration(h && h.durationMinutes);
   const states = Array.isArray(stateOrStates) ? stateOrStates
     : (stateOrStates ? [stateOrStates] : []);
+  // Tasks: lifetime budget shared across days. Rhythm keepup/reduce: per-day budget.
+  const dayBase = states.length === 1 && states[0] && states[0].dayBase != null
+    ? states[0].dayBase
+    : null;
+  const totalLeft = typeof breakableBudgetMinutes === 'function'
+    ? (h && h.type === 'task'
+      ? breakableBudgetMinutes(h)
+      : breakableBudgetMinutes(h, dayBase != null ? dayBase : (typeof dayStart === 'function' ? dayStart(Date.now()) : Date.now())))
+    : (typeof remainingDurationMinutes === 'function'
+      ? remainingDurationMinutes(h) : clampDuration(h && h.durationMinutes));
+  // For one-shot task placement across many days, subtract all placed pieces.
+  // For a single-day state (rhythm daily), only subtract that day's commits.
   const placed = states.reduce((sum,st)=>sum + placedBreakableMinutes(st,habitIndex),0);
   return Math.max(0,totalLeft - placed);
 }
@@ -1517,27 +1527,22 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   let totalAssigned = 0;
   for(const c of candidates){
     const pinned = c.pinned === true;
-    // Breakables: continuous-first across the week, then adaptive largest pieces.
-    // Prefer keeping later pieces on the same day when that day still has room.
-    if(c.h && c.h.breakable){
+    // Breakable tasks: one-shot continuous-first pool across the week.
+    // Breakable keepup/reduce: still rhythm (daily/sparse) with a fresh
+    // duration budget each eligible day — continuous-first / adaptive split
+    // within that day only (so "work 7h every day" lands today + every day,
+    // not once on the emptiest tomorrow).
+    if(c.h && c.h.breakable && c.h.type === 'task'){
       totalAssigned += placeBreakableAcrossWeek(c,dayStates,settings,locHints,{
         todayBase,registry,mode,weights,candidates,pinned
       });
       continue;
     }
-    // Rhythm habits (target-based keepup/reduce without chunks) place on
-    // every eligible day their rhythm allows, not just one. The virtual
-    // lastLog advances after each commit so target:1 → every day, target:3
-    // → every third day, etc. Tasks keep one-shot best-day scoring.
     const rhythmHabit = !!(c.h && c.h.type !== 'task'
       && Number.isFinite(Number(c.h && c.h.target)));
+    const breakableRhythm = !!(c.h && c.h.breakable && rhythmHabit);
     let virtualLastLog = rhythmHabit && c.h ? c.h.lastLog : null;
     let rhythmPlacementCount = 0;
-    // Daily (and denser) rhythms must walk the week in order — shopping for a
-    // globally "best" first day skips earlier feasible days forever once
-    // virtualLastLog advances past them. Sparse rhythms (target > 1) keep
-    // best-day scoring so a weekly far habit can still defer to cluster with
-    // a co-located partner later in the week.
     const dailyRhythm = rhythmHabit && Number(c.h && c.h.target) <= 1;
     if(dailyRhythm){
       for(const state of dayStates){
@@ -1556,6 +1561,24 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(!isScarceScore(c.scarcity)){
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
           if(spare.length)dayOpts.spareWindows = spare;
+        }
+        if(breakableRhythm){
+          const before = state.fills.length;
+          if(placeBreakableSessions(state,fill,{...dayOpts, allowNetwork:true})){
+            const added = state.fills.slice(before);
+            for(const entry of added){
+              state.day.agendaItems.push({
+                h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity,
+                locationId:entry.fit.locId,
+                chunkMinutes:entry.fit.durMin,
+                chunkIndex:entry.fill.chunkIndex != null ? entry.fill.chunkIndex : null
+              });
+              totalAssigned += 1;
+            }
+            virtualLastLog = state.dayBase;
+            rhythmPlacementCount += 1;
+          }
+          continue;
         }
         const fit = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
         if(!fit)continue;
@@ -1590,6 +1613,31 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
           if(spare.length)dayOpts.spareWindows = spare;
         }
+        if(breakableRhythm){
+          // Dry-run continuous-first / largest piece for scoring without commit.
+          const clone = clonePlacementState(state);
+          const probeFill = {...fill};
+          const placed = placeBreakableSessions(clone,probeFill,{...dayOpts, allowNetwork:true});
+          if(!placed || !clone.fills.length)continue;
+          const first = clone.fills[clone.fills.length - 1];
+          const fitProbe = first.fit;
+          const travel = fitProbe.edge.seconds || 0;
+          const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
+          const coLocHint = colocateHintBonus(state,fitProbe.locId,c.i,locHints,registry,mode);
+          const score = scoreAgendaPlacement({
+            travelSeconds:travel,
+            clusterBonus,
+            coLocHint,
+            dayOffsetPenalty:dayOpts.dayOffsetPenalty,
+            asapDelayMin:0,
+            scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
+            preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
+            urgency:c.urgency
+          },weights);
+          const cand = { state, fill, dayOpts, score, breakable:true };
+          if(!best || score < best.score)best = cand;
+          continue;
+        }
         const fitProbe = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
         if(!fitProbe)continue;
         const travel = fitProbe.edge.seconds || 0;
@@ -1609,11 +1657,26 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(!best || score < best.score)best = cand;
       }
       if(!best)break;
-      commitPlacement(best.state,best.fill,best.fit);
-      best.state.day.agendaItems.push({
-        h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity, locationId:best.fit.locId
-      });
-      totalAssigned += 1;
+      if(best.breakable){
+        const before = best.state.fills.length;
+        if(!placeBreakableSessions(best.state,best.fill,{...best.dayOpts, allowNetwork:true}))break;
+        const added = best.state.fills.slice(before);
+        for(const entry of added){
+          best.state.day.agendaItems.push({
+            h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity,
+            locationId:entry.fit.locId,
+            chunkMinutes:entry.fit.durMin,
+            chunkIndex:entry.fill.chunkIndex != null ? entry.fill.chunkIndex : null
+          });
+          totalAssigned += 1;
+        }
+      }else{
+        commitPlacement(best.state,best.fill,best.fit);
+        best.state.day.agendaItems.push({
+          h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity, locationId:best.fit.locId
+        });
+        totalAssigned += 1;
+      }
       if(rhythmHabit){
         virtualLastLog = best.state.dayBase;
         rhythmPlacementCount += 1;
@@ -1760,7 +1823,8 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
   for(const c of candidates){
     if(!c || !c.h)continue;
-    if(c.h.breakable){
+    // Breakable tasks: one-shot leftover pool across days.
+    if(c.h.breakable && c.h.type === 'task'){
       gained += placeBreakableAcrossWeek(c,dayStates,settings,null,{
         todayBase:dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now()),
         registry:dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations),
@@ -1773,6 +1837,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings){
     }
     const rhythmHabit = !!(c.h.type !== 'task'
       && Number.isFinite(Number(c.h.target)));
+    const breakableRhythm = !!(c.h.breakable && rhythmHabit);
     let lastPlaced = rhythmHabit ? c.h.lastLog : null;
     let alreadyOneShot = false;
     for(const state of dayStates){
@@ -1792,6 +1857,21 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings){
       if(rhythmHabit && lastPlaced != null
         && !rhythmEligibleOnDay(c.h,lastPlaced,state.dayBase,state.weekday))continue;
       const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+      if(breakableRhythm){
+        const before = state.fills.length;
+        if(!placeBreakableSessions(state,fill,{settings,allowNetwork:true}))continue;
+        const added = state.fills.slice(before);
+        for(const entry of added){
+          state.day.agendaItems.push({
+            h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:entry.fit.locId,
+            chunkMinutes:entry.fit.durMin,
+            chunkIndex:entry.fill.chunkIndex != null ? entry.fill.chunkIndex : null
+          });
+          gained += 1;
+        }
+        lastPlaced = state.dayBase;
+        continue;
+      }
       const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
       if(!fit)continue;
       commitPlacement(state,fill,fit);

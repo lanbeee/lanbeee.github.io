@@ -91,7 +91,7 @@
  * @property {number}      preferredTimeEndDayOffset2
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
- * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min)
+ * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
  * @property {number|null} timerAutoStopMinutes — optional live-timer auto-stop (null = use durationMinutes)
  * @property {number|null} autoMarkMinutes — when set, the item logs itself this many minutes after its scheduled time (or timer start). null = manual.
@@ -673,26 +673,62 @@ function loggedChunkMinutes(h){
     return sum + (Number.isFinite(m) && m > 0 ? m : 0);
   },0);
 }
-/** PURE: remaining minutes for a breakable item (full duration when nothing logged). */
-function remainingDurationMinutes(h){
+/**
+ * PURE: breakable minutes logged on one calendar day (for daily keepup/reduce
+ * budgets). Tasks ignore this and use lifetime remaining instead.
+ */
+function loggedChunkMinutesOnDay(h,dayBase){
+  if(!h)return 0;
+  const start = dayStart(dayBase != null ? dayBase : Date.now());
+  const end = start + 86400000;
+  return normalizeLogs(h.logs).reduce((sum,log)=>{
+    if(isPlanLog(log))return sum;
+    const ts = logTime(log);
+    if(!ts || ts < start || ts >= end)return sum;
+    const m = Number(log && log.minutes);
+    return sum + (Number.isFinite(m) && m > 0 ? m : 0);
+  },0);
+}
+/**
+ * PURE: breakable keepup/reduce with a target — place on each rhythm day with
+ * a fresh daily duration budget (not a one-shot pool across the week).
+ */
+function isBreakableRhythmHabit(h){
+  return !!(h && h.breakable && h.type !== 'task'
+    && Number.isFinite(Number(h && h.target)));
+}
+/**
+ * PURE: minutes of breakable work still needed.
+ * - Tasks: lifetime remaining (duration − all logged minutes).
+ * - Keepup/reduce: today's budget (duration − minutes logged today).
+ */
+function breakableBudgetMinutes(h,dayBase){
   const total = clampDuration(h && h.durationMinutes);
   if(!h || !h.breakable)return total;
-  return Math.max(0,total - loggedChunkMinutes(h));
+  if(h.type === 'task')return Math.max(0,total - loggedChunkMinutes(h));
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
+  return Math.max(0,total - loggedChunkMinutesOnDay(h,base));
+}
+/** PURE: remaining minutes for a breakable item (full duration when nothing logged). */
+function remainingDurationMinutes(h,dayBase){
+  if(!h || !h.breakable)return clampDuration(h && h.durationMinutes);
+  if(h.type === 'task')return breakableBudgetMinutes(h);
+  return breakableBudgetMinutes(h,dayBase != null ? dayBase : dayStart(Date.now()));
 }
 /**
  * PURE: smallest session that still makes progress on a breakable item.
  * Finish-up when remaining < min; otherwise the min-chunk floor.
  */
-function minViableSessionMinutes(h){
-  const left = remainingDurationMinutes(h);
+function minViableSessionMinutes(h,dayBase){
+  const left = remainingDurationMinutes(h,dayBase);
   if(left <= 0)return 0;
   if(!h || !h.breakable)return left;
   const min = clampMinChunk(h.minChunkMinutes);
   return left < min ? left : min;
 }
 /** PURE: ideal next chunk sizes (continuous: one block of remaining). */
-function remainingChunks(h){
-  const left = remainingDurationMinutes(h);
+function remainingChunks(h,dayBase){
+  const left = remainingDurationMinutes(h,dayBase);
   if(left <= 0)return [];
   if(!h || !h.breakable)return [left];
   return planChunks(left,h.minChunkMinutes);
