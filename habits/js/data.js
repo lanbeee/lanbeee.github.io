@@ -1304,6 +1304,38 @@ function normalizeLogs(logs){
     .sort((a,b)=>logTime(a)-logTime(b))
     .slice(-MAX_LOGS);
 }
+// PURE: snap a timestamp to the start of the habit's eligibility window for
+// the log's day. Used at log time so a daily habit logged late (e.g. 11pm
+// for a 6am–10am window) is recorded at 6am — the next-day rhythm check
+// (`daysSince >= target`) then resolves correctly inside the narrow allowed
+// window instead of silently staying "0 days since" until 24h have elapsed.
+// Habits with no time window snap to the start of the calendar day.
+// Tasks and zero-type keep their actual ts (one-off events whose time
+// carries its own meaning; zero-types have no rhythm).
+//
+// Edge case: if the user logs BEFORE today's window has opened (e.g. 5am for
+// a 6am–10am window), the snapped ts would fall into the future. That would
+// be filtered out by `actualLogs()` (which keeps only logTime <= Date.now()),
+// hiding the log until the window opens. We keep the actual ts in that case
+// rather than push the log into the future or move it to yesterday.
+function snapLogTimestamp(h,ts){
+  if(!h)return ts;
+  if(h.type === 'task' || h.type === 'zero')return ts;
+  const dayBase = dayStart(ts);
+  if(typeof hasTimeWindow === 'function' && hasTimeWindow(h)){
+    const startMin = typeof resolveHabitTimeField === 'function'
+      ? resolveHabitTimeField(h,'allowedTimeStart',dayBase)
+      : h.allowedTimeStart;
+    if(startMin != null && Number.isFinite(startMin)){
+      const snapped = dayBase + startMin * 60000;
+      // Only snap when the window start is on/before the log ts — never push
+      // a log into the future (would be hidden by actualLogs) or backwards
+      // to yesterday.
+      if(snapped <= ts)return snapped;
+    }
+  }
+  return dayBase <= ts ? dayBase : ts;
+}
 /** PURE: build an actual log entry, optionally with value / chunk minutes / note. */
 function makeActualLog(ts,opts = {}){
   const entry = {ts};

@@ -2183,11 +2183,15 @@ function logTing(i,opts = {}){
     const next = remainingChunks(h)[0];
     if(next)minutes = next;
   }
-  const entry = makeActualLog(now,{value:opts.value,minutes,note:opts.note});
+  // Snap the stored ts to the habit's window-start for the log's day so a
+  // habit logged late still counts as "done today" by rhythm math the next
+  // time its window opens. See snapLogTimestamp in data.js.
+  const entryTs = (typeof snapLogTimestamp === 'function') ? snapLogTimestamp(h,now) : now;
+  const entry = makeActualLog(entryTs,{value:opts.value,minutes,note:opts.note});
   const action = withEntryToastAction({
     type:'entry',
     idx:i,
-    ts:now,
+    ts:entryTs,
     plan:false,
     consumedPlanTs,
     snoozedUntil:h.snoozedUntil || null,

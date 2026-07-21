@@ -1,16 +1,23 @@
-// Debug script: load sample backup into the live app, freeze clock to
-// "today 8:36 PM" (matching the user's bug report), and dump everything
-// the agenda pipeline produces for Maghrib + Shower.
+// Debug script: synthesise the Maghrib + Shower dataset inline (what used
+// to live in lib/sample_tings-backup-YYYY-MM-DD.json), freeze clock to
+// "today 21:13" matching the original user bug-report screenshot, and dump
+// everything the agenda pipeline produces for Maghrib + Shower.
 //
-// Usage: node tests/debug-maghrib-shower.js
-
-const fs = require('fs');
-const path = require('path');
+// Generating data inline keeps the test self-contained — no dated backup
+// file to re-create every day, and timestamps are computed from Date.now()
+// so they stay valid whenever the test runs.
+//
+//   HABITS_URL=http://127.0.0.1:4173/ node tests/debug-maghrib-shower.js
+//
 const { chromium } = require('playwright');
 
-const repoRoot = path.resolve(__dirname, '..');
-const backupPath = path.join(repoRoot, 'lib', 'sample_tings-backup-2026-07-20_v2.json');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+
+let pass = 0, fail = 0;
+function assert(cond,msg){
+  if(cond){ pass += 1; console.log('  ok: ' + msg); }
+  else { fail += 1; console.error('  FAIL: ' + msg); }
+}
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -42,30 +49,83 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
     window.Date = FrozenDate;
   }, frozenClock);
 
-  await page.goto(baseUrl, { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil:'networkidle' });
   await page.evaluate(() => localStorage.clear());
 
-  // Load the sample backup into localStorage using whatever KEY/SORT_SETTINGS_KEY
-  // the app expects. We don't know them ahead of time, so inspect the app.
+  // Sanity: confirm the app exposed its storage keys.
   const keys = await page.evaluate(() => Object.keys(localStorage));
   console.log('initial localStorage keys:', keys);
-
-  // Find the keys by poking at the app's exposed globals.
   const appKeys = await page.evaluate(() => ({
     dataKey: typeof KEY !== 'undefined' ? KEY : null,
     settingsKey: typeof SORT_SETTINGS_KEY !== 'undefined' ? SORT_SETTINGS_KEY : null,
   }));
   console.log('app keys:', appKeys);
+  assert(appKeys.dataKey && appKeys.settingsKey, 'app storage keys discovered (' + JSON.stringify(appKeys) + ')');
 
-  const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-  await page.evaluate(({ dataKey, settingsKey, backup }) => {
-    localStorage.setItem(dataKey, JSON.stringify(backup.habits));
-    localStorage.setItem(settingsKey, JSON.stringify(backup.settings));
-  }, { ...appKeys, backup });
+  // Synthesise Maghrib + Shower data inline. Times derived from the frozen
+  // clock so the test is reproducible any day it runs.
+  await page.evaluate(({ dataKey, settingsKey }) => {
+    const HOME = 'home-id';
+    const now = Date.now();
+    const dayBase = new Date(now); dayBase.setHours(0,0,0,0);
+    const yesterdayBase = dayBase.getTime() - 86400000;
+    const three = new Date(yesterdayBase - 2 * 86400000);
 
-  await page.reload({ waitUntil: 'networkidle' });
+    const habits = [
+      {
+        hid:'maghrib', name:'Maghrib', type:'keepup', target:1,
+        lastLog: yesterdayBase + 12 * 3600000,
+        logs:[ yesterdayBase + 12 * 3600000 ],
+        allowedTimeStartAnchor:'maghrib', allowedTimeStartOffsetMin:2,
+        allowedTimeEndAnchor:'maghrib', allowedTimeEndOffsetMin:-40,
+        durationMinutes:10, priority:0, breakable:false, locationIds:[],
+        allowedWeekdays:[], flexibilityDays:0, emoji:'🌄', topics:[],
+      },
+      {
+        hid:'isha', name:'Isha', type:'keepup', target:1,
+        lastLog:null, logs:[],
+        allowedTimeStartAnchor:'isha', allowedTimeStartOffsetMin:0,
+        allowedTimeEndAnchor:'isha', allowedTimeEndOffsetMin:120,
+        durationMinutes:10, priority:0, breakable:false, locationIds:[],
+        allowedWeekdays:[], flexibilityDays:0, emoji:'🌃', topics:[],
+      },
+      {
+        hid:'shower', name:'Shower', type:'keepup', target:3,
+        lastLog: three.getTime() + 13 * 3600000,
+        logs:[ three.getTime() + 13 * 3600000 ],
+        durationMinutes:5, priority:1, breakable:false,
+        locationIds:[HOME],
+        allowedWeekdays:[], flexibilityDays:0, emoji:'🚿', topics:[],
+      },
+    ];
+    const settings = {
+      preset:'todayFirst', showWeekOnHome:true, focus:'balanced',
+      availabilityMinutes:[600,360,360,360,360,360,600],
+      availabilityOverrides:{},
+      blockedTimes:[
+        { label:'sleep', days:[], locationId:HOME,
+          startAnchor:'sunrise', startOffsetMin:-480,
+          startCombine:'later', startAnchor2:'isha', startOffsetMin2:15, startDayOffset2:0,
+          endAnchor:'sunrise', endOffsetMin:-30 },
+        { label:'breakfast', days:[], start:530, end:540, locationId:HOME },
+        { label:'work morning', days:[1,2,3,4,5], start:540, end:720 },
+        { label:'work evening', days:[1,2,3,4,5], start:870, end:1050 },
+        { label:'dinner', days:[], start:1305, end:1320, locationId:HOME },   // 21:45–22:00
+      ],
+      showScheduledTasksInAgenda:true, showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true, showDueHabitsInAgenda:true,
+      locations:[{ id:HOME, name:'Home', lat:40.700, lng:-74.000 }],
+      travel:{}, defaultTravelMode:'driving',
+      prayerMethod:'NorthAmerica', prayerMadhab:'shafi',
+      lastKnownLocationId:HOME,
+    };
+    localStorage.setItem(dataKey, JSON.stringify(habits));
+    localStorage.setItem(settingsKey, JSON.stringify(settings));
+  }, appKeys);
 
-  // Sanity: prayer times for Home today.
+  await page.reload({ waitUntil:'networkidle' });
+
+  // Sanity: prayer times for Home today resolve (anchors depend on them).
   const prayerDebug = await page.evaluate(() => {
     const s = (typeof loadSortSettings === 'function') ? loadSortSettings() : sortSettings;
     const home = (s.locations || []).find(l => l && l.name === 'Home');
@@ -90,6 +150,8 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   });
   console.log('\nPRAYER TIMES (Home, today):');
   console.log(prayerDebug);
+  assert(!prayerDebug.prayerError, 'prayer times resolved without error');
+  assert(prayerDebug.homePresent, 'Home location present');
 
   // Drill into Maghrib + Shower specifically.
   const debug = await page.evaluate(() => {
@@ -98,7 +160,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
     const find = name => data.findIndex(h => h && h.name === name);
     const maghribIdx = find('Maghrib');
     const showerIdx = find('Shower');
-    const out = {};
+    const out = { maghribIdx, showerIdx };
 
     for (const [label, idx] of [['maghrib', maghribIdx], ['shower', showerIdx]]) {
       if (idx < 0) { out[label] = { notFound: true }; continue; }
@@ -110,7 +172,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
         type: h.type,
         target: h.target,
         lastLog: h.lastLog,
-        lastLogDate: new Date(h.lastLog).toString(),
+        lastLogDate: h.lastLog ? new Date(h.lastLog).toString() : null,
         daysSinceLastLog: (typeof daysSince === 'function') ? daysSince(h.lastLog) : null,
         hasTimeWindow: (typeof hasTimeWindow === 'function') ? hasTimeWindow(h) : null,
         includeInTodayAgenda: (typeof includeInTodayAgenda === 'function') ? includeInTodayAgenda(h, settings) : null,
@@ -128,13 +190,11 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
       out[label] = v;
     }
 
-    // Effective availability for today.
     const todayKey = (typeof todayIso === 'function') ? todayIso() : null;
     out.todayKey = todayKey;
     out.availabilityMinutesToday = (typeof effectiveAvailabilityMinutes === 'function')
       ? effectiveAvailabilityMinutes(todayKey, settings) : null;
 
-    // Run the actual agenda.
     try {
       const agenda = (typeof buildTodayAgenda === 'function') ? buildTodayAgenda(data, settings) : null;
       out.todayAgenda = agenda && {
@@ -161,7 +221,6 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
       }
     } catch (e) { out.todayTimelineError = e.message; }
 
-    // Try week agenda too in case the user is viewing the week mode.
     try {
       if (typeof buildWeekAgenda === 'function') {
         const wk = buildWeekAgenda(data, settings, 7);
@@ -187,8 +246,26 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   console.log('\nDEBUG DUMP:');
   console.log(JSON.stringify(debug, null, 2));
 
+  // Assertions: the dataset and pipeline must hold together without throwing.
+  assert(debug.maghribIdx >= 0, 'Maghrib habit found in loaded data');
+  assert(debug.showerIdx >= 0, 'Shower habit found in loaded data');
+  assert(!debug.todayAgendaError, 'buildTodayAgenda did not throw (' + (debug.todayAgendaError || '') + ')');
+  assert(!debug.todayTimelineError, 'buildTodayTimeline did not throw (' + (debug.todayTimelineError || '') + ')');
+  assert(!debug.weekAgendaError, 'buildWeekAgenda did not throw (' + (debug.weekAgendaError || '') + ')');
+  if(debug.todayAgenda){
+    assert(Array.isArray(debug.todayAgenda.slots), 'today agenda has slots array');
+    assert(debug.todayAgenda.slots.length > 0, 'today agenda has at least one open slot (' + debug.todayAgenda.slots.length + ')');
+  }
+
   console.log('\nConsole errors/warnings:');
+  if(errors.length === 0)console.log('  (none)');
   errors.forEach(e => console.log(' ', e));
+  assert(errors.length === 0, 'no console errors/warnings (' + errors.length + ')');
 
   await browser.close();
-})();
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail > 0 ? 1 : 0);
+})().catch(err => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

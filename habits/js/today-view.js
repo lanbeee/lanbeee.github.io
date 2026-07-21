@@ -125,17 +125,39 @@ function fillPreferredStart(h,dayBase,contextLocId){
 // hints are intentionally NOT consulted — only strict allowed windows can
 // close a day. Keeps the home list ("today" vs "overdue") in sync with the
 // location-aware agenda.
+//
+// Blocked intervals (sleep, work, anything in settings.blockedTimes) are
+// subtracted from the remaining window: an item whose nominal window still
+// has minutes left, but those minutes fall inside a block (e.g. 11pm for a
+// 10pm–6am sleep), is NOT still doable today. This mirrors what
+// buildOpenAgendaSlots does for the agenda timeline, so the home list agrees.
 function windowStillDoableToday(h,now = Date.now()){
   const cost = clampDuration(h.durationMinutes) * 60000;
   const dayBase = dayStart(now);
   const weekday = new Date(now).getDay();
-  const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  const settings = (sortSettings || loadSortSettings());
+  const registry = normalizeLocationRegistry(settings.locations);
   const locIds = normalizeLocationIds(h.locationIds,registry);
+  const dayEnd = dayBase + 24 * 3600000;
+  const todayKey = dateKey(now);
+  const blocked = (typeof agendaBlockedIntervals === 'function')
+    ? agendaBlockedIntervals(todayKey,settings,dayBase,dayEnd)
+    : [];
+  const blockedMsIn = (from,to)=>blocked.reduce((sum,b)=>{
+    if(b.end <= from || b.start >= to)return sum;
+    return sum + (Math.min(b.end,to) - Math.max(b.start,from));
+  },0);
   if(!locIds.length){
-    if(!hasTimeWindow(h))return true;
+    if(!hasTimeWindow(h)){
+      // No restriction: count time left today minus any blocked span.
+      const remaining = dayEnd - now - blockedMsIn(now,dayEnd);
+      return remaining >= cost;
+    }
     const win = fillTimeWindow(h,dayBase);
     if(!win)return true;
-    return win.end - Math.max(now,win.start) >= cost;
+    const from = Math.max(now,win.start);
+    const remaining = win.end - from - blockedMsIn(from,win.end);
+    return remaining >= cost;
   }
   return locIds.some(id=>{
     const loc = registry.find(l=>l.id === id);
@@ -144,7 +166,9 @@ function windowStillDoableToday(h,now = Date.now()){
     return intervals.some(iv=>{
       const start = dayBase + iv.start * 60000;
       const end = dayBase + iv.end * 60000;
-      return end - Math.max(now,start) >= cost;
+      const from = Math.max(now,start);
+      const remaining = end - from - blockedMsIn(from,end);
+      return remaining >= cost;
     });
   });
 }
