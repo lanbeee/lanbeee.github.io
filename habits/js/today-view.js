@@ -119,6 +119,20 @@ function fillPreferredStart(h,dayBase,contextLocId){
   return dayBase + s * 60000;
 }
 
+// PURE: soft preferred window as {start,end} ms, or null. Used for scarcity
+// packing so evening-preferring habits are not starved by morning ASAP flex
+// that burns the whole availability budget while later open gaps stay empty.
+function fillPreferredWindow(h,dayBase,contextLocId){
+  if(typeof hasPreferredTimeWindow === 'function' && !hasPreferredTimeWindow(h))return null;
+  const startMin = resolveHabitTimeField(h,'preferredTimeStart',dayBase,contextLocId);
+  const endMin = resolveHabitTimeField(h,'preferredTimeEnd',dayBase,contextLocId);
+  if(startMin == null || endMin == null)return null;
+  const start = dayBase + startMin * 60000;
+  let end = dayBase + endMin * 60000;
+  if(end <= start)end += 24 * 3600000;
+  return {start,end};
+}
+
 // PURE: is there still enough unexpired room today to fit a full session,
 // considering the habit's own window ∩ each allowed location's hours? Habits
 // with no time window and no location hours are always doable. preferred*
@@ -161,7 +175,7 @@ function windowStillDoableToday(h,now = Date.now()){
   }
   return locIds.some(id=>{
     const loc = registry.find(l=>l.id === id);
-    const intervals = effectiveLocationWindow(h,loc,weekday);
+    const intervals = effectiveLocationWindow(h,loc,weekday,dayBase);
     if(!intervals.length)return false;
     return intervals.some(iv=>{
       const start = dayBase + iv.start * 60000;
@@ -215,7 +229,9 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
     || null;
   const bands = [];
   for(const item of items){
-    const scarce = isScarceScore(item.scarcity) || (typeof hasTimeWindow === 'function' && hasTimeWindow(item.h));
+    const scarce = isScarceScore(item.scarcity)
+      || (typeof hasTimeWindow === 'function' && hasTimeWindow(item.h))
+      || (typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(item.h));
     const scarcityKey = scarce ? 0 : 1;
     const p = item.priority ?? effectivePriority(item.h);
     let band = bands.find(b=>b.scarcityKey === scarcityKey && b.priority === p);
@@ -335,7 +351,7 @@ function createDayPlacementState(day,settings,opts = {}){
     ? opts.startClock
     : (isTodayDay
       ? ceilToMinutes(now,5)
-      : dayBase + dayFirstOpenMinute(blocks,weekday) * 60000);
+      : dayBase + dayFirstOpenMinute(blocks,weekday,dayBase) * 60000);
   const slots = (day.slots && day.slots.length)
     ? day.slots.map(s=>({start:s.start,end:s.end}))
     : [{start:startClock,end:dayBase + 24 * 3600000}];
@@ -348,8 +364,8 @@ function createDayPlacementState(day,settings,opts = {}){
   });
   let prevLocId = isTodayDay
     ? ((typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null)
-    : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday)
-      || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday) - 1),weekday)
+    : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
+      || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
       || null);
   return {
     day,
@@ -400,12 +416,19 @@ function fillDurationMinutes(fill){
   return clampDuration(fill.h.durationMinutes);
 }
 
-// PURE: minutes of allowed-window slack beyond the session duration, or
-// SCARCITY_UNBOUNDED when the habit has no hard time window.
+// PURE: minutes of allowed/preferred-window slack beyond the session duration,
+// or SCARCITY_UNBOUNDED when the habit has neither. Hard allowed windows stay
+// the tightest; preferred-only habits still beat pure flex so morning ASAP
+// fills cannot blank an entire week of evening-preferring work.
 function windowSlackMinutes(h,dayState,contextLocId){
   if(!h || !dayState)return SCARCITY_UNBOUNDED;
-  if(typeof hasTimeWindow === 'function' && !hasTimeWindow(h))return SCARCITY_UNBOUNDED;
-  const win = fillTimeWindow(h,dayState.dayBase,contextLocId != null ? contextLocId : dayState.seedLocId);
+  const loc = contextLocId != null ? contextLocId : dayState.seedLocId;
+  let win = null;
+  if(typeof hasTimeWindow === 'function' && hasTimeWindow(h)){
+    win = fillTimeWindow(h,dayState.dayBase,loc);
+  }else if(typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(h)){
+    win = fillPreferredWindow(h,dayState.dayBase,loc);
+  }
   if(!win)return SCARCITY_UNBOUNDED;
   const span = Math.max(0,(win.end - win.start) / 60000);
   return Math.max(0,span - clampDuration(h.durationMinutes));
@@ -429,7 +452,9 @@ function feasibleStartCount(h,dayState,fillExtras = {}){
 }
 
 // PURE: lower = tighter. Combines feasible-slot count (primary) with window
-// slack (secondary). Windowless habits sort as least scarce.
+// slack (secondary). Hard allowed windows beat preferred-only; both beat
+// pure flex (unbounded), so availability is not burned ASAP in the morning
+// while later open gaps (and the habits that want them) stay blank all week.
 function scarcityScore(candidate,dayStates){
   const run = ()=>scarcityScoreInner(candidate,dayStates);
   return typeof withTravelNetworkPaused === 'function' ? withTravelNetworkPaused(run) : run();
@@ -437,14 +462,18 @@ function scarcityScore(candidate,dayStates){
 function scarcityScoreInner(candidate,dayStates){
   const h = candidate && candidate.h;
   if(!h)return SCARCITY_UNBOUNDED;
-  if(typeof hasTimeWindow === 'function' && !hasTimeWindow(h))return SCARCITY_UNBOUNDED;
+  const hard = typeof hasTimeWindow === 'function' && hasTimeWindow(h);
+  const soft = typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(h);
+  if(!hard && !soft)return SCARCITY_UNBOUNDED;
+  // Preferred-only sorts after every hard-window habit, before unbounded flex.
+  const softBias = hard ? 0 : 500000;
   const states = Array.isArray(dayStates) ? dayStates : [];
   if(!states.length){
     const todayBase = dayStart(Date.now());
-    const win = fillTimeWindow(h,todayBase,null);
+    const win = hard ? fillTimeWindow(h,todayBase,null) : fillPreferredWindow(h,todayBase,null);
     if(!win)return SCARCITY_UNBOUNDED;
     const slack = Math.max(0,(win.end - win.start) / 60000 - clampDuration(h.durationMinutes));
-    return Math.min(slack,9999);
+    return softBias + Math.min(slack,9999);
   }
   let minFeasible = Infinity;
   let minSlack = Infinity;
@@ -461,15 +490,18 @@ function scarcityScoreInner(candidate,dayStates){
   if(!any)return SCARCITY_UNBOUNDED;
   if(minFeasible === Infinity)minFeasible = 0;
   if(minSlack === Infinity)minSlack = SCARCITY_UNBOUNDED;
-  return minFeasible * 10000 + Math.min(minSlack,9999);
+  return softBias + minFeasible * 10000 + Math.min(minSlack,9999);
 }
 
 function isScarceScore(score){
   return Number.isFinite(score) && score < SCARCITY_UNBOUNDED;
 }
 
-// PURE: scarcity ASC, then priority ASC, then urgency/score/rank.
+// PURE: pinned (planned-today) first, then scarcity ASC, priority ASC, urgency.
 function compareScarcityThenPriority(a,b){
+  const pinA = a.pinned === true;
+  const pinB = b.pinned === true;
+  if(pinA !== pinB)return pinA ? -1 : 1;
   const sa = a.scarcity != null ? a.scarcity : SCARCITY_UNBOUNDED;
   const sb = b.scarcity != null ? b.scarcity : SCARCITY_UNBOUNDED;
   if(sa !== sb)return sa - sb;
@@ -493,9 +525,13 @@ function scarceWindowsToSpare(candidates,dayBase,seedLocId,eligibleDayBase){
   if(!Array.isArray(candidates))return windows;
   for(const c of candidates){
     if(!c || !c.h)continue;
-    if(!isScarceScore(c.scarcity) && !(typeof hasTimeWindow === 'function' && hasTimeWindow(c.h)))continue;
+    const hard = typeof hasTimeWindow === 'function' && hasTimeWindow(c.h);
+    const soft = typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(c.h);
+    if(!isScarceScore(c.scarcity) && !hard && !soft)continue;
     if(eligibleDayBase != null && c.eligible && !c.eligible.has(eligibleDayBase))continue;
-    const win = fillTimeWindow(c.h,dayBase,seedLocId);
+    const win = hard
+      ? fillTimeWindow(c.h,dayBase,seedLocId)
+      : fillPreferredWindow(c.h,dayBase,seedLocId);
     if(win)windows.push(win);
   }
   return windows;
@@ -632,7 +668,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
       const locId = resolveLoc(anchor);
       if(locId){
         const loc = registry.find(l=>l.id === locId);
-        const intervals = effectiveLocationWindow(fill.h,loc,weekday);
+        const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         if(!intervals.length)continue;
       }
       const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
@@ -649,7 +685,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
       let cap = gap.end;
       if(locId){
         const loc = registry.find(l=>l.id === locId);
-        const intervals = effectiveLocationWindow(fill.h,loc,weekday);
+        const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         const arriveMin = Math.floor((placeStart - dayBase) / 60000);
         let iv = intervals.find(x=>arriveMin >= x.start && arriveMin < x.end);
         if(!iv){
@@ -745,13 +781,13 @@ function finalizePlacementRows(state){
 // a day, derived from location-tied blocked times (sleep→Home, work→Office).
 // Returns the locationId or null. Lets the week agenda start each day anchored
 // to a known place ("you wake at Home") instead of an unknown starting point.
-function blockLocationAtMinute(blocks,minute,weekday){
+function blockLocationAtMinute(blocks,minute,weekday,dayBase){
   if(!Array.isArray(blocks))return null;
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
     if(!block.locationId)continue;
-    const rawS = resolveBlockedTimeMinutes(block,'start') ?? block.start;
-    const rawE = resolveBlockedTimeMinutes(block,'end') ?? block.end;
+    const rawS = resolveBlockedTimeMinutes(block,'start',dayBase) ?? block.start;
+    const rawE = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
     const {startMin:s, endMin:e} = typeof foldBlockedMinutes === 'function'
       ? foldBlockedMinutes(rawS, rawE) : {startMin:rawS, endMin:rawE};
     const inSimple = e > s && minute >= s && minute < e;
@@ -767,13 +803,15 @@ function blockLocationAtMinute(blocks,minute,weekday){
 // an isolated mid-morning block (e.g. breakfast 8:00–9:00) must NOT, or the
 // gap between sleep wake and breakfast is clipped away and morning habits
 // (sunrise windows) never place on future days.
-function dayFirstOpenMinute(blocks,weekday){
+// dayBase selects which day's prayer times to use for dynamic blocks (must
+// match agendaBlockedIntervals); omitting it falls back to today.
+function dayFirstOpenMinute(blocks,weekday,dayBase){
   if(!Array.isArray(blocks) || !blocks.length)return 0;
   const intervals = [];
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
-    const rawS = resolveBlockedTimeMinutes(block,'start') ?? block.start;
-    const rawE = resolveBlockedTimeMinutes(block,'end') ?? block.end;
+    const rawS = resolveBlockedTimeMinutes(block,'start',dayBase) ?? block.start;
+    const rawE = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
     const {startMin:s, endMin:e} = typeof foldBlockedMinutes === 'function'
       ? foldBlockedMinutes(rawS, rawE) : {startMin:rawS, endMin:rawE};
     if(!Number.isFinite(s) || !Number.isFinite(e))continue;
@@ -880,11 +918,12 @@ function dayTimelineSeedLocation(day,settings){
       || settings.lastKnownLocationId
       || null;
   }
-  const weekday = day?.weekday ?? new Date(day?.dayBase || Date.now()).getDay();
+  const dayBase = day?.dayBase != null ? day.dayBase : dayStart(Date.now());
+  const weekday = day?.weekday ?? new Date(dayBase).getDay();
   const blocks = normalizeBlockedTimes(settings.blockedTimes);
-  const openMin = dayFirstOpenMinute(blocks,weekday);
-  return blockLocationAtMinute(blocks,Math.max(0,openMin - 1),weekday)
-    || blockLocationAtMinute(blocks,openMin,weekday)
+  const openMin = dayFirstOpenMinute(blocks,weekday,dayBase);
+  return blockLocationAtMinute(blocks,Math.max(0,openMin - 1),weekday,dayBase)
+    || blockLocationAtMinute(blocks,openMin,weekday,dayBase)
     || null;
 }
 
@@ -1060,7 +1099,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
     .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && !isTaskDone(h) && dateKey(h.eventTime) === dayKey)
     .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
   const totalMinutes = effectiveAvailabilityMinutes(dayKey,settings);
-  const clipAfter = isToday ? ceilToMinutes(Date.now(),5) : dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday) * 60000;
+  const clipAfter = isToday ? ceilToMinutes(Date.now(),5) : dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday,dayBase) * 60000;
   const slots = buildOpenAgendaSlots(dayKey,scheduled,settings,{clipAfter});
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
   const totalCap = Math.min(totalMinutes,slotMinutes);
@@ -1425,7 +1464,52 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     }
   }
   totalAssigned += rebalanceScarcePlacements(candidates,dayStates,settings,locHints);
+  totalAssigned += rescueLeftoverWeekFits(candidates,dayStates,settings);
   return totalAssigned;
+}
+
+// PURE: after greedy + scarce rebalance, fill any remaining due habits that
+// still fit on a day with leftover budget/open gaps. Catches order/budget
+// misses where rem > 0 (or a later gap is free) but the habit never got a
+// commit — the "blank all week until I plan it" failure mode.
+function rescueLeftoverWeekFits(candidates,dayStates,settings){
+  let gained = 0;
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
+  for(const c of candidates){
+    if(!c || !c.h)continue;
+    const rhythmHabit = !!(c.h.type !== 'task' && !c.h.breakable
+      && Number.isFinite(Number(c.h.target)));
+    let lastPlaced = rhythmHabit ? c.h.lastLog : null;
+    let alreadyOneShot = false;
+    for(const state of dayStates){
+      if(state.placed.has(c.i)){
+        lastPlaced = state.dayBase;
+        if(!rhythmHabit)alreadyOneShot = true;
+      }
+    }
+    if(alreadyOneShot)continue;
+    for(const state of dayStates){
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(c.pinned && !state.isTodayDay)continue;
+      if(state.placed.has(c.i)){
+        lastPlaced = state.dayBase;
+        continue;
+      }
+      if(rhythmHabit && lastPlaced != null
+        && !rhythmEligibleOnDay(c.h,lastPlaced,state.dayBase,state.weekday))continue;
+      const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+      const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
+      if(!fit)continue;
+      commitPlacement(state,fill,fit);
+      state.day.agendaItems.push({
+        h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:fit.locId
+      });
+      lastPlaced = state.dayBase;
+      gained += 1;
+      if(!rhythmHabit)break;
+    }
+  }
+  return gained;
 }
 
 // PURE: after greedy scarcity placement, try to free a scarce unplaced item by
@@ -1450,7 +1534,8 @@ function rebalanceScarcePlacements(candidates,dayStates,_settings,_locHints){
         continue;
       }
       const flexibleFills = state.fills.filter(f=>f.fill && !isScarceScore(f.fill.scarcity)
-        && !(typeof hasTimeWindow === 'function' && hasTimeWindow(f.fill.h)));
+        && !(typeof hasTimeWindow === 'function' && hasTimeWindow(f.fill.h))
+        && !(typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(f.fill.h)));
       for(const victim of flexibleFills){
         if(attempts >= MAX_ATTEMPTS)break;
         attempts += 1;

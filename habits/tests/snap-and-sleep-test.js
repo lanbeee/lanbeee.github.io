@@ -144,11 +144,11 @@ function assert(cond,msg){
   assert(logBehavior.sameDay, 'snapped log stays on today');
   assert(logBehavior.storedMinute === 360,
     `snapped minute-of-day is 360 (6am), got ${logBehavior.storedMinute}`);
-  // With the OLD behaviour (storing 11pm), at 7am next day daysSince would
-  // be 0 (only 8h elapsed). With snapping to 6am, it is 1 (25h elapsed) —
-  // eligible again inside the next day's window.
+  // With calendar daysSince, an unsapped 11pm log is already age 1 by 7am
+  // next morning. Snap still matters for attributing the session to the
+  // allowed window (6am), not for making the habit due again.
   assert(logBehavior.realDaysSinceTomorrow7am === 1,
-    `daysSince at tomorrow-7am = 1 (snapped), got ${logBehavior.realDaysSinceTomorrow7am}`);
+    `rolling age at tomorrow-7am = 1 (snapped to 6am), got ${logBehavior.realDaysSinceTomorrow7am}`);
 
   // ══════════════════════════════════════════════════════════════════════
   // C. windowStillDoableToday with no blocked time — sanity baseline

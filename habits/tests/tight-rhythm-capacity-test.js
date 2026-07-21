@@ -14,11 +14,19 @@
 //   - brand-new (never logged)
 //   - overdue / logged on time yesterday morning
 //   - logged late last night, with snapLogTimestamp (as logTing does)
-//   - logged late last night RAW (no snap) — documents the daysSince=0 pitfall
+//   - logged late last night RAW (no snap) — still due next calendar morning
 //   - already logged today (must skip today, resume tomorrow)
 //   - morning-window daily logged after the window closed (snapped to window start)
 //   - flexibility pull-forward (not yet due on raw target, eligible via flex)
 //   - multi-times that are new, mid-cycle, or overdue
+//
+// And a blocked-hours stress case (the reported "blocks mess up placement"):
+//   - sleep / breakfast / work / lunch / work-pm / sunset / dinner blocks
+//   - most blocks + nearly all habits use dynamic prayer anchors
+//     (fajr→isha clusters: stretch, review, dhuhr, lunch walk, asr, maghrib,
+//     dishes, shower, journal, late-log floss, multi-times, …)
+//   - asserts fills stay outside blocks, habits land in resolved windows,
+//     and a manual plan still fits when the planner left a due habit unplaced
 //
 // Freeze the clock to Monday 06:00 so today is clipped mid-morning while
 // future days open at midnight — this is exactly when a bogus midnight
@@ -469,7 +477,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
         withLog(mk({ name: 'V late-snapped-none', target: 1, durationMinutes: 10, priority: 2 }), yestLate, { snap: true }),
         // Late last night inside a morning window → snap to yesterday 6am.
         withLog(windowedShell, yestLate, { snap: true }),
-        // Same late stamp WITHOUT snap — daysSince at 6am is 0, so today is missed.
+        // Same late stamp WITHOUT snap — calendar daysSince is still 1 at 6am,
+        // so the daily is due today (rolling-24h used to miss it until 11pm).
         withLog(mk({ name: 'V late-raw', target: 1, durationMinutes: 10, priority: 2 }), yestLate, { snap: false }),
         // Already completed today before "now" — skip today, resume tomorrow.
         withLog(mk({ name: 'V done-today', target: 1, durationMinutes: 10, priority: 2 }), todayEarly),
@@ -560,8 +569,9 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
         placedDays: Object.fromEntries(data.map(h => [h.name, placedDays(h.name)])),
         spareBugs,
         todayDueDailies,
-        yestLateRawDaysSince: Math.floor((frozen - yestLate) / 86400000),
-        yestLateSnappedNoneDaysSince: Math.floor((frozen - dayStart(yestLate)) / 86400000)
+        yestLateRawDaysSince: daysSince(yestLate),
+        yestLateSnappedNoneDaysSince: daysSince(dayStart(yestLate)),
+        yestLateRawRolling24h: Math.floor((frozen - yestLate) / 86400000)
       };
     } finally {
       globalThis.Date = orig;
@@ -573,9 +583,12 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
   console.log('  placedDays:', JSON.stringify(variations.placedDays));
 
   // ── Eligibility / snap diagnostics ──
-  check('raw late log (11pm→6am) has daysSince 0 (the pitfall snap fixes)',
-    variations.yestLateRawDaysSince === 0,
+  check('raw late log (11pm→6am) has calendar daysSince 1 (due next morning)',
+    variations.yestLateRawDaysSince === 1,
     `got ${variations.yestLateRawDaysSince}`);
+  check('rolling-24h age of raw late log is still 0 (why the old check failed)',
+    variations.yestLateRawRolling24h === 0,
+    `got ${variations.yestLateRawRolling24h}`);
   check('snapped-to-midnight late log has daysSince 1 by 6am next morning',
     variations.yestLateSnappedNoneDaysSince === 1,
     `got ${variations.yestLateSnappedNoneDaysSince}`);
@@ -596,8 +609,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     JSON.stringify(diag('V late-snapped-window')));
   check('V late-snapped-window is today-eligible',
     diag('V late-snapped-window').todayEligible === true);
-  check('V late-raw is NOT today-eligible (unsapped 11pm)',
-    diag('V late-raw').todayEligible === false,
+  check('V late-raw is today-eligible (calendar day, even without snap)',
+    diag('V late-raw').todayEligible === true,
     JSON.stringify(diag('V late-raw')));
   check('V done-today is NOT today-eligible',
     diag('V done-today').todayEligible === false,
@@ -624,10 +637,9 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
       `got ${variations.counts[name]}/7 days=${JSON.stringify(variations.placedDays[name])}`);
   }
 
-  check('V late-raw skips today but places the other 6 days',
-    variations.counts['V late-raw'] === 6
-      && !variations.placedDays['V late-raw'].includes(0)
-      && variations.placedDays['V late-raw'].join(',') === '1,2,3,4,5,6',
+  check('V late-raw places every day including today (calendar due)',
+    variations.counts['V late-raw'] === 7
+      && variations.placedDays['V late-raw'].join(',') === '0,1,2,3,4,5,6',
     `days=${JSON.stringify(variations.placedDays['V late-raw'])}`);
 
   check('V done-today skips today but places the other 6 days',
@@ -804,6 +816,638 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
   check('late-log Monday still packs competing dailies (fillers present today)',
     lateLogLive.todayFills.includes('LL filler A') && lateLogLive.todayFills.includes('LL filler B'),
     `today=${JSON.stringify(lateLogLive.todayFills)}`);
+
+  // ── Fifth scenario: blocked hours + dynamic anchors + mixed windows ──
+  console.log('\n[tight-rhythm-blocked] sleep/meals/work/sunset carve gaps; habits must pack into them');
+  const blocked = await page.evaluate(({ frozen }) => {
+    const RealDate = Date;
+    function FrozenDate(...args) {
+      if (args.length === 0) return new RealDate(frozen);
+      return new RealDate(...args);
+    }
+    FrozenDate.now = () => frozen;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate, RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const orig = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    try {
+      const HOME = 'home';
+      const todayBase = dayStart(frozen);
+      const ago = (d, h = 9) => todayBase - d * 86400000 + h * 3600000;
+
+      function mk(props) {
+        return Object.assign({
+          type: 'keepup', flexibilityDays: 0, durationMinutes: 10, priority: 2,
+          allowedTimeStart: null, allowedTimeEnd: null,
+          preferredTimeStart: null, preferredTimeEnd: null,
+          locationIds: [], logs: [ago(1)], lastLog: ago(1),
+          emoji: '', pinned: false, sample: false, snoozedUntil: null, topics: [],
+          allowedWeekdays: [], allowedMonthDays: [], preferredWeekdays: [], preferredMonthDays: [],
+          dueDate: null, eventTime: null, hardDue: false, markDone: true,
+          createdAt: frozen - 30 * 86400000, target: 1
+        }, props);
+      }
+
+      const lateShell = mk({
+        name: 'BH late-log floss', durationMinutes: 5, priority: 1,
+        // Nightly floss after isha — late log snaps to isha+30.
+        allowedTimeStartAnchor: 'isha', allowedTimeStartOffsetMin: 30,
+        allowedTimeEndAnchor: 'isha', allowedTimeEndOffsetMin: 85
+      });
+      const lateTs = snapLogTimestamp(lateShell, ago(1, 23));
+
+      const raw = [
+        // ── dawn / sunrise cluster (all dynamic) ──
+        mk({
+          name: 'BH Fajr', durationMinutes: 5, priority: 0,
+          allowedTimeStartAnchor: 'fajr', allowedTimeStartOffsetMin: 0,
+          allowedTimeEndAnchor: 'sunrise', allowedTimeEndOffsetMin: -5
+        }),
+        mk({
+          name: 'BH Quran', durationMinutes: 10, priority: 0,
+          allowedTimeStartAnchor: 'fajr', allowedTimeStartOffsetMin: 10,
+          allowedTimeEndAnchor: 'sunrise', allowedTimeEndOffsetMin: -10
+        }),
+        mk({
+          name: 'BH Sunrise stretch', durationMinutes: 5, priority: 1,
+          allowedTimeStartAnchor: 'sunrise', allowedTimeStartOffsetMin: 5,
+          allowedTimeEndAnchor: 'sunrise', allowedTimeEndOffsetMin: 35
+        }),
+        mk({
+          name: 'BH Morning review', durationMinutes: 15, priority: 1,
+          // After stretch window, before a sunrise-anchored breakfast block.
+          allowedTimeStartAnchor: 'sunrise', allowedTimeStartOffsetMin: 40,
+          allowedTimeEndAnchor: 'sunrise', allowedTimeEndOffsetMin: 95
+        }),
+        mk({
+          name: 'BH Hydrate', durationMinutes: 5, priority: 2,
+          allowedTimeStartAnchor: 'sunrise', allowedTimeStartOffsetMin: 40,
+          allowedTimeEndAnchor: 'sunrise', allowedTimeEndOffsetMin: 100,
+          preferredTimeStartAnchor: 'sunrise', preferredTimeStartOffsetMin: 50
+        }),
+
+        // ── midday (dhuhr-anchored) ──
+        mk({
+          name: 'BH Dhuhr', durationMinutes: 5, priority: 0,
+          allowedTimeStartAnchor: 'dhuhr', allowedTimeStartOffsetMin: 0,
+          allowedTimeEndAnchor: 'dhuhr', allowedTimeEndOffsetMin: 40
+        }),
+        mk({
+          name: 'BH Lunch walk', durationMinutes: 15, priority: 2,
+          // After dynamic lunch block (dhuhr−10…dhuhr+25).
+          allowedTimeStartAnchor: 'dhuhr', allowedTimeStartOffsetMin: 30,
+          allowedTimeEndAnchor: 'asr', allowedTimeEndOffsetMin: -60
+        }),
+        mk({
+          name: 'BH Midday vitamins', durationMinutes: 5, priority: 2,
+          allowedTimeStartAnchor: 'dhuhr', allowedTimeStartOffsetMin: 30,
+          allowedTimeEndAnchor: 'dhuhr', allowedTimeEndOffsetMin: 70
+        }),
+
+        // ── afternoon / sunset (asr → maghrib) ──
+        mk({
+          name: 'BH Asr', durationMinutes: 5, priority: 0,
+          allowedTimeStartAnchor: 'asr', allowedTimeStartOffsetMin: 0,
+          allowedTimeEndAnchor: 'asr', allowedTimeEndOffsetMin: 45
+        }),
+        mk({
+          name: 'BH Sunset walk', durationMinutes: 15, priority: 2,
+          allowedTimeStartAnchor: 'asr', allowedTimeStartOffsetMin: 60,
+          allowedTimeEndAnchor: 'maghrib', allowedTimeEndOffsetMin: -25
+        }),
+        mk({
+          name: 'BH Maghrib', durationMinutes: 10, priority: 0,
+          allowedTimeStartAnchor: 'maghrib', allowedTimeStartOffsetMin: 5,
+          allowedTimeEndAnchor: 'maghrib', allowedTimeEndOffsetMin: 45
+        }),
+        mk({
+          name: 'BH Gratitude', durationMinutes: 5, priority: 2,
+          allowedTimeStartAnchor: 'maghrib', allowedTimeStartOffsetMin: 50,
+          allowedTimeEndAnchor: 'isha', allowedTimeEndOffsetMin: -15
+        }),
+
+        // ── evening / night (before sleep @ isha+90) ──
+        mk({
+          name: 'BH Dinner dishes', durationMinutes: 15, priority: 2,
+          allowedTimeStartAnchor: 'maghrib', allowedTimeStartOffsetMin: 105,
+          allowedTimeEndAnchor: 'isha', allowedTimeEndOffsetMin: 80
+        }),
+        mk({
+          name: 'BH Isha', durationMinutes: 10, priority: 0,
+          allowedTimeStartAnchor: 'isha', allowedTimeStartOffsetMin: 0,
+          allowedTimeEndAnchor: 'isha', allowedTimeEndOffsetMin: 40
+        }),
+        mk({
+          name: 'BH Shower', durationMinutes: 10, priority: 1, locationIds: [HOME],
+          allowedTimeStartAnchor: 'isha', allowedTimeStartOffsetMin: 15,
+          allowedTimeEndAnchor: 'isha', allowedTimeEndOffsetMin: 70
+        }),
+        mk({
+          name: 'BH Journal', durationMinutes: 15, priority: 2,
+          allowedTimeStartAnchor: 'isha', allowedTimeStartOffsetMin: 20,
+          allowedTimeEndAnchor: 'isha', allowedTimeEndOffsetMin: 85,
+          preferredTimeStartAnchor: 'isha', preferredTimeStartOffsetMin: 45
+        }),
+        // Soft preferred only (still flexible placement).
+        mk({
+          name: 'BH Inbox', durationMinutes: 20, priority: 3,
+          preferredTimeStartAnchor: 'asr', preferredTimeStartOffsetMin: 30,
+          preferredTimeEndAnchor: 'maghrib', preferredTimeEndOffsetMin: -60
+        }),
+        Object.assign(lateShell, { logs: [lateTs], lastLog: lateTs }),
+        mk({
+          name: 'BH New habit', durationMinutes: 10, priority: 1,
+          logs: [], lastLog: null, createdAt: frozen,
+          allowedTimeStartAnchor: 'sunrise', allowedTimeStartOffsetMin: 100,
+          allowedTimeEndAnchor: 'dhuhr', allowedTimeEndOffsetMin: -30
+        }),
+
+        // Multi-times with dynamic windows
+        mk({
+          name: 'BH Laundry', target: targetFromRhythmParts(3, 7),
+          durationMinutes: 20, priority: 2,
+          allowedTimeStartAnchor: 'asr', allowedTimeStartOffsetMin: 0,
+          allowedTimeEndAnchor: 'maghrib', allowedTimeEndOffsetMin: -30
+        }),
+        mk({
+          name: 'BH Groceries', target: 3, durationMinutes: 25, priority: 2,
+          locationIds: [HOME],
+          allowedTimeStartAnchor: 'dhuhr', allowedTimeStartOffsetMin: 40,
+          allowedTimeEndAnchor: 'asr', allowedTimeEndOffsetMin: 30
+        }),
+        mk({
+          name: 'BH Deep clean', target: targetFromRhythmParts(2, 7),
+          durationMinutes: 30, priority: 3,
+          allowedTimeStartAnchor: 'sunrise', allowedTimeStartOffsetMin: 120,
+          allowedTimeEndAnchor: 'dhuhr', allowedTimeEndOffsetMin: -60
+        })
+      ];
+
+      const settings = Object.assign({}, loadSortSettings(), {
+        // Tight vs fragmented open time — availability is the soft budget;
+        // blocks carve the hard gaps.
+        availabilityMinutes: [180, 180, 180, 180, 180, 240, 240],
+        availabilityOverrides: {},
+        locations: [{ id: HOME, name: 'Home', lat: 40.734852, lng: -74.003584 }],
+        lastKnownLocationId: HOME,
+        prayerMethod: 'NorthAmerica',
+        prayerMadhab: 'shafi',
+        blockedTimes: [
+          // Sleep @ isha+90 so isha-window habits have a real evening gap.
+          {
+            label: 'sleep', days: [], locationId: HOME, start: 1320, end: 420,
+            startAnchor: 'sunrise', startOffsetMin: -480,
+            startCombine: 'later', startAnchor2: 'isha', startOffsetMin2: 90,
+            startDayOffset: 1, startDayOffset2: 0,
+            endAnchor: 'sunrise', endOffsetMin: -30
+          },
+          {
+            label: 'breakfast', days: [], locationId: HOME, start: 480, end: 510,
+            startAnchor: 'sunrise', startOffsetMin: 100,
+            endAnchor: 'sunrise', endOffsetMin: 130
+          },
+          { label: 'work am', days: [1, 2, 3, 4, 5], start: 540, end: 720 },
+          {
+            label: 'lunch', days: [], locationId: HOME, start: 720, end: 750,
+            startAnchor: 'dhuhr', startOffsetMin: -10,
+            endAnchor: 'dhuhr', endOffsetMin: 25
+          },
+          // After summer dhuhr so dhuhr-anchored habits can place on weekdays.
+          { label: 'work pm', days: [1, 2, 3, 4, 5], start: 840, end: 1020 }, // 2–5
+          {
+            label: 'sunset', days: [], locationId: HOME, start: 1080, end: 1140,
+            startAnchor: 'maghrib', startOffsetMin: -20,
+            endAnchor: 'maghrib', endOffsetMin: 5
+          },
+          {
+            label: 'dinner', days: [], locationId: HOME, start: 1140, end: 1200,
+            startAnchor: 'maghrib', startOffsetMin: 55,
+            endAnchor: 'maghrib', endOffsetMin: 100
+          }
+        ],
+        showWeekOnHome: true,
+        showDueHabitsInAgenda: true,
+        showPlannedItemsInAgenda: true,
+        agendaOptimizer: false
+      });
+
+      // Persist so prayer/block resolvers that read loadSortSettings() agree.
+      saveSortSettings(settings);
+      if (typeof sortSettings !== 'undefined' && sortSettings) Object.assign(sortSettings, settings);
+
+      const data = normalize(raw);
+      const week = buildWeekAgenda(data, settings, 7);
+
+      function overlapsBlock(placeMin, endMin, blockIntervals) {
+        return blockIntervals.some(b => placeMin < b.end && endMin > b.start);
+      }
+
+      const byDay = week.days.map((d, i) => {
+        const fills = (d.timeline || []).filter(r => r.kind === 'fill').map(r => ({
+          name: r.h.name,
+          min: Math.round((r.start - d.dayBase) / 60000),
+          end: Math.round((r.end - d.dayBase) / 60000)
+        }));
+        const slots = (d.slots || []).map(s => ({
+          a: Math.round((s.start - d.dayBase) / 60000),
+          b: Math.round((s.end - d.dayBase) / 60000)
+        }));
+        // Resolved blocked intervals for this weekday (fixed + dynamic).
+        const blockIntervals = [];
+        for (const b of normalizeBlockedTimes(settings.blockedTimes)) {
+          if (b.days.length && !b.days.includes(d.weekday)) continue;
+          let start = b.start;
+          let end = b.end;
+          if (b.startAnchor || b.endAnchor) {
+            const loc = settings.locations.find(l => l.id === b.locationId);
+            if (loc) {
+              if (b.startAnchor) {
+                const sm = resolvePrayerExprMinutes(
+                  { latitude: loc.lat, longitude: loc.lng },
+                  b.startAnchor, b.startOffsetMin, d.dayBase, b.startDayOffset
+                );
+                let s2 = null;
+                if (b.startCombine && b.startAnchor2) {
+                  s2 = resolvePrayerExprMinutes(
+                    { latitude: loc.lat, longitude: loc.lng },
+                    b.startAnchor2, b.startOffsetMin2, d.dayBase, b.startDayOffset2
+                  );
+                }
+                const combined = combineResolvedMinutes(sm, s2, b.startCombine);
+                if (combined != null) start = ((combined % 1440) + 1440) % 1440;
+              }
+              if (b.endAnchor) {
+                const em = resolvePrayerExprMinutes(
+                  { latitude: loc.lat, longitude: loc.lng },
+                  b.endAnchor, b.endOffsetMin, d.dayBase, b.endDayOffset
+                );
+                if (em != null) end = ((em % 1440) + 1440) % 1440;
+              }
+            }
+          }
+          if (start !== end) blockIntervals.push({ label: b.label, start, end });
+        }
+
+        const inBlock = fills.filter(f => overlapsBlock(f.min, f.end, blockIntervals));
+
+        // Window checks for prayer / fixed-window habits that placed.
+        const windowMiss = [];
+        for (const f of fills) {
+          const h = data.find(x => x.name === f.name);
+          if (!h || !hasTimeWindow(h)) continue;
+          const win = fillTimeWindow(h, d.dayBase, HOME);
+          if (!win) continue; // unresolved → skip (separate assertion covers resolve)
+          const wStart = Math.round((win.start - d.dayBase) / 60000);
+          const wEnd = Math.round((win.end - d.dayBase) / 60000);
+          if (f.min < wStart || f.end > wEnd + 1) {
+            windowMiss.push({ name: f.name, place: [f.min, f.end], win: [wStart, wEnd] });
+          }
+        }
+
+        // Due dailies missing despite leftover availability + a gap that fits.
+        const dailies = data.filter(h => Number(h.target) <= 1);
+        const missingDue = [];
+        const spareFit = [];
+        for (const h of dailies) {
+          if (fills.some(f => f.name === h.name)) continue;
+          if (!isWeekCandidate(h, settings, d.dayBase, d.weekday)) continue;
+          missingDue.push(h.name);
+          const need = clampDuration(h.durationMinutes);
+          if (d.remainingMinutes < need) continue;
+          // Rebuild state with committed fills, then try the missing habit.
+          const state = createDayPlacementState(
+            Object.assign({}, d, { agendaItems: [], timeline: (d.timeline || []).filter(r => r.kind === 'scheduled') }),
+            settings,
+            { dayBase: d.dayBase, weekday: d.weekday, weekMode: true }
+          );
+          for (const row of (d.timeline || []).filter(r => r.kind === 'fill')) {
+            const fill = {
+              h: row.h, i: data.findIndex(x => x.name === row.h.name),
+              priority: effectivePriority(row.h), scarcity: 0
+            };
+            const fit = tryPlaceOnDay(state, fill, { settings, allowNetwork: true });
+            if (fit) commitPlacement(state, fill, fit);
+          }
+          const probe = tryPlaceOnDay(
+            state,
+            { h, i: data.findIndex(x => x.name === h.name), priority: effectivePriority(h), scarcity: 0 },
+            { settings, allowNetwork: true }
+          );
+          if (probe) {
+            spareFit.push({
+              name: h.name,
+              rem: d.remainingMinutes,
+              need,
+              wouldPlaceMin: Math.round((probe.placeStart - d.dayBase) / 60000)
+            });
+          }
+        }
+
+        return {
+          day: i,
+          weekday: d.weekday,
+          used: d.usedMinutes,
+          rem: d.remainingMinutes,
+          total: d.totalMinutes,
+          slots,
+          fills,
+          blockIntervals,
+          inBlock,
+          windowMiss,
+          missingDue,
+          spareFit
+        };
+      });
+
+      const counts = Object.fromEntries(
+        data.map(h => [h.name, byDay.filter(d => d.fills.some(f => f.name === h.name)).length])
+      );
+
+      // Prayer windows must resolve (settings seeded).
+      const maghrib = data.find(h => h.name === 'BH Maghrib');
+      const maghribWin = fillTimeWindow(maghrib, todayBase + 86400000, HOME);
+
+      // Manual plan rescue for first spareFit on a weekday (days 1–4).
+      let rescue = null;
+      const rescueDay = byDay.find(d => d.day >= 1 && d.day <= 4 && d.spareFit.length);
+      if (rescueDay) {
+        const name = rescueDay.spareFit[0].name;
+        const dayBase = week.days[rescueDay.day].dayBase;
+        const data2 = normalize(data.map(h => {
+          if (h.name !== name) return h;
+          return Object.assign({}, h, {
+            logs: [...(h.logs || []), { ts: dayBase + 10 * 3600000, plan: true }]
+          });
+        }));
+        const week2 = buildWeekAgenda(data2, settings, 7);
+        const fills2 = (week2.days[rescueDay.day].timeline || [])
+          .filter(r => r.kind === 'fill').map(r => r.h.name);
+        const beforeNames = rescueDay.fills.map(f => f.name);
+        rescue = {
+          day: rescueDay.day,
+          name,
+          placed: fills2.includes(name),
+          othersKept: beforeNames.every(n => n === name || fills2.includes(n)),
+          fillsBefore: beforeNames,
+          fillsAfter: fills2,
+          remAfter: week2.days[rescueDay.day].remainingMinutes
+        };
+      }
+
+      // Sunrise stretch vs flexible Inbox on tomorrow morning gap.
+      const tom = byDay[1];
+      const sunrise = tom.fills.find(f => f.name === 'BH Sunrise stretch');
+      const inbox = tom.fills.find(f => f.name === 'BH Inbox');
+      const breakfast = tom.blockIntervals.find(b => b.label === 'breakfast');
+      const dynamicHabitNames = data
+        .filter(h => hasTimeWindow(h) && (
+          h.allowedTimeStartAnchor || h.allowedTimeEndAnchor
+        ))
+        .map(h => h.name);
+
+      return {
+        counts,
+        byDay,
+        rescue,
+        maghribWinMin: maghribWin
+          ? {
+              s: Math.round((maghribWin.start - (todayBase + 86400000)) / 60000),
+              e: Math.round((maghribWin.end - (todayBase + 86400000)) / 60000)
+            }
+          : null,
+        sunriseTom: sunrise || null,
+        inboxTom: inbox || null,
+        breakfastTom: breakfast || null,
+        tomSlots: tom.slots,
+        dynamicHabitNames,
+        dynamicHabitCount: dynamicHabitNames.length,
+        spareFitTotal: byDay.reduce((n, d) => n + d.spareFit.length, 0),
+        inBlockTotal: byDay.reduce((n, d) => n + d.inBlock.length, 0),
+        windowMissTotal: byDay.reduce((n, d) => n + d.windowMiss.length, 0)
+      };
+    } finally {
+      globalThis.Date = orig;
+    }
+  }, { frozen: FROZEN });
+
+  console.log('  counts:', JSON.stringify(blocked.counts));
+  console.log('  maghribWin:', JSON.stringify(blocked.maghribWinMin));
+  console.log('  tomSlots:', JSON.stringify(blocked.tomSlots));
+  console.log('  spareFitTotal:', blocked.spareFitTotal, 'rescue:', JSON.stringify(blocked.rescue));
+  if (blocked.spareFitTotal) {
+    console.log('  spareFit detail:', JSON.stringify(blocked.byDay.map(d => ({
+      day: d.day, spareFit: d.spareFit, missingDue: d.missingDue, rem: d.rem, fills: d.fills.map(f => f.name)
+    })), null, 2));
+  }
+
+  check('prayer windows resolve with seeded home location (maghrib tomorrow)',
+    blocked.maghribWinMin != null && blocked.maghribWinMin.s > 1000 && blocked.maghribWinMin.e > blocked.maghribWinMin.s,
+    JSON.stringify(blocked.maghribWinMin));
+
+  check('most habits use dynamic prayer-anchored windows',
+    blocked.dynamicHabitCount >= 16,
+    `got ${blocked.dynamicHabitCount}: ${JSON.stringify(blocked.dynamicHabitNames)}`);
+
+  check('no fill overlaps a blocked interval across the week',
+    blocked.inBlockTotal === 0,
+    JSON.stringify(blocked.byDay.flatMap(d => d.inBlock.map(x => ({ day: d.day, ...x })))));
+
+  check('no fill lands outside its allowed/prayer window',
+    blocked.windowMissTotal === 0,
+    JSON.stringify(blocked.byDay.flatMap(d => d.windowMiss.map(x => ({ day: d.day, ...x })))));
+
+  // Core dynamic dailies should appear most days when their gaps exist.
+  // These windows were chosen to sit in open gaps (not inside dinner/sleep);
+  // skips here are planner bugs, not "the block covers the allowed time".
+  for (const name of [
+    'BH Shower', 'BH Journal', 'BH late-log floss', 'BH Dinner dishes',
+    'BH Maghrib', 'BH Isha', 'BH Sunrise stretch'
+  ]) {
+    check(`${name} places on at least 6 of 7 days (window clears blocks)`,
+      blocked.counts[name] >= 6,
+      `got ${blocked.counts[name]}/7`);
+  }
+
+  check('BH Fajr / Quran place on future dawn gaps',
+    blocked.counts['BH Fajr'] + blocked.counts['BH Quran'] >= 6,
+    JSON.stringify({ fajr: blocked.counts['BH Fajr'], quran: blocked.counts['BH Quran'] }));
+  check('BH Dhuhr places on future days',
+    blocked.counts['BH Dhuhr'] >= 4,
+    `got ${blocked.counts['BH Dhuhr']}`);
+  check('BH Lunch walk (dhuhr→asr) places most days',
+    blocked.counts['BH Lunch walk'] >= 3,
+    `got ${blocked.counts['BH Lunch walk']}`);
+  check('BH Morning review (sunrise-anchored) places most days',
+    blocked.counts['BH Morning review'] >= 3,
+    `got ${blocked.counts['BH Morning review']}`);
+  check('BH Sunset walk (asr→maghrib) places most days',
+    blocked.counts['BH Sunset walk'] >= 3,
+    `got ${blocked.counts['BH Sunset walk']}`);
+  check('BH New habit (sunrise→dhuhr) places most days',
+    blocked.counts['BH New habit'] >= 3,
+    `got ${blocked.counts['BH New habit']}`);
+
+  // Scarcity: sunrise stays before the dynamic breakfast block when it places.
+  if (blocked.sunriseTom && blocked.breakfastTom) {
+    check('BH Sunrise stretch on tomorrow stays before dynamic breakfast',
+      blocked.sunriseTom.end <= blocked.breakfastTom.start,
+      `sunrise=${JSON.stringify(blocked.sunriseTom)} breakfast=${JSON.stringify(blocked.breakfastTom)}`);
+  } else {
+    check('BH Sunrise stretch on tomorrow stays before dynamic breakfast',
+      Boolean(blocked.sunriseTom),
+      `sunrise=${JSON.stringify(blocked.sunriseTom)} breakfast=${JSON.stringify(blocked.breakfastTom)}`);
+  }
+
+  // Flexible inbox may share a gap but must not displace the sunrise fill.
+  if (blocked.sunriseTom && blocked.inboxTom) {
+    check('BH Inbox does not overlap the seated Sunrise stretch fill',
+      blocked.inboxTom.min >= blocked.sunriseTom.end || blocked.inboxTom.end <= blocked.sunriseTom.min,
+      `sunrise=${JSON.stringify(blocked.sunriseTom)} inbox=${JSON.stringify(blocked.inboxTom)}`);
+  } else {
+    check('BH Inbox does not overlap the seated Sunrise stretch fill', true, 'inbox not on tomorrow');
+  }
+
+  check('multi-times still place somewhere in the blocked week',
+    blocked.counts['BH Laundry'] + blocked.counts['BH Groceries'] + blocked.counts['BH Deep clean'] >= 2,
+    JSON.stringify({
+      laundry: blocked.counts['BH Laundry'],
+      groceries: blocked.counts['BH Groceries'],
+      deep: blocked.counts['BH Deep clean']
+    }));
+
+  // The reported symptom: leftover gap that fits a due habit the planner skipped.
+  check('no due habit left unplaced while a real open gap still fits it',
+    blocked.spareFitTotal === 0,
+    JSON.stringify(blocked.byDay.filter(d => d.spareFit.length).map(d => ({
+      day: d.day, rem: d.rem, spareFit: d.spareFit, fills: d.fills.map(f => f.name)
+    }))));
+
+  if (blocked.rescue) {
+    check('manual plan places the skipped habit on that day',
+      blocked.rescue.placed,
+      JSON.stringify(blocked.rescue));
+    check('manual plan keeps the other fills already on that day',
+      blocked.rescue.othersKept,
+      JSON.stringify(blocked.rescue));
+  } else {
+    check('manual plan rescue not needed (no spare-fit skips)', true);
+  }
+
+  for (const day of blocked.byDay) {
+    check(`blocked day ${day.day} used ≤ availability total`,
+      day.used <= day.total + 0.01,
+      `used=${day.used} total=${day.total}`);
+  }
+
+  // ── Sixth scenario: preferred evening blanked all week by morning flex ──
+  // Blocks carve a real evening gap; availability is spent ASAP in the morning
+  // by higher-priority flex. Preferred-only habits used to stay off the agenda
+  // every day (rem=0, evening open) until a manual plan forced them on.
+  console.log('\n[tight-rhythm-pref-evening] preferred evening must not blank the whole week');
+  const prefEve = await page.evaluate(({ frozen }) => {
+    const RealDate = Date;
+    function FrozenDate(...args) {
+      if (args.length === 0) return new RealDate(frozen);
+      return new RealDate(...args);
+    }
+    FrozenDate.now = () => frozen;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate, RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const orig = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    try {
+      const HOME = 'home';
+      const todayBase = dayStart(frozen);
+      const ago = todayBase - 86400000 + 9 * 3600000;
+      const inbox = {
+        name: 'PE Inbox', type: 'keepup', target: 1, durationMinutes: 20, priority: 3,
+        preferredTimeStartAnchor: 'isha', preferredTimeStartOffsetMin: 30,
+        preferredTimeEndAnchor: 'isha', preferredTimeEndOffsetMin: 80,
+        allowedTimeStart: null, allowedTimeEnd: null,
+        logs: [ago], lastLog: ago, flexibilityDays: 0, locationIds: [],
+        emoji: '', pinned: false, topics: [], createdAt: frozen
+      };
+      const flex = Array.from({ length: 5 }, (_, i) => ({
+        name: 'PE Flex ' + i, type: 'keepup', target: 1, durationMinutes: 20, priority: 1,
+        logs: [ago], lastLog: ago, flexibilityDays: 0, locationIds: [],
+        emoji: '', pinned: false, topics: [], createdAt: frozen
+      }));
+      const settings = Object.assign({}, loadSortSettings(), {
+        availabilityMinutes: [80, 80, 80, 80, 80, 80, 80],
+        locations: [{ id: HOME, name: 'Home', lat: 40.734852, lng: -74.003584 }],
+        lastKnownLocationId: HOME,
+        prayerMethod: 'NorthAmerica',
+        prayerMadhab: 'shafi',
+        blockedTimes: [
+          {
+            label: 'sleep', days: [], locationId: HOME, start: 1320, end: 420,
+            startAnchor: 'sunrise', startOffsetMin: -480,
+            startCombine: 'later', startAnchor2: 'isha', startOffsetMin2: 90,
+            startDayOffset: 1, startDayOffset2: 0,
+            endAnchor: 'sunrise', endOffsetMin: -30
+          },
+          { label: 'work am', days: [1, 2, 3, 4, 5], start: 540, end: 720 },
+          { label: 'work pm', days: [1, 2, 3, 4, 5], start: 780, end: 1020 },
+          {
+            label: 'dinner', days: [], locationId: HOME, start: 1140, end: 1200,
+            startAnchor: 'maghrib', startOffsetMin: 55,
+            endAnchor: 'maghrib', endOffsetMin: 100
+          }
+        ],
+        showDueHabitsInAgenda: true,
+        showWeekOnHome: true,
+        showPlannedItemsInAgenda: true,
+        agendaOptimizer: false
+      });
+      saveSortSettings(settings);
+      if (typeof sortSettings !== 'undefined' && sortSettings) Object.assign(sortSettings, settings);
+      const data = normalize([inbox, ...flex]);
+      const week = buildWeekAgenda(data, settings, 7);
+      const byDay = week.days.map((d, i) => {
+        const fills = (d.timeline || []).filter(r => r.kind === 'fill').map(r => ({
+          name: r.h.name,
+          min: Math.round((r.start - d.dayBase) / 60000)
+        }));
+        const slots = (d.slots || []).map(s => ({
+          a: Math.round((s.start - d.dayBase) / 60000),
+          b: Math.round((s.end - d.dayBase) / 60000)
+        }));
+        return {
+          day: i,
+          rem: d.remainingMinutes,
+          fills,
+          hasInbox: fills.some(f => f.name === 'PE Inbox'),
+          inboxMin: (fills.find(f => f.name === 'PE Inbox') || {}).min,
+          eveningOpen: slots.some(s => s.b > 1320 && s.a < 1400)
+        };
+      });
+      return {
+        count: byDay.filter(d => d.hasInbox).length,
+        byDay,
+        eveningOpenDays: byDay.filter(d => d.eveningOpen).length
+      };
+    } finally {
+      globalThis.Date = orig;
+    }
+  }, { frozen: FROZEN });
+
+  console.log('  pref-evening:', JSON.stringify({
+    count: prefEve.count,
+    days: prefEve.byDay.map(d => ({ day: d.day, has: d.hasInbox, at: d.inboxMin, rem: d.rem }))
+  }));
+  check('preferred evening inbox places all 7 days (not blanked by morning flex)',
+    prefEve.count === 7,
+    `got ${prefEve.count}/7`);
+  check('preferred evening landings stay in the evening gap',
+    prefEve.byDay.every(d => d.inboxMin == null || d.inboxMin >= 1200),
+    JSON.stringify(prefEve.byDay.map(d => d.inboxMin)));
+  check('evening open slots exist across the week (blocks are not covering the preference)',
+    prefEve.eveningOpenDays >= 5,
+    `eveningOpenDays=${prefEve.eveningOpenDays}`);
 
   await browser.close();
   if (failures.length) {

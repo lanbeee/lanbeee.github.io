@@ -1173,18 +1173,22 @@ function intersectWindows(a,b){
 // (NOT the location passed in here — that may be a different allowed
 // location). If the habit has no usable location yet (e.g. mid-save), the
 // anchor endpoints degrade to "unset" and the window collapses to empty.
-function effectiveLocationWindow(h,loc,weekday){
+function effectiveLocationWindow(h,loc,weekday,dayBase){
   const locWin = loc ? resolveLocationWindow(loc,weekday) : {start:0,end:1440};
   if(!locWin)return [];
   // Both prayer anchors and habit anchors are dynamic; resolve through the
   // shared resolver. Habit anchors ignore the passed-in location (they use
   // the anchor habit's log); prayer anchors use the habit's resolved location
   // — NOT the location passed in here, which may be a different allowed one.
+  // dayBase must be the day being placed (not Date.now): otherwise a located
+  // habit's sunrise window is resolved for today and stamped onto tomorrow,
+  // which can miss the open post-sleep gap even when the real window is clear.
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
   const startAnchor = cleanAnchor(h && h.allowedTimeStartAnchor);
   const endAnchor = cleanAnchor(h && h.allowedTimeEndAnchor);
   if(startAnchor || endAnchor){
-    const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayStart(Date.now()));
-    const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayStart(Date.now()));
+    const startMin = resolveHabitTimeField(h,'allowedTimeStart',base);
+    const endMin = resolveHabitTimeField(h,'allowedTimeEnd',base);
     if(startMin == null || endMin == null)return [];
     return intersectWindows({start:startMin,end:endMin},locWin);
   }
@@ -1398,8 +1402,19 @@ function sampleLogs(actualDays = [],plannedDays = []){
 // impurity and is acceptable (clock reads port cleanly to RN).
 // ─────────────────────────────────────────────────────────────────────────
 
-function daysSince(ts){return ts ? Math.floor((Date.now() - ts) / 86400000) : null;}
-function dayDistance(ts){return ts ? Math.round((Date.now() - ts) / 86400000) : null;}
+// Calendar-day age (not rolling 24h). A log from yesterday 9pm is 1 day old
+// at 6am today — so daily habits become due each morning even when the prior
+// session was less than 24 hours ago. Rolling Math.floor(ms/86400000) made
+// those habits look "not due" until the clock caught up, while a manual plan
+// still placed them (hasPlannedForDay bypasses the age check).
+function daysSince(ts){
+  if(!ts)return null;
+  return Math.round((dayStart(Date.now()) - dayStart(ts)) / 86400000);
+}
+function dayDistance(ts){
+  if(!ts)return null;
+  return Math.round((dayStart(Date.now()) - dayStart(ts)) / 86400000);
+}
 function daysUntil(ts){return ts ? Math.floor((dayStart(ts) - dayStart(Date.now())) / 86400000) : null;}
 function dayStart(ts){
   const d = new Date(ts);
