@@ -960,15 +960,15 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
-/** PURE: breakable progress slider markup (0–100% of today's / task budget).
- *  Thumb cannot go below committed progress (no reverse). */
+/** PURE: breakable progress slider markup (0–100% of today's / task budget). */
 function cardBreakableSlider(h){
   const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
   const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
-  const pct = total > 0 ? Math.max(0,Math.min(100,Math.round((done / total) * 100))) : 0;
+  const pct = total > 0 ? Math.max(0,Math.min(100,(done / total) * 100)) : 0;
+  const value = Math.round(pct * 1000) / 1000;
   const label = `progress ${done} of ${total} minutes`;
   return `<div class="breakable-progress" data-breakable-progress>
-    <input type="range" class="breakable-slider" min="${pct}" max="100" step="1" value="${pct}"
+    <input type="range" class="breakable-slider" min="0" max="100" step="0.1" value="${value}"
       aria-label="${escapeHtml(label)}" data-committed="${done}" data-total="${total}" />
     <span class="breakable-progress-label" aria-hidden="true">${done}/${total}m</span>
   </div>`;
@@ -1584,7 +1584,7 @@ function render(opts){
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
-        <div class="ting-info">
+        <div class="ting-info${showBreakableSlider ? ' has-breakable-progress' : ''}">
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
             <div class="mini-score-ring ${cardScoreTone}" style="--score:${cardScore ?? 0};--score-color:${accent};" title="${escapeHtml(cue)}" aria-hidden="true"></div>
@@ -1986,68 +1986,37 @@ function renderProgressive(){
   _homeListFingerprint = homeListFingerprint();
 }
 
-// WIRE: breakable progress slider — only a real drag sets a pending target;
-// tap/pulse without drag always logs the min-chunk suggestion.
+// WIRE: slider input only sets a pending absolute target. Logging stays on the
+// pulse/double-tap path, and slider gestures never activate or swipe the card.
 function setupBreakableSlider(row,_realIdx){
   const slider = row.querySelector('.breakable-slider');
   const label = row.querySelector('.breakable-progress-label');
   if(!slider)return;
   const total = Math.max(1,Math.round(Number(slider.dataset.total) || 1));
   const committed = Math.max(0,Math.min(total,Math.round(Number(slider.dataset.committed) || 0)));
-  const minPct = total > 0 ? Math.max(0,Math.min(100,Math.round((committed / total) * 100))) : 0;
-  slider.min = String(minPct);
-  let dragOriginX = null;
-  let dragged = false;
+  const committedPct = total > 0 ? Math.max(0,Math.min(100,(committed / total) * 100)) : 0;
+  slider.min = '0';
   function syncLabel(minutes){
     if(label)label.textContent = `${Math.round(minutes)}/${total}m`;
     slider.setAttribute('aria-label',`progress ${Math.round(minutes)} of ${total} minutes`);
   }
   function onInput(){
-    let pct = Math.max(minPct,Math.min(100,Number(slider.value) || 0));
-    if(Number(slider.value) < minPct)slider.value = String(minPct);
-    const minutes = Math.max(committed,Math.min(total,Math.round(total * pct / 100)));
-    // Ignore stray input/change without a real drag (common on mobile taps
-    // near the control) — otherwise pulse would commit to 100%.
-    if(!dragged){
-      row.dataset.progressTarget = String(committed);
-      row.dataset.progressDirty = '0';
-      syncLabel(committed);
-      slider.value = String(minPct);
-      slider.style.setProperty('--breakable-pct',`${minPct}%`);
-      return;
+    const pct = Math.max(0,Math.min(100,Number(slider.value) || 0));
+    let minutes = Math.max(0,Math.min(total,Math.round(total * pct / 100)));
+    // A visible percentage move should always represent at least one minute.
+    if(minutes === committed && Math.abs(pct - committedPct) > 0.0001){
+      minutes = Math.max(0,Math.min(total,committed + (pct > committedPct ? 1 : -1)));
     }
-    if(minutes > committed){
-      row.dataset.progressTarget = String(minutes);
-      row.dataset.progressDirty = '1';
-    }else{
-      row.dataset.progressTarget = String(committed);
-      row.dataset.progressDirty = '0';
-    }
+    row.dataset.progressTarget = String(minutes);
+    row.dataset.progressDirty = minutes === committed ? '0' : '1';
     syncLabel(minutes);
-    slider.style.setProperty('--breakable-pct',`${pct}%`);
+    slider.style.setProperty('--breakable-target-pct',`${pct}%`);
   }
-  slider.style.setProperty('--breakable-pct',`${slider.value}%`);
+  slider.style.setProperty('--breakable-committed-pct',`${committedPct}%`);
+  slider.style.setProperty('--breakable-target-pct',`${slider.value}%`);
   const stop = e=>{ e.stopPropagation(); };
-  ['pointerdown','touchstart','mousedown','click'].forEach(ev=>{
+  ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel','mousedown','mouseup','click'].forEach(ev=>{
     slider.addEventListener(ev,stop,{ passive:true });
-  });
-  slider.addEventListener('pointerdown',e=>{
-    dragOriginX = e.clientX;
-    dragged = false;
-  });
-  slider.addEventListener('pointermove',e=>{
-    if(dragOriginX == null)return;
-    if(Math.abs(e.clientX - dragOriginX) >= 6)dragged = true;
-  });
-  slider.addEventListener('pointerup',()=>{ dragOriginX = null; });
-  slider.addEventListener('pointercancel',()=>{
-    dragOriginX = null;
-    dragged = false;
-    row.dataset.progressDirty = '0';
-    row.dataset.progressTarget = String(committed);
-    slider.value = String(minPct);
-    syncLabel(committed);
-    slider.style.setProperty('--breakable-pct',`${minPct}%`);
   });
   slider.addEventListener('input',onInput);
   slider.addEventListener('change',onInput);
@@ -2598,6 +2567,14 @@ function executeUndo(){
       data[idx].snoozedUntil = snoozedUntilBefore;
     }
   }
+  if(pendingAction.type === 'breakable-set'){
+    const {idx,logs,snoozedUntil} = pendingAction;
+    if(data[idx]){
+      data[idx].logs = normalizeLogs(logs);
+      data[idx].lastLog = latestActualLog(data[idx].logs);
+      data[idx].snoozedUntil = snoozedUntil;
+    }
+  }
   if(pendingAction.type === 'restore-blocked'){
     const {dayKey,label,startMin,endMin,freedMin} = pendingAction;
     if(typeof restoreBlockedInstance === 'function')restoreBlockedInstance(dayKey,label,startMin,endMin);
@@ -2625,43 +2602,73 @@ function executeUndo(){
 }
 
 /**
- * HYBRID: commit breakable card progress from slider (or suggested chunk).
- * - Real slider drag ahead → log delta to target.
- * - Plain pulse/tap → always min-chunk suggestion (never the placed piece size,
- *   never full remaining). Accidental slider input without a drag is ignored.
+ * HYBRID: set absolute breakable progress. Forward movement appends a minute
+ * log; backward movement consolidates minute logs in the relevant scope while
+ * preserving plans and non-minute entries.
  * Returns true when a log was saved.
  */
-function commitBreakableFromCard(i,card){
+function commitBreakableProgress(i,targetMinutes,dayBase){
   const data = load();
   if(!data[i] || !data[i].breakable)return false;
   const h = data[i];
+  const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h,dayBase) : 0;
+  const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
+  let target = Math.round(Number(targetMinutes));
+  if(!Number.isFinite(target))target = done;
+  target = Math.max(0,Math.min(total,target));
+  if(target === done)return false;
+
+  if(target > done){
+    const delta = typeof breakableSliderDeltaMinutes === 'function'
+      ? breakableSliderDeltaMinutes(h,target,dayBase)
+      : (target - done);
+    if(delta > 0)return logTing(i,{ minutes:delta });
+    return false;
+  }
+
+  const logsBefore = normalizeLogs(h.logs);
+  const snoozedUntil = h.snoozedUntil || null;
+  const result = rewriteBreakableProgress(h,target,dayBase);
+  if(result.mode !== 'set' || !save(data))return false;
+  showActionToast(`Set ${toastItemName(h)} · ${target}m`,{
+    type:'breakable-set',idx:i,logs:logsBefore,snoozedUntil,openAction:false
+  });
+  return true;
+}
+
+// PURE: read the pending target from a card, or compute its untouched quick-log
+// advance. The agenda chunk is only used when it is a true partial placement.
+function breakableCardIntent(h,card){
   const row = card && card.closest ? card.closest('.swipe-row') : null;
   const dirty = row && row.dataset.progressDirty === '1';
   const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
   const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
-  let target = dirty && row
-    ? Math.round(Number(row.dataset.progressTarget))
-    : done;
+  let target = dirty && row ? Math.round(Number(row.dataset.progressTarget)) : done;
   if(!Number.isFinite(target))target = done;
-  target = Math.max(done,Math.min(total,target));
-
-  if(dirty && target > done){
-    const delta = typeof breakableSliderDeltaMinutes === 'function'
-      ? breakableSliderDeltaMinutes(h,target)
-      : (target - done);
-    if(delta > 0)return logTing(i,{ minutes:delta });
-  }
-
-  const suggested = typeof suggestedBreakableLogMinutes === 'function'
-    ? suggestedBreakableLogMinutes(h,null)
+  target = Math.max(0,Math.min(total,target));
+  const chunk = row && row.dataset.chunkMinutes != null && row.dataset.chunkMinutes !== ''
+    ? Math.round(Number(row.dataset.chunkMinutes))
     : null;
+  const suggested = typeof suggestedBreakableLogMinutes === 'function'
+    ? suggestedBreakableLogMinutes(h,chunk)
+    : 0;
+  return {row,dirty:dirty && target !== done,done,target,suggested};
+}
+
+/** HYBRID: commit a card's pending target, or advance by its quick-log amount. */
+function commitBreakableFromCard(i,card){
+  const h = load()[i];
+  if(!h || !h.breakable)return false;
+  const intent = breakableCardIntent(h,card);
+  if(intent.dirty)return commitBreakableProgress(i,intent.target);
+  const suggested = typeof suggestedBreakableLogMinutes === 'function'
+    ? intent.suggested
+    : 0;
   if(!suggested || suggested <= 0){
     showToast('already done');
     return false;
   }
-  // Always pass minutes explicitly — a bare breakable log without minutes is
-  // treated as a full completion for tasks and clears rhythm eligibility.
-  return logTing(i,{ minutes:suggested });
+  return commitBreakableProgress(i,intent.done + suggested);
 }
 
 // HYBRID: log entry and flash card
@@ -2677,20 +2684,12 @@ function quickLog(i,card){
   const h = data[i];
   if(h && h.breakable){
     if(h.trackValue && typeof requestLogTing === 'function'){
-      const row = card && card.closest ? card.closest('.swipe-row') : null;
-      const dirty = row && row.dataset.progressDirty === '1';
-      const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
-      const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
-      let target = dirty && row ? Math.round(Number(row.dataset.progressTarget)) : done;
-      if(!Number.isFinite(target))target = done;
-      target = Math.max(done,Math.min(total,target));
-      const minutes = (dirty && target > done)
-        ? (typeof breakableSliderDeltaMinutes === 'function'
-          ? breakableSliderDeltaMinutes(h,target)
-          : (target - done))
-        : (typeof suggestedBreakableLogMinutes === 'function'
-          ? suggestedBreakableLogMinutes(h,null)
-          : null);
+      const intent = breakableCardIntent(h,card);
+      if(intent.dirty && intent.target < intent.done){
+        if(commitBreakableProgress(i,intent.target))go();
+        return;
+      }
+      const minutes = intent.dirty ? intent.target - intent.done : intent.suggested;
       if(!minutes || minutes <= 0){
         showToast('already done');
         return;

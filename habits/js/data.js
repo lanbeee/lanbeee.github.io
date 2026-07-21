@@ -744,18 +744,22 @@ function breakableTotalMinutes(h){
   return clampDuration(h && h.durationMinutes);
 }
 /**
- * PURE: instant-tap suggestion for a breakable log.
- * Always a small step: min chunk (or finish-up when remaining < min).
- * Never the card's placed piece size and never the full remaining day —
- * large agenda chunks are placement, not a tap-sized log.
+ * PURE: instant-tap amount for a breakable log. A real partial agenda piece is
+ * meaningful, so use it when present. A continuous placement often equals the
+ * entire remaining budget; in that case fall back to the minimum as a quick-log
+ * step rather than treating the minimum as the preferred session length.
  */
-function suggestedBreakableLogMinutes(h,_chunkMinutes,dayBase){
+function suggestedBreakableLogMinutes(h,chunkMinutes,dayBase){
   if(!h || !h.breakable)return 0;
   const rem = breakableBudgetMinutes(h,dayBase);
   if(rem <= 0)return 0;
   const min = clampMinChunk(h.minChunkMinutes);
   if(rem < min)return rem;
-  return Math.min(min,rem);
+  let suggested = Math.round(Number(chunkMinutes));
+  if(!Number.isFinite(suggested) || suggested <= 0 || suggested >= rem){
+    suggested = min;
+  }
+  return Math.max(1,Math.min(suggested,rem));
 }
 /**
  * PURE: minutes to log when the user dragged the progress slider to a target.
@@ -765,7 +769,7 @@ function breakableSliderDeltaMinutes(h,targetMinutes,dayBase){
   if(!h || !h.breakable)return 0;
   const total = breakableTotalMinutes(h);
   const done = breakableProgressMinutes(h,dayBase);
-  const target = Math.max(done,Math.min(total,Math.round(Number(targetMinutes) || 0)));
+  const target = Math.max(0,Math.min(total,Math.round(Number(targetMinutes) || 0)));
   return Math.max(0,target - done);
 }
 /**

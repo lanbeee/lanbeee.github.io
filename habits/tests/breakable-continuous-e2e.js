@@ -13,7 +13,7 @@
  *   I. Progress slider UX:
  *      - slider only on first today timeline instance; later chunks keep trail
  *      - pulse/double-tap stay instant; no-drag tap logs suggested chunk (never full day)
- *      - drag ahead then pulse logs delta; drag below committed is ignored (no reverse)
+ *      - slider tap/drag sets a pending target; pulse commits ahead or correction
  *      - secondary chunk cards still pulse suggested chunk; primary slider refreshes
  *      - after commit, remaining agenda budget shrinks — leftover chunks MUST remain
  *      - partial log keeps includeInTodayAgenda / isWeekCandidate / todayCategory
@@ -269,8 +269,8 @@ async function breakableFillRows(page, name){
   assert(helpers.sugNull === 60, `null chunk → min 60, got ${helpers.sugNull}`);
   assert(helpers.sugFullRem === 60,
     `large/full card chunk must still tap-suggest min, got ${helpers.sugFullRem}`);
-  assert(helpers.sugPartialChunk === 60,
-    `placed piece size is ignored on tap — always min, got ${helpers.sugPartialChunk}`);
+  assert(helpers.sugPartialChunk === 90,
+    `true partial placed piece should be used, got ${helpers.sugPartialChunk}`);
   assert(helpers.sugFinish === 20, `finish-up suggestion 20, got ${helpers.sugFinish}`);
   assert(helpers.rewriteAddMode === 'add', `rewrite ahead → add, got ${helpers.rewriteAddMode}`);
   assert(helpers.rewriteAddDelta === 30, `rewrite add delta 30, got ${helpers.rewriteAddDelta}`);
@@ -579,6 +579,20 @@ async function breakableFillRows(page, name){
   assert(await page.locator('.ting-card:has-text("Normal stretch") .ting-trail').count() === 1,
     'non-breakable keeps trail dots');
 
+  // Non-breakable pulse remains the existing one-entry instant completion.
+  const normalBefore = await page.evaluate(() => {
+    const h = load().find(x => x.name === 'Normal stretch');
+    return normalizeLogs(h.logs).filter(log => !isPlanLog(log)).length;
+  });
+  await page.locator('.ting-card:has-text("Normal stretch") .pulse-btn').click();
+  await page.waitForFunction(before => {
+    const h = load().find(x => x.name === 'Normal stretch');
+    return normalizeLogs(h.logs).filter(log => !isPlanLog(log)).length === before + 1;
+  }, normalBefore, { timeout:5000 });
+  assert(await page.locator('.ting-card:has-text("Normal stretch") .breakable-slider').count() === 0,
+    'non-breakable remains slider-free after pulse');
+  console.log('  non-breakable pulse unchanged: OK');
+
   // Pulse without drag → suggested min chunk (60), not full 420.
   await sliderCard.locator('.pulse-btn').click();
   await page.waitForFunction(() => {
@@ -603,15 +617,16 @@ async function breakableFillRows(page, name){
   assert(afterPulse2.progress === 60, `pulse should log 60m suggestion, got ${afterPulse2.progress}`);
   assert(afterPulse2.budget === 360, `remaining budget 360, got ${afterPulse2.budget}`);
   assert(afterPulse2.label === '60/420m', `label should be 60/420m, got ${afterPulse2.label}`);
-  assert(afterPulse2.sliderVal === 14, `slider ~14% for 60/420, got ${afterPulse2.sliderVal}`);
-  assert(afterPulse2.min === 14, `slider min should clamp at committed 14%, got ${afterPulse2.min}`);
+  assert(Math.abs(afterPulse2.sliderVal - (60 / 420 * 100)) < 0.2,
+    `slider ~14.3% for 60/420, got ${afterPulse2.sliderVal}`);
+  assert(afterPulse2.min === 0, `slider must retain the full correction range, got min ${afterPulse2.min}`);
   console.log('  pulse logs suggestion 60m: OK');
 
-  // Drag below committed must not reverse — snaps to floor, not dirty.
+  // Move below committed to 45m, then pulse: rewrite today's minute logs to 45.
   const workCard = page.locator('.ting-card').filter({ hasText:'Slider work' });
   const slider2 = workCard.locator('.breakable-slider');
   await slider2.evaluate(el => {
-    el.value = '5';
+    el.value = String(45 / 420 * 100);
     el.dispatchEvent(new Event('input', { bubbles:true }));
     el.dispatchEvent(new Event('change', { bubbles:true }));
   });
@@ -627,28 +642,38 @@ async function breakableFillRows(page, name){
       min:el ? Number(el.min) : null
     };
   });
-  assert(reverseAttempt.min === 14, `min stays 14 after reverse attempt, got ${reverseAttempt.min}`);
-  assert(reverseAttempt.value === 14, `value snaps to min 14, got ${reverseAttempt.value}`);
-  assert(reverseAttempt.dirty === '0', `reverse drag must not dirty, got ${reverseAttempt.dirty}`);
-  assert(Number(reverseAttempt.target) === 60, `target stays 60, got ${reverseAttempt.target}`);
-  console.log('  no reverse via slider: OK');
+  assert(reverseAttempt.min === 0, `slider correction range starts at 0, got ${reverseAttempt.min}`);
+  assert(reverseAttempt.dirty === '1', `reverse target must be pending, got ${reverseAttempt.dirty}`);
+  assert(Number(reverseAttempt.target) === 45, `pending correction should be 45, got ${reverseAttempt.target}`);
+  await workCard.locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const h = load().find(x => x.name === 'Slider work');
+    return h && breakableProgressMinutes(h) === 45;
+  }, null, { timeout:5000 });
+  const afterCorrection = await page.evaluate(() => {
+    const h = load().find(x => x.name === 'Slider work');
+    const today = dayStart(Date.now());
+    const todayMinuteLogs = normalizeLogs(h.logs).filter(log =>
+      !isPlanLog(log) && logMinutes(log) !== null && dayStart(logTime(log)) === today);
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h),
+      minuteLogs:todayMinuteLogs.map(logMinutes),
+      keptHistorical:h.logs.some(log => dayStart(logTime(log)) < today)
+    };
+  });
+  assert(afterCorrection.progress === 45, `correction should set 45m, got ${afterCorrection.progress}`);
+  assert(afterCorrection.budget === 375, `correction should leave 375m, got ${afterCorrection.budget}`);
+  assert(JSON.stringify(afterCorrection.minuteLogs) === JSON.stringify([45]),
+    `correction should consolidate today's minutes to [45], got ${JSON.stringify(afterCorrection.minuteLogs)}`);
+  assert(afterCorrection.keptHistorical, 'correction must preserve out-of-scope history');
+  console.log('  reverse correction sets today to 45m: OK');
 
-  // Drag ahead to ~50% then pulse → log delta to ~210.
-  // Must simulate a real pointer drag — bare input events are ignored so
-  // accidental mobile taps near the slider cannot commit 100%.
+  // Native slider input (track tap, keyboard, or drag) to 50%, then pulse.
   await slider2.evaluate(el => {
-    el.dispatchEvent(new PointerEvent('pointerdown', {
-      bubbles:true, clientX:10, pointerId:1, pointerType:'touch'
-    }));
-    el.dispatchEvent(new PointerEvent('pointermove', {
-      bubbles:true, clientX:80, pointerId:1, pointerType:'touch'
-    }));
     el.value = '50';
     el.dispatchEvent(new Event('input', { bubbles:true }));
     el.dispatchEvent(new Event('change', { bubbles:true }));
-    el.dispatchEvent(new PointerEvent('pointerup', {
-      bubbles:true, clientX:80, pointerId:1, pointerType:'touch'
-    }));
   });
   const pending = await page.evaluate(() => {
     const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
@@ -659,7 +684,7 @@ async function breakableFillRows(page, name){
       target:row?.dataset.progressTarget
     };
   });
-  assert(pending.dirty === '1', 'slider drag ahead should mark dirty');
+  assert(pending.dirty === '1', 'slider input ahead should mark dirty');
   const targetMin = Math.round(420 * 50 / 100);
   assert(Number(pending.target) === targetMin,
     `target minutes ~${targetMin}, got ${pending.target}`);
@@ -712,8 +737,7 @@ async function breakableFillRows(page, name){
   });
   assert(afterSecondPulse.progress === 270, `second pulse → 270, got ${afterSecondPulse.progress}`);
   assert(afterSecondPulse.label === '270/420m', `label 270/420m, got ${afterSecondPulse.label}`);
-  assert(afterSecondPulse.min === Math.round(270 / 420 * 100),
-    `min clamps to new committed %, got ${afterSecondPulse.min}`);
+  assert(afterSecondPulse.min === 0, `slider keeps correction range after refresh, got ${afterSecondPulse.min}`);
   console.log('  undragged second pulse advances suggestion: OK');
 
   // Helpers unit checks
@@ -730,12 +754,12 @@ async function breakableFillRows(page, name){
     };
   });
   assert(helperCheck.sug === 60, `default suggestion 60, got ${helperCheck.sug}`);
-  assert(helperCheck.sugChunk === 60, `placed 90m piece still taps as min 60, got ${helperCheck.sugChunk}`);
-  assert(helperCheck.sugHuge === 60, `placed 360m piece still taps as min 60, got ${helperCheck.sugHuge}`);
+  assert(helperCheck.sugChunk === 90, `placed partial 90m piece should be used, got ${helperCheck.sugChunk}`);
+  assert(helperCheck.sugHuge === 360, `placed partial 360m piece should be used, got ${helperCheck.sugHuge}`);
   assert(helperCheck.notFull, 'suggestion must not be full remaining day');
-  console.log('  suggestedBreakableLogMinutes always min-chunk: OK');
+  console.log('  suggestedBreakableLogMinutes partial-or-fallback: OK');
 
-  // Large placed chunk on the card must NOT be what pulse logs.
+  // An untouched continuous/full placement must never log the full budget.
   console.log('  large chunkMinutes card pulse...');
   await freezeClock(page, clockTs);
   await seedAndReload(page, {
@@ -778,35 +802,15 @@ async function breakableFillRows(page, name){
       dirty:row?.dataset.progressDirty
     };
   });
-  // Simulate accidental mobile slider jump to 100% WITHOUT a drag flag.
-  await page.evaluate(() => {
-    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
-      (r.querySelector('.ting-card')?.textContent || '').includes('Huge chunk work')
-      && r.querySelector('.breakable-slider'));
-    const el = row?.querySelector('.breakable-slider');
-    if(!el || !row)return;
-    el.value = '100';
-    row.dataset.progressTarget = '420';
-    row.dataset.progressDirty = '1'; // dirty without drag — must be ignored
-    el.dispatchEvent(new Event('input', { bubbles:true }));
-    el.dispatchEvent(new Event('change', { bubbles:true }));
-  });
-  const afterFakeDirty = await page.evaluate(() => {
-    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
-      (r.querySelector('.ting-card')?.textContent || '').includes('Huge chunk work')
-      && r.querySelector('.breakable-slider'));
-    return {
-      dirty:row?.dataset.progressDirty,
-      target:row?.dataset.progressTarget
-    };
-  });
-  assert(afterFakeDirty.dirty === '0',
-    `stray slider input without drag must clear dirty, got ${afterFakeDirty.dirty}`);
+  const expectedHugePulse = Number.isFinite(hugeMeta.chunkMinutes)
+    && hugeMeta.chunkMinutes > 0 && hugeMeta.chunkMinutes < 420
+    ? hugeMeta.chunkMinutes
+    : 60;
   await page.locator('#list .ting-card').filter({ hasText:'Huge chunk work' }).first()
     .locator('.pulse-btn').click();
   await page.waitForFunction(() => {
     const h = load().find(x => x.name === 'Huge chunk work');
-    return h && breakableProgressMinutes(h) === 60;
+    return h && breakableProgressMinutes(h) > 0;
   }, null, { timeout:5000 });
   const afterHugePulse = await page.evaluate(() => {
     const h = load().find(x => x.name === 'Huge chunk work');
@@ -817,15 +821,14 @@ async function breakableFillRows(page, name){
       logMinutes:logMinutes(last)
     };
   });
-  assert(afterHugePulse.progress === 60,
-    `pulse must log min 60 even if card chunk was ${hugeMeta.chunkMinutes}, got ${afterHugePulse.progress}`);
-  assert(afterHugePulse.logMinutes === 60, `stored minutes 60, got ${afterHugePulse.logMinutes}`);
-  assert(afterHugePulse.budget === 360, `budget 360, got ${afterHugePulse.budget}`);
-  if(Number.isFinite(hugeMeta.chunkMinutes) && hugeMeta.chunkMinutes > 60){
-    assert(afterHugePulse.progress < hugeMeta.chunkMinutes,
-      `logged ${afterHugePulse.progress} must be < placed chunk ${hugeMeta.chunkMinutes}`);
-  }
-  console.log('  large chunk / fake dirty still logs min only: OK');
+  assert(afterHugePulse.progress === expectedHugePulse,
+    `pulse should log ${expectedHugePulse} for card chunk ${hugeMeta.chunkMinutes}, got ${afterHugePulse.progress}`);
+  assert(afterHugePulse.logMinutes === expectedHugePulse,
+    `stored minutes ${expectedHugePulse}, got ${afterHugePulse.logMinutes}`);
+  assert(afterHugePulse.budget === 420 - expectedHugePulse,
+    `budget ${420 - expectedHugePulse}, got ${afterHugePulse.budget}`);
+  assert(afterHugePulse.progress < 420, 'untouched pulse must never log the full remaining budget');
+  console.log('  continuous/full card pulse is bounded: OK');
 
   // Multi-instance: only first today card has slider; later cards keep trail
   // and still log via suggested chunk on pulse.
