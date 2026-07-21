@@ -1,10 +1,10 @@
 // Exact schedule optimizer (GLPK) — regression for scarcity packing when
 // settings.agendaOptimizer is on. Falls soft-pass if GLPK cannot load.
 //
-// Run: HABITS_URL=http://127.0.0.1:4173/ node tests/agenda-optimizer-test.js
+// Run: HABITS_URL=http://127.0.0.1:4181/ node tests/agenda-optimizer-test.js
 
 const { chromium } = require('playwright');
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 function atTime(hour, minute = 0) {
   const d = new Date();

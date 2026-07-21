@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function dateInput(d){
@@ -24,6 +24,12 @@ async function scrollDetailToSchedule(page, paneIndex = 2){
     if(pager) pager.scrollTo({ left: pager.clientWidth * idx, behavior: 'instant' });
   }, paneIndex);
   await page.waitForTimeout(200);
+}
+
+async function openCardDetail(page,name){
+  const card = page.locator('#list .ting-card',{hasText:name}).first();
+  await card.locator('.ting-main').click();
+  await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
 }
 
 async function assertAttr(page, selector, attr, expected, msg){
@@ -166,8 +172,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   await page.waitForTimeout(400);
 
   // Reopen detail (rhythm habits may render under multiple day sections)
-  await page.locator('#list .ting-card', { hasText: runId }).first().click();
-  await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
+  await openCardDetail(page,runId);
   await scrollDetailToSchedule(page, 3);
   await page.waitForTimeout(200);
 
@@ -239,8 +244,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   let stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
   let taskItem = stored.find(h => h.name === taskName);
   if(!taskItem?.eventTime) throw new Error('task with due time should have eventTime');
-  await page.locator('#list .ting-card', { hasText: taskName }).first().click();
-  await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
+  await openCardDetail(page,taskName);
   await scrollDetailToSchedule(page, 3);
   await page.locator('#detail-due-time').fill('');
   await page.locator('#detail-flexibility').fill('0');
@@ -254,8 +258,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   console.log('  Due/time + inferred hardDue: OK');
 
   // Save closes the sheet — reopen for schedule-pane tests.
-  await page.locator('#list .ting-card', { hasText: taskName }).first().click();
-  await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
+  await openCardDetail(page,taskName);
 
   // ═══════════════════════════════════════════════
   // SECTION 5: Schedule view seg + chips
@@ -297,8 +300,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 6: Reopen build habit ---');
   // Reopen the build habit (task detail may have been saved and closed)
-  await page.locator('#list .ting-card', { hasText: runId }).first().click();
-  await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
+  await openCardDetail(page,runId);
   await scrollDetailToSchedule(page, 3);
   await page.waitForTimeout(200);
 

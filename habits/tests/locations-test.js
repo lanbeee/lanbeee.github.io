@@ -5,11 +5,11 @@
 // suite is deterministic and offline-safe. Mirrors the e2e harness pattern
 // used by tests/habits-e2e.js.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/locations-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/locations-test.js
 //
 const { chromium } = require('playwright');
 
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 const LOC_A = { id:'loc-a', name:'A', lat:51.5074, lng:-0.1278 };   // London
 const LOC_B = { id:'loc-b', name:'B', lat:48.8566, lng:2.3522 };    // Paris  (~344 km)

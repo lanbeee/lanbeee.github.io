@@ -18,9 +18,9 @@
 // Travel uses walking mode (pure haversine, no network) so proximity — and thus
 // the cluster advantage — is deterministic and offline-safe.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/cluster-objective-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/cluster-objective-test.js
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 let pass = 0, fail = 0;
 function assert(cond,msg){ if(cond){ pass += 1; console.log('  ok: ' + msg); } else { fail += 1; console.error('  FAIL: ' + msg); } }

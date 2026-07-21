@@ -3,7 +3,7 @@
 // expands on click, and re-collapses every time the add sheet reopens; and
 // that Settings collapsible sections open/close with correct aria-expanded.
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 function assert(cond, msg){
   if(!cond)throw new Error(`assert failed: ${msg}`);

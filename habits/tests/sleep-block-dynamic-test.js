@@ -8,10 +8,10 @@
 //   segment 2: sunrise−8h → midnight (previous-day evening start)
 // Total duration is always 480 minutes regardless of sunrise time.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/sleep-block-dynamic-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/sleep-block-dynamic-test.js
 //
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 let pass = 0, fail = 0;
 function assert(cond, msg){

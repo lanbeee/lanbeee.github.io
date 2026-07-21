@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 function assert(condition,message){
   if(!condition)throw new Error(message);

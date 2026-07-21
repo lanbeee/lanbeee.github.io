@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-PORT="${PORT:-4173}"
-HABITS_URL="${HABITS_URL:-http://127.0.0.1:$PORT/}"
+PORT="${PORT:-4181}"
+HABITS_URL="http://127.0.0.1:$PORT/"
 
 cleanup() { kill "$server_pid" 2>/dev/null; }
 trap cleanup EXIT
@@ -13,6 +13,10 @@ server_pid=$!
 # machines catch up without slowing down the common case.
 ready=0
 for _ in $(seq 1 60); do
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    echo "test server failed to start on port $PORT (the port may already be in use)" >&2
+    exit 1
+  fi
   if curl -sf -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
   sleep 0.25
 done

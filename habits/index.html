@@ -902,6 +902,22 @@
     </div>
   </div>
 
+  <!-- hidden day agenda diagnostics (triple-tap a day section header) -->
+  <div class="sheet-wrap" id="day-capacity-sheet" role="dialog" aria-modal="true" aria-labelledby="day-capacity-title">
+    <div class="sheet day-capacity-sheet">
+      <div class="capacity-sheet-head">
+        <div>
+          <p class="sheet-name" id="day-capacity-title">day agenda audit</p>
+          <p class="sheet-sub" id="day-capacity-sub"></p>
+        </div>
+        <button class="mini-nav" id="day-capacity-close" type="button" aria-label="close day agenda audit">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div id="day-capacity-content"></div>
+    </div>
+  </div>
+
   <!-- day logs sheet -->
   <div class="sheet-wrap" id="day-logs-sheet">
     <div class="sheet">

@@ -1,9 +1,9 @@
 // sign-toggle — tests for the +/- offset sign toggle button
 //
-// HABITS_URL=http://127.0.0.1:4173/ node tests/sign-toggle-test.js
+// HABITS_URL=http://127.0.0.1:4181/ node tests/sign-toggle-test.js
 
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 let pass = 0, fail = 0;
 function assert(cond, msg){

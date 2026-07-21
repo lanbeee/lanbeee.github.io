@@ -3,7 +3,7 @@
 // round trip (export download → file input → count confirmation → replace).
 const { chromium } = require('playwright');
 const fs = require('fs');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 function assert(cond, msg){
   if(!cond)throw new Error(`assert failed: ${msg}`);

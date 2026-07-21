@@ -1,10 +1,10 @@
 // End-to-end: sample locations + chips + filters + agenda travel + I-am-at.
 //
 //   PLAYWRIGHT_BROWSERS_PATH=~/Library/Caches/ms-playwright \
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/locations-flow-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/locations-flow-test.js
 //
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 let pass = 0, fail = 0;
 function assert(cond, msg){

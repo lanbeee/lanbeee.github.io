@@ -21,13 +21,13 @@
  *      - slider touch target is phone-friendly (≥40px)
  *
  * Run:
- *   python3 -m http.server 4173   (from habits/)
- *   HABITS_URL=http://127.0.0.1:4173/ node tests/breakable-continuous-e2e.js
+ *   python3 -m http.server 4181   (from habits/)
+ *   HABITS_URL=http://127.0.0.1:4181/ node tests/breakable-continuous-e2e.js
  */
 
 const { chromium } = require('playwright');
 
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 function assert(cond, msg){
   if(!cond)throw new Error(msg);

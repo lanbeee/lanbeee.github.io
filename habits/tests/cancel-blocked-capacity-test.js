@@ -12,11 +12,11 @@
 // blocks are clipped as "in the past" — that lets us render the real DOM and
 // drive the real cancel/undo buttons.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/cancel-blocked-capacity-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/cancel-blocked-capacity-test.js
 //
 const { chromium } = require('playwright');
 
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 // LOCAL-day today key — matches the page's todayIso() / dateKey semantics.
 function localTodayKey(){

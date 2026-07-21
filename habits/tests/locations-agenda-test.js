@@ -9,10 +9,10 @@
 // Travel uses walking mode (pure haversine) so proximity is reflected without
 // any network — the cluster advantage is deterministic and offline-safe.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/locations-agenda-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/locations-agenda-test.js
 //
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 let pass = 0, fail = 0;
 function assert(cond, msg){

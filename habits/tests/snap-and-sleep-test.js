@@ -11,10 +11,10 @@
 //      inside a sleep block, is NOT "still doable today" — and so it should
 //      fall out of the today bucket on the home list once sleep has started.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/snap-and-sleep-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/snap-and-sleep-test.js
 //
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 let pass = 0, fail = 0;
 function assert(cond,msg){

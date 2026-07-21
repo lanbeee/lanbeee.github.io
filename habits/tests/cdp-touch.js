@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 (async () => {
   const name = `CDPTouch ${Date.now()}`;

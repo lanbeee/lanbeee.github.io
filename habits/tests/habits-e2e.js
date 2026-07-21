@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 const runId = `E2E ${Date.now()}`;
 const scheduledName = `${runId} dentist appointment`;
 const habitName = `${runId} daily walk`;

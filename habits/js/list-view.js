@@ -1397,11 +1397,172 @@ function consumeBlockedRun(seq,startIdx){
   return {blocks,nextIdx:i};
 }
 
-function appendSectionHeader(list,label){
+function capacityMinutesLabel(value){
+  const minutes = Math.max(0,Math.round(Number(value) || 0));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if(!hours)return `${rest}m`;
+  if(!rest)return `${hours}h`;
+  return `${hours}h ${rest}m`;
+}
+
+function capacityTimeLabel(value){
+  return new Date(value).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+
+function renderDayCapacityScorecard(report){
+  const content = $('day-capacity-content');
+  if(!content || !report)return;
+  const metric = (label,value,detail='',tone='')=>`
+    <div class="capacity-metric${tone ? ` ${tone}` : ''}">
+      <span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b>${detail ? `<small>${escapeHtml(detail)}</small>` : ''}
+    </div>`;
+  const coverage = `${Math.round((Number(report.eligibleCoverage) || 0) * 100)}%`;
+  const budgetUse = `${Math.round((Number(report.budgetUtilization) || 0) * 100)}%`;
+  const auditHeadline = report.missedOpportunityCount > 0
+    ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
+    : 'no unexplained placement gaps';
+  const auditDetail = report.missedOpportunityCount > 0
+    ? 'eligible work still fits under the scheduler\'s current constraints'
+    : (report.budgetCappedGapCount > 0
+      ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
+      : 'remaining gaps cannot take the outstanding candidates');
+  const agendaRows = report.agendaRows.length
+    ? report.agendaRows.map(row=>`
+      <div class="capacity-agenda-row ${escapeHtml(row.kind)}">
+        <time>${capacityTimeLabel(row.start)}<small>${capacityTimeLabel(row.end)}</small></time>
+        <div><b>${escapeHtml(row.name)}</b><small>${capacityMinutesLabel(row.minutes)} / ${escapeHtml(row.kind)}</small></div>
+      </div>`).join('')
+    : '<p class="capacity-empty">The agenda builder committed no timed rows.</p>';
+  const gapRows = report.placementGaps.length
+    ? report.placementGaps.map(gap=>{
+      const labels = {
+        missed:'could place',
+        'assigned-elsewhere':'placed elsewhere',
+        'budget-capped':'budget capped',
+        'no-fit':'no eligible fit'
+      };
+      return `
+        <div class="capacity-gap ${escapeHtml(gap.status)}" data-capacity-gap-status="${escapeHtml(gap.status)}">
+          <div class="capacity-gap-time">
+            <b>${capacityTimeLabel(gap.start)}-${capacityTimeLabel(gap.end)}</b>
+            <span>${capacityMinutesLabel(gap.minutes)}</span>
+          </div>
+          <div class="capacity-gap-result">
+            <strong>${escapeHtml(labels[gap.status] || gap.status)}</strong>
+            <small>${escapeHtml(gap.explanation)}</small>
+          </div>
+        </div>`;
+    }).join('')
+    : '<p class="capacity-empty">No open scheduler gaps remain.</p>';
+  const blocks = report.blockedBreakdown.length
+    ? report.blockedBreakdown.map(block=>`<span>${escapeHtml(block.label)} <b>${capacityMinutesLabel(block.minutes)}</b></span>`).join('')
+    : '<span>none</span>';
+  const unplaced = report.unplacedItems.length
+    ? report.unplacedItems.map(item=>`
+      <div class="capacity-unplaced-item" data-capacity-item-index="${item.i}">
+        <div class="capacity-unplaced-head">
+          <b>${escapeHtml(item.name)}</b>
+          <span>${escapeHtml(PRIORITY_LABELS[item.priority] || `P${item.priority}`)} / ${escapeHtml(item.type)}</span>
+        </div>
+        <p>${capacityMinutesLabel(item.remainingMinutes)} unplaced${item.placedMinutes ? ` / ${capacityMinutesLabel(item.placedMinutes)} placed` : ''}</p>
+        <small>${escapeHtml(item.reason)}${item.window ? ` / ${escapeHtml(item.window)}` : ''}</small>
+      </div>`).join('')
+    : '<p class="capacity-empty">Every eligible item was fully placed.</p>';
+  content.innerHTML = `
+    <div class="capacity-metrics">
+      ${metric('eligible work',capacityMinutesLabel(report.outstandingLoad),`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`,'load')}
+      ${metric('work placed',capacityMinutesLabel(report.placedLoadMinutes),`${coverage} of eligible work`,'net')}
+      ${metric('budget used',budgetUse,`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`)}
+      ${metric('missed gaps',String(report.missedOpportunityCount),`${capacityMinutesLabel(report.largestGapMinutes)} largest open gap`,report.missedOpportunityCount ? 'warning' : '')}
+    </div>
+    <div class="capacity-balance ${report.missedOpportunityCount ? 'deficit' : 'surplus'}">
+      <div><span>placement audit</span><b>${escapeHtml(auditHeadline)}</b></div>
+      <strong>${escapeHtml(auditDetail)}</strong>
+    </div>
+    <div class="capacity-facts" aria-label="scheduler totals">
+      <span>open scheduler time <b>${capacityMinutesLabel(report.schedulerOpenMinutes)}</b></span>
+      <span>budget remaining <b>${capacityMinutesLabel(report.placementBudgetRemaining)}</b></span>
+      <span>scheduled events <b>${capacityMinutesLabel(report.scheduledMinutes)}</b></span>
+      <span>travel committed <b>${capacityMinutesLabel(report.travelMinutes)}</b></span>
+    </div>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>agenda output</h3><span>${report.agendaRows.length}</span></div>
+      <div class="capacity-agenda">${agendaRows}</div>
+    </section>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>remaining gap audit</h3><span>${report.placementGaps.length}</span></div>
+      <div class="capacity-gaps">${gapRows}</div>
+    </section>
+    <section class="capacity-section">
+      <h3>capacity context</h3>
+      <div class="capacity-breakdown">
+        <span>clock <b>${capacityMinutesLabel(report.totalCapacity)}</b></span>
+        <span>blocked <b>${capacityMinutesLabel(report.blockedMinutes)}</b></span>
+        <span>net <b>${capacityMinutesLabel(report.netAvailable)}</b></span>
+        ${blocks}
+      </div>
+    </section>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>unplaced items</h3><span>${report.unplacedItems.length}</span></div>
+      <div class="capacity-unplaced">${unplaced}</div>
+    </section>`;
+}
+
+function openDayCapacityScorecard(dayBase,weekMode = false){
+  if(typeof buildDayCapacityScorecard !== 'function')return;
+  const now = Date.now();
+  const report = buildDayCapacityScorecard(load(),sortSettings,dayBase,now,{weekMode});
+  const title = $('day-capacity-title');
+  const sub = $('day-capacity-sub');
+  const sheet = $('day-capacity-sheet');
+  if(title)title.textContent = report.isToday
+    ? 'today agenda audit'
+    : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase();
+  if(sub)sub.textContent = report.isToday
+    ? `remaining day from ${new Date(report.rangeStart).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
+    : 'full-day agenda placement audit';
+  if(sheet)sheet.dataset.dayKey = report.dayKey;
+  renderDayCapacityScorecard(report);
+  openSheet('day-capacity-sheet');
+}
+
+function setupDayCapacityHeader(header,dayBase,weekMode){
+  if(!header)return;
+  header.classList.add('day-section-header');
+  header.dataset.capacityDay = dateKey(dayBase);
+  let taps = [];
+  let pointerStart = null;
+  header.addEventListener('pointerdown',event=>{
+    pointerStart = {id:event.pointerId,x:event.clientX,y:event.clientY};
+  });
+  header.addEventListener('pointercancel',()=>{ pointerStart = null; });
+  header.addEventListener('pointerup',event=>{
+    if(!pointerStart || pointerStart.id !== event.pointerId)return;
+    const moved = Math.hypot(event.clientX - pointerStart.x,event.clientY - pointerStart.y);
+    pointerStart = null;
+    if(moved > 10){ taps = []; return; }
+    const now = performance.now();
+    taps = taps.filter(ts=>now - ts < 1600);
+    taps.push(now);
+    if(taps.length < 3)return;
+    taps = [];
+    event.preventDefault();
+    event.stopPropagation();
+    openDayCapacityScorecard(dayBase,weekMode);
+  });
+}
+
+function appendSectionHeader(list,label,dayContext = null){
   if(!list || !label)return;
   const header = document.createElement('div');
   header.className = 'section-header';
   header.textContent = label;
+  if(dayContext && dayContext.dayBase != null){
+    setupDayCapacityHeader(header,dayContext.dayBase,true);
+  }else if(label === 'today'){
+    setupDayCapacityHeader(header,dayStart(Date.now()),false);
+  }
   list.appendChild(header);
 }
 
@@ -1684,7 +1845,7 @@ function render(opts){
 
     dayPlans.forEach(({day,seq})=>{
       if(!seq.length)return;
-      appendSectionHeader(list,homeWeekDayLabel(day));
+      appendSectionHeader(list,homeWeekDayLabel(day),day);
       for(let i = 0;i < seq.length;){
         const row = seq[i];
         if(row.kind === 'travel'){

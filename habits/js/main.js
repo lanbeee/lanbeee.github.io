@@ -1933,6 +1933,9 @@ $('activity-calendar').addEventListener('click',()=>{
 });
 $('activity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){activityIdx = null;closeSheet('activity-sheet');}});
 
+$('day-capacity-close').addEventListener('click',()=>closeSheet('day-capacity-sheet'));
+$('day-capacity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('day-capacity-sheet');});
+
 $('day-logs-overview').addEventListener('click',()=>{
   dayLogsKey = null;
   closeSheet('day-logs-sheet');

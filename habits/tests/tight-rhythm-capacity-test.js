@@ -38,10 +38,10 @@
 // "preferred time" used to make tomorrow score better than today, so the
 // greedy first-placement skipped today and never backfilled.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/tight-rhythm-capacity-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/tight-rhythm-capacity-test.js
 
 const { chromium } = require('playwright');
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 // Fixed Monday 6am local — weekday 1, mid-morning clip on today.
 const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();

@@ -341,14 +341,364 @@ function buildDayTimeline(agenda,opts = {}){
   }
   agenda.usedMinutes = state.usedMinutes;
   agenda.remainingMinutes = Math.max(0,(Number(agenda.totalMinutes) || 0) - state.usedMinutes);
+  if(opts.diagnostics)agenda.placementDiagnostics = buildPlacementDiagnostics(ordered,state);
   agenda.agendaItems = (agenda.agendaItems || []).filter(item=>state.placed.has(item.i));
   return finalizePlacementRows(state);
 }
 
 // PURE: today's timeline — thin wrapper over buildDayTimeline so the existing
 // single-day callers are unchanged. Derives the day context from `now`.
-function buildTodayTimeline(agenda,now = Date.now()){
-  return buildDayTimeline(agenda,{ now });
+function buildTodayTimeline(agenda,now = Date.now(),opts = {}){
+  return buildDayTimeline(agenda,{...opts,now});
+}
+
+// PURE: total incomplete minutes represented by one today's-agenda candidate.
+function todayCandidateLoadMinutes(h,dayBase){
+  if(!h)return 0;
+  if(h.breakable){
+    if(typeof breakableBudgetMinutes === 'function')return h.type === 'task'
+      ? breakableBudgetMinutes(h)
+      : breakableBudgetMinutes(h,dayBase);
+    if(typeof remainingDurationMinutes === 'function')return remainingDurationMinutes(h,dayBase);
+  }
+  return clampDuration(h.durationMinutes);
+}
+
+// PURE: open sub-intervals after every committed fill, used only to explain
+// why a remaining candidate could not fit the final placement state.
+function remainingPlacementGaps(state){
+  if(!state || !Array.isArray(state.slots))return [];
+  const chron = (state.fills || []).slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+  const gaps = [];
+  for(const slot of state.slots){
+    let cursor = Math.max(slot.start,state.startClock);
+    for(const entry of chron){
+      const fit = entry && entry.fit;
+      if(!fit || fit.placeStart >= slot.end || fit.placeEnd <= cursor)continue;
+      const occupiedStart = Math.max(slot.start,fit.placeStart - Math.max(0,Number(fit.edge && fit.edge.seconds) || 0) * 1000);
+      if(occupiedStart > cursor)gaps.push({start:cursor,end:Math.min(occupiedStart,slot.end)});
+      cursor = Math.max(cursor,fit.placeEnd);
+      if(cursor >= slot.end)break;
+    }
+    if(cursor < slot.end)gaps.push({start:cursor,end:slot.end});
+  }
+  return gaps.filter(g=>g.end > g.start);
+}
+
+// PURE: can one remaining fill use this exact final gap? `ignoreBudget` keeps
+// every other hard constraint intact while removing only the availability cap,
+// which lets the audit distinguish a placement miss from an intentional cap.
+function auditFillFitInGap(state,fill,gap,remainingMinutes,ignoreBudget = false){
+  if(!state || !fill || !fill.h || !gap || gap.end <= gap.start)return null;
+  const clone = clonePlacementState(state);
+  clone.slots = [{start:gap.start,end:gap.end}];
+  if(ignoreBudget)clone.remaining = 1000000;
+  const auditFill = {...fill,placeKey:`audit:${fill.i}`};
+  if(fill.h.breakable){
+    const min = typeof clampMinChunk === 'function'
+      ? clampMinChunk(fill.h.minChunkMinutes)
+      : Math.max(1,Number(fill.h.minChunkMinutes) || 30);
+    const result = largestFeasibleBreakableFit(
+      clone,
+      auditFill,
+      remainingMinutes,
+      min,
+      {allowNetwork:false}
+    );
+    return result && result.fit || null;
+  }
+  return tryPlaceOnDay(clone,auditFill,{allowNetwork:false});
+}
+
+// PURE: inspect the exact final state produced by the placement engine. A gap
+// is a missed opportunity only when an unplaced candidate still fits that gap
+// with the current budget and every hard constraint enforced.
+function buildPlacementGapAudit(ordered,state,items){
+  const byIndex = new Map((ordered || []).map(fill=>[fill.i,fill]));
+  const remaining = (items || []).filter(item=>item.remainingMinutes > 0);
+  const gaps = remainingPlacementGaps(state).map(gap=>{
+    const minutes = Math.max(0,Math.floor((gap.end - gap.start) / 60000));
+    const feasibleCandidateIndices = [];
+    const budgetLimitedCandidateIndices = [];
+    for(const item of remaining){
+      const fill = byIndex.get(item.i);
+      if(!fill)continue;
+      if(auditFillFitInGap(state,fill,gap,item.remainingMinutes,false)){
+        feasibleCandidateIndices.push(item.i);
+        continue;
+      }
+      if(auditFillFitInGap(state,fill,gap,item.remainingMinutes,true)){
+        budgetLimitedCandidateIndices.push(item.i);
+      }
+    }
+    return {start:gap.start,end:gap.end,minutes,feasibleCandidateIndices,budgetLimitedCandidateIndices};
+  }).filter(gap=>gap.minutes > 0);
+  return {
+    openSlotMinutes:(state.slots || []).reduce((sum,slot)=>sum + Math.max(0,Math.floor((slot.end - Math.max(slot.start,state.startClock)) / 60000)),0),
+    openGapMinutes:gaps.reduce((sum,gap)=>sum + gap.minutes,0),
+    largestGapMinutes:gaps.reduce((max,gap)=>Math.max(max,gap.minutes),0),
+    gaps
+  };
+}
+
+function largestGapMinutes(gaps,window){
+  return (gaps || []).reduce((max,gap)=>{
+    const start = window ? Math.max(gap.start,window.start) : gap.start;
+    const end = window ? Math.min(gap.end,window.end) : gap.end;
+    return Math.max(max,Math.floor(Math.max(0,end - start) / 60000));
+  },0);
+}
+
+// PURE: concise best-effort explanation against the final state. The scheduler
+// remains authoritative; this only identifies the first hard constraint that
+// makes the remaining minimum session impossible.
+function explainUnplacedAgendaFill(state,fill,remainingLoad){
+  const h = fill && fill.h;
+  if(!state || !h)return 'not accepted by the placement pass';
+  const remaining = Math.max(0,Math.round(Number(remainingLoad) || 0));
+  const needed = h.breakable
+    ? Math.min(remaining,typeof clampMinChunk === 'function' ? clampMinChunk(h.minChunkMinutes) : (h.minChunkMinutes || 30))
+    : clampDuration(h.durationMinutes);
+  if(needed <= 0)return 'no outstanding duration';
+  const budget = Math.max(0,Math.floor(Number(state.remaining) || 0));
+  if(state.usedMinutes > 0 && budget < needed){
+    return `agenda budget has ${budget}m left; needs ${needed}m`;
+  }
+
+  const gaps = remainingPlacementGaps(state);
+  const maxGap = largestGapMinutes(gaps);
+  if(maxGap < needed)return `largest open gap is ${maxGap}m; needs ${needed}m`;
+
+  const hardWindow = fillTimeWindow(h,state.dayBase,state.seedLocId);
+  if(hardWindow){
+    const inWindow = largestGapMinutes(gaps,hardWindow);
+    if(inWindow < needed)return `allowed window has no ${needed}m open gap`;
+  }
+
+  const locIds = normalizeLocationIds(h.locationIds,state.registry);
+  if(locIds.length){
+    let locationGap = 0;
+    for(const id of locIds){
+      const loc = state.registry.find(item=>item.id === id);
+      for(const iv of effectiveLocationWindow(h,loc,state.weekday,state.dayBase)){
+        const win = {start:state.dayBase + iv.start * 60000,end:state.dayBase + iv.end * 60000};
+        locationGap = Math.max(locationGap,largestGapMinutes(gaps,win));
+      }
+    }
+    if(locationGap < needed)return `location hours leave no ${needed}m open gap`;
+  }
+
+  const locId = fill.locationId || pickHabitLocationId(h,state.seedLocId,state.registry,state.mode);
+  if(locId){
+    const edge = travelEdgeBetweenIds(state.seedLocId,locId,state.registry,state.mode,{allowNetwork:false});
+    const travelMin = Math.ceil((edge.seconds || 0) / 60);
+    if(travelMin > 0 && maxGap < needed + travelMin){
+      return `${travelMin}m travel plus ${needed}m work does not fit`;
+    }
+  }
+  return 'higher-ranked work claimed the compatible gap';
+}
+
+// PURE: compact summary attached to an agenda after its placement pass.
+function buildPlacementDiagnostics(ordered,state){
+  const placedByIndex = new Map();
+  for(const entry of state.fills || []){
+    const i = entry && entry.fill && entry.fill.i;
+    if(i == null)continue;
+    placedByIndex.set(i,(placedByIndex.get(i) || 0) + Math.max(0,Math.round(Number(entry.fit && entry.fit.durMin) || 0)));
+  }
+  const items = (ordered || []).map(fill=>{
+    const loadMinutes = todayCandidateLoadMinutes(fill.h,state.dayBase);
+    const placedMinutes = Math.min(loadMinutes,placedByIndex.get(fill.i) || 0);
+    const remainingMinutes = Math.max(0,loadMinutes - placedMinutes);
+    return {
+      i:fill.i,
+      loadMinutes,
+      placedMinutes,
+      remainingMinutes,
+      reason:remainingMinutes > 0 ? explainUnplacedAgendaFill(state,fill,remainingMinutes) : ''
+    };
+  });
+  const placements = (state.fills || []).map(entry=>({
+    i:entry.fill.i,
+    start:entry.fit.placeStart,
+    end:entry.fit.placeEnd,
+    minutes:Math.max(0,Math.round(Number(entry.fit.durMin) || 0)),
+    travelMinutes:Math.max(0,Math.ceil((Number(entry.fit.edge && entry.fit.edge.seconds) || 0) / 60))
+  })).sort((a,b)=>a.start - b.start);
+  return {
+    placedMinutes:[...placedByIndex.values()].reduce((sum,value)=>sum + value,0),
+    travelMinutes:Math.max(0,Math.round(state.usedMinutes - [...placedByIndex.values()].reduce((sum,value)=>sum + value,0))),
+    budgetMinutes:Math.max(0,Math.round(state.totalMinutes)),
+    usedMinutes:Math.max(0,Math.round(state.usedMinutes)),
+    remainingMinutes:Math.max(0,Math.round(state.remaining)),
+    items,
+    placements,
+    gapAudit:buildPlacementGapAudit(ordered,state,items)
+  };
+}
+
+// PURE: scorecard model for the hidden day-header diagnostic overlay. Classic
+// home uses the single-day agenda; week home uses the same cross-day assignment
+// that produced the visible day sections.
+function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),now = Date.now(),opts = {}){
+  dayBase = dayStart(dayBase);
+  const dayEnd = dayBase + 24 * 3600000;
+  const isToday = dayBase === dayStart(now);
+  const rangeStart = isToday ? now : dayBase;
+  const dayKey = dateKey(dayBase);
+  const totalCapacity = Math.max(0,Math.round((dayEnd - rangeStart) / 60000));
+  const rawBlocks = agendaBlockedIntervals(dayKey,settings,dayBase,dayEnd)
+    .map(block=>({...block,start:Math.max(rangeStart,block.start),end:Math.min(dayEnd,block.end)}))
+    .filter(block=>block.end > block.start);
+  const mergedBlocks = mergeIntervals(rawBlocks.map(block=>({start:block.start,end:block.end})));
+  const blockedMinutes = mergedBlocks.reduce((sum,block)=>sum + Math.round((block.end - block.start) / 60000),0);
+  const netAvailable = Math.max(0,totalCapacity - blockedMinutes);
+
+  let agenda;
+  let diagnostics;
+  let timeline = [];
+  let week = null;
+  if(opts.weekMode){
+    const dayOffset = Math.max(0,Math.round((dayBase - dayStart(now)) / 86400000));
+    week = buildWeekAgenda(data,settings,Math.max(7,dayOffset + 1),{diagnostics:true});
+    agenda = week.days.find(day=>day.dayBase === dayBase) || buildDayAgenda(data,settings,dayBase,{weekMode:true});
+    diagnostics = agenda.placementDiagnostics || {items:[],placedMinutes:0,travelMinutes:0};
+    timeline = agenda.timeline || [];
+  }else{
+    agenda = buildTodayAgenda(data,settings);
+    timeline = buildTodayTimeline(agenda,now,{diagnostics:true});
+    diagnostics = agenda.placementDiagnostics || {items:[],placedMinutes:0,travelMinutes:0};
+  }
+  const scheduledMinutes = (agenda.scheduled || []).reduce((sum,event)=>{
+    const start = Math.max(rangeStart,event.h.eventTime);
+    const end = Math.min(dayEnd,event.h.eventTime + clampDuration(event.h.durationMinutes) * 60000);
+    return sum + Math.max(0,Math.round((end - start) / 60000));
+  },0);
+  const diagByIndex = new Map(diagnostics.items.map(item=>[item.i,item]));
+
+  const eligible = visibleIndices(data,settings).filter(i=>{
+    const h = data[i];
+    if(!h || h.type === 'zero')return false;
+    if(h.type === 'task' && (isTaskDone(h) || h.eventTime !== null))return false;
+    if(!isToday && opts.weekMode){
+      return isWeekCandidate(h,settings,dayBase,new Date(dayBase).getDay());
+    }
+    return includeInTodayAgenda(h,settings) && windowStillDoableToday(h,now);
+  });
+  const outstandingLoad = eligible.reduce((sum,i)=>sum + todayCandidateLoadMinutes(data[i],dayBase),0);
+  const assignedDayByIndex = new Map();
+  if(week){
+    for(const day of week.days){
+      for(const row of day.timeline || []){
+        if(row.kind !== 'fill' || row.i == null)continue;
+        let assigned = assignedDayByIndex.get(row.i);
+        if(!assigned){ assigned = new Set(); assignedDayByIndex.set(row.i,assigned); }
+        assigned.add(day.dayBase);
+      }
+    }
+  }
+  const assignmentLabel = (i)=>{
+    const elsewhere = [...(assignedDayByIndex.get(i) || [])].find(base=>base !== dayBase);
+    if(elsewhere == null)return '';
+    return homeWeekDayLabel({
+      dayBase:elsewhere,
+      isToday:elsewhere === dayStart(now),
+      offset:Math.round((elsewhere - dayStart(now)) / 86400000)
+    },now).toLowerCase();
+  };
+  const unplacedItems = eligible.map(i=>{
+    const h = data[i];
+    const loadMinutes = todayCandidateLoadMinutes(h,dayBase);
+    const diag = diagByIndex.get(i) || {};
+    const placedMinutes = Math.min(loadMinutes,Math.max(0,diag.placedMinutes || 0));
+    const remainingMinutes = Math.max(0,loadMinutes - placedMinutes);
+    const elsewhereLabel = assignmentLabel(i);
+    return {
+      i,
+      name:h.name,
+      type:h.type,
+      priority:effectivePriority(h),
+      loadMinutes,
+      placedMinutes,
+      remainingMinutes,
+      reason:elsewhereLabel
+        ? `assigned ${elsewhereLabel}`
+        : (diag.reason || (remainingMinutes > 0 ? 'not committed by the placement pass' : '')),
+      window:typeof timeWindowSummary === 'function' && hasTimeWindow(h) ? timeWindowSummary(h) : ''
+    };
+  }).filter(item=>item.remainingMinutes > 0);
+
+  const eligibleSet = new Set(eligible);
+  const gapAudit = diagnostics.gapAudit || {openSlotMinutes:0,openGapMinutes:0,largestGapMinutes:0,gaps:[]};
+  const placementGaps = (gapAudit.gaps || []).map(gap=>{
+    const feasible = (gap.feasibleCandidateIndices || []).filter(i=>eligibleSet.has(i));
+    const budgetLimited = (gap.budgetLimitedCandidateIndices || []).filter(i=>eligibleSet.has(i));
+    const unassignedFeasible = feasible.filter(i=>!assignmentLabel(i));
+    const status = unassignedFeasible.length
+      ? 'missed'
+      : (feasible.length ? 'assigned-elsewhere' : (budgetLimited.length ? 'budget-capped' : 'no-fit'));
+    const candidateNames = (status === 'budget-capped' ? budgetLimited : feasible)
+      .slice(0,3)
+      .map(i=>data[i] && data[i].name)
+      .filter(Boolean);
+    let explanation = 'no remaining eligible item satisfies this gap';
+    if(status === 'missed')explanation = `${candidateNames.join(', ')} can still fit with current constraints`;
+    if(status === 'assigned-elsewhere')explanation = `${candidateNames.join(', ')} fits here but was assigned to another day`;
+    if(status === 'budget-capped')explanation = `${candidateNames.join(', ')} fits the clock gap, but not the remaining agenda budget`;
+    return {...gap,status,candidateNames,explanation};
+  });
+  const missedOpportunityCount = placementGaps.filter(gap=>gap.status === 'missed').length;
+  const budgetCappedGapCount = placementGaps.filter(gap=>gap.status === 'budget-capped').length;
+  const agendaRows = timeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel').map(row=>({
+    kind:row.kind,
+    i:row.i != null ? row.i : null,
+    name:row.kind === 'travel'
+      ? `travel${row.toName ? ` to ${row.toName}` : ''}`
+      : (row.h && row.h.name || 'scheduled item'),
+    start:row.start,
+    end:row.end,
+    minutes:Math.max(0,Math.round((row.end - row.start) / 60000))
+  }));
+
+  const blockedByLabel = new Map();
+  for(const block of rawBlocks){
+    const label = block.label || 'blocked';
+    blockedByLabel.set(label,(blockedByLabel.get(label) || 0) + Math.round((block.end - block.start) / 60000));
+  }
+  const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
+  return {
+    generatedAt:now,
+    dayBase,
+    dayKey,
+    isToday,
+    rangeStart,
+    dayEnd,
+    totalCapacity,
+    blockedMinutes,
+    netAvailable,
+    outstandingLoad,
+    placementRatio,
+    surplusMinutes:netAvailable - outstandingLoad,
+    scheduledMinutes,
+    agendaBudgetMinutes:Math.max(0,Math.round(agenda.totalMinutes || 0)),
+    agendaUsedMinutes:Math.max(0,Math.round(agenda.usedMinutes || 0)),
+    placedLoadMinutes:Math.max(0,Math.round(diagnostics.placedMinutes || 0)),
+    travelMinutes:Math.max(0,Math.round(diagnostics.travelMinutes || 0)),
+    eligibleCount:eligible.length,
+    eligibleCoverage:outstandingLoad > 0 ? Math.min(1,(diagnostics.placedMinutes || 0) / outstandingLoad) : 1,
+    budgetUtilization:(agenda.totalMinutes || 0) > 0 ? Math.min(1,(agenda.usedMinutes || 0) / agenda.totalMinutes) : 0,
+    placementBudgetRemaining:Math.max(0,Math.round(diagnostics.remainingMinutes || 0)),
+    schedulerOpenMinutes:Math.max(0,Math.round(gapAudit.openSlotMinutes || 0)),
+    openGapMinutes:Math.max(0,Math.round(gapAudit.openGapMinutes || 0)),
+    largestGapMinutes:Math.max(0,Math.round(gapAudit.largestGapMinutes || 0)),
+    missedOpportunityCount,
+    budgetCappedGapCount,
+    placementGaps,
+    agendaRows,
+    unplacedItems,
+    blockedBreakdown:[...blockedByLabel.entries()].map(([label,minutes])=>({label,minutes}))
+  };
 }
 
 // PURE: mutable placement state for one day. Scheduled tasks are hard rows;
@@ -2036,7 +2386,7 @@ function collectLocationHints(dayStates){
 // not been placed yet. Pass 2 reuses the same eligibility/priority/feasibility
 // gates, only the day-preference score changes, so nothing gets placed that
 // wouldn't have been placeable before.
-function buildWeekAgenda(data,settings,numDays = 7){
+function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   const todayBase = dayStart(Date.now());
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
   const days = [];
@@ -2091,6 +2441,12 @@ function buildWeekAgenda(data,settings,numDays = 7){
     const state = dayStates[d];
     const day = days[d];
     day.timeline = finalizePlacementRows(state);
+    if(opts.diagnostics){
+      day.placementDiagnostics = buildPlacementDiagnostics(
+        candidates.filter(candidate=>candidate.eligible.has(day.dayBase)),
+        state
+      );
+    }
     day.usedMinutes = state.usedMinutes;
     day.remainingMinutes = Math.max(0,(Number(day.totalMinutes) || 0) - state.usedMinutes);
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
@@ -2113,5 +2469,3 @@ function renderWeekOnHome(){
   wrap.innerHTML = '';
   wrap.hidden = true;
 }
-
-

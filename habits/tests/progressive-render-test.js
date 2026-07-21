@@ -1,9 +1,9 @@
 // Smooth home refresh — no progressive flicker, fingerprint skip for no-ops.
 //
-//   HABITS_URL=http://127.0.0.1:4173/ node tests/progressive-render-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/progressive-render-test.js
 //
 const { chromium } = require('playwright');
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 (async () => {
   const browser = await chromium.launch({ headless:true });

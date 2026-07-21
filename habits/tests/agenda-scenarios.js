@@ -21,11 +21,11 @@
 // Each scenario seeds localStorage, reloads, and asserts against the live
 // in-page pure functions (via page.evaluate) plus the rendered DOM for pills.
 // Run with:  node habits/tests/agenda-scenarios.js   (after starting the server)
-//            python3 -m http.server 4176  (from the habits/ directory)
+//            python3 -m http.server 4181  (from the habits/ directory)
 
 const { chromium } = require('playwright');
 
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
+const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 // ---- time helpers (all anchored to "today, local") ----
 function atTime(hour, minute = 0) {
