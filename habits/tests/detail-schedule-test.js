@@ -179,11 +179,38 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(flexPersisted !== '3') throw new Error(`flexibility should persist as 3, got ${flexPersisted}`);
   console.log('  All values persisted: OK');
 
+  // Home card for a breakable habit shows the progress slider (first instance).
+  await page.locator('#detail-cool').click().catch(() => {});
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const cool = document.getElementById('detail-cool');
+    if(cool)cool.click();
+  });
+  await page.waitForTimeout(300);
+  const homeSlider = await page.evaluate((name) => {
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes(name));
+    return {
+      count:cards.length,
+      sliders:cards.filter(c => c.querySelector('.breakable-slider')).length,
+      trails:cards.filter(c => c.querySelector('.ting-trail')).length,
+      label:cards[0]?.querySelector('.breakable-progress-label')?.textContent || null
+    };
+  }, runId);
+  if(homeSlider.count < 1) throw new Error('breakable habit card missing on home');
+  if(homeSlider.sliders !== 1){
+    throw new Error(`expected exactly 1 progress slider on first instance, got ${JSON.stringify(homeSlider)}`);
+  }
+  if(homeSlider.count > 1 && homeSlider.trails !== homeSlider.count - homeSlider.sliders){
+    throw new Error(`later breakable instances should keep trail dots: ${JSON.stringify(homeSlider)}`);
+  }
+  console.log('  Home breakable slider (first-only): OK');
+
   // ═══════════════════════════════════════════════
   // SECTION 4: Task schedule tab toggles
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 4: Task schedule tab ---');
-  await page.locator('#detail-cool').click();
+  await page.locator('#detail-cool').click({ timeout:1000 }).catch(() => {});
   await page.waitForTimeout(300);
 
   const taskName = `${runId} task`;

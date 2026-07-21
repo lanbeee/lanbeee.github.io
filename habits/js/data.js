@@ -733,6 +733,87 @@ function remainingChunks(h,dayBase){
   if(!h || !h.breakable)return [left];
   return planChunks(left,h.minChunkMinutes);
 }
+/** PURE: minutes already completed toward the breakable budget. */
+function breakableProgressMinutes(h,dayBase){
+  if(!h || !h.breakable)return 0;
+  if(h.type === 'task')return loggedChunkMinutes(h);
+  return loggedChunkMinutesOnDay(h,dayBase != null ? dayBase : dayStart(Date.now()));
+}
+/** PURE: total breakable budget (duration). */
+function breakableTotalMinutes(h){
+  return clampDuration(h && h.durationMinutes);
+}
+/**
+ * PURE: instant-tap suggestion for a breakable log — a real split card chunk,
+ * or min chunk. Never the full remaining day (continuous block on the card).
+ */
+function suggestedBreakableLogMinutes(h,chunkMinutes,dayBase){
+  if(!h || !h.breakable)return 0;
+  const rem = breakableBudgetMinutes(h,dayBase);
+  if(rem <= 0)return 0;
+  const min = clampMinChunk(h.minChunkMinutes);
+  if(rem < min)return rem;
+  let suggested = Math.round(Number(chunkMinutes));
+  // Continuous placement often puts the whole remaining budget on one card —
+  // that is not a tap-sized step. Only honor chunkMinutes when it is a true
+  // partial piece below remaining.
+  if(!Number.isFinite(suggested) || suggested <= 0 || suggested >= rem){
+    suggested = min;
+  }
+  return Math.max(1,Math.min(suggested,rem));
+}
+/**
+ * PURE: 0–100 progress percent for slider display (committed minutes / total).
+ */
+function breakableProgressPercent(h,dayBase){
+  const total = breakableTotalMinutes(h);
+  if(total <= 0)return 0;
+  const done = breakableProgressMinutes(h,dayBase);
+  return Math.max(0,Math.min(100,Math.round((done / total) * 100)));
+}
+/** PURE: minutes for a 0–100 slider percent of the breakable budget. */
+function breakableMinutesFromPercent(h,percent){
+  const total = breakableTotalMinutes(h);
+  const p = Math.max(0,Math.min(100,Number(percent) || 0));
+  return Math.max(0,Math.min(total,Math.round(total * p / 100)));
+}
+/**
+ * MUTATES habit logs so breakable progress equals targetMinutes (day scope for
+ * keepup/reduce, lifetime for tasks). Returns {mode:'add'|'set'|'noop', delta, minutes}.
+ * Caller must save. For mode 'add', caller should logTing the delta instead of
+ * using this — this function handles 'set' (rewrite) when target < done, and
+ * can also set exactly when building a consolidated entry.
+ */
+function rewriteBreakableProgress(h,targetMinutes,dayBase){
+  if(!h || !h.breakable)return { mode:'noop', delta:0, minutes:0 };
+  const total = breakableTotalMinutes(h);
+  const target = Math.max(0,Math.min(total,Math.round(Number(targetMinutes) || 0)));
+  const done = breakableProgressMinutes(h,dayBase);
+  const delta = target - done;
+  if(delta === 0)return { mode:'noop', delta:0, minutes:target };
+  if(delta > 0)return { mode:'add', delta, minutes:target };
+  // Reduce: drop minute-bearing actuals in scope, keep plans + non-minute actuals.
+  const logs = normalizeLogs(h.logs);
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
+  const start = dayStart(base);
+  const end = start + 86400000;
+  const kept = logs.filter(log=>{
+    if(isPlanLog(log))return true;
+    if(logMinutes(log) === null)return true;
+    if(h.type === 'task')return false;
+    const ts = logTime(log);
+    return !ts || ts < start || ts >= end;
+  });
+  if(target > 0){
+    const ts = (typeof snapLogTimestamp === 'function')
+      ? snapLogTimestamp(h,Date.now())
+      : Date.now();
+    kept.push(makeActualLog(ts,{ minutes:target }));
+  }
+  h.logs = normalizeLogs(kept);
+  h.lastLog = latestActualLog(h.logs);
+  return { mode:'set', delta, minutes:target };
+}
 /** PURE: task fully complete? Breakable tasks need chunk minutes to cover duration
  *  (or a full log without minutes). Non-breakable: any actual log. */
 function isTaskDone(h){

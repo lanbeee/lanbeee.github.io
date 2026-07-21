@@ -960,6 +960,20 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
+/** PURE: breakable progress slider markup (0–100% of today's / task budget).
+ *  Thumb cannot go below committed progress (no reverse). */
+function cardBreakableSlider(h){
+  const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
+  const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+  const pct = total > 0 ? Math.max(0,Math.min(100,Math.round((done / total) * 100))) : 0;
+  const label = `progress ${done} of ${total} minutes`;
+  return `<div class="breakable-progress" data-breakable-progress>
+    <input type="range" class="breakable-slider" min="${pct}" max="100" step="1" value="${pct}"
+      aria-label="${escapeHtml(label)}" data-committed="${done}" data-total="${total}" />
+    <span class="breakable-progress-label" aria-hidden="true">${done}/${total}m</span>
+  </div>`;
+}
+
 // PURE: today's agenda timeline rows, shared by the home card pill map and
 // the chronological "today" section ordering so both stay in lockstep.
 // Travel/wait rows are excluded here — home inserts thin travel cards itself.
@@ -1483,8 +1497,11 @@ function render(opts){
   // not part of the first paint.
   const earlyMap = deferAgenda ? new Map() : homeEarlyMap(data,sortSettings);
   const visibleSet = new Set(indices);
+  // Only the first today instance of a breakable habit gets the progress slider;
+  // later chunk cards keep the activity trail and still log via suggested chunk.
+  const breakableSliderShown = new Set();
 
-  const appendHabitCard = (realIdx,agendaRow,earlyReasonText)=>{
+  const appendHabitCard = (realIdx,agendaRow,earlyReasonText,opts={})=>{
     const h = data[realIdx];
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
@@ -1495,6 +1512,16 @@ function render(opts){
     const earlyPill = earlyCardPill(earlyReasonText || '');
     const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
+    let showBreakableSlider = false;
+    if(h.breakable){
+      const eligible = opts.isPrimaryBreakable !== false;
+      showBreakableSlider = eligible && !breakableSliderShown.has(realIdx);
+      if(showBreakableSlider)breakableSliderShown.add(realIdx);
+    }
+    const visualHtml = showBreakableSlider
+      ? cardBreakableSlider(h)
+      : `<div class="ting-trail">${trail}</div>`;
+    const visualAria = showBreakableSlider ? '' : ' aria-hidden="true"';
     const accent = visualClassColor(cardScoreTone);
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
@@ -1505,6 +1532,11 @@ function render(opts){
     row.dataset.realIdx = realIdx;
     if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
       row.dataset.chunkMinutes = String(Math.round(agendaRow.chunkMinutes));
+    }
+    if(showBreakableSlider){
+      const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+      row.dataset.progressTarget = String(done);
+      row.dataset.progressDirty = '0';
     }
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
@@ -1526,8 +1558,8 @@ function render(opts){
           </div>
           <div class="ting-cue">${escapeHtml(cue)}</div>
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>
-          <div class="ting-visual" aria-hidden="true">
-            <div class="ting-trail">${trail}</div>
+          <div class="ting-visual"${visualAria}>
+            ${visualHtml}
           </div>
         </div>
         <div class="card-actions" aria-label="habit actions">
@@ -1540,6 +1572,7 @@ function render(opts){
     list.appendChild(row);
     setupSwipe(row);
     setupCardTap(row,realIdx);
+    if(showBreakableSlider)setupBreakableSlider(row,realIdx);
   };
 
   if(deferAgenda){
@@ -1643,7 +1676,9 @@ function render(opts){
         if(data[row.i]?.pinned)continue;
         const cat = todayCategory(data[row.i],sortSettings);
         const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
-        appendHabitCard(row.i,row,earlyText);
+        // Slider only on the first today instance; later days / later chunks
+        // keep the trail and still pulse suggested chunks.
+        appendHabitCard(row.i,row,earlyText,{ isPrimaryBreakable:Boolean(day.isToday) });
       }
     });
 
@@ -1774,7 +1809,9 @@ function render(opts){
             }
             prevTodayLocId = cLocId || prevTodayLocId;
             const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
-            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '');
+            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '',{
+              isPrimaryBreakable:ci === 0
+            });
           });
           return;
         }
@@ -1867,6 +1904,7 @@ function homeListFingerprint(now = Date.now()){
     h.durationMinutes, h.priority, h.flexibilityDays,
     h.breakable ? 1 : 0,
     h.minChunkMinutes || '',
+    typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0,
     h.allowedTimeStart, h.allowedTimeEnd,
     h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
     h.allowedTimeEndAnchor || '', h.allowedTimeEndOffsetMin || 0,
@@ -1915,6 +1953,43 @@ function renderHomeIfChanged(force){
 function renderProgressive(){
   render();
   _homeListFingerprint = homeListFingerprint();
+}
+
+// WIRE: breakable progress slider — drag sets pending target ahead of
+// committed progress only (no reverse); tap commits.
+function setupBreakableSlider(row,_realIdx){
+  const slider = row.querySelector('.breakable-slider');
+  const label = row.querySelector('.breakable-progress-label');
+  if(!slider)return;
+  const total = Math.max(1,Math.round(Number(slider.dataset.total) || 1));
+  const committed = Math.max(0,Math.min(total,Math.round(Number(slider.dataset.committed) || 0)));
+  const minPct = total > 0 ? Math.max(0,Math.min(100,Math.round((committed / total) * 100))) : 0;
+  slider.min = String(minPct);
+  function syncLabel(minutes){
+    if(label)label.textContent = `${Math.round(minutes)}/${total}m`;
+    slider.setAttribute('aria-label',`progress ${Math.round(minutes)} of ${total} minutes`);
+  }
+  function onInput(){
+    let pct = Math.max(minPct,Math.min(100,Number(slider.value) || 0));
+    if(Number(slider.value) < minPct)slider.value = String(minPct);
+    const minutes = Math.max(committed,Math.min(total,Math.round(total * pct / 100)));
+    if(minutes > committed){
+      row.dataset.progressTarget = String(minutes);
+      row.dataset.progressDirty = '1';
+    }else{
+      row.dataset.progressTarget = String(committed);
+      row.dataset.progressDirty = '0';
+    }
+    syncLabel(minutes);
+    slider.style.setProperty('--breakable-pct',`${pct}%`);
+  }
+  slider.style.setProperty('--breakable-pct',`${slider.value}%`);
+  const stop = e=>{ e.stopPropagation(); };
+  ['pointerdown','touchstart','mousedown','click'].forEach(ev=>{
+    slider.addEventListener(ev,stop,{ passive:true });
+  });
+  slider.addEventListener('input',onInput);
+  slider.addEventListener('change',onInput);
 }
 
 // WIRE: attach swipe gesture listeners
@@ -2185,9 +2260,10 @@ function logTing(i,opts = {}){
   const consumedPlanTs = planToConsumeForEntry(logs,now);
   let minutes = opts.minutes;
   if(minutes == null && h.breakable && !isAutoMark(h)){
-    // Continuous ideal: default to full remaining. Callers (chunk cards) may
-    // pass opts.minutes for a specific placed session size.
-    const next = remainingChunks(h)[0];
+    // Suggested chunk only — never the full remaining day on a bare tap.
+    const next = typeof suggestedBreakableLogMinutes === 'function'
+      ? suggestedBreakableLogMinutes(h,null)
+      : null;
     if(next)minutes = next;
   }
   // Snap the stored ts to the habit's window-start for the log's day so a
@@ -2487,6 +2563,43 @@ function executeUndo(){
   }
 }
 
+/**
+ * HYBRID: commit breakable card progress from slider (or suggested chunk).
+ * Slider may only advance (target > done); reverse is not supported.
+ * Cards without a slider (later chunks) always use suggested-chunk advance.
+ * Returns true when a log was saved.
+ */
+function commitBreakableFromCard(i,card){
+  const data = load();
+  if(!data[i] || !data[i].breakable)return false;
+  const h = data[i];
+  const row = card && card.closest ? card.closest('.swipe-row') : null;
+  const dirty = row && row.dataset.progressDirty === '1';
+  const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+  const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
+  let target = dirty && row
+    ? Math.round(Number(row.dataset.progressTarget))
+    : done;
+  if(!Number.isFinite(target))target = done;
+  target = Math.max(done,Math.min(total,target));
+
+  if(dirty && target > done){
+    return logTing(i,{ minutes:target - done });
+  }
+
+  const chunkRaw = row && row.dataset.chunkMinutes != null && row.dataset.chunkMinutes !== ''
+    ? Math.round(Number(row.dataset.chunkMinutes))
+    : null;
+  const suggested = typeof suggestedBreakableLogMinutes === 'function'
+    ? suggestedBreakableLogMinutes(h,chunkRaw)
+    : null;
+  if(!suggested || suggested <= 0){
+    showToast('already done');
+    return false;
+  }
+  return logTing(i,{ minutes:suggested });
+}
+
 // HYBRID: log entry and flash card
 function quickLog(i,card){
   const go = ()=>{
@@ -2496,20 +2609,41 @@ function quickLog(i,card){
     }
     setTimeout(refreshOpenViews, 260);
   };
-  const chunkRaw = card && card.closest && card.closest('.swipe-row')
-    ? card.closest('.swipe-row').dataset.chunkMinutes
-    : null;
-  const chunkMinutes = chunkRaw != null && chunkRaw !== ''
-    ? Math.round(Number(chunkRaw))
-    : null;
-  const logOpts = Number.isFinite(chunkMinutes) && chunkMinutes > 0
-    ? {minutes:chunkMinutes}
-    : {};
-  if(typeof requestLogTing === 'function'){
-    requestLogTing(i,go,logOpts);
+  const data = load();
+  const h = data[i];
+  if(h && h.breakable){
+    if(h.trackValue && typeof requestLogTing === 'function'){
+      const row = card && card.closest ? card.closest('.swipe-row') : null;
+      const dirty = row && row.dataset.progressDirty === '1';
+      const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+      const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
+      let target = dirty && row ? Math.round(Number(row.dataset.progressTarget)) : done;
+      if(!Number.isFinite(target))target = done;
+      target = Math.max(done,Math.min(total,target));
+      const chunkRaw = row && row.dataset.chunkMinutes != null && row.dataset.chunkMinutes !== ''
+        ? Math.round(Number(row.dataset.chunkMinutes))
+        : null;
+      const minutes = (dirty && target > done)
+        ? (target - done)
+        : (typeof suggestedBreakableLogMinutes === 'function'
+          ? suggestedBreakableLogMinutes(h,chunkRaw)
+          : null);
+      if(!minutes || minutes <= 0){
+        showToast('already done');
+        return;
+      }
+      requestLogTing(i,go,{ minutes });
+      return;
+    }
+    if(!commitBreakableFromCard(i,card))return;
+    go();
     return;
   }
-  if(!logTing(i,logOpts))return;
+  if(typeof requestLogTing === 'function'){
+    requestLogTing(i,go);
+    return;
+  }
+  if(!logTing(i))return;
   go();
 }
 

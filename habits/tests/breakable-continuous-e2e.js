@@ -1,5 +1,5 @@
 /**
- * Breakable tasks — continuous-first + true min-chunk floor.
+ * Breakable tasks — continuous-first + true min-chunk floor + progress slider UX.
  *
  * Guards:
  *   A. Continuous wins when a gap fits full remaining
@@ -7,9 +7,16 @@
  *   C. Min floor: never schedule a piece < min while remaining >= min
  *   D. Finish-up: remaining < min after partial logs may place exactly remaining
  *   E. Progress logging updates remaining; next plan is continuous leftover
- *   F. Pure helpers: planChunks / isValidChunkMinutes / minViableSessionMinutes
+ *   F. Pure helpers: planChunks / validity / progress / suggestion / rewrite
  *   G. Doability uses min-viable session, not full duration
- *   H. Detail toggle persists breakable + minChunk
+ *   H. Detail toggle persists breakable + minChunk; detail-mark uses suggestion
+ *   I. Progress slider UX:
+ *      - slider only on first today instance; later chunks keep trail dots
+ *      - pulse/double-tap stay instant; no-drag tap logs suggested chunk (never full day)
+ *      - drag ahead then pulse logs delta; drag below committed is ignored (no reverse)
+ *      - secondary chunk cards still pulse suggested chunk; primary slider refreshes
+ *      - after commit, remaining agenda budget shrinks
+ *      - non-breakable cards unchanged (trail, instant full log)
  *
  * Run:
  *   python3 -m http.server 4173   (from habits/)
@@ -149,6 +156,7 @@ async function breakableFillRows(page, name){
   // ═══════════════════════════════════════════════════════════
   console.log('\n--- F: pure helpers ---');
   const helpers = await page.evaluate(() => {
+    const day = dayStart(Date.now());
     const h90 = {
       breakable:true,
       durationMinutes:90,
@@ -165,6 +173,38 @@ async function breakableFillRows(page, name){
       lastLog:Date.now(),
       type:'task'
     };
+    const hKeepup = {
+      breakable:true,
+      durationMinutes:420,
+      minChunkMinutes:60,
+      logs:[{ ts:day + 60 * 60000, minutes:60 }],
+      lastLog:day + 60 * 60000,
+      type:'keepup',
+      target:1
+    };
+    const hRewrite = {
+      breakable:true,
+      durationMinutes:100,
+      minChunkMinutes:30,
+      type:'task',
+      logs:[
+        { ts:day + 10 * 60000, minutes:40 },
+        { ts:day + 20 * 60000, minutes:20 },
+        { ts:day + 30 * 60000, plan:true }
+      ],
+      lastLog:day + 20 * 60000
+    };
+    const rewriteAdd = rewriteBreakableProgress({
+      ...h90,
+      logs:[{ ts:Date.now(), minutes:10 }],
+      lastLog:Date.now()
+    }, 40);
+    const rewriteSet = rewriteBreakableProgress(hRewrite, 25);
+    const rewriteNoop = rewriteBreakableProgress({
+      ...h90,
+      logs:[{ ts:Date.now(), minutes:40 }],
+      lastLog:Date.now()
+    }, 40);
     return {
       plan100:planChunks(100, 30),
       plan0:planChunks(0, 30),
@@ -176,7 +216,28 @@ async function breakableFillRows(page, name){
       valid40:isValidChunkMinutes(40, 90, 30),
       valid10of90:isValidChunkMinutes(10, 90, 30),
       valid20finish:isValidChunkMinutes(20, 20, 30),
-      valid15finishBad:isValidChunkMinutes(15, 20, 30)
+      valid15finishBad:isValidChunkMinutes(15, 20, 30),
+      progress0:breakableProgressMinutes(h90),
+      progressPartial:breakableProgressMinutes(hPartial),
+      progressKeepup:breakableProgressMinutes(hKeepup, day),
+      totalKeepup:breakableTotalMinutes(hKeepup),
+      budgetKeepup:breakableBudgetMinutes(hKeepup, day),
+      pctKeepup:breakableProgressPercent(hKeepup, day),
+      minsFrom11:breakableMinutesFromPercent(hKeepup, 11),
+      minsFrom50:breakableMinutesFromPercent(hKeepup, 50),
+      sugNull:suggestedBreakableLogMinutes(hKeepup, null, day),
+      sugFullRem:suggestedBreakableLogMinutes(hKeepup, 360, day),
+      sugPartialChunk:suggestedBreakableLogMinutes(hKeepup, 90, day),
+      sugFinish:suggestedBreakableLogMinutes({
+        ...hPartial, type:'task'
+      }, null),
+      rewriteAddMode:rewriteAdd.mode,
+      rewriteAddDelta:rewriteAdd.delta,
+      rewriteSetMode:rewriteSet.mode,
+      rewriteSetMinutes:rewriteSet.minutes,
+      rewriteSetProgress:breakableProgressMinutes(hRewrite),
+      rewriteKeptPlan:normalizeLogs(hRewrite.logs).some(l => isPlanLog(l)),
+      rewriteNoopMode:rewriteNoop.mode
     };
   });
   assert(JSON.stringify(helpers.plan100) === JSON.stringify([100]),
@@ -194,6 +255,27 @@ async function breakableFillRows(page, name){
   assert(helpers.valid10of90 === false, '10 of 90 with min 30 must be invalid');
   assert(helpers.valid20finish === true, 'finish-up 20 of 20 should be valid');
   assert(helpers.valid15finishBad === false, 'partial finish-up must equal remaining');
+  assert(helpers.progress0 === 0, `fresh progress 0, got ${helpers.progress0}`);
+  assert(helpers.progressPartial === 70, `partial progress 70, got ${helpers.progressPartial}`);
+  assert(helpers.progressKeepup === 60, `keepup today progress 60, got ${helpers.progressKeepup}`);
+  assert(helpers.totalKeepup === 420, `total budget 420, got ${helpers.totalKeepup}`);
+  assert(helpers.budgetKeepup === 360, `remaining budget 360, got ${helpers.budgetKeepup}`);
+  assert(helpers.pctKeepup === 14, `60/420 → 14%, got ${helpers.pctKeepup}`);
+  assert(helpers.minsFrom11 === Math.round(420 * 11 / 100),
+    `11% minutes, got ${helpers.minsFrom11}`);
+  assert(helpers.minsFrom50 === 210, `50% → 210, got ${helpers.minsFrom50}`);
+  assert(helpers.sugNull === 60, `null chunk → min 60, got ${helpers.sugNull}`);
+  assert(helpers.sugFullRem === 60,
+    `full-remaining card chunk must fall back to min, got ${helpers.sugFullRem}`);
+  assert(helpers.sugPartialChunk === 90, `true partial chunk 90, got ${helpers.sugPartialChunk}`);
+  assert(helpers.sugFinish === 20, `finish-up suggestion 20, got ${helpers.sugFinish}`);
+  assert(helpers.rewriteAddMode === 'add', `rewrite ahead → add, got ${helpers.rewriteAddMode}`);
+  assert(helpers.rewriteAddDelta === 30, `rewrite add delta 30, got ${helpers.rewriteAddDelta}`);
+  assert(helpers.rewriteSetMode === 'set', `rewrite below → set, got ${helpers.rewriteSetMode}`);
+  assert(helpers.rewriteSetMinutes === 25, `rewrite set minutes 25, got ${helpers.rewriteSetMinutes}`);
+  assert(helpers.rewriteSetProgress === 25, `after rewrite progress 25, got ${helpers.rewriteSetProgress}`);
+  assert(helpers.rewriteKeptPlan === true, 'rewrite must keep plan logs');
+  assert(helpers.rewriteNoopMode === 'noop', `equal target → noop, got ${helpers.rewriteNoopMode}`);
   console.log('  pure helpers: OK');
 
   // ═══════════════════════════════════════════════════════════
@@ -221,6 +303,20 @@ async function breakableFillRows(page, name){
     `continuous should be 1 row, got ${continuousRows.length}: ${JSON.stringify(continuousRows)}`);
   assert(continuousRows[0].durMin === 90,
     `continuous duration should be 90, got ${continuousRows[0].durMin}`);
+  const continuousUi = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Breakable continuous'));
+    return {
+      count:cards.length,
+      hasSlider:!!cards[0]?.querySelector('.breakable-slider'),
+      hasTrail:!!cards[0]?.querySelector('.ting-trail'),
+      label:cards[0]?.querySelector('.breakable-progress-label')?.textContent || null
+    };
+  });
+  assert(continuousUi.count === 1, `single continuous card, got ${continuousUi.count}`);
+  assert(continuousUi.hasSlider === true, 'single breakable card must show slider');
+  assert(continuousUi.hasTrail === false, 'slider card must not also show trail');
+  assert(continuousUi.label === '0/90m', `fresh label 0/90m, got ${continuousUi.label}`);
   console.log('  continuous 90m: OK');
 
   // ═══════════════════════════════════════════════════════════
@@ -435,6 +531,309 @@ async function breakableFillRows(page, name){
   console.log('  doability min-viable: OK');
 
   // ═══════════════════════════════════════════════════════════
+  // I. Progress slider + instant tap (suggested chunk, not full day)
+  // ═══════════════════════════════════════════════════════════
+  console.log('\n--- I: progress slider UX ---');
+  await freezeClock(page, clockTs);
+  await seedAndReload(page, {
+    clockTs,
+    settings:defaultSettings({
+      blockedTimes:[{ label:'sleep', days:[], start:0, end:420 }]
+    }),
+    data:[
+      base({
+        name:'Slider work',
+        type:'keepup',
+        target:1,
+        durationMinutes:420,
+        breakable:true,
+        minChunkMinutes:60,
+        dueDate:null,
+        lastLog:at(0, 0) - 2 * 86400000,
+        logs:[at(0, 0) - 2 * 86400000],
+        priority:0
+      }),
+      base({
+        name:'Normal stretch',
+        type:'keepup',
+        target:1,
+        durationMinutes:15,
+        breakable:false,
+        lastLog:at(0, 0) - 2 * 86400000,
+        logs:[at(0, 0) - 2 * 86400000],
+        priority:1
+      })
+    ]
+  });
+
+  const sliderCard = page.locator('.ting-card:has-text("Slider work")');
+  await sliderCard.waitFor({ state:'visible' });
+  const slider = sliderCard.locator('.breakable-slider');
+  assert(await slider.count() === 1, 'breakable card should show progress slider');
+  assert(await slider.inputValue() === '0', `slider starts at 0, got ${await slider.inputValue()}`);
+  assert(await page.locator('.ting-card:has-text("Normal stretch") .breakable-slider').count() === 0,
+    'non-breakable must not show slider');
+  assert(await page.locator('.ting-card:has-text("Normal stretch") .ting-trail').count() === 1,
+    'non-breakable keeps trail dots');
+
+  // Pulse without drag → suggested min chunk (60), not full 420.
+  await sliderCard.locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
+      (el.textContent || '').includes('Slider work'));
+    const label = card?.querySelector('.breakable-progress-label')?.textContent || '';
+    return label === '60/420m';
+  }, null, { timeout:5000 });
+  const afterPulse2 = await page.evaluate(() => {
+    const data = load();
+    const h = data.find(x => x.name === 'Slider work');
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el => el.textContent.includes('Slider work'));
+    const sliderEl = card?.querySelector('.breakable-slider');
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h),
+      sliderVal:sliderEl ? Number(sliderEl.value) : null,
+      label:card?.querySelector('.breakable-progress-label')?.textContent,
+      min:sliderEl ? Number(sliderEl.min) : null
+    };
+  });
+  assert(afterPulse2.progress === 60, `pulse should log 60m suggestion, got ${afterPulse2.progress}`);
+  assert(afterPulse2.budget === 360, `remaining budget 360, got ${afterPulse2.budget}`);
+  assert(afterPulse2.label === '60/420m', `label should be 60/420m, got ${afterPulse2.label}`);
+  assert(afterPulse2.sliderVal === 14, `slider ~14% for 60/420, got ${afterPulse2.sliderVal}`);
+  assert(afterPulse2.min === 14, `slider min should clamp at committed 14%, got ${afterPulse2.min}`);
+  console.log('  pulse logs suggestion 60m: OK');
+
+  // Drag below committed must not reverse — snaps to floor, not dirty.
+  const workCard = page.locator('.ting-card').filter({ hasText:'Slider work' });
+  const slider2 = workCard.locator('.breakable-slider');
+  await slider2.evaluate(el => {
+    el.value = '5';
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+    el.dispatchEvent(new Event('change', { bubbles:true }));
+  });
+  const reverseAttempt = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.swipe-row')].find(r =>
+      r.querySelector('.ting-card')?.textContent.includes('Slider work')
+      && r.querySelector('.breakable-slider'));
+    const el = row?.querySelector('.breakable-slider');
+    return {
+      dirty:row?.dataset.progressDirty,
+      target:row?.dataset.progressTarget,
+      value:el ? Number(el.value) : null,
+      min:el ? Number(el.min) : null
+    };
+  });
+  assert(reverseAttempt.min === 14, `min stays 14 after reverse attempt, got ${reverseAttempt.min}`);
+  assert(reverseAttempt.value === 14, `value snaps to min 14, got ${reverseAttempt.value}`);
+  assert(reverseAttempt.dirty === '0', `reverse drag must not dirty, got ${reverseAttempt.dirty}`);
+  assert(Number(reverseAttempt.target) === 60, `target stays 60, got ${reverseAttempt.target}`);
+  console.log('  no reverse via slider: OK');
+
+  // Drag ahead to ~50% then pulse → log delta to ~210.
+  await slider2.evaluate(el => {
+    el.value = '50';
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+    el.dispatchEvent(new Event('change', { bubbles:true }));
+  });
+  const pending = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.swipe-row')].find(r =>
+      r.querySelector('.ting-card')?.textContent.includes('Slider work')
+      && r.querySelector('.breakable-slider'));
+    return {
+      dirty:row?.dataset.progressDirty,
+      target:row?.dataset.progressTarget
+    };
+  });
+  assert(pending.dirty === '1', 'slider drag ahead should mark dirty');
+  const targetMin = Math.round(420 * 50 / 100);
+  assert(Number(pending.target) === targetMin,
+    `target minutes ~${targetMin}, got ${pending.target}`);
+
+  await workCard.locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const data = typeof load === 'function' ? load() : [];
+    const h = data.find(x => x.name === 'Slider work');
+    return h && breakableProgressMinutes(h) === 210;
+  }, null, { timeout:5000 });
+  const afterDrag = await page.evaluate(() => {
+    const data = load();
+    const h = data.find(x => x.name === 'Slider work');
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h)
+    };
+  });
+  assert(afterDrag.progress === targetMin,
+    `drag+pulse should set progress to ${targetMin}, got ${afterDrag.progress}`);
+  assert(afterDrag.budget === 420 - targetMin,
+    `budget should be ${420 - targetMin}, got ${afterDrag.budget}`);
+  // Agenda leftover for this habit must not exceed remaining budget.
+  const agendaAfterDrag = await breakableFillRows(page, 'Slider work');
+  const agendaSum = agendaAfterDrag.reduce((a, r) => a + r.durMin, 0);
+  assert(agendaSum <= afterDrag.budget,
+    `agenda placed ${agendaSum}m but budget is ${afterDrag.budget}: ${JSON.stringify(agendaAfterDrag)}`);
+  console.log('  drag then pulse commits target: OK');
+
+  // Undragged second pulse on primary → another suggested chunk (60 → 270).
+  await workCard.locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const data = typeof load === 'function' ? load() : [];
+    const h = data.find(x => x.name === 'Slider work');
+    if(!h || breakableProgressMinutes(h) !== 270)return false;
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
+      (el.textContent || '').includes('Slider work') && el.querySelector('.breakable-slider'));
+    return card?.querySelector('.breakable-progress-label')?.textContent === '270/420m';
+  }, null, { timeout:5000 });
+  const afterSecondPulse = await page.evaluate(() => {
+    const data = load();
+    const h = data.find(x => x.name === 'Slider work');
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
+      el.textContent.includes('Slider work') && el.querySelector('.breakable-slider'));
+    return {
+      progress:breakableProgressMinutes(h),
+      label:card?.querySelector('.breakable-progress-label')?.textContent,
+      min:Number(card?.querySelector('.breakable-slider')?.min)
+    };
+  });
+  assert(afterSecondPulse.progress === 270, `second pulse → 270, got ${afterSecondPulse.progress}`);
+  assert(afterSecondPulse.label === '270/420m', `label 270/420m, got ${afterSecondPulse.label}`);
+  assert(afterSecondPulse.min === Math.round(270 / 420 * 100),
+    `min clamps to new committed %, got ${afterSecondPulse.min}`);
+  console.log('  undragged second pulse advances suggestion: OK');
+
+  // Helpers unit checks
+  const helperCheck = await page.evaluate(() => {
+    const h = {
+      breakable:true, type:'keepup', target:1,
+      durationMinutes:420, minChunkMinutes:60, logs:[], lastLog:null
+    };
+    return {
+      sug:suggestedBreakableLogMinutes(h, null),
+      sugChunk:suggestedBreakableLogMinutes(h, 90),
+      notFull:suggestedBreakableLogMinutes(h, null) < 420
+    };
+  });
+  assert(helperCheck.sug === 60, `default suggestion 60, got ${helperCheck.sug}`);
+  assert(helperCheck.sugChunk === 90, `card chunk suggestion 90, got ${helperCheck.sugChunk}`);
+  assert(helperCheck.notFull, 'suggestion must not be full remaining day');
+  console.log('  suggestedBreakableLogMinutes: OK');
+
+  // Multi-instance: only first today card has slider; later cards keep trail
+  // and still log via suggested chunk on pulse.
+  console.log('  multi-instance primary slider...');
+  await freezeClock(page, clockTs);
+  await seedAndReload(page, {
+    clockTs,
+    settings:defaultSettings({
+      blockedTimes:[
+        { label:'sleep', days:[], start:0, end:420 },
+        { label:'mid', days:[], start:520, end:600 },
+        { label:'late', days:[], start:650, end:1440 }
+      ]
+    }),
+    data:[
+      base({
+        name:'Split slider',
+        type:'task',
+        durationMinutes:90,
+        breakable:true,
+        minChunkMinutes:30,
+        dueDate:at(0, 0),
+        lastLog:null,
+        logs:[],
+        priority:0
+      })
+    ]
+  });
+  const multiUi = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Split slider'));
+    return {
+      count:cards.length,
+      sliders:cards.map(c => !!c.querySelector('.breakable-slider')),
+      trails:cards.map(c => !!c.querySelector('.ting-trail'))
+    };
+  });
+  assert(multiUi.count >= 2, `expected >=2 Split slider cards, got ${multiUi.count}`);
+  assert(multiUi.sliders[0] === true, 'first instance should show slider');
+  assert(multiUi.sliders.slice(1).every(v => v === false),
+    `later instances must not show slider: ${JSON.stringify(multiUi.sliders)}`);
+  assert(multiUi.trails.slice(1).every(v => v === true),
+    `later instances keep trail dots: ${JSON.stringify(multiUi.trails)}`);
+  console.log('  first-only slider + secondary trails: OK');
+
+  // Pulse on secondary card → suggested chunk advance (no slider needed).
+  const secondaryPulse = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Split slider'));
+    const secondary = cards[1];
+    const btn = secondary?.querySelector('.pulse-btn');
+    if(btn)btn.click();
+    return { clicked:!!btn };
+  });
+  assert(secondaryPulse.clicked, 'secondary pulse button should exist');
+  await page.waitForFunction(() => {
+    const data = typeof load === 'function' ? load() : [];
+    const h = data.find(x => x.name === 'Split slider');
+    if(!h)return false;
+    const prog = breakableProgressMinutes(h);
+    if(!(prog > 0))return false;
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Split slider'));
+    const label = cards[0]?.querySelector('.breakable-progress-label')?.textContent || '';
+    return label === `${prog}/90m`;
+  }, null, { timeout:5000 });
+  const afterSecondary = await page.evaluate(() => {
+    const data = load();
+    const h = data.find(x => x.name === 'Split slider');
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Split slider'));
+    return {
+      progress:breakableProgressMinutes(h),
+      firstHasSlider:!!cards[0]?.querySelector('.breakable-slider'),
+      firstLabel:cards[0]?.querySelector('.breakable-progress-label')?.textContent || null,
+      sliders:cards.map(c => !!c.querySelector('.breakable-slider')),
+      trails:cards.map(c => !!c.querySelector('.ting-trail')),
+      cardCount:cards.length
+    };
+  });
+  assert(afterSecondary.progress >= 30,
+    `secondary pulse should log >= min chunk, got ${afterSecondary.progress}`);
+  assert(afterSecondary.firstHasSlider, 'primary card still has slider after secondary log');
+  assert(afterSecondary.firstLabel === `${afterSecondary.progress}/90m`,
+    `primary slider label should refresh to ${afterSecondary.progress}/90m, got ${afterSecondary.firstLabel}`);
+  assert(afterSecondary.sliders.filter(Boolean).length === 1,
+    `exactly one slider after re-render, got ${JSON.stringify(afterSecondary.sliders)}`);
+  if(afterSecondary.cardCount > 1){
+    assert(afterSecondary.trails.slice(1).every(Boolean),
+      `secondary trails remain: ${JSON.stringify(afterSecondary.trails)}`);
+  }
+  console.log('  secondary pulse suggested-chunk: OK');
+
+  // Fingerprint includes logged progress so home re-renders when minutes change.
+  const fingerprint = await page.evaluate(() => {
+    const data = load();
+    const h = data.find(x => x.name === 'Split slider');
+    const before = typeof homeListFingerprint === 'function' ? homeListFingerprint() : null;
+    // Simulate another minute log without going through UI, then compare fp.
+    const clone = JSON.parse(JSON.stringify(data));
+    const hi = clone.findIndex(x => x.name === 'Split slider');
+    clone[hi].logs = normalizeLogs([
+      ...normalizeLogs(clone[hi].logs),
+      makeActualLog(Date.now(), { minutes:1 })
+    ]);
+    save(clone);
+    const after = typeof homeListFingerprint === 'function' ? homeListFingerprint() : null;
+    // Restore prior data for later tests.
+    save(data);
+    return { before, after, changed:before !== after, hasFp:before != null };
+  });
+  assert(fingerprint.hasFp, 'homeListFingerprint should be available');
+  assert(fingerprint.changed, 'fingerprint must change when breakable progress minutes change');
+  console.log('  fingerprint includes progress minutes: OK');
+
+  // ═══════════════════════════════════════════════════════════
   // H. Detail toggle persistence
   // ═══════════════════════════════════════════════════════════
   console.log('\n--- H: detail persistence ---');
@@ -468,6 +867,7 @@ async function breakableFillRows(page, name){
     await breakableBtn.click();
   }
   await page.waitForSelector('#detail-min-chunk-row:not([hidden])');
+  await page.locator('#detail-duration').fill('120');
   await page.locator('#detail-min-chunk').fill('45');
   await page.locator('#detail-save').click();
   await page.waitForTimeout(400);
@@ -492,6 +892,56 @@ async function breakableFillRows(page, name){
   assert(stored && stored.breakable === true, 'stored breakable true');
   assert(stored && Number(stored.minChunkMinutes) === 45, `stored minChunk 45, got ${JSON.stringify(stored)}`);
   console.log('  detail persistence: OK');
+
+  // After enabling breakable, card should show slider on home.
+  await page.locator('#detail-cool').click().catch(() => {});
+  await page.waitForTimeout(200);
+  // Close detail if still open
+  await page.evaluate(() => {
+    const cool = document.getElementById('detail-cool');
+    if(cool)cool.click();
+  });
+  await page.waitForTimeout(300);
+  const detailCardSlider = await page.evaluate(() => {
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
+      (el.textContent || '').includes('BreakableDetail'));
+    return !!card?.querySelector('.breakable-slider');
+  });
+  assert(detailCardSlider, 'persisted breakable task card should show slider');
+  console.log('  breakable task card slider: OK');
+
+  // Detail mark uses suggested chunk (not full duration) — same instant path.
+  const openedDetail = await page.evaluate(() => {
+    const data = load();
+    const i = data.findIndex(x => String(x.name || '').startsWith('BreakableDetail'));
+    if(i < 0 || typeof openDetail !== 'function')return { ok:false, i };
+    openDetail(i);
+    return {
+      ok:true,
+      i,
+      progress:breakableProgressMinutes(data[i]),
+      duration:clampDuration(data[i].durationMinutes),
+      suggested:suggestedBreakableLogMinutes(data[i], null)
+    };
+  });
+  assert(openedDetail.ok, 'openDetail for BreakableDetail');
+  assert(openedDetail.duration === 120,
+    `detail duration should be 120, got ${openedDetail.duration}`);
+  assert(openedDetail.suggested === 45,
+    `suggested detail mark 45, got ${openedDetail.suggested}`);
+  await page.waitForSelector('#detail-sheet.open, body.pane-active', { timeout:5000 });
+  await page.locator('#detail-mark').click();
+  await page.waitForFunction((prev) => {
+    const h = load().find(x => String(x.name || '').startsWith('BreakableDetail'));
+    return h && breakableProgressMinutes(h) === prev + 45;
+  }, openedDetail.progress, { timeout:5000 });
+  const afterDetailMark = await page.evaluate(() => {
+    const h = load().find(x => String(x.name || '').startsWith('BreakableDetail'));
+    return breakableProgressMinutes(h);
+  });
+  assert(afterDetailMark === openedDetail.progress + 45,
+    `detail-mark should log 45m, got ${afterDetailMark}`);
+  console.log('  detail-mark suggested chunk: OK');
 
   if(errors.length){
     console.error('page errors:', errors);

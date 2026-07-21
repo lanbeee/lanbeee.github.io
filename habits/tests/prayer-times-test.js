@@ -26,18 +26,41 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
 
 (async () => {
   const browser = await chromium.launch({ headless:true });
-  const page = await browser.newPage();
+  // Pin Eastern Time: fixtures use NYC coords, and wall-clock bands
+  // (sunrise 4–9am, isha after noon) are meaningless in other host TZs.
+  const context = await browser.newContext({
+    timezoneId:'America/New_York',
+    locale:'en-US'
+  });
+  const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
 
-  // Empty registry; tests inject locations directly.
-  await page.addInitScript(() => {
+  // Empty registry; tests inject locations directly. Freeze to a mid-year
+  // Eastern afternoon so seasonal sunrise stays inside the 4–9am band.
+  const frozenTs = new Date('2026-07-21T16:00:00-04:00').getTime();
+  await page.addInitScript((ts) => {
     localStorage.setItem('tings_v2', JSON.stringify([]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', topics:[], locations:[], travel:{},
       defaultTravelMode:'driving'
     }));
-  });
+    const RealDate = Date;
+    class FakeDate extends RealDate{
+      constructor(...args){
+        if(args.length === 0)super(ts);
+        else super(...args);
+      }
+      static now(){ return ts; }
+    }
+    FakeDate.parse = RealDate.parse;
+    FakeDate.UTC = RealDate.UTC;
+    // Preserve prototype chain checks used by some libs.
+    Object.setPrototypeOf(FakeDate, RealDate);
+    window.__tingsRealDate = RealDate;
+    // eslint-disable-next-line no-global-assign
+    Date = FakeDate;
+  }, frozenTs);
   await page.goto(baseUrl, { waitUntil:'load' });
   await page.waitForTimeout(300);
   assert(pageErrors.length === 0, 'no page errors on boot (' + pageErrors.length + ')');
@@ -218,7 +241,8 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     return {sunriseMin, sunrisePlusHour, fixed, anywhere, noLoc};
   });
   assert(Number.isFinite(resolved.sunriseMin), 'sunrise resolved to a finite minute');
-  assert(resolved.sunriseMin >= 240 && resolved.sunriseMin <= 540, 'sunrise lands 4am–9am (' + resolved.sunriseMin + ')');
+  // NYC mid-summer sunrise is ~5:30–6:00am ET; band leaves room for method variance.
+  assert(resolved.sunriseMin >= 240 && resolved.sunriseMin <= 540, 'sunrise lands 4am–9am ET (' + resolved.sunriseMin + ')');
   assert(resolved.sunrisePlusHour - resolved.sunriseMin === 30, 'offset shifts by (60−30)=30 min (' + (resolved.sunrisePlusHour - resolved.sunriseMin) + ')');
   assert(resolved.fixed === 600, 'fixed minutes returned unchanged');
   assert(Number.isFinite(resolved.anywhere), 'anywhere + prayer resolves via fallback (' + resolved.anywhere + ')');
@@ -468,9 +492,10 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(blocked.sleepEndAnchor === 'sunrise', 'sleep endAnchor kept');
   assert(Number.isFinite(blocked.sleepStart), 'sleep start resolved (' + blocked.sleepStart + ')');
   assert(Number.isFinite(blocked.sleepEnd), 'sleep end resolved (' + blocked.sleepEnd + ')');
-  // Isha is evening, sunrise is morning — overnight block.
-  assert(blocked.sleepStart > 720, 'isha lands after noon (' + blocked.sleepStart + ')');
-  assert(blocked.sleepEnd < 720, 'sunrise lands before noon (' + blocked.sleepEnd + ')');
+  // Isha is evening ET, sunrise is morning ET — overnight block.
+  assert(blocked.sleepStart > 720, 'isha lands after noon ET (' + blocked.sleepStart + ')');
+  assert(blocked.sleepEnd < 720, 'sunrise lands before noon ET (' + blocked.sleepEnd + ')');
+  assert(blocked.sleepStart > blocked.sleepEnd, 'overnight: isha minute > sunrise minute (' + blocked.sleepStart + ' > ' + blocked.sleepEnd + ')');
   assert(blocked.workStart === 540, 'fixed block returns literal start');
   assert(blocked.workStartAnchor == null, 'fixed block has no startAnchor');
   assert(blocked.badAnchor == null, 'anchor without locationId stripped');
@@ -529,6 +554,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(ctx.noneStart === ctx.eastStart, 'no context → registry[0] fallback (east)');
   assert(ctx.emptyWin === null, 'empty registry + no context → null window');
 
+  await context.close();
   await browser.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);
