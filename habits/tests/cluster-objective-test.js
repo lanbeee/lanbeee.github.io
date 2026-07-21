@@ -115,9 +115,14 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // ── 1. Mixed habit + task, far + co-located, different urgency → ONE day ──
   // The exact user bug: a flexible overdue habit + a day-pinned task, both far
   // and near each other. Must share a day with a direct far→far hop.
+  //
+  // target:7 (weekly) so the habit places once and dayOf isolates the cluster
+  // day — same rationale as scenarios 4 and 9. A target:1 daily would
+  // legitimately also land on earlier open days (chronological rhythm), which
+  // makes "first placed day" the wrong signal for clustering.
   await run('1. mixed habit+task far+co-located cluster', [
     homeRoutine,
-    { name:'farA habit', type:'keepup', target:1, logs:[today-2*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
+    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
     { name:'farB task',  type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farB'], priority:2 },
   ], { locations:PLACES }, async () => {
     const w = await week();

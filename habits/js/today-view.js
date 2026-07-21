@@ -1245,7 +1245,12 @@ function weekPreferencePenalty(h,fit,day,registry){
   else{
     const loc = fit.locId ? registry.find(l=>l.id === fit.locId) : null;
     const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? day.dayBase + loc.preferredTimeStart * 60000 : null;
-    const habitPref = fillPreferredStart(h,day.dayBase);
+    // Only score a habit preferred-time miss when the habit actually has one.
+    // fillPreferredStart used to return midnight for unset preferences
+    // (Number(null)===0), which falsely penalised any later placement.
+    const habitPref = (typeof hasPreferredTimeWindow === 'function' && !hasPreferredTimeWindow(h))
+      ? null
+      : fillPreferredStart(h,day.dayBase);
     const prefTs = locPref || habitPref;
     if(prefTs != null && Math.abs(fit.placeStart - prefTs) > 30 * 60000)penalty += 60;
   }
@@ -1271,11 +1276,13 @@ function weekPreferencePenalty(h,fit,day,registry){
 // near-home work is completely unaffected.
 //
 // Rhythm habits (non-task, non-breakable keepup/reduce) are placed on EACH
-// eligible day their rhythm allows, not just their single best day. After every
-// commit the virtual lastLog advances to that day, so target:1 lands on every
-// day of the week, target:3 every third day, etc. Tasks and breakable habits
-// keep the one-shot behaviour (tasks carry an explicit dueDate; breakables
-// already split one occurrence per chunk).
+// eligible day their rhythm allows. Daily rhythms (target ≤ 1) walk the week
+// chronologically so an earlier feasible day is never skipped forever once
+// virtualLastLog advances. Sparse rhythms (target > 1) still shop for a
+// best-scoring day first so a weekly far habit can defer to cluster with a
+// co-located partner. After every commit the virtual lastLog advances, so
+// target:1 lands every day, target:3 every third day, etc. Tasks and
+// breakable habits keep one-shot best-day scoring.
 
 // PURE: rhythm check for multi-day week placement. Given a habit and the
 // timestamp it was last "completed" (real lastLog, or a virtual one advanced
@@ -1319,20 +1326,54 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       && Number.isFinite(Number(c.h && c.h.target)));
     let virtualLastLog = rhythmHabit && c.h ? c.h.lastLog : null;
     let rhythmPlacementCount = 0;
+    // Daily (and denser) rhythms must walk the week in order — shopping for a
+    // globally "best" first day skips earlier feasible days forever once
+    // virtualLastLog advances past them. Sparse rhythms (target > 1) keep
+    // best-day scoring so a weekly far habit can still defer to cluster with
+    // a co-located partner later in the week.
+    const dailyRhythm = rhythmHabit && Number(c.h && c.h.target) <= 1;
     for(let ci = 0;ci < chunkSizes.length;ci += 1){
-      // For rhythm habits this loops once per placement opportunity (advancing
-      // virtualLastLog each time); for one-shots it runs exactly once.
+      if(dailyRhythm){
+        for(const state of dayStates){
+          if(c.eligible && !c.eligible.has(state.dayBase))continue;
+          if(pinned && !state.isTodayDay)continue;
+          if(rhythmPlacementCount > 0 && virtualLastLog != null
+            && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday))continue;
+          const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
+          const cm = chunkSizes[ci];
+          if(cm != null){ fill.chunkMinutes = cm; fill.chunkIndex = ci; fill.placeKey = `${c.i}:${ci}`; }
+          const offset = Math.round((state.dayBase - todayBase) / 86400000);
+          const dayOpts = {
+            settings,
+            weights,
+            urgency:c.urgency,
+            dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
+          };
+          if(!isScarceScore(c.scarcity)){
+            const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
+            if(spare.length)dayOpts.spareWindows = spare;
+          }
+          const fit = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
+          if(!fit)continue;
+          commitPlacement(state,fill,fit);
+          state.day.agendaItems.push({
+            h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity, locationId:fit.locId,
+            chunkMinutes:fill.chunkMinutes != null ? fill.chunkMinutes : null,
+            chunkIndex:fill.chunkIndex != null ? fill.chunkIndex : null
+          });
+          totalAssigned += 1;
+          virtualLastLog = state.dayBase;
+          rhythmPlacementCount += 1;
+        }
+        continue;
+      }
+      // Sparse rhythm / one-shot: pick the best-scoring feasible day, then
+      // (for rhythm) advance and repeat for later eligible days only.
       while(true){
         let best = null;
         for(const state of dayStates){
           if(c.eligible && !c.eligible.has(state.dayBase))continue;
-          if(pinned && !state.isTodayDay)continue; // hard pins: today only
-          // After the FIRST placement, only consider days whose rhythm is
-          // satisfied relative to the virtual lastLog. The first placement
-          // is left to isWeekCandidate's full eligibility logic (which also
-          // covers plan-by deadlines, flexibility pull-forward, schedules)
-          // so a plan-by-date habit still gets its single timed slot even
-          // when its raw target would say "not due for weeks".
+          if(pinned && !state.isTodayDay)continue;
           if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null
             && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday))continue;
           const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
@@ -1349,13 +1390,8 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
             const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
             if(spare.length)dayOpts.spareWindows = spare;
           }
-          // Score each feasible fit with travel/cluster in the same function so
-          // day choice and slot choice share one scale.
           const fitProbe = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
           if(!fitProbe)continue;
-          // Re-pick among that day's fits with full day-level terms by probing
-          // through tryPlaceOnDay (already picked best within-day). Augment
-          // with cluster relative to this fit's location.
           const travel = fitProbe.edge.seconds || 0;
           const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
           const coLocHint = colocateHintBonus(state,fitProbe.locId,c.i,locHints,registry,mode);
@@ -1364,7 +1400,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
             clusterBonus,
             coLocHint,
             dayOffsetPenalty:dayOpts.dayOffsetPenalty,
-            asapDelayMin:0, // within-day ASAP already chose the fit
+            asapDelayMin:0,
             scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
             preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
             urgency:c.urgency
@@ -1372,7 +1408,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           const cand = { state, fill, fit:fitProbe, score };
           if(!best || score < best.score)best = cand;
         }
-        if(!best)break; // this chunk can't be placed → stop placing the rest
+        if(!best)break;
         commitPlacement(best.state,best.fill,best.fit);
         best.state.day.agendaItems.push({
           h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity, locationId:best.fit.locId,
@@ -1384,7 +1420,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           virtualLastLog = best.state.dayBase;
           rhythmPlacementCount += 1;
         }
-        if(!rhythmHabit)break; // one-shot: a single placement per chunk
+        if(!rhythmHabit)break;
       }
     }
   }

@@ -256,7 +256,12 @@ function resolveHabitTimeField(h, fieldName, dayBase, contextLocId){
   if(!h)return null;
   const anchor = cleanAnchor(h[fieldName + 'Anchor']);
   if(!anchor){
-    const n = Number(h[fieldName]);
+    // Number(null) === 0, so treat null/'' as unset — otherwise an absent
+    // preferred/allowed time silently becomes midnight and week scoring
+    // penalises any later placement (e.g. "now" on today) as a preference miss.
+    const raw = h[fieldName];
+    if(raw == null || raw === '')return null;
+    const n = Number(raw);
     return Number.isFinite(n) ? n : null;
   }
   const primary = resolveHabitExprMinutes(h, fieldName, '', dayBase, contextLocId);
