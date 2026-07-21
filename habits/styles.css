@@ -705,24 +705,25 @@ body.reach-pad #list{padding-top:220px;}
 .ting-cue{
   grid-column:1;grid-row:2;
   color:var(--text2);font-size:12px;font-weight:500;line-height:1.25;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;max-width:100%;word-break:break-word;
 }
 .ting-meta{
   grid-column:2;grid-row:2 / span 2;align-self:start;
   font-size:11.5px;color:var(--text2);display:flex;align-items:center;
   justify-content:flex-end;flex-wrap:wrap;gap:4px 5px;min-width:0;
-  max-width:min(42vw,150px);max-height:42px;overflow:hidden;
+  max-width:min(50vw,160px);max-height:50px;overflow:hidden;
 }
 .context-pill{
-  display:inline-flex;align-items:center;gap:4px;
-  color:var(--text2);font-size:11.5px;font-weight:650;
+  display:inline-flex;align-items:center;gap:3px;
+  color:var(--text2);font-size:9.5px;font-weight:650;
   background:var(--bg2);border:0.5px solid var(--border);
-  border-radius:999px;padding:3px 6px;line-height:1;
-  white-space:nowrap;min-width:0;max-width:92px;overflow:hidden;text-overflow:ellipsis;
+  border-radius:999px;padding:2px 4px;line-height:1;
+  white-space:nowrap;min-width:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;
   flex:0 1 auto;
 }
 .context-pill i{flex:0 0 auto;}
-.context-pill i{font-size:13px;color:var(--text3);}
+.context-pill i{font-size:10.5px;color:var(--text3);}
 .context-pill.plan{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
 .context-pill.plan i{color:var(--purple-icon);}
 .context-pill.agenda-suggested{color:var(--teal-text);background:var(--teal-bg);border-color:transparent;}
@@ -1921,6 +1922,10 @@ body[data-pane-count="3"] .settings-sheet .settings-actions{
 .info-btn{background:none;border:none;padding:0;margin-left:2px;font-size:12px;color:var(--text3);vertical-align:-1px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;}
 .info-btn:active{background:var(--border);}
 .info-tooltip{position:absolute;top:calc(100% + 6px);left:0;z-index:20;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;font-size:11.5px;font-weight:500;color:var(--text2);line-height:1.35;width:max(180px,40vw);max-width:240px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+/* Any inline wrapper span that hosts an info-tooltip needs to be its
+   positioning anchor; otherwise the absolutely-positioned tooltip floats
+   to .sheet-wrap and renders off-screen. */
+span:has(> .info-btn){position:relative;display:inline-block;}
 .flexibility-label .info-tooltip{left:auto;right:0;}
 .add-sheet .info-tooltip{left:auto;right:0;}
 .priority-label .info-tooltip{left:0;right:auto;}
@@ -2351,8 +2356,8 @@ body[data-pane-count="3"] #action-toast{
   .ting-main{gap:7px;}
   .ting-name{font-size:14.5px;}
   .ting-cue{font-size:11.5px;}
-  .ting-meta{flex-wrap:wrap;gap:4px;max-width:126px;}
-  .context-pill{font-size:11px;padding:3px 5px;}
+  .ting-meta{flex-wrap:wrap;gap:4px;max-width:115px;}
+  .context-pill{font-size:9px;padding:2px 3px;}
   .ting-visual{margin-top:0;}
   .trail-week{margin-right:4px;}
   .sheet{padding-left:16px;padding-right:16px;}

@@ -1682,14 +1682,14 @@ $('value-log-sheet')?.addEventListener('click',e=>{
 });
 
 /** Prompt for a value when trackValue is on, otherwise log immediately. */
-function requestLogTing(idx,after){
+function requestLogTing(idx,after,opts){
   const h = load()[idx];
   if(!h)return;
   if(h.trackValue){
-    openValueLogSheet(idx,after);
+    openValueLogSheet(idx,after,opts && opts.minutes);
     return;
   }
-  if(!logTing(idx))return;
+  if(!logTing(idx,opts || {}))return;
   if(typeof after === 'function')after();
 }
 

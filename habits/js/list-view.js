@@ -1503,6 +1503,9 @@ function render(opts){
     const row = document.createElement('div');
     row.className = 'swipe-row';
     row.dataset.realIdx = realIdx;
+    if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
+      row.dataset.chunkMinutes = String(Math.round(agendaRow.chunkMinutes));
+    }
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         ${pinAction}
@@ -1770,6 +1773,7 @@ function render(opts){
               if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs);
             }
             prevTodayLocId = cLocId || prevTodayLocId;
+            const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
             appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '');
           });
           return;
@@ -1862,6 +1866,7 @@ function homeListFingerprint(now = Date.now()){
     (h.locationIds || []).join(','),
     h.durationMinutes, h.priority, h.flexibilityDays,
     h.breakable ? 1 : 0,
+    h.minChunkMinutes || '',
     h.allowedTimeStart, h.allowedTimeEnd,
     h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
     h.allowedTimeEndAnchor || '', h.allowedTimeEndOffsetMin || 0,
@@ -2180,6 +2185,8 @@ function logTing(i,opts = {}){
   const consumedPlanTs = planToConsumeForEntry(logs,now);
   let minutes = opts.minutes;
   if(minutes == null && h.breakable && !isAutoMark(h)){
+    // Continuous ideal: default to full remaining. Callers (chunk cards) may
+    // pass opts.minutes for a specific placed session size.
     const next = remainingChunks(h)[0];
     if(next)minutes = next;
   }
@@ -2489,11 +2496,20 @@ function quickLog(i,card){
     }
     setTimeout(refreshOpenViews, 260);
   };
+  const chunkRaw = card && card.closest && card.closest('.swipe-row')
+    ? card.closest('.swipe-row').dataset.chunkMinutes
+    : null;
+  const chunkMinutes = chunkRaw != null && chunkRaw !== ''
+    ? Math.round(Number(chunkRaw))
+    : null;
+  const logOpts = Number.isFinite(chunkMinutes) && chunkMinutes > 0
+    ? {minutes:chunkMinutes}
+    : {};
   if(typeof requestLogTing === 'function'){
-    requestLogTing(i,go);
+    requestLogTing(i,go,logOpts);
     return;
   }
-  if(!logTing(i))return;
+  if(!logTing(i,logOpts))return;
   go();
 }
 

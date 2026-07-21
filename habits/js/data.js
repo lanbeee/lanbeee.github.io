@@ -91,8 +91,8 @@
  * @property {number}      preferredTimeEndDayOffset2
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
  * @property {number} durationMinutes         — planned session length; 1-720
- * @property {boolean} breakable              — when true, planner may split duration into chunks of at least minChunkMinutes
- * @property {number} minChunkMinutes         — minimum chunk length when breakable; 15-720
+ * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min)
+ * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
  * @property {number|null} timerAutoStopMinutes — optional live-timer auto-stop (null = use durationMinutes)
  * @property {number|null} autoMarkMinutes — when set, the item logs itself this many minutes after its scheduled time (or timer start). null = manual.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
@@ -640,19 +640,29 @@ function normalizeAutoMark(value){
   if(!Number.isFinite(n) || n < 0)return null;
   return Math.min(10080,n); // up to a week, in minutes
 }
-/** PURE: split total minutes into chunks; leftover below min stays as last chunk. */
-function planChunks(totalMinutes,minChunkMinutes){
-  const total = clampDuration(totalMinutes);
+/**
+ * PURE: ideal continuous session plan for remaining work (no calendar).
+ * Splitting is a placement concern — this returns a single chunk of `total`
+ * (or [] when empty). `minChunkMinutes` is unused here but kept for call-site
+ * compatibility; the hard floor is enforced by isValidChunkMinutes / placement.
+ */
+function planChunks(totalMinutes,_minChunkMinutes){
+  const total = Math.max(0,Math.round(Number(totalMinutes) || 0));
+  if(total <= 0)return [];
+  return [clampDuration(total)];
+}
+/**
+ * PURE: whether `piece` is a valid session size for `remaining` given min floor.
+ * Finish-up: when remaining < min, only exactly remaining is allowed.
+ * Otherwise piece must be in [min, remaining].
+ */
+function isValidChunkMinutes(piece,remaining,minChunkMinutes){
+  const rem = Math.max(0,Math.round(Number(remaining) || 0));
   const min = clampMinChunk(minChunkMinutes);
-  if(total <= min)return [total];
-  const chunks = [];
-  let left = total;
-  while(left > min){
-    chunks.push(min);
-    left -= min;
-  }
-  if(left > 0)chunks.push(left);
-  return chunks;
+  const p = Math.round(Number(piece) || 0);
+  if(rem <= 0 || p <= 0 || p > rem)return false;
+  if(rem < min)return p === rem;
+  return p >= min;
 }
 /** PURE: minutes already logged toward a breakable session (sum of log.minutes). */
 function loggedChunkMinutes(h){
@@ -669,7 +679,18 @@ function remainingDurationMinutes(h){
   if(!h || !h.breakable)return total;
   return Math.max(0,total - loggedChunkMinutes(h));
 }
-/** PURE: next chunk sizes still needed for a breakable item. */
+/**
+ * PURE: smallest session that still makes progress on a breakable item.
+ * Finish-up when remaining < min; otherwise the min-chunk floor.
+ */
+function minViableSessionMinutes(h){
+  const left = remainingDurationMinutes(h);
+  if(left <= 0)return 0;
+  if(!h || !h.breakable)return left;
+  const min = clampMinChunk(h.minChunkMinutes);
+  return left < min ? left : min;
+}
+/** PURE: ideal next chunk sizes (continuous: one block of remaining). */
 function remainingChunks(h){
   const left = remainingDurationMinutes(h);
   if(left <= 0)return [];

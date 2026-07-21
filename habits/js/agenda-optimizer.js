@@ -78,6 +78,14 @@ function solveDayPackingIlp(GLPK,state,dayCandidates){
   const options = [];
   for(const c of dayCandidates){
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    // Continuous-first: breakables pack their full remaining duration as one
+    // session option (splits happen in the leftover adaptive pass).
+    if(c.h && c.h.breakable && typeof breakableMinutesLeft === 'function'){
+      const left = breakableMinutesLeft(c.h,c.i,state);
+      if(left <= 0)continue;
+      fill.chunkMinutes = left;
+      fill.placeKey = `${c.i}:opt`;
+    }
     const fits = listPlaceFitsOnDay(state,fill);
     for(const fit of fits){
       options.push({c,fill,fit,weight:optimizerWeight(c)});
@@ -191,6 +199,16 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         if(typeof rhythmEligibleOnDay === 'function'
           && !rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday))continue;
       }
+      // Breakables may already have a continuous piece elsewhere; still allow
+      // a continuous attempt on this day when leftover work remains.
+      if(c.h && c.h.breakable){
+        const left = typeof breakableMinutesLeft === 'function'
+          ? breakableMinutesLeft(c.h,c.i,dayStates)
+          : (typeof remainingDurationMinutes === 'function' ? remainingDurationMinutes(c.h) : 0);
+        if(left <= 0)continue;
+        dayCands.push(c);
+        continue;
+      }
       if(state.placed.has(c.i))continue;
       dayCands.push(c);
     }
@@ -203,16 +221,46 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     }
     if(!chosen)return false;
     for(const {fill,fit} of chosen){
+      if(fill.h && fill.h.breakable){
+        const chunkIndex = state.fills.filter(f=>f.fill && f.fill.i === fill.i).length;
+        fill.chunkMinutes = fit.durMin;
+        fill.chunkIndex = chunkIndex;
+        fill.placeKey = `${fill.i}:${chunkIndex}`;
+        fit.placeKey = fill.placeKey;
+      }
       commitPlacement(state,fill,fit);
+      if(fill.h && fill.h.breakable)state.placed.add(fill.i);
       state.day.agendaItems.push({
         h:fill.h,i:fill.i,priority:fill.priority,scarcity:fill.scarcity,
-        locationId:fit.locId
+        locationId:fit.locId,
+        chunkMinutes:fill.chunkMinutes != null ? fill.chunkMinutes : null,
+        chunkIndex:fill.chunkIndex != null ? fill.chunkIndex : null
       });
       total += 1;
       const c = candidates.find(x=>x.i === fill.i);
       if(c && c.h && c.h.type !== 'task' && !c.h.breakable){
         virtualLogs.set(c.i,state.dayBase);
       }
+    }
+  }
+  // Adaptive leftover pass for breakables that still have remaining work
+  // after the continuous ILP attempts (min-floor splits across gaps/days).
+  if(typeof placeBreakableAcrossWeek === 'function'){
+    const registry = dayStates[0] ? dayStates[0].registry
+      : (typeof normalizeLocationRegistry === 'function'
+        ? normalizeLocationRegistry(settings.locations) : []);
+    const mode = dayStates[0] ? dayStates[0].mode
+      : (typeof normalizeTravelMode === 'function'
+        ? normalizeTravelMode(settings.defaultTravelMode) : 'walk');
+    const weights = typeof resolveAgendaScoreWeights === 'function'
+      ? resolveAgendaScoreWeights(settings) : null;
+    const todayBase = dayStates[0] ? dayStates[0].dayBase
+      : (typeof dayStart === 'function' ? dayStart(Date.now()) : Date.now());
+    for(const c of candidates){
+      if(!c || !c.h || !c.h.breakable)continue;
+      total += placeBreakableAcrossWeek(c,dayStates,settings,null,{
+        todayBase,registry,mode,weights,candidates,pinned:c.pinned === true
+      });
     }
   }
   return total >= 0;

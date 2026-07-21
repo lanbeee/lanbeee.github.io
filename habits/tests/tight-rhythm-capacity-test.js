@@ -28,6 +28,11 @@
 //   - asserts fills stay outside blocks, habits land in resolved windows,
 //     and a manual plan still fits when the planner left a due habit unplaced
 //
+// Plus a big breakable task under the same tight daily budget:
+//   - 90m breakable / min chunk 30 shares 35m residual slack with dailies
+//   - dailies still land all 7 days; breakable splits into valid pieces
+//   - after a 40m partial log, leftover 50m re-packs without starving dailies
+//
 // Freeze the clock to Monday 06:00 so today is clipped mid-morning while
 // future days open at midnight — this is exactly when a bogus midnight
 // "preferred time" used to make tomorrow score better than today, so the
@@ -1448,6 +1453,208 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
   check('evening open slots exist across the week (blocks are not covering the preference)',
     prefEve.eveningOpenDays >= 5,
     `eveningOpenDays=${prefEve.eveningOpenDays}`);
+
+  // ── Seventh scenario: big breakable task + tight daily rhythm together ──
+  // Same 110m budget / 75m dailies (35m slack). A 90m breakable with min
+  // chunk 30 cannot take a continuous day without starving dailies, so it
+  // must share residual slack as adaptive pieces ≥ 30 while every daily
+  // still lands all 7 days. Then a partial log (40 of 90) re-packs the
+  // leftover 50 under the same pressure (finish-up allowed under min).
+  console.log('\n[tight-rhythm + breakable] big task shares slack with daily rhythm');
+  const breakableTogether = await page.evaluate(({ frozen, dailies }) => {
+    const RealDate = Date;
+    function FrozenDate(...args) {
+      if (args.length === 0) return new RealDate(frozen);
+      return new RealDate(...args);
+    }
+    FrozenDate.now = () => frozen;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate, RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const orig = globalThis.Date;
+    globalThis.Date = FrozenDate;
+
+    try {
+      const ago = frozen - 2 * 86400000;
+      const dueFri = frozen + 4 * 86400000; // Friday of the frozen week
+      function mk(props) {
+        return Object.assign({
+          type: 'keepup', flexibilityDays: 0, durationMinutes: 15,
+          allowedTimeStart: null, allowedTimeEnd: null,
+          preferredTimeStart: null, preferredTimeEnd: null,
+          lastLog: ago, logs: [ago], emoji: '', pinned: false, sample: false,
+          snoozedUntil: null, topics: [], allowedWeekdays: [], allowedMonthDays: [],
+          preferredWeekdays: [], preferredMonthDays: [], dueDate: null, eventTime: null,
+          hardDue: false, markDone: true, createdAt: frozen, priority: 2, locationIds: [],
+          breakable: false, minChunkMinutes: 30
+        }, props);
+      }
+
+      const raw = [
+        mk({ name: 'D1 stretch', target: 1, durationMinutes: 15, priority: 1 }),
+        mk({ name: 'D2 meditate', target: 1, durationMinutes: 15, priority: 1 }),
+        mk({ name: 'D3 journal', target: 1, durationMinutes: 15, priority: 2 }),
+        mk({ name: 'D4 floss', target: 1, durationMinutes: 10, priority: 2 }),
+        mk({ name: 'D5 vitamins', target: 1, durationMinutes: 5, priority: 2 }),
+        mk({ name: 'D6 review', target: 1, durationMinutes: 15, priority: 2 }),
+        // One light multi so breakable still competes for residual slack
+        // without every day being pre-eaten by 25–30m sparse habits.
+        mk({ name: 'W3 walk', target: targetFromRhythmParts(3, 7), durationMinutes: 15, priority: 3 }),
+        // Big breakable task — flexibility opens Mon→Fri so adaptive chunks
+        // can share residual slack across the week (not only on the due day).
+        // After P1 dailies claim rhythm seats, this fills leftover minutes as
+        // pieces ≥ 30 (cannot take a continuous 90m day without starving dailies).
+        mk({
+          name: 'Big report',
+          type: 'task',
+          target: null,
+          durationMinutes: 90,
+          breakable: true,
+          minChunkMinutes: 30,
+          dueDate: dueFri,
+          hardDue: false,
+          flexibilityDays: 4,
+          lastLog: null,
+          logs: [],
+          priority: 2
+        })
+      ];
+
+      const settings = Object.assign({}, loadSortSettings(), {
+        availabilityMinutes: [110, 110, 110, 110, 110, 110, 110],
+        availabilityOverrides: {},
+        blockedTimes: [],
+        showWeekOnHome: true,
+        showDueHabitsInAgenda: true,
+        showPlannedItemsInAgenda: true,
+        showScheduledTasksInAgenda: true,
+        showDueTasksInAgenda: true,
+        locations: [],
+        lastKnownLocationId: null,
+        agendaOptimizer: false
+      });
+
+      function packBreakable(dataIn) {
+        const week = buildWeekAgenda(dataIn, settings, 7);
+        const byDay = week.days.map((d, i) => {
+          const fills = (d.timeline || []).filter(r => r.kind === 'fill');
+          const names = fills.map(r => r.h.name);
+          const reportPieces = fills
+            .filter(r => r.h && r.h.name === 'Big report')
+            .map(r => ({
+              day: i,
+              durMin: Math.round((r.end - r.start) / 60000),
+              chunkMinutes: r.chunkMinutes != null ? r.chunkMinutes : Math.round((r.end - r.start) / 60000)
+            }));
+          return {
+            day: i,
+            rem: d.remainingMinutes,
+            used: d.usedMinutes,
+            total: d.totalMinutes,
+            fills: names,
+            dailiesMissing: dailies.filter(n => !names.includes(n)),
+            reportPieces
+          };
+        });
+        const reportAll = byDay.flatMap(d => d.reportPieces);
+        const reportMinutes = reportAll.reduce((s, p) => s + p.durMin, 0);
+        const dailyCounts = {};
+        for (const n of dailies) {
+          dailyCounts[n] = byDay.filter(d => d.fills.includes(n)).length;
+        }
+        // Walk pieces in day order and validate min-floor / finish-up.
+        let left = remainingDurationMinutes(dataIn.find(h => h.name === 'Big report'));
+        const floorViolations = [];
+        for (const p of reportAll) {
+          if (left >= 30 && p.durMin < 30) {
+            floorViolations.push({ left, piece: p.durMin, day: p.day });
+          }
+          if (left < 30 && p.durMin !== left && left > 0) {
+            floorViolations.push({ left, piece: p.durMin, day: p.day, finishUp: true });
+          }
+          left -= p.durMin;
+        }
+        return {
+          byDay,
+          reportAll,
+          reportMinutes,
+          reportDays: [...new Set(reportAll.map(p => p.day))],
+          dailyCounts,
+          floorViolations,
+          maxPiece: reportAll.reduce((m, p) => Math.max(m, p.durMin), 0),
+          multiLaundry: byDay.filter(d => d.fills.includes('W3 laundry')).length,
+          multiClean: byDay.filter(d => d.fills.includes('W2 deep clean')).length,
+          multiGroceries: byDay.filter(d => d.fills.includes('E3 groceries')).length,
+          multiWalk: byDay.filter(d => d.fills.includes('W3 walk')).length
+        };
+      }
+
+      const data = normalize(raw);
+      const full = packBreakable(data);
+
+      // Partial progress: 40m already logged → remaining 50 under same rhythm load.
+      const logTs = frozen - 3600000;
+      const dataPartial = normalize(data.map(h => {
+        if (h.name !== 'Big report') return Object.assign({}, h);
+        return Object.assign({}, h, {
+          lastLog: logTs,
+          logs: [{ ts: logTs, minutes: 40 }]
+        });
+      }));
+      const partial = packBreakable(dataPartial);
+      const remAfterLog = remainingDurationMinutes(dataPartial.find(h => h.name === 'Big report'));
+
+      return { full, partial, remAfterLog };
+    } finally {
+      globalThis.Date = orig;
+    }
+  }, { frozen: FROZEN, dailies: DAILIES });
+
+  console.log('  breakable pieces:', JSON.stringify(breakableTogether.full.reportAll));
+  console.log('  daily counts with breakable:', JSON.stringify(breakableTogether.full.dailyCounts));
+  console.log('  partial leftover pieces:', JSON.stringify(breakableTogether.partial.reportAll));
+
+  for (const name of DAILIES) {
+    check(`with Big report, ${name} still places all 7 days`,
+      breakableTogether.full.dailyCounts[name] === 7,
+      `got ${breakableTogether.full.dailyCounts[name]}/7`);
+  }
+  check('Big report places at least one session under tight slack',
+    breakableTogether.full.reportAll.length >= 1,
+    JSON.stringify(breakableTogether.full.reportAll));
+  check('Big report sessions sum to full 90m across the week',
+    breakableTogether.full.reportMinutes === 90,
+    `got ${breakableTogether.full.reportMinutes}m from ${JSON.stringify(breakableTogether.full.reportAll)}`);
+  check('Big report never schedules a piece < min while remaining ≥ min',
+    breakableTogether.full.floorViolations.length === 0,
+    JSON.stringify(breakableTogether.full.floorViolations));
+  check('Big report cannot land as one continuous 90m day (would starve dailies)',
+    breakableTogether.full.reportAll.length >= 2
+      || breakableTogether.full.maxPiece < 90,
+    `pieces=${JSON.stringify(breakableTogether.full.reportAll)}`);
+  check('Big report spreads across multiple days when split',
+    breakableTogether.full.reportDays.length >= 2
+      || breakableTogether.full.reportMinutes < 90,
+    `days=${JSON.stringify(breakableTogether.full.reportDays)}`);
+  check('multi-times still place somewhere alongside Big report',
+    breakableTogether.full.multiWalk >= 1,
+    `walk=${breakableTogether.full.multiWalk}`);
+
+  check('after logging 40m, remaining work is 50',
+    breakableTogether.remAfterLog === 50,
+    `rem=${breakableTogether.remAfterLog}`);
+  for (const name of DAILIES) {
+    check(`after partial Big report log, ${name} still places all 7 days`,
+      breakableTogether.partial.dailyCounts[name] === 7,
+      `got ${breakableTogether.partial.dailyCounts[name]}/7`);
+  }
+  check('partial leftover Big report sessions sum to remaining 50m',
+    breakableTogether.partial.reportMinutes === 50,
+    `got ${breakableTogether.partial.reportMinutes}m from ${JSON.stringify(breakableTogether.partial.reportAll)}`);
+  check('partial leftover respects min-chunk floor / finish-up',
+    breakableTogether.partial.floorViolations.length === 0,
+    JSON.stringify(breakableTogether.partial.floorViolations));
 
   await browser.close();
   if (failures.length) {

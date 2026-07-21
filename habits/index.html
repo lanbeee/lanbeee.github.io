@@ -419,7 +419,8 @@
           </label>
           <div class="planning-grid" id="detail-min-chunk-row" hidden>
             <div class="planning-field">
-              <span>min chunk</span>
+              <span>min chunk <button type="button" class="info-btn" data-tip="detail-min-chunk-help" aria-label="about min chunk"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-min-chunk-help" role="tooltip" hidden>Smallest piece when work must be split. Prefer one continuous session when time allows — this is a floor, not a suggested chunk size.</div></span>
               <label class="range-value" aria-label="minimum chunk minutes">
                 <input type="text" id="detail-min-chunk" inputmode="numeric" maxlength="3" value="30" />
                 <span>min</span>
