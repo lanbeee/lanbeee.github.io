@@ -125,8 +125,123 @@ function base(props) {
   check('Flexible Deep Work placed', result.flexibleMin != null, `fills=${result.names.join(', ')}`);
   check('sunrise in morning gap', result.sunriseMin != null && result.sunriseMin < 480,
     `sunriseMin=${result.sunriseMin}`);
-  check('flexible outside morning gap', result.flexibleMin != null && result.flexibleMin >= 480,
-    `flexibleMin=${result.flexibleMin}`);
+  check('flexible work does not displace sunrise', result.flexibleMin != null
+    && result.sunriseMin != null
+    && (result.flexibleMin + 60 <= result.sunriseMin || result.flexibleMin >= result.sunriseMin + 5),
+    `sunriseMin=${result.sunriseMin}; flexibleMin=${result.flexibleMin}`);
+
+  console.log('\n[Optimizer] breakable Work yields to narrow Zuhr window');
+  const tomorrow = new Date(Date.now() + 86400000);
+  const tomorrowWeekday = tomorrow.getDay();
+  const ago2d = atTime(6) - 2 * 86400000;
+  const splitResult = await page.evaluate(async ({now,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      const week = await buildWeekAgendaAsync(data,settings,2);
+      const day = week.days[1];
+      const fills = (day.timeline || []).filter(row=>row.kind === 'fill');
+      const compact = fills.map(row=>({
+        name:row.h.name,
+        start:Math.round((row.start - day.dayBase) / 60000),
+        end:Math.round((row.end - day.dayBase) / 60000),
+        minutes:Math.round((row.end - row.start) / 60000)
+      }));
+      return {optimized:Boolean(week.optimized),fills:compact};
+    }finally{
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(15),
+    data:[
+      base({
+        name:'Work',type:'keepup',target:1,durationMinutes:360,
+        breakable:true,minChunkMinutes:60,priority:0,
+        allowedTimeStart:540,allowedTimeEnd:1125,
+        allowedWeekdays:[tomorrowWeekday],lastLog:ago2d,logs:[ago2d]
+      }),
+      base({
+        name:'Zuhr',type:'keepup',target:1,durationMinutes:10,priority:5,
+        allowedTimeStart:830,allowedTimeEnd:840,
+        allowedWeekdays:[tomorrowWeekday],lastLog:ago2d,logs:[ago2d]
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[480,480,480,480,480,480,480],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      locations:[],travel:{},blockedTimes:[{label:'sleep',days:[],start:0,end:420}]
+    }
+  });
+  const zuhr = splitResult.fills.find(fill=>fill.name === 'Zuhr');
+  const work = splitResult.fills.filter(fill=>fill.name === 'Work');
+  const workMinutes = work.reduce((sum,fill)=>sum + fill.minutes,0);
+  check('split scenario uses optimizer',splitResult.optimized,JSON.stringify(splitResult.fills));
+  check('narrow Zuhr habit survives broad Work window',zuhr && zuhr.start === 830,
+    JSON.stringify(splitResult.fills));
+  check('all Work minutes still place around fixed habits',workMinutes === 360,
+    `workMinutes=${workMinutes}; fills=${JSON.stringify(splitResult.fills)}`);
+  check('Work does not overlap Zuhr',Boolean(zuhr) && work.every(fill=>fill.end <= zuhr.start || fill.start >= zuhr.end),
+    JSON.stringify(splitResult.fills));
+  check('Work remains inside its 9:00 AM-6:45 PM window',work.length > 0 && work.every(fill=>fill.start >= 540 && fill.end <= 1125),
+    JSON.stringify(splitResult.fills));
+
+  console.log('\n[Optimizer] week-level task and capacity invariants');
+  const invariantResult = await page.evaluate(async ({now,weekday,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      const week = await buildWeekAgendaAsync(data,settings,4);
+      const allFills = week.days.flatMap(day=>(day.timeline || [])
+        .filter(row=>row.kind === 'fill')
+        .map(row=>({name:row.h.name,dayBase:day.dayBase,minutes:Math.round((row.end-row.start)/60000)})));
+      const constrainedDay = week.days.find(day=>day.weekday === weekday);
+      return {
+        taskCount:allFills.filter(fill=>fill.name === 'One shot').length,
+        constrainedUsed:constrainedDay ? constrainedDay.usedMinutes : null,
+        constrainedNames:constrainedDay
+          ? (constrainedDay.timeline || []).filter(row=>row.kind === 'fill').map(row=>row.h.name)
+          : []
+      };
+    }finally{
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(15),
+    weekday:tomorrowWeekday,
+    data:[
+      base({
+        name:'One shot',type:'task',durationMinutes:30,priority:1,
+        dueDate:atTime(12) + 3 * 86400000,createdAt:atTime(12) - 86400000
+      }),
+      base({
+        name:'Capacity A',type:'keepup',target:1,durationMinutes:60,priority:1,
+        allowedWeekdays:[tomorrowWeekday],lastLog:ago2d,logs:[ago2d]
+      }),
+      base({
+        name:'Capacity B',type:'keepup',target:1,durationMinutes:60,priority:2,
+        allowedWeekdays:[tomorrowWeekday],lastLog:ago2d,logs:[ago2d]
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[90,90,90,90,90,90,90],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      locations:[],travel:{},blockedTimes:[{label:'sleep',days:[],start:0,end:420}]
+    }
+  });
+  check('one-shot task appears only once across the optimized week',invariantResult.taskCount === 1,
+    JSON.stringify(invariantResult));
+  check('fixed fills respect aggregate day capacity',invariantResult.constrainedUsed <= 90,
+    JSON.stringify(invariantResult));
 
   // Fallback path: force timeout / broken glpk should not throw — heuristic still works.
   console.log('\n[Optimizer] heuristic fallback still works with optimizer flag');

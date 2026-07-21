@@ -538,6 +538,67 @@ function buildPlacementDiagnostics(ordered,state){
   };
 }
 
+// PURE: recover a final placement state from the exact day model rendered on
+// Home. This is essential when the async optimizer replaced the fast planner:
+// rebuilding would audit a different agenda than the cards the user sees.
+function diagnosticsFromRenderedDay(data,settings,day){
+  if(!day)return null;
+  const slots = Array.isArray(day.slots) ? day.slots : [];
+  const startClock = slots.length
+    ? slots.reduce((min,slot)=>Math.min(min,slot.start),slots[0].start)
+    : day.dayBase;
+  const state = createDayPlacementState(day,settings,{
+    dayBase:day.dayBase,
+    weekday:day.weekday,
+    startClock
+  });
+  const candidates = [];
+  for(let i = 0;i < data.length;i += 1){
+    const h = data[i];
+    if(!h || (h.type === 'task' && h.eventTime !== null))continue;
+    const pinned = isWeekPinnedToday(h,settings);
+    if((pinned && day.isToday) || (!pinned && isWeekCandidate(h,settings,day.dayBase,day.weekday))){
+      candidates.push({h,i,priority:effectivePriority(h)});
+    }
+  }
+
+  const timeline = Array.isArray(day.timeline) ? day.timeline : [];
+  const travels = timeline.filter(row=>row.kind === 'travel');
+  const chunkCounts = new Map();
+  state.fills = timeline.filter(row=>row.kind === 'fill').map(row=>{
+    const h = data[row.i] || row.h;
+    const chunkIndex = row.chunkIndex != null ? row.chunkIndex : (chunkCounts.get(row.i) || 0);
+    chunkCounts.set(row.i,chunkIndex + 1);
+    const placeKey = h && h.breakable ? `${row.i}:${chunkIndex}` : row.i;
+    const travel = travels.find(item=>Math.abs(item.end - row.start) < 1000
+      && (!row.locationId || !item.to || item.to === row.locationId));
+    const seconds = Math.max(0,Number(travel && travel.seconds) || 0);
+    const fill = {
+      h,i:row.i,priority:effectivePriority(h),
+      chunkMinutes:row.chunkMinutes != null ? row.chunkMinutes : Math.round((row.end - row.start) / 60000),
+      chunkIndex,
+      placeKey
+    };
+    const fit = {
+      placeStart:row.start,
+      placeEnd:row.end,
+      locId:row.locationId || null,
+      edge:{seconds,metres:Number(travel && travel.metres) || 0,provider:travel && travel.provider || 'snapshot'},
+      travelMin:Math.ceil(seconds / 60),
+      durMin:Math.max(0,Math.round((row.end - row.start) / 60000)),
+      slotStart:row.start,
+      prevLocId:travel && travel.from || null,
+      placeKey
+    };
+    state.placed.add(placeKey);
+    state.placed.add(row.i);
+    return {fill,fit,slotStart:fit.slotStart};
+  });
+  state.usedMinutes = Math.max(0,Number(day.usedMinutes) || 0);
+  state.remaining = Math.max(0,(Number(day.totalMinutes) || 0) - state.usedMinutes);
+  return buildPlacementDiagnostics(candidates,state);
+}
+
 // PURE: scorecard model for the hidden day-header diagnostic overlay. Classic
 // home uses the single-day agenda; week home uses the same cross-day assignment
 // that produced the visible day sections.
@@ -560,10 +621,15 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   let timeline = [];
   let week = null;
   if(opts.weekMode){
+    const snapshot = opts.weekSnapshot && Array.isArray(opts.weekSnapshot.days)
+      ? opts.weekSnapshot : null;
     const dayOffset = Math.max(0,Math.round((dayBase - dayStart(now)) / 86400000));
-    week = buildWeekAgenda(data,settings,Math.max(7,dayOffset + 1),{diagnostics:true});
+    week = snapshot || buildWeekAgenda(data,settings,Math.max(7,dayOffset + 1),{diagnostics:true});
     agenda = week.days.find(day=>day.dayBase === dayBase) || buildDayAgenda(data,settings,dayBase,{weekMode:true});
-    diagnostics = agenda.placementDiagnostics || {items:[],placedMinutes:0,travelMinutes:0};
+    diagnostics = snapshot
+      ? diagnosticsFromRenderedDay(data,settings,agenda)
+      : agenda.placementDiagnostics;
+    diagnostics = diagnostics || {items:[],placedMinutes:0,travelMinutes:0};
     timeline = agenda.timeline || [];
   }else{
     agenda = buildTodayAgenda(data,settings);
@@ -650,7 +716,10 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   });
   const missedOpportunityCount = placementGaps.filter(gap=>gap.status === 'missed').length;
   const budgetCappedGapCount = placementGaps.filter(gap=>gap.status === 'budget-capped').length;
-  const agendaRows = timeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel').map(row=>({
+  const homeTimeline = Array.isArray(agenda.homeDisplayedTimeline)
+    ? agenda.homeDisplayedTimeline
+    : timeline;
+  const agendaRows = homeTimeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel').map(row=>({
     kind:row.kind,
     i:row.i != null ? row.i : null,
     name:row.kind === 'travel'
@@ -660,6 +729,8 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     end:row.end,
     minutes:Math.max(0,Math.round((row.end - row.start) / 60000))
   }));
+  const schedulerPlacementRowCount = timeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').length;
+  const displayedPlacementRowCount = homeTimeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').length;
 
   const blockedByLabel = new Map();
   for(const block of rawBlocks){
@@ -669,6 +740,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
   return {
     generatedAt:now,
+    usesRenderedSnapshot:Boolean(opts.weekMode && opts.weekSnapshot),
     dayBase,
     dayKey,
     isToday,
@@ -696,6 +768,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     budgetCappedGapCount,
     placementGaps,
     agendaRows,
+    hiddenAgendaRowCount:Math.max(0,schedulerPlacementRowCount - displayedPlacementRowCount),
     unplacedItems,
     blockedBreakdown:[...blockedByLabel.entries()].map(([label,minutes])=>({label,minutes}))
   };

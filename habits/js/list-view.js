@@ -1487,8 +1487,9 @@ function renderDayCapacityScorecard(report){
       <span>travel committed <b>${capacityMinutesLabel(report.travelMinutes)}</b></span>
     </div>
     <section class="capacity-section">
-      <div class="capacity-section-head"><h3>agenda output</h3><span>${report.agendaRows.length}</span></div>
+      <div class="capacity-section-head"><h3>home agenda output</h3><span>${report.agendaRows.length}</span></div>
       <div class="capacity-agenda">${agendaRows}</div>
+      ${report.hiddenAgendaRowCount ? `<p class="capacity-note">${report.hiddenAgendaRowCount} scheduler placement${report.hiddenAgendaRowCount === 1 ? '' : 's'} not shown in this day section because of the current pin or filter view.</p>` : ''}
     </section>
     <section class="capacity-section">
       <div class="capacity-section-head"><h3>remaining gap audit</h3><span>${report.placementGaps.length}</span></div>
@@ -1512,7 +1513,10 @@ function renderDayCapacityScorecard(report){
 function openDayCapacityScorecard(dayBase,weekMode = false){
   if(typeof buildDayCapacityScorecard !== 'function')return;
   const now = Date.now();
-  const report = buildDayCapacityScorecard(load(),sortSettings,dayBase,now,{weekMode});
+  const report = buildDayCapacityScorecard(load(),sortSettings,dayBase,now,{
+    weekMode,
+    weekSnapshot:weekMode ? _homeRenderedWeek : null
+  });
   const title = $('day-capacity-title');
   const sub = $('day-capacity-sub');
   const sheet = $('day-capacity-sheet');
@@ -1520,8 +1524,8 @@ function openDayCapacityScorecard(dayBase,weekMode = false){
     ? 'today agenda audit'
     : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase();
   if(sub)sub.textContent = report.isToday
-    ? `remaining day from ${new Date(report.rangeStart).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
-    : 'full-day agenda placement audit';
+    ? `${report.usesRenderedSnapshot ? 'current home agenda' : 'remaining day'} from ${new Date(report.rangeStart).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
+    : (report.usesRenderedSnapshot ? 'current home agenda, full-day audit' : 'full-day agenda placement audit');
   if(sheet)sheet.dataset.dayKey = report.dayKey;
   renderDayCapacityScorecard(report);
   openSheet('day-capacity-sheet');
@@ -1587,6 +1591,7 @@ function summarizeTrailTone(tones){
 // user sees the complete picture immediately after their gesture.
 function render(opts){
   const o = opts || {};
+  _homeRenderedWeek = null;
   const list = $('list');
   const empty = $('empty');
   const data = load();
@@ -1814,6 +1819,7 @@ function render(opts){
     const week = (o.__optimizedWeek && o.__optimizedWeek.days)
       ? o.__optimizedWeek
       : buildWeekAgenda(data,sortSettings,7);
+    _homeRenderedWeek = week;
     if(useOptimizer && !o.__optimizedWeek){
       const snapData = data;
       const snapSettings = sortSettings;
@@ -1826,6 +1832,9 @@ function render(opts){
     const weekAssigned = new Set();
     const dayPlans = week.days.map(day=>{
       const seq = homeDaySequence(day,sortSettings,{visibleSet});
+      day.homeDisplayedTimeline = seq.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
+        && row.i != null
+        && !data[row.i]?.pinned);
       for(const row of seq){
         if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
           weekAssigned.add(row.i);
@@ -2127,6 +2136,7 @@ function homeListFingerprint(now = Date.now()){
 }
 
 let _homeListFingerprint = '';
+let _homeRenderedWeek = null;
 
 // RENDER: sync home list only when the freshness key moved. Background paths
 // (travel refresh, while-open loop, quiet location updates) should call this

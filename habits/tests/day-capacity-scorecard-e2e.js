@@ -52,7 +52,7 @@ function task(name,dueDate,priority = 1){
     showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
     showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
     showTaskDateOnCards:true,showPlansOnCards:true,showTimeWindowOnCards:true,
-    agendaOptimizer:false,topics:[],locations:[],travel:{},defaultTravelMode:'driving'
+    agendaOptimizer:true,topics:[],locations:[],travel:{},defaultTravelMode:'driving'
   };
 
   const browser = await chromium.launch({headless:true});
@@ -82,6 +82,7 @@ function task(name,dueDate,priority = 1){
   await page.reload({waitUntil:'networkidle'});
   await page.waitForSelector('#list:not(.is-progressive)');
   await page.waitForSelector('#list .section-header[data-capacity-day]');
+  await page.waitForFunction(()=>typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized === true,null,{timeout:10000});
 
   const model = await page.evaluate(({todayBase,tomorrowBase})=>{
     const d = load();
@@ -119,6 +120,27 @@ function task(name,dueDate,priority = 1){
     `Expected an obvious clock gap explained by the agenda budget: ${JSON.stringify(model.today)}`);
   assert(model.syntheticMissed,'Gap audit failed to flag an eligible item that still fits an empty final gap');
 
+  const snapshotParity = await page.evaluate((tomorrowBase)=>{
+    const rendered = _homeRenderedWeek.days.find(day=>day.dayBase === tomorrowBase);
+    const report = buildDayCapacityScorecard(load(),sortSettings,tomorrowBase,Date.now(),{
+      weekMode:true,
+      weekSnapshot:_homeRenderedWeek
+    });
+    const compact = rows=>rows
+      .filter(row=>row.kind === 'fill' || row.kind === 'scheduled')
+      .map(row=>({kind:row.kind,i:row.i,start:row.start,end:row.end,name:row.h?.name || row.name}));
+    return {
+      rendered:compact(rendered.homeDisplayedTimeline || rendered.timeline || []),
+      audited:report.agendaRows
+        .filter(row=>row.kind === 'fill' || row.kind === 'scheduled')
+        .map(row=>({kind:row.kind,i:row.i,start:row.start,end:row.end,name:row.name})),
+      usesRenderedSnapshot:report.usesRenderedSnapshot
+    };
+  },tomorrowBase);
+  assert(snapshotParity.usesRenderedSnapshot,'Audit did not identify the rendered Home snapshot as its source');
+  assert(JSON.stringify(snapshotParity.audited) === JSON.stringify(snapshotParity.rendered),
+    `Audit output diverged from rendered optimized Home agenda:\n${JSON.stringify(snapshotParity,null,2)}`);
+
   async function tripleTap(selector){
     const header = page.locator(selector);
     await header.waitFor({state:'visible'});
@@ -143,6 +165,7 @@ function task(name,dueDate,priority = 1){
   const tomorrowKey = new Date(tomorrowBase).toISOString().slice(0,10);
   await tripleTap(`#list .section-header[data-capacity-day="${todayKey}"]`);
   assert(await page.locator('#day-capacity-title').textContent() === 'today agenda audit','Today overlay title mismatch');
+  assert((await page.locator('#day-capacity-sub').textContent()).includes('current home agenda'),'Audit did not identify the current Home agenda as its source');
   assert(await page.locator('#day-capacity-content').getByText('9h',{exact:true}).count() === 1,'Today overlay missing 9h capacity');
   assert(await page.locator('[data-capacity-gap-status="budget-capped"]').count() > 0,'Overlay did not explain the obvious unused gap');
   assert(await page.locator('.capacity-agenda-row').count() > 0,'Overlay did not render the agenda builder output');
