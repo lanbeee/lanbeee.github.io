@@ -744,23 +744,29 @@ function breakableTotalMinutes(h){
   return clampDuration(h && h.durationMinutes);
 }
 /**
- * PURE: instant-tap suggestion for a breakable log — a real split card chunk,
- * or min chunk. Never the full remaining day (continuous block on the card).
+ * PURE: instant-tap suggestion for a breakable log.
+ * Always a small step: min chunk (or finish-up when remaining < min).
+ * Never the card's placed piece size and never the full remaining day —
+ * large agenda chunks are placement, not a tap-sized log.
  */
-function suggestedBreakableLogMinutes(h,chunkMinutes,dayBase){
+function suggestedBreakableLogMinutes(h,_chunkMinutes,dayBase){
   if(!h || !h.breakable)return 0;
   const rem = breakableBudgetMinutes(h,dayBase);
   if(rem <= 0)return 0;
   const min = clampMinChunk(h.minChunkMinutes);
   if(rem < min)return rem;
-  let suggested = Math.round(Number(chunkMinutes));
-  // Continuous placement often puts the whole remaining budget on one card —
-  // that is not a tap-sized step. Only honor chunkMinutes when it is a true
-  // partial piece below remaining.
-  if(!Number.isFinite(suggested) || suggested <= 0 || suggested >= rem){
-    suggested = min;
-  }
-  return Math.max(1,Math.min(suggested,rem));
+  return Math.min(min,rem);
+}
+/**
+ * PURE: minutes to log when the user dragged the progress slider to a target.
+ * Returns delta above committed progress, or 0 when target is not ahead.
+ */
+function breakableSliderDeltaMinutes(h,targetMinutes,dayBase){
+  if(!h || !h.breakable)return 0;
+  const total = breakableTotalMinutes(h);
+  const done = breakableProgressMinutes(h,dayBase);
+  const target = Math.max(done,Math.min(total,Math.round(Number(targetMinutes) || 0)));
+  return Math.max(0,target - done);
 }
 /**
  * PURE: 0–100 progress percent for slider display (committed minutes / total).

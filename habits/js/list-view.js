@@ -1986,8 +1986,8 @@ function renderProgressive(){
   _homeListFingerprint = homeListFingerprint();
 }
 
-// WIRE: breakable progress slider — drag sets pending target ahead of
-// committed progress only (no reverse); tap commits.
+// WIRE: breakable progress slider — only a real drag sets a pending target;
+// tap/pulse without drag always logs the min-chunk suggestion.
 function setupBreakableSlider(row,_realIdx){
   const slider = row.querySelector('.breakable-slider');
   const label = row.querySelector('.breakable-progress-label');
@@ -1996,6 +1996,8 @@ function setupBreakableSlider(row,_realIdx){
   const committed = Math.max(0,Math.min(total,Math.round(Number(slider.dataset.committed) || 0)));
   const minPct = total > 0 ? Math.max(0,Math.min(100,Math.round((committed / total) * 100))) : 0;
   slider.min = String(minPct);
+  let dragOriginX = null;
+  let dragged = false;
   function syncLabel(minutes){
     if(label)label.textContent = `${Math.round(minutes)}/${total}m`;
     slider.setAttribute('aria-label',`progress ${Math.round(minutes)} of ${total} minutes`);
@@ -2004,6 +2006,16 @@ function setupBreakableSlider(row,_realIdx){
     let pct = Math.max(minPct,Math.min(100,Number(slider.value) || 0));
     if(Number(slider.value) < minPct)slider.value = String(minPct);
     const minutes = Math.max(committed,Math.min(total,Math.round(total * pct / 100)));
+    // Ignore stray input/change without a real drag (common on mobile taps
+    // near the control) — otherwise pulse would commit to 100%.
+    if(!dragged){
+      row.dataset.progressTarget = String(committed);
+      row.dataset.progressDirty = '0';
+      syncLabel(committed);
+      slider.value = String(minPct);
+      slider.style.setProperty('--breakable-pct',`${minPct}%`);
+      return;
+    }
     if(minutes > committed){
       row.dataset.progressTarget = String(minutes);
       row.dataset.progressDirty = '1';
@@ -2018,6 +2030,24 @@ function setupBreakableSlider(row,_realIdx){
   const stop = e=>{ e.stopPropagation(); };
   ['pointerdown','touchstart','mousedown','click'].forEach(ev=>{
     slider.addEventListener(ev,stop,{ passive:true });
+  });
+  slider.addEventListener('pointerdown',e=>{
+    dragOriginX = e.clientX;
+    dragged = false;
+  });
+  slider.addEventListener('pointermove',e=>{
+    if(dragOriginX == null)return;
+    if(Math.abs(e.clientX - dragOriginX) >= 6)dragged = true;
+  });
+  slider.addEventListener('pointerup',()=>{ dragOriginX = null; });
+  slider.addEventListener('pointercancel',()=>{
+    dragOriginX = null;
+    dragged = false;
+    row.dataset.progressDirty = '0';
+    row.dataset.progressTarget = String(committed);
+    slider.value = String(minPct);
+    syncLabel(committed);
+    slider.style.setProperty('--breakable-pct',`${minPct}%`);
   });
   slider.addEventListener('input',onInput);
   slider.addEventListener('change',onInput);
@@ -2596,8 +2626,9 @@ function executeUndo(){
 
 /**
  * HYBRID: commit breakable card progress from slider (or suggested chunk).
- * Slider may only advance (target > done); reverse is not supported.
- * Cards without a slider (later chunks) always use suggested-chunk advance.
+ * - Real slider drag ahead → log delta to target.
+ * - Plain pulse/tap → always min-chunk suggestion (never the placed piece size,
+ *   never full remaining). Accidental slider input without a drag is ignored.
  * Returns true when a log was saved.
  */
 function commitBreakableFromCard(i,card){
@@ -2615,19 +2646,21 @@ function commitBreakableFromCard(i,card){
   target = Math.max(done,Math.min(total,target));
 
   if(dirty && target > done){
-    return logTing(i,{ minutes:target - done });
+    const delta = typeof breakableSliderDeltaMinutes === 'function'
+      ? breakableSliderDeltaMinutes(h,target)
+      : (target - done);
+    if(delta > 0)return logTing(i,{ minutes:delta });
   }
 
-  const chunkRaw = row && row.dataset.chunkMinutes != null && row.dataset.chunkMinutes !== ''
-    ? Math.round(Number(row.dataset.chunkMinutes))
-    : null;
   const suggested = typeof suggestedBreakableLogMinutes === 'function'
-    ? suggestedBreakableLogMinutes(h,chunkRaw)
+    ? suggestedBreakableLogMinutes(h,null)
     : null;
   if(!suggested || suggested <= 0){
     showToast('already done');
     return false;
   }
+  // Always pass minutes explicitly — a bare breakable log without minutes is
+  // treated as a full completion for tasks and clears rhythm eligibility.
   return logTing(i,{ minutes:suggested });
 }
 
@@ -2651,13 +2684,12 @@ function quickLog(i,card){
       let target = dirty && row ? Math.round(Number(row.dataset.progressTarget)) : done;
       if(!Number.isFinite(target))target = done;
       target = Math.max(done,Math.min(total,target));
-      const chunkRaw = row && row.dataset.chunkMinutes != null && row.dataset.chunkMinutes !== ''
-        ? Math.round(Number(row.dataset.chunkMinutes))
-        : null;
       const minutes = (dirty && target > done)
-        ? (target - done)
+        ? (typeof breakableSliderDeltaMinutes === 'function'
+          ? breakableSliderDeltaMinutes(h,target)
+          : (target - done))
         : (typeof suggestedBreakableLogMinutes === 'function'
-          ? suggestedBreakableLogMinutes(h,chunkRaw)
+          ? suggestedBreakableLogMinutes(h,null)
           : null);
       if(!minutes || minutes <= 0){
         showToast('already done');

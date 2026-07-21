@@ -11,12 +11,14 @@
  *   G. Doability uses min-viable session, not full duration
  *   H. Detail toggle persists breakable + minChunk; detail-mark uses suggestion
  *   I. Progress slider UX:
- *      - slider only on first today instance; later chunks keep trail dots
+ *      - slider only on first today timeline instance; later chunks keep trail
  *      - pulse/double-tap stay instant; no-drag tap logs suggested chunk (never full day)
  *      - drag ahead then pulse logs delta; drag below committed is ignored (no reverse)
  *      - secondary chunk cards still pulse suggested chunk; primary slider refreshes
- *      - after commit, remaining agenda budget shrinks
+ *      - after commit, remaining agenda budget shrinks — leftover chunks MUST remain
+ *      - partial log keeps includeInTodayAgenda / isWeekCandidate / todayCategory
  *      - non-breakable cards unchanged (trail, instant full log)
+ *      - slider touch target is phone-friendly (≥40px)
  *
  * Run:
  *   python3 -m http.server 4173   (from habits/)
@@ -266,8 +268,9 @@ async function breakableFillRows(page, name){
   assert(helpers.minsFrom50 === 210, `50% → 210, got ${helpers.minsFrom50}`);
   assert(helpers.sugNull === 60, `null chunk → min 60, got ${helpers.sugNull}`);
   assert(helpers.sugFullRem === 60,
-    `full-remaining card chunk must fall back to min, got ${helpers.sugFullRem}`);
-  assert(helpers.sugPartialChunk === 90, `true partial chunk 90, got ${helpers.sugPartialChunk}`);
+    `large/full card chunk must still tap-suggest min, got ${helpers.sugFullRem}`);
+  assert(helpers.sugPartialChunk === 60,
+    `placed piece size is ignored on tap — always min, got ${helpers.sugPartialChunk}`);
   assert(helpers.sugFinish === 20, `finish-up suggestion 20, got ${helpers.sugFinish}`);
   assert(helpers.rewriteAddMode === 'add', `rewrite ahead → add, got ${helpers.rewriteAddMode}`);
   assert(helpers.rewriteAddDelta === 30, `rewrite add delta 30, got ${helpers.rewriteAddDelta}`);
@@ -631,13 +634,24 @@ async function breakableFillRows(page, name){
   console.log('  no reverse via slider: OK');
 
   // Drag ahead to ~50% then pulse → log delta to ~210.
+  // Must simulate a real pointer drag — bare input events are ignored so
+  // accidental mobile taps near the slider cannot commit 100%.
   await slider2.evaluate(el => {
+    el.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles:true, clientX:10, pointerId:1, pointerType:'touch'
+    }));
+    el.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles:true, clientX:80, pointerId:1, pointerType:'touch'
+    }));
     el.value = '50';
     el.dispatchEvent(new Event('input', { bubbles:true }));
     el.dispatchEvent(new Event('change', { bubbles:true }));
+    el.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles:true, clientX:80, pointerId:1, pointerType:'touch'
+    }));
   });
   const pending = await page.evaluate(() => {
-    const row = [...document.querySelectorAll('.swipe-row')].find(r =>
+    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
       r.querySelector('.ting-card')?.textContent.includes('Slider work')
       && r.querySelector('.breakable-slider'));
     return {
@@ -711,13 +725,107 @@ async function breakableFillRows(page, name){
     return {
       sug:suggestedBreakableLogMinutes(h, null),
       sugChunk:suggestedBreakableLogMinutes(h, 90),
+      sugHuge:suggestedBreakableLogMinutes(h, 360),
       notFull:suggestedBreakableLogMinutes(h, null) < 420
     };
   });
   assert(helperCheck.sug === 60, `default suggestion 60, got ${helperCheck.sug}`);
-  assert(helperCheck.sugChunk === 90, `card chunk suggestion 90, got ${helperCheck.sugChunk}`);
+  assert(helperCheck.sugChunk === 60, `placed 90m piece still taps as min 60, got ${helperCheck.sugChunk}`);
+  assert(helperCheck.sugHuge === 60, `placed 360m piece still taps as min 60, got ${helperCheck.sugHuge}`);
   assert(helperCheck.notFull, 'suggestion must not be full remaining day');
-  console.log('  suggestedBreakableLogMinutes: OK');
+  console.log('  suggestedBreakableLogMinutes always min-chunk: OK');
+
+  // Large placed chunk on the card must NOT be what pulse logs.
+  console.log('  large chunkMinutes card pulse...');
+  await freezeClock(page, clockTs);
+  await seedAndReload(page, {
+    clockTs,
+    settings:defaultSettings({
+      showWeekOnHome:true,
+      blockedTimes:[
+        { label:'sleep', days:[], start:0, end:420 },
+        // Force one big afternoon gap after lunch so the card can carry a
+        // large chunkMinutes while remaining budget is still 420.
+        { label:'lunch', days:[], start:720, end:780 }
+      ]
+    }),
+    data:[
+      base({
+        name:'Huge chunk work',
+        type:'keepup',
+        target:1,
+        durationMinutes:420,
+        breakable:true,
+        minChunkMinutes:60,
+        dueDate:null,
+        lastLog:at(0, 0) - 2 * 86400000,
+        logs:[at(0, 0) - 2 * 86400000],
+        priority:0
+      })
+    ]
+  });
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll('#list .ting-card')]
+      .find(el => (el.textContent || '').includes('Huge chunk work'));
+    return !!card?.querySelector('.breakable-slider');
+  }, null, { timeout:8000 });
+  const hugeMeta = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
+      (r.querySelector('.ting-card')?.textContent || '').includes('Huge chunk work')
+      && r.querySelector('.breakable-slider'));
+    return {
+      chunkMinutes:row ? Number(row.dataset.chunkMinutes) : null,
+      dirty:row?.dataset.progressDirty
+    };
+  });
+  // Simulate accidental mobile slider jump to 100% WITHOUT a drag flag.
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
+      (r.querySelector('.ting-card')?.textContent || '').includes('Huge chunk work')
+      && r.querySelector('.breakable-slider'));
+    const el = row?.querySelector('.breakable-slider');
+    if(!el || !row)return;
+    el.value = '100';
+    row.dataset.progressTarget = '420';
+    row.dataset.progressDirty = '1'; // dirty without drag — must be ignored
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+    el.dispatchEvent(new Event('change', { bubbles:true }));
+  });
+  const afterFakeDirty = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
+      (r.querySelector('.ting-card')?.textContent || '').includes('Huge chunk work')
+      && r.querySelector('.breakable-slider'));
+    return {
+      dirty:row?.dataset.progressDirty,
+      target:row?.dataset.progressTarget
+    };
+  });
+  assert(afterFakeDirty.dirty === '0',
+    `stray slider input without drag must clear dirty, got ${afterFakeDirty.dirty}`);
+  await page.locator('#list .ting-card').filter({ hasText:'Huge chunk work' }).first()
+    .locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const h = load().find(x => x.name === 'Huge chunk work');
+    return h && breakableProgressMinutes(h) === 60;
+  }, null, { timeout:5000 });
+  const afterHugePulse = await page.evaluate(() => {
+    const h = load().find(x => x.name === 'Huge chunk work');
+    const last = normalizeLogs(h.logs).filter(l => !isPlanLog(l)).pop();
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h),
+      logMinutes:logMinutes(last)
+    };
+  });
+  assert(afterHugePulse.progress === 60,
+    `pulse must log min 60 even if card chunk was ${hugeMeta.chunkMinutes}, got ${afterHugePulse.progress}`);
+  assert(afterHugePulse.logMinutes === 60, `stored minutes 60, got ${afterHugePulse.logMinutes}`);
+  assert(afterHugePulse.budget === 360, `budget 360, got ${afterHugePulse.budget}`);
+  if(Number.isFinite(hugeMeta.chunkMinutes) && hugeMeta.chunkMinutes > 60){
+    assert(afterHugePulse.progress < hugeMeta.chunkMinutes,
+      `logged ${afterHugePulse.progress} must be < placed chunk ${hugeMeta.chunkMinutes}`);
+  }
+  console.log('  large chunk / fake dirty still logs min only: OK');
 
   // Multi-instance: only first today card has slider; later cards keep trail
   // and still log via suggested chunk on pulse.
@@ -892,6 +1000,155 @@ async function breakableFillRows(page, name){
       `later Week work chunks must keep trail, got ${JSON.stringify(weekUi.sliders)}`);
   }
   console.log('  week lunch-then-work first breakable has slider: OK');
+
+  // ── Pulse must NOT wipe remaining chunks (eligibility + suggested minutes) ──
+  console.log('  pulse must leave leftover budget on timeline...');
+  const beforePulseCards = weekUi.cardCount;
+  const pulseTarget = page.locator('#list .ting-card').filter({ hasText:'Week work' }).first();
+  await pulseTarget.locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const data = typeof load === 'function' ? load() : [];
+    const h = data.find(x => x.name === 'Week work');
+    return h && breakableProgressMinutes(h) === 60;
+  }, null, { timeout:5000 });
+  await page.waitForFunction(() => {
+    const data = typeof load === 'function' ? load() : [];
+    const h = data.find(x => x.name === 'Week work');
+    if(!h || breakableProgressMinutes(h) !== 60)return false;
+    if(breakableBudgetMinutes(h) !== 360)return false;
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Week work'));
+    if(cards.length < 1)return false;
+    const label = cards.map(c => c.querySelector('.breakable-progress-label')?.textContent)
+      .find(Boolean);
+    return label === '60/420m';
+  }, null, { timeout:8000 });
+  const afterPulseWeek = await page.evaluate(() => {
+    const data = load();
+    const h = data.find(x => x.name === 'Week work');
+    const idx = data.findIndex(x => x.name === 'Week work');
+    const todayBase = dayStart(Date.now());
+    const settings = sortSettings || loadSortSettings();
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Week work'));
+    const fills = typeof buildTodayAgenda === 'function'
+      ? buildTodayTimeline(buildTodayAgenda(data, settings))
+          .filter(r => r.kind === 'fill' && r.i === idx)
+          .map(r => Math.round((r.end - r.start) / 60000))
+      : [];
+    const weekFills = (typeof buildWeekAgenda === 'function')
+      ? (()=>{
+        const week = buildWeekAgenda(data, settings, 7);
+        const today = (week.days || []).find(d => d.isToday);
+        if(!today || !today.timeline)return [];
+        return today.timeline
+          .filter(r => (r.kind === 'fill' || r.kind === 'scheduled') && r.i === idx)
+          .map(r => Math.round((r.end - r.start) / 60000));
+      })()
+      : [];
+    const last = normalizeLogs(h.logs).filter(l => !isPlanLog(l)).pop();
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h),
+      logMinutes:logMinutes(last),
+      cardCount:cards.length,
+      hasSlider:cards.some(c => c.querySelector('.breakable-slider')),
+      label:cards.map(c => c.querySelector('.breakable-progress-label')?.textContent).find(Boolean) || null,
+      includeToday:typeof includeInTodayAgenda === 'function'
+        ? includeInTodayAgenda(h, settings) : null,
+      weekCandidate:typeof isWeekCandidate === 'function'
+        ? isWeekCandidate(h, settings, todayBase, new Date(todayBase).getDay()) : null,
+      todayCategory:typeof todayCategory === 'function' ? todayCategory(h, settings) : null,
+      fillSum:fills.reduce((a,b)=>a+b,0),
+      weekFillSum:weekFills.reduce((a,b)=>a+b,0),
+      fills,
+      weekFills
+    };
+  });
+  assert(afterPulseWeek.progress === 60, `pulse logs 60m not full day, got ${afterPulseWeek.progress}`);
+  assert(afterPulseWeek.logMinutes === 60, `stored log minutes must be 60, got ${afterPulseWeek.logMinutes}`);
+  assert(afterPulseWeek.budget === 360, `remaining budget 360, got ${afterPulseWeek.budget}`);
+  assert(afterPulseWeek.includeToday === true,
+    `includeInTodayAgenda must stay true after partial log, got ${afterPulseWeek.includeToday}`);
+  assert(afterPulseWeek.weekCandidate === true,
+    `isWeekCandidate must stay true after partial log, got ${afterPulseWeek.weekCandidate}`);
+  assert(afterPulseWeek.todayCategory === 0,
+    `todayCategory must stay today(0) after partial log, got ${afterPulseWeek.todayCategory}`);
+  assert(afterPulseWeek.cardCount >= 1,
+    `Week work cards must remain after pulse (not wipe all chunks), got ${afterPulseWeek.cardCount} (was ${beforePulseCards})`);
+  assert(afterPulseWeek.hasSlider === true, 'leftover Work must still show progress slider');
+  assert(afterPulseWeek.label === '60/420m', `slider label 60/420m, got ${afterPulseWeek.label}`);
+  const leftoverPlaced = Math.max(afterPulseWeek.fillSum, afterPulseWeek.weekFillSum);
+  assert(leftoverPlaced > 0 && leftoverPlaced <= 360,
+    `leftover timeline must place remaining work (≤360), got fills=${JSON.stringify(afterPulseWeek.fills)} week=${JSON.stringify(afterPulseWeek.weekFills)}`);
+  assert(leftoverPlaced < 420,
+    `must not re-place full 420 after logging 60, got ${leftoverPlaced}`);
+  console.log('  pulse leaves leftover budget + cards: OK');
+
+  // Second pulse advances another suggestion; still not complete.
+  await page.locator('#list .ting-card').filter({ hasText:'Week work' }).first()
+    .locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const h = load().find(x => x.name === 'Week work');
+    return h && breakableProgressMinutes(h) === 120;
+  }, null, { timeout:5000 });
+  const afterSecond = await page.evaluate(() => {
+    const h = load().find(x => x.name === 'Week work');
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes('Week work'));
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h),
+      cardCount:cards.length
+    };
+  });
+  assert(afterSecond.progress === 120, `second pulse → 120, got ${afterSecond.progress}`);
+  assert(afterSecond.budget === 300, `budget 300 after 2×60, got ${afterSecond.budget}`);
+  assert(afterSecond.cardCount >= 1, `cards remain after second pulse, got ${afterSecond.cardCount}`);
+  console.log('  second pulse still leaves remainder: OK');
+
+  // Pure eligibility regression (no calendar UI).
+  const elig = await page.evaluate(() => {
+    const todayBase = dayStart(Date.now());
+    const h = {
+      name:'elig', type:'keepup', target:1, breakable:true,
+      durationMinutes:420, minChunkMinutes:60,
+      lastLog:todayBase + 60 * 60000,
+      logs:[{ ts:todayBase + 60 * 60000, minutes:60 }]
+    };
+    const settings = loadSortSettings();
+    return {
+      include:includeInTodayAgenda(h, settings),
+      week:isWeekCandidate(h, settings, todayBase, new Date(todayBase).getDay()),
+      cat:todayCategory(h, settings),
+      budget:breakableBudgetMinutes(h, todayBase),
+      doneFull:{
+        include:includeInTodayAgenda({
+          ...h,
+          logs:[{ ts:todayBase + 60 * 60000, minutes:420 }],
+          lastLog:todayBase + 60 * 60000
+        }, settings),
+        budget:breakableBudgetMinutes({
+          ...h,
+          logs:[{ ts:todayBase + 60 * 60000, minutes:420 }]
+        }, todayBase)
+      }
+    };
+  });
+  assert(elig.include === true, `partial → includeInTodayAgenda, got ${elig.include}`);
+  assert(elig.week === true, `partial → isWeekCandidate, got ${elig.week}`);
+  assert(elig.cat === 0, `partial → todayCategory 0, got ${elig.cat}`);
+  assert(elig.budget === 360, `partial budget 360, got ${elig.budget}`);
+  assert(elig.doneFull.budget === 0, 'full day log → budget 0');
+  assert(elig.doneFull.include === false,
+    `full day log must leave today agenda, got ${elig.doneFull.include}`);
+  console.log('  eligibility helpers after partial/full log: OK');
+
+  // Slider hit target size (phone-friendly).
+  const sliderBox = await page.locator('#list .breakable-slider').first().boundingBox();
+  assert(sliderBox && sliderBox.height >= 40,
+    `slider hit area should be ≥40px tall on phone, got ${sliderBox && sliderBox.height}`);
+  console.log('  slider touch target size: OK');
 
   // ═══════════════════════════════════════════════════════════
   // H. Detail toggle persistence

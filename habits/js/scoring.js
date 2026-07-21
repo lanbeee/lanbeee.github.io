@@ -768,6 +768,17 @@ function todayCategory(h,settings){
     }
   }
 
+  // Breakable with remaining today budget stays in the today section after a
+  // partial pulse — otherwise leftover chunks jump to "upcoming" / vanish.
+  if(h.breakable && isAvailableToday && typeof breakableBudgetMinutes === 'function'){
+    const todayBase = typeof dayStart === 'function' ? dayStart(Date.now()) : Date.now();
+    if(breakableBudgetMinutes(h,todayBase) > 0){
+      const startedToday = typeof loggedChunkMinutesOnDay === 'function'
+        && loggedChunkMinutesOnDay(h,todayBase) > 0;
+      if(startedToday || days === null || days >= target)return 0;
+    }
+  }
+
   if(h.type === 'keepup' && days !== null && days >= target){
     return isAvailableToday ? 0 : 1;
   }

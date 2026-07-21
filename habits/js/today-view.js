@@ -81,6 +81,18 @@ function includeInTodayAgenda(h,settings){
   }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
+  // Breakable keepup/reduce: a partial log today must NOT clear the rest of
+  // today's duration budget off the agenda (that looked like "all chunks done").
+  if(h.breakable && settings.showDueHabitsInAgenda !== false
+    && scheduleDistance === 0 && windowStillDoableToday(h)
+    && typeof breakableBudgetMinutes === 'function'){
+    const todayBase = dayStart(Date.now());
+    if(breakableBudgetMinutes(h,todayBase) > 0){
+      const startedToday = typeof loggedChunkMinutesOnDay === 'function'
+        && loggedChunkMinutesOnDay(h,todayBase) > 0;
+      if(startedToday || days === null || days >= target)return true;
+    }
+  }
   // Never-logged habits (days === null) are treated as due today: a freshly
   // created habit should enter the agenda so the user can do it, rather than
   // silently waiting for the first log. After the first log the normal
@@ -1408,6 +1420,16 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
   if(ageOnDay >= target)return true;               // due/overdue by this day
+  // Breakable daily rhythm: after a partial log, today's budget is still open
+  // even though lastLog reset the rhythm clock (days < target). Keep placing
+  // the leftover so one pulse cannot wipe every chunk off the timeline.
+  if(typeof isBreakableRhythmHabit === 'function' && isBreakableRhythmHabit(h)
+    && typeof breakableBudgetMinutes === 'function'
+    && breakableBudgetMinutes(h,dayBase) > 0
+    && typeof loggedChunkMinutesOnDay === 'function'
+    && loggedChunkMinutesOnDay(h,dayBase) > 0){
+    return true;
+  }
   // Pull forward within flexibility so the week can absorb upcoming work.
   const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
   if(flex > 0 && ageOnDay >= target - flex)return true;
