@@ -7,7 +7,19 @@ trap cleanup EXIT
 
 npx serve -l "$PORT" -s . &>/dev/null &
 server_pid=$!
-sleep 1
+
+# Wait for the static server to actually answer before driving tests at it.
+# A fixed `sleep 1` races cold `npx` startups; polling the port lets slow
+# machines catch up without slowing down the common case.
+ready=0
+for _ in $(seq 1 60); do
+  if curl -sf -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
+  sleep 0.25
+done
+if [ "$ready" -ne 1 ]; then
+  echo "server did not become ready on port $PORT" >&2
+  exit 1
+fi
 
 total_ok=0
 total_not_ok=0

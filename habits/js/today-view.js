@@ -575,89 +575,105 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const resolveLoc = (anchor)=>fill.locationId || pickHabitLocationId(fill.h,anchor,registry,mode);
   const fits = [];
 
+  // Chronological list of all committed fills, reused per gap so the travel
+  // anchor reflects the location active at each gap's start (not just the
+  // tail of the slot). The placement loop walks every open gap inside each
+  // slot — including gaps BEFORE already-committed fills — so a scarce item
+  // whose window opens earlier than a previously-placed one can still land
+  // in its own gap instead of being pushed past the slot's end.
+  const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+
   for(const slot of slots){
-    let clock = Math.max(slot.start,startClock);
-    const inSlot = state.fills
-      .filter(c=>c.fit.placeStart >= slot.start && c.fit.placeStart < slot.end)
-      .sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
-    for(const c of inSlot)clock = Math.max(clock,c.fit.placeEnd);
-
-    // Travel anchor = last committed session that ends at/before this clock,
-    // else the day's seed location (presence / morning block).
-    let anchor = state.seedLocId;
-    const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
-    for(const c of chron){
-      if(c.fit.placeEnd <= clock && c.fit.locId)anchor = c.fit.locId;
+    const lowerBound = Math.max(slot.start,startClock);
+    const inSlot = chron
+      .filter(c=>c.fit.placeStart >= slot.start && c.fit.placeStart < slot.end);
+    // Build the open sub-intervals (gaps) within this slot.
+    const gaps = [];
+    let cursor = lowerBound;
+    for(const c of inSlot){
+      if(c.fit.placeStart > cursor)gaps.push({start:cursor, end:c.fit.placeStart});
+      cursor = Math.max(cursor, c.fit.placeEnd);
     }
+    if(cursor < slot.end)gaps.push({start:cursor, end:slot.end});
+    if(!gaps.length)continue;
 
-    const locId = resolveLoc(anchor);
-    if(locId){
-      const loc = registry.find(l=>l.id === locId);
-      const intervals = effectiveLocationWindow(fill.h,loc,weekday);
-      if(!intervals.length)continue;
-    }
-    const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
-    const travelMin = Math.ceil((edge.seconds || 0) / 60);
-    const durMin = fillDurationMinutes(fill);
-    if(durMin <= 0)return null;
-    // Hard availability budget. The first fill of a day may still place when
-    // travel+duration exceeds the remaining budget (same rule as the classic
-    // timeline) — otherwise a long commute can never open a day. Later fills
-    // must fit the leftover minutes.
-    if(durMin + travelMin > remaining && usedMinutes > 0)continue;
-
-    let placeStart = clock + (edge.seconds || 0) * 1000;
-    let cap = slot.end;
-    if(locId){
-      const loc = registry.find(l=>l.id === locId);
-      const intervals = effectiveLocationWindow(fill.h,loc,weekday);
-      const arriveMin = Math.floor((placeStart - dayBase) / 60000);
-      let iv = intervals.find(x=>arriveMin >= x.start && arriveMin < x.end);
-      if(!iv){
-        iv = intervals.find(x=>x.start >= arriveMin) || intervals.find(x=>x.end > arriveMin);
-        if(!iv)continue;
-        placeStart = Math.max(placeStart, dayBase + iv.start * 60000);
+    for(const gap of gaps){
+      // Travel anchor = last committed session that ends at/before this gap's
+      // start, else the day's seed location (presence / morning block).
+      let anchor = state.seedLocId;
+      for(const c of chron){
+        if(c.fit.placeEnd <= gap.start && c.fit.locId)anchor = c.fit.locId;
       }
-      cap = Math.min(cap, dayBase + iv.end * 60000);
-    }else{
-      const win = fillTimeWindow(fill.h,dayBase,anchor);
-      if(win){
-        placeStart = Math.max(placeStart,win.start);
-        cap = Math.min(cap,win.end);
+
+      const locId = resolveLoc(anchor);
+      if(locId){
+        const loc = registry.find(l=>l.id === locId);
+        const intervals = effectiveLocationWindow(fill.h,loc,weekday);
+        if(!intervals.length)continue;
       }
-    }
-    // Placement must stay inside this open slot (blocks/scheduled already carved).
-    placeStart = Math.max(placeStart,clock);
-    if(placeStart >= slot.end)continue;
-    const cost = durMin * 60000;
-    let placeEnd = placeStart + cost;
-    if(placeEnd > cap || placeEnd > slot.end)continue;
-    if(placeStart < slot.start || placeStart >= slot.end)continue;
-    const baseFit = {
-      placeStart,
-      placeEnd,
-      locId,
-      edge,
-      travelMin,
-      durMin,
-      slotStart:slot.start,
-      preferredHit:false,
-      prevLocId:anchor,
-      placeKey
-    };
-    fits.push(baseFit);
-    // Preferred time is a second soft candidate — score picks vs ASAP/scarce.
-    const loc = locId ? registry.find(l=>l.id === locId) : null;
-    const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
-    const habitPref = fillPreferredStart(fill.h,dayBase,anchor);
-    const prefTs = locPref || habitPref;
-    if(prefTs !== null && prefTs > placeStart && prefTs + cost <= cap && prefTs + cost <= slot.end){
-      fits.push({
-        ...baseFit,
-        placeStart:prefTs,
-        placeEnd:prefTs + cost,
-        preferredHit:true
-      });
+      const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
+      const travelMin = Math.ceil((edge.seconds || 0) / 60);
+      const durMin = fillDurationMinutes(fill);
+      if(durMin <= 0)return null;
+      // Hard availability budget. The first fill of a day may still place when
+      // travel+duration exceeds the remaining budget (same rule as the classic
+      // timeline) — otherwise a long commute can never open a day. Later fills
+      // must fit the leftover minutes.
+      if(durMin + travelMin > remaining && usedMinutes > 0)continue;
+
+      let placeStart = gap.start + (edge.seconds || 0) * 1000;
+      let cap = gap.end;
+      if(locId){
+        const loc = registry.find(l=>l.id === locId);
+        const intervals = effectiveLocationWindow(fill.h,loc,weekday);
+        const arriveMin = Math.floor((placeStart - dayBase) / 60000);
+        let iv = intervals.find(x=>arriveMin >= x.start && arriveMin < x.end);
+        if(!iv){
+          iv = intervals.find(x=>x.start >= arriveMin) || intervals.find(x=>x.end > arriveMin);
+          if(!iv)continue;
+          placeStart = Math.max(placeStart, dayBase + iv.start * 60000);
+        }
+        cap = Math.min(cap, dayBase + iv.end * 60000);
+      }else{
+        const win = fillTimeWindow(fill.h,dayBase,anchor);
+        if(win){
+          placeStart = Math.max(placeStart,win.start);
+          cap = Math.min(cap,win.end);
+        }
+      }
+      // Placement must stay inside this open gap (blocks/scheduled already carved).
+      placeStart = Math.max(placeStart,gap.start);
+      if(placeStart >= gap.end)continue;
+      const cost = durMin * 60000;
+      let placeEnd = placeStart + cost;
+      if(placeEnd > cap || placeEnd > gap.end)continue;
+      if(placeStart < gap.start || placeStart >= gap.end)continue;
+      const baseFit = {
+        placeStart,
+        placeEnd,
+        locId,
+        edge,
+        travelMin,
+        durMin,
+        slotStart:slot.start,
+        preferredHit:false,
+        prevLocId:anchor,
+        placeKey
+      };
+      fits.push(baseFit);
+      // Preferred time is a second soft candidate — score picks vs ASAP/scarce.
+      const loc = locId ? registry.find(l=>l.id === locId) : null;
+      const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
+      const habitPref = fillPreferredStart(fill.h,dayBase,anchor);
+      const prefTs = locPref || habitPref;
+      if(prefTs !== null && prefTs > placeStart && prefTs + cost <= cap && prefTs + cost <= gap.end){
+        fits.push({
+          ...baseFit,
+          placeStart:prefTs,
+          placeEnd:prefTs + cost,
+          preferredHit:true
+        });
+      }
     }
   }
   if(!fits.length)return null;

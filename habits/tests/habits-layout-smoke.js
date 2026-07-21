@@ -14,7 +14,9 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
     const errors = [];
     page.on('console', msg => { if(msg.type() === 'error')errors.push(msg.text()); });
     page.on('pageerror', err => errors.push(err.message));
-    await page.goto(baseUrl,{waitUntil:'domcontentloaded'});
+    // networkidle (not domcontentloaded) so external scripts — adhan, leaflet —
+    // are loaded and main.js has wired its handlers before we drive the UI.
+    await page.goto(baseUrl,{waitUntil:'networkidle'});
     const addButton = testCase.name === 'desktop' ? '#bar-open-add' : '#open-add';
     await page.locator(addButton).waitFor({state:'visible'});
     await page.locator(addButton).click();
@@ -22,7 +24,15 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
     await page.locator('#type-seg [data-v="task"]').click();
     await page.locator('#task-due-row').waitFor({state:'visible'});
     await page.locator('#ting-due-time').waitFor({state:'visible'});
-    await page.waitForTimeout(450);
+    // Wait for the sheet's open animation to settle (boundingBox stabilises)
+    // instead of a fixed timeout — survives slower hosts without bloating the
+    // happy-path runtime.
+    await page.waitForFunction(()=>{
+      const el = document.querySelector('#add-sheet .sheet');
+      if(!el)return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }, null, { timeout:3000 });
     const box = await page.locator('#add-sheet .sheet').boundingBox();
     if(!box || box.width <= 0 || box.height <= 0)throw new Error(`${testCase.name}: add sheet is not measurable`);
     await page.screenshot({path:`/private/tmp/habits-${testCase.name}.png`,fullPage:true});
