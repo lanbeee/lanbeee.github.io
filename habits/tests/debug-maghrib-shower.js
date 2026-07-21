@@ -9,7 +9,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const repoRoot = path.resolve(__dirname, '..');
-const backupPath = path.join(repoRoot, 'lib', 'sample_tings-backup-2026-07-20.json');
+const backupPath = path.join(repoRoot, 'lib', 'sample_tings-backup-2026-07-20_v2.json');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
 
 (async () => {
@@ -24,11 +24,10 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
   });
   page.on('pageerror', err => errors.push(`[pageerror] ${err.message}`));
 
-  // Freeze clock to "today 20:36" — matching the user's report.
-  // Use the real today (whenever the script runs) so prayer anchors resolve.
+  // Freeze clock to "today 21:13" — matching the user's screenshot moment.
   const frozenClock = (() => {
     const d = new Date();
-    d.setHours(20, 36, 0, 0);
+    d.setHours(21, 13, 0, 0);
     return d.getTime();
   })();
   await page.addInitScript(clock => {

@@ -390,6 +390,21 @@ function normalize(items){
       locationPrefs,
       preferredLocationId
     };
+    // Migration: a degenerate 0/0 fixed window with no anchor is the signature
+    // of the Number(null)===0 render bug in detail-view.js (an empty time
+    // input rendered as "00:00" and got saved back as 0/0). hasTimeWindow
+    // treated 0/0 as a valid 24h window, which silently shadowed rhythm
+    // placement for affected habits. Collapse it back to "no window set".
+    if(h.allowedTimeStart === 0 && h.allowedTimeEnd === 0
+      && !h.allowedTimeStartAnchor && !h.allowedTimeEndAnchor){
+      h.allowedTimeStart = null;
+      h.allowedTimeEnd = null;
+    }
+    if(h.preferredTimeStart === 0 && h.preferredTimeEnd === 0
+      && !h.preferredTimeStartAnchor && !h.preferredTimeEndAnchor){
+      h.preferredTimeStart = null;
+      h.preferredTimeEnd = null;
+    }
     h.lastLog = latestActualLog(h.logs);
     return h;
   });

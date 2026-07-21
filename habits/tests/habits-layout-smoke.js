@@ -14,6 +14,27 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4173/';
     const errors = [];
     page.on('console', msg => { if(msg.type() === 'error')errors.push(msg.text()); });
     page.on('pageerror', err => errors.push(err.message));
+    // Stub + unregister any service worker so a leftover SW from a previous
+    // test run can't serve stale cached assets and trip a console error.
+    // Also start from a clean localStorage so the test is deterministic.
+    await page.addInitScript(() => {
+      try{
+        if(navigator.serviceWorker){
+          navigator.serviceWorker.register = () => Promise.resolve({
+            unregister:() => Promise.resolve(true),
+            update:() => Promise.resolve()
+          });
+          navigator.serviceWorker.getRegistrations?.().then(rs => rs.forEach(r => r.unregister()));
+        }
+      }catch{ /* ignore */ }
+      try{
+        localStorage.setItem('tings_v2', JSON.stringify([]));
+        localStorage.setItem('tings_app_settings_v2', JSON.stringify({
+          preset:'todayFirst', topics:[], locations:[], travel:{},
+          defaultTravelMode:'driving', blockedTimes:[]
+        }));
+      }catch{ /* ignore */ }
+    });
     // networkidle (not domcontentloaded) so external scripts — adhan, leaflet —
     // are loaded and main.js has wired its handlers before we drive the UI.
     await page.goto(baseUrl,{waitUntil:'networkidle'});

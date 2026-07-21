@@ -314,7 +314,12 @@ function renderTimeEndpoint(endpoint, field, h){
     endpoint.classList.remove('is-dynamic');
     if(fixedInput){
       fixedInput.hidden = false;
-      const num = Number(h[field]);
+      // Guard null/undefined explicitly — Number(null) returns 0, which would
+      // otherwise render "00:00" in the input and silently write back a
+      // midnight→midnight time window on the next save (hasTimeWindow treats
+      // 0/0 as a valid 24h window). null must round-trip to an empty input.
+      const raw = h[field];
+      const num = raw != null ? Number(raw) : NaN;
       fixedInput.value = Number.isFinite(num) ? minutesToTimeInput(num) : '';
     }
     if(dynWrap)dynWrap.hidden = true;
