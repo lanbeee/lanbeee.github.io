@@ -1194,6 +1194,91 @@ function defaultSettings(overrides = {}) {
       `flexibleMin=${issue12.flexibleMin}, sunriseMin=${issue12.sunriseMin}`);
   }
 
+  // ==========================================================================
+  // ISSUE 13 — due-today work at the user's current place uses tonight's gap
+  // At 7:30pm, with a short-window item becoming eligible ~10:30pm, a flexible
+  // due-today item already at the current location must use the open gap now —
+  // not defer to tomorrow morning because scarce sunrise habits exist later.
+  // ==========================================================================
+  console.log('\n[Issue 13] due-today uses tonight gap before a late timed task');
+  {
+    const ago1d = atTime(9) - 1 * 86400000;
+    const todayDue = atTime(12);
+    await seed(
+      [
+        base({ name:'Sunrise scarce', type:'keepup', target:1, durationMinutes:5,
+          priority:2, locationIds:[],
+          allowedTimeStartAnchor:'sunrise', allowedTimeStartOffsetMin:5,
+          allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:35,
+          lastLog:ago1d, logs:[ago1d] }),
+        base({ name:'Late timed', type:'task', target:null, durationMinutes:30,
+          priority:1, locationIds:['home'],
+          eventTime:atTime(22, 30), dueDate:todayDue, hardDue:false }),
+        base({ name:'Flexible due now', type:'task', target:null, durationMinutes:30,
+          priority:0, locationIds:['home'],
+          dueDate:todayDue, hardDue:false }),
+        base({ name:'Flexible due habit', type:'keepup', target:1, durationMinutes:30,
+          priority:0, locationIds:['home'],
+          lastLog:ago1d, logs:[ago1d] })
+      ],
+      defaultSettings({
+        showWeekOnHome:true,
+        availabilityMinutes:[600,600,600,600,600,600,600],
+        locations:[{id:'home', name:'Home', lat:40.73, lng:-74.0}],
+        lastKnownLocationId:'home',
+        blockedTimes:[
+          {label:'sleep', days:[], locationId:'home',
+            start:1320, end:420,
+            startAnchor:'sunrise', startOffsetMin:-480,
+            startCombine:'later', startAnchor2:'isha', startOffsetMin2:15, startDayOffset:1,
+            endAnchor:'sunrise', endOffsetMin:-30}
+        ]
+      })
+    );
+
+    const issue13 = await page.evaluate(({ now }) => {
+      const RealDate = Date;
+      function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+      FD.now = () => now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FD, RealDate); FD.prototype = RealDate.prototype;
+      const orig = globalThis.Date; globalThis.Date = FD;
+      try {
+        const data = normalize(JSON.parse(localStorage.getItem('tings_v2')));
+        const settings = loadSortSettings();
+        const week = buildWeekAgenda(data, settings, 7);
+        function info(name){
+          for(let i = 0;i < week.days.length;i += 1){
+            const hits = (week.days[i].timeline || []).filter(r =>
+              (r.kind === 'fill' || r.kind === 'scheduled') && r.h && r.h.name === name);
+            if(hits.length){
+              return {
+                day:i,
+                min:Math.round((hits[0].start - week.days[i].dayBase) / 60000)
+              };
+            }
+          }
+          return {day:-1, min:null};
+        }
+        return {
+          task: info('Flexible due now'),
+          habit: info('Flexible due habit'),
+          late: info('Late timed'),
+          sunrise: info('Sunrise scarce')
+        };
+      } finally { globalThis.Date = orig; }
+    }, { now: atTime(19, 30) }); // 7:30pm
+
+    check('13a flexible due task places TODAY in the evening gap',
+      issue13.task.day === 0 && issue13.task.min != null && issue13.task.min < 22 * 60,
+      `task=${JSON.stringify(issue13.task)}`);
+    check('13b flexible due habit first lands TODAY (not tomorrow morning)',
+      issue13.habit.day === 0 && issue13.habit.min != null && issue13.habit.min >= 19 * 60,
+      `habit=${JSON.stringify(issue13.habit)}; sunrise=${JSON.stringify(issue13.sunrise)}`);
+    check('13c late timed task stays at 10:30pm',
+      issue13.late.day === 0 && issue13.late.min === 22 * 60 + 30,
+      `late=${JSON.stringify(issue13.late)}`);
+  }
+
   if (errors.length) failures.push('page/console errors:\n' + errors.join('\n'));
   await browser.close();
 

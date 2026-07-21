@@ -155,6 +155,7 @@
  * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
  * @property {boolean} showWeekOnHome                          — day-by-day week plan on home
  * @property {boolean} agendaOptimizer                         — optional ILP packer for tight windows (lazy GLPK)
+ * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
  * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
@@ -252,6 +253,7 @@ function loadSortSettings(){
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
     merged.cancelledBlocks = normalizeCancelledBlocks(merged.cancelledBlocks);
     merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
+    merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
       try{ preloadAgendaOptimizer(); }catch(_){}
     }
@@ -278,6 +280,8 @@ function saveSortSettings(settings){
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
   next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
   next.cancelledBlocks = normalizeCancelledBlocks(next.cancelledBlocks);
+  next.agendaOptimizer = Boolean(next.agendaOptimizer);
+  next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }
@@ -728,6 +732,18 @@ function normalizeTimeMinutes(value){
   const n = parseInt(value,10);
   if(Number.isNaN(n))return null;
   return Math.max(0,Math.min(1439,n));
+}
+function normalizeAgendaScoreWeights(value){
+  const defaults = (typeof DEFAULT_SORT_SETTINGS !== 'undefined' && DEFAULT_SORT_SETTINGS.agendaScoreWeights)
+    ? DEFAULT_SORT_SETTINGS.agendaScoreWeights
+    : { travel:1, cluster:1, day:1, asap:0.12, scarce:0.05, preference:1.5 };
+  const src = value && typeof value === 'object' ? value : {};
+  const out = {};
+  for(const key of Object.keys(defaults)){
+    const n = Number(src[key]);
+    out[key] = Number.isFinite(n) && n >= 0 ? n : defaults[key];
+  }
+  return out;
 }
 function normalizeAvailability(value){
   const src = Array.isArray(value) ? value : DEFAULT_AVAILABILITY_MINUTES;

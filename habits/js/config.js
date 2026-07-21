@@ -138,6 +138,23 @@ const DEFAULT_SORT_SETTINGS = {
   // Exact ILP packer for tight windows (lazy-loads GLPK). Default off — the
   // scarcity-first heuristic is the light PWA path; turn this on for harder days.
   agendaOptimizer:false,
+  // Unified agenda placement score (lower = better). All soft signals share
+  // one comparable scale — no special-case overrides for due/near/tonight.
+  //   travel       — per second of commute for this placement
+  //   cluster      — per unit of on-site / co-locate savings
+  //   day          — multiplier on day-offset (ASAP / on-time) penalty
+  //   asap         — per minute later than the earliest fit that day
+  //   scarce       — per ms overlapping a scarce allowed window
+  //   preference   — multiplier on soft preferred time/place/weekday penalty
+  agendaScoreWeights:{
+    travel:1,
+    cluster:1,
+    day:1,
+    // Within-day clock delay — weak vs preference/scarce; day-offset carries ASAP.
+    asap:0.12,
+    scarce:0.05,
+    preference:1.5
+  },
   // How blocked times + travel between places appear on home:
   //   'cards'     → card surfaces for the whole day (default)
   //   'cards12h'  → same cards, but only for the next 12 hours

@@ -232,13 +232,14 @@ function buildDayTimeline(agenda,opts = {}){
   const now = opts.now != null ? opts.now : Date.now();
   const ordered = reorderAgendaItemsByLocation(agenda.agendaItems || [],settings,now);
   for(const fill of ordered){
-    const placeOpts = {};
+    const placeOpts = {
+      settings,
+      urgency:typeof weekUrgency === 'function' ? weekUrgency(fill.h) : 0,
+      weights:resolveAgendaScoreWeights(settings)
+    };
     if(!isScarceScore(fill.scarcity) && !(typeof hasTimeWindow === 'function' && hasTimeWindow(fill.h))){
       const spare = scarceWindowsToSpare(ordered,state.dayBase,state.seedLocId,state.dayBase);
-      if(spare.length){
-        placeOpts.spareWindows = spare;
-        placeOpts.preferLatest = true;
-      }
+      if(spare.length)placeOpts.spareWindows = spare;
     }
     if(fill.h && fill.h.breakable){
       const chunks = remainingChunks(fill.h);
@@ -487,12 +488,83 @@ function fitOverlapWithWindows(fit,windows){
   return overlap;
 }
 
+// PURE: default + settings weights for the unified agenda score (lower = better).
+function resolveAgendaScoreWeights(settings){
+  if(typeof normalizeAgendaScoreWeights === 'function'){
+    return normalizeAgendaScoreWeights(settings && settings.agendaScoreWeights);
+  }
+  const w = settings && settings.agendaScoreWeights;
+  return {
+    travel:1, cluster:1, day:1, asap:8, scarce:0.05, preference:1,
+    ...(w && typeof w === 'object' ? w : {})
+  };
+}
+
+// PURE: single comparable placement score. Hard constraints are enforced
+// before this runs; every soft signal is a weighted term here.
+// terms: {
+//   travelSeconds, clusterBonus, coLocHint, dayOffsetPenalty,
+//   asapDelayMin, scarceOverlapMs, preferencePenalty, urgency
+// }
+function scoreAgendaPlacement(terms,weights){
+  const W = weights || resolveAgendaScoreWeights(null);
+  const t = terms || {};
+  const travel = Number(t.travelSeconds) || 0;
+  const cluster = (Number(t.clusterBonus) || 0) + (Number(t.coLocHint) || 0);
+  const dayPen = Number(t.dayOffsetPenalty) || 0;
+  const urgency = Number(t.urgency) || 0;
+  // Within-day ASAP: only the first ~90 minutes of delay matter, so a free
+  // day's preferred evening time can still beat "right now", while nearer
+  // slots stay ordered. Urgency scales the pressure; day-offset handles
+  // today-vs-tomorrow ASAP.
+  const asapDelay = Math.min(Math.max(0, Number(t.asapDelayMin) || 0), 90);
+  const asap = asapDelay * (1 + urgency / 50);
+  const scarce = Number(t.scarceOverlapMs) || 0;
+  const pref = Number(t.preferencePenalty) || 0;
+  return (W.travel || 0) * travel
+    - (W.cluster || 0) * cluster
+    + (W.day || 0) * dayPen
+    + (W.asap || 0) * asap
+    + (W.scarce || 0) * scarce
+    + (W.preference || 0) * pref;
+}
+
+// PURE: among feasible fits on one day, pick the best by unified score.
+function pickBestScoredFit(fits,fill,state,opts = {}){
+  if(!fits || !fits.length)return null;
+  const weights = opts.weights || resolveAgendaScoreWeights(opts.settings || (state && state.settings));
+  const spare = opts.spareWindows || [];
+  const urgency = opts.urgency != null ? opts.urgency
+    : (typeof weekUrgency === 'function' ? weekUrgency(fill.h) : 0);
+  const earliest = fits.reduce((m,f)=>Math.min(m,f.placeStart),fits[0].placeStart);
+  let best = null;
+  let bestScore = Infinity;
+  for(const fit of fits){
+    const prefPen = typeof weekPreferencePenalty === 'function'
+      ? weekPreferencePenalty(fill.h,fit,state,state.registry)
+      : (fit.preferredHit ? -40 : 0);
+    const score = scoreAgendaPlacement({
+      travelSeconds:fit.edge && fit.edge.seconds || 0,
+      clusterBonus:opts.clusterBonus != null ? opts.clusterBonus : 0,
+      coLocHint:opts.coLocHint != null ? opts.coLocHint : 0,
+      dayOffsetPenalty:opts.dayOffsetPenalty != null ? opts.dayOffsetPenalty : 0,
+      asapDelayMin:(fit.placeStart - earliest) / 60000,
+      scarceOverlapMs:fitOverlapWithWindows(fit,spare),
+      preferencePenalty:prefPen,
+      urgency
+    },weights);
+    fit.score = score;
+    if(score < bestScore){ bestScore = score; best = fit; }
+  }
+  return best;
+}
+
 // PURE: attempt to place a fill into this day's open slots under hard
 // constraints — availability budget, blocked/scheduled slots, travel time,
-// location hours ∩ habit allowed window, and preferred-time nudge (soft).
-// opts.spareWindows: when set, among feasible fits prefer the one that least
-// overlaps those scarce windows (flexible items yield to tight ones).
-// opts.preferLatest: among ties / when no spareWindows, prefer later clock.
+// location hours ∩ habit allowed window. Soft choice among feasible fits
+// uses the unified agenda score (ASAP, scarce-window overlap, preferences).
+// opts.spareWindows: scarce windows to penalize overlapping (soft).
+// opts.urgency / opts.weights / opts.settings: scoring context.
 function tryPlaceOnDay(state,fill,opts = {}){
   if(!state || !fill || !fill.h)return null;
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
@@ -536,7 +608,6 @@ function tryPlaceOnDay(state,fill,opts = {}){
 
     let placeStart = clock + (edge.seconds || 0) * 1000;
     let cap = slot.end;
-    let preferredHit = false;
     if(locId){
       const loc = registry.find(l=>l.id === locId);
       const intervals = effectiveLocationWindow(fill.h,loc,weekday);
@@ -560,18 +631,9 @@ function tryPlaceOnDay(state,fill,opts = {}){
     if(placeStart >= slot.end)continue;
     const cost = durMin * 60000;
     let placeEnd = placeStart + cost;
-    const loc = locId ? registry.find(l=>l.id === locId) : null;
-    const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
-    const habitPref = fillPreferredStart(fill.h,dayBase,anchor);
-    const prefTs = locPref || habitPref;
-    if(prefTs !== null && prefTs >= placeStart && prefTs + cost <= cap && prefTs + cost <= slot.end){
-      placeStart = prefTs;
-      placeEnd = prefTs + cost;
-      preferredHit = true;
-    }
     if(placeEnd > cap || placeEnd > slot.end)continue;
     if(placeStart < slot.start || placeStart >= slot.end)continue;
-    fits.push({
+    const baseFit = {
       placeStart,
       placeEnd,
       locId,
@@ -579,28 +641,27 @@ function tryPlaceOnDay(state,fill,opts = {}){
       travelMin,
       durMin,
       slotStart:slot.start,
-      preferredHit,
+      preferredHit:false,
       prevLocId:anchor,
       placeKey
-    });
+    };
+    fits.push(baseFit);
+    // Preferred time is a second soft candidate — score picks vs ASAP/scarce.
+    const loc = locId ? registry.find(l=>l.id === locId) : null;
+    const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
+    const habitPref = fillPreferredStart(fill.h,dayBase,anchor);
+    const prefTs = locPref || habitPref;
+    if(prefTs !== null && prefTs > placeStart && prefTs + cost <= cap && prefTs + cost <= slot.end){
+      fits.push({
+        ...baseFit,
+        placeStart:prefTs,
+        placeEnd:prefTs + cost,
+        preferredHit:true
+      });
+    }
   }
   if(!fits.length)return null;
-  const spare = opts.spareWindows;
-  if(spare && spare.length){
-    let best = fits[0];
-    let bestOverlap = fitOverlapWithWindows(best,spare);
-    for(let i = 1;i < fits.length;i += 1){
-      const f = fits[i];
-      const ov = fitOverlapWithWindows(f,spare);
-      if(ov < bestOverlap || (ov === bestOverlap && f.placeStart > best.placeStart)){
-        best = f;
-        bestOverlap = ov;
-      }
-    }
-    return best;
-  }
-  if(opts.preferLatest)return fits[fits.length - 1];
-  return fits[0];
+  return pickBestScoredFit(fits,fill,state,opts);
 }
 
 // PURE: commit a successful fit into day state (travel row + fill row + budgets).
@@ -989,8 +1050,8 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
   return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday };
 }
 
-// PURE: items that must try today first in week mode — planned-for-today, and
-// hard-deadline tasks that are already due. Soft work can slide freely.
+// PURE: hard pins for week mode — planned-for-today, and hard-deadline tasks
+// already due/overdue. Soft due/overdue work stays in the unified score.
 function isWeekPinnedToday(h,settings){
   if(!h || h.type === 'zero')return false;
   if(h.type === 'task' && isTaskDone(h))return false;
@@ -1200,6 +1261,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
   const mode = dayStates[0] ? dayStates[0].mode : normalizeTravelMode(settings.defaultTravelMode);
+  const weights = resolveAgendaScoreWeights(settings);
   for(const c of candidates){
     if(c.scarcity == null)c.scarcity = scarcityScore(c,dayStates);
   }
@@ -1217,7 +1279,6 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       && Number.isFinite(Number(c.h && c.h.target)));
     let virtualLastLog = rhythmHabit && c.h ? c.h.lastLog : null;
     let rhythmPlacementCount = 0;
-    const placeOpts = {};
     for(let ci = 0;ci < chunkSizes.length;ci += 1){
       // For rhythm habits this loops once per placement opportunity (advancing
       // virtualLastLog each time); for one-shots it runs exactly once.
@@ -1237,29 +1298,39 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
           const cm = chunkSizes[ci];
           if(cm != null){ fill.chunkMinutes = cm; fill.chunkIndex = ci; fill.placeKey = `${c.i}:${ci}`; }
-          const dayOpts = {...placeOpts};
+          const offset = Math.round((state.dayBase - todayBase) / 86400000);
+          const dayOpts = {
+            settings,
+            weights,
+            urgency:c.urgency,
+            dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
+          };
           if(!isScarceScore(c.scarcity)){
             const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
-            if(spare.length){
-              dayOpts.spareWindows = spare;
-              dayOpts.preferLatest = true;
-            }
+            if(spare.length)dayOpts.spareWindows = spare;
           }
-          const fit = tryPlaceOnDay(state,fill,dayOpts);
-          if(!fit)continue;
-          const offset = Math.round((state.dayBase - todayBase) / 86400000);
-          const travel = fit.edge.seconds || 0;
-          // Smooth cluster bonus: strongest at zero travel (already on-site) and
-          // tapering so a short hop between near-each-other places still earns a
-          // nudge — not just an exact same-location match.
+          // Score each feasible fit with travel/cluster in the same function so
+          // day choice and slot choice share one scale.
+          const fitProbe = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
+          if(!fitProbe)continue;
+          // Re-pick among that day's fits with full day-level terms by probing
+          // through tryPlaceOnDay (already picked best within-day). Augment
+          // with cluster relative to this fit's location.
+          const travel = fitProbe.edge.seconds || 0;
           const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
-          const coLocHint = colocateHintBonus(state,fit.locId,c.i,locHints,registry,mode);
-          const score = travel
-            - clusterBonus
-            - coLocHint
-            + flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
-            + weekPreferencePenalty(c.h,fit,state,registry);
-          if(!best || score < best.score)best = { state, fill, fit, score };
+          const coLocHint = colocateHintBonus(state,fitProbe.locId,c.i,locHints,registry,mode);
+          const score = scoreAgendaPlacement({
+            travelSeconds:travel,
+            clusterBonus,
+            coLocHint,
+            dayOffsetPenalty:dayOpts.dayOffsetPenalty,
+            asapDelayMin:0, // within-day ASAP already chose the fit
+            scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
+            preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
+            urgency:c.urgency
+          },weights);
+          const cand = { state, fill, fit:fitProbe, score };
+          if(!best || score < best.score)best = cand;
         }
         if(!best)break; // this chunk can't be placed → stop placing the rest
         commitPlacement(best.state,best.fill,best.fit);
@@ -1321,19 +1392,21 @@ function rebalanceScarcePlacements(candidates,dayStates,_settings,_locHints){
         clean.remaining = Math.max(0,(Number(state.totalMinutes) || 0));
         clean.prevLocId = state.seedLocId;
         let ok = true;
+        const scoreOpts = {
+          settings:state.settings,
+          weights:resolveAgendaScoreWeights(state.settings),
+          spareWindows:scarceWindowsToSpare(candidates,clean.dayBase,clean.seedLocId,clean.dayBase)
+        };
         for(const other of others){
-          const refit = tryPlaceOnDay(clean,other,{preferLatest:!isScarceScore(other.scarcity)});
+          const refit = tryPlaceOnDay(clean,other,scoreOpts);
           if(!refit){ ok = false; break; }
           commitPlacement(clean,other,refit);
         }
         if(!ok)continue;
-        const scarceFit = tryPlaceOnDay(clean,fill);
+        const scarceFit = tryPlaceOnDay(clean,fill,scoreOpts);
         if(!scarceFit)continue;
         commitPlacement(clean,fill,scarceFit);
-        const victimFit = tryPlaceOnDay(clean,victim.fill,{
-          preferLatest:true,
-          spareWindows:scarceWindowsToSpare(candidates,clean.dayBase,clean.seedLocId,clean.dayBase)
-        });
+        const victimFit = tryPlaceOnDay(clean,victim.fill,scoreOpts);
         if(victimFit)commitPlacement(clean,victim.fill,victimFit);
         state.rows = clean.rows;
         state.fills = clean.fills;
