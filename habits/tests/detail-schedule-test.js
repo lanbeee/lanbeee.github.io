@@ -389,6 +389,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // SECTION 9: Time input fields
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 9: Time window inputs ---');
+  await scrollDetailToSchedule(page, 2);
   const timeStart = page.locator('#detail-time-start');
   const timeEnd = page.locator('#detail-time-end');
   await timeStart.fill('09:00');
@@ -397,6 +398,75 @@ async function assertAttr(page, selector, attr, expected, msg){
   const timeClear = page.locator('#detail-time-clear');
   if(!(await timeClear.isVisible())) throw new Error('time clear button should show');
   console.log('  Time window inputs: OK');
+
+  // Expanding two dynamic comparisons makes Schedule taller than a compact
+  // phone viewport. Vertical position must belong to that pane, not the sheet,
+  // so swiping to Effort starts at Effort's top.
+  console.log('\n--- SECTION 10: Independent pane scrolling ---');
+  await page.setViewportSize({ width:390, height:667 });
+  const startEndpoint = page.locator('.time-endpoint[data-field="allowedTimeStart"]');
+  const endEndpoint = page.locator('.time-endpoint[data-field="allowedTimeEnd"]');
+  await startEndpoint.locator('.time-mode-toggle').click();
+  await endEndpoint.locator('.time-mode-toggle').click();
+  await startEndpoint.locator('.time-combine').selectOption('later');
+  await endEndpoint.locator('.time-combine').selectOption('earlier');
+  await page.waitForTimeout(150);
+
+  const preparedScroll = await page.evaluate(() => {
+    const sheet = document.querySelector('#detail-sheet .detail-sheet');
+    const pager = sheet?.querySelector('.detail-pager');
+    const pages = pager ? [...pager.querySelectorAll('.detail-page')] : [];
+    const schedule = pages[2];
+    const effort = pages[3];
+    if(!sheet || !pager || !schedule || !effort)return null;
+    effort.scrollTop = 0;
+    schedule.scrollTop = schedule.scrollHeight;
+    const scheduleTop = schedule.scrollTop;
+    pager.scrollTo({ left:pager.clientWidth * 3, behavior:'auto' });
+    return { scheduleTop };
+  });
+  await page.waitForTimeout(250);
+  const paneScroll = await page.evaluate(() => {
+    const sheet = document.querySelector('#detail-sheet .detail-sheet');
+    const pager = sheet?.querySelector('.detail-pager');
+    const pages = pager ? [...pager.querySelectorAll('.detail-page')] : [];
+    const schedule = pages[2];
+    const effort = pages[3];
+    if(!sheet || !pager || !schedule || !effort)return null;
+    const pagerBox = pager.getBoundingClientRect();
+    const effortBox = effort.getBoundingClientRect();
+    return {
+      sheetTop:sheet.scrollTop,
+      sheetOverflow:getComputedStyle(sheet).overflowY,
+      scheduleTop:schedule.scrollTop,
+      scheduleOverflow:getComputedStyle(schedule).overflowY,
+      effortTop:effort.scrollTop,
+      effortAligned:Math.abs(effortBox.top - pagerBox.top) <= 2
+    };
+  });
+  if(!preparedScroll || preparedScroll.scheduleTop <= 0){
+    throw new Error(`expanded schedule should scroll on compact phone: ${JSON.stringify(preparedScroll)}`);
+  }
+  if(!paneScroll || paneScroll.sheetTop !== 0 || paneScroll.sheetOverflow !== 'hidden'){
+    throw new Error(`detail sheet must not own vertical scroll: ${JSON.stringify(paneScroll)}`);
+  }
+  if(paneScroll.scheduleTop <= 0 || paneScroll.scheduleOverflow !== 'auto'){
+    throw new Error(`schedule pane should retain its own scroll: ${JSON.stringify(paneScroll)}`);
+  }
+  if(paneScroll.effortTop !== 0 || !paneScroll.effortAligned){
+    throw new Error(`new pane should open at its top: ${JSON.stringify(paneScroll)}`);
+  }
+  console.log('  Schedule and Effort scroll independently: OK');
+
+  await scrollDetailToSchedule(page, 2);
+  await page.evaluate(() => {
+    const pager = document.querySelector('#detail-sheet .detail-pager');
+    const schedule = pager?.querySelectorAll('.detail-page')[2];
+    if(schedule)schedule.scrollTop = 0;
+  });
+  await startEndpoint.locator('.time-mode-toggle').click();
+  await endEndpoint.locator('.time-mode-toggle').click();
+  await page.setViewportSize({ width:390, height:844 });
 
   // Cleanup
   console.log('\n--- CLEANUP ---');

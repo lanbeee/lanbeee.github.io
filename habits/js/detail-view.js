@@ -113,8 +113,11 @@ function openDetail(i){
   setDetailDirty(false);
   openSheet('detail-sheet');
   if(changedHabit){
-    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+    const inner = getSheetInner('detail-sheet');
+    const pager = inner?.querySelector('.detail-pager');
+    if(inner)inner.scrollTop = 0;
     if(pager){
+      pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
       // Tasks are one-off — the calendar pane is just a single dot, so land
       // on Effort (the pane with the actual due/scheduled controls) instead
       // of the default Calendar. Habits land on Calendar (index 0). Deferred
