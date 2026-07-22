@@ -214,7 +214,10 @@ function seedScript(extraHabits, extraSettings){
   });
   await page.waitForTimeout(100);
   await page.evaluate(() => { if(typeof render === 'function')render(); });
-  await page.waitForTimeout(300);
+  await page.waitForFunction(()=>{
+    const headers = [...document.querySelectorAll('#list .section-header')].map(el=>el.textContent.trim());
+    return headers.includes('today') && headers.includes('tomorrow');
+  },null,{timeout:10000});
   const homeWeek = await page.evaluate(() => {
     const wrap = document.getElementById('home-week-plan');
     const list = document.getElementById('list');
@@ -382,7 +385,7 @@ function seedScript(extraHabits, extraSettings){
     saveSortSettings(s);
     if(typeof render === 'function')render();
   });
-  await page.waitForTimeout(300);
+  await page.waitForFunction(()=>document.querySelectorAll('#list .section-header').length > 0,null,{timeout:10000});
   const overload = await page.evaluate(() => {
     const list = document.getElementById('list');
     const headers = [...list.querySelectorAll('.section-header')].map(el => el.textContent.trim());

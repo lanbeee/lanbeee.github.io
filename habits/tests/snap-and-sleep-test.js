@@ -120,33 +120,46 @@ function assert(cond,msg){
     ]);
     const data = load();
     const i = data.findIndex(h => h.name === 'stretch');
-    // Force "now" to be 11pm today by overriding Date.now inside logTing's
-    // closure is not possible without source edits. Instead, verify the
-    // stored timestamp falls on dayStart+360*60000 by checking dateKey +
-    // minute-of-day of the resulting lastLog.
-    logTing(i);
-    const after = load();
-    const h = after.find(x => x.name === 'stretch');
-    const storedTs = h.lastLog;
-    const storedDay = dayStart(storedTs);
-    const storedMinute = Math.round((storedTs - storedDay) / 60000);
-    // daysSince as of "tomorrow at 7am" should be 1 (eligible again) —
-    // we approximate by re-evaluating daysSince with an explicit now.
-    const tomorrow7am = storedDay + 86400000 + 7 * 3600000;
-    const realDaysSince = Math.floor((tomorrow7am - storedTs) / 86400000);
-    return {
-      storedMinute,
-      sameDay: storedDay === today,
-      realDaysSinceTomorrow7am: realDaysSince
-    };
+    // Exercise the late-day path deterministically. Running this suite before
+    // the 6am window used to log at midnight while still asserting a 6am snap.
+    const RealDate = Date;
+    const fixedNow = today + 23 * 3600000;
+    function FixedDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(fixedNow);
+    }
+    FixedDate.now = ()=>fixedNow;
+    FixedDate.parse = RealDate.parse;
+    FixedDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FixedDate,RealDate);
+    FixedDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FixedDate;
+    try{
+      logTing(i);
+      // Read while the same clock is active; normalization intentionally hides
+      // future logs, and 6am is still in the future at a real pre-dawn run.
+      const after = load();
+      const h = after.find(x => x.name === 'stretch');
+      const storedTs = h.lastLog;
+      const storedDay = dayStart(storedTs);
+      const storedMinute = Math.round((storedTs - storedDay) / 60000);
+      const tomorrow7am = storedDay + 86400000 + 7 * 3600000;
+      const realDaysSince = Math.floor((tomorrow7am - storedTs) / 86400000);
+      return {
+        storedMinute,
+        sameDay: storedDay === today,
+        realDaysSinceTomorrow7am: realDaysSince
+      };
+    }finally{
+      globalThis.Date = originalDate;
+    }
   });
   console.log(logBehavior);
   assert(logBehavior.sameDay, 'snapped log stays on today');
   assert(logBehavior.storedMinute === 360,
     `snapped minute-of-day is 360 (6am), got ${logBehavior.storedMinute}`);
-  // With calendar daysSince, an unsapped 11pm log is already age 1 by 7am
-  // next morning. Snap still matters for attributing the session to the
-  // allowed window (6am), not for making the habit due again.
+  // The explicit rolling-age check is 1 because the log snapped to 6am; an
+  // unsnapped 11pm timestamp would still be less than a day old at 7am.
   assert(logBehavior.realDaysSinceTomorrow7am === 1,
     `rolling age at tomorrow-7am = 1 (snapped to 6am), got ${logBehavior.realDaysSinceTomorrow7am}`);
 

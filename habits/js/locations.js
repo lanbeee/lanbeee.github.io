@@ -921,6 +921,9 @@ function saveTravelEditFromSheet(){
   const mins = Number(($('travel-edit-minutes') && $('travel-edit-minutes').value) || NaN);
   if(!from || !to || !Number.isFinite(mins) || mins < 1){ showToast('enter minutes'); return; }
   setManualTravelMinutes(from,to,Math.min(240,Math.round(mins)));
+  if(typeof markHomeTravelEdgeEdited === 'function'){
+    markHomeTravelEdgeEdited(from.id,to.id,mins);
+  }
   showToast('travel time saved');
   closeTravelEditSheet();
   if(typeof render === 'function')render();

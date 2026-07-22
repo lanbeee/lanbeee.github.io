@@ -598,7 +598,7 @@ function bindAutoMarkField(id,onDirty){
 bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
 bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
 bindCompactNumber('detail-times',clampTimes,{maxLength:2});
-bindAutoMarkField('detail-auto-mark',()=>setDetailDirty());
+bindAutoMarkField('detail-auto-mark',()=>{ syncBreakableUi(); setDetailDirty(); });
 bindAutoMarkField('ting-auto-mark');
 function bindTimerAutoStopField(id,onDirty){
   const field = $(id);
@@ -1720,7 +1720,10 @@ function stopHabitTimer(promptLog,manual){
       // trackValue habits still get their value prompt with elapsed minutes; undo is available.
       if(h.trackValue)openValueLogSheet(idx,after,elapsedMin);
       else{
-        logTing(idx,h && h.breakable && isAutoMark(h) ? {minutes:elapsedMin} : {});
+        const timerMinutes = h.breakable
+          ? Math.min(elapsedMin,Math.max(0,remainingDurationMinutes(h)))
+          : null;
+        if(!h.breakable || timerMinutes > 0)logTing(idx,timerMinutes ? {minutes:timerMinutes} : {});
         if(detailIdx === idx)openDetail(idx);
         render();
       }
@@ -1751,7 +1754,10 @@ function tickHabitTimer(){
     const h = load()[idx];
     if(h && (h.type !== 'task' || h.lastLog === null)){
       const elapsedMin = Math.max(1,Math.round((Date.now() - startedAt) / 60000));
-      logTing(idx,h.breakable && isAutoMark(h) ? {minutes:elapsedMin} : {});
+      const timerMinutes = h.breakable
+        ? Math.min(elapsedMin,Math.max(0,remainingDurationMinutes(h)))
+        : null;
+      if(!h.breakable || timerMinutes > 0)logTing(idx,timerMinutes ? {minutes:timerMinutes} : {});
       if(detailIdx === idx)openDetail(idx);
       render();
     }
@@ -1811,7 +1817,12 @@ bindScrollSafeTap($('detail-timer-toggle'),()=>{
   const h = load()[detailIdx];
   if(!h)return;
   const autoMin = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : clampDuration(h.durationMinutes);
-  const autoMarkAt = isAutoMark(h) ? Date.now() + (h.autoMarkMinutes || 0) * 60000 : null;
+  // Breakable auto-mark follows agenda chunk ends. The live timer already
+  // records its measured session at auto-stop, so it must not also fire the
+  // agenda delay from timer start and double-count progress.
+  const autoMarkAt = isAutoMark(h) && !h.breakable
+    ? Date.now() + (h.autoMarkMinutes || 0) * 60000
+    : null;
   habitTimer = {
     idx:detailIdx,
     startedAt:Date.now(),

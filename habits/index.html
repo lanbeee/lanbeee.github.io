@@ -244,8 +244,8 @@
             <div class="monthday-chip-row" id="detail-monthday-chips"></div>
             <div class="schedule-time-row">
               <span class="settings-sublabel compact-label">time window</span>
-              <div class="time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed">
-                <div class="time-endpoint" data-field="allowedTimeStart">
+              <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed">
+                <div class="time-endpoint" data-field="allowedTimeStart" data-endpoint-label="starts">
                   <input type="time" class="time-input time-fixed" id="detail-time-start" step="900" aria-label="allowed start time" />
                   <div class="time-dynamic" hidden>
                     <div class="time-expr">
@@ -275,10 +275,10 @@
                     </div>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use a fixed or relative start time" aria-label="switch start between fixed and relative time"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
                 </div>
                 <span class="time-sep">—</span>
-                <div class="time-endpoint" data-field="allowedTimeEnd">
+                <div class="time-endpoint" data-field="allowedTimeEnd" data-endpoint-label="ends">
                   <input type="time" class="time-input time-fixed" id="detail-time-end" step="900" aria-label="allowed end time" />
                   <div class="time-dynamic" hidden>
                     <div class="time-expr">
@@ -308,7 +308,7 @@
                     </div>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use a fixed or relative end time" aria-label="switch end between fixed and relative time"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
                 </div>
               </div>
               <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
@@ -321,8 +321,8 @@
             <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
             <div class="schedule-time-row preferred">
               <span class="settings-sublabel compact-label">best time</span>
-              <div class="time-endpoints" id="detail-preferred-time-row" data-field-prefix="preferred">
-                <div class="time-endpoint" data-field="preferredTimeStart">
+              <div class="time-endpoints detail-time-endpoints" id="detail-preferred-time-row" data-field-prefix="preferred">
+                <div class="time-endpoint" data-field="preferredTimeStart" data-endpoint-label="starts">
                   <input type="time" class="time-input time-fixed" id="detail-preferred-time-start" step="900" aria-label="preferred start time" />
                   <div class="time-dynamic" hidden>
                     <div class="time-expr">
@@ -352,10 +352,10 @@
                     </div>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use a fixed or relative start time" aria-label="switch start between fixed and relative time"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
                 </div>
                 <span class="time-sep">—</span>
-                <div class="time-endpoint" data-field="preferredTimeEnd">
+                <div class="time-endpoint" data-field="preferredTimeEnd" data-endpoint-label="ends">
                   <input type="time" class="time-input time-fixed" id="detail-preferred-time-end" step="900" aria-label="preferred end time" />
                   <div class="time-dynamic" hidden>
                     <div class="time-expr">
@@ -385,7 +385,7 @@
                     </div>
                     <span class="time-resolved" aria-live="polite"></span>
                   </div>
-                  <button type="button" class="time-mode-toggle mini-text-btn" title="use dynamic time" aria-label="use dynamic time">⚙</button>
+                  <button type="button" class="time-mode-toggle mini-text-btn" title="use a fixed or relative end time" aria-label="switch end between fixed and relative time"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
                 </div>
               </div>
               <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
@@ -433,13 +433,14 @@
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </label>
-          <div class="planning-grid">
-            <div class="planning-field">
-              <span>auto mark done <button type="button" class="info-btn" data-tip="detail-auto-mark-help" aria-label="about auto mark done"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <div class="info-tooltip" id="detail-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and the item logs itself that long after its scheduled time (or after you start a timer).</div></span>
+          <div class="planning-grid auto-mark-grid">
+            <div class="planning-field auto-mark-field">
+              <span><span id="detail-auto-mark-label">auto mark done</span> <button type="button" class="info-btn" data-tip="detail-auto-mark-help" aria-label="about automatic logging"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-auto-mark-help" role="tooltip" hidden>Blank keeps logging manual. For breakable items, each agenda chunk is credited after it ends; the delay gives you time to correct the plan first.</div></span>
+              <small id="detail-auto-mark-summary">Blank keeps this manual.</small>
               <label class="range-value" aria-label="auto mark done minutes, blank = manual">
                 <input type="text" id="detail-auto-mark" inputmode="numeric" maxlength="4" placeholder="—" />
-                <span>min</span>
+                <span id="detail-auto-mark-unit">min after</span>
               </label>
             </div>
           </div>
@@ -523,7 +524,7 @@
           </div>
         </section>
       </div>
-      <div class="detail-dots" aria-hidden="true"></div>
+      <div class="detail-dots" role="tablist" aria-label="detail pages"></div>
       <div class="btn-row detail-actions" id="detail-cool-row">
         <button class="btn primary" id="detail-cool">done</button>
       </div>
@@ -624,7 +625,7 @@
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="agendaOptimizer" aria-pressed="false">
-              <span><b>exact schedule optimizer</b><small>Packs tight windows more carefully with an ILP solver. Uses more battery; loads the solver the first time you turn it on. Scarcity-first heuristics stay on either way.</small></span>
+              <span><b>schedule optimizer</b><small>Default. Uses GLPK to pack tight windows and protect constrained habits. Turn off to use the faster heuristic planner.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </div>

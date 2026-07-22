@@ -148,6 +148,7 @@ function atDay(offset,hour = 12,minute = 0){
   await page.getByRole('button', { name: 'settings', exact: true }).click();
   await page.locator('#settings-testdata-head').click();
   await page.getByRole('button', { name: 'add samples' }).click();
+  await page.locator('.ting-card:has-text("do early because")').first().waitFor({state:'visible',timeout:10000});
   // Samples load without the old standalone "do it early" section. The
   // "do early because ..." item still renders — under "today" when today has
   // room for it (carrying the early pill), otherwise under "upcoming". Either

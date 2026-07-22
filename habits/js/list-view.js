@@ -1358,7 +1358,8 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
     suppressCardClick = toggle;
     if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
     else expandedBlockedGroups.add(groupKey);
-    if(typeof render === 'function')render();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    else if(typeof render === 'function')render();
     setTimeout(()=>{if(suppressCardClick === toggle)suppressCardClick = null;},120);
   });
   toggle.addEventListener('pointercancel',e=>{
@@ -1373,7 +1374,8 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
     }
     if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
     else expandedBlockedGroups.add(groupKey);
-    if(typeof render === 'function')render();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    else if(typeof render === 'function')render();
   });
   wrap.appendChild(toggle);
 
@@ -1582,19 +1584,27 @@ function summarizeTrailTone(tones){
 
 // RENDER: render the full habit list.
 //
-// `opts.deferAgenda` (default false): when true, skip the expensive
-// buildWeekAgenda / homeAgendaRows / homeEarlyMap work and emit a basic
-// pinned + todayCategory-bucketed list with no agenda pills, day sections,
-// or travel/blocked extras. Used by renderProgressive() so the list paints
-// within a frame; the full agenda replaces it on the next idle paint. Direct
-// user-action renders (taps, swipes, saves) keep deferAgenda:false so the
-// user sees the complete picture immediately after their gesture.
+// `opts.deferAgenda` (default false): compatibility path that skips expensive
+// agenda work and emits a basic grouped list. Normal home renders wait for the
+// default GLPK planner and paint its result once.
 function render(opts){
   const o = opts || {};
-  _homeRenderedWeek = null;
   const list = $('list');
   const empty = $('empty');
   const data = load();
+  const wantsOptimizedWeek = !o.deferAgenda
+    && !o.__optimizedWeek
+    && !o.__optimizerFallback
+    && Boolean(sortSettings.agendaOptimizer)
+    && sortSettings.preset === 'todayFirst'
+    && Boolean(sortSettings.showWeekOnHome)
+    && !searchQuery.trim()
+    && typeof buildWeekAgendaAsync === 'function';
+  if(wantsOptimizedWeek){
+    queueOptimizedHomeRender(data,o);
+    return false;
+  }
+  _homeRenderedWeek = null;
   list.innerHTML = '';
   empty.onclick = null;
   updateQuotaBar(sizeKb(data));
@@ -1813,21 +1823,11 @@ function render(opts){
   }else{
     list.classList.remove('is-progressive');
     if(weekMode){
-    const useOptimizer = Boolean(sortSettings.agendaOptimizer)
-      && typeof buildWeekAgendaAsync === 'function'
-      && !o.__fromOptimizer;
     const week = (o.__optimizedWeek && o.__optimizedWeek.days)
       ? o.__optimizedWeek
       : buildWeekAgenda(data,sortSettings,7);
     _homeRenderedWeek = week;
-    if(useOptimizer && !o.__optimizedWeek){
-      const snapData = data;
-      const snapSettings = sortSettings;
-      void buildWeekAgendaAsync(snapData,snapSettings,7).then(optimized=>{
-        if(!optimized || !optimized.optimized)return;
-        if(typeof render === 'function')render({deferAgenda:false,__fromOptimizer:true,__optimizedWeek:optimized});
-      }).catch(()=>{});
-    }
+    if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
     const agendaMap = new Map();
     const weekAssigned = new Set();
     const dayPlans = week.days.map(day=>{
@@ -1908,6 +1908,9 @@ function render(opts){
     });
   }else{
     const agendaRows = homeAgendaRows(data);
+    if(typeof syncAutoMarkChunkPlans === 'function'){
+      syncAutoMarkChunkPlans(data,{days:[{dayBase:dayStart(Date.now()),timeline:agendaRows}]});
+    }
     const agendaMap = new Map();
     const agendaOrder = new Map();
     const chunksByIndex = new Map();
@@ -2074,6 +2077,7 @@ function render(opts){
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
   _homeListFingerprint = homeListFingerprint();
+  return true;
 }
 
 // PURE: lightweight freshness key for the home list. Used to skip background
@@ -2119,6 +2123,7 @@ function homeListFingerprint(now = Date.now()){
     s.lastKnownLocationId || '',
     s.preset || '',
     s.showWeekOnHome ? 1 : 0,
+    s.agendaOptimizer ? 1 : 0,
     s.showSnoozed ? 1 : 0,
     typeof searchQuery === 'string' ? searchQuery : '',
     typeof homeTopicFilter === 'string' ? homeTopicFilter : '',
@@ -2137,6 +2142,91 @@ function homeListFingerprint(now = Date.now()){
 
 let _homeListFingerprint = '';
 let _homeRenderedWeek = null;
+let _optimizerHomeRequestKey = '';
+let _optimizerHomeRequestToken = 0;
+let _optimizerHomeReadyKey = '';
+let _optimizerHomeReadyWeek = null;
+
+// The lightweight home fingerprint deliberately omits some low-frequency
+// fields. Optimizer reuse needs an exact key so edits to any habit, window,
+// location, score weight, or travel edge can never reuse a stale schedule.
+function optimizerHomeStateKey(data){
+  // Use persisted records for the exact data signature. normalize() gives
+  // legacy records a generated hid in memory; hashing that transient value
+  // would make every load look different until the record is next saved.
+  const persisted = (typeof Storage !== 'undefined' && typeof KEY !== 'undefined')
+    ? (Storage.read(KEY) || data || [])
+    : (data || []);
+  return `${homeListFingerprint()}\n${JSON.stringify(persisted)}\n${JSON.stringify(sortSettings || {})}`;
+}
+
+// View-only state such as an expanded blocked group does not change placement.
+// Repaint from the already solved week so the interaction responds immediately
+// even if travel-cache background writes changed the next optimizer key.
+function renderHomePresentationOnly(){
+  if(sortSettings.agendaOptimizer && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+    render({__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
+    return;
+  }
+  render();
+}
+
+// ASYNC COORDINATOR: GLPK is the default planner, so wait for its result and
+// paint the home agenda once. Keeping the current DOM while it solves avoids
+// the old heuristic-first replacement that made times and cards visibly jump.
+function queueOptimizedHomeRender(data,opts){
+  const key = optimizerHomeStateKey(data);
+  if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
+    render({...opts,__fromOptimizer:true,__optimizedWeek:_optimizerHomeReadyWeek});
+    return;
+  }
+  if(_optimizerHomeRequestKey === key)return;
+
+  const token = ++_optimizerHomeRequestToken;
+  _optimizerHomeRequestKey = key;
+  const settings = {...sortSettings};
+  void buildWeekAgendaAsync(data,settings,7).then(week=>{
+    if(token !== _optimizerHomeRequestToken)return;
+    _optimizerHomeRequestKey = '';
+    if(!sortSettings.agendaOptimizer)return;
+    if(key !== optimizerHomeStateKey(load())){
+      render(opts);
+      return;
+    }
+    if(!week || !Array.isArray(week.days)){
+      render({...opts,__fromOptimizer:true,__optimizerFallback:true});
+      return;
+    }
+    _optimizerHomeReadyKey = key;
+    _optimizerHomeReadyWeek = week;
+    render({...opts,__fromOptimizer:true,__optimizedWeek:week});
+  }).catch(()=>{
+    if(token !== _optimizerHomeRequestToken)return;
+    _optimizerHomeRequestKey = '';
+    if(!sortSettings.agendaOptimizer)return;
+    render({...opts,__fromOptimizer:true,__optimizerFallback:true});
+  });
+}
+
+// Immediate feedback for a saved travel override. The optimized replan still
+// runs, but the tapped edge shows its edited value while GLPK is working.
+function markHomeTravelEdgeEdited(fromId,toId,minutes){
+  const mins = Math.max(1,Math.round(Number(minutes) || 1));
+  document.querySelectorAll('#list .travel-card').forEach(card=>{
+    const sameEdge = (card.dataset.travelFrom === fromId && card.dataset.travelTo === toId)
+      || (card.dataset.travelFrom === toId && card.dataset.travelTo === fromId);
+    if(!sameEdge)return;
+    card.classList.add('is-edited');
+    const copy = card.querySelector('span');
+    if(copy)copy.textContent = copy.textContent.replace(/\b\d+\s+min\b/,`${mins} min`);
+    if(!card.querySelector('.travel-edit-mark')){
+      const icon = document.createElement('i');
+      icon.className = 'ti ti-pencil travel-edit-mark';
+      icon.setAttribute('aria-hidden','true');
+      card.appendChild(icon);
+    }
+  });
+}
 
 // RENDER: sync home list only when the freshness key moved. Background paths
 // (travel refresh, while-open loop, quiet location updates) should call this
@@ -2144,8 +2234,8 @@ let _homeRenderedWeek = null;
 function renderHomeIfChanged(force){
   const fp = homeListFingerprint();
   if(!force && fp === _homeListFingerprint)return false;
-  render();
-  _homeListFingerprint = homeListFingerprint();
+  const didRender = render();
+  if(didRender !== false)_homeListFingerprint = homeListFingerprint();
   return true;
 }
 
@@ -2153,8 +2243,8 @@ function renderHomeIfChanged(force){
 // differed from agenda order and caused visible flicker. Callers that still
 // name renderProgressive get a single sync render.
 function renderProgressive(){
-  render();
-  _homeListFingerprint = homeListFingerprint();
+  const didRender = render();
+  if(didRender !== false)_homeListFingerprint = homeListFingerprint();
 }
 
 // WIRE: slider input only sets a pending absolute target. Logging stays on the

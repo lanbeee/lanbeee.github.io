@@ -1,6 +1,6 @@
-// Optional exact agenda packer (ILP via GLPK). Lazy-loaded only when
-// settings.agendaOptimizer is on — the default path stays the scarcity
-// heuristic in today-view.js.
+// Exact agenda packer (ILP via GLPK). It is the default week-planning path and
+// lazy-loads on demand; the scarcity heuristic in today-view.js is the explicit
+// off-mode and the timeout/error fallback.
 //
 // Per day: enumerate feasible start options via tryPlaceOnDay, then solve a
 // set-packing ILP that maximizes weighted placements subject to no overlaps and

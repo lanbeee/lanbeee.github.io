@@ -564,6 +564,28 @@ function syncBreakableUi(){
   const on = $('detail-breakable')?.getAttribute('aria-pressed') === 'true';
   const row = $('detail-min-chunk-row');
   if(row)row.hidden = !on;
+  const autoValue = normalizeAutoMark($('detail-auto-mark')?.value);
+  const autoOn = autoValue !== null;
+  const label = $('detail-auto-mark-label');
+  const summary = $('detail-auto-mark-summary');
+  const unit = $('detail-auto-mark-unit');
+  const inputWrap = $('detail-auto-mark')?.closest('.range-value');
+  if(label)label.textContent = on ? 'auto-log agenda chunks' : 'auto mark done';
+  if(unit)unit.textContent = on ? 'min later' : 'min after';
+  if(summary){
+    summary.textContent = on
+      ? (autoOn
+        ? `Each placed chunk logs ${autoValue ? `${autoValue} min after` : 'when'} it ends. Manual taps count first.`
+        : 'Blank keeps chunk logging manual.')
+      : (autoOn
+        ? `Logs automatically ${autoValue ? `${autoValue} min after` : 'at'} its trigger.`
+        : 'Blank keeps this manual.');
+  }
+  if(inputWrap){
+    inputWrap.setAttribute('aria-label',on
+      ? 'agenda chunk auto-log delay in minutes, blank is manual'
+      : 'auto mark done delay in minutes, blank is manual');
+  }
 }
 
 // HYBRID: compares form to original, toggles dirty class
@@ -1125,21 +1147,48 @@ function renderCalendar(h){
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
 }
 
-// RENDER: syncs pager dot indicator
+const DETAIL_PAGE_NAV = [
+  {label:'calendar',icon:'ti-calendar-month'},
+  {label:'insight',icon:'ti-chart-line'},
+  {label:'schedule',icon:'ti-calendar-time'},
+  {label:'effort',icon:'ti-progress-check'},
+  {label:'identity',icon:'ti-id'},
+  {label:'actions',icon:'ti-dots'}
+];
+
+// RENDER: syncs the compact pager navigation.
 function updateDetailPagerDots(){
   const inner = getSheetInner('detail-sheet');
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
   const pages = [...pager.querySelectorAll('.detail-page')];
+  pages.forEach((panel,i)=>{
+    panel.id = panel.id || `detail-page-${i}`;
+    panel.setAttribute('role','tabpanel');
+  });
   if(dotsWrap.children.length !== pages.length){
-    dotsWrap.innerHTML = pages.map(()=>'<span></span>').join('');
+    dotsWrap.innerHTML = pages.map((_,i)=>{
+      const item = DETAIL_PAGE_NAV[i] || {label:`page ${i + 1}`,icon:'ti-circle'};
+      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="detail-page-${i}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
+    }).join('');
   }
-  const dots = [...dotsWrap.querySelectorAll('span')];
+  if(dotsWrap.dataset.bound !== '1'){
+    dotsWrap.dataset.bound = '1';
+    dotsWrap.addEventListener('click',event=>{
+      const tab = event.target.closest('.detail-page-tab');
+      if(!tab || !dotsWrap.contains(tab))return;
+      const index = Math.max(0,Math.min(pages.length - 1,Number(tab.dataset.detailPage) || 0));
+      pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
+    });
+  }
+  const dots = [...dotsWrap.querySelectorAll('.detail-page-tab')];
   if(!dots.length)return;
-  const page = Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth));
+  const page = Math.max(0,Math.min(dots.length - 1,Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth))));
   dots.forEach((dot,i)=>{
     dot.classList.toggle('on',i === page);
+    dot.setAttribute('aria-selected',i === page ? 'true' : 'false');
+    dot.tabIndex = i === page ? 0 : -1;
   });
 }
 

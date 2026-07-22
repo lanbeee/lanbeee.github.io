@@ -1,4 +1,4 @@
-const CACHE = 'tings-v39';
+const CACHE = 'tings-v42';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';

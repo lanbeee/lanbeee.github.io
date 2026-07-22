@@ -94,7 +94,7 @@
  * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
  * @property {number|null} timerAutoStopMinutes — optional live-timer auto-stop (null = use durationMinutes)
- * @property {number|null} autoMarkMinutes — when set, the item logs itself this many minutes after its scheduled time (or timer start). null = manual.
+ * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
@@ -154,7 +154,7 @@
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
  * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
  * @property {boolean} showWeekOnHome                          — day-by-day week plan on home
- * @property {boolean} agendaOptimizer                         — optional ILP packer for tight windows (lazy GLPK)
+ * @property {boolean} agendaOptimizer                         — default ILP packer for tight windows (lazy GLPK)
  * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
@@ -307,9 +307,9 @@ function normalize(items){
     // flexibility > 0 means the deadline is soft.
     const hardDue = type === 'task' && dueDate !== null && flexibilityDays === 0;
     // autoMarkMinutes replaces the legacy markDone toggle. null/empty = manual;
-    // a number = the item logs itself that many minutes after its scheduled
-    // time (tasks) or timer start. Legacy markDone:false maps to 0 (auto at
-    // the trigger); legacy events default to 0 too.
+    // a number = automatic logging with this delay. Breakables use planner
+    // chunk ends; other items use their scheduled trigger. Legacy
+    // markDone:false maps to 0 (auto at the trigger); legacy events do too.
     const legacyAuto = wasEvent || raw.markDone === false;
     const autoMarkMinutes = raw.autoMarkMinutes != null
       ? normalizeAutoMark(raw.autoMarkMinutes)
@@ -410,8 +410,8 @@ function normalize(items){
   });
 }
 
-// PURE: true when this item will log itself (no tap required) once its trigger
-// fires. Replaces direct checks against the old markDone === false flag.
+// PURE: true when this item has automatic logging enabled. Breakables use each
+// captured agenda chunk end; other items keep their event/day trigger.
 function isAutoMark(h){
   return Boolean(h) && h.autoMarkMinutes !== null;
 }
@@ -517,12 +517,163 @@ function restoreBackup(raw){
   return {ok:true,count:trimmed.length};
 }
 
+// Ephemeral agenda commitments used by breakable auto-log. This is kept out of
+// the habit backup intentionally: it is a device-local snapshot of what this
+// particular agenda showed, not user-authored history.
+const AUTO_CHUNK_PLAN_KEY = 'tings_auto_chunk_plans_v1';
+
+function loadAutoChunkPlans(){
+  const raw = Storage.read(AUTO_CHUNK_PLAN_KEY);
+  if(!raw || typeof raw !== 'object' || !raw.groups || typeof raw.groups !== 'object')return {groups:{}};
+  return {groups:raw.groups};
+}
+
+function saveAutoChunkPlans(plans){
+  const next = plans && plans.groups ? plans : {groups:{}};
+  const current = Storage.read(AUTO_CHUNK_PLAN_KEY);
+  if(JSON.stringify(current || {groups:{}}) === JSON.stringify(next))return false;
+  try{ Storage.write(AUTO_CHUNK_PLAN_KEY,next); return true; }
+  catch{ return false; }
+}
+
+function autoChunkPlanScope(h,dayBase){
+  if(!h || !h.hid)return null;
+  return h.type === 'task' ? `task:${h.hid}` : `day:${h.hid}:${dateKey(dayBase)}`;
+}
+
+/**
+ * HYBRID: remember future breakable rows that the agenda actually presented.
+ * Rows that have already started stay stable while future rows follow replans.
+ * A cold open never invents credit for work that was never shown to the user.
+ */
+function syncAutoMarkChunkPlans(data,week,now = Date.now()){
+  if(!Array.isArray(data) || !week || !Array.isArray(week.days))return false;
+  const plans = loadAutoChunkPlans();
+  const current = new Map();
+  const autoHids = new Set(data.filter(h=>h && h.breakable && isAutoMark(h)).map(h=>h.hid));
+
+  week.days.forEach(day=>{
+    const dayBase = day && day.dayBase != null ? day.dayBase : dayStart(now);
+    (day && Array.isArray(day.timeline) ? day.timeline : []).forEach(row=>{
+      if(!row || (row.kind !== 'fill' && row.kind !== 'scheduled') || row.i == null)return;
+      const h = data[row.i];
+      if(!h || !h.breakable || !isAutoMark(h) || !h.hid)return;
+      const scope = autoChunkPlanScope(h,dayBase);
+      if(!scope)return;
+      if(!current.has(scope))current.set(scope,{hid:h.hid,type:h.type,dayBase:h.type === 'task' ? null : dayBase,total:breakableTotalMinutes(h),rows:[]});
+      current.get(scope).rows.push({
+        start:Number(row.start) || 0,
+        end:Number(row.end) || 0,
+        minutes:Math.max(1,Math.round(Number(row.chunkMinutes) || ((Number(row.end) - Number(row.start)) / 60000) || 1))
+      });
+    });
+  });
+
+  const staleBefore = now - 8 * 86400000;
+  for(const [scope,group] of Object.entries(plans.groups)){
+    if(!group || !autoHids.has(group.hid)){ delete plans.groups[scope]; continue; }
+    const retained = Array.isArray(group.rows)
+      ? group.rows.filter(row=>Number(row.end) >= staleBefore && Number(row.start) <= now)
+      : [];
+    if(retained.length)plans.groups[scope] = {...group,rows:retained};
+    else if(!current.has(scope))delete plans.groups[scope];
+  }
+
+  for(const [scope,nextGroup] of current){
+    const h = data.find(item=>item && item.hid === nextGroup.hid);
+    if(!h)continue;
+    const old = plans.groups[scope];
+    const preserved = old && Array.isArray(old.rows)
+      ? old.rows.filter(row=>Number(row.start) <= now && Number(row.end) >= staleBefore)
+      : [];
+    const dayBase = nextGroup.dayBase != null ? nextGroup.dayBase : dayStart(now);
+    const done = breakableProgressMinutes(h,dayBase);
+    let target = Math.max(done,...preserved.map(row=>Math.max(0,Number(row.targetMinutes) || 0)));
+    const total = breakableTotalMinutes(h);
+    const preservedKeys = new Set(preserved.map(row=>`${row.start}:${row.end}`));
+    const future = nextGroup.rows
+      .filter(row=>row.end > now && row.end > row.start && !preservedKeys.has(`${row.start}:${row.end}`))
+      .sort((a,b)=>a.start - b.start)
+      .map(row=>{
+        const amount = Math.max(0,Math.min(row.minutes,total - target));
+        target += amount;
+        return {...row,targetMinutes:target};
+      })
+      .filter(row=>row.targetMinutes > done);
+    const rows = [...preserved,...future]
+      .sort((a,b)=>a.end - b.end)
+      .filter((row,index,all)=>index === 0 || row.start !== all[index - 1].start || row.end !== all[index - 1].end);
+    if(rows.length)plans.groups[scope] = {...nextGroup,total,rows};
+    else delete plans.groups[scope];
+  }
+  return saveAutoChunkPlans(plans);
+}
+
+/**
+ * HYBRID: credit every due planner chunk up to its stored cumulative target.
+ * Manual logs made before the deadline already count toward that target, so a
+ * later sweep adds only the uncovered minutes. Due rows are removed once read,
+ * making foreground and interval sweeps idempotent.
+ */
+function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
+  const plans = loadAutoChunkPlans();
+  const data = load();
+  let changedData = false;
+  let changedPlans = false;
+  let credited = 0;
+  const completedSigs = [];
+
+  for(const [scope,group] of Object.entries(plans.groups)){
+    const h = data.find(item=>item && item.hid === group.hid);
+    if(!h || !h.breakable || !isAutoMark(h)){
+      delete plans.groups[scope];
+      changedPlans = true;
+      continue;
+    }
+    const delayMs = Math.max(0,Number(h.autoMarkMinutes) || 0) * 60000;
+    const rows = Array.isArray(group.rows) ? group.rows.slice().sort((a,b)=>a.end - b.end) : [];
+    const keep = [];
+    for(const row of rows){
+      const dueAt = Number(row.end) + delayMs;
+      if(!Number.isFinite(dueAt) || dueAt > now){ keep.push(row); continue; }
+      const dayBase = h.type === 'task' ? dayStart(now) : (group.dayBase != null ? group.dayBase : dayStart(row.end));
+      const done = breakableProgressMinutes(h,dayBase);
+      const target = Math.max(0,Math.min(breakableTotalMinutes(h),Math.round(Number(row.targetMinutes) || 0)));
+      const delta = Math.max(0,target - done);
+      if(delta > 0){
+        const rawLogTs = Math.min(now,Math.max(1,Number(row.end) || dueAt));
+        const logTs = h.type === 'task' ? rawLogTs : snapLogTimestamp(h,rawLogTs);
+        h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(logTs,{minutes:delta,note:'agenda auto-log'})]);
+        h.lastLog = latestActualLog(h.logs);
+        h.snoozedUntil = null;
+        clearPlanByDateOnLog(h);
+        changedData = true;
+        credited += 1;
+      }
+      changedPlans = true;
+    }
+    if(keep.length)plans.groups[scope] = {...group,rows:keep};
+    else delete plans.groups[scope];
+    if(h.type === 'task' && isTaskDone(h) && typeof reminderSignature === 'function')completedSigs.push(reminderSignature(h));
+  }
+
+  if(changedData)save(data);
+  if(changedPlans)saveAutoChunkPlans(plans);
+  if(changedData && typeof cancelPush === 'function')completedSigs.forEach(sig=>cancelPush(sig));
+  if(changedData && opts.refresh !== false && typeof refreshOpenViews === 'function')refreshOpenViews();
+  if(changedData && opts.toast !== false && typeof showToast === 'function'){
+    showToast(credited === 1 ? 'agenda chunk auto-logged' : `${credited} agenda chunks auto-logged`);
+  }
+  return credited;
+}
+
 // HYBRID: auto-complete event-style items (markDone === false) whose time has
 // passed. Two shapes: timed tasks (log at eventTime) and scheduled build-habits
 // (log each passed scheduled weekday/monthday day). Adds completion logs,
 // cancels scheduled pushes for tasks, and re-renders. Idempotent — safe on a
 // timer. Returns the number of items it completed.
 function sweepAutoDoneTasks(){
+  const chunkCount = sweepAutoMarkedBreakableChunks(Date.now(),{refresh:false,toast:true});
   const data = load();
   const now = Date.now();
   const todayStart = dayStart(now);
@@ -531,6 +682,7 @@ function sweepAutoDoneTasks(){
   let count = 0;
   data.forEach(h=>{
     if(h.autoMarkMinutes === null)return;
+    if(h.breakable)return; // breakables are reconciled against placed chunks above
     if(h.type === 'task'){
       // Trigger: fixed time, or when the task enters the agenda window.
       const trigger = h.eventTime ?? (h.dueDate !== null
@@ -571,11 +723,14 @@ function sweepAutoDoneTasks(){
       }
     }
   });
-  if(!changed)return 0;
+  if(!changed){
+    if(chunkCount > 0 && typeof refreshOpenViews === 'function')refreshOpenViews();
+    return chunkCount;
+  }
   save(data);
   if(typeof cancelPush === 'function')completedSigs.forEach(sig=>cancelPush(sig));
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
-  return count;
+  return count + chunkCount;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

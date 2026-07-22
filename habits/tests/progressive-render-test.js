@@ -1,4 +1,5 @@
-// Smooth home refresh — no progressive flicker, fingerprint skip for no-ops.
+// Single-stage GLPK home refresh — no heuristic-first agenda jitter, and
+// fingerprint skips for no-op refreshes.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/progressive-render-test.js
 //
@@ -18,14 +19,23 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   }
 
   await page.addInitScript(()=>{
-    window.__progressiveObs = { saw:false };
+    window.__progressiveObs = { saw:false, cardsSeen:false, destructive:0 };
     const attachObs = ()=>{
       const list = document.getElementById('list');
       if(!list || list.__progressiveObsAttached)return;
       list.__progressiveObsAttached = true;
-      new MutationObserver(()=>{
-        if(list.classList.contains('is-progressive'))window.__progressiveObs.saw = true;
-      }).observe(list,{ attributes:true, attributeFilter:['class'] });
+      new MutationObserver(records=>{
+        const state = window.__progressiveObs;
+        records.forEach(record=>{
+          if(record.type === 'attributes' && list.classList.contains('is-progressive'))state.saw = true;
+          if(record.type !== 'childList')return;
+          if(state.cardsSeen && record.removedNodes.length)state.destructive += 1;
+          if([...record.addedNodes].some(node=>node.nodeType === 1
+            && (node.matches?.('.ting-card,.swipe-row') || node.querySelector?.('.ting-card')))){
+            state.cardsSeen = true;
+          }
+        });
+      }).observe(list,{ childList:true, attributes:true, attributeFilter:['class'] });
     };
     attachObs();
     document.addEventListener('DOMContentLoaded',attachObs,{ once:true });
@@ -53,7 +63,9 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
 
   await page.goto(BASE,{ waitUntil:'load' });
-  await page.waitForTimeout(400);
+  await page.waitForFunction(()=>Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),null,{ timeout:10000 });
+  await page.waitForSelector('#list .ting-card');
+  await page.waitForTimeout(100);
 
   const loadState = await page.evaluate(()=>{
     const list = document.getElementById('list');
@@ -61,11 +73,16 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       sawProgressive:Boolean(window.__progressiveObs && window.__progressiveObs.saw),
       progressiveNow:Boolean(list && list.classList.contains('is-progressive')),
       cards:list ? list.querySelectorAll('.ting-card').length : 0,
+      optimizerDefault:loadSortSettings().agendaOptimizer,
+      optimized:Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),
+      destructiveRenders:Number(window.__progressiveObs?.destructive || 0),
       hasFingerprint:typeof homeListFingerprint === 'function',
       hasRenderIfChanged:typeof renderHomeIfChanged === 'function'
     };
   });
   check('cold load does not use is-progressive', !loadState.sawProgressive && !loadState.progressiveNow, JSON.stringify(loadState));
+  check('GLPK optimizer is the default planner', loadState.optimizerDefault && loadState.optimized, JSON.stringify(loadState));
+  check('cold load paints one final agenda', loadState.destructiveRenders === 0, JSON.stringify(loadState));
   check('cards render on cold load', loadState.cards >= 3, JSON.stringify(loadState));
   check('homeListFingerprint + renderHomeIfChanged exist', loadState.hasFingerprint && loadState.hasRenderIfChanged, JSON.stringify(loadState));
 

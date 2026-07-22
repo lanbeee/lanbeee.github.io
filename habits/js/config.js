@@ -135,9 +135,9 @@ const DEFAULT_SORT_SETTINGS = {
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
   showWeekOnHome:true,
-  // Exact ILP packer for tight windows (lazy-loads GLPK). Default off — the
-  // scarcity-first heuristic is the light PWA path; turn this on for harder days.
-  agendaOptimizer:false,
+  // Exact ILP packer for tight windows (lazy-loads GLPK). This is the default
+  // planner; the scarcity-first heuristic remains the explicit fast fallback.
+  agendaOptimizer:true,
   // Unified agenda placement score (lower = better). All soft signals share
   // one comparable scale — no special-case overrides for due/near/tonight.
   //   travel       — per second of commute for this placement

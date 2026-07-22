@@ -232,7 +232,14 @@ async function openSettings(page){
     await page.waitForSelector('#travel-edit-sheet.open');
     await page.locator('#travel-edit-minutes').fill('42');
     await page.locator('#travel-edit-save').click();
-    await page.waitForTimeout(300);
+    await page.waitForFunction(({from,to})=>{
+      const cards = [...document.querySelectorAll('#list .travel-card')];
+      const match = cards.find(el =>
+        (el.dataset.travelFrom === from && el.dataset.travelTo === to) ||
+        (el.dataset.travelFrom === to && el.dataset.travelTo === from)
+      );
+      return !match || match.classList.contains('is-edited');
+    },target,{timeout:10000});
     const manual = await page.evaluate(({ from, to }) => {
       // edgeKey is symmetric — check both orderings.
       const k1 = `${from}|${to}`;
