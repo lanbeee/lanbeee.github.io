@@ -1292,6 +1292,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         edge,
         travelMin,
         durMin:piece,
+        maxDurMin:piece,
         slotStart:slot.start,
         preferredHit:false,
         prevLocId:anchor,
@@ -1300,6 +1301,25 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     }
   }
   if(!candidates.length)return null;
+  // Avoid manufacturing a tiny finish-up merely because the greedy pass took
+  // too much from this gap. When another gap can hold a full minimum session,
+  // reserve exactly that minimum instead. Example: 127m left with 119m and 80m
+  // gaps at a 60m minimum becomes 67+60, not 119+8.
+  if(rem >= min * 2){
+    for(const candidate of candidates){
+      const remainder = rem - candidate.durMin;
+      if(remainder <= 0 || remainder >= min)continue;
+      const adjusted = rem - min;
+      if(adjusted < min || adjusted > candidate.maxDurMin)continue;
+      const budgetAfter = Math.max(0,budgetLeft - candidate.travelMin - adjusted);
+      const hasMinimumGap = candidates.some(other=>other !== candidate
+        && other.maxDurMin >= min
+        && (usedMinutes <= 0 || other.travelMin + min <= budgetAfter));
+      if(!hasMinimumGap)continue;
+      candidate.durMin = adjusted;
+      candidate.placeEnd = candidate.placeStart + adjusted * 60000;
+    }
+  }
   // Prefer larger sessions first (continuous), then soft score among ties.
   candidates.sort((a,b)=>b.durMin - a.durMin);
   const topDur = candidates[0].durMin;

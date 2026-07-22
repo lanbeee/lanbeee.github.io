@@ -362,6 +362,41 @@ async function breakableFillRows(page, name){
     `expected a 40m piece from the first gap, got ${JSON.stringify(splitDurs)}`);
   console.log('  adaptive split:', splitDurs.join('+'), 'OK');
 
+  // Avoidable finish-up: greedy largest-first used to take 233+119 and leave
+  // an 8-minute final piece. The 80-minute middle gap can carry the minimum,
+  // so the second chunk must reserve a full 60-minute finish instead.
+  console.log('\n--- B2: reserve minimum remainder ---');
+  await seedAndReload(page, {
+    clockTs,
+    settings:defaultSettings({
+      blockedTimes:[
+        { label:'before work', days:[], start:0, end:570 },
+        { label:'lunch', days:[], start:803, end:833 },
+        { label:'zuhr', days:[], start:913, end:923 },
+        { label:'after work', days:[], start:1042, end:1440 }
+      ]
+    }),
+    data:[
+      base({
+        name:'Breakable reserve',
+        durationMinutes:360,
+        breakable:true,
+        minChunkMinutes:60,
+        dueDate:at(0, 0),
+        priority:0
+      })
+    ]
+  });
+  const reserveRows = await breakableFillRows(page, 'Breakable reserve');
+  const reserveDurs = reserveRows.map(r => r.durMin);
+  assert(reserveDurs.reduce((sum,d)=>sum+d,0) === 360,
+    `reserved chunks must still sum to 360: ${JSON.stringify(reserveDurs)}`);
+  assert(reserveDurs.every(d=>d >= 60),
+    `avoidable under-min finish-up must be eliminated: ${JSON.stringify(reserveDurs)}`);
+  assert(!reserveDurs.includes(8),
+    `old 233+119+8 split must not return: ${JSON.stringify(reserveDurs)}`);
+  console.log('  reserved split:', reserveDurs.join('+'), 'OK');
+
   // ═══════════════════════════════════════════════════════════
   // C. Min floor — three 30m gaps + one 10m gap, duration 100
   // Gaps after 8:00: 8:00–8:30, 8:40–9:10, 9:20–9:50, 10:00–10:10

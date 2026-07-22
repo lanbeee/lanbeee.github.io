@@ -24,7 +24,11 @@ function assert(cond, msg){
   // window filters some of them out and the merge group comes up short).
   await page.addInitScript(() => {
     const now = new Date();
-    const blockStart = (Math.floor((now.getHours() * 60 + now.getMinutes()) / 30) + 2) * 30; // next 30-min boundary, +1h
+    const futureStart = (Math.floor((now.getHours() * 60 + now.getMinutes()) / 30) + 2) * 30;
+    // The four-block fixture spans two hours. Late at night, putting it one hour
+    // ahead would create invalid 1440+ minute values. The rules repeat daily, so
+    // use 1:00 AM and assert against tomorrow's rendered week row instead.
+    const blockStart = futureStart + 120 <= 1440 ? futureStart : 60;
 
     localStorage.setItem('tings_v2', JSON.stringify([
       { name:'Morning exercise', type:'keepup', target:7, logs:[Date.now() - 86400000], durationMinutes:30, locationIds:['home'], priority:1 },
