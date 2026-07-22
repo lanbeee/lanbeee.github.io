@@ -390,14 +390,20 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     if(typeof isBreakableRhythmHabit === 'function' && isBreakableRhythmHabit(c.h)
       && typeof placeBreakableSessions === 'function'){
       let vLog = virtualLogs.has(c.i) ? virtualLogs.get(c.i) : c.h.lastLog;
+      let rhythmPlacementCount = 0;
       for(const state of dayStates){
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(c.pinned && !state.isTodayDay)continue;
         if(state.placed.has(c.i)){
           vLog = state.dayBase;
+          rhythmPlacementCount += 1;
           continue;
         }
-        if(vLog != null && typeof rhythmEligibleOnDay === 'function'
+        // c.eligible already accounts for today's partial breakable budget.
+        // Only apply rhythm spacing after this optimizer pass has placed a
+        // session; otherwise a new partial log makes lastLog=today and wrongly
+        // removes the rest of today's budget from the agenda.
+        if(rhythmPlacementCount > 0 && vLog != null && typeof rhythmEligibleOnDay === 'function'
           && !rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday))continue;
         const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
         const before = state.fills.length;
@@ -413,6 +419,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         }
         vLog = state.dayBase;
         virtualLogs.set(c.i,state.dayBase);
+        rhythmPlacementCount += 1;
       }
     }
   }
