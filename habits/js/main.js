@@ -232,6 +232,7 @@ $('do-save').addEventListener('click',()=>{
     priority:selectedAddPriority(),
     topics:selectedAddTopics(),
     locationIds,
+    anywhereAllowed:selectedAnywhere(),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
     createdAt:Date.now()
@@ -629,7 +630,7 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-anywhere]')){
-    renderTagChips('ting-tag-chips',selectedTopicsFrom('ting-tag-chips'),[],null,{});
+    renderTagChips('ting-tag-chips',selectedTopicsFrom('ting-tag-chips'),selectedLocationIds(),null,selectedLocationPrefs(),!selectedAnywhereFrom('ting-tag-chips'));
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){
@@ -661,7 +662,7 @@ $('detail-tag-chips')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-anywhere]')){
-    renderTagChips('detail-tag-chips',selectedTopicsFrom('detail-tag-chips'),[],null,{});
+    renderTagChips('detail-tag-chips',selectedTopicsFrom('detail-tag-chips'),selectedLocationIdsFrom('detail-tag-chips'),null,selectedLocationPrefsFrom('detail-tag-chips'),!selectedAnywhereFrom('detail-tag-chips'));
     setDetailDirty();
     return;
   }
@@ -959,6 +960,7 @@ $('detail-save').addEventListener('click',()=>{
   h.pinned = current.pinned;
   h.topics = normalizeTopics(current.topics);
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
+  h.anywhereAllowed = Boolean(current.anywhereAllowed);
   h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,h.locationIds,current.preferredLocationId);
   h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,h.locationIds);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
@@ -1569,13 +1571,84 @@ $('presence-picker-close')?.addEventListener('click',()=>closeSheet('presence-pi
 $('presence-picker-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeSheet('presence-picker-sheet');
 });
-$('list')?.addEventListener('click',e=>{
-  const card = e.target.closest('.travel-card[data-travel-from]');
-  if(!card)return;
-  e.preventDefault();
-  e.stopPropagation();
-  openTravelEditSheet(card.dataset.travelFrom,card.dataset.travelTo);
-});
+
+let blockEditContext = null;
+function openBlockEditSheet(row){
+  if(!row)return;
+  const dayKey = dateKey(row.start);
+  const originalStart = Number(row.blockStartMin);
+  const originalEnd = Number(row.blockEndMin);
+  const signature = row.blockSignature || blockedInstanceKey(row.label,originalStart,originalEnd);
+  const settings = loadSortSettings();
+  const overrides = normalizeBlockedTimeOverrides(settings.blockedTimeOverrides);
+  const current = overrides[dayKey]?.[signature] || {start:originalStart,end:originalEnd};
+  blockEditContext = {row,dayKey,signature,originalStart,originalEnd,blockIndex:Number(row.blockIndex),current};
+  $('block-edit-title').textContent = row.label || 'blocked time';
+  $('block-edit-copy').textContent = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
+  $('block-edit-start').value = minutesToTimeInput(current.start);
+  $('block-edit-end').value = minutesToTimeInput(current.end);
+  openSheet('block-edit-sheet');
+}
+
+function readBlockEditTimes(){
+  const start = timeInputToMinutes($('block-edit-start')?.value || '');
+  const end = timeInputToMinutes($('block-edit-end')?.value || '');
+  if(start === null || end === null || start === end){
+    showToast('choose different start and end times');
+    return null;
+  }
+  return {start,end};
+}
+
+function saveBlockEditInstance(){
+  if(!blockEditContext)return;
+  const next = readBlockEditTimes();
+  if(!next)return;
+  const ctx = blockEditContext;
+  const settings = loadSortSettings();
+  const overrides = normalizeBlockedTimeOverrides(settings.blockedTimeOverrides);
+  const previousDay = {...(overrides[ctx.dayKey] || {})};
+  const previousOverride = previousDay[ctx.signature] || null;
+  overrides[ctx.dayKey] = {...previousDay,[ctx.signature]:next};
+  const availability = normalizeAvailabilityOverrides(settings.availabilityOverrides);
+  const hadAvailability = Object.prototype.hasOwnProperty.call(availability,ctx.dayKey);
+  const previousAvailability = availability[ctx.dayKey];
+  const oldDuration = blockDurationMinutes(ctx.current.start,ctx.current.end);
+  const newDuration = blockDurationMinutes(next.start,next.end);
+  availability[ctx.dayKey] = Math.max(0,effectiveAvailabilityMinutes(ctx.dayKey,settings) + oldDuration-newDuration);
+  saveSortSettings({...settings,blockedTimeOverrides:overrides,availabilityOverrides:availability});
+  closeSheet('block-edit-sheet');
+  blockEditContext = null;
+  render();
+  showActionToast(`Adjusted ${ctx.row.label || 'blocked'} for this date`,{
+    type:'restore-block-adjust',dayKey:ctx.dayKey,signature:ctx.signature,previousOverride,
+    hadAvailability,previousAvailability,openAction:false,undoLabel:'undo'
+  });
+}
+
+function saveBlockEditSeries(){
+  if(!blockEditContext)return;
+  const next = readBlockEditTimes();
+  if(!next)return;
+  const settings = loadSortSettings();
+  const blocks = normalizeBlockedTimes(settings.blockedTimes);
+  const index = blockEditContext.blockIndex;
+  if(!Number.isInteger(index) || !blocks[index])return;
+  blocks[index] = {...blocks[index],start:next.start,end:next.end,
+    startAnchor:null,startOffsetMin:0,startCombine:null,startAnchor2:null,startOffsetMin2:0,startDayOffset:0,startDayOffset2:0,
+    endAnchor:null,endOffsetMin:0,endCombine:null,endAnchor2:null,endOffsetMin2:0,endDayOffset:0,endDayOffset2:0};
+  saveSortSettings({...settings,blockedTimes:blocks});
+  closeSheet('block-edit-sheet');
+  blockEditContext = null;
+  if(typeof renderBlockedTimeControls === 'function')renderBlockedTimeControls();
+  render();
+  showToast('recurring block updated');
+}
+
+$('block-edit-instance')?.addEventListener('click',saveBlockEditInstance);
+$('block-edit-series')?.addEventListener('click',saveBlockEditSeries);
+$('block-edit-cancel')?.addEventListener('click',()=>{blockEditContext=null;closeSheet('block-edit-sheet');});
+$('block-edit-sheet')?.addEventListener('click',e=>{if(e.target===e.currentTarget){blockEditContext=null;closeSheet('block-edit-sheet');}});
 $('today-content')?.addEventListener('click',e=>{
   const row = e.target.closest('.today-travel-row[data-travel-from]');
   if(!row)return;
@@ -1847,18 +1920,23 @@ $('detail-track-value')?.addEventListener('click',function(){
   setDetailDirty();
 });
 bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
+function openDayLogsAfterCalendarGesture(key,{refreshOverview = false} = {}){
+  if(!key)return;
+  dayLogsKey = key;
+  if(refreshOverview)renderOverview();
+  renderDayLogs(key);
+  // WebKit may synthesize its click after pointerup/touchend. Mounting the
+  // backdrop during pointerup makes that tail click land on the new backdrop
+  // and immediately close it. Defer mounting until the gesture is complete.
+  setTimeout(()=>{
+    if(dayLogsKey === key)openSheet('day-logs-sheet');
+  },0);
+}
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
-  if(!day)return;
-  dayLogsKey = day.dataset.logDay;
-  renderOverview();
-  renderDayLogs(dayLogsKey);
-  openSheet('day-logs-sheet');
+  openDayLogsAfterCalendarGesture(day?.dataset.logDay,{refreshOverview:true});
 });
 bindCalendarTap($('today-week-strip'),'[data-log-day]',day=>{
-  if(!day)return;
-  dayLogsKey = day.dataset.logDay;
-  renderDayLogs(dayLogsKey);
-  openSheet('day-logs-sheet');
+  openDayLogsAfterCalendarGesture(day?.dataset.logDay);
 });
 $('day-log-add').addEventListener('click',()=>{
   if(!dayLogsKey)return;

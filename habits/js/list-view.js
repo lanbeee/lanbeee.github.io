@@ -55,6 +55,17 @@ function selectedLocationIds(){
   return selectedLocationIdsFrom('ting-tag-chips');
 }
 
+function selectedAnywhereFrom(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return true;
+  return wrap.querySelector('[data-anywhere]')?.classList.contains('on')
+    ?? wrap.dataset.anywhereAllowed === '1';
+}
+
+function selectedAnywhere(){
+  return selectedAnywhereFrom('ting-tag-chips');
+}
+
 // PURE: preferred location id from a unified chip row (highest preference), or null
 function selectedPreferredLocationIdFrom(containerId){
   const prefs = selectedLocationPrefsFrom(containerId);
@@ -88,7 +99,7 @@ function selectedLocationPrefs(){
 // selectedTopicsFrom / selectedLocationIdsFrom helpers (which walk by data
 // attribute, not by row) keep working unchanged.
 // Location pref cycle: off → on → little → high → avoid → off
-function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null){
+function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null,anywhereAllowed = null){
   const wrap = $(containerId);
   if(!wrap)return;
   // Preserve horizontal scroll position across the rebuild so toggling a chip
@@ -100,7 +111,10 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
   const selectedLocs = normalizeLocationIds(selectedLocIds,locations);
   const prefs = normalizeLocationPrefs(locationPrefs,selectedLocs,preferredLocId);
-  const anywhereOn = selectedLocs.length === 0;
+  const anywhereOn = anywhereAllowed == null
+    ? (wrap.dataset.anywhereAllowed ? wrap.dataset.anywhereAllowed === '1' : selectedLocs.length === 0)
+    : Boolean(anywhereAllowed);
+  wrap.dataset.anywhereAllowed = anywhereOn ? '1' : '0';
   const anywhereHtml = locations.length > 0
     ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="no specific place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
     : '';
@@ -211,7 +225,7 @@ function toggleLocationChip(e){
   }
   const selected = selectedLocationIdsFrom(wrap.id);
   const prefs = selectedLocationPrefsFrom(wrap.id);
-  renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,prefs);
+  renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,prefs,selectedAnywhereFrom(wrap.id));
   if(wrap.id === 'detail-tag-chips')setDetailDirty();
 }
 
@@ -229,7 +243,7 @@ function homeLocationChoices(data){
   const registry = locationOptions();
   const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
   const locs = registry.filter(loc=>used.has(loc.id));
-  const hasNone = data.some(h=>!normalizeLocationIds(h.locationIds,registry).length);
+  const hasNone = data.some(h=>h.anywhereAllowed || !normalizeLocationIds(h.locationIds,registry).length);
   return [
     {key:'all',label:'all places'},
     ...locs.map(loc=>({key:loc.id,label:loc.name})),
@@ -241,7 +255,7 @@ function homeLocationChoices(data){
 function matchesHomeLocation(h,id){
   if(!id || id === 'all')return true;
   const ids = normalizeLocationIds(h.locationIds);
-  if(id === '__none__')return !ids.length;
+  if(id === '__none__')return Boolean(h.anywhereAllowed) || !ids.length;
   return ids.includes(id);
 }
 
@@ -688,6 +702,15 @@ function setSearchOpen(open,options = {}){
   }
   if(!open)updateKeyboardLift();
   if(options.render !== false)render();
+  if(open){
+    // Search is a fresh result view, not a continuation of the home scroll.
+    // Reset both possible scroll hosts after render while retaining input focus.
+    requestAnimationFrame(()=>{
+      const pane = document.querySelector('.pane-list');
+      if(pane)pane.scrollTop = 0;
+      window.scrollTo({top:0,left:0,behavior:'auto'});
+    });
+  }
 }
 
 // HYBRID: close and clear search UI
@@ -867,6 +890,27 @@ function capitalizeFirst(s){
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// PURE: compact clock copy for dense home rows. Detail and audit views keep
+// their existing precise formatter; this only removes redundant ":00"/spaces.
+function compactHomeTime(ts){
+  if(!Number.isFinite(Number(ts)))return '';
+  const d = new Date(Number(ts));
+  const minutes = d.getMinutes();
+  return d.toLocaleTimeString(undefined,{
+    hour:'numeric',
+    ...(minutes ? {minute:'2-digit'} : {}),
+    hour12:true
+  }).replace(/\s+/g,'').toUpperCase();
+}
+
+// PURE: compact an effort estimate without implying false precision.
+function compactHomeDuration(minutes){
+  const value = Math.max(0,Number(minutes) || 0);
+  if(value < 60)return `${Math.round(value)}m`;
+  const hours = Math.round((value / 60) * 10) / 10;
+  return `${Number.isInteger(hours) ? hours.toFixed(0) : hours}h`;
+}
+
 // PURE: compute card tone class
 function cardTone(h){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'quiet';
@@ -901,7 +945,7 @@ function cardMeta(h,options = {}){
       else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
     }
   }
-  if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration"><i class="ti ti-clock" aria-hidden="true"></i>${h.durationMinutes}m</span>`);
+  if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration ${Math.round(h.durationMinutes)} minutes"><i class="ti ti-clock" aria-hidden="true"></i>${compactHomeDuration(h.durationMinutes)}</span>`);
   if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="flexibility"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
   if(hasDaySchedule(h) && (options.forceDaySchedule || sortSettings.showDayScheduleOnCards)){
     const eligible = nextEligibleShort(h);
@@ -1020,19 +1064,30 @@ function priorityColor(p){
 }
 
 // PURE: compact right-side agenda marker for a home card
-function agendaCardPill(row){
+function agendaCardPill(row,h = null){
   if(!row)return '';
-  const label = agendaTimeLabel(row.start);
-  const end = row.kind === 'fill' ? agendaTimeLabel(row.end) : '';
-  const chunk = (row.chunkIndex != null && Number.isFinite(row.chunkMinutes))
-    ? ` · ${Math.round(row.chunkMinutes)}m`
+  const label = compactHomeTime(row.start);
+  const end = row.kind === 'fill' ? compactHomeTime(row.end) : '';
+  // Chunk length is actionable on breakable cards (it is the next planned
+  // piece). On ordinary cards it only repeats the duration metadata.
+  const chunkMinutes = h?.breakable && row.chunkIndex != null && Number.isFinite(row.chunkMinutes)
+    ? Math.round(row.chunkMinutes)
+    : null;
+  const chunk = chunkMinutes != null
+    ? ` · ${compactHomeDuration(chunkMinutes)}`
     : '';
   const title = row.kind === 'scheduled'
     ? `scheduled at ${label}`
-    : `suggested ${label}${end ? ` to ${end}` : ''}${chunk}`;
+    : `suggested ${label}${end ? ` to ${end}` : ''}${chunkMinutes != null ? ` · ${chunkMinutes} minutes` : ''}`;
   const cls = row.kind === 'scheduled' ? 'scheduled' : 'agenda-suggested';
   const icon = row.kind === 'scheduled' ? 'ti-calendar-time' : 'ti-sparkles';
-  return `<span class="context-pill ${cls}" title="${escapeHtml(title)}"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}${escapeHtml(chunk)}</span>`;
+  return `<span class="context-pill agenda-lead ${cls}" title="${escapeHtml(title)}"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}${escapeHtml(chunk)}</span></span>`;
+}
+
+// PURE: the former score ring as a compact, readable metadata pill.
+function cardStatusPill(score,tone,cue,accent){
+  const value = Number.isFinite(score) ? `${Math.round(score)}%` : 'new';
+  return `<span class="context-pill status-pill ${escapeHtml(tone || '')}" style="--status-color:${accent};" title="${escapeHtml(cue || 'status')}"><i class="ti ti-circle-filled" aria-hidden="true"></i>${escapeHtml(value)}</span>`;
 }
 
 function targetDayForEarly(h){
@@ -1152,7 +1207,7 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   }
   const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
   const toName = to ? to.name : 'next';
-  const depart = startTs && typeof agendaTimeLabel === 'function' ? `leave by ${agendaTimeLabel(startTs)} · ` : '';
+  const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
   const travelEl = document.createElement('button');
   travelEl.type = 'button';
   travelEl.className = `travel-card${edited ? ' is-edited' : ''}${fromCurrent ? ' is-from-current' : ''}`;
@@ -1160,34 +1215,43 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   travelEl.dataset.travelTo = toId;
   travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
   if(fromCurrent)travelEl.setAttribute('aria-disabled','true');
-  travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${mins} min · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
+  travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${compactHomeDuration(mins)} · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
   list.appendChild(travelEl);
   // Synthetic current-coord legs are not editable — skip all gesture wiring.
   if(fromCurrent)return;
   let travelPointer = null;
   travelEl.addEventListener('pointerdown',e=>{
-    travelPointer = {el:travelEl,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+    const scrollHost = travelEl.closest('.pane-list,.sheet,.detail-page');
+    travelPointer = {el:travelEl,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),maxMove:0,
+      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
+  },{passive:true});
+  travelEl.addEventListener('pointermove',e=>{
+    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
+    travelPointer.maxMove = Math.max(travelPointer.maxMove,Math.hypot(e.clientX-travelPointer.x,e.clientY-travelPointer.y));
   },{passive:true});
   travelEl.addEventListener('pointerup',e=>{
     if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
     const tap = travelPointer;
     travelPointer = null;
-    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
-    if(moved > 10 || Date.now() - tap.time > 800)return;
-    suppressCardClick = travelEl;
-    openTravelEditSheet(fromId,toId);
-    setTimeout(()=>{if(suppressCardClick === travelEl)suppressCardClick = null;},120);
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now() - tap.time > 650){
+      travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
+      return;
+    }
+    travelEl.dataset.approvedClickUntil = String(Date.now()+500);
   });
   travelEl.addEventListener('pointercancel',e=>{
-    if(travelPointer && travelPointer.el === travelEl && travelPointer.id === e.pointerId)travelPointer = null;
+    if(travelPointer && travelPointer.el === travelEl && travelPointer.id === e.pointerId){
+      const tap = travelPointer;travelPointer = null;
+      const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+      if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1)travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
+    }
   });
   travelEl.addEventListener('click',e=>{
     e.preventDefault();
     e.stopPropagation();
-    if(suppressCardClick === travelEl){
-      suppressCardClick = null;
-      return;
-    }
+    if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
     openTravelEditSheet(fromId,toId);
   });
 }
@@ -1234,10 +1298,10 @@ function appendHomeTravelText(list,fromId,toId,startTs){
     fromName = from ? from.name : 'here';
   }
   const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
-  const depart = startTs && typeof agendaTimeLabel === 'function' ? `leave by ${agendaTimeLabel(startTs)} · ` : '';
+  const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
   const el = document.createElement('div');
   el.className = 'extra-text-line travel-text';
-  el.textContent = `${depart}${mins} min · ${fromName} → ${to ? to.name : 'next'}`;
+  el.textContent = `${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`;
   list.appendChild(el);
 }
 
@@ -1245,8 +1309,8 @@ function appendHomeTravelText(list,fromId,toId,startTs){
 function appendHomeBlockedText(list,row){
   if(!list || !row)return;
   const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
-  const start = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.start) : '';
-  const end = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.end) : '';
+  const start = compactHomeTime(row.start);
+  const end = compactHomeTime(row.end);
   const place = loc ? ` · ${loc.name}` : '';
   const el = document.createElement('div');
   el.className = 'extra-text-line blocked-text';
@@ -1267,16 +1331,80 @@ function appendHomeExtraTravel(list,fromId,toId,startTs){
 }
 
 // RENDER: blocked-time card on home — tap cancels this instance for today.
+let blockedCardActivationLocked = false;
+let blockedCardActivationTimer = null;
+function lockBlockedCardActivation(ms = 180){
+  blockedCardActivationLocked = true;
+  clearTimeout(blockedCardActivationTimer);
+  blockedCardActivationTimer = setTimeout(()=>{blockedCardActivationLocked = false;},ms);
+}
+function bindScrollSafeTap(el,activate,ignoreSelector = ''){
+  let pointer = null;
+  let handledUntil = 0;
+  const recoverStationaryTap = tap=>{
+    setTimeout(()=>{
+      if(!el.isConnected || Date.now() < handledUntil)return;
+      const settledTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+      if(Math.abs(settledTop-tap.scrollTop) > 1)return;
+      handledUntil = Date.now()+500;
+      activate(new Event('click'));
+    },60);
+  };
+  el.addEventListener('pointerdown',e=>{
+    if(ignoreSelector && e.target.closest(ignoreSelector))return;
+    const scrollHost = el.closest('.pane-list,.sheet,.detail-page');
+    pointer = {id:e.pointerId,x:e.clientX,y:e.clientY,maxMove:0,time:Date.now(),
+      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
+  },{passive:true});
+  el.addEventListener('pointermove',e=>{
+    if(!pointer || pointer.id !== e.pointerId)return;
+    pointer.maxMove = Math.max(pointer.maxMove,Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y));
+  },{passive:true});
+  el.addEventListener('pointerup',e=>{
+    if(!pointer || pointer.id !== e.pointerId)return;
+    const tap = pointer;pointer = null;
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX-tap.x,e.clientY-tap.y));
+    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now()-tap.time > 650){
+      el.dataset.ignoreClickUntil = String(Date.now()+500);return;
+    }
+    recoverStationaryTap(tap);
+  });
+  el.addEventListener('pointercancel',()=>{
+    const tap = pointer;pointer = null;
+    if(!tap)return;
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1){
+      el.dataset.ignoreClickUntil = String(Date.now()+500);
+      return;
+    }
+    // Mobile WebKit sometimes cancels an otherwise stationary tap and emits
+    // no click. Wait briefly so a real scroll has time to move, then recover
+    // only when both the finger and scroll host remained still.
+    recoverStationaryTap(tap);
+  },{passive:true});
+  el.addEventListener('click',e=>{
+    if(ignoreSelector && e.target.closest(ignoreSelector))return;
+    e.preventDefault();e.stopPropagation();
+    if(Date.now() < handledUntil)return;
+    if(Number(el.dataset.ignoreClickUntil || 0) > Date.now())return;
+    handledUntil = Date.now()+500;
+    activate(e);
+  });
+}
+
 function appendHomeBlockedCard(list,row){
   if(!list || !row)return;
   const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
-  const start = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.start) : '';
-  const end = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(row.end) : '';
+  const start = compactHomeTime(row.start);
+  const end = compactHomeTime(row.end);
   const place = loc ? ` · ${loc.name}` : '';
   // The card body is non-interactive background surface; only the X frees the
   // block for today (cancel + undo toast). Tapping anywhere else does nothing.
   const el = document.createElement('div');
   el.className = 'blocked-card';
+  el.tabIndex = 0;
+  el.setAttribute('role','button');
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
   el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span><button type="button" class="blocked-cancel-mark" aria-label="free ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
   const xBtn = el.querySelector('.blocked-cancel-mark');
@@ -1285,12 +1413,28 @@ function appendHomeBlockedCard(list,row){
     e.stopPropagation();
     cancelHomeBlockedRow(row);
   });
+  bindScrollSafeTap(el,()=>{
+    if(blockedCardActivationLocked)return;
+    // Let the browser finish the click sequence before mounting an overlay;
+    // otherwise the new backdrop can intercept the tail of the same gesture.
+    setTimeout(()=>{
+      if(blockedCardActivationLocked)return;
+      if(typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
+    },0);
+  },'.blocked-cancel-mark');
+  el.addEventListener('keydown',e=>{
+    if((e.key === 'Enter' || e.key === ' ') && !e.target.closest('.blocked-cancel-mark')){
+      e.preventDefault();
+      if(!blockedCardActivationLocked && typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
+    }
+  });
   list.appendChild(el);
 }
 
 /** HANDLER: cancel one blocked instance for its day and refresh, with undo. */
 function cancelHomeBlockedRow(row){
   if(!row)return;
+  lockBlockedCardActivation();
   const dayKey = dateKey(row.start);
   const startMin = row.blockStartMin != null ? row.blockStartMin : (row.startMin != null ? row.startMin : Math.round((row.start - dayStart(row.start)) / 60000));
   const endMin = row.blockEndMin != null ? row.blockEndMin : (row.endMin != null ? row.endMin : Math.round((row.end - dayStart(row.start)) / 60000));
@@ -1299,20 +1443,22 @@ function cancelHomeBlockedRow(row){
   // is (1440 − start + end), and cancelling the signature frees BOTH halves of
   // the day's interval at once. Plain `end − start` would go negative here and
   // wrongly *subtract* from the day's capacity.
+  const effectiveStart = row.effectiveBlockStartMin != null ? row.effectiveBlockStartMin : startMin;
+  const effectiveEnd = row.effectiveBlockEndMin != null ? row.effectiveBlockEndMin : endMin;
   const freedMin = typeof blockDurationMinutes === 'function'
-    ? blockDurationMinutes(startMin,endMin)
-    : (endMin > startMin ? endMin - startMin : (1440 - startMin) + endMin);
+    ? blockDurationMinutes(effectiveStart,effectiveEnd)
+    : (effectiveEnd > effectiveStart ? effectiveEnd - effectiveStart : (1440 - effectiveStart) + effectiveEnd);
   const s = loadSortSettings();
   const overrides = normalizeAvailabilityOverrides(s.availabilityOverrides);
   const current = effectiveAvailabilityMinutes(dayKey,s);
   overrides[dayKey] = Math.max(0,current + freedMin);
   saveSortSettings({...s,availabilityOverrides:overrides});
+  if(typeof render === 'function')render();
   showActionToast(`Freed ${row.label || 'blocked'} for today`,{
     type:'restore-blocked',
     dayKey,label:row.label,startMin,endMin,freedMin,
     undoLabel:'undo'
   });
-  if(typeof render === 'function')render();
 }
 
 // RENDER: one card for a run of consecutive blocked times. Tap expands to the
@@ -1324,8 +1470,8 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
     return;
   }
   const expanded = expandedBlockedGroups.has(groupKey);
-  const start = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(blocks[0].start) : '';
-  const end = typeof agendaTimeLabel === 'function' ? agendaTimeLabel(blocks[blocks.length - 1].end) : '';
+  const start = compactHomeTime(blocks[0].start);
+  const end = compactHomeTime(blocks[blocks.length - 1].end);
   const labels = blocks.map(b => b.label || 'blocked').filter(Boolean);
   const summary = labels.length <= 3
     ? labels.join(', ')
@@ -1355,12 +1501,7 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
     mergePointer = null;
     const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
     if(moved > 10 || Date.now() - tap.time > 800)return;
-    suppressCardClick = toggle;
-    if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
-    else expandedBlockedGroups.add(groupKey);
-    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
-    else if(typeof render === 'function')render();
-    setTimeout(()=>{if(suppressCardClick === toggle)suppressCardClick = null;},120);
+    toggle.dataset.approvedClickUntil = String(Date.now()+500);
   });
   toggle.addEventListener('pointercancel',e=>{
     if(mergePointer && mergePointer.el === toggle && mergePointer.id === e.pointerId)mergePointer = null;
@@ -1368,10 +1509,8 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
   toggle.addEventListener('click',e=>{
     e.preventDefault();
     e.stopPropagation();
-    if(suppressCardClick === toggle){
-      suppressCardClick = null;
-      return;
-    }
+    if(e.detail !== 0 && Number(toggle.dataset.approvedClickUntil || 0) < Date.now())return;
+    lockBlockedCardActivation();
     if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
     else expandedBlockedGroups.add(groupKey);
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
@@ -1722,16 +1861,17 @@ function render(opts){
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const agendaPill = agendaCardPill(agendaRow);
+    const agendaPill = agendaCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
-    const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+    const accent = visualClassColor(cardScoreTone);
+    const statusPill = cardStatusPill(cardScore,cardScoreTone,cue,accent);
+    const context = cardMeta(h,{extraPills:[statusPill,earlyPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
     const visualHtml = showBreakableSlider
       ? cardBreakableSlider(h)
       : `<div class="ting-trail">${trail}</div>`;
     const visualAria = showBreakableSlider ? '' : ' aria-hidden="true"';
-    const accent = visualClassColor(cardScoreTone);
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
@@ -1763,7 +1903,7 @@ function render(opts){
         <div class="ting-info${showBreakableSlider ? ' has-breakable-progress' : ''}">
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
-            <div class="mini-score-ring ${cardScoreTone}" style="--score:${cardScore ?? 0};--score-color:${accent};" title="${escapeHtml(cue)}" aria-hidden="true"></div>
+            ${agendaPill}
           </div>
           <div class="ting-cue">${escapeHtml(cue)}</div>
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>
@@ -2133,6 +2273,7 @@ function homeListFingerprint(now = Date.now()){
     currentEdgeSig,
     habitSig,
     JSON.stringify(s.cancelledBlocks || {}),
+    JSON.stringify(s.blockedTimeOverrides || {}),
     JSON.stringify(s.availabilityOverrides || {}),
     JSON.stringify(s.availabilityMinutes || []),
     JSON.stringify(s.blockedTimes || []),
@@ -2419,30 +2560,46 @@ function setupCardTap(row,realIdx){
   const card = row.querySelector('.ting-card');
   card.addEventListener('pointerdown',e=>{
     if(e.target.closest('.pulse-btn'))return;
-    cardPointer = {card,realIdx,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+    const scrollHost = card.closest('.pane-list,.sheet,.detail-page');
+    cardPointer = {
+      card,realIdx,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),maxMove:0,
+      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY
+    };
   });
+  card.addEventListener('pointermove',e=>{
+    if(!cardPointer || cardPointer.card !== card || cardPointer.id !== e.pointerId)return;
+    cardPointer.maxMove = Math.max(cardPointer.maxMove,Math.hypot(e.clientX-cardPointer.x,e.clientY-cardPointer.y));
+  },{passive:true});
   card.addEventListener('pointerup',e=>{
     if(!cardPointer || cardPointer.card !== card || cardPointer.id !== e.pointerId)return;
     const tap = cardPointer;
     cardPointer = null;
-    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
-    if(moved > 10 || Date.now() - tap.time > 800)return;
-    suppressCardClick = card;
-    if(swipeOpenCard){closeAllSwipes();}
-    else handleCardActivate(realIdx,card,()=>openDetail(realIdx));
-    setTimeout(()=>{if(suppressCardClick === card)suppressCardClick = null;},120);
-  });
-  card.addEventListener('pointercancel',e=>{
-    if(cardPointer && cardPointer.card === card && cardPointer.id === e.pointerId)cardPointer = null;
-  });
-  card.addEventListener('click',e=>{
-    if(suppressCardClick === card){
-      e.preventDefault();
-      e.stopPropagation();
-      suppressCardClick = null;
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now() - tap.time > 650){
+      card.dataset.ignoreClickUntil = String(Date.now()+500);
       return;
     }
+    card.dataset.approvedClickUntil = String(Date.now()+500);
+  });
+  card.addEventListener('pointercancel',e=>{
+    if(cardPointer && cardPointer.card === card && cardPointer.id === e.pointerId){
+      const tap = cardPointer;cardPointer = null;
+      const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+      if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1)card.dataset.ignoreClickUntil = String(Date.now()+500);
+    }
+  });
+  card.addEventListener('click',e=>{
+    if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){
+      e.preventDefault();e.stopPropagation();return;
+    }
     if(e.target.closest('.pulse-btn'))return;
+    const clickNow = performance.now();
+    const previousClick = Number(card.dataset.lastClickAt || 0);
+    if(previousClick && clickNow-previousClick < 80){
+      e.preventDefault();e.stopPropagation();return;
+    }
+    card.dataset.lastClickAt = String(clickNow);
     if(swipeOpenCard){closeAllSwipes();return;}
     handleCardActivate(realIdx,card,()=>openDetail(realIdx));
   });
@@ -2837,6 +2994,7 @@ function executeUndo(){
     }
   }
   if(pendingAction.type === 'restore-blocked'){
+    lockBlockedCardActivation();
     const {dayKey,label,startMin,endMin,freedMin} = pendingAction;
     if(typeof restoreBlockedInstance === 'function')restoreBlockedInstance(dayKey,label,startMin,endMin);
     const s = loadSortSettings();
@@ -2854,6 +3012,21 @@ function executeUndo(){
       else delete overrides[dayKey];
       saveSortSettings({...s,availabilityOverrides:overrides});
     }
+  }
+  if(pendingAction.type === 'restore-block-adjust'){
+    lockBlockedCardActivation();
+    const {dayKey,signature,previousOverride,hadAvailability,previousAvailability} = pendingAction;
+    const s = loadSortSettings();
+    const blockOverrides = normalizeBlockedTimeOverrides(s.blockedTimeOverrides);
+    const day = {...(blockOverrides[dayKey] || {})};
+    if(previousOverride)day[signature] = previousOverride;
+    else delete day[signature];
+    if(Object.keys(day).length)blockOverrides[dayKey] = day;
+    else delete blockOverrides[dayKey];
+    const availabilityOverrides = normalizeAvailabilityOverrides(s.availabilityOverrides);
+    if(hadAvailability)availabilityOverrides[dayKey] = previousAvailability;
+    else delete availabilityOverrides[dayKey];
+    saveSortSettings({...s,blockedTimeOverrides:blockOverrides,availabilityOverrides});
   }
   if(save(data)){
     hideActionToast();

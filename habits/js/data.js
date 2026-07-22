@@ -106,8 +106,9 @@
  * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
  * @property {boolean} hardDue                — computed: true when dueDate is set and flexibilityDays is 0 (firm deadline, escalates urgency past it)
  *
- * — LocationFields (optional, on every type; empty locationIds = anywhere) —
- * @property {string[]} locationIds           — allowed Location ids (empty = anywhere, the default)
+ * — LocationFields (optional, on every type) —
+ * @property {string[]} locationIds           — selected allowed/preferred Location ids
+ * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
  */
@@ -252,6 +253,7 @@ function loadSortSettings(){
     merged.availabilityOverrides = normalizeAvailabilityOverrides(merged.availabilityOverrides);
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
     merged.cancelledBlocks = normalizeCancelledBlocks(merged.cancelledBlocks);
+    merged.blockedTimeOverrides = normalizeBlockedTimeOverrides(merged.blockedTimeOverrides);
     merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
@@ -280,6 +282,7 @@ function saveSortSettings(settings){
   next.availabilityOverrides = normalizeAvailabilityOverrides(next.availabilityOverrides);
   next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
   next.cancelledBlocks = normalizeCancelledBlocks(next.cancelledBlocks);
+  next.blockedTimeOverrides = normalizeBlockedTimeOverrides(next.blockedTimeOverrides);
   next.agendaOptimizer = Boolean(next.agendaOptimizer);
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
   sortSettings = next;
@@ -324,6 +327,7 @@ function normalize(items){
     // longer present in the registry) happens once at startup via
     // reconcileLocations(), after both habits and settings have loaded.
     const locationIds = normalizeLocationIds(raw.locationIds);
+    const anywhereAllowed = raw.anywhereAllowed == null ? locationIds.length === 0 : Boolean(raw.anywhereAllowed);
     const locationPrefs = normalizeLocationPrefs(raw.locationPrefs, locationIds, raw.preferredLocationId);
     const preferredLocationId = primaryPreferredLocationId(locationPrefs, locationIds);
     const isRhythmHabit = type === 'keepup' || type === 'reduce';
@@ -387,6 +391,7 @@ function normalize(items){
       trackValue:Boolean(raw.trackValue),
       priority:clampPriority(raw.priority),
       locationIds,
+      anywhereAllowed,
       locationPrefs,
       preferredLocationId
     };
@@ -1126,6 +1131,23 @@ function normalizeBlockedTimes(value){
 /** PURE: stable signature for a blocked-time instance on a given day. */
 function blockedInstanceKey(label,startMin,endMin){
   return `${String(label || 'blocked').slice(0,24)}|${startMin}|${endMin}`;
+}
+/** PURE: validate per-day, per-instance blocked-time clock edits. */
+function normalizeBlockedTimeOverrides(value){
+  if(!value || typeof value !== 'object' || Array.isArray(value))return {};
+  const out = {};
+  for(const [dayKey,entries] of Object.entries(value)){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dayKey) || !entries || typeof entries !== 'object' || Array.isArray(entries))continue;
+    const clean = {};
+    for(const [signature,raw] of Object.entries(entries)){
+      const start = normalizeTimeMinutes(raw && raw.start);
+      const end = normalizeTimeMinutes(raw && raw.end);
+      if(!signature || start === null || end === null || start === end)continue;
+      clean[String(signature).slice(0,96)] = {start,end};
+    }
+    if(Object.keys(clean).length)out[dayKey] = clean;
+  }
+  return out;
 }
 /** PURE: actual minute span of a blocked-time instance. Overnight blocks
  *  (end <= start, e.g. 22:00→02:00) wrap past midnight and occupy the

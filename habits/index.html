@@ -64,9 +64,9 @@
       <div id="quota-bar"></div>
       <div id="reminder-banner" class="reminder-banner" hidden></div>
       <div id="home-tag-filter" class="topic-filter-row" aria-label="topic and location filter"></div>
-      <div id="list"></div>
+      <div id="list"><div class="home-loading" role="status" aria-label="loading agenda"><span></span><span></span><span></span></div></div>
       <div id="home-week-plan" class="home-week-plan" hidden></div>
-      <p id="empty">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
+      <p id="empty" style="display:none">no habits yet<br><span class="empty-sub">tap + to get started</span></p>
     </div>
 
   <div class="pane-overview" id="pane-overview"></div>
@@ -1048,6 +1048,29 @@
         <button class="btn" type="button" id="travel-edit-maps">open in maps</button>
         <button class="btn" type="button" id="travel-edit-reset">reset to estimate</button>
         <button class="btn" type="button" id="travel-edit-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- blocked-time editor -->
+  <div class="sheet-wrap" id="block-edit-sheet">
+    <div class="sheet block-edit-sheet">
+      <div class="page-head">
+        <div>
+          <p class="sheet-title" id="block-edit-title">blocked time</p>
+          <p class="about-copy" id="block-edit-copy"></p>
+        </div>
+      </div>
+      <div class="block-edit-hours">
+        <label><span>starts</span><input type="time" id="block-edit-start" step="300" /></label>
+        <span aria-hidden="true">to</span>
+        <label><span>ends</span><input type="time" id="block-edit-end" step="300" /></label>
+      </div>
+      <p class="field-hint">Change only this date, or update the recurring block used on future matching days.</p>
+      <div class="btn-row block-edit-actions">
+        <button class="btn primary" type="button" id="block-edit-instance">save this date</button>
+        <button class="btn" type="button" id="block-edit-series">update recurring</button>
+        <button class="btn" type="button" id="block-edit-cancel">cancel</button>
       </div>
     </div>
   </div>

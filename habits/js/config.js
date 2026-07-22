@@ -178,7 +178,9 @@ const DEFAULT_SORT_SETTINGS = {
   availabilityOverrides:{},
   blockedTimes:DEFAULT_BLOCKED_TIMES,
   /** Per-day cancelled block instances: {'YYYY-MM-DD':['label|start|end', ...]} */
-  cancelledBlocks:{}
+  cancelledBlocks:{},
+  /** Per-day clock edits for one block instance: {'YYYY-MM-DD':{'label|start|end':{start,end}}} */
+  blockedTimeOverrides:{}
 };
 const LIMIT_MODE_POLICY = {
   quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01,trend:0.08,trendEarly:0},

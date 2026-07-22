@@ -143,6 +143,8 @@ async function openSettings(page){
   // Second tap on Gym (with 2+ selected) marks it preferred (cycle: off→on→little→high→avoid→off)
   await page.locator('#ting-tag-chips [data-location-id="sample-gym"]').click();
   await page.waitForTimeout(100);
+  const anywhereStillOn = await page.locator('#ting-tag-chips [data-anywhere].on').count();
+  assert(anywhereStillOn === 1, 'anywhere remains selected while a place is preferred');
   const prefOn = await page.locator('#ting-tag-chips .location-chip[data-pref="little"][data-location-id="sample-gym"]').count();
   assert(prefOn === 1, 'Gym marked preferred via second tap');
   await page.locator('#ting-message').fill('loc chip test habit');
@@ -154,11 +156,12 @@ async function openSettings(page){
   }
   const saved = await page.evaluate(() => {
     const h = load().find(x => x.name === 'loc chip test habit');
-    return h ? { ids:h.locationIds, pref:h.preferredLocationId } : null;
+    return h ? { ids:h.locationIds, pref:h.preferredLocationId, anywhere:h.anywhereAllowed } : null;
   });
   console.log(saved);
   assert(saved && saved.ids.includes('sample-home') && saved.ids.includes('sample-gym'), 'saved locationIds');
   assert(saved && saved.pref === 'sample-gym', 'saved preferredLocationId = Gym');
+  assert(saved && saved.anywhere === true, 'saved habit allows anywhere with preferred Gym');
 
   // ── D. Home agenda travel + I-am-at ──
   console.log('\n[D] home agenda travel rows + I-am-at');

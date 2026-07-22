@@ -135,6 +135,22 @@ function localTodayKey(){
   check('1d undo restores baseline capacity',
     restored1 === base1, `restored=${restored1} base=${base1}`);
 
+  await page.locator('.blocked-card:not(.blocked-card-merge)').first().click();
+  await page.waitForSelector('#block-edit-sheet.open');
+  check('1e block editor locks the background',await page.locator('body.modal-open').count() === 1);
+  await page.locator('#block-edit-start').fill('08:15');
+  await page.locator('#block-edit-end').fill('08:45');
+  await page.locator('#block-edit-instance').click();
+  await page.waitForSelector('#action-toast.show');
+  const adjusted1 = await capacityFor(todayK);
+  const adjustedSettings = await readSettings();
+  check('1f date-only block edit frees the 30 minute difference',adjusted1-base1 === 30,`base=${base1} adjusted=${adjusted1}`);
+  check('1g date-only block edit is persisted separately from recurring blocks',
+    adjustedSettings.blockedTimes[0].start === 480 && adjustedSettings.blockedTimeOverrides?.[todayK]?.['Morning|480|540']?.start === 495,
+    JSON.stringify(adjustedSettings.blockedTimeOverrides));
+  await clickUndo();
+  check('1h block-edit undo restores baseline capacity',await capacityFor(todayK) === base1);
+
   // ───────────────────────────────────────────────────────────────────────
   console.log('\n[cancel-blocked] multiple cancellations each add their minutes');
 

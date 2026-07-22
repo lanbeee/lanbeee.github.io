@@ -42,7 +42,7 @@ function openDetail(i){
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
-  renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs);
+  renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
@@ -62,6 +62,7 @@ function openDetail(i){
     pinned:Boolean(h.pinned),
     topics:normalizeTopics(h.topics),
     locationIds:normalizeLocationIds(h.locationIds),
+    anywhereAllowed:Boolean(h.anywhereAllowed),
     locationPrefs:normalizeLocationPrefs(h.locationPrefs,h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
@@ -492,6 +493,7 @@ function currentDetailTune(){
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
     topics:selectedTopicsFrom('detail-tag-chips'),
     locationIds,
+    anywhereAllowed:selectedAnywhereFrom('detail-tag-chips'),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
@@ -608,6 +610,7 @@ function setDetailDirty(force){
       current.autoMarkMinutes !== detailTuneOriginal.autoMarkMinutes ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
       current.locationIds.join('|') !== (detailTuneOriginal.locationIds || []).join('|') ||
+      current.anywhereAllowed !== Boolean(detailTuneOriginal.anywhereAllowed) ||
       JSON.stringify(current.locationPrefs || {}) !== JSON.stringify(detailTuneOriginal.locationPrefs || {}) ||
       (current.preferredLocationId || null) !== (detailTuneOriginal.preferredLocationId || null) ||
       current.breakable !== detailTuneOriginal.breakable ||
@@ -675,7 +678,7 @@ function restoreDetailTune(){
   if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(detailTuneOriginal.planByDate);
   syncDetailDueUi();
   syncDetailPlanByUi();
-  renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null);
+  renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');

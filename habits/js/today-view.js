@@ -177,7 +177,7 @@ function windowStillDoableToday(h,now = Date.now()){
     if(b.end <= from || b.start >= to)return sum;
     return sum + (Math.min(b.end,to) - Math.max(b.start,from));
   },0);
-  if(!locIds.length){
+  if(h.anywhereAllowed || !locIds.length){
     if(!hasTimeWindow(h)){
       // No restriction: count time left today minus any blocked span.
       const remaining = dayEnd - now - blockedMsIn(now,dayEnd);
@@ -219,9 +219,9 @@ function travelEdgeBetweenIds(fromId,toId,registry,mode,opts = {}){
 function pickHabitLocationId(h,anchorId,registry,mode){
   const ids = normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return null;
-  if(ids.length === 1)return ids[0];
-  let best = ids[0];
-  let bestScore = Infinity;
+  if(ids.length === 1 && !h.anywhereAllowed)return ids[0];
+  let best = null;
+  let bestScore = h.anywhereAllowed ? 0 : Infinity;
   for(const id of ids){
     const edge = travelEdgeBetweenIds(anchorId,id,registry,mode);
     const pref = locationPrefLevel(h,id);
@@ -1491,7 +1491,9 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
 function agendaBlockedIntervals(todayKey,settings,start,end){
   const day = new Date(`${todayKey}T12:00:00`).getDay();
   const dayBase = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
-  return normalizeBlockedTimes(settings.blockedTimes).flatMap(block=>{
+  const overrides = typeof normalizeBlockedTimeOverrides === 'function'
+    ? normalizeBlockedTimeOverrides(settings.blockedTimeOverrides) : {};
+  return normalizeBlockedTimes(settings.blockedTimes).flatMap((block,blockIndex)=>{
     if(block.days.length && !block.days.includes(day))return [];
     // Resolve dynamic start/end (prayer anchors only on blocked times).
     // Fold dayBase-relative values (negative / >1440 from offsets or +1d)
@@ -1501,16 +1503,22 @@ function agendaBlockedIntervals(todayKey,settings,start,end){
     const rawEnd = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
     const folded = typeof foldBlockedMinutes === 'function'
       ? foldBlockedMinutes(rawStart, rawEnd) : {startMin:rawStart, endMin:rawEnd};
-    const startMin = folded.startMin;
-    const endMin = folded.endMin;
-    if(isBlockedCancelled(todayKey,block.label,startMin,endMin,settings))return [];
+    const originalStartMin = folded.startMin;
+    const originalEndMin = folded.endMin;
+    if(isBlockedCancelled(todayKey,block.label,originalStartMin,originalEndMin,settings))return [];
+    const signature = blockedInstanceKey(block.label,originalStartMin,originalEndMin);
+    const instance = overrides[todayKey] && overrides[todayKey][signature];
+    const startMin = instance ? instance.start : originalStartMin;
+    const endMin = instance ? instance.end : originalEndMin;
     const locationId = block.locationId || null;
     const blockStart = start + startMin * 60000;
     const blockEnd = start + endMin * 60000;
-    if(endMin > startMin)return [{start:blockStart,end:blockEnd,label:block.label,locationId,startMin,endMin,blockStartMin:startMin,blockEndMin:endMin}];
+    const shared = {label:block.label,locationId,startMin,endMin,blockStartMin:originalStartMin,blockEndMin:originalEndMin,
+      effectiveBlockStartMin:startMin,effectiveBlockEndMin:endMin,blockIndex,blockSignature:signature};
+    if(endMin > startMin)return [{start:blockStart,end:blockEnd,...shared}];
     return [
-      {start,end:blockEnd,label:block.label,locationId,startMin:0,endMin:endMin,blockStartMin:startMin,blockEndMin:endMin},
-      {start:blockStart,end,label:block.label,locationId,startMin,endMin:1440,blockStartMin:startMin,blockEndMin:endMin}
+      {start,end:blockEnd,...shared,startMin:0,endMin:endMin},
+      {start:blockStart,end,...shared,startMin,endMin:1440}
     ];
   });
 }
@@ -1531,7 +1539,11 @@ function blockedTimelineRows(dayKey,settings,dayBase,{clipAfter} = {}){
       startMin:b.startMin,
       endMin:b.endMin,
       blockStartMin:b.blockStartMin,
-      blockEndMin:b.blockEndMin
+      blockEndMin:b.blockEndMin,
+      effectiveBlockStartMin:b.effectiveBlockStartMin,
+      effectiveBlockEndMin:b.effectiveBlockEndMin,
+      blockIndex:b.blockIndex,
+      blockSignature:b.blockSignature
     }))
     .filter(b=>b.end > b.start && (clip == null || b.end > clip));
 }

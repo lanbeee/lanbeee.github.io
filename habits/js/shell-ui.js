@@ -412,10 +412,25 @@ function shouldMountInPane(id) {
   return id === 'detail-sheet';
 }
 
-// RENDER: toggles body class for full-page sheet state
+let modalScrollY = 0;
+// RENDER: toggles full-page chrome and locks every modal's background scroll.
 function updateFullPageState(){
-  const open = ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].some(id=>$(id).classList.contains('open'));
-  document.body.classList.toggle('fullpage-open',open);
+  const fullPageOpen = ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].some(id=>$(id).classList.contains('open'));
+  const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
+  document.body.classList.toggle('fullpage-open',fullPageOpen);
+  if(modalOpen && !document.body.classList.contains('modal-open')){
+    modalScrollY = window.scrollY;
+    document.body.classList.add('modal-open');
+    if(!paneTierActive()){
+      document.body.classList.add('modal-scroll-fixed');
+      document.body.style.top = `${-modalScrollY}px`;
+    }
+  }else if(!modalOpen && document.body.classList.contains('modal-open')){
+    const restore = modalScrollY;
+    document.body.classList.remove('modal-open','modal-scroll-fixed');
+    document.body.style.top = '';
+    window.scrollTo(0,restore);
+  }
 }
 
 // RENDER: shows and auto-hides the toast message
@@ -557,6 +572,10 @@ function forgivingButtonTarget(target){
   if(!target || typeof target.closest !== "function")return null;
   const btn = target.closest('button');
   if(!btn || btn.closest('.ting-card'))return null;
+  // These live directly in the vertically scrolling home feed and have their
+  // own movement-aware activation. Synthesizing a forgiving click here can
+  // open an editor or cancel a block before their scroll guards see pointerup.
+  if(btn.matches('.travel-card') || btn.closest('.blocked-card'))return null;
   if(btn.closest('#settings-sheet'))return null;
   if(btn.closest('.month-nav'))return null;
   if(btn.classList.contains('cal-day'))return null;
@@ -572,6 +591,8 @@ function bindCalendarTap(container,selector,handler){
   // be sure the pager never actually moved - not just that the finger ended
   // up close to where it started.
   const pager = container.closest('.detail-pager');
+  let ignoreClickUntil = 0;
+  let handledClickUntil = 0;
 
   container.addEventListener('pointerdown',e=>{
     const day = e.target.closest(selector);
@@ -608,8 +629,12 @@ function bindCalendarTap(container,selector,handler){
     const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
     const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
     const pagerScrolled = tap.pager ? Math.abs(tap.pager.scrollLeft - tap.pagerScrollLeft) : 0;
-    if(moved > 6 || scrolled > 1 || pagerScrolled > 1 || Date.now() - tap.time > 650)return;
+    if(moved > 6 || scrolled > 1 || pagerScrolled > 1 || Date.now() - tap.time > 650){
+      ignoreClickUntil = Date.now() + 500;
+      return;
+    }
     if(!tap.pager){
+      handledClickUntil = Date.now() + 500;
       handler(tap.day,e);
       return;
     }
@@ -619,15 +644,43 @@ function bindCalendarTap(container,selector,handler){
     const settleScrollLeft = tap.pager.scrollLeft;
     requestAnimationFrame(()=>{
       requestAnimationFrame(()=>{
-        if(Math.abs(tap.pager.scrollLeft - settleScrollLeft) > 1)return;
+        if(Math.abs(tap.pager.scrollLeft - settleScrollLeft) > 1){
+          ignoreClickUntil = Date.now() + 500;
+          return;
+        }
+        handledClickUntil = Date.now() + 500;
         handler(tap.day,e);
       });
     });
   },{passive:true});
 
   container.addEventListener('pointercancel',()=>{
-    if(calendarPointer && calendarPointer.container === container)calendarPointer = null;
+    if(!calendarPointer || calendarPointer.container !== container)return;
+    const tap = calendarPointer;
+    calendarPointer = null;
+    const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
+    const pagerScrolled = tap.pager ? Math.abs(tap.pager.scrollLeft - tap.pagerScrollLeft) : 0;
+    if(tap.maxMove > 6 || scrolled > 1 || pagerScrolled > 1)ignoreClickUntil = Date.now() + 500;
   },{passive:true});
+
+  // WebKit can emit a clean click after claiming/cancelling the pointer stream.
+  // Keep a click/keyboard fallback, while the timestamps above deduplicate a
+  // normal pointerup and reject clicks following an actual scroll gesture.
+  container.addEventListener('click',e=>{
+    const day = e.target.closest(selector);
+    if(!day || !container.contains(day))return;
+    if(Date.now() < handledClickUntil){
+      e.preventDefault();
+      return;
+    }
+    if(Date.now() < ignoreClickUntil){
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handledClickUntil = Date.now() + 500;
+    handler(day,e);
+  });
 }
 
 document.addEventListener('pointerdown',e=>{
@@ -705,7 +758,7 @@ document.addEventListener('pointercancel',e=>{
 },true);
 
 document.addEventListener('click',e=>{
-  if(e.target.closest('button') === suppressNativeButton && e.isTrusted){
+  if(suppressNativeButton && e.target.closest('button') === suppressNativeButton && e.isTrusted){
     e.preventDefault();
     e.stopPropagation();
     suppressNativeButton = null;

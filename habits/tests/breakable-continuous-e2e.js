@@ -1290,15 +1290,20 @@ async function breakableFillRows(page, name){
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil:'networkidle' });
   await page.waitForSelector('#open-add');
-
-  await page.locator('#open-add').click();
-  await page.waitForSelector('#add-sheet.open');
-  await page.locator('#ting-message').fill(`BreakableDetail ${Date.now()}`);
-  await page.locator('#type-seg [data-v="task"]').click();
-  const due = new Date();
-  const dueStr = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
-  await page.locator('#ting-due-date').fill(dueStr);
-  await page.locator('#do-save').click();
+  // Creation/auto-open has separate E2E coverage. Seed this fixture directly
+  // so this long scenario remains focused on detail persistence and logging.
+  await page.evaluate(()=>{
+    window.scrollTo(0,0);
+    const data = load();
+    data.push({
+      name:`BreakableDetail ${Date.now()}`,type:'task',target:null,
+      dueDate:dayStart(Date.now()),durationMinutes:30,logs:[],lastLog:null,
+      breakable:false,minChunkMinutes:15,priority:2,locationIds:[],anywhereAllowed:true
+    });
+    save(data);
+    render();
+    openDetailSchedule(data.length - 1);
+  });
   await page.waitForSelector('#detail-sheet.open, body.pane-active');
 
   // Effort pane (duration / breakable) — pager index 3 in detail-schedule-test.
@@ -1320,7 +1325,10 @@ async function breakableFillRows(page, name){
   await page.waitForTimeout(400);
 
   // Re-open and confirm persistence.
-  await page.locator('.ting-card').first().click();
+  await page.evaluate(()=>{
+    const i = load().findIndex(h=>String(h.name || '').startsWith('BreakableDetail'));
+    if(i >= 0)openDetail(i);
+  });
   await page.waitForSelector('#detail-sheet.open, body.pane-active');
   await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
