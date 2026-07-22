@@ -48,6 +48,29 @@ function ok(value,message){
   await page.waitForSelector('#detail-sheet.open');
   ok(await page.locator('.detail-page-tab').count() === 6,'detail exposes six labeled page tabs');
   ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'calendar|insight|schedule|effort|identity|actions','page tabs name every pane');
+  const compactShell = await page.evaluate(()=>{
+    const head = document.querySelector('.detail-head').getBoundingClientRect();
+    const pager = document.querySelector('.detail-pager').getBoundingClientRect();
+    const bar = document.querySelector('.detail-bottom-bar').getBoundingClientRect();
+    const done = document.querySelector('#detail-cool').getBoundingClientRect();
+    const tab = document.querySelector('.detail-page-tab').getBoundingClientRect();
+    return {
+      head:head.height,pager:pager.height,bar:bar.height,done:done.width,tab:tab.width,
+      viewport:innerHeight,overlap:Math.max(0,pager.bottom - bar.top),overflow:document.body.scrollWidth - innerWidth
+    };
+  });
+  ok(compactShell.head <= 64 && compactShell.pager >= compactShell.viewport * 0.68,'compact header leaves most of the short viewport to pane content');
+  ok(compactShell.bar <= 50 && compactShell.overlap <= 0 && compactShell.overflow <= 0,'integrated bottom dock does not overlap content or overflow');
+  ok(compactShell.done >= compactShell.tab * 1.8,'done remains substantially larger than a pane shortcut');
+  const dirtyDock = await page.evaluate(()=>{
+    setDetailDirty(true);
+    const save = document.querySelector('#detail-save').getBoundingClientRect();
+    const cancel = document.querySelector('#detail-close').getBoundingClientRect();
+    const visible = save.width > 0 && save.height > 0 && cancel.width > 0 && cancel.height > 0;
+    setDetailDirty(false);
+    return {visible,width:save.width + cancel.width};
+  });
+  ok(dirtyDock.visible && dirtyDock.width <= 148,'save and cancel fit the same compact dock when editing');
   ok((await page.locator('#detail-auto-mark-label').textContent()) === 'auto-log agenda chunks','breakable auto-mark is named as chunk logging');
   ok((await page.locator('#detail-auto-mark-summary').textContent()).includes('Manual taps count first'),'auto-log summary explains manual reconciliation');
 
