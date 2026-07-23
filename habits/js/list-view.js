@@ -1063,25 +1063,74 @@ function priorityColor(p){
   return 'color-mix(in srgb, var(--text3) 35%, transparent)';
 }
 
-// PURE: compact right-side agenda marker for a home card
-function agendaCardPill(row,h = null){
-  if(!row)return '';
+// PURE: window status for a suggested agenda lead — anytime / later / now / closing.
+// Scheduled rows are handled by the caller. Closing = remaining window is too
+// tight for the next session (chunk or full duration), floored at 45 minutes.
+function agendaLeadStatus(row,h = null,now = Date.now()){
   const label = compactHomeTime(row.start);
   const end = row.kind === 'fill' ? compactHomeTime(row.end) : '';
-  // Chunk length is actionable on breakable cards (it is the next planned
-  // piece). On ordinary cards it only repeats the duration metadata.
   const chunkMinutes = h?.breakable && row.chunkIndex != null && Number.isFinite(row.chunkMinutes)
     ? Math.round(row.chunkMinutes)
     : null;
-  const chunk = chunkMinutes != null
-    ? ` · ${compactHomeDuration(chunkMinutes)}`
+  const baseTitle = `suggested ${label}${end ? ` to ${end}` : ''}${chunkMinutes != null ? ` · ${chunkMinutes} minutes` : ''}`;
+  if(row.kind === 'scheduled'){
+    return {cls:'scheduled',icon:'ti-calendar-time',title:`scheduled at ${label}`,chunkMinutes};
+  }
+  if(!h || typeof hasTimeWindow !== 'function' || !hasTimeWindow(h)){
+    return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
+  }
+  const dayBase = typeof dayStart === 'function' ? dayStart(row.start) : row.start;
+  const win = typeof fillTimeWindow === 'function' ? fillTimeWindow(h,dayBase) : null;
+  if(!win){
+    return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
+  }
+  if(now < win.start){
+    return {
+      cls:'agenda-later',
+      icon:'ti-hourglass',
+      title:`${baseTitle} · opens at ${compactHomeTime(win.start)}`,
+      chunkMinutes
+    };
+  }
+  const sessionMin = chunkMinutes != null
+    ? chunkMinutes
+    : (typeof clampDuration === 'function' ? clampDuration(h.durationMinutes) : Math.max(1,Number(h.durationMinutes) || 30));
+  const sessionMs = Math.max(0,sessionMin) * 60000;
+  const closingMs = Math.max(sessionMs,45 * 60000);
+  if(now < win.end && (win.end - now) <= closingMs){
+    return {
+      cls:'agenda-closing',
+      icon:'ti-alarm',
+      title:`${baseTitle} · window closing`,
+      chunkMinutes
+    };
+  }
+  if(now >= win.end){
+    // Past the hard window — still show the suggestion, but as closing urgency.
+    return {
+      cls:'agenda-closing',
+      icon:'ti-alarm',
+      title:`${baseTitle} · window closing`,
+      chunkMinutes
+    };
+  }
+  return {
+    cls:'agenda-suggested',
+    icon:'ti-sparkles',
+    title:`${baseTitle} · window open`,
+    chunkMinutes
+  };
+}
+
+// PURE: compact right-side agenda marker for a home card
+function agendaCardPill(row,h = null,now = Date.now()){
+  if(!row)return '';
+  const status = agendaLeadStatus(row,h,now);
+  const label = compactHomeTime(row.start);
+  const chunk = status.chunkMinutes != null
+    ? ` · ${compactHomeDuration(status.chunkMinutes)}`
     : '';
-  const title = row.kind === 'scheduled'
-    ? `scheduled at ${label}`
-    : `suggested ${label}${end ? ` to ${end}` : ''}${chunkMinutes != null ? ` · ${chunkMinutes} minutes` : ''}`;
-  const cls = row.kind === 'scheduled' ? 'scheduled' : 'agenda-suggested';
-  const icon = row.kind === 'scheduled' ? 'ti-calendar-time' : 'ti-sparkles';
-  return `<span class="context-pill agenda-lead ${cls}" title="${escapeHtml(title)}"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}${escapeHtml(chunk)}</span></span>`;
+  return `<span class="context-pill agenda-lead ${status.cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i><span>${escapeHtml(label)}${escapeHtml(chunk)}</span></span>`;
 }
 
 // PURE: the former score ring as a compact, readable metadata pill.
@@ -1399,8 +1448,7 @@ function appendHomeBlockedCard(list,row){
   const start = compactHomeTime(row.start);
   const end = compactHomeTime(row.end);
   const place = loc ? ` · ${loc.name}` : '';
-  // The card body is non-interactive background surface; only the X frees the
-  // block for today (cancel + undo toast). Tapping anywhere else does nothing.
+  // Tap opens the per-instance editor; the X frees this occurrence for today.
   const el = document.createElement('div');
   el.className = 'blocked-card';
   el.tabIndex = 0;

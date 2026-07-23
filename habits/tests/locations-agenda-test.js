@@ -407,7 +407,7 @@ function seedScript(extraHabits, extraSettings){
         continue;
       }
       if(el.classList.contains('swipe-row')){
-        const pill = el.querySelector('.context-pill.agenda-suggested, .context-pill.scheduled');
+        const pill = el.querySelector('.context-pill.agenda-lead');
         if(inDay){
           dayCards += 1;
           fillsByDay[section] = (fillsByDay[section] || 0) + 1;

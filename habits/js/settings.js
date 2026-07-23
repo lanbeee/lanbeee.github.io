@@ -196,10 +196,16 @@ function saveAvailabilityDay(index,value){
 }
 
 // PURE: <option> list for a blocked-time prayer-anchor picker.
-function blockedAnchorOptions(selected){
-  const sel = cleanPrayerAnchor(selected) || '';
-  return '<option value="">— anchor —</option>'
-    + PRAYER_ANCHORS.map(a => `<option value="${a}"${a === sel ? ' selected' : ''}>${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+// When `allowFixed` is true (secondary B row), include a clock-time option.
+function blockedAnchorOptions(selected, allowFixed = false){
+  const prayer = cleanPrayerAnchor(selected) || '';
+  const isFixed = allowFixed && selected === 'fixed';
+  let html = '<option value="">— anchor —</option>'
+    + PRAYER_ANCHORS.map(a => `<option value="${a}"${a === prayer ? ' selected' : ''}>${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+  if(allowFixed){
+    html += `<option value="fixed"${isFixed ? ' selected' : ''}>clock time…</option>`;
+  }
+  return html;
 }
 
 // PURE: live preview text for one blocked-time endpoint (resolved clock time,
@@ -226,15 +232,21 @@ function blockedCombineOptions(selected){
 
 // RENDER: one blocked-time endpoint (start or end) — fixed clock OR prayer
 // anchor + offset (+ optional later/earlier-of second expression), toggled by
-// the gear. Prayer-anchors only (no habit-relative option on settings blocks).
+// the mode button. Prayer anchors on primary; secondary may also be a clock.
 function blockedEndpointHtml(block, i, field){
   const anchor = cleanPrayerAnchor(block[field + 'Anchor']);
   const isDyn = Boolean(anchor);
   const fixedVal = minutesToTimeInput(block[field]);
   const offsetVal = normalizePrayerOffset(block[field + 'OffsetMin']) || '';
   const combine = cleanTimeCombine(block[field + 'Combine']);
-  const anchor2 = cleanPrayerAnchor(block[field + 'Anchor2']);
+  const anchor2 = typeof cleanBlockedAnchor2 === 'function'
+    ? cleanBlockedAnchor2(block[field + 'Anchor2'])
+    : cleanPrayerAnchor(block[field + 'Anchor2']);
+  const isFixed2 = anchor2 === 'fixed';
   const offset2Val = normalizePrayerOffset(block[field + 'OffsetMin2']) || '';
+  const fixed2Val = minutesToTimeInput(
+    normalizeTimeMinutes(block[field + 'FixedMin2']) ?? 1200
+  );
   const dayOn = normalizeAnchorDayOffset(block[field + 'DayOffset']) === 1;
   const day2On = normalizeAnchorDayOffset(block[field + 'DayOffset2']) === 1;
   const resolved = isDyn ? blockedResolvedLabel(block, field) : '';
@@ -251,15 +263,16 @@ function blockedEndpointHtml(block, i, field){
       </div>
       <select class="time-combine mini-select" data-blocked-${field}-combine="${i}" aria-label="${aria} combine">${blockedCombineOptions(combine)}</select>
       <div class="time-expr time-expr2"${combine ? '' : ' hidden'}>
-        <select class="time-anchor2 mini-select" data-blocked-${field}-anchor2="${i}" aria-label="${aria} second anchor">${blockedAnchorOptions(anchor2)}</select>
-        <input type="number" class="time-offset2 mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset2="${i}" aria-label="${aria} second offset minutes" value="${Math.abs(offset2Val)}" />
-        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offset2Val < 0 ? '-' : '+'}" aria-label="${offset2Val < 0 ? 'negative' : 'positive'} offset">${offset2Val < 0 ? '−' : '+'}</button>
-        <span class="time-offset-unit">min</span>
-        <button type="button" class="time-day-next2 mini-text-btn" data-blocked-${field}-day2="${i}" aria-pressed="${day2On ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day">+1d</button>
+        <select class="time-anchor2 mini-select" data-blocked-${field}-anchor2="${i}" aria-label="${aria} second anchor">${blockedAnchorOptions(anchor2, true)}</select>
+        <input type="time" class="time-fixed2" step="900" data-blocked-${field}-fixed2="${i}" aria-label="${aria} clock time" value="${fixed2Val}"${isFixed2 ? '' : ' hidden'} />
+        <input type="number" class="time-offset2 mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset2="${i}" aria-label="${aria} second offset minutes" value="${Math.abs(offset2Val)}"${isFixed2 ? ' hidden' : ''} />
+        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offset2Val < 0 ? '-' : '+'}" aria-label="${offset2Val < 0 ? 'negative' : 'positive'} offset"${isFixed2 ? ' hidden' : ''}>${offset2Val < 0 ? '−' : '+'}</button>
+        <span class="time-offset-unit"${isFixed2 ? ' hidden' : ''}>min</span>
+        <button type="button" class="time-day-next2 mini-text-btn" data-blocked-${field}-day2="${i}" aria-pressed="${day2On ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day"${isFixed2 ? ' hidden' : ''}>+1d</button>
       </div>
       <span class="time-resolved" aria-live="polite">${escapeHtml(resolved)}</span>
     </div>
-    <button type="button" class="time-mode-toggle mini-text-btn" data-blocked-${field}-mode="${i}" title="use prayer time" aria-label="use prayer time">⚙</button>
+    <button type="button" class="time-mode-toggle mini-text-btn" data-blocked-${field}-mode="${i}" title="use prayer time" aria-label="use prayer time"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
   </div>`;
 }
 

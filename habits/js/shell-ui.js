@@ -412,24 +412,23 @@ function shouldMountInPane(id) {
   return id === 'detail-sheet';
 }
 
-let modalScrollY = 0;
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
+// Use overflow locking only — never position:fixed. Fixing the body forces
+// scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
   const fullPageOpen = ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.body.classList.toggle('fullpage-open',fullPageOpen);
   if(modalOpen && !document.body.classList.contains('modal-open')){
-    modalScrollY = window.scrollY;
     document.body.classList.add('modal-open');
-    if(!paneTierActive()){
-      document.body.classList.add('modal-scroll-fixed');
-      document.body.style.top = `${-modalScrollY}px`;
-    }
   }else if(!modalOpen && document.body.classList.contains('modal-open')){
-    const restore = modalScrollY;
-    document.body.classList.remove('modal-open','modal-scroll-fixed');
-    document.body.style.top = '';
-    window.scrollTo(0,restore);
+    // Drop focus inside the sheet (or the home card that opened it) before
+    // unlocking. Otherwise Safari scrolls that target into view on close.
+    const active = document.activeElement;
+    if(active && active !== document.body && typeof active.blur === 'function' && active.closest?.('.sheet-wrap,.blocked-card,.travel-card')){
+      active.blur();
+    }
+    document.body.classList.remove('modal-open');
   }
 }
 
@@ -641,6 +640,9 @@ function bindCalendarTap(container,selector,handler){
     // A fast flick can release with almost no finger movement yet still carry
     // the pager into its momentum/snap animation a moment later. Wait two
     // frames and confirm the pager truly settled before treating this as a tap.
+    // Claim the tap immediately so the synthesized click (which fires before
+    // those frames) cannot also invoke the handler and double-log an entry.
+    handledClickUntil = Date.now() + 500;
     const settleScrollLeft = tap.pager.scrollLeft;
     requestAnimationFrame(()=>{
       requestAnimationFrame(()=>{

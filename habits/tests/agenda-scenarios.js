@@ -187,8 +187,8 @@ function defaultSettings(overrides = {}) {
       fill ? `got start=${fill.startLabel}` : 'fill missing');
     check('1a fill still ends inside window (<=8pm)',
       fill && fill.endMs <= atTime(20, 0) + 60000, fill ? `end=${fill.endLabel}` : 'fill missing');
-    // DOM: the card must surface the suggested time and it must be >= 10am.
-    const pillText = await page.locator('.ting-card:has-text("Workout windowed") .context-pill.agenda-suggested').first().textContent().catch(() => null);
+    // DOM: the card must surface a suggested-time lead pill (tone may vary).
+    const pillText = await page.locator('.ting-card:has-text("Workout windowed") .context-pill.agenda-lead').first().textContent().catch(() => null);
     check('1a card agenda-suggested pill renders',
       Boolean(pillText), `pill=${JSON.stringify(pillText)}`);
   }
@@ -340,7 +340,7 @@ function defaultSettings(overrides = {}) {
       })],
       defaultSettings()
     );
-    const suggested = await page.locator('.ting-card:has-text("Due habit fill") .context-pill.agenda-suggested').count();
+    const suggested = await page.locator('.ting-card:has-text("Due habit fill") .context-pill.agenda-lead:not(.scheduled)').count();
     const scheduled = await page.locator('.ting-card:has-text("Due habit fill") .context-pill.scheduled').count();
     check('2c fill item renders agenda-suggested pill', suggested === 1, `suggested=${suggested}`);
     check('2c fill item does not render a scheduled pill', scheduled === 0, `scheduled=${scheduled}`);
@@ -512,9 +512,9 @@ function defaultSettings(overrides = {}) {
       Boolean(a && b && (b.startMs >= a.endMs || a.startMs >= b.endMs)),
       a && b ? `A=${a.startLabel}-${a.endLabel} B=${b.startLabel}-${b.endLabel}` : 'missing');
 
-    // DOM: both home cards must surface the agenda-suggested pill.
-    const aPill = await page.locator('.ting-card:has-text("Plan A 60m") .context-pill.agenda-suggested').count();
-    const bPill = await page.locator('.ting-card:has-text("Plan B 60m") .context-pill.agenda-suggested').count();
+    // DOM: both home cards must surface an agenda lead time pill.
+    const aPill = await page.locator('.ting-card:has-text("Plan A 60m") .context-pill.agenda-lead').count();
+    const bPill = await page.locator('.ting-card:has-text("Plan B 60m") .context-pill.agenda-lead').count();
     check('4a Plan A card renders agenda-suggested pill', aPill === 1, `count=${aPill}`);
     check('4a Plan B card renders agenda-suggested pill', bPill === 1, `count=${bPill}`);
   }
@@ -683,7 +683,7 @@ function defaultSettings(overrides = {}) {
     check('6a do-early card sits under the today section', sec === 'today', `section=${sec}`);
 
     const earlyPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill:has-text("early")').count();
-    const suggestedPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill.agenda-suggested').count();
+    const suggestedPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill.agenda-lead').count();
     check('6a do-early card shows the early pill', earlyPill === 1, `early=${earlyPill}`);
     check('6a do-early card shows an agenda-suggested time pill', suggestedPill >= 1, `suggested=${suggestedPill}`);
 
@@ -832,8 +832,8 @@ function defaultSettings(overrides = {}) {
       fill && fill.endMs <= atTime(11, 0) + 24 * 3600000,
       fill ? `end=${fill.endLabel}` : 'missing');
 
-    // DOM: the home card must surface the agenda-suggested pill.
-    const pill = await page.locator('.ting-card:has-text("Overnight 10pm-11am") .context-pill.agenda-suggested').count();
+    // DOM: the home card must surface an agenda lead time pill.
+    const pill = await page.locator('.ting-card:has-text("Overnight 10pm-11am") .context-pill.agenda-lead').count();
     check('8a card renders agenda-suggested pill', pill === 1, `count=${pill}`);
   }
 

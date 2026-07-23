@@ -69,24 +69,28 @@
  * @property {string|null} allowedTimeStartAnchor2
  * @property {number}      allowedTimeStartOffsetMin2
  * @property {string|null} allowedTimeStartAnchorHabitId2
+ * @property {number|null} allowedTimeStartFixedMin2 — minutes 0..1439 when Anchor2 === 'fixed'
  * @property {number}      allowedTimeStartDayOffset
  * @property {number}      allowedTimeStartDayOffset2
  * @property {'later'|'earlier'|null} allowedTimeEndCombine
  * @property {string|null} allowedTimeEndAnchor2
  * @property {number}      allowedTimeEndOffsetMin2
  * @property {string|null} allowedTimeEndAnchorHabitId2
+ * @property {number|null} allowedTimeEndFixedMin2
  * @property {number}      allowedTimeEndDayOffset
  * @property {number}      allowedTimeEndDayOffset2
  * @property {'later'|'earlier'|null} preferredTimeStartCombine
  * @property {string|null} preferredTimeStartAnchor2
  * @property {number}      preferredTimeStartOffsetMin2
  * @property {string|null} preferredTimeStartAnchorHabitId2
+ * @property {number|null} preferredTimeStartFixedMin2
  * @property {number}      preferredTimeStartDayOffset
  * @property {number}      preferredTimeStartDayOffset2
  * @property {'later'|'earlier'|null} preferredTimeEndCombine
  * @property {string|null} preferredTimeEndAnchor2
  * @property {number}      preferredTimeEndOffsetMin2
  * @property {string|null} preferredTimeEndAnchorHabitId2
+ * @property {number|null} preferredTimeEndFixedMin2
  * @property {number}      preferredTimeEndDayOffset
  * @property {number}      preferredTimeEndDayOffset2
  * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
@@ -171,7 +175,7 @@
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
  * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
- * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,startCombine:?string,startAnchor2:?string,startOffsetMin2:number,startDayOffset:number,startDayOffset2:number,endAnchor:?string,endOffsetMin:number,endCombine:?string,endAnchor2:?string,endOffsetMin2:number,endDayOffset:number,endDayOffset2:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits (prayer only; later/earlier-of + +1d supported).
+ * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,startCombine:?string,startAnchor2:?string,startOffsetMin2:number,startFixedMin2:?number,startDayOffset:number,startDayOffset2:number,endAnchor:?string,endOffsetMin:number,endCombine:?string,endAnchor2:?string,endOffsetMin2:number,endFixedMin2:?number,endDayOffset:number,endDayOffset2:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits (prayer + fixed secondary; later/earlier-of + +1d supported).
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
  */
 
@@ -1104,10 +1108,18 @@ function normalizeBlockedTimes(value){
     const safeEndAnchor = endAnchor && locationId ? endAnchor : null;
     const startCombine = safeStartAnchor && typeof cleanTimeCombine === 'function'
       ? cleanTimeCombine(raw?.startCombine) : null;
-    const startAnchor2 = startCombine && locationId ? cleanPrayerAnchor(raw?.startAnchor2) : null;
+    const startAnchor2 = startCombine && locationId
+      ? (typeof cleanBlockedAnchor2 === 'function'
+        ? cleanBlockedAnchor2(raw?.startAnchor2)
+        : cleanPrayerAnchor(raw?.startAnchor2))
+      : null;
     const endCombine = safeEndAnchor && typeof cleanTimeCombine === 'function'
       ? cleanTimeCombine(raw?.endCombine) : null;
-    const endAnchor2 = endCombine && locationId ? cleanPrayerAnchor(raw?.endAnchor2) : null;
+    const endAnchor2 = endCombine && locationId
+      ? (typeof cleanBlockedAnchor2 === 'function'
+        ? cleanBlockedAnchor2(raw?.endAnchor2)
+        : cleanPrayerAnchor(raw?.endAnchor2))
+      : null;
     const dayOff = typeof normalizeAnchorDayOffset === 'function' ? normalizeAnchorDayOffset : (v => 0);
     return {
       label,days,start,end,locationId,
@@ -1115,16 +1127,18 @@ function normalizeBlockedTimes(value){
       startOffsetMin:normalizePrayerOffset(raw?.startOffsetMin),
       startCombine:startCombine && startAnchor2 ? startCombine : null,
       startAnchor2,
-      startOffsetMin2:normalizePrayerOffset(raw?.startOffsetMin2),
+      startOffsetMin2:startAnchor2 && startAnchor2 !== 'fixed' ? normalizePrayerOffset(raw?.startOffsetMin2) : 0,
+      startFixedMin2:startAnchor2 === 'fixed' ? (normalizeTimeMinutes(raw?.startFixedMin2) ?? 1200) : null,
       startDayOffset:dayOff(raw?.startDayOffset),
-      startDayOffset2:dayOff(raw?.startDayOffset2),
+      startDayOffset2:startAnchor2 && startAnchor2 !== 'fixed' ? dayOff(raw?.startDayOffset2) : 0,
       endAnchor:safeEndAnchor,
       endOffsetMin:normalizePrayerOffset(raw?.endOffsetMin),
       endCombine:endCombine && endAnchor2 ? endCombine : null,
       endAnchor2,
-      endOffsetMin2:normalizePrayerOffset(raw?.endOffsetMin2),
+      endOffsetMin2:endAnchor2 && endAnchor2 !== 'fixed' ? normalizePrayerOffset(raw?.endOffsetMin2) : 0,
+      endFixedMin2:endAnchor2 === 'fixed' ? (normalizeTimeMinutes(raw?.endFixedMin2) ?? 1200) : null,
       endDayOffset:dayOff(raw?.endDayOffset),
-      endDayOffset2:dayOff(raw?.endDayOffset2)
+      endDayOffset2:endAnchor2 && endAnchor2 !== 'fixed' ? dayOff(raw?.endDayOffset2) : 0
     };
   }).filter(Boolean).slice(0,24);
 }
@@ -1222,21 +1236,26 @@ function cleanHabitId(value){
 
 // PURE: coerce the later/earlier-of + dayOffset fields for one habit endpoint
 // prefix (e.g. 'allowedTimeStart'). Secondary fields only stick when Combine
-// is set and Anchor2 is a real anchor; otherwise they're cleared so stale
-// secondaries don't linger after the user picks "just this".
+// is set and Anchor2 is a real anchor (prayer, habit, or fixed clock); otherwise
+// they're cleared so stale secondaries don't linger after the user picks "just this".
 function normalizeCombineFields(raw, prefix){
   const cleanA = typeof cleanAnchor === 'function' ? cleanAnchor : cleanPrayerAnchor;
   const combine = typeof cleanTimeCombine === 'function' ? cleanTimeCombine(raw[prefix + 'Combine']) : null;
   const anchor2 = combine ? cleanA(raw[prefix + 'Anchor2']) : null;
   const dayOff = typeof normalizeAnchorDayOffset === 'function'
     ? normalizeAnchorDayOffset(raw[prefix + 'DayOffset']) : 0;
-  const dayOff2 = typeof normalizeAnchorDayOffset === 'function'
+  const dayOff2 = (anchor2 && anchor2 !== 'fixed' && typeof normalizeAnchorDayOffset === 'function')
     ? normalizeAnchorDayOffset(raw[prefix + 'DayOffset2']) : 0;
+  const fixedMin2 = anchor2 === 'fixed'
+    ? (normalizeTimeMinutes(raw[prefix + 'FixedMin2']) ?? 1200)
+    : null;
   return {
     [prefix + 'Combine']: combine && anchor2 ? combine : null,
     [prefix + 'Anchor2']: anchor2,
-    [prefix + 'OffsetMin2']: normalizePrayerOffset(raw[prefix + 'OffsetMin2']),
+    [prefix + 'OffsetMin2']: anchor2 && anchor2 !== 'fixed'
+      ? normalizePrayerOffset(raw[prefix + 'OffsetMin2']) : 0,
     [prefix + 'AnchorHabitId2']: (anchor2 === 'habit' ? cleanHabitId(raw[prefix + 'AnchorHabitId2']) : '') || null,
+    [prefix + 'FixedMin2']: fixedMin2,
     [prefix + 'DayOffset']: dayOff,
     [prefix + 'DayOffset2']: dayOff2
   };

@@ -109,6 +109,45 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   check('long titles ellipsize before agenda time is cut',hierarchy.titleEllipses && hierarchy.leadFits,JSON.stringify(hierarchy));
   check('agenda cue and status use compact copy in their intended rows',hierarchy.text === '9AM · 2h' && hierarchy.statusInMeta,JSON.stringify(hierarchy));
 
+  const tones = await page.evaluate(()=>{
+    const day = new Date(2026,6,22,12,0).getTime(); // noon
+    const row = (start,end)=>({kind:'fill',start,end,chunkIndex:0,chunkMinutes:60});
+    const parse = html=>{
+      const host = document.createElement('div');
+      host.innerHTML = html;
+      const lead = host.querySelector('.agenda-lead');
+      const icon = lead?.querySelector('i');
+      return {
+        cls:[...lead.classList].filter(c=>c.startsWith('agenda-') || c === 'scheduled').sort().join(' '),
+        icon:[...icon.classList].find(c=>c.startsWith('ti-') && c !== 'ti') || '',
+        title:lead?.getAttribute('title') || ''
+      };
+    };
+    const anytime = parse(agendaCardPill(row(day,day+3600000),{breakable:true,durationMinutes:60},day));
+    const laterHabit = {
+      breakable:true,durationMinutes:60,
+      allowedTimeStart:18 * 60,allowedTimeEnd:21 * 60
+    };
+    const later = parse(agendaCardPill(row(day + 6*3600000,day + 7*3600000),laterHabit,day));
+    const openHabit = {
+      breakable:true,durationMinutes:60,
+      allowedTimeStart:9 * 60,allowedTimeEnd:20 * 60
+    };
+    const openNow = parse(agendaCardPill(row(day,day+3600000),openHabit,day));
+    const closingHabit = {
+      breakable:true,durationMinutes:60,
+      allowedTimeStart:9 * 60,allowedTimeEnd:13 * 60 // ends 1pm; noon + 60m session => closing
+    };
+    const closing = parse(agendaCardPill(row(day,day+3600000),closingHabit,day));
+    const scheduled = parse(agendaCardPill({kind:'scheduled',start:day},{},day));
+    return {anytime,later,openNow,closing,scheduled};
+  });
+  check('agenda lead anytime has muted clock cue',tones.anytime.cls.includes('agenda-anytime') && tones.anytime.icon === 'ti-clock' && tones.anytime.title.includes('anytime'),JSON.stringify(tones.anytime));
+  check('agenda lead later waits for the window',tones.later.cls.includes('agenda-later') && tones.later.icon === 'ti-hourglass' && tones.later.title.includes('opens at'),JSON.stringify(tones.later));
+  check('agenda lead open window stays teal suggested',tones.openNow.cls.includes('agenda-suggested') && tones.openNow.icon === 'ti-sparkles' && tones.openNow.title.includes('window open'),JSON.stringify(tones.openNow));
+  check('agenda lead closing warns when the window is tight',tones.closing.cls.includes('agenda-closing') && tones.closing.icon === 'ti-alarm' && tones.closing.title.includes('window closing'),JSON.stringify(tones.closing));
+  check('scheduled agenda lead stays purple calendar cue',tones.scheduled.cls.includes('scheduled') && tones.scheduled.icon === 'ti-calendar-time',JSON.stringify(tones.scheduled));
+
   const homeCopy = await page.evaluate(()=>({
     block:document.querySelector('.blocked-card:not(.blocked-card-merge) span')?.textContent || '',
     duration:[...document.querySelectorAll('.context-pill[title^="duration "]')].map(el=>el.textContent.trim())
@@ -159,14 +198,14 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const modal = await page.evaluate(()=>{
     const pane = document.querySelector('.pane-list');
     return {
-      bodyLocked:document.body.classList.contains('modal-open') && document.body.classList.contains('modal-scroll-fixed'),
+      bodyLocked:document.body.classList.contains('modal-open'),
       paneOverflow:getComputedStyle(pane).overflowY,
-      top:document.body.style.top
+      htmlOverflow:getComputedStyle(document.documentElement).overflow
     };
   });
-  check('open sheets lock the body and underlying home pane',modal.bodyLocked && modal.paneOverflow === 'hidden' && Boolean(modal.top),JSON.stringify(modal));
+  check('open sheets lock the body and underlying home pane',modal.bodyLocked && modal.paneOverflow === 'hidden',JSON.stringify(modal));
   await page.evaluate(()=>closeSheet('add-sheet'));
-  check('closing the last sheet restores page scrolling',await page.evaluate(()=>!document.body.classList.contains('modal-open') && !document.body.classList.contains('modal-scroll-fixed')));
+  check('closing the last sheet restores page scrolling',await page.evaluate(()=>!document.body.classList.contains('modal-open')));
 
   const travelButtons = await page.evaluate(()=>{
     const buttons = [...document.querySelectorAll('.travel-edit-row .icon-btn')];

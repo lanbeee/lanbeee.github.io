@@ -265,6 +265,7 @@
                     </select>
                     <div class="time-expr time-expr2" hidden>
                       <select class="time-anchor2 mini-select" aria-label="allowed start second anchor"></select>
+                      <input type="time" class="time-input time-fixed2" step="900" hidden aria-label="allowed start clock time" />
                       <span class="time-habit-wrap2" hidden>
                         <select class="time-habit2 mini-select" aria-label="allowed start second habit"></select>
                       </span>
@@ -298,6 +299,7 @@
                     </select>
                     <div class="time-expr time-expr2" hidden>
                       <select class="time-anchor2 mini-select" aria-label="allowed end second anchor"></select>
+                      <input type="time" class="time-input time-fixed2" step="900" hidden aria-label="allowed end clock time" />
                       <span class="time-habit-wrap2" hidden>
                         <select class="time-habit2 mini-select" aria-label="allowed end second habit"></select>
                       </span>
@@ -342,6 +344,7 @@
                     </select>
                     <div class="time-expr time-expr2" hidden>
                       <select class="time-anchor2 mini-select" aria-label="preferred start second anchor"></select>
+                      <input type="time" class="time-input time-fixed2" step="900" hidden aria-label="preferred start clock time" />
                       <span class="time-habit-wrap2" hidden>
                         <select class="time-habit2 mini-select" aria-label="preferred start second habit"></select>
                       </span>
@@ -375,6 +378,7 @@
                     </select>
                     <div class="time-expr time-expr2" hidden>
                       <select class="time-anchor2 mini-select" aria-label="preferred end second anchor"></select>
+                      <input type="time" class="time-input time-fixed2" step="900" hidden aria-label="preferred end clock time" />
                       <span class="time-habit-wrap2" hidden>
                         <select class="time-habit2 mini-select" aria-label="preferred end second habit"></select>
                       </span>
@@ -417,7 +421,7 @@
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </label>
-          <div class="planning-grid" id="detail-min-chunk-row" hidden>
+          <div class="planning-grid planning-grid-single" id="detail-min-chunk-row" hidden>
             <div class="planning-field">
               <span>min chunk <button type="button" class="info-btn" data-tip="detail-min-chunk-help" aria-label="about min chunk"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
                 <div class="info-tooltip" id="detail-min-chunk-help" role="tooltip" hidden>Smallest piece when work must be split. Prefer one continuous session when time allows — this is a floor, not a suggested chunk size.</div></span>
@@ -433,14 +437,14 @@
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </label>
-          <div class="planning-grid auto-mark-grid">
-            <div class="planning-field auto-mark-field">
+          <div class="planning-grid planning-grid-single">
+            <div class="planning-field">
               <span><span id="detail-auto-mark-label">auto mark done</span> <button type="button" class="info-btn" data-tip="detail-auto-mark-help" aria-label="about automatic logging"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
                 <div class="info-tooltip" id="detail-auto-mark-help" role="tooltip" hidden>Blank keeps logging manual. For breakable items, each agenda chunk is credited after it ends; the delay gives you time to correct the plan first.</div></span>
               <small id="detail-auto-mark-summary">Blank keeps this manual.</small>
               <label class="range-value" aria-label="auto mark done minutes, blank = manual">
                 <input type="text" id="detail-auto-mark" inputmode="numeric" maxlength="4" placeholder="—" />
-                <span id="detail-auto-mark-unit">min after</span>
+                <span id="detail-auto-mark-unit">min</span>
               </label>
             </div>
           </div>

@@ -225,20 +225,30 @@ function snapshotCombineFields(h, prefix){
     [prefix + 'Anchor2']:cleanAnchor(h && h[prefix + 'Anchor2']),
     [prefix + 'OffsetMin2']:normalizePrayerOffset(h && h[prefix + 'OffsetMin2']),
     [prefix + 'AnchorHabitId2']:cleanHabitId(h && h[prefix + 'AnchorHabitId2']) || null,
+    [prefix + 'FixedMin2']:normalizeTimeMinutes(h && h[prefix + 'FixedMin2']),
     [prefix + 'DayOffset']:normalizeAnchorDayOffset(h && h[prefix + 'DayOffset']),
     [prefix + 'DayOffset2']:normalizeAnchorDayOffset(h && h[prefix + 'DayOffset2'])
   };
 }
 
 // RENDER (idempotent): populate every anchor <select> with the standard list.
-// Re-running on every openDetail is harmless — the options are stable. Includes
-// the 'habit' anchor option, which (when selected) reveals a habit picker.
+// Re-running on every openDetail is harmless — the options are stable. Primary
+// gets prayer + habit; secondary also gets a fixed clock option.
 function populateAnchorOptions(){
-  document.querySelectorAll('.time-endpoint .time-anchor, .time-endpoint .time-anchor2').forEach(sel => {
+  const prayerOpts = PRAYER_ANCHORS.map(a => `<option value="${a}">${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+  document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
     if(sel.dataset.populated === '1')return;
     sel.innerHTML = '<option value="">— anchor —</option>'
-      + PRAYER_ANCHORS.map(a => `<option value="${a}">${PRAYER_ANCHOR_LABELS[a]}</option>`).join('')
+      + prayerOpts
       + '<option value="habit">after another habit…</option>';
+    sel.dataset.populated = '1';
+  });
+  document.querySelectorAll('.time-endpoint .time-anchor2').forEach(sel => {
+    if(sel.dataset.populated === '1')return;
+    sel.innerHTML = '<option value="">— anchor —</option>'
+      + prayerOpts
+      + '<option value="habit">after another habit…</option>'
+      + '<option value="fixed">clock time…</option>';
     sel.dataset.populated = '1';
   });
 }
@@ -261,12 +271,22 @@ function populateHabitPickerFor(endpoint, field, h, which = ''){
   picker.innerHTML = options.join('');
 }
 
-// RENDER: sync habit-wrap + day-next visibility for one expression row.
+// RENDER: sync habit-wrap + day-next (+ fixed clock for B) visibility for one expression row.
 function syncExprControls(endpoint, field, h, which = ''){
   const suffix = which === '2' ? '2' : '';
   const anchor = cleanAnchor(h && h[field + 'Anchor' + suffix]);
+  const isFixed = which === '2' && anchor === 'fixed';
   const habitWrap = endpoint.querySelector(which === '2' ? '.time-habit-wrap2' : '.time-habit-wrap');
   const dayBtn = endpoint.querySelector(which === '2' ? '.time-day-next2' : '.time-day-next');
+  const expr = endpoint.querySelector(which === '2' ? '.time-expr2' : '.time-expr');
+  const fixed2 = which === '2' ? endpoint.querySelector('.time-fixed2') : null;
+  if(fixed2){
+    fixed2.hidden = !isFixed;
+    if(isFixed){
+      const min = normalizeTimeMinutes(h && h[field + 'FixedMin2']);
+      fixed2.value = minutesToTimeInput(min != null ? min : 1200);
+    }
+  }
   if(habitWrap){
     habitWrap.hidden = anchor !== 'habit';
     if(anchor === 'habit')populateHabitPickerFor(endpoint, field, h, which);
@@ -274,8 +294,13 @@ function syncExprControls(endpoint, field, h, which = ''){
   if(dayBtn){
     const on = normalizeAnchorDayOffset(h && h[field + 'DayOffset' + suffix]) === 1;
     dayBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    // +1d only applies to prayer anchors (habit logs are absolute).
-    dayBtn.hidden = !anchor || anchor === 'habit';
+    // +1d only applies to prayer anchors (habit logs are absolute; fixed has no day).
+    dayBtn.hidden = !anchor || anchor === 'habit' || isFixed;
+  }
+  if(expr && which === '2'){
+    expr.querySelectorAll('.time-offset2, .time-offset-sign-btn, .time-offset-unit').forEach(el => {
+      el.hidden = isFixed;
+    });
   }
 }
 
@@ -454,27 +479,32 @@ function readHabitIdFromEndpoint(fixedInputId, which = ''){
 }
 // PURE: read combine mode / secondary expression / day offsets from an endpoint.
 function readCombineFromEndpoint(fixedInputId){
-  const el = document.getElementById(fixedInputId);
-  if(!el)return {
-    combine:null, anchor2:null, offset2:0, habitId2:null, dayOffset:0, dayOffset2:0
+  const empty = {
+    combine:null, anchor2:null, offset2:0, habitId2:null, fixedMin2:null, dayOffset:0, dayOffset2:0
   };
+  const el = document.getElementById(fixedInputId);
+  if(!el)return empty;
   const endpoint = el.closest('.time-endpoint');
-  if(!endpoint || !endpoint.classList.contains('is-dynamic')){
-    return {combine:null, anchor2:null, offset2:0, habitId2:null, dayOffset:0, dayOffset2:0};
-  }
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return empty;
   const combine = cleanTimeCombine(endpoint.querySelector('.time-combine')?.value);
   const dayOffset = endpoint.querySelector('.time-day-next')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
   if(!combine){
-    return {combine:null, anchor2:null, offset2:0, habitId2:null, dayOffset, dayOffset2:0};
+    return {...empty, dayOffset};
   }
   const anchor2 = cleanAnchor(endpoint.querySelector('.time-anchor2')?.value);
-  const offset2 = readSignedOffset(endpoint.querySelector('.time-offset2'));
-  const dayOffset2 = endpoint.querySelector('.time-day-next2')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
+  const offset2 = anchor2 && anchor2 !== 'fixed'
+    ? readSignedOffset(endpoint.querySelector('.time-offset2')) : 0;
+  const dayOffset2 = anchor2 && anchor2 !== 'fixed'
+    && endpoint.querySelector('.time-day-next2')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
+  const fixedMin2 = anchor2 === 'fixed'
+    ? (timeInputToMinutes(endpoint.querySelector('.time-fixed2')?.value) ?? 1200)
+    : null;
   return {
     combine: anchor2 ? combine : null,
     anchor2,
     offset2,
     habitId2: readHabitIdFromEndpoint(fixedInputId, '2'),
+    fixedMin2,
     dayOffset,
     dayOffset2
   };
@@ -521,6 +551,7 @@ function currentDetailTune(){
       return {
         allowedTimeStartCombine:c.combine, allowedTimeStartAnchor2:c.anchor2,
         allowedTimeStartOffsetMin2:c.offset2, allowedTimeStartAnchorHabitId2:c.habitId2,
+        allowedTimeStartFixedMin2:c.fixedMin2,
         allowedTimeStartDayOffset:c.dayOffset, allowedTimeStartDayOffset2:c.dayOffset2
       };
     })(),
@@ -529,6 +560,7 @@ function currentDetailTune(){
       return {
         allowedTimeEndCombine:c.combine, allowedTimeEndAnchor2:c.anchor2,
         allowedTimeEndOffsetMin2:c.offset2, allowedTimeEndAnchorHabitId2:c.habitId2,
+        allowedTimeEndFixedMin2:c.fixedMin2,
         allowedTimeEndDayOffset:c.dayOffset, allowedTimeEndDayOffset2:c.dayOffset2
       };
     })(),
@@ -537,6 +569,7 @@ function currentDetailTune(){
       return {
         preferredTimeStartCombine:c.combine, preferredTimeStartAnchor2:c.anchor2,
         preferredTimeStartOffsetMin2:c.offset2, preferredTimeStartAnchorHabitId2:c.habitId2,
+        preferredTimeStartFixedMin2:c.fixedMin2,
         preferredTimeStartDayOffset:c.dayOffset, preferredTimeStartDayOffset2:c.dayOffset2
       };
     })(),
@@ -545,6 +578,7 @@ function currentDetailTune(){
       return {
         preferredTimeEndCombine:c.combine, preferredTimeEndAnchor2:c.anchor2,
         preferredTimeEndOffsetMin2:c.offset2, preferredTimeEndAnchorHabitId2:c.habitId2,
+        preferredTimeEndFixedMin2:c.fixedMin2,
         preferredTimeEndDayOffset:c.dayOffset, preferredTimeEndDayOffset2:c.dayOffset2
       };
     })(),
@@ -573,7 +607,8 @@ function syncBreakableUi(){
   const unit = $('detail-auto-mark-unit');
   const inputWrap = $('detail-auto-mark')?.closest('.range-value');
   if(label)label.textContent = on ? 'auto-log agenda chunks' : 'auto mark done';
-  if(unit)unit.textContent = on ? 'min later' : 'min after';
+  // Keep the compact "min" unit; after/later belongs in the summary copy.
+  if(unit)unit.textContent = 'min';
   if(summary){
     summary.textContent = on
       ? (autoOn
@@ -641,24 +676,28 @@ function setDetailDirty(force){
       (current.allowedTimeStartAnchor2 || null) !== (detailTuneOriginal.allowedTimeStartAnchor2 || null) ||
       current.allowedTimeStartOffsetMin2 !== detailTuneOriginal.allowedTimeStartOffsetMin2 ||
       (current.allowedTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId2 || null) ||
+      (current.allowedTimeStartFixedMin2 ?? null) !== (detailTuneOriginal.allowedTimeStartFixedMin2 ?? null) ||
       current.allowedTimeStartDayOffset !== detailTuneOriginal.allowedTimeStartDayOffset ||
       current.allowedTimeStartDayOffset2 !== detailTuneOriginal.allowedTimeStartDayOffset2 ||
       (current.allowedTimeEndCombine || null) !== (detailTuneOriginal.allowedTimeEndCombine || null) ||
       (current.allowedTimeEndAnchor2 || null) !== (detailTuneOriginal.allowedTimeEndAnchor2 || null) ||
       current.allowedTimeEndOffsetMin2 !== detailTuneOriginal.allowedTimeEndOffsetMin2 ||
       (current.allowedTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId2 || null) ||
+      (current.allowedTimeEndFixedMin2 ?? null) !== (detailTuneOriginal.allowedTimeEndFixedMin2 ?? null) ||
       current.allowedTimeEndDayOffset !== detailTuneOriginal.allowedTimeEndDayOffset ||
       current.allowedTimeEndDayOffset2 !== detailTuneOriginal.allowedTimeEndDayOffset2 ||
       (current.preferredTimeStartCombine || null) !== (detailTuneOriginal.preferredTimeStartCombine || null) ||
       (current.preferredTimeStartAnchor2 || null) !== (detailTuneOriginal.preferredTimeStartAnchor2 || null) ||
       current.preferredTimeStartOffsetMin2 !== detailTuneOriginal.preferredTimeStartOffsetMin2 ||
       (current.preferredTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId2 || null) ||
+      (current.preferredTimeStartFixedMin2 ?? null) !== (detailTuneOriginal.preferredTimeStartFixedMin2 ?? null) ||
       current.preferredTimeStartDayOffset !== detailTuneOriginal.preferredTimeStartDayOffset ||
       current.preferredTimeStartDayOffset2 !== detailTuneOriginal.preferredTimeStartDayOffset2 ||
       (current.preferredTimeEndCombine || null) !== (detailTuneOriginal.preferredTimeEndCombine || null) ||
       (current.preferredTimeEndAnchor2 || null) !== (detailTuneOriginal.preferredTimeEndAnchor2 || null) ||
       current.preferredTimeEndOffsetMin2 !== detailTuneOriginal.preferredTimeEndOffsetMin2 ||
       (current.preferredTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId2 || null) ||
+      (current.preferredTimeEndFixedMin2 ?? null) !== (detailTuneOriginal.preferredTimeEndFixedMin2 ?? null) ||
       current.preferredTimeEndDayOffset !== detailTuneOriginal.preferredTimeEndDayOffset ||
       current.preferredTimeEndDayOffset2 !== detailTuneOriginal.preferredTimeEndDayOffset2)
   );

@@ -705,6 +705,7 @@ document.querySelectorAll('.time-endpoint').forEach(endpoint => {
   const anchor2Sel = endpoint.querySelector('.time-anchor2');
   const offset2Input = endpoint.querySelector('.time-offset2');
   const habit2Sel = endpoint.querySelector('.time-habit2');
+  const fixed2Input = endpoint.querySelector('.time-fixed2');
   const dayBtn = endpoint.querySelector('.time-day-next');
   const day2Btn = endpoint.querySelector('.time-day-next2');
   if(toggle)toggle.addEventListener('click',()=>{
@@ -732,9 +733,15 @@ document.querySelectorAll('.time-endpoint').forEach(endpoint => {
     if(cleanTimeCombine(combineSel.value) && anchor2Sel && !anchor2Sel.value)anchor2Sel.value = 'sunrise';
     onDynChange();
   });
-  if(anchor2Sel)anchor2Sel.addEventListener('change', onDynChange);
+  if(anchor2Sel)anchor2Sel.addEventListener('change',()=>{
+    if(anchor2Sel.value === 'fixed' && fixed2Input && !fixed2Input.value){
+      fixed2Input.value = minutesToTimeInput(1200);
+    }
+    onDynChange();
+  });
   if(offset2Input)offset2Input.addEventListener('input',()=>{ setDetailDirty(); refreshTimeResolvedFor(endpoint); });
   if(habit2Sel)habit2Sel.addEventListener('change', onDynChange);
+  if(fixed2Input)fixed2Input.addEventListener('input',()=>{ setDetailDirty(); refreshTimeResolvedFor(endpoint); });
   if(dayBtn)dayBtn.addEventListener('click',()=>{
     const on = dayBtn.getAttribute('aria-pressed') === 'true';
     dayBtn.setAttribute('aria-pressed', on ? 'false' : 'true');
@@ -784,6 +791,11 @@ function clearTimeEndpoint(endpoint){
   if(combine)combine.value = '';
   const expr2 = endpoint.querySelector('.time-expr2');
   if(expr2)expr2.hidden = true;
+  const fixed2 = endpoint.querySelector('.time-fixed2');
+  if(fixed2){
+    fixed2.value = '';
+    fixed2.hidden = true;
+  }
   const dayBtn = endpoint.querySelector('.time-day-next');
   if(dayBtn)dayBtn.setAttribute('aria-pressed','false');
   const day2Btn = endpoint.querySelector('.time-day-next2');
@@ -999,16 +1011,20 @@ $('detail-save').addEventListener('click',()=>{
   h.allowedTimeEndAnchorHabitId = h.allowedTimeEndAnchor === 'habit' ? (cleanHabitId(current.allowedTimeEndAnchorHabitId) || null) : null;
   h.preferredTimeStartAnchorHabitId = h.preferredTimeStartAnchor === 'habit' ? (cleanHabitId(current.preferredTimeStartAnchorHabitId) || null) : null;
   h.preferredTimeEndAnchorHabitId = h.preferredTimeEndAnchor === 'habit' ? (cleanHabitId(current.preferredTimeEndAnchorHabitId) || null) : null;
-  // Later/earlier-of + +1d day shift fields.
+  // Later/earlier-of + +1d day shift fields (+ optional fixed secondary clock).
   for(const f of ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd']){
     const combine = cleanTimeCombine(current[f + 'Combine']);
     const anchor2 = combine ? cleanAnchor(current[f + 'Anchor2']) : null;
     h[f + 'Combine'] = combine && anchor2 ? combine : null;
     h[f + 'Anchor2'] = anchor2;
-    h[f + 'OffsetMin2'] = normalizePrayerOffset(current[f + 'OffsetMin2']);
+    h[f + 'OffsetMin2'] = anchor2 && anchor2 !== 'fixed'
+      ? normalizePrayerOffset(current[f + 'OffsetMin2']) : 0;
     h[f + 'AnchorHabitId2'] = anchor2 === 'habit' ? (cleanHabitId(current[f + 'AnchorHabitId2']) || null) : null;
+    h[f + 'FixedMin2'] = anchor2 === 'fixed'
+      ? (normalizeTimeMinutes(current[f + 'FixedMin2']) ?? 1200) : null;
     h[f + 'DayOffset'] = normalizeAnchorDayOffset(current[f + 'DayOffset']);
-    h[f + 'DayOffset2'] = normalizeAnchorDayOffset(current[f + 'DayOffset2']);
+    h[f + 'DayOffset2'] = anchor2 && anchor2 !== 'fixed'
+      ? normalizeAnchorDayOffset(current[f + 'DayOffset2']) : 0;
   }
   // Block: a 'habit' endpoint without a picked habit is incomplete.
   const habitAnchorFields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
@@ -1017,6 +1033,11 @@ $('detail-save').addEventListener('click',()=>{
     || (h[f + 'Anchor2'] === 'habit' && !h[f + 'AnchorHabitId2'])
   )){
     showToast('pick a habit for the dynamic time');
+    return;
+  }
+  // Block: fixed secondary without a clock time.
+  if(habitAnchorFields.some(f => h[f + 'Anchor2'] === 'fixed' && h[f + 'FixedMin2'] == null)){
+    showToast('pick a clock time for later/earlier of');
     return;
   }
   // Block: later/earlier-of without a second anchor.
@@ -1241,6 +1262,10 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   const endAnchor2 = e.target.closest('[data-blocked-end-anchor2]');
   const startOffset2 = e.target.closest('[data-blocked-start-offset2]');
   const endOffset2 = e.target.closest('[data-blocked-end-offset2]');
+  const startFixed2 = e.target.closest('[data-blocked-start-fixed2]');
+  const endFixed2 = e.target.closest('[data-blocked-end-fixed2]');
+  const secondaryAnchor = v => (typeof cleanBlockedAnchor2 === 'function'
+    ? cleanBlockedAnchor2(v) : cleanPrayerAnchor(v));
   if(label)saveBlockedTimePatch(parseInt(label.dataset.blockedLabel,10),{label:cleanTopic(label.value) || 'blocked'});
   if(start)saveBlockedTimePatch(parseInt(start.dataset.blockedStart,10),{start:timeInputToMinutes(start.value)});
   if(end)saveBlockedTimePatch(parseInt(end.dataset.blockedEnd,10),{end:timeInputToMinutes(end.value)});
@@ -1251,20 +1276,44 @@ $('blocked-time-list')?.addEventListener('change',e=>{
   if(endOffset)saveBlockedTimePatch(parseInt(endOffset.dataset.blockedEndOffset,10),{endOffsetMin:readSignedOffset(endOffset)});
   if(startCombine){
     const v = cleanTimeCombine(startCombine.value);
+    const existing = secondaryAnchor(startCombine.closest('.time-dynamic')?.querySelector('.time-anchor2')?.value);
     saveBlockedTimePatch(parseInt(startCombine.dataset.blockedStartCombine,10),{
-      startCombine:v, startAnchor2:v ? (cleanPrayerAnchor(startCombine.closest('.time-dynamic')?.querySelector('.time-anchor2')?.value) || 'sunrise') : null
+      startCombine:v,
+      startAnchor2:v ? (existing || 'sunrise') : null,
+      startFixedMin2:v && existing === 'fixed' ? (timeInputToMinutes(startCombine.closest('.time-dynamic')?.querySelector('.time-fixed2')?.value) ?? 1200) : null
     });
   }
   if(endCombine){
     const v = cleanTimeCombine(endCombine.value);
+    const existing = secondaryAnchor(endCombine.closest('.time-dynamic')?.querySelector('.time-anchor2')?.value);
     saveBlockedTimePatch(parseInt(endCombine.dataset.blockedEndCombine,10),{
-      endCombine:v, endAnchor2:v ? (cleanPrayerAnchor(endCombine.closest('.time-dynamic')?.querySelector('.time-anchor2')?.value) || 'sunrise') : null
+      endCombine:v,
+      endAnchor2:v ? (existing || 'sunrise') : null,
+      endFixedMin2:v && existing === 'fixed' ? (timeInputToMinutes(endCombine.closest('.time-dynamic')?.querySelector('.time-fixed2')?.value) ?? 1200) : null
     });
   }
-  if(startAnchor2)saveBlockedTimePatch(parseInt(startAnchor2.dataset.blockedStartAnchor2,10),{startAnchor2:cleanPrayerAnchor(startAnchor2.value)});
-  if(endAnchor2)saveBlockedTimePatch(parseInt(endAnchor2.dataset.blockedEndAnchor2,10),{endAnchor2:cleanPrayerAnchor(endAnchor2.value)});
+  if(startAnchor2){
+    const a2 = secondaryAnchor(startAnchor2.value);
+    saveBlockedTimePatch(parseInt(startAnchor2.dataset.blockedStartAnchor2,10),{
+      startAnchor2:a2,
+      startFixedMin2:a2 === 'fixed'
+        ? (timeInputToMinutes(startAnchor2.closest('.time-expr2')?.querySelector('.time-fixed2')?.value) ?? 1200)
+        : null
+    });
+  }
+  if(endAnchor2){
+    const a2 = secondaryAnchor(endAnchor2.value);
+    saveBlockedTimePatch(parseInt(endAnchor2.dataset.blockedEndAnchor2,10),{
+      endAnchor2:a2,
+      endFixedMin2:a2 === 'fixed'
+        ? (timeInputToMinutes(endAnchor2.closest('.time-expr2')?.querySelector('.time-fixed2')?.value) ?? 1200)
+        : null
+    });
+  }
   if(startOffset2)saveBlockedTimePatch(parseInt(startOffset2.dataset.blockedStartOffset2,10),{startOffsetMin2:readSignedOffset(startOffset2)});
   if(endOffset2)saveBlockedTimePatch(parseInt(endOffset2.dataset.blockedEndOffset2,10),{endOffsetMin2:readSignedOffset(endOffset2)});
+  if(startFixed2)saveBlockedTimePatch(parseInt(startFixed2.dataset.blockedStartFixed2,10),{startFixedMin2:timeInputToMinutes(startFixed2.value) ?? 1200});
+  if(endFixed2)saveBlockedTimePatch(parseInt(endFixed2.dataset.blockedEndFixed2,10),{endFixedMin2:timeInputToMinutes(endFixed2.value) ?? 1200});
 });
 $('blocked-time-list')?.addEventListener('click',e=>{
   const remove = e.target.closest('[data-blocked-remove]');
@@ -1307,6 +1356,7 @@ $('blocked-time-list')?.addEventListener('click',e=>{
       saveBlockedTimePatch(index,{
         [anchorKey]:null,[offsetKey]:0,
         [field + 'Combine']:null,[field + 'Anchor2']:null,[field + 'OffsetMin2']:0,
+        [field + 'FixedMin2']:null,
         [field + 'DayOffset']:0,[field + 'DayOffset2']:0
       });
     }else{
@@ -1587,6 +1637,10 @@ function openBlockEditSheet(row){
   $('block-edit-copy').textContent = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
   $('block-edit-start').value = minutesToTimeInput(current.start);
   $('block-edit-end').value = minutesToTimeInput(current.end);
+  // Blur the home card before the sheet mounts so closing cannot restore focus
+  // there and scroll the list underneath.
+  const focusedCard = document.activeElement?.closest?.('.blocked-card');
+  if(focusedCard && typeof document.activeElement.blur === 'function')document.activeElement.blur();
   openSheet('block-edit-sheet');
 }
 

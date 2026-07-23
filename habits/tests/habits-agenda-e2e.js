@@ -22,11 +22,11 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.getByRole('button', { name: 'settings', exact: true }).click();
   await page.locator('#settings-testdata-head').click();
   await page.getByRole('button', { name: 'add samples' }).click();
-  await page.waitForSelector('.ting-card .context-pill.agenda-suggested, .ting-card .context-pill.scheduled');
+  await page.waitForSelector('.ting-card .context-pill.agenda-lead');
 
-  const planRows = await page.locator('.ting-card .context-pill.agenda-suggested, .ting-card .context-pill.scheduled').count();
+  const planRows = await page.locator('.ting-card .context-pill.agenda-lead').count();
   if (planRows < 1) throw new Error('agenda time pills did not render on cards after samples');
-  await page.locator('.ting-card:has(.context-pill.agenda-suggested), .ting-card:has(.context-pill.scheduled)').first().click();
+  await page.locator('.ting-card:has(.context-pill.agenda-lead)').first().click();
   await page.waitForSelector('#detail-sheet.open, body.pane-active');
   await page.locator('#detail-cool').click();
   await page.waitForTimeout(150);
@@ -53,7 +53,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.waitForTimeout(250);
   if (await page.locator('#bar-open-today').count()) throw new Error('agenda wide button still exists');
   if (await page.locator('#home-agenda').count()) throw new Error('duplicate home agenda section exists on desktop');
-  if (!(await page.locator('.ting-card .context-pill.agenda-suggested, .ting-card .context-pill.scheduled').first().isVisible())) throw new Error('card time pill hidden on desktop');
+  if (!(await page.locator('.ting-card .context-pill.agenda-lead').first().isVisible())) throw new Error('card time pill hidden on desktop');
 
   // ────────────────────────────────────────────────────────────────────────
   // Phase 2 — controlled-data scenarios for the regressions:
@@ -153,11 +153,11 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     console.log('time-window pill debug:', JSON.stringify(pillDebug));
     throw new Error('time-window pill missing on windowed card');
   }
-  if (!(await winCard.locator('.context-pill.agenda-suggested').count())) throw new Error('agenda suggested pill missing on windowed card');
+  if (!(await winCard.locator('.context-pill.agenda-lead').count())) throw new Error('agenda suggested pill missing on windowed card');
 
   // (B)+(C)+(D)+(E) — agenda placement verified via home list and evaluate
   // Check that the windowed workout card shows the expected pills
-  if (!(await winCard.locator('.context-pill.agenda-suggested').count())) {
+  if (!(await winCard.locator('.context-pill.agenda-lead').count())) {
     throw new Error('agenda suggested pill missing on windowed card');
   }
   // Verify agenda placement via evaluate (buildTodayAgenda/buildTodayTimeline)

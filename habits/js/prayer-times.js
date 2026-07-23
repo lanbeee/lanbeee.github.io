@@ -213,6 +213,15 @@ function combineResolvedMinutes(a, b, combine){
 function resolveHabitExprMinutes(h, fieldName, suffix, dayBase, contextLocId){
   const anchor = cleanAnchor(h[fieldName + 'Anchor' + suffix]);
   if(!anchor)return null;
+  // Fixed clock is secondary-only (later/earlier-of B row).
+  if(anchor === 'fixed'){
+    if(suffix !== '2')return null;
+    return typeof normalizeTimeMinutes === 'function'
+      ? normalizeTimeMinutes(h[fieldName + 'FixedMin2'])
+      : (Number.isFinite(Number(h[fieldName + 'FixedMin2']))
+        ? Math.max(0, Math.min(1439, Math.round(Number(h[fieldName + 'FixedMin2']))))
+        : null);
+  }
   const offset = h[fieldName + 'OffsetMin' + suffix];
   const dayOff = h[fieldName + 'DayOffset' + suffix];
   if(anchor === 'habit'){
@@ -293,6 +302,15 @@ function prayerAnchorLabel(anchor, offsetMin, anchorHabitName, dayOffset){
   return out;
 }
 
+// PURE: compact clock label for a fixed secondary (e.g. "8pm").
+function fixedClockLabel(minutes){
+  const n = typeof normalizeTimeMinutes === 'function'
+    ? normalizeTimeMinutes(minutes)
+    : (Number.isFinite(Number(minutes)) ? Math.max(0, Math.min(1439, Math.round(Number(minutes)))) : null);
+  if(n == null)return 'clock';
+  return typeof formatTimeShort === 'function' ? formatTimeShort(n) : String(n);
+}
+
 // PURE: label for a (possibly combined) habit endpoint.
 function habitEndpointLabel(h, fieldName){
   if(!h)return '';
@@ -304,8 +322,14 @@ function habitEndpointLabel(h, fieldName){
   const combine = cleanTimeCombine(h[fieldName + 'Combine']);
   const a2 = cleanAnchor(h[fieldName + 'Anchor2']);
   if(!combine || !a2)return primary;
-  const name2 = a2 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId2'], data) || {}).name : null;
-  const secondary = prayerAnchorLabel(a2, h[fieldName + 'OffsetMin2'], name2, h[fieldName + 'DayOffset2']);
+  const secondary = a2 === 'fixed'
+    ? fixedClockLabel(h[fieldName + 'FixedMin2'])
+    : prayerAnchorLabel(
+      a2,
+      h[fieldName + 'OffsetMin2'],
+      a2 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId2'], data) || {}).name : null,
+      h[fieldName + 'DayOffset2']
+    );
   const word = combine === 'earlier' ? 'earlier of' : 'later of';
   return `${word} ${primary} · ${secondary}`;
 }
@@ -340,12 +364,21 @@ function habitUsesHabitAnchors(h){
   );
 }
 
-// PURE: cleanPrayerAnchor returns null for 'habit' (it's not in PRAYER_ANCHORS).
-// This helper accepts both kinds: returns 'fajr'|'sunrise'|...|'isha' OR 'habit'.
+// PURE: cleanPrayerAnchor returns null for 'habit'/'fixed' (not in PRAYER_ANCHORS).
+// Accepts prayer keys, 'habit' (primary or secondary), and 'fixed' (secondary
+// clock time in later/earlier-of only).
 function cleanAnchor(value){
   const prayer = cleanPrayerAnchor(value);
   if(prayer)return prayer;
-  return value === 'habit' ? 'habit' : null;
+  if(value === 'habit')return 'habit';
+  if(value === 'fixed')return 'fixed';
+  return null;
+}
+
+// PURE: secondary anchor for blocked times — prayer or fixed clock (no habit).
+function cleanBlockedAnchor2(value){
+  if(value === 'fixed')return 'fixed';
+  return cleanPrayerAnchor(value);
 }
 
 // IMPURE (reads load()): find a habit by hid in the current dataset. Returns
@@ -460,7 +493,7 @@ function foldBlockedMinutes(startMin, endMin){
 // PURE (with sortSettings global): resolve a blocked time endpoint to minutes-
 // relative to dayBase for the given day, or null when the block has no anchor.
 // Supports the same later/earlier-of combine + +1d dayOffset as habits
-// (prayer anchors only — no habit-relative option on blocked times).
+// (prayer anchors on primary; secondary may be prayer or a fixed clock).
 // Callers that need overnight agenda segments should run the pair through
 // foldBlockedMinutes() so negative / >1440 values become a wrap encoding.
 function resolveBlockedTimeMinutes(block, fieldName, dayBase){
@@ -479,8 +512,18 @@ function resolveBlockedTimeMinutes(block, fieldName, dayBase){
     coords, anchor, block[fieldName + 'OffsetMin'], dayBase, block[fieldName + 'DayOffset']
   );
   const combine = cleanTimeCombine(block[fieldName + 'Combine']);
-  const anchor2 = cleanPrayerAnchor(block[fieldName + 'Anchor2']);
+  const anchor2 = typeof cleanBlockedAnchor2 === 'function'
+    ? cleanBlockedAnchor2(block[fieldName + 'Anchor2'])
+    : cleanPrayerAnchor(block[fieldName + 'Anchor2']);
   if(!combine || !anchor2)return primary;
+  if(anchor2 === 'fixed'){
+    const secondary = typeof normalizeTimeMinutes === 'function'
+      ? normalizeTimeMinutes(block[fieldName + 'FixedMin2'])
+      : (Number.isFinite(Number(block[fieldName + 'FixedMin2']))
+        ? Math.max(0, Math.min(1439, Math.round(Number(block[fieldName + 'FixedMin2']))))
+        : null);
+    return combineResolvedMinutes(primary, secondary, combine);
+  }
   const secondary = resolvePrayerExprMinutes(
     coords, anchor2, block[fieldName + 'OffsetMin2'], dayBase, block[fieldName + 'DayOffset2']
   );

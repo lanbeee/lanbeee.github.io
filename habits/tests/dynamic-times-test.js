@@ -657,6 +657,120 @@ async function toastText(page){
   assert(helpers.junk === null, 'cleanTimeCombine junk→null');
   assert(helpers.d0 === 0 && helpers.d1 === 1 && helpers.d2 === 0, 'dayOffset only 0|1');
 
+  // ══════════════════════════════════════════════════════════════════════
+  // UNIT — later/earlier-of with fixed clock secondary
+  // ══════════════════════════════════════════════════════════════════════
+
+  console.log('\n[L] later/earlier-of + fixed clock secondary');
+  const fixedCombine = await page.evaluate(() => {
+    const s = loadSortSettings();
+    s.locations = [{id:'home', name:'Home', lat:40.7, lng:-74.0}];
+    saveSortSettings(s);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
+    const today = dayStart(Date.now());
+    const habit = {
+      locationIds:['home'],
+      allowedTimeStartAnchor:'isha',
+      allowedTimeStartOffsetMin:15,
+      allowedTimeStartCombine:'later',
+      allowedTimeStartAnchor2:'fixed',
+      allowedTimeStartFixedMin2:1200
+    };
+    const start = resolveHabitTimeField(habit, 'allowedTimeStart', today);
+    const ishaAlone = resolveHabitTimeField({
+      locationIds:['home'], allowedTimeStartAnchor:'isha', allowedTimeStartOffsetMin:15
+    }, 'allowedTimeStart', today);
+    const earlier = resolveHabitTimeField({
+      ...habit, allowedTimeStartCombine:'earlier'
+    }, 'allowedTimeStart', today);
+    const round = normalize([{
+      name:'sleep', type:'keepup', target:7, ...habit
+    }])[0];
+    const label = habitEndpointLabel(round, 'allowedTimeStart');
+    s.blockedTimes = [{
+      label:'sleep', days:[], start:1320, end:420, locationId:'home',
+      startAnchor:'isha', startOffsetMin:15,
+      startCombine:'later', startAnchor2:'fixed', startFixedMin2:1200,
+      endAnchor:'sunrise', endDayOffset:1
+    }];
+    saveSortSettings(s);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
+    const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)[0];
+    const blockStart = resolveBlockedTimeMinutes(block, 'start', today);
+    return {
+      start, ishaAlone, earlier,
+      startIsMax: start === Math.max(ishaAlone, 1200),
+      earlierIsMin: earlier === Math.min(ishaAlone, 1200),
+      roundAnchor2: round.allowedTimeStartAnchor2,
+      roundFixed: round.allowedTimeStartFixedMin2,
+      label,
+      blockAnchor2: block.startAnchor2,
+      blockFixed: block.startFixedMin2,
+      blockStart,
+      blockMatches: blockStart === start,
+      cleanFixed: cleanAnchor('fixed'),
+      blockedClean: typeof cleanBlockedAnchor2 === 'function' ? cleanBlockedAnchor2('fixed') : null
+    };
+  });
+  assert(Number.isFinite(fixedCombine.start), 'fixed-secondary start resolves (' + fixedCombine.start + ')');
+  assert(fixedCombine.startIsMax === true, 'later-of = max(isha+15, 8pm)');
+  assert(fixedCombine.earlierIsMin === true, 'earlier-of = min(isha+15, 8pm)');
+  assert(fixedCombine.roundAnchor2 === 'fixed', 'normalize keeps Anchor2 fixed');
+  assert(fixedCombine.roundFixed === 1200, 'normalize keeps FixedMin2 1200');
+  assert(fixedCombine.label.indexOf('later of') === 0, 'label starts with later of (' + fixedCombine.label + ')');
+  assert(/8pm/i.test(fixedCombine.label), 'label includes clock form (' + fixedCombine.label + ')');
+  assert(fixedCombine.blockAnchor2 === 'fixed', 'blocked Anchor2 fixed kept');
+  assert(fixedCombine.blockFixed === 1200, 'blocked FixedMin2 kept');
+  assert(fixedCombine.blockMatches === true, 'blocked start matches habit for fixed secondary');
+  assert(fixedCombine.cleanFixed === 'fixed', 'cleanAnchor accepts fixed');
+  assert(fixedCombine.blockedClean === 'fixed', 'cleanBlockedAnchor2 accepts fixed');
+
+  // Light UI: combine → fixed shows clock input, hides offset
+  console.log('\n[L2] detail UI fixed secondary controls');
+  const uiFixed = await page.evaluate(() => {
+    const data = load();
+    const idx = data.findIndex(h => h && h.name);
+    if(idx < 0)return {ok:false, reason:'no habit'};
+    openDetail(idx);
+    const endpoint = document.querySelector('#detail-allowed-time-row .time-endpoint[data-field="allowedTimeStart"]');
+    if(!endpoint)return {ok:false, reason:'no endpoint'};
+    endpoint.classList.add('is-dynamic');
+    const dyn = endpoint.querySelector('.time-dynamic');
+    if(dyn)dyn.hidden = false;
+    const fixed = endpoint.querySelector('.time-fixed');
+    if(fixed)fixed.hidden = true;
+    const anchor = endpoint.querySelector('.time-anchor');
+    if(anchor)anchor.value = 'isha';
+    const combine = endpoint.querySelector('.time-combine');
+    if(combine)combine.value = 'later';
+    const expr2 = endpoint.querySelector('.time-expr2');
+    if(expr2)expr2.hidden = false;
+    const anchor2 = endpoint.querySelector('.time-anchor2');
+    if(anchor2)anchor2.value = 'fixed';
+    const fixed2 = endpoint.querySelector('.time-fixed2');
+    if(fixed2)fixed2.value = '20:00';
+    syncExprControls(endpoint, 'allowedTimeStart', {
+      allowedTimeStartAnchor:'isha',
+      allowedTimeStartCombine:'later',
+      allowedTimeStartAnchor2:'fixed',
+      allowedTimeStartFixedMin2:1200
+    }, '2');
+    const offset2 = endpoint.querySelector('.time-offset2');
+    const day2 = endpoint.querySelector('.time-day-next2');
+    return {
+      ok:true,
+      fixed2Shown: fixed2 && !fixed2.hidden,
+      offsetHidden: offset2 ? offset2.hidden === true : false,
+      dayHidden: day2 ? day2.hidden === true : false,
+      fixedValue: fixed2 ? fixed2.value : ''
+    };
+  });
+  assert(uiFixed.ok === true, 'detail endpoint available (' + (uiFixed.reason || '') + ')');
+  assert(uiFixed.fixed2Shown === true, 'clock input shown for fixed B');
+  assert(uiFixed.offsetHidden === true, 'offset hidden when B is fixed');
+  assert(uiFixed.dayHidden === true, '+1d hidden when B is fixed');
+  assert(uiFixed.fixedValue === '20:00', 'clock defaults/shows 20:00');
+
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

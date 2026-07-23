@@ -506,12 +506,14 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   const cleaned = await page.evaluate(() => ({
     fajr: cleanAnchor('fajr'),
     habit: cleanAnchor('habit'),
+    fixed: cleanAnchor('fixed'),
     sunset: cleanAnchor('sunset'),
     junk: cleanAnchor('nope'),
     empty: cleanAnchor('')
   }));
   assert(cleaned.fajr === 'fajr', 'cleanAnchor fajr');
   assert(cleaned.habit === 'habit', "cleanAnchor 'habit'");
+  assert(cleaned.fixed === 'fixed', "cleanAnchor 'fixed'");
   assert(cleaned.sunset === 'maghrib', 'cleanAnchor sunset→maghrib');
   assert(cleaned.junk === null, 'cleanAnchor junk→null');
   assert(cleaned.empty === null, 'cleanAnchor empty→null');
