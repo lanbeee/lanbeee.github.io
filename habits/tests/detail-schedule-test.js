@@ -197,7 +197,7 @@ async function assertAttr(page, selector, attr, expected, msg){
       .filter(el => (el.textContent || '').includes(name));
     return {
       count:cards.length,
-      sliders:cards.filter(c => c.querySelector('.breakable-slider')).length,
+      sliders:cards.filter(c => c.querySelector('.breakable-crown')).length,
       trails:cards.filter(c => c.querySelector('.ting-trail')).length,
       label:cards[0]?.querySelector('.breakable-progress-label')?.textContent || null
     };

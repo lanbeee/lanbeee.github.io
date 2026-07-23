@@ -1004,16 +1004,31 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
-/** PURE: breakable progress slider markup (0–100% of today's / task budget). */
+/** PURE: breakable progress crown-dial markup with 3-color status bar. */
 function cardBreakableSlider(h){
   const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
-  const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
-  const pct = total > 0 ? Math.max(0,Math.min(100,(done / total) * 100)) : 0;
-  const value = Math.round(pct * 1000) / 1000;
+  const rawDone = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+  const done = Math.min(rawDone,total);
+  const bd = typeof breakableProgressBreakdown === 'function'
+    ? breakableProgressBreakdown(h)
+    : {manual:done,calendar:0,total};
+  const cappedManual = Math.min(bd.manual,total);
+  const cappedCal = Math.min(bd.calendar,total - cappedManual);
+  const manualPct = total > 0 ? (cappedManual / total) * 100 : 0;
+  const calPct = total > 0 ? (cappedCal / total) * 100 : 0;
+  const isComplete = done >= total;
   const label = `progress ${done} of ${total} minutes`;
   return `<div class="breakable-progress" data-breakable-progress>
-    <input type="range" class="breakable-slider" min="0" max="100" step="0.1" value="${value}"
-      aria-label="${escapeHtml(label)}" data-committed="${done}" data-total="${total}" />
+    <div class="breakable-status-bar" aria-hidden="true">
+      <span class="bar-manual" style="width:${manualPct}%"></span>
+      <span class="bar-calendar" style="width:${calPct}%"></span>
+      <span class="bar-adding" style="width:0%"></span>
+    </div>
+    <div class="crown-dial breakable-crown${isComplete ? ' complete' : ''}" role="slider" tabindex="0"
+      aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"
+      data-committed="${done}" data-total="${total}" data-calendar="${cappedCal}" data-manual="${cappedManual}">
+      <canvas class="crown-canvas"></canvas>
+    </div>
     <span class="breakable-progress-label" aria-hidden="true">${done}/${total}m</span>
   </div>`;
 }
@@ -1935,6 +1950,7 @@ function render(opts){
       row.dataset.progressTarget = String(done);
       row.dataset.progressDirty = '0';
     }
+    const isBreakable = showBreakableSlider;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         ${pinAction}
@@ -1944,32 +1960,32 @@ function render(opts){
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
-        <div class="ting-info${showBreakableSlider ? ' has-breakable-progress' : ''}">
+        <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}">
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
           </div>
-          <div class="ting-cue">${escapeHtml(cue)}</div>
-          <div class="ting-meta" aria-label="rhythm and plan">${context}</div>
+          ${isBreakable ? '' : `<div class="ting-cue">${escapeHtml(cue)}</div>
+          <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           <div class="ting-visual"${visualAria}>
             ${visualHtml}
           </div>
         </div>
-        <div class="card-actions" aria-label="habit actions">
+        ${isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="snooze" aria-label="snooze" title="snooze"><i class="ti ti-moon" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
-        </div>
+        </div>`}
       </div>`;
 
     list.appendChild(row);
     setupSwipe(row);
     setupCardTap(row,realIdx);
-    if(showBreakableSlider)setupBreakableSlider(row,realIdx);
+    if(showBreakableSlider)setupBreakableCrown(row,realIdx);
   };
 
   if(deferAgenda){
@@ -2436,40 +2452,150 @@ function renderProgressive(){
   if(didRender !== false)_homeListFingerprint = homeListFingerprint();
 }
 
-// WIRE: slider input only sets a pending absolute target. Logging stays on the
-// pulse/double-tap path, and slider gestures never activate or swipe the card.
-function setupBreakableSlider(row,_realIdx){
-  const slider = row.querySelector('.breakable-slider');
+// WIRE: crown-dial gesture for breakable progress. Drag horizontally to adjust
+// minutes (10px = 1 min). Updates the 3-color status bar and pending target.
+// Logging stays on the pulse/double-tap path; gestures never swipe the card.
+function setupBreakableCrown(row,_realIdx){
+  const crown = row.querySelector('.breakable-crown');
+  if(!crown)return;
+  const canvas = crown.querySelector('.crown-canvas');
   const label = row.querySelector('.breakable-progress-label');
-  if(!slider)return;
-  const total = Math.max(1,Math.round(Number(slider.dataset.total) || 1));
-  const committed = Math.max(0,Math.min(total,Math.round(Number(slider.dataset.committed) || 0)));
-  const committedPct = total > 0 ? Math.max(0,Math.min(100,(committed / total) * 100)) : 0;
-  slider.min = '0';
-  function syncLabel(minutes){
-    if(label)label.textContent = `${Math.round(minutes)}/${total}m`;
-    slider.setAttribute('aria-label',`progress ${Math.round(minutes)} of ${total} minutes`);
+  const barManual = row.querySelector('.bar-manual');
+  const barCalendar = row.querySelector('.bar-calendar');
+  const barAdding = row.querySelector('.bar-adding');
+  const total = Math.max(1,Math.round(Number(crown.dataset.total) || 1));
+  const committed = Math.max(0,Math.min(total,Math.round(Number(crown.dataset.committed) || 0)));
+  const calendarMin = Math.max(0,Math.round(Number(crown.dataset.calendar) || 0));
+  const manualMin = Math.max(0,Math.round(Number(crown.dataset.manual) || 0));
+
+  crown._scroll = committed * 10;
+  if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas, crown._scroll);
+
+  // Dial is forward-only: committed progress is locked, you can only add more.
+  // teal = manual committed, purple = calendar committed, amber = pending add.
+  function syncVisual(minutes){
+    const m = Math.max(committed,Math.min(total,Math.round(minutes)));
+    if(label)label.textContent = `${m}/${total}m`;
+    crown.setAttribute('aria-valuenow',m);
+    crown.setAttribute('aria-label',`progress ${m} of ${total} minutes`);
+    crown.classList.toggle('complete',m >= total);
+    const adding = m - committed;
+    const capManual = Math.min(manualMin,total);
+    const capCal = Math.min(calendarMin,total - capManual);
+    const capAdding = Math.min(adding,total - capManual - capCal);
+    const manualPct = total > 0 ? (capManual / total) * 100 : 0;
+    const calPct = total > 0 ? (capCal / total) * 100 : 0;
+    const addingPct = total > 0 ? (capAdding / total) * 100 : 0;
+    if(barManual)barManual.style.width = `${manualPct}%`;
+    if(barCalendar)barCalendar.style.width = `${calPct}%`;
+    if(barAdding)barAdding.style.width = `${addingPct}%`;
   }
-  function onInput(){
-    const pct = Math.max(0,Math.min(100,Number(slider.value) || 0));
-    let minutes = Math.max(0,Math.min(total,Math.round(total * pct / 100)));
-    // A visible percentage move should always represent at least one minute.
-    if(minutes === committed && Math.abs(pct - committedPct) > 0.0001){
-      minutes = Math.max(0,Math.min(total,committed + (pct > committedPct ? 1 : -1)));
+
+  function setTarget(minutes){
+    const m = Math.max(committed,Math.min(total,Math.round(minutes)));
+    row.dataset.progressTarget = String(m);
+    row.dataset.progressDirty = m === committed ? '0' : '1';
+    syncVisual(m);
+  }
+
+  let prevX,velX = 0,momentumId = null,smoothAnimId = null;
+  const friction = 0.935;
+  const minScroll = committed * 10;
+
+  const cancelMomentum = () => {
+    if(momentumId){cancelAnimationFrame(momentumId);momentumId=null;}
+    if(smoothAnimId){cancelAnimationFrame(smoothAnimId);smoothAnimId=null;}
+  };
+
+  const startMomentum = initVel => {
+    cancelMomentum();
+    const baseScroll = crown._scroll;
+    const baseVal = Math.round(Number(row.dataset.progressTarget) || committed);
+    let vel = initVel;
+    const tick = () => {
+      vel *= friction;
+      if(Math.abs(vel) < 0.5){momentumId = null;return;}
+      crown._scroll = Math.max(minScroll,crown._scroll + vel);
+      const derived = Math.max(committed,Math.min(total,baseVal + Math.round((crown._scroll - baseScroll) / 10)));
+      setTarget(derived);
+      if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+      momentumId = requestAnimationFrame(tick);
+    };
+    momentumId = requestAnimationFrame(tick);
+  };
+
+  crown.addEventListener('pointerdown',e=>{
+    cancelMomentum();
+    prevX = e.clientX;
+    velX = 0;
+    crown._valScroll = 0;
+    crown._dragBase = Math.round(Number(row.dataset.progressTarget) || committed);
+    crown.setPointerCapture(e.pointerId);
+    crown.classList.add('active');
+  });
+
+  crown.addEventListener('pointermove',e=>{
+    if(prevX === undefined)return;
+    const dx = e.clientX - prevX;
+    prevX = e.clientX;
+    velX = velX * 0.55 + dx * 0.45;
+    crown._scroll = Math.max(minScroll,crown._scroll + dx);
+    if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+    const speed = Math.abs(velX);
+    const gain = 1 + speed * 0.15;
+    crown._valScroll += dx * gain;
+    setTarget(crown._dragBase + Math.round(crown._valScroll / 10));
+  });
+
+  const endDrag = () => {
+    prevX = undefined;
+    crown.classList.remove('active');
+    if(Math.abs(velX) > 1)startMomentum(velX);
+    velX = 0;
+  };
+
+  crown.addEventListener('pointerup',endDrag);
+  crown.addEventListener('pointercancel',endDrag);
+
+  crown.addEventListener('wheel',e=>{
+    e.preventDefault();
+    cancelMomentum();
+    const step = e.deltaY < 0 ? 1 : -1;
+    const cur = Math.round(Number(row.dataset.progressTarget) || committed);
+    const next = Math.max(committed,Math.min(total,cur + step));
+    if(next !== cur){
+      crown._scroll = Math.max(minScroll,crown._scroll + step * 10);
+      if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+      setTarget(next);
     }
-    row.dataset.progressTarget = String(minutes);
-    row.dataset.progressDirty = minutes === committed ? '0' : '1';
-    syncLabel(minutes);
-    slider.style.setProperty('--breakable-target-pct',`${pct}%`);
-  }
-  slider.style.setProperty('--breakable-committed-pct',`${committedPct}%`);
-  slider.style.setProperty('--breakable-target-pct',`${slider.value}%`);
+  },{passive:false});
+
+  crown.addEventListener('keydown',e=>{
+    const inc = e.key === 'ArrowRight' || e.key === 'ArrowUp';
+    const dec = e.key === 'ArrowLeft' || e.key === 'ArrowDown';
+    if(inc||dec){
+      e.preventDefault();
+      cancelMomentum();
+      const cur = Math.round(Number(row.dataset.progressTarget) || committed);
+      const next = Math.max(committed,Math.min(total,cur + (inc ? 1 : -1)));
+      if(next !== cur){
+        crown._scroll = Math.max(minScroll,crown._scroll + (inc ? 10 : -10));
+        if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+        setTarget(next);
+      }
+    }
+  });
+
   const stop = e=>{ e.stopPropagation(); };
   ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel','mousedown','mouseup','click'].forEach(ev=>{
-    slider.addEventListener(ev,stop,{ passive:true });
+    crown.addEventListener(ev,stop,{ passive:true });
   });
-  slider.addEventListener('input',onInput);
-  slider.addEventListener('change',onInput);
+
+  window.addEventListener('resize',()=>{
+    if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+  });
+
+  syncVisual(committed);
 }
 
 // WIRE: attach swipe gesture listeners
@@ -3142,7 +3268,13 @@ function commitBreakableFromCard(i,card){
   const h = load()[i];
   if(!h || !h.breakable)return false;
   const intent = breakableCardIntent(h,card);
-  if(intent.dirty)return commitBreakableProgress(i,intent.target);
+  if(intent.dirty){
+    if(intent.target <= intent.done){
+      showToast('already done');
+      return false;
+    }
+    return commitBreakableProgress(i,intent.target);
+  }
   const suggested = typeof suggestedBreakableLogMinutes === 'function'
     ? intent.suggested
     : 0;
@@ -3167,8 +3299,8 @@ function quickLog(i,card){
   if(h && h.breakable){
     if(h.trackValue && typeof requestLogTing === 'function'){
       const intent = breakableCardIntent(h,card);
-      if(intent.dirty && intent.target < intent.done){
-        if(commitBreakableProgress(i,intent.target))go();
+      if(intent.dirty && intent.target <= intent.done){
+        showToast('already done');
         return;
       }
       const minutes = intent.dirty ? intent.target - intent.done : intent.suggested;

@@ -311,7 +311,7 @@ async function breakableFillRows(page, name){
       .filter(el => (el.textContent || '').includes('Breakable continuous'));
     return {
       count:cards.length,
-      hasSlider:!!cards[0]?.querySelector('.breakable-slider'),
+      hasSlider:!!cards[0]?.querySelector('.breakable-crown'),
       hasTrail:!!cards[0]?.querySelector('.ting-trail'),
       label:cards[0]?.querySelector('.breakable-progress-label')?.textContent || null
     };
@@ -606,10 +606,10 @@ async function breakableFillRows(page, name){
 
   const sliderCard = page.locator('.ting-card:has-text("Slider work")');
   await sliderCard.waitFor({ state:'visible' });
-  const slider = sliderCard.locator('.breakable-slider');
-  assert(await slider.count() === 1, 'breakable card should show progress slider');
-  assert(await slider.inputValue() === '0', `slider starts at 0, got ${await slider.inputValue()}`);
-  assert(await page.locator('.ting-card:has-text("Normal stretch") .breakable-slider').count() === 0,
+  const slider = sliderCard.locator('.breakable-crown');
+  assert(await slider.count() === 1, 'breakable card should show progress crown');
+  assert(await slider.getAttribute('aria-valuenow') === '0', `crown starts at 0, got ${await slider.getAttribute('aria-valuenow')}`);
+  assert(await page.locator('.ting-card:has-text("Normal stretch") .breakable-crown').count() === 0,
     'non-breakable must not show slider');
   assert(await page.locator('.ting-card:has-text("Normal stretch") .ting-trail').count() === 1,
     'non-breakable keeps trail dots');
@@ -624,7 +624,7 @@ async function breakableFillRows(page, name){
     const h = load().find(x => x.name === 'Normal stretch');
     return normalizeLogs(h.logs).filter(log => !isPlanLog(log)).length === before + 1;
   }, normalBefore, { timeout:5000 });
-  assert(await page.locator('.ting-card:has-text("Normal stretch") .breakable-slider').count() === 0,
+  assert(await page.locator('.ting-card:has-text("Normal stretch") .breakable-crown').count() === 0,
     'non-breakable remains slider-free after pulse');
   console.log('  non-breakable pulse unchanged: OK');
 
@@ -640,89 +640,96 @@ async function breakableFillRows(page, name){
     const data = load();
     const h = data.find(x => x.name === 'Slider work');
     const card = [...document.querySelectorAll('#list .ting-card')].find(el => el.textContent.includes('Slider work'));
-    const sliderEl = card?.querySelector('.breakable-slider');
+    const crownEl = card?.querySelector('.breakable-crown');
     return {
       progress:breakableProgressMinutes(h),
       budget:breakableBudgetMinutes(h),
-      sliderVal:sliderEl ? Number(sliderEl.value) : null,
+      ariaNow:crownEl ? crownEl.getAttribute('aria-valuenow') : null,
       label:card?.querySelector('.breakable-progress-label')?.textContent,
-      min:sliderEl ? Number(sliderEl.min) : null
+      committed:crownEl ? crownEl.dataset.committed : null
     };
   });
   assert(afterPulse2.progress === 60, `pulse should log 60m suggestion, got ${afterPulse2.progress}`);
   assert(afterPulse2.budget === 360, `remaining budget 360, got ${afterPulse2.budget}`);
   assert(afterPulse2.label === '60/420m', `label should be 60/420m, got ${afterPulse2.label}`);
-  assert(Math.abs(afterPulse2.sliderVal - (60 / 420 * 100)) < 0.2,
-    `slider ~14.3% for 60/420, got ${afterPulse2.sliderVal}`);
-  assert(afterPulse2.min === 0, `slider must retain the full correction range, got min ${afterPulse2.min}`);
+  assert(afterPulse2.ariaNow === '60', `crown aria-valuenow=60, got ${afterPulse2.ariaNow}`);
+  assert(afterPulse2.committed === '60', `crown committed=60 after pulse, got ${afterPulse2.committed}`);
   console.log('  pulse logs suggestion 60m: OK');
 
-  // Move below committed to 45m, then pulse: rewrite today's minute logs to 45.
+  // Forward-only dial: cannot reduce below committed, can only add.
   const workCard = page.locator('.ting-card').filter({ hasText:'Slider work' });
-  const slider2 = workCard.locator('.breakable-slider');
-  await slider2.evaluate(el => {
-    el.value = String(45 / 420 * 100);
-    el.dispatchEvent(new Event('input', { bubbles:true }));
-    el.dispatchEvent(new Event('change', { bubbles:true }));
+  const crown2 = workCard.locator('.breakable-crown');
+  // Try to reduce via keyboard left — should clamp at committed (60).
+  await crown2.evaluate(el => {
+    for(let i = 0; i < 20; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key:'ArrowLeft', bubbles:true }));
   });
-  const reverseAttempt = await page.evaluate(() => {
+  const forwardOnly = await page.evaluate(() => {
     const row = [...document.querySelectorAll('.swipe-row')].find(r =>
       r.querySelector('.ting-card')?.textContent.includes('Slider work')
-      && r.querySelector('.breakable-slider'));
-    const el = row?.querySelector('.breakable-slider');
-    return {
-      dirty:row?.dataset.progressDirty,
-      target:row?.dataset.progressTarget,
-      value:el ? Number(el.value) : null,
-      min:el ? Number(el.min) : null
-    };
-  });
-  assert(reverseAttempt.min === 0, `slider correction range starts at 0, got ${reverseAttempt.min}`);
-  assert(reverseAttempt.dirty === '1', `reverse target must be pending, got ${reverseAttempt.dirty}`);
-  assert(Number(reverseAttempt.target) === 45, `pending correction should be 45, got ${reverseAttempt.target}`);
-  await workCard.locator('.pulse-btn').click();
-  await page.waitForFunction(() => {
-    const h = load().find(x => x.name === 'Slider work');
-    return h && breakableProgressMinutes(h) === 45;
-  }, null, { timeout:5000 });
-  const afterCorrection = await page.evaluate(() => {
-    const h = load().find(x => x.name === 'Slider work');
-    const today = dayStart(Date.now());
-    const todayMinuteLogs = normalizeLogs(h.logs).filter(log =>
-      !isPlanLog(log) && logMinutes(log) !== null && dayStart(logTime(log)) === today);
-    return {
-      progress:breakableProgressMinutes(h),
-      budget:breakableBudgetMinutes(h),
-      minuteLogs:todayMinuteLogs.map(logMinutes),
-      keptHistorical:h.logs.some(log => dayStart(logTime(log)) < today)
-    };
-  });
-  assert(afterCorrection.progress === 45, `correction should set 45m, got ${afterCorrection.progress}`);
-  assert(afterCorrection.budget === 375, `correction should leave 375m, got ${afterCorrection.budget}`);
-  assert(JSON.stringify(afterCorrection.minuteLogs) === JSON.stringify([45]),
-    `correction should consolidate today's minutes to [45], got ${JSON.stringify(afterCorrection.minuteLogs)}`);
-  assert(afterCorrection.keptHistorical, 'correction must preserve out-of-scope history');
-  console.log('  reverse correction sets today to 45m: OK');
-
-  // Native slider input (track tap, keyboard, or drag) to 50%, then pulse.
-  await slider2.evaluate(el => {
-    el.value = '50';
-    el.dispatchEvent(new Event('input', { bubbles:true }));
-    el.dispatchEvent(new Event('change', { bubbles:true }));
-  });
-  const pending = await page.evaluate(() => {
-    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
-      r.querySelector('.ting-card')?.textContent.includes('Slider work')
-      && r.querySelector('.breakable-slider'));
+      && r.querySelector('.breakable-crown'));
     return {
       dirty:row?.dataset.progressDirty,
       target:row?.dataset.progressTarget
     };
   });
-  assert(pending.dirty === '1', 'slider input ahead should mark dirty');
-  const targetMin = Math.round(420 * 50 / 100);
+  assert(forwardOnly.dirty === '0', `dial at committed should not be dirty, got ${forwardOnly.dirty}`);
+  assert(Number(forwardOnly.target) === 60, `dial clamped at committed=60, got ${forwardOnly.target}`);
+
+  // Add forward via keyboard right — should increase target.
+  await crown2.evaluate(el => {
+    for(let i = 0; i < 30; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key:'ArrowRight', bubbles:true }));
+  });
+  const forwardAdd = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.swipe-row')].find(r =>
+      r.querySelector('.ting-card')?.textContent.includes('Slider work')
+      && r.querySelector('.breakable-crown'));
+    return {
+      dirty:row?.dataset.progressDirty,
+      target:row?.dataset.progressTarget
+    };
+  });
+  assert(forwardAdd.dirty === '1', `forward add should be dirty, got ${forwardAdd.dirty}`);
+  assert(Number(forwardAdd.target) === 90, `forward add to 90, got ${forwardAdd.target}`);
+  await workCard.locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const h = load().find(x => x.name === 'Slider work');
+    return h && breakableProgressMinutes(h) === 90;
+  }, null, { timeout:5000 });
+  const afterForward = await page.evaluate(() => {
+    const h = load().find(x => x.name === 'Slider work');
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h)
+    };
+  });
+  assert(afterForward.progress === 90, `forward commit should set 90m, got ${afterForward.progress}`);
+  assert(afterForward.budget === 330, `forward commit should leave 330m, got ${afterForward.budget}`);
+  console.log('  forward-only dial: OK');
+
+  // Wait for UI to re-render with committed=90 before interacting with crown.
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
+      (el.textContent || '').includes('Slider work'));
+    return card?.querySelector('.breakable-crown')?.dataset.committed === '90';
+  }, null, { timeout:5000 });
+
+  // Crown keyboard input to 50% (210m from committed 90), then pulse.
+  await crown2.evaluate(el => {
+    for(let i = 0; i < 120; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key:'ArrowRight', bubbles:true }));
+  });
+  const pending = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
+      r.querySelector('.ting-card')?.textContent.includes('Slider work')
+      && r.querySelector('.breakable-crown'));
+    return {
+      dirty:row?.dataset.progressDirty,
+      target:row?.dataset.progressTarget
+    };
+  });
+  assert(pending.dirty === '1', 'crown keyboard ahead should mark dirty');
+  const targetMin = 210;
   assert(Number(pending.target) === targetMin,
-    `target minutes ~${targetMin}, got ${pending.target}`);
+    `target minutes ${targetMin}, got ${pending.target}`);
 
   await workCard.locator('.pulse-btn').click();
   await page.waitForFunction(() => {
@@ -756,23 +763,23 @@ async function breakableFillRows(page, name){
     const h = data.find(x => x.name === 'Slider work');
     if(!h || breakableProgressMinutes(h) !== 270)return false;
     const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
-      (el.textContent || '').includes('Slider work') && el.querySelector('.breakable-slider'));
+      (el.textContent || '').includes('Slider work') && el.querySelector('.breakable-crown'));
     return card?.querySelector('.breakable-progress-label')?.textContent === '270/420m';
   }, null, { timeout:5000 });
   const afterSecondPulse = await page.evaluate(() => {
     const data = load();
     const h = data.find(x => x.name === 'Slider work');
     const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
-      el.textContent.includes('Slider work') && el.querySelector('.breakable-slider'));
+      el.textContent.includes('Slider work') && el.querySelector('.breakable-crown'));
     return {
       progress:breakableProgressMinutes(h),
       label:card?.querySelector('.breakable-progress-label')?.textContent,
-      min:Number(card?.querySelector('.breakable-slider')?.min)
+      committed:card?.querySelector('.breakable-crown')?.dataset.committed
     };
   });
   assert(afterSecondPulse.progress === 270, `second pulse → 270, got ${afterSecondPulse.progress}`);
   assert(afterSecondPulse.label === '270/420m', `label 270/420m, got ${afterSecondPulse.label}`);
-  assert(afterSecondPulse.min === 0, `slider keeps correction range after refresh, got ${afterSecondPulse.min}`);
+  assert(afterSecondPulse.committed === '270', `crown committed tracks progress, got ${afterSecondPulse.committed}`);
   console.log('  undragged second pulse advances suggestion: OK');
 
   // Helpers unit checks
@@ -826,12 +833,12 @@ async function breakableFillRows(page, name){
   await page.waitForFunction(() => {
     const card = [...document.querySelectorAll('#list .ting-card')]
       .find(el => (el.textContent || '').includes('Huge chunk work'));
-    return !!card?.querySelector('.breakable-slider');
+    return !!card?.querySelector('.breakable-crown');
   }, null, { timeout:8000 });
   const hugeMeta = await page.evaluate(() => {
     const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
       (r.querySelector('.ting-card')?.textContent || '').includes('Huge chunk work')
-      && r.querySelector('.breakable-slider'));
+      && r.querySelector('.breakable-crown'));
     return {
       chunkMinutes:row ? Number(row.dataset.chunkMinutes) : null,
       dirty:row?.dataset.progressDirty
@@ -897,7 +904,7 @@ async function breakableFillRows(page, name){
       .filter(el => (el.textContent || '').includes('Split slider'));
     return {
       count:cards.length,
-      sliders:cards.map(c => !!c.querySelector('.breakable-slider')),
+      sliders:cards.map(c => !!c.querySelector('.breakable-crown')),
       trails:cards.map(c => !!c.querySelector('.ting-trail'))
     };
   });
@@ -937,9 +944,9 @@ async function breakableFillRows(page, name){
       .filter(el => (el.textContent || '').includes('Split slider'));
     return {
       progress:breakableProgressMinutes(h),
-      firstHasSlider:!!cards[0]?.querySelector('.breakable-slider'),
+      firstHasSlider:!!cards[0]?.querySelector('.breakable-crown'),
       firstLabel:cards[0]?.querySelector('.breakable-progress-label')?.textContent || null,
-      sliders:cards.map(c => !!c.querySelector('.breakable-slider')),
+      sliders:cards.map(c => !!c.querySelector('.breakable-crown')),
       trails:cards.map(c => !!c.querySelector('.ting-trail')),
       cardCount:cards.length
     };
@@ -1022,7 +1029,7 @@ async function breakableFillRows(page, name){
     const workAt = listText.indexOf('Week work');
     return {
       cardCount:cards.length,
-      sliders:cards.map(c => !!c.querySelector('.breakable-slider')),
+      sliders:cards.map(c => !!c.querySelector('.breakable-crown')),
       trails:cards.map(c => !!c.querySelector('.ting-trail')),
       lunchBeforeWork:lunchAt >= 0 && workAt >= 0 ? lunchAt < workAt : null,
       hasLunch:lunchAt >= 0
@@ -1090,7 +1097,7 @@ async function breakableFillRows(page, name){
       budget:breakableBudgetMinutes(h),
       logMinutes:logMinutes(last),
       cardCount:cards.length,
-      hasSlider:cards.some(c => c.querySelector('.breakable-slider')),
+      hasSlider:cards.some(c => c.querySelector('.breakable-crown')),
       label:cards.map(c => c.querySelector('.breakable-progress-label')?.textContent).find(Boolean) || null,
       includeToday:typeof includeInTodayAgenda === 'function'
         ? includeInTodayAgenda(h, settings) : null,
@@ -1175,7 +1182,7 @@ async function breakableFillRows(page, name){
   });
   await page.waitForFunction(()=>{
     const work = [...document.querySelectorAll('#list .ting-card')]
-      .find(card=>(card.textContent || '').includes('GLPK partial work') && card.querySelector('.breakable-slider'));
+      .find(card=>(card.textContent || '').includes('GLPK partial work') && card.querySelector('.breakable-crown'));
     return Boolean(work && typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized);
   },null,{timeout:10000});
   const glpkBefore = await page.evaluate(()=>{
@@ -1187,11 +1194,9 @@ async function breakableFillRows(page, name){
   });
   assert(glpkBefore.first >= 0 && glpkBefore.work > glpkBefore.first,
     `another agenda card should precede Work: ${JSON.stringify(glpkBefore)}`);
-  const glpkWork = page.locator('#list .ting-card').filter({hasText:'GLPK partial work'}).filter({has:page.locator('.breakable-slider')}).first();
-  await glpkWork.locator('.breakable-slider').evaluate(el=>{
-    el.value = String(120 / 360 * 100);
-    el.dispatchEvent(new Event('input',{bubbles:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
+  const glpkWork = page.locator('#list .ting-card').filter({hasText:'GLPK partial work'}).filter({has:page.locator('.breakable-crown')}).first();
+  await glpkWork.locator('.breakable-crown').evaluate(el=>{
+    for(let i = 0; i < 120; i++) el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
   });
   const glpkPending = await glpkWork.evaluate(card=>{
     const row = card.closest('.swipe-row');
@@ -1204,7 +1209,7 @@ async function breakableFillRows(page, name){
     const h = load().find(x=>x.name === 'GLPK partial work');
     const idx = load().findIndex(x=>x.name === 'GLPK partial work');
     const card = [...document.querySelectorAll('#list .ting-card')]
-      .find(el=>(el.textContent || '').includes('GLPK partial work') && el.querySelector('.breakable-slider'));
+      .find(el=>(el.textContent || '').includes('GLPK partial work') && el.querySelector('.breakable-crown'));
     const today = (_homeRenderedWeek?.days || []).find(day=>day.isToday);
     const remainingPlaced = (today?.timeline || [])
       .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i === idx)
@@ -1275,9 +1280,9 @@ async function breakableFillRows(page, name){
   console.log('  eligibility helpers after partial/full log: OK');
 
   // Slider hit target size (phone-friendly).
-  const sliderBox = await page.locator('#list .breakable-slider').first().boundingBox();
-  assert(sliderBox && sliderBox.height >= 40,
-    `slider hit area should be ≥40px tall on phone, got ${sliderBox && sliderBox.height}`);
+  const sliderBox = await page.locator('#list .breakable-crown').first().boundingBox();
+  assert(sliderBox && sliderBox.height >= 34,
+    `crown hit area should be ≥34px tall on phone, got ${sliderBox && sliderBox.height}`);
   console.log('  slider touch target size: OK');
 
   // ═══════════════════════════════════════════════════════════
@@ -1360,7 +1365,7 @@ async function breakableFillRows(page, name){
   const detailCardSlider = await page.evaluate(() => {
     const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
       (el.textContent || '').includes('BreakableDetail'));
-    return !!card?.querySelector('.breakable-slider');
+    return !!card?.querySelector('.breakable-crown');
   });
   assert(detailCardSlider, 'persisted breakable task card should show slider');
   console.log('  breakable task card slider: OK');

@@ -957,6 +957,29 @@ function breakableProgressPercent(h,dayBase){
   const done = breakableProgressMinutes(h,dayBase);
   return Math.max(0,Math.min(100,Math.round((done / total) * 100)));
 }
+/**
+ * PURE: split committed breakable progress into manual vs calendar-sourced
+ * minutes. Used by the 3-color status bar on breakable cards.
+ */
+function breakableProgressBreakdown(h,dayBase){
+  const total = breakableTotalMinutes(h);
+  if(!h || !h.breakable || total <= 0)return {manual:0,calendar:0,total:0};
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
+  const start = h.type === 'task' ? 0 : dayStart(base);
+  const end = h.type === 'task' ? Infinity : start + 86400000;
+  let calendar = 0;
+  normalizeLogs(h.logs).forEach(log=>{
+    if(isPlanLog(log))return;
+    const ts = logTime(log);
+    if(!ts || ts < start || ts >= end)return;
+    const m = Number(log && log.minutes);
+    if(!Number.isFinite(m) || m <= 0)return;
+    if(isCalendarCreditLog(log))calendar += m;
+  });
+  const done = breakableProgressMinutes(h,dayBase);
+  const manual = Math.max(0,done - calendar);
+  return {manual,calendar,total};
+}
 /** PURE: minutes for a 0–100 slider percent of the breakable budget. */
 function breakableMinutesFromPercent(h,percent){
   const total = breakableTotalMinutes(h);
