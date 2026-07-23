@@ -1,9 +1,11 @@
-const CACHE = 'tings-v50';
+const CACHE = 'tings-v51';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 const MAPS_ORIGINS = [
   'https://router.project-osrm.org',
   'https://nominatim.openstreetmap.org',
@@ -13,7 +15,8 @@ const MAPS_ORIGINS = [
   'https://a.tile.openstreetmap.org',
   'https://b.tile.openstreetmap.org',
   'https://c.tile.openstreetmap.org',
-  'https://unpkg.com'
+  'https://unpkg.com',
+  'https://cdn.jsdelivr.net'
 ];
 const GEOCODE_ORIGINS = [
   'https://nominatim.openstreetmap.org',
@@ -30,6 +33,7 @@ const PRECACHE = [
   './js/viewport.js',
   './lib/js/adhan.umd.min.js',
   './js/data.js',
+  './js/calendar-import.js',
   './js/locations.js',
   './js/prayer-times.js',
   './js/scoring.js',
@@ -51,7 +55,7 @@ const PRECACHE = [
   './manifest.json'
 ];
 
-const PRECACHE_CDN = [TABLER_CSS, TABLER_WOFF2, LEAFLET_CSS, LEAFLET_JS];
+const PRECACHE_CDN = [TABLER_CSS, TABLER_WOFF2, LEAFLET_CSS, LEAFLET_JS, PDFJS, PDFJS_WORKER];
 
 async function cachePutOk(cache, url) {
   try {

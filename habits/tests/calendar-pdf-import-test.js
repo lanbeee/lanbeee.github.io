@@ -224,6 +224,18 @@ Calendar: holidays@example.com
   assert(after.meetings === 0, 'no pdf meetings left');
   assert(after.credits === 0, 'calendar credit logs stripped');
 
+  // Keepup with duration (not yet breakable) still appears / credits.
+  const creditList = await page.evaluate(()=>{
+    save([{
+      hid:'work-habit-1', name:'Work', type:'keepup', target:1, breakable:false,
+      durationMinutes:420, minChunkMinutes:30, logs:[], emoji:''
+    }]);
+    renderCalendarImportControls();
+    const opts = [...document.querySelectorAll('#calendar-credit-habit option')].map(o=>({v:o.value,t:o.textContent}));
+    return opts;
+  });
+  assert(creditList.some(o=>o.v === 'work-habit-1'), `Work should appear in credit list: ${JSON.stringify(creditList)}`);
+
   assert(!errors.length, `page errors: ${errors.join('; ')}`);
   console.log('calendar-pdf-import-test: ok');
   await browser.close();

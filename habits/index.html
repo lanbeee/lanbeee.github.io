@@ -679,16 +679,17 @@
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
             <p class="field-hint">Temporary stand-in until Microsoft or Google connect. Import an Outlook/Teams agenda print or a Google Calendar schedule PDF — meetings land as auto-done timed blocks on your agenda.</p>
-            <div class="btn-row">
-              <button class="btn primary" id="calendar-pdf-pick" type="button">choose PDF</button>
+            <div class="btn-row calendar-pdf-pick-row">
+              <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose PDF</label>
               <button class="btn" id="calendar-pdf-clear" type="button">clear imported</button>
             </div>
-            <input type="file" id="calendar-pdf-input" accept="application/pdf,.pdf" hidden />
+            <!-- Not [hidden]: iOS Safari ignores programmatic .click() on display:none / hidden file inputs. -->
+            <input type="file" id="calendar-pdf-input" class="file-input-native" accept="application/pdf,.pdf" />
             <label class="field-label" for="calendar-credit-habit">credit meeting hours to</label>
             <select id="calendar-credit-habit" class="settings-select">
               <option value="">none</option>
             </select>
-            <p class="field-hint">Pick a breakable habit (like Work). Overlapping meetings on the same day are merged so wall-clock time is credited once.</p>
+            <p class="field-hint" id="calendar-credit-hint">Pick a keepup/reduce habit (like Work). Meeting minutes are credited toward its daily duration; the habit is marked breakable if needed.</p>
             <label class="field-label" for="calendar-allday-mode">all-day events</label>
             <select id="calendar-allday-mode" class="settings-select">
               <option value="skip">skip them</option>

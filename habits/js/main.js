@@ -1488,7 +1488,6 @@ $('backup-file-input')?.addEventListener('change',e=>{
 });
 $('backup-import-yes')?.addEventListener('click',confirmBackupImport);
 $('backup-import-no')?.addEventListener('click',cancelBackupImport);
-$('calendar-pdf-pick')?.addEventListener('click',()=>$('calendar-pdf-input')?.click());
 $('calendar-pdf-input')?.addEventListener('change',e=>{
   const file = e.target.files && e.target.files[0];
   handleCalendarPdfChosen(file);

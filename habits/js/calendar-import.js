@@ -5,8 +5,10 @@
 //   - PURE parsers + applyImport port verbatim.
 //   - PDF text extraction swaps pdf.js for a native PDF kit; OAuth adapters come later.
 
-const CALENDAR_PDF_JS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-const CALENDAR_PDF_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const CALENDAR_PDF_JS_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const CALENDAR_PDF_WORKER_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const CALENDAR_PDF_JS_FALLBACK = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js';
+const CALENDAR_PDF_WORKER_FALLBACK = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
 const OUTLOOK_TIME_LINE = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)\s*$/i;
 const OUTLOOK_DAY_HEADER = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}\s*$/i;
@@ -283,14 +285,16 @@ function mapEventToTask(ev, source){
 }
 
 // PURE-ish: strip prior calendar credit logs, then write one merged-day credit
-// per import day onto the selected breakable habit.
+// per import day onto the selected keepup/reduce habit (marked breakable if needed).
 function applyCalendarCreditLogs(habits, events, creditHabitId){
   const hid = typeof cleanHabitId === 'function' ? cleanHabitId(creditHabitId) : creditHabitId;
   if(!hid)return {credited:0, habitName:null};
   const h = (habits || []).find(x=>x && x.hid === hid);
-  if(!h || !h.breakable || (h.type !== 'keepup' && h.type !== 'reduce')){
+  if(!h || (h.type !== 'keepup' && h.type !== 'reduce')){
     return {credited:0, habitName:null};
   }
+  // Minute budgets only apply to breakable habits — flip it on when crediting.
+  if(!h.breakable)h.breakable = true;
   const kept = normalizeLogs(h.logs).filter(log=>!isCalendarCreditLog(log));
   const days = calendarCreditMinutesByDay(events);
   let credited = 0;
@@ -433,25 +437,58 @@ function clearCalendarImport(source = 'pdf'){
   return {removed: before - next.length};
 }
 
-// ASYNC: lazy-load pdf.js from CDN once.
-function ensurePdfJs(){
-  if(typeof window !== 'undefined' && window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
-  if(pdfJsLoadPromise)return pdfJsLoadPromise;
-  pdfJsLoadPromise = new Promise((resolve, reject)=>{
+// ASYNC: lazy-load pdf.js. Prefer a blob workerSrc so Safari PWAs (which often
+// choke on cross-origin workers) can still parse on the main thread path.
+function loadScriptOnce(src){
+  return new Promise((resolve, reject)=>{
+    const existing = document.querySelector(`script[data-calendar-pdfjs="${src}"]`);
+    if(existing){
+      if(window.pdfjsLib)resolve(window.pdfjsLib);
+      else existing.addEventListener('load',()=>resolve(window.pdfjsLib));
+      existing.addEventListener('error',()=>reject(new Error('Could not load PDF library')));
+      return;
+    }
     const script = document.createElement('script');
-    script.src = CALENDAR_PDF_JS_CDN;
+    script.src = src;
     script.async = true;
+    script.dataset.calendarPdfjs = src;
     script.onload = ()=>{
-      const lib = window.pdfjsLib;
-      if(!lib){
-        reject(new Error('pdf.js failed to load'));
-        return;
-      }
-      lib.GlobalWorkerOptions.workerSrc = CALENDAR_PDF_WORKER_CDN;
-      resolve(lib);
+      if(!window.pdfjsLib)reject(new Error('pdf.js failed to load'));
+      else resolve(window.pdfjsLib);
     };
     script.onerror = ()=>reject(new Error('Could not load PDF library'));
     document.head.appendChild(script);
+  });
+}
+
+async function configurePdfWorker(lib, workerUrl){
+  try{
+    const res = await fetch(workerUrl, {mode:'cors'});
+    if(!res.ok)throw new Error('worker fetch failed');
+    const blob = await res.blob();
+    lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  }catch(_){
+    // Fall back to the CDN URL; pdf.js may still run via its fake-worker path.
+    lib.GlobalWorkerOptions.workerSrc = workerUrl;
+  }
+}
+
+function ensurePdfJs(){
+  if(typeof window !== 'undefined' && window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+  if(pdfJsLoadPromise)return pdfJsLoadPromise;
+  pdfJsLoadPromise = (async()=>{
+    let lib = null;
+    try{
+      lib = await loadScriptOnce(CALENDAR_PDF_JS_CDN);
+      await configurePdfWorker(lib, CALENDAR_PDF_WORKER_CDN);
+    }catch(_){
+      lib = await loadScriptOnce(CALENDAR_PDF_JS_FALLBACK);
+      await configurePdfWorker(lib, CALENDAR_PDF_WORKER_FALLBACK);
+    }
+    return lib;
+  })().catch(err=>{
+    pdfJsLoadPromise = null;
+    throw err;
   });
   return pdfJsLoadPromise;
 }
@@ -459,7 +496,17 @@ function ensurePdfJs(){
 // ASYNC: extract plain text from a PDF ArrayBuffer via pdf.js.
 async function extractPdfText(arrayBuffer){
   const pdfjsLib = await ensurePdfJs();
-  const doc = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  let doc;
+  try{
+    doc = await pdfjsLib.getDocument({
+      data:arrayBuffer,
+      // Helps Safari / low-memory PWAs; text extract does not need streaming.
+      disableStream:true,
+      disableAutoFetch:true
+    }).promise;
+  }catch(err){
+    throw new Error('Could not open that PDF in this browser. Try re-saving it, or open Tings in Safari (not an in-app browser).');
+  }
   const pageTexts = [];
   for(let i = 1; i <= doc.numPages; i++){
     const page = await doc.getPage(i);

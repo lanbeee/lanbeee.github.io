@@ -217,11 +217,23 @@ function renderCalendarImportControls(){
   if(!select)return;
   const settings = sortSettings || loadSortSettings();
   const selected = settings.calendarCreditHabitId || '';
-  const habits = load().filter(h=>h && h.breakable && (h.type === 'keepup' || h.type === 'reduce'));
+  // Keepup/reduce with a duration — not only already-breakable — so Work shows
+  // up even if the breakable toggle was never flipped on.
+  const habits = load().filter(h=>h && (h.type === 'keepup' || h.type === 'reduce')
+    && Number(h.durationMinutes) > 0);
   const options = [`<option value="">none</option>`].concat(
-    habits.map(h=>`<option value="${escapeHtml(h.hid)}"${h.hid === selected ? ' selected' : ''}>${escapeHtml(h.emoji ? `${h.emoji} ` : '')}${escapeHtml(h.name || 'untitled')}</option>`)
+    habits.map(h=>{
+      const label = `${h.emoji ? `${h.emoji} ` : ''}${h.name || 'untitled'}${h.breakable ? '' : ' (will mark breakable)'}`;
+      return `<option value="${escapeHtml(h.hid)}"${h.hid === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    })
   );
   select.innerHTML = options.join('');
+  const hint = $('calendar-credit-hint');
+  if(hint){
+    hint.textContent = habits.length
+      ? 'Pick a keepup/reduce habit (like Work). Meeting minutes are credited toward its daily duration; overlapping meetings merge. Non-breakable habits are marked breakable when credited.'
+      : 'No keepup/reduce habits with a duration yet. Add Work (or similar) with daily hours to credit meetings against it.';
+  }
   const allDaySelect = $('calendar-allday-mode');
   if(allDaySelect){
     const mode = normalizeCalendarAllDayMode(settings.calendarAllDayMode);
@@ -259,14 +271,20 @@ function showCalendarPdfPreview(events){
 
 async function handleCalendarPdfChosen(file){
   const status = $('calendar-pdf-status');
-  if(!file)return;
+  if(!file){
+    if(status)status.textContent = 'No file selected.';
+    return;
+  }
   if(status)status.textContent = 'Reading PDF…';
   try{
     const {events} = await parseCalendarPdfFile(file);
     showCalendarPdfPreview(events);
+    if(typeof showToast === 'function')showToast(`${events.length} event${events.length === 1 ? '' : 's'} ready`);
   }catch(err){
     clearCalendarPdfPreview({keepStatus:true});
-    if(status)status.textContent = (err && err.message) || 'Could not read that PDF.';
+    const msg = (err && err.message) || 'Could not read that PDF.';
+    if(status)status.textContent = msg;
+    if(typeof showToast === 'function')showToast(msg);
   }
 }
 
