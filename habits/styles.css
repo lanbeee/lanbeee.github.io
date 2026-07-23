@@ -2407,6 +2407,19 @@ button.setting-toggle{
   display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;
 }
 .sample-count{margin-top:8px;margin-bottom:0;}
+.calendar-pdf-preview{
+  margin-top:10px;padding:10px;border-radius:var(--radius-sm);
+  background:var(--bg);border:0.5px solid var(--border);
+}
+.calendar-pdf-list{
+  list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;
+}
+.calendar-pdf-list li{
+  display:flex;flex-direction:column;gap:2px;
+  font-size:12.5px;line-height:1.35;color:var(--text);
+}
+.calendar-pdf-list li span{color:var(--text2);font-size:12px;}
+#calendar-credit-habit,#calendar-allday-mode{margin:6px 0 4px;}
 .settings-danger{
   background:transparent;border-style:dashed;
 }

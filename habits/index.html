@@ -673,6 +673,37 @@
           </div>
         </section>
         <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
+            <span class="settings-label">calendar import</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-calendar-body" hidden>
+            <p class="field-hint">Temporary stand-in until Microsoft or Google connect. Import an Outlook/Teams agenda print or a Google Calendar schedule PDF — meetings land as auto-done timed blocks on your agenda.</p>
+            <div class="btn-row">
+              <button class="btn primary" id="calendar-pdf-pick" type="button">choose PDF</button>
+              <button class="btn" id="calendar-pdf-clear" type="button">clear imported</button>
+            </div>
+            <input type="file" id="calendar-pdf-input" accept="application/pdf,.pdf" hidden />
+            <label class="field-label" for="calendar-credit-habit">credit meeting hours to</label>
+            <select id="calendar-credit-habit" class="settings-select">
+              <option value="">none</option>
+            </select>
+            <p class="field-hint">Pick a breakable habit (like Work). Overlapping meetings on the same day are merged so wall-clock time is credited once.</p>
+            <label class="field-label" for="calendar-allday-mode">all-day events</label>
+            <select id="calendar-allday-mode" class="settings-select">
+              <option value="skip">skip them</option>
+              <option value="tasks">import as dated tasks</option>
+            </select>
+            <p class="field-hint">Holidays and other all-day rows. Skipping keeps the agenda focused on timed meetings; dated tasks still never credit Work hours.</p>
+            <div id="calendar-pdf-preview" class="calendar-pdf-preview" hidden></div>
+            <div class="btn-row" id="calendar-pdf-actions" hidden>
+              <button class="btn primary" id="calendar-pdf-import" type="button">import meetings</button>
+              <button class="btn" id="calendar-pdf-cancel" type="button">cancel</button>
+            </div>
+            <p class="field-hint sample-count" id="calendar-pdf-status"></p>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-topics-head" data-collapse-target="settings-topics-body" aria-expanded="false" aria-controls="settings-topics-body">
             <span class="settings-label">topics</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1117,6 +1148,7 @@
 <script src="./js/viewport.js" defer></script>
 <script src="./lib/js/adhan.umd.min.js" defer></script>
 <script src="./js/data.js" defer></script>
+<script src="./js/calendar-import.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
 <script src="./js/scoring.js" defer></script>

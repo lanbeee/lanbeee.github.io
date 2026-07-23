@@ -45,10 +45,12 @@ function applyAddDefaults(){
 // section out from under the user mid-edit.
 function resetSettingsSheetState(){
   pendingImportPayload = null;
+  pendingCalendarEvents = null;
   const backupConfirm = $('backup-import-confirm');
   if(backupConfirm)backupConfirm.hidden = true;
   const backupStatus = $('backup-status');
   if(backupStatus)backupStatus.textContent = '';
+  clearCalendarPdfPreview({keepStatus:false});
   document.querySelectorAll('.settings-collapse-head').forEach(head=>{
     const body = $(head.dataset.collapseTarget);
     if(body)body.hidden = true;
@@ -75,6 +77,7 @@ function syncSettingsControls(){
     btn.classList.toggle('on',btn.dataset.travelMode === travelMode);
   });
   renderPrayerTimesControls();
+  renderCalendarImportControls();
   const homeExtraMode = normalizeHomeExtraMode(sortSettings.homeExtraMode);
   document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === homeExtraMode);
@@ -162,6 +165,181 @@ function cancelBackupImport(){
   if(fileInput)fileInput.value = '';
   const confirmBox = $('backup-import-confirm');
   if(confirmBox)confirmBox.hidden = true;
+}
+
+// ── Calendar PDF import (temporary until OAuth providers) ──
+let pendingCalendarEvents = null;
+
+function clearCalendarPdfPreview({keepStatus = true} = {}){
+  pendingCalendarEvents = null;
+  const preview = $('calendar-pdf-preview');
+  if(preview){ preview.hidden = true; preview.innerHTML = ''; }
+  const actions = $('calendar-pdf-actions');
+  if(actions)actions.hidden = true;
+  const fileInput = $('calendar-pdf-input');
+  if(fileInput)fileInput.value = '';
+  if(!keepStatus){
+    const status = $('calendar-pdf-status');
+    if(status)status.textContent = '';
+  }
+}
+
+function formatCalendarEventPreview(ev, allDayMode){
+  const mode = typeof normalizeCalendarAllDayMode === 'function'
+    ? normalizeCalendarAllDayMode(allDayMode)
+    : (allDayMode === 'tasks' ? 'tasks' : 'skip');
+  const allDay = Boolean(ev && ev.isAllDay);
+  const start = Number(ev.start);
+  const end = Number(ev.end);
+  let when = '';
+  if(allDay){
+    when = mode === 'skip' ? 'all day · skipped' : 'all day · dated task';
+  }else{
+    when = (typeof scheduledWhenLabel === 'function' && Number.isFinite(start))
+      ? scheduledWhenLabel(start)
+      : (Number.isFinite(start) ? new Date(start).toLocaleString() : '');
+    const mins = Number.isFinite(end - start) ? Math.round((end - start) / 60000) : 0;
+    if(mins)when += ` · ${mins}m`;
+  }
+  return `<li><strong>${escapeHtml(ev.subject || 'untitled')}</strong><span>${escapeHtml(when)}</span></li>`;
+}
+
+function escapeHtml(value){
+  return String(value == null ? '' : value)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function renderCalendarImportControls(){
+  const select = $('calendar-credit-habit');
+  if(!select)return;
+  const settings = sortSettings || loadSortSettings();
+  const selected = settings.calendarCreditHabitId || '';
+  const habits = load().filter(h=>h && h.breakable && (h.type === 'keepup' || h.type === 'reduce'));
+  const options = [`<option value="">none</option>`].concat(
+    habits.map(h=>`<option value="${escapeHtml(h.hid)}"${h.hid === selected ? ' selected' : ''}>${escapeHtml(h.emoji ? `${h.emoji} ` : '')}${escapeHtml(h.name || 'untitled')}</option>`)
+  );
+  select.innerHTML = options.join('');
+  const allDaySelect = $('calendar-allday-mode');
+  if(allDaySelect){
+    const mode = normalizeCalendarAllDayMode(settings.calendarAllDayMode);
+    allDaySelect.value = mode;
+  }
+  const imported = load().filter(h=>h && h.source === 'pdf').length;
+  const status = $('calendar-pdf-status');
+  if(status && !pendingCalendarEvents){
+    status.textContent = imported
+      ? `${imported} imported meeting${imported === 1 ? '' : 's'} on this device.`
+      : '';
+  }
+  if(pendingCalendarEvents)showCalendarPdfPreview(pendingCalendarEvents);
+}
+
+function showCalendarPdfPreview(events){
+  pendingCalendarEvents = events || [];
+  const settings = sortSettings || loadSortSettings();
+  const mode = normalizeCalendarAllDayMode(settings.calendarAllDayMode);
+  const timed = pendingCalendarEvents.filter(e=>!e.isAllDay).length;
+  const allDay = pendingCalendarEvents.length - timed;
+  const preview = $('calendar-pdf-preview');
+  const actions = $('calendar-pdf-actions');
+  const status = $('calendar-pdf-status');
+  if(preview){
+    preview.hidden = false;
+    const summary = allDay
+      ? `${pendingCalendarEvents.length} event${pendingCalendarEvents.length === 1 ? '' : 's'} found · ${timed} timed · ${allDay} all-day (${mode === 'skip' ? 'will skip' : 'will import'})`
+      : `${pendingCalendarEvents.length} meeting${pendingCalendarEvents.length === 1 ? '' : 's'} found`;
+    preview.innerHTML = `<p class="field-hint">${escapeHtml(summary)}</p><ul class="calendar-pdf-list">${pendingCalendarEvents.map(ev=>formatCalendarEventPreview(ev, mode)).join('')}</ul>`;
+  }
+  if(actions)actions.hidden = false;
+  if(status)status.textContent = '';
+}
+
+async function handleCalendarPdfChosen(file){
+  const status = $('calendar-pdf-status');
+  if(!file)return;
+  if(status)status.textContent = 'Reading PDF…';
+  try{
+    const {events} = await parseCalendarPdfFile(file);
+    showCalendarPdfPreview(events);
+  }catch(err){
+    clearCalendarPdfPreview({keepStatus:true});
+    if(status)status.textContent = (err && err.message) || 'Could not read that PDF.';
+  }
+}
+
+function confirmCalendarPdfImport(){
+  if(!pendingCalendarEvents || !pendingCalendarEvents.length)return;
+  const select = $('calendar-credit-habit');
+  const allDaySelect = $('calendar-allday-mode');
+  const creditHabitId = select && select.value ? select.value : null;
+  const allDayMode = normalizeCalendarAllDayMode(allDaySelect && allDaySelect.value);
+  const settings = loadSortSettings();
+  saveSortSettings({
+    ...settings,
+    calendarCreditHabitId:creditHabitId || null,
+    calendarAllDayMode:allDayMode
+  });
+  sortSettings = loadSortSettings();
+  const result = applyCalendarImport(pendingCalendarEvents, {
+    source:'pdf',
+    creditHabitId,
+    allDayMode
+  });
+  clearCalendarPdfPreview({keepStatus:true});
+  if(typeof sweepAutoDoneTasks === 'function')sweepAutoDoneTasks();
+  renderCalendarImportControls();
+  if(typeof render === 'function')render();
+  const status = $('calendar-pdf-status');
+  const parts = [];
+  if(result.added)parts.push(`added ${result.added}`);
+  if(result.updated)parts.push(`updated ${result.updated}`);
+  if(result.skippedAllDay)parts.push(`skipped ${result.skippedAllDay} all-day`);
+  else if(result.skipped)parts.push(`skipped ${result.skipped}`);
+  if(result.removedAllDay)parts.push(`cleared ${result.removedAllDay} all-day`);
+  if(result.creditedMinutes && result.creditHabitName){
+    const hrs = (result.creditedMinutes / 60);
+    const hrsLabel = Number.isInteger(hrs) ? `${hrs}h` : `${hrs.toFixed(1)}h`;
+    parts.push(`credited ${hrsLabel} to ${result.creditHabitName}`);
+  }
+  if(status)status.textContent = parts.length ? parts.join(' · ') : 'Nothing to import.';
+  if(typeof showToast === 'function')showToast(parts.length ? `imported · ${parts[0]}` : 'imported');
+}
+
+function cancelCalendarPdfImport(){
+  clearCalendarPdfPreview({keepStatus:false});
+  renderCalendarImportControls();
+}
+
+function clearImportedCalendarMeetings(){
+  const result = clearCalendarImport('pdf');
+  clearCalendarPdfPreview({keepStatus:true});
+  const status = $('calendar-pdf-status');
+  if(status)status.textContent = result.removed
+    ? `Removed ${result.removed} imported meeting${result.removed === 1 ? '' : 's'}.`
+    : 'No imported meetings to clear.';
+  if(typeof showToast === 'function')showToast(result.removed ? 'imported meetings cleared' : 'nothing to clear');
+  renderCalendarImportControls();
+  if(typeof render === 'function')render();
+}
+
+function onCalendarCreditHabitChange(){
+  const select = $('calendar-credit-habit');
+  if(!select)return;
+  const settings = loadSortSettings();
+  saveSortSettings({...settings, calendarCreditHabitId:select.value || null});
+  sortSettings = loadSortSettings();
+}
+
+function onCalendarAllDayModeChange(){
+  const select = $('calendar-allday-mode');
+  if(!select)return;
+  const settings = loadSortSettings();
+  saveSortSettings({...settings, calendarAllDayMode:normalizeCalendarAllDayMode(select.value)});
+  sortSettings = loadSortSettings();
+  if(pendingCalendarEvents)showCalendarPdfPreview(pendingCalendarEvents);
 }
 
 // HYBRID: remove old sort-lab sample habits now that the lab is no longer part

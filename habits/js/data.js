@@ -104,6 +104,9 @@
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
  * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
  * @property {number|null} planByDate         — keepup/reduce only: one-off soft "do by" day (ms day-start). Week planner may place it any day on/before this date; cleared on the next actual log. null = none.
+ * @property {string|null} externalId         — stable id from an external calendar/PDF import; null for Tings-native items. Used to de-dupe on re-import.
+ * @property {'pdf'|'msgraph'|'gcal'|null} source — which importer produced this row; null for Tings-native items.
+ * @property {number|null} importedAt         — ms timestamp of last import overwrite; null when not imported.
  *
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
@@ -177,6 +180,8 @@
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
  * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,startCombine:?string,startAnchor2:?string,startOffsetMin2:number,startFixedMin2:?number,startDayOffset:number,startDayOffset2:number,endAnchor:?string,endOffsetMin:number,endCombine:?string,endAnchor2:?string,endOffsetMin2:number,endFixedMin2:?number,endDayOffset:number,endDayOffset2:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits (prayer + fixed secondary; later/earlier-of + +1d supported).
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
+ * @property {string|null} calendarCreditHabitId — breakable habit hid that receives imported meeting minutes as progress credit; null = none
+ * @property {'skip'|'tasks'} calendarAllDayMode — how PDF/calendar all-day events are imported: skip them, or land as dated untimed tasks
  */
 
 /**
@@ -258,6 +263,8 @@ function loadSortSettings(){
     merged.blockedTimes = normalizeBlockedTimes(merged.blockedTimes);
     merged.cancelledBlocks = normalizeCancelledBlocks(merged.cancelledBlocks);
     merged.blockedTimeOverrides = normalizeBlockedTimeOverrides(merged.blockedTimeOverrides);
+    merged.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(merged.calendarCreditHabitId) : '') || null;
+    merged.calendarAllDayMode = normalizeCalendarAllDayMode(merged.calendarAllDayMode);
     merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
@@ -287,6 +294,8 @@ function saveSortSettings(settings){
   next.blockedTimes = normalizeBlockedTimes(next.blockedTimes);
   next.cancelledBlocks = normalizeCancelledBlocks(next.cancelledBlocks);
   next.blockedTimeOverrides = normalizeBlockedTimeOverrides(next.blockedTimeOverrides);
+  next.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(next.calendarCreditHabitId) : '') || null;
+  next.calendarAllDayMode = normalizeCalendarAllDayMode(next.calendarAllDayMode);
   next.agendaOptimizer = Boolean(next.agendaOptimizer);
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
   sortSettings = next;
@@ -397,7 +406,10 @@ function normalize(items){
       locationIds,
       anywhereAllowed,
       locationPrefs,
-      preferredLocationId
+      preferredLocationId,
+      externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
+      source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,
+      importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
     };
     // Migration: a degenerate 0/0 fixed window with no anchor is the signature
     // of the Number(null)===0 render bug in detail-view.js (an empty time
@@ -1441,6 +1453,10 @@ function normalizeTravelCache(value){
 function normalizeTravelMode(value){
   return TRAVEL_MODES.includes(value) ? value : DEFAULT_TRAVEL_MODE;
 }
+/** PURE: all-day calendar import policy. */
+function normalizeCalendarAllDayMode(value){
+  return value === 'tasks' ? 'tasks' : 'skip';
+}
 // PURE: normalize the home blocked/travel presentation mode.
 function normalizeHomeExtraMode(value){
   return (value === 'cards12h' || value === 'text12h') ? value : 'cards';
@@ -1629,6 +1645,10 @@ function logNote(log){
   if(!log || typeof log !== 'object' || isPlanLog(log))return '';
   return String((log && log.note) || '').slice(0,MAX_NOTE_CHARS).trim();
 }
+/** PURE: true when a log is imported-calendar progress credit (not a manual session). */
+function isCalendarCreditLog(log){
+  return Boolean(log && typeof log === 'object' && !isPlanLog(log) && log.source === 'calendar');
+}
 function normalizeLogs(logs){
   if(!Array.isArray(logs))return [];
   return logs
@@ -1644,7 +1664,8 @@ function normalizeLogs(logs){
         if(value !== null)entry.value = value;
         if(minutes !== null)entry.minutes = minutes;
         if(note)entry.note = note;
-        if(entry.value !== undefined || entry.minutes !== undefined || entry.note !== undefined)return entry;
+        if(log.source === 'calendar')entry.source = 'calendar';
+        if(entry.value !== undefined || entry.minutes !== undefined || entry.note !== undefined || entry.source)return entry;
       }
       return ts;
     })
