@@ -213,6 +213,93 @@ function travelEdgeBetweenIds(fromId,toId,registry,mode,opts = {}){
   return travelBetween(a,b,mode,opts);
 }
 
+/**
+ * PURE: next location-bearing anchors after `afterTs` that homeDaySequence would
+ * draw travel into — scheduled tasks, already-placed fills, and location-tied
+ * blocked times. Sorted earliest-first.
+ */
+function hardLocationAnchorsAfter(state,afterTs){
+  const anchors = [];
+  const after = Number(afterTs) || 0;
+  for(const row of state && state.rows || []){
+    if(row.kind !== 'scheduled' || !row.locationId)continue;
+    if(!(row.start > after))continue;
+    anchors.push({start:row.start,locationId:row.locationId});
+  }
+  for(const entry of state && state.fills || []){
+    const fit = entry && entry.fit;
+    if(!fit || !fit.locId || !(fit.placeStart > after))continue;
+    anchors.push({start:fit.placeStart,locationId:fit.locId});
+  }
+  for(const block of locationTiedBlockedIntervals(state)){
+    if(!(block.start > after))continue;
+    anchors.push({start:block.start,locationId:block.locationId});
+  }
+  anchors.sort((a,b)=>a.start - b.start);
+  return anchors;
+}
+
+/**
+ * PURE: location-tied blocked intervals for the placement day (empty when the
+ * day context is missing). Shared by presence + outbound leave-by.
+ */
+function locationTiedBlockedIntervals(state){
+  if(!state || !state.settings || state.dayBase == null)return [];
+  if(typeof agendaBlockedIntervals !== 'function' || typeof dateKey !== 'function')return [];
+  const dayKey = dateKey(state.dayBase);
+  const dayEnd = state.dayBase + 24 * 3600000;
+  return agendaBlockedIntervals(dayKey,state.settings,state.dayBase,dayEnd)
+    .filter(b=>b && b.locationId);
+}
+
+/**
+ * PURE: where homeDaySequence would consider the user to be at `atTs` — last
+ * location-bearing scheduled / blocked / committed fill that has already
+ * started. Falls back to the day's seed (presence / morning block).
+ */
+function locationPresenceAt(state,atTs,chron){
+  let loc = state && state.seedLocId || null;
+  const marks = [];
+  const at = Number(atTs) || 0;
+  for(const row of state && state.rows || []){
+    if(row.kind !== 'scheduled' || !row.locationId)continue;
+    if(!(row.start < at))continue;
+    marks.push({start:row.start,locationId:row.locationId});
+  }
+  for(const block of locationTiedBlockedIntervals(state)){
+    if(!(block.start < at))continue;
+    marks.push({start:block.start,locationId:block.locationId});
+  }
+  for(const entry of chron || []){
+    const fit = entry && entry.fit;
+    if(!fit || !fit.locId || !(fit.placeStart < at))continue;
+    marks.push({start:fit.placeStart,locationId:fit.locId});
+  }
+  if(!marks.length)return loc;
+  marks.sort((a,b)=>a.start - b.start);
+  return marks[marks.length - 1].locationId;
+}
+
+/**
+ * PURE: latest placeEnd so outbound travel to the next different-location
+ * hard/fill row still arrives on time. Matches the leave-by card homeDaySequence
+ * inserts after placement. Returns null when no outbound commute is required.
+ */
+function outboundLeaveByMs(state,fromLocId,afterTs,opts = {}){
+  if(!state || !fromLocId)return null;
+  const next = hardLocationAnchorsAfter(state,afterTs)
+    .find(a=>a.locationId && a.locationId !== fromLocId);
+  if(!next)return null;
+  const edge = travelEdgeBetweenIds(
+    fromLocId,
+    next.locationId,
+    state.registry,
+    state.mode,
+    {allowNetwork:opts.allowNetwork !== false}
+  );
+  return next.start - (Number(edge.seconds) || 0) * 1000;
+}
+
 // PURE: choose a location id for a habit given the current anchor. Anywhere
 // items return null (no travel, anchor unchanged). When several are allowed,
 // prefer high/little preference, avoid last, then cheapest travel from anchor.
@@ -1095,12 +1182,9 @@ function tryPlaceOnDay(state,fill,opts = {}){
     if(!gaps.length)continue;
 
     for(const gap of gaps){
-      // Travel anchor = last committed session that ends at/before this gap's
-      // start, else the day's seed location (presence / morning block).
-      let anchor = state.seedLocId;
-      for(const c of chron){
-        if(c.fit.placeEnd <= gap.start && c.fit.locId)anchor = c.fit.locId;
-      }
+      // Travel anchor = location homeDaySequence would already be at when this
+      // gap opens (scheduled / blocked / prior fills), else the day seed.
+      const anchor = locationPresenceAt(state,gap.start,chron);
 
       const locId = resolveLoc(anchor);
       if(locId){
@@ -1141,6 +1225,11 @@ function tryPlaceOnDay(state,fill,opts = {}){
       // Placement must stay inside this open gap (blocks/scheduled already carved).
       placeStart = Math.max(placeStart,gap.start);
       if(placeStart >= gap.end)continue;
+      // Reserve outbound commute to the next different-location hard/fill row
+      // so placeEnd cannot overlap the leave-by window homeDaySequence draws.
+      const presenceLocId = locId || anchor;
+      const leaveBy = outboundLeaveByMs(state,presenceLocId,placeStart,opts);
+      if(leaveBy != null)cap = Math.min(cap,leaveBy);
       const cost = durMin * 60000;
       let placeEnd = placeStart + cost;
       if(placeEnd > cap || placeEnd > gap.end)continue;
@@ -1234,10 +1323,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     }
     if(cursor < slot.end)gaps.push({start:cursor, end:slot.end});
     for(const gap of gaps){
-      let anchor = state.seedLocId;
-      for(const c of chron){
-        if(c.fit.placeEnd <= gap.start && c.fit.locId)anchor = c.fit.locId;
-      }
+      const anchor = locationPresenceAt(state,gap.start,chron);
       const locId = resolveLoc(anchor);
       if(locId){
         const loc = registry.find(l=>l.id === locId);
@@ -1268,6 +1354,11 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       }
       placeStart = Math.max(placeStart,gap.start);
       if(placeStart >= gap.end || placeStart >= cap)continue;
+      // Reserve outbound commute to the next different-location hard/fill row.
+      const presenceLocId = locId || anchor;
+      const leaveBy = outboundLeaveByMs(state,presenceLocId,placeStart,opts);
+      if(leaveBy != null)cap = Math.min(cap,leaveBy);
+      if(placeStart >= cap)continue;
       const usableMs = Math.min(cap,gap.end) - placeStart;
       const usableMin = Math.floor(usableMs / 60000);
       if(usableMin <= 0)continue;

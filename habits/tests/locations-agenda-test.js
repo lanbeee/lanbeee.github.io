@@ -505,8 +505,654 @@ function seedScript(extraHabits, extraSettings){
   assert(cleared.planByDate == null, 'logging clears planByDate');
   assert(cleared.lastLog != null, 'logging sets lastLog');
 
-  // ── H. Boot cleanliness ──
-  console.log('\n[H] boot cleanliness');
+  // ── G5. Outbound leave-by variants (placement must reserve post-task travel) ──
+  // Matrix covers the live bug and neighboring cases that share leave-by /
+  // presence machinery:
+  //   A. under-min skip      — pocket < minChunk after leave-by
+  //   B. capped fit          — session ends exactly at leave-by
+  //   C. same-location       — next hard row same place → no outbound reserve
+  //   D. fixed fill          — non-breakable duration respects leave-by
+  //   E. pre-task leave      — morning fill yields for travel INTO appointment
+  //   F. blocked anchor      — location-tied block is an outbound target
+  //   G. travel card         — homeDaySequence leave-by aligns with placed end
+  //   H. explicit location   — fill pinned to Mechanic still caps at leave-by
+  //   I. travel eats gap     — commute ≥ open gap → nothing places
+  //   J. location-less next  — next scheduled has no place → no outbound reserve
+  //   K. multi-leg target    — leave-by uses Mechanic→Office, not Home
+  //   L. fill-to-fill        — already-placed fill is an outbound target
+  //   M. zero-travel edge    — different places, 0s commute → full gap usable
+  //   N. dual-pocket split   — morning + post-oil both respect their leave-bys
+  //   O. inbound + outbound  — travel into fill location AND out to next task
+  console.log('\n[G5] outbound leave-by variants');
+  const outbound = await page.evaluate(() => {
+    const dayBase = dayStart(Date.now());
+    const at = (h, m) => dayBase + (h * 60 + m) * 60000;
+    const places = [
+      { id:'home', name:'Home', lat:40.700, lng:-74.000 },
+      { id:'mechanic', name:'Mechanic', lat:40.710, lng:-74.010 },
+      { id:'office', name:'Office', lat:40.720, lng:-74.020 },
+    ];
+    const settings = Object.assign(loadSortSettings(), {
+      locations:places,
+      defaultTravelMode:'driving',
+      lastKnownLocationId:'home',
+      availabilityMinutes:[600,600,600,600,600,600,600],
+      blockedTimes:[
+        { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' },
+        { label:'evening wind-down', days:[0,1,2,3,4,5,6], start:22 * 60, end:24 * 60, locationId:'home' }
+      ],
+      travel:{
+        'home|mechanic':{
+          a:'home', b:'mechanic', seconds:16 * 60, metres:2000,
+          provider:'manual', fetchedAt:Date.now()
+        },
+        'home|office':{
+          a:'home', b:'office', seconds:20 * 60, metres:3000,
+          provider:'manual', fetchedAt:Date.now()
+        },
+        'mechanic|office':{
+          a:'mechanic', b:'office', seconds:12 * 60, metres:1500,
+          provider:'manual', fetchedAt:Date.now()
+        }
+      }
+    });
+    saveSortSettings(settings);
+
+    function edgeSeconds(fromId, toId){
+      const edge = travelBetween(
+        places.find(l => l.id === fromId),
+        places.find(l => l.id === toId),
+        'driving',
+        { allowNetwork:false }
+      );
+      return Number(edge.seconds) || 0;
+    }
+
+    function setTravelMinutes(aId, bId, minutes){
+      const key = aId < bId ? `${aId}|${bId}` : `${bId}|${aId}`;
+      settings.travel[key] = {
+        a:aId < bId ? aId : bId,
+        b:aId < bId ? bId : aId,
+        seconds:Math.max(0, Math.round(minutes * 60)),
+        metres:2000,
+        provider:'manual',
+        fetchedAt:Date.now()
+      };
+      saveSortSettings(settings);
+    }
+
+    function task(name, locId, startTs, durationMinutes){
+      return {
+        name, type:'task', target:null, flexibilityDays:0,
+        durationMinutes, breakable:false, minChunkMinutes:30,
+        eventTime:startTs, dueDate:null, hardDue:false, markDone:true,
+        locationIds:locId ? [locId] : [], anywhereAllowed:!locId,
+        logs:[], lastLog:null, priority:0, createdAt:Date.now()
+      };
+    }
+
+    function workHabit(opts){
+      return Object.assign({
+        name:'Work', type:'keepup', target:1, flexibilityDays:0,
+        durationMinutes:360, breakable:true, minChunkMinutes:30,
+        eventTime:null, dueDate:null, hardDue:false, markDone:true,
+        locationIds:[], anywhereAllowed:true, logs:[], lastLog:null,
+        priority:1, createdAt:Date.now()
+      }, opts);
+    }
+
+    function placeDay({ scheduledHabits, fillHabits, fillHabit, slotStart, slotEnd, slots, seedLocId }){
+      const fills = fillHabits || (fillHabit ? [fillHabit] : []);
+      const data = normalize([...(scheduledHabits || []), ...fills]);
+      const scheduled = data
+        .map((h, i) => ({ h, i }))
+        .filter(({ h }) => h.eventTime != null);
+      const day = {
+        scheduled,
+        agendaItems:fills.map(src => {
+          const i = data.findIndex(h => h.name === src.name);
+          return {
+            h:data[i],
+            i,
+            priority:src.priority != null ? src.priority : 1,
+            scarcity:src._scarcity != null ? src._scarcity : 0
+          };
+        }),
+        totalMinutes:600,
+        slots:slots || [{ start:slotStart, end:slotEnd }],
+        dayBase,
+        weekday:new Date(dayBase).getDay(),
+        isToday:true,
+        dayKey:dateKey(dayBase)
+      };
+      if(seedLocId)settings.lastKnownLocationId = seedLocId;
+      saveSortSettings(settings);
+      const clock = slotStart != null ? slotStart : (slots && slots[0] && slots[0].start);
+      const timeline = buildDayTimeline(day, {
+        now:clock,
+        dayBase,
+        startClock:clock,
+        weekMode:true
+      });
+      const fillRowsFor = (name) => timeline.filter(r => r.kind === 'fill' && r.h && r.h.name === name);
+      const seq = typeof homeDaySequence === 'function'
+        ? homeDaySequence({ ...day, timeline, isToday:true }, settings)
+        : [];
+      const travelAfter = (name) => seq.filter((r, idx) => {
+        if(r.kind !== 'travel')return false;
+        const prev = seq[idx - 1];
+        return prev && prev.kind === 'fill' && prev.h && prev.h.name === name;
+      });
+      return {
+        timeline,
+        fillRows:fillRowsFor(fills[0] && fills[0].name),
+        fillRowsFor,
+        travelAfter,
+        seq,
+        day
+      };
+    }
+
+    // Shared appointment sandwich: Oil @ Mechanic 10:06–12:06, Child @ Home 1:00.
+    const oil = task('Oil change', 'mechanic', at(10, 6), 120);
+    const child = task('The Perfect Child', 'home', at(13, 0), 30);
+    const leaveByHome = at(13, 0) - edgeSeconds('mechanic', 'home') * 1000;
+    const usablePostOil = Math.floor((leaveByHome - at(12, 6)) / 60000);
+    const morningLeaveBy = at(10, 6) - edgeSeconds('home', 'mechanic') * 1000;
+
+    // A. under-min skip
+    const skip = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({ minChunkMinutes:45 }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const skipPocket = skip.fillRows.filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+
+    // B. capped fit
+    const capped = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({ minChunkMinutes:30 }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const cappedPocket = capped.fillRows.filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+
+    // C. same-location next hard row — Child also at Mechanic → full 54m usable
+    const childMechanic = task('Pickup', 'mechanic', at(13, 0), 30);
+    const sameLoc = placeDay({
+      scheduledHabits:[oil, childMechanic],
+      fillHabit:workHabit({ minChunkMinutes:30 }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const samePocket = sameLoc.fillRows.filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+
+    // D. fixed (non-breakable) fill — 50m can't fit in 38m leave-by window
+    const fixedTooLong = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({
+        name:'Errand pack',
+        breakable:false,
+        durationMinutes:50,
+        minChunkMinutes:30
+      }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const fixedFit = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({
+        name:'Quick call',
+        breakable:false,
+        durationMinutes:30,
+        minChunkMinutes:30
+      }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+
+    // E. pre-task leave-by — morning fill must leave for Oil @ Mechanic
+    const preTask = placeDay({
+      scheduledHabits:[oil],
+      fillHabit:workHabit({
+        name:'Morning deep work',
+        breakable:false,
+        durationMinutes:120,
+        locationIds:[],
+        anywhereAllowed:true
+      }),
+      slotStart:at(8, 0),
+      slotEnd:at(10, 6),
+      seedLocId:'home'
+    });
+    const preTaskFit = placeDay({
+      scheduledHabits:[oil],
+      fillHabit:workHabit({
+        name:'Morning notes',
+        breakable:false,
+        durationMinutes:40,
+        locationIds:[],
+        anywhereAllowed:true
+      }),
+      slotStart:at(8, 0),
+      slotEnd:at(10, 6),
+      seedLocId:'home'
+    });
+
+    // F. blocked-time outbound — evening fill before Home wind-down block
+    const officeErrand = task('Office drop', 'office', at(18, 0), 60);
+    const blockLeaveBy = at(22, 0) - edgeSeconds('office', 'home') * 1000;
+    const blocked = placeDay({
+      scheduledHabits:[officeErrand],
+      fillHabit:workHabit({
+        name:'Office leftover',
+        breakable:true,
+        minChunkMinutes:30,
+        durationMinutes:200,
+        locationIds:['office'],
+        anywhereAllowed:false
+      }),
+      slotStart:at(19, 0),
+      slotEnd:at(22, 0),
+      seedLocId:'office'
+    });
+    const blockedPocket = blocked.fillRows.filter(r => r.start >= at(19, 0) - 1000 && r.start < at(22, 0));
+
+    // G. travel card after fill aligns with leave-by
+    const travelCard = capped.travelAfter('Work')[0] || null;
+
+    // H. explicit Mechanic location on the fill (not anywhere)
+    const explicit = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({
+        name:'Shop laptop',
+        minChunkMinutes:30,
+        locationIds:['mechanic'],
+        anywhereAllowed:false
+      }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const explicitPocket = explicit.fillRowsFor('Shop laptop')
+      .filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+
+    // I. travel eats the whole gap (60m commute into a 54m pocket)
+    setTravelMinutes('mechanic', 'home', 60);
+    const eaten = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({ name:'No room', minChunkMinutes:15 }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    setTravelMinutes('mechanic', 'home', 16); // restore
+
+    // J. next scheduled has no location → no outbound reserve → full 54m
+    const floatingChild = task('Floating review', null, at(13, 0), 30);
+    const noLocNext = placeDay({
+      scheduledHabits:[oil, floatingChild],
+      fillHabit:workHabit({ name:'Post-oil float', minChunkMinutes:30 }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const noLocPocket = noLocNext.fillRowsFor('Post-oil float')
+      .filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+
+    // K. multi-leg — next hard is Office, leave-by uses Mechanic→Office (12m)
+    const officeMeet = task('Office standup', 'office', at(13, 0), 30);
+    const leaveByOffice = at(13, 0) - edgeSeconds('mechanic', 'office') * 1000;
+    const multiLeg = placeDay({
+      scheduledHabits:[oil, officeMeet],
+      fillHabit:workHabit({ name:'Between errands', minChunkMinutes:30 }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const multiPocket = multiLeg.fillRowsFor('Between errands')
+      .filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+    const multiTravel = multiLeg.travelAfter('Between errands')[0] || null;
+
+    // L. fill-to-fill — already-placed Office fill is the outbound target
+    const fillToFill = (() => {
+      const work = workHabit({ name:'Before gym', minChunkMinutes:30, durationMinutes:120 });
+      const gym = workHabit({
+        name:'Gym block',
+        breakable:false,
+        durationMinutes:45,
+        locationIds:['office'],
+        anywhereAllowed:false,
+        priority:0
+      });
+      const data = normalize([oil, work, gym]);
+      const scheduled = data.map((h, i) => ({ h, i })).filter(({ h }) => h.eventTime != null);
+      const workIdx = data.findIndex(h => h.name === 'Before gym');
+      const gymIdx = data.findIndex(h => h.name === 'Gym block');
+      const day = {
+        scheduled,
+        agendaItems:[],
+        totalMinutes:600,
+        slots:[{ start:at(12, 6), end:at(14, 0) }],
+        dayBase,
+        weekday:new Date(dayBase).getDay(),
+        isToday:true,
+        dayKey:dateKey(dayBase)
+      };
+      settings.lastKnownLocationId = 'home';
+      saveSortSettings(settings);
+      const state = createDayPlacementState(day, settings, {
+        now:at(12, 6),
+        dayBase,
+        startClock:at(12, 6)
+      });
+      // Pin Gym at Office starting 1:00 — Work before it must leave by 12:48.
+      commitPlacement(state, { h:data[gymIdx], i:gymIdx }, {
+        placeStart:at(13, 0),
+        placeEnd:at(13, 45),
+        locId:'office',
+        edge:{ seconds:0, metres:0, provider:'none' },
+        travelMin:0,
+        durMin:45,
+        slotStart:at(12, 6),
+        preferredHit:false,
+        prevLocId:'mechanic',
+        placeKey:gymIdx
+      });
+      placeBreakableSessions(state, { h:data[workIdx], i:workIdx }, { allowNetwork:false });
+      const rows = finalizePlacementRows(state);
+      const workRows = rows.filter(r => r.kind === 'fill' && r.h && r.h.name === 'Before gym');
+      const leaveBy = at(13, 0) - edgeSeconds('mechanic', 'office') * 1000;
+      return {
+        leaveBy,
+        usable:Math.floor((leaveBy - at(12, 6)) / 60000),
+        count:workRows.length,
+        duration:workRows[0] ? Math.round((workRows[0].end - workRows[0].start) / 60000) : null,
+        end:workRows[0] ? workRows[0].end : null,
+        overlaps:workRows.some(r => r.end > leaveBy + 1000)
+      };
+    })();
+
+    // M. zero-travel edge between different places → full gap usable
+    setTravelMinutes('mechanic', 'home', 0);
+    const zeroTravel = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({ name:'Zero commute', minChunkMinutes:30 }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const zeroPocket = zeroTravel.fillRowsFor('Zero commute')
+      .filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+    setTravelMinutes('mechanic', 'home', 16); // restore
+
+    // N. dual-pocket split — morning before oil + post-oil before child
+    const dual = placeDay({
+      scheduledHabits:[oil, child],
+      fillHabit:workHabit({ name:'Split day', minChunkMinutes:30, durationMinutes:360 }),
+      slots:[
+        { start:at(8, 0), end:at(10, 6) },
+        { start:at(12, 6), end:at(13, 0) }
+      ],
+      slotStart:at(8, 0),
+      seedLocId:'home'
+    });
+    const dualMorning = dual.fillRowsFor('Split day')
+      .filter(r => r.start >= at(8, 0) - 1000 && r.start < at(10, 6));
+    const dualPost = dual.fillRowsFor('Split day')
+      .filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+
+    // O. inbound + outbound — seed Home, fill pinned Mechanic, next Home task
+    //    (no prior Mechanic appointment). Arrive 12:06+16=12:22, leave by 12:43.
+    const soloChild = task('Home reading', 'home', at(13, 0), 30);
+    const bothWaysLeaveBy = at(13, 0) - edgeSeconds('mechanic', 'home') * 1000;
+    const bothWays = placeDay({
+      scheduledHabits:[soloChild],
+      fillHabit:workHabit({
+        name:'Cafe focus',
+        minChunkMinutes:15,
+        durationMinutes:120,
+        locationIds:['mechanic'],
+        anywhereAllowed:false
+      }),
+      slotStart:at(12, 6),
+      slotEnd:at(13, 0),
+      seedLocId:'home'
+    });
+    const bothPocket = bothWays.fillRowsFor('Cafe focus')
+      .filter(r => r.start >= at(12, 6) - 1000 && r.start < at(13, 0));
+    const bothArrive = at(12, 6) + edgeSeconds('home', 'mechanic') * 1000;
+    const bothTravelBefore = bothWays.seq.filter(r => r.kind === 'travel' && r.to === 'mechanic');
+    const bothTravelAfter = bothWays.travelAfter('Cafe focus');
+
+    return {
+      usablePostOil,
+      leaveByHome,
+      travelHomeMin:Math.round(edgeSeconds('mechanic', 'home') / 60),
+      A:{
+        pocketCount:skipPocket.length,
+        overlaps:skipPocket.some(r => r.end > leaveByHome + 1000)
+      },
+      B:{
+        pocketCount:cappedPocket.length,
+        duration:cappedPocket[0] ? Math.round((cappedPocket[0].end - cappedPocket[0].start) / 60000) : null,
+        end:cappedPocket[0] ? cappedPocket[0].end : null,
+        overlaps:cappedPocket.some(r => r.end > leaveByHome + 1000)
+      },
+      C:{
+        pocketCount:samePocket.length,
+        duration:samePocket[0] ? Math.round((samePocket[0].end - samePocket[0].start) / 60000) : null
+      },
+      D:{
+        tooLongPlaced:fixedTooLong.fillRows.length,
+        fitPlaced:fixedFit.fillRows.length,
+        fitEnd:fixedFit.fillRows[0] ? fixedFit.fillRows[0].end : null,
+        fitOverlaps:fixedFit.fillRows.some(r => r.end > leaveByHome + 1000)
+      },
+      E:{
+        morningLeaveBy,
+        tooLongPlaced:preTask.fillRows.length,
+        fitPlaced:preTaskFit.fillRows.length,
+        fitEnd:preTaskFit.fillRows[0] ? preTaskFit.fillRows[0].end : null,
+        fitOverlaps:preTaskFit.fillRows.some(r => r.end > morningLeaveBy + 1000),
+        usableMorning:Math.floor((morningLeaveBy - at(8, 0)) / 60000)
+      },
+      F:{
+        blockLeaveBy,
+        pocketCount:blockedPocket.length,
+        duration:blockedPocket[0] ? Math.round((blockedPocket[0].end - blockedPocket[0].start) / 60000) : null,
+        end:blockedPocket[0] ? blockedPocket[0].end : null,
+        overlaps:blockedPocket.some(r => r.end > blockLeaveBy + 1000),
+        usable:Math.floor((blockLeaveBy - at(19, 0)) / 60000)
+      },
+      G:{
+        hasTravel:Boolean(travelCard),
+        from:travelCard && travelCard.from,
+        to:travelCard && travelCard.to,
+        travelStart:travelCard && travelCard.start,
+        travelEnd:travelCard && travelCard.end,
+        fillEnd:cappedPocket[0] ? cappedPocket[0].end : null,
+        leaveBy:leaveByHome
+      },
+      H:{
+        pocketCount:explicitPocket.length,
+        duration:explicitPocket[0] ? Math.round((explicitPocket[0].end - explicitPocket[0].start) / 60000) : null,
+        end:explicitPocket[0] ? explicitPocket[0].end : null,
+        loc:explicitPocket[0] ? explicitPocket[0].locationId : null,
+        overlaps:explicitPocket.some(r => r.end > leaveByHome + 1000)
+      },
+      I:{
+        placed:eaten.fillRowsFor('No room').length
+      },
+      J:{
+        pocketCount:noLocPocket.length,
+        duration:noLocPocket[0] ? Math.round((noLocPocket[0].end - noLocPocket[0].start) / 60000) : null
+      },
+      K:{
+        leaveByOffice,
+        usable:Math.floor((leaveByOffice - at(12, 6)) / 60000),
+        pocketCount:multiPocket.length,
+        duration:multiPocket[0] ? Math.round((multiPocket[0].end - multiPocket[0].start) / 60000) : null,
+        end:multiPocket[0] ? multiPocket[0].end : null,
+        travelFrom:multiTravel && multiTravel.from,
+        travelTo:multiTravel && multiTravel.to,
+        overlaps:multiPocket.some(r => r.end > leaveByOffice + 1000)
+      },
+      L:fillToFill,
+      M:{
+        pocketCount:zeroPocket.length,
+        duration:zeroPocket[0] ? Math.round((zeroPocket[0].end - zeroPocket[0].start) / 60000) : null,
+        end:zeroPocket[0] ? zeroPocket[0].end : null,
+        childStart:at(13, 0)
+      },
+      N:{
+        morningCount:dualMorning.length,
+        morningDuration:dualMorning[0] ? Math.round((dualMorning[0].end - dualMorning[0].start) / 60000) : null,
+        morningEnd:dualMorning[0] ? dualMorning[0].end : null,
+        morningLeaveBy,
+        postCount:dualPost.length,
+        postDuration:dualPost[0] ? Math.round((dualPost[0].end - dualPost[0].start) / 60000) : null,
+        postEnd:dualPost[0] ? dualPost[0].end : null,
+        morningOverlaps:dualMorning.some(r => r.end > morningLeaveBy + 1000),
+        postOverlaps:dualPost.some(r => r.end > leaveByHome + 1000)
+      },
+      O:{
+        bothArrive,
+        bothWaysLeaveBy,
+        usable:Math.floor((bothWaysLeaveBy - bothArrive) / 60000),
+        pocketCount:bothPocket.length,
+        start:bothPocket[0] ? bothPocket[0].start : null,
+        end:bothPocket[0] ? bothPocket[0].end : null,
+        duration:bothPocket[0] ? Math.round((bothPocket[0].end - bothPocket[0].start) / 60000) : null,
+        inboundCount:bothTravelBefore.length,
+        outboundCount:bothTravelAfter.length,
+        outboundFrom:bothTravelAfter[0] && bothTravelAfter[0].from,
+        outboundTo:bothTravelAfter[0] && bothTravelAfter[0].to,
+        overlaps:bothPocket.some(r => r.end > bothWaysLeaveBy + 1000)
+      }
+    };
+  });
+  console.log(outbound);
+
+  // A — under-min skip
+  assert(outbound.travelHomeMin === 16, `A travel Home↔Mechanic is 16m (got ${outbound.travelHomeMin})`);
+  assert(outbound.usablePostOil < 45, `A post-oil usable under min45 (got ${outbound.usablePostOil})`);
+  assert(outbound.A.pocketCount === 0, `A min45 skips post-oil pocket (got ${outbound.A.pocketCount})`);
+  assert(!outbound.A.overlaps, 'A min45 does not overlap leave-by');
+
+  // B — capped fit
+  assert(outbound.B.pocketCount === 1, `B min30 places one post-oil session (got ${outbound.B.pocketCount})`);
+  assert(outbound.B.duration === outbound.usablePostOil,
+    `B uses full leave-by-capped pocket (got ${outbound.B.duration} vs ${outbound.usablePostOil})`);
+  assert(outbound.B.end === outbound.leaveByHome, 'B Work ends exactly at leave-by');
+  assert(!outbound.B.overlaps, 'B does not overlap leave-by');
+
+  // C — same location: no outbound reserve, full gap usable
+  assert(outbound.C.pocketCount === 1, `C same-location places post-oil Work (got ${outbound.C.pocketCount})`);
+  assert(outbound.C.duration === 54,
+    `C uses full gap to next same-location task (got ${outbound.C.duration})`);
+
+  // D — fixed fill respects leave-by
+  assert(outbound.D.tooLongPlaced === 0, `D 50m fixed fill rejected from 38m leave-by window (got ${outbound.D.tooLongPlaced})`);
+  assert(outbound.D.fitPlaced === 1, `D 30m fixed fill places (got ${outbound.D.fitPlaced})`);
+  assert(!outbound.D.fitOverlaps, 'D fixed fill does not overlap leave-by');
+  assert(outbound.D.fitEnd <= outbound.leaveByHome + 1000, 'D fixed fill ends by leave-by');
+
+  // E — pre-appointment leave-by
+  assert(outbound.E.usableMorning === 110,
+    `E morning usable after leave-by is 110m (got ${outbound.E.usableMorning})`);
+  assert(outbound.E.tooLongPlaced === 0, `E 120m morning fill rejected when leave-by needs 16m (got ${outbound.E.tooLongPlaced})`);
+  assert(outbound.E.fitPlaced === 1, `E 40m morning fill places (got ${outbound.E.fitPlaced})`);
+  assert(!outbound.E.fitOverlaps, 'E morning fill does not overlap travel-to-oil');
+  assert(outbound.E.fitEnd <= outbound.E.morningLeaveBy + 1000, 'E morning fill ends by oil leave-by');
+
+  // F — blocked-time outbound target
+  assert(outbound.F.usable > 0, `F evening usable after leave-by (got ${outbound.F.usable})`);
+  assert(outbound.F.pocketCount === 1, `F places office leftover before Home block (got ${outbound.F.pocketCount})`);
+  assert(outbound.F.duration === outbound.F.usable,
+    `F uses full block-capped pocket (got ${outbound.F.duration} vs ${outbound.F.usable})`);
+  assert(outbound.F.end === outbound.F.blockLeaveBy, 'F ends exactly at leave-by for Home block');
+  assert(!outbound.F.overlaps, 'F does not overlap travel-home before wind-down');
+
+  // G — travel card after the fill matches leave-by
+  assert(outbound.G.hasTravel, 'G homeDaySequence inserts travel after post-oil Work');
+  assert(outbound.G.from === 'mechanic' && outbound.G.to === 'home',
+    `G travel is Mechanic→Home (got ${outbound.G.from}→${outbound.G.to})`);
+  assert(outbound.G.travelStart === outbound.G.fillEnd,
+    'G travel starts when Work ends (leave-by)');
+  assert(outbound.G.travelStart === outbound.leaveByHome,
+    'G travel start equals computed leave-by');
+  assert(outbound.G.travelEnd === outbound.leaveByHome + outbound.travelHomeMin * 60 * 1000,
+    'G travel ends at Perfect Child start');
+
+  // H — explicit Mechanic location
+  assert(outbound.H.pocketCount === 1, `H explicit-location fill places (got ${outbound.H.pocketCount})`);
+  assert(outbound.H.loc === 'mechanic', `H fill stays at Mechanic (got ${outbound.H.loc})`);
+  assert(outbound.H.duration === outbound.usablePostOil,
+    `H uses leave-by-capped pocket (got ${outbound.H.duration})`);
+  assert(outbound.H.end === outbound.leaveByHome, 'H ends at leave-by');
+  assert(!outbound.H.overlaps, 'H does not overlap leave-by');
+
+  // I — travel consumes the gap
+  assert(outbound.I.placed === 0, `I nothing places when commute ≥ gap (got ${outbound.I.placed})`);
+
+  // J — location-less next scheduled
+  assert(outbound.J.pocketCount === 1, `J places when next task has no location (got ${outbound.J.pocketCount})`);
+  assert(outbound.J.duration === 54, `J uses full gap with no outbound reserve (got ${outbound.J.duration})`);
+
+  // K — multi-leg Mechanic→Office
+  assert(outbound.K.usable === 42, `K usable after Mechanic→Office leave-by is 42m (got ${outbound.K.usable})`);
+  assert(outbound.K.pocketCount === 1, `K places between Mechanic and Office (got ${outbound.K.pocketCount})`);
+  assert(outbound.K.duration === 42, `K duration matches Office leave-by cap (got ${outbound.K.duration})`);
+  assert(outbound.K.end === outbound.K.leaveByOffice, 'K ends at Mechanic→Office leave-by');
+  assert(outbound.K.travelFrom === 'mechanic' && outbound.K.travelTo === 'office',
+    `K travel card is Mechanic→Office (got ${outbound.K.travelFrom}→${outbound.K.travelTo})`);
+  assert(!outbound.K.overlaps, 'K does not overlap Office leave-by');
+
+  // L — fill-to-fill outbound target
+  assert(outbound.L.usable === 42, `L usable before pinned Office fill is 42m (got ${outbound.L.usable})`);
+  assert(outbound.L.count === 1, `L places Work before Gym fill (got ${outbound.L.count})`);
+  assert(outbound.L.duration === 42, `L capped by fill-to-fill leave-by (got ${outbound.L.duration})`);
+  assert(outbound.L.end === outbound.L.leaveBy, 'L ends at leave-by for next fill');
+  assert(!outbound.L.overlaps, 'L does not overlap travel to next fill');
+
+  // M — zero-travel different locations
+  assert(outbound.M.pocketCount === 1, `M places with 0s commute (got ${outbound.M.pocketCount})`);
+  assert(outbound.M.duration === 54, `M uses full gap when travel is 0s (got ${outbound.M.duration})`);
+  assert(outbound.M.end === outbound.M.childStart,
+    'M ends at next task start when commute is zero');
+
+  // N — dual pocket morning + post-oil
+  assert(outbound.N.morningCount === 1, `N places morning session (got ${outbound.N.morningCount})`);
+  assert(outbound.N.morningDuration === outbound.E.usableMorning,
+    `N morning uses oil leave-by cap (got ${outbound.N.morningDuration})`);
+  assert(outbound.N.morningEnd === outbound.N.morningLeaveBy, 'N morning ends at oil leave-by');
+  assert(outbound.N.postCount === 1, `N places post-oil session (got ${outbound.N.postCount})`);
+  assert(outbound.N.postDuration === outbound.usablePostOil,
+    `N post-oil uses home leave-by cap (got ${outbound.N.postDuration})`);
+  assert(outbound.N.postEnd === outbound.leaveByHome, 'N post-oil ends at home leave-by');
+  assert(!outbound.N.morningOverlaps && !outbound.N.postOverlaps, 'N neither pocket overlaps leave-by');
+
+  // O — inbound + outbound around an explicit-location fill
+  assert(outbound.O.usable === 22, `O usable after inbound+outbound is 22m (got ${outbound.O.usable})`);
+  assert(outbound.O.pocketCount === 1, `O places Mechanic fill (got ${outbound.O.pocketCount})`);
+  assert(outbound.O.start === outbound.O.bothArrive, 'O starts after inbound Home→Mechanic travel');
+  assert(outbound.O.end === outbound.O.bothWaysLeaveBy, 'O ends at outbound leave-by');
+  assert(outbound.O.duration === 22, `O duration is inbound/outbound residual (got ${outbound.O.duration})`);
+  assert(outbound.O.inboundCount >= 1, `O sequence includes inbound travel (got ${outbound.O.inboundCount})`);
+  assert(outbound.O.outboundCount === 1, `O sequence includes outbound travel (got ${outbound.O.outboundCount})`);
+  assert(outbound.O.outboundFrom === 'mechanic' && outbound.O.outboundTo === 'home',
+    `O outbound is Mechanic→Home (got ${outbound.O.outboundFrom}→${outbound.O.outboundTo})`);
+  assert(!outbound.O.overlaps, 'O does not overlap leave-by');
+
+  // ── Boot cleanliness ──
+  console.log('\n[Boot] cleanliness');
   assert(pageErrors.length === 0, 'no pageerrors (got: ' + JSON.stringify(pageErrors) + ')');
 
   await browser.close();
