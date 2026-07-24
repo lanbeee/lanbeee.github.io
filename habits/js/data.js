@@ -557,6 +557,68 @@ function saveAutoChunkPlans(plans){
   catch{ return false; }
 }
 
+const TODAY_SUGGESTED_KEY = 'tings_today_suggested_v1';
+
+function yesterdayIso(){
+  return dateKey(Date.now() - 86400000);
+}
+
+function dataFingerprint(data){
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate].join(':')).join('|');
+}
+
+function loadTodaySuggested(){
+  const raw = Storage.read(TODAY_SUGGESTED_KEY);
+  const today = todayIso();
+  if(!raw || typeof raw !== 'object' || typeof raw.hids !== 'object')
+    return {day:today,hids:{},projection:null,prevProjection:null};
+  if(raw.day === today)return raw;
+  if(raw.day === yesterdayIso())
+    return {day:today,hids:{},projection:raw.projection || null,prevProjection:raw.projection || null};
+  return {day:today,hids:{},projection:null,prevProjection:null};
+}
+
+function saveTodaySuggested(snapshot){
+  const current = Storage.read(TODAY_SUGGESTED_KEY);
+  if(JSON.stringify(current) === JSON.stringify(snapshot))return false;
+  try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); return true; }
+  catch{ return false; }
+}
+
+function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids = null,fingerprint = null){
+  const snap = loadTodaySuggested();
+  let changed = false;
+  const validHids = new Set(data.filter(h=>h && h.hid).map(h=>h.hid));
+  for(const hid of Object.keys(snap.hids)){
+    if(!validHids.has(hid)){ delete snap.hids[hid]; changed = true; }
+  }
+  for(const hid of currentHids){
+    if(!snap.hids[hid]){
+      const h = data.find(item=>item && item.hid === hid);
+      snap.hids[hid] = {first:now,name:h ? h.name : ''};
+      changed = true;
+    }
+  }
+  if(projectionHids && fingerprint){
+    const tomorrow = dateKey(now + 86400000);
+    if(!snap.projection || snap.projection.day !== tomorrow || snap.projection.fingerprint !== fingerprint){
+      snap.projection = {day:tomorrow,hids:projectionHids,fingerprint};
+      changed = true;
+    }
+  }
+  delete snap.prevProjection;
+  if(changed)saveTodaySuggested(snap);
+  return snap;
+}
+
+function completedToday(h,now = Date.now()){
+  if(!h)return false;
+  if(h.type === 'task')return isTaskDone(h);
+  const start = dayStart(now);
+  const end = start + 86400000;
+  return actualLogs(h.logs).some(ts=>ts >= start && ts < end);
+}
+
 function autoChunkPlanScope(h,dayBase){
   if(!h || !h.hid)return null;
   return h.type === 'task' ? `task:${h.hid}` : `day:${h.hid}:${dateKey(dayBase)}`;

@@ -1020,8 +1020,8 @@ function cardBreakableSlider(h){
   const label = `progress ${done} of ${total} minutes`;
   return `<div class="breakable-progress" data-breakable-progress>
     <div class="breakable-status-bar" aria-hidden="true">
-      <span class="bar-manual" style="width:${manualPct}%"></span>
       <span class="bar-calendar" style="width:${calPct}%"></span>
+      <span class="bar-manual" style="width:${manualPct}%"></span>
       <span class="bar-adding" style="width:0%"></span>
     </div>
     <div class="crown-dial breakable-crown${isComplete ? ' complete' : ''}" role="slider" tabindex="0"
@@ -1761,7 +1761,11 @@ function setupDayCapacityHeader(header,dayBase,weekMode){
   });
 }
 
-function appendSectionHeader(list,label,dayContext = null){
+let _droppedPanelOpen = false;
+let _droppedDayBaseline = null;
+let _droppedDayBaselineDay = null;
+
+function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   if(!list || !label)return;
   const header = document.createElement('div');
   header.className = 'section-header';
@@ -1771,7 +1775,97 @@ function appendSectionHeader(list,label,dayContext = null){
   }else if(label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
+  if(label === 'today' && todayHids){
+    attachDroppedIndicator(header,list,todayHids);
+  }
   list.appendChild(header);
+}
+
+function computeTomorrowProjection(data,settings){
+  if(typeof buildWeekAgenda !== 'function')return [];
+  const week = buildWeekAgenda(data,settings,2);
+  const tomorrow = week.days[1];
+  if(!tomorrow || !tomorrow.timeline)return [];
+  return tomorrow.timeline
+    .filter(r=>(r.kind === 'fill' || r.kind === 'scheduled') && r.i != null)
+    .map(r=>data[r.i]?.hid)
+    .filter(Boolean);
+}
+
+function attachDroppedIndicator(header,list,todayHids){
+  const data = load();
+  const now = Date.now();
+  const snap = loadTodaySuggested();
+  const today = todayIso();
+  if(_droppedDayBaselineDay !== today){
+    _droppedDayBaseline = snap.prevProjection || null;
+    _droppedDayBaselineDay = today;
+  }
+  const fingerprint = dataFingerprint(data);
+  const needsProjection = !snap.projection
+    || snap.projection.day !== dateKey(now + 86400000)
+    || snap.projection.fingerprint !== fingerprint;
+  const projectionHids = needsProjection ? computeTomorrowProjection(data,sortSettings) : null;
+  recordTodaySuggested(data,todayHids,now,projectionHids,fingerprint);
+
+  const currentSet = new Set(todayHids);
+  const droppedMap = new Map();
+
+  if(_droppedDayBaseline && Array.isArray(_droppedDayBaseline.hids)){
+    for(const hid of _droppedDayBaseline.hids){
+      if(currentSet.has(hid) || droppedMap.has(hid))continue;
+      const idx = data.findIndex(h=>h && h.hid === hid);
+      if(idx < 0)continue;
+      const h = data[idx];
+      if(completedToday(h,now))continue;
+      const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+      droppedMap.set(hid,{hid,name:h.name,emoji:h.emoji,idx,snoozed,first:now});
+    }
+  }
+
+  for(const [hid,info] of Object.entries(snap.hids)){
+    if(currentSet.has(hid) || droppedMap.has(hid))continue;
+    const idx = data.findIndex(h=>h && h.hid === hid);
+    if(idx < 0)continue;
+    const h = data[idx];
+    if(completedToday(h,now))continue;
+    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+    droppedMap.set(hid,{hid,name:info.name || h.name,emoji:h.emoji,idx,snoozed,first:info.first});
+  }
+
+  const dropped = [...droppedMap.values()]
+    .sort((a,b)=>Number(a.snoozed) - Number(b.snoozed) || a.first - b.first);
+  if(!dropped.length)return;
+  header.classList.add('has-dropped');
+  const pill = document.createElement('span');
+  pill.className = 'dropped-pill';
+  pill.textContent = `${dropped.length} slipped`;
+  pill.addEventListener('pointerup',e=>{
+    e.stopPropagation();
+    _droppedPanelOpen = !_droppedPanelOpen;
+    const existing = header.nextElementSibling;
+    if(existing && existing.classList.contains('dropped-panel'))existing.remove();
+    if(_droppedPanelOpen){
+      header.after(renderDroppedPanel(dropped));
+    }
+  });
+  header.appendChild(pill);
+  if(_droppedPanelOpen){
+    header.after(renderDroppedPanel(dropped));
+  }
+}
+
+function renderDroppedPanel(items){
+  const panel = document.createElement('div');
+  panel.className = 'dropped-panel';
+  items.forEach(item=>{
+    const row = document.createElement('button');
+    row.className = 'dropped-item' + (item.snoozed ? ' snoozed' : '');
+    row.innerHTML = `${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : ''}<span class="dropped-name">${escapeHtml(item.name)}</span>${item.snoozed ? '<span class="dropped-tag">snoozed</span>' : ''}`;
+    row.addEventListener('click',()=>{ openDetail(item.idx); });
+    panel.appendChild(row);
+  });
+  return panel;
 }
 
 // PURE: reduce trail tones to one
@@ -2056,9 +2150,18 @@ function render(opts){
       appendHabitCard(realIdx,agendaRow,earlyText);
     });
 
+    const weekTodayHids = (()=>{
+      const todayPlan = dayPlans.find(p=>p.day.isToday);
+      if(!todayPlan)return [];
+      return todayPlan.seq
+        .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i != null && !data[row.i]?.pinned)
+        .map(row=>data[row.i]?.hid)
+        .filter(Boolean);
+    })();
+
     dayPlans.forEach(({day,seq})=>{
       if(!seq.length)return;
-      appendSectionHeader(list,homeWeekDayLabel(day),day);
+      appendSectionHeader(list,homeWeekDayLabel(day),day,day.isToday ? weekTodayHids : null);
       for(let i = 0;i < seq.length;){
         const row = seq[i];
         if(row.kind === 'travel'){
@@ -2188,6 +2291,15 @@ function render(opts){
       }
     }
 
+    const todayHids = (!searching && todayFirstActive)
+      ? renderIndices.filter(i=>{
+          const h = data[i];
+          if(h.pinned)return false;
+          const cat = todayCategory(h,sortSettings);
+          return cat === 0 || (cat === 2 && earlyToday(i));
+        }).map(i=>data[i].hid).filter(Boolean)
+      : [];
+
     renderIndices.forEach(realIdx=>{
       const h = data[realIdx];
       const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
@@ -2199,7 +2311,7 @@ function render(opts){
         if(sectionKey !== sectionCat){
           const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
           const label = labels[sectionKey];
-          if(label)appendSectionHeader(list,label);
+          if(label)appendSectionHeader(list,label,null,label === 'today' ? todayHids : null);
           sectionCat = sectionKey;
           if(sectionKey !== 0)prevTodayLocId = null;
         }
@@ -2242,6 +2354,17 @@ function render(opts){
         (!searching && cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : ''
       );
     });
+    if(!searching && todayFirstActive && sectionCat !== 0){
+      const _snap = loadTodaySuggested();
+      if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        header.textContent = 'today';
+        setupDayCapacityHeader(header,dayStart(Date.now()),false);
+        attachDroppedIndicator(header,list,todayHids);
+        if(header.classList.contains('has-dropped'))list.prepend(header);
+      }
+    }
   }
   } // end of the `else` (non-deferred) branch
 
@@ -2453,8 +2576,9 @@ function renderProgressive(){
 }
 
 // WIRE: crown-dial gesture for breakable progress. Drag horizontally to adjust
-// minutes (10px = 1 min). Updates the 3-color status bar and pending target.
-// Logging stays on the pulse/double-tap path; gestures never swipe the card.
+// minutes (3px ≈ 1 min, speed-adaptive). Updates the 3-color status bar and
+// pending target. A clean tap propagates to card (opens detail); vertical
+// gestures pass through to page scroll.
 function setupBreakableCrown(row,_realIdx){
   const crown = row.querySelector('.breakable-crown');
   if(!crown)return;
@@ -2468,11 +2592,25 @@ function setupBreakableCrown(row,_realIdx){
   const calendarMin = Math.max(0,Math.round(Number(crown.dataset.calendar) || 0));
   const manualMin = Math.max(0,Math.round(Number(crown.dataset.manual) || 0));
 
+  const PX_PER_MIN = 3;
   crown._scroll = committed * 10;
   if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas, crown._scroll);
 
-  // Dial is forward-only: committed progress is locked, you can only add more.
-  // teal = manual committed, purple = calendar committed, amber = pending add.
+  let tooltip = null;
+  function showTooltip(minutes){
+    const adding = Math.max(0,minutes - committed);
+    if(!tooltip){
+      tooltip = document.createElement('span');
+      tooltip.className = 'crown-tooltip';
+      crown.appendChild(tooltip);
+    }
+    tooltip.textContent = adding > 0 ? `+${adding}m` : `${minutes}m`;
+    tooltip.classList.add('visible');
+  }
+  function hideTooltip(){
+    if(tooltip)tooltip.classList.remove('visible');
+  }
+
   function syncVisual(minutes){
     const m = Math.max(committed,Math.min(total,Math.round(minutes)));
     if(label)label.textContent = `${m}/${total}m`;
@@ -2498,8 +2636,9 @@ function setupBreakableCrown(row,_realIdx){
     syncVisual(m);
   }
 
-  let prevX,velX = 0,momentumId = null,smoothAnimId = null;
-  const friction = 0.935;
+  let startX,startY,prevX,velX = 0,momentumId = null,smoothAnimId = null;
+  let dragging = false,pointerId = null;
+  const friction = 0.92;
   const minScroll = committed * 10;
 
   const cancelMomentum = () => {
@@ -2514,10 +2653,11 @@ function setupBreakableCrown(row,_realIdx){
     let vel = initVel;
     const tick = () => {
       vel *= friction;
-      if(Math.abs(vel) < 0.5){momentumId = null;return;}
-      crown._scroll = Math.max(minScroll,crown._scroll + vel);
+      if(Math.abs(vel) < 0.5){momentumId = null;hideTooltip();return;}
+      crown._scroll = Math.max(minScroll,crown._scroll + vel * (10 / PX_PER_MIN));
       const derived = Math.max(committed,Math.min(total,baseVal + Math.round((crown._scroll - baseScroll) / 10)));
       setTarget(derived);
+      showTooltip(derived);
       if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
       momentumId = requestAnimationFrame(tick);
     };
@@ -2526,36 +2666,72 @@ function setupBreakableCrown(row,_realIdx){
 
   crown.addEventListener('pointerdown',e=>{
     cancelMomentum();
+    startX = e.clientX;
+    startY = e.clientY;
     prevX = e.clientX;
     velX = 0;
+    dragging = false;
+    pointerId = e.pointerId;
     crown._valScroll = 0;
     crown._dragBase = Math.round(Number(row.dataset.progressTarget) || committed);
-    crown.setPointerCapture(e.pointerId);
-    crown.classList.add('active');
   });
 
   crown.addEventListener('pointermove',e=>{
-    if(prevX === undefined)return;
+    if(pointerId === null || e.pointerId !== pointerId)return;
+    const dxTotal = e.clientX - startX;
+    const dyTotal = e.clientY - startY;
+
+    if(!dragging){
+      if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
+      if(Math.abs(dyTotal) > Math.abs(dxTotal)){
+        pointerId = null;
+        return;
+      }
+      dragging = true;
+      crown.setPointerCapture(e.pointerId);
+      crown.classList.add('active');
+      e.preventDefault();
+    }
+
     const dx = e.clientX - prevX;
     prevX = e.clientX;
     velX = velX * 0.55 + dx * 0.45;
-    crown._scroll = Math.max(minScroll,crown._scroll + dx);
+    crown._scroll = Math.max(minScroll,crown._scroll + dx * (10 / PX_PER_MIN));
     if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
     const speed = Math.abs(velX);
-    const gain = 1 + speed * 0.15;
+    const gain = 1 + speed * 0.25;
     crown._valScroll += dx * gain;
-    setTarget(crown._dragBase + Math.round(crown._valScroll / 10));
+    const target = crown._dragBase + Math.round(crown._valScroll / PX_PER_MIN);
+    setTarget(target);
+    showTooltip(target);
   });
 
-  const endDrag = () => {
-    prevX = undefined;
-    crown.classList.remove('active');
-    if(Math.abs(velX) > 1)startMomentum(velX);
+  const endDrag = e => {
+    if(pointerId === null)return;
+    const wasDragging = dragging;
+    if(dragging){
+      crown.classList.remove('active');
+      if(Math.abs(velX) > 1.5)startMomentum(velX);
+      else hideTooltip();
+      setTimeout(hideTooltip,1200);
+    }
+    dragging = false;
+    pointerId = null;
     velX = 0;
+    if(!wasDragging && e.type === 'pointerup'){
+      const card = row.querySelector('.ting-card');
+      if(card){
+        card.dataset.approvedClickUntil = String(Date.now()+500);
+        card.click();
+      }
+    }
   };
 
   crown.addEventListener('pointerup',endDrag);
-  crown.addEventListener('pointercancel',endDrag);
+  crown.addEventListener('pointercancel',e=>{
+    if(dragging){crown.classList.remove('active');hideTooltip();}
+    dragging = false;pointerId = null;velX = 0;
+  });
 
   crown.addEventListener('wheel',e=>{
     e.preventDefault();
@@ -2586,10 +2762,11 @@ function setupBreakableCrown(row,_realIdx){
     }
   });
 
-  const stop = e=>{ e.stopPropagation(); };
-  ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel','mousedown','mouseup','click'].forEach(ev=>{
+  const stop = e=>{ if(dragging)e.stopPropagation(); };
+  ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel','mousedown','mouseup'].forEach(ev=>{
     crown.addEventListener(ev,stop,{ passive:true });
   });
+  crown.addEventListener('click',e=>{ e.stopPropagation(); },{ passive:true });
 
   window.addEventListener('resize',()=>{
     if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
