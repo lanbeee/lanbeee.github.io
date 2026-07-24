@@ -472,6 +472,39 @@ function remainingPlacementGaps(state){
   return gaps.filter(g=>g.end > g.start);
 }
 
+function computeDayFreeGaps(day,settings,now = Date.now()){
+  const empty = {gaps:[],totalFreeMinutes:0,largestGapMinutes:0,nextGapStart:null};
+  if(!day || day.dayBase == null)return empty;
+  const dayBase = day.dayBase;
+  const dayEnd = dayBase + 86400000;
+  const dayKey = dateKey(dayBase);
+  const clipStart = day.isToday ? Math.max(dayBase,ceilToMinutes(now,5)) : dayBase;
+  if(clipStart >= dayEnd)return empty;
+  const occupied = agendaBlockedIntervals(dayKey,settings,dayBase,dayEnd)
+    .map(b=>({start:b.start,end:b.end}));
+  for(const row of day.timeline || []){
+    if(row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel'){
+      if(row.end > clipStart && row.start < dayEnd){
+        occupied.push({start:Math.max(row.start,clipStart),end:Math.min(row.end,dayEnd)});
+      }
+    }
+  }
+  const merged = mergeIntervals(occupied
+    .map(b=>({start:Math.max(dayBase,b.start),end:Math.min(dayEnd,b.end)}))
+    .filter(b=>b.end > b.start));
+  const gaps = [];
+  let cursor = clipStart;
+  for(const block of merged){
+    if(block.start > cursor)gaps.push({start:cursor,end:block.start});
+    cursor = Math.max(cursor,block.end);
+  }
+  if(cursor < dayEnd)gaps.push({start:cursor,end:dayEnd});
+  const totalFreeMinutes = gaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);
+  const largestGapMinutes = gaps.reduce((m,g)=>Math.max(m,Math.round((g.end - g.start) / 60000)),0);
+  const nextGapStart = gaps.length ? gaps[0].start : null;
+  return {gaps,totalFreeMinutes,largestGapMinutes,nextGapStart};
+}
+
 // PURE: can one remaining fill use this exact final gap? `ignoreBudget` keeps
 // every other hard constraint intact while removing only the availability cap,
 // which lets the audit distinguish a placement miss from an intentional cap.

@@ -1769,9 +1769,11 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   if(!list || !label)return;
   const header = document.createElement('div');
   header.className = 'section-header';
+  header.dataset.label = label;
   header.textContent = label;
   if(dayContext && dayContext.dayBase != null){
     setupDayCapacityHeader(header,dayContext.dayBase,true);
+    attachFreeTimeIndicator(header,dayContext);
   }else if(label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
@@ -1865,6 +1867,64 @@ function renderDroppedPanel(items){
     row.addEventListener('click',()=>{ openDetail(item.idx); });
     panel.appendChild(row);
   });
+  return panel;
+}
+
+function formatFreeDuration(minutes){
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if(h <= 0)return `${m}m`;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+let _freePanelOpen = null;
+
+function attachFreeTimeIndicator(header,day){
+  if(typeof computeDayFreeGaps !== 'function')return;
+  const info = computeDayFreeGaps(day,sortSettings);
+  if(info.totalFreeMinutes < 10)return;
+  header.classList.add('has-pill');
+  const pill = document.createElement('span');
+  pill.className = 'free-pill';
+  pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
+  pill.addEventListener('pointerup',e=>{
+    e.stopPropagation();
+    const key = day.dayKey || String(day.dayBase);
+    const existing = header.nextElementSibling;
+    if(existing && existing.classList.contains('free-panel'))existing.remove();
+    if(_freePanelOpen === key){ _freePanelOpen = null; return; }
+    document.querySelectorAll('.free-panel').forEach(p=>p.remove());
+    _freePanelOpen = key;
+    header.after(renderFreePanel(info));
+  });
+  header.appendChild(pill);
+}
+
+function renderFreePanel(info){
+  const panel = document.createElement('div');
+  panel.className = 'free-panel';
+  const summary = document.createElement('div');
+  summary.className = 'free-panel-row';
+  summary.innerHTML = `<span>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(info.largestGapMinutes))} largest</span>`;
+  panel.appendChild(summary);
+  const bigGaps = info.gaps.filter(g=>Math.round((g.end - g.start) / 60000) >= 30);
+  const shortMinutes = info.totalFreeMinutes - bigGaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);
+  bigGaps.forEach(g=>{
+    const mins = Math.round((g.end - g.start) / 60000);
+    const sd = new Date(g.start), ed = new Date(g.end);
+    const startLabel = formatTimeShort(sd.getHours() * 60 + sd.getMinutes());
+    const endLabel = formatTimeShort(ed.getHours() * 60 + ed.getMinutes());
+    const row = document.createElement('div');
+    row.className = 'free-panel-row';
+    row.innerHTML = `<span>${escapeHtml(startLabel)} – ${escapeHtml(endLabel)}</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(mins))}</span>`;
+    panel.appendChild(row);
+  });
+  if(shortMinutes >= 10){
+    const note = document.createElement('div');
+    note.className = 'free-panel-note';
+    note.textContent = `+ ${formatFreeDuration(shortMinutes)} in shorter gaps`;
+    panel.appendChild(note);
+  }
   return panel;
 }
 
@@ -2311,7 +2371,10 @@ function render(opts){
         if(sectionKey !== sectionCat){
           const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
           const label = labels[sectionKey];
-          if(label)appendSectionHeader(list,label,null,label === 'today' ? todayHids : null);
+          const dayCtx = label === 'today'
+            ? {dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows}
+            : null;
+          if(label)appendSectionHeader(list,label,dayCtx,label === 'today' ? todayHids : null);
           sectionCat = sectionKey;
           if(sectionKey !== 0)prevTodayLocId = null;
         }
@@ -2359,10 +2422,12 @@ function render(opts){
       if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
         const header = document.createElement('div');
         header.className = 'section-header';
+        header.dataset.label = 'today';
         header.textContent = 'today';
         setupDayCapacityHeader(header,dayStart(Date.now()),false);
+        attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
         attachDroppedIndicator(header,list,todayHids);
-        if(header.classList.contains('has-dropped'))list.prepend(header);
+        if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
       }
     }
   }

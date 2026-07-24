@@ -651,7 +651,7 @@ function defaultSettings(overrides = {}) {
       const row = card.closest('.swipe-row') || card.parentElement;
       let node = row ? row.previousElementSibling : null;
       while(node){
-        if(node.classList && node.classList.contains('section-header'))return node.textContent.trim();
+        if(node.classList && node.classList.contains('section-header'))return node.dataset.label || node.textContent.trim();
         node = node.previousElementSibling;
       }
       return null;

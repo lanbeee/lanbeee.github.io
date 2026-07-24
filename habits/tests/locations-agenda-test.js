@@ -215,13 +215,13 @@ function seedScript(extraHabits, extraSettings){
   await page.waitForTimeout(100);
   await page.evaluate(() => { if(typeof render === 'function')render(); });
   await page.waitForFunction(()=>{
-    const headers = [...document.querySelectorAll('#list .section-header')].map(el=>el.textContent.trim());
+    const headers = [...document.querySelectorAll('#list .section-header')].map(el=>el.dataset.label || el.textContent.trim());
     return headers.includes('today') && headers.includes('tomorrow');
   },null,{timeout:10000});
   const homeWeek = await page.evaluate(() => {
     const wrap = document.getElementById('home-week-plan');
     const list = document.getElementById('list');
-    const headers = [...(list?.querySelectorAll('.section-header') || [])].map(el => el.textContent.trim());
+    const headers = [...(list?.querySelectorAll('.section-header') || [])].map(el => el.dataset.label || el.textContent.trim());
     return {
       exists: !!wrap,
       separateHidden: wrap ? wrap.hidden : true,
@@ -280,7 +280,7 @@ function seedScript(extraHabits, extraSettings){
   const classicHome = await page.evaluate(() => {
     const wrap = document.getElementById('home-week-plan');
     const list = document.getElementById('list');
-    const headers = [...(list?.querySelectorAll('.section-header') || [])].map(el => el.textContent.trim());
+    const headers = [...(list?.querySelectorAll('.section-header') || [])].map(el => el.dataset.label || el.textContent.trim());
     return {
       separateHidden: wrap ? wrap.hidden : true,
       headers,
@@ -388,7 +388,7 @@ function seedScript(extraHabits, extraSettings){
   await page.waitForFunction(()=>document.querySelectorAll('#list .section-header').length > 0,null,{timeout:10000});
   const overload = await page.evaluate(() => {
     const list = document.getElementById('list');
-    const headers = [...list.querySelectorAll('.section-header')].map(el => el.textContent.trim());
+    const headers = [...list.querySelectorAll('.section-header')].map(el => el.dataset.label || el.textContent.trim());
     const dayLabels = new Set(['today','tomorrow','others','overdue','upcoming']);
     // Walk children: section headers bound day vs leftover sections.
     let section = '';
@@ -401,7 +401,7 @@ function seedScript(extraHabits, extraSettings){
     const children = [...list.children];
     for(const el of children){
       if(el.classList.contains('section-header')){
-        section = el.textContent.trim();
+        section = el.dataset.label || el.textContent.trim();
         inDay = !['overdue','upcoming','others'].includes(section);
         if(inDay)fillsByDay[section] = fillsByDay[section] || 0;
         continue;
