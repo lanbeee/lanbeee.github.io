@@ -1941,8 +1941,8 @@ function summarizeTrailTone(tones){
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
-// agenda work and emits a basic grouped list. Normal home renders wait for the
-// default GLPK planner and paint its result once.
+// agenda work and emits a basic grouped list. Normal home renders kick off the
+// GLPK planner in the background after a fast sync paint.
 function render(opts){
   const o = opts || {};
   const list = $('list');
@@ -2565,16 +2565,21 @@ function renderHomePresentationOnly(){
   render();
 }
 
-// ASYNC COORDINATOR: GLPK is the default planner, so wait for its result and
-// paint the home agenda once. Keeping the current DOM while it solves avoids
-// the old heuristic-first replacement that made times and cards visibly jump.
+// ASYNC COORDINATOR: paint the sync heuristic week immediately, then upgrade
+// in place when GLPK finishes. Waiting on the solver before first paint left
+// home blank for seconds on cold load.
 function queueOptimizedHomeRender(data,opts){
   const key = optimizerHomeStateKey(data);
   if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
     render({...opts,__fromOptimizer:true,__optimizedWeek:_optimizerHomeReadyWeek});
+    _homeListFingerprint = homeListFingerprint();
     return;
   }
   if(_optimizerHomeRequestKey === key)return;
+
+  // Fast first paint so the list appears right away.
+  render({...opts,__fromOptimizer:true,__optimizerFallback:true});
+  _homeListFingerprint = homeListFingerprint();
 
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
@@ -2585,20 +2590,20 @@ function queueOptimizedHomeRender(data,opts){
     if(!sortSettings.agendaOptimizer)return;
     if(key !== optimizerHomeStateKey(load())){
       render(opts);
+      _homeListFingerprint = homeListFingerprint();
       return;
     }
-    if(!week || !Array.isArray(week.days)){
-      render({...opts,__fromOptimizer:true,__optimizerFallback:true});
-      return;
-    }
+    if(!week || !Array.isArray(week.days))return;
+    // Heuristic paint already on screen; only replace when GLPK produced a plan.
+    if(!week.optimized)return;
     _optimizerHomeReadyKey = key;
     _optimizerHomeReadyWeek = week;
     render({...opts,__fromOptimizer:true,__optimizedWeek:week});
+    _homeListFingerprint = homeListFingerprint();
   }).catch(()=>{
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
-    if(!sortSettings.agendaOptimizer)return;
-    render({...opts,__fromOptimizer:true,__optimizerFallback:true});
+    // Keep the fast planner already on screen.
   });
 }
 

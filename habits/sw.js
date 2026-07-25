@@ -1,4 +1,4 @@
-const CACHE = 'tings-v56';
+const CACHE = 'tings-v63';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -57,17 +57,41 @@ const PRECACHE = [
 
 const PRECACHE_CDN = [TABLER_CSS, TABLER_WOFF2, LEAFLET_CSS, LEAFLET_JS, PDFJS, PDFJS_WORKER];
 
+function isScriptAsset(url){
+  return /\.(m?js)(\?|$)/i.test(url || '');
+}
+
+function responseLooksLikeHtml(res){
+  if(!res)return false;
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  return ct.includes('text/html');
+}
+
 async function cachePutOk(cache, url) {
   try {
     const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
-    if (res && res.ok) await cache.put(url, res);
+    if (res && res.ok && !responseLooksLikeHtml(res)) await cache.put(url, res);
   } catch (_) {}
+}
+
+async function cachePutResponse(cache, req, res){
+  if(!res || !res.ok)return;
+  // SPA servers (serve -s) return index.html with 200 for missing files.
+  // Never store that under a .js/.mjs key — it permanently breaks module import.
+  const url = typeof req === 'string' ? req : req.url;
+  if(isScriptAsset(url) && responseLooksLikeHtml(res))return;
+  try{ await cache.put(req, res.clone()); }catch(_){}
 }
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await cache.addAll(PRECACHE);
+    await Promise.all(PRECACHE.map(async url => {
+      try{
+        const res = await fetch(url, { cache: 'no-cache' });
+        await cachePutResponse(cache, url, res);
+      }catch(_){}
+    }));
     await Promise.all(PRECACHE_CDN.map(url => cachePutOk(cache, url)));
     await self.skipWaiting();
   })());
@@ -143,20 +167,36 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // GLPK module: network-first so a poisoned HTML cache entry cannot stick.
+  if (/\/lib\/js\/glpk\.mjs(\?|$)/i.test(req.url)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const res = await fetch(req, { cache: 'no-cache' });
+        await cachePutResponse(cache, req, res);
+        if (res && res.ok && !responseLooksLikeHtml(res)) return res;
+      } catch (_) {}
+      const cached = await cache.match(req);
+      if (cached && !responseLooksLikeHtml(cached)) return cached;
+      return new Response('GLPK unavailable', { status: 503, statusText: 'Service Unavailable' });
+    })());
+    return;
+  }
+
   // Stale-while-revalidate for app shell + CDN assets. Must always resolve to a
   // Response — returning a Promise that settles to undefined breaks offline.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req);
-    if (cached) {
+    if (cached && !(isScriptAsset(req.url) && responseLooksLikeHtml(cached))) {
       fetch(req).then(res => {
-        if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+        cachePutResponse(cache, req, res);
       }).catch(() => {});
       return cached;
     }
     try {
       const res = await fetch(req);
-      if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+      await cachePutResponse(cache, req, res);
       return res;
     } catch {
       return new Response('', { status: 503, statusText: 'Offline' });

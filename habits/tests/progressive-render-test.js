@@ -1,5 +1,5 @@
-// Single-stage GLPK home refresh — no heuristic-first agenda jitter, and
-// fingerprint skips for no-op refreshes.
+// Fast heuristic first paint, then optional GLPK upgrade.
+// Cards appear immediately; the optimized week may replace them once.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/progressive-render-test.js
 //
@@ -63,8 +63,18 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
 
   await page.goto(BASE,{ waitUntil:'load' });
-  await page.waitForFunction(()=>Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),null,{ timeout:10000 });
-  await page.waitForSelector('#list .ting-card');
+  // Fast path: cards must appear without waiting on GLPK.
+  await page.waitForSelector('#list .ting-card',{ timeout:3000 });
+  const early = await page.evaluate(()=>({
+    cards:document.querySelectorAll('#list .ting-card').length,
+    progressive:document.getElementById('list')?.classList.contains('is-progressive'),
+    sawProgressive:Boolean(window.__progressiveObs && window.__progressiveObs.saw),
+    optimized:Boolean(_homeRenderedWeek && _homeRenderedWeek.optimized)
+  }));
+  check('cards appear before GLPK finishes', early.cards >= 3, JSON.stringify(early));
+  check('fast paint does not use is-progressive', !early.sawProgressive && !early.progressive, JSON.stringify(early));
+
+  await page.waitForFunction(()=>Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),null,{ timeout:15000 });
   await page.waitForTimeout(100);
 
   const loadState = await page.evaluate(()=>{
@@ -82,7 +92,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
   check('cold load does not use is-progressive', !loadState.sawProgressive && !loadState.progressiveNow, JSON.stringify(loadState));
   check('GLPK optimizer is the default planner', loadState.optimizerDefault && loadState.optimized, JSON.stringify(loadState));
-  check('cold load paints one final agenda', loadState.destructiveRenders === 0, JSON.stringify(loadState));
+  // One heuristic→optimized replace is expected; more churn is not.
+  check('cold load upgrades at most once', loadState.destructiveRenders <= 1, JSON.stringify(loadState));
   check('cards render on cold load', loadState.cards >= 3, JSON.stringify(loadState));
   check('homeListFingerprint + renderHomeIfChanged exist', loadState.hasFingerprint && loadState.hasRenderIfChanged, JSON.stringify(loadState));
 
@@ -118,9 +129,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await browser.close();
   if(failures.length){
     console.log(`\n${failures.length} FAILURES:`);
-    failures.forEach(f=>console.log(' • ' + f));
+    failures.forEach(f=>console.log(' -',f));
     process.exit(1);
   }
   console.log('\nPASS — smooth home refresh verified');
-  process.exit(0);
-})().catch(e=>{ console.error(e); process.exit(1); });
+})().catch(err=>{ console.error(err); process.exit(1); });

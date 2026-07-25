@@ -8,39 +8,53 @@
 // fills the remaining gaps continuous-first. This keeps a broad work window from
 // winning one large binary choice and erasing a narrow habit inside that window.
 
-const AGENDA_OPTIMIZER_TIMEOUT_MS = 5000;
-// Dynamic import() resolves relative to the page URL, not this file. Anchor to
-// the script tag so /habits/ on GitHub Pages and / locally both find GLPK.
-const AGENDA_OPTIMIZER_GLPK_URL = (()=>{
-  try{
-    const el = document.querySelector('script[src*="agenda-optimizer.js"]');
-    if(el && el.src)return new URL('../lib/js/glpk.mjs',el.src).href;
-  }catch(_){}
-  return new URL('./lib/js/glpk.mjs',location.href).href;
-})();
-
+// Cold WASM/worker bring-up can exceed a tight budget on first open.
+const AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS = 12000;
+// Shared week solve budget. Near days take a larger share; unused time rolls
+// forward. Far days still get a small floor so they can try GLPK briefly.
+const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 12000;
+const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 600;
+const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 4500;
 let _glpkPromise = null;
 let _glpkInstance = null;
-let _optimizerToastShown = false;
 
 function preloadAgendaOptimizer(){
   return ensureGlpk().catch(()=>null);
 }
 
+function glpkCandidateUrls(){
+  const urls = [];
+  try{
+    const el = document.querySelector('script[src*="agenda-optimizer.js"]');
+    if(el && el.src)urls.push(new URL('../lib/js/glpk.mjs',el.src).href);
+  }catch(_){}
+  try{ urls.push(new URL('./lib/js/glpk.mjs',location.href).href); }catch(_){}
+  // De-dupe while preserving order.
+  return urls.filter((url,i)=>url && urls.indexOf(url) === i);
+}
+
 function ensureGlpk(){
   if(_glpkInstance)return Promise.resolve(_glpkInstance);
   if(_glpkPromise)return _glpkPromise;
-  _glpkPromise = import(AGENDA_OPTIMIZER_GLPK_URL)
-    .then(mod=> (mod.default || mod)())
-    .then(GLPK=>{
-      _glpkInstance = GLPK;
-      return GLPK;
-    })
-    .catch(err=>{
-      _glpkPromise = null;
-      console.warn('[agenda-optimizer] GLPK load failed:', err && err.message || err);
-      throw err;
-    });
+  _glpkPromise = (async ()=>{
+    let lastErr = null;
+    for(const url of glpkCandidateUrls()){
+      try{
+        const mod = await import(url);
+        const GLPK = await (mod.default || mod)();
+        if(!GLPK || typeof GLPK.solve !== 'function'){
+          throw new Error('GLPK module missing solve()');
+        }
+        _glpkInstance = GLPK;
+        return GLPK;
+      }catch(err){
+        lastErr = err;
+        console.warn('[agenda-optimizer] GLPK load failed for',url,err && err.message || err);
+      }
+    }
+    _glpkPromise = null;
+    throw lastErr || new Error('GLPK unavailable');
+  })();
   return _glpkPromise;
 }
 
@@ -52,6 +66,20 @@ function withTimeout(promise,ms){
       e=>{ clearTimeout(t); reject(e); }
     );
   });
+}
+
+// Today/tomorrow keep most of the remaining week budget; later offsets decay.
+function daySolveWeight(dayOffset){
+  return Math.pow(0.7,Math.max(0,dayOffset));
+}
+
+function daySolveTimeoutMs(dayOffset,budgetLeft,weightsFromHere){
+  const weightSum = weightsFromHere.reduce((sum,w)=>sum + w,0) || 1;
+  const share = budgetLeft * (daySolveWeight(dayOffset) / weightSum);
+  return Math.max(
+    AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS,
+    Math.min(AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS,Math.round(share))
+  );
 }
 
 function optimizerWeight(c){
@@ -282,6 +310,29 @@ async function packDayWithOptimizer(state,dayCandidates){
   return chosen;
 }
 
+// Scarcity-order placement for one day when ILP times out or is infeasible.
+// Keeps the rest of the week on the optimizer path instead of aborting entirely.
+function packDayWithHeuristic(state,dayCandidates){
+  if(typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return [];
+  const ordered = dayCandidates.slice().sort((a,b)=>optimizerWeight(b) - optimizerWeight(a));
+  const chosen = [];
+  for(const c of ordered){
+    if(state.placed.has(c.i))continue;
+    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    const fit = tryPlaceOnDay(state,fill,{allowNetwork:true});
+    if(!fit)continue;
+    chosen.push({fill,fit});
+    commitPlacement(state,fill,fit);
+    state.day.agendaItems.push({
+      h:fill.h,i:fill.i,priority:fill.priority,scarcity:fill.scarcity,
+      locationId:fit.locId,
+      chunkMinutes:null,
+      chunkIndex:null
+    });
+  }
+  return chosen;
+}
+
 // Assign candidates onto dayStates using per-day ILP packing. Falls back by
 // returning false so the caller can run the scarcity heuristic instead.
 async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
@@ -294,7 +345,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   const virtualLogs = new Map();
   const oneShotPlaced = new Set();
   let total = 0;
-  for(const state of dayStates){
+  let budgetLeft = AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS;
+  const dayWeights = dayStates.map((_,offset)=>daySolveWeight(offset));
+  for(let dayOffset = 0;dayOffset < dayStates.length;dayOffset += 1){
+    const state = dayStates[dayOffset];
     const dayCands = [];
     for(const c of candidates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
@@ -331,13 +385,41 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     }
     const fixedCands = dayCands.filter(c=>!(c.h && c.h.breakable));
     if(!fixedCands.length)continue;
-    let chosen;
-    try{
-      chosen = await withTimeout(packDayWithOptimizer(state,fixedCands),AGENDA_OPTIMIZER_TIMEOUT_MS);
-    }catch(_){
-      return false;
+    const solveMs = daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
+    let chosen = null;
+    let usedHeuristic = false;
+    if(budgetLeft < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS){
+      usedHeuristic = true;
+    }else{
+      const solveStarted = (typeof performance !== 'undefined' && performance.now)
+        ? performance.now() : Date.now();
+      try{
+        chosen = await withTimeout(packDayWithOptimizer(state,fixedCands),solveMs);
+      }catch(err){
+        console.warn('[agenda-optimizer] day solve timed out — using fast pack for this day:',err && err.message || err);
+        chosen = null;
+        usedHeuristic = true;
+      }
+      const spent = Math.max(0,((typeof performance !== 'undefined' && performance.now)
+        ? performance.now() : Date.now()) - solveStarted);
+      budgetLeft = Math.max(0,budgetLeft - spent);
     }
-    if(!chosen)return false;
+    if(!chosen){
+      if(!usedHeuristic){
+        console.warn('[agenda-optimizer] day solve infeasible — using fast pack for this day');
+      }
+      const heuristicChosen = packDayWithHeuristic(state,fixedCands);
+      for(const {fill} of heuristicChosen){
+        total += 1;
+        const c = candidates.find(x=>x.i === fill.i);
+        if(c && c.h && c.h.type === 'task')oneShotPlaced.add(c.i);
+        if(c && c.h && c.h.type !== 'task'
+          && Number.isFinite(Number(c.h.target))){
+          virtualLogs.set(c.i,state.dayBase);
+        }
+      }
+      continue;
+    }
     for(const {fill,fit} of chosen){
       if(fill.h && fill.h.breakable){
         const chunkIndex = state.fills.filter(f=>f.fill && f.fill.i === fill.i).length;
@@ -441,9 +523,10 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7){
     return buildWeekAgenda(data,settings,numDays);
   }
   try{
-    await withTimeout(ensureGlpk(),AGENDA_OPTIMIZER_TIMEOUT_MS);
-  }catch(_){
-    maybeToastOptimizerFallback();
+    await withTimeout(ensureGlpk(),AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS);
+  }catch(err){
+    // Silent fallback — the fast planner still builds a usable week.
+    console.warn('[agenda-optimizer] GLPK unavailable:',err && err.message || err);
     return buildWeekAgenda(data,settings,numDays);
   }
 
@@ -488,7 +571,8 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7){
 
   const ok = await assignWeekCandidatesOptimized(candidates,dayStates,settings);
   if(!ok){
-    maybeToastOptimizerFallback();
+    // Packing timed out or a day was infeasible — use the fast planner quietly.
+    // The "unavailable" toast is reserved for GLPK failing to load.
     return buildWeekAgenda(data,settings,numDays);
   }
 
@@ -503,12 +587,4 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7){
     totalTravelSeconds += day.travelSeconds;
   }
   return {days,totalTravelSeconds,candidateCount:candidates.length,optimized:true};
-}
-
-function maybeToastOptimizerFallback(){
-  if(_optimizerToastShown)return;
-  _optimizerToastShown = true;
-  if(typeof showToast === 'function'){
-    try{ showToast('Schedule optimizer unavailable — using fast planner'); }catch(_){}
-  }
 }
