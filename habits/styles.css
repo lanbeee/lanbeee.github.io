@@ -802,6 +802,11 @@ body.reach-pad #list{padding-top:220px;}
   min-width:60px;height:34px;
   border-radius:var(--radius-sm);
 }
+/* Invisible hit pad so near-misses scrub the dial instead of arming card swipe.
+   Absolute inset keeps layout/height unchanged. */
+.breakable-crown::after{
+  content:"";position:absolute;inset:-10px;z-index:1;
+}
 .breakable-crown.complete{
   background:color-mix(in srgb,var(--teal-icon) 10%,var(--bg2));
   border-color:color-mix(in srgb,var(--teal-icon) 30%,var(--border));

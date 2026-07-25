@@ -2901,6 +2901,18 @@ function setupSwipe(row){
   const rightActions = row.querySelector('.swipe-actions-right');
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
   let startedOpen = false;
+  const CROWN_SWIPE_PAD = 10;
+
+  // PURE: touch is on/near the crown dial (layout box + pad), so swipe must stand down.
+  function touchNearCrown(clientX, clientY){
+    const crown = row.querySelector('.breakable-crown');
+    if(!crown)return false;
+    const r = crown.getBoundingClientRect();
+    return clientX >= r.left - CROWN_SWIPE_PAD
+      && clientX <= r.right + CROWN_SWIPE_PAD
+      && clientY >= r.top - CROWN_SWIPE_PAD
+      && clientY <= r.bottom + CROWN_SWIPE_PAD;
+  }
 
   // PURE: measure total swipe action width
   function revealWidth(actions){
@@ -2925,14 +2937,14 @@ function setupSwipe(row){
   }
 
   row.addEventListener('touchstart',e=>{
-    // Crown dial owns horizontal scrubbing — never arm card swipe from it.
-    if(e.target.closest('.breakable-crown,.breakable-progress') || row.dataset.crownGesture === '1'){
+    const t = e.changedTouches[0];
+    // Crown dial + a small pad around it owns the gesture — never arm card swipe.
+    if(e.target.closest('.breakable-crown,.breakable-progress') || row.dataset.crownGesture === '1' || touchNearCrown(t.clientX, t.clientY)){
       touchId = null;
       moved = false;
       dx = 0;
       return;
     }
-    const t = e.changedTouches[0];
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     startedOpen = swipeOpenCard === card;
     if(swipeOpenCard && swipeOpenCard !== card){
@@ -2945,6 +2957,12 @@ function setupSwipe(row){
     if(e.target.closest('.breakable-crown,.breakable-progress'))return;
     const t = [...e.changedTouches].find(item=>item.identifier === touchId);
     if(!t)return;
+    // If the finger drifts into the crown pad mid-gesture, drop swipe instead of fighting the dial.
+    if(touchNearCrown(t.clientX, t.clientY)){
+      touchId = null;
+      if(moved)resetSwipe();
+      return;
+    }
     const ddx = t.clientX - startX;
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
