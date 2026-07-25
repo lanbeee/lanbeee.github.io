@@ -1761,7 +1761,6 @@ function setupDayCapacityHeader(header,dayBase,weekMode){
   });
 }
 
-let _droppedPanelOpen = false;
 let _droppedDayBaseline = null;
 let _droppedDayBaselineDay = null;
 
@@ -1844,17 +1843,9 @@ function attachDroppedIndicator(header,list,todayHids){
   pill.textContent = `${dropped.length} slipped`;
   pill.addEventListener('pointerup',e=>{
     e.stopPropagation();
-    _droppedPanelOpen = !_droppedPanelOpen;
-    const existing = header.nextElementSibling;
-    if(existing && existing.classList.contains('dropped-panel'))existing.remove();
-    if(_droppedPanelOpen){
-      header.after(renderDroppedPanel(dropped));
-    }
+    openSlippedSheet(dropped,header.dataset.label || 'today');
   });
   header.appendChild(pill);
-  if(_droppedPanelOpen){
-    header.after(renderDroppedPanel(dropped));
-  }
 }
 
 function renderDroppedPanel(items){
@@ -1864,10 +1855,19 @@ function renderDroppedPanel(items){
     const row = document.createElement('button');
     row.className = 'dropped-item' + (item.snoozed ? ' snoozed' : '');
     row.innerHTML = `${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : ''}<span class="dropped-name">${escapeHtml(item.name)}</span>${item.snoozed ? '<span class="dropped-tag">snoozed</span>' : ''}`;
-    row.addEventListener('click',()=>{ openDetail(item.idx); });
+    row.addEventListener('click',()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); });
     panel.appendChild(row);
   });
   return panel;
+}
+
+function openSlippedSheet(items,dayLabel){
+  const content = document.getElementById('slipped-content');
+  if(!content)return;
+  document.getElementById('slipped-title').textContent = `slipped ${dayLabel}`;
+  content.innerHTML = '';
+  content.appendChild(renderDroppedPanel(items));
+  openSheet('slipped-sheet');
 }
 
 function formatFreeDuration(minutes){
@@ -1877,7 +1877,6 @@ function formatFreeDuration(minutes){
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-let _freePanelOpen = null;
 
 function attachFreeTimeIndicator(header,day){
   if(typeof computeDayFreeGaps !== 'function')return;
@@ -1889,13 +1888,7 @@ function attachFreeTimeIndicator(header,day){
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
   pill.addEventListener('pointerup',e=>{
     e.stopPropagation();
-    const key = day.dayKey || String(day.dayBase);
-    const existing = header.nextElementSibling;
-    if(existing && existing.classList.contains('free-panel'))existing.remove();
-    if(_freePanelOpen === key){ _freePanelOpen = null; return; }
-    document.querySelectorAll('.free-panel').forEach(p=>p.remove());
-    _freePanelOpen = key;
-    header.after(renderFreePanel(info));
+    openFreeTimeSheet(info,header.dataset.label || 'today');
   });
   header.appendChild(pill);
 }
@@ -1926,6 +1919,15 @@ function renderFreePanel(info){
     panel.appendChild(note);
   }
   return panel;
+}
+
+function openFreeTimeSheet(info,dayLabel){
+  const content = document.getElementById('free-time-content');
+  if(!content)return;
+  document.getElementById('free-time-title').textContent = `open time ${dayLabel}`;
+  content.innerHTML = '';
+  content.appendChild(renderFreePanel(info));
+  openSheet('free-time-sheet');
 }
 
 // PURE: reduce trail tones to one

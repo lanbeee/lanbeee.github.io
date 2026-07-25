@@ -2189,6 +2189,12 @@ $('activity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget
 $('day-capacity-close').addEventListener('click',()=>closeSheet('day-capacity-sheet'));
 $('day-capacity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('day-capacity-sheet');});
 
+$('slipped-close').addEventListener('click',()=>closeSheet('slipped-sheet'));
+$('slipped-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('slipped-sheet');});
+
+$('free-time-close').addEventListener('click',()=>closeSheet('free-time-sheet'));
+$('free-time-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('free-time-sheet');});
+
 $('day-logs-overview').addEventListener('click',()=>{
   dayLogsKey = null;
   closeSheet('day-logs-sheet');

@@ -69,49 +69,51 @@ function assert(cond,msg){
   assert(firstPillText.includes('open'), `pill text includes "open": "${firstPillText}"`);
 
   // ══════════════════════════════════════════════════════════════════════
-  // B. Tap pill opens panel with gap details
+  // B. Tap pill opens sheet with gap details
   // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[B] Tap pill opens panel');
+  console.log('\n[B] Tap pill opens sheet');
   const tomorrowPill = page.locator('.free-pill').nth(1);
   await tomorrowPill.click();
   await page.waitForTimeout(300);
 
-  const panelCount = await page.locator('.free-panel').count();
-  assert(panelCount === 1, 'panel appears after tap');
+  const sheetOpen = await page.locator('#free-time-sheet.open').count();
+  assert(sheetOpen === 1, 'free-time sheet opens after tap');
 
-  const panelRows = await page.locator('.free-panel-row').count();
+  const panelRows = await page.locator('#free-time-sheet .free-panel-row').count();
   assert(panelRows >= 2, `panel has summary + gap rows (found ${panelRows})`);
 
-  const summaryText = await page.locator('.free-panel-row').first().textContent();
+  const summaryText = await page.locator('#free-time-sheet .free-panel-row').first().textContent();
   assert(summaryText.includes('open'), `summary row shows total open: "${summaryText}"`);
   assert(summaryText.includes('largest'), `summary row shows largest: "${summaryText}"`);
 
   if(panelRows > 1){
-    const gapText = await page.locator('.free-panel-row').nth(1).textContent();
+    const gapText = await page.locator('#free-time-sheet .free-panel-row').nth(1).textContent();
     assert(/[ap]m/.test(gapText), `gap row shows time range: "${gapText}"`);
     assert(gapText.includes('–'), `gap row has dash separator: "${gapText}"`);
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // C. Tap again dismisses panel
+  // C. Close button dismisses sheet
   // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[C] Tap again dismisses');
-  await tomorrowPill.click();
+  console.log('\n[C] Close dismisses sheet');
+  await page.locator('#free-time-close').click();
   await page.waitForTimeout(300);
-  const panelAfterDismiss = await page.locator('.free-panel').count();
-  assert(panelAfterDismiss === 0, 'panel dismissed on second tap');
+  const sheetAfterDismiss = await page.locator('#free-time-sheet.open').count();
+  assert(sheetAfterDismiss === 0, 'sheet dismissed on close');
 
   // ══════════════════════════════════════════════════════════════════════
-  // D. Only one panel open at a time
+  // D. Tapping another pill opens sheet with that day's data
   // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[D] Only one panel at a time');
+  console.log('\n[D] Another pill opens sheet');
   await page.locator('.free-pill').nth(1).click();
   await page.waitForTimeout(200);
+  await page.locator('#free-time-close').click();
+  await page.waitForTimeout(200);
   await page.locator('.free-pill').nth(2).click();
   await page.waitForTimeout(200);
-  const openPanels = await page.locator('.free-panel').count();
-  assert(openPanels === 1, `only one panel open (found ${openPanels})`);
-  await page.locator('.free-pill').nth(2).click();
+  const openSheets = await page.locator('#free-time-sheet.open').count();
+  assert(openSheets === 1, `sheet open for second pill (found ${openSheets})`);
+  await page.locator('#free-time-close').click();
   await page.waitForTimeout(200);
 
   // ══════════════════════════════════════════════════════════════════════

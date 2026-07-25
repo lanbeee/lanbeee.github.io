@@ -124,9 +124,11 @@ function assert(cond,msg){
   if(pill){
     await pill.click();
     await page.waitForTimeout(300);
-    const items = await page.$$eval('.dropped-item', els => els.map(el => el.textContent.trim()));
+    const items = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
     assert(items.some(i => i.includes('Deep Work')), 'Deep Work shown as slipped (not due today)');
     assert(!items.some(i => i.includes('Walk')), 'Walk NOT slipped (still in today section)');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -204,13 +206,14 @@ function assert(cond,msg){
   pill = await page.$('.dropped-pill');
   assert(Boolean(pill), 'pill shows for snoozed+dropped item');
   if(pill){
-    await page.evaluate(() => { _droppedPanelOpen = false; });
     await pill.click();
     await page.waitForTimeout(300);
-    const snoozedItem = await page.$('.dropped-item.snoozed');
+    const snoozedItem = await page.$('#slipped-sheet .dropped-item.snoozed');
     assert(Boolean(snoozedItem), 'snoozed item has .snoozed class');
-    const tag = await page.$('.dropped-tag');
+    const tag = await page.$('#slipped-sheet .dropped-tag');
     assert(Boolean(tag), 'snoozed tag rendered');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -248,7 +251,7 @@ function assert(cond,msg){
   if(pill){
     await pill.click();
     await page.waitForTimeout(300);
-    const item = await page.$('.dropped-item');
+    const item = await page.$('#slipped-sheet .dropped-item');
     if(item){
       await item.click();
       await page.waitForTimeout(500);
