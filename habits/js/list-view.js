@@ -2701,25 +2701,59 @@ function setupBreakableCrown(row,_realIdx){
     syncVisual(m);
   }
 
-  let startX,startY,prevX,velX = 0,momentumId = null,smoothAnimId = null;
-  let dragging = false,pointerId = null;
+  let startX,startY,prevX,velX = 0,momentumId = null,smoothAnimId = null,scrubRaf = null;
+  let dragging = false,pointerId = null,pendingDx = 0,pendingTarget = null;
   const friction = 0.92;
   const minScroll = committed * 10;
+  const progressRoot = row.querySelector('.breakable-progress');
 
   const cancelMomentum = () => {
     if(momentumId){cancelAnimationFrame(momentumId);momentumId=null;}
     if(smoothAnimId){cancelAnimationFrame(smoothAnimId);smoothAnimId=null;}
   };
 
+  const cancelScrub = () => {
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;}
+    pendingDx = 0;
+  };
+
+  const applyScrubDx = dx => {
+    if(!dx && pendingTarget == null)return;
+    if(dx){
+      crown._scroll = Math.max(minScroll,crown._scroll + dx * (10 / PX_PER_MIN));
+      if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+      const speed = Math.abs(velX);
+      const gain = 1 + speed * 0.25;
+      crown._valScroll += dx * gain;
+      pendingTarget = crown._dragBase + Math.round(crown._valScroll / PX_PER_MIN);
+    }
+    if(pendingTarget != null){
+      setTarget(pendingTarget);
+      showTooltip(pendingTarget);
+      pendingTarget = null;
+    }
+  };
+
+  const flushScrub = () => {
+    scrubRaf = null;
+    const dx = pendingDx;
+    pendingDx = 0;
+    applyScrubDx(dx);
+  };
+
   const startMomentum = initVel => {
     cancelMomentum();
+    cancelScrub();
     const baseScroll = crown._scroll;
     const baseVal = Math.round(Number(row.dataset.progressTarget) || committed);
     let vel = initVel;
-    const tick = () => {
-      vel *= friction;
+    let last = performance.now();
+    const tick = now => {
+      const dt = Math.min(32, Math.max(0, now - last));
+      last = now;
+      vel *= Math.pow(friction, dt / 16.67);
       if(Math.abs(vel) < 0.5){momentumId = null;hideTooltip();return;}
-      crown._scroll = Math.max(minScroll,crown._scroll + vel * (10 / PX_PER_MIN));
+      crown._scroll = Math.max(minScroll,crown._scroll + vel * (dt / 16.67) * (10 / PX_PER_MIN));
       const derived = Math.max(committed,Math.min(total,baseVal + Math.round((crown._scroll - baseScroll) / 10)));
       setTarget(derived);
       showTooltip(derived);
@@ -2731,10 +2765,13 @@ function setupBreakableCrown(row,_realIdx){
 
   crown.addEventListener('pointerdown',e=>{
     cancelMomentum();
+    cancelScrub();
     startX = e.clientX;
     startY = e.clientY;
     prevX = e.clientX;
     velX = 0;
+    pendingDx = 0;
+    pendingTarget = null;
     dragging = false;
     pointerId = e.pointerId;
     crown._valScroll = 0;
@@ -2755,27 +2792,24 @@ function setupBreakableCrown(row,_realIdx){
       dragging = true;
       crown.setPointerCapture(e.pointerId);
       crown.classList.add('active');
+      if(progressRoot)progressRoot.classList.add('is-scrubbing');
       e.preventDefault();
     }
 
     const dx = e.clientX - prevX;
     prevX = e.clientX;
     velX = velX * 0.55 + dx * 0.45;
-    crown._scroll = Math.max(minScroll,crown._scroll + dx * (10 / PX_PER_MIN));
-    if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
-    const speed = Math.abs(velX);
-    const gain = 1 + speed * 0.25;
-    crown._valScroll += dx * gain;
-    const target = crown._dragBase + Math.round(crown._valScroll / PX_PER_MIN);
-    setTarget(target);
-    showTooltip(target);
+    pendingDx += dx;
+    if(!scrubRaf)scrubRaf = requestAnimationFrame(flushScrub);
   });
 
   const endDrag = e => {
     if(pointerId === null)return;
     const wasDragging = dragging;
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;flushScrub();}
     if(dragging){
       crown.classList.remove('active');
+      if(progressRoot)progressRoot.classList.remove('is-scrubbing');
       if(Math.abs(velX) > 1.5)startMomentum(velX);
       else hideTooltip();
       setTimeout(hideTooltip,1200);
@@ -2794,13 +2828,19 @@ function setupBreakableCrown(row,_realIdx){
 
   crown.addEventListener('pointerup',endDrag);
   crown.addEventListener('pointercancel',e=>{
-    if(dragging){crown.classList.remove('active');hideTooltip();}
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;pendingDx=0;}
+    if(dragging){
+      crown.classList.remove('active');
+      if(progressRoot)progressRoot.classList.remove('is-scrubbing');
+      hideTooltip();
+    }
     dragging = false;pointerId = null;velX = 0;
   });
 
   crown.addEventListener('wheel',e=>{
     e.preventDefault();
     cancelMomentum();
+    cancelScrub();
     const step = e.deltaY < 0 ? 1 : -1;
     const cur = Math.round(Number(row.dataset.progressTarget) || committed);
     const next = Math.max(committed,Math.min(total,cur + step));
@@ -2817,6 +2857,7 @@ function setupBreakableCrown(row,_realIdx){
     if(inc||dec){
       e.preventDefault();
       cancelMomentum();
+      cancelScrub();
       const cur = Math.round(Number(row.dataset.progressTarget) || committed);
       const next = Math.max(committed,Math.min(total,cur + (inc ? 1 : -1)));
       if(next !== cur){

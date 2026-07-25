@@ -793,6 +793,7 @@ body.reach-pad #list{padding-top:220px;}
   background:var(--bg3);
 }
 .breakable-status-bar span{display:block;height:100%;transition:width 0.15s ease;}
+.breakable-progress.is-scrubbing .breakable-status-bar span{transition:none;}
 .bar-manual{background:#12A66B;}
 .bar-calendar{background:#7C5CFC;}
 .bar-adding{background:#F5871F;}
@@ -2307,7 +2308,7 @@ span:has(> .info-btn){position:relative;display:inline-block;}
   position:absolute;inset:0;pointer-events:none;
   width:100%;height:100%;display:block;
 }
-.crown-dial.active{filter:brightness(0.85);}
+.crown-dial.active{background:var(--bg3);}
 .breakable-crown{touch-action:pan-y;overflow:visible;}
 .crown-tooltip{
   position:absolute;top:-22px;left:50%;transform:translateX(-50%) scale(0.85);

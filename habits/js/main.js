@@ -360,26 +360,58 @@ function currentRhythmTarget(prefix){
   return targetFromRhythmParts(times,days);
 }
 
-// RENDER: draw crown dial ridges onto canvas
+// Cached ridge ink — avoid getComputedStyle + color-mix on every frame (mobile jank).
+let _crownRidgeRgb = null;
+function crownRidgeRgb(){
+  if(_crownRidgeRgb)return _crownRidgeRgb;
+  const raw = (getComputedStyle(document.documentElement).getPropertyValue('--text2') || '').trim() || '#6b6a65';
+  let r = 107, g = 106, b = 101;
+  if(raw[0] === '#'){
+    const hex = raw.length === 4
+      ? `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`
+      : raw;
+    const n = parseInt(hex.slice(1), 16);
+    if(!Number.isNaN(n)){ r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255; }
+  }else{
+    const m = raw.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if(m){ r = +m[1]; g = +m[2]; b = +m[3]; }
+  }
+  _crownRidgeRgb = [r, g, b];
+  return _crownRidgeRgb;
+}
+if(typeof matchMedia === 'function'){
+  const scheme = matchMedia('(prefers-color-scheme: dark)');
+  const bust = ()=>{ _crownRidgeRgb = null; };
+  if(scheme.addEventListener)scheme.addEventListener('change', bust);
+  else if(scheme.addListener)scheme.addListener(bust);
+}
+
+// RENDER: draw crown dial ridges onto canvas.
+// Sized once (or on resize); cheap rgba fills — critical for phone scrubbing.
 function drawCrownRidges(canvas, scroll){
   if(!canvas || !canvas.isConnected)return;
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   if(w === 0 || h === 0)return;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
+  const bw = (w * dpr) | 0;
+  const bh = (h * dpr) | 0;
+  let ctx = canvas._crownCtx;
+  if(!ctx || canvas.width !== bw || canvas.height !== bh){
+    canvas.width = bw;
+    canvas.height = bh;
+    ctx = canvas.getContext('2d', { alpha:true, desynchronized:true });
+    canvas._crownCtx = ctx;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
   const R = w / 2, cx = w / 2;
   const stepDeg = 3.6, baseW = 2.2, radOff = scroll / R;
   const radOffDeg = radOff * 180 / Math.PI;
   const margin = 5;
   const startI = Math.ceil((-90 - margin - radOffDeg) / stepDeg);
   const endI = Math.floor((90 + margin - radOffDeg) / stepDeg);
-  ctx.clearRect(0,0,w,h);
-  const rootStyle = getComputedStyle(document.documentElement);
-  const ridgeColor = rootStyle.getPropertyValue('--text2').trim() || '#6b6a65';
+  const [rr, gg, bb] = crownRidgeRgb();
   for(let i = startI; i <= endI; i++){
     const adjDeg = i * stepDeg + radOffDeg;
     const a = adjDeg * Math.PI / 180;
@@ -388,7 +420,7 @@ function drawCrownRidges(canvas, scroll){
     const rw = baseW * f + 0.2;
     if(rw < 0.2 || x < -rw || x > w + rw)continue;
     const alpha = 0.85 * f + 0.15;
-    ctx.fillStyle = `color-mix(in srgb, ${ridgeColor} ${Math.round(alpha * 100)}%, transparent)`;
+    ctx.fillStyle = `rgba(${rr},${gg},${bb},${alpha})`;
     ctx.fillRect(x - rw / 2, 1, Math.max(0.5, rw), h - 2);
   }
 }
@@ -415,7 +447,8 @@ function bindRhythm(prefix){
     syncRhythm(prefix,{times,days:e.target.value || 7});
   });
 
-  let startVal,prevX,velX = 0,momentumId = null,smoothAnimId = null;
+  let startVal,prevX,velX = 0,momentumId = null,smoothAnimId = null,scrubRaf = null;
+  let pendingDx = 0, scrubbing = false;
   crown._scroll = 0;
   const canvas = crown.querySelector('.crown-canvas');
   const friction = 0.935;
@@ -425,8 +458,14 @@ function bindRhythm(prefix){
     if(smoothAnimId){cancelAnimationFrame(smoothAnimId);smoothAnimId=null;}
   };
 
+  const cancelScrub = () => {
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;}
+    pendingDx = 0;
+  };
+
   crown._animateTo = target => {
     cancelMomentum();
+    cancelScrub();
     const start = crown._scroll;
     const delta = target - start;
     if(Math.abs(delta) < 1){crown._scroll = target;updateVisual(crown._scroll);return;}
@@ -457,41 +496,8 @@ function bindRhythm(prefix){
 
   window.addEventListener('resize',()=>drawCrownRidges(canvas, crown._scroll));
 
-  const startMomentum = initVel => {
-    cancelMomentum();
-    const baseScroll = crown._scroll;
-    const baseVal = parseInt(field.value,10) || 7;
-    let vel = initVel;
-    const tick = () => {
-      vel *= friction;
-      if(Math.abs(vel) < 0.5){momentumId = null;return;}
-      crown._scroll += vel;
-      const derivedVal = clampRhythm(baseVal + Math.round((crown._scroll - baseScroll) / 10));
-      const curVal = parseInt(field.value,10) || 7;
-      if(derivedVal !== curVal){
-        setVal(derivedVal);
-      }
-      drawCrownRidges(canvas,crown._scroll);
-      momentumId = requestAnimationFrame(tick);
-    };
-    momentumId = requestAnimationFrame(tick);
-  };
-
-  crown.addEventListener('pointerdown',e=>{
-    cancelMomentum();
-    prevX = e.clientX;
-    startVal = parseInt(field.value,10) || 7;
-    velX = 0;
-    crown._valScroll = 0;
-    crown.setPointerCapture(e.pointerId);
-    crown.classList.add('active');
-  });
-
-  crown.addEventListener('pointermove',e=>{
-    if(prevX === undefined)return;
-    const dx = e.clientX - prevX;
-    prevX = e.clientX;
-    velX = velX * 0.55 + dx * 0.45;
+  const applyScrubDx = dx => {
+    if(!dx)return;
     crown._scroll += dx;
     updateVisual(crown._scroll);
     const speed = Math.abs(velX);
@@ -500,9 +506,63 @@ function bindRhythm(prefix){
     const newVal = clampRhythm(startVal + Math.round(crown._valScroll / 10));
     const oldVal = parseInt(field.value,10) || 7;
     if(newVal !== oldVal)setVal(newVal);
+  };
+
+  const flushScrub = () => {
+    scrubRaf = null;
+    const dx = pendingDx;
+    pendingDx = 0;
+    applyScrubDx(dx);
+  };
+
+  const startMomentum = initVel => {
+    cancelMomentum();
+    cancelScrub();
+    const baseScroll = crown._scroll;
+    const baseVal = parseInt(field.value,10) || 7;
+    let vel = initVel;
+    let last = performance.now();
+    const tick = now => {
+      const dt = Math.min(32, Math.max(0, now - last));
+      last = now;
+      // Frame-rate independent decay (friction calibrated at ~60fps).
+      vel *= Math.pow(friction, dt / 16.67);
+      if(Math.abs(vel) < 0.5){momentumId = null;return;}
+      crown._scroll += vel * (dt / 16.67);
+      const derivedVal = clampRhythm(baseVal + Math.round((crown._scroll - baseScroll) / 10));
+      const curVal = parseInt(field.value,10) || 7;
+      if(derivedVal !== curVal)setVal(derivedVal);
+      drawCrownRidges(canvas,crown._scroll);
+      momentumId = requestAnimationFrame(tick);
+    };
+    momentumId = requestAnimationFrame(tick);
+  };
+
+  crown.addEventListener('pointerdown',e=>{
+    cancelMomentum();
+    cancelScrub();
+    prevX = e.clientX;
+    startVal = parseInt(field.value,10) || 7;
+    velX = 0;
+    pendingDx = 0;
+    scrubbing = true;
+    crown._valScroll = 0;
+    crown.setPointerCapture(e.pointerId);
+    crown.classList.add('active');
+  });
+
+  crown.addEventListener('pointermove',e=>{
+    if(!scrubbing || prevX === undefined)return;
+    const dx = e.clientX - prevX;
+    prevX = e.clientX;
+    velX = velX * 0.55 + dx * 0.45;
+    pendingDx += dx;
+    if(!scrubRaf)scrubRaf = requestAnimationFrame(flushScrub);
   });
 
   const endDrag = () => {
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;flushScrub();}
+    scrubbing = false;
     prevX = undefined;
     crown.classList.remove('active');
     if(Math.abs(velX) > 1)startMomentum(velX);
@@ -515,6 +575,7 @@ function bindRhythm(prefix){
   crown.addEventListener('wheel',e=>{
     e.preventDefault();
     cancelMomentum();
+    cancelScrub();
     const step = e.deltaY < 0 ? 1 : -1;
     const newVal = clampRhythm((parseInt(field.value,10) || 7) + step);
     const oldVal = parseInt(field.value,10) || 7;
@@ -531,6 +592,7 @@ function bindRhythm(prefix){
     if(inc||dec){
       e.preventDefault();
       cancelMomentum();
+      cancelScrub();
       const newVal = clampRhythm((parseInt(field.value,10) || 7) + (inc ? 1 : -1));
       const oldVal = parseInt(field.value,10) || 7;
       if(newVal !== oldVal){
