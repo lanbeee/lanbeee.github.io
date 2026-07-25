@@ -259,7 +259,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   }));
   assert(summaries.both_anchor === 'sunrise–sunset', 'both anchor → anchor labels');
   assert(summaries.anchor_off === 'sunrise +90m–sunset −15m', 'offsets in label');
-  assert(summaries.mixed === 'fajr–10am', 'mixed anchor/fixed');
+  assert(summaries.mixed === 'dawn–10am', 'mixed anchor/fixed');
   assert(summaries.fixed === '10am–12pm', 'fixed times still work');
   assert(summaries.none === '', 'no window → empty string');
 

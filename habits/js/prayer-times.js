@@ -115,7 +115,11 @@ function habitPrayerLocation(h, settings, contextLocId){
   }
   const fbId = cleanLocationId(contextLocId) || cleanLocationId(s.lastKnownLocationId) || null;
   const fb = fbId ? registry.find(l => l.id === fbId) : null;
-  return fb || registry[0] || null;
+  if(fb || registry[0])return fb || registry[0];
+  if(Number.isFinite(s.prayerCityLat) && Number.isFinite(s.prayerCityLng)){
+    return {id:'__prayer_city__', lat:s.prayerCityLat, lng:s.prayerCityLng, name:s.prayerCityName || 'Prayer city'};
+  }
+  return null;
 }
 
 // ── PrayerTimes cache ───────────────────────────────────────────────────
@@ -280,6 +284,15 @@ function resolveHabitTimeField(h, fieldName, dayBase, contextLocId){
   return combineResolvedMinutes(primary, secondary, combine);
 }
 
+// PURE: display name for a prayer anchor, respecting the user's Islamic/generic
+// name preference. Falls back to the anchor key itself for unknown anchors.
+function prayerDisplayName(anchor){
+  const a = cleanAnchor(anchor);
+  if(!a)return '';
+  const labels = sortSettings.prayerIslamicNames ? PRAYER_ANCHOR_LABELS : PRAYER_GENERIC_LABELS;
+  return labels[a] || a;
+}
+
 // PURE: a short, stable label for an anchor+offset, used in card chips and the
 // detail header so the user sees "sunrise +30" instead of "6:23am" (which
 // would lie the moment the date or location changes). Accepts both prayer
@@ -288,9 +301,9 @@ function resolveHabitTimeField(h, fieldName, dayBase, contextLocId){
 function prayerAnchorLabel(anchor, offsetMin, anchorHabitName, dayOffset){
   const a = cleanAnchor(anchor);
   if(!a)return '';
-  const label = a === 'maghrib' ? 'sunset'
+  const label = a === 'maghrib' ? (sortSettings.prayerIslamicNames ? 'Maghrib' : 'sunset')
     : a === 'habit' ? (anchorHabitName ? `after ${anchorHabitName}` : 'after anchor')
-    : a;
+    : prayerDisplayName(a).toLowerCase();
   const off = normalizePrayerOffset(offsetMin);
   let out = label;
   if(off !== 0){

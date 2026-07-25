@@ -29,7 +29,7 @@ async function openSettings(page){
     localStorage.setItem('tings_v2', JSON.stringify([]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', topics:[], locations:[], travel:{}, defaultTravelMode:'walking',
-      showLocationOnCards:false, availabilityMinutes:[180,180,180,180,180,120,120]
+      showLocationOnCards:false, showWeekOnHome:false, availabilityMinutes:[180,180,180,180,180,120,120]
     }));
     // Mock OSRM so travel edges resolve quickly without the public demo server.
     const realFetch = window.fetch.bind(window);

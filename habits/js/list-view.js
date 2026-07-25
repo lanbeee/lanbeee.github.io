@@ -2081,8 +2081,9 @@ function render(opts){
     const agendaPill = agendaCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
     const accent = visualClassColor(cardScoreTone);
-    const statusPill = cardStatusPill(cardScore,cardScoreTone,cue,accent);
-    const context = cardMeta(h,{extraPills:[statusPill,earlyPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+    const statusPill = sortSettings.showStatusOnCards ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
+    const gatedEarlyPill = sortSettings.showEarlyOnCards ? earlyPill : '';
+    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
     const visualHtml = showBreakableSlider

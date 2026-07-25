@@ -235,7 +235,7 @@ function snapshotCombineFields(h, prefix){
 // Re-running on every openDetail is harmless — the options are stable. Primary
 // gets prayer + habit; secondary also gets a fixed clock option.
 function populateAnchorOptions(){
-  const prayerOpts = PRAYER_ANCHORS.map(a => `<option value="${a}">${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+  const prayerOpts = PRAYER_ANCHORS.map(a => `<option value="${a}">${prayerDisplayName(a)}</option>`).join('');
   document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
     if(sel.dataset.populated === '1')return;
     sel.innerHTML = '<option value="">— anchor —</option>'

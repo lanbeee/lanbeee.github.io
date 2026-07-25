@@ -31,6 +31,10 @@ const PRAYER_ANCHOR_LABELS = {
   fajr:'Fajr', sunrise:'Sunrise', dhuhr:'Dhuhr',
   asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha'
 };
+const PRAYER_GENERIC_LABELS = {
+  fajr:'Dawn', sunrise:'Sunrise', dhuhr:'Noon',
+  asr:'Afternoon', maghrib:'Sunset', isha:'Night'
+};
 // Calculation methods exposed in Settings. Keys mirror adhan.CalculationMethod
 // factory names; labels are the friendly strings users recognise. The default
 // matches the user's request: North American (ISNA).
@@ -65,7 +69,7 @@ const MAX_RHYTHM_DAYS = 183;
 const MIN_RHYTHM_DAYS = 0.5;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_MIN_CHUNK_MINUTES = 30;
-const DEFAULT_FLEXIBILITY_DAYS = 0;
+const DEFAULT_FLEXIBILITY_DAYS = 1;
 const TIME_PICKER_STEP_MINUTES = 15;
 const MAX_NOTE_CHARS = 200;
 /** Soft location preference among allowed places. */
@@ -73,13 +77,9 @@ const LOCATION_PREF_LEVELS = ['avoid','little','high'];
 const LOCATION_PREF_SCORE = {avoid:-40, little:12, high:36};
 const DEFAULT_PRIORITY = 2; // P0 (critical) .. P5 (someday); new items default to P2
 const PRIORITY_LABELS = ['P0','P1','P2','P3','P4','P5'];
-const DEFAULT_AVAILABILITY_MINUTES = [240,90,90,90,90,90,240];
+const DEFAULT_AVAILABILITY_MINUTES = [400,200,200,200,200,200,400];
 const DEFAULT_BLOCKED_TIMES = [
-  {label:'sleep',days:[0,1,2,3,4,5,6],start:0,end:420},
-  {label:'breakfast',days:[0,1,2,3,4,5,6],start:480,end:510},
-  {label:'work',days:[1,2,3,4,5],start:540,end:1020},
-  {label:'lunch',days:[0,1,2,3,4,5,6],start:720,end:780},
-  {label:'dinner',days:[0,1,2,3,4,5,6],start:1080,end:1140}
+  {label:'sleep',days:[0,1,2,3,4,5,6],start:1380,end:300}
 ];
 const WEEKDAY_LABELS = ['sun','mon','tue','wed','thu','fri','sat'];
 const SWIPE_THRESHOLD = 60;
@@ -165,6 +165,26 @@ const DEFAULT_SORT_SETTINGS = {
   pushDetailed:false,
   defaultType:'keepup',
   defaultTarget:7,
+  defaultPriority:DEFAULT_PRIORITY,
+  defaultDurationMinutes:DEFAULT_DURATION_MINUTES,
+  defaultFlexibilityDays:DEFAULT_FLEXIBILITY_DAYS,
+  defaultBreakable:false,
+  defaultMinChunkMinutes:DEFAULT_MIN_CHUNK_MINUTES,
+  defaultTopics:[],
+  defaultAutoMarkMinutes:null,
+
+  showStatusOnCards:true,
+  showEarlyOnCards:true,
+
+  compactMode:true,
+  fontScale:'medium',
+  themeMode:'system',
+
+  prayerCityName:'',
+  prayerCityLat:null,
+  prayerCityLng:null,
+  prayerIslamicNames:false,
+
   topics:[],
   locations:[],
   travel:{},

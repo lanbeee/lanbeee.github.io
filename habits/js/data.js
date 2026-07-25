@@ -265,6 +265,22 @@ function loadSortSettings(){
     merged.blockedTimeOverrides = normalizeBlockedTimeOverrides(merged.blockedTimeOverrides);
     merged.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(merged.calendarCreditHabitId) : '') || null;
     merged.calendarAllDayMode = normalizeCalendarAllDayMode(merged.calendarAllDayMode);
+    merged.defaultPriority = clampPriority(merged.defaultPriority);
+    merged.defaultDurationMinutes = clampDuration(merged.defaultDurationMinutes);
+    merged.defaultFlexibilityDays = clampFlexibility(merged.defaultFlexibilityDays);
+    merged.defaultBreakable = Boolean(merged.defaultBreakable);
+    merged.defaultMinChunkMinutes = clampMinChunk(merged.defaultMinChunkMinutes);
+    merged.defaultTopics = normalizeTopics(merged.defaultTopics);
+    merged.defaultAutoMarkMinutes = Number.isFinite(merged.defaultAutoMarkMinutes) && merged.defaultAutoMarkMinutes > 0 ? Math.round(merged.defaultAutoMarkMinutes) : null;
+    merged.showStatusOnCards = merged.showStatusOnCards !== false;
+    merged.showEarlyOnCards = merged.showEarlyOnCards !== false;
+    merged.compactMode = Boolean(merged.compactMode);
+    merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
+    merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';
+    merged.prayerCityName = typeof merged.prayerCityName === 'string' ? merged.prayerCityName.trim() : '';
+    merged.prayerCityLat = Number.isFinite(merged.prayerCityLat) ? merged.prayerCityLat : null;
+    merged.prayerCityLng = Number.isFinite(merged.prayerCityLng) ? merged.prayerCityLng : null;
+    merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
     merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
@@ -296,6 +312,22 @@ function saveSortSettings(settings){
   next.blockedTimeOverrides = normalizeBlockedTimeOverrides(next.blockedTimeOverrides);
   next.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(next.calendarCreditHabitId) : '') || null;
   next.calendarAllDayMode = normalizeCalendarAllDayMode(next.calendarAllDayMode);
+  next.defaultPriority = clampPriority(next.defaultPriority);
+  next.defaultDurationMinutes = clampDuration(next.defaultDurationMinutes);
+  next.defaultFlexibilityDays = clampFlexibility(next.defaultFlexibilityDays);
+  next.defaultBreakable = Boolean(next.defaultBreakable);
+  next.defaultMinChunkMinutes = clampMinChunk(next.defaultMinChunkMinutes);
+  next.defaultTopics = normalizeTopics(next.defaultTopics);
+  next.defaultAutoMarkMinutes = Number.isFinite(next.defaultAutoMarkMinutes) && next.defaultAutoMarkMinutes > 0 ? Math.round(next.defaultAutoMarkMinutes) : null;
+  next.showStatusOnCards = next.showStatusOnCards !== false;
+  next.showEarlyOnCards = next.showEarlyOnCards !== false;
+  next.compactMode = Boolean(next.compactMode);
+  next.fontScale = ['small','medium','large'].includes(next.fontScale) ? next.fontScale : 'medium';
+  next.themeMode = ['light','dark','system'].includes(next.themeMode) ? next.themeMode : 'system';
+  next.prayerCityName = typeof next.prayerCityName === 'string' ? next.prayerCityName.trim() : '';
+  next.prayerCityLat = Number.isFinite(next.prayerCityLat) ? next.prayerCityLat : null;
+  next.prayerCityLng = Number.isFinite(next.prayerCityLng) ? next.prayerCityLng : null;
+  next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
   next.agendaOptimizer = Boolean(next.agendaOptimizer);
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
   sortSettings = next;
@@ -854,7 +886,8 @@ function formatRhythmLabel(target){
   return times === 1 ? `${days}d` : `${times}×/${days}d`;
 }
 function clampFlexibility(value){
-  return Math.max(0,Math.min(60,parseInt(value,10) || DEFAULT_FLEXIBILITY_DAYS));
+  const n = parseInt(value,10);
+  return Math.max(0,Math.min(60,Number.isNaN(n) ? DEFAULT_FLEXIBILITY_DAYS : n));
 }
 function clampDuration(value){
   return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
@@ -1544,7 +1577,7 @@ function normalizeCalendarAllDayMode(value){
 }
 // PURE: normalize the home blocked/travel presentation mode.
 function normalizeHomeExtraMode(value){
-  return (value === 'cards12h' || value === 'text12h') ? value : 'cards';
+  return value === 'cards12h' ? 'cards12h' : 'cards';
 }
 // PURE: true iff the location has any hours constraint at all. Locations with
 // no hours resolve to 24h every day and skip all window math — the "Home"

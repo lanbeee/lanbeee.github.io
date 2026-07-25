@@ -602,56 +602,45 @@
       <p class="sheet-title">settings</p>
       <p class="about-copy">A short setup for daily use. The home list is always ordered for today.</p>
       <div class="settings-stack">
-        <section class="settings-block">
-          <span class="settings-label">today</span>
-          <p class="field-hint">Pinned habits stay first. Everything else is ordered for today, overdue work, and plans due soon.</p>
-          <div class="settings-grid">
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
-              <span><b>show planned items early</b><small>Plans due soon can move near the top.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showScheduledTasksInAgenda" aria-pressed="false">
-              <span><b>show scheduled tasks in plan</b><small>Fixed-time tasks appear in the home plan.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueTasksInAgenda" aria-pressed="false">
-              <span><b>show due tasks in plan</b><small>Untimed tasks due today can fill open plan time.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPlannedItemsInAgenda" aria-pressed="false">
-              <span><b>show planned items in plan</b><small>Entries planned for today can fill open plan time.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueHabitsInAgenda" aria-pressed="false">
-              <span><b>show due habits in plan</b><small>Habits ready today can fill open plan time.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showWeekOnHome" aria-pressed="false">
-              <span><b>plan the week on home</b><small>Replace today / overdue / upcoming with a day-by-day week plan on home, including blocked times and travel between places.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="agendaOptimizer" aria-pressed="false">
-              <span><b>schedule optimizer</b><small>Default. Uses GLPK to pack tight windows and protect constrained habits. Turn off to use the faster heuristic planner.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-          </div>
-          <span class="settings-sublabel compact-label">blocked time &amp; travel</span>
-          <div class="seg home-extra-seg" id="home-extra-seg" data-setting-seg="homeExtraMode" role="group" aria-label="how blocked time and travel appear on home">
-            <button type="button" class="seg-opt" data-seg-value="cards">cards · all day</button>
-            <button type="button" class="seg-opt" data-seg-value="cards12h">cards · next 12h</button>
-            <button type="button" class="seg-opt" data-seg-value="text12h">text · next 12h</button>
-          </div>
-          <p class="field-hint">How blocked times and travel between places look on home. "Text" shows them as quiet background lines, and both 12h options hide anything further than the next 12 hours.</p>
-          <span class="settings-sublabel compact-label">reminders</span>
-          <div class="settings-grid">
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reminders" aria-pressed="false">
-              <span><b>reminders</b><small>Heads-up for hard deadlines and scheduled tasks starting soon. On iPhone, reminders appear when you open the app.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="pushDetailed" aria-pressed="false">
-              <span><b>include task names in notifications</b><small>When off, push notifications say "Task due today" without names. When on, the full task name is included.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-home-head" data-collapse-target="settings-home-body" aria-expanded="false" aria-controls="settings-home-body">
+            <span class="settings-label">home plan</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-home-body" hidden>
+            <p class="field-hint">Control what appears in the daily plan on your home screen.</p>
+            <div class="settings-grid">
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="plansFirst" aria-pressed="false">
+                <span><b>planned items early</b><small>Move plans due soon near the top of the list.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showScheduledTasksInAgenda" aria-pressed="false">
+                <span><b>scheduled tasks</b><small>Fixed-time tasks appear in the home plan.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueTasksInAgenda" aria-pressed="false">
+                <span><b>due tasks</b><small>Untimed tasks due today fill open plan time.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPlannedItemsInAgenda" aria-pressed="false">
+                <span><b>planned entries</b><small>Entries planned for today fill open plan time.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDueHabitsInAgenda" aria-pressed="false">
+                <span><b>due habits</b><small>Habits ready today fill open plan time.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showWeekOnHome" aria-pressed="false">
+                <span><b>week view</b><small>Show a day-by-day week plan instead of today / overdue / upcoming.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </div>
+            <span class="settings-sublabel compact-label">blocked time &amp; travel display</span>
+            <div class="seg home-extra-seg" id="home-extra-seg" data-setting-seg="homeExtraMode" role="group" aria-label="how blocked time and travel appear on home">
+              <button type="button" class="seg-opt" data-seg-value="cards">cards · all day</button>
+              <button type="button" class="seg-opt" data-seg-value="cards12h">cards · next 12h</button>
+            </div>
+            <p class="field-hint">How blocked times and travel between places appear on home.</p>
           </div>
         </section>
         <section class="settings-block">
@@ -672,6 +661,7 @@
             </div>
           </div>
         </section>
+        <div class="settings-group-head">schedule &amp; places</div>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
             <span class="settings-label">calendar import</span>
@@ -746,21 +736,6 @@
                 <button type="button" class="seg-opt" data-travel-mode="transit">transit</button>
               </div>
             </div>
-            <div class="prayer-times-settings">
-              <span class="settings-sublabel">prayer times</span>
-              <p class="field-hint">Used when a habit's time window is tied to a prayer time. Method defaults to North America (ISNA).</p>
-              <div class="prayer-times-row">
-                <label for="setting-prayer-method">method</label>
-                <select id="setting-prayer-method" class="mini-select prayer-method-select"></select>
-              </div>
-              <div class="prayer-times-row">
-                <label for="setting-prayer-madhab">asr school</label>
-                <div class="seg compact-seg prayer-madhab-seg" id="prayer-madhab-seg" role="group" aria-label="asr school">
-                  <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi</button>
-                  <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi</button>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
         <section class="settings-block settings-collapsible">
@@ -784,6 +759,7 @@
             <button class="btn" id="blocked-time-add" type="button">add blocked time</button>
           </div>
         </section>
+        <div class="settings-group-head">display &amp; defaults</div>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-cards-head" data-collapse-target="settings-cards-body" aria-expanded="false" aria-controls="settings-cards-body">
             <span class="settings-label">customize cards</span>
@@ -843,6 +819,14 @@
               <span><b>show location on cards</b><small>Show a pin label for each item's location.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showStatusOnCards" aria-pressed="true">
+              <span><b>show status pill</b><small>Show the colored percentage or "new" chip on each card.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showEarlyOnCards" aria-pressed="true">
+              <span><b>show early pill</b><small>Show the "early" chip when a habit can be done ahead of schedule.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
             <button class="setting-toggle setting-switch" type="button" data-setting-toggle="reachAssist" aria-pressed="false">
               <span><b>top reach assist</b><small>Pull and hold at the top to bring the first cards lower.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
@@ -861,12 +845,100 @@
               <button class="seg-opt" data-default-type="keepup">build</button>
               <button class="seg-opt" data-default-type="reduce">limit</button>
               <button class="seg-opt" data-default-type="zero">stop</button>
+              <button class="seg-opt" data-default-type="task">task</button>
             </div>
             <label class="settings-range simple-range">
               <span>rhythm</span>
               <input type="range" id="setting-default-target" min="1" max="183" />
               <output id="setting-default-target-label"></output>
             </label>
+            <span class="settings-sublabel">priority</span>
+            <div class="seg compact-seg" id="default-priority-seg">
+              <button type="button" class="seg-opt" data-default-priority="0">P0</button>
+              <button type="button" class="seg-opt" data-default-priority="1">P1</button>
+              <button type="button" class="seg-opt" data-default-priority="2">P2</button>
+              <button type="button" class="seg-opt" data-default-priority="3">P3</button>
+              <button type="button" class="seg-opt" data-default-priority="4">P4</button>
+              <button type="button" class="seg-opt" data-default-priority="5">P5</button>
+            </div>
+            <label class="settings-range simple-range">
+              <span>duration</span>
+              <input type="range" id="setting-default-duration" min="5" max="120" step="5" />
+              <output id="setting-default-duration-label"></output>
+            </label>
+            <label class="settings-range simple-range">
+              <span>flexibility</span>
+              <input type="range" id="setting-default-flexibility" min="0" max="14" />
+              <output id="setting-default-flexibility-label"></output>
+            </label>
+            <div class="settings-grid">
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="defaultBreakable" aria-pressed="false">
+                <span><b>breakable by default</b><small>New habits can be split across sessions.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </div>
+            <label class="settings-range simple-range" id="default-chunk-row" hidden>
+              <span>min chunk</span>
+              <input type="range" id="setting-default-min-chunk" min="15" max="120" step="5" />
+              <output id="setting-default-min-chunk-label"></output>
+            </label>
+            <span class="settings-sublabel">default topics</span>
+            <div class="topic-chip-row" id="default-topics-chips"></div>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-appearance-head" data-collapse-target="settings-appearance-body" aria-expanded="false" aria-controls="settings-appearance-body">
+            <span class="settings-label">appearance</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-appearance-body" hidden>
+            <div class="settings-grid">
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="compactMode" aria-pressed="false">
+                <span><b>compact mode</b><small>Reduce card spacing to fit more habits on screen.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </div>
+            <span class="settings-sublabel">font size</span>
+            <div class="seg compact-seg" id="font-scale-seg" role="group" aria-label="font size">
+              <button type="button" class="seg-opt" data-seg-value="small">small</button>
+              <button type="button" class="seg-opt" data-seg-value="medium">medium</button>
+              <button type="button" class="seg-opt" data-seg-value="large">large</button>
+            </div>
+            <span class="settings-sublabel">theme</span>
+            <div class="seg compact-seg" id="theme-mode-seg" role="group" aria-label="theme">
+              <button type="button" class="seg-opt" data-seg-value="light">light</button>
+              <button type="button" class="seg-opt" data-seg-value="dark">dark</button>
+              <button type="button" class="seg-opt" data-seg-value="system">system</button>
+            </div>
+          </div>
+        </section>
+        <div class="settings-group-head">more</div>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
+            <span class="settings-label">prayer times</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-prayer-body" hidden>
+            <p class="field-hint">Set a default city for prayer-based scheduling. Used when a habit or blocked time has a prayer anchor but no location assigned.</p>
+            <div class="prayer-city-row">
+              <input type="text" id="prayer-city-input" class="settings-text-input" placeholder="city name (e.g. Lahore)" autocomplete="off" />
+              <button class="btn primary" id="prayer-city-set" type="button">set</button>
+              <button class="btn" id="prayer-city-clear" type="button">clear</button>
+            </div>
+            <p class="field-hint" id="prayer-city-status"></p>
+            <div class="settings-grid">
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="prayerIslamicNames" aria-pressed="false">
+                <span><b>Islamic prayer names</b><small>Show Fajr, Dhuhr, Asr, Maghrib, Isha instead of Dawn, Noon, Afternoon, Sunset, Night.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </div>
+            <span class="settings-sublabel">calculation method</span>
+            <select id="setting-prayer-method" class="mini-select"></select>
+            <span class="settings-sublabel">Asr school (madhab)</span>
+            <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
+              <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
+              <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
+            </div>
           </div>
         </section>
         <section class="settings-block settings-collapsible">
@@ -880,6 +952,20 @@
             <div class="btn-row">
               <button class="btn primary" id="add-sort-samples">add samples</button>
               <button class="btn" id="remove-sort-samples">remove samples</button>
+            </div>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-advanced-head" data-collapse-target="settings-advanced-body" aria-expanded="false" aria-controls="settings-advanced-body">
+            <span class="settings-label">advanced</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-advanced-body" hidden>
+            <div class="settings-grid">
+              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="agendaOptimizer" aria-pressed="false">
+                <span><b>schedule optimizer</b><small>Uses GLPK to pack tight windows and protect constrained habits. Turn off to use the faster heuristic planner.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
             </div>
           </div>
         </section>

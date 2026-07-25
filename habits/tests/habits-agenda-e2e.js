@@ -37,7 +37,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.waitForSelector('#blocked-time-list');
 
   const blocks = await page.locator('#blocked-time-list .blocked-time-row').count();
-  if (blocks < 3) throw new Error('default blocked-time rows missing');
+  if (blocks < 1) throw new Error('default blocked-time rows missing');
 
   await page.locator('[data-blocked-label="0"]').fill('sleep test');
   await page.locator('[data-blocked-label="0"]').blur();

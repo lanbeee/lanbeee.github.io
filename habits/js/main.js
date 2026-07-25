@@ -27,6 +27,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 sortSettings = loadSortSettings();
+applyAppearanceSettings();
 {
   const reconciled = reconcileLocations(load(),sortSettings);
   if(reconciled.changed)save(reconciled.data);
@@ -216,11 +217,15 @@ $('do-save').addEventListener('click',()=>{
   if(!name){$('ting-message').focus();return;}
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
+  const settings = loadSortSettings();
   const type = selectedType;
   const isHabit = type === 'keepup' || type === 'reduce';
   const target = isHabit ? targetFromRhythmParts($('ting-times')?.value || 1,$('ting-days').value) : null;
   const locationIds = selectedLocationIds();
   const locationPrefs = selectedLocationPrefs();
+  const userTopics = selectedAddTopics();
+  const defTopics = Array.isArray(settings.defaultTopics) ? settings.defaultTopics : [];
+  const mergedTopics = [...new Set([...defTopics,...userTopics])];
   const record = {
     name:name.slice(0,60),
     type,
@@ -230,11 +235,14 @@ $('do-save').addEventListener('click',()=>{
     emoji:cleanMark($('ting-emoji').value),
     pinned:false,
     priority:selectedAddPriority(),
-    topics:selectedAddTopics(),
+    topics:mergedTopics,
     locationIds,
     anywhereAllowed:selectedAnywhere(),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
+    durationMinutes:settings.defaultDurationMinutes,
+    breakable:Boolean(settings.defaultBreakable),
+    minChunkMinutes:settings.defaultMinChunkMinutes,
     createdAt:Date.now()
   };
   if(type === 'task'){
@@ -242,8 +250,11 @@ $('do-save').addEventListener('click',()=>{
     record.eventTime = parseTaskWhen($('ting-due-date').value,$('ting-due-time')?.value || '');
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
     record.flexibilityDays = record.dueDate === null ? 0 : 3;
+  }else{
+    record.flexibilityDays = settings.defaultFlexibilityDays;
   }
-  record.autoMarkMinutes = normalizeAutoMark($('ting-auto-mark')?.value);
+  const manualAutoMark = normalizeAutoMark($('ting-auto-mark')?.value);
+  record.autoMarkMinutes = manualAutoMark != null ? manualAutoMark : settings.defaultAutoMarkMinutes;
   data.push(record);
   if(save(data)){cancelAdd();render();openDetailSchedule(data.length - 1);}
 });
@@ -1533,6 +1544,34 @@ $('location-list')?.addEventListener('click',e=>{
   }
 });
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
+bindSettingRange('default-duration','defaultDurationMinutes','m',{custom:false});
+bindSettingRange('default-flexibility','defaultFlexibilityDays','d',{custom:false});
+bindSettingRange('default-min-chunk','defaultMinChunkMinutes','m',{custom:false});
+$('default-priority-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-default-priority]');
+  if(!opt)return;
+  updateSortSetting({defaultPriority:parseInt(opt.dataset.defaultPriority,10)});
+});
+$('font-scale-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  updateSortSetting({fontScale:opt.dataset.segValue});
+  applyAppearanceSettings();
+});
+$('theme-mode-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  updateSortSetting({themeMode:opt.dataset.segValue});
+  applyAppearanceSettings();
+});
+$('prayer-city-set')?.addEventListener('click',setPrayerCity);
+$('prayer-city-input')?.addEventListener('keydown',e=>{if(e.key === 'Enter')setPrayerCity();});
+$('prayer-city-clear')?.addEventListener('click',clearPrayerCity);
+$('default-topics-chips')?.addEventListener('click',e=>{
+  const chip = e.target.closest('[data-topic]');
+  if(!chip)return;
+  toggleDefaultTopic(chip.dataset.topic);
+});
 document.querySelectorAll('.settings-collapse-head').forEach(head=>{
   head.addEventListener('click',()=>{
     const body = $(head.dataset.collapseTarget);

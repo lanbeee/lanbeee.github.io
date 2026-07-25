@@ -98,7 +98,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   console.log('Testing flexibility field...');
   const flexField = page.locator('#detail-flexibility');
   const flexVal = await flexField.inputValue();
-  if(flexVal !== '0') throw new Error(`flexibility default should be 0, got ${flexVal}`);
+  if(flexVal !== '1') throw new Error(`flexibility default should be 1, got ${flexVal}`);
   await flexField.click();
   await flexField.fill('3');
   await flexField.blur();

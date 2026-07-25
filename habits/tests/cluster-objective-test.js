@@ -123,7 +123,7 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   await run('1. mixed habit+task far+co-located cluster', [
     homeRoutine,
     { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
-    { name:'farB task',  type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farB'], priority:2 },
+    { name:'farB task',  type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const a = w.dayOf('farA habit'), b = w.dayOf('farB task');
@@ -139,7 +139,7 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   await run('2. both due today (ample slot) cluster on today', [
     homeRoutine,
     { name:'farA habit', type:'keepup', target:1, logs:[today-2*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
-    { name:'farB task',  type:'task', dueDate: dayStartOf(0), durationMinutes:30, locationIds:['farB'], priority:2 },
+    { name:'farB task',  type:'task', dueDate: dayStartOf(0), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const a = w.dayOf('farA habit'), b = w.dayOf('farB task');
@@ -150,9 +150,9 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // ── 3. Three co-located far items → all on the SAME day (transitive) ──
   await run('3. three co-located far items cluster transitively', [
     homeRoutine,
-    { name:'farA item', type:'task', dueDate: dayStartOf(3), durationMinutes:20, locationIds:['farA'], priority:2 },
-    { name:'farB item', type:'task', dueDate: dayStartOf(3), durationMinutes:20, locationIds:['farB'], priority:2 },
-    { name:'farC item', type:'task', dueDate: dayStartOf(3), durationMinutes:20, locationIds:['farC'], priority:2 },
+    { name:'farA item', type:'task', dueDate: dayStartOf(3), durationMinutes:20, locationIds:['farA'], priority:2, flexibilityDays:0 },
+    { name:'farB item', type:'task', dueDate: dayStartOf(3), durationMinutes:20, locationIds:['farB'], priority:2, flexibilityDays:0 },
+    { name:'farC item', type:'task', dueDate: dayStartOf(3), durationMinutes:20, locationIds:['farC'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const a = w.dayOf('farA item'), b = w.dayOf('farB item'), c = w.dayOf('farC item');
@@ -172,7 +172,7 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   await run('4. flexible far item defers to join day-pinned far partner', [
     homeRoutine,
     { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
-    { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2 },
+    { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const a = w.dayOf('farA habit'), b = w.dayOf('farB task');
@@ -187,8 +187,8 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // due today stays today even when a far cluster sits on another day.
   await run('5. near-home item not over-deferred by far cluster', [
     { name:'home habit', type:'keepup', target:1, logs:[today-2*86400000], durationMinutes:30, locationIds:['home'], priority:2 },
-    { name:'farA task', type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farA'], priority:2 },
-    { name:'farB task', type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farB'], priority:2 },
+    { name:'farA task', type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farA'], priority:2, flexibilityDays:0 },
+    { name:'farB task', type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const h = w.dayOf('home habit');
@@ -201,8 +201,8 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // pin wins — it stays today. Constraints > travel.
   await run('6. hard-pinned task does not defer to chase a far cluster', [
     homeRoutine,
-    { name:'farA critical', type:'task', dueDate: dayStartOf(0), hardDue:true, durationMinutes:30, locationIds:['farA'], priority:0 },
-    { name:'farB later',    type:'task', dueDate: dayStartOf(1), durationMinutes:30, locationIds:['farB'], priority:2 },
+    { name:'farA critical', type:'task', dueDate: dayStartOf(0), hardDue:true, durationMinutes:30, locationIds:['farA'], priority:0, flexibilityDays:0 },
+    { name:'farB later',    type:'task', dueDate: dayStartOf(1), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const a = w.dayOf('farA critical');
@@ -212,8 +212,8 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // ── 7. Quantitative min-travel: grouped < 55% of split baseline ──
   await run('7. grouped travel < 55% of split baseline', [
     homeRoutine,
-    { name:'farA errand', type:'task', dueDate: dayStartOf(3), durationMinutes:30, locationIds:['farA'], priority:2 },
-    { name:'farB errand', type:'task', dueDate: dayStartOf(3), durationMinutes:30, locationIds:['farB'], priority:2 },
+    { name:'farA errand', type:'task', dueDate: dayStartOf(3), durationMinutes:30, locationIds:['farA'], priority:2, flexibilityDays:0 },
+    { name:'farB errand', type:'task', dueDate: dayStartOf(3), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const splitBaseline = w.homeToFar * 4; // home→farA→home + home→farB→home
@@ -253,7 +253,7 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   await run('9. soft preferred-weekday yields to min-travel clustering', [
     homeRoutine,
     { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2, preferredWeekdays:[new Date(sixAm).getDay()] },
-    { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2 },
+    { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
     const a = w.dayOf('farA habit'), b = w.dayOf('farB task');

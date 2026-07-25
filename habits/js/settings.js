@@ -19,7 +19,8 @@ function applyAddDefaults(){
   selectedType = settings.defaultType || 'keepup';
   const target = clampRhythm(settings.defaultTarget || 7);
   syncRhythm('ting',target);
-  renderTagChips('ting-tag-chips',[],[],null);
+  const defTopics = Array.isArray(settings.defaultTopics) ? settings.defaultTopics : [];
+  renderTagChips('ting-tag-chips',defTopics,[],null);
   const topicsWrap = $('add-topics-section');
   if(topicsWrap)topicsWrap.hidden = false;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
@@ -28,7 +29,8 @@ function applyAddDefaults(){
   if(dueInput)dueInput.value = '';
   if(timeInput)timeInput.value = '';
   if($('ting-auto-mark'))$('ting-auto-mark').value = '';
-  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',parseInt(o.dataset.priority,10) === DEFAULT_PRIORITY));
+  const defPriority = Number.isFinite(settings.defaultPriority) ? settings.defaultPriority : DEFAULT_PRIORITY;
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',parseInt(o.dataset.priority,10) === defPriority));
   const moreBody = $('add-more-options');
   const moreToggle = $('add-more-toggle');
   if(moreBody)moreBody.hidden = true;
@@ -86,6 +88,23 @@ function syncSettingsControls(){
     btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
   });
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
+  syncSettingRange('default-duration',sortSettings.defaultDurationMinutes,'m');
+  syncSettingRange('default-flexibility',sortSettings.defaultFlexibilityDays,'d');
+  syncSettingRange('default-min-chunk',sortSettings.defaultMinChunkMinutes,'m');
+  const chunkRow = $('default-chunk-row');
+  if(chunkRow)chunkRow.hidden = !sortSettings.defaultBreakable;
+  document.querySelectorAll('#default-priority-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',parseInt(btn.dataset.defaultPriority,10) === sortSettings.defaultPriority);
+  });
+  document.querySelectorAll('#font-scale-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === sortSettings.fontScale);
+  });
+  document.querySelectorAll('#theme-mode-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === sortSettings.themeMode);
+  });
+  syncPrayerCityStatus();
+  renderDefaultTopicsChips();
+  applyAppearanceSettings();
 }
 
 // HANDLER: export all habits + settings as a downloadable JSON file. This is
@@ -397,7 +416,7 @@ function blockedAnchorOptions(selected, allowFixed = false){
   const prayer = cleanPrayerAnchor(selected) || '';
   const isFixed = allowFixed && selected === 'fixed';
   let html = '<option value="">— anchor —</option>'
-    + PRAYER_ANCHORS.map(a => `<option value="${a}"${a === prayer ? ' selected' : ''}>${PRAYER_ANCHOR_LABELS[a]}</option>`).join('');
+    + PRAYER_ANCHORS.map(a => `<option value="${a}"${a === prayer ? ' selected' : ''}>${prayerDisplayName(a)}</option>`).join('');
   if(allowFixed){
     html += `<option value="fixed"${isFixed ? ' selected' : ''}>clock time…</option>`;
   }
@@ -1109,6 +1128,11 @@ function toggleAppSettingButton(btn){
   if(key === 'agendaOptimizer' && patch.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
     preloadAgendaOptimizer();
   }
+  if(key === 'prayerIslamicNames'){
+    document.querySelectorAll('.time-anchor[data-populated]').forEach(sel=>{delete sel.dataset.populated;});
+    if(typeof populateAnchorOptions === 'function')populateAnchorOptions();
+    renderBlockedTimeControls();
+  }
 }
 
 // HANDLER: enable/disable reminders. On enable, ask for notification permission
@@ -1398,4 +1422,83 @@ function bindSettingRange(name,key,suffix,options = {}){
   field.addEventListener('change',()=>{
     render();
   });
+}
+
+// ── Appearance ──────────────────────────────────────────────────────────
+function applyAppearanceSettings(){
+  const s = sortSettings || {};
+  document.body.classList.toggle('compact-mode', !!s.compactMode);
+  document.documentElement.dataset.fontScale = s.fontScale || 'medium';
+  const mode = s.themeMode || 'system';
+  if(mode === 'system')document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.dataset.theme = mode;
+}
+
+// ── Prayer city ─────────────────────────────────────────────────────────
+function syncPrayerCityStatus(){
+  const el = $('prayer-city-status');
+  if(!el)return;
+  if(sortSettings.prayerCityName && Number.isFinite(sortSettings.prayerCityLat)){
+    el.textContent = `${sortSettings.prayerCityName} (${sortSettings.prayerCityLat.toFixed(2)}, ${sortSettings.prayerCityLng.toFixed(2)})`;
+  }else{
+    el.textContent = 'No default prayer city set.';
+  }
+}
+
+async function setPrayerCity(){
+  const input = $('prayer-city-input');
+  if(!input)return;
+  const query = input.value.trim();
+  if(!query)return;
+  const status = $('prayer-city-status');
+  if(status)status.textContent = 'Looking up…';
+  try{
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`);
+    const json = await res.json();
+    const feat = json.features && json.features[0];
+    if(!feat){
+      if(status)status.textContent = 'City not found. Try a different spelling.';
+      return;
+    }
+    const [lng,lat] = feat.geometry.coordinates;
+    const name = feat.properties.name || query;
+    updateSortSetting({prayerCityName:name, prayerCityLat:lat, prayerCityLng:lng});
+    if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+    input.value = '';
+    syncPrayerCityStatus();
+    if(typeof showToast === 'function')showToast(`prayer city: ${name}`);
+  }catch(_){
+    if(status)status.textContent = 'Lookup failed. Check your connection.';
+  }
+}
+
+function clearPrayerCity(){
+  updateSortSetting({prayerCityName:'', prayerCityLat:null, prayerCityLng:null});
+  if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+  syncPrayerCityStatus();
+}
+
+// ── Default topics chips ────────────────────────────────────────────────
+function renderDefaultTopicsChips(){
+  const wrap = $('default-topics-chips');
+  if(!wrap)return;
+  const allTopics = Array.isArray(sortSettings.topics) ? sortSettings.topics : [];
+  const selected = Array.isArray(sortSettings.defaultTopics) ? sortSettings.defaultTopics : [];
+  if(!allTopics.length){
+    wrap.innerHTML = '<p class="field-hint">Add topics in the Topics section first.</p>';
+    return;
+  }
+  wrap.innerHTML = allTopics.map(t=>{
+    const on = selected.includes(t);
+    return `<button type="button" class="topic-filter${on ? ' on' : ''}" data-topic="${escapeHtml(t)}">${escapeHtml(t)}</button>`;
+  }).join('');
+}
+
+function toggleDefaultTopic(topic){
+  const current = Array.isArray(sortSettings.defaultTopics) ? [...sortSettings.defaultTopics] : [];
+  const idx = current.indexOf(topic);
+  if(idx >= 0)current.splice(idx,1);
+  else current.push(topic);
+  updateSortSetting({defaultTopics:current});
+  renderDefaultTopicsChips();
 }

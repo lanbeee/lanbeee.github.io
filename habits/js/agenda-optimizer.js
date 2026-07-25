@@ -8,8 +8,16 @@
 // fills the remaining gaps continuous-first. This keeps a broad work window from
 // winning one large binary choice and erasing a narrow habit inside that window.
 
-const AGENDA_OPTIMIZER_TIMEOUT_MS = 2000;
-const AGENDA_OPTIMIZER_GLPK_URL = '../lib/js/glpk.mjs';
+const AGENDA_OPTIMIZER_TIMEOUT_MS = 5000;
+// Dynamic import() resolves relative to the page URL, not this file. Anchor to
+// the script tag so /habits/ on GitHub Pages and / locally both find GLPK.
+const AGENDA_OPTIMIZER_GLPK_URL = (()=>{
+  try{
+    const el = document.querySelector('script[src*="agenda-optimizer.js"]');
+    if(el && el.src)return new URL('../lib/js/glpk.mjs',el.src).href;
+  }catch(_){}
+  return new URL('./lib/js/glpk.mjs',location.href).href;
+})();
 
 let _glpkPromise = null;
 let _glpkInstance = null;
@@ -30,6 +38,7 @@ function ensureGlpk(){
     })
     .catch(err=>{
       _glpkPromise = null;
+      console.warn('[agenda-optimizer] GLPK load failed:', err && err.message || err);
       throw err;
     });
   return _glpkPromise;
