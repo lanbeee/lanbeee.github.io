@@ -2764,6 +2764,7 @@ function setupBreakableCrown(row,_realIdx){
   };
 
   crown.addEventListener('pointerdown',e=>{
+    e.stopPropagation();
     cancelMomentum();
     cancelScrub();
     startX = e.clientX;
@@ -2776,23 +2777,29 @@ function setupBreakableCrown(row,_realIdx){
     pointerId = e.pointerId;
     crown._valScroll = 0;
     crown._dragBase = Math.round(Number(row.dataset.progressTarget) || committed);
+    // Soft-claim so a tiny move can't arm card swipe before horizontal intent is known.
+    row.dataset.crownGesture = '1';
   });
 
   crown.addEventListener('pointermove',e=>{
     if(pointerId === null || e.pointerId !== pointerId)return;
+    e.stopPropagation();
     const dxTotal = e.clientX - startX;
     const dyTotal = e.clientY - startY;
 
     if(!dragging){
       if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
       if(Math.abs(dyTotal) > Math.abs(dxTotal)){
+        // Vertical scroll intent — release claim so the page can pan.
         pointerId = null;
+        delete row.dataset.crownGesture;
         return;
       }
       dragging = true;
       crown.setPointerCapture(e.pointerId);
       crown.classList.add('active');
       if(progressRoot)progressRoot.classList.add('is-scrubbing');
+      if(typeof closeAllSwipes === 'function')closeAllSwipes();
       e.preventDefault();
     }
 
@@ -2805,6 +2812,7 @@ function setupBreakableCrown(row,_realIdx){
 
   const endDrag = e => {
     if(pointerId === null)return;
+    e.stopPropagation();
     const wasDragging = dragging;
     if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;flushScrub();}
     if(dragging){
@@ -2817,6 +2825,7 @@ function setupBreakableCrown(row,_realIdx){
     dragging = false;
     pointerId = null;
     velX = 0;
+    delete row.dataset.crownGesture;
     if(!wasDragging && e.type === 'pointerup'){
       const card = row.querySelector('.ting-card');
       if(card){
@@ -2828,6 +2837,7 @@ function setupBreakableCrown(row,_realIdx){
 
   crown.addEventListener('pointerup',endDrag);
   crown.addEventListener('pointercancel',e=>{
+    e.stopPropagation();
     if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;pendingDx=0;}
     if(dragging){
       crown.classList.remove('active');
@@ -2835,6 +2845,7 @@ function setupBreakableCrown(row,_realIdx){
       hideTooltip();
     }
     dragging = false;pointerId = null;velX = 0;
+    delete row.dataset.crownGesture;
   });
 
   crown.addEventListener('wheel',e=>{
@@ -2868,7 +2879,9 @@ function setupBreakableCrown(row,_realIdx){
     }
   });
 
-  const stop = e=>{ if(dragging)e.stopPropagation(); };
+  // Always isolate crown gestures from card swipe/tap handlers on the row.
+  // Waiting until `dragging` lets touchstart bubble and arm swipe first.
+  const stop = e=>{ e.stopPropagation(); };
   ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel','mousedown','mouseup'].forEach(ev=>{
     crown.addEventListener(ev,stop,{ passive:true });
   });
@@ -2912,6 +2925,13 @@ function setupSwipe(row){
   }
 
   row.addEventListener('touchstart',e=>{
+    // Crown dial owns horizontal scrubbing — never arm card swipe from it.
+    if(e.target.closest('.breakable-crown,.breakable-progress') || row.dataset.crownGesture === '1'){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
     const t = e.changedTouches[0];
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     startedOpen = swipeOpenCard === card;
@@ -2921,6 +2941,8 @@ function setupSwipe(row){
   },{passive:true});
 
   row.addEventListener('touchmove',e=>{
+    if(touchId === null || row.dataset.crownGesture === '1')return;
+    if(e.target.closest('.breakable-crown,.breakable-progress'))return;
     const t = [...e.changedTouches].find(item=>item.identifier === touchId);
     if(!t)return;
     const ddx = t.clientX - startX;
@@ -2958,7 +2980,7 @@ function setupSwipe(row){
   },{passive:false});
 
   row.addEventListener('touchend',()=>{
-    if(!moved)return;
+    if(touchId === null || !moved)return;
     if(startedOpen){
       startedOpen = false;
       return;
