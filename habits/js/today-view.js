@@ -473,7 +473,7 @@ function remainingPlacementGaps(state){
 }
 
 function computeDayFreeGaps(day,settings,now = Date.now()){
-  const empty = {gaps:[],totalFreeMinutes:0,largestGapMinutes:0,nextGapStart:null};
+  const empty = {gaps:[],busy:[],totalFreeMinutes:0,largestGapMinutes:0,nextGapStart:null,windowStart:null,windowEnd:null};
   if(!day || day.dayBase == null)return empty;
   const dayBase = day.dayBase;
   const dayEnd = dayBase + 86400000;
@@ -499,10 +499,13 @@ function computeDayFreeGaps(day,settings,now = Date.now()){
     cursor = Math.max(cursor,block.end);
   }
   if(cursor < dayEnd)gaps.push({start:cursor,end:dayEnd});
+  const busy = merged
+    .map(b=>({start:Math.max(b.start,clipStart),end:Math.min(b.end,dayEnd)}))
+    .filter(b=>b.end > b.start);
   const totalFreeMinutes = gaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);
   const largestGapMinutes = gaps.reduce((m,g)=>Math.max(m,Math.round((g.end - g.start) / 60000)),0);
   const nextGapStart = gaps.length ? gaps[0].start : null;
-  return {gaps,totalFreeMinutes,largestGapMinutes,nextGapStart};
+  return {gaps,busy,totalFreeMinutes,largestGapMinutes,nextGapStart,windowStart:clipStart,windowEnd:dayEnd};
 }
 
 // PURE: can one remaining fill use this exact final gap? `ignoreBudget` keeps

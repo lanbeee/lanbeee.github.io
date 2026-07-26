@@ -95,6 +95,7 @@ function assert(cond,msg){
   if(pill){
     const text = await pill.textContent();
     assert(text.includes('1'), 'pill shows count of 1');
+    assert(/missed/i.test(text), `pill uses missed wording: "${text}"`);
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -362,7 +363,7 @@ function assert(cond,msg){
     await pill.click();
     await page.waitForTimeout(300);
     const missedHeads = await page.$$eval('#slipped-sheet .slipped-section-head', els => els.map(el => el.textContent));
-    assert(!missedHeads.some(t => t.includes('missed')), 'no missed section when baseline is null');
+    assert(!missedHeads.some(t => /yesterday|still open/i.test(t)), 'no missed-from-yesterday section when baseline is null');
     await page.click('#slipped-close');
     await page.waitForTimeout(300);
   } else {

@@ -116,8 +116,12 @@ function habitPrayerLocation(h, settings, contextLocId){
   const fbId = cleanLocationId(contextLocId) || cleanLocationId(s.lastKnownLocationId) || null;
   const fb = fbId ? registry.find(l => l.id === fbId) : null;
   if(fb || registry[0])return fb || registry[0];
+  if(Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng)){
+    return {id:'__home_city__', lat:s.homeCityLat, lng:s.homeCityLng, name:s.homeCityName || 'Home city'};
+  }
+  // Legacy prayer-city keys (pre-home-city rename).
   if(Number.isFinite(s.prayerCityLat) && Number.isFinite(s.prayerCityLng)){
-    return {id:'__prayer_city__', lat:s.prayerCityLat, lng:s.prayerCityLng, name:s.prayerCityName || 'Prayer city'};
+    return {id:'__home_city__', lat:s.prayerCityLat, lng:s.prayerCityLng, name:s.prayerCityName || 'Home city'};
   }
   return null;
 }

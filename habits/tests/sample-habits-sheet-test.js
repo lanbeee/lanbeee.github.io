@@ -100,11 +100,13 @@ function assert(cond, msg){
   await page.waitForTimeout(300);
   const afterFew = await page.evaluate(() => {
     const data = load();
-    const samples = data.filter(h => h.sample);
+    const byHid = hids => data.filter(h => hids.includes(h.hid));
+    const added = byHid(['sample-feature-water','sample-feature-timed-run']);
     const waterBtn = document.querySelector('#sample-habits-preview [data-add-sample="sample-feature-water"]');
     return {
-      sampleCount: samples.length,
-      hids: samples.map(h => h.hid).sort(),
+      addedCount: added.length,
+      addedAreSample: added.every(h => h.sample === false),
+      addedNames: added.map(h => h.name),
       sheetOpen: document.getElementById('sample-habits-sheet')?.classList.contains('open'),
       waterLabel: waterBtn?.textContent?.trim(),
       waterDisabled: waterBtn?.disabled === true,
@@ -113,8 +115,9 @@ function assert(cond, msg){
   });
   console.log(afterFew);
   assert(afterFew.sheetOpen, 'sheet stays open after single adds');
-  assert(afterFew.sampleCount === 2, 'exactly two feature samples added');
-  assert(afterFew.hids.includes('sample-feature-water') && afterFew.hids.includes('sample-feature-timed-run'), 'picked demos present');
+  assert(afterFew.addedCount === 2, 'exactly two feature demos added');
+  assert(afterFew.addedAreSample, 'individually added demos are not marked as sample');
+  assert(afterFew.addedNames.every(n => !n.startsWith('Sample: ')), 'individually added demos have no Sample: prefix');
   assert(afterFew.waterLabel === 'added' && afterFew.waterDisabled, 'added row shows added state');
   assert(afterFew.placeCount >= 1, 'places seeded when a place demo is added');
 
@@ -147,56 +150,64 @@ function assert(cond, msg){
   await page.locator('#sample-prayers-preview [data-add-sample="sample-prayer-fajr"]').click();
   await page.waitForTimeout(300);
   const afterOnePrayer = await page.evaluate(() => {
-    const prayers = load().filter(h => h.sample && String(h.hid || '').startsWith('sample-prayer-'));
+    const fajr = load().find(h => (h.hid || '') === 'sample-prayer-fajr');
     const fajrBtn = document.querySelector('#sample-prayers-preview [data-add-sample="sample-prayer-fajr"]');
     return {
-      prayerCount: prayers.length,
+      fajrExists: !!fajr,
+      fajrIsSample: fajr ? fajr.sample : null,
       sheetOpen: document.getElementById('sample-habits-sheet')?.classList.contains('open'),
       fajrAdded: fajrBtn?.textContent?.trim() === 'added'
     };
   });
   console.log(afterOnePrayer);
-  assert(afterOnePrayer.prayerCount === 1 && afterOnePrayer.sheetOpen && afterOnePrayer.fajrAdded, 'single prayer add keeps sheet open');
+  assert(afterOnePrayer.fajrExists && afterOnePrayer.fajrIsSample === false && afterOnePrayer.sheetOpen && afterOnePrayer.fajrAdded, 'single prayer add keeps sheet open, not marked sample');
 
   await page.locator('#sample-prayers-add').click();
   await page.waitForTimeout(500);
   const afterPrayers = await page.evaluate(() => {
     const data = load();
-    const prayers = data.filter(h => h.sample && String(h.hid || '').startsWith('sample-prayer-'));
+    const allPrayers = data.filter(h => String(h.hid || '').startsWith('sample-prayer-'));
+    const samplePrayers = allPrayers.filter(h => h.sample);
     const features = data.filter(h => h.sample && !String(h.hid || '').startsWith('sample-prayer-'));
     return {
-      prayerCount: prayers.length,
+      totalPrayers: allPrayers.length,
+      samplePrayerCount: samplePrayers.length,
       featureCount: features.length,
-      names: prayers.map(h => h.name),
-      fajrWindow: prayers.find(h => (h.hid || '') === 'sample-prayer-fajr')
+      sampleNames: samplePrayers.map(h => h.name),
+      fajrName: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr')?.name,
+      fajrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr')
     };
   });
   console.log(afterPrayers);
-  assert(afterPrayers.prayerCount === 5, 'five prayer samples total after add all');
+  assert(afterPrayers.totalPrayers === 5, 'five prayer habits total after add all');
+  assert(afterPrayers.samplePrayerCount === 4, 'four prayers marked sample (Fajr added individually)');
   assert(afterPrayers.featureCount >= 8, 'feature samples still present');
   assert(afterPrayers.fajrWindow && afterPrayers.fajrWindow.allowedTimeStartAnchor === 'fajr', 'Fajr has prayer window');
+  assert(afterPrayers.fajrName === 'Fajr', 'individually added Fajr has no Sample: prefix');
   assert(
-    afterPrayers.names.every(n => /^Sample: (Fajr|Dhuhr|Asr|Maghrib|Isha)$/.test(n)),
-    'prayer samples use Islamic names'
+    afterPrayers.sampleNames.every(n => /^Sample: (Dhuhr|Asr|Maghrib|Isha)$/.test(n)),
+    'bulk-added prayer samples use Islamic names with Sample: prefix'
   );
 
   console.log('\n[F] Keep one prayer — survives remove samples');
   const keepResult = await page.evaluate(() => {
-    const idx = load().findIndex(h => h.sample && (h.hid || '') === 'sample-prayer-fajr');
+    const idx = load().findIndex(h => h.sample && (h.hid || '') === 'sample-prayer-dhuhr');
     keepSampleHabit(idx);
-    const fajr = load().find(h => (h.hid || '') === 'sample-prayer-fajr');
+    const dhuhr = load().find(h => (h.hid || '') === 'sample-prayer-dhuhr');
     removeSortSamples();
     const after = load();
     return {
-      keptName: fajr && fajr.name,
-      keptSample: fajr && fajr.sample,
+      keptName: dhuhr && dhuhr.name,
+      keptSample: dhuhr && dhuhr.sample,
       remainingSamples: after.filter(h => h.sample).length,
+      dhuhrStillThere: after.some(h => (h.hid || '') === 'sample-prayer-dhuhr' && !h.sample),
       fajrStillThere: after.some(h => (h.hid || '') === 'sample-prayer-fajr' && !h.sample)
     };
   });
   console.log(keepResult);
-  assert(keepResult.keptName === 'Fajr', 'keep strips Sample: prefix → Fajr');
-  assert(keepResult.keptSample === false && keepResult.fajrStillThere, 'kept Fajr survives remove samples');
+  assert(keepResult.keptName === 'Dhuhr', 'keep strips Sample: prefix → Dhuhr');
+  assert(keepResult.keptSample === false && keepResult.dhuhrStillThere, 'kept Dhuhr survives remove samples');
+  assert(keepResult.fajrStillThere, 'individually added Fajr (non-sample) also survives');
   assert(keepResult.remainingSamples === 0, 'unkept samples removed');
 
   console.log('\n[G] Blank home still opens sample habits');

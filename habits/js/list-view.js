@@ -2000,9 +2000,10 @@ function attachDroppedIndicator(header,list,todayHids){
     .sort((a,b)=>Number(a.snoozed) - Number(b.snoozed) || a.first - b.first);
   if(!dropped.length)return;
   header.classList.add('has-dropped');
-  const pill = document.createElement('span');
+  const pill = document.createElement('button');
+  pill.type = 'button';
   pill.className = 'dropped-pill';
-  pill.textContent = `${dropped.length} off agenda`;
+  pill.textContent = `${dropped.length} missed`;
   pill.addEventListener('pointerup',e=>{
     e.stopPropagation();
     openSlippedSheet(dropped,header.dataset.label || 'today');
@@ -2030,7 +2031,7 @@ function renderDroppedPanel(items,opts = {}){
 function openSlippedSheet(items,dayLabel){
   const content = document.getElementById('slipped-content');
   if(!content)return;
-  document.getElementById('slipped-title').textContent = `off agenda · ${dayLabel}`;
+  document.getElementById('slipped-title').textContent = `missed · ${dayLabel}`;
   content.innerHTML = '';
 
   const data = load();
@@ -2044,7 +2045,7 @@ function openSlippedSheet(items,dayLabel){
   if(slippedWithTags.length){
     const head1 = document.createElement('div');
     head1.className = 'slipped-section-head';
-    head1.textContent = `off agenda · ${dayLabel}`;
+    head1.textContent = `missed · ${dayLabel}`;
     content.appendChild(head1);
     content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
   }
@@ -2073,13 +2074,105 @@ function formatFreeDuration(minutes){
   return `${Math.round(hours)}h`;
 }
 
+function freeDayClockLabel(ts){
+  const d = new Date(ts);
+  return formatTimeShort(d.getHours() * 60 + d.getMinutes());
+}
+
+// PURE: hour tick marks for the free/busy day strip.
+function freeDayTickMarks(windowStart,windowEnd){
+  if(!(windowEnd > windowStart))return [];
+  const spanMs = windowEnd - windowStart;
+  const spanHours = spanMs / 3600000;
+  const stepHours = spanHours <= 8 ? 1 : spanHours <= 14 ? 2 : 3;
+  const ticks = [{ts:windowStart,edge:'start'}];
+  const cursor = new Date(windowStart);
+  cursor.setSeconds(0,0);
+  cursor.setMinutes(0);
+  cursor.setHours(cursor.getHours() + 1);
+  while(cursor.getTime() < windowEnd){
+    const ts = cursor.getTime();
+    const pct = (ts - windowStart) / spanMs;
+    if(pct > 0.08 && pct < 0.92 && cursor.getHours() % stepHours === 0){
+      ticks.push({ts,edge:null});
+    }
+    cursor.setHours(cursor.getHours() + 1);
+  }
+  ticks.push({ts:windowEnd,edge:'end'});
+  return ticks;
+}
+
+function renderFreeDayStrip(info){
+  const wrap = document.createElement('div');
+  wrap.className = 'free-day-strip';
+  const winStart = info.windowStart;
+  const winEnd = info.windowEnd;
+  if(!(winEnd > winStart))return wrap;
+
+  const span = winEnd - winStart;
+  const pieces = [];
+  let cursor = winStart;
+  const busy = [...(info.busy || [])].sort((a,b)=>a.start - b.start);
+  for(const block of busy){
+    const start = Math.max(block.start,winStart);
+    const end = Math.min(block.end,winEnd);
+    if(end <= start)continue;
+    if(start > cursor)pieces.push({kind:'free',start:cursor,end:start});
+    pieces.push({kind:'busy',start,end});
+    cursor = Math.max(cursor,end);
+  }
+  if(cursor < winEnd)pieces.push({kind:'free',start:cursor,end:winEnd});
+
+  wrap.setAttribute('role','img');
+  wrap.setAttribute(
+    'aria-label',
+    `${formatFreeDuration(info.totalFreeMinutes)} open · ${formatFreeDuration(info.largestGapMinutes)} biggest stretch`
+  );
+
+  const track = document.createElement('div');
+  track.className = 'free-day-track';
+  if(!pieces.length){
+    const seg = document.createElement('span');
+    seg.className = 'free-day-seg free';
+    seg.style.flex = '1';
+    track.appendChild(seg);
+  }else{
+    pieces.forEach(piece=>{
+      const seg = document.createElement('span');
+      seg.className = `free-day-seg ${piece.kind}`;
+      seg.style.flex = String(Math.max(1, piece.end - piece.start));
+      const mins = Math.round((piece.end - piece.start) / 60000);
+      seg.title = `${piece.kind === 'busy' ? 'busy' : 'open'} · ${freeDayClockLabel(piece.start)} – ${freeDayClockLabel(piece.end)} · ${formatFreeDuration(mins)}`;
+      track.appendChild(seg);
+    });
+  }
+  wrap.appendChild(track);
+
+  const ticks = document.createElement('div');
+  ticks.className = 'free-day-ticks';
+  freeDayTickMarks(winStart,winEnd).forEach(tick=>{
+    const mark = document.createElement('span');
+    mark.className = 'free-day-tick' + (tick.edge ? ` edge-${tick.edge}` : '');
+    mark.style.left = `${((tick.ts - winStart) / span) * 100}%`;
+    mark.textContent = freeDayClockLabel(tick.ts);
+    ticks.appendChild(mark);
+  });
+  wrap.appendChild(ticks);
+
+  const legend = document.createElement('div');
+  legend.className = 'free-day-legend';
+  legend.innerHTML = '<span><i class="busy" aria-hidden="true"></i>busy</span><span><i class="open" aria-hidden="true"></i>open</span>';
+  wrap.appendChild(legend);
+  return wrap;
+}
 
 function attachFreeTimeIndicator(header,day){
   if(typeof computeDayFreeGaps !== 'function')return;
   const info = computeDayFreeGaps(day,sortSettings);
   if(info.totalFreeMinutes < 10)return;
   header.classList.add('has-pill');
-  const pill = document.createElement('span');
+  const pill = document.createElement('button');
+  pill.type = 'button';
   pill.className = 'free-pill';
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
   pill.addEventListener('pointerup',e=>{
@@ -2092,6 +2185,7 @@ function attachFreeTimeIndicator(header,day){
 function renderFreePanel(info){
   const panel = document.createElement('div');
   panel.className = 'free-panel';
+  panel.appendChild(renderFreeDayStrip(info));
   const summary = document.createElement('div');
   summary.className = 'free-panel-row';
   summary.innerHTML = `<span>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(info.largestGapMinutes))} biggest stretch</span>`;

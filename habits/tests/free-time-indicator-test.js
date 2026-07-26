@@ -1,7 +1,7 @@
 // free-time-indicator — tests for the "open time" pill on day headers:
 //
 //   A. Pills render on week day headers with correct format.
-//   B. Tap pill opens panel with gap details (time ranges + durations).
+//   B. Tap pill opens panel with free/busy strip + gap details.
 //   C. Tap again dismisses panel.
 //   D. Only one panel open at a time.
 //   E. No pill when day has < 10m free.
@@ -78,6 +78,14 @@ function assert(cond,msg){
 
   const sheetOpen = await page.locator('#free-time-sheet.open').count();
   assert(sheetOpen === 1, 'free-time sheet opens after tap');
+
+  const strip = await page.locator('#free-time-sheet .free-day-strip').count();
+  assert(strip === 1, 'day free/busy strip renders');
+  const busySegs = await page.locator('#free-time-sheet .free-day-seg.busy').count();
+  const freeSegs = await page.locator('#free-time-sheet .free-day-seg.free').count();
+  assert(busySegs + freeSegs >= 1, `strip has segments (busy=${busySegs}, free=${freeSegs})`);
+  const legendText = await page.locator('#free-time-sheet .free-day-legend').textContent();
+  assert(/busy/i.test(legendText) && /open/i.test(legendText), `legend labels busy/open: "${legendText}"`);
 
   const panelRows = await page.locator('#free-time-sheet .free-panel-row').count();
   assert(panelRows >= 2, `panel has summary + gap rows (found ${panelRows})`);

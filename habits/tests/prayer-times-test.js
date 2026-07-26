@@ -8,8 +8,9 @@
 //   • each of the four endpoints can be independently switched to dynamic;
 //   • the resolver returns a finite minutes-from-midnight for a habit with
 //     a valid location + anchor; "anywhere" habits resolve via the running
-//     agenda anchor / lastKnown / registry[0] fallback, null only when the
-//     user has no saved location at all;
+//     agenda anchor / lastKnown / registry[0] / home city fallback, null only
+//     when the user has no saved place and no home city;
+//   • home city alone (no places / GPS) is enough for prayer timings;
 //   • the save path blocks prayer anchors only when the registry is empty.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/prayer-times-test.js
@@ -204,9 +205,24 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
       return id;
     })(),
     emptyRegistry: (() => {
-      const s = loadSortSettings(); const saved = s.locations; s.locations = []; saveSortSettings(s);
+      const s = loadSortSettings();
+      const saved = {
+        locations:s.locations,
+        homeCityName:s.homeCityName,
+        homeCityLat:s.homeCityLat,
+        homeCityLng:s.homeCityLng
+      };
+      s.locations = [];
+      s.homeCityName = '';
+      s.homeCityLat = null;
+      s.homeCityLng = null;
+      saveSortSettings(s);
       const r = habitPrayerLocation({locationIds:[]});
-      s.locations = saved; saveSortSettings(s);
+      s.locations = saved.locations;
+      s.homeCityName = saved.homeCityName;
+      s.homeCityLat = saved.homeCityLat;
+      s.homeCityLng = saved.homeCityLng;
+      saveSortSettings(s);
       return r;
     })()
   }));
@@ -218,7 +234,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(loc.dangling === 'home', 'dangling id → anywhere fallback (registry[0])');
   assert(loc.ctxWins === 'gym', 'contextLocId (running anchor) wins for anywhere habits');
   assert(loc.lastKnown === 'office', 'lastKnownLocationId used when no context');
-  assert(loc.emptyRegistry === null, 'anywhere + empty registry → null');
+  assert(loc.emptyRegistry === null, 'anywhere + empty registry + no city → null');
 
   // ── G. resolveHabitTimeField with real adhan.js ──
   console.log('\n[G] resolveHabitTimeField against adhan');
@@ -234,10 +250,21 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     const fixed = resolveHabitTimeField({allowedTimeStart:600}, 'allowedTimeStart', today);
     // Anywhere habit + prayer anchor: resolves via the registry fallback now.
     const anywhere = resolveHabitTimeField({allowedTimeStartAnchor:'fajr'}, 'allowedTimeStart', today);
-    // Truly no location anywhere (empty registry + no lastKnown) → null.
-    const s = loadSortSettings(); const savedLocs = s.locations; s.locations = []; saveSortSettings(s);
+    // Truly no place and no home city → null.
+    const s = loadSortSettings();
+    const savedLocs = s.locations;
+    const savedCity = {name:s.homeCityName, lat:s.homeCityLat, lng:s.homeCityLng};
+    s.locations = [];
+    s.homeCityName = '';
+    s.homeCityLat = null;
+    s.homeCityLng = null;
+    saveSortSettings(s);
     const noLoc = resolveHabitTimeField({allowedTimeStartAnchor:'fajr'}, 'allowedTimeStart', today);
-    s.locations = savedLocs; saveSortSettings(s);
+    s.locations = savedLocs;
+    s.homeCityName = savedCity.name;
+    s.homeCityLat = savedCity.lat;
+    s.homeCityLng = savedCity.lng;
+    saveSortSettings(s);
     return {sunriseMin, sunrisePlusHour, fixed, anywhere, noLoc};
   });
   assert(Number.isFinite(resolved.sunriseMin), 'sunrise resolved to a finite minute');
@@ -246,7 +273,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(resolved.sunrisePlusHour - resolved.sunriseMin === 30, 'offset shifts by (60−30)=30 min (' + (resolved.sunrisePlusHour - resolved.sunriseMin) + ')');
   assert(resolved.fixed === 600, 'fixed minutes returned unchanged');
   assert(Number.isFinite(resolved.anywhere), 'anywhere + prayer resolves via fallback (' + resolved.anywhere + ')');
-  assert(resolved.noLoc === null, 'prayer anchor + empty registry → null');
+  assert(resolved.noLoc === null, 'prayer anchor + empty registry + no city → null');
 
   // ── H. timeWindowSummary uses anchor labels ──
   console.log('\n[H] timeWindowSummary shows anchor labels');
@@ -540,10 +567,20 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     const winEast = fillTimeWindow(h, today, 'east');
     const winWest = fillTimeWindow(h, today, 'west');
     const winNone = fillTimeWindow(h, today);              // fallback → registry[0] (east)
-    // Empty registry + no context → can't resolve → null.
-    const savedLocs = s.locations; s.locations = []; saveSortSettings(s);
+    // Empty registry + no city + no context → can't resolve → null.
+    const savedLocs = s.locations;
+    const savedCity = {name:s.homeCityName, lat:s.homeCityLat, lng:s.homeCityLng};
+    s.locations = [];
+    s.homeCityName = '';
+    s.homeCityLat = null;
+    s.homeCityLng = null;
+    saveSortSettings(s);
     const winEmpty = fillTimeWindow(h, today);
-    s.locations = savedLocs; saveSortSettings(s);
+    s.locations = savedLocs;
+    s.homeCityName = savedCity.name;
+    s.homeCityLat = savedCity.lat;
+    s.homeCityLng = savedCity.lng;
+    saveSortSettings(s);
     return {
       eastStart: winEast ? Math.round((winEast.start - today) / 60000) : null,
       westStart: winWest ? Math.round((winWest.start - today) / 60000) : null,
@@ -554,7 +591,114 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(ctx.eastStart !== null && ctx.westStart !== null, 'both contexts resolve a sunrise start');
   assert(Math.abs(ctx.eastStart - ctx.westStart) > 60, 'different contextLocId → different sunrise (east ' + ctx.eastStart + ' vs west ' + ctx.westStart + ')');
   assert(ctx.noneStart === ctx.eastStart, 'no context → registry[0] fallback (east)');
-  assert(ctx.emptyWin === null, 'empty registry + no context → null window');
+  assert(ctx.emptyWin === null, 'empty registry + no city + no context → null window');
+
+  // ── S. home city alone (no places / GPS) resolves prayer timings ──
+  // Users can set a city (+ country) under Locations without enabling live
+  // location or adding places. Prayer anchors must still resolve against that
+  // city's coordinates.
+  console.log('\n[S] home city alone resolves prayer timings');
+  const homeCity = await page.evaluate(() => {
+    const today = dayStart(Date.now());
+    const s = loadSortSettings();
+    s.locations = [];
+    s.lastKnownLocationId = null;
+    s.locationOptIn = false;
+    s.homeCityName = 'New York, United States';
+    s.homeCityLat = 40.7128;
+    s.homeCityLng = -74.0060;
+    saveSortSettings(s);
+    if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+
+    const loc = habitPrayerLocation({locationIds:[]});
+    const fajr = resolveHabitTimeField({allowedTimeStartAnchor:'fajr'}, 'allowedTimeStart', today);
+    const sunrise = resolveHabitTimeField({allowedTimeStartAnchor:'sunrise'}, 'allowedTimeStart', today);
+    const isha = resolveHabitTimeField({allowedTimeStartAnchor:'isha'}, 'allowedTimeStart', today);
+    const win = fillTimeWindow({
+      locationIds:[],
+      allowedTimeStartAnchor:'fajr',
+      allowedTimeEndAnchor:'isha'
+    }, today);
+
+    // Name without coordinates is not enough.
+    s.homeCityName = 'Lahore, Pakistan';
+    s.homeCityLat = null;
+    s.homeCityLng = null;
+    saveSortSettings(s);
+    if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+    const nameOnly = resolveHabitTimeField({allowedTimeStartAnchor:'fajr'}, 'allowedTimeStart', today);
+    const locNameOnly = habitPrayerLocation({locationIds:[]});
+
+    // Legacy prayerCity* settings object (pre-rename) still resolves when
+    // passed directly — and saveSortSettings migrates into homeCity*.
+    const legacyLoc = habitPrayerLocation({locationIds:[]}, {
+      locations:[],
+      lastKnownLocationId:null,
+      prayerCityName:'New York, United States',
+      prayerCityLat:40.7128,
+      prayerCityLng:-74.0060
+    });
+    localStorage.setItem('tings_app_settings_v2', JSON.stringify({
+      ...loadSortSettings(),
+      homeCityName:'',
+      homeCityLat:null,
+      homeCityLng:null,
+      prayerCityName:'New York, United States',
+      prayerCityLat:40.7128,
+      prayerCityLng:-74.0060,
+      locations:[]
+    }));
+    const migrated = loadSortSettings();
+    saveSortSettings(migrated);
+    if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+    const migratedSunrise = resolveHabitTimeField({allowedTimeStartAnchor:'sunrise'}, 'allowedTimeStart', today);
+
+    // Cleanup so later suites aren't affected if this file is extended.
+    const clean = loadSortSettings();
+    clean.homeCityName = '';
+    clean.homeCityLat = null;
+    clean.homeCityLng = null;
+    clean.locations = [];
+    saveSortSettings(clean);
+
+    return {
+      locId: loc && loc.id,
+      locName: loc && loc.name,
+      locLat: loc && loc.lat,
+      fajr,
+      sunrise,
+      isha,
+      winStart: win ? Math.round((win.start - today) / 60000) : null,
+      winEnd: win ? Math.round((win.end - today) / 60000) : null,
+      nameOnly,
+      locNameOnly,
+      legacyLocId: legacyLoc && legacyLoc.id,
+      legacyLocLat: legacyLoc && legacyLoc.lat,
+      migratedName: migrated.homeCityName,
+      migratedLat: migrated.homeCityLat,
+      migratedHasLegacy: Object.prototype.hasOwnProperty.call(migrated, 'prayerCityName'),
+      migratedSunrise
+    };
+  });
+  assert(homeCity.locId === '__home_city__', 'empty places → home city location id');
+  assert(homeCity.locName === 'New York, United States', 'home city keeps city, country name');
+  assert(Math.abs(homeCity.locLat - 40.7128) < 0.001, 'home city lat used');
+  assert(Number.isFinite(homeCity.fajr), 'fajr resolves from home city (' + homeCity.fajr + ')');
+  assert(Number.isFinite(homeCity.sunrise), 'sunrise resolves from home city (' + homeCity.sunrise + ')');
+  assert(Number.isFinite(homeCity.isha), 'isha resolves from home city (' + homeCity.isha + ')');
+  assert(homeCity.sunrise >= 240 && homeCity.sunrise <= 540, 'NYC sunrise lands 4am–9am ET (' + homeCity.sunrise + ')');
+  assert(homeCity.fajr < homeCity.sunrise, 'fajr before sunrise');
+  assert(homeCity.isha > 720, 'isha after noon ET (' + homeCity.isha + ')');
+  assert(homeCity.winStart !== null && homeCity.winEnd !== null, 'fajr–isha window fills from home city');
+  assert(homeCity.winEnd > homeCity.winStart, 'home-city window spans day');
+  assert(homeCity.nameOnly === null, 'city name without coords does not resolve');
+  assert(homeCity.locNameOnly === null, 'city name without coords → no prayer location');
+  assert(homeCity.legacyLocId === '__home_city__', 'legacy prayerCity* settings still resolve');
+  assert(Math.abs(homeCity.legacyLocLat - 40.7128) < 0.001, 'legacy prayerCity lat used');
+  assert(homeCity.migratedName === 'New York, United States', 'loadSortSettings migrates prayerCity → homeCity');
+  assert(Math.abs(homeCity.migratedLat - 40.7128) < 0.001, 'migrated homeCity lat kept');
+  assert(homeCity.migratedHasLegacy === false, 'legacy prayerCity keys removed on load');
+  assert(Number.isFinite(homeCity.migratedSunrise), 'migrated home city resolves sunrise (' + homeCity.migratedSunrise + ')');
 
   await context.close();
   await browser.close();

@@ -102,7 +102,7 @@ function syncSettingsControls(){
   document.querySelectorAll('#theme-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === sortSettings.themeMode);
   });
-  syncPrayerCityStatus();
+  syncHomeCityStatus();
   renderDefaultTopicsChips();
   applyAppearanceSettings();
 }
@@ -1354,19 +1354,19 @@ function sortSampleHabit(name,type,target,logs,options = {}){
 function buildSampleLocations(){
   return [
     {
-      id:'sample-home', name:'Home', address:'West Village, NYC',
+      id:'sample-home', name:'Sample Home', address:'West Village, NYC',
       lat:40.7359, lng:-74.0036, radiusM:100,
       emoji:'🏠'
     },
     {
-      id:'sample-office', name:'Office', address:'Midtown, NYC',
+      id:'sample-office', name:'Sample Office', address:'Midtown, NYC',
       lat:40.7549, lng:-73.9840, radiusM:80,
       emoji:'🏢',
       allowedTimeStart:540, allowedTimeEnd:1080, // 9a–6p
       closedDays:[0,6]
     },
     {
-      id:'sample-gym', name:'Gym', address:'Chelsea, NYC',
+      id:'sample-gym', name:'Sample Gym', address:'Chelsea, NYC',
       lat:40.7465, lng:-73.9972, radiusM:75,
       emoji:'🏋️',
       allowedTimeStart:360, allowedTimeEnd:1320, // 6a–10p
@@ -1374,7 +1374,7 @@ function buildSampleLocations(){
       preferredTimeStart:420, preferredTimeEnd:540 // best early
     },
     {
-      id:'sample-cafe', name:'Cafe', address:'East Village, NYC',
+      id:'sample-cafe', name:'Sample Cafe', address:'East Village, NYC',
       lat:40.7265, lng:-73.9815, radiusM:60,
       emoji:'☕',
       allowedTimeStart:480, allowedTimeEnd:1020, // 8a–5p
@@ -1382,14 +1382,14 @@ function buildSampleLocations(){
       hoursByDay:{6:{start:540,end:900}} // Sat 9a–3p
     },
     {
-      id:'sample-moms', name:"Mom's house", address:'Park Slope, Brooklyn',
+      id:'sample-moms', name:"Sample Mom's house", address:'Park Slope, Brooklyn',
       lat:40.6701, lng:-73.9778, radiusM:90,
       emoji:'🏡',
       allowedTimeStart:660, allowedTimeEnd:1020 // 11a–5p
     },
     {
       // 24h second anchor so travel between places is visible even late at night.
-      id:'sample-park', name:'Park', address:'Washington Square Park, NYC',
+      id:'sample-park', name:'Sample Park', address:'Washington Square Park, NYC',
       lat:40.7308, lng:-73.9973, radiusM:120,
       emoji:'🌳'
     }
@@ -1588,6 +1588,10 @@ function addOneSample(hid){
   const sample = findCatalogSample(hid);
   if(!sample)return false;
   const isPrayer = String(hid || '').startsWith('sample-prayer-');
+  sample.sample = false;
+  if(typeof sample.name === 'string' && sample.name.startsWith('Sample: ')){
+    sample.name = sample.name.slice('Sample: '.length);
+  }
   const label = sampleDisplayName(sample) || 'sample';
   return commitSampleHabits([sample],{
     setPresence:!isPrayer,
@@ -1728,23 +1732,23 @@ function applyAppearanceSettings(){
   else document.documentElement.dataset.theme = mode;
 }
 
-// ── Prayer city ─────────────────────────────────────────────────────────
-function syncPrayerCityStatus(){
-  const el = $('prayer-city-status');
+// ── Home city (general area for prayer, weather, etc.) ───────────────────
+function syncHomeCityStatus(){
+  const el = $('home-city-status');
   if(!el)return;
-  if(sortSettings.prayerCityName && Number.isFinite(sortSettings.prayerCityLat)){
-    el.textContent = `${sortSettings.prayerCityName} (${sortSettings.prayerCityLat.toFixed(2)}, ${sortSettings.prayerCityLng.toFixed(2)})`;
+  if(sortSettings.homeCityName && Number.isFinite(sortSettings.homeCityLat)){
+    el.textContent = `${sortSettings.homeCityName} (${sortSettings.homeCityLat.toFixed(2)}, ${sortSettings.homeCityLng.toFixed(2)})`;
   }else{
-    el.textContent = 'No default prayer city set.';
+    el.textContent = 'No city set.';
   }
 }
 
-async function setPrayerCity(){
-  const input = $('prayer-city-input');
+async function setHomeCity(){
+  const input = $('home-city-input');
   if(!input)return;
   const query = input.value.trim();
   if(!query)return;
-  const status = $('prayer-city-status');
+  const status = $('home-city-status');
   if(status)status.textContent = 'Looking up…';
   try{
     const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`);
@@ -1756,20 +1760,20 @@ async function setPrayerCity(){
     }
     const [lng,lat] = feat.geometry.coordinates;
     const name = feat.properties.name || query;
-    updateSortSetting({prayerCityName:name, prayerCityLat:lat, prayerCityLng:lng});
+    updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng});
     if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
     input.value = '';
-    syncPrayerCityStatus();
-    if(typeof showToast === 'function')showToast(`prayer city: ${name}`);
+    syncHomeCityStatus();
+    if(typeof showToast === 'function')showToast(`city: ${name}`);
   }catch(_){
     if(status)status.textContent = 'Lookup failed. Check your connection.';
   }
 }
 
-function clearPrayerCity(){
-  updateSortSetting({prayerCityName:'', prayerCityLat:null, prayerCityLng:null});
+function clearHomeCity(){
+  updateSortSetting({homeCityName:'', homeCityLat:null, homeCityLng:null});
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
-  syncPrayerCityStatus();
+  syncHomeCityStatus();
 }
 
 // ── Default topics chips ────────────────────────────────────────────────

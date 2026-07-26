@@ -1625,9 +1625,9 @@ $('theme-mode-seg')?.addEventListener('click',e=>{
   updateSortSetting({themeMode:opt.dataset.segValue});
   applyAppearanceSettings();
 });
-$('prayer-city-set')?.addEventListener('click',setPrayerCity);
-$('prayer-city-input')?.addEventListener('keydown',e=>{if(e.key === 'Enter')setPrayerCity();});
-$('prayer-city-clear')?.addEventListener('click',clearPrayerCity);
+$('home-city-set')?.addEventListener('click',setHomeCity);
+$('home-city-input')?.addEventListener('keydown',e=>{if(e.key === 'Enter')setHomeCity();});
+$('home-city-clear')?.addEventListener('click',clearHomeCity);
 $('default-topics-chips')?.addEventListener('click',e=>{
   const chip = e.target.closest('[data-topic]');
   if(!chip)return;

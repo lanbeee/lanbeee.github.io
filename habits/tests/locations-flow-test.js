@@ -75,7 +75,7 @@ async function openSettings(page){
   });
   console.log(seeded);
   assert(seeded.locCount >= 6, 'at least 6 sample locations');
-  assert(seeded.names.includes('Home') && seeded.names.includes('Gym') && seeded.names.includes('Park'), 'Home/Gym/Park present');
+  assert(seeded.names.includes('Sample Home') && seeded.names.includes('Sample Gym') && seeded.names.includes('Sample Park'), 'Home/Gym/Park present');
   assert(seeded.withLoc >= 10, 'many habits have locationIds (got ' + seeded.withLoc + ')');
   assert(seeded.multi >= 3, 'some multi-location habits');
   assert(seeded.lastKnown === 'sample-home', 'lastKnownLocationId = Home');

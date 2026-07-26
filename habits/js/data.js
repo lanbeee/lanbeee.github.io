@@ -277,9 +277,23 @@ function loadSortSettings(){
     merged.compactMode = Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
     merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';
-    merged.prayerCityName = typeof merged.prayerCityName === 'string' ? merged.prayerCityName.trim() : '';
-    merged.prayerCityLat = Number.isFinite(merged.prayerCityLat) ? merged.prayerCityLat : null;
-    merged.prayerCityLng = Number.isFinite(merged.prayerCityLng) ? merged.prayerCityLng : null;
+    merged.homeCityName = typeof merged.homeCityName === 'string' ? merged.homeCityName.trim() : '';
+    merged.homeCityLat = Number.isFinite(merged.homeCityLat) ? merged.homeCityLat : null;
+    merged.homeCityLng = Number.isFinite(merged.homeCityLng) ? merged.homeCityLng : null;
+    // Migrate legacy prayer-city fields into home city.
+    if(!merged.homeCityName && typeof merged.prayerCityName === 'string' && merged.prayerCityName.trim()){
+      merged.homeCityName = merged.prayerCityName.trim();
+      merged.homeCityLat = Number.isFinite(merged.prayerCityLat) ? merged.prayerCityLat : null;
+      merged.homeCityLng = Number.isFinite(merged.prayerCityLng) ? merged.prayerCityLng : null;
+    }
+    if(!Number.isFinite(merged.homeCityLat) && Number.isFinite(merged.prayerCityLat) && Number.isFinite(merged.prayerCityLng)){
+      merged.homeCityLat = merged.prayerCityLat;
+      merged.homeCityLng = merged.prayerCityLng;
+      if(!merged.homeCityName)merged.homeCityName = typeof merged.prayerCityName === 'string' ? merged.prayerCityName.trim() : '';
+    }
+    delete merged.prayerCityName;
+    delete merged.prayerCityLat;
+    delete merged.prayerCityLng;
     merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
     merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
@@ -324,9 +338,17 @@ function saveSortSettings(settings){
   next.compactMode = Boolean(next.compactMode);
   next.fontScale = ['small','medium','large'].includes(next.fontScale) ? next.fontScale : 'medium';
   next.themeMode = ['light','dark','system'].includes(next.themeMode) ? next.themeMode : 'system';
-  next.prayerCityName = typeof next.prayerCityName === 'string' ? next.prayerCityName.trim() : '';
-  next.prayerCityLat = Number.isFinite(next.prayerCityLat) ? next.prayerCityLat : null;
-  next.prayerCityLng = Number.isFinite(next.prayerCityLng) ? next.prayerCityLng : null;
+  next.homeCityName = typeof next.homeCityName === 'string' ? next.homeCityName.trim() : '';
+  next.homeCityLat = Number.isFinite(next.homeCityLat) ? next.homeCityLat : null;
+  next.homeCityLng = Number.isFinite(next.homeCityLng) ? next.homeCityLng : null;
+  if(!next.homeCityName && typeof next.prayerCityName === 'string' && next.prayerCityName.trim()){
+    next.homeCityName = next.prayerCityName.trim();
+    next.homeCityLat = Number.isFinite(next.prayerCityLat) ? next.prayerCityLat : null;
+    next.homeCityLng = Number.isFinite(next.prayerCityLng) ? next.prayerCityLng : null;
+  }
+  delete next.prayerCityName;
+  delete next.prayerCityLat;
+  delete next.prayerCityLng;
   next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
   next.agendaOptimizer = Boolean(next.agendaOptimizer);
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);

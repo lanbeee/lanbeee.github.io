@@ -180,9 +180,9 @@ const DEFAULT_SORT_SETTINGS = {
   fontScale:'medium',
   themeMode:'system',
 
-  prayerCityName:'',
-  prayerCityLat:null,
-  prayerCityLng:null,
+  homeCityName:'',
+  homeCityLat:null,
+  homeCityLng:null,
   prayerIslamicNames:false,
 
   topics:[],
