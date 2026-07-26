@@ -1686,20 +1686,25 @@ $('open-overview').addEventListener('click',()=>{
   renderOverview();
   openSheet('overview-sheet');
 });
+addScrollGuard(document.querySelector('.overview-sheet'),'y');
+addScrollGuard(document.querySelector('.day-logs-sheet'),'y');
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
 $('overview-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('overview-prev-month').addEventListener('click',()=>{
+  if(document.querySelector('.overview-sheet')?._sg)return;
   if(overviewRangeFilter === 'recent')overviewRecentOffset -= (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset -= 1;
   renderOverview();
 });
 $('overview-next-month').addEventListener('click',()=>{
+  if(document.querySelector('.overview-sheet')?._sg)return;
   if(overviewRangeFilter === 'recent')overviewRecentOffset += (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset += 1;
   renderOverview();
 });
 $('overview-filter')?.addEventListener('click',e=>{
+  if(e.target.closest('.overview-sheet')?._sg)return;
   const topicBtn = e.target.closest('[data-overview-topic]');
   if(topicBtn){
     overviewTopicFilter = topicBtn.dataset.overviewTopic || 'all';
@@ -1725,16 +1730,19 @@ $('overview-filter')?.addEventListener('click',e=>{
   }
 });
 $('overview-pane-filter')?.addEventListener('click',e=>{
+  if(e.target.closest('.overview-sheet')?._sg)return;
   const btn = e.target.closest('[data-overview-pane]');
   if(!btn)return;
   setOverviewListPane(btn.dataset.overviewPane || 'plan');
 });
 $('overview-insight')?.addEventListener('click',e=>{
+  if(e.target.closest('.overview-sheet')?._sg)return;
   const dayBtn = e.target.closest('[data-log-day]');
   if(!dayBtn)return;
   openDayLogsAfterCalendarGesture(dayBtn.dataset.logDay,{refreshOverview:true});
 });
 $('overview-list')?.addEventListener('click',e=>{
+  if(e.target.closest('.overview-sheet')?._sg)return;
   const dayBtn = e.target.closest('[data-log-day]');
   if(!dayBtn || !dayBtn.closest('.overview-plan-tip'))return;
   openDayLogsAfterCalendarGesture(dayBtn.dataset.logDay,{refreshOverview:true});
@@ -2336,6 +2344,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     closeDayLogsSheet({refreshOverview:!dayLogsScoped()});
     return;
   }
+  if(e.target.closest('.day-logs-sheet')?._sg)return;
 
   if(e.target.closest('#day-logs-done')){
     closeDayLogsSheet({refreshOverview:false});

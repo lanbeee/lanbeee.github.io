@@ -597,7 +597,37 @@ function forgivingButtonTarget(target){
   if(btn.closest('#settings-sheet'))return null;
   if(btn.closest('.month-nav'))return null;
   if(btn.classList.contains('cal-day'))return null;
+  if(btn.closest('#overview-filter'))return null;
+  if(btn.closest('#overview-pane-filter'))return null;
+  if(btn.closest('#overview-insight'))return null;
+  if(btn.closest('#overview-list'))return null;
   return btn;
+}
+
+// WIRE: prevents accidental taps during scroll. Sets el._sg on touch
+// displacement or scroll (capture phase catches descendant scrollers too),
+// auto-disarms 500ms after the last movement.
+// axis: 'y' = only vertical displacement arms, 'x' = only horizontal,
+//       omitted = either axis arms.
+function addScrollGuard(el,axis){
+  if(!el)return;
+  var timer;
+  function arm(){ el._sg = 1; clearTimeout(timer); timer = setTimeout(function(){ el._sg = 0; },500); }
+  (function(){
+    var sx,sy;
+    el.addEventListener('touchstart',function(e){
+      var t = e.changedTouches[0];
+      sx = t.clientX; sy = t.clientY;
+    },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t = e.changedTouches[0];
+      var dx = Math.abs(t.clientX - sx), dy = Math.abs(t.clientY - sy);
+      if(axis === 'y'){ if(dy > 8)arm(); }
+      else if(axis === 'x'){ if(dx > 8)arm(); }
+      else if(dx > 8 || dy > 8)arm();
+    },{passive:true});
+  })();
+  el.addEventListener('scroll',arm,{passive:true,capture:true});
 }
 
 // WIRE: attaches forgiving pointer tap handlers to a calendar

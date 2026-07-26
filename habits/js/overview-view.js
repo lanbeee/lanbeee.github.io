@@ -558,6 +558,8 @@ function renderOverview(){
   const data = allData.filter(matchesOverviewFilters);
   if(overviewRangeFilter === 'recent')renderOverviewRecent(data);
   else renderOverviewMonth(data,overviewRangeFilter === 'all');
+  const sheet = document.querySelector('.overview-sheet');
+  if(sheet)setTimeout(()=>{ sheet._sg = 0; },0);
 }
 
 // RENDER: 14-day strip centered on today (past 7 · today · next 6)
@@ -725,6 +727,8 @@ function renderDayLogs(key){
   else if(dayLogsStep === 'avail' && !dayLogsScoped())renderDayLogsAvailStep(key);
   else if(dayLogsStep === 'item' || dayLogsScoped())renderDayLogsItemStep(key);
   else renderDayLogsListStep(key);
+  const dlSheet = document.querySelector('.day-logs-sheet');
+  if(dlSheet)setTimeout(()=>{ dlSheet._sg = 0; },0);
 }
 
 // RENDER: list step — items for the day (overview only)
