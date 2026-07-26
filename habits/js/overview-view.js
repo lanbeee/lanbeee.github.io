@@ -558,8 +558,16 @@ function renderOverview(){
   const data = allData.filter(matchesOverviewFilters);
   if(overviewRangeFilter === 'recent')renderOverviewRecent(data);
   else renderOverviewMonth(data,overviewRangeFilter === 'all');
-  const sheet = document.querySelector('.overview-sheet');
-  if(sheet)setTimeout(()=>{ sheet._sg = 0; },0);
+  // Rebuild/layout can fire scroll events that falsely arm guards; clear on next tick.
+  setTimeout(()=>{
+    ['.overview-sheet','.pane-overview','#overview-filter','#overview-pane-filter','#overview-insight','#overview-list']
+      .forEach(sel=>{
+        const el = document.querySelector(sel);
+        if(!el)return;
+        el._sg = 0;
+        el.classList.remove('scrolling');
+      });
+  },0);
 }
 
 // RENDER: 14-day strip centered on today (past 7 · today · next 6)
@@ -728,7 +736,7 @@ function renderDayLogs(key){
   else if(dayLogsStep === 'item' || dayLogsScoped())renderDayLogsItemStep(key);
   else renderDayLogsListStep(key);
   const dlSheet = document.querySelector('.day-logs-sheet');
-  if(dlSheet)setTimeout(()=>{ dlSheet._sg = 0; },0);
+  if(dlSheet)setTimeout(()=>{ dlSheet._sg = 0; dlSheet.classList.remove('scrolling'); },0);
 }
 
 // RENDER: list step — items for the day (overview only)

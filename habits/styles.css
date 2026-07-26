@@ -2840,6 +2840,13 @@ select{
 }
 #home-tag-filter{margin:10px -10px 14px;padding:0 10px;width:calc(100% + 20px);max-width:calc(100% + 20px);}
 .topic-filter-row::-webkit-scrollbar{display:none;}
+/* While a filter/chip row is mid-scroll, ignore taps on its children so the
+   synthesized click after touchend cannot activate a pill. */
+.topic-filter-row.scrolling > *,
+.overview-open-chips.scrolling > *,
+#overview-insight.scrolling .overview-open-chip{
+  pointer-events:none;
+}
 .topic-filter{
   flex:0 0 auto;max-width:min(180px,70vw);
   overflow:hidden;text-overflow:ellipsis;

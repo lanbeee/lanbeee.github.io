@@ -604,30 +604,83 @@ function forgivingButtonTarget(target){
   return btn;
 }
 
-// WIRE: prevents accidental taps during scroll. Sets el._sg on touch
+// PURE: true if target or any ancestor was flagged as mid-scroll.
+// Click handlers must use this — checking only .overview-sheet._sg misses
+// horizontal row guards (#overview-filter, .overview-open-chips, etc.).
+function isScrollGuarded(target){
+  for(let el = target; el; el = el.parentElement){
+    if(el._sg)return true;
+  }
+  return false;
+}
+
+// WIRE: prevents accidental taps during scroll. Sets el._sg on touch/pointer
 // displacement or scroll (capture phase catches descendant scrollers too),
 // auto-disarms 500ms after the last movement.
 // axis: 'y' = only vertical displacement arms, 'x' = only horizontal,
 //       omitted = either axis arms.
+// Safe to call more than once on the same element (idempotent).
 function addScrollGuard(el,axis){
-  if(!el)return;
+  if(!el || el._sgBound)return;
+  el._sgBound = 1;
   var timer;
-  function arm(){ el._sg = 1; clearTimeout(timer); timer = setTimeout(function(){ el._sg = 0; },500); }
+  function arm(){
+    el._sg = 1;
+    el.classList.add('scrolling');
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      el._sg = 0;
+      el.classList.remove('scrolling');
+    },500);
+  }
   (function(){
-    var sx,sy;
-    el.addEventListener('touchstart',function(e){
-      var t = e.changedTouches[0];
-      sx = t.clientX; sy = t.clientY;
-    },{passive:true});
-    el.addEventListener('touchmove',function(e){
-      var t = e.changedTouches[0];
-      var dx = Math.abs(t.clientX - sx), dy = Math.abs(t.clientY - sy);
+    var sx = null,sy = null;
+    function start(x,y){ sx = x; sy = y; }
+    function end(){ sx = null; sy = null; }
+    function move(x,y){
+      if(sx == null)return;
+      var dx = Math.abs(x - sx), dy = Math.abs(y - sy);
       if(axis === 'y'){ if(dy > 8)arm(); }
       else if(axis === 'x'){ if(dx > 8)arm(); }
       else if(dx > 8 || dy > 8)arm();
+    }
+    el.addEventListener('touchstart',function(e){
+      var t = e.changedTouches[0];
+      start(t.clientX,t.clientY);
     },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t = e.changedTouches[0];
+      move(t.clientX,t.clientY);
+    },{passive:true});
+    el.addEventListener('touchend',end,{passive:true});
+    el.addEventListener('touchcancel',end,{passive:true});
+    // Pointer path covers mouse-drag and some WebKit streams where touch*
+    // alone is not enough to arm before the synthesized click.
+    el.addEventListener('pointerdown',function(e){
+      if(e.pointerType === 'mouse' && e.button !== 0)return;
+      start(e.clientX,e.clientY);
+    },{passive:true});
+    el.addEventListener('pointermove',function(e){
+      move(e.clientX,e.clientY);
+    },{passive:true});
+    el.addEventListener('pointerup',end,{passive:true});
+    el.addEventListener('pointercancel',end,{passive:true});
   })();
   el.addEventListener('scroll',arm,{passive:true,capture:true});
+}
+
+// WIRE: scroll guards for calendar overview + day-logs. Horizontal rows get
+// their own guards (sheet axis:'y' alone never arms on a sideways swipe).
+// Pane mode scrolls .pane-overview, not .overview-sheet.
+function bindOverviewScrollGuards(){
+  addScrollGuard(document.querySelector('.overview-sheet'),'y');
+  addScrollGuard(document.querySelector('.pane-overview'),'y');
+  addScrollGuard(document.querySelector('.day-logs-sheet'),'y');
+  addScrollGuard($('overview-filter'),'x');
+  addScrollGuard($('overview-pane-filter'),'x');
+  // Insight host persists across re-renders; capture catches .overview-open-chips.
+  addScrollGuard($('overview-insight'),'x');
+  addScrollGuard($('overview-list'),'y');
 }
 
 // WIRE: attaches forgiving pointer tap handlers to a calendar

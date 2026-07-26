@@ -153,8 +153,44 @@ function seedScript(){
   );
   assert(paneAfter === paneBefore, 'pane filter unchanged after vertical scroll');
 
-  // ── 4. Normal tap on filter pill still works ──
-  console.log('\n--- 4. Normal tap on filter pill ---');
+  // ── 4. Horizontal scroll on open-time chips does NOT open day sheet ──
+  console.log('\n--- 4. Horizontal scroll on open-time chips ---');
+  const chips = page.locator('#overview-insight .overview-open-chips');
+  const chipsVisible = await chips.isVisible().catch(() => false);
+  if(chipsVisible){
+    const dayLogsBeforeChips = await page.evaluate(() =>
+      document.querySelector('#day-logs-sheet')?.classList.contains('open') || false
+    );
+    assert(!dayLogsBeforeChips, 'day-logs not open before chip scroll');
+
+    const chipBox = await chips.boundingBox();
+    const chipDims = await chips.evaluate(el => ({ sw:el.scrollWidth, cw:el.clientWidth, sl:el.scrollLeft }));
+    console.log(`  open chips: scrollWidth=${chipDims.sw} clientWidth=${chipDims.cw}`);
+
+    if(chipBox && chipDims.sw > chipDims.cw){
+      await cdpSwipe(client,
+        chipBox.x + chipBox.width - 10, chipBox.y + chipBox.height / 2,
+        chipBox.x + 10, chipBox.y + chipBox.height / 2, 10);
+      await page.waitForTimeout(400);
+      const scrollAfter = await chips.evaluate(el => el.scrollLeft);
+      console.log(`  open chips scroll: ${chipDims.sl} → ${scrollAfter}`);
+      assert(scrollAfter !== chipDims.sl, 'open chips actually scrolled');
+
+      const dayLogsAfterChips = await page.evaluate(() =>
+        document.querySelector('#day-logs-sheet')?.classList.contains('open') || false
+      );
+      assert(!dayLogsAfterChips, 'day-logs NOT opened by chip horizontal scroll');
+    } else {
+      console.log('  (open chips not scrollable — skipping)');
+      assert(true, 'open chips not scrollable — skip');
+    }
+  } else {
+    console.log('  (insight chips hidden — skipping)');
+    assert(true, 'insight chips hidden — skip');
+  }
+
+  // ── 5. Normal tap on filter pill still works ──
+  console.log('\n--- 5. Normal tap on filter pill ---');
   await page.waitForTimeout(600); // let scroll guard expire
   const monthPill = page.locator('#overview-filter [data-overview-range="month"]');
   if(await monthPill.isVisible()){
@@ -172,8 +208,8 @@ function seedScript(){
     assert(true, 'month pill not visible — skip');
   }
 
-  // ── 5. Normal tap on calendar day still opens day sheet ──
-  console.log('\n--- 5. Normal tap on calendar day ---');
+  // ── 6. Normal tap on calendar day still opens day sheet ──
+  console.log('\n--- 6. Normal tap on calendar day ---');
   await page.waitForTimeout(600);
   const todayCell = page.locator('#overview-calendar .cal-day.pickable.today');
   if(await todayCell.isVisible()){
@@ -205,8 +241,8 @@ function seedScript(){
     }
   }
 
-  // ── 6. Scroll on day-logs sheet does NOT trigger item navigation ──
-  console.log('\n--- 6. Scroll on day-logs sheet ---');
+  // ── 7. Scroll on day-logs sheet does NOT trigger item navigation ──
+  console.log('\n--- 7. Scroll on day-logs sheet ---');
   await page.waitForTimeout(600);
   const cell2 = page.locator('#overview-calendar .cal-day.pickable').first();
   if(await cell2.isVisible()){
