@@ -2199,7 +2199,7 @@ function render(opts){
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
     }else{
-      empty.innerHTML = 'habits, tasks, and a day plan<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span>';
+      empty.innerHTML = 'habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span>';
       empty.classList.add('is-action');
       empty.onclick = ()=>{
         if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
