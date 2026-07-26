@@ -301,7 +301,7 @@ function assert(cond,msg){
     assert(allItems.some(i => i.includes('Yoga')), 'Yoga (overdue, window closed) shown');
     assert(!allItems.some(i => i.includes('Run')), 'Run (in today section) NOT shown as missed');
     const tags = await page.$$eval('#slipped-sheet .dropped-tag', els => els.map(el => el.textContent.trim()));
-    assert(tags.some(t => t.includes('overdue')), 'overdue day-tag rendered');
+    assert(tags.some(t => t.includes('behind') || t.includes('overdue')), 'behind day-tag rendered');
     await page.click('#slipped-close');
     await page.waitForTimeout(300);
   } else {

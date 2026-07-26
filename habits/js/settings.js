@@ -242,7 +242,7 @@ function renderCalendarImportControls(){
     && Number(h.durationMinutes) > 0);
   const options = [`<option value="">none</option>`].concat(
     habits.map(h=>{
-      const label = `${h.emoji ? `${h.emoji} ` : ''}${h.name || 'untitled'}${h.breakable ? '' : ' (will mark breakable)'}`;
+      const label = `${h.emoji ? `${h.emoji} ` : ''}${h.name || 'untitled'}${h.breakable ? '' : ' (can split across sessions)'}`;
       return `<option value="${escapeHtml(h.hid)}"${h.hid === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
     })
   );
@@ -250,8 +250,8 @@ function renderCalendarImportControls(){
   const hint = $('calendar-credit-hint');
   if(hint){
     hint.textContent = habits.length
-      ? 'Pick a keepup/reduce habit (like Work). Meeting minutes are credited toward its daily duration; overlapping meetings merge. Non-breakable habits are marked breakable when credited.'
-      : 'No keepup/reduce habits with a duration yet. Add Work (or similar) with daily hours to credit meetings against it.';
+      ? 'Pick a build or limit habit (like Work). Meeting minutes count toward its daily time; overlapping meetings merge. Habits that can’t split yet are updated so they can.'
+      : 'No build or limit habit with daily hours yet. Add Work (or similar) first to count meetings toward it.';
   }
   const allDaySelect = $('calendar-allday-mode');
   if(allDaySelect){
@@ -339,7 +339,7 @@ function confirmCalendarPdfImport(){
   if(result.creditedMinutes && result.creditHabitName){
     const hrs = (result.creditedMinutes / 60);
     const hrsLabel = Number.isInteger(hrs) ? `${hrs}h` : `${hrs.toFixed(1)}h`;
-    parts.push(`credited ${hrsLabel} to ${result.creditHabitName}`);
+    parts.push(`counted ${hrsLabel} toward ${result.creditHabitName}`);
   }
   if(status)status.textContent = parts.length ? parts.join(' · ') : 'Nothing to import.';
   if(typeof showToast === 'function')showToast(parts.length ? `imported · ${parts[0]}` : 'imported');
@@ -395,7 +395,8 @@ function renderAvailabilityControls(){
   wrap.innerHTML = WEEKDAY_LABELS.map((label,i)=>`
     <label>
       <span>${label}</span>
-      <input type="number" min="0" max="1440" inputmode="numeric" data-availability-day="${i}" value="${availability[i]}" />
+      <input type="number" min="0" max="1440" inputmode="numeric" data-availability-day="${i}" value="${availability[i]}" aria-label="${label} free minutes" />
+      <span class="loc-unit">min</span>
     </label>
   `).join('');
 }
@@ -415,7 +416,7 @@ function saveAvailabilityDay(index,value){
 function blockedAnchorOptions(selected, allowFixed = false){
   const prayer = cleanPrayerAnchor(selected) || '';
   const isFixed = allowFixed && selected === 'fixed';
-  let html = '<option value="">— anchor —</option>'
+  let html = '<option value="">— prayer —</option>'
     + PRAYER_ANCHORS.map(a => `<option value="${a}"${a === prayer ? ' selected' : ''}>${prayerDisplayName(a)}</option>`).join('');
   if(allowFixed){
     html += `<option value="fixed"${isFixed ? ' selected' : ''}>clock time…</option>`;
@@ -427,7 +428,7 @@ function blockedAnchorOptions(selected, allowFixed = false){
 // or a muted hint when the anchor can't resolve yet).
 function blockedResolvedLabel(block, field){
   if(!block || !cleanPrayerAnchor(block[field + 'Anchor']))return '';
-  if(!block.locationId)return 'pick a location';
+  if(!block.locationId)return 'choose a place first';
   const min = typeof resolveBlockedTimeMinutes === 'function'
     ? resolveBlockedTimeMinutes(block, field, dayStart(Date.now()))
     : null;
@@ -439,9 +440,9 @@ function blockedResolvedLabel(block, field){
 function blockedCombineOptions(selected){
   const sel = cleanTimeCombine(selected) || '';
   return [
-    ['', 'just this'],
-    ['later', 'later of…'],
-    ['earlier', 'earlier of…']
+    ['', 'this time only'],
+    ['later', 'whichever is later'],
+    ['earlier', 'whichever is earlier']
   ].map(([v, label]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${label}</option>`).join('');
 }
 
@@ -474,7 +475,7 @@ function blockedEndpointHtml(block, i, field){
         <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset="${i}" aria-label="${aria} offset minutes" value="${Math.abs(offsetVal)}" />
         <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offsetVal < 0 ? '-' : '+'}" aria-label="${offsetVal < 0 ? 'negative' : 'positive'} offset">${offsetVal < 0 ? '−' : '+'}</button>
         <span class="time-offset-unit">min</span>
-        <button type="button" class="time-day-next mini-text-btn" data-blocked-${field}-day="${i}" aria-pressed="${dayOn ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day">+1d</button>
+        <button type="button" class="time-day-next mini-text-btn" data-blocked-${field}-day="${i}" aria-pressed="${dayOn ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day">next day</button>
       </div>
       <select class="time-combine mini-select" data-blocked-${field}-combine="${i}" aria-label="${aria} combine">${blockedCombineOptions(combine)}</select>
       <div class="time-expr time-expr2"${combine ? '' : ' hidden'}>
@@ -483,7 +484,7 @@ function blockedEndpointHtml(block, i, field){
         <input type="number" class="time-offset2 mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset2="${i}" aria-label="${aria} second offset minutes" value="${Math.abs(offset2Val)}"${isFixed2 ? ' hidden' : ''} />
         <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offset2Val < 0 ? '-' : '+'}" aria-label="${offset2Val < 0 ? 'negative' : 'positive'} offset"${isFixed2 ? ' hidden' : ''}>${offset2Val < 0 ? '−' : '+'}</button>
         <span class="time-offset-unit"${isFixed2 ? ' hidden' : ''}>min</span>
-        <button type="button" class="time-day-next2 mini-text-btn" data-blocked-${field}-day2="${i}" aria-pressed="${day2On ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day"${isFixed2 ? ' hidden' : ''}>+1d</button>
+        <button type="button" class="time-day-next2 mini-text-btn" data-blocked-${field}-day2="${i}" aria-pressed="${day2On ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day"${isFixed2 ? ' hidden' : ''}>next day</button>
       </div>
       <span class="time-resolved" aria-live="polite">${escapeHtml(resolved)}</span>
     </div>
@@ -498,7 +499,7 @@ function renderBlockedTimeControls(){
   const locs = typeof locationOptions === 'function' ? locationOptions() : [];
   wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
     <div class="blocked-time-row" data-blocked-row="${i}">
-      <input type="text" data-blocked-label="${i}" aria-label="blocked time name" maxlength="24" value="${escapeHtml(block.label)}" />
+      <input type="text" data-blocked-label="${i}" aria-label="busy time name" maxlength="24" value="${escapeHtml(block.label)}" />
       <div class="blocked-time-hours time-endpoints">
         ${blockedEndpointHtml(block, i, 'start')}
         <span class="time-sep">to</span>
@@ -511,14 +512,14 @@ function renderBlockedTimeControls(){
         }).join('')}
       </div>
       <div class="compact-days" style="margin-top:6px;align-items:center;gap:6px;">
-        <select data-blocked-location="${i}" aria-label="${escapeHtml(block.label)} location" class="mini-select">
-          <option value="">no location</option>
+        <select data-blocked-location="${i}" aria-label="${escapeHtml(block.label)} place" class="mini-select">
+          <option value="">any place</option>
           ${locs.map(loc=>`<option value="${escapeHtml(loc.id)}"${block.locationId === loc.id ? ' selected' : ''}>${escapeHtml(loc.label || loc.name)}</option>`).join('')}
         </select>
       </div>
       <button class="mini-text-btn" type="button" data-blocked-remove="${i}">remove</button>
     </div>
-  `).join('') : '<p class="field-hint">No blocked time. The plan may use any open time today.</p>';
+  `).join('') : '<p class="field-hint">No busy times. The list can use any open time today.</p>';
 }
 
 function saveBlockedTimePatch(index,patch){
@@ -532,7 +533,7 @@ function saveBlockedTimePatch(index,patch){
 
 function addBlockedTime(){
   const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
-  blocks.push({label:'blocked',days:[],start:900,end:960});
+  blocks.push({label:'busy',days:[],start:900,end:960});
   updateSortSetting({blockedTimes:blocks},{renderNow:false});
   renderBlockedTimeControls();
   render();
@@ -647,11 +648,11 @@ function locationRowMarkup(loc,i){
   const closedCount = closedSet.size;
   const moreSummary = [
     closedCount ? `closed ${closedCount}d` : null,
-    prefSet ? 'best time' : null
+    prefSet ? 'preferred time' : null
   ].filter(Boolean).join(' · ');
   return `<div class="location-row" data-location-row="${i}">
     <div class="location-row-head">
-      <input type="text" class="location-name" data-loc-name="${i}" aria-label="location name" maxlength="48" value="${escapeHtml(loc.name)}" />
+      <input type="text" class="location-name" data-loc-name="${i}" aria-label="place name" maxlength="48" value="${escapeHtml(loc.name)}" />
       <button class="mini-text-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}">remove</button>
     </div>
     <div class="location-meta">
@@ -668,12 +669,12 @@ function locationRowMarkup(loc,i){
       <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}">All day</button>
     </div>
     <div class="location-radius">
-      <span class="loc-field-label">radius</span>
-      <input type="number" data-loc-radius="${i}" aria-label="match radius in metres" min="10" max="2000" step="5" inputmode="numeric" value="${radius}" />
+      <span class="loc-field-label">nearby</span>
+      <input type="number" data-loc-radius="${i}" aria-label="how close in metres" min="10" max="2000" step="5" inputmode="numeric" value="${radius}" />
       <span class="loc-unit">m</span>
-      <span class="loc-hint">how close counts as here</span>
+      <span class="loc-hint">how close means you’re here</span>
     </div>
-    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} more${moreSummary ? ` · ${moreSummary}` : ''}</button>
+    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} more options${moreSummary ? ` · ${moreSummary}` : ''}</button>
     <div class="location-more" data-location-more="${i}" ${moreOpen ? '' : 'hidden'}>
       <div class="location-days">
         <span class="loc-field-label">closed</span>
@@ -683,10 +684,10 @@ function locationRowMarkup(loc,i){
         }).join('')}
       </div>
       <div class="loc-pref">
-        <span class="loc-field-label">best</span>
-        <input type="time" step="900" data-loc-pref-start="${i}" aria-label="best from" value="${prefStart}" />
+        <span class="loc-field-label">prefer</span>
+        <input type="time" step="900" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}" />
         <span class="loc-sep">–</span>
-        <input type="time" step="900" data-loc-pref-end="${i}" aria-label="best until" value="${prefEnd}" />
+        <input type="time" step="900" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}" />
         <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
       </div>
       <div class="loc-perday">
@@ -797,7 +798,7 @@ function toggleLocationMore(index){
   if(opening)expandedLocationMores.add(index); else expandedLocationMores.delete(index);
   if(btn){
     btn.setAttribute('aria-expanded',String(opening));
-    btn.innerHTML = (opening ? '▾' : '▸') + ' per-day hours &amp; best time';
+    btn.innerHTML = (opening ? '▾' : '▸') + ' hours by day &amp; preferred time';
   }
 }
 
@@ -1178,16 +1179,133 @@ function sortSampleCount(){
   return load().filter(h=>h.sample).length;
 }
 
+// PURE: prayer demo samples use stable hids
+function isPrayerSample(h){
+  return Boolean(h && h.sample && String(h.hid || '').startsWith('sample-prayer-'));
+}
+function isFeatureSample(h){
+  return Boolean(h && h.sample && !String(h.hid || '').startsWith('sample-prayer-'));
+}
+
 // RENDER: update sample count label text
 function updateSortSampleCount(){
   const label = $('sort-sample-count');
   if(label)label.textContent = sortSampleCount() ? `${sortSampleCount()} sample habits currently in the list.` : 'No sample habits are in the list.';
 }
 
+// PURE: display name without Sample: prefix
+function sampleDisplayName(h){
+  if(!h || typeof h.name !== 'string')return '';
+  return h.name.startsWith('Sample: ') ? h.name.slice('Sample: '.length) : h.name;
+}
+
+// PURE: whether a catalog sample is already on home (by hid, or legacy name match)
+function sampleAlreadyOnHome(hid, displayName){
+  const data = load();
+  if(hid && data.some(h => h.hid === hid))return true;
+  if(displayName){
+    const full = `Sample: ${displayName}`;
+    if(data.some(h => h.name === full || h.name === displayName))return true;
+  }
+  return false;
+}
+
+// PURE: blurbs for feature-tour rows (keys match buildSortSamples hids)
+function featureSamplePreviews(){
+  return [
+    {hid:'sample-feature-stretch', emoji:'🌅', title:'stretch after sunrise', blurb:'Window from sunrise +10m', place:''},
+    {hid:'sample-feature-night-work', emoji:'🌙', title:'night deep work', blurb:'Evening window after Isha', place:'Home'},
+    {hid:'sample-feature-report', emoji:'📝', title:'write report in chunks', blurb:'Breakable — split across sessions', place:'Home'},
+    {hid:'sample-feature-timed-run', emoji:'🏃', title:'timed run', blurb:'Timer + session progress bar', place:'Park'},
+    {hid:'sample-feature-dentist', emoji:'🦷', title:'dentist (auto)', blurb:'Timed task that auto-completes', place:''},
+    {hid:'sample-feature-weigh-in', emoji:'⚖️', title:'weigh-in', blurb:'Log a number with each entry', place:'Home'},
+    {hid:'sample-feature-park-walk', emoji:'🌳', title:'walk to the park', blurb:'Place + travel on today’s list', place:'Park'},
+    {hid:'sample-feature-do-early', emoji:'🧺', title:'do early because Tuesday is packed', blurb:'Do it early while the week is open', place:'Home'},
+    {hid:'sample-feature-gym', emoji:'💪', title:'gym session', blurb:'Place-gated workout', place:'Gym'},
+    {hid:'sample-feature-stretch-gym', emoji:'🤸', title:'stretch at gym or home', blurb:'Multi-place habit', place:'Gym · Home'},
+    {hid:'sample-feature-family', emoji:'☎️', title:'call family', blurb:'Home or Mom’s', place:'Home · Mom’s'},
+    {hid:'sample-feature-coffee', emoji:'☕', title:'coffee on office days', blurb:'Limit · Office or Cafe', place:'Office · Cafe'},
+    {hid:'sample-feature-water', emoji:'💧', title:'drink water', blurb:'Simple daily habit', place:''},
+    {hid:'sample-feature-snacks', emoji:'🍪', title:'less late snacks', blurb:'Limit how often', place:'Home'},
+    {hid:'sample-feature-soda', emoji:'🥤', title:'quit soda', blurb:'Stop habit', place:''}
+  ];
+}
+
+// PURE: prayer preview rows
+function prayerSamplePreviews(){
+  const label = (key)=>{
+    if(typeof PRAYER_ANCHOR_LABELS !== 'undefined' && PRAYER_ANCHOR_LABELS[key]){
+      return String(PRAYER_ANCHOR_LABELS[key]).replace(/\s*\([^)]*\)\s*$/,'').trim();
+    }
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  };
+  return [
+    {key:'fajr', blurb:'Until sunrise'},
+    {key:'dhuhr', blurb:'Until Asr'},
+    {key:'asr', blurb:'Until Maghrib'},
+    {key:'maghrib', blurb:'Until Isha'},
+    {key:'isha', blurb:'Until next Fajr'}
+  ].map(row=>({
+    hid:`sample-prayer-${row.key}`,
+    emoji:'🕌',
+    title:label(row.key),
+    blurb:row.blurb,
+    place:''
+  }));
+}
+
+// RENDER: one sample row with per-item add
+function renderSampleHabitRow(row){
+  const onHome = sampleAlreadyOnHome(row.hid, row.title);
+  return `
+    <div class="sample-habit-row${onHome ? ' is-on-home' : ''}" data-sample-hid="${escapeHtml(row.hid)}">
+      <span class="sample-habit-emoji" aria-hidden="true">${row.emoji}</span>
+      <div class="sample-habit-copy">
+        <b>${escapeHtml(row.title)}</b>
+        <small>${escapeHtml(row.blurb)}${row.place ? ` · ${escapeHtml(row.place)}` : ''}</small>
+      </div>
+      <button type="button" class="btn sample-habit-add" data-add-sample="${escapeHtml(row.hid)}"${onHome ? ' disabled' : ''}>
+        ${onHome ? 'added' : 'add'}
+      </button>
+    </div>
+  `;
+}
+
+// RENDER: fill sample-habits sheet feature list
+function renderSampleHabitsPreview(){
+  const host = $('sample-habits-preview');
+  if(!host)return;
+  host.innerHTML = featureSamplePreviews().map(renderSampleHabitRow).join('');
+}
+
+// RENDER: fill daily prayers list on sample sheet
+function renderPrayerSamplesPreview(){
+  const host = $('sample-prayers-preview');
+  if(!host)return;
+  host.innerHTML = prayerSamplePreviews().map(renderSampleHabitRow).join('');
+}
+
+// RENDER: refresh both preview lists on the sample sheet
+function refreshSampleHabitsSheet(){
+  renderSampleHabitsPreview();
+  renderPrayerSamplesPreview();
+}
+
+// HYBRID: open sample habits sheet from About
+function openSampleHabitsSheet(){
+  refreshSampleHabitsSheet();
+  const prayersBody = $('sample-prayers-body');
+  const prayersHead = $('sample-prayers-head');
+  if(prayersBody)prayersBody.hidden = true;
+  if(prayersHead)prayersHead.setAttribute('aria-expanded','false');
+  closeSheet('about-sheet');
+  openSheet('sample-habits-sheet');
+}
+
 // PURE: build a sample habit object
 function sortSampleHabit(name,type,target,logs,options = {}){
   const locationIds = Array.isArray(options.locationIds) ? options.locationIds.map(cleanLocationId).filter(Boolean) : [];
-  return {
+  const raw = {
     name:`Sample: ${name}`,
     type,
     target:(type === 'zero' || type === 'task') ? null : target,
@@ -1212,10 +1330,23 @@ function sortSampleHabit(name,type,target,logs,options = {}){
     allowedTimeEnd:normalizeTimeMinutes(options.allowedTimeEnd),
     preferredTimeStart:normalizeTimeMinutes(options.preferredTimeStart),
     preferredTimeEnd:normalizeTimeMinutes(options.preferredTimeEnd),
+    allowedTimeStartAnchor:options.allowedTimeStartAnchor ?? null,
+    allowedTimeStartOffsetMin:options.allowedTimeStartOffsetMin ?? 0,
+    allowedTimeEndAnchor:options.allowedTimeEndAnchor ?? null,
+    allowedTimeEndOffsetMin:options.allowedTimeEndOffsetMin ?? 0,
+    allowedTimeStartDayOffset:options.allowedTimeStartDayOffset ?? 0,
+    allowedTimeEndDayOffset:options.allowedTimeEndDayOffset ?? 0,
     flexibilityDays:clampFlexibility(options.flexibilityDays),
     durationMinutes:clampDuration(options.durationMinutes),
-    priority:options.priority != null ? clampPriority(options.priority) : undefined
+    breakable:Boolean(options.breakable),
+    minChunkMinutes:options.minChunkMinutes != null ? clampMinChunk(options.minChunkMinutes) : undefined,
+    autoMarkMinutes:options.autoMarkMinutes != null ? normalizeAutoMark(options.autoMarkMinutes) : null,
+    timerAutoStopMinutes:options.timerAutoStopMinutes != null ? normalizeTimerAutoStop(options.timerAutoStopMinutes) : null,
+    trackValue:Boolean(options.trackValue),
+    priority:options.priority != null ? clampPriority(options.priority) : undefined,
+    hid:options.hid || undefined
   };
+  return raw;
 }
 
 // PURE: NYC-area sample places — close enough that travel is visible but short.
@@ -1265,7 +1396,7 @@ function buildSampleLocations(){
   ];
 }
 
-// PURE: build array of sample habits
+// PURE: curated feature-tour samples (no five daily prayers)
 function buildSortSamples(){
   const H = 'sample-home';
   const O = 'sample-office';
@@ -1274,66 +1405,118 @@ function buildSortSamples(){
   const M = 'sample-moms';
   const P = 'sample-park';
   return [
-    sortSampleHabit('daily walk overdue','keepup',1,sampleLogs([9,7,5,2]),{emoji:'🚶',topics:['health'],durationMinutes:25,allowedTimeStart:390,allowedTimeEnd:600,locationIds:[H,P],preferredLocationId:P,priority:1}),
-    sortSampleHabit('call family due soon','keepup',7,sampleLogs([34,21,14,6]),{emoji:'☎️',topics:['relationships'],allowedWeekdays:[2,4],locationIds:[H,M],preferredLocationId:M,durationMinutes:20,priority:1}),
-    sortSampleHabit('movie night just done','keepup',7,sampleLogs([22,15,8,1]),{emoji:'🎬',topics:['rest'],allowedWeekdays:[5,6],durationMinutes:120,locationIds:[H]}),
-    sortSampleHabit('new meditation habit','keepup',7,[],{emoji:'🧘',topics:['health','calm'],durationMinutes:10,locationIds:[H]}),
-    sortSampleHabit('40 day habit mid cycle','keepup',40,sampleLogs([97,57,17]),{emoji:'🌿',topics:['home'],flexibilityDays:5,locationIds:[H]}),
-    sortSampleHabit('do early because Tuesday is packed','keepup',2,sampleLogs([0]),{emoji:'🧺',topics:['home'],durationMinutes:50,flexibilityDays:2,locationIds:[H],priority:2}),
-    sortSampleHabit('monthly date night close','keepup',30,sampleLogs([91,61,28]),{emoji:'💙',durationMinutes:150,flexibilityDays:4,topics:['relationships'],locationIds:[C,H],preferredLocationId:C}),
-    sortSampleHabit('quarterly mini trip overdue','keepup',90,sampleLogs([190,91]),{emoji:'🧳',durationMinutes:240,flexibilityDays:14,topics:['adventure']}),
-    sortSampleHabit('long flexible home reset','keepup',60,sampleLogs([180,122,68]),{emoji:'🧹',durationMinutes:45,flexibilityDays:10,topics:['home'],locationIds:[H],priority:2}),
-    sortSampleHabit('planned today workout','keepup',3,sampleLogs([11,8,5],[0]),{emoji:'🏋️',topics:['health'],durationMinutes:40,locationIds:[G],priority:0}),
-    sortSampleHabit('planned weekend check-in','keepup',14,sampleLogs([42,28,15],[3]),{emoji:'🗓️',topics:['planning'],allowedWeekdays:[0,6],locationIds:[H,C],preferredLocationId:C,durationMinutes:25}),
-    sortSampleHabit('weekend-only yard work','keepup',7,sampleLogs([17,10]),{emoji:'🌱',allowedWeekdays:[0,6],durationMinutes:40,locationIds:[H]}),
-    sortSampleHabit('first of month money review','keepup',30,sampleLogs([92,61,31]),{emoji:'💵',allowedMonthDays:[1],durationMinutes:45,locationIds:[H,O],preferredLocationId:H}),
-    sortSampleHabit('15th-only insurance paperwork','keepup',30,sampleLogs([104,74,44]),{emoji:'📄',allowedMonthDays:[15],topics:['admin'],durationMinutes:35,locationIds:[O]}),
-    sortSampleHabit('weekday guitar practice with long title','keepup',2,sampleLogs([12,9,6,3]),{emoji:'🎸',allowedWeekdays:[1,2,3,4,5],preferredWeekdays:[1,3,5],topics:['creative','practice'],durationMinutes:20,locationIds:[H]}),
-    sortSampleHabit('pinned water habit','keepup',1,sampleLogs([4,3,1]),{emoji:'💧',pinned:true,topics:['health']}),
-    sortSampleHabit('slipping reading rhythm','keepup',7,sampleLogs([45,34,23,13,8]),{emoji:'📖',topics:['learning'],locationIds:[C,H],preferredLocationId:C,durationMinutes:30}),
-    sortSampleHabit('improving stretch routine','keepup',7,sampleLogs([32,20,11,5,1]),{emoji:'🤸',topics:['health'],durationMinutes:15,locationIds:[G,H],preferredLocationId:G}),
-    sortSampleHabit('video games too recent','reduce',7,sampleLogs([1]),{emoji:'🎮',topics:['screen time'],locationIds:[H]}),
-    sortSampleHabit('limit habit too often','reduce',7,sampleLogs([5,3,1]),{emoji:'🎯',topics:['focus'],allowedWeekdays:[1,3,5],locationIds:[O]}),
-    sortSampleHabit('takeout good spacing','reduce',14,sampleLogs([42,25,18]),{emoji:'🥡',topics:['food','budget'],locationIds:[C]}),
-    sortSampleHabit('social media ready to review','reduce',3,sampleLogs([11,8,5]),{emoji:'📱',topics:['screen time'],durationMinutes:15}),
-    sortSampleHabit('late-night snacks close','reduce',5,sampleLogs([9,6,3]),{emoji:'🍪',topics:['food'],locationIds:[H]}),
-    sortSampleHabit('coffee only on office days','reduce',2,sampleLogs([6,4,2]),{emoji:'☕',topics:['health'],allowedWeekdays:[1,3],durationMinutes:5,locationIds:[O,C],preferredLocationId:O}),
-    sortSampleHabit('stop smoking reset today','zero',null,sampleLogs([0]),{emoji:'🚭'}),
-    sortSampleHabit('no soda clear stretch','zero',null,sampleLogs([35,18]),{emoji:'🥤',topics:['health']}),
-    sortSampleHabit('old stop habit no entries','zero',null,[],{emoji:'⛔',topics:['avoid']}),
-    sortSampleHabit('snoozed build habit','keepup',7,sampleLogs([12]),{emoji:'😴',snoozedUntil:samplePlan(3,8),topics:['rest'],locationIds:[H]}),
-    sortSampleHabit('overdue hard-deadline task','task',null,[],{emoji:'⚠️',dueDate:sampleActual(2),hardDue:true,topics:['admin'],durationMinutes:20,locationIds:[O],priority:0}),
-    sortSampleHabit('task due today','task',null,[],{emoji:'📞',dueDate:sampleActual(0),topics:['relationships'],durationMinutes:15,locationIds:[H,M],preferredLocationId:H,priority:1}),
-    sortSampleHabit('task due next week','task',null,[],{emoji:'📝',dueDate:samplePlan(6),topics:['learning'],durationMinutes:45,flexibilityDays:3,locationIds:[C]}),
-    sortSampleHabit('busy target errand','task',null,[],{emoji:'📦',dueDate:samplePlan(2,10),topics:['admin'],durationMinutes:40,locationIds:[O],priority:2}),
-    sortSampleHabit('busy target paperwork','task',null,[],{emoji:'🗂️',dueDate:samplePlan(2,14),topics:['admin'],durationMinutes:40,locationIds:[O],priority:2}),
-    sortSampleHabit('busy target call','task',null,[],{emoji:'📱',dueDate:samplePlan(2,16),topics:['admin'],durationMinutes:25,locationIds:[H,O],preferredLocationId:H,priority:3}),
-    sortSampleHabit('someday task no date','task',null,[],{emoji:'🗂️',topics:['someday']}),
-    sortSampleHabit('dentist appointment task','task',null,[],{emoji:'🦷',eventTime:Date.now() + 4 * 3600000,dueDate:dayStart(Date.now()),durationMinutes:60,topics:['health'],locationIds:[O],priority:0}),
-    sortSampleHabit('grocery run today','task',null,[],{emoji:'🛒',dueDate:sampleActual(0),durationMinutes:25,topics:['home'],locationIds:[C],priority:2}),
-    sortSampleHabit('gym session due','keepup',2,sampleLogs([5,3]),{emoji:'💪',topics:['health'],durationMinutes:35,locationIds:[G],priority:1}),
-    // Evening-friendly pair (both 24h) so travel cards show even after shops close.
-    // Short + high priority so they still fit when only a thin late-night slot remains.
-    sortSampleHabit('evening park stroll','task',null,[],{emoji:'🌙',dueDate:sampleActual(0),durationMinutes:12,topics:['health','rest'],locationIds:[P],priority:0}),
-    sortSampleHabit('tidy desk tonight','task',null,[],{emoji:'🧹',dueDate:sampleActual(0),durationMinutes:12,topics:['home'],locationIds:[H],priority:0})
+    sortSampleHabit('stretch after sunrise','keepup',1,[],{
+      emoji:'🌅', topics:['health'], durationMinutes:15, pinned:true, priority:1,
+      hid:'sample-feature-stretch',
+      allowedTimeStartAnchor:'sunrise', allowedTimeStartOffsetMin:10,
+      allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:40
+    }),
+    sortSampleHabit('night deep work','keepup',1,[],{
+      emoji:'🌙', topics:['focus'], durationMinutes:45, priority:2,
+      hid:'sample-feature-night-work',
+      allowedTimeStartAnchor:'isha', allowedTimeStartOffsetMin:15,
+      allowedTimeEndAnchor:'isha', allowedTimeEndOffsetMin:150,
+      locationIds:[H]
+    }),
+    sortSampleHabit('write report in chunks','task',null,[],{
+      emoji:'📝', topics:['work'], durationMinutes:90, minChunkMinutes:20,
+      hid:'sample-feature-report',
+      breakable:true, dueDate:sampleActual(0), priority:1, locationIds:[H]
+    }),
+    sortSampleHabit('timed run','keepup',2,sampleLogs([5,3]),{
+      emoji:'🏃', topics:['health'], durationMinutes:30, timerAutoStopMinutes:30,
+      hid:'sample-feature-timed-run',
+      locationIds:[P], preferredLocationId:P, priority:1
+    }),
+    sortSampleHabit('dentist (auto)','task',null,[],{
+      emoji:'🦷', topics:['health'], durationMinutes:45,
+      hid:'sample-feature-dentist',
+      eventTime:Date.now() + 3 * 3600000, dueDate:dayStart(Date.now()),
+      autoMarkMinutes:45, priority:0
+    }),
+    sortSampleHabit('weigh-in','keepup',7,sampleLogs([14,7]),{
+      emoji:'⚖️', topics:['health'], durationMinutes:5, trackValue:true,
+      hid:'sample-feature-weigh-in', locationIds:[H]
+    }),
+    sortSampleHabit('walk to the park','task',null,[],{
+      emoji:'🌳', topics:['health','rest'], durationMinutes:20,
+      hid:'sample-feature-park-walk',
+      dueDate:sampleActual(0), locationIds:[H,P], preferredLocationId:P, priority:0, pinned:true
+    }),
+    sortSampleHabit('do early because Tuesday is packed','keepup',2,sampleLogs([0]),{
+      emoji:'🧺', topics:['home'], durationMinutes:50, flexibilityDays:2,
+      hid:'sample-feature-do-early', locationIds:[H], priority:2
+    }),
+    sortSampleHabit('gym session','keepup',2,sampleLogs([5,3]),{
+      emoji:'💪', topics:['health'], durationMinutes:35,
+      hid:'sample-feature-gym', locationIds:[G], priority:1
+    }),
+    sortSampleHabit('stretch at gym or home','keepup',7,sampleLogs([32,20,11,5,1]),{
+      emoji:'🤸', topics:['health'], durationMinutes:15,
+      hid:'sample-feature-stretch-gym',
+      locationIds:[G,H], preferredLocationId:G
+    }),
+    sortSampleHabit('call family','keepup',7,sampleLogs([34,21,14,6]),{
+      emoji:'☎️', topics:['relationships'], durationMinutes:20,
+      hid:'sample-feature-family',
+      locationIds:[H,M], preferredLocationId:M, priority:1
+    }),
+    sortSampleHabit('coffee on office days','reduce',2,sampleLogs([6,4,2]),{
+      emoji:'☕', topics:['health'], durationMinutes:5,
+      hid:'sample-feature-coffee',
+      allowedWeekdays:[1,3], locationIds:[O,C], preferredLocationId:O
+    }),
+    sortSampleHabit('drink water','keepup',1,sampleLogs([2,1]),{
+      emoji:'💧', topics:['health'], durationMinutes:2, pinned:true,
+      hid:'sample-feature-water'
+    }),
+    sortSampleHabit('less late snacks','reduce',5,sampleLogs([9,6,3]),{
+      emoji:'🍪', topics:['food'], hid:'sample-feature-snacks', locationIds:[H]
+    }),
+    sortSampleHabit('quit soda','zero',null,sampleLogs([35,18]),{
+      emoji:'🥤', topics:['health'], hid:'sample-feature-soda'
+    })
   ];
 }
 
-// HANDLER: add sample habits to list (+ seed sample locations into the registry)
-function addSortSamples(){
-  const current = load().filter(h=>!h.sample);
-  const samples = buildSortSamples();
-  if(current.length + samples.length > MAX_TINGS){
-    alert(`${MAX_TINGS} habits max`);
-    return;
-  }
-  // Merge sample places into the registry (stable ids → idempotent re-add).
+// PURE: five daily prayer demos (optional pack)
+// Always use Islamic names (Fajr–Isha), independent of Settings prayerIslamicNames.
+function buildPrayerSamples(){
+  const label = (key)=>{
+    if(typeof PRAYER_ANCHOR_LABELS !== 'undefined' && PRAYER_ANCHOR_LABELS[key]){
+      // Drop parentheticals like "Maghrib (sunset)" for habit titles
+      return String(PRAYER_ANCHOR_LABELS[key]).replace(/\s*\([^)]*\)\s*$/,'').trim();
+    }
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  };
+  const rows = [
+    {key:'fajr', end:'sunrise', endDay:0},
+    {key:'dhuhr', end:'asr', endDay:0},
+    {key:'asr', end:'maghrib', endDay:0},
+    {key:'maghrib', end:'isha', endDay:0},
+    {key:'isha', end:'fajr', endDay:1}
+  ];
+  return rows.map(row=>sortSampleHabit(label(row.key),'keepup',1,[],{
+    emoji:'🕌',
+    topics:['prayer'],
+    durationMinutes:8,
+    priority:1,
+    hid:`sample-prayer-${row.key}`,
+    allowedTimeStartAnchor:row.key,
+    allowedTimeStartOffsetMin:0,
+    allowedTimeEndAnchor:row.end,
+    allowedTimeEndOffsetMin:0,
+    allowedTimeEndDayOffset:row.endDay
+  }));
+}
+
+// HYBRID: merge sample places + topics into settings (shared by feature / prayer add)
+function seedSamplePlacesAndTopics(samples,{setPresence = true} = {}){
   const sampleLocs = buildSampleLocations();
   const existing = normalizeLocationRegistry(sortSettings.locations);
   const byId = new Map(existing.map(l=>[l.id,l]));
   sampleLocs.forEach(loc=>{ if(!byId.has(loc.id))byId.set(loc.id,loc); });
   const locations = normalizeLocationRegistry([...byId.values()]);
-  // Patch blocked times so each section gets an appropriate sample location.
   const BLOCK_LOCATION = {
     sleep:'sample-home', breakfast:'sample-home', dinner:'sample-home',
     work:'sample-office', lunch:'sample-office'
@@ -1344,30 +1527,129 @@ function addSortSamples(){
     if(loc && !b.locationId)return {...b,locationId:loc};
     return b;
   });
-  // Collect topics from sample habits into the global topic list.
   const existingTopics = new Set(normalizeTopics(sortSettings.topics || []));
   samples.forEach(h=>(h.topics || []).forEach(t=>{ if(t)existingTopics.add(t); }));
   const topics = normalizeTopics([...existingTopics]);
-  updateSortSetting({
+  const patch = {
     locations,
     topics,
-    lastKnownLocationId:sortSettings.lastKnownLocationId || 'sample-home',
     showLocationOnCards:true,
+    showSampleOnCards:true,
     defaultTravelMode:sortSettings.defaultTravelMode || 'walking',
     blockedTimes:patchedBlocks
-  },{renderNow:false,sync:false});
-  const next = [...current,...samples].map(h=>({...h,lastLog:latestActualLog(h.logs)}));
-  if(save(next)){
-    updateSortSampleCount();
-    syncSettingsControls();
-    closeSheet('settings-sheet');
-    render();
-    const topicCount = topics.length;
-    showToast(`samples added · 6 places · ${topicCount} topic${topicCount === 1 ? '' : 's'}`);
-  }
+  };
+  if(setPresence)patch.lastKnownLocationId = sortSettings.lastKnownLocationId || 'sample-home';
+  updateSortSetting(patch,{renderNow:false,sync:false});
+  return {locations, topics};
 }
 
-// HANDLER: remove sample habits from list (+ drop sample-* locations)
+// PURE: look up a catalog sample by hid
+function findCatalogSample(hid){
+  const id = String(hid || '');
+  if(!id)return null;
+  return [...buildSortSamples(), ...buildPrayerSamples()].find(h => h.hid === id) || null;
+}
+
+// HANDLER: commit one or more catalog samples onto home
+function commitSampleHabits(samples,{setPresence = true, closeSheets = false, toast = ''} = {}){
+  const list = (samples || []).filter(Boolean);
+  if(!list.length)return false;
+  const data = load();
+  const have = new Set(data.map(h => h.hid).filter(Boolean));
+  const fresh = list.filter(h => h.hid && !have.has(h.hid));
+  if(!fresh.length){
+    if(typeof showToast === 'function')showToast('already on home');
+    refreshSampleHabitsSheet();
+    return false;
+  }
+  if(data.length + fresh.length > MAX_TINGS){
+    alert(`${MAX_TINGS} habits max`);
+    return false;
+  }
+  seedSamplePlacesAndTopics(fresh,{setPresence});
+  const next = [...data, ...fresh.map(h=>({...h,lastLog:latestActualLog(h.logs)}))];
+  if(!save(next))return false;
+  updateSortSampleCount();
+  syncSettingsControls();
+  if(closeSheets){
+    closeSheet('settings-sheet');
+    closeSheet('sample-habits-sheet');
+    closeSheet('about-sheet');
+  }else{
+    refreshSampleHabitsSheet();
+  }
+  if(typeof render === 'function')render();
+  if(toast && typeof showToast === 'function')showToast(toast);
+  return true;
+}
+
+// HANDLER: add a single feature or prayer sample (sheet stays open)
+function addOneSample(hid){
+  const sample = findCatalogSample(hid);
+  if(!sample)return false;
+  const isPrayer = String(hid || '').startsWith('sample-prayer-');
+  const label = sampleDisplayName(sample) || 'sample';
+  return commitSampleHabits([sample],{
+    setPresence:!isPrayer,
+    closeSheets:false,
+    toast:`added · ${label}`
+  });
+}
+
+// HANDLER: add feature-tour sample habits (+ seed sample locations)
+function addSortSamples({closeSheets = true} = {}){
+  const have = new Set(load().map(h => h.hid).filter(Boolean));
+  const samples = buildSortSamples().filter(h => !have.has(h.hid));
+  if(!samples.length){
+    if(typeof showToast === 'function')showToast('feature demos already on home');
+    refreshSampleHabitsSheet();
+    return;
+  }
+  commitSampleHabits(samples,{
+    setPresence:true,
+    closeSheets,
+    toast: closeSheets
+      ? `samples added · keep any you want · sample tag`
+      : `${samples.length} demos added`
+  });
+}
+
+// HANDLER: add optional daily prayer samples
+function addPrayerSamples({closeSheets = true} = {}){
+  const have = new Set(load().map(h => h.hid).filter(Boolean));
+  const samples = buildPrayerSamples().filter(h => !have.has(h.hid));
+  if(!samples.length){
+    if(typeof showToast === 'function')showToast('prayer samples already on home');
+    refreshSampleHabitsSheet();
+    return;
+  }
+  commitSampleHabits(samples,{
+    setPresence:false,
+    closeSheets,
+    toast: closeSheets
+      ? 'prayer samples added · keep any you want'
+      : `${samples.length} prayers added`
+  });
+}
+
+// HANDLER: adopt a sample as a real habit
+function keepSampleHabit(idx){
+  const data = load();
+  const h = data[idx];
+  if(!h || !h.sample)return false;
+  h.sample = false;
+  if(typeof h.name === 'string' && h.name.startsWith('Sample: ')){
+    h.name = h.name.slice('Sample: '.length);
+  }
+  if(!save(data))return false;
+  if(typeof showToast === 'function')showToast('kept · now one of yours');
+  updateSortSampleCount();
+  if(typeof detailIdx === 'number' && detailIdx === idx && typeof openDetail === 'function')openDetail(idx);
+  if(typeof render === 'function')render();
+  return true;
+}
+
+// HANDLER: remove remaining sample habits (+ drop unused sample-* locations)
 function removeSortSamples(){
   const current = load();
   const next = current.filter(h=>!h.sample);
@@ -1375,13 +1657,25 @@ function removeSortSamples(){
     showToast('no samples');
     return;
   }
+  const usedIds = new Set();
+  next.forEach(h=>(h.locationIds || []).forEach(id=>{ if(id)usedIds.add(id); }));
+  next.forEach(h=>{ if(h.preferredLocationId)usedIds.add(h.preferredLocationId); });
   const locations = normalizeLocationRegistry(sortSettings.locations)
-    .filter(loc=>!(loc.id || '').startsWith('sample-'));
+    .filter(loc=>{
+      const id = loc.id || '';
+      if(!id.startsWith('sample-'))return true;
+      return usedIds.has(id);
+    });
   const travel = {};
   for(const [key,edge] of Object.entries(sortSettings.travel || {})){
-    if(!(String(edge.a || '').startsWith('sample-') || String(edge.b || '').startsWith('sample-')))travel[key] = edge;
+    const a = String(edge.a || '');
+    const b = String(edge.b || '');
+    if(a.startsWith('sample-') && !usedIds.has(a))continue;
+    if(b.startsWith('sample-') && !usedIds.has(b))continue;
+    travel[key] = edge;
   }
   const lastKnown = (sortSettings.lastKnownLocationId || '').startsWith('sample-')
+    && !usedIds.has(sortSettings.lastKnownLocationId)
     ? null
     : sortSettings.lastKnownLocationId;
   updateSortSetting({locations,travel,lastKnownLocationId:lastKnown},{renderNow:false,sync:false});

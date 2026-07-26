@@ -581,11 +581,11 @@ function stopLocationWatch(){
 function requestLocationAccess(opts = {}){
   const quiet = Boolean(opts.quiet);
   if(!window.isSecureContext){
-    if(!quiet && typeof showToast === 'function')showToast('Location needs HTTPS (or localhost)');
+    if(!quiet && typeof showToast === 'function')showToast('Location needs a secure (HTTPS) page');
     return Promise.resolve('insecure');
   }
   if(!navigator.geolocation){
-    if(!quiet && typeof showToast === 'function')showToast('Location not supported on this device');
+    if(!quiet && typeof showToast === 'function')showToast('Location not available on this device');
     return Promise.resolve('unsupported');
   }
   if(locationPermissionPending)return locationPermissionPending;
@@ -704,11 +704,11 @@ function renderLocationAccessControl(){
   if(!statusEl && !btn)return;
   const s = sortSettings || loadSortSettings();
   const on = s.locationOptIn || !!currentCoord;
-  let label = 'off · tap to enable';
-  if(!window.isSecureContext)label = 'needs HTTPS';
-  else if(!navigator.geolocation)label = 'not supported';
-  else if(currentCoord)label = 'on · reading location';
-  else if(s.locationOptIn)label = 'on · waiting for fix';
+  let label = 'off · tap to turn on';
+  if(!window.isSecureContext)label = 'needs a secure (HTTPS) page';
+  else if(!navigator.geolocation)label = 'location not available here';
+  else if(currentCoord)label = 'on · using your location';
+  else if(s.locationOptIn)label = 'on · finding you…';
   if(statusEl)statusEl.textContent = label;
   if(btn){
     btn.hidden = !window.isSecureContext || !navigator.geolocation;
@@ -864,7 +864,7 @@ function renderPresencePickerBody(){
     const on = current === loc.id;
     const gpsAt = presence.gps && presence.kind === 'at' && presence.id === loc.id;
     return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${gpsAt ? 'gps-matched' : ''}" data-presence-pick="${escapeHtml(loc.id)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}</button>`;
-  }).join('') + `<button type="button" class="topic-chip location-chip" data-presence-gps="1"><i class="ti ti-current-location" aria-hidden="true"></i>use GPS</button>`;
+  }).join('') + `<button type="button" class="topic-chip location-chip" data-presence-gps="1"><i class="ti ti-current-location" aria-hidden="true"></i>use my location</button>`;
 }
 
 // ── Travel-time editor sheet ─────────────────────────────────────────────

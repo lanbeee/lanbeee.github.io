@@ -389,7 +389,7 @@ function seedScript(extraHabits, extraSettings){
   const overload = await page.evaluate(() => {
     const list = document.getElementById('list');
     const headers = [...list.querySelectorAll('.section-header')].map(el => el.dataset.label || el.textContent.trim());
-    const dayLabels = new Set(['today','tomorrow','others','overdue','upcoming']);
+    const dayLabels = new Set(['today','tomorrow','the rest','overdue','coming up']);
     // Walk children: section headers bound day vs leftover sections.
     let section = '';
     let inDay = false;
@@ -402,7 +402,7 @@ function seedScript(extraHabits, extraSettings){
     for(const el of children){
       if(el.classList.contains('section-header')){
         section = el.dataset.label || el.textContent.trim();
-        inDay = !['overdue','upcoming','others'].includes(section);
+        inDay = !['overdue','coming up','the rest'].includes(section);
         if(inDay)fillsByDay[section] = fillsByDay[section] || 0;
         continue;
       }
@@ -441,7 +441,7 @@ function seedScript(extraHabits, extraSettings){
       timedDays,
       bothFarPlaced: bothPlaced,
       farSharedDay: shared,
-      leftoverHeaders: headers.filter(h => h === 'overdue' || h === 'upcoming' || h === 'others'),
+      leftoverHeaders: headers.filter(h => h === 'overdue' || h === 'coming up' || h === 'the rest'),
     };
   });
   console.log(overload);
@@ -451,7 +451,7 @@ function seedScript(extraHabits, extraSettings){
   if(overload.bothFarPlaced){
     assert(overload.farSharedDay, 'co-located far errands share a day when both place');
   }
-  assert(overload.leftoverHeaders.every(h => h === 'overdue' || h === 'upcoming' || h === 'others'), 'leftovers only use overdue/upcoming/others');
+  assert(overload.leftoverHeaders.every(h => h === 'overdue' || h === 'coming up' || h === 'the rest'), 'leftovers only use overdue/coming up/the rest');
 
   // ── G4. Habit one-off planByDate pulls a not-yet-due habit into the week ──
   console.log('\n[G4] habit planByDate soft deadline');
@@ -492,7 +492,7 @@ function seedScript(extraHabits, extraSettings){
   assert(planBy.eligibleDays >= 2, `plan-by habit eligible on multiple week days (got ${planBy.eligibleDays})`);
   assert(planBy.placed, 'plan-by habit gets a timed week slot');
   assert(planBy.pastDeadline, 'plan-by habit placed on or before the deadline');
-  assert(/plan by/i.test(planBy.cue), `card cue mentions plan by (got "${planBy.cue}")`);
+  assert(/needs a day|plan by/i.test(planBy.cue), `card cue mentions needs a day (got "${planBy.cue}")`);
 
   // Logging clears the one-off plan-by.
   const cleared = await page.evaluate(() => {
@@ -1231,9 +1231,9 @@ function seedScript(extraHabits, extraSettings){
       // Misleading seed — must not become the travel origin while GPS is away.
       lastKnownLocationId:'home',
       pinnedLocationId:null,
-      blockedTimes:[
-        { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' }
-      ],
+      // No overnight busy block: G5c is about away-from-saved travel leave-by,
+      // and a sleep window covering "now" would route through Home first.
+      blockedTimes:[],
       travel:{}
     });
     saveSortSettings(settings);

@@ -285,27 +285,31 @@ async function openSettings(page){
   const mode = await page.evaluate(() => loadSortSettings().defaultTravelMode);
   assert(mode === 'driving', 'travel mode switched to driving');
 
-  // ── F. Remove samples cleans sample-* locations ──
+  // ── F. Remove samples drops sample habits; keeps sample places still in use ──
   console.log('\n[F] remove samples sweeps sample locations');
   await page.evaluate(() => removeSortSamples());
   await page.waitForTimeout(200);
   const after = await page.evaluate(() => {
     const s = loadSortSettings();
+    const custom = load().find(h => h.name === 'loc chip test habit');
     return {
       habits:load().filter(h=>h.sample).length,
       sampleLocs:s.locations.filter(l=>(l.id||'').startsWith('sample-')).length,
-      customHabit:load().some(h=>h.name==='loc chip test habit')
+      customHabit:!!custom,
+      customLocs:custom ? (custom.locationIds || []).slice().sort() : null
     };
   });
   console.log(after);
   assert(after.habits === 0, 'sample habits removed');
-  assert(after.sampleLocs === 0, 'sample-* locations removed');
-  // Custom habit may remain but its sample location ids should be swept.
-  const swept = await page.evaluate(() => {
-    const h = load().find(x=>x.name==='loc chip test habit');
-    return h ? h.locationIds : null;
-  });
-  if(swept)assert(swept.length === 0, 'custom habit location ids swept after sample loc removal');
+  // Custom habit still points at sample-home / sample-gym, so those places stay.
+  assert(after.sampleLocs === 2, 'sample places kept while still referenced (got ' + after.sampleLocs + ')');
+  assert(after.customHabit, 'custom habit remains');
+  assert(
+    after.customLocs
+      && after.customLocs.includes('sample-home')
+      && after.customLocs.includes('sample-gym'),
+    'custom habit keeps its sample location ids'
+  );
 
   await browser.close();
   console.log('\n' + (fail ? `${fail} FAILURES` : `ALL ${pass} CHECKS PASSED`));

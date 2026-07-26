@@ -839,11 +839,17 @@ function sweepAutoDoneTasks(){
     }
   });
   if(!changed){
-    if(chunkCount > 0 && typeof refreshOpenViews === 'function')refreshOpenViews();
+    if(chunkCount > 0){
+      if(typeof syncTimerAfterExternalCompletion === 'function')syncTimerAfterExternalCompletion();
+      if(typeof refreshOpenViews === 'function')refreshOpenViews();
+    }
     return chunkCount;
   }
   save(data);
   if(typeof cancelPush === 'function')completedSigs.forEach(sig=>cancelPush(sig));
+  // Snappy clear: drop a running timer / open session sheet if this sweep
+  // just completed that habit (instead of waiting for the next 250ms tick).
+  if(typeof syncTimerAfterExternalCompletion === 'function')syncTimerAfterExternalCompletion();
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
   return count + chunkCount;
 }

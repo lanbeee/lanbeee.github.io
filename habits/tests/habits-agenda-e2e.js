@@ -41,13 +41,13 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
   await page.locator('[data-blocked-label="0"]').fill('sleep test');
   await page.locator('[data-blocked-label="0"]').blur();
-  await page.getByRole('button', { name: 'add blocked time' }).click();
+  await page.getByRole('button', { name: 'add busy time' }).click();
   const blocksAfter = await page.locator('#blocked-time-list .blocked-time-row').count();
-  if (blocksAfter <= blocks) throw new Error('add blocked time failed');
+  if (blocksAfter <= blocks) throw new Error('add busy time failed');
 
   await page.locator('[data-blocked-remove]').last().click();
   const blocksFinal = await page.locator('#blocked-time-list .blocked-time-row').count();
-  if (blocksFinal !== blocks) throw new Error('remove blocked time failed');
+  if (blocksFinal !== blocks) throw new Error('remove busy time failed');
 
   await page.setViewportSize({ width: 1180, height: 850 });
   await page.waitForTimeout(250);

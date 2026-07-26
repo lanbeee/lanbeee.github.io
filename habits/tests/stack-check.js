@@ -17,7 +17,8 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.waitForTimeout(200);
   await page.locator('#overview-calendar [data-log-day]').filter({ has: page.locator('.cal-dot.plan') }).last().tap();
   await page.locator('#day-logs-sheet.open').waitFor();
-  await page.locator('#day-logs-list .overview-item', { hasText: name }).locator('[data-open-day-item]').tap();
+  await page.locator('#day-logs-body [data-day-item]', { hasText: name }).tap();
+  await page.locator('#day-logs-body [data-open-day-item]').tap();
   await page.waitForTimeout(500);
 
   const overviewOpen = await page.locator('#overview-sheet.open').count();

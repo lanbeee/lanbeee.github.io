@@ -150,6 +150,7 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   overviewTopicFilter = 'all';
   overviewLocationFilter = 'all';
   overviewRangeFilter = 'recent';
+  overviewListPane = 'plan';
   renderOverview();
   openSheet('overview-sheet');
 });
@@ -1217,6 +1218,10 @@ bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   const key = day.dataset.entryDay;
   if(hasPlannedEntryForDay(h,key) || hasScheduledMarkerForDay(h,key)){
     dayLogsKey = key;
+    dayLogsScopeIndex = detailIdx;
+    dayLogsStep = 'item';
+    dayLogsItemIndex = detailIdx;
+    dayLogsMoving = false;
     renderCalendar(h);
     renderDayLogs(key);
     openSheet('day-logs-sheet');
@@ -1241,12 +1246,63 @@ getSheetInner('detail-sheet')?.querySelector('.detail-pager')?.addEventListener(
   requestAnimationFrame(updateDetailPagerDots);
 },{passive:true});
 
-$('open-about').addEventListener('click',()=>openSheet('about-sheet'));
+function resetAboutSheetState(){
+  document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
+    const body = $(head.dataset.collapseTarget);
+    if(body)body.hidden = true;
+    head.setAttribute('aria-expanded','false');
+  });
+}
+
+$('open-about').addEventListener('click',()=>{
+  resetAboutSheetState();
+  openSheet('about-sheet');
+});
 $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
 $('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
+  head.addEventListener('click',()=>{
+    const body = $(head.dataset.collapseTarget);
+    if(!body)return;
+    const opening = body.hidden;
+    if(opening){
+      document.querySelectorAll('#about-sheet .about-collapse-head').forEach(other=>{
+        if(other === head)return;
+        const otherBody = $(other.dataset.collapseTarget);
+        if(otherBody)otherBody.hidden = true;
+        other.setAttribute('aria-expanded','false');
+      });
+    }
+    body.hidden = !opening;
+    head.setAttribute('aria-expanded',String(opening));
+  });
+});
+$('open-sample-habits')?.addEventListener('click',()=>{
+  if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
+});
+$('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
+$('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
+$('sample-habits-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('sample-habits-add')?.addEventListener('click',()=>{
+  if(typeof addSortSamples === 'function')addSortSamples({closeSheets:true});
+});
+$('sample-prayers-add')?.addEventListener('click',()=>{
+  if(typeof addPrayerSamples === 'function')addPrayerSamples({closeSheets:true});
+});
+$('sample-habits-preview')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-add-sample]');
+  if(!btn || btn.disabled)return;
+  if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
+});
+$('sample-prayers-preview')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-add-sample]');
+  if(!btn || btn.disabled)return;
+  if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
+});
 $('open-settings').addEventListener('click',()=>{
   closeSheet('about-sheet');
+  closeSheet('sample-habits-sheet');
   resetSettingsSheetState();
   syncSettingsControls();
   openSheet('settings-sheet');
@@ -1254,6 +1310,11 @@ $('open-settings').addEventListener('click',()=>{
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('detail-keep-sample')?.addEventListener('click',()=>{
+  if(detailIdx == null)return;
+  if(typeof keepSampleHabit === 'function')keepSampleHabit(detailIdx);
+});
+$('detail-keep-sample')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
   if(!opt)return;
@@ -1621,6 +1682,7 @@ $('open-overview').addEventListener('click',()=>{
   overviewTopicFilter = 'all';
   overviewLocationFilter = 'all';
   overviewRangeFilter = 'recent';
+  overviewListPane = 'plan';
   renderOverview();
   openSheet('overview-sheet');
 });
@@ -1628,16 +1690,16 @@ $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
 $('overview-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('overview-prev-month').addEventListener('click',()=>{
-  if(overviewRangeFilter === 'recent')overviewRecentOffset -= 14;
+  if(overviewRangeFilter === 'recent')overviewRecentOffset -= (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset -= 1;
   renderOverview();
 });
 $('overview-next-month').addEventListener('click',()=>{
-  if(overviewRangeFilter === 'recent')overviewRecentOffset += 14;
+  if(overviewRangeFilter === 'recent')overviewRecentOffset += (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset += 1;
   renderOverview();
 });
-$('overview-tag-filter')?.addEventListener('click',e=>{
+$('overview-filter')?.addEventListener('click',e=>{
   const topicBtn = e.target.closest('[data-overview-topic]');
   if(topicBtn){
     overviewTopicFilter = topicBtn.dataset.overviewTopic || 'all';
@@ -1650,16 +1712,32 @@ $('overview-tag-filter')?.addEventListener('click',e=>{
     overviewLocationFilter = locBtn.dataset.overviewLocation || 'all';
     dayLogsKey = null;
     renderOverview();
+    return;
+  }
+  const rangeBtn = e.target.closest('[data-overview-range]');
+  if(rangeBtn){
+    overviewRangeFilter = rangeBtn.dataset.overviewRange || 'recent';
+    overviewMonthOffset = 0;
+    overviewRecentOffset = 0;
+    overviewListPane = 'plan';
+    dayLogsKey = null;
+    renderOverview();
   }
 });
-$('overview-range-filter').addEventListener('click',e=>{
-  const btn = e.target.closest('[data-overview-range]');
+$('overview-pane-filter')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-overview-pane]');
   if(!btn)return;
-  overviewRangeFilter = btn.dataset.overviewRange || 'recent';
-  overviewMonthOffset = 0;
-  overviewRecentOffset = 0;
-  dayLogsKey = null;
-  renderOverview();
+  setOverviewListPane(btn.dataset.overviewPane || 'plan');
+});
+$('overview-insight')?.addEventListener('click',e=>{
+  const dayBtn = e.target.closest('[data-log-day]');
+  if(!dayBtn)return;
+  openDayLogsAfterCalendarGesture(dayBtn.dataset.logDay,{refreshOverview:true});
+});
+$('overview-list')?.addEventListener('click',e=>{
+  const dayBtn = e.target.closest('[data-log-day]');
+  if(!dayBtn || !dayBtn.closest('.overview-plan-tip'))return;
+  openDayLogsAfterCalendarGesture(dayBtn.dataset.logDay,{refreshOverview:true});
 });
 $('home-tag-filter')?.addEventListener('click',e=>{
   if(e.target.closest('[data-home-presence]')){
@@ -1743,7 +1821,7 @@ function openBlockEditSheet(row){
   const overrides = normalizeBlockedTimeOverrides(settings.blockedTimeOverrides);
   const current = overrides[dayKey]?.[signature] || {start:originalStart,end:originalEnd};
   blockEditContext = {row,dayKey,signature,originalStart,originalEnd,blockIndex:Number(row.blockIndex),current};
-  $('block-edit-title').textContent = row.label || 'blocked time';
+  $('block-edit-title').textContent = row.label || 'busy time';
   $('block-edit-copy').textContent = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
   $('block-edit-start').value = minutesToTimeInput(current.start);
   $('block-edit-end').value = minutesToTimeInput(current.end);
@@ -1841,9 +1919,22 @@ let valueLogIdx = null;
 let valueLogAfter = null;
 let valueLogMinutes = null;
 function openValueLogSheet(idx,after,sessionMinutes){
+  const incomingSession = Number.isFinite(sessionMinutes) && sessionMinutes > 0;
+  // Session confirm owns the sheet — don't silently overwrite it with a
+  // plain value prompt (or another habit's session).
+  if(valueLogMinutes != null && !incomingSession){
+    if(typeof showToast === 'function')showToast('finish or discard the session first');
+    return;
+  }
+  if(valueLogMinutes != null && incomingSession && valueLogIdx != null && valueLogIdx !== idx){
+    if(typeof showToast === 'function')showToast('session discarded');
+    valueLogIdx = null;
+    valueLogAfter = null;
+    valueLogMinutes = null;
+  }
   valueLogIdx = idx;
   valueLogAfter = after || null;
-  valueLogMinutes = Number.isFinite(sessionMinutes) && sessionMinutes > 0 ? sessionMinutes : null;
+  valueLogMinutes = incomingSession ? sessionMinutes : null;
   const h = load()[idx];
   const sheet = $('value-log-sheet');
   const copy = $('value-log-copy');
@@ -1882,11 +1973,20 @@ function finishValueLog(opts){
   const idx = valueLogIdx;
   const after = valueLogAfter;
   const minutes = valueLogMinutes;
+  const wasSession = minutes != null;
   valueLogIdx = null;
   valueLogAfter = null;
   valueLogMinutes = null;
   closeSheet('value-log-sheet');
   if(idx == null)return;
+  const h = typeof load === 'function' ? load()[idx] : null;
+  // Sweep (or pulse) may have completed the task while the sheet was open —
+  // never add a second entry from a stale confirm.
+  if(wasSession && h && h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h)){
+    if(typeof showToast === 'function')showToast('already logged');
+    if(typeof render === 'function')render();
+    return;
+  }
   const full = {...(opts || {})};
   if(minutes != null)full.minutes = minutes;
   if(!logTing(idx,full))return;
@@ -1903,19 +2003,25 @@ $('value-log-save')?.addEventListener('click',()=>{
   finishValueLog(opts);
 });
 $('value-log-skip')?.addEventListener('click',()=>finishValueLog({}));
-$('value-log-cancel')?.addEventListener('click',()=>{
+// Discard / backdrop: no entry. Session discard restores any pending auto
+// bar on the next render so the habit isn't left in a half-stopped state.
+function discardValueLogSheet(){
+  const wasSession = valueLogMinutes != null;
+  const idx = valueLogIdx;
   valueLogIdx = null;
   valueLogAfter = null;
   valueLogMinutes = null;
   closeSheet('value-log-sheet');
-});
-$('value-log-sheet')?.addEventListener('click',e=>{
-  if(e.target === e.currentTarget){
-    valueLogIdx = null;
-    valueLogAfter = null;
-    valueLogMinutes = null;
-    closeSheet('value-log-sheet');
+  if(wasSession){
+    const h = idx != null && typeof load === 'function' ? load()[idx] : null;
+    const alreadyDone = h && h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h);
+    if(typeof showToast === 'function')showToast(alreadyDone ? 'already logged' : 'session discarded');
   }
+  if(typeof render === 'function')render();
+}
+$('value-log-cancel')?.addEventListener('click',discardValueLogSheet);
+$('value-log-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget)discardValueLogSheet();
 });
 
 /** Prompt for a value when trackValue is on, otherwise log immediately. */
@@ -1932,6 +2038,54 @@ function requestLogTing(idx,after,opts){
 
 // Habit session timer (auto-stops, then prompts to log)
 let habitTimer = null;
+
+// PURE: minutes to store from a timed session
+function timerSessionMinutes(h,elapsedMin){
+  const elapsed = Math.max(1,Math.round(Number(elapsedMin) || 0));
+  if(h && h.breakable && typeof remainingDurationMinutes === 'function'){
+    return Math.min(elapsed,Math.max(0,remainingDurationMinutes(h)));
+  }
+  return elapsed;
+}
+
+// PURE: whether this habit can run a session timer from home/detail.
+// Breakable tasks stay eligible until fully done (remaining minutes = 0).
+function habitTimerEligible(h){
+  if(!h || h.type === 'zero')return false;
+  if(h.type === 'task'){
+    if(typeof isTaskDone === 'function')return !isTaskDone(h);
+    return h.lastLog === null;
+  }
+  return true;
+}
+
+// RENDER: detail Effort timer button + countdown from habitTimer
+function syncDetailTimerUi(){
+  const btn = $('detail-timer-toggle');
+  const display = $('detail-timer-display');
+  if(!btn && !display)return;
+  if(habitTimer && detailIdx !== null && habitTimer.idx === detailIdx){
+    if(btn){
+      btn.textContent = 'stop timer';
+      btn.disabled = false;
+      btn.setAttribute('aria-disabled','false');
+    }
+    if(display)display.hidden = false;
+    return;
+  }
+  const h = detailIdx != null && typeof load === 'function' ? load()[detailIdx] : null;
+  const eligible = habitTimerEligible(h);
+  if(btn){
+    btn.textContent = 'start timer';
+    btn.disabled = !eligible;
+    btn.setAttribute('aria-disabled', eligible ? 'false' : 'true');
+  }
+  if(display){
+    display.hidden = true;
+    display.textContent = '';
+  }
+}
+
 function stopHabitTimer(promptLog,manual){
   const btn = $('detail-timer-toggle');
   const display = $('detail-timer-display');
@@ -1944,60 +2098,147 @@ function stopHabitTimer(promptLog,manual){
     if(display)display.hidden = true;
     if(promptLog && idx != null){
       const h = load()[idx];
-      if(!h)return;
+      if(!h){
+        syncDetailTimerUi();
+        if(typeof render === 'function')render();
+        return;
+      }
+      // Already completed (pulse, auto-mark sweep, etc.) — never open a
+      // second log sheet for the same session.
+      if(!habitTimerEligible(h)){
+        syncDetailTimerUi();
+        if(typeof render === 'function')render();
+        return;
+      }
+      const sessionMinutes = timerSessionMinutes(h,elapsedMin);
+      if(sessionMinutes <= 0){
+        syncDetailTimerUi();
+        if(typeof render === 'function')render();
+        return;
+      }
       const after = ()=>{ if(detailIdx === idx)openDetail(idx); render(); };
       if(manual){
         // Manual stop: confirm before logging. An accidental tap never
         // silently completes a task — the sheet offers a discard path that
         // creates no entry, plus an optional note/value for the session.
-        openValueLogSheet(idx,after,elapsedMin);
+        openValueLogSheet(idx,after,sessionMinutes);
+        if(typeof render === 'function')render();
         return;
       }
       // Auto-stop (timer ran its course): log the session automatically.
       // trackValue habits still get their value prompt with elapsed minutes; undo is available.
-      if(h.trackValue)openValueLogSheet(idx,after,elapsedMin);
-      else{
-        const timerMinutes = h.breakable
-          ? Math.min(elapsedMin,Math.max(0,remainingDurationMinutes(h)))
-          : null;
-        if(!h.breakable || timerMinutes > 0)logTing(idx,timerMinutes ? {minutes:timerMinutes} : {});
+      if(h.trackValue){
+        openValueLogSheet(idx,after,sessionMinutes);
+        if(typeof render === 'function')render();
+      }else{
+        logTing(idx,{minutes:sessionMinutes});
         if(detailIdx === idx)openDetail(idx);
         render();
       }
+    }else if(typeof render === 'function'){
+      syncDetailTimerUi();
+      render();
     }
   }
 }
+
+// Clear a running timer without logging — used when the habit was completed
+// another way (pulse, auto-mark sweep) while the timer was still open.
+function clearHabitTimerSilent(){
+  if(!habitTimer)return;
+  clearInterval(habitTimer.interval);
+  habitTimer = null;
+  syncDetailTimerUi();
+}
+
+// If a session confirm is open for a task that just completed elsewhere,
+// close it so Log cannot double-entry.
+function invalidateOpenSessionIfDone(){
+  if(valueLogMinutes == null || valueLogIdx == null)return false;
+  const h = typeof load === 'function' ? load()[valueLogIdx] : null;
+  if(!(h && h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h)))return false;
+  valueLogIdx = null;
+  valueLogAfter = null;
+  valueLogMinutes = null;
+  closeSheet('value-log-sheet');
+  return true;
+}
+
+// After sweeps / external logs: drop a stale timer and any open session sheet.
+function syncTimerAfterExternalCompletion(opts = {}){
+  const toast = opts.toast !== false;
+  let cleared = false;
+  if(habitTimer){
+    const h = typeof load === 'function' ? load()[habitTimer.idx] : null;
+    if(!habitTimerEligible(h)){
+      clearHabitTimerSilent();
+      cleared = true;
+    }
+  }
+  const closedSheet = invalidateOpenSessionIfDone();
+  if((cleared || closedSheet) && toast && typeof showToast === 'function')showToast('already logged');
+  if((cleared || closedSheet) && typeof render === 'function')render();
+  return cleared || closedSheet;
+}
+
+// HYBRID: start a session timer for habit idx (detail or home swipe)
+function startHabitTimer(idx){
+  if(idx == null || idx < 0)return false;
+  if(habitTimer){
+    if(habitTimer.idx === idx){
+      syncDetailTimerUi();
+      return true;
+    }
+    if(typeof showToast === 'function')showToast('stop the running timer first');
+    return false;
+  }
+  const h = load()[idx];
+  if(!habitTimerEligible(h))return false;
+  const autoMin = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : clampDuration(h.durationMinutes);
+  // Timer and auto-mark stay independent. Auto-complete still follows the
+  // habit's due/trigger window via sweep; the timer only measures a session
+  // and logs on stop / auto-stop. Linking autoMarkMinutes to timer-start
+  // used to double-log (mid-run mark + later auto-stop).
+  habitTimer = {
+    idx,
+    startedAt:Date.now(),
+    autoStopMs:Math.max(1,autoMin) * 60000,
+    interval:setInterval(tickHabitTimer,250)
+  };
+  syncDetailTimerUi();
+  if(typeof showToast === 'function')showToast('timer running');
+  if(typeof render === 'function')render();
+  tickHabitTimer();
+  return true;
+}
+
 function tickHabitTimer(){
   if(!habitTimer)return;
+  const idx = habitTimer.idx;
+  const h = typeof load === 'function' ? load()[idx] : null;
+  // Habit finished elsewhere (auto-mark, pulse, detail log) — drop the
+  // timer quietly so we never prompt to log twice.
+  if(!habitTimerEligible(h)){
+    clearHabitTimerSilent();
+    invalidateOpenSessionIfDone();
+    if(typeof showToast === 'function')showToast('already logged');
+    if(typeof render === 'function')render();
+    return;
+  }
   const elapsed = Date.now() - habitTimer.startedAt;
   const left = Math.max(0,habitTimer.autoStopMs - elapsed);
   const display = $('detail-timer-display');
-  if(display){
+  if(display && detailIdx === habitTimer.idx){
     const sec = Math.ceil(left / 1000);
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     display.textContent = `${m}:${String(s).padStart(2,'0')}`;
     display.hidden = false;
   }
+  if(typeof updateHomeSessionProgress === 'function')updateHomeSessionProgress();
   if(left <= 0){
     showToast('timer done');
     stopHabitTimer(true);
-    return;
-  }
-  if(habitTimer.autoMarkAt && Date.now() >= habitTimer.autoMarkAt){
-    const idx = habitTimer.idx;
-    const startedAt = habitTimer.startedAt;
-    habitTimer.autoMarkAt = null;
-    const h = load()[idx];
-    if(h && (h.type !== 'task' || h.lastLog === null)){
-      const elapsedMin = Math.max(1,Math.round((Date.now() - startedAt) / 60000));
-      const timerMinutes = h.breakable
-        ? Math.min(elapsedMin,Math.max(0,remainingDurationMinutes(h)))
-        : null;
-      if(!h.breakable || timerMinutes > 0)logTing(idx,timerMinutes ? {minutes:timerMinutes} : {});
-      if(detailIdx === idx)openDetail(idx);
-      render();
-    }
   }
 }
 function bindScrollSafeTap(btn,handler){
@@ -2045,31 +2286,21 @@ function bindScrollSafeTap(btn,handler){
   });
 }
 window.stopHabitTimer = stopHabitTimer;
+window.startHabitTimer = startHabitTimer;
+window.clearHabitTimerSilent = clearHabitTimerSilent;
+window.syncTimerAfterExternalCompletion = syncTimerAfterExternalCompletion;
 bindScrollSafeTap($('detail-timer-toggle'),()=>{
   if(detailIdx === null)return;
-  if(habitTimer){
+  if(habitTimer && habitTimer.idx === detailIdx){
     stopHabitTimer(true,true); // manual stop → confirm before logging
     return;
   }
+  if(startHabitTimer(detailIdx))return;
   const h = load()[detailIdx];
-  if(!h)return;
-  const autoMin = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : clampDuration(h.durationMinutes);
-  // Breakable auto-mark follows agenda chunk ends. The live timer already
-  // records its measured session at auto-stop, so it must not also fire the
-  // agenda delay from timer start and double-count progress.
-  const autoMarkAt = isAutoMark(h) && !h.breakable
-    ? Date.now() + (h.autoMarkMinutes || 0) * 60000
-    : null;
-  habitTimer = {
-    idx:detailIdx,
-    startedAt:Date.now(),
-    autoStopMs:autoMin * 60000,
-    autoMarkAt,
-    interval:setInterval(tickHabitTimer,250)
-  };
-  const btn = $('detail-timer-toggle');
-  if(btn)btn.textContent = 'stop timer';
-  tickHabitTimer();
+  if(!h || habitTimer)return; // other-timer toast already shown
+  if(typeof showToast === 'function'){
+    showToast(h.type === 'zero' ? 'timer not available' : 'already done');
+  }
 });
 $('detail-breakable')?.addEventListener('click',function(){
   const pressed = this.getAttribute('aria-pressed') === 'true';
@@ -2087,6 +2318,7 @@ bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
 function openDayLogsAfterCalendarGesture(key,{refreshOverview = false} = {}){
   if(!key)return;
   dayLogsKey = key;
+  resetDayLogsStep(); // clears habit scope — overview shows all matching items
   if(refreshOverview)renderOverview();
   renderDayLogs(key);
   // WebKit may synthesize its click after pointerup/touchend. Mounting the
@@ -2099,24 +2331,52 @@ function openDayLogsAfterCalendarGesture(key,{refreshOverview = false} = {}){
 bindCalendarTap($('overview-calendar'),'[data-log-day]',day=>{
   openDayLogsAfterCalendarGesture(day?.dataset.logDay,{refreshOverview:true});
 });
-bindCalendarTap($('today-week-strip'),'[data-log-day]',day=>{
-  openDayLogsAfterCalendarGesture(day?.dataset.logDay);
-});
-$('day-log-add').addEventListener('click',()=>{
-  if(!dayLogsKey)return;
-  const idx = parseInt($('day-log-ting').value,10);
-  if(Number.isNaN(idx))return;
-  const h = load()[idx];
-  if(!h || (h.type === 'task' && h.lastLog !== null))return;
-  if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false}))return;
-  if($('day-log-time'))$('day-log-time').value = '';
-  renderDayLogs(dayLogsKey);
-  refreshOpenViews();
-});
-$('day-availability-save').addEventListener('click',saveDayAvailabilityOverride);
-$('day-availability-minutes').addEventListener('keydown',e=>{if(e.key === 'Enter')saveDayAvailabilityOverride();});
-$('day-availability-clear').addEventListener('click',clearDayAvailabilityOverride);
-$('day-logs-list').addEventListener('click',e=>{
+$('day-logs-sheet').addEventListener('click',e=>{
+  if(e.target === e.currentTarget){
+    closeDayLogsSheet({refreshOverview:!dayLogsScoped()});
+    return;
+  }
+
+  if(e.target.closest('#day-logs-done')){
+    closeDayLogsSheet({refreshOverview:false});
+    return;
+  }
+
+  if(e.target.closest('#day-logs-back') || e.target.closest('#day-logs-back-list')){
+    if(dayLogsScoped()){
+      if(dayLogsStep === 'add')setDayLogsStep('item',dayLogsScopeIndex);
+      else closeDayLogsSheet({refreshOverview:false});
+      return;
+    }
+    setDayLogsStep('list');
+    return;
+  }
+  if(e.target.closest('#day-logs-plan')){
+    setDayLogsStep('add');
+    return;
+  }
+  if(e.target.closest('#day-logs-day')){
+    if(dayLogsScoped())return;
+    setDayLogsStep('avail');
+    return;
+  }
+  if(e.target.closest('#day-logs-overview')){
+    closeDayLogsSheet({refreshOverview:true});
+    return;
+  }
+  if(e.target.closest('#day-logs-home')){
+    closeDayLogsSheet({refreshOverview:false});
+    closeSheet('overview-sheet');
+    return;
+  }
+
+  const rowBtn = e.target.closest('[data-day-item]');
+  if(rowBtn){
+    const idx = parseInt(rowBtn.dataset.dayItem,10);
+    if(!Number.isNaN(idx))setDayLogsStep('item',idx);
+    return;
+  }
+
   const openBtn = e.target.closest('[data-open-day-item]');
   if(openBtn){
     const idx = parseInt(openBtn.dataset.openDayItem,10);
@@ -2129,36 +2389,67 @@ $('day-logs-list').addEventListener('click',e=>{
     const idx = parseInt(removeBtn.dataset.removePlan,10);
     const key = removeBtn.dataset.planDay;
     removePlansOnDay(idx,key);
+    dayLogsMoving = false;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
     return;
   }
   const moveBtn = e.target.closest('[data-move-plan]');
   if(moveBtn){
-    const row = moveBtn.closest('.overview-item');
-    if(row){
-      row.querySelector('.plan-actions').hidden = true;
-      const inline = row.querySelector('.move-inline');
-      if(inline){inline.hidden = false;row.querySelector('.move-date')?.focus();}
-    }
+    dayLogsMoving = true;
+    if(dayLogsKey)renderDayLogs(dayLogsKey);
     return;
   }
   const cancelBtn = e.target.closest('[data-move-cancel]');
   if(cancelBtn){
-    const row = cancelBtn.closest('.overview-item');
-    if(row){
-      row.querySelector('.plan-actions').hidden = false;
-      row.querySelector('.move-inline').hidden = true;
-    }
+    dayLogsMoving = false;
+    if(dayLogsKey)renderDayLogs(dayLogsKey);
     return;
   }
   const goBtn = e.target.closest('[data-move-go]');
   if(goBtn){
-    const row = goBtn.closest('.overview-item');
-    if(!row)return;
     const idx = parseInt(goBtn.dataset.moveGo,10);
-    const fromKey = row.querySelector('.move-date').dataset.moveFrom;
-    const toKey = row.querySelector('.move-date').value;
+    const dateInput = $('day-move-date') || goBtn.closest('.day-item-card')?.querySelector('.move-date');
+    if(!dateInput)return;
+    const fromKey = dateInput.dataset.moveFrom;
+    const toKey = dateInput.value;
     if(!toKey)return;
     movePlanTo(idx,fromKey,toKey);
+    dayLogsMoving = false;
+    dayLogsKey = toKey;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    return;
+  }
+
+  if(e.target.closest('#day-log-add')){
+    if(!dayLogsKey)return;
+    const idx = dayLogsScoped()
+      ? dayLogsScopeIndex
+      : parseInt($('day-log-ting')?.value,10);
+    if(Number.isNaN(idx))return;
+    const h = load()[idx];
+    if(!h || !dayLogsHabitPlannable(h))return;
+    if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false}))return;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    refreshOpenViews();
+    return;
+  }
+  if(e.target.closest('#day-availability-save')){
+    saveDayAvailabilityOverride();
+    return;
+  }
+  if(e.target.closest('#day-availability-clear')){
+    clearDayAvailabilityOverride();
+  }
+});
+$('day-logs-sheet').addEventListener('keydown',e=>{
+  if(e.key === 'Enter' && e.target?.id === 'day-availability-minutes')saveDayAvailabilityOverride();
+});
+$('day-logs-sheet').addEventListener('pointerup',e=>{
+  if(e.target === e.currentTarget){
+    closeDayLogsSheet({refreshOverview:!dayLogsScoped()});
   }
 });
 
@@ -2195,18 +2486,6 @@ $('slipped-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)
 $('free-time-close').addEventListener('click',()=>closeSheet('free-time-sheet'));
 $('free-time-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('free-time-sheet');});
 
-$('day-logs-overview').addEventListener('click',()=>{
-  dayLogsKey = null;
-  closeSheet('day-logs-sheet');
-  renderOverview();
-});
-$('day-logs-home').addEventListener('click',()=>{
-  dayLogsKey = null;
-  closeSheet('day-logs-sheet');
-  closeSheet('overview-sheet');
-});
-$('day-logs-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
-$('day-logs-sheet').addEventListener('pointerup',e=>{if(e.target === e.currentTarget){dayLogsKey = null;closeSheet('day-logs-sheet');renderOverview();}});
 $('action-undo').addEventListener('click',executeUndo);
 $('action-open')?.addEventListener('click',()=>{
   if(!canOpenFromAction(pendingAction))return;
@@ -2289,6 +2568,7 @@ function refreshHomeAgendaWhileOpen(){
   }
   if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged();
   else if(typeof render === 'function')render();
+  if(typeof updateHomeSessionProgress === 'function')updateHomeSessionProgress();
 }
 
 function startHomeAgendaRefreshLoop(){

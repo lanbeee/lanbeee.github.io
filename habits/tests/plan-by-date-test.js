@@ -224,7 +224,9 @@ function seedScript(){
   assert(todayAg.urgencyToday > todayAg.urgencyFuture3, 'weekUrgency(today) > weekUrgency(future)');
   assert(todayAg.urgencyOverdue >= todayAg.urgencyToday, 'weekUrgency(overdue) >= weekUrgency(today)');
   assert(todayAg.urgencyFuture1 > todayAg.urgencyFuture3, 'weekUrgency(1d) > weekUrgency(3d)');
-  assert(todayAg.wrongDay === false, 'plan-by today but weekday-excluded NOT in today agenda');
+  // plan-by today is a scheduled marker for today, so it stays on today's
+  // agenda even when allowedWeekdays would otherwise skip the day.
+  assert(todayAg.wrongDay === true, 'plan-by today still in today agenda despite weekday exclusion');
 
   // ════════════════════════════════════════════════════════════════════════
   // E. Week planner — isWeekCandidate bounds (overdue / today / future)
@@ -293,12 +295,12 @@ function seedScript(){
     };
   });
   console.log(card);
-  assert(/plan by/i.test(card.cueOverdue) && /overdue/i.test(card.cueOverdue), `overdue cue says "plan by … overdue" (got "${card.cueOverdue}")`);
-  assert(/plan by today/i.test(card.cueToday), `today cue says "plan by today" (got "${card.cueToday}")`);
-  assert(/plan by tomorrow/i.test(card.cueTomorrow), `tomorrow cue says "plan by tomorrow" (got "${card.cueTomorrow}")`);
-  assert(/plan by in 3d/i.test(card.cue3day), `3-day cue says "plan by in 3d" (got "${card.cue3day}")`);
-  assert(/plan by/i.test(card.cue10day), `10-day cue mentions plan by (got "${card.cue10day}")`);
-  assert(!/plan by/i.test(card.cueNone), `no-plan cue does not mention plan by (got "${card.cueNone}")`);
+  assert(/behind on planning|needs a day/i.test(card.cueOverdue), `overdue cue mentions planning lag (got "${card.cueOverdue}")`);
+  assert(/needs a day by today/i.test(card.cueToday), `today cue says "Needs a day by today" (got "${card.cueToday}")`);
+  assert(/needs a day by tomorrow/i.test(card.cueTomorrow), `tomorrow cue says "Needs a day by tomorrow" (got "${card.cueTomorrow}")`);
+  assert(/needs a day in 3d/i.test(card.cue3day), `3-day cue says "Needs a day in 3d" (got "${card.cue3day}")`);
+  assert(/needs a day/i.test(card.cue10day), `10-day cue mentions needs a day (got "${card.cue10day}")`);
+  assert(!/needs a day|plan by/i.test(card.cueNone), `no-plan cue does not mention plan-by (got "${card.cueNone}")`);
   assert(card.metaHasPill, 'cardMeta renders a "due"-style pill for plan-by');
   assert(card.metaNoRhythm, 'cardMeta hides the rhythm pill when plan-by is set');
   assert(card.metaRhythmWhenNoPlan, 'cardMeta shows rhythm pill when no plan-by is set');
@@ -350,14 +352,14 @@ function seedScript(){
       planBy: habitPlanByDate(h),
       cat: todayCategory(h, settings),
       include: includeInTodayAgenda(h, settings),
-      cue: /plan by/i.test(cardCue(h)),
+      cue: /needs a day|plan by/i.test(cardCue(h)),
     };
   });
   console.log(reduceCase);
   assert(reduceCase.planBy !== null, 'habitPlanByDate works on reduce');
   assert(reduceCase.cat === 0 || reduceCase.cat === 1, 'reduce with plan-by today escalates category');
   assert(reduceCase.include === true, 'reduce with plan-by today included in today agenda');
-  assert(reduceCase.cue === true, 'reduce card cue mentions plan by');
+  assert(reduceCase.cue === true, 'reduce card cue mentions needs a day');
 
   // ════════════════════════════════════════════════════════════════════════
   // I. Overview day tally — plan-by marks the deadline day

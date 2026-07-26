@@ -103,6 +103,9 @@ function openDetail(i){
   };
   syncRhythm('detail',h.target || 7);
   syncBreakableUi();
+  if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi();
+  const keepBtn = $('detail-keep-sample');
+  if(keepBtn)keepBtn.hidden = !h.sample;
   $('detail-mark').style.background = c.bg;
   $('detail-mark').style.color = c.icon;
   $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
@@ -1130,56 +1133,48 @@ function graphCaption(h,intervals){
   return `Last clear stretch was ${last}d: ${label}. Longer is better.${avgPart}`;
 }
 
-// RENDER: renders month calendar grid
+// RENDER: renders month calendar grid (shared markers with overview tally)
 function renderCalendar(h){
   const frame = monthFrame(detailMonthOffset);
   const {year,month,first,last,label,today} = frame;
-  const logs = normalizeLogs(h.logs);
-  const dayCounts = new Map();
+  const tally = typeof buildDayTally === 'function'
+    ? buildDayTally([h],ts=>{
+      const d = new Date(ts);
+      return d.getFullYear() === year && d.getMonth() === month;
+    })
+    : {map:new Map(),actual:0,planned:0};
   const toneByDay = logToneMap(h);
-  let actual = 0;
-  let planned = 0;
-  const addPlannedMarker = ts=>{
-    if(ts === null)return;
-    const d = new Date(ts);
-    if(d.getFullYear() !== year || d.getMonth() !== month)return;
-    const key = dateKey(ts);
-    dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
-    planned += 1;
-    if(!toneByDay.has(key))toneByDay.set(key,'plan');
-  };
-  logs.forEach(log=>{
-    const ts = logTime(log);
-    const d = new Date(ts);
-    if(d.getFullYear() !== year || d.getMonth() !== month)return;
-    const key = dateKey(ts);
-    dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
-    if(isPlanLog(log))planned += 1;
-    else actual += 1;
-  });
-  if(isTimedTask(h) && h.lastLog === null)addPlannedMarker(h.eventTime);
-  else if(h.type === 'task' && h.lastLog === null)addPlannedMarker(h.dueDate);
-  else if((h.type === 'keepup' || h.type === 'reduce') && h.planByDate)addPlannedMarker(h.planByDate);
-  const monthEntries = actual + planned;
-  const activeDays = [...dayCounts.values()].filter(Boolean).length;
+  const monthEntries = tally.actual + tally.planned;
+  const activeDays = tally.map.size;
   $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
   $('detail-calendar-summary').innerHTML = `
     <span class="overview-stat"><i class="ti ti-calendar-check" aria-hidden="true"></i>${activeDays} days</span>
-    <span class="overview-stat"><i class="ti ti-list-check" aria-hidden="true"></i>${actual} entries</span>
-    <span class="overview-stat"><i class="ti ti-calendar-event" aria-hidden="true"></i>${planned} planned</span>`;
+    <span class="overview-stat"><i class="ti ti-list-check" aria-hidden="true"></i>${tally.actual} entries</span>
+    <span class="overview-stat"><i class="ti ti-calendar-event" aria-hidden="true"></i>${tally.planned} planned</span>`;
+
+  const hasSched = typeof hasDaySchedule === 'function' && hasDaySchedule(h);
+  const densityFn = typeof calDensityClass === 'function' ? calDensityClass : (count=>count >= 3 ? 'density-3' : count >= 2 ? 'density-2' : count ? 'density-1' : '');
 
   const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
   const blanks = Array.from({length:first.getDay()},()=>'<div class="cal-day blank"></div>');
   const days = Array.from({length:last.getDate()},(_,i)=>{
     const date = new Date(year,month,i + 1);
     const key = dateKey(date.getTime());
-    const count = dayCounts.get(key) || 0;
-    const toneClass = toneByDay.get(key) || '';
-    const density = count >= 3 ? 'density-3' : count >= 2 ? 'density-2' : count ? 'density-1' : '';
-    const dots = count ? `<span class="cal-dots"><span class="cal-dot ${toneClass}"></span>${count > 1 ? `<span class="cal-more">${count}</span>` : ''}</span>` : '<span class="cal-dots"></span>';
+    const entries = tally.map.get(key) || [];
+    const count = entries.length;
+    const toneClass = entries.find(e=>e.tone && e.tone !== 'plan')?.tone
+      || (entries.some(e=>e.tone === 'plan') ? 'plan' : '')
+      || toneByDay.get(key)
+      || '';
+    const density = densityFn(count);
+    const eligible = !count && hasSched && typeof isDateEligibleForHabit === 'function' && isDateEligibleForHabit(h,date.getTime());
+    const dots = count
+      ? `<span class="cal-dots"><span class="cal-dot ${toneClass}"></span>${count > 1 ? `<span class="cal-more">${count}</span>` : ''}</span>`
+      : '<span class="cal-dots"></span>';
     const cls = [
       count ? 'has-entry' : '',
       density,
+      eligible ? 'eligible' : '',
       key === today ? 'today' : '',
       key === dayLogsKey ? 'selected' : '',
       'pickable'
@@ -1259,11 +1254,15 @@ function hasPlannedEntryForDay(h,key){
   return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
 }
 
-// PURE: checks whether a task has its own scheduled date on a day.
+// PURE: checks whether a habit has a due/scheduled/plan-by marker on a day.
 function hasScheduledMarkerForDay(h,key){
+  if(typeof habitPlanMarkers === 'function'){
+    return habitPlanMarkers(h).some(marker=>dateKey(marker.ts) === key);
+  }
   return (
     (isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key) ||
-    (h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
+    (h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key) ||
+    ((h.type === 'keepup' || h.type === 'reduce') && h.planByDate && dateKey(h.planByDate) === key)
   );
 }
 

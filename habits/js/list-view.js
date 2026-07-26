@@ -298,7 +298,7 @@ function renderHomeTagFilter(data){
     else if(presence.kind === 'near')label = `near ${presence.name}`;
     else if(anchorLoc){ label = `at ${anchorLoc.name}`; kind = 'at'; }
     const gpsClass = presence.gps && presence.kind === 'at' ? 'gps-matched' : '';
-    statusHtml = `<button type="button" class="topic-filter presence-filter ${kind} ${gpsClass}" data-home-presence="1" title="set agenda starting place"><i class="ti ti-current-location" aria-hidden="true"></i>${escapeHtml(label)}</button>`;
+    statusHtml = `<button type="button" class="topic-filter presence-filter ${kind} ${gpsClass}" data-home-presence="1" title="starting place for today"><i class="ti ti-current-location" aria-hidden="true"></i>${escapeHtml(label)}</button>`;
   }
   const locHtml = hasLocs ? locChoices.map(choice=>`
     <button type="button" class="topic-filter location-filter ${choice.key === homeLocationFilter ? 'on' : ''}" data-home-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
@@ -803,7 +803,7 @@ function compactPillText(value,max = 10){
 // PURE: compute keep-up cue text
 function buildCue(h,days,target){
   if(days === null)return 'Ready for first entry';
-  if(days < 0)return 'Planned ahead';
+  if(days < 0)return 'Coming up';
   const remaining = target - days;
   if(remaining < 0){
     const overdue = Math.abs(remaining);
@@ -814,19 +814,19 @@ function buildCue(h,days,target){
   if(remaining === 0)return 'Due today';
   if(remaining === 1)return 'Due tomorrow';
   if(remaining <= 3)return `Due in ${remaining} days`;
-  if(days <= target * 0.5)return 'Steady rhythm';
+  if(days <= target * 0.5)return 'On track';
   return `${remaining} days left`;
 }
 
 // PURE: compute reduce cue text
 function limitCue(h,days,target){
   if(days === null)return 'No entries yet';
-  if(days < 0)return 'Planned ahead';
+  if(days < 0)return 'Coming up';
   const remaining = target - days;
   if(remaining > 1)return `Wait ${remaining} days`;
   if(remaining === 1)return 'Wait 1 more day';
   if(remaining === 0)return 'Okay today';
-  return 'Enough space';
+  return 'Okay again';
 }
 
 // PURE: compute card status cue text
@@ -841,11 +841,11 @@ function cardCue(h){
   if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
     const left = daysUntil(planBy);
     if(left !== null){
-      if(left < 0)return `Plan by ${Math.abs(left)}d overdue`;
-      if(left === 0)return 'Plan by today';
-      if(left === 1)return 'Plan by tomorrow';
-      if(left <= 7)return `Plan by in ${left}d`;
-      return `Plan by ${new Date(planBy).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+      if(left < 0)return `${Math.abs(left)}d behind on planning`;
+      if(left === 0)return 'Needs a day by today';
+      if(left === 1)return 'Needs a day by tomorrow';
+      if(left <= 7)return `Needs a day in ${left}d`;
+      return `Needs a day by ${new Date(planBy).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
     }
   }
   if(days === null){
@@ -855,10 +855,10 @@ function cardCue(h){
   if(days < 0)return 'Coming up';
   if(h.type === 'keepup')return buildCue(h,days,target);
   if(h.type === 'reduce')return limitCue(h,days,target);
-  if(days === 0)return 'Reset today';
-  if(days === 1)return '1 day clear';
-  if(days < 4)return `${days} days clear`;
-  return `${days} days clear`;
+  if(days === 0)return 'Clean today';
+  if(days === 1)return '1 day clean';
+  if(days < 4)return `${days} days clean`;
+  return `${days} days clean`;
 }
 
 // PURE: task status cue
@@ -939,14 +939,14 @@ function cardMeta(h,options = {}){
   }else{
     const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
     if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
-      parts.push(`<span class="context-pill due" title="${escapeHtml(`plan by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
+      parts.push(`<span class="context-pill due" title="${escapeHtml(`needs a day by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
     }else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
-      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="target rhythm"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`);
+      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`);
       else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
     }
   }
   if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration ${Math.round(h.durationMinutes)} minutes"><i class="ti ti-clock" aria-hidden="true"></i>${compactHomeDuration(h.durationMinutes)}</span>`);
-  if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="flexibility"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
+  if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="can do up to ${h.flexibilityDays}d early"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
   if(hasDaySchedule(h) && (options.forceDaySchedule || sortSettings.showDayScheduleOnCards)){
     const eligible = nextEligibleShort(h);
     const title = [scheduleSummary(h),nextEligibleCopy(h)].filter(Boolean).join(' · ');
@@ -954,7 +954,7 @@ function cardMeta(h,options = {}){
     parts.push(`<span class="context-pill schedule${prefClass} ${eligible ? '' : 'icon-only'}" title="${escapeHtml(title)}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(eligible)}</span>`);
   }
   if(hasTimeWindow(h) && (options.forceTimeWindow || sortSettings.showTimeWindowOnCards)){
-    parts.push(`<span class="context-pill time" title="time window"><i class="ti ti-clock-hour-4" aria-hidden="true"></i>${escapeHtml(timeWindowSummary(h))}</span>`);
+    parts.push(`<span class="context-pill time" title="allowed hours"><i class="ti ti-clock-hour-4" aria-hidden="true"></i>${escapeHtml(timeWindowSummary(h))}</span>`);
   }
   const topics = normalizeTopics(h.topics);
   if(options.forceTopics || sortSettings.showTopicsOnCards){
@@ -1033,6 +1033,104 @@ function cardBreakableSlider(h){
   </div>`;
 }
 
+// PURE: pending auto-complete window for non-breakable tasks (trigger → deadline)
+function pendingAutoMarkWindow(h,now = Date.now()){
+  if(!h || typeof isAutoMark !== 'function' || !isAutoMark(h) || h.breakable)return null;
+  if(h.type !== 'task' || h.lastLog !== null)return null;
+  const trigger = h.eventTime != null
+    ? h.eventTime
+    : (h.dueDate !== null
+      ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+      : null);
+  if(trigger == null)return null;
+  const delayMs = Math.max(0,Number(h.autoMarkMinutes) || 0) * 60000;
+  const end = trigger + delayMs;
+  if(now < trigger || now >= end)return null;
+  return {kind:'auto',start:trigger,end};
+}
+
+// PURE: live session progress state for timer or pending auto-complete.
+// Timer wins when running. While a session-confirm sheet is open for this
+// card, hide the auto bar so the user isn't watching two countdowns.
+function sessionProgressState(h,realIdx,now = Date.now()){
+  const timer = typeof habitTimer !== 'undefined' ? habitTimer : null;
+  if(timer && timer.idx === realIdx){
+    const start = timer.startedAt;
+    const end = start + Math.max(1,timer.autoStopMs || 0);
+    const elapsedMs = Math.max(0,now - start);
+    const totalMs = Math.max(1,end - start);
+    const elapsedMin = Math.max(0,Math.floor(elapsedMs / 60000));
+    const totalMin = Math.max(1,Math.round(totalMs / 60000));
+    const pct = Math.min(100,(elapsedMs / totalMs) * 100);
+    return {
+      kind:'timer',
+      pct,
+      label:`${elapsedMin}/${totalMin}m`,
+      aria:`timer ${elapsedMin} of ${totalMin} minutes`
+    };
+  }
+  if(typeof valueLogMinutes !== 'undefined' && valueLogMinutes != null
+    && typeof valueLogIdx !== 'undefined' && valueLogIdx === realIdx){
+    return null;
+  }
+  const win = pendingAutoMarkWindow(h,now);
+  if(win){
+    const totalMs = Math.max(1,win.end - win.start);
+    const elapsedMs = Math.max(0,now - win.start);
+    const leftMin = Math.max(0,Math.ceil((win.end - now) / 60000));
+    const totalMin = Math.max(1,Math.round(totalMs / 60000));
+    const elapsedMin = Math.min(totalMin,Math.max(0,Math.floor(elapsedMs / 60000)));
+    const pct = Math.min(100,(elapsedMs / totalMs) * 100);
+    return {
+      kind:'auto',
+      pct,
+      label: leftMin ? `auto in ${leftMin}m` : `${elapsedMin}/${totalMin}m`,
+      aria:`auto-complete in ${leftMin} minutes`
+    };
+  }
+  return null;
+}
+
+// PURE: home progress bar (no crown) for running timer / pending auto-complete
+function cardSessionProgress(h,realIdx,now = Date.now()){
+  const state = sessionProgressState(h,realIdx,now);
+  if(!state)return '';
+  return `<div class="session-progress ${state.kind === 'auto' ? 'is-auto' : 'is-timer'}" data-session-progress data-session-idx="${realIdx}" role="progressbar" aria-label="${escapeHtml(state.aria)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(state.pct)}">
+    <div class="breakable-status-bar session-status-bar" aria-hidden="true">
+      <span class="bar-session" style="width:${state.pct}%"></span>
+    </div>
+    <span class="session-progress-label" aria-hidden="true">${escapeHtml(state.label)}</span>
+  </div>`;
+}
+
+// RENDER: refresh live session bars without rebuilding the whole list
+function updateHomeSessionProgress(now = Date.now()){
+  const list = $('list');
+  if(!list)return;
+  list.querySelectorAll('[data-session-progress]').forEach(el=>{
+    const idx = parseInt(el.dataset.sessionIdx,10);
+    if(!Number.isFinite(idx))return;
+    const h = typeof load === 'function' ? load()[idx] : null;
+    if(!h)return;
+    const state = sessionProgressState(h,idx,now);
+    if(!state){
+      // Timer stopped or auto window ended — leave a stub until the next
+      // full render restitches the card (trail / no bar).
+      el.style.visibility = 'hidden';
+      return;
+    }
+    el.style.visibility = '';
+    el.classList.toggle('is-auto',state.kind === 'auto');
+    el.classList.toggle('is-timer',state.kind === 'timer');
+    el.setAttribute('aria-label',state.aria);
+    el.setAttribute('aria-valuenow',String(Math.round(state.pct)));
+    const fill = el.querySelector('.bar-session');
+    if(fill)fill.style.width = `${state.pct}%`;
+    const label = el.querySelector('.session-progress-label');
+    if(label)label.textContent = state.label;
+  });
+}
+
 // PURE: today's agenda timeline rows, shared by the home card pill map and
 // the chronological "today" section ordering so both stay in lockstep.
 // Travel/wait rows are excluded here — home inserts thin travel cards itself.
@@ -1078,7 +1176,7 @@ function priorityColor(p){
   return 'color-mix(in srgb, var(--text3) 35%, transparent)';
 }
 
-// PURE: window status for a suggested agenda lead — anytime / later / now / closing.
+// PURE: window status for an agenda lead — anytime / later / now / closing.
 // Scheduled rows are handled by the caller. Closing = remaining window is too
 // tight for the next session (chunk or full duration), floored at 45 minutes.
 function agendaLeadStatus(row,h = null,now = Date.now()){
@@ -1087,9 +1185,9 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
   const chunkMinutes = h?.breakable && row.chunkIndex != null && Number.isFinite(row.chunkMinutes)
     ? Math.round(row.chunkMinutes)
     : null;
-  const baseTitle = `suggested ${label}${end ? ` to ${end}` : ''}${chunkMinutes != null ? ` · ${chunkMinutes} minutes` : ''}`;
+  const baseTitle = `on agenda at ${label}${end ? ` to ${end}` : ''}${chunkMinutes != null ? ` · ${chunkMinutes} minutes` : ''}`;
   if(row.kind === 'scheduled'){
-    return {cls:'scheduled',icon:'ti-calendar-time',title:`scheduled at ${label}`,chunkMinutes};
+    return {cls:'scheduled',icon:'ti-calendar-time',title:`fixed at ${label}`,chunkMinutes};
   }
   if(!h || typeof hasTimeWindow !== 'function' || !hasTimeWindow(h)){
     return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
@@ -1103,7 +1201,7 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
     return {
       cls:'agenda-later',
       icon:'ti-hourglass',
-      title:`${baseTitle} · opens at ${compactHomeTime(win.start)}`,
+      title:`${baseTitle} · starts at ${compactHomeTime(win.start)}`,
       chunkMinutes
     };
   }
@@ -1116,7 +1214,7 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
     return {
       cls:'agenda-closing',
       icon:'ti-alarm',
-      title:`${baseTitle} · window closing`,
+      title:`${baseTitle} · almost out of time`,
       chunkMinutes
     };
   }
@@ -1125,14 +1223,14 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
     return {
       cls:'agenda-closing',
       icon:'ti-alarm',
-      title:`${baseTitle} · window closing`,
+      title:`${baseTitle} · almost out of time`,
       chunkMinutes
     };
   }
   return {
     cls:'agenda-suggested',
     icon:'ti-sparkles',
-    title:`${baseTitle} · window open`,
+    title:`${baseTitle} · good time now`,
     chunkMinutes
   };
 }
@@ -1221,10 +1319,10 @@ function earlyReason(data,i,settings){
   if(!pressureDay)return '';
   const pressure = dayPressure(data,dateKey(pressureDay),settings,i);
   const duration = clampDuration(h.durationMinutes);
-  const targetLabel = preferred ? 'preferred day' : 'target day';
-  if(pressure.capacity <= 0)return `${targetLabel} has no open time`;
-  if(pressure.remaining < duration)return `${targetLabel} is short ${duration - pressure.remaining}m`;
-  if(pressure.busy >= 0.75)return `${targetLabel} is busy`;
+  const targetLabel = preferred ? 'preferred day' : 'usual day';
+  if(pressure.capacity <= 0)return `${targetLabel} is packed`;
+  if(pressure.remaining < duration)return `${targetLabel} needs ${duration - pressure.remaining}m more open`;
+  if(pressure.busy >= 0.75)return `${targetLabel} is packed`;
   return '';
 }
 
@@ -1491,7 +1589,7 @@ function appendHomeBlockedCard(list,row){
   el.tabIndex = 0;
   el.setAttribute('role','button');
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
-  el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span><button type="button" class="blocked-cancel-mark" aria-label="free ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
+  el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
   const xBtn = el.querySelector('.blocked-cancel-mark');
   if(xBtn)xBtn.addEventListener('click',e=>{
     e.preventDefault();
@@ -1572,8 +1670,8 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
   toggle.setAttribute(
     'aria-label',
     expanded
-      ? `collapse ${blocks.length} blocked times`
-      : `${blocks.length} blocked times ${start} to ${end}, tap to expand`
+      ? `collapse ${blocks.length} busy times`
+      : `${blocks.length} busy times ${start} to ${end}, tap to expand`
   );
   toggle.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)} · ${blocks.length}</span><i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
   let mergePointer = null;
@@ -1830,11 +1928,11 @@ function buildHidDayLabelMap(data,settings){
       }
     }
   }
-  const catLabels = {0:'in today',1:'overdue',2:'upcoming',3:'snoozed'};
+  const catLabels = {0:'on today',1:'behind',2:'coming up',3:'snoozed'};
   for(let i = 0; i < data.length; i++){
     const h = data[i];
     if(!h || !h.hid || map.has(h.hid)) continue;
-    map.set(h.hid, catLabels[todayCategory(h, settings)] || 'overdue');
+    map.set(h.hid, catLabels[todayCategory(h, settings)] || 'behind');
   }
   return map;
 }
@@ -1851,7 +1949,7 @@ function computeMissedYesterday(data,baseline,slippedHids,dayLabelMap){
     if(completedToday(h, now)) continue;
     if(todayCategory(h, sortSettings) === 0) continue;
     const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
-    const dayLabel = dayLabelMap.get(hid) || 'overdue';
+    const dayLabel = dayLabelMap.get(hid) || 'behind';
     missed.push({hid, name:h.name, emoji:h.emoji, idx, snoozed, dayLabel});
   }
   return missed.sort((a,b) => Number(a.snoozed) - Number(b.snoozed));
@@ -1904,7 +2002,7 @@ function attachDroppedIndicator(header,list,todayHids){
   header.classList.add('has-dropped');
   const pill = document.createElement('span');
   pill.className = 'dropped-pill';
-  pill.textContent = `${dropped.length} slipped`;
+  pill.textContent = `${dropped.length} off agenda`;
   pill.addEventListener('pointerup',e=>{
     e.stopPropagation();
     openSlippedSheet(dropped,header.dataset.label || 'today');
@@ -1932,7 +2030,7 @@ function renderDroppedPanel(items,opts = {}){
 function openSlippedSheet(items,dayLabel){
   const content = document.getElementById('slipped-content');
   if(!content)return;
-  document.getElementById('slipped-title').textContent = `slipped ${dayLabel}`;
+  document.getElementById('slipped-title').textContent = `off agenda · ${dayLabel}`;
   content.innerHTML = '';
 
   const data = load();
@@ -1940,13 +2038,13 @@ function openSlippedSheet(items,dayLabel){
 
   const slippedWithTags = items.map(item=>({
     ...item,
-    dayLabel: dayLabelMap.get(item.hid) || 'overdue'
+    dayLabel: dayLabelMap.get(item.hid) || 'behind'
   }));
 
   if(slippedWithTags.length){
     const head1 = document.createElement('div');
     head1.className = 'slipped-section-head';
-    head1.textContent = `slipped ${dayLabel}`;
+    head1.textContent = `off agenda · ${dayLabel}`;
     content.appendChild(head1);
     content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
   }
@@ -1956,7 +2054,7 @@ function openSlippedSheet(items,dayLabel){
   if(missed.length){
     const head2 = document.createElement('div');
     head2.className = 'slipped-section-head';
-    head2.textContent = 'missed from yesterday';
+    head2.textContent = 'still open from yesterday';
     content.appendChild(head2);
     content.appendChild(renderDroppedPanel(missed,{showDayTag:true}));
   }
@@ -1992,7 +2090,7 @@ function renderFreePanel(info){
   panel.className = 'free-panel';
   const summary = document.createElement('div');
   summary.className = 'free-panel-row';
-  summary.innerHTML = `<span>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(info.largestGapMinutes))} largest</span>`;
+  summary.innerHTML = `<span>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(info.largestGapMinutes))} biggest stretch</span>`;
   panel.appendChild(summary);
   const bigGaps = info.gaps.filter(g=>Math.round((g.end - g.start) / 60000) >= 30);
   const shortMinutes = info.totalFreeMinutes - bigGaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);
@@ -2009,7 +2107,7 @@ function renderFreePanel(info){
   if(shortMinutes >= 10){
     const note = document.createElement('div');
     note.className = 'free-panel-note';
-    note.textContent = `+ ${formatFreeDuration(shortMinutes)} in shorter gaps`;
+    note.textContent = `+ ${formatFreeDuration(shortMinutes)} in shorter stretches`;
     panel.appendChild(note);
   }
   return panel;
@@ -2101,7 +2199,12 @@ function render(opts){
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
     }else{
-      empty.innerHTML = 'simple habit tracking<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, or + to add your first habit.</span>';
+      empty.innerHTML = 'habits, tasks, and a day plan<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span>';
+      empty.classList.add('is-action');
+      empty.onclick = ()=>{
+        if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
+        else if(typeof openSheet === 'function')openSheet('about-sheet');
+      };
     }
     _homeListFingerprint = homeListFingerprint();
     return;
@@ -2182,12 +2285,27 @@ function render(opts){
     const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
+    const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
+    // Timer bar always shows while running — even on breakable crown cards —
+    // so the user can see the session without opening detail.
+    const sessionHtml = (timerRunning || !showBreakableSlider) ? cardSessionProgress(h,realIdx) : '';
     const visualHtml = showBreakableSlider
-      ? cardBreakableSlider(h)
-      : `<div class="ting-trail">${trail}</div>`;
-    const visualAria = showBreakableSlider ? '' : ' aria-hidden="true"';
+      ? `${cardBreakableSlider(h)}${sessionHtml}`
+      : (sessionHtml || `<div class="ting-trail">${trail}</div>`);
+    const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
     const isDoneTask = h.type === 'task' && isTaskDone(h);
+    const canTimer = typeof habitTimerEligible === 'function'
+      ? habitTimerEligible(h)
+      : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
+    const timerAction = (canTimer || timerRunning)
+      ? (timerRunning
+        ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop timer"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
+        : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start timer"><i class="ti ti-player-play" aria-hidden="true"></i>timer</button>`)
+      : '';
     const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
+    const keepAction = h.sample
+      ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
+      : '';
     const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
 
     const row = document.createElement('div');
@@ -2202,20 +2320,25 @@ function render(opts){
       row.dataset.progressDirty = '0';
     }
     const isBreakable = showBreakableSlider;
+    // Session grid class only when the bar owns the visual row (non-breakable).
+    // Breakable stacks the timer bar under the crown inside the same visual.
+    const hasSession = Boolean(sessionHtml) && !isBreakable;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         ${pinAction}
+        ${keepAction}
         ${activityAction}
+        ${timerAction}
       </div>
       <div class="swipe-actions swipe-actions-right">
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
-        <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}">
+        <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}">
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
@@ -2245,7 +2368,7 @@ function render(opts){
     // (today / overdue / upcoming / others) so the list is sensible within a
     // frame. Full agenda replaces this on the next idle paint.
     list.classList.add('is-progressive');
-    const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
+    const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
     const fastOrder = todayFirstActive && !searching
       ? [...indices].sort((a,b)=>{
         const pa = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
@@ -2363,7 +2486,7 @@ function render(opts){
     leftovers.forEach(realIdx=>{
       const key = leftoverKey(data[realIdx]);
       if(key !== leftoverCat){
-        const labels = {1:'overdue',2:'upcoming',3:'others'};
+        const labels = {1:'overdue',2:'coming up',3:'the rest'};
         const label = labels[key];
         if(label)appendSectionHeader(list,label);
         leftoverCat = key;
@@ -2466,7 +2589,7 @@ function render(opts){
       if(!searching && todayFirstActive && !h.pinned){
         const sectionKey = isEarlyToday ? 0 : cat;
         if(sectionKey !== sectionCat){
-          const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
+          const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
           const label = labels[sectionKey];
           const dayCtx = label === 'today'
             ? {dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows}
@@ -2558,9 +2681,19 @@ function render(opts){
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
       if(btn.dataset.action === 'pin')togglePin(idx);
+      if(btn.dataset.action === 'keep'){
+        if(typeof keepSampleHabit === 'function')keepSampleHabit(idx);
+      }
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
+      if(btn.dataset.action === 'timer'){
+        if(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === idx){
+          if(typeof stopHabitTimer === 'function')stopHabitTimer(true,true);
+        }else if(typeof startHabitTimer === 'function'){
+          startHabitTimer(idx);
+        }
+      }
     });
   });
   list.querySelectorAll('.card-action-btn').forEach(btn=>{
@@ -2629,6 +2762,7 @@ function homeListFingerprint(now = Date.now()){
     coordSig,
     currentEdgeSig,
     habitSig,
+    (typeof habitTimer !== 'undefined' && habitTimer) ? `timer:${habitTimer.idx}:${habitTimer.startedAt}` : '',
     JSON.stringify(s.cancelledBlocks || {}),
     JSON.stringify(s.blockedTimeOverrides || {}),
     JSON.stringify(s.availabilityOverrides || {}),
@@ -3359,6 +3493,12 @@ function logTing(i,opts = {}){
     return parts.length ? ` · ${parts.join(' · ')}` : '';
   })();
   showActionToast(`Logged ${toastItemName(h)}${detail}`,action);
+  // If a session timer was open for this habit, drop it — the entry already
+  // covers the session and a later stop must not prompt a second log.
+  if(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === i
+    && typeof clearHabitTimerSilent === 'function'){
+    clearHabitTimerSilent();
+  }
   return true;
 }
 
@@ -3391,6 +3531,11 @@ function logTingAt(i,ts){
   }
   if(!save(data))return false;
   showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
+  // Calendar day log counts as completing the session — drop any open timer.
+  if(!isPlan && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === i
+    && typeof clearHabitTimerSilent === 'function'){
+    clearHabitTimerSilent();
+  }
   return true;
 }
 

@@ -53,8 +53,10 @@ function datetimeInput(d){
   async function verifyCalendarOverview(){
     await page.locator('#open-overview').click();
     await page.waitForSelector('#overview-sheet.open, #pane-overview .overview-sheet');
-    const plannedText = await page.locator('#overview-stats').textContent();
-    if(!/planned/.test(plannedText || ''))throw new Error('Calendar overview did not render planned stats');
+    const hasGrid = await page.locator('#overview-calendar .cal-day.pickable').count();
+    if(!hasGrid)throw new Error('Calendar overview did not render day cells');
+    const hasFilter = await page.locator('#overview-filter [data-overview-range]').count();
+    if(!hasFilter)throw new Error('Calendar overview missing range filters');
     await page.locator('#overview-close').click();
   }
 

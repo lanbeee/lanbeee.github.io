@@ -26,22 +26,33 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.locator('#day-logs-sheet.open').waitFor();
   const sheet = await page.$('#day-logs-sheet .sheet');
 
+  await page.locator('#day-logs-body [data-day-item]', { hasText: name }).first().click();
+  await page.locator('#day-logs-body [data-open-day-item]').waitFor();
+
   for(const d of [4, 8, 15, 22, 30]){
-    const openBtn = page.locator('#day-logs-list .overview-item', { hasText: `${name} 0` }).locator('[data-open-day-item]');
+    const openBtn = page.locator('#day-logs-body [data-open-day-item]');
     const b = await openBtn.boundingBox();
     await cdpDrift(client, b.x + b.width/2, b.y + b.height/2, d);
     await page.waitForTimeout(250);
     const detail = await page.locator('#detail-sheet.open').count();
     console.log(`TAP drift ${d}px -> detail open: ${detail}`);
     await page.evaluate(()=>{document.getElementById('detail-sheet').classList.remove('open');document.body.classList.remove('fullpage-open');});
+    if(!(await page.locator('#day-logs-sheet.open').count())){
+      await planCell.tap();
+      await page.locator('#day-logs-sheet.open').waitFor();
+      await page.locator('#day-logs-body [data-day-item]', { hasText: name }).first().click();
+      await page.locator('#day-logs-body [data-open-day-item]').waitFor();
+    }
   }
 
-  // Now a REAL scroll swipe on the list should NOT fire a click.
+  // Back to list for scroll test
+  await page.locator('#day-logs-back, #day-logs-back-list').first().click();
+  await page.locator('#day-logs-body [data-day-item]').first().waitFor();
+
   console.log('--- real scroll test ---');
   const beforeScroll = await sheet.evaluate(el=>el.scrollTop);
-  const firstItem = page.locator('#day-logs-list .overview-item', { hasText: `${name} 0` });
+  const firstItem = page.locator('#day-logs-body [data-day-item]', { hasText: name }).first();
   const fb = await firstItem.boundingBox();
-  // fast vertical swipe of 120px
   await cdpDriftV(client, fb.x + 30, fb.y + 10, 120);
   await page.waitForTimeout(300);
   const afterScroll = await sheet.evaluate(el=>el.scrollTop);

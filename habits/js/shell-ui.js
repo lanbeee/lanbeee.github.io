@@ -306,6 +306,24 @@ function doNuke(i){
   if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && removed.type === 'task'){
     cancelPush(reminderSignature(removed));
   }
+  // Drop or renumber the global timer so idx cannot retarget another habit.
+  if(typeof habitTimer !== 'undefined' && habitTimer){
+    if(habitTimer.idx === i){
+      if(typeof clearHabitTimerSilent === 'function')clearHabitTimerSilent();
+    }else if(habitTimer.idx > i){
+      habitTimer.idx -= 1;
+    }
+  }
+  if(typeof valueLogIdx !== 'undefined' && valueLogIdx != null){
+    if(valueLogIdx === i){
+      valueLogIdx = null;
+      valueLogAfter = null;
+      valueLogMinutes = null;
+      if(typeof closeSheet === 'function')closeSheet('value-log-sheet');
+    }else if(valueLogIdx > i){
+      valueLogIdx -= 1;
+    }
+  }
   data.splice(i,1);
   if(save(data)){
     showActionToast(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
@@ -390,6 +408,7 @@ function openDetailFromDayLogs(idx){
   if(typeof openDetail !== 'function')return;
   if(!paneTierActive() && $('day-logs-sheet')?.classList.contains('open')){
     dayLogsKey = null;
+    if(typeof resetDayLogsStep === 'function')resetDayLogsStep();
     // Open detail first (it renders behind day-logs due to z-index 110 < 120),
     // then close day-logs so the detail sheet is revealed as day-logs fades out.
     openDetail(idx);
@@ -401,7 +420,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -416,7 +435,7 @@ function shouldMountInPane(id) {
 // Use overflow locking only — never position:fixed. Fixing the body forces
 // scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
-  const fullPageOpen = ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.body.classList.toggle('fullpage-open',fullPageOpen);
   if(modalOpen && !document.body.classList.contains('modal-open')){
@@ -583,9 +602,9 @@ function forgivingButtonTarget(target){
 
 // WIRE: attaches forgiving pointer tap handlers to a calendar
 function bindCalendarTap(container,selector,handler){
-  if(!container)return; // calendar element not present (e.g. retired strip)
+  if(!container)return; // calendar element not present
   // Any horizontally-scrollable pager this calendar lives inside of (the
-  // detail sheet's info/calendar/schedule pager). Swiping between those pages
+  // detail sheet's calendar/insight/schedule pager). Swiping between those pages
   // often starts the gesture on top of a calendar cell, so a tap here has to
   // be sure the pager never actually moved - not just that the finger ended
   // up close to where it started.
@@ -801,7 +820,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','overview-sheet','settings-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
@@ -842,7 +861,7 @@ document.addEventListener('keydown',e=>{
     if (id === 'detail-sheet' && typeof closeDetail === 'function') closeDetail();
   }
   // Also close centered modals on Escape
-  ['add-sheet','about-sheet','settings-sheet','overview-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'].forEach(id=>{
+  ['add-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'].forEach(id=>{
     const el = $(id);
     if (el && el.classList.contains('open')) {
       e.preventDefault();
@@ -851,10 +870,11 @@ document.addEventListener('keydown',e=>{
       else if (id === 'overview-sheet') closeSheet('overview-sheet');
       else if (id === 'settings-sheet') closeSheet('settings-sheet');
       else if (id === 'about-sheet') closeSheet('about-sheet');
+      else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');
       else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
       else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
       else if (id === 'day-capacity-sheet') closeSheet('day-capacity-sheet');
-      else if (id === 'day-logs-sheet') { dayLogsKey = null; closeSheet('day-logs-sheet'); }
+      else if (id === 'day-logs-sheet') { if(typeof closeDayLogsSheet === 'function') closeDayLogsSheet({refreshOverview:!dayLogsScoped()}); else { dayLogsKey = null; if(typeof resetDayLogsStep === 'function')resetDayLogsStep(); closeSheet('day-logs-sheet'); } }
       else if (id === 'slipped-sheet') closeSheet('slipped-sheet');
       else if (id === 'free-time-sheet') closeSheet('free-time-sheet');
     }

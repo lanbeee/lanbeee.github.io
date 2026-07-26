@@ -84,7 +84,7 @@ function assert(cond,msg){
 
   const summaryText = await page.locator('#free-time-sheet .free-panel-row').first().textContent();
   assert(summaryText.includes('open'), `summary row shows total open: "${summaryText}"`);
-  assert(summaryText.includes('largest'), `summary row shows largest: "${summaryText}"`);
+  assert(summaryText.includes('biggest stretch') || summaryText.includes('largest'), `summary row shows biggest stretch: "${summaryText}"`);
 
   if(panelRows > 1){
     const gapText = await page.locator('#free-time-sheet .free-panel-row').nth(1).textContent();

@@ -143,9 +143,9 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     return {anytime,later,openNow,closing,scheduled};
   });
   check('agenda lead anytime has muted clock cue',tones.anytime.cls.includes('agenda-anytime') && tones.anytime.icon === 'ti-clock' && tones.anytime.title.includes('anytime'),JSON.stringify(tones.anytime));
-  check('agenda lead later waits for the window',tones.later.cls.includes('agenda-later') && tones.later.icon === 'ti-hourglass' && tones.later.title.includes('opens at'),JSON.stringify(tones.later));
-  check('agenda lead open window stays teal suggested',tones.openNow.cls.includes('agenda-suggested') && tones.openNow.icon === 'ti-sparkles' && tones.openNow.title.includes('window open'),JSON.stringify(tones.openNow));
-  check('agenda lead closing warns when the window is tight',tones.closing.cls.includes('agenda-closing') && tones.closing.icon === 'ti-alarm' && tones.closing.title.includes('window closing'),JSON.stringify(tones.closing));
+  check('agenda lead later waits for the window',tones.later.cls.includes('agenda-later') && tones.later.icon === 'ti-hourglass' && tones.later.title.includes('starts at'),JSON.stringify(tones.later));
+  check('agenda lead open window stays teal suggested',tones.openNow.cls.includes('agenda-suggested') && tones.openNow.icon === 'ti-sparkles' && tones.openNow.title.includes('good time now'),JSON.stringify(tones.openNow));
+  check('agenda lead closing warns when the window is tight',tones.closing.cls.includes('agenda-closing') && tones.closing.icon === 'ti-alarm' && tones.closing.title.includes('almost out of time'),JSON.stringify(tones.closing));
   check('scheduled agenda lead stays purple calendar cue',tones.scheduled.cls.includes('scheduled') && tones.scheduled.icon === 'ti-calendar-time',JSON.stringify(tones.scheduled));
 
   const homeCopy = await page.evaluate(()=>({

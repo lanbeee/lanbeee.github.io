@@ -108,13 +108,14 @@ function atDay(offset,hour = 12,minute = 0){
   if (!(await page.locator('.ting-card:has-text("Do early laundry") .context-pill:has-text("early")').first().isVisible())) {
     throw new Error('early reason pill missing');
   }
-  if (!(await page.locator('.section-header:text("upcoming")').isVisible())) {
-    throw new Error('upcoming section missing');
+  if (!(await page.locator('.section-header:text("coming up")').isVisible())) {
+    throw new Error('coming up section missing');
   }
 
   await page.locator('#open-overview').click();
   await page.locator(`[data-log-day="${dateKey(0)}"]`).first().click();
   await page.waitForSelector('#day-logs-sheet.open');
+  await page.locator('#day-logs-plan').click();
   await page.locator('#day-log-ting').selectOption({ label: 'Normal upcoming' });
   await page.locator('#day-log-time').fill('09:30');
   await page.locator('#day-log-add').click();

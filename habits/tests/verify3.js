@@ -24,7 +24,8 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
   for(const d of [4, 8, 15, 22, 30]){
     await openDayLogs();
-    const openBtn = page.locator('#day-logs-list .overview-item', { hasText: name }).locator('[data-open-day-item]');
+    await page.locator('#day-logs-body [data-day-item]', { hasText: name }).click();
+    const openBtn = page.locator('#day-logs-body [data-open-day-item]');
     const b = await openBtn.boundingBox();
     await cdpDrift(client, b.x + b.width/2, b.y + b.height/2, d);
     await page.waitForTimeout(300);

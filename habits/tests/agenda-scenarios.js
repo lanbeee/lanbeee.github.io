@@ -718,7 +718,7 @@ function defaultSettings(overrides = {}) {
     check('6b do-early item dropped from agenda when today is full', !fill, fill ? `unexpected start=${fill.startLabel}` : '');
 
     const sec = await sectionOf('Laundry upcoming');
-    check('6b dropped do-early card falls back to upcoming section', sec === 'upcoming', `section=${sec}`);
+    check('6b dropped do-early card falls back to coming up section', sec === 'coming up', `section=${sec}`);
 
     const earlyPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill:has-text("early")').count();
     check('6b dropped do-early card has no early pill', earlyPill === 0, `early=${earlyPill}`);

@@ -20,19 +20,20 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const label = await page.locator('#overview-calendar-label').textContent();
   const nav = await page.locator('#overview-prev-month').isVisible();
   console.log('WK recent label:', JSON.stringify(label), 'nav:', nav);
-  if(label !== 'last 14 days' || !nav) throw new Error('recent nav UI broken on webkit');
+  if(label !== 'around today' || !nav) throw new Error('recent nav UI broken on webkit');
   await page.locator('#overview-prev-month').click();
   await page.waitForTimeout(150);
   const label2 = await page.locator('#overview-calendar-label').textContent();
   console.log('WK prev label:', JSON.stringify(label2));
-  if(label2 === 'last 14 days') throw new Error('prev nav did not shift on webkit');
+  if(label2 === 'around today') throw new Error('prev nav did not shift on webkit');
 
   // Feature 1: open button via clean tap (webkit clean tap)
   await page.locator('#overview-next-month').click(); // back to default
   await page.waitForTimeout(150);
   await page.locator('#overview-calendar [data-log-day]').filter({ has: page.locator('.cal-dot.plan') }).last().tap();
   await page.locator('#day-logs-sheet.open').waitFor();
-  await page.locator('#day-logs-list .overview-item', { hasText: name }).locator('[data-open-day-item]').tap();
+  await page.locator('#day-logs-body [data-day-item]', { hasText: name }).tap();
+  await page.locator('#day-logs-body [data-open-day-item]').tap();
   await page.locator('#detail-sheet.open').waitFor();
   const nm = await page.locator('#detail-name', { hasText: name }).count();
   console.log('WK open -> detail name shown:', nm);

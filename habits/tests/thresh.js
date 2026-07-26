@@ -22,7 +22,10 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.locator('#day-logs-sheet.open').waitFor();
   for(const d of [4, 8, 12, 16, 20, 25, 35]){
     // reset by closing+reopening not needed; button stays
-    const openBtn = page.locator('#day-logs-list .overview-item', { hasText: name }).locator('[data-open-day-item]');
+    const listItem = page.locator('#day-logs-body [data-day-item]', { hasText: name });
+    if(await listItem.count()) await listItem.click();
+    const openBtn = page.locator('#day-logs-body [data-open-day-item]');
+    await openBtn.waitFor({ state:'visible', timeout:5000 });
     const b = await openBtn.boundingBox();
     await cdpDrift(client, b.x + b.width/2, b.y + b.height/2, d);
     await page.waitForTimeout(300);
@@ -32,6 +35,15 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       // close detail to retest
       await page.evaluate(()=>document.getElementById('detail-sheet').classList.remove('open'));
     }
+    // Return to the day list so the next drift can re-select the item.
+    await page.evaluate(()=>{
+      if(typeof dayLogsKey === 'string' && dayLogsKey){
+        dayLogsStep = 'list';
+        dayLogsItemIndex = null;
+        dayLogsMoving = false;
+        if(typeof renderDayLogsSheet === 'function')renderDayLogsSheet(dayLogsKey);
+      }
+    });
   }
   await browser.close();
 })().catch(e=>{console.error(e);process.exit(1);});

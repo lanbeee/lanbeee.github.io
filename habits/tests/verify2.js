@@ -21,13 +21,24 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.locator('#day-logs-sheet.open').waitFor();
 
   for(const d of [4, 8, 15, 22, 30]){
-    const openBtn = page.locator('#day-logs-list .overview-item', { hasText: name }).locator('[data-open-day-item]');
+    const listItem = page.locator('#day-logs-body [data-day-item]', { hasText: name });
+    if(await listItem.count()) await listItem.click();
+    const openBtn = page.locator('#day-logs-body [data-open-day-item]');
+    await openBtn.waitFor({ state:'visible', timeout:5000 });
     const b = await openBtn.boundingBox();
     await cdpDrift(client, b.x + b.width/2, b.y + b.height/2, d);
     await page.waitForTimeout(250);
     const detail = await page.locator('#detail-sheet.open').count();
     console.log(`TAP drift ${d}px -> detail open: ${detail}`);
     await page.evaluate(()=>{document.getElementById('detail-sheet').classList.remove('open');document.body.classList.remove('fullpage-open');});
+    await page.evaluate(()=>{
+      if(typeof dayLogsKey === 'string' && dayLogsKey){
+        dayLogsStep = 'list';
+        dayLogsItemIndex = null;
+        dayLogsMoving = false;
+        if(typeof renderDayLogsSheet === 'function')renderDayLogsSheet(dayLogsKey);
+      }
+    });
   }
   await browser.close();
 })().catch(e=>{console.error(e);process.exit(1);});

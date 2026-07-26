@@ -289,8 +289,8 @@ async function openSettings(page){
   console.log({ beforeDrop, afterPan });
   assert(Math.abs(afterPan.lat - 41.8781) < 0.002, 'pan moveend snaps pin lat');
   assert(Math.abs(afterPan.lng - (-87.6298)) < 0.002, 'pan moveend snaps pin lng');
-  assert(await page.locator('#picker-drop-pin').textContent().then(t => t.trim() === 'Pin'), 'Pin button label is short');
-  // Explicit Pin after another pan (with stop) still works.
+  assert(await page.locator('#picker-drop-pin').textContent().then(t => /use this spot/i.test(t.trim())), 'drop-pin button uses plain label');
+  // Explicit pin after another pan (with stop) still works.
   await page.evaluate(() => {
     pickerMap.setView([34.0522,-118.2437],14,{animate:false});
   });

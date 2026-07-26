@@ -31,7 +31,8 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.locator('#day-logs-sheet.open').waitFor();
   console.log('day-logs-sheet opened (after click on day cell)');
 
-  const openBtn = page.locator('#day-logs-list .overview-item', { hasText: name }).locator('[data-open-day-item]');
+  await page.locator('#day-logs-body [data-day-item]', { hasText: name }).click();
+    const openBtn = page.locator('#day-logs-body [data-open-day-item]');
   const btnBox = await openBtn.boundingBox();
   console.log('open button box:', JSON.stringify(btnBox));
 
