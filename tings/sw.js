@@ -1,5 +1,27 @@
-const CACHE = 'tings-v14';
+const CACHE = 'tings-v63';
+const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
+const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
+const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const MAPS_ORIGINS = [
+  'https://router.project-osrm.org',
+  'https://nominatim.openstreetmap.org',
+  'https://photon.komoot.io',
+  'https://maps.googleapis.com',
+  'https://tile.openstreetmap.org',
+  'https://a.tile.openstreetmap.org',
+  'https://b.tile.openstreetmap.org',
+  'https://c.tile.openstreetmap.org',
+  'https://unpkg.com',
+  'https://cdn.jsdelivr.net'
+];
+const GEOCODE_ORIGINS = [
+  'https://nominatim.openstreetmap.org',
+  'https://photon.komoot.io'
+];
 
 const PRECACHE = [
   './',
@@ -9,12 +31,18 @@ const PRECACHE = [
   './js/config.js',
   './js/storage.js',
   './js/viewport.js',
+  './lib/js/adhan.umd.min.js',
   './js/data.js',
+  './js/calendar-import.js',
+  './js/locations.js',
+  './js/prayer-times.js',
   './js/scoring.js',
   './js/list-view.js',
   './js/detail-view.js',
   './js/overview-view.js',
   './js/today-view.js',
+  './js/agenda-optimizer.js',
+  './lib/js/glpk.mjs',
   './js/push-client.js',
   './js/reminders.js',
   './js/shell-ui.js',
@@ -27,14 +55,44 @@ const PRECACHE = [
   './manifest.json'
 ];
 
+const PRECACHE_CDN = [TABLER_CSS, TABLER_WOFF2, LEAFLET_CSS, LEAFLET_JS, PDFJS, PDFJS_WORKER];
+
+function isScriptAsset(url){
+  return /\.(m?js)(\?|$)/i.test(url || '');
+}
+
+function responseLooksLikeHtml(res){
+  if(!res)return false;
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  return ct.includes('text/html');
+}
+
+async function cachePutOk(cache, url) {
+  try {
+    const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    if (res && res.ok && !responseLooksLikeHtml(res)) await cache.put(url, res);
+  } catch (_) {}
+}
+
+async function cachePutResponse(cache, req, res){
+  if(!res || !res.ok)return;
+  // SPA servers (serve -s) return index.html with 200 for missing files.
+  // Never store that under a .js/.mjs key — it permanently breaks module import.
+  const url = typeof req === 'string' ? req : req.url;
+  if(isScriptAsset(url) && responseLooksLikeHtml(res))return;
+  try{ await cache.put(req, res.clone()); }catch(_){}
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await cache.addAll(PRECACHE);
-    try {
-      const res = await fetch(TABLER_CSS, { mode: 'no-cors' });
-      await cache.put(TABLER_CSS, res);
-    } catch (_) {}
+    await Promise.all(PRECACHE.map(async url => {
+      try{
+        const res = await fetch(url, { cache: 'no-cache' });
+        await cachePutResponse(cache, url, res);
+      }catch(_){}
+    }));
+    await Promise.all(PRECACHE_CDN.map(url => cachePutOk(cache, url)));
     await self.skipWaiting();
   })());
 });
@@ -42,7 +100,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k !== CACHE && k !== MAPS_CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -52,26 +110,97 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET') return;
 
   if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req).catch(async () =>
-        (await caches.match(req)) || (await caches.match('./index.html'))
-      )
-    );
-    return;
-  }
-
-  event.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    const cached = await cache.match(req);
-    const network = fetch(req)
-      .then(res => {
-        if (res && (res.ok || res.type === 'opaque')) {
+    event.respondWith((async () => {
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) {
+          const cache = await caches.open(CACHE);
           cache.put(req, res.clone());
         }
         return res;
-      })
-      .catch(() => cached);
-    return cached || network || new Response('', { status: 503, statusText: 'Offline' });
+      } catch {
+        return (await caches.match(req))
+          || (await caches.match('./index.html'))
+          || (await caches.match('./'))
+          || new Response('Offline', { status: 503, statusText: 'Offline' });
+      }
+    })());
+    return;
+  }
+
+  // Geocode search/reverse: network-first so address queries stay fresh
+  // (cache-first can stick a failed/empty response across retries).
+  if (GEOCODE_ORIGINS.some(origin => req.url.startsWith(origin))) {
+    event.respondWith((async () => {
+      const mapsCache = await caches.open(MAPS_CACHE);
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) mapsCache.put(req, res.clone());
+        return res;
+      } catch {
+        return (await mapsCache.match(req)) || new Response('[]', {
+          status: 504,
+          statusText: 'Gateway Timeout',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    })());
+    return;
+  }
+
+  // Map/directions API responses: cache-first into a dedicated cache that
+  // survives app-shell version bumps (travel data is far more static than app
+  // assets — a 30-day TTL is correct here, where SWR is right for the shell).
+  if (MAPS_ORIGINS.some(origin => req.url.startsWith(origin))) {
+    event.respondWith((async () => {
+      const mapsCache = await caches.open(MAPS_CACHE);
+      const hit = await mapsCache.match(req);
+      if (hit) return hit;
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) mapsCache.put(req, res.clone());
+        return res;
+      } catch {
+        return hit || new Response('', { status: 504, statusText: 'Gateway Timeout' });
+      }
+    })());
+    return;
+  }
+
+  // GLPK module: network-first so a poisoned HTML cache entry cannot stick.
+  if (/\/lib\/js\/glpk\.mjs(\?|$)/i.test(req.url)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const res = await fetch(req, { cache: 'no-cache' });
+        await cachePutResponse(cache, req, res);
+        if (res && res.ok && !responseLooksLikeHtml(res)) return res;
+      } catch (_) {}
+      const cached = await cache.match(req);
+      if (cached && !responseLooksLikeHtml(cached)) return cached;
+      return new Response('GLPK unavailable', { status: 503, statusText: 'Service Unavailable' });
+    })());
+    return;
+  }
+
+  // Stale-while-revalidate for app shell + CDN assets. Must always resolve to a
+  // Response — returning a Promise that settles to undefined breaks offline.
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(req);
+    if (cached && !(isScriptAsset(req.url) && responseLooksLikeHtml(cached))) {
+      fetch(req).then(res => {
+        cachePutResponse(cache, req, res);
+      }).catch(() => {});
+      return cached;
+    }
+    try {
+      const res = await fetch(req);
+      await cachePutResponse(cache, req, res);
+      return res;
+    } catch {
+      return new Response('', { status: 503, statusText: 'Offline' });
+    }
   })());
 });
 

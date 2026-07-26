@@ -26,6 +26,20 @@ function reminderSignature(h){
   return `${h.type}|${isTimedTask(h) ? 'scheduled' : 'due'}|${h.name || ''}|${ts || ''}`;
 }
 
+// PURE: optional " · Home" suffix for pushDetailed reminder bodies.
+function reminderLocationSuffix(h){
+  const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  const ids = normalizeLocationIds(h.locationIds,registry);
+  if(!ids.length)return '';
+  const pref = primaryPreferredLocationId(h.locationPrefs,ids) || normalizePreferredLocation(h.preferredLocationId,ids);
+  // Prefer a non-avoid location for the label when no explicit preference.
+  const nonAvoid = ids.filter(id=>locationPrefLevel(h,id) !== 'avoid');
+  const pool = nonAvoid.length ? nonAvoid : ids;
+  const id = pref || pool[0];
+  const loc = registry.find(l=>l.id === id);
+  return loc ? ` · ${loc.name}` : '';
+}
+
 // PURE: gather actionable reminders. Hard-due tasks that are overdue/due today
 // and not done, plus scheduled tasks starting within the next hour. Sorted:
 // soonest scheduled task first, then overdue tasks.
@@ -38,7 +52,7 @@ function gatherReminders(data,now = Date.now()){
         out.push({
           h,i,kind:'task',sig:reminderSignature(h),
           title:left === 0 ? 'Task due today' : `${Math.abs(left)}d past deadline`,
-          body:h.name + (h.topics.length ? ` · ${h.topics.join(', ')}` : '')
+          body:h.name + (h.topics.length ? ` · ${h.topics.join(', ')}` : '') + reminderLocationSuffix(h)
         });
       }
     }
@@ -49,7 +63,7 @@ function gatherReminders(data,now = Date.now()){
         out.push({
           h,i,kind:'scheduled',sig:reminderSignature(h),
           title:mins <= 1 ? 'Scheduled task starting now' : `Scheduled task in ${mins} min`,
-          body:h.name + ' · ' + agendaTimeLabel(h.eventTime)
+          body:h.name + ' · ' + agendaTimeLabel(h.eventTime) + reminderLocationSuffix(h)
         });
       }
     }
@@ -149,7 +163,7 @@ function checkReminders(options = {}){
           const sig = reminderSignature(h);
           if(scheduledPushSigs.has(sig))return;
           scheduledPushSigs.add(sig);
-          const body = settings.pushDetailed ? (h.name + (h.topics?.length ? ` · ${h.topics.join(', ')}` : '')) : '';
+          const body = settings.pushDetailed ? (h.name + (h.topics?.length ? ` · ${h.topics.join(', ')}` : '') + reminderLocationSuffix(h)) : '';
           schedulePush(sig,'Upcoming task',body,sig,dayStart(h.dueDate));
         }
       }
@@ -159,7 +173,7 @@ function checkReminders(options = {}){
           const sig = reminderSignature(h);
           if(scheduledPushSigs.has(sig))return;
           scheduledPushSigs.add(sig);
-          const body = settings.pushDetailed ? (h.name + ' · ' + agendaTimeLabel(h.eventTime)) : '';
+          const body = settings.pushDetailed ? (h.name + ' · ' + agendaTimeLabel(h.eventTime) + reminderLocationSuffix(h)) : '';
           schedulePush(sig,'Upcoming scheduled task',body,sig,h.eventTime - REMINDER_EVENT_WINDOW_MS);
         }
       }
@@ -196,7 +210,6 @@ function renderReminderBanner(items){
     </button>`;
   $('reminder-go').addEventListener('click',()=>{
     if(count === 1 && typeof openDetail === 'function')openDetail(first.i);
-    else if(typeof openToday === 'function')openToday();
   });
   $('reminder-dismiss').addEventListener('click',()=>dismissReminderBanner(items));
 }

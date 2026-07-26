@@ -632,8 +632,8 @@ body.fullpage-open .bottom-nav{
   appearance:none;-webkit-appearance:none;border:0.5px solid color-mix(in srgb,var(--amber-icon) 32%,transparent);
   font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
   color:var(--amber-text);background:var(--amber-bg);
-  border-radius:6px;padding:4px 7px;cursor:pointer;margin:0;
-  -webkit-tap-highlight-color:transparent;
+  border-radius:6px;padding:6px 9px;cursor:pointer;margin:0;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
 }
 .dropped-pill:active{transform:scale(0.97);}
 .dropped-panel{
@@ -665,16 +665,16 @@ body.fullpage-open .bottom-nav{
 }
 .section-header.has-pill.has-dropped{
   justify-content:flex-start;
+  gap:12px;
 }
 .section-header .free-pill{margin-left:auto;}
-.section-header .dropped-pill + .free-pill{margin-left:5px;}
 .free-pill{
   appearance:none;-webkit-appearance:none;
   border:0.5px solid color-mix(in srgb,var(--teal-icon) 40%,transparent);
   font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
   color:var(--teal-text);background:var(--teal-bg);
-  border-radius:6px;padding:4px 7px;cursor:pointer;margin:0;
-  -webkit-tap-highlight-color:transparent;
+  border-radius:6px;padding:6px 9px;cursor:pointer;margin:0;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
 }
 .free-pill:active{transform:scale(0.97);}
 .free-panel{
@@ -720,8 +720,11 @@ body.reach-pad #list{padding-top:220px;}
   position:relative;overflow:hidden;border-radius:var(--radius);
   touch-action:pan-y;
 }
+/* Collapsed at rest (width:0). Inline width during swipe still reveals actions;
+   without this, content-sized actions sit under the card and peek on fast scroll. */
 .swipe-actions{
   position:absolute;top:0;bottom:0;
+  width:0;min-width:0;
   display:flex;align-items:stretch;
   overflow:hidden;
   pointer-events:none;

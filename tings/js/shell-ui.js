@@ -179,7 +179,18 @@ function renderActivity(h){
   const actual = actualLogs(h.logs);
   const past = logs
     .filter(log=>!isPlanLog(log) && dateKey(logTime(log)) <= nowKey)
-    .map(log=>({ts:logTime(log),kind:'entry',detail:activityEntryDetail(actual,logTime(log))}))
+    .map(log=>{
+      const ts = logTime(log);
+      const obj = typeof log === 'object' ? log : null;
+      return {
+        ts,
+        kind:'entry',
+        detail:activityEntryDetail(actual,ts),
+        value:obj ? logValue(obj) : null,
+        minutes:obj ? logMinutes(obj) : null,
+        note:obj ? logNote(obj) : ''
+      };
+    })
     .sort((a,b)=>b.ts-a.ts);
   const future = logs
     .filter(log=>isPlanLog(log) && dateKey(logTime(log)) >= nowKey)
@@ -263,13 +274,27 @@ function activitySection(title,items,moreCount = 0){
       const label = d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
       const detail = item.kind === 'plan' ? entryWhen(item.ts) : item.detail || d.toLocaleDateString(undefined,{year:'numeric'});
       const icon = item.kind === 'plan' ? 'ti-calendar-event' : 'ti-check';
+      const extras = item.kind === 'entry' ? activityEntryExtras(item) : '';
       return `<div class="activity-item ${item.kind}">
         <span class="overview-name"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span>
         <span class="overview-meta">${escapeHtml(detail)}</span>
+        ${extras}
       </div>`;
     }).join('')}
     ${moreCount > 0 ? `<div class="activity-more">${moreCount} older ${moreCount === 1 ? 'entry' : 'entries'}</div>` : ''}
   </section>`;
+}
+
+// PURE: optional value/minutes/note line for an activity entry.
+function activityEntryExtras(item){
+  if(!item)return '';
+  const bits = [];
+  if(item.minutes != null)bits.push(`${item.minutes}m`);
+  if(item.value != null && Number.isFinite(Number(item.value)))bits.push(`${item.value}`);
+  const note = String(item.note || '').trim();
+  const meta = bits.length ? `<span class="activity-extras-meta">${escapeHtml(bits.join(' · '))}</span>` : '';
+  const noteHtml = note ? `<span class="activity-extras-note">${escapeHtml(note)}</span>` : '';
+  return (meta || noteHtml) ? `<div class="activity-extras">${meta}${noteHtml}</div>` : '';
 }
 
 // HANDLER: deletes a habit and shows undo
@@ -280,6 +305,24 @@ function doNuke(i){
   // Cancel any scheduled push before removing.
   if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && removed.type === 'task'){
     cancelPush(reminderSignature(removed));
+  }
+  // Drop or renumber the global timer so idx cannot retarget another habit.
+  if(typeof habitTimer !== 'undefined' && habitTimer){
+    if(habitTimer.idx === i){
+      if(typeof clearHabitTimerSilent === 'function')clearHabitTimerSilent();
+    }else if(habitTimer.idx > i){
+      habitTimer.idx -= 1;
+    }
+  }
+  if(typeof valueLogIdx !== 'undefined' && valueLogIdx != null){
+    if(valueLogIdx === i){
+      valueLogIdx = null;
+      valueLogAfter = null;
+      valueLogMinutes = null;
+      if(typeof closeSheet === 'function')closeSheet('value-log-sheet');
+    }else if(valueLogIdx > i){
+      valueLogIdx -= 1;
+    }
   }
   data.splice(i,1);
   if(save(data)){
@@ -365,6 +408,7 @@ function openDetailFromDayLogs(idx){
   if(typeof openDetail !== 'function')return;
   if(!paneTierActive() && $('day-logs-sheet')?.classList.contains('open')){
     dayLogsKey = null;
+    if(typeof resetDayLogsStep === 'function')resetDayLogsStep();
     // Open detail first (it renders behind day-logs due to z-index 110 < 120),
     // then close day-logs so the detail sheet is revealed as day-logs fades out.
     openDetail(idx);
@@ -376,7 +420,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'today-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -387,10 +431,24 @@ function shouldMountInPane(id) {
   return id === 'detail-sheet';
 }
 
-// RENDER: toggles body class for full-page sheet state
+// RENDER: toggles full-page chrome and locks every modal's background scroll.
+// Use overflow locking only — never position:fixed. Fixing the body forces
+// scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
-  const open = ['detail-sheet','about-sheet','overview-sheet','settings-sheet','today-sheet'].some(id=>$(id).classList.contains('open'));
-  document.body.classList.toggle('fullpage-open',open);
+  const fullPageOpen = ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].some(id=>$(id).classList.contains('open'));
+  const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
+  document.body.classList.toggle('fullpage-open',fullPageOpen);
+  if(modalOpen && !document.body.classList.contains('modal-open')){
+    document.body.classList.add('modal-open');
+  }else if(!modalOpen && document.body.classList.contains('modal-open')){
+    // Drop focus inside the sheet (or the home card that opened it) before
+    // unlocking. Otherwise Safari scrolls that target into view on close.
+    const active = document.activeElement;
+    if(active && active !== document.body && typeof active.blur === 'function' && active.closest?.('.sheet-wrap,.blocked-card,.travel-card')){
+      active.blur();
+    }
+    document.body.classList.remove('modal-open');
+  }
 }
 
 // RENDER: shows and auto-hides the toast message
@@ -475,7 +533,6 @@ function refreshOpenViews(){
     }
   }
   if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
-  if($('today-sheet').classList.contains('open') && typeof renderTodayAgenda === 'function')renderTodayAgenda();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
   if(typeof checkReminders === 'function')checkReminders();
 }
@@ -530,22 +587,113 @@ function updateHeaderOnScroll(){
 
 // PURE: resolves forgiving button target from an event target
 function forgivingButtonTarget(target){
+  if(!target || typeof target.closest !== "function")return null;
   const btn = target.closest('button');
   if(!btn || btn.closest('.ting-card'))return null;
+  // These live directly in the vertically scrolling home feed and have their
+  // own movement-aware activation. Synthesizing a forgiving click here can
+  // open an editor or cancel a block before their scroll guards see pointerup.
+  if(btn.matches('.travel-card') || btn.closest('.blocked-card'))return null;
   if(btn.closest('#settings-sheet'))return null;
   if(btn.closest('.month-nav'))return null;
   if(btn.classList.contains('cal-day'))return null;
+  if(btn.closest('#overview-filter'))return null;
+  if(btn.closest('#overview-pane-filter'))return null;
+  if(btn.closest('#overview-insight'))return null;
+  if(btn.closest('#overview-list'))return null;
   return btn;
+}
+
+// PURE: true if target or any ancestor was flagged as mid-scroll.
+// Click handlers must use this — checking only .overview-sheet._sg misses
+// horizontal row guards (#overview-filter, .overview-open-chips, etc.).
+function isScrollGuarded(target){
+  for(let el = target; el; el = el.parentElement){
+    if(el._sg)return true;
+  }
+  return false;
+}
+
+// WIRE: prevents accidental taps during scroll. Sets el._sg on touch/pointer
+// displacement or scroll (capture phase catches descendant scrollers too),
+// auto-disarms 500ms after the last movement.
+// axis: 'y' = only vertical displacement arms, 'x' = only horizontal,
+//       omitted = either axis arms.
+// Safe to call more than once on the same element (idempotent).
+function addScrollGuard(el,axis){
+  if(!el || el._sgBound)return;
+  el._sgBound = 1;
+  var timer;
+  function arm(){
+    el._sg = 1;
+    el.classList.add('scrolling');
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      el._sg = 0;
+      el.classList.remove('scrolling');
+    },500);
+  }
+  (function(){
+    var sx = null,sy = null;
+    function start(x,y){ sx = x; sy = y; }
+    function end(){ sx = null; sy = null; }
+    function move(x,y){
+      if(sx == null)return;
+      var dx = Math.abs(x - sx), dy = Math.abs(y - sy);
+      if(axis === 'y'){ if(dy > 8)arm(); }
+      else if(axis === 'x'){ if(dx > 8)arm(); }
+      else if(dx > 8 || dy > 8)arm();
+    }
+    el.addEventListener('touchstart',function(e){
+      var t = e.changedTouches[0];
+      start(t.clientX,t.clientY);
+    },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t = e.changedTouches[0];
+      move(t.clientX,t.clientY);
+    },{passive:true});
+    el.addEventListener('touchend',end,{passive:true});
+    el.addEventListener('touchcancel',end,{passive:true});
+    // Pointer path covers mouse-drag and some WebKit streams where touch*
+    // alone is not enough to arm before the synthesized click.
+    el.addEventListener('pointerdown',function(e){
+      if(e.pointerType === 'mouse' && e.button !== 0)return;
+      start(e.clientX,e.clientY);
+    },{passive:true});
+    el.addEventListener('pointermove',function(e){
+      move(e.clientX,e.clientY);
+    },{passive:true});
+    el.addEventListener('pointerup',end,{passive:true});
+    el.addEventListener('pointercancel',end,{passive:true});
+  })();
+  el.addEventListener('scroll',arm,{passive:true,capture:true});
+}
+
+// WIRE: scroll guards for calendar overview + day-logs. Horizontal rows get
+// their own guards (sheet axis:'y' alone never arms on a sideways swipe).
+// Pane mode scrolls .pane-overview, not .overview-sheet.
+function bindOverviewScrollGuards(){
+  addScrollGuard(document.querySelector('.overview-sheet'),'y');
+  addScrollGuard(document.querySelector('.pane-overview'),'y');
+  addScrollGuard(document.querySelector('.day-logs-sheet'),'y');
+  addScrollGuard($('overview-filter'),'x');
+  addScrollGuard($('overview-pane-filter'),'x');
+  // Insight host persists across re-renders; capture catches .overview-open-chips.
+  addScrollGuard($('overview-insight'),'x');
+  addScrollGuard($('overview-list'),'y');
 }
 
 // WIRE: attaches forgiving pointer tap handlers to a calendar
 function bindCalendarTap(container,selector,handler){
+  if(!container)return; // calendar element not present
   // Any horizontally-scrollable pager this calendar lives inside of (the
-  // detail sheet's info/calendar/schedule pager). Swiping between those pages
+  // detail sheet's calendar/insight/schedule pager). Swiping between those pages
   // often starts the gesture on top of a calendar cell, so a tap here has to
   // be sure the pager never actually moved - not just that the finger ended
   // up close to where it started.
   const pager = container.closest('.detail-pager');
+  let ignoreClickUntil = 0;
+  let handledClickUntil = 0;
 
   container.addEventListener('pointerdown',e=>{
     const day = e.target.closest(selector);
@@ -582,26 +730,61 @@ function bindCalendarTap(container,selector,handler){
     const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
     const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
     const pagerScrolled = tap.pager ? Math.abs(tap.pager.scrollLeft - tap.pagerScrollLeft) : 0;
-    if(moved > 6 || scrolled > 1 || pagerScrolled > 1 || Date.now() - tap.time > 650)return;
+    if(moved > 6 || scrolled > 1 || pagerScrolled > 1 || Date.now() - tap.time > 650){
+      ignoreClickUntil = Date.now() + 500;
+      return;
+    }
     if(!tap.pager){
+      handledClickUntil = Date.now() + 500;
       handler(tap.day,e);
       return;
     }
     // A fast flick can release with almost no finger movement yet still carry
     // the pager into its momentum/snap animation a moment later. Wait two
     // frames and confirm the pager truly settled before treating this as a tap.
+    // Claim the tap immediately so the synthesized click (which fires before
+    // those frames) cannot also invoke the handler and double-log an entry.
+    handledClickUntil = Date.now() + 500;
     const settleScrollLeft = tap.pager.scrollLeft;
     requestAnimationFrame(()=>{
       requestAnimationFrame(()=>{
-        if(Math.abs(tap.pager.scrollLeft - settleScrollLeft) > 1)return;
+        if(Math.abs(tap.pager.scrollLeft - settleScrollLeft) > 1){
+          ignoreClickUntil = Date.now() + 500;
+          return;
+        }
+        handledClickUntil = Date.now() + 500;
         handler(tap.day,e);
       });
     });
   },{passive:true});
 
   container.addEventListener('pointercancel',()=>{
-    if(calendarPointer && calendarPointer.container === container)calendarPointer = null;
+    if(!calendarPointer || calendarPointer.container !== container)return;
+    const tap = calendarPointer;
+    calendarPointer = null;
+    const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
+    const pagerScrolled = tap.pager ? Math.abs(tap.pager.scrollLeft - tap.pagerScrollLeft) : 0;
+    if(tap.maxMove > 6 || scrolled > 1 || pagerScrolled > 1)ignoreClickUntil = Date.now() + 500;
   },{passive:true});
+
+  // WebKit can emit a clean click after claiming/cancelling the pointer stream.
+  // Keep a click/keyboard fallback, while the timestamps above deduplicate a
+  // normal pointerup and reject clicks following an actual scroll gesture.
+  container.addEventListener('click',e=>{
+    const day = e.target.closest(selector);
+    if(!day || !container.contains(day))return;
+    if(Date.now() < handledClickUntil){
+      e.preventDefault();
+      return;
+    }
+    if(Date.now() < ignoreClickUntil){
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handledClickUntil = Date.now() + 500;
+    handler(day,e);
+  });
 }
 
 document.addEventListener('pointerdown',e=>{
@@ -647,7 +830,8 @@ document.addEventListener('pointerup',e=>{
   const dx = Math.abs(e.clientX - x);
   const dy = Math.abs(e.clientY - y);
   const moved = Math.hypot(dx,dy);
-  if(moved > 8 && moved <= 160 && Date.now() - time < 1200){
+  if(btn.disabled)return;
+  if(moved > 8 && moved <= 160 && Date.now() - time < 1200 && !btn.classList.contains('timer-start-btn')){
     suppressNativeButton = btn;
     e.preventDefault();
     e.stopPropagation();
@@ -668,6 +852,7 @@ document.addEventListener('pointercancel',e=>{
   const tap = buttonPointer;
   buttonPointer = null;
   if(tap.btn.disabled)return;
+  if(tap.btn.classList.contains('timer-start-btn'))return;
   const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
   if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && scrolled === 0){
     suppressNativeButton = tap.btn;
@@ -677,7 +862,7 @@ document.addEventListener('pointercancel',e=>{
 },true);
 
 document.addEventListener('click',e=>{
-  if(e.target.closest('button') === suppressNativeButton && e.isTrusted){
+  if(suppressNativeButton && e.target.closest('button') === suppressNativeButton && e.isTrusted){
     e.preventDefault();
     e.stopPropagation();
     suppressNativeButton = null;
@@ -718,7 +903,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','today-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
@@ -759,7 +944,7 @@ document.addEventListener('keydown',e=>{
     if (id === 'detail-sheet' && typeof closeDetail === 'function') closeDetail();
   }
   // Also close centered modals on Escape
-  ['add-sheet','about-sheet','settings-sheet','overview-sheet','today-sheet','snooze-sheet','activity-sheet','day-logs-sheet'].forEach(id=>{
+  ['add-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'].forEach(id=>{
     const el = $(id);
     if (el && el.classList.contains('open')) {
       e.preventDefault();
@@ -768,10 +953,13 @@ document.addEventListener('keydown',e=>{
       else if (id === 'overview-sheet') closeSheet('overview-sheet');
       else if (id === 'settings-sheet') closeSheet('settings-sheet');
       else if (id === 'about-sheet') closeSheet('about-sheet');
-      else if (id === 'today-sheet') closeSheet('today-sheet');
+      else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');
       else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
       else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
-      else if (id === 'day-logs-sheet') { dayLogsKey = null; closeSheet('day-logs-sheet'); }
+      else if (id === 'day-capacity-sheet') closeSheet('day-capacity-sheet');
+      else if (id === 'day-logs-sheet') { if(typeof closeDayLogsSheet === 'function') closeDayLogsSheet({refreshOverview:!dayLogsScoped()}); else { dayLogsKey = null; if(typeof resetDayLogsStep === 'function')resetDayLogsStep(); closeSheet('day-logs-sheet'); } }
+      else if (id === 'slipped-sheet') closeSheet('slipped-sheet');
+      else if (id === 'free-time-sheet') closeSheet('free-time-sheet');
     }
   });
 });

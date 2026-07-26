@@ -2060,7 +2060,10 @@ function openSlippedSheet(items,dayLabel){
     content.appendChild(renderDroppedPanel(missed,{showDayTag:true}));
   }
 
-  openSheet('slipped-sheet');
+  // WebKit may synthesize a click after pointerup. Mounting the backdrop
+  // during pointerup makes that tail click land on the new backdrop and
+  // immediately close it — same defer as openDayLogsAfterCalendarGesture.
+  setTimeout(()=>openSheet('slipped-sheet'),0);
 }
 
 function formatFreeDuration(minutes){
@@ -2217,7 +2220,10 @@ function openFreeTimeSheet(info,dayLabel){
   document.getElementById('free-time-title').textContent = `open time ${dayLabel}`;
   content.innerHTML = '';
   content.appendChild(renderFreePanel(info));
-  openSheet('free-time-sheet');
+  // WebKit may synthesize a click after pointerup. Mounting the backdrop
+  // during pointerup makes that tail click land on the new backdrop and
+  // immediately close it — same defer as openDayLogsAfterCalendarGesture.
+  setTimeout(()=>openSheet('free-time-sheet'),0);
 }
 
 // PURE: reduce trail tones to one
@@ -3244,6 +3250,11 @@ function setupSwipe(row){
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
   let startedOpen = false;
   const CROWN_SWIPE_PAD = 10;
+  // Match CSS collapsed default so first paint never shows action chrome.
+  leftActions.style.width = '0';
+  rightActions.style.width = '0';
+  leftActions.style.pointerEvents = 'none';
+  rightActions.style.pointerEvents = 'none';
 
   // PURE: touch is on/near the crown dial (layout box + pad), so swipe must stand down.
   function touchNearCrown(clientX, clientY){

@@ -33,20 +33,23 @@ function openDetail(i){
   $('detail-habit-message').value = h.name || '';
   $('detail-emoji').value = h.emoji || '';
   $('detail-days').value = h.target || '';
-  $('detail-pinned').checked = Boolean(h.pinned);
+  if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
+  $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-flexibility').value = h.flexibilityDays || 0;
-  renderTopicChips('detail-topic-chips',h.topics);
+  if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',h.breakable ? 'true' : 'false');
+  if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
+  if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
+  if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
+  renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
-  $('detail-hard-due').checked = Boolean(h.hardDue);
-  $('detail-scheduled-time').value = datetimeInputValue(h.eventTime);
-  $('detail-mark-done').checked = h.markDone !== false;
-  $('detail-habit-mark-done').checked = h.markDone !== false;
+  if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
+  if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(h.planByDate);
   syncDetailDueUi();
-  syncDetailScheduledUi();
-  syncDetailHabitMarkDoneUi();
+  syncDetailPlanByUi();
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
@@ -58,21 +61,51 @@ function openDetail(i){
     target:h.target || '',
     pinned:Boolean(h.pinned),
     topics:normalizeTopics(h.topics),
+    locationIds:normalizeLocationIds(h.locationIds),
+    anywhereAllowed:Boolean(h.anywhereAllowed),
+    locationPrefs:normalizeLocationPrefs(h.locationPrefs,h.locationIds,h.preferredLocationId),
+    preferredLocationId:h.preferredLocationId || null,
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
     preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
     preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
     allowedTimeStart:h.allowedTimeStart ?? null,
     allowedTimeEnd:h.allowedTimeEnd ?? null,
+    preferredTimeStart:h.preferredTimeStart ?? null,
+    preferredTimeEnd:h.preferredTimeEnd ?? null,
+    allowedTimeStartAnchor:cleanAnchor(h.allowedTimeStartAnchor),
+    allowedTimeStartOffsetMin:normalizePrayerOffset(h.allowedTimeStartOffsetMin),
+    allowedTimeEndAnchor:cleanAnchor(h.allowedTimeEndAnchor),
+    allowedTimeEndOffsetMin:normalizePrayerOffset(h.allowedTimeEndOffsetMin),
+    preferredTimeStartAnchor:cleanAnchor(h.preferredTimeStartAnchor),
+    preferredTimeStartOffsetMin:normalizePrayerOffset(h.preferredTimeStartOffsetMin),
+    preferredTimeEndAnchor:cleanAnchor(h.preferredTimeEndAnchor),
+    preferredTimeEndOffsetMin:normalizePrayerOffset(h.preferredTimeEndOffsetMin),
+    allowedTimeStartAnchorHabitId:cleanHabitId(h.allowedTimeStartAnchorHabitId) || null,
+    allowedTimeEndAnchorHabitId:cleanHabitId(h.allowedTimeEndAnchorHabitId) || null,
+    preferredTimeStartAnchorHabitId:cleanHabitId(h.preferredTimeStartAnchorHabitId) || null,
+    preferredTimeEndAnchorHabitId:cleanHabitId(h.preferredTimeEndAnchorHabitId) || null,
+    ...snapshotCombineFields(h, 'allowedTimeStart'),
+    ...snapshotCombineFields(h, 'allowedTimeEnd'),
+    ...snapshotCombineFields(h, 'preferredTimeStart'),
+    ...snapshotCombineFields(h, 'preferredTimeEnd'),
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
+    breakable:Boolean(h.breakable),
+    minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
+    timerAutoStopMinutes:h.timerAutoStopMinutes ?? null,
+    autoMarkMinutes:h.autoMarkMinutes ?? null,
+    trackValue:Boolean(h.trackValue),
     flexibilityDays:h.flexibilityDays || 0,
     priority:effectivePriority(h),
     dueDate:h.dueDate ?? null,
-    hardDue:Boolean(h.hardDue),
     eventTime:h.eventTime ?? null,
-    markDone:h.markDone !== false
+    planByDate:h.planByDate ?? null
   };
   syncRhythm('detail',h.target || 7);
+  syncBreakableUi();
+  if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi();
+  const keepBtn = $('detail-keep-sample');
+  if(keepBtn)keepBtn.hidden = !h.sample;
   $('detail-mark').style.background = c.bg;
   $('detail-mark').style.color = c.icon;
   $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
@@ -84,15 +117,19 @@ function openDetail(i){
   setDetailDirty(false);
   openSheet('detail-sheet');
   if(changedHabit){
-    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+    const inner = getSheetInner('detail-sheet');
+    const pager = inner?.querySelector('.detail-pager');
+    if(inner)inner.scrollTop = 0;
     if(pager){
+      pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
+      // Tasks are one-off — the calendar pane is just a single dot, so land
+      // on Effort (the pane with the actual due/scheduled controls) instead
+      // of the default Calendar. Habits land on Calendar (index 0). Deferred
+      // a frame so clientWidth is measured after layout, same as
+      // openDetailSchedule() below.
       if(h.type === 'task'){
-        // Tasks are one-off — the calendar pane is just a single dot, so land
-        // on Schedule (the pane with the actual due/scheduled controls)
-        // instead. Deferred a frame so clientWidth is measured after layout,
-        // same as openDetailSchedule() below.
         requestAnimationFrame(()=>{
-          pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
+          pager.scrollTo({left:pager.clientWidth * 3,behavior:'auto'});
           updateDetailPagerDots();
         });
       }else{
@@ -117,13 +154,16 @@ function openDetailCalendar(i){
   });
 }
 
-// HYBRID: opens detail then scrolls to schedule
+// HYBRID: opens detail then scrolls to schedule. For tasks the relevant
+// controls (due / scheduled) live in the Effort pane, so route by type.
 function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
     const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
     if(!pager)return;
-    pager.scrollTo({left:pager.clientWidth * 2,behavior:'auto'});
+    const h = load()[i];
+    const paneIndex = h && h.type === 'task' ? 3 : 2;
+    pager.scrollTo({left:pager.clientWidth * paneIndex,behavior:'auto'});
     updateDetailPagerDots();
   });
 }
@@ -163,54 +203,429 @@ function scheduledWhenLabel(ts){
   return `${new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${time}`;
 }
 
-// RENDER: fills time window input fields
+// RENDER: fills allowed/preferred time window input fields
+//
+// Each of the four endpoints (allowed start/end, preferred start/end) is a
+// per-endpoint editor that swaps between two modes:
+//   • fixed  → a single <input type="time"> (the legacy behaviour)
+//   • dynamic → a <select> of prayer anchors + signed-minute offset + live
+//              preview of the resolved clock time
+// The gear button toggles modes; the underlying time-endpoint element holds
+// both controls and shows the one that matches the habit's current state.
 function renderTimeWindowInputs(h = {}){
-  const start = $('detail-time-start');
-  const end = $('detail-time-end');
-  const clear = $('detail-time-clear');
-  if(!start || !end)return;
-  if(hasTimeWindow(h)){
-    start.value = minutesToTimeInput(h.allowedTimeStart);
-    end.value = minutesToTimeInput(h.allowedTimeEnd);
-    if(clear)clear.hidden = false;
-  }else{
-    start.value = '';
-    end.value = '';
-    if(clear)clear.hidden = true;
+  populateAnchorOptions();
+  renderTimeEndpoint($('detail-time-start').closest('.time-endpoint'), 'allowedTimeStart', h);
+  renderTimeEndpoint($('detail-time-end').closest('.time-endpoint'), 'allowedTimeEnd', h);
+  renderTimeEndpoint($('detail-preferred-time-start').closest('.time-endpoint'), 'preferredTimeStart', h);
+  renderTimeEndpoint($('detail-preferred-time-end').closest('.time-endpoint'), 'preferredTimeEnd', h);
+  syncTimeClearBtn();
+}
+
+// PURE: snapshot the later/earlier-of fields for one endpoint into the tune object.
+function snapshotCombineFields(h, prefix){
+  return {
+    [prefix + 'Combine']:cleanTimeCombine(h && h[prefix + 'Combine']),
+    [prefix + 'Anchor2']:cleanAnchor(h && h[prefix + 'Anchor2']),
+    [prefix + 'OffsetMin2']:normalizePrayerOffset(h && h[prefix + 'OffsetMin2']),
+    [prefix + 'AnchorHabitId2']:cleanHabitId(h && h[prefix + 'AnchorHabitId2']) || null,
+    [prefix + 'FixedMin2']:normalizeTimeMinutes(h && h[prefix + 'FixedMin2']),
+    [prefix + 'DayOffset']:normalizeAnchorDayOffset(h && h[prefix + 'DayOffset']),
+    [prefix + 'DayOffset2']:normalizeAnchorDayOffset(h && h[prefix + 'DayOffset2'])
+  };
+}
+
+// RENDER (idempotent): populate every anchor <select> with the standard list.
+// Re-running on every openDetail is harmless — the options are stable. Primary
+// gets prayer + habit; secondary also gets a fixed clock option.
+function populateAnchorOptions(){
+  const prayerOpts = PRAYER_ANCHORS.map(a => `<option value="${a}">${prayerDisplayName(a)}</option>`).join('');
+  document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
+    if(sel.dataset.populated === '1')return;
+    sel.innerHTML = '<option value="">— anchor —</option>'
+      + prayerOpts
+      + '<option value="habit">after another habit…</option>';
+    sel.dataset.populated = '1';
+  });
+  document.querySelectorAll('.time-endpoint .time-anchor2').forEach(sel => {
+    if(sel.dataset.populated === '1')return;
+    sel.innerHTML = '<option value="">— anchor —</option>'
+      + prayerOpts
+      + '<option value="habit">after another habit…</option>'
+      + '<option value="fixed">clock time…</option>';
+    sel.dataset.populated = '1';
+  });
+}
+
+// RENDER: build/rebuild a habit-picker dropdown. `which` is '' (primary) or '2'.
+// Excludes the current habit (can't anchor on yourself).
+function populateHabitPickerFor(endpoint, field, h, which = ''){
+  if(!endpoint)return;
+  const picker = endpoint.querySelector(which === '2' ? '.time-habit2' : '.time-habit');
+  if(!picker)return;
+  const selected = cleanHabitId(h && h[field + 'AnchorHabitId' + which]) || '';
+  const data = typeof load === 'function' ? load() : [];
+  const currentHid = cleanHabitId(h && h.hid);
+  const options = ['<option value="">— pick a habit —</option>']
+    .concat(data.filter(x => x && cleanHabitId(x.hid) !== currentHid).map(x => {
+      const hid = cleanHabitId(x.hid);
+      const name = (x.name || 'untitled').slice(0,60);
+      return `<option value="${escapeHtml(hid)}"${hid === selected ? ' selected' : ''}>${escapeHtml(name)}</option>`;
+    }));
+  picker.innerHTML = options.join('');
+}
+
+// RENDER: sync habit-wrap + day-next (+ fixed clock for B) visibility for one expression row.
+function syncExprControls(endpoint, field, h, which = ''){
+  const suffix = which === '2' ? '2' : '';
+  const anchor = cleanAnchor(h && h[field + 'Anchor' + suffix]);
+  const isFixed = which === '2' && anchor === 'fixed';
+  const habitWrap = endpoint.querySelector(which === '2' ? '.time-habit-wrap2' : '.time-habit-wrap');
+  const dayBtn = endpoint.querySelector(which === '2' ? '.time-day-next2' : '.time-day-next');
+  const expr = endpoint.querySelector(which === '2' ? '.time-expr2' : '.time-expr');
+  const fixed2 = which === '2' ? endpoint.querySelector('.time-fixed2') : null;
+  if(fixed2){
+    fixed2.hidden = !isFixed;
+    if(isFixed){
+      const min = normalizeTimeMinutes(h && h[field + 'FixedMin2']);
+      fixed2.value = minutesToTimeInput(min != null ? min : 1200);
+    }
+  }
+  if(habitWrap){
+    habitWrap.hidden = anchor !== 'habit';
+    if(anchor === 'habit')populateHabitPickerFor(endpoint, field, h, which);
+  }
+  if(dayBtn){
+    const on = normalizeAnchorDayOffset(h && h[field + 'DayOffset' + suffix]) === 1;
+    dayBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    // +1d only applies to prayer anchors (habit logs are absolute; fixed has no day).
+    dayBtn.hidden = !anchor || anchor === 'habit' || isFixed;
+  }
+  if(expr && which === '2'){
+    expr.querySelectorAll('.time-offset2, .time-offset-sign-btn, .time-offset-unit').forEach(el => {
+      el.hidden = isFixed;
+    });
   }
 }
-// RENDER: toggles time-clear button visibility
+
+// RENDER: sync a single time endpoint DOM block from the habit's stored state.
+function renderTimeEndpoint(endpoint, field, h){
+  if(!endpoint)return;
+  const fixedInput = endpoint.querySelector('.time-fixed');
+  const dynWrap = endpoint.querySelector('.time-dynamic');
+  const anchorSel = endpoint.querySelector('.time-anchor');
+  const offsetInput = endpoint.querySelector('.time-offset');
+  const combineSel = endpoint.querySelector('.time-combine');
+  const expr2 = endpoint.querySelector('.time-expr2');
+  const anchor2Sel = endpoint.querySelector('.time-anchor2');
+  const offset2Input = endpoint.querySelector('.time-offset2');
+  const anchor = cleanAnchor(h && h[field + 'Anchor']);
+  if(anchor){
+    endpoint.classList.add('is-dynamic');
+    if(fixedInput)fixedInput.hidden = true;
+    if(dynWrap)dynWrap.hidden = false;
+    if(anchorSel)anchorSel.value = anchor;
+    if(offsetInput){
+      const off = normalizePrayerOffset(h[field + 'OffsetMin']);
+      offsetInput.value = Math.abs(off) || '';
+      syncOffsetSign(offsetInput, off);
+    }
+    syncExprControls(endpoint, field, h, '');
+    const combine = cleanTimeCombine(h && h[field + 'Combine']);
+    if(combineSel)combineSel.value = combine || '';
+    if(expr2)expr2.hidden = !combine;
+    if(combine){
+      if(anchor2Sel)anchor2Sel.value = cleanAnchor(h[field + 'Anchor2']) || '';
+      if(offset2Input){
+        const off2 = normalizePrayerOffset(h[field + 'OffsetMin2']);
+        offset2Input.value = Math.abs(off2) || '';
+        syncOffsetSign(offset2Input, off2);
+      }
+      syncExprControls(endpoint, field, h, '2');
+    }
+  }else{
+    endpoint.classList.remove('is-dynamic');
+    if(fixedInput){
+      fixedInput.hidden = false;
+      // Guard null/undefined explicitly — Number(null) returns 0, which would
+      // otherwise render "00:00" in the input and silently write back a
+      // midnight→midnight time window on the next save (hasTimeWindow treats
+      // 0/0 as a valid 24h window). null must round-trip to an empty input.
+      const raw = h[field];
+      const num = raw != null ? Number(raw) : NaN;
+      fixedInput.value = Number.isFinite(num) ? minutesToTimeInput(num) : '';
+    }
+    if(dynWrap)dynWrap.hidden = true;
+    if(anchorSel)anchorSel.value = '';
+    if(offsetInput)offsetInput.value = '';
+    if(combineSel)combineSel.value = '';
+    if(expr2)expr2.hidden = true;
+  }
+  updateTimeResolved(endpoint, field, h);
+}
+
+// RENDER: live preview of the resolved clock time for a dynamic endpoint.
+// Falls back to a muted "—" when there's no location on the habit (the save
+// path will block, but the preview explains why). For 'habit' anchors, shows
+// contextual hints: "pick a habit", "never logged", "done · waiting".
+function updateTimeResolved(endpoint, field, h){
+  const node = endpoint && endpoint.querySelector('.time-resolved');
+  if(!node)return;
+  const anchor = cleanAnchor(h && h[field + 'Anchor']);
+  if(!anchor){ node.textContent = ''; return; }
+  if(anchor === 'habit'){
+    const data = typeof load === 'function' ? load() : [];
+    const anchorHabit = findHabitByHid(h && h[field + 'AnchorHabitId'], data);
+    if(!anchorHabit){ node.textContent = 'pick a habit'; return; }
+    const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
+    if(min == null){
+      const role = field.endsWith('Start') ? 'start' : 'end';
+      const anchorLast = anchorHabit.lastLog;
+      const ownLast = h && h.lastLog;
+      if(role === 'start' && ownLast != null && anchorLast != null && ownLast >= anchorLast){
+        node.textContent = 'done · waiting';
+      }else if(anchorLast == null){
+        node.textContent = 'never logged';
+      }else{
+        node.textContent = '—';
+      }
+      return;
+    }
+    node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
+    return;
+  }
+  // Prayer anchor — needs a location.
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const loc = habitPrayerLocation(h, settings);
+  if(!loc){
+    node.textContent = 'add a location';
+    return;
+  }
+  const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
+  if(min == null){
+    node.textContent = '—';
+    return;
+  }
+  node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
+}
+// RENDER: toggles time-clear button visibility. A clear is offered whenever
+// any of the four endpoints has a value (fixed or dynamic).
 function syncTimeClearBtn(){
+  const allowedOn = endpointHasValue($('detail-time-start').closest('.time-endpoint'))
+    || endpointHasValue($('detail-time-end').closest('.time-endpoint'));
+  const prefOn = endpointHasValue($('detail-preferred-time-start').closest('.time-endpoint'))
+    || endpointHasValue($('detail-preferred-time-end').closest('.time-endpoint'));
   const clear = $('detail-time-clear');
-  if(!clear)return;
-  clear.hidden = !$('detail-time-start').value && !$('detail-time-end').value;
+  if(clear)clear.hidden = !allowedOn;
+  const prefClear = $('detail-preferred-time-clear');
+  if(prefClear)prefClear.hidden = !prefOn;
+}
+function endpointHasValue(endpoint){
+  if(!endpoint)return false;
+  if(endpoint.classList.contains('is-dynamic'))return true;
+  const fixed = endpoint.querySelector('.time-fixed');
+  return Boolean(fixed && fixed.value);
+}
+// RENDER: sync the sign toggle button next to an offset input to reflect a
+// signed numeric value. The input stores the absolute value.
+function syncOffsetSign(input, signedVal){
+  if(!input)return;
+  const btn = input.nextElementSibling;
+  if(!btn || !btn.classList.contains('time-offset-sign-btn'))return;
+  const neg = signedVal < 0;
+  btn.dataset.sign = neg ? '-' : '+';
+  btn.textContent = neg ? '−' : '+';
+  btn.setAttribute('aria-label', (neg ? 'negative' : 'positive') + ' offset');
+}
+// PURE: read the signed offset from an input element by combining its value
+// with the sign from the adjacent .time-offset-sign-btn.
+function readSignedOffset(input){
+  const raw = normalizePrayerOffset(input ? input.value : 0);
+  if(!input)return raw;
+  const btn = input.nextElementSibling;
+  if(btn && btn.classList.contains('time-offset-sign-btn') && btn.dataset.sign === '-'){
+    return -Math.abs(raw);
+  }
+  return Math.abs(raw);
+}
+// PURE: read the anchor value (or null) from a per-endpoint editor, addressed
+// by its fixed-input id. Returns null when the endpoint is in fixed mode.
+function readAnchorFromEndpoint(fixedInputId){
+  const el = document.getElementById(fixedInputId);
+  if(!el)return null;
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return null;
+  const sel = endpoint.querySelector('.time-anchor');
+  return cleanAnchor(sel ? sel.value : '');
+}
+// PURE: read the signed offset (default 0) from a per-endpoint editor.
+function readOffsetFromEndpoint(fixedInputId){
+  const el = document.getElementById(fixedInputId);
+  if(!el)return 0;
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return 0;
+  const input = endpoint.querySelector('.time-offset');
+  return readSignedOffset(input);
+}
+// PURE: read the referenced habit id (or null) from a per-endpoint editor.
+// Returns null when the endpoint isn't in 'habit' anchor mode.
+// `which` is '' (primary) or '2' (secondary expression).
+function readHabitIdFromEndpoint(fixedInputId, which = ''){
+  const el = document.getElementById(fixedInputId);
+  if(!el)return null;
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return null;
+  const sel = endpoint.querySelector(which === '2' ? '.time-anchor2' : '.time-anchor');
+  if(!sel || sel.value !== 'habit')return null;
+  const picker = endpoint.querySelector(which === '2' ? '.time-habit2' : '.time-habit');
+  const id = picker ? cleanHabitId(picker.value) : '';
+  return id || null;
+}
+// PURE: read combine mode / secondary expression / day offsets from an endpoint.
+function readCombineFromEndpoint(fixedInputId){
+  const empty = {
+    combine:null, anchor2:null, offset2:0, habitId2:null, fixedMin2:null, dayOffset:0, dayOffset2:0
+  };
+  const el = document.getElementById(fixedInputId);
+  if(!el)return empty;
+  const endpoint = el.closest('.time-endpoint');
+  if(!endpoint || !endpoint.classList.contains('is-dynamic'))return empty;
+  const combine = cleanTimeCombine(endpoint.querySelector('.time-combine')?.value);
+  const dayOffset = endpoint.querySelector('.time-day-next')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
+  if(!combine){
+    return {...empty, dayOffset};
+  }
+  const anchor2 = cleanAnchor(endpoint.querySelector('.time-anchor2')?.value);
+  const offset2 = anchor2 && anchor2 !== 'fixed'
+    ? readSignedOffset(endpoint.querySelector('.time-offset2')) : 0;
+  const dayOffset2 = anchor2 && anchor2 !== 'fixed'
+    && endpoint.querySelector('.time-day-next2')?.getAttribute('aria-pressed') === 'true' ? 1 : 0;
+  const fixedMin2 = anchor2 === 'fixed'
+    ? (timeInputToMinutes(endpoint.querySelector('.time-fixed2')?.value) ?? 1200)
+    : null;
+  return {
+    combine: anchor2 ? combine : null,
+    anchor2,
+    offset2,
+    habitId2: readHabitIdFromEndpoint(fixedInputId, '2'),
+    fixedMin2,
+    dayOffset,
+    dayOffset2
+  };
 }
 
 // HYBRID: reads form DOM into tune object
 function currentDetailTune(){
   const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
-  const markDoneEl = type === 'task' ? $('detail-mark-done') : $('detail-habit-mark-done');
+  const locationIds = selectedLocationIdsFrom('detail-tag-chips');
+  const locationPrefs = selectedLocationPrefsFrom('detail-tag-chips');
   return {
     name:$('detail-habit-message').value.trim(),
     type,
     emoji:cleanMark($('detail-emoji').value),
-    target:$('detail-days').value || '',
-    pinned:$('detail-pinned').checked,
-    topics:selectedTopicsFrom('detail-topic-chips'),
+    target:currentRhythmTarget('detail'),
+    pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
+    topics:selectedTopicsFrom('detail-tag-chips'),
+    locationIds,
+    anywhereAllowed:selectedAnywhereFrom('detail-tag-chips'),
+    locationPrefs,
+    preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
     allowedMonthDays:selectedMonthDaysFrom('detail-monthday-chips'),
     preferredWeekdays:selectedWeekdaysFrom('detail-preferred-weekday-chips'),
     preferredMonthDays:selectedMonthDaysFrom('detail-preferred-monthday-chips'),
     allowedTimeStart:timeInputToMinutes($('detail-time-start').value),
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
+    preferredTimeStart:timeInputToMinutes($('detail-preferred-time-start').value),
+    preferredTimeEnd:timeInputToMinutes($('detail-preferred-time-end').value),
+    allowedTimeStartAnchor:readAnchorFromEndpoint('detail-time-start'),
+    allowedTimeStartOffsetMin:readOffsetFromEndpoint('detail-time-start'),
+    allowedTimeEndAnchor:readAnchorFromEndpoint('detail-time-end'),
+    allowedTimeEndOffsetMin:readOffsetFromEndpoint('detail-time-end'),
+    preferredTimeStartAnchor:readAnchorFromEndpoint('detail-preferred-time-start'),
+    preferredTimeStartOffsetMin:readOffsetFromEndpoint('detail-preferred-time-start'),
+    preferredTimeEndAnchor:readAnchorFromEndpoint('detail-preferred-time-end'),
+    preferredTimeEndOffsetMin:readOffsetFromEndpoint('detail-preferred-time-end'),
+    allowedTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-time-start'),
+    allowedTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-time-end'),
+    preferredTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-start'),
+    preferredTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-end'),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-time-start');
+      return {
+        allowedTimeStartCombine:c.combine, allowedTimeStartAnchor2:c.anchor2,
+        allowedTimeStartOffsetMin2:c.offset2, allowedTimeStartAnchorHabitId2:c.habitId2,
+        allowedTimeStartFixedMin2:c.fixedMin2,
+        allowedTimeStartDayOffset:c.dayOffset, allowedTimeStartDayOffset2:c.dayOffset2
+      };
+    })(),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-time-end');
+      return {
+        allowedTimeEndCombine:c.combine, allowedTimeEndAnchor2:c.anchor2,
+        allowedTimeEndOffsetMin2:c.offset2, allowedTimeEndAnchorHabitId2:c.habitId2,
+        allowedTimeEndFixedMin2:c.fixedMin2,
+        allowedTimeEndDayOffset:c.dayOffset, allowedTimeEndDayOffset2:c.dayOffset2
+      };
+    })(),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-preferred-time-start');
+      return {
+        preferredTimeStartCombine:c.combine, preferredTimeStartAnchor2:c.anchor2,
+        preferredTimeStartOffsetMin2:c.offset2, preferredTimeStartAnchorHabitId2:c.habitId2,
+        preferredTimeStartFixedMin2:c.fixedMin2,
+        preferredTimeStartDayOffset:c.dayOffset, preferredTimeStartDayOffset2:c.dayOffset2
+      };
+    })(),
+    ...(() => {
+      const c = readCombineFromEndpoint('detail-preferred-time-end');
+      return {
+        preferredTimeEndCombine:c.combine, preferredTimeEndAnchor2:c.anchor2,
+        preferredTimeEndOffsetMin2:c.offset2, preferredTimeEndAnchorHabitId2:c.habitId2,
+        preferredTimeEndFixedMin2:c.fixedMin2,
+        preferredTimeEndDayOffset:c.dayOffset, preferredTimeEndDayOffset2:c.dayOffset2
+      };
+    })(),
     durationMinutes:clampDuration($('detail-duration').value),
+    breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
+    minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
+    timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
+    autoMarkMinutes:normalizeAutoMark($('detail-auto-mark')?.value),
+    trackValue:$('detail-track-value')?.getAttribute('aria-pressed') === 'true',
     flexibilityDays:clampFlexibility($('detail-flexibility').value),
     priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
-    hardDue:$('detail-hard-due').checked,
-    eventTime:parseDateTimeInput($('detail-scheduled-time').value),
-    markDone:markDoneEl ? markDoneEl.checked : true
+    eventTime:parseTaskWhen($('detail-due-date').value,$('detail-due-time')?.value || ''),
+    planByDate:parseDateInput($('detail-plan-by-date')?.value || '')
   };
+}
+
+function syncBreakableUi(){
+  const on = $('detail-breakable')?.getAttribute('aria-pressed') === 'true';
+  const row = $('detail-min-chunk-row');
+  if(row)row.hidden = !on;
+  const autoValue = normalizeAutoMark($('detail-auto-mark')?.value);
+  const autoOn = autoValue !== null;
+  const label = $('detail-auto-mark-label');
+  const summary = $('detail-auto-mark-summary');
+  const unit = $('detail-auto-mark-unit');
+  const inputWrap = $('detail-auto-mark')?.closest('.range-value');
+  if(label)label.textContent = on ? 'auto-log agenda chunks' : 'auto mark done';
+  // Keep the compact "min" unit; after/later belongs in the summary copy.
+  if(unit)unit.textContent = 'min';
+  if(summary){
+    summary.textContent = on
+      ? (autoOn
+        ? `Each placed chunk logs ${autoValue ? `${autoValue} min after` : 'when'} it ends. Manual taps count first.`
+        : 'Blank keeps chunk logging manual.')
+      : (autoOn
+        ? `Logs automatically ${autoValue ? `${autoValue} min after` : 'at'} its trigger.`
+        : 'Blank keeps this manual.');
+  }
+  if(inputWrap){
+    inputWrap.setAttribute('aria-label',on
+      ? 'agenda chunk auto-log delay in minutes, blank is manual'
+      : 'auto mark done delay in minutes, blank is manual');
+  }
 }
 
 // HYBRID: compares form to original, toggles dirty class
@@ -228,16 +643,66 @@ function setDetailDirty(force){
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
       current.priority !== detailTuneOriginal.priority ||
       current.dueDate !== detailTuneOriginal.dueDate ||
-      current.hardDue !== detailTuneOriginal.hardDue ||
       current.eventTime !== detailTuneOriginal.eventTime ||
-      current.markDone !== detailTuneOriginal.markDone ||
+      current.planByDate !== detailTuneOriginal.planByDate ||
+      current.autoMarkMinutes !== detailTuneOriginal.autoMarkMinutes ||
       current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
+      current.locationIds.join('|') !== (detailTuneOriginal.locationIds || []).join('|') ||
+      current.anywhereAllowed !== Boolean(detailTuneOriginal.anywhereAllowed) ||
+      JSON.stringify(current.locationPrefs || {}) !== JSON.stringify(detailTuneOriginal.locationPrefs || {}) ||
+      (current.preferredLocationId || null) !== (detailTuneOriginal.preferredLocationId || null) ||
+      current.breakable !== detailTuneOriginal.breakable ||
+      current.minChunkMinutes !== detailTuneOriginal.minChunkMinutes ||
+      current.timerAutoStopMinutes !== detailTuneOriginal.timerAutoStopMinutes ||
+      current.trackValue !== detailTuneOriginal.trackValue ||
       current.allowedWeekdays.join('|') !== detailTuneOriginal.allowedWeekdays.join('|') ||
       current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|') ||
       current.preferredWeekdays.join('|') !== detailTuneOriginal.preferredWeekdays.join('|') ||
       current.preferredMonthDays.join('|') !== detailTuneOriginal.preferredMonthDays.join('|') ||
       current.allowedTimeStart !== detailTuneOriginal.allowedTimeStart ||
-      current.allowedTimeEnd !== detailTuneOriginal.allowedTimeEnd)
+      current.allowedTimeEnd !== detailTuneOriginal.allowedTimeEnd ||
+      current.preferredTimeStart !== detailTuneOriginal.preferredTimeStart ||
+      current.preferredTimeEnd !== detailTuneOriginal.preferredTimeEnd ||
+      current.allowedTimeStartAnchor !== detailTuneOriginal.allowedTimeStartAnchor ||
+      current.allowedTimeStartOffsetMin !== detailTuneOriginal.allowedTimeStartOffsetMin ||
+      current.allowedTimeEndAnchor !== detailTuneOriginal.allowedTimeEndAnchor ||
+      current.allowedTimeEndOffsetMin !== detailTuneOriginal.allowedTimeEndOffsetMin ||
+      current.preferredTimeStartAnchor !== detailTuneOriginal.preferredTimeStartAnchor ||
+      current.preferredTimeStartOffsetMin !== detailTuneOriginal.preferredTimeStartOffsetMin ||
+      current.preferredTimeEndAnchor !== detailTuneOriginal.preferredTimeEndAnchor ||
+      current.preferredTimeEndOffsetMin !== detailTuneOriginal.preferredTimeEndOffsetMin ||
+      (current.allowedTimeStartAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId || null) ||
+      (current.allowedTimeEndAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId || null) ||
+      (current.preferredTimeStartAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId || null) ||
+      (current.preferredTimeEndAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId || null) ||
+      (current.allowedTimeStartCombine || null) !== (detailTuneOriginal.allowedTimeStartCombine || null) ||
+      (current.allowedTimeStartAnchor2 || null) !== (detailTuneOriginal.allowedTimeStartAnchor2 || null) ||
+      current.allowedTimeStartOffsetMin2 !== detailTuneOriginal.allowedTimeStartOffsetMin2 ||
+      (current.allowedTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId2 || null) ||
+      (current.allowedTimeStartFixedMin2 ?? null) !== (detailTuneOriginal.allowedTimeStartFixedMin2 ?? null) ||
+      current.allowedTimeStartDayOffset !== detailTuneOriginal.allowedTimeStartDayOffset ||
+      current.allowedTimeStartDayOffset2 !== detailTuneOriginal.allowedTimeStartDayOffset2 ||
+      (current.allowedTimeEndCombine || null) !== (detailTuneOriginal.allowedTimeEndCombine || null) ||
+      (current.allowedTimeEndAnchor2 || null) !== (detailTuneOriginal.allowedTimeEndAnchor2 || null) ||
+      current.allowedTimeEndOffsetMin2 !== detailTuneOriginal.allowedTimeEndOffsetMin2 ||
+      (current.allowedTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId2 || null) ||
+      (current.allowedTimeEndFixedMin2 ?? null) !== (detailTuneOriginal.allowedTimeEndFixedMin2 ?? null) ||
+      current.allowedTimeEndDayOffset !== detailTuneOriginal.allowedTimeEndDayOffset ||
+      current.allowedTimeEndDayOffset2 !== detailTuneOriginal.allowedTimeEndDayOffset2 ||
+      (current.preferredTimeStartCombine || null) !== (detailTuneOriginal.preferredTimeStartCombine || null) ||
+      (current.preferredTimeStartAnchor2 || null) !== (detailTuneOriginal.preferredTimeStartAnchor2 || null) ||
+      current.preferredTimeStartOffsetMin2 !== detailTuneOriginal.preferredTimeStartOffsetMin2 ||
+      (current.preferredTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId2 || null) ||
+      (current.preferredTimeStartFixedMin2 ?? null) !== (detailTuneOriginal.preferredTimeStartFixedMin2 ?? null) ||
+      current.preferredTimeStartDayOffset !== detailTuneOriginal.preferredTimeStartDayOffset ||
+      current.preferredTimeStartDayOffset2 !== detailTuneOriginal.preferredTimeStartDayOffset2 ||
+      (current.preferredTimeEndCombine || null) !== (detailTuneOriginal.preferredTimeEndCombine || null) ||
+      (current.preferredTimeEndAnchor2 || null) !== (detailTuneOriginal.preferredTimeEndAnchor2 || null) ||
+      current.preferredTimeEndOffsetMin2 !== detailTuneOriginal.preferredTimeEndOffsetMin2 ||
+      (current.preferredTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId2 || null) ||
+      (current.preferredTimeEndFixedMin2 ?? null) !== (detailTuneOriginal.preferredTimeEndFixedMin2 ?? null) ||
+      current.preferredTimeEndDayOffset !== detailTuneOriginal.preferredTimeEndDayOffset ||
+      current.preferredTimeEndDayOffset2 !== detailTuneOriginal.preferredTimeEndDayOffset2)
   );
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }
@@ -247,18 +712,21 @@ function restoreDetailTune(){
   if(!detailTuneOriginal)return;
   $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;
-  $('detail-pinned').checked = detailTuneOriginal.pinned;
+  $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
-  $('detail-hard-due').checked = Boolean(detailTuneOriginal.hardDue);
-  $('detail-scheduled-time').value = datetimeInputValue(detailTuneOriginal.eventTime);
-  $('detail-mark-done').checked = detailTuneOriginal.markDone !== false;
-  $('detail-habit-mark-done').checked = detailTuneOriginal.markDone !== false;
+  if($('detail-due-time'))$('detail-due-time').value = detailTuneOriginal.eventTime !== null ? timeInputValue(detailTuneOriginal.eventTime) : '';
+  if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(detailTuneOriginal.planByDate);
   syncDetailDueUi();
-  syncDetailScheduledUi();
-  syncDetailHabitMarkDoneUi();
-  renderTopicChips('detail-topic-chips',detailTuneOriginal.topics);
+  syncDetailPlanByUi();
+  renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
+  if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
+  if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');
+  if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = detailTuneOriginal.timerAutoStopMinutes != null ? detailTuneOriginal.timerAutoStopMinutes : '';
+  if($('detail-auto-mark'))$('detail-auto-mark').value = detailTuneOriginal.autoMarkMinutes != null ? detailTuneOriginal.autoMarkMinutes : '';
+  syncBreakableUi();
   renderScheduleChips('detail',detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
@@ -267,38 +735,34 @@ function restoreDetailTune(){
   setDetailDirty(false);
 }
 
-// RENDER: toggle detail due-date clear button + hard-deadline visibility
+// RENDER: task due row hint — date-only vs fixed appointment
 function syncDetailDueUi(){
   const dueInput = $('detail-due-date');
-  const clearBtn = $('detail-due-clear');
-  const hardToggle = $('detail-hard-due')?.closest('.hard-due-toggle');
+  const timeInput = $('detail-due-time');
   if(!dueInput)return;
   const hasDate = Boolean(dueInput.value);
-  if(clearBtn)clearBtn.hidden = !hasDate;
-  if(hardToggle)hardToggle.hidden = !hasDate;
+  const hasTime = Boolean(timeInput?.value);
   const hint = $('detail-due-hint');
+  if(hint){
+    if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+    else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
+    else hint.textContent = 'Due on this date — set flexibility to 0 for a firm deadline.';
+  }
+}
+
+// RENDER: toggle habit one-off plan-by controls + hint
+function syncDetailPlanByUi(){
+  const input = $('detail-plan-by-date');
+  const clearBtn = $('detail-plan-by-clear');
+  const weekBtn = $('detail-plan-by-week');
+  if(!input)return;
+  const hasDate = Boolean(input.value);
+  if(clearBtn)clearBtn.hidden = !hasDate;
+  if(weekBtn)weekBtn.hidden = hasDate;
+  const hint = $('detail-plan-by-hint');
   if(hint)hint.textContent = hasDate
-    ? 'Due on this date — it rises in your list as it gets closer. Hard deadline adds a firm cutoff and stronger reminders.'
-    : 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
-}
-
-// RENDER: toggle mark-done visibility based on whether a scheduled time is set
-function syncDetailScheduledUi(){
-  const timeInput = $('detail-scheduled-time');
-  const toggle = $('detail-mark-done-toggle');
-  if(!timeInput || !toggle)return;
-  toggle.hidden = !timeInput.value;
-}
-
-// RENDER: habit mark-done toggle shows only for build habits with a day schedule
-function syncDetailHabitMarkDoneUi(){
-  const toggle = $('detail-habit-mark-done-toggle');
-  if(!toggle)return;
-  const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType;
-  if(type !== 'keepup'){ toggle.hidden = true; return; }
-  const hasSchedule = selectedWeekdaysFrom('detail-weekday-chips').length > 0
-                   || selectedMonthDaysFrom('detail-monthday-chips').length > 0;
-  toggle.hidden = !hasSchedule;
+    ? 'Soft one-off target — the week planner will place this habit on a free day on or before this date. Cleared when you log it.'
+    : 'Optional. Set a one-off “plan by” date to pull this habit into the week planner without picking a specific day.';
 }
 
 // HYBRID: switches allowed/preferred schedule section
@@ -470,6 +934,12 @@ function scoreTitle(h,score){
 // PURE: computes 0-100 progress score
 function progressScore(h){
   if(h.type === 'task'){
+    if(h.breakable && h.lastLog !== null){
+      const total = clampDuration(h.durationMinutes);
+      const done = loggedChunkMinutes(h);
+      if(total <= 0)return 100;
+      return Math.max(0,Math.min(100,Math.round((done / total) * 100)));
+    }
     if(h.lastLog !== null)return 100;
     const when = taskWhen(h);
     if(when === null)return null;
@@ -538,6 +1008,28 @@ function aboutText(h){
   }
   const target = effectiveTarget(h);
   const rhythm = h.target || 7;
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null){
+    const left = daysUntil(planBy);
+    const planLabel = left === null
+      ? 'Plan by date set'
+      : left < 0
+        ? `Plan-by was ${Math.abs(left)} days ago`
+        : left === 0
+          ? 'Plan by today'
+          : `Plan by in ${left} days`;
+    if(days === null)return `${planLabel}. Aim for about every ${rhythm} days.`;
+    if(days < 0)return `${planLabel}. Next entry is ${entryWhen(h.lastLog)}.`;
+    const when = entryWhen(h.lastLog);
+    if(h.type === 'keepup'){
+      if(days < target)return `${planLabel}. Last entry was ${when}.`;
+      if(days === target)return `${planLabel}. Last entry was ${when}. Rhythm is also due today.`;
+      return `${planLabel}. Last entry was ${when}. Rhythm is ${days - target} days overdue.`;
+    }
+    return days >= target
+      ? `${planLabel}. ${days} days since the last entry.`
+      : `${planLabel}. Entry was ${when}.`;
+  }
   if(days === null)return `Aim for about every ${rhythm} days.`;
   if(days < 0)return `Next entry is ${entryWhen(h.lastLog)}.`;
   const when = entryWhen(h.lastLog);
@@ -569,6 +1061,15 @@ function trendText(h){
     if(days === 0)return 'entry today';
     if(days < 3)return 'recent entry';
     return 'on track';
+  }
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null){
+    const left = daysUntil(planBy);
+    if(left !== null){
+      if(left < 0)return `plan by ${Math.abs(left)}d overdue`;
+      if(left === 0)return 'plan by today';
+      return `plan by in ${left}d`;
+    }
   }
   const target = effectiveTarget(h);
   const pace = avg || days;
@@ -632,55 +1133,48 @@ function graphCaption(h,intervals){
   return `Last clear stretch was ${last}d: ${label}. Longer is better.${avgPart}`;
 }
 
-// RENDER: renders month calendar grid
+// RENDER: renders month calendar grid (shared markers with overview tally)
 function renderCalendar(h){
   const frame = monthFrame(detailMonthOffset);
   const {year,month,first,last,label,today} = frame;
-  const logs = normalizeLogs(h.logs);
-  const dayCounts = new Map();
+  const tally = typeof buildDayTally === 'function'
+    ? buildDayTally([h],ts=>{
+      const d = new Date(ts);
+      return d.getFullYear() === year && d.getMonth() === month;
+    })
+    : {map:new Map(),actual:0,planned:0};
   const toneByDay = logToneMap(h);
-  let actual = 0;
-  let planned = 0;
-  const addPlannedMarker = ts=>{
-    if(ts === null)return;
-    const d = new Date(ts);
-    if(d.getFullYear() !== year || d.getMonth() !== month)return;
-    const key = dateKey(ts);
-    dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
-    planned += 1;
-    if(!toneByDay.has(key))toneByDay.set(key,'plan');
-  };
-  logs.forEach(log=>{
-    const ts = logTime(log);
-    const d = new Date(ts);
-    if(d.getFullYear() !== year || d.getMonth() !== month)return;
-    const key = dateKey(ts);
-    dayCounts.set(key,(dayCounts.get(key) || 0) + 1);
-    if(isPlanLog(log))planned += 1;
-    else actual += 1;
-  });
-  if(isTimedTask(h) && h.lastLog === null)addPlannedMarker(h.eventTime);
-  else if(h.type === 'task' && h.lastLog === null)addPlannedMarker(h.dueDate);
-  const monthEntries = actual + planned;
-  const activeDays = [...dayCounts.values()].filter(Boolean).length;
+  const monthEntries = tally.actual + tally.planned;
+  const activeDays = tally.map.size;
   $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
   $('detail-calendar-summary').innerHTML = `
     <span class="overview-stat"><i class="ti ti-calendar-check" aria-hidden="true"></i>${activeDays} days</span>
-    <span class="overview-stat"><i class="ti ti-list-check" aria-hidden="true"></i>${actual} entries</span>
-    <span class="overview-stat"><i class="ti ti-calendar-event" aria-hidden="true"></i>${planned} planned</span>`;
+    <span class="overview-stat"><i class="ti ti-list-check" aria-hidden="true"></i>${tally.actual} entries</span>
+    <span class="overview-stat"><i class="ti ti-calendar-event" aria-hidden="true"></i>${tally.planned} planned</span>`;
+
+  const hasSched = typeof hasDaySchedule === 'function' && hasDaySchedule(h);
+  const densityFn = typeof calDensityClass === 'function' ? calDensityClass : (count=>count >= 3 ? 'density-3' : count >= 2 ? 'density-2' : count ? 'density-1' : '');
 
   const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
   const blanks = Array.from({length:first.getDay()},()=>'<div class="cal-day blank"></div>');
   const days = Array.from({length:last.getDate()},(_,i)=>{
     const date = new Date(year,month,i + 1);
     const key = dateKey(date.getTime());
-    const count = dayCounts.get(key) || 0;
-    const toneClass = toneByDay.get(key) || '';
-    const density = count >= 3 ? 'density-3' : count >= 2 ? 'density-2' : count ? 'density-1' : '';
-    const dots = count ? `<span class="cal-dots"><span class="cal-dot ${toneClass}"></span>${count > 1 ? `<span class="cal-more">${count}</span>` : ''}</span>` : '<span class="cal-dots"></span>';
+    const entries = tally.map.get(key) || [];
+    const count = entries.length;
+    const toneClass = entries.find(e=>e.tone && e.tone !== 'plan')?.tone
+      || (entries.some(e=>e.tone === 'plan') ? 'plan' : '')
+      || toneByDay.get(key)
+      || '';
+    const density = densityFn(count);
+    const eligible = !count && hasSched && typeof isDateEligibleForHabit === 'function' && isDateEligibleForHabit(h,date.getTime());
+    const dots = count
+      ? `<span class="cal-dots"><span class="cal-dot ${toneClass}"></span>${count > 1 ? `<span class="cal-more">${count}</span>` : ''}</span>`
+      : '<span class="cal-dots"></span>';
     const cls = [
       count ? 'has-entry' : '',
       density,
+      eligible ? 'eligible' : '',
       key === today ? 'today' : '',
       key === dayLogsKey ? 'selected' : '',
       'pickable'
@@ -690,21 +1184,48 @@ function renderCalendar(h){
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
 }
 
-// RENDER: syncs pager dot indicator
+const DETAIL_PAGE_NAV = [
+  {label:'calendar',icon:'ti-calendar-month'},
+  {label:'insight',icon:'ti-chart-line'},
+  {label:'schedule',icon:'ti-calendar-time'},
+  {label:'effort',icon:'ti-progress-check'},
+  {label:'identity',icon:'ti-id'},
+  {label:'actions',icon:'ti-dots'}
+];
+
+// RENDER: syncs the compact pager navigation.
 function updateDetailPagerDots(){
   const inner = getSheetInner('detail-sheet');
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
   const pages = [...pager.querySelectorAll('.detail-page')];
+  pages.forEach((panel,i)=>{
+    panel.id = panel.id || `detail-page-${i}`;
+    panel.setAttribute('role','tabpanel');
+  });
   if(dotsWrap.children.length !== pages.length){
-    dotsWrap.innerHTML = pages.map(()=>'<span></span>').join('');
+    dotsWrap.innerHTML = pages.map((_,i)=>{
+      const item = DETAIL_PAGE_NAV[i] || {label:`page ${i + 1}`,icon:'ti-circle'};
+      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="detail-page-${i}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
+    }).join('');
   }
-  const dots = [...dotsWrap.querySelectorAll('span')];
+  if(dotsWrap.dataset.bound !== '1'){
+    dotsWrap.dataset.bound = '1';
+    dotsWrap.addEventListener('click',event=>{
+      const tab = event.target.closest('.detail-page-tab');
+      if(!tab || !dotsWrap.contains(tab))return;
+      const index = Math.max(0,Math.min(pages.length - 1,Number(tab.dataset.detailPage) || 0));
+      pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
+    });
+  }
+  const dots = [...dotsWrap.querySelectorAll('.detail-page-tab')];
   if(!dots.length)return;
-  const page = Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth));
+  const page = Math.max(0,Math.min(dots.length - 1,Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth))));
   dots.forEach((dot,i)=>{
     dot.classList.toggle('on',i === page);
+    dot.setAttribute('aria-selected',i === page ? 'true' : 'false');
+    dot.tabIndex = i === page ? 0 : -1;
   });
 }
 
@@ -733,11 +1254,15 @@ function hasPlannedEntryForDay(h,key){
   return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
 }
 
-// PURE: checks whether a task has its own scheduled date on a day.
+// PURE: checks whether a habit has a due/scheduled/plan-by marker on a day.
 function hasScheduledMarkerForDay(h,key){
+  if(typeof habitPlanMarkers === 'function'){
+    return habitPlanMarkers(h).some(marker=>dateKey(marker.ts) === key);
+  }
   return (
     (isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key) ||
-    (h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key)
+    (h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key) ||
+    ((h.type === 'keepup' || h.type === 'reduce') && h.planByDate && dateKey(h.planByDate) === key)
   );
 }
 

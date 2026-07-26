@@ -8,18 +8,78 @@ const QUOTA_WARN_KB = 4096;
 const QUOTA_HARD_KB = 4800;
 const PUSH_WORKER_URL = 'https://habits-push.YOUR-ACCOUNT.workers.dev';
 const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+
+// ── Locations / travel-time ──
+const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())
+const OSRM_BASE = 'https://router.project-osrm.org';
+const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+const PHOTON_BASE = 'https://photon.komoot.io';
+const MAX_LOCATIONS = 32;
+const MAX_TRAVEL_EDGES = 1024;                     // 32² upper bound
+const TRAVEL_TTL_MS = 30 * 86400000;               // cached edges revalidate after 30 days
+const TRAVEL_FETCH_TIMEOUT_MS = 3000;              // hard cap on travel routing calls
+const GEOCODE_FETCH_TIMEOUT_MS = 8000;             // address search / reverse can be slower
+const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
+const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
+const DEFAULT_TRAVEL_MODE = 'driving';
+
+// ── Prayer times (dynamic habit windows) ──
+// Prayer-time anchors a habit's allowed/preferred time endpoint can be tied to.
+// 'maghrib' is the same moment as sunset; both keys are accepted as aliases.
+const PRAYER_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
+const PRAYER_ANCHOR_LABELS = {
+  fajr:'Fajr', sunrise:'Sunrise', dhuhr:'Dhuhr',
+  asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha'
+};
+const PRAYER_GENERIC_LABELS = {
+  fajr:'Dawn', sunrise:'Sunrise', dhuhr:'Noon',
+  asr:'Afternoon', maghrib:'Sunset', isha:'Night'
+};
+// Calculation methods exposed in Settings. Keys mirror adhan.CalculationMethod
+// factory names; labels are the friendly strings users recognise. The default
+// matches the user's request: North American (ISNA).
+const PRAYER_METHODS = [
+  {key:'NorthAmerica',  label:'North America (ISNA)'},
+  {key:'MuslimWorldLeague', label:'Muslim World League'},
+  {key:'Egyptian',      label:'Egyptian General Authority'},
+  {key:'Karachi',       label:'University of Karachi'},
+  {key:'UmmAlQura',     label:'Umm al-Qura (Makkah)'},
+  {key:'Dubai',         label:'Dubai'},
+  {key:'MoonsightingCommittee', label:'Moonsighting Committee Worldwide'},
+  {key:'Kuwait',        label:'Kuwait'},
+  {key:'Qatar',         label:'Qatar'},
+  {key:'Singapore',     label:'Singapore'},
+  {key:'Tehran',        label:'Tehran'},
+  {key:'Turkey',        label:'Turkey (Diyanet)'},
+  {key:'Other',         label:'Other'}
+];
+const DEFAULT_PRAYER_METHOD = 'NorthAmerica';
+// Madhab affects only Asr time. Shafi = standard; Hanafi = later Asr.
+const PRAYER_MADHABS = [
+  {key:'shafi',  label:'Shafi (standard)'},
+  {key:'hanafi', label:'Hanafi (later Asr)'}
+];
+const DEFAULT_PRAYER_MADHAB = 'shafi';
+// Cap on the offset (signed minutes) a user can attach to an anchor. ±12 h is
+// well past any sane "sunrise + a few hours" / "isha - 30 min" use case but
+// keeps typos from producing nonsense like 99999.
+const PRAYER_OFFSET_MAX_MIN = 720;
+
 const MAX_RHYTHM_DAYS = 183;
+const MIN_RHYTHM_DAYS = 0.5;
 const DEFAULT_DURATION_MINUTES = 30;
-const DEFAULT_FLEXIBILITY_DAYS = 0;
+const DEFAULT_MIN_CHUNK_MINUTES = 30;
+const DEFAULT_FLEXIBILITY_DAYS = 1;
+const TIME_PICKER_STEP_MINUTES = 15;
+const MAX_NOTE_CHARS = 200;
+/** Soft location preference among allowed places. */
+const LOCATION_PREF_LEVELS = ['avoid','little','high'];
+const LOCATION_PREF_SCORE = {avoid:-40, little:12, high:36};
 const DEFAULT_PRIORITY = 2; // P0 (critical) .. P5 (someday); new items default to P2
 const PRIORITY_LABELS = ['P0','P1','P2','P3','P4','P5'];
-const DEFAULT_AVAILABILITY_MINUTES = [240,90,90,90,90,90,240];
+const DEFAULT_AVAILABILITY_MINUTES = [400,200,200,200,200,200,400];
 const DEFAULT_BLOCKED_TIMES = [
-  {label:'sleep',days:[0,1,2,3,4,5,6],start:0,end:420},
-  {label:'breakfast',days:[0,1,2,3,4,5,6],start:480,end:510},
-  {label:'work',days:[1,2,3,4,5],start:540,end:1020},
-  {label:'lunch',days:[0,1,2,3,4,5,6],start:720,end:780},
-  {label:'dinner',days:[0,1,2,3,4,5,6],start:1080,end:1140}
+  {label:'sleep',days:[0,1,2,3,4,5,6],start:1380,end:300}
 ];
 const WEEKDAY_LABELS = ['sun','mon','tue','wed','thu','fri','sat'];
 const SWIPE_THRESHOLD = 60;
@@ -32,25 +92,25 @@ const SORT_PRESETS = {
     focus:'balanced',plansFirst:true,planWindowDays:3,
     planWeight:100,dueWeight:100,progressWeight:70,trendWeight:55,rhythmWeight:55,
     buildWeight:100,limitWeight:70,stopWeight:130,newWeight:90,
-    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'watch',rhythmBias:0
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:70
   },
   build:{
     focus:'build',plansFirst:true,planWindowDays:3,
     planWeight:95,dueWeight:135,progressWeight:105,trendWeight:75,rhythmWeight:60,
     buildWeight:140,limitWeight:50,stopWeight:12,newWeight:125,
-    newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12
+    newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12,locationWeight:60
   },
   planned:{
     focus:'balanced',plansFirst:true,planWindowDays:7,
     planWeight:175,dueWeight:85,progressWeight:55,trendWeight:40,rhythmWeight:40,
     buildWeight:95,limitWeight:65,stopWeight:35,newWeight:70,
-    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0
+    newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0,locationWeight:75
   },
   todayFirst:{
     focus:'balanced',plansFirst:true,planWindowDays:3,
     planWeight:120,dueWeight:140,progressWeight:60,trendWeight:50,rhythmWeight:50,
     buildWeight:110,limitWeight:80,stopWeight:110,newWeight:100,
-    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:70,limitMode:'overdue',stopMode:'watch',rhythmBias:0
+    newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:70,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:80
   }
 };
 const DEFAULT_SORT_SETTINGS = {
@@ -68,20 +128,83 @@ const DEFAULT_SORT_SETTINGS = {
   showRepetitionOnCards:true,
   showFlexibilityOnCards:false,
   showTopicsOnCards:false,
+  showLocationOnCards:false,
 
   showScheduledTasksInAgenda:true,
   showDueTasksInAgenda:true,
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
+  showWeekOnHome:true,
+  // Exact ILP packer for tight windows (lazy-loads GLPK). This is the default
+  // planner; the scarcity-first heuristic remains the explicit fast fallback.
+  agendaOptimizer:true,
+  // Unified agenda placement score (lower = better). All soft signals share
+  // one comparable scale — no special-case overrides for due/near/tonight.
+  //   travel       — per second of commute for this placement
+  //   cluster      — per unit of on-site / co-locate savings
+  //   day          — multiplier on day-offset (ASAP / on-time) penalty
+  //   asap         — per minute later than the earliest fit that day
+  //   scarce       — per ms overlapping a scarce allowed window
+  //   preference   — multiplier on soft preferred time/place/weekday penalty
+  agendaScoreWeights:{
+    travel:1,
+    cluster:1,
+    day:1,
+    // Within-day clock delay — weak vs preference/scarce; day-offset carries ASAP.
+    asap:0.12,
+    scarce:0.05,
+    preference:1.5
+  },
+  // How blocked times + travel between places appear on home:
+  //   'cards'     → card surfaces for the whole day (default)
+  //   'cards12h'  → same cards, but only for the next 12 hours
+  //   'text12h'   → plain muted background lines for the next 12 hours
+  homeExtraMode:'cards12h',
   reachAssist:true,
   reminders:false,
   pushDetailed:false,
   defaultType:'keepup',
   defaultTarget:7,
+  defaultPriority:DEFAULT_PRIORITY,
+  defaultDurationMinutes:DEFAULT_DURATION_MINUTES,
+  defaultFlexibilityDays:DEFAULT_FLEXIBILITY_DAYS,
+  defaultBreakable:false,
+  defaultMinChunkMinutes:DEFAULT_MIN_CHUNK_MINUTES,
+  defaultTopics:[],
+  defaultAutoMarkMinutes:null,
+
+  showStatusOnCards:true,
+  showEarlyOnCards:true,
+
+  compactMode:true,
+  fontScale:'medium',
+  themeMode:'system',
+
+  homeCityName:'',
+  homeCityLat:null,
+  homeCityLng:null,
+  prayerIslamicNames:false,
+
   topics:[],
+  locations:[],
+  travel:{},
+  defaultTravelMode:DEFAULT_TRAVEL_MODE,
+  prayerMethod:DEFAULT_PRAYER_METHOD,           // adhan.CalculationMethod key
+  prayerMadhab:DEFAULT_PRAYER_MADHAB,           // 'shafi' | 'hanafi'
+  lastKnownLocationId:null,
+  locationOptIn:false,           // user granted geolocation (coords never persisted)
+  pinnedLocationId:null,         // a manually-pinned "I am at" id; takes precedence over auto detection
   availabilityMinutes:DEFAULT_AVAILABILITY_MINUTES,
   availabilityOverrides:{},
-  blockedTimes:DEFAULT_BLOCKED_TIMES
+  blockedTimes:DEFAULT_BLOCKED_TIMES,
+  /** Per-day cancelled block instances: {'YYYY-MM-DD':['label|start|end', ...]} */
+  cancelledBlocks:{},
+  /** Per-day clock edits for one block instance: {'YYYY-MM-DD':{'label|start|end':{start,end}}} */
+  blockedTimeOverrides:{},
+  /** Breakable habit that receives imported calendar minutes as progress (null = off). */
+  calendarCreditHabitId:null,
+  /** All-day calendar rows: 'skip' (default) or 'tasks' (dated untimed). */
+  calendarAllDayMode:'skip'
 };
 const LIMIT_MODE_POLICY = {
   quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01,trend:0.08,trendEarly:0},
@@ -95,7 +218,7 @@ const STOP_MODE_POLICY = {
   recent:{steps:[[1,58],[2,44],[4,28],[7,14]],fallback:3,progress:0.34,mix:{due:0.78,progress:0.28,trend:0.3},focus:1},
   active:{steps:[[1,92],[2,78],[4,58],[7,34]],fallback:8,progress:0.62,mix:{due:1.5,progress:0.85,trend:0.65},focus:1}
 };
-const BASE_SORT_MIX = {now:0.82,plan:1.45,due:1.35,progress:0.72,trend:0.7,rhythm:1,newness:1};
+const BASE_SORT_MIX = {now:0.82,plan:1.45,due:1.35,progress:0.72,trend:0.7,rhythm:1,newness:1,location:0.85};
 const FOCUS_TYPE_SCALE = {
   balanced:{keepup:1,reduce:1,zero:1,task:1},
   build:{keepup:1.22,reduce:0.78,zero:1,task:0.92},
@@ -103,6 +226,12 @@ const FOCUS_TYPE_SCALE = {
 };
 
 const $ = id => document.getElementById(id);
+
+// TRUE when a Google Maps API key has been configured. Mirrors pushConfigured()
+// in push-client.js: the 'YOUR_' prefix is the disabled sentinel.
+function mapsConfigured(){
+  return Boolean(MAPS_API_KEY) && !MAPS_API_KEY.includes('YOUR_');
+}
 
 // "Is the layout wide enough to mount sheets in side panes?"  True whenever
 // the viewport can fit 2+ panes (>= 960px). Driven by body[data-pane-count]
@@ -128,9 +257,16 @@ let detailMonthOffset = 0;
 let overviewMonthOffset = 0;
 let overviewRecentOffset = 0;
 let overviewTopicFilter = 'all';
+let overviewLocationFilter = 'all';
 let overviewRangeFilter = 'recent';
 let homeTopicFilter = 'all';
+let homeLocationFilter = 'all';
 let dayLogsKey = null;
+let dayLogsStep = 'list'; // list | item | add | avail
+let dayLogsItemIndex = null;
+let dayLogsMoving = false;
+let overviewListPane = 'plan'; // plan | care | past (around-today only)
+let _overviewStretchCache = null;
 let selectedType = 'keepup';
 let sortSettings = null;
 let searchQuery = '';

@@ -21,15 +21,305 @@ function topicOptions(){
 
 // PURE: read selected topics from DOM
 function selectedTopicsFrom(containerId){
-  return [...$(containerId).querySelectorAll('.topic-chip.on')].map(btn=>btn.dataset.topic);
+  const wrap = $(containerId);
+  if(!wrap)return [];
+  return [...wrap.querySelectorAll('.topic-chip.on[data-topic]')].map(btn=>btn.dataset.topic);
 }
 
 // PURE: read selected add-topic chips
 function selectedAddTopics(){
-  return selectedTopicsFrom('ting-topic-chips');
+  return selectedTopicsFrom('ting-tag-chips');
 }
 
-// PURE: read selected weekday chips
+// PURE: registry locations from settings
+function locationOptions(){
+  return normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+}
+
+// PURE: look up a location by id
+function locationById(id,registry = locationOptions()){
+  const clean = cleanLocationId(id);
+  if(!clean)return null;
+  return registry.find(loc=>loc.id === clean) || null;
+}
+
+// PURE: read selected location ids from a chip row
+function selectedLocationIdsFrom(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return [];
+  return [...wrap.querySelectorAll('.location-chip.on[data-location-id]')].map(btn=>btn.dataset.locationId);
+}
+
+// PURE: selected locations on the add sheet
+function selectedLocationIds(){
+  return selectedLocationIdsFrom('ting-tag-chips');
+}
+
+function selectedAnywhereFrom(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return true;
+  return wrap.querySelector('[data-anywhere]')?.classList.contains('on')
+    ?? wrap.dataset.anywhereAllowed === '1';
+}
+
+function selectedAnywhere(){
+  return selectedAnywhereFrom('ting-tag-chips');
+}
+
+// PURE: preferred location id from a unified chip row (highest preference), or null
+function selectedPreferredLocationIdFrom(containerId){
+  const prefs = selectedLocationPrefsFrom(containerId);
+  const ids = selectedLocationIdsFrom(containerId);
+  return primaryPreferredLocationId(prefs,ids);
+}
+
+function selectedPreferredLocationId(){
+  return selectedPreferredLocationIdFrom('ting-tag-chips');
+}
+
+/** PURE: read locationPrefs map from chip data-pref attributes. */
+function selectedLocationPrefsFrom(containerId){
+  const wrap = $(containerId);
+  if(!wrap)return {};
+  const out = {};
+  wrap.querySelectorAll('.location-chip.on[data-location-id]').forEach(btn=>{
+    const level = btn.dataset.pref;
+    if(LOCATION_PREF_LEVELS.includes(level))out[btn.dataset.locationId] = level;
+  });
+  return out;
+}
+
+function selectedLocationPrefs(){
+  return selectedLocationPrefsFrom('ting-tag-chips');
+}
+
+// RENDER: split chip layout — places on one horizontal-scroll row, topics on
+// another. Each row starts with its own "+ new" pill so a place or topic can
+// be created inline. The container keeps its id so the existing
+// selectedTopicsFrom / selectedLocationIdsFrom helpers (which walk by data
+// attribute, not by row) keep working unchanged.
+// Location pref cycle: off → on → little → high → avoid → off
+function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null,anywhereAllowed = null){
+  const wrap = $(containerId);
+  if(!wrap)return;
+  // Preserve horizontal scroll position across the rebuild so toggling a chip
+  // doesn't snap the row back to the start.
+  const prevPlaceScroll = wrap.querySelector('.tag-row-places')?.scrollLeft ?? 0;
+  const prevTopicScroll = wrap.querySelector('.tag-row-topics')?.scrollLeft ?? 0;
+  const topics = topicOptions();
+  const locations = locationOptions();
+  const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
+  const selectedLocs = normalizeLocationIds(selectedLocIds,locations);
+  const prefs = normalizeLocationPrefs(locationPrefs,selectedLocs,preferredLocId);
+  const anywhereOn = anywhereAllowed == null
+    ? (wrap.dataset.anywhereAllowed ? wrap.dataset.anywhereAllowed === '1' : selectedLocs.length === 0)
+    : Boolean(anywhereAllowed);
+  wrap.dataset.anywhereAllowed = anywhereOn ? '1' : '0';
+  const anywhereHtml = locations.length > 0
+    ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="no specific place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
+    : '';
+  const locHtml = locations.map(loc=>{
+    const on = selectedLocs.includes(loc.id);
+    const level = prefs[loc.id] || '';
+    const mark = level === 'high' ? ' ★' : level === 'little' ? ' ☆' : level === 'avoid' ? ' –' : '';
+    const title = level === 'high' ? 'high preference'
+      : level === 'little' ? 'little preference'
+      : level === 'avoid' ? 'avoid if possible'
+      : 'place';
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${mark}</button>`;
+  }).join('');
+  const topicHtml = topics.map(topic=>{
+    const on = selectedSet.has(topic.toLowerCase());
+    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
+  }).join('');
+  // Build via DOM (not innerHTML) so the pill buttons retain their dataset and
+  // event-less state cleanly. Order: place pill, anywhere option, then real places.
+  wrap.innerHTML = '';
+  const locRow = document.createElement('div');
+  locRow.className = 'tag-row tag-row-places';
+  locRow.appendChild(createAddLocationPill());
+  locRow.insertAdjacentHTML('beforeend',anywhereHtml + locHtml);
+  const topicRow = document.createElement('div');
+  topicRow.className = 'tag-row tag-row-topics';
+  topicRow.appendChild(createAddTopicPill());
+  topicRow.insertAdjacentHTML('beforeend',topicHtml);
+  // Scroll guard: prevents accidental chip taps during horizontal scroll.
+  // Sets a flag on the row as soon as touch displacement (finger movement)
+  // is detected. The flag lingers for 500ms to cover the synthetic click
+  // that mobile browsers fire after touchend. The click handlers in main.js
+  // check this flag and bail if set.
+  function addScrollGuard(row){
+    var timer;
+    function arm(){ row._sg = 1; clearTimeout(timer); timer = setTimeout(function(){ row._sg = 0; },500); }
+    (function(){
+      var sx,sy;
+      row.addEventListener('touchstart',function(e){
+        var t = e.changedTouches[0];
+        sx = t.clientX; sy = t.clientY;
+      },{passive:true});
+      row.addEventListener('touchmove',function(e){
+        var t = e.changedTouches[0];
+        if(Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8)arm();
+      },{passive:true});
+    })();
+    row.addEventListener('scroll',arm,{passive:true});
+  }
+  addScrollGuard(locRow);
+  addScrollGuard(topicRow);
+  wrap.appendChild(locRow);
+  wrap.appendChild(topicRow);
+  // Restore horizontal scroll position saved before rebuild.
+  locRow.scrollLeft = prevPlaceScroll;
+  topicRow.scrollLeft = prevTopicScroll;
+  // Setting scrollLeft fires an async scroll event that arms the scroll guard,
+  // which would swallow the next click within 500ms. Disarm on the next tick
+  // (the scroll event is queued before this timeout so it fires first).
+  setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
+}
+
+// RENDER: draw selectable topic chips (legacy name — now renders the unified row)
+function renderTopicChips(containerId,selected = []){
+  // Map old container ids to the unified tag row.
+  const unified = containerId === 'ting-topic-chips' || containerId === 'ting-location-chips'
+    ? 'ting-tag-chips'
+    : containerId === 'detail-topic-chips' || containerId === 'detail-location-chips'
+      ? 'detail-tag-chips'
+      : containerId;
+  const locContainer = unified;
+  const locs = selectedLocationIdsFrom(locContainer);
+  const prefs = selectedLocationPrefsFrom(locContainer);
+  renderTagChips(unified,selected,locs,null,prefs);
+}
+
+// RENDER: location side of the unified row (keeps topics intact)
+function renderLocationChips(containerId,selectedIds = [],opts = {}){
+  const unified = containerId === 'ting-location-chips' || containerId === 'ting-topic-chips'
+    ? 'ting-tag-chips'
+    : containerId === 'detail-location-chips' || containerId === 'detail-topic-chips'
+      ? 'detail-tag-chips'
+      : containerId;
+  const topics = selectedTopicsFrom(unified);
+  renderTagChips(unified,topics,selectedIds,opts.preferred || null,opts.prefs || null);
+}
+
+// HANDLER: toggle a location chip — off → on → little → high → avoid → off
+function toggleLocationChip(e){
+  const btn = e.target.closest('.location-chip[data-location-id]');
+  if(!btn)return;
+  const wrap = btn.closest('.topic-chip-row');
+  if(!wrap)return;
+  const level = btn.dataset.pref || '';
+  const isOn = btn.classList.contains('on');
+  if(!isOn){
+    btn.classList.add('on');
+    btn.dataset.pref = '';
+  }else if(level === ''){
+    btn.dataset.pref = 'little';
+  }else if(level === 'little'){
+    btn.dataset.pref = 'high';
+  }else if(level === 'high'){
+    btn.dataset.pref = 'avoid';
+  }else{
+    btn.classList.remove('on');
+    btn.dataset.pref = '';
+  }
+  const selected = selectedLocationIdsFrom(wrap.id);
+  const prefs = selectedLocationPrefsFrom(wrap.id);
+  renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,prefs,selectedAnywhereFrom(wrap.id));
+  if(wrap.id === 'detail-tag-chips')setDetailDirty();
+}
+
+// PURE: resolve the place a home/agenda card is treated as being at.
+function cardLocationId(h,agendaRow){
+  if(agendaRow && agendaRow.locationId)return agendaRow.locationId;
+  const registry = locationOptions();
+  const ids = normalizeLocationIds(h && h.locationIds,registry);
+  if(!ids.length)return null;
+  return pickHabitLocationId(h,null,registry,normalizeTravelMode((sortSettings || {}).defaultTravelMode)) || ids[0];
+}
+
+// PURE: compute home location filter choices
+function homeLocationChoices(data){
+  const registry = locationOptions();
+  const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
+  const locs = registry.filter(loc=>used.has(loc.id));
+  const hasNone = data.some(h=>h.anywhereAllowed || !normalizeLocationIds(h.locationIds,registry).length);
+  return [
+    {key:'all',label:'all places'},
+    ...locs.map(loc=>({key:loc.id,label:loc.name})),
+    ...(hasNone ? [{key:'__none__',label:'anywhere'}] : [])
+  ];
+}
+
+// PURE: test habit matches home location filter
+function matchesHomeLocation(h,id){
+  if(!id || id === 'all')return true;
+  const ids = normalizeLocationIds(h.locationIds);
+  if(id === '__none__')return Boolean(h.anywhereAllowed) || !ids.length;
+  return ids.includes(id);
+}
+
+// HYBRID: one home filter row — presence status, then places, then topics.
+// Each group only renders when at least one habit actually uses that
+// dimension — otherwise the row would just show redundant "all/no" chips.
+function renderHomeTagFilter(data){
+  const wrap = $('home-tag-filter');
+  if(!wrap)return;
+  const registry = locationOptions();
+  // "Real" usage = at least one habit carries this dimension. Without this
+  // gate, the row shows filler like "all places" + "anywhere" even when no
+  // habit has any location, which is just visual noise.
+  const usedTopicSet = new Set();
+  data.forEach(h=>normalizeTopics(h.topics).forEach(t=>usedTopicSet.add(t.toLowerCase())));
+  const usedLocSet = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
+  const hasTopics = usedTopicSet.size > 0;
+  const hasLocs = usedLocSet.size > 0;
+  const hasPresence = registry.length > 0 && hasLocs;
+  if(!hasTopics && !hasLocs && !hasPresence){
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
+  const topicChoices = homeTopicChoices(data);
+  const locChoices = homeLocationChoices(data);
+  // Reset stale filters: if the dimension is unused (or the chosen key is no
+  // longer present), fall back to 'all' so we never silently hide everything.
+  if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
+  if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
+  wrap.hidden = false;
+  let statusHtml = '';
+  if(hasPresence && typeof locationPresence === 'function'){
+    const presence = locationPresence(registry);
+    const anchor = typeof currentLocationId === 'function' ? currentLocationId() : null;
+    const anchorLoc = anchor ? locationById(anchor,registry) : null;
+    let label = 'set place';
+    let kind = presence.kind || 'away';
+    if(presence.kind === 'at')label = `at ${presence.name}`;
+    else if(presence.kind === 'near')label = `near ${presence.name}`;
+    else if(anchorLoc){ label = `at ${anchorLoc.name}`; kind = 'at'; }
+    const gpsClass = presence.gps && presence.kind === 'at' ? 'gps-matched' : '';
+    statusHtml = `<button type="button" class="topic-filter presence-filter ${kind} ${gpsClass}" data-home-presence="1" title="starting place for today"><i class="ti ti-current-location" aria-hidden="true"></i>${escapeHtml(label)}</button>`;
+  }
+  const locHtml = hasLocs ? locChoices.map(choice=>`
+    <button type="button" class="topic-filter location-filter ${choice.key === homeLocationFilter ? 'on' : ''}" data-home-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
+  `).join('') : '';
+  const topicHtml = hasTopics ? topicChoices.map(choice=>`
+    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
+  `).join('') : '';
+  wrap.innerHTML = statusHtml + locHtml + topicHtml;
+}
+
+// HYBRID: draw home location filter (compat — routes to unified row)
+function renderHomeLocationFilter(data){
+  renderHomeTagFilter(data);
+}
+
+// HYBRID: draw home topic filter (compat — routes to unified row)
+function renderHomeTopicFilter(data){
+  renderHomeTagFilter(data);
+}
+
+// PURE: build weekday and month-day chips
 function selectedWeekdaysFrom(containerId){
   return [...$(containerId).querySelectorAll('.schedule-chip.on')].map(btn=>parseInt(btn.dataset.weekday,10));
 }
@@ -83,12 +373,12 @@ function minutesToTimeInput(minutes){
   const m = minutes % 60;
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
-// PURE: parse HH:MM into minutes
+// PURE: parse HH:MM into minutes, snapped to the 15-minute picker grid
 function timeInputToMinutes(value){
   if(!value)return null;
   const [h,m] = value.split(':').map(Number);
   if(Number.isNaN(h) || Number.isNaN(m))return null;
-  return h * 60 + m;
+  return snapTimeMinutes(h * 60 + m);
 }
 // PURE: ms timestamp -> "YYYY-MM-DD" for <input type="date">
 function dateInputValue(ts){
@@ -102,6 +392,13 @@ function timeInputValue(ts){
   const hh = String(d.getHours()).padStart(2,'0');
   const mm = String(d.getMinutes()).padStart(2,'0');
   return `${hh}:${mm}`;
+}
+// PURE: task due row — date + optional time → eventTime ms, or null when no time set.
+function parseTaskWhen(dateValue,timeValue){
+  if(!timeValue || !String(timeValue).trim())return null;
+  if(!dateValue)return null;
+  const ts = new Date(`${dateValue}T${timeValue}`).getTime();
+  return Number.isFinite(ts) ? ts : null;
 }
 // PURE: ms timestamp -> "YYYY-MM-DDTHH:mm" for <input type="datetime-local">
 function datetimeInputValue(ts){
@@ -123,7 +420,6 @@ function toggleScheduleChip(e){
   btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
   if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips')){
     setDetailDirty();
-    if(typeof syncDetailHabitMarkDoneUi === 'function')syncDetailHabitMarkDoneUi();
   }
 }
 
@@ -138,17 +434,15 @@ function createAddTopicPill(){
   return btn;
 }
 
-// RENDER: draw selectable topic chips
-function renderTopicChips(containerId,selected = []){
-  const topics = topicOptions();
-  const selectedSet = new Set(normalizeTopics(selected).map(topic=>topic.toLowerCase()));
-  const wrap = $(containerId);
-  if(!wrap)return;
-  wrap.innerHTML = topics.map(topic=>{
-    const on = selectedSet.has(topic.toLowerCase());
-    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
-  }).join('');
-  wrap.appendChild(createAddTopicPill());
+// RENDER: build the add-place pill button (opens the location picker).
+function createAddLocationPill(){
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'topic-chip topic-chip-add location-chip-add';
+  btn.dataset.locationAdd = '';
+  btn.setAttribute('aria-label','new place');
+  btn.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i>new place';
+  return btn;
 }
 
 // HYBRID: swap pill for input and wire commit
@@ -191,9 +485,11 @@ function beginNewTopicInput(containerId){
       updateSortSetting({topics:normalizeTopics([...existing,topic])},{renderNow:false});
     }
     const nextSelected = normalizeTopics([...selectedTopicsFrom(containerId),topic]);
-    renderTopicChips(containerId,nextSelected);
+    const locs = selectedLocationIdsFrom(containerId);
+    const prefs = selectedLocationPrefsFrom(containerId);
+    renderTagChips(containerId,nextSelected,locs,null,prefs);
     renderTopicList();
-    if(containerId === 'detail-topic-chips')setDetailDirty();
+    if(containerId === 'detail-tag-chips')setDetailDirty();
     render();
   };
   input.addEventListener('blur',()=>{
@@ -221,7 +517,7 @@ function toggleTopicChip(e){
   const btn = e.target.closest('.topic-chip[data-topic]');
   if(!btn)return;
   btn.classList.toggle('on');
-  if(btn.closest('#detail-topic-chips'))setDetailDirty();
+  if(btn.closest('#detail-tag-chips'))setDetailDirty();
 }
 
 // RENDER: draw removable topic list
@@ -247,12 +543,12 @@ function addTopicFromInput(inputId,options = {}){
   renderTopicList();
   const autoSelect = options.autoSelect;
   const addSelected = autoSelect ? normalizeTopics([...selectedAddTopics(),topic]) : selectedAddTopics();
-  renderTopicChips('ting-topic-chips',addSelected);
+  renderTagChips('ting-tag-chips',addSelected,selectedLocationIds(),null,selectedLocationPrefs());
   if(detailIdx !== null){
     const detailSelected = autoSelect
-      ? normalizeTopics([...selectedTopicsFrom('detail-topic-chips'),topic])
+      ? normalizeTopics([...selectedTopicsFrom('detail-tag-chips'),topic])
       : currentDetailTune().topics;
-    renderTopicChips('detail-topic-chips',detailSelected);
+    renderTagChips('detail-tag-chips',detailSelected,selectedLocationIdsFrom('detail-tag-chips'),null,selectedLocationPrefsFrom('detail-tag-chips'));
     if(autoSelect)setDetailDirty();
   }
   render();
@@ -274,8 +570,11 @@ function removeTopic(topic){
   }));
   save(data);
   renderTopicList();
-  renderTopicChips('ting-topic-chips',selectedAddTopics());
-  if(detailIdx !== null)renderTopicChips('detail-topic-chips',currentDetailTune().topics);
+  renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),null,selectedLocationPrefs());
+  if(detailIdx !== null){
+    const tune = currentDetailTune();
+    renderTagChips('detail-tag-chips',tune.topics,tune.locationIds,tune.preferredLocationId,tune.locationPrefs);
+  }
   if(typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key){
     homeTopicFilter = 'all';
   }
@@ -297,28 +596,11 @@ function matchesHomeTopic(h,topic){
   return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
 }
 
-// HYBRID: draw filter and reset invalid state
-function renderHomeTopicFilter(data){
-  const wrap = $('home-topic-filter');
-  if(!wrap)return;
-  const choices = homeTopicChoices(data);
-  if(choices.length <= 1){
-    wrap.innerHTML = '';
-    wrap.hidden = true;
-    return;
-  }
-  if(!choices.some(choice=>choice.key === homeTopicFilter))homeTopicFilter = 'all';
-  wrap.hidden = false;
-  wrap.innerHTML = choices.map(choice=>`
-    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
-  `).join('');
-}
-
 // RENDER: toggle sort and search buttons
 function updateSortButton(){
   const data = load();
   const count = data.length;
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && h.lastLog !== null);
+  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
@@ -336,6 +618,13 @@ function updateSortButton(){
   if(count < 10 && !hasSearchableArchive)closeSearch({render:false});
 }
 
+// PURE: whether the search chrome is open (phone nav or wide app bar).
+function isSearchOpen(){
+  const wide = paneTierActive();
+  if(wide)return !!$('app-bar-search')?.classList.contains('is-open');
+  return !!document.querySelector('.bottom-nav')?.classList.contains('search-open');
+}
+
 // RENDER: sync search bar to query state
 function updateSearchUi(){
   const nav = document.querySelector('.bottom-nav');
@@ -344,31 +633,37 @@ function updateSearchUi(){
   const barSearchBtn = $('bar-open-search');
   const clearBtn = $('clear-search');
   if(!input || (!nav && !barSearchBtn))return;
-  const wide = paneTierActive();
-  const open = wide
-    ? !!($('app-bar-search') && $('app-bar-search').classList.contains('is-open'))
-    : !!nav?.classList.contains('search-open');
+  const open = isSearchOpen();
+  const empty = !searchQuery.trim();
   input.value = searchQuery;
   document.body.classList.toggle('search-active',open);
-  if (searchBtn) {
-    searchBtn.classList.toggle('is-on',open);
-    searchBtn.setAttribute('aria-pressed',String(open));
-  }
-  if (barSearchBtn) {
-    barSearchBtn.classList.toggle('is-on',open);
-    barSearchBtn.setAttribute('aria-pressed',String(open));
-  }
+  const syncSearchToggle = (btn)=>{
+    if(!btn)return;
+    btn.classList.toggle('is-on',open);
+    btn.setAttribute('aria-pressed',String(open));
+    btn.setAttribute('aria-label',open ? 'close search' : 'search habits');
+    const icon = btn.querySelector('i');
+    if(icon){
+      icon.className = open ? 'ti ti-x' : 'ti ti-search';
+      icon.setAttribute('aria-hidden','true');
+    }
+  };
+  syncSearchToggle(searchBtn);
+  syncSearchToggle(barSearchBtn);
   const navSearchWrap = $('nav-search');
-  if (navSearchWrap) navSearchWrap.setAttribute('aria-hidden',String(!open));
+  if (navSearchWrap){
+    navSearchWrap.setAttribute('aria-hidden',String(!open));
+    navSearchWrap.classList.toggle('is-empty',empty);
+  }
   const barSearchWrap = $('app-bar-search');
   if (barSearchWrap) {
     barSearchWrap.setAttribute('aria-hidden',String(!open));
     barSearchWrap.classList.toggle('is-open',open);
+    barSearchWrap.classList.toggle('is-empty',empty);
   }
   if(clearBtn){
-    const empty = !searchQuery.trim();
-    if (navSearchWrap) navSearchWrap.classList.toggle('is-empty',empty);
-    clearBtn.hidden = true;
+    clearBtn.hidden = !open;
+    clearBtn.setAttribute('aria-label',empty ? 'close search' : 'clear search');
   }
 }
 
@@ -407,12 +702,21 @@ function setSearchOpen(open,options = {}){
   }
   if(!open)updateKeyboardLift();
   if(options.render !== false)render();
+  if(open){
+    // Search is a fresh result view, not a continuation of the home scroll.
+    // Reset both possible scroll hosts after render while retaining input focus.
+    requestAnimationFrame(()=>{
+      const pane = document.querySelector('.pane-list');
+      if(pane)pane.scrollTop = 0;
+      window.scrollTo({top:0,left:0,behavior:'auto'});
+    });
+  }
 }
 
 // HYBRID: close and clear search UI
 function closeSearch(options = {}){
-  const nav = document.querySelector('.bottom-nav');
-  const active = Boolean(searchQuery.trim()) || Boolean(nav?.classList.contains('search-open'));
+  const open = isSearchOpen();
+  const active = Boolean(searchQuery.trim()) || open;
   setSearchOpen(false,{
     clear:options.clear !== false,
     focus:false,
@@ -422,17 +726,11 @@ function closeSearch(options = {}){
 
 // PURE: decide if tap dismisses search
 function shouldDismissSearchFromTap(target){
-  const nav = document.querySelector('.bottom-nav');
-  const barSearch = $('app-bar-search');
-  const wide = paneTierActive();
-  const searchOpen = wide
-    ? !!barSearch?.classList.contains('is-open')
-    : !!nav?.classList.contains('search-open');
   if(!target?.closest)return false;
-  if(!searchOpen)return false;
-  if(target.closest('#habit-search'))return false;
-  if(target.closest('.bottom-nav'))return target.closest('#open-search');
-  if(target.closest('.app-bar'))return target.closest('#bar-open-search');
+  if(!isSearchOpen())return false;
+  // Close/clear controls handle their own clicks — don't double-fire dismiss
+  // here or the follow-up click reopens search (toggle sees it already closed).
+  if(target.closest('#habit-search,#clear-search,#open-search,#bar-open-search'))return false;
   if(target.closest('.sheet-wrap.open'))return false;
   if(searchQuery.trim() && target.closest('.swipe-row,.ting-card,.swipe-actions'))return false;
   return true;
@@ -505,7 +803,7 @@ function compactPillText(value,max = 10){
 // PURE: compute keep-up cue text
 function buildCue(h,days,target){
   if(days === null)return 'Ready for first entry';
-  if(days < 0)return 'Planned ahead';
+  if(days < 0)return 'Coming up';
   const remaining = target - days;
   if(remaining < 0){
     const overdue = Math.abs(remaining);
@@ -516,19 +814,19 @@ function buildCue(h,days,target){
   if(remaining === 0)return 'Due today';
   if(remaining === 1)return 'Due tomorrow';
   if(remaining <= 3)return `Due in ${remaining} days`;
-  if(days <= target * 0.5)return 'Steady rhythm';
+  if(days <= target * 0.5)return 'On track';
   return `${remaining} days left`;
 }
 
 // PURE: compute reduce cue text
 function limitCue(h,days,target){
   if(days === null)return 'No entries yet';
-  if(days < 0)return 'Planned ahead';
+  if(days < 0)return 'Coming up';
   const remaining = target - days;
   if(remaining > 1)return `Wait ${remaining} days`;
   if(remaining === 1)return 'Wait 1 more day';
   if(remaining === 0)return 'Okay today';
-  return 'Enough space';
+  return 'Okay again';
 }
 
 // PURE: compute card status cue text
@@ -539,6 +837,17 @@ function cardCue(h){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'Snoozed for now';
   if(h.type === 'task')return taskCue(h);
   if(plan && dateKey(plan) === dateKey(Date.now()) && h.type !== 'zero')return 'Planned today';
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
+    const left = daysUntil(planBy);
+    if(left !== null){
+      if(left < 0)return `${Math.abs(left)}d behind on planning`;
+      if(left === 0)return 'Needs a day by today';
+      if(left === 1)return 'Needs a day by tomorrow';
+      if(left <= 7)return `Needs a day in ${left}d`;
+      return `Needs a day by ${new Date(planBy).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+    }
+  }
   if(days === null){
     if(h.type === 'zero')return 'Nothing logged';
     return 'Ready to start';
@@ -546,10 +855,10 @@ function cardCue(h){
   if(days < 0)return 'Coming up';
   if(h.type === 'keepup')return buildCue(h,days,target);
   if(h.type === 'reduce')return limitCue(h,days,target);
-  if(days === 0)return 'Reset today';
-  if(days === 1)return '1 day clear';
-  if(days < 4)return `${days} days clear`;
-  return `${days} days clear`;
+  if(days === 0)return 'Clean today';
+  if(days === 1)return '1 day clean';
+  if(days < 4)return `${days} days clean`;
+  return `${days} days clean`;
 }
 
 // PURE: task status cue
@@ -581,6 +890,27 @@ function capitalizeFirst(s){
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// PURE: compact clock copy for dense home rows. Detail and audit views keep
+// their existing precise formatter; this only removes redundant ":00"/spaces.
+function compactHomeTime(ts){
+  if(!Number.isFinite(Number(ts)))return '';
+  const d = new Date(Number(ts));
+  const minutes = d.getMinutes();
+  return d.toLocaleTimeString(undefined,{
+    hour:'numeric',
+    ...(minutes ? {minute:'2-digit'} : {}),
+    hour12:true
+  }).replace(/\s+/g,'').toUpperCase();
+}
+
+// PURE: compact an effort estimate without implying false precision.
+function compactHomeDuration(minutes){
+  const value = Math.max(0,Number(minutes) || 0);
+  if(value < 60)return `${Math.round(value)}m`;
+  const hours = Math.round((value / 60) * 10) / 10;
+  return `${Number.isInteger(hours) ? hours.toFixed(0) : hours}h`;
+}
+
 // PURE: compute card tone class
 function cardTone(h){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'quiet';
@@ -606,13 +936,17 @@ function cardMeta(h,options = {}){
     }else{
       parts.push(`<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`);
     }
+  }else{
+    const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+    if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
+      parts.push(`<span class="context-pill due" title="${escapeHtml(`needs a day by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
+    }else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
+      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`);
+      else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
+    }
   }
-  else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
-    if(h.type !== 'zero')parts.push(`<span class="context-pill" title="target rhythm"><i class="ti ti-repeat" aria-hidden="true"></i>${h.target || 7}d</span>`);
-    else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
-  }
-  if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration"><i class="ti ti-clock" aria-hidden="true"></i>${h.durationMinutes}m</span>`);
-  if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="flexibility"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
+  if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration ${Math.round(h.durationMinutes)} minutes"><i class="ti ti-clock" aria-hidden="true"></i>${compactHomeDuration(h.durationMinutes)}</span>`);
+  if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="can do up to ${h.flexibilityDays}d early"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
   if(hasDaySchedule(h) && (options.forceDaySchedule || sortSettings.showDayScheduleOnCards)){
     const eligible = nextEligibleShort(h);
     const title = [scheduleSummary(h),nextEligibleCopy(h)].filter(Boolean).join(' · ');
@@ -620,7 +954,7 @@ function cardMeta(h,options = {}){
     parts.push(`<span class="context-pill schedule${prefClass} ${eligible ? '' : 'icon-only'}" title="${escapeHtml(title)}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(eligible)}</span>`);
   }
   if(hasTimeWindow(h) && (options.forceTimeWindow || sortSettings.showTimeWindowOnCards)){
-    parts.push(`<span class="context-pill time" title="time window"><i class="ti ti-clock-hour-4" aria-hidden="true"></i>${escapeHtml(timeWindowSummary(h))}</span>`);
+    parts.push(`<span class="context-pill time" title="allowed hours"><i class="ti ti-clock-hour-4" aria-hidden="true"></i>${escapeHtml(timeWindowSummary(h))}</span>`);
   }
   const topics = normalizeTopics(h.topics);
   if(options.forceTopics || sortSettings.showTopicsOnCards){
@@ -628,6 +962,16 @@ function cardMeta(h,options = {}){
       parts.push(`<span class="context-pill quiet" title="${escapeHtml(`topic: ${topic}`)}"><i class="ti ti-tag" aria-hidden="true"></i>${escapeHtml(compactPillText(topic,10))}</span>`);
     });
     if(topics.length > 2)parts.push(`<span class="context-pill quiet" title="more topics">+${topics.length - 2}</span>`);
+  }
+  if(options.forceLocation || sortSettings.showLocationOnCards){
+    const registry = locationOptions();
+    const locIds = normalizeLocationIds(h.locationIds,registry);
+    locIds.slice(0,2).forEach(id=>{
+      const loc = locationById(id,registry);
+      if(!loc)return;
+      parts.push(`<span class="context-pill quiet" title="${escapeHtml(`location: ${loc.name}`)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(compactPillText(loc.name,10))}</span>`);
+    });
+    if(locIds.length > 2)parts.push(`<span class="context-pill quiet" title="more locations">+${locIds.length - 2}</span>`);
   }
   if(plan && h.type !== 'zero' && (options.forcePlans || sortSettings.showPlansOnCards)){
     const label = compactPlanLabel(plan);
@@ -660,9 +1004,144 @@ function cardTrail(h){
   return `${lastWeek}${thisWeek}`;
 }
 
+/** PURE: breakable progress crown-dial markup with 3-color status bar. */
+function cardBreakableSlider(h){
+  const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
+  const rawDone = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+  const done = Math.min(rawDone,total);
+  const bd = typeof breakableProgressBreakdown === 'function'
+    ? breakableProgressBreakdown(h)
+    : {manual:done,calendar:0,total};
+  const cappedManual = Math.min(bd.manual,total);
+  const cappedCal = Math.min(bd.calendar,total - cappedManual);
+  const manualPct = total > 0 ? (cappedManual / total) * 100 : 0;
+  const calPct = total > 0 ? (cappedCal / total) * 100 : 0;
+  const isComplete = done >= total;
+  const label = `progress ${done} of ${total} minutes`;
+  return `<div class="breakable-progress" data-breakable-progress>
+    <div class="breakable-status-bar" aria-hidden="true">
+      <span class="bar-calendar" style="width:${calPct}%"></span>
+      <span class="bar-manual" style="width:${manualPct}%"></span>
+      <span class="bar-adding" style="width:0%"></span>
+    </div>
+    <div class="crown-dial breakable-crown${isComplete ? ' complete' : ''}" role="slider" tabindex="0"
+      aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"
+      data-committed="${done}" data-total="${total}" data-calendar="${cappedCal}" data-manual="${cappedManual}">
+      <canvas class="crown-canvas"></canvas>
+    </div>
+    <span class="breakable-progress-label" aria-hidden="true">${done}/${total}m</span>
+  </div>`;
+}
+
+// PURE: pending auto-complete window for non-breakable tasks (trigger → deadline)
+function pendingAutoMarkWindow(h,now = Date.now()){
+  if(!h || typeof isAutoMark !== 'function' || !isAutoMark(h) || h.breakable)return null;
+  if(h.type !== 'task' || h.lastLog !== null)return null;
+  const trigger = h.eventTime != null
+    ? h.eventTime
+    : (h.dueDate !== null
+      ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+      : null);
+  if(trigger == null)return null;
+  const delayMs = Math.max(0,Number(h.autoMarkMinutes) || 0) * 60000;
+  const end = trigger + delayMs;
+  if(now < trigger || now >= end)return null;
+  return {kind:'auto',start:trigger,end};
+}
+
+// PURE: live session progress state for timer or pending auto-complete.
+// Timer wins when running. While a session-confirm sheet is open for this
+// card, hide the auto bar so the user isn't watching two countdowns.
+function sessionProgressState(h,realIdx,now = Date.now()){
+  const timer = typeof habitTimer !== 'undefined' ? habitTimer : null;
+  if(timer && timer.idx === realIdx){
+    const start = timer.startedAt;
+    const end = start + Math.max(1,timer.autoStopMs || 0);
+    const elapsedMs = Math.max(0,now - start);
+    const totalMs = Math.max(1,end - start);
+    const elapsedMin = Math.max(0,Math.floor(elapsedMs / 60000));
+    const totalMin = Math.max(1,Math.round(totalMs / 60000));
+    const pct = Math.min(100,(elapsedMs / totalMs) * 100);
+    return {
+      kind:'timer',
+      pct,
+      label:`${elapsedMin}/${totalMin}m`,
+      aria:`timer ${elapsedMin} of ${totalMin} minutes`
+    };
+  }
+  if(typeof valueLogMinutes !== 'undefined' && valueLogMinutes != null
+    && typeof valueLogIdx !== 'undefined' && valueLogIdx === realIdx){
+    return null;
+  }
+  const win = pendingAutoMarkWindow(h,now);
+  if(win){
+    const totalMs = Math.max(1,win.end - win.start);
+    const elapsedMs = Math.max(0,now - win.start);
+    const leftMin = Math.max(0,Math.ceil((win.end - now) / 60000));
+    const totalMin = Math.max(1,Math.round(totalMs / 60000));
+    const elapsedMin = Math.min(totalMin,Math.max(0,Math.floor(elapsedMs / 60000)));
+    const pct = Math.min(100,(elapsedMs / totalMs) * 100);
+    return {
+      kind:'auto',
+      pct,
+      label: leftMin ? `auto in ${leftMin}m` : `${elapsedMin}/${totalMin}m`,
+      aria:`auto-complete in ${leftMin} minutes`
+    };
+  }
+  return null;
+}
+
+// PURE: home progress bar (no crown) for running timer / pending auto-complete
+function cardSessionProgress(h,realIdx,now = Date.now()){
+  const state = sessionProgressState(h,realIdx,now);
+  if(!state)return '';
+  return `<div class="session-progress ${state.kind === 'auto' ? 'is-auto' : 'is-timer'}" data-session-progress data-session-idx="${realIdx}" role="progressbar" aria-label="${escapeHtml(state.aria)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(state.pct)}">
+    <div class="breakable-status-bar session-status-bar" aria-hidden="true">
+      <span class="bar-session" style="width:${state.pct}%"></span>
+    </div>
+    <span class="session-progress-label" aria-hidden="true">${escapeHtml(state.label)}</span>
+  </div>`;
+}
+
+// RENDER: refresh live session bars without rebuilding the whole list
+function updateHomeSessionProgress(now = Date.now()){
+  const list = $('list');
+  if(!list)return;
+  list.querySelectorAll('[data-session-progress]').forEach(el=>{
+    const idx = parseInt(el.dataset.sessionIdx,10);
+    if(!Number.isFinite(idx))return;
+    const h = typeof load === 'function' ? load()[idx] : null;
+    if(!h)return;
+    const state = sessionProgressState(h,idx,now);
+    if(!state){
+      // Timer stopped or auto window ended — leave a stub until the next
+      // full render restitches the card (trail / no bar).
+      el.style.visibility = 'hidden';
+      return;
+    }
+    el.style.visibility = '';
+    el.classList.toggle('is-auto',state.kind === 'auto');
+    el.classList.toggle('is-timer',state.kind === 'timer');
+    el.setAttribute('aria-label',state.aria);
+    el.setAttribute('aria-valuenow',String(Math.round(state.pct)));
+    const fill = el.querySelector('.bar-session');
+    if(fill)fill.style.width = `${state.pct}%`;
+    const label = el.querySelector('.session-progress-label');
+    if(label)label.textContent = state.label;
+  });
+}
+
 // PURE: today's agenda timeline rows, shared by the home card pill map and
 // the chronological "today" section ordering so both stay in lockstep.
+// Travel/wait rows are excluded here — home inserts thin travel cards itself.
 function homeAgendaRows(data){
+  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
+  return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()))
+    .filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
+}
+
+// PURE: full timeline including travel rows (for thin home travel cards).
+function homeAgendaTimeline(data){
   if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
   return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
 }
@@ -697,17 +1176,80 @@ function priorityColor(p){
   return 'color-mix(in srgb, var(--text3) 35%, transparent)';
 }
 
+// PURE: window status for an agenda lead — anytime / later / now / closing.
+// Scheduled rows are handled by the caller. Closing = remaining window is too
+// tight for the next session (chunk or full duration), floored at 45 minutes.
+function agendaLeadStatus(row,h = null,now = Date.now()){
+  const label = compactHomeTime(row.start);
+  const end = row.kind === 'fill' ? compactHomeTime(row.end) : '';
+  const chunkMinutes = h?.breakable && row.chunkIndex != null && Number.isFinite(row.chunkMinutes)
+    ? Math.round(row.chunkMinutes)
+    : null;
+  const baseTitle = `on agenda at ${label}${end ? ` to ${end}` : ''}${chunkMinutes != null ? ` · ${chunkMinutes} minutes` : ''}`;
+  if(row.kind === 'scheduled'){
+    return {cls:'scheduled',icon:'ti-calendar-time',title:`fixed at ${label}`,chunkMinutes};
+  }
+  if(!h || typeof hasTimeWindow !== 'function' || !hasTimeWindow(h)){
+    return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
+  }
+  const dayBase = typeof dayStart === 'function' ? dayStart(row.start) : row.start;
+  const win = typeof fillTimeWindow === 'function' ? fillTimeWindow(h,dayBase) : null;
+  if(!win){
+    return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
+  }
+  if(now < win.start){
+    return {
+      cls:'agenda-later',
+      icon:'ti-hourglass',
+      title:`${baseTitle} · starts at ${compactHomeTime(win.start)}`,
+      chunkMinutes
+    };
+  }
+  const sessionMin = chunkMinutes != null
+    ? chunkMinutes
+    : (typeof clampDuration === 'function' ? clampDuration(h.durationMinutes) : Math.max(1,Number(h.durationMinutes) || 30));
+  const sessionMs = Math.max(0,sessionMin) * 60000;
+  const closingMs = Math.max(sessionMs,45 * 60000);
+  if(now < win.end && (win.end - now) <= closingMs){
+    return {
+      cls:'agenda-closing',
+      icon:'ti-alarm',
+      title:`${baseTitle} · almost out of time`,
+      chunkMinutes
+    };
+  }
+  if(now >= win.end){
+    // Past the hard window — still show the suggestion, but as closing urgency.
+    return {
+      cls:'agenda-closing',
+      icon:'ti-alarm',
+      title:`${baseTitle} · almost out of time`,
+      chunkMinutes
+    };
+  }
+  return {
+    cls:'agenda-suggested',
+    icon:'ti-sparkles',
+    title:`${baseTitle} · good time now`,
+    chunkMinutes
+  };
+}
+
 // PURE: compact right-side agenda marker for a home card
-function agendaCardPill(row){
+function agendaCardPill(row,h = null,now = Date.now()){
   if(!row)return '';
-  const label = agendaTimeLabel(row.start);
-  const end = row.kind === 'fill' ? agendaTimeLabel(row.end) : '';
-  const title = row.kind === 'scheduled'
-    ? `scheduled at ${label}`
-    : `suggested ${label}${end ? ` to ${end}` : ''}`;
-  const cls = row.kind === 'scheduled' ? 'scheduled' : 'agenda-suggested';
-  const icon = row.kind === 'scheduled' ? 'ti-calendar-time' : 'ti-sparkles';
-  return `<span class="context-pill ${cls}" title="${escapeHtml(title)}"><i class="ti ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span>`;
+  const status = agendaLeadStatus(row,h,now);
+  const label = compactHomeTime(row.start);
+  const chunk = status.chunkMinutes != null
+    ? ` · ${compactHomeDuration(status.chunkMinutes)}`
+    : '';
+  return `<span class="context-pill agenda-lead ${status.cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i><span>${escapeHtml(label)}${escapeHtml(chunk)}</span></span>`;
+}
+
+// PURE: the former score ring as a compact, readable metadata pill.
+function cardStatusPill(score,tone,cue,accent){
+  const value = Number.isFinite(score) ? `${Math.round(score)}%` : 'new';
+  return `<span class="context-pill status-pill ${escapeHtml(tone || '')}" style="--status-color:${accent};" title="${escapeHtml(cue || 'status')}"><i class="ti ti-circle-filled" aria-hidden="true"></i>${escapeHtml(value)}</span>`;
 }
 
 function targetDayForEarly(h){
@@ -718,7 +1260,7 @@ function targetDayForEarly(h){
   const plan = nextPlannedLog(h);
   if(plan)return dayStart(plan);
   if(h.lastLog === null)return nextEligibleDate(h,Date.now());
-  const target = Math.max(1,parseInt(h.target,10) || 7);
+  const target = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
   const rawTarget = dayStart(h.lastLog) + target * 86400000;
   if(!hasDaySchedule(h))return rawTarget;
   return nextEligibleDate(h,rawTarget) || rawTarget;
@@ -777,10 +1319,10 @@ function earlyReason(data,i,settings){
   if(!pressureDay)return '';
   const pressure = dayPressure(data,dateKey(pressureDay),settings,i);
   const duration = clampDuration(h.durationMinutes);
-  const targetLabel = preferred ? 'preferred day' : 'target day';
-  if(pressure.capacity <= 0)return `${targetLabel} has no open time`;
-  if(pressure.remaining < duration)return `${targetLabel} is short ${duration - pressure.remaining}m`;
-  if(pressure.busy >= 0.75)return `${targetLabel} is busy`;
+  const targetLabel = preferred ? 'preferred day' : 'usual day';
+  if(pressure.capacity <= 0)return `${targetLabel} is packed`;
+  if(pressure.remaining < duration)return `${targetLabel} needs ${duration - pressure.remaining}m more open`;
+  if(pressure.busy >= 0.75)return `${targetLabel} is packed`;
   return '';
 }
 
@@ -798,6 +1340,892 @@ function earlyCardPill(reason){
   return `<span class="context-pill agenda-suggested" title="${escapeHtml(reason)}"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i>early</span>`;
 }
 
+// RENDER: thin travel card between home list items (same surface as today).
+// When fromId is CURRENT_COORD_ID the edge is computed from the live GPS coord
+// via travelFromCurrent() (movement-thresholded cache) and the card is a non-
+// interactive label — editing an edge anchored to an ephemeral coord would
+// store an override that's stale on the next GPS tick, so the synthetic leg
+// is informational only. Saved-place → saved-place legs remain tappable.
+function appendHomeTravelCard(list,fromId,toId,startTs){
+  if(!list || !fromId || !toId || fromId === toId)return;
+  const fromCurrent = fromId === CURRENT_COORD_ID;
+  const to = typeof locationById === 'function' ? locationById(toId) : null;
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  let edge, fromName, edited;
+  if(fromCurrent){
+    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+    edge = (here && to && typeof travelFromCurrent === 'function')
+      ? travelFromCurrent(to,mode)
+      : { seconds:0, metres:0, provider:'none' };
+    fromName = 'here';
+    edited = false;
+  }else{
+    const from = typeof locationById === 'function' ? locationById(fromId) : null;
+    edge = (from && to && typeof travelBetween === 'function')
+      ? travelBetween(from,to,mode)
+      : { seconds:0 };
+    fromName = from ? from.name : 'here';
+    edited = typeof isManualTravelEdge === 'function' && isManualTravelEdge(edge);
+  }
+  const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
+  const toName = to ? to.name : 'next';
+  const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
+  const travelEl = document.createElement('button');
+  travelEl.type = 'button';
+  travelEl.className = `travel-card${edited ? ' is-edited' : ''}${fromCurrent ? ' is-from-current' : ''}`;
+  travelEl.dataset.travelFrom = fromId;
+  travelEl.dataset.travelTo = toId;
+  travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
+  if(fromCurrent)travelEl.setAttribute('aria-disabled','true');
+  travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${compactHomeDuration(mins)} · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
+  list.appendChild(travelEl);
+  // Synthetic current-coord legs are not editable — skip all gesture wiring.
+  if(fromCurrent)return;
+  let travelPointer = null;
+  travelEl.addEventListener('pointerdown',e=>{
+    const scrollHost = travelEl.closest('.pane-list,.sheet,.detail-page');
+    travelPointer = {el:travelEl,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),maxMove:0,
+      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
+  },{passive:true});
+  travelEl.addEventListener('pointermove',e=>{
+    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
+    travelPointer.maxMove = Math.max(travelPointer.maxMove,Math.hypot(e.clientX-travelPointer.x,e.clientY-travelPointer.y));
+  },{passive:true});
+  travelEl.addEventListener('pointerup',e=>{
+    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
+    const tap = travelPointer;
+    travelPointer = null;
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now() - tap.time > 650){
+      travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
+      return;
+    }
+    travelEl.dataset.approvedClickUntil = String(Date.now()+500);
+  });
+  travelEl.addEventListener('pointercancel',e=>{
+    if(travelPointer && travelPointer.el === travelEl && travelPointer.id === e.pointerId){
+      const tap = travelPointer;travelPointer = null;
+      const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+      if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1)travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
+    }
+  });
+  travelEl.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
+    openTravelEditSheet(fromId,toId);
+  });
+}
+
+// Module state: which consecutive blocked groups are expanded on the home list.
+const expandedBlockedGroups = new Set();
+
+// Visible window (ms) for the "next 12 hours" cleanup levels.
+const HOME_EXTRA_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+// PURE: normalized home blocked/travel presentation mode.
+function homeExtraMode(){
+  return (typeof normalizeHomeExtraMode === 'function' && normalizeHomeExtraMode(sortSettings.homeExtraMode))
+    || 'cards';
+}
+
+// PURE: whether a blocked/travel row (keyed by its start ts) is shown under the
+// current homeExtraMode. 'cards' shows everything; the 12h modes hide anything
+// whose start lies past the next 12 hours (still-active blocks keep their past
+// start, so an in-progress block stays visible).
+function homeExtraRowVisible(ts){
+  if(homeExtraMode() === 'cards')return true;
+  return Number.isFinite(ts) && ts < Date.now() + HOME_EXTRA_WINDOW_MS;
+}
+
+// RENDER: plain muted background line for a home travel leg (text cleanup level).
+function appendHomeTravelText(list,fromId,toId,startTs){
+  if(!list || !fromId || !toId || fromId === toId)return;
+  const fromCurrent = fromId === CURRENT_COORD_ID;
+  const to = typeof locationById === 'function' ? locationById(toId) : null;
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  let edge, fromName;
+  if(fromCurrent){
+    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+    edge = (here && to && typeof travelFromCurrent === 'function')
+      ? travelFromCurrent(to,mode)
+      : { seconds:0 };
+    fromName = 'here';
+  }else{
+    const from = typeof locationById === 'function' ? locationById(fromId) : null;
+    edge = (from && to && typeof travelBetween === 'function')
+      ? travelBetween(from,to,mode)
+      : { seconds:0 };
+    fromName = from ? from.name : 'here';
+  }
+  const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
+  const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
+  const el = document.createElement('div');
+  el.className = 'extra-text-line travel-text';
+  el.textContent = `${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`;
+  list.appendChild(el);
+}
+
+// RENDER: plain muted background line for a blocked-time instance (text level).
+function appendHomeBlockedText(list,row){
+  if(!list || !row)return;
+  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
+  const start = compactHomeTime(row.start);
+  const end = compactHomeTime(row.end);
+  const place = loc ? ` · ${loc.name}` : '';
+  const el = document.createElement('div');
+  el.className = 'extra-text-line blocked-text';
+  el.textContent = `${row.label || 'blocked'} · ${start}–${end}${place}`;
+  list.appendChild(el);
+}
+
+// RENDER: dispatch a blocked row to a card or a muted line per homeExtraMode.
+function appendHomeExtraBlocked(list,row){
+  if(homeExtraMode() === 'text12h')appendHomeBlockedText(list,row);
+  else appendHomeBlockedCard(list,row);
+}
+
+// RENDER: dispatch a travel leg to a card or a muted line per homeExtraMode.
+function appendHomeExtraTravel(list,fromId,toId,startTs){
+  if(homeExtraMode() === 'text12h')appendHomeTravelText(list,fromId,toId,startTs);
+  else appendHomeTravelCard(list,fromId,toId,startTs);
+}
+
+// PURE: leave-by for a saved→saved (or here→saved) home travel card.
+// destStart − travel, floored at now so the card never shows a past depart.
+function homeTravelLeaveByMs(fromId,toId,destStart){
+  if(!Number.isFinite(destStart))return Date.now();
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  let seconds = 0;
+  if(fromId === CURRENT_COORD_ID){
+    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+    const to = typeof locationById === 'function' ? locationById(toId) : null;
+    if(here && to && typeof travelFromCurrent === 'function'){
+      seconds = Number(travelFromCurrent(to,mode).seconds) || 0;
+    }
+  }else{
+    const from = typeof locationById === 'function' ? locationById(fromId) : null;
+    const to = typeof locationById === 'function' ? locationById(toId) : null;
+    if(from && to && typeof travelBetween === 'function'){
+      seconds = Number(travelBetween(from,to,mode).seconds) || 0;
+    }
+  }
+  return Math.max(destStart - seconds * 1000, Date.now());
+}
+
+// RENDER: blocked-time card on home — tap cancels this instance for today.
+let blockedCardActivationLocked = false;
+let blockedCardActivationTimer = null;
+function lockBlockedCardActivation(ms = 180){
+  blockedCardActivationLocked = true;
+  clearTimeout(blockedCardActivationTimer);
+  blockedCardActivationTimer = setTimeout(()=>{blockedCardActivationLocked = false;},ms);
+}
+function bindScrollSafeTap(el,activate,ignoreSelector = ''){
+  let pointer = null;
+  let handledUntil = 0;
+  const recoverStationaryTap = tap=>{
+    setTimeout(()=>{
+      if(!el.isConnected || Date.now() < handledUntil)return;
+      const settledTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+      if(Math.abs(settledTop-tap.scrollTop) > 1)return;
+      handledUntil = Date.now()+500;
+      activate(new Event('click'));
+    },60);
+  };
+  el.addEventListener('pointerdown',e=>{
+    if(ignoreSelector && e.target.closest(ignoreSelector))return;
+    const scrollHost = el.closest('.pane-list,.sheet,.detail-page');
+    pointer = {id:e.pointerId,x:e.clientX,y:e.clientY,maxMove:0,time:Date.now(),
+      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
+  },{passive:true});
+  el.addEventListener('pointermove',e=>{
+    if(!pointer || pointer.id !== e.pointerId)return;
+    pointer.maxMove = Math.max(pointer.maxMove,Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y));
+  },{passive:true});
+  el.addEventListener('pointerup',e=>{
+    if(!pointer || pointer.id !== e.pointerId)return;
+    const tap = pointer;pointer = null;
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX-tap.x,e.clientY-tap.y));
+    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now()-tap.time > 650){
+      el.dataset.ignoreClickUntil = String(Date.now()+500);return;
+    }
+    recoverStationaryTap(tap);
+  });
+  el.addEventListener('pointercancel',()=>{
+    const tap = pointer;pointer = null;
+    if(!tap)return;
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1){
+      el.dataset.ignoreClickUntil = String(Date.now()+500);
+      return;
+    }
+    // Mobile WebKit sometimes cancels an otherwise stationary tap and emits
+    // no click. Wait briefly so a real scroll has time to move, then recover
+    // only when both the finger and scroll host remained still.
+    recoverStationaryTap(tap);
+  },{passive:true});
+  el.addEventListener('click',e=>{
+    if(ignoreSelector && e.target.closest(ignoreSelector))return;
+    e.preventDefault();e.stopPropagation();
+    if(Date.now() < handledUntil)return;
+    if(Number(el.dataset.ignoreClickUntil || 0) > Date.now())return;
+    handledUntil = Date.now()+500;
+    activate(e);
+  });
+}
+
+function appendHomeBlockedCard(list,row){
+  if(!list || !row)return;
+  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
+  const start = compactHomeTime(row.start);
+  const end = compactHomeTime(row.end);
+  const place = loc ? ` · ${loc.name}` : '';
+  // Tap opens the per-instance editor; the X frees this occurrence for today.
+  const el = document.createElement('div');
+  el.className = 'blocked-card';
+  el.tabIndex = 0;
+  el.setAttribute('role','button');
+  el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
+  el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
+  const xBtn = el.querySelector('.blocked-cancel-mark');
+  if(xBtn)xBtn.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    cancelHomeBlockedRow(row);
+  });
+  bindScrollSafeTap(el,()=>{
+    if(blockedCardActivationLocked)return;
+    // Let the browser finish the click sequence before mounting an overlay;
+    // otherwise the new backdrop can intercept the tail of the same gesture.
+    setTimeout(()=>{
+      if(blockedCardActivationLocked)return;
+      if(typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
+    },0);
+  },'.blocked-cancel-mark');
+  el.addEventListener('keydown',e=>{
+    if((e.key === 'Enter' || e.key === ' ') && !e.target.closest('.blocked-cancel-mark')){
+      e.preventDefault();
+      if(!blockedCardActivationLocked && typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
+    }
+  });
+  list.appendChild(el);
+}
+
+/** HANDLER: cancel one blocked instance for its day and refresh, with undo. */
+function cancelHomeBlockedRow(row){
+  if(!row)return;
+  lockBlockedCardActivation();
+  const dayKey = dateKey(row.start);
+  const startMin = row.blockStartMin != null ? row.blockStartMin : (row.startMin != null ? row.startMin : Math.round((row.start - dayStart(row.start)) / 60000));
+  const endMin = row.blockEndMin != null ? row.blockEndMin : (row.endMin != null ? row.endMin : Math.round((row.end - dayStart(row.start)) / 60000));
+  cancelBlockedInstance(dayKey,row.label,startMin,endMin);
+  // Overnight blocks (end <= start) wrap past midnight: their full minute span
+  // is (1440 − start + end), and cancelling the signature frees BOTH halves of
+  // the day's interval at once. Plain `end − start` would go negative here and
+  // wrongly *subtract* from the day's capacity.
+  const effectiveStart = row.effectiveBlockStartMin != null ? row.effectiveBlockStartMin : startMin;
+  const effectiveEnd = row.effectiveBlockEndMin != null ? row.effectiveBlockEndMin : endMin;
+  const freedMin = typeof blockDurationMinutes === 'function'
+    ? blockDurationMinutes(effectiveStart,effectiveEnd)
+    : (effectiveEnd > effectiveStart ? effectiveEnd - effectiveStart : (1440 - effectiveStart) + effectiveEnd);
+  const s = loadSortSettings();
+  const overrides = normalizeAvailabilityOverrides(s.availabilityOverrides);
+  const current = effectiveAvailabilityMinutes(dayKey,s);
+  overrides[dayKey] = Math.max(0,current + freedMin);
+  saveSortSettings({...s,availabilityOverrides:overrides});
+  if(typeof render === 'function')render();
+  showActionToast(`Freed ${row.label || 'blocked'} for today`,{
+    type:'restore-blocked',
+    dayKey,label:row.label,startMin,endMin,freedMin,
+    undoLabel:'undo'
+  });
+}
+
+// RENDER: one card for a run of consecutive blocked times. Tap expands to the
+// individual rows (and tap again collapses) so week-home stays quieter.
+function appendHomeBlockedGroup(list,blocks,groupKey){
+  if(!list || !blocks || !blocks.length)return;
+  if(blocks.length === 1){
+    appendHomeBlockedCard(list,blocks[0]);
+    return;
+  }
+  const expanded = expandedBlockedGroups.has(groupKey);
+  const start = compactHomeTime(blocks[0].start);
+  const end = compactHomeTime(blocks[blocks.length - 1].end);
+  const labels = blocks.map(b => b.label || 'blocked').filter(Boolean);
+  const summary = labels.length <= 3
+    ? labels.join(', ')
+    : `${labels.slice(0,2).join(', ')} +${labels.length - 2}`;
+  const wrap = document.createElement('div');
+  wrap.className = `blocked-group${expanded ? ' is-expanded' : ''}`;
+  wrap.dataset.blockedGroup = groupKey;
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'blocked-card blocked-card-merge';
+  toggle.setAttribute('aria-expanded',String(expanded));
+  toggle.setAttribute(
+    'aria-label',
+    expanded
+      ? `collapse ${blocks.length} busy times`
+      : `${blocks.length} busy times ${start} to ${end}, tap to expand`
+  );
+  toggle.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)} · ${blocks.length}</span><i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
+  let mergePointer = null;
+  toggle.addEventListener('pointerdown',e=>{
+    mergePointer = {el:toggle,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+  },{passive:true});
+  toggle.addEventListener('pointerup',e=>{
+    if(!mergePointer || mergePointer.el !== toggle || mergePointer.id !== e.pointerId)return;
+    const tap = mergePointer;
+    mergePointer = null;
+    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
+    if(moved > 10 || Date.now() - tap.time > 800)return;
+    toggle.dataset.approvedClickUntil = String(Date.now()+500);
+  });
+  toggle.addEventListener('pointercancel',e=>{
+    if(mergePointer && mergePointer.el === toggle && mergePointer.id === e.pointerId)mergePointer = null;
+  });
+  toggle.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(e.detail !== 0 && Number(toggle.dataset.approvedClickUntil || 0) < Date.now())return;
+    lockBlockedCardActivation();
+    if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
+    else expandedBlockedGroups.add(groupKey);
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    else if(typeof render === 'function')render();
+  });
+  wrap.appendChild(toggle);
+
+  if(expanded){
+    const detail = document.createElement('div');
+    detail.className = 'blocked-group-detail';
+    blocks.forEach(row => appendHomeBlockedCard(detail,row));
+    wrap.appendChild(detail);
+  }
+  list.appendChild(wrap);
+}
+
+// PURE: walk a day sequence and fold back-to-back blocked rows into groups.
+function consumeBlockedRun(seq,startIdx){
+  const blocks = [];
+  let i = startIdx;
+  while(i < seq.length && seq[i].kind === 'blocked'){
+    blocks.push(seq[i]);
+    i += 1;
+  }
+  return {blocks,nextIdx:i};
+}
+
+function capacityMinutesLabel(value){
+  const minutes = Math.max(0,Math.round(Number(value) || 0));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if(!hours)return `${rest}m`;
+  if(!rest)return `${hours}h`;
+  return `${hours}h ${rest}m`;
+}
+
+function capacityTimeLabel(value){
+  return new Date(value).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+
+function renderDayCapacityScorecard(report){
+  const content = $('day-capacity-content');
+  if(!content || !report)return;
+  const metric = (label,value,detail='',tone='')=>`
+    <div class="capacity-metric${tone ? ` ${tone}` : ''}">
+      <span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b>${detail ? `<small>${escapeHtml(detail)}</small>` : ''}
+    </div>`;
+  const coverage = `${Math.round((Number(report.eligibleCoverage) || 0) * 100)}%`;
+  const budgetUse = `${Math.round((Number(report.budgetUtilization) || 0) * 100)}%`;
+  const auditHeadline = report.missedOpportunityCount > 0
+    ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
+    : 'no unexplained placement gaps';
+  const auditDetail = report.missedOpportunityCount > 0
+    ? 'eligible work still fits under the scheduler\'s current constraints'
+    : (report.budgetCappedGapCount > 0
+      ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
+      : 'remaining gaps cannot take the outstanding candidates');
+  const agendaRows = report.agendaRows.length
+    ? report.agendaRows.map(row=>`
+      <div class="capacity-agenda-row ${escapeHtml(row.kind)}">
+        <time>${capacityTimeLabel(row.start)}<small>${capacityTimeLabel(row.end)}</small></time>
+        <div><b>${escapeHtml(row.name)}</b><small>${capacityMinutesLabel(row.minutes)} / ${escapeHtml(row.kind)}</small></div>
+      </div>`).join('')
+    : '<p class="capacity-empty">The agenda builder committed no timed rows.</p>';
+  const gapRows = report.placementGaps.length
+    ? report.placementGaps.map(gap=>{
+      const labels = {
+        missed:'could place',
+        'assigned-elsewhere':'placed elsewhere',
+        'budget-capped':'budget capped',
+        'no-fit':'no eligible fit'
+      };
+      return `
+        <div class="capacity-gap ${escapeHtml(gap.status)}" data-capacity-gap-status="${escapeHtml(gap.status)}">
+          <div class="capacity-gap-time">
+            <b>${capacityTimeLabel(gap.start)}-${capacityTimeLabel(gap.end)}</b>
+            <span>${capacityMinutesLabel(gap.minutes)}</span>
+          </div>
+          <div class="capacity-gap-result">
+            <strong>${escapeHtml(labels[gap.status] || gap.status)}</strong>
+            <small>${escapeHtml(gap.explanation)}</small>
+          </div>
+        </div>`;
+    }).join('')
+    : '<p class="capacity-empty">No open scheduler gaps remain.</p>';
+  const blocks = report.blockedBreakdown.length
+    ? report.blockedBreakdown.map(block=>`<span>${escapeHtml(block.label)} <b>${capacityMinutesLabel(block.minutes)}</b></span>`).join('')
+    : '<span>none</span>';
+  const unplaced = report.unplacedItems.length
+    ? report.unplacedItems.map(item=>`
+      <div class="capacity-unplaced-item" data-capacity-item-index="${item.i}">
+        <div class="capacity-unplaced-head">
+          <b>${escapeHtml(item.name)}</b>
+          <span>${escapeHtml(PRIORITY_LABELS[item.priority] || `P${item.priority}`)} / ${escapeHtml(item.type)}</span>
+        </div>
+        <p>${capacityMinutesLabel(item.remainingMinutes)} unplaced${item.placedMinutes ? ` / ${capacityMinutesLabel(item.placedMinutes)} placed` : ''}</p>
+        <small>${escapeHtml(item.reason)}${item.window ? ` / ${escapeHtml(item.window)}` : ''}</small>
+      </div>`).join('')
+    : '<p class="capacity-empty">Every eligible item was fully placed.</p>';
+  content.innerHTML = `
+    <div class="capacity-metrics">
+      ${metric('eligible work',capacityMinutesLabel(report.outstandingLoad),`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`,'load')}
+      ${metric('work placed',capacityMinutesLabel(report.placedLoadMinutes),`${coverage} of eligible work`,'net')}
+      ${metric('budget used',budgetUse,`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`)}
+      ${metric('missed gaps',String(report.missedOpportunityCount),`${capacityMinutesLabel(report.largestGapMinutes)} largest open gap`,report.missedOpportunityCount ? 'warning' : '')}
+    </div>
+    <div class="capacity-balance ${report.missedOpportunityCount ? 'deficit' : 'surplus'}">
+      <div><span>placement audit</span><b>${escapeHtml(auditHeadline)}</b></div>
+      <strong>${escapeHtml(auditDetail)}</strong>
+    </div>
+    <div class="capacity-facts" aria-label="scheduler totals">
+      <span>open scheduler time <b>${capacityMinutesLabel(report.schedulerOpenMinutes)}</b></span>
+      <span>budget remaining <b>${capacityMinutesLabel(report.placementBudgetRemaining)}</b></span>
+      <span>scheduled events <b>${capacityMinutesLabel(report.scheduledMinutes)}</b></span>
+      <span>travel committed <b>${capacityMinutesLabel(report.travelMinutes)}</b></span>
+    </div>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>home agenda output</h3><span>${report.agendaRows.length}</span></div>
+      <div class="capacity-agenda">${agendaRows}</div>
+      ${report.hiddenAgendaRowCount ? `<p class="capacity-note">${report.hiddenAgendaRowCount} scheduler placement${report.hiddenAgendaRowCount === 1 ? '' : 's'} not shown in this day section because of the current pin or filter view.</p>` : ''}
+    </section>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>remaining gap audit</h3><span>${report.placementGaps.length}</span></div>
+      <div class="capacity-gaps">${gapRows}</div>
+    </section>
+    <section class="capacity-section">
+      <h3>capacity context</h3>
+      <div class="capacity-breakdown">
+        <span>clock <b>${capacityMinutesLabel(report.totalCapacity)}</b></span>
+        <span>blocked <b>${capacityMinutesLabel(report.blockedMinutes)}</b></span>
+        <span>net <b>${capacityMinutesLabel(report.netAvailable)}</b></span>
+        ${blocks}
+      </div>
+    </section>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>unplaced items</h3><span>${report.unplacedItems.length}</span></div>
+      <div class="capacity-unplaced">${unplaced}</div>
+    </section>`;
+}
+
+function openDayCapacityScorecard(dayBase,weekMode = false){
+  if(typeof buildDayCapacityScorecard !== 'function')return;
+  const now = Date.now();
+  const report = buildDayCapacityScorecard(load(),sortSettings,dayBase,now,{
+    weekMode,
+    weekSnapshot:weekMode ? _homeRenderedWeek : null
+  });
+  const title = $('day-capacity-title');
+  const sub = $('day-capacity-sub');
+  const sheet = $('day-capacity-sheet');
+  if(title)title.textContent = report.isToday
+    ? 'today agenda audit'
+    : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase();
+  if(sub)sub.textContent = report.isToday
+    ? `${report.usesRenderedSnapshot ? 'current home agenda' : 'remaining day'} from ${new Date(report.rangeStart).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
+    : (report.usesRenderedSnapshot ? 'current home agenda, full-day audit' : 'full-day agenda placement audit');
+  if(sheet)sheet.dataset.dayKey = report.dayKey;
+  renderDayCapacityScorecard(report);
+  openSheet('day-capacity-sheet');
+}
+
+function setupDayCapacityHeader(header,dayBase,weekMode){
+  if(!header)return;
+  header.classList.add('day-section-header');
+  header.dataset.capacityDay = dateKey(dayBase);
+  let taps = [];
+  let pointerStart = null;
+  header.addEventListener('pointerdown',event=>{
+    pointerStart = {id:event.pointerId,x:event.clientX,y:event.clientY};
+  });
+  header.addEventListener('pointercancel',()=>{ pointerStart = null; });
+  header.addEventListener('pointerup',event=>{
+    if(!pointerStart || pointerStart.id !== event.pointerId)return;
+    const moved = Math.hypot(event.clientX - pointerStart.x,event.clientY - pointerStart.y);
+    pointerStart = null;
+    if(moved > 10){ taps = []; return; }
+    const now = performance.now();
+    taps = taps.filter(ts=>now - ts < 1600);
+    taps.push(now);
+    if(taps.length < 3)return;
+    taps = [];
+    event.preventDefault();
+    event.stopPropagation();
+    openDayCapacityScorecard(dayBase,weekMode);
+  });
+}
+
+let _droppedDayBaseline = null;
+let _droppedDayBaselineDay = null;
+
+function appendSectionHeader(list,label,dayContext = null,todayHids = null){
+  if(!list || !label)return;
+  const header = document.createElement('div');
+  header.className = 'section-header';
+  header.dataset.label = label;
+  header.textContent = label;
+  if(dayContext && dayContext.dayBase != null){
+    setupDayCapacityHeader(header,dayContext.dayBase,true);
+    attachFreeTimeIndicator(header,dayContext);
+  }else if(label === 'today'){
+    setupDayCapacityHeader(header,dayStart(Date.now()),false);
+  }
+  if(label === 'today' && todayHids){
+    attachDroppedIndicator(header,list,todayHids);
+  }
+  list.appendChild(header);
+}
+
+function computeTomorrowProjection(data,settings){
+  if(typeof buildWeekAgenda !== 'function')return [];
+  const week = buildWeekAgenda(data,settings,2);
+  const tomorrow = week.days[1];
+  if(!tomorrow || !tomorrow.timeline)return [];
+  return tomorrow.timeline
+    .filter(r=>(r.kind === 'fill' || r.kind === 'scheduled') && r.i != null)
+    .map(r=>data[r.i]?.hid)
+    .filter(Boolean);
+}
+
+function buildHidDayLabelMap(data,settings){
+  const map = new Map();
+  const week = _homeRenderedWeek;
+  if(week && Array.isArray(week.days)){
+    for(const day of week.days){
+      const label = homeWeekDayLabel(day);
+      const rows = day.homeDisplayedTimeline || day.timeline || [];
+      for(const row of rows){
+        if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
+          const hid = data[row.i]?.hid;
+          if(hid && !map.has(hid)) map.set(hid, `in ${label}`);
+        }
+      }
+    }
+  }
+  const catLabels = {0:'on today',1:'behind',2:'coming up',3:'snoozed'};
+  for(let i = 0; i < data.length; i++){
+    const h = data[i];
+    if(!h || !h.hid || map.has(h.hid)) continue;
+    map.set(h.hid, catLabels[todayCategory(h, settings)] || 'behind');
+  }
+  return map;
+}
+
+function computeMissedYesterday(data,baseline,slippedHids,dayLabelMap){
+  if(!baseline || !Array.isArray(baseline.hids)) return [];
+  const now = Date.now();
+  const missed = [];
+  for(const hid of baseline.hids){
+    if(slippedHids.has(hid)) continue;
+    const idx = data.findIndex(h => h && h.hid === hid);
+    if(idx < 0) continue;
+    const h = data[idx];
+    if(completedToday(h, now)) continue;
+    if(todayCategory(h, sortSettings) === 0) continue;
+    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+    const dayLabel = dayLabelMap.get(hid) || 'behind';
+    missed.push({hid, name:h.name, emoji:h.emoji, idx, snoozed, dayLabel});
+  }
+  return missed.sort((a,b) => Number(a.snoozed) - Number(b.snoozed));
+}
+
+function attachDroppedIndicator(header,list,todayHids){
+  const data = load();
+  const now = Date.now();
+  const snap = loadTodaySuggested();
+  const today = todayIso();
+  if(_droppedDayBaselineDay !== today){
+    _droppedDayBaseline = snap.prevProjection || null;
+    _droppedDayBaselineDay = today;
+  }
+  const fingerprint = dataFingerprint(data);
+  const needsProjection = !snap.projection
+    || snap.projection.day !== dateKey(now + 86400000)
+    || snap.projection.fingerprint !== fingerprint;
+  const projectionHids = needsProjection ? computeTomorrowProjection(data,sortSettings) : null;
+  recordTodaySuggested(data,todayHids,now,projectionHids,fingerprint);
+
+  const currentSet = new Set(todayHids);
+  const droppedMap = new Map();
+
+  if(_droppedDayBaseline && Array.isArray(_droppedDayBaseline.hids)){
+    for(const hid of _droppedDayBaseline.hids){
+      if(currentSet.has(hid) || droppedMap.has(hid))continue;
+      const idx = data.findIndex(h=>h && h.hid === hid);
+      if(idx < 0)continue;
+      const h = data[idx];
+      if(completedToday(h,now))continue;
+      const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+      droppedMap.set(hid,{hid,name:h.name,emoji:h.emoji,idx,snoozed,first:now});
+    }
+  }
+
+  for(const [hid,info] of Object.entries(snap.hids)){
+    if(currentSet.has(hid) || droppedMap.has(hid))continue;
+    const idx = data.findIndex(h=>h && h.hid === hid);
+    if(idx < 0)continue;
+    const h = data[idx];
+    if(completedToday(h,now))continue;
+    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+    droppedMap.set(hid,{hid,name:info.name || h.name,emoji:h.emoji,idx,snoozed,first:info.first});
+  }
+
+  const dropped = [...droppedMap.values()]
+    .sort((a,b)=>Number(a.snoozed) - Number(b.snoozed) || a.first - b.first);
+  if(!dropped.length)return;
+  header.classList.add('has-dropped');
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'dropped-pill';
+  pill.textContent = `${dropped.length} missed`;
+  pill.addEventListener('pointerup',e=>{
+    e.stopPropagation();
+    openSlippedSheet(dropped,header.dataset.label || 'today');
+  });
+  header.appendChild(pill);
+}
+
+function renderDroppedPanel(items,opts = {}){
+  const showDayTag = Boolean(opts.showDayTag);
+  const panel = document.createElement('div');
+  panel.className = 'dropped-panel';
+  items.forEach(item=>{
+    const row = document.createElement('button');
+    row.className = 'dropped-item' + (item.snoozed ? ' snoozed' : '');
+    const tagHtml = item.snoozed
+      ? '<span class="dropped-tag">snoozed</span>'
+      : (showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '');
+    row.innerHTML = `${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : ''}<span class="dropped-name">${escapeHtml(item.name)}</span>${tagHtml}`;
+    row.addEventListener('click',()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); });
+    panel.appendChild(row);
+  });
+  return panel;
+}
+
+function openSlippedSheet(items,dayLabel){
+  const content = document.getElementById('slipped-content');
+  if(!content)return;
+  document.getElementById('slipped-title').textContent = `missed · ${dayLabel}`;
+  content.innerHTML = '';
+
+  const data = load();
+  const dayLabelMap = buildHidDayLabelMap(data,sortSettings);
+
+  const slippedWithTags = items.map(item=>({
+    ...item,
+    dayLabel: dayLabelMap.get(item.hid) || 'behind'
+  }));
+
+  if(slippedWithTags.length){
+    const head1 = document.createElement('div');
+    head1.className = 'slipped-section-head';
+    head1.textContent = `missed · ${dayLabel}`;
+    content.appendChild(head1);
+    content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
+  }
+
+  const slippedHids = new Set(items.map(i=>i.hid));
+  const missed = computeMissedYesterday(data,_droppedDayBaseline,slippedHids,dayLabelMap);
+  if(missed.length){
+    const head2 = document.createElement('div');
+    head2.className = 'slipped-section-head';
+    head2.textContent = 'still open from yesterday';
+    content.appendChild(head2);
+    content.appendChild(renderDroppedPanel(missed,{showDayTag:true}));
+  }
+
+  // WebKit may synthesize a click after pointerup. Mounting the backdrop
+  // during pointerup makes that tail click land on the new backdrop and
+  // immediately close it — same defer as openDayLogsAfterCalendarGesture.
+  setTimeout(()=>openSheet('slipped-sheet'),0);
+}
+
+function formatFreeDuration(minutes){
+  const m = Math.max(0, Math.round(minutes));
+  if(m < 60)return `${m}m`;
+  const hours = m / 60;
+  if(hours < 4){
+    const rounded = Math.round(hours * 2) / 2;
+    return Number.isInteger(rounded) ? `${rounded}h` : `${rounded.toFixed(1)}h`;
+  }
+  return `${Math.round(hours)}h`;
+}
+
+function freeDayClockLabel(ts){
+  const d = new Date(ts);
+  return formatTimeShort(d.getHours() * 60 + d.getMinutes());
+}
+
+// PURE: hour tick marks for the free/busy day strip.
+function freeDayTickMarks(windowStart,windowEnd){
+  if(!(windowEnd > windowStart))return [];
+  const spanMs = windowEnd - windowStart;
+  const spanHours = spanMs / 3600000;
+  const stepHours = spanHours <= 8 ? 1 : spanHours <= 14 ? 2 : 3;
+  const ticks = [{ts:windowStart,edge:'start'}];
+  const cursor = new Date(windowStart);
+  cursor.setSeconds(0,0);
+  cursor.setMinutes(0);
+  cursor.setHours(cursor.getHours() + 1);
+  while(cursor.getTime() < windowEnd){
+    const ts = cursor.getTime();
+    const pct = (ts - windowStart) / spanMs;
+    if(pct > 0.08 && pct < 0.92 && cursor.getHours() % stepHours === 0){
+      ticks.push({ts,edge:null});
+    }
+    cursor.setHours(cursor.getHours() + 1);
+  }
+  ticks.push({ts:windowEnd,edge:'end'});
+  return ticks;
+}
+
+function renderFreeDayStrip(info){
+  const wrap = document.createElement('div');
+  wrap.className = 'free-day-strip';
+  const winStart = info.windowStart;
+  const winEnd = info.windowEnd;
+  if(!(winEnd > winStart))return wrap;
+
+  const span = winEnd - winStart;
+  const pieces = [];
+  let cursor = winStart;
+  const busy = [...(info.busy || [])].sort((a,b)=>a.start - b.start);
+  for(const block of busy){
+    const start = Math.max(block.start,winStart);
+    const end = Math.min(block.end,winEnd);
+    if(end <= start)continue;
+    if(start > cursor)pieces.push({kind:'free',start:cursor,end:start});
+    pieces.push({kind:'busy',start,end});
+    cursor = Math.max(cursor,end);
+  }
+  if(cursor < winEnd)pieces.push({kind:'free',start:cursor,end:winEnd});
+
+  wrap.setAttribute('role','img');
+  wrap.setAttribute(
+    'aria-label',
+    `${formatFreeDuration(info.totalFreeMinutes)} open · ${formatFreeDuration(info.largestGapMinutes)} biggest stretch`
+  );
+
+  const track = document.createElement('div');
+  track.className = 'free-day-track';
+  if(!pieces.length){
+    const seg = document.createElement('span');
+    seg.className = 'free-day-seg free';
+    seg.style.flex = '1';
+    track.appendChild(seg);
+  }else{
+    pieces.forEach(piece=>{
+      const seg = document.createElement('span');
+      seg.className = `free-day-seg ${piece.kind}`;
+      seg.style.flex = String(Math.max(1, piece.end - piece.start));
+      const mins = Math.round((piece.end - piece.start) / 60000);
+      seg.title = `${piece.kind === 'busy' ? 'busy' : 'open'} · ${freeDayClockLabel(piece.start)} – ${freeDayClockLabel(piece.end)} · ${formatFreeDuration(mins)}`;
+      track.appendChild(seg);
+    });
+  }
+  wrap.appendChild(track);
+
+  const ticks = document.createElement('div');
+  ticks.className = 'free-day-ticks';
+  freeDayTickMarks(winStart,winEnd).forEach(tick=>{
+    const mark = document.createElement('span');
+    mark.className = 'free-day-tick' + (tick.edge ? ` edge-${tick.edge}` : '');
+    mark.style.left = `${((tick.ts - winStart) / span) * 100}%`;
+    mark.textContent = freeDayClockLabel(tick.ts);
+    ticks.appendChild(mark);
+  });
+  wrap.appendChild(ticks);
+
+  const legend = document.createElement('div');
+  legend.className = 'free-day-legend';
+  legend.innerHTML = '<span><i class="busy" aria-hidden="true"></i>busy</span><span><i class="open" aria-hidden="true"></i>open</span>';
+  wrap.appendChild(legend);
+  return wrap;
+}
+
+function attachFreeTimeIndicator(header,day){
+  if(typeof computeDayFreeGaps !== 'function')return;
+  const info = computeDayFreeGaps(day,sortSettings);
+  if(info.totalFreeMinutes < 10)return;
+  header.classList.add('has-pill');
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'free-pill';
+  pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
+  pill.addEventListener('pointerup',e=>{
+    e.stopPropagation();
+    openFreeTimeSheet(info,header.dataset.label || 'today');
+  });
+  header.appendChild(pill);
+}
+
+function renderFreePanel(info){
+  const panel = document.createElement('div');
+  panel.className = 'free-panel';
+  panel.appendChild(renderFreeDayStrip(info));
+  const summary = document.createElement('div');
+  summary.className = 'free-panel-row';
+  summary.innerHTML = `<span>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(info.largestGapMinutes))} biggest stretch</span>`;
+  panel.appendChild(summary);
+  const bigGaps = info.gaps.filter(g=>Math.round((g.end - g.start) / 60000) >= 30);
+  const shortMinutes = info.totalFreeMinutes - bigGaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);
+  bigGaps.forEach(g=>{
+    const mins = Math.round((g.end - g.start) / 60000);
+    const sd = new Date(g.start), ed = new Date(g.end);
+    const startLabel = formatTimeShort(sd.getHours() * 60 + sd.getMinutes());
+    const endLabel = formatTimeShort(ed.getHours() * 60 + ed.getMinutes());
+    const row = document.createElement('div');
+    row.className = 'free-panel-row';
+    row.innerHTML = `<span>${escapeHtml(startLabel)} – ${escapeHtml(endLabel)}</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(mins))}</span>`;
+    panel.appendChild(row);
+  });
+  if(shortMinutes >= 10){
+    const note = document.createElement('div');
+    note.className = 'free-panel-note';
+    note.textContent = `+ ${formatFreeDuration(shortMinutes)} in shorter stretches`;
+    panel.appendChild(note);
+  }
+  return panel;
+}
+
+function openFreeTimeSheet(info,dayLabel){
+  const content = document.getElementById('free-time-content');
+  if(!content)return;
+  document.getElementById('free-time-title').textContent = `open time ${dayLabel}`;
+  content.innerHTML = '';
+  content.appendChild(renderFreePanel(info));
+  // WebKit may synthesize a click after pointerup. Mounting the backdrop
+  // during pointerup makes that tail click land on the new backdrop and
+  // immediately close it — same defer as openDayLogsAfterCalendarGesture.
+  setTimeout(()=>openSheet('free-time-sheet'),0);
+}
+
 // PURE: reduce trail tones to one
 function summarizeTrailTone(tones){
   if(!tones.length)return '';
@@ -808,32 +2236,58 @@ function summarizeTrailTone(tones){
   return '';
 }
 
-// RENDER: render the full habit list
-function render(){
-  const data = load();
+// RENDER: render the full habit list.
+//
+// `opts.deferAgenda` (default false): compatibility path that skips expensive
+// agenda work and emits a basic grouped list. Normal home renders kick off the
+// GLPK planner in the background after a fast sync paint.
+function render(opts){
+  const o = opts || {};
   const list = $('list');
   const empty = $('empty');
+  const data = load();
+  const wantsOptimizedWeek = !o.deferAgenda
+    && !o.__optimizedWeek
+    && !o.__optimizerFallback
+    && Boolean(sortSettings.agendaOptimizer)
+    && sortSettings.preset === 'todayFirst'
+    && Boolean(sortSettings.showWeekOnHome)
+    && !searchQuery.trim()
+    && typeof buildWeekAgendaAsync === 'function';
+  if(wantsOptimizedWeek){
+    queueOptimizedHomeRender(data,o);
+    return false;
+  }
+  _homeRenderedWeek = null;
   list.innerHTML = '';
   empty.onclick = null;
   updateQuotaBar(sizeKb(data));
   updateSortButton();
   updateSearchUi();
-  renderHomeTopicFilter(data);
+  renderHomeTagFilter(data);
 
   const visible = visibleIndices(data);
   const indices = filteredVisibleIndices(data);
   if(!indices.length){
     empty.style.display = 'block';
+    if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
     const hasSearch = searchQuery.trim().length > 0;
     const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
+    const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
     empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
     if(hasSearch){
-      empty.innerHTML = 'no matches<br><span class="empty-sub">try another habit name or icon</span>';
-    }else if(hasTopicFilter){
-      const label = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
-      empty.innerHTML = `no habits in ${escapeHtml(label)}<br><span class="empty-sub">tap a topic above to change the filter</span>`;
+      empty.innerHTML = 'no matches<br><span class="empty-sub">try a habit name, topic, or place</span>';
+    }else if(hasTopicFilter || hasLocationFilter){
+      const topicLabel = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
+      const loc = typeof locationById === 'function' ? locationById(homeLocationFilter) : null;
+      const locLabel = homeLocationFilter === '__none__' ? 'anywhere' : (loc ? loc.name : homeLocationFilter);
+      const label = hasTopicFilter && hasLocationFilter
+        ? `${topicLabel} · ${locLabel}`
+        : (hasTopicFilter ? topicLabel : locLabel);
+      empty.innerHTML = `no habits in ${escapeHtml(label)}<br><span class="empty-sub">tap a filter above to change it</span>`;
       empty.onclick = ()=>{
         homeTopicFilter = 'all';
+        homeLocationFilter = 'all';
         render();
       };
     }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){
@@ -844,135 +2298,472 @@ function render(){
         render();
       };
     }else if(data.length && !visible.length){
-      const doneTasks = data.filter(h=>h.type === 'task' && h.lastLog !== null).length;
+      const doneTasks = data.filter(h=>h.type === 'task' && isTaskDone(h)).length;
       empty.innerHTML = doneTasks && doneTasks === data.length
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
     }else{
-      empty.innerHTML = 'simple habit tracking<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, or + to add your first habit.</span>';
+      empty.innerHTML = 'habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span>';
+      empty.classList.add('is-action');
+      empty.onclick = ()=>{
+        if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
+        else if(typeof openSheet === 'function')openSheet('about-sheet');
+      };
     }
+    _homeListFingerprint = homeListFingerprint();
     return;
   }
   empty.classList.remove('is-action');
   empty.style.display = 'none';
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
-  const agendaRows = homeAgendaRows(data);
-  const agendaMap = new Map();
-  const agendaOrder = new Map();
-  agendaRows.forEach((row,pos)=>{
-    if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
-    if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
-  });
-  const earlyMap = homeEarlyMap(data,sortSettings);
-  // An upcoming item is pulled into "today" only when it BOTH passes the
-  // do-early gate (allowed today + flexibility + its target day is over-loaded)
-  // AND earns an agenda row today. If it loses its slot to capacity it falls
-  // back to its original "upcoming" section, so the list never promises time
-  // the day cannot give and the card never shows an "early" pill it can't honour.
-  const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
-  const renderIndices = todayFirstActive ? [...indices].sort((a,b)=>{
-    const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
-    if(pin)return pin;
-    const catA = todayCategory(data[a],sortSettings);
-    const catB = todayCategory(data[b],sortSettings);
-    const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
-    const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
-    if(dispA !== dispB)return dispA - dispB;
-    if(dispA === 0){
-      // Show the "today" section chronologically — same order the agenda
-      // timeline reads — so priority, planned time, allowed windows and the
-      // preferred-time nudge all surface through one consistent ordering.
-      // Today items without an agenda row (rare: a due item dropped by
-      // capacity) trail after the timed ones.
-      const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
-      if(posA != null || posB != null){
-        if(posA == null)return 1;
-        if(posB == null)return -1;
-        return posA - posB;
-      }
-    }
-    return indices.indexOf(a) - indices.indexOf(b);
-  }) : indices;
-  let sectionCat = -1;
+  // Search is habit lookup — skip week-plan chrome (blocked times, travel,
+  // day sections) so results are just matching habits, ranked by relevance.
+  const searching = searchQuery.trim().length > 0;
+  const deferAgenda = Boolean(o.deferAgenda);
+  const weekMode = !deferAgenda && todayFirstActive
+    && sortSettings.showWeekOnHome
+    && !searching
+    && typeof buildWeekAgenda === 'function'
+    && typeof homeDaySequence === 'function';
+  // homeEarlyMap calls earlyReason per item, which in turn may invoke the
+  // today agenda pipeline. Defer it on progressive renders — it is only used
+  // to surface an "early" pill on cards that pulled forward, and that pill is
+  // not part of the first paint.
+  const earlyMap = deferAgenda ? new Map() : homeEarlyMap(data,sortSettings);
+  const visibleSet = new Set(indices);
+  // Earliest today-timeline fill/scheduled row per breakable habit. The slider
+  // belongs on that row only — not on later chunks, and not on a pinned/
+  // leftover card that happens to render earlier in the DOM.
+  const breakablePrimaries = new Map();
+  const breakableCatchupShown = new Set();
 
-  renderIndices.forEach(realIdx=>{
+  const noteBreakablePrimary = (realIdx,row)=>{
+    if(realIdx == null || !row || !data[realIdx]?.breakable)return;
+    const prev = breakablePrimaries.get(realIdx);
+    if(!prev){
+      breakablePrimaries.set(realIdx,row);
+      return;
+    }
+    if(Number.isFinite(row.start) && Number.isFinite(prev.start) && row.start < prev.start){
+      breakablePrimaries.set(realIdx,row);
+    }
+  };
+
+  const isBreakableSliderRow = (realIdx,agendaRow)=>{
     const h = data[realIdx];
-    const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
-
-    if(todayFirstActive && !h.pinned){
-      const isEarlyToday = cat === 2 && earlyToday(realIdx);
-      const sectionKey = isEarlyToday ? 0 : cat;
-      if(sectionKey !== sectionCat){
-        const labels = {0:'today',1:'overdue',2:'upcoming',3:'others'};
-        const label = labels[sectionKey];
-        if(label){
-          const header = document.createElement('div');
-          header.className = 'section-header';
-          header.textContent = label;
-          list.appendChild(header);
-        }
-        sectionCat = sectionKey;
+    if(!h || !h.breakable)return false;
+    const primary = breakablePrimaries.get(realIdx);
+    if(primary){
+      if(!agendaRow)return false;
+      // Start time uniquely identifies the today timeline instance (chunkIndex
+      // alone collides across week days — every day can have chunkIndex 0).
+      if(Number.isFinite(primary.start) && Number.isFinite(agendaRow.start)){
+        return primary.start === agendaRow.start;
       }
+      if(primary.chunkIndex != null && agendaRow.chunkIndex != null){
+        return primary.chunkIndex === agendaRow.chunkIndex;
+      }
+      return primary === agendaRow;
     }
+    // No today timeline placement (progressive paint / unplaced leftover):
+    // allow one catch-up slider on a lone card.
+    if(agendaRow != null)return false;
+    if(breakableCatchupShown.has(realIdx))return false;
+    breakableCatchupShown.add(realIdx);
+    return true;
+  };
 
+  const appendHabitCard = (realIdx,agendaRow,earlyReasonText)=>{
+    const h = data[realIdx];
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const agendaRow = agendaMap.get(realIdx);
-    const agendaPill = agendaCardPill(agendaRow);
-    // The "early" pill only marks items actually pulled into today; items that
-    // lost the capacity cut and fell back to upcoming carry no early pill.
-    const earlyPill = earlyCardPill((cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : '');
-    // Suppress the cardMeta "scheduled" pill when the agenda already renders
-    // the same time pill for this timed task today (avoids duplicate pills).
-    const context = cardMeta(h,{extraPills:[earlyPill,agendaPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
-    const trail = cardTrail(h);
+    const agendaPill = agendaCardPill(agendaRow,h);
+    const earlyPill = earlyCardPill(earlyReasonText || '');
     const accent = visualClassColor(cardScoreTone);
-    const isDoneTask = h.type === 'task' && h.lastLog !== null;
+    const statusPill = sortSettings.showStatusOnCards ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
+    const gatedEarlyPill = sortSettings.showEarlyOnCards ? earlyPill : '';
+    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+    const trail = cardTrail(h);
+    const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
+    const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
+    // Timer bar always shows while running — even on breakable crown cards —
+    // so the user can see the session without opening detail.
+    const sessionHtml = (timerRunning || !showBreakableSlider) ? cardSessionProgress(h,realIdx) : '';
+    const visualHtml = showBreakableSlider
+      ? `${cardBreakableSlider(h)}${sessionHtml}`
+      : (sessionHtml || `<div class="ting-trail">${trail}</div>`);
+    const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
+    const isDoneTask = h.type === 'task' && isTaskDone(h);
+    const canTimer = typeof habitTimerEligible === 'function'
+      ? habitTimerEligible(h)
+      : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
+    const timerAction = (canTimer || timerRunning)
+      ? (timerRunning
+        ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop timer"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
+        : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start timer"><i class="ti ti-player-play" aria-hidden="true"></i>timer</button>`)
+      : '';
     const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
+    const keepAction = h.sample
+      ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
+      : '';
     const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
 
     const row = document.createElement('div');
     row.className = 'swipe-row';
     row.dataset.realIdx = realIdx;
+    if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
+      row.dataset.chunkMinutes = String(Math.round(agendaRow.chunkMinutes));
+    }
+    if(showBreakableSlider){
+      const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+      row.dataset.progressTarget = String(done);
+      row.dataset.progressDirty = '0';
+    }
+    const isBreakable = showBreakableSlider;
+    // Session grid class only when the bar owns the visual row (non-breakable).
+    // Breakable stacks the timer bar under the crown inside the same visual.
+    const hasSession = Boolean(sessionHtml) && !isBreakable;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         ${pinAction}
+        ${keepAction}
         ${activityAction}
+        ${timerAction}
       </div>
       <div class="swipe-actions swipe-actions-right">
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
-        <div class="ting-info">
+        <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}">
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
-            <div class="mini-score-ring ${cardScoreTone}" style="--score:${cardScore ?? 0};--score-color:${accent};" title="${escapeHtml(cue)}" aria-hidden="true"></div>
+            ${agendaPill}
           </div>
-          <div class="ting-cue">${escapeHtml(cue)}</div>
-          <div class="ting-meta" aria-label="rhythm and plan">${context}</div>
-          <div class="ting-visual" aria-hidden="true">
-            <div class="ting-trail">${trail}</div>
+          ${isBreakable ? '' : `<div class="ting-cue">${escapeHtml(cue)}</div>
+          <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
+          <div class="ting-visual"${visualAria}>
+            ${visualHtml}
           </div>
         </div>
-        <div class="card-actions" aria-label="habit actions">
+        ${isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="snooze" aria-label="snooze" title="snooze"><i class="ti ti-moon" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
-        </div>
+        </div>`}
       </div>`;
 
     list.appendChild(row);
     setupSwipe(row);
     setupCardTap(row,realIdx);
-  });
+    if(showBreakableSlider)setupBreakableCrown(row,realIdx);
+  };
+
+  if(deferAgenda){
+    // PROGRESSIVE FIRST PAINT — no buildWeekAgenda, no homeAgendaRows, no
+    // homeEarlyMap. Show pinned first, then everyone in todayCategory order
+    // (today / overdue / upcoming / others) so the list is sensible within a
+    // frame. Full agenda replaces this on the next idle paint.
+    list.classList.add('is-progressive');
+    const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
+    const fastOrder = todayFirstActive && !searching
+      ? [...indices].sort((a,b)=>{
+        const pa = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
+        if(pa)return pa;
+        const ca = todayCategory(data[a],sortSettings);
+        const cb = todayCategory(data[b],sortSettings);
+        if(ca !== cb)return ca - cb;
+        return indices.indexOf(a) - indices.indexOf(b);
+      })
+      : [...indices].sort((a,b)=>Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned)) || indices.indexOf(a) - indices.indexOf(b));
+    let fastCat = -1;
+    let fastHeaderForPinned = false;
+    fastOrder.forEach(realIdx=>{
+      const h = data[realIdx];
+      if(h.pinned){
+        if(!fastHeaderForPinned){ appendSectionHeader(list,'pinned'); fastHeaderForPinned = true; }
+        appendHabitCard(realIdx,null,'');
+        return;
+      }
+      if(todayFirstActive && !searching){
+        const cat = todayCategory(h,sortSettings);
+        if(cat !== fastCat){
+          const label = labels[cat];
+          if(label)appendSectionHeader(list,label);
+          fastCat = cat;
+        }
+      }
+      appendHabitCard(realIdx,null,'');
+    });
+  }else{
+    list.classList.remove('is-progressive');
+    if(weekMode){
+    const week = (o.__optimizedWeek && o.__optimizedWeek.days)
+      ? o.__optimizedWeek
+      : buildWeekAgenda(data,sortSettings,7);
+    _homeRenderedWeek = week;
+    if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
+    const agendaMap = new Map();
+    const weekAssigned = new Set();
+    const dayPlans = week.days.map(day=>{
+      const seq = homeDaySequence(day,sortSettings,{visibleSet});
+      day.homeDisplayedTimeline = seq.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
+        && row.i != null
+        && !data[row.i]?.pinned);
+      for(const row of seq){
+        if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
+          weekAssigned.add(row.i);
+          if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
+          if(day.isToday)noteBreakablePrimary(row.i,row);
+        }
+      }
+      return {day,seq};
+    });
+
+    indices.filter(i=>data[i].pinned).forEach(realIdx=>{
+      const agendaRow = agendaMap.get(realIdx);
+      const cat = todayCategory(data[realIdx],sortSettings);
+      const earlyText = (cat === 2 && earlyMap.get(realIdx) && agendaMap.has(realIdx)) ? earlyMap.get(realIdx) : '';
+      appendHabitCard(realIdx,agendaRow,earlyText);
+    });
+
+    const weekTodayHids = (()=>{
+      const todayPlan = dayPlans.find(p=>p.day.isToday);
+      if(!todayPlan)return [];
+      return todayPlan.seq
+        .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i != null && !data[row.i]?.pinned)
+        .map(row=>data[row.i]?.hid)
+        .filter(Boolean);
+    })();
+
+    dayPlans.forEach(({day,seq})=>{
+      if(!seq.length)return;
+      appendSectionHeader(list,homeWeekDayLabel(day),day,day.isToday ? weekTodayHids : null);
+      for(let i = 0;i < seq.length;){
+        const row = seq[i];
+        if(row.kind === 'travel'){
+          if(homeExtraRowVisible(row.start))appendHomeExtraTravel(list,row.from,row.to,row.start);
+          i += 1;
+          continue;
+        }
+        if(row.kind === 'blocked'){
+          const {blocks,nextIdx} = consumeBlockedRun(seq,i);
+          if(homeExtraRowVisible(blocks[0].start)){
+            if(homeExtraMode() === 'text12h'){
+              blocks.forEach(b=>appendHomeBlockedText(list,b));
+            }else{
+              const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
+              appendHomeBlockedGroup(list,blocks,groupKey);
+            }
+          }
+          i = nextIdx;
+          continue;
+        }
+        i += 1;
+        if(row.kind !== 'fill' && row.kind !== 'scheduled')continue;
+        if(data[row.i]?.pinned)continue;
+        const cat = todayCategory(data[row.i],sortSettings);
+        const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
+        appendHabitCard(row.i,row,earlyText);
+      }
+    });
+
+    // Timed-only day sections: anything without a suggested time goes to
+    // overdue / upcoming — never as an untimed card under a day.
+    const leftoverKey = (h)=>{
+      const cat = todayCategory(h,sortSettings);
+      if(cat === 3)return 3;
+      if(cat === 1 || cat === 0)return 1; // due/overdue that didn't place
+      return 2;
+    };
+    const leftovers = indices
+      .filter(i=>!data[i].pinned && !weekAssigned.has(i))
+      .sort((a,b)=>leftoverKey(data[a]) - leftoverKey(data[b]) || indices.indexOf(a) - indices.indexOf(b));
+    let leftoverCat = -1;
+    leftovers.forEach(realIdx=>{
+      const key = leftoverKey(data[realIdx]);
+      if(key !== leftoverCat){
+        const labels = {1:'overdue',2:'coming up',3:'the rest'};
+        const label = labels[key];
+        if(label)appendSectionHeader(list,label);
+        leftoverCat = key;
+      }
+      appendHabitCard(realIdx,null,'');
+    });
+  }else{
+    const agendaRows = homeAgendaRows(data);
+    if(typeof syncAutoMarkChunkPlans === 'function'){
+      syncAutoMarkChunkPlans(data,{days:[{dayBase:dayStart(Date.now()),timeline:agendaRows}]});
+    }
+    const agendaMap = new Map();
+    const agendaOrder = new Map();
+    const chunksByIndex = new Map();
+    agendaRows.forEach((row,pos)=>{
+      if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
+      if(!agendaOrder.has(row.i))agendaOrder.set(row.i,pos);
+      if(!chunksByIndex.has(row.i))chunksByIndex.set(row.i,[]);
+      chunksByIndex.get(row.i).push(row);
+      noteBreakablePrimary(row.i,row);
+    });
+    // An upcoming item is pulled into "today" only when it BOTH passes the
+    // do-early gate (allowed today + flexibility + its target day is over-loaded)
+    // AND earns an agenda row today. If it loses its slot to capacity it falls
+    // back to its original "upcoming" section, so the list never promises time
+    // the day cannot give and the card never shows an "early" pill it can't honour.
+    const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
+    const renderIndices = todayFirstActive && !searching ? [...indices].sort((a,b)=>{
+      const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
+      if(pin)return pin;
+      const catA = todayCategory(data[a],sortSettings);
+      const catB = todayCategory(data[b],sortSettings);
+      const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
+      const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
+      if(dispA !== dispB)return dispA - dispB;
+      if(dispA === 0){
+        const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
+        if(posA != null || posB != null){
+          if(posA == null)return 1;
+          if(posB == null)return -1;
+          return posA - posB;
+        }
+      }
+      return indices.indexOf(a) - indices.indexOf(b);
+    }) : indices;
+    let sectionCat = -1;
+    let prevTodayLocId = null;
+
+    // Precompute: should today's first location-bearing item be preceded by a
+    // synthetic "from current location" leg? Mirrors what homeDaySequence
+    // inserts at the top of today for the week branch — when the user has a
+    // live GPS fix that isn't inside any saved location, the regular seed
+    // (currentLocationId → nearest saved) would mis-anchor the first leg.
+    // Returning CURRENT_COORD_ID here lets the existing prevTodayLocId check
+    // render the leg via appendHomeExtraTravel (which routes the synthetic id
+    // through travelFromCurrent's movement-thresholded cache).
+    let currentCoordSeed = null;
+    if(todayFirstActive && !searching
+      && typeof currentCoordLocation === 'function'
+      && typeof isCurrentCoordAwayFromSaved === 'function'
+      && typeof CURRENT_COORD_ID !== 'undefined'
+      && typeof CURRENT_COORD_TRAVEL_CARD_MIN_METRES !== 'undefined'){
+      const here = currentCoordLocation();
+      if(here && isCurrentCoordAwayFromSaved()){
+        const registry = locationOptions();
+        for(const seedIdx of renderIndices){
+          const sh = data[seedIdx];
+          if(!sh || sh.pinned)continue;
+          const scat = todayCategory(sh,sortSettings);
+          const sEarly = scat === 2 && earlyToday(seedIdx);
+          if(scat !== 0 && !sEarly)continue;
+          const sRow = agendaMap.get(seedIdx);
+          const sLoc = cardLocationId(sh,sRow);
+          if(!sLoc)continue;
+          const sTo = locationById(sLoc,registry);
+          if(!sTo)continue;
+          if(haversineMetres(here.lat,here.lng,sTo.lat,sTo.lng) >= CURRENT_COORD_TRAVEL_CARD_MIN_METRES){
+            currentCoordSeed = CURRENT_COORD_ID;
+          }
+          break; // first location-bearing today item decides; stop scanning
+        }
+      }
+    }
+
+    const todayHids = (!searching && todayFirstActive)
+      ? renderIndices.filter(i=>{
+          const h = data[i];
+          if(h.pinned)return false;
+          const cat = todayCategory(h,sortSettings);
+          return cat === 0 || (cat === 2 && earlyToday(i));
+        }).map(i=>data[i].hid).filter(Boolean)
+      : [];
+
+    renderIndices.forEach(realIdx=>{
+      const h = data[realIdx];
+      const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
+      const isEarlyToday = todayFirstActive && cat === 2 && earlyToday(realIdx);
+      const inTodaySection = !searching && todayFirstActive && !h.pinned && (cat === 0 || isEarlyToday);
+
+      if(!searching && todayFirstActive && !h.pinned){
+        const sectionKey = isEarlyToday ? 0 : cat;
+        if(sectionKey !== sectionCat){
+          const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
+          const label = labels[sectionKey];
+          const dayCtx = label === 'today'
+            ? {dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows}
+            : null;
+          if(label)appendSectionHeader(list,label,dayCtx,label === 'today' ? todayHids : null);
+          sectionCat = sectionKey;
+          if(sectionKey !== 0)prevTodayLocId = null;
+        }
+      }
+
+      // Breakable tasks placed in the today section expand to one card per
+      // chunk so each time block is visible on the timeline.
+      if(inTodaySection){
+        const chunkRows = chunksByIndex.get(realIdx);
+        if(chunkRows && chunkRows.length > 1){
+          if(prevTodayLocId === null && currentCoordSeed)prevTodayLocId = currentCoordSeed;
+          chunkRows.forEach((chunkRow,ci)=>{
+            const cLocId = cardLocationId(h,chunkRow);
+            if(prevTodayLocId && cLocId && prevTodayLocId !== cLocId){
+              const travelTs = homeTravelLeaveByMs(prevTodayLocId,cLocId,chunkRow.start);
+              if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs);
+            }
+            prevTodayLocId = cLocId || prevTodayLocId;
+            const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
+            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '');
+          });
+          return;
+        }
+      }
+
+      const agendaRow = agendaMap.get(realIdx);
+      const locId = cardLocationId(h,agendaRow);
+      if(inTodaySection && prevTodayLocId === null && currentCoordSeed && locId){
+        prevTodayLocId = currentCoordSeed;
+      }
+      if(inTodaySection && prevTodayLocId && locId && prevTodayLocId !== locId){
+        const travelTs = homeTravelLeaveByMs(
+          prevTodayLocId,
+          locId,
+          agendaRow && Number.isFinite(agendaRow.start) ? agendaRow.start : NaN
+        );
+        if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs);
+      }
+      if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
+
+      appendHabitCard(
+        realIdx,
+        agendaRow,
+        (!searching && cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : ''
+      );
+    });
+    if(!searching && todayFirstActive && sectionCat !== 0){
+      const _snap = loadTodaySuggested();
+      if(!_droppedDayBaseline && _snap.prevProjection){
+        _droppedDayBaseline = _snap.prevProjection;
+        _droppedDayBaselineDay = todayIso();
+      }
+      if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        header.dataset.label = 'today';
+        header.textContent = 'today';
+        setupDayCapacityHeader(header,dayStart(Date.now()),false);
+        attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
+        attachDroppedIndicator(header,list,todayHids);
+        if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
+      }
+    }
+  }
+  } // end of the `else` (non-deferred) branch
 
   list.querySelectorAll('[data-pulse]').forEach(btn=>{
     btn.addEventListener('click',e=>{
@@ -994,9 +2785,19 @@ function render(){
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       closeAllSwipes();
       if(btn.dataset.action === 'pin')togglePin(idx);
+      if(btn.dataset.action === 'keep'){
+        if(typeof keepSampleHabit === 'function')keepSampleHabit(idx);
+      }
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
+      if(btn.dataset.action === 'timer'){
+        if(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === idx){
+          if(typeof stopHabitTimer === 'function')stopHabitTimer(true,true);
+        }else if(typeof startHabitTimer === 'function'){
+          startHabitTimer(idx);
+        }
+      }
     });
   });
   list.querySelectorAll('.card-action-btn').forEach(btn=>{
@@ -1008,6 +2809,437 @@ function render(){
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
   });
+  if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+  _homeListFingerprint = homeListFingerprint();
+  return true;
+}
+
+// PURE: lightweight freshness key for the home list. Used to skip background
+// re-renders when nothing that affects order/pills/travel has changed — avoids
+// wiping #list (and the visual jitter that causes) on GPS ticks, travel-cache
+// writes that didn't move numbers, and the while-open refresh loop.
+function homeListFingerprint(now = Date.now()){
+  const data = typeof load === 'function' ? load() : [];
+  const s = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const loc = typeof currentLocationId === 'function' ? currentLocationId() : null;
+  const travel = s.travel || {};
+  const travelSig = Object.keys(travel).sort().map(k=>{
+    const e = travel[k] || {};
+    return `${k}:${e.seconds || 0}:${e.provider || ''}`;
+  }).join('|');
+  // Live-coord freshness — only changes when the user has crossed a coarse
+  // ~100m bucket or the current-coord travel cache updated (e.g., an OSRM
+  // result refined a haversine floor). Skips renders for sub-bucket GPS
+  // jitter so the list doesn't thrash on every watch tick.
+  const coord = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+  const coordSig = coord
+    ? `${Math.round(coord.lat * 1000)},${Math.round(coord.lng * 1000)}`
+    : '';
+  const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
+  const habitSig = data.map(h=>[
+    h.name, h.type, h.lastLog, h.dueDate, h.eventTime,
+    h.pinned ? 1 : 0, h.snoozedUntil || '',
+    (h.locationIds || []).join(','),
+    h.durationMinutes, h.priority, h.flexibilityDays,
+    h.breakable ? 1 : 0,
+    h.minChunkMinutes || '',
+    typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0,
+    h.allowedTimeStart, h.allowedTimeEnd,
+    h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
+    h.allowedTimeEndAnchor || '', h.allowedTimeEndOffsetMin || 0,
+    (h.allowedWeekdays || []).join(','),
+    (h.preferredWeekdays || []).join(',')
+  ].join('~')).join(';');
+  return [
+    Math.floor(now / 60000),
+    loc || '',
+    s.pinnedLocationId || '',
+    s.lastKnownLocationId || '',
+    s.preset || '',
+    s.showWeekOnHome ? 1 : 0,
+    s.agendaOptimizer ? 1 : 0,
+    s.showSnoozed ? 1 : 0,
+    typeof searchQuery === 'string' ? searchQuery : '',
+    typeof homeTopicFilter === 'string' ? homeTopicFilter : '',
+    typeof homeLocationFilter === 'string' ? homeLocationFilter : '',
+    travelSig,
+    coordSig,
+    currentEdgeSig,
+    habitSig,
+    (typeof habitTimer !== 'undefined' && habitTimer) ? `timer:${habitTimer.idx}:${habitTimer.startedAt}` : '',
+    JSON.stringify(s.cancelledBlocks || {}),
+    JSON.stringify(s.blockedTimeOverrides || {}),
+    JSON.stringify(s.availabilityOverrides || {}),
+    JSON.stringify(s.availabilityMinutes || []),
+    JSON.stringify(s.blockedTimes || []),
+    s.prayerMethod || '', s.prayerMadhab || ''
+  ].join('\n');
+}
+
+let _homeListFingerprint = '';
+let _homeRenderedWeek = null;
+let _optimizerHomeRequestKey = '';
+let _optimizerHomeRequestToken = 0;
+let _optimizerHomeReadyKey = '';
+let _optimizerHomeReadyWeek = null;
+
+// The lightweight home fingerprint deliberately omits some low-frequency
+// fields. Optimizer reuse needs an exact key so edits to any habit, window,
+// location, score weight, or travel edge can never reuse a stale schedule.
+function optimizerHomeStateKey(data){
+  // Use persisted records for the exact data signature. normalize() gives
+  // legacy records a generated hid in memory; hashing that transient value
+  // would make every load look different until the record is next saved.
+  const persisted = (typeof Storage !== 'undefined' && typeof KEY !== 'undefined')
+    ? (Storage.read(KEY) || data || [])
+    : (data || []);
+  return `${homeListFingerprint()}\n${JSON.stringify(persisted)}\n${JSON.stringify(sortSettings || {})}`;
+}
+
+// View-only state such as an expanded blocked group does not change placement.
+// Repaint from the already solved week so the interaction responds immediately
+// even if travel-cache background writes changed the next optimizer key.
+function renderHomePresentationOnly(){
+  if(sortSettings.agendaOptimizer && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+    render({__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
+    return;
+  }
+  render();
+}
+
+// ASYNC COORDINATOR: paint the sync heuristic week immediately, then upgrade
+// in place when GLPK finishes. Waiting on the solver before first paint left
+// home blank for seconds on cold load.
+function queueOptimizedHomeRender(data,opts){
+  const key = optimizerHomeStateKey(data);
+  if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
+    render({...opts,__fromOptimizer:true,__optimizedWeek:_optimizerHomeReadyWeek});
+    _homeListFingerprint = homeListFingerprint();
+    return;
+  }
+  if(_optimizerHomeRequestKey === key)return;
+
+  // Fast first paint so the list appears right away.
+  render({...opts,__fromOptimizer:true,__optimizerFallback:true});
+  _homeListFingerprint = homeListFingerprint();
+
+  const token = ++_optimizerHomeRequestToken;
+  _optimizerHomeRequestKey = key;
+  const settings = {...sortSettings};
+  void buildWeekAgendaAsync(data,settings,7).then(week=>{
+    if(token !== _optimizerHomeRequestToken)return;
+    _optimizerHomeRequestKey = '';
+    if(!sortSettings.agendaOptimizer)return;
+    if(key !== optimizerHomeStateKey(load())){
+      render(opts);
+      _homeListFingerprint = homeListFingerprint();
+      return;
+    }
+    if(!week || !Array.isArray(week.days))return;
+    // Heuristic paint already on screen; only replace when GLPK produced a plan.
+    if(!week.optimized)return;
+    _optimizerHomeReadyKey = key;
+    _optimizerHomeReadyWeek = week;
+    render({...opts,__fromOptimizer:true,__optimizedWeek:week});
+    _homeListFingerprint = homeListFingerprint();
+  }).catch(()=>{
+    if(token !== _optimizerHomeRequestToken)return;
+    _optimizerHomeRequestKey = '';
+    // Keep the fast planner already on screen.
+  });
+}
+
+// Immediate feedback for a saved travel override. The optimized replan still
+// runs, but the tapped edge shows its edited value while GLPK is working.
+function markHomeTravelEdgeEdited(fromId,toId,minutes){
+  const mins = Math.max(1,Math.round(Number(minutes) || 1));
+  document.querySelectorAll('#list .travel-card').forEach(card=>{
+    const sameEdge = (card.dataset.travelFrom === fromId && card.dataset.travelTo === toId)
+      || (card.dataset.travelFrom === toId && card.dataset.travelTo === fromId);
+    if(!sameEdge)return;
+    card.classList.add('is-edited');
+    const copy = card.querySelector('span');
+    if(copy)copy.textContent = copy.textContent.replace(/\b\d+\s+min\b/,`${mins} min`);
+    if(!card.querySelector('.travel-edit-mark')){
+      const icon = document.createElement('i');
+      icon.className = 'ti ti-pencil travel-edit-mark';
+      icon.setAttribute('aria-hidden','true');
+      card.appendChild(icon);
+    }
+  });
+}
+
+// RENDER: sync home list only when the freshness key moved. Background paths
+// (travel refresh, while-open loop, quiet location updates) should call this
+// instead of render() so an unchanged agenda never rebuilds the DOM.
+function renderHomeIfChanged(force){
+  const fp = homeListFingerprint();
+  if(!force && fp === _homeListFingerprint)return false;
+  const didRender = render();
+  if(didRender !== false)_homeListFingerprint = homeListFingerprint();
+  return true;
+}
+
+// Compat alias — progressive two-phase paint was retired because phase-1 order
+// differed from agenda order and caused visible flicker. Callers that still
+// name renderProgressive get a single sync render.
+function renderProgressive(){
+  const didRender = render();
+  if(didRender !== false)_homeListFingerprint = homeListFingerprint();
+}
+
+// WIRE: crown-dial gesture for breakable progress. Drag horizontally to adjust
+// minutes (3px ≈ 1 min, speed-adaptive). Updates the 3-color status bar and
+// pending target. A clean tap propagates to card (opens detail); vertical
+// gestures pass through to page scroll.
+function setupBreakableCrown(row,_realIdx){
+  const crown = row.querySelector('.breakable-crown');
+  if(!crown)return;
+  const canvas = crown.querySelector('.crown-canvas');
+  const label = row.querySelector('.breakable-progress-label');
+  const barManual = row.querySelector('.bar-manual');
+  const barCalendar = row.querySelector('.bar-calendar');
+  const barAdding = row.querySelector('.bar-adding');
+  const total = Math.max(1,Math.round(Number(crown.dataset.total) || 1));
+  const committed = Math.max(0,Math.min(total,Math.round(Number(crown.dataset.committed) || 0)));
+  const calendarMin = Math.max(0,Math.round(Number(crown.dataset.calendar) || 0));
+  const manualMin = Math.max(0,Math.round(Number(crown.dataset.manual) || 0));
+
+  const PX_PER_MIN = 3;
+  crown._scroll = committed * 10;
+  if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas, crown._scroll);
+
+  let tooltip = null;
+  function showTooltip(minutes){
+    const adding = Math.max(0,minutes - committed);
+    if(!tooltip){
+      tooltip = document.createElement('span');
+      tooltip.className = 'crown-tooltip';
+      crown.appendChild(tooltip);
+    }
+    tooltip.textContent = adding > 0 ? `+${adding}m` : `${minutes}m`;
+    tooltip.classList.add('visible');
+  }
+  function hideTooltip(){
+    if(tooltip)tooltip.classList.remove('visible');
+  }
+
+  function syncVisual(minutes){
+    const m = Math.max(committed,Math.min(total,Math.round(minutes)));
+    if(label)label.textContent = `${m}/${total}m`;
+    crown.setAttribute('aria-valuenow',m);
+    crown.setAttribute('aria-label',`progress ${m} of ${total} minutes`);
+    crown.classList.toggle('complete',m >= total);
+    const adding = m - committed;
+    const capManual = Math.min(manualMin,total);
+    const capCal = Math.min(calendarMin,total - capManual);
+    const capAdding = Math.min(adding,total - capManual - capCal);
+    const manualPct = total > 0 ? (capManual / total) * 100 : 0;
+    const calPct = total > 0 ? (capCal / total) * 100 : 0;
+    const addingPct = total > 0 ? (capAdding / total) * 100 : 0;
+    if(barManual)barManual.style.width = `${manualPct}%`;
+    if(barCalendar)barCalendar.style.width = `${calPct}%`;
+    if(barAdding)barAdding.style.width = `${addingPct}%`;
+  }
+
+  function setTarget(minutes){
+    const m = Math.max(committed,Math.min(total,Math.round(minutes)));
+    row.dataset.progressTarget = String(m);
+    row.dataset.progressDirty = m === committed ? '0' : '1';
+    syncVisual(m);
+  }
+
+  let startX,startY,prevX,velX = 0,momentumId = null,smoothAnimId = null,scrubRaf = null;
+  let dragging = false,pointerId = null,pendingDx = 0,pendingTarget = null;
+  const friction = 0.92;
+  const minScroll = committed * 10;
+  const progressRoot = row.querySelector('.breakable-progress');
+
+  const cancelMomentum = () => {
+    if(momentumId){cancelAnimationFrame(momentumId);momentumId=null;}
+    if(smoothAnimId){cancelAnimationFrame(smoothAnimId);smoothAnimId=null;}
+  };
+
+  const cancelScrub = () => {
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;}
+    pendingDx = 0;
+  };
+
+  const applyScrubDx = dx => {
+    if(!dx && pendingTarget == null)return;
+    if(dx){
+      crown._scroll = Math.max(minScroll,crown._scroll + dx * (10 / PX_PER_MIN));
+      if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+      const speed = Math.abs(velX);
+      const gain = 1 + speed * 0.25;
+      crown._valScroll += dx * gain;
+      pendingTarget = crown._dragBase + Math.round(crown._valScroll / PX_PER_MIN);
+    }
+    if(pendingTarget != null){
+      setTarget(pendingTarget);
+      showTooltip(pendingTarget);
+      pendingTarget = null;
+    }
+  };
+
+  const flushScrub = () => {
+    scrubRaf = null;
+    const dx = pendingDx;
+    pendingDx = 0;
+    applyScrubDx(dx);
+  };
+
+  const startMomentum = initVel => {
+    cancelMomentum();
+    cancelScrub();
+    const baseScroll = crown._scroll;
+    const baseVal = Math.round(Number(row.dataset.progressTarget) || committed);
+    let vel = initVel;
+    let last = performance.now();
+    const tick = now => {
+      const dt = Math.min(32, Math.max(0, now - last));
+      last = now;
+      vel *= Math.pow(friction, dt / 16.67);
+      if(Math.abs(vel) < 0.5){momentumId = null;hideTooltip();return;}
+      crown._scroll = Math.max(minScroll,crown._scroll + vel * (dt / 16.67) * (10 / PX_PER_MIN));
+      const derived = Math.max(committed,Math.min(total,baseVal + Math.round((crown._scroll - baseScroll) / 10)));
+      setTarget(derived);
+      showTooltip(derived);
+      if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+      momentumId = requestAnimationFrame(tick);
+    };
+    momentumId = requestAnimationFrame(tick);
+  };
+
+  crown.addEventListener('pointerdown',e=>{
+    e.stopPropagation();
+    cancelMomentum();
+    cancelScrub();
+    startX = e.clientX;
+    startY = e.clientY;
+    prevX = e.clientX;
+    velX = 0;
+    pendingDx = 0;
+    pendingTarget = null;
+    dragging = false;
+    pointerId = e.pointerId;
+    crown._valScroll = 0;
+    crown._dragBase = Math.round(Number(row.dataset.progressTarget) || committed);
+    // Soft-claim so a tiny move can't arm card swipe before horizontal intent is known.
+    row.dataset.crownGesture = '1';
+  });
+
+  crown.addEventListener('pointermove',e=>{
+    if(pointerId === null || e.pointerId !== pointerId)return;
+    e.stopPropagation();
+    const dxTotal = e.clientX - startX;
+    const dyTotal = e.clientY - startY;
+
+    if(!dragging){
+      if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
+      if(Math.abs(dyTotal) > Math.abs(dxTotal)){
+        // Vertical scroll intent — release claim so the page can pan.
+        pointerId = null;
+        delete row.dataset.crownGesture;
+        return;
+      }
+      dragging = true;
+      crown.setPointerCapture(e.pointerId);
+      crown.classList.add('active');
+      if(progressRoot)progressRoot.classList.add('is-scrubbing');
+      if(typeof closeAllSwipes === 'function')closeAllSwipes();
+      e.preventDefault();
+    }
+
+    const dx = e.clientX - prevX;
+    prevX = e.clientX;
+    velX = velX * 0.55 + dx * 0.45;
+    pendingDx += dx;
+    if(!scrubRaf)scrubRaf = requestAnimationFrame(flushScrub);
+  });
+
+  const endDrag = e => {
+    if(pointerId === null)return;
+    e.stopPropagation();
+    const wasDragging = dragging;
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;flushScrub();}
+    if(dragging){
+      crown.classList.remove('active');
+      if(progressRoot)progressRoot.classList.remove('is-scrubbing');
+      if(Math.abs(velX) > 1.5)startMomentum(velX);
+      else hideTooltip();
+      setTimeout(hideTooltip,1200);
+    }
+    dragging = false;
+    pointerId = null;
+    velX = 0;
+    delete row.dataset.crownGesture;
+    if(!wasDragging && e.type === 'pointerup'){
+      const card = row.querySelector('.ting-card');
+      if(card){
+        card.dataset.approvedClickUntil = String(Date.now()+500);
+        card.click();
+      }
+    }
+  };
+
+  crown.addEventListener('pointerup',endDrag);
+  crown.addEventListener('pointercancel',e=>{
+    e.stopPropagation();
+    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;pendingDx=0;}
+    if(dragging){
+      crown.classList.remove('active');
+      if(progressRoot)progressRoot.classList.remove('is-scrubbing');
+      hideTooltip();
+    }
+    dragging = false;pointerId = null;velX = 0;
+    delete row.dataset.crownGesture;
+  });
+
+  crown.addEventListener('wheel',e=>{
+    e.preventDefault();
+    cancelMomentum();
+    cancelScrub();
+    const step = e.deltaY < 0 ? 1 : -1;
+    const cur = Math.round(Number(row.dataset.progressTarget) || committed);
+    const next = Math.max(committed,Math.min(total,cur + step));
+    if(next !== cur){
+      crown._scroll = Math.max(minScroll,crown._scroll + step * 10);
+      if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+      setTarget(next);
+    }
+  },{passive:false});
+
+  crown.addEventListener('keydown',e=>{
+    const inc = e.key === 'ArrowRight' || e.key === 'ArrowUp';
+    const dec = e.key === 'ArrowLeft' || e.key === 'ArrowDown';
+    if(inc||dec){
+      e.preventDefault();
+      cancelMomentum();
+      cancelScrub();
+      const cur = Math.round(Number(row.dataset.progressTarget) || committed);
+      const next = Math.max(committed,Math.min(total,cur + (inc ? 1 : -1)));
+      if(next !== cur){
+        crown._scroll = Math.max(minScroll,crown._scroll + (inc ? 10 : -10));
+        if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+        setTarget(next);
+      }
+    }
+  });
+
+  // Always isolate crown gestures from card swipe/tap handlers on the row.
+  // Waiting until `dragging` lets touchstart bubble and arm swipe first.
+  const stop = e=>{ e.stopPropagation(); };
+  ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel','mousedown','mouseup'].forEach(ev=>{
+    crown.addEventListener(ev,stop,{ passive:true });
+  });
+  crown.addEventListener('click',e=>{ e.stopPropagation(); },{ passive:true });
+
+  window.addEventListener('resize',()=>{
+    if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
+  });
+
+  syncVisual(committed);
 }
 
 // WIRE: attach swipe gesture listeners
@@ -1017,6 +3249,23 @@ function setupSwipe(row){
   const rightActions = row.querySelector('.swipe-actions-right');
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
   let startedOpen = false;
+  const CROWN_SWIPE_PAD = 10;
+  // Match CSS collapsed default so first paint never shows action chrome.
+  leftActions.style.width = '0';
+  rightActions.style.width = '0';
+  leftActions.style.pointerEvents = 'none';
+  rightActions.style.pointerEvents = 'none';
+
+  // PURE: touch is on/near the crown dial (layout box + pad), so swipe must stand down.
+  function touchNearCrown(clientX, clientY){
+    const crown = row.querySelector('.breakable-crown');
+    if(!crown)return false;
+    const r = crown.getBoundingClientRect();
+    return clientX >= r.left - CROWN_SWIPE_PAD
+      && clientX <= r.right + CROWN_SWIPE_PAD
+      && clientY >= r.top - CROWN_SWIPE_PAD
+      && clientY <= r.bottom + CROWN_SWIPE_PAD;
+  }
 
   // PURE: measure total swipe action width
   function revealWidth(actions){
@@ -1042,6 +3291,13 @@ function setupSwipe(row){
 
   row.addEventListener('touchstart',e=>{
     const t = e.changedTouches[0];
+    // Crown dial + a small pad around it owns the gesture — never arm card swipe.
+    if(e.target.closest('.breakable-crown,.breakable-progress') || row.dataset.crownGesture === '1' || touchNearCrown(t.clientX, t.clientY)){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     startedOpen = swipeOpenCard === card;
     if(swipeOpenCard && swipeOpenCard !== card){
@@ -1050,8 +3306,16 @@ function setupSwipe(row){
   },{passive:true});
 
   row.addEventListener('touchmove',e=>{
+    if(touchId === null || row.dataset.crownGesture === '1')return;
+    if(e.target.closest('.breakable-crown,.breakable-progress'))return;
     const t = [...e.changedTouches].find(item=>item.identifier === touchId);
     if(!t)return;
+    // If the finger drifts into the crown pad mid-gesture, drop swipe instead of fighting the dial.
+    if(touchNearCrown(t.clientX, t.clientY)){
+      touchId = null;
+      if(moved)resetSwipe();
+      return;
+    }
     const ddx = t.clientX - startX;
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
@@ -1087,7 +3351,7 @@ function setupSwipe(row){
   },{passive:false});
 
   row.addEventListener('touchend',()=>{
-    if(!moved)return;
+    if(touchId === null || !moved)return;
     if(startedOpen){
       startedOpen = false;
       return;
@@ -1146,30 +3410,46 @@ function setupCardTap(row,realIdx){
   const card = row.querySelector('.ting-card');
   card.addEventListener('pointerdown',e=>{
     if(e.target.closest('.pulse-btn'))return;
-    cardPointer = {card,realIdx,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
+    const scrollHost = card.closest('.pane-list,.sheet,.detail-page');
+    cardPointer = {
+      card,realIdx,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),maxMove:0,
+      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY
+    };
   });
+  card.addEventListener('pointermove',e=>{
+    if(!cardPointer || cardPointer.card !== card || cardPointer.id !== e.pointerId)return;
+    cardPointer.maxMove = Math.max(cardPointer.maxMove,Math.hypot(e.clientX-cardPointer.x,e.clientY-cardPointer.y));
+  },{passive:true});
   card.addEventListener('pointerup',e=>{
     if(!cardPointer || cardPointer.card !== card || cardPointer.id !== e.pointerId)return;
     const tap = cardPointer;
     cardPointer = null;
-    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
-    if(moved > 10 || Date.now() - tap.time > 800)return;
-    suppressCardClick = card;
-    if(swipeOpenCard){closeAllSwipes();}
-    else handleCardActivate(realIdx,card,()=>openDetail(realIdx));
-    setTimeout(()=>{if(suppressCardClick === card)suppressCardClick = null;},120);
-  });
-  card.addEventListener('pointercancel',e=>{
-    if(cardPointer && cardPointer.card === card && cardPointer.id === e.pointerId)cardPointer = null;
-  });
-  card.addEventListener('click',e=>{
-    if(suppressCardClick === card){
-      e.preventDefault();
-      e.stopPropagation();
-      suppressCardClick = null;
+    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
+    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now() - tap.time > 650){
+      card.dataset.ignoreClickUntil = String(Date.now()+500);
       return;
     }
+    card.dataset.approvedClickUntil = String(Date.now()+500);
+  });
+  card.addEventListener('pointercancel',e=>{
+    if(cardPointer && cardPointer.card === card && cardPointer.id === e.pointerId){
+      const tap = cardPointer;cardPointer = null;
+      const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
+      if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1)card.dataset.ignoreClickUntil = String(Date.now()+500);
+    }
+  });
+  card.addEventListener('click',e=>{
+    if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){
+      e.preventDefault();e.stopPropagation();return;
+    }
     if(e.target.closest('.pulse-btn'))return;
+    const clickNow = performance.now();
+    const previousClick = Number(card.dataset.lastClickAt || 0);
+    if(previousClick && clickNow-previousClick < 80){
+      e.preventDefault();e.stopPropagation();return;
+    }
+    card.dataset.lastClickAt = String(clickNow);
     if(swipeOpenCard){closeAllSwipes();return;}
     handleCardActivate(realIdx,card,()=>openDetail(realIdx));
   });
@@ -1268,34 +3548,66 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   return true;
 }
 
-// HYBRID: log entry and show undo
-function logTing(i){
+// HYBRID: log entry and show undo. opts: {value, minutes, note} for numeric / chunk / note logs.
+function logTing(i,opts = {}){
   const data = load();
   const now = Date.now();
   if(!data[i])return false;
-  const logs = normalizeLogs(data[i].logs);
+  const h = data[i];
+  const logs = normalizeLogs(h.logs);
   const consumedPlanTs = planToConsumeForEntry(logs,now);
+  let minutes = opts.minutes;
+  if(minutes == null && h.breakable && !isAutoMark(h)){
+    // Suggested chunk only — never the full remaining day on a bare tap.
+    const next = typeof suggestedBreakableLogMinutes === 'function'
+      ? suggestedBreakableLogMinutes(h,null)
+      : null;
+    if(next)minutes = next;
+  }
+  // Snap the stored ts to the habit's window-start for the log's day so a
+  // habit logged late still counts as "done today" by rhythm math the next
+  // time its window opens. See snapLogTimestamp in data.js.
+  const entryTs = (typeof snapLogTimestamp === 'function') ? snapLogTimestamp(h,now) : now;
+  const entry = makeActualLog(entryTs,{value:opts.value,minutes,note:opts.note});
   const action = withEntryToastAction({
     type:'entry',
     idx:i,
-    ts:now,
+    ts:entryTs,
     plan:false,
     consumedPlanTs,
-    snoozedUntil:data[i].snoozedUntil || null
+    snoozedUntil:h.snoozedUntil || null,
+    entry
   });
-  data[i].lastLog = now;
   if(consumedPlanTs !== null){
     const pos = findEntryByKind(logs,consumedPlanTs,true);
     if(pos >= 0)logs.splice(pos,1);
   }
-  data[i].logs = normalizeLogs([...logs,now]);
-  data[i].snoozedUntil = null;
+  h.logs = normalizeLogs([...logs,entry]);
+  h.lastLog = latestActualLog(h.logs);
+  h.snoozedUntil = null;
+  if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(h);
   if(!save(data))return false;
   // Cancel any scheduled push for this completed task.
-  if(typeof cancelPush === 'function' && data[i].type === 'task'){
-    cancelPush(reminderSignature(data[i]));
+  if(typeof cancelPush === 'function' && h.type === 'task' && isTaskDone(h)){
+    cancelPush(reminderSignature(h));
   }
-  showActionToast(`Logged ${toastItemName(data[i])}`,action);
+  // Toast shows minutes + one detail (note preferred over value) so it never
+  // overflows; the full value+note history lives in the activity sheet.
+  const detail = (()=>{
+    const parts = [];
+    if(minutes)parts.push(`${minutes}m`);
+    const noteStr = String(opts.note || '').trim();
+    if(noteStr)parts.push(noteStr.slice(0,32));
+    else if(opts.value != null && Number.isFinite(Number(opts.value)))parts.push(`${opts.value}`);
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
+  })();
+  showActionToast(`Logged ${toastItemName(h)}${detail}`,action);
+  // If a session timer was open for this habit, drop it — the entry already
+  // covers the session and a later stop must not prompt a second log.
+  if(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === i
+    && typeof clearHabitTimerSilent === 'function'){
+    clearHabitTimerSilent();
+  }
   return true;
 }
 
@@ -1322,9 +3634,17 @@ function logTingAt(i,ts){
   }
   data[i].logs = normalizeLogs([...logs,log]);
   data[i].lastLog = latestActualLog(data[i].logs);
-  if(!isPlan)data[i].snoozedUntil = null;
+  if(!isPlan){
+    data[i].snoozedUntil = null;
+    if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(data[i]);
+  }
   if(!save(data))return false;
   showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
+  // Calendar day log counts as completing the session — drop any open timer.
+  if(!isPlan && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === i
+    && typeof clearHabitTimerSilent === 'function'){
+    clearHabitTimerSilent();
+  }
   return true;
 }
 
@@ -1526,6 +3846,49 @@ function executeUndo(){
       data[idx].snoozedUntil = snoozedUntilBefore;
     }
   }
+  if(pendingAction.type === 'breakable-set'){
+    const {idx,logs,snoozedUntil} = pendingAction;
+    if(data[idx]){
+      data[idx].logs = normalizeLogs(logs);
+      data[idx].lastLog = latestActualLog(data[idx].logs);
+      data[idx].snoozedUntil = snoozedUntil;
+    }
+  }
+  if(pendingAction.type === 'restore-blocked'){
+    lockBlockedCardActivation();
+    const {dayKey,label,startMin,endMin,freedMin} = pendingAction;
+    if(typeof restoreBlockedInstance === 'function')restoreBlockedInstance(dayKey,label,startMin,endMin);
+    const s = loadSortSettings();
+    const overrides = normalizeAvailabilityOverrides(s.availabilityOverrides);
+    if(Object.prototype.hasOwnProperty.call(overrides,dayKey)){
+      // Reuse the same wraparound math as cancelHomeBlockedRow so overnight
+      // blocks restore the exact minutes that were freed (not end−start < 0).
+      const back = freedMin != null && Number.isFinite(freedMin)
+        ? freedMin
+        : (typeof blockDurationMinutes === 'function'
+          ? blockDurationMinutes(startMin,endMin)
+          : (endMin > startMin ? endMin - startMin : (1440 - startMin) + endMin));
+      const restored = overrides[dayKey] - back;
+      if(restored > 0)overrides[dayKey] = restored;
+      else delete overrides[dayKey];
+      saveSortSettings({...s,availabilityOverrides:overrides});
+    }
+  }
+  if(pendingAction.type === 'restore-block-adjust'){
+    lockBlockedCardActivation();
+    const {dayKey,signature,previousOverride,hadAvailability,previousAvailability} = pendingAction;
+    const s = loadSortSettings();
+    const blockOverrides = normalizeBlockedTimeOverrides(s.blockedTimeOverrides);
+    const day = {...(blockOverrides[dayKey] || {})};
+    if(previousOverride)day[signature] = previousOverride;
+    else delete day[signature];
+    if(Object.keys(day).length)blockOverrides[dayKey] = day;
+    else delete blockOverrides[dayKey];
+    const availabilityOverrides = normalizeAvailabilityOverrides(s.availabilityOverrides);
+    if(hadAvailability)availabilityOverrides[dayKey] = previousAvailability;
+    else delete availabilityOverrides[dayKey];
+    saveSortSettings({...s,blockedTimeOverrides:blockOverrides,availabilityOverrides});
+  }
   if(save(data)){
     hideActionToast();
     showToast('undone');
@@ -1533,14 +3896,118 @@ function executeUndo(){
   }
 }
 
+/**
+ * HYBRID: set absolute breakable progress. Forward movement appends a minute
+ * log; backward movement consolidates minute logs in the relevant scope while
+ * preserving plans and non-minute entries.
+ * Returns true when a log was saved.
+ */
+function commitBreakableProgress(i,targetMinutes,dayBase){
+  const data = load();
+  if(!data[i] || !data[i].breakable)return false;
+  const h = data[i];
+  const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h,dayBase) : 0;
+  const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
+  let target = Math.round(Number(targetMinutes));
+  if(!Number.isFinite(target))target = done;
+  target = Math.max(0,Math.min(total,target));
+  if(target === done)return false;
+
+  if(target > done){
+    const delta = typeof breakableSliderDeltaMinutes === 'function'
+      ? breakableSliderDeltaMinutes(h,target,dayBase)
+      : (target - done);
+    if(delta > 0)return logTing(i,{ minutes:delta });
+    return false;
+  }
+
+  const logsBefore = normalizeLogs(h.logs);
+  const snoozedUntil = h.snoozedUntil || null;
+  const result = rewriteBreakableProgress(h,target,dayBase);
+  if(result.mode !== 'set' || !save(data))return false;
+  showActionToast(`Set ${toastItemName(h)} · ${target}m`,{
+    type:'breakable-set',idx:i,logs:logsBefore,snoozedUntil,openAction:false
+  });
+  return true;
+}
+
+// PURE: read the pending target from a card, or compute its untouched quick-log
+// advance. The agenda chunk is only used when it is a true partial placement.
+function breakableCardIntent(h,card){
+  const row = card && card.closest ? card.closest('.swipe-row') : null;
+  const dirty = row && row.dataset.progressDirty === '1';
+  const done = typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0;
+  const total = typeof breakableTotalMinutes === 'function' ? breakableTotalMinutes(h) : clampDuration(h.durationMinutes);
+  let target = dirty && row ? Math.round(Number(row.dataset.progressTarget)) : done;
+  if(!Number.isFinite(target))target = done;
+  target = Math.max(0,Math.min(total,target));
+  const chunk = row && row.dataset.chunkMinutes != null && row.dataset.chunkMinutes !== ''
+    ? Math.round(Number(row.dataset.chunkMinutes))
+    : null;
+  const suggested = typeof suggestedBreakableLogMinutes === 'function'
+    ? suggestedBreakableLogMinutes(h,chunk)
+    : 0;
+  return {row,dirty:dirty && target !== done,done,target,suggested};
+}
+
+/** HYBRID: commit a card's pending target, or advance by its quick-log amount. */
+function commitBreakableFromCard(i,card){
+  const h = load()[i];
+  if(!h || !h.breakable)return false;
+  const intent = breakableCardIntent(h,card);
+  if(intent.dirty){
+    if(intent.target <= intent.done){
+      showToast('already done');
+      return false;
+    }
+    return commitBreakableProgress(i,intent.target);
+  }
+  const suggested = typeof suggestedBreakableLogMinutes === 'function'
+    ? intent.suggested
+    : 0;
+  if(!suggested || suggested <= 0){
+    showToast('already done');
+    return false;
+  }
+  return commitBreakableProgress(i,intent.done + suggested);
+}
+
 // HYBRID: log entry and flash card
 function quickLog(i,card){
-  if(!logTing(i))return;
-  if(card){
-    card.classList.add('logged');
-    setTimeout(()=>card.classList.remove('logged'),380);
+  const go = ()=>{
+    if(card){
+      card.classList.add('logged');
+      setTimeout(()=>card.classList.remove('logged'),380);
+    }
+    setTimeout(refreshOpenViews, 260);
+  };
+  const data = load();
+  const h = data[i];
+  if(h && h.breakable){
+    if(h.trackValue && typeof requestLogTing === 'function'){
+      const intent = breakableCardIntent(h,card);
+      if(intent.dirty && intent.target <= intent.done){
+        showToast('already done');
+        return;
+      }
+      const minutes = intent.dirty ? intent.target - intent.done : intent.suggested;
+      if(!minutes || minutes <= 0){
+        showToast('already done');
+        return;
+      }
+      requestLogTing(i,go,{ minutes });
+      return;
+    }
+    if(!commitBreakableFromCard(i,card))return;
+    go();
+    return;
   }
-  setTimeout(refreshOpenViews, 260);
+  if(typeof requestLogTing === 'function'){
+    requestLogTing(i,go);
+    return;
+  }
+  if(!logTing(i))return;
+  go();
 }
 
 // PURE: compute next plan timestamp
