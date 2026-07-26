@@ -585,23 +585,43 @@ function updateHeaderOnScroll(){
   lastScrollY = y;
 }
 
-// PURE: resolves forgiving button target from an event target
-function forgivingButtonTarget(target){
+// PURE: resolves forgiving button target from an event target.
+// Optional clientX/clientY expand day-header open/missed pills by a small
+// hit slop so near-miss taps on sticky header chrome still arm the pill.
+function forgivingButtonTarget(target, clientX, clientY){
   if(!target || typeof target.closest !== "function")return null;
   const btn = target.closest('button');
-  if(!btn || btn.closest('.ting-card'))return null;
-  // These live directly in the vertically scrolling home feed and have their
-  // own movement-aware activation. Synthesizing a forgiving click here can
-  // open an editor or cancel a block before their scroll guards see pointerup.
-  if(btn.matches('.travel-card') || btn.closest('.blocked-card'))return null;
-  if(btn.closest('#settings-sheet'))return null;
-  if(btn.closest('.month-nav'))return null;
-  if(btn.classList.contains('cal-day'))return null;
-  if(btn.closest('#overview-filter'))return null;
-  if(btn.closest('#overview-pane-filter'))return null;
-  if(btn.closest('#overview-insight'))return null;
-  if(btn.closest('#overview-list'))return null;
-  return btn;
+  if(btn){
+    if(btn.closest('.ting-card'))return null;
+    // These live directly in the vertically scrolling home feed and have their
+    // own movement-aware activation. Synthesizing a forgiving click here can
+    // open an editor or cancel a block before their scroll guards see pointerup.
+    if(btn.matches('.travel-card') || btn.closest('.blocked-card'))return null;
+    if(btn.closest('#settings-sheet'))return null;
+    if(btn.closest('.month-nav'))return null;
+    if(btn.classList.contains('cal-day'))return null;
+    if(btn.closest('#overview-filter'))return null;
+    if(btn.closest('#overview-pane-filter'))return null;
+    if(btn.closest('#overview-insight'))return null;
+    if(btn.closest('#overview-list'))return null;
+    return btn;
+  }
+  if(clientX == null || clientY == null)return null;
+  const header = target.closest('.section-header');
+  if(!header)return null;
+  const HIT_SLOP = 16;
+  let best = null;
+  let bestDist = Infinity;
+  header.querySelectorAll('.free-pill,.dropped-pill').forEach(pill=>{
+    const r = pill.getBoundingClientRect();
+    if(clientX < r.left - HIT_SLOP || clientX > r.right + HIT_SLOP)return;
+    if(clientY < r.top - HIT_SLOP || clientY > r.bottom + HIT_SLOP)return;
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dist = Math.hypot(clientX - cx, clientY - cy);
+    if(dist < bestDist){ best = pill; bestDist = dist; }
+  });
+  return best;
 }
 
 // PURE: true if target or any ancestor was flagged as mid-scroll.
@@ -793,14 +813,20 @@ document.addEventListener('pointerdown',e=>{
     return;
   }
   searchDismissPointer = null;
-  const btn = forgivingButtonTarget(e.target);
+  const btn = forgivingButtonTarget(e.target, e.clientX, e.clientY);
   if(!btn)return;
-  const scrollHost = btn.closest('.sheet');
+  // Home list scrolls on window (mobile) or .pane-list (multi-pane); sheets
+  // scroll themselves. Track the real scroller so pointercancel recovery does
+  // not treat an actual scroll as a tap.
+  const scrollHost = btn.closest('.pane-list,.sheet,.detail-page');
+  const hostScrolls = scrollHost && (scrollHost.scrollHeight > scrollHost.clientHeight + 1);
   buttonPointer = {
     btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),
     maxMove:0,
-    scrollHost,
-    scrollTop:scrollHost ? scrollHost.scrollTop : 0
+    // True when the finger missed the button box but hit-slop still armed it.
+    armedBySlop: e.target.closest('button') !== btn,
+    scrollHost: hostScrolls ? scrollHost : null,
+    scrollTop: hostScrolls ? scrollHost.scrollTop : window.scrollY
   };
 },true);
 
@@ -824,20 +850,28 @@ document.addEventListener('pointerup',e=>{
     }
   }
   if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
-  const {btn,x,y,time} = buttonPointer;
+  const {btn,x,y,time,armedBySlop} = buttonPointer;
   buttonPointer = null;
   if(btn.disabled)return;
   const dx = Math.abs(e.clientX - x);
   const dy = Math.abs(e.clientY - y);
   const moved = Math.hypot(dx,dy);
   if(btn.disabled)return;
-  if(moved > 8 && moved <= 160 && Date.now() - time < 1200 && !btn.classList.contains('timer-start-btn')){
-    suppressNativeButton = btn;
-    e.preventDefault();
-    e.stopPropagation();
-    btn.click();
-    setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},80);
-  }
+  if(btn.classList.contains('timer-start-btn'))return;
+  if(Date.now() - time >= 1200 || moved > 160)return;
+
+  const headerPill = btn.matches('.free-pill,.dropped-pill');
+  // Drift → forgiving click. Slop-armed header pills (finger never on the
+  // button/::before) also need a synthesized click. Exact on-pill taps,
+  // including CSS hit-pad ::before hits, keep the native click path.
+  const shouldClick = moved > 8 || (headerPill && armedBySlop);
+  if(!shouldClick)return;
+
+  suppressNativeButton = btn;
+  e.preventDefault();
+  e.stopPropagation();
+  btn.click();
+  setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},80);
 },true);
 
 // On a phone, a tap inside a scrollable sheet often drifts a few pixels, which
@@ -853,7 +887,9 @@ document.addEventListener('pointercancel',e=>{
   buttonPointer = null;
   if(tap.btn.disabled)return;
   if(tap.btn.classList.contains('timer-start-btn'))return;
-  const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
+  const scrolled = tap.scrollHost
+    ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop)
+    : Math.abs(window.scrollY - tap.scrollTop);
   if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && scrolled === 0){
     suppressNativeButton = tap.btn;
     tap.btn.click();
@@ -868,7 +904,7 @@ document.addEventListener('click',e=>{
     suppressNativeButton = null;
     return;
   }
-  const btn = forgivingButtonTarget(e.target);
+  const btn = forgivingButtonTarget(e.target, e.clientX, e.clientY);
   if(btn && btn === suppressNativeButton && e.isTrusted){
     e.preventDefault();
     e.stopPropagation();

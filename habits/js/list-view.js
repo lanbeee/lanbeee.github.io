@@ -2004,10 +2004,7 @@ function attachDroppedIndicator(header,list,todayHids){
   pill.type = 'button';
   pill.className = 'dropped-pill';
   pill.textContent = `${dropped.length} missed`;
-  pill.addEventListener('pointerup',e=>{
-    e.stopPropagation();
-    openSlippedSheet(dropped,header.dataset.label || 'today');
-  });
+  bindDayHeaderPill(pill,()=>openSlippedSheet(dropped,header.dataset.label || 'today'));
   header.appendChild(pill);
 }
 
@@ -2060,10 +2057,7 @@ function openSlippedSheet(items,dayLabel){
     content.appendChild(renderDroppedPanel(missed,{showDayTag:true}));
   }
 
-  // WebKit may synthesize a click after pointerup. Mounting the backdrop
-  // during pointerup makes that tail click land on the new backdrop and
-  // immediately close it — same defer as openDayLogsAfterCalendarGesture.
-  setTimeout(()=>openSheet('slipped-sheet'),0);
+  openSheet('slipped-sheet');
 }
 
 function formatFreeDuration(minutes){
@@ -2178,11 +2172,24 @@ function attachFreeTimeIndicator(header,day){
   pill.type = 'button';
   pill.className = 'free-pill';
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
-  pill.addEventListener('pointerup',e=>{
-    e.stopPropagation();
-    openFreeTimeSheet(info,header.dataset.label || 'today');
-  });
+  bindDayHeaderPill(pill,()=>openFreeTimeSheet(info,header.dataset.label || 'today'));
   header.appendChild(pill);
+}
+
+// WIRE: day-header open/missed pills. Activation must be click-based so the
+// document forgiving-button path (near-miss drift / pointercancel → btn.click)
+// works. pointerup-only missed those taps because capture-phase forgiving
+// stopPropagation prevented the pill's pointerup from firing. Stop pointer
+// bubbling so sticky-header capacity triple-tap does not count pill presses.
+function bindDayHeaderPill(pill,open){
+  if(!pill || typeof open !== 'function')return;
+  pill.addEventListener('pointerdown',e=>e.stopPropagation());
+  pill.addEventListener('pointerup',e=>e.stopPropagation());
+  pill.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    open();
+  });
 }
 
 function renderFreePanel(info){
@@ -2220,10 +2227,7 @@ function openFreeTimeSheet(info,dayLabel){
   document.getElementById('free-time-title').textContent = `open time ${dayLabel}`;
   content.innerHTML = '';
   content.appendChild(renderFreePanel(info));
-  // WebKit may synthesize a click after pointerup. Mounting the backdrop
-  // during pointerup makes that tail click land on the new backdrop and
-  // immediately close it — same defer as openDayLogsAfterCalendarGesture.
-  setTimeout(()=>openSheet('free-time-sheet'),0);
+  openSheet('free-time-sheet');
 }
 
 // PURE: reduce trail tones to one

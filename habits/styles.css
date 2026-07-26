@@ -633,7 +633,12 @@ body.fullpage-open .bottom-nav{
   font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
   color:var(--amber-text);background:var(--amber-bg);
   border-radius:6px;padding:6px 9px;cursor:pointer;margin:0;
+  position:relative;
   -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+/* Invisible hit pad so near-misses on sticky day headers still land on the pill. */
+.dropped-pill::before{
+  content:"";position:absolute;inset:-12px -14px -12px -4px;
 }
 .dropped-pill:active{transform:scale(0.97);}
 .dropped-panel{
@@ -674,7 +679,11 @@ body.fullpage-open .bottom-nav{
   font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
   color:var(--teal-text);background:var(--teal-bg);
   border-radius:6px;padding:6px 9px;cursor:pointer;margin:0;
+  position:relative;
   -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.free-pill::before{
+  content:"";position:absolute;inset:-12px -4px -12px -14px;
 }
 .free-pill:active{transform:scale(0.97);}
 .free-panel{
@@ -2179,15 +2188,19 @@ body[data-pane-count="3"] .detail-sheet{
 .location-travel-mode .settings-sublabel{display:block;margin-bottom:8px;}
 .travel-mode-seg{display:flex;flex-wrap:wrap;gap:6px;}
 .travel-card{
-  display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
+  display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:nowrap;
   margin:0;padding:9px 14px;border-radius:10px;
   border:0.5px solid color-mix(in srgb,var(--teal-icon) 22%,var(--border));
   background:color-mix(in srgb,var(--teal-bg) 25%,var(--bg));
   color:color-mix(in srgb,var(--teal-text) 65%,var(--text2));
   font-size:12px;font-weight:650;letter-spacing:0.01em;
-  width:100%;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  width:100%;min-width:0;overflow:hidden;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
 }
-.travel-card i{font-size:14px;color:color-mix(in srgb,var(--teal-icon) 55%,var(--text3));}
+.travel-card i{font-size:14px;flex-shrink:0;color:color-mix(in srgb,var(--teal-icon) 55%,var(--text3));}
+.travel-card > span{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 .travel-card.is-edited{border-style:solid;border-color:var(--teal-icon);}
 .travel-edit-mark{opacity:0.75;font-size:12px !important;}
 .blocked-card{
