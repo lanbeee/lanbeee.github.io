@@ -262,6 +262,112 @@ function assert(cond,msg){
       assert(detailOpen, 'detail sheet opens on item tap');
     }
   }
+  // Close detail sheet so it doesn't block subsequent interactions
+  await page.evaluate(() => { closeSheet('detail-sheet'); });
+  await page.waitForTimeout(300);
+
+  // ══════════════════════════════════════════════════════════════════════
+  // I. Missed from yesterday section renders
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n[I] Missed from yesterday section');
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    localStorage.setItem('tings_v2', JSON.stringify([
+      { hid:'miss-a', name:'Yoga', emoji:'🧘', type:'keepup', target:1, flexibilityDays:0, logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1 },
+      { hid:'miss-b', name:'Run', emoji:'🏃', type:'keepup', target:1, flexibilityDays:0, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
+    ]));
+    const d = new Date(now - dayMs);
+    const yesterday = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
+      day: yesterday,
+      hids: {},
+      projection: { day:'stale', hids:['miss-a','miss-b'], fingerprint:'old' }
+    }));
+    _droppedDayBaselineDay = null;
+    render();
+  });
+  await page.waitForTimeout(800);
+  // miss-a has closed window (allowedTimeEnd:1) so it's overdue, not in today
+  // miss-b is daily logged yesterday → daysSince=1 >= target=1 → due today → in today section
+  // So only miss-a should appear as missed (miss-b is in today, excluded)
+  pill = await page.$('.dropped-pill');
+  if(pill){
+    await pill.click();
+    await page.waitForTimeout(300);
+    const missedHead = await page.$('#slipped-sheet .slipped-section-head');
+    assert(Boolean(missedHead), 'section header rendered in slipped sheet');
+    const allItems = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
+    assert(allItems.some(i => i.includes('Yoga')), 'Yoga (overdue, window closed) shown');
+    assert(!allItems.some(i => i.includes('Run')), 'Run (in today section) NOT shown as missed');
+    const tags = await page.$$eval('#slipped-sheet .dropped-tag', els => els.map(el => el.textContent.trim()));
+    assert(tags.some(t => t.includes('overdue')), 'overdue day-tag rendered');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
+  } else {
+    // No pill means no slipped items, but missed section should still be accessible
+    // via the sheet if we force-open it. For this test, pill absence means no baseline slipped.
+    assert(false, 'expected pill for missed-from-yesterday scenario');
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // J. Completion removes from missed section
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n[J] Completion removes from missed');
+  await page.evaluate(() => {
+    const data = JSON.parse(localStorage.getItem('tings_v2'));
+    data[0].logs.push(Date.now());
+    data[0].lastLog = Date.now();
+    localStorage.setItem('tings_v2', JSON.stringify(data));
+    render();
+  });
+  await page.waitForTimeout(800);
+  pill = await page.$('.dropped-pill');
+  if(pill){
+    await pill.click();
+    await page.waitForTimeout(300);
+    const allItems = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
+    assert(!allItems.some(i => i.includes('Yoga')), 'Yoga gone after completion');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
+  } else {
+    assert(true, 'no pill after all items completed (missed section empty)');
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // K. No baseline → no missed section
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n[K] No baseline hides missed section');
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    localStorage.setItem('tings_v2', JSON.stringify([
+      { hid:'nobase-1', name:'Swim', emoji:'🏊', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
+    ]));
+    localStorage.removeItem('tings_today_suggested_v1');
+    _droppedDayBaselineDay = null;
+    _droppedDayBaseline = null;
+    render();
+  });
+  await page.waitForTimeout(800);
+  await page.evaluate(() => {
+    const data = JSON.parse(localStorage.getItem('tings_v2'));
+    data[0].allowedTimeEnd = 1;
+    localStorage.setItem('tings_v2', JSON.stringify(data));
+    render();
+  });
+  await page.waitForTimeout(800);
+  pill = await page.$('.dropped-pill');
+  if(pill){
+    await pill.click();
+    await page.waitForTimeout(300);
+    const missedHeads = await page.$$eval('#slipped-sheet .slipped-section-head', els => els.map(el => el.textContent));
+    assert(!missedHeads.some(t => t.includes('missed')), 'no missed section when baseline is null');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
+  } else {
+    assert(true, 'no pill when no baseline (expected)');
+  }
 
   // ══════════════════════════════════════════════════════════════════════
   // Summary

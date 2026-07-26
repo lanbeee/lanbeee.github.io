@@ -978,7 +978,8 @@ function seedScript(extraHabits, extraSettings){
         travelStart:travelCard && travelCard.start,
         travelEnd:travelCard && travelCard.end,
         fillEnd:cappedPocket[0] ? cappedPocket[0].end : null,
-        leaveBy:leaveByHome
+        leaveBy:leaveByHome,
+        nowMs:Date.now()
       },
       H:{
         pocketCount:explicitPocket.length,
@@ -1080,14 +1081,13 @@ function seedScript(extraHabits, extraSettings){
   assert(outbound.F.end === outbound.F.blockLeaveBy, 'F ends exactly at leave-by for Home block');
   assert(!outbound.F.overlaps, 'F does not overlap travel-home before wind-down');
 
-  // G — travel card after the fill matches leave-by
+  // G — travel card after the fill matches leave-by (floored at now on today)
   assert(outbound.G.hasTravel, 'G homeDaySequence inserts travel after post-oil Work');
   assert(outbound.G.from === 'mechanic' && outbound.G.to === 'home',
     `G travel is Mechanic→Home (got ${outbound.G.from}→${outbound.G.to})`);
-  assert(outbound.G.travelStart === outbound.G.fillEnd,
-    'G travel starts when Work ends (leave-by)');
-  assert(outbound.G.travelStart === outbound.leaveByHome,
-    'G travel start equals computed leave-by');
+  const gExpectedStart = Math.max(outbound.leaveByHome, outbound.G.nowMs);
+  assert(Math.abs(outbound.G.travelStart - gExpectedStart) < 5000,
+    'G travel start equals leave-by floored at now');
   assert(outbound.G.travelEnd === outbound.leaveByHome + outbound.travelHomeMin * 60 * 1000,
     'G travel ends at Perfect Child start');
 
@@ -1150,6 +1150,172 @@ function seedScript(extraHabits, extraSettings){
   assert(outbound.O.outboundFrom === 'mechanic' && outbound.O.outboundTo === 'home',
     `O outbound is Mechanic→Home (got ${outbound.O.outboundFrom}→${outbound.O.outboundTo})`);
   assert(!outbound.O.overlaps, 'O does not overlap leave-by');
+
+  // ── G5b. Today saved→saved travel leave-by never in the past ──
+  console.log('\n[G5b] today travel leave-by clamped to now');
+  const lateLeave = await page.evaluate(() => {
+    const dayBase = dayStart(Date.now());
+    const places = [
+      { id:'home', name:'Home', lat:40.700, lng:-74.000 },
+      { id:'office', name:'Office', lat:40.720, lng:-74.020 },
+    ];
+    const travelSec = 30 * 60;
+    // Clear live GPS so today seeds from lastKnownLocationId (home).
+    if(typeof currentCoord !== 'undefined')currentCoord = null;
+    const settings = Object.assign(loadSortSettings(), {
+      locations:places,
+      defaultTravelMode:'driving',
+      lastKnownLocationId:'home',
+      blockedTimes:[
+        { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' }
+      ],
+      travel:{
+        'home|office':{
+          a:'home', b:'office', seconds:travelSec, metres:3000,
+          provider:'manual', fetchedAt:Date.now()
+        }
+      }
+    });
+    saveSortSettings(settings);
+    // Task starts in 10m; 30m commute → raw leave-by is 20m ago.
+    const taskStart = Date.now() + 10 * 60 * 1000;
+    const rawLeaveBy = taskStart - travelSec * 1000;
+    const day = {
+      dayBase,
+      weekday:new Date(dayBase).getDay(),
+      isToday:true,
+      dayKey:dateKey(dayBase),
+      timeline:[{
+        kind:'scheduled',
+        i:0,
+        h:{ name:'Office meetup' },
+        locationId:'office',
+        start:taskStart,
+        end:taskStart + 30 * 60 * 1000
+      }]
+    };
+    const before = Date.now();
+    const seq = homeDaySequence(day, settings);
+    const after = Date.now();
+    const travel = seq.find(r => r.kind === 'travel');
+    return {
+      before, after, taskStart, rawLeaveBy, travelSec,
+      travel:travel ? { start:travel.start, end:travel.end, from:travel.from, to:travel.to } : null
+    };
+  });
+  assert(lateLeave.rawLeaveBy < lateLeave.before, 'G5b scenario has past raw leave-by');
+  assert(lateLeave.travel, 'G5b inserts home→office travel');
+  assert(lateLeave.travel.from === 'home' && lateLeave.travel.to === 'office',
+    `G5b travel is Home→Office (got ${lateLeave.travel && lateLeave.travel.from}→${lateLeave.travel && lateLeave.travel.to})`);
+  assert(lateLeave.travel.start >= lateLeave.before,
+    'G5b today travel start is not in the past');
+  assert(lateLeave.travel.start <= lateLeave.after + 50,
+    'G5b today travel start is clamped to Date.now()');
+  assert(lateLeave.travel.end === lateLeave.taskStart,
+    'G5b travel end remains the task start');
+
+  // ── G5c. Away from every saved place → synthetic here→place leave-by ──
+  // Covers the GPS path (buildCurrentCoordTravelLeg): late leave-by floors at
+  // now, on-time leave-by stays in the future, and lastKnown is not used as
+  // the travel origin while the user is genuinely elsewhere.
+  console.log('\n[G5c] away-from-saved travel leave-by');
+  const awayLeave = await page.evaluate(() => {
+    const dayBase = dayStart(Date.now());
+    const places = [
+      { id:'home', name:'Home', lat:40.700, lng:-74.000 },
+      { id:'office', name:'Office', lat:40.720, lng:-74.020 },
+    ];
+    const settings = Object.assign(loadSortSettings(), {
+      locations:places,
+      defaultTravelMode:'driving',
+      // Misleading seed — must not become the travel origin while GPS is away.
+      lastKnownLocationId:'home',
+      pinnedLocationId:null,
+      blockedTimes:[
+        { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' }
+      ],
+      travel:{}
+    });
+    saveSortSettings(settings);
+    if(typeof clearCurrentCoordEdgeCache === 'function')clearCurrentCoordEdgeCache();
+    // ~5–6 km NE of Home/Office — outside every geofence.
+    applyGeoPosition(
+      { coords:{ latitude:40.7900, longitude:-73.9700 } },
+      { updateAnchor:false }
+    );
+    const away = typeof isCurrentCoordAwayFromSaved === 'function'
+      && isCurrentCoordAwayFromSaved(places);
+    const office = places.find(l => l.id === 'office');
+    const edge = travelFromCurrent(office, 'driving');
+    const travelSec = Number(edge.seconds) || 0;
+
+    function seqFor(taskStart){
+      const day = {
+        dayBase,
+        weekday:new Date(dayBase).getDay(),
+        isToday:true,
+        dayKey:dateKey(dayBase),
+        timeline:[{
+          kind:'scheduled',
+          i:0,
+          h:{ name:'Office meetup' },
+          locationId:'office',
+          start:taskStart,
+          end:taskStart + 30 * 60 * 1000
+        }]
+      };
+      const before = Date.now();
+      const seq = homeDaySequence(day, settings);
+      const after = Date.now();
+      const travels = seq.filter(r => r.kind === 'travel');
+      const travel = travels[0] || null;
+      return {
+        before, after,
+        taskStart,
+        rawLeaveBy:taskStart - travelSec * 1000,
+        travels:travels.map(r => ({ from:r.from, to:r.to, start:r.start, end:r.end, fromCurrent:!!r.fromCurrentCoord })),
+        travel:travel
+          ? { from:travel.from, to:travel.to, start:travel.start, end:travel.end, fromCurrent:!!travel.fromCurrentCoord }
+          : null
+      };
+    }
+
+    // Late: arrive in 3m but commute is longer → leave-by would be past.
+    const late = seqFor(Date.now() + 3 * 60 * 1000);
+    // On time: task far enough that leave-by is still ahead of now.
+    const onTime = seqFor(Date.now() + Math.max(travelSec + 20 * 60, 45 * 60) * 1000);
+
+    return {
+      away,
+      travelSec,
+      currentCoordId:typeof CURRENT_COORD_ID !== 'undefined' ? CURRENT_COORD_ID : '__current__',
+      late,
+      onTime
+    };
+  });
+  assert(awayLeave.away, 'G5c GPS is away from every saved place');
+  assert(awayLeave.travelSec > 3 * 60, `G5c commute longer than 3m window (got ${awayLeave.travelSec}s)`);
+  assert(awayLeave.late.travel, 'G5c late case inserts travel');
+  assert(awayLeave.late.travel.from === awayLeave.currentCoordId,
+    `G5c late origin is here (got ${awayLeave.late.travel && awayLeave.late.travel.from})`);
+  assert(awayLeave.late.travel.to === 'office', 'G5c late destination is office');
+  assert(awayLeave.late.travel.fromCurrent, 'G5c late leg marked fromCurrentCoord');
+  assert(awayLeave.late.travels.every(t => t.from !== 'home'),
+    'G5c late does not insert lastKnown home→office while away');
+  assert(awayLeave.late.rawLeaveBy < awayLeave.late.before, 'G5c late raw leave-by is past');
+  assert(awayLeave.late.travel.start >= awayLeave.late.before,
+    'G5c late travel start is not in the past');
+  assert(awayLeave.late.travel.start <= awayLeave.late.after + 50,
+    'G5c late travel start is clamped to Date.now()');
+  assert(awayLeave.late.travel.end === awayLeave.late.taskStart,
+    'G5c late travel end remains the task start');
+  assert(awayLeave.onTime.travel, 'G5c on-time case inserts travel');
+  assert(awayLeave.onTime.travel.from === awayLeave.currentCoordId,
+    'G5c on-time origin is here');
+  assert(awayLeave.onTime.rawLeaveBy > awayLeave.onTime.before,
+    'G5c on-time raw leave-by is still ahead');
+  assert(Math.abs(awayLeave.onTime.travel.start - awayLeave.onTime.rawLeaveBy) < 2000,
+    'G5c on-time leave-by is not forced to now');
 
   // ── Boot cleanliness ──
   console.log('\n[Boot] cleanliness');

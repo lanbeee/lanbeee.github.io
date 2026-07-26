@@ -650,6 +650,13 @@ body.fullpage-open .bottom-nav{
   font-size:9px;font-weight:650;color:var(--text3);
   background:var(--bg2);border-radius:10px;padding:1px 5px;flex:0 0 auto;
 }
+.slipped-section-head{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;
+  color:var(--text3);padding:10px 8px 4px;
+}
+.slipped-section-head:not(:first-child){
+  margin-top:8px;border-top:0.5px solid var(--border);padding-top:12px;
+}
 .section-header.has-pill{
   display:flex;align-items:center;
 }

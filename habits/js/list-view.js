@@ -1394,6 +1394,28 @@ function appendHomeExtraTravel(list,fromId,toId,startTs){
   else appendHomeTravelCard(list,fromId,toId,startTs);
 }
 
+// PURE: leave-by for a saved→saved (or here→saved) home travel card.
+// destStart − travel, floored at now so the card never shows a past depart.
+function homeTravelLeaveByMs(fromId,toId,destStart){
+  if(!Number.isFinite(destStart))return Date.now();
+  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
+  let seconds = 0;
+  if(fromId === CURRENT_COORD_ID){
+    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+    const to = typeof locationById === 'function' ? locationById(toId) : null;
+    if(here && to && typeof travelFromCurrent === 'function'){
+      seconds = Number(travelFromCurrent(to,mode).seconds) || 0;
+    }
+  }else{
+    const from = typeof locationById === 'function' ? locationById(fromId) : null;
+    const to = typeof locationById === 'function' ? locationById(toId) : null;
+    if(from && to && typeof travelBetween === 'function'){
+      seconds = Number(travelBetween(from,to,mode).seconds) || 0;
+    }
+  }
+  return Math.max(destStart - seconds * 1000, Date.now());
+}
+
 // RENDER: blocked-time card on home — tap cancels this instance for today.
 let blockedCardActivationLocked = false;
 let blockedCardActivationTimer = null;
@@ -1793,6 +1815,48 @@ function computeTomorrowProjection(data,settings){
     .filter(Boolean);
 }
 
+function buildHidDayLabelMap(data,settings){
+  const map = new Map();
+  const week = _homeRenderedWeek;
+  if(week && Array.isArray(week.days)){
+    for(const day of week.days){
+      const label = homeWeekDayLabel(day);
+      const rows = day.homeDisplayedTimeline || day.timeline || [];
+      for(const row of rows){
+        if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
+          const hid = data[row.i]?.hid;
+          if(hid && !map.has(hid)) map.set(hid, `in ${label}`);
+        }
+      }
+    }
+  }
+  const catLabels = {0:'in today',1:'overdue',2:'upcoming',3:'snoozed'};
+  for(let i = 0; i < data.length; i++){
+    const h = data[i];
+    if(!h || !h.hid || map.has(h.hid)) continue;
+    map.set(h.hid, catLabels[todayCategory(h, settings)] || 'overdue');
+  }
+  return map;
+}
+
+function computeMissedYesterday(data,baseline,slippedHids,dayLabelMap){
+  if(!baseline || !Array.isArray(baseline.hids)) return [];
+  const now = Date.now();
+  const missed = [];
+  for(const hid of baseline.hids){
+    if(slippedHids.has(hid)) continue;
+    const idx = data.findIndex(h => h && h.hid === hid);
+    if(idx < 0) continue;
+    const h = data[idx];
+    if(completedToday(h, now)) continue;
+    if(todayCategory(h, sortSettings) === 0) continue;
+    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+    const dayLabel = dayLabelMap.get(hid) || 'overdue';
+    missed.push({hid, name:h.name, emoji:h.emoji, idx, snoozed, dayLabel});
+  }
+  return missed.sort((a,b) => Number(a.snoozed) - Number(b.snoozed));
+}
+
 function attachDroppedIndicator(header,list,todayHids){
   const data = load();
   const now = Date.now();
@@ -1848,13 +1912,17 @@ function attachDroppedIndicator(header,list,todayHids){
   header.appendChild(pill);
 }
 
-function renderDroppedPanel(items){
+function renderDroppedPanel(items,opts = {}){
+  const showDayTag = Boolean(opts.showDayTag);
   const panel = document.createElement('div');
   panel.className = 'dropped-panel';
   items.forEach(item=>{
     const row = document.createElement('button');
     row.className = 'dropped-item' + (item.snoozed ? ' snoozed' : '');
-    row.innerHTML = `${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : ''}<span class="dropped-name">${escapeHtml(item.name)}</span>${item.snoozed ? '<span class="dropped-tag">snoozed</span>' : ''}`;
+    const tagHtml = item.snoozed
+      ? '<span class="dropped-tag">snoozed</span>'
+      : (showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '');
+    row.innerHTML = `${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : ''}<span class="dropped-name">${escapeHtml(item.name)}</span>${tagHtml}`;
     row.addEventListener('click',()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); });
     panel.appendChild(row);
   });
@@ -1866,7 +1934,33 @@ function openSlippedSheet(items,dayLabel){
   if(!content)return;
   document.getElementById('slipped-title').textContent = `slipped ${dayLabel}`;
   content.innerHTML = '';
-  content.appendChild(renderDroppedPanel(items));
+
+  const data = load();
+  const dayLabelMap = buildHidDayLabelMap(data,sortSettings);
+
+  const slippedWithTags = items.map(item=>({
+    ...item,
+    dayLabel: dayLabelMap.get(item.hid) || 'overdue'
+  }));
+
+  if(slippedWithTags.length){
+    const head1 = document.createElement('div');
+    head1.className = 'slipped-section-head';
+    head1.textContent = `slipped ${dayLabel}`;
+    content.appendChild(head1);
+    content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
+  }
+
+  const slippedHids = new Set(items.map(i=>i.hid));
+  const missed = computeMissedYesterday(data,_droppedDayBaseline,slippedHids,dayLabelMap);
+  if(missed.length){
+    const head2 = document.createElement('div');
+    head2.className = 'slipped-section-head';
+    head2.textContent = 'missed from yesterday';
+    content.appendChild(head2);
+    content.appendChild(renderDroppedPanel(missed,{showDayTag:true}));
+  }
+
   openSheet('slipped-sheet');
 }
 
@@ -2392,7 +2486,7 @@ function render(opts){
           chunkRows.forEach((chunkRow,ci)=>{
             const cLocId = cardLocationId(h,chunkRow);
             if(prevTodayLocId && cLocId && prevTodayLocId !== cLocId){
-              const travelTs = Number.isFinite(chunkRow.start) ? chunkRow.start : Date.now();
+              const travelTs = homeTravelLeaveByMs(prevTodayLocId,cLocId,chunkRow.start);
               if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs);
             }
             prevTodayLocId = cLocId || prevTodayLocId;
@@ -2409,7 +2503,11 @@ function render(opts){
         prevTodayLocId = currentCoordSeed;
       }
       if(inTodaySection && prevTodayLocId && locId && prevTodayLocId !== locId){
-        const travelTs = agendaRow && Number.isFinite(agendaRow.start) ? agendaRow.start : Date.now();
+        const travelTs = homeTravelLeaveByMs(
+          prevTodayLocId,
+          locId,
+          agendaRow && Number.isFinite(agendaRow.start) ? agendaRow.start : NaN
+        );
         if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs);
       }
       if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
@@ -2422,6 +2520,10 @@ function render(opts){
     });
     if(!searching && todayFirstActive && sectionCat !== 0){
       const _snap = loadTodaySuggested();
+      if(!_droppedDayBaseline && _snap.prevProjection){
+        _droppedDayBaseline = _snap.prevProjection;
+        _droppedDayBaselineDay = todayIso();
+      }
       if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
         const header = document.createElement('div');
         header.className = 'section-header';

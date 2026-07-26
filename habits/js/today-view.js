@@ -1789,7 +1789,12 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
         toName:to ? to.name : '',
         seconds:edge.seconds || 0,
         metres:edge.metres || 0,
-        start:Math.max(row.start - (edge.seconds || 0) * 1000, day.dayBase),
+        // Today: never show a leave-by in the past (matches buildCurrentCoordTravelLeg).
+        // Future days: floor at midnight so overnight commute math stays on that day.
+        start:Math.max(
+          row.start - (edge.seconds || 0) * 1000,
+          day.isToday ? Date.now() : day.dayBase
+        ),
         end:row.start,
         provider:edge.provider || mode
       });
