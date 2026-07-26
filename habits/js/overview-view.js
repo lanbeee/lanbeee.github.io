@@ -281,14 +281,14 @@ function hideOverviewStretchChrome(){
 
 // PURE: short duration label for insight chips
 function overviewMinutesLabel(minutes){
-  if(typeof capacityMinutesLabel === 'function')return capacityMinutesLabel(minutes);
-  if(typeof formatFreeDuration === 'function')return formatFreeDuration(minutes);
   const m = Math.max(0,Math.round(Number(minutes) || 0));
-  const h = Math.floor(m / 60);
-  const r = m % 60;
-  if(!h)return `${r}m`;
-  if(!r)return `${h}h`;
-  return `${h}h ${r}m`;
+  if(m < 60)return `${m}m`;
+  const hours = m / 60;
+  if(hours < 4){
+    const rounded = Math.round(hours * 2) / 2;
+    return Number.isInteger(rounded) ? `${rounded}h` : `${rounded.toFixed(1)}h`;
+  }
+  return `${Math.round(hours)}h`;
 }
 
 // PURE: weekday short label for a day key

@@ -2063,10 +2063,14 @@ function openSlippedSheet(items,dayLabel){
 }
 
 function formatFreeDuration(minutes){
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if(h <= 0)return `${m}m`;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const m = Math.max(0, Math.round(minutes));
+  if(m < 60)return `${m}m`;
+  const hours = m / 60;
+  if(hours < 4){
+    const rounded = Math.round(hours * 2) / 2;
+    return Number.isInteger(rounded) ? `${rounded}h` : `${rounded.toFixed(1)}h`;
+  }
+  return `${Math.round(hours)}h`;
 }
 
 
