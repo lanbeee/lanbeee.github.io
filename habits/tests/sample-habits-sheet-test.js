@@ -103,6 +103,7 @@ function assert(cond, msg){
     const byHid = hids => data.filter(h => hids.includes(h.hid));
     const added = byHid(['sample-feature-water','sample-feature-timed-run']);
     const waterBtn = document.querySelector('#sample-habits-preview [data-add-sample="sample-feature-water"]');
+    const samplePlaces = (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-'));
     return {
       addedCount: added.length,
       addedAreSample: added.every(h => h.sample === false),
@@ -110,7 +111,8 @@ function assert(cond, msg){
       sheetOpen: document.getElementById('sample-habits-sheet')?.classList.contains('open'),
       waterLabel: waterBtn?.textContent?.trim(),
       waterDisabled: waterBtn?.disabled === true,
-      placeCount: (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
+      placeCount: samplePlaces.length,
+      placeIds: samplePlaces.map(l => l.id)
     };
   });
   console.log(afterFew);
@@ -119,7 +121,7 @@ function assert(cond, msg){
   assert(afterFew.addedAreSample, 'individually added demos are not marked as sample');
   assert(afterFew.addedNames.every(n => !n.startsWith('Sample: ')), 'individually added demos have no Sample: prefix');
   assert(afterFew.waterLabel === 'added' && afterFew.waterDisabled, 'added row shows added state');
-  assert(afterFew.placeCount >= 1, 'places seeded when a place demo is added');
+  assert(afterFew.placeCount === 1 && afterFew.placeIds[0] === 'sample-park', 'only places referenced by added demos are seeded');
 
   console.log('\n[D] Add all demos fills the rest');
   await page.locator('#sample-habits-add').click();
@@ -128,20 +130,51 @@ function assert(cond, msg){
     const data = load();
     const samples = data.filter(h => h.sample);
     const prayers = samples.filter(h => String(h.hid || '').startsWith('sample-prayer-'));
+    const samplePlaces = (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-'));
     return {
       sampleCount: samples.length,
       prayerCount: prayers.length,
       hasSunrise: samples.some(h => h.allowedTimeStartAnchor === 'sunrise'),
       hasBreakable: samples.some(h => h.breakable),
-      sheetClosed: !document.getElementById('sample-habits-sheet')?.classList.contains('open')
+      sheetClosed: !document.getElementById('sample-habits-sheet')?.classList.contains('open'),
+      placeCount: samplePlaces.length
     };
   });
   console.log(afterTour);
   assert(afterTour.sheetClosed, 'sample sheet closes after add all');
   assert(afterTour.sampleCount >= 8 && afterTour.prayerCount === 0, 'feature samples filled without prayers');
   assert(afterTour.hasSunrise && afterTour.hasBreakable, 'showcase fields present');
+  assert(afterTour.placeCount >= 6, 'add-all demos seeds all referenced sample places');
 
-  console.log('\n[E] Expand + add one prayer, then all');
+  console.log('\n[E] Prayer add requires home city, then seeds no places');
+  await page.locator('#open-about').click();
+  await page.locator('#open-sample-habits').click();
+  await page.waitForSelector('#sample-habits-sheet.open');
+  await page.locator('#sample-prayers-head').click();
+  await page.waitForSelector('#sample-prayers-body:not([hidden])');
+  // No city yet → blocked, redirected to Settings → Locations.
+  await page.locator('#sample-prayers-preview [data-add-sample="sample-prayer-fajr"]').click();
+  await page.waitForTimeout(400);
+  const blockedPrayer = await page.evaluate(() => ({
+    fajrExists: load().some(h => (h.hid || '') === 'sample-prayer-fajr'),
+    settingsOpen: document.getElementById('settings-sheet')?.classList.contains('open'),
+    locationsOpen: document.getElementById('settings-locations-body')
+      ? !document.getElementById('settings-locations-body').hidden
+      : false,
+    placeCount: (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
+  }));
+  console.log(blockedPrayer);
+  assert(!blockedPrayer.fajrExists, 'prayer not added without home city');
+  assert(blockedPrayer.settingsOpen && blockedPrayer.locationsOpen, 'opens Settings → Locations to set city');
+
+  await page.evaluate(() => {
+    updateSortSetting({
+      homeCityName:'New York, United States',
+      homeCityLat:40.7128,
+      homeCityLng:-74.0060
+    },{renderNow:false,sync:false});
+  });
+  await page.locator('#settings-close').click();
   await page.locator('#open-about').click();
   await page.locator('#open-sample-habits').click();
   await page.waitForSelector('#sample-habits-sheet.open');
@@ -152,15 +185,18 @@ function assert(cond, msg){
   const afterOnePrayer = await page.evaluate(() => {
     const fajr = load().find(h => (h.hid || '') === 'sample-prayer-fajr');
     const fajrBtn = document.querySelector('#sample-prayers-preview [data-add-sample="sample-prayer-fajr"]');
+    const s = loadSortSettings();
     return {
       fajrExists: !!fajr,
       fajrIsSample: fajr ? fajr.sample : null,
       sheetOpen: document.getElementById('sample-habits-sheet')?.classList.contains('open'),
-      fajrAdded: fajrBtn?.textContent?.trim() === 'added'
+      fajrAdded: fajrBtn?.textContent?.trim() === 'added',
+      placeCount: (s.locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
     };
   });
   console.log(afterOnePrayer);
   assert(afterOnePrayer.fajrExists && afterOnePrayer.fajrIsSample === false && afterOnePrayer.sheetOpen && afterOnePrayer.fajrAdded, 'single prayer add keeps sheet open, not marked sample');
+  assert(afterOnePrayer.placeCount >= 6, 'prayer add does not seed extra sample places');
 
   await page.locator('#sample-prayers-add').click();
   await page.waitForTimeout(500);
@@ -175,7 +211,8 @@ function assert(cond, msg){
       featureCount: features.length,
       sampleNames: samplePrayers.map(h => h.name),
       fajrName: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr')?.name,
-      fajrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr')
+      fajrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr'),
+      placeCount: (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
     };
   });
   console.log(afterPrayers);
@@ -188,20 +225,31 @@ function assert(cond, msg){
     afterPrayers.sampleNames.every(n => /^Sample: (Dhuhr|Asr|Maghrib|Isha)$/.test(n)),
     'bulk-added prayer samples use Islamic names with Sample: prefix'
   );
+  assert(afterPrayers.placeCount >= 6, 'add-all prayers still seeds no extra places');
 
-  console.log('\n[F] Keep one prayer — survives remove samples');
+  console.log('\n[F] Keep one prayer — survives remove samples; city clear blocked');
   const keepResult = await page.evaluate(() => {
     const idx = load().findIndex(h => h.sample && (h.hid || '') === 'sample-prayer-dhuhr');
     keepSampleHabit(idx);
     const dhuhr = load().find(h => (h.hid || '') === 'sample-prayer-dhuhr');
     removeSortSamples();
     const after = load();
+    const beforeCity = {
+      name: loadSortSettings().homeCityName,
+      lat: loadSortSettings().homeCityLat
+    };
+    clearHomeCity();
+    const afterCity = {
+      name: loadSortSettings().homeCityName,
+      lat: loadSortSettings().homeCityLat
+    };
     return {
       keptName: dhuhr && dhuhr.name,
       keptSample: dhuhr && dhuhr.sample,
       remainingSamples: after.filter(h => h.sample).length,
       dhuhrStillThere: after.some(h => (h.hid || '') === 'sample-prayer-dhuhr' && !h.sample),
-      fajrStillThere: after.some(h => (h.hid || '') === 'sample-prayer-fajr' && !h.sample)
+      fajrStillThere: after.some(h => (h.hid || '') === 'sample-prayer-fajr' && !h.sample),
+      cityBlocked: beforeCity.lat === afterCity.lat && beforeCity.name === afterCity.name && Number.isFinite(afterCity.lat)
     };
   });
   console.log(keepResult);
@@ -209,6 +257,7 @@ function assert(cond, msg){
   assert(keepResult.keptSample === false && keepResult.dhuhrStillThere, 'kept Dhuhr survives remove samples');
   assert(keepResult.fajrStillThere, 'individually added Fajr (non-sample) also survives');
   assert(keepResult.remainingSamples === 0, 'unkept samples removed');
+  assert(keepResult.cityBlocked, 'clearHomeCity blocked while prayer habits rely on city');
 
   console.log('\n[G] Blank home still opens sample habits');
   await page.evaluate(() => {

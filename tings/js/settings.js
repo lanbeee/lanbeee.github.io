@@ -747,13 +747,64 @@ function addLocation({name,address,lat,lng,emoji}){
   return id;
 }
 
+// PURE: habits that still reference a place id (locationIds / preferred / prefs).
+function habitsUsingLocationId(locId, data){
+  const id = cleanLocationId(locId);
+  if(!id)return [];
+  const list = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  return list.filter(h=>{
+    if(!h)return false;
+    const ids = Array.isArray(h.locationIds) ? h.locationIds : [];
+    if(ids.some(x => cleanLocationId(x) === id))return true;
+    if(cleanLocationId(h.preferredLocationId) === id)return true;
+    if(h.locationPrefs && typeof h.locationPrefs === 'object' && Object.prototype.hasOwnProperty.call(h.locationPrefs, id)){
+      return true;
+    }
+    return false;
+  });
+}
+
+// PURE: habits that rely on home city for prayer windows (anchors, no places).
+function habitsUsingHomeCity(data){
+  const list = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  return list.filter(h=>{
+    if(typeof habitUsesPrayerAnchors !== 'function' || !habitUsesPrayerAnchors(h))return false;
+    const ids = Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : [];
+    return ids.length === 0;
+  });
+}
+
+// PURE: short toast listing habit names that block a destructive settings action.
+function habitsInUseToast(prefix, habits){
+  const names = (habits || []).map(h=>{
+    if(typeof sampleDisplayName === 'function'){
+      const n = sampleDisplayName(h);
+      if(n)return n;
+    }
+    return (h && h.name) || 'habit';
+  }).filter(Boolean);
+  if(!names.length)return prefix;
+  const shown = names.slice(0,4);
+  const more = names.length > shown.length ? ` +${names.length - shown.length}` : '';
+  return `${prefix}: ${shown.join(', ')}${more}`;
+}
+
 // HYBRID: remove a location, prune its travel edges, and sweep the dangling id
 // off every habit (locationIds + preferredLocationId). Resets any location
-// filter that pointed at it (Phase 5 globals, guarded).
+// filter that pointed at it (Phase 5 globals, guarded). Blocked when any habit
+// still references the place — user must clear those habits first.
 function removeLocation(index){
   const locations = normalizeLocationRegistry(sortSettings.locations);
   const removed = locations[index];
   if(!removed)return;
+  const users = habitsUsingLocationId(removed.id);
+  if(users.length){
+    const label = removed.name || 'place';
+    if(typeof showToast === 'function'){
+      showToast(habitsInUseToast(`can't remove ${label} — still used by`, users));
+    }
+    return;
+  }
   reindexSetAfterRemoval(expandedLocationMores,index);
   reindexSetAfterRemoval(pendingLocationHoursEdit,index);
   locations.splice(index,1);
@@ -1479,8 +1530,9 @@ function buildSortSamples(){
   ];
 }
 
-// PURE: five daily prayer demos (optional pack)
-// Always use Islamic names (Fajr–Isha), independent of Settings prayerIslamicNames.
+// PURE: five daily prayer demos (optional pack). No sample places — windows
+// resolve from Settings home city (homeCityLat/Lng). Always use Islamic names
+// (Fajr–Isha), independent of Settings prayerIslamicNames.
 function buildPrayerSamples(){
   const label = (key)=>{
     if(typeof PRAYER_ANCHOR_LABELS !== 'undefined' && PRAYER_ANCHOR_LABELS[key]){
@@ -1510,37 +1562,70 @@ function buildPrayerSamples(){
   }));
 }
 
-// HYBRID: merge sample places + topics into settings (shared by feature / prayer add)
+// PURE: sample place ids referenced by habits about to be added.
+function sampleLocationIdsReferenced(samples){
+  const ids = new Set();
+  (samples || []).forEach(h=>{
+    if(!h)return;
+    (Array.isArray(h.locationIds) ? h.locationIds : []).forEach(id=>{
+      const clean = cleanLocationId(id);
+      if(clean)ids.add(clean);
+    });
+    const pref = cleanLocationId(h.preferredLocationId);
+    if(pref)ids.add(pref);
+    if(h.locationPrefs && typeof h.locationPrefs === 'object'){
+      Object.keys(h.locationPrefs).forEach(id=>{
+        const clean = cleanLocationId(id);
+        if(clean)ids.add(clean);
+      });
+    }
+  });
+  return ids;
+}
+
+// HYBRID: merge sample places + topics into settings (shared by feature / prayer add).
+// Only seeds sample locations referenced by the habits being added — prayer-only
+// packs seed topics and never touch the place registry or lastKnownLocationId.
 function seedSamplePlacesAndTopics(samples,{setPresence = true} = {}){
-  const sampleLocs = buildSampleLocations();
+  const neededIds = sampleLocationIdsReferenced(samples);
   const existing = normalizeLocationRegistry(sortSettings.locations);
   const byId = new Map(existing.map(l=>[l.id,l]));
+  const sampleLocs = buildSampleLocations().filter(loc => neededIds.has(loc.id));
   sampleLocs.forEach(loc=>{ if(!byId.has(loc.id))byId.set(loc.id,loc); });
   const locations = normalizeLocationRegistry([...byId.values()]);
-  const BLOCK_LOCATION = {
-    sleep:'sample-home', breakfast:'sample-home', dinner:'sample-home',
-    work:'sample-office', lunch:'sample-office'
-  };
-  const patchedBlocks = normalizeBlockedTimes(sortSettings.blockedTimes).map(b=>{
-    const label = (b.label || '').toLowerCase();
-    const loc = BLOCK_LOCATION[label];
-    if(loc && !b.locationId)return {...b,locationId:loc};
-    return b;
-  });
   const existingTopics = new Set(normalizeTopics(sortSettings.topics || []));
-  samples.forEach(h=>(h.topics || []).forEach(t=>{ if(t)existingTopics.add(t); }));
+  (samples || []).forEach(h=>(h.topics || []).forEach(t=>{ if(t)existingTopics.add(t); }));
   const topics = normalizeTopics([...existingTopics]);
   const patch = {
-    locations,
     topics,
-    showLocationOnCards:true,
-    showSampleOnCards:true,
-    defaultTravelMode:sortSettings.defaultTravelMode || 'walking',
-    blockedTimes:patchedBlocks
+    showSampleOnCards:true
   };
-  if(setPresence)patch.lastKnownLocationId = sortSettings.lastKnownLocationId || 'sample-home';
+  if(neededIds.size){
+    const BLOCK_LOCATION = {
+      sleep:'sample-home', breakfast:'sample-home', dinner:'sample-home',
+      work:'sample-office', lunch:'sample-office'
+    };
+    const patchedBlocks = normalizeBlockedTimes(sortSettings.blockedTimes).map(b=>{
+      const label = (b.label || '').toLowerCase();
+      const loc = BLOCK_LOCATION[label];
+      if(loc && !b.locationId && byId.has(loc))return {...b,locationId:loc};
+      return b;
+    });
+    patch.locations = locations;
+    patch.showLocationOnCards = true;
+    patch.defaultTravelMode = sortSettings.defaultTravelMode || 'walking';
+    patch.blockedTimes = patchedBlocks;
+    if(setPresence && !sortSettings.lastKnownLocationId){
+      if(neededIds.has('sample-home') || byId.has('sample-home')){
+        patch.lastKnownLocationId = 'sample-home';
+      }else{
+        const first = [...neededIds][0];
+        if(first)patch.lastKnownLocationId = first;
+      }
+    }
+  }
   updateSortSetting(patch,{renderNow:false,sync:false});
-  return {locations, topics};
+  return {locations, topics, seededLocationIds:[...neededIds]};
 }
 
 // PURE: look up a catalog sample by hid
@@ -1583,11 +1668,46 @@ function commitSampleHabits(samples,{setPresence = true, closeSheets = false, to
   return true;
 }
 
+// PURE: home city has usable coords for prayer timing.
+function hasHomeCityCoords(settings){
+  const s = settings || sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  return Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng);
+}
+
+// HYBRID: open Settings → Locations with the city field focused (prayer sample gate).
+function openHomeCitySettings(){
+  closeSheet('sample-habits-sheet');
+  closeSheet('about-sheet');
+  if(typeof resetSettingsSheetState === 'function')resetSettingsSheetState();
+  if(typeof syncSettingsControls === 'function')syncSettingsControls();
+  openSheet('settings-sheet');
+  const head = $('settings-locations-head');
+  const body = $('settings-locations-body');
+  if(body)body.hidden = false;
+  if(head)head.setAttribute('aria-expanded','true');
+  const input = $('home-city-input');
+  if(input){
+    try{ input.focus({preventScroll:false}); }catch(_){ input.focus(); }
+    if(typeof input.scrollIntoView === 'function')input.scrollIntoView({block:'center', behavior:'smooth'});
+  }
+}
+
+// HYBRID: prayer samples need a home city before add. Opens the city flow when missing.
+function ensureHomeCityForPrayerSamples(){
+  if(hasHomeCityCoords())return true;
+  if(typeof showToast === 'function'){
+    showToast('set your city in Settings → Locations first');
+  }
+  openHomeCitySettings();
+  return false;
+}
+
 // HANDLER: add a single feature or prayer sample (sheet stays open)
 function addOneSample(hid){
   const sample = findCatalogSample(hid);
   if(!sample)return false;
   const isPrayer = String(hid || '').startsWith('sample-prayer-');
+  if(isPrayer && !ensureHomeCityForPrayerSamples())return false;
   sample.sample = false;
   if(typeof sample.name === 'string' && sample.name.startsWith('Sample: ')){
     sample.name = sample.name.slice('Sample: '.length);
@@ -1618,8 +1738,9 @@ function addSortSamples({closeSheets = true} = {}){
   });
 }
 
-// HANDLER: add optional daily prayer samples
+// HANDLER: add optional daily prayer samples (home city required; no sample places)
 function addPrayerSamples({closeSheets = true} = {}){
+  if(!ensureHomeCityForPrayerSamples())return;
   const have = new Set(load().map(h => h.hid).filter(Boolean));
   const samples = buildPrayerSamples().filter(h => !have.has(h.hid));
   if(!samples.length){
@@ -1771,6 +1892,13 @@ async function setHomeCity(){
 }
 
 function clearHomeCity(){
+  const users = habitsUsingHomeCity();
+  if(users.length){
+    if(typeof showToast === 'function'){
+      showToast(habitsInUseToast("can't clear city — still used by", users));
+    }
+    return;
+  }
   updateSortSetting({homeCityName:'', homeCityLat:null, homeCityLng:null});
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
   syncHomeCityStatus();

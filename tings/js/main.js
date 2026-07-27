@@ -1119,15 +1119,16 @@ $('detail-save').addEventListener('click',()=>{
     showToast('pick a second time for later/earlier of');
     return;
   }
-  // Block: dynamic prayer anchors need a location to resolve against. The
-  // habit's own locations are preferred, but "anywhere" habits may resolve
-  // against the running agenda anchor / last known GPS location — so we only
-  // block when the user has NO saved location at all. Habit-anchors don't need
-  // a location (they resolve from another habit's log).
+  // Block: dynamic prayer anchors need coords to resolve against. Prefer the
+  // habit's own places; "anywhere" habits use the home city (or fall back to
+  // a saved place / last known). Block only when neither city nor places exist.
+  // Habit-anchors don't need a location (they resolve from another habit's log).
   if(habitUsesPrayerAnchors(h) && !(h.locationIds && h.locationIds.length)){
-    const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
-    if(!registry.length){
-      showToast('add a location to use prayer times');
+    const s = sortSettings || loadSortSettings();
+    const hasCity = Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng);
+    const registry = normalizeLocationRegistry(s.locations);
+    if(!hasCity && !registry.length){
+      showToast('set your city to use prayer times');
       return;
     }
   }

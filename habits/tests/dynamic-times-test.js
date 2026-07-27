@@ -7,7 +7,7 @@
 //   • normalize edge cases (strip dangling habit ids, keep prayer alongside)
 //   • fillTimeWindow / effectiveLocationWindow / agendaBlockedIntervals
 //   • settings UI: blocked-time gear toggle requires location
-//   • detail UI: habit picker, save guards (missing habit / cycle / no location for prayer)
+//   • detail UI: habit picker, save guards (missing habit / cycle / no city for prayer)
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/dynamic-times-test.js
 //
@@ -455,18 +455,22 @@ async function toastText(page){
   await page.waitForTimeout(100);
   const habitWrapHidden = await startEp2.locator('.time-habit-wrap').evaluate(el => el.hidden);
   assert(habitWrapHidden === true, 'habit picker hides when switching to prayer');
-  // Clear the registry so the prayer-without-location guard fires. With a
-  // saved location present, anywhere+prayer is now allowed (it resolves via
-  // the lastKnown/registry fallback); the guard only blocks when the user
-  // has no location at all.
+  // Clear registry + home city so the anywhere-prayer guard fires. With a
+  // city or saved place present, anywhere+prayer is allowed; the guard only
+  // blocks when the user has neither.
   await page.evaluate(() => {
-    const s = loadSortSettings(); s.locations = []; saveSortSettings(s);
+    const s = loadSortSettings();
+    s.locations = [];
+    s.homeCityName = '';
+    s.homeCityLat = null;
+    s.homeCityLng = null;
+    saveSortSettings(s);
     if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
   });
   await page.locator('#detail-save').click();
   await page.waitForTimeout(400);
   toast = await toastText(page);
-  assert(toast.indexOf('location') >= 0, 'prayer without location + empty registry → toast (' + toast + ')');
+  assert(toast.indexOf('city') >= 0, 'prayer without city + empty registry → toast (' + toast + ')');
   // Force-close so settings tests aren't blocked by an open sheet.
   await page.evaluate(() => {
     if(typeof closeDetail === 'function')closeDetail();

@@ -7,11 +7,13 @@
 //     (legacy migration + zero behaviour change for users who don't opt in);
 //   • each of the four endpoints can be independently switched to dynamic;
 //   • the resolver returns a finite minutes-from-midnight for a habit with
-//     a valid location + anchor; "anywhere" habits resolve via the running
-//     agenda anchor / lastKnown / registry[0] / home city fallback, null only
-//     when the user has no saved place and no home city;
+//     a valid location + anchor; when a home city is set it wins for all
+//     prayer timing; otherwise "anywhere" habits resolve via the running
+//     agenda anchor / lastKnown / registry[0], null only when the user has
+//     no saved place and no home city;
 //   • home city alone (no places / GPS) is enough for prayer timings;
-//   • the save path blocks prayer anchors only when the registry is empty.
+//   • the save path blocks anywhere prayer anchors only when neither city
+//     nor places exist.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/prayer-times-test.js
 //
@@ -187,6 +189,9 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
       {id:'gym',  name:'Gym',  lat:40.8, lng:-73.9},
       {id:'office', name:'Office', lat:40.9, lng:-73.8}
     ];
+    s.homeCityName = '';
+    s.homeCityLat = null;
+    s.homeCityLng = null;
     saveSortSettings(s);
   });
   const loc = await page.evaluate(() => ({
@@ -196,7 +201,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     preferred: habitPrayerLocation({locationIds:['gym','home'], locationPrefs:{home:'high'}})?.id,
     legacyPref: habitPrayerLocation({locationIds:['gym','home'], preferredLocationId:'gym'})?.id,
     dangling: habitPrayerLocation({locationIds:['xxx']})?.id,
-    // "Anywhere" fallback chain: contextLocId wins, then lastKnown, then registry[0].
+    // "Anywhere" fallback chain (no home city): contextLocId wins, then lastKnown, then registry[0].
     ctxWins: habitPrayerLocation({locationIds:[]}, null, 'gym')?.id,
     lastKnown: (() => {
       const s = loadSortSettings(); s.lastKnownLocationId = 'office'; saveSortSettings(s);
@@ -224,6 +229,21 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
       s.homeCityLng = saved.homeCityLng;
       saveSortSettings(s);
       return r;
+    })(),
+    // Home city wins over habit places and context when set.
+    cityWins: (() => {
+      const s = loadSortSettings();
+      s.homeCityName = 'Karachi';
+      s.homeCityLat = 24.86;
+      s.homeCityLng = 67.00;
+      saveSortSettings(s);
+      const withPlace = habitPrayerLocation({locationIds:['gym']})?.id;
+      const anywhere = habitPrayerLocation({locationIds:[]}, null, 'office')?.id;
+      s.homeCityName = '';
+      s.homeCityLat = null;
+      s.homeCityLng = null;
+      saveSortSettings(s);
+      return {withPlace, anywhere};
     })()
   }));
   assert(loc.none === 'home', 'anywhere habit falls back to first registry location');
@@ -235,6 +255,8 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(loc.ctxWins === 'gym', 'contextLocId (running anchor) wins for anywhere habits');
   assert(loc.lastKnown === 'office', 'lastKnownLocationId used when no context');
   assert(loc.emptyRegistry === null, 'anywhere + empty registry + no city → null');
+  assert(loc.cityWins.withPlace === '__home_city__', 'home city wins over habit locationIds');
+  assert(loc.cityWins.anywhere === '__home_city__', 'home city wins over contextLocId');
 
   // ── G. resolveHabitTimeField with real adhan.js ──
   console.log('\n[G] resolveHabitTimeField against adhan');

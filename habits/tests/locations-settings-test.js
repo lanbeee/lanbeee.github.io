@@ -2,8 +2,7 @@
 //
 // Exercises the full registry manager: geocode add, manual hour editing,
 // closed-days, per-day overrides, preferred time, 24h toggle, GPS add, and the
-// dangling-id sweep on remove. Network (Nominatim) and geolocation are mocked
-// so the suite is deterministic and offline-safe.
+// in-use guard on remove (places referenced by habits cannot be deleted).
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/locations-settings-test.js
 //
@@ -340,8 +339,8 @@ async function openSettings(page){
   assert(/on/i.test(accessAfter.statusText), 'access status shows on');
   assert(accessAfter.sheetOpen === false, 'permission sheet closes after allow');
 
-  // ── I. Dangling-id sweep on remove ──
-  console.log('\n[I] remove location → dangling-id sweep');
+  // ── I. In-use location cannot be removed; unused can ──
+  console.log('\n[I] remove location → in-use guard');
   // Seed a habit referencing the first location's id.
   const firstId = await page.evaluate(() => loadSortSettings().locations[0].id);
   await page.evaluate(id => {
@@ -349,7 +348,25 @@ async function openSettings(page){
     data.push({ name:'sweep-test', type:'keepup', target:7, logs:[], locationIds:[id], preferredLocationId:id });
     save(data);
   }, firstId);
-  // Remove the first location (index 0).
+  // Remove should be blocked while the habit still references the place.
+  await page.locator('[data-loc-remove="0"]').click();
+  await page.waitForTimeout(250);
+  const blocked = await page.evaluate(() => {
+    const s = loadSortSettings();
+    const h = load().find(x => x.name === 'sweep-test');
+    return { locCount:s.locations.length, habitLocIds:h.locationIds, habitPref:h.preferredLocationId };
+  });
+  console.log(blocked);
+  assert(blocked.locCount === 2, 'in-use location not removed');
+  assert(JSON.stringify(blocked.habitLocIds) === JSON.stringify([firstId]), 'habit locationIds unchanged');
+  assert(blocked.habitPref === firstId, 'preferred unchanged while blocked');
+  // Clear the habit's place refs, then remove succeeds.
+  await page.evaluate(() => {
+    const data = load();
+    const h = data.find(x => x.name === 'sweep-test');
+    if(h){ h.locationIds = []; h.preferredLocationId = null; h.locationPrefs = {}; }
+    save(data);
+  });
   await page.locator('[data-loc-remove="0"]').click();
   await page.waitForTimeout(250);
   const after = await page.evaluate(() => {
@@ -358,9 +375,9 @@ async function openSettings(page){
     return { locCount:s.locations.length, habitLocIds:h.locationIds, habitPref:h.preferredLocationId };
   });
   console.log(after);
-  assert(after.locCount === 1, 'registry down to 1 after remove');
-  assert(JSON.stringify(after.habitLocIds) === JSON.stringify([]), 'removed id swept off the habit');
-  assert(after.habitPref === null, 'preferred referencing removed location nulled');
+  assert(after.locCount === 1, 'registry down to 1 after unused remove');
+  assert(JSON.stringify(after.habitLocIds) === JSON.stringify([]), 'habit still has empty locationIds');
+  assert(after.habitPref == null, 'preferred still null');
 
   // ── J. Travel edges referencing the removed location are pruned ──
   console.log('\n[J] travel-edge prune on remove');

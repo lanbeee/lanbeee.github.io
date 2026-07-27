@@ -91,20 +91,22 @@ function prayerParams(settings){
 }
 
 // PURE: the Location to use for prayer-time calculation on this habit.
-// Per the spec: the user said the location tied to the habit must be there
-// and the first allowed/preferred location should be used. Resolution order:
+// When a home city is set, prefer it for all dynamic prayer timings (one
+// city-level calculation instead of per-place). Otherwise:
 //   1. habit's preferred (high/little/legacy) location, if it's still allowed
 //   2. first entry in habit.locationIds
-//   3. null — caller decides (save path blocks; reader treats anchor as unset)
-//
-// "Anywhere" habits (empty locationIds) with prayer anchors resolve against
-// `contextLocId` — the running agenda anchor (last location before the task) —
-// then fall back to the user's last known GPS location, then the first saved
-// location. This lets a habit be place-agnostic yet still tie its dynamic
-// time to wherever the user actually is in the day's plan.
+//   3. for empty locationIds ("anywhere"): contextLocId → lastKnown → registry[0]
+//   4. null — caller decides (save path blocks; reader treats anchor as unset)
 function habitPrayerLocation(h, settings, contextLocId){
   if(!h)return null;
   const s = settings || sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  if(Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng)){
+    return {id:'__home_city__', lat:s.homeCityLat, lng:s.homeCityLng, name:s.homeCityName || 'Home city'};
+  }
+  // Legacy prayer-city keys (pre-home-city rename).
+  if(Number.isFinite(s.prayerCityLat) && Number.isFinite(s.prayerCityLng)){
+    return {id:'__home_city__', lat:s.prayerCityLat, lng:s.prayerCityLng, name:s.prayerCityName || 'Home city'};
+  }
   const registry = normalizeLocationRegistry(s.locations);
   const ids = normalizeLocationIds(h.locationIds, registry);
   if(ids.length){
@@ -116,13 +118,6 @@ function habitPrayerLocation(h, settings, contextLocId){
   const fbId = cleanLocationId(contextLocId) || cleanLocationId(s.lastKnownLocationId) || null;
   const fb = fbId ? registry.find(l => l.id === fbId) : null;
   if(fb || registry[0])return fb || registry[0];
-  if(Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng)){
-    return {id:'__home_city__', lat:s.homeCityLat, lng:s.homeCityLng, name:s.homeCityName || 'Home city'};
-  }
-  // Legacy prayer-city keys (pre-home-city rename).
-  if(Number.isFinite(s.prayerCityLat) && Number.isFinite(s.prayerCityLng)){
-    return {id:'__home_city__', lat:s.prayerCityLat, lng:s.prayerCityLng, name:s.prayerCityName || 'Home city'};
-  }
   return null;
 }
 
