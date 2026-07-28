@@ -281,13 +281,32 @@ async function stickyState(page, headerSel){
 
   // ── C. Drift tap (forgiving path) ──
   console.log('\n[C] Drift tap (~20px) on open pill');
+  await closeFreeSheet(page);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await sleep(150);
-  const driftPill = page.locator('.free-pill').nth(Math.min(1, freeCount - 1));
-  await driftPill.scrollIntoViewIfNeeded();
-  await sleep(150);
-  pt = await pillCenter(page, `.free-pill >> nth=${Math.min(1, freeCount - 1)}`);
-  await cdpTapWithDrift(client, pt.x, pt.y, 20, 4);
+  await sleep(200);
+  // Measure and return coordinates in one turn — sticky/layout can shift scrollY
+  // between a paused measure and the CDP gesture, landing the tap on a card.
+  const driftIdx = Math.min(freeCount - 1, 1);
+  const driftTarget = await page.evaluate((idx) => {
+    const pill = document.querySelectorAll('.free-pill')[idx];
+    if(!pill)return { ok:false, tag:'missing' };
+    pill.scrollIntoView({ block:'center', inline:'nearest' });
+    const mid = (window.innerHeight || 844) * 0.4;
+    let r = pill.getBoundingClientRect();
+    window.scrollBy(0, r.top + r.height / 2 - mid);
+    r = pill.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    const el = document.elementFromPoint(x, y);
+    return {
+      ok: !!(el && el.closest && el.closest('.free-pill')),
+      x, y,
+      tag: el ? (el.className || el.tagName) : 'none',
+      vh: window.innerHeight
+    };
+  }, driftIdx);
+  assert(driftTarget.ok, `drift target hits free-pill (got ${driftTarget.tag})`);
+  await cdpTapWithDrift(client, driftTarget.x, driftTarget.y, 20, 4);
   await waitSheetOpen(page, '#free-time-sheet', '20px drift tap opens open-time sheet');
   await sleep(250);
   assert(

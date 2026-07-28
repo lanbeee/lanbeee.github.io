@@ -634,7 +634,8 @@ body.fullpage-open .bottom-nav{
   color:var(--amber-text);background:var(--amber-bg);
   border-radius:6px;padding:6px 9px;cursor:pointer;margin:0;
   position:relative;
-  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  /* none: keep finger drift from being claimed as a page pan (sticky headers). */
+  -webkit-tap-highlight-color:transparent;touch-action:none;
 }
 /* Invisible hit pad so near-misses on sticky day headers still land on the pill. */
 .dropped-pill::before{
@@ -680,7 +681,8 @@ body.fullpage-open .bottom-nav{
   color:var(--teal-text);background:var(--teal-bg);
   border-radius:6px;padding:6px 9px;cursor:pointer;margin:0;
   position:relative;
-  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  /* none: keep finger drift from being claimed as a page pan (sticky headers). */
+  -webkit-tap-highlight-color:transparent;touch-action:none;
 }
 .free-pill::before{
   content:"";position:absolute;inset:-12px -4px -12px -14px;
@@ -976,6 +978,10 @@ body.reach-pad #list{padding-top:220px;}
 .sample-habits-add-row{margin-top:2px;}
 .sample-prayers-block{margin-top:4px;}
 .sample-prayers-block .sample-habits-list{margin:8px 0 4px;}
+.sample-habits-sheet.scrolling .sample-habit-add,
+.sample-habits-sheet.scrolling .sample-habits-add-row .btn{
+  pointer-events:none;
+}
 @media (pointer:coarse){
   .breakable-crown{height:38px;}
   .breakable-progress-label{font-size:13px;}

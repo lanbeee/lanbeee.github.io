@@ -1,7 +1,7 @@
 // Massive tight-capacity week packing for daily + multi-times-per-week habits.
 //
 // Reproduces the reported failure mode:
-//   - Capacity is set via availabilityMinutes only (no blocked-time carve-outs).
+//   - Capacity is set via availabilityOverrides only (no blocked-time carve-outs).
 //   - Space exists, but only narrowly — the planner must pack diligently.
 //   - Daily habits (target:1) must appear on EVERY day of the week.
 //   - Multi-times habits (2×/7d, 3×/7d, every-3-days) must land the expected
@@ -38,6 +38,9 @@
 // "preferred time" used to make tomorrow score better than today, so the
 // greedy first-placement skipped today and never backfilled.
 //
+// Capacity uses per-day availabilityOverrides (weekly availabilityMinutes is
+// unused). Tests seed overrides for the frozen week at the intended budget.
+//
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/tight-rhythm-capacity-test.js
 
 const { chromium } = require('playwright');
@@ -45,6 +48,19 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 // Fixed Monday 6am local — weekday 1, mid-morning clip on today.
 const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
+
+/** Per-day overrides for `days` starting at frozen midnight (local). */
+function weekCapacityOverrides(frozen, mins, days = 14) {
+  const out = {};
+  const start = new Date(frozen);
+  start.setHours(12, 0, 0, 0);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start.getTime() + i * 86400000);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    out[key] = Array.isArray(mins) ? mins[d.getDay()] : mins;
+  }
+  return out;
+}
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -88,7 +104,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     'W2 call mom'      // 2×/7d, 20m
   ];
 
-  const result = await page.evaluate(({ frozen, dailies, multi }) => {
+  const result = await page.evaluate(({frozen, dailies, multi , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -141,8 +157,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
       // Capacity via availability only — no blocked times (the "block hours
       // feel too rigid" setup the user wants to rely on).
       const settings = Object.assign({}, loadSortSettings(), {
-        availabilityMinutes: [110, 110, 110, 110, 110, 110, 110],
-        availabilityOverrides: {},
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: capacityOverrides,
         blockedTimes: [],
         showWeekOnHome: true,
         showDueHabitsInAgenda: true,
@@ -252,7 +268,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN, dailies: DAILIES, multi: MULTI });
+  }, { frozen: FROZEN, dailies: DAILIES, multi: MULTI, capacityOverrides: weekCapacityOverrides(FROZEN, 110) });
 
   console.log('\n[tight-rhythm] null preferred must not resolve as midnight');
   check('preferredTimeStart null stays unresolved (not 0)',
@@ -358,7 +374,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
 
   // ── Second scenario: even tighter — exact fit, no multi slack ─────────
   console.log('\n[tight-rhythm-exact] dailies alone exactly fill each day');
-  const exact = await page.evaluate(({ frozen }) => {
+  const exact = await page.evaluate(({frozen , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -389,8 +405,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
       const data = normalize(names.map((name, i) =>
         mk({ name, target: 1, durationMinutes: 15, priority: i < 2 ? 1 : 2 })));
       const settings = Object.assign({}, loadSortSettings(), {
-        availabilityMinutes: [90, 90, 90, 90, 90, 90, 90],
-        availabilityOverrides: {},
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: capacityOverrides,
         blockedTimes: [],
         locations: [],
         lastKnownLocationId: null,
@@ -411,7 +427,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN });
+  }, { frozen: FROZEN, capacityOverrides: weekCapacityOverrides(FROZEN, 90) });
 
   for (const day of exact) {
     check(`exact day ${day.day} places all 6 dailies`,
@@ -424,7 +440,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
 
   // ── Third scenario: every habit-state variation under tight capacity ──
   console.log('\n[tight-rhythm-variations] new / late-log / mid-cycle / flex / done-today');
-  const variations = await page.evaluate(({ frozen }) => {
+  const variations = await page.evaluate(({frozen , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -511,8 +527,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
       const data = normalize(raw);
       const settings = Object.assign({}, loadSortSettings(), {
         // Narrow but enough for the due dailies (~50–60m) + a few multis.
-        availabilityMinutes: [120, 120, 120, 120, 120, 120, 120],
-        availabilityOverrides: {},
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: capacityOverrides,
         blockedTimes: [],
         locations: [],
         lastKnownLocationId: null,
@@ -581,7 +597,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN });
+  }, { frozen: FROZEN, capacityOverrides: weekCapacityOverrides(FROZEN, 120) });
 
   console.log('  diagnostics:', JSON.stringify(variations.diagnostics, null, 2));
   console.log('  counts:', JSON.stringify(variations.counts));
@@ -689,7 +705,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
 
   // ── Fourth scenario: late-log snap through logTing under week packing ──
   console.log('\n[tight-rhythm-late-log] logTing snap then rebuild week');
-  const lateLogLive = await page.evaluate(({ frozen }) => {
+  const lateLogLive = await page.evaluate(({frozen , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -707,8 +723,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
       const sunday11pm = todayBase - 86400000 + 23 * 3600000;
 
       const settings = Object.assign({}, loadSortSettings(), {
-        availabilityMinutes: [90, 90, 90, 90, 90, 90, 90],
-        availabilityOverrides: {},
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: capacityOverrides,
         blockedTimes: [],
         locations: [],
         lastKnownLocationId: null,
@@ -790,7 +806,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN });
+  }, { frozen: FROZEN, capacityOverrides: weekCapacityOverrides(FROZEN, 90) });
 
   console.log('  lateLogLive:', JSON.stringify(lateLogLive, null, 2));
 
@@ -824,7 +840,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
 
   // ── Fifth scenario: blocked hours + dynamic anchors + mixed windows ──
   console.log('\n[tight-rhythm-blocked] sleep/meals/work/sunset carve gaps; habits must pack into them');
-  const blocked = await page.evaluate(({ frozen }) => {
+  const blocked = await page.evaluate(({frozen , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -993,8 +1009,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
       const settings = Object.assign({}, loadSortSettings(), {
         // Tight vs fragmented open time — availability is the soft budget;
         // blocks carve the hard gaps.
-        availabilityMinutes: [180, 180, 180, 180, 180, 240, 240],
-        availabilityOverrides: {},
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: capacityOverrides,
         locations: [{ id: HOME, name: 'Home', lat: 40.734852, lng: -74.003584 }],
         lastKnownLocationId: HOME,
         prayerMethod: 'NorthAmerica',
@@ -1235,7 +1251,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN });
+  }, { frozen: FROZEN, capacityOverrides: weekCapacityOverrides(FROZEN, [180, 180, 180, 180, 180, 240, 240]) });
 
   console.log('  counts:', JSON.stringify(blocked.counts));
   console.log('  maghribWin:', JSON.stringify(blocked.maghribWinMin));
@@ -1351,7 +1367,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
   // by higher-priority flex. Preferred-only habits used to stay off the agenda
   // every day (rem=0, evening open) until a manual plan forced them on.
   console.log('\n[tight-rhythm-pref-evening] preferred evening must not blank the whole week');
-  const prefEve = await page.evaluate(({ frozen }) => {
+  const prefEve = await page.evaluate(({frozen , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -1382,7 +1398,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
         emoji: '', pinned: false, topics: [], createdAt: frozen
       }));
       const settings = Object.assign({}, loadSortSettings(), {
-        availabilityMinutes: [80, 80, 80, 80, 80, 80, 80],
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: capacityOverrides,
         locations: [{ id: HOME, name: 'Home', lat: 40.734852, lng: -74.003584 }],
         lastKnownLocationId: HOME,
         prayerMethod: 'NorthAmerica',
@@ -1438,7 +1455,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN });
+  }, { frozen: FROZEN, capacityOverrides: weekCapacityOverrides(FROZEN, 80) });
 
   console.log('  pref-evening:', JSON.stringify({
     count: prefEve.count,
@@ -1461,7 +1478,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
   // still lands all 7 days. Then a partial log (40 of 90) re-packs the
   // leftover 50 under the same pressure (finish-up allowed under min).
   console.log('\n[tight-rhythm + breakable] big task shares slack with daily rhythm');
-  const breakableTogether = await page.evaluate(({ frozen, dailies }) => {
+  const breakableTogether = await page.evaluate(({frozen, dailies , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -1522,8 +1539,8 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
       ];
 
       const settings = Object.assign({}, loadSortSettings(), {
-        availabilityMinutes: [110, 110, 110, 110, 110, 110, 110],
-        availabilityOverrides: {},
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: capacityOverrides,
         blockedTimes: [],
         showWeekOnHome: true,
         showDueHabitsInAgenda: true,
@@ -1609,7 +1626,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN, dailies: DAILIES });
+  }, { frozen: FROZEN, dailies: DAILIES, capacityOverrides: weekCapacityOverrides(FROZEN, 110) });
 
   console.log('  breakable pieces:', JSON.stringify(breakableTogether.full.reportAll));
   console.log('  daily counts with breakable:', JSON.stringify(breakableTogether.full.dailyCounts));
@@ -1661,7 +1678,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
   // must still land TODAY (afternoon clip) and every other day — not once
   // on the emptiest tomorrow as a one-shot continuous block.
   console.log('\n[tight-rhythm + breakable daily] long work keepup every day incl. today');
-  const longDaily = await page.evaluate(({ frozen, dailies }) => {
+  const longDaily = await page.evaluate(({frozen, dailies , capacityOverrides }) => {
     const RealDate = Date;
     function FrozenDate(...args) {
       if (args.length === 0) return new RealDate(frozen);
@@ -1789,7 +1806,7 @@ const FROZEN = new Date(2026, 6, 20, 6, 0, 0, 0).getTime();
     } finally {
       globalThis.Date = orig;
     }
-  }, { frozen: FROZEN, dailies: DAILIES });
+  }, { frozen: FROZEN, dailies: DAILIES, capacityOverrides: {} });
 
   console.log('  long-daily:', JSON.stringify({
     todayHasWork: longDaily.todayHasWork,

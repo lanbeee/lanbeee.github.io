@@ -84,16 +84,37 @@ function assert(cond, msg){
       prayersCollapsed: prayersBody ? prayersBody.hidden : null,
       addAll: !!document.getElementById('sample-habits-add'),
       addPrayers: !!document.getElementById('sample-prayers-add'),
+      removeSamples: !!document.getElementById('remove-sort-samples'),
+      removeDisabled: document.getElementById('remove-sort-samples')?.disabled === true,
+      testdataGone: !document.getElementById('settings-testdata-head'),
       aboutClosed: !document.getElementById('about-sheet')?.classList.contains('open')
     };
   });
   console.log(sheet);
   assert(sheet.aboutClosed, 'About closes when opening sample habits');
   assert(sheet.rows >= 8 && sheet.addAll && sheet.rowAdds >= 8, 'feature rows each have add + add all');
+  assert(sheet.removeSamples && sheet.removeDisabled, 'remove samples on sheet, disabled when none');
+  assert(sheet.testdataGone, 'settings test data section removed');
   assert(sheet.prayersCollapsed === true, 'daily prayers collapsed by default');
   assert(!sheet.titles.some(t => /^(Fajr|Dhuhr|Asr|Maghrib|Isha)$/i.test(t)), 'five prayers not in feature preview list');
 
-  console.log('\n[C] Add one or two demos — sheet stays open');
+  console.log('\n[C] Add one or two demos — sheet stays open + undo toast');
+  await page.locator('#sample-habits-preview [data-add-sample="sample-feature-water"]').click();
+  await page.waitForSelector('#action-toast.show');
+  const undoToast = await page.evaluate(() => ({
+    text: document.getElementById('action-text')?.textContent || '',
+    undo: document.getElementById('action-undo')?.textContent || '',
+    pending: pendingAction && pendingAction.type === 'add-samples'
+  }));
+  assert(/added/i.test(undoToast.text) && undoToast.undo === 'undo' && undoToast.pending, 'single add shows action toast with undo');
+  await page.locator('#action-undo').click();
+  await page.waitForTimeout(300);
+  const afterUndo = await page.evaluate(() => ({
+    water: load().some(h => (h.hid || '') === 'sample-feature-water'),
+    waterBtn: document.querySelector('#sample-habits-preview [data-add-sample="sample-feature-water"]')?.textContent?.trim()
+  }));
+  assert(!afterUndo.water && afterUndo.waterBtn === 'add', 'undo removes the single add');
+
   await page.locator('#sample-habits-preview [data-add-sample="sample-feature-water"]').click();
   await page.waitForTimeout(300);
   await page.locator('#sample-habits-preview [data-add-sample="sample-feature-timed-run"]').click();

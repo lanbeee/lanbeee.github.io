@@ -42,18 +42,20 @@ function localTodayKey(){
   page.on('pageerror',e=>pageErrors.push(String(e)));
 
   const failures = [];
+  const todayK = localTodayKey();
   function check(name,cond,detail){
     if(cond){ console.log(`  ok  - ${name}`); }
     else { failures.push(`${name}${detail ? ' :: ' + detail : ''}`); console.log(`  FAIL- ${name}${detail ? ' :: ' + detail : ''}`); }
   }
 
-  async function seed(blocks, weekly = [600,600,600,600,600,600,600]){
+  async function seed(blocks, capacity = 600){
     // First-time load: navigate to BASE so we have a page to talk to. Later
     // seeds just write storage and reload — no accumulating init scripts.
+    // Capacity uses a per-day override (weekly availabilityMinutes is unused).
     if(!page.url() || page.url() === 'about:blank'){
       await page.goto(BASE,{ waitUntil:'load' });
     }
-    await page.evaluate(({blocks,weekly})=>{
+    await page.evaluate(({blocks,capacity,todayKey})=>{
       localStorage.clear();
       localStorage.setItem('tings_v2', JSON.stringify([
         { name:'Read', type:'keepup', target:7, logs:[Date.now() - 2*86400000], durationMinutes:20 }
@@ -63,15 +65,15 @@ function localTodayKey(){
         showWeekOnHome:true,
         topics:[],
         locations:[{ id:'home', name:'Home', lat:40.700, lng:-74.000, radiusM:75 }],
-        availabilityMinutes:weekly,
-        availabilityOverrides:{},
+        availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440],
+        availabilityOverrides:{ [todayKey]: capacity },
         cancelledBlocks:{},
         blockedTimes:blocks,
         homeExtraMode:'cards',
         defaultTravelMode:'walking',
         lastKnownLocationId:'home'
       }));
-    },{blocks,weekly});
+    },{blocks,capacity,todayKey:todayK});
     await page.reload({ waitUntil:'load' });
     await page.waitForTimeout(400);
   }
@@ -111,7 +113,6 @@ function localTodayKey(){
     await page.waitForTimeout(250);
   }
 
-  const todayK = localTodayKey();
 
   // ───────────────────────────────────────────────────────────────────────
   console.log('\n[cancel-blocked] same-day block frees its exact minutes');

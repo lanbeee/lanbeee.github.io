@@ -3893,9 +3893,22 @@ function executeUndo(){
     else delete availabilityOverrides[dayKey];
     saveSortSettings({...s,blockedTimeOverrides:blockOverrides,availabilityOverrides});
   }
+  if(pendingAction.type === 'add-samples'){
+    const hids = new Set((pendingAction.hids || []).filter(Boolean));
+    for(let i = data.length - 1; i >= 0; i--){
+      if(hids.has(data[i].hid))data.splice(i,1);
+    }
+    if(typeof pruneUnusedSamplePlaces === 'function'){
+      const pruned = pruneUnusedSamplePlaces(data);
+      data.length = 0;
+      data.push(...pruned);
+    }
+  }
   if(save(data)){
     hideActionToast();
     showToast('undone');
+    if(typeof updateSortSampleCount === 'function')updateSortSampleCount();
+    if(typeof refreshSampleHabitsSheet === 'function')refreshSampleHabitsSheet();
     refreshOpenViews();
   }
 }

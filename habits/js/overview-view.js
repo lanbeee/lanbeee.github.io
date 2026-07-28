@@ -897,10 +897,9 @@ function renderDayLogsAvailStep(key){
   const overrides = normalizeAvailabilityOverrides(sortSettings.availabilityOverrides);
   const hasOverride = Object.prototype.hasOwnProperty.call(overrides,key);
   const minutes = effectiveAvailabilityMinutes(key);
-  const date = new Date(`${key}T12:00:00`);
   const source = hasOverride
     ? 'custom for this date'
-    : `${WEEKDAY_LABELS[date.getDay()]} default`;
+    : 'full day';
 
   $('day-logs-body').innerHTML = `
     <div class="day-availability day-availability-step">
@@ -912,7 +911,7 @@ function renderDayLogsAvailStep(key){
       <button class="mini-text-btn" id="day-availability-save" type="button">save</button>
       <button class="mini-text-btn" id="day-availability-clear" type="button" ${hasOverride ? '' : 'hidden'}>clear</button>
     </div>
-    <p class="field-hint">Override how many minutes this day has for planning.</p>`;
+    <p class="field-hint">Override how many minutes this day has for planning. Clear returns to a full day (busy times still carve open slots).</p>`;
 
   $('day-logs-footer').innerHTML = `
     <button class="btn" type="button" id="day-logs-back-list">back</button>

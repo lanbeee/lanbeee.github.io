@@ -43,7 +43,14 @@ function task(name,dueDate,priority = 1){
   ];
   const settings = {
     preset:'todayFirst',focus:'balanced',showWeekOnHome:true,
-    availabilityMinutes:[90,90,90,90,90,90,90],availabilityOverrides:{},
+    availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440],
+    availabilityOverrides:(()=>{
+      const key = d=>{
+        const x = new Date(d); x.setHours(12,0,0,0);
+        return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+      };
+      return { [key(todayBase)]:90, [key(tomorrowBase)]:90 };
+    })(),
     blockedTimes:[
       {label:'sleep',days:[],start:0,end:420},
       {label:'work',days:[],start:540,end:1020},

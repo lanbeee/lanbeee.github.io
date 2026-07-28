@@ -176,7 +176,7 @@
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
  * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
- * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
+ * @property {number[]} availabilityMinutes                    — legacy weekly minutes (Sun-Sat); unused for packing (default is full day / overrides)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
  * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,startCombine:?string,startAnchor2:?string,startOffsetMin2:number,startFixedMin2:?number,startDayOffset:number,startDayOffset2:number,endAnchor:?string,endOffsetMin:number,endCombine:?string,endAnchor2:?string,endOffsetMin2:number,endFixedMin2:?number,endDayOffset:number,endDayOffset2:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits (prayer + fixed secondary; later/earlier-of + +1d supported).
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
@@ -1726,10 +1726,10 @@ function reconcileLocations(data,settings){
 function effectiveAvailabilityMinutes(key,settings = sortSettings){
   const normalized = {...DEFAULT_SORT_SETTINGS,...settings};
   const overrides = normalizeAvailabilityOverrides(normalized.availabilityOverrides);
+  // Weekly availabilityMinutes is unused for packing — default is a full day
+  // (1440). Open slots after busy times still cap via min(budget, slots).
   if(Object.prototype.hasOwnProperty.call(overrides,key))return overrides[key];
-  const d = new Date(`${key}T12:00:00`);
-  const weekly = normalizeAvailability(normalized.availabilityMinutes);
-  return weekly[d.getDay()] ?? 0;
+  return 1440;
 }
 function retentionWeight(h,log){
   if(isPlanLog(log))return Infinity;

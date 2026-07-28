@@ -146,9 +146,8 @@ function atDay(offset,hour = 12,minute = 0){
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'how it works' }).click();
-  await page.getByRole('button', { name: 'settings', exact: true }).click();
-  await page.locator('#settings-testdata-head').click();
-  await page.getByRole('button', { name: 'add samples' }).click();
+  await page.locator('#open-sample-habits').click();
+  await page.locator('#sample-habits-add').click();
   await page.locator('.ting-card:has-text("do early because")').first().waitFor({state:'visible',timeout:10000});
   // Samples load without the old standalone "do it early" section. The
   // "do early because ..." item still renders — under "today" when today has

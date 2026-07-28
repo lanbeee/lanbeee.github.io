@@ -380,8 +380,27 @@ function openSheet(id){
     return;
   }
   $(id).classList.add('open');
+  // Day-header pill taps often go through the forgiving/synthesized click path.
+  // The trailing native click then lands on the freshly opened wrap and would
+  // immediately dismiss it — ignore backdrop taps briefly after open.
+  if(id === 'free-time-sheet' || id === 'slipped-sheet'){
+    armSheetBackdropGuard(id);
+  }
   updateFullPageState();
   updateKeyboardLift();
+}
+
+// HYBRID: ignore sheet-wrap backdrop clicks for a short window after open
+function armSheetBackdropGuard(id,ms = 400){
+  const wrap = $(id);
+  if(!wrap)return;
+  wrap.dataset.ignoreBackdropUntil = String(Date.now() + ms);
+}
+function sheetBackdropArmed(id){
+  const wrap = $(id);
+  if(!wrap)return false;
+  const until = parseInt(wrap.dataset.ignoreBackdropUntil || '0',10);
+  return Date.now() < until;
 }
 // RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
@@ -890,7 +909,11 @@ document.addEventListener('pointercancel',e=>{
   const scrolled = tap.scrollHost
     ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop)
     : Math.abs(window.scrollY - tap.scrollTop);
-  if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && scrolled === 0){
+  // Day-header pills sit in sticky chrome; finger drift often nudges
+  // window.scrollY (or the browser cancels into a pan) even when the user meant
+  // a tap. For those pills, recover on short cancels regardless of scroll delta.
+  const headerPill = tap.btn.matches('.free-pill,.dropped-pill');
+  if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && (headerPill || scrolled === 0)){
     suppressNativeButton = tap.btn;
     tap.btn.click();
     setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},80);

@@ -39,6 +39,27 @@ function todayKey() {
   return d.toISOString().slice(0, 10);
 }
 
+/** Local YYYY-MM-DD for a timestamp. */
+function localDayKey(ts = Date.now()) {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Per-day capacity overrides for a span of local days starting at `ts`. */
+function capacityOverridesAround(ts, minutes, days = 14) {
+  const out = {};
+  const start = new Date(ts);
+  start.setHours(12, 0, 0, 0);
+  for (let i = -1; i < days; i++) {
+    const d = new Date(start.getTime() + i * 86400000);
+    out[localDayKey(d.getTime())] = Array.isArray(minutes) ? minutes[d.getDay()] : minutes;
+  }
+  return out;
+}
+
 // A minimal but valid habit/task record. Defaults mirror normalize().
 function base(props) {
   return Object.assign({
@@ -75,7 +96,7 @@ function defaultSettings(overrides = {}) {
     preset: 'todayFirst',
     showWeekOnHome: false,
     focus: 'balanced',
-    availabilityMinutes: [600, 600, 600, 600, 600, 600, 600],
+    availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
     availabilityOverrides: {},
     blockedTimes: [],
     showScheduledTasksInAgenda: true,
@@ -340,6 +361,9 @@ function defaultSettings(overrides = {}) {
       })],
       defaultSettings()
     );
+    // Freeze to mid-morning so remaining open time fits the habit (late-night
+    // wall clock would leave <20m and omit the agenda pill).
+    await timelineFor(atTime(9, 0), true);
     const suggested = await page.locator('.ting-card:has-text("Due habit fill") .context-pill.agenda-lead:not(.scheduled)').count();
     const scheduled = await page.locator('.ting-card:has-text("Due habit fill") .context-pill.scheduled').count();
     check('2c fill item renders agenda-suggested pill', suggested === 1, `suggested=${suggested}`);
@@ -404,7 +428,7 @@ function defaultSettings(overrides = {}) {
         base({ name: 'P0 cardio', type: 'keepup', target: 1, durationMinutes: 50, priority: 0, lastLog: ago, logs: [ago] })
       ],
       // 60 min of capacity -> only one 50-min item fits.
-      defaultSettings({ availabilityMinutes: [60, 60, 60, 60, 60, 60, 60] })
+      defaultSettings({ availabilityOverrides: capacityOverridesAround(atTime(9), 60) })
     );
     const rows = await timelineFor(atTime(9, 0));
     const names = rows.filter(r => r.kind === 'fill').map(r => r.name);
@@ -435,11 +459,12 @@ function defaultSettings(overrides = {}) {
   // (c) Legacy records (no priority field) migrate to P2 and compete fairly.
   {
     const ago = atTime(9) - 2 * 86400000;
-    await page.evaluate(({ ago }) => {
+    await page.evaluate(({ ago, overrides }) => {
       localStorage.clear();
       localStorage.setItem('tings_app_settings_v2', JSON.stringify({
         preset: 'todayFirst', focus: 'balanced',
-        availabilityMinutes: [600, 600, 600, 600, 600, 600, 600], availabilityOverrides: {},
+        availabilityMinutes: [1440, 1440, 1440, 1440, 1440, 1440, 1440],
+        availabilityOverrides: overrides,
         blockedTimes: [], showScheduledTasksInAgenda: true, showDueTasksInAgenda: true,
         showPlannedItemsInAgenda: true, showDueHabitsInAgenda: true, showTaskDateOnCards: true
       }));
@@ -447,15 +472,31 @@ function defaultSettings(overrides = {}) {
       localStorage.setItem('tings_v2', JSON.stringify([
         { name: 'Legacy no priority', type: 'keepup', target: 1, durationMinutes: 20, lastLog: ago, logs: [ago], emoji: '', pinned: false, sample: false, snoozedUntil: null, topics: [], createdAt: 1000 }
       ]));
-    }, { ago });
+    }, { ago, overrides: capacityOverridesAround(atTime(9), 600) });
     await page.reload({ waitUntil: 'networkidle' });
-    const normalized = await page.evaluate(() => {
-      const rows = buildTodayTimeline(buildTodayAgenda(JSON.parse(localStorage.getItem('tings_v2')), JSON.parse(localStorage.getItem('tings_app_settings_v2'))), new Date().setHours(9,0,0,0));
-      // The app never reads .priority directly; it goes through effectivePriority,
-      // which is what makes legacy (field-less) records migrate to the default.
-      const item = JSON.parse(localStorage.getItem('tings_v2'))[0];
-      return { effective: effectivePriority(item), rawHasField: Object.prototype.hasOwnProperty.call(item, 'priority'), placed: rows.some(r => r.h.name === 'Legacy no priority') };
-    });
+    const normalized = await page.evaluate(({ now }) => {
+      const RealDate = Date;
+      function FrozenDate(...args) {
+        if (args.length === 0) return new RealDate(now);
+        return new RealDate(...args);
+      }
+      FrozenDate.now = () => now;
+      FrozenDate.parse = RealDate.parse;
+      FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate, RealDate);
+      FrozenDate.prototype = RealDate.prototype;
+      const orig = globalThis.Date;
+      globalThis.Date = FrozenDate;
+      try {
+        const data = JSON.parse(localStorage.getItem('tings_v2'));
+        const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
+        const rows = buildTodayTimeline(buildTodayAgenda(data, settings), now);
+        const item = data[0];
+        return { effective: effectivePriority(item), rawHasField: Object.prototype.hasOwnProperty.call(item, 'priority'), placed: rows.some(r => r.h.name === 'Legacy no priority') };
+      } finally {
+        globalThis.Date = orig;
+      }
+    }, { now: atTime(9, 0) });
     check('3c legacy item migrates to default P2', normalized.effective === 2, `effective=${normalized.effective}`);
     check('3c raw legacy record had no priority field', normalized.rawHasField === false, `rawHasField=${normalized.rawHasField}`);
     check('3c legacy item still placed in agenda', normalized.placed, '');
@@ -498,7 +539,7 @@ function defaultSettings(overrides = {}) {
       ],
       // 120 min of availability, but blocked 9:30-10:30 fragments the morning.
       defaultSettings({
-        availabilityMinutes: [120, 120, 120, 120, 120, 120, 120],
+        availabilityOverrides: capacityOverridesAround(atTime(9), 120),
         blockedTimes: [{ label: 'meeting', days: [], start: 570, end: 630 }] // 9:30-10:30
       })
     );
@@ -820,7 +861,7 @@ function defaultSettings(overrides = {}) {
       [base({ name: 'Overnight 10pm-11am', type: 'keepup', target: 1, durationMinutes: 30,
         allowedTimeStart: 1320, allowedTimeEnd: 660, // 22:00 - 11:00 (overnight)
         lastLog: ago, logs: [ago] })],
-      defaultSettings({ availabilityMinutes: [90, 90, 90, 90, 90, 90, 90] })
+      defaultSettings({ availabilityOverrides: capacityOverridesAround(atTime(9), 90) })
     );
     const rows = await timelineFor(atTime(9, 0), true);
     const fill = rows.find(r => r.name === 'Overnight 10pm-11am');

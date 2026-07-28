@@ -36,7 +36,7 @@ function assert(cond,msg){
   await page.goto(baseUrl, { waitUntil:'networkidle' });
 
   // Seed a realistic dataset using the app's own sample builders. Mirrors
-  // what the "add sample habits" settings button does, so the smoke test
+  // what "add all demos" on the sample habits sheet does, so the smoke test
   // exercises the same shape real users get when they tap that button.
   const seeded = await page.evaluate(() => {
     if(typeof buildSortSamples !== 'function' || typeof buildSampleLocations !== 'function'){

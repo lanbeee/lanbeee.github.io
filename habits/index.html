@@ -591,7 +591,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="about-collapse-body" id="about-start-body" hidden>
-            <p>Blank home: tap the empty message to open sample habits. Add one demo or a few, tagged until you keep them; remove the rest in Settings.</p>
+            <p>Blank home: tap the empty message to open sample habits. Add one demo or a few; tagged bulk adds can be removed from the same sheet.</p>
             <p><b>+</b> creates a build (keep up), limit, stop, or task.</p>
           </div>
         </section>
@@ -673,7 +673,7 @@
   <div class="sheet-wrap" id="sample-habits-sheet">
     <div class="sheet sample-habits-sheet">
       <p class="sheet-title">sample habits</p>
-      <p class="about-copy">Try one demo or a few — timers, places, breakable tasks, and more. Habits that need a place will add a sample location. Add all at once to tag them as samples; keep what you like, remove the rest in Settings.</p>
+      <p class="about-copy">Try one demo or a few — timers, places, breakable tasks, and more. Habits that need a place will add a sample location. Add all at once to tag them as samples; keep what you like, or remove tagged samples below.</p>
       <div class="sample-habits-stack">
         <div class="sample-habits-list" id="sample-habits-preview" aria-label="feature demos"></div>
         <div class="btn-row sample-habits-add-row">
@@ -692,8 +692,10 @@
             </div>
           </div>
         </section>
+        <p class="field-hint sample-count" id="sort-sample-count">No tagged samples on home.</p>
       </div>
       <div class="btn-row sample-habits-actions">
+        <button type="button" class="btn" id="remove-sort-samples" disabled>remove samples</button>
         <button class="btn primary" id="sample-habits-close">done</button>
       </div>
     </div>
@@ -847,16 +849,6 @@
                 <button type="button" class="seg-opt" data-travel-mode="transit">transit</button>
               </div>
             </div>
-          </div>
-        </section>
-        <section class="settings-block settings-collapsible">
-          <button type="button" class="settings-collapse-head" id="settings-availability-head" data-collapse-target="settings-availability-body" aria-expanded="false" aria-controls="settings-availability-body">
-            <span class="settings-label">hours free each day</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-availability-body" hidden>
-            <p class="field-hint">How many free minutes you have for habits each weekday. This is your open-time budget; busy times carve chunks out of it.</p>
-            <div class="availability-grid" id="availability-grid"></div>
           </div>
         </section>
         <section class="settings-block settings-collapsible">
@@ -1044,20 +1036,6 @@
             <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
               <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
               <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
-            </div>
-          </div>
-        </section>
-        <section class="settings-block settings-collapsible">
-          <button type="button" class="settings-collapse-head" id="settings-testdata-head" data-collapse-target="settings-testdata-body" aria-expanded="false" aria-controls="settings-testdata-body">
-            <span class="settings-label">test data</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-testdata-body" hidden>
-            <p class="field-hint">Same feature demos as Sample habits on the Tings screen (places included). There you can add one at a time; here add samples adds any missing demos. Daily prayers are optional on that sheet. Samples are tagged — keep any you want, or remove the rest here.</p>
-            <p class="field-hint sample-count" id="sort-sample-count">No sample habits are in the list.</p>
-            <div class="btn-row">
-              <button class="btn primary" id="add-sort-samples">add samples</button>
-              <button class="btn" id="remove-sort-samples">remove samples</button>
             </div>
           </div>
         </section>

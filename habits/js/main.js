@@ -1285,22 +1285,32 @@ $('open-sample-habits')?.addEventListener('click',()=>{
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
 $('sample-habits-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('remove-sort-samples')?.addEventListener('click',()=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded($('remove-sort-samples')))return;
+  if(typeof removeSortSamples === 'function')removeSortSamples();
+});
+$('remove-sort-samples')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('sample-habits-add')?.addEventListener('click',()=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded($('sample-habits-add')))return;
   if(typeof addSortSamples === 'function')addSortSamples({closeSheets:true});
 });
 $('sample-prayers-add')?.addEventListener('click',()=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded($('sample-prayers-add')))return;
   if(typeof addPrayerSamples === 'function')addPrayerSamples({closeSheets:true});
 });
 $('sample-habits-preview')?.addEventListener('click',e=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded(e.target))return;
   const btn = e.target.closest('[data-add-sample]');
   if(!btn || btn.disabled)return;
   if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
 });
 $('sample-prayers-preview')?.addEventListener('click',e=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded(e.target))return;
   const btn = e.target.closest('[data-add-sample]');
   if(!btn || btn.disabled)return;
   if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
 });
+addScrollGuard(document.querySelector('.sample-habits-sheet'),'y');
 $('open-settings').addEventListener('click',()=>{
   closeSheet('about-sheet');
   closeSheet('sample-habits-sheet');
@@ -1375,11 +1385,6 @@ $('topic-list').addEventListener('click',e=>{
   const btn = e.target.closest('[data-remove-topic]');
   if(!btn)return;
   removeTopic(btn.dataset.removeTopic);
-});
-$('availability-grid').addEventListener('change',e=>{
-  const field = e.target.closest('[data-availability-day]');
-  if(!field)return;
-  saveAvailabilityDay(parseInt(field.dataset.availabilityDay,10),field.value);
 });
 $('blocked-time-add')?.addEventListener('click',addBlockedTime);
 $('blocked-time-list')?.addEventListener('change',e=>{
@@ -1660,8 +1665,6 @@ $('calendar-pdf-cancel')?.addEventListener('click',cancelCalendarPdfImport);
 $('calendar-pdf-clear')?.addEventListener('click',clearImportedCalendarMeetings);
 $('calendar-credit-habit')?.addEventListener('change',onCalendarCreditHabitChange);
 $('calendar-allday-mode')?.addEventListener('change',onCalendarAllDayModeChange);
-$('add-sort-samples')?.addEventListener('click',addSortSamples);
-$('remove-sort-samples')?.addEventListener('click',removeSortSamples);
 $('settings-reset').addEventListener('click',()=>{
   $('settings-reset-confirm').hidden = false;
 });
@@ -2490,10 +2493,18 @@ $('day-capacity-close').addEventListener('click',()=>closeSheet('day-capacity-sh
 $('day-capacity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('day-capacity-sheet');});
 
 $('slipped-close').addEventListener('click',()=>closeSheet('slipped-sheet'));
-$('slipped-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('slipped-sheet');});
+$('slipped-sheet').addEventListener('click',e=>{
+  if(e.target !== e.currentTarget)return;
+  if(typeof sheetBackdropArmed === 'function' && sheetBackdropArmed('slipped-sheet'))return;
+  closeSheet('slipped-sheet');
+});
 
 $('free-time-close').addEventListener('click',()=>closeSheet('free-time-sheet'));
-$('free-time-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('free-time-sheet');});
+$('free-time-sheet').addEventListener('click',e=>{
+  if(e.target !== e.currentTarget)return;
+  if(typeof sheetBackdropArmed === 'function' && sheetBackdropArmed('free-time-sheet'))return;
+  closeSheet('free-time-sheet');
+});
 
 $('action-undo').addEventListener('click',executeUndo);
 $('action-open')?.addEventListener('click',()=>{

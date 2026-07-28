@@ -144,12 +144,29 @@ function assert(cond,msg){
   // ══════════════════════════════════════════════════════════════════════
   console.log('\n[F] Non-week mode today pill');
   await page.evaluate(() => {
+    // Ensure a "today" section exists even late at night (otherwise free pill
+    // has no header to attach to — only "coming up" would render).
+    const data = load();
+    // Plan-for-today forces the today section even when remaining evening time
+    // is shorter than a default-duration keepup (late-night suite runs).
+    data.push({
+      hid:'ft-today-keepup',
+      name:'Evening stretch',
+      emoji:'🧘',
+      type:'keepup',
+      target:1,
+      durationMinutes:5,
+      logs:[{ts:Date.now() + 5 * 60000, plan:true}],
+      createdAt:Date.now() - 5 * 86400000
+    });
+    save(data);
     const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2'));
     settings.showWeekOnHome = false;
+    // Leave evening open so remaining-from-now free time stays ≥ 10m.
     settings.blockedTimes = [
       {label:'sleep', start:0, end:420},
-      {label:'work', start:540, end:1020},
-      {label:'sleep', start:1320, end:1440}
+      {label:'work', start:540, end:720},
+      {label:'work', start:780, end:1020}
     ];
     localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
     sortSettings = loadSortSettings();

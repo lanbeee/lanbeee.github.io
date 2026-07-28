@@ -30,14 +30,35 @@ function assert(cond,msg){ if(cond){ pass += 1; console.log('  ok: ' + msg); } e
 const sixAm = (() => { const d = new Date(); d.setHours(6,0,0,0); return d.getTime(); })();
 function dayStartOf(n){ const d = new Date(); return new Date(d.getFullYear(),d.getMonth(),d.getDate()+n).getTime(); }
 
+/** Per-day overrides for a weekly Sun–Sat minutes array, from frozen midnight. */
+function weekOverridesFromWeekly(frozen, weekly, days = 14){
+  const out = {};
+  const start = new Date(frozen);
+  start.setHours(12, 0, 0, 0);
+  for(let i = 0; i < days; i++){
+    const d = new Date(start.getTime() + i * 86400000);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    out[key] = weekly[d.getDay()];
+  }
+  return out;
+}
+
 // Build an init script: freeze clock at 6am + seed habits & settings.
 function seedScript(habits, settingsOverrides = {}){
+  const weekly = settingsOverrides.availabilityMinutes || [600,600,600,600,600,600,600];
+  const overrides = Object.assign(
+    weekOverridesFromWeekly(sixAm, weekly),
+    settingsOverrides.availabilityOverrides || {}
+  );
   const settings = {
     preset:'todayFirst', topics:[], travel:{}, defaultTravelMode:'walking',
-    availabilityMinutes:[600,600,600,600,600,600,600],
+    availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440],
+    availabilityOverrides:overrides,
     blockedTimes:[{ label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:360, locationId:'home' }],
     lastKnownLocationId:'home', locationWeight:80, showWeekOnHome:true,
     ...settingsOverrides,
+    // Re-apply so spread of settingsOverrides cannot wipe capacity overrides.
+    availabilityOverrides: Object.assign(overrides, settingsOverrides.availabilityOverrides || {}),
   };
   return `(function(){
     const R=Date,frozen=${sixAm};

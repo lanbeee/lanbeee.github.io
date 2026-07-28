@@ -19,9 +19,8 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   if (await page.locator('#home-agenda').count()) throw new Error('duplicate home agenda section still exists');
 
   await page.getByRole('button', { name: 'how it works' }).click();
-  await page.getByRole('button', { name: 'settings', exact: true }).click();
-  await page.locator('#settings-testdata-head').click();
-  await page.getByRole('button', { name: 'add samples' }).click();
+  await page.locator('#open-sample-habits').click();
+  await page.locator('#sample-habits-add').click();
   await page.waitForSelector('.ting-card .context-pill.agenda-lead');
 
   const planRows = await page.locator('.ting-card .context-pill.agenda-lead').count();

@@ -235,7 +235,18 @@ function base(props) {
     ],
     settings:{
       preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
-      availabilityMinutes:[90,90,90,90,90,90,90],availabilityOverrides:{},
+      availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440],
+      availabilityOverrides:(()=>{
+        const out = {};
+        const start = new Date(atTime(15));
+        start.setHours(12,0,0,0);
+        for(let i = 0; i < 10; i++){
+          const d = new Date(start.getTime() + i * 86400000);
+          const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          out[key] = 90;
+        }
+        return out;
+      })(),
       showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
       showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
       locations:[],travel:{},blockedTimes:[{label:'sleep',days:[],start:0,end:420}]
