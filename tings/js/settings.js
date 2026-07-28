@@ -726,6 +726,7 @@ function saveLocationPatch(index,patch){
 // manual entry). Generates a stable opaque id. Enforces MAX_LOCATIONS.
 // Returns the new id on success, or null on failure (so callers — e.g. the
 // detail-pane "+ new place" flow — can auto-select the freshly created place).
+// When no home city is set yet, infers one from the new place's coordinates.
 function addLocation({name,address,lat,lng,emoji}){
   const cleanName = String(name || '').trim().slice(0,48);
   if(!cleanName){ showToast('enter a name'); return null; }
@@ -744,6 +745,7 @@ function addLocation({name,address,lat,lng,emoji}){
   renderLocationControls();
   render();
   showToast(`added ${cleanName}`);
+  if(typeof maybeInferHomeCityFromPlace === 'function')maybeInferHomeCityFromPlace(lat,lng);
   return id;
 }
 
@@ -1862,6 +1864,32 @@ function syncHomeCityStatus(){
   }else{
     el.textContent = 'No city set.';
   }
+}
+
+// ASYNC: if home city is unset, set it from a place's coordinates (reverse
+// geocode → "City, Country"). Never overwrites an existing city. Used when
+// the user adds a place so they don't also have to type a general city.
+async function maybeInferHomeCityFromPlace(lat,lng){
+  if(typeof hasHomeCityCoords === 'function' ? hasHomeCityCoords() : (Number.isFinite(sortSettings.homeCityLat) && Number.isFinite(sortSettings.homeCityLng))){
+    return false;
+  }
+  if(!Number.isFinite(lat) || !Number.isFinite(lng))return false;
+  let name = 'Home area';
+  try{
+    if(typeof reverseGeocodeCity === 'function'){
+      const city = await reverseGeocodeCity(lat,lng);
+      if(city && city.name)name = city.name;
+    }
+  }catch{ /* keep fallback name */ }
+  // User may have set a city while the reverse lookup was in flight.
+  if(typeof hasHomeCityCoords === 'function' ? hasHomeCityCoords() : (Number.isFinite(sortSettings.homeCityLat) && Number.isFinite(sortSettings.homeCityLng))){
+    return false;
+  }
+  updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng});
+  if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+  syncHomeCityStatus();
+  if(typeof showToast === 'function')showToast(`city: ${name}`);
+  return true;
 }
 
 async function setHomeCity(){

@@ -452,6 +452,39 @@ async function reverseGeocodeNominatim(lat,lng){
   }
 }
 
+// PURE: build a "City, Country" label from structured geocoder address fields.
+function formatCityLabel(locality,country){
+  const city = String(locality || '').trim();
+  const nation = String(country || '').trim();
+  const name = [city, nation].filter(Boolean).join(', ');
+  return name ? name.slice(0,80) : '';
+}
+
+// ASYNC: reverse-geocode coords into a general city label for homeCity*.
+// Prefers city/town/village over street-level place names. Returns
+// {name,lat,lng} or null when neither Photon nor Nominatim yields a locality.
+async function reverseGeocodeCity(lat,lng){
+  if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
+  try{
+    const url = `${PHOTON_BASE}/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&lang=en`;
+    const json = await fetchJsonWithTimeout(url);
+    const f = json && Array.isArray(json.features) && json.features[0];
+    const props = (f && f.properties) || {};
+    const locality = props.city || props.town || props.village || props.municipality || props.county || props.state || '';
+    const name = formatCityLabel(locality, props.country);
+    if(name)return { name, lat, lng };
+  }catch{ /* try Nominatim */ }
+  try{
+    const url = `${NOMINATIM_BASE}/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
+    const json = await fetchJsonWithTimeout(url);
+    const addr = (json && json.address) || {};
+    const locality = addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.state || '';
+    const name = formatCityLabel(locality, addr.country);
+    if(name)return { name, lat, lng };
+  }catch{ /* fall through */ }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // CACHE PERSISTENCE — debounced writes through the normal settings path so a
 // burst of edge refreshes coalesces into one localStorage write.

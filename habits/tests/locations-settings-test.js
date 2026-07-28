@@ -122,6 +122,16 @@ async function openSettings(page){
   assert(persisted.count === 1 && persisted.name === 'Office', 'location persisted to settings');
   assert(Math.abs(persisted.lat - 51.5034) < 0.001, 'lat from geocode result');
   assert(persisted.id && persisted.id.length > 8, 'stable id generated');
+  // Wait for async home-city inference from the new place.
+  await page.waitForTimeout(400);
+  const inferredCity = await page.evaluate(() => {
+    const s = loadSortSettings();
+    return { name:s.homeCityName, lat:s.homeCityLat, lng:s.homeCityLng };
+  });
+  console.log(inferredCity);
+  assert(inferredCity.name && /London/i.test(inferredCity.name), 'home city inferred from first place (' + inferredCity.name + ')');
+  assert(Math.abs(inferredCity.lat - 51.5034) < 0.001, 'home city lat matches place');
+  assert(Number.isFinite(inferredCity.lng), 'home city lng set');
 
   // ── C. Uncheck All day → default 09–17, then set 11:00–17:00 ──
   console.log('\n[C] default open window (11:00–17:00)');
