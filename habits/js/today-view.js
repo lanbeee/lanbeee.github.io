@@ -323,6 +323,59 @@ function pickHabitLocationId(h,anchorId,registry,mode){
 // PURE: within each priority band, greedy nearest-neighbour reorder. Revisiting
 // a location later in the day is allowed — this is NOT a hard cluster-by-place
 // pass. Items with no location stay zero-cost floaters.
+// Soft day-order constraints (sometime/direct) bias candidate order first so
+// "before" items claim slots ahead of "after" items when both are free.
+function reorderAgendaItemsByOrderConstraints(items,dayBase){
+  if(!Array.isArray(items) || items.length < 2)return Array.isArray(items) ? items.slice() : [];
+  if(typeof orderConstraintsForDay !== 'function')return items.slice();
+  const edges = orderConstraintsForDay(dayBase);
+  if(!edges.length)return items.slice();
+  const indexByHid = new Map();
+  items.forEach((item,idx)=>{
+    if(item && item.h && item.h.hid)indexByHid.set(item.h.hid,idx);
+  });
+  const preds = new Map(); // afterHid → Set(beforeHid)
+  const weight = new Map(); // hid → direct boost
+  for(const e of edges){
+    if(!indexByHid.has(e.beforeHid) || !indexByHid.has(e.afterHid))continue;
+    if(!preds.has(e.afterHid))preds.set(e.afterHid,new Set());
+    preds.get(e.afterHid).add(e.beforeHid);
+    if(e.adjacency === 'direct'){
+      weight.set(e.beforeHid,(weight.get(e.beforeHid) || 0) + 2);
+      weight.set(e.afterHid,(weight.get(e.afterHid) || 0) + 1);
+    }else{
+      weight.set(e.beforeHid,(weight.get(e.beforeHid) || 0) + 1);
+    }
+  }
+  if(!preds.size)return items.slice();
+  const remaining = items.map((item,idx)=>({item,idx,hid:item && item.h && item.h.hid}));
+  const out = [];
+  const placed = new Set();
+  while(remaining.length){
+    let best = -1;
+    let bestScore = Infinity;
+    for(let i = 0;i < remaining.length;i += 1){
+      const hid = remaining[i].hid;
+      const need = preds.get(hid);
+      if(need){
+        let ready = true;
+        for(const p of need){
+          if(!placed.has(p) && remaining.some(r=>r.hid === p)){ ready = false; break; }
+        }
+        if(!ready)continue;
+      }
+      // Prefer constrained "before" items, then original order.
+      const score = -(weight.get(hid) || 0) * 1000 + remaining[i].idx;
+      if(score < bestScore){ bestScore = score; best = i; }
+    }
+    if(best < 0)best = 0;
+    const picked = remaining.splice(best,1)[0];
+    out.push(picked.item);
+    if(picked.hid)placed.add(picked.hid);
+  }
+  return out;
+}
+
 function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
   if(!Array.isArray(items) || !items.length)return [];
   const registry = normalizeLocationRegistry(settings.locations);
@@ -373,13 +426,26 @@ function buildDayTimeline(agenda,opts = {}){
   const settings = sortSettings || loadSortSettings();
   const state = createDayPlacementState(agenda,settings,opts);
   const now = opts.now != null ? opts.now : Date.now();
-  const ordered = reorderAgendaItemsByLocation(agenda.agendaItems || [],settings,now);
+  let ordered = reorderAgendaItemsByLocation(agenda.agendaItems || [],settings,now);
+  ordered = reorderAgendaItemsByOrderConstraints(ordered,state.dayBase);
+  // Doing-now item claims the earliest slot today.
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(doing && doing.dayBase === state.dayBase && doing.hid){
+    const idx = ordered.findIndex(item=>item && item.h && item.h.hid === doing.hid);
+    if(idx > 0){
+      const [item] = ordered.splice(idx,1);
+      ordered.unshift(item);
+    }
+  }
   for(const fill of ordered){
     const placeOpts = {
       settings,
       urgency:typeof weekUrgency === 'function' ? weekUrgency(fill.h) : 0,
       weights:resolveAgendaScoreWeights(settings)
     };
+    if(doing && fill.h && fill.h.hid === doing.hid && doing.dayBase === state.dayBase){
+      placeOpts.doingNowStart = doing.startedAt;
+    }
     if(!isScarceScore(fill.scarcity) && !(typeof hasTimeWindow === 'function' && hasTimeWindow(fill.h))){
       const spare = scarceWindowsToSpare(ordered,state.dayBase,state.seedLocId,state.dayBase);
       if(spare.length)placeOpts.spareWindows = spare;
@@ -1124,7 +1190,7 @@ function resolveAgendaScoreWeights(settings){
 // before this runs; every soft signal is a weighted term here.
 // terms: {
 //   travelSeconds, clusterBonus, coLocHint, dayOffsetPenalty,
-//   asapDelayMin, scarceOverlapMs, preferencePenalty, urgency
+//   asapDelayMin, scarceOverlapMs, preferencePenalty, urgency, orderPenalty
 // }
 function scoreAgendaPlacement(terms,weights){
   const W = weights || resolveAgendaScoreWeights(null);
@@ -1141,12 +1207,48 @@ function scoreAgendaPlacement(terms,weights){
   const asap = asapDelay * (1 + urgency / 50);
   const scarce = Number(t.scarceOverlapMs) || 0;
   const pref = Number(t.preferencePenalty) || 0;
+  const orderPen = Number(t.orderPenalty) || 0;
   return (W.travel || 0) * travel
     - (W.cluster || 0) * cluster
     + (W.day || 0) * dayPen
     + (W.asap || 0) * asap
     + (W.scarce || 0) * scarce
-    + (W.preference || 0) * pref;
+    + (W.preference || 0) * pref
+    + orderPen;
+}
+
+// PURE: soft penalty when a fit would break same-day temporary order links.
+// sometime: heavy if starting before the predecessor ends.
+// direct: prefer the earliest slot after the predecessor (gap becomes cost).
+function orderConstraintPenalty(fill,fit,state){
+  if(!fill || !fill.h || !fill.h.hid || !fit || !state)return 0;
+  if(typeof orderConstraintsForDay !== 'function')return 0;
+  const edges = orderConstraintsForDay(state.dayBase);
+  if(!edges.length)return 0;
+  const hid = fill.h.hid;
+  const placedByHid = new Map();
+  for(const entry of state.fills || []){
+    const h = entry && entry.fill && entry.fill.h;
+    if(h && h.hid && entry.fit)placedByHid.set(h.hid,entry.fit);
+  }
+  let pen = 0;
+  for(const e of edges){
+    if(e.afterHid !== hid)continue;
+    const pred = placedByHid.get(e.beforeHid);
+    if(!pred)continue;
+    const predEnd = Number(pred.placeEnd) || 0;
+    if(fit.placeStart + 60000 < predEnd){
+      // Starting before the predecessor finishes — strong soft violation.
+      pen += 8000 + Math.max(0,(predEnd - fit.placeStart) / 60000) * 40;
+      continue;
+    }
+    if(e.adjacency === 'direct'){
+      const gapMin = Math.max(0,(fit.placeStart - predEnd) / 60000);
+      // Prefer next feasible slot; large gaps drift away from "right after".
+      pen += Math.min(120,gapMin) * 6;
+    }
+  }
+  return pen;
 }
 
 // PURE: among feasible fits on one day, pick the best by unified score.
@@ -1171,7 +1273,8 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       asapDelayMin:(fit.placeStart - earliest) / 60000,
       scarceOverlapMs:fitOverlapWithWindows(fit,spare),
       preferencePenalty:prefPen,
-      urgency
+      urgency,
+      orderPenalty:orderConstraintPenalty(fill,fit,state)
     },weights);
     fit.score = score;
     if(score < bestScore){ bestScore = score; best = fit; }
@@ -1203,8 +1306,23 @@ function tryPlaceOnDay(state,fill,opts = {}){
   // in its own gap instead of being pushed past the slot's end.
   const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
 
+  // Temporary day-order: never start before a placed predecessor finishes.
+  let orderFloor = 0;
+  if(fill.h && fill.h.hid && typeof orderConstraintsForDay === 'function'){
+    for(const e of orderConstraintsForDay(dayBase)){
+      if(e.afterHid !== fill.h.hid)continue;
+      for(const entry of chron){
+        const ph = entry && entry.fill && entry.fill.h;
+        if(ph && ph.hid === e.beforeHid && entry.fit){
+          orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+        }
+      }
+    }
+  }
+  const doingFloor = opts.doingNowStart != null ? Number(opts.doingNowStart) || 0 : 0;
+
   for(const slot of slots){
-    const lowerBound = Math.max(slot.start,startClock);
+    const lowerBound = Math.max(slot.start,startClock,orderFloor,doingFloor);
     const inSlot = chron
       .filter(c=>c.fit.placeStart >= slot.start && c.fit.placeStart < slot.end);
     // Build the open sub-intervals (gaps) within this slot.
@@ -1348,8 +1466,22 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
   const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   const candidates = [];
 
+  let orderFloor = 0;
+  if(fill.h && fill.h.hid && typeof orderConstraintsForDay === 'function'){
+    for(const e of orderConstraintsForDay(dayBase)){
+      if(e.afterHid !== fill.h.hid)continue;
+      for(const entry of chron){
+        const ph = entry && entry.fill && entry.fill.h;
+        if(ph && ph.hid === e.beforeHid && entry.fit){
+          orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+        }
+      }
+    }
+  }
+  const doingFloor = opts.doingNowStart != null ? Number(opts.doingNowStart) || 0 : 0;
+
   for(const slot of slots){
-    const lowerBound = Math.max(slot.start,startClock);
+    const lowerBound = Math.max(slot.start,startClock,orderFloor,doingFloor);
     const inSlot = chron.filter(c=>c.fit.placeStart >= slot.start && c.fit.placeStart < slot.end);
     const gaps = [];
     let cursor = lowerBound;
@@ -2133,6 +2265,27 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     if(c.scarcity == null)c.scarcity = scarcityScore(c,dayStates);
   }
   candidates.sort(compareScarcityThenPriority);
+  // Soft boost: place "before" sides of same-day order links earlier in the
+  // assignment loop so their successors can sit after them.
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(typeof orderConstraintsForDay === 'function' || doing){
+    const beforeBoost = new Map();
+    for(const state of dayStates){
+      for(const e of orderConstraintsForDay(state.dayBase)){
+        beforeBoost.set(e.beforeHid,(beforeBoost.get(e.beforeHid) || 0) + (e.adjacency === 'direct' ? 2 : 1));
+      }
+    }
+    candidates.sort((a,b)=>{
+      const ah = a && a.h && a.h.hid;
+      const bh = b && b.h && b.h.hid;
+      if(doing && ah === doing.hid && bh !== doing.hid)return -1;
+      if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+      const wa = beforeBoost.get(ah) || 0;
+      const wb = beforeBoost.get(bh) || 0;
+      if(wa !== wb)return wb - wa;
+      return compareScarcityThenPriority(a,b);
+    });
+  }
   let totalAssigned = 0;
   for(const c of candidates){
     const pinned = c.pinned === true;
@@ -2167,6 +2320,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           urgency:c.urgency,
           dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
         };
+        if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
+          dayOpts.doingNowStart = doing.startedAt;
+        }
         if(!isScarceScore(c.scarcity)){
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
           if(spare.length)dayOpts.spareWindows = spare;
@@ -2218,6 +2374,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           urgency:c.urgency,
           dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
         };
+        if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
+          dayOpts.doingNowStart = doing.startedAt;
+        }
         if(!isScarceScore(c.scarcity)){
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
           if(spare.length)dayOpts.spareWindows = spare;

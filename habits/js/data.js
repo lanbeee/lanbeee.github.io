@@ -613,8 +613,263 @@ function saveAutoChunkPlans(plans){
 
 const TODAY_SUGGESTED_KEY = 'tings_today_suggested_v1';
 
+// Temporary same-day agenda precedence links (device-local; not in habit backup).
+// dayBase → edges; each edge says beforeHid should be planned before afterHid that day.
+const ORDER_CONSTRAINTS_KEY = 'tings_order_constraints_v1';
+
+/**
+ * @typedef {Object} OrderConstraint
+ * @property {string} id
+ * @property {number} dayBase
+ * @property {string} beforeHid
+ * @property {string} afterHid
+ * @property {'sometime'|'direct'} adjacency
+ * @property {number} createdAt
+ */
+
+/**
+ * @typedef {Object} DoingNowState
+ * @property {string} hid
+ * @property {number} startedAt
+ * @property {number} dayBase
+ */
+
 function yesterdayIso(){
   return dateKey(Date.now() - 86400000);
+}
+
+function newOrderConstraintId(){
+  return `oc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+}
+
+function normalizeOrderAdjacency(raw){
+  return raw === 'direct' ? 'direct' : 'sometime';
+}
+
+function normalizeOrderConstraint(raw){
+  if(!raw || typeof raw !== 'object')return null;
+  const dayBase = clampDayTimestamp(raw.dayBase);
+  const beforeHid = typeof raw.beforeHid === 'string' ? raw.beforeHid.trim() : '';
+  const afterHid = typeof raw.afterHid === 'string' ? raw.afterHid.trim() : '';
+  if(dayBase == null || !beforeHid || !afterHid || beforeHid === afterHid)return null;
+  return {
+    id:typeof raw.id === 'string' && raw.id ? raw.id : newOrderConstraintId(),
+    dayBase,
+    beforeHid,
+    afterHid,
+    adjacency:normalizeOrderAdjacency(raw.adjacency),
+    createdAt:Number.isFinite(Number(raw.createdAt)) ? Number(raw.createdAt) : Date.now()
+  };
+}
+
+function normalizeDoingNow(raw,todayBase = dayStart(Date.now())){
+  if(!raw || typeof raw !== 'object')return null;
+  const hid = typeof raw.hid === 'string' ? raw.hid.trim() : '';
+  const dayBase = clampDayTimestamp(raw.dayBase);
+  const startedAt = Number(raw.startedAt);
+  if(!hid || dayBase == null || !Number.isFinite(startedAt))return null;
+  if(dayBase !== todayBase)return null;
+  return {hid,startedAt,dayBase};
+}
+
+function loadOrderConstraintStore(now = Date.now()){
+  const raw = Storage.read(ORDER_CONSTRAINTS_KEY);
+  const todayBase = dayStart(now);
+  const edges = [];
+  const seen = new Set();
+  const list = raw && Array.isArray(raw.edges) ? raw.edges
+    : (raw && raw.byDay && typeof raw.byDay === 'object'
+      ? Object.values(raw.byDay).flatMap(v=>Array.isArray(v) ? v : [])
+      : []);
+  for(const item of list){
+    const edge = normalizeOrderConstraint(item);
+    if(!edge)continue;
+    if(edge.dayBase < todayBase)continue; // past days drop
+    const key = `${edge.dayBase}|${edge.beforeHid}|${edge.afterHid}`;
+    if(seen.has(key))continue;
+    seen.add(key);
+    edges.push(edge);
+  }
+  const doingNow = normalizeDoingNow(raw && raw.doingNow,todayBase);
+  return {edges,doingNow};
+}
+
+function saveOrderConstraintStore(store){
+  const next = {
+    edges:Array.isArray(store && store.edges) ? store.edges.map(normalizeOrderConstraint).filter(Boolean) : [],
+    doingNow:store && store.doingNow ? normalizeDoingNow(store.doingNow) : null
+  };
+  const current = Storage.read(ORDER_CONSTRAINTS_KEY);
+  if(JSON.stringify(current || {edges:[],doingNow:null}) === JSON.stringify(next))return false;
+  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); return true; }
+  catch{ return false; }
+}
+
+function orderConstraintsForDay(dayBase,store = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return [];
+  const src = store || loadOrderConstraintStore();
+  return (src.edges || []).filter(e=>e.dayBase === base);
+}
+
+function getDoingNow(store = null){
+  const src = store || loadOrderConstraintStore();
+  return src.doingNow || null;
+}
+
+function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now())){
+  const todayBase = dayStart(startedAt);
+  const nextDay = clampDayTimestamp(dayBase);
+  if(!hid || nextDay !== todayBase)return null;
+  const store = loadOrderConstraintStore(startedAt);
+  store.doingNow = {hid:String(hid),startedAt:Number(startedAt) || Date.now(),dayBase:todayBase};
+  saveOrderConstraintStore(store);
+  return store.doingNow;
+}
+
+function clearDoingNow(hid = null){
+  const store = loadOrderConstraintStore();
+  if(!store.doingNow)return false;
+  if(hid != null && store.doingNow.hid !== hid)return false;
+  store.doingNow = null;
+  return saveOrderConstraintStore(store);
+}
+
+/** Upsert one day-scoped edge; replaces any existing same before→after that day. */
+function upsertOrderConstraint({dayBase,beforeHid,afterHid,adjacency = 'sometime'}){
+  const edge = normalizeOrderConstraint({
+    id:newOrderConstraintId(),
+    dayBase,
+    beforeHid,
+    afterHid,
+    adjacency,
+    createdAt:Date.now()
+  });
+  if(!edge)return null;
+  const store = loadOrderConstraintStore();
+  store.edges = (store.edges || []).filter(e=>!(
+    e.dayBase === edge.dayBase && e.beforeHid === edge.beforeHid && e.afterHid === edge.afterHid
+  ));
+  store.edges.push(edge);
+  saveOrderConstraintStore(store);
+  return edge;
+}
+
+/** Write the chosen edges for a drop; replaces same-day pairs among touched hids. */
+function saveOrderConstraintsForDrop(dayBase,edges){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return [];
+  const store = loadOrderConstraintStore();
+  const incoming = (edges || []).map(e=>normalizeOrderConstraint({...e,dayBase:base})).filter(Boolean);
+  const touch = new Set();
+  for(const e of incoming){
+    touch.add(e.beforeHid);
+    touch.add(e.afterHid);
+  }
+  store.edges = (store.edges || []).filter(e=>{
+    if(e.dayBase !== base)return true;
+    if(!touch.size)return true;
+    // Replace any prior same-day edge that touches the moved cluster pairs.
+    return !(touch.has(e.beforeHid) && touch.has(e.afterHid));
+  });
+  for(const e of incoming)store.edges.push(e);
+  saveOrderConstraintStore(store);
+  return incoming;
+}
+
+function removeOrderConstraint(id){
+  if(!id)return false;
+  const store = loadOrderConstraintStore();
+  const next = (store.edges || []).filter(e=>e.id !== id);
+  if(next.length === store.edges.length)return false;
+  store.edges = next;
+  return saveOrderConstraintStore(store);
+}
+
+function clearOrderConstraintsForDay(dayBase,hid = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return false;
+  const store = loadOrderConstraintStore();
+  const beforeLen = store.edges.length;
+  const beforeDoing = store.doingNow;
+  store.edges = (store.edges || []).filter(e=>{
+    if(e.dayBase !== base)return true;
+    if(hid == null)return false;
+    return e.beforeHid !== hid && e.afterHid !== hid;
+  });
+  if(store.doingNow && store.doingNow.dayBase === base && (hid == null || store.doingNow.hid === hid)){
+    store.doingNow = null;
+  }
+  if(store.edges.length === beforeLen && store.doingNow === beforeDoing)return false;
+  return saveOrderConstraintStore(store);
+}
+
+/** Drop edges / doing-now when a habit completes or is deleted. */
+function pruneOrderConstraintsForHabit(h,data = null,now = Date.now()){
+  if(!h || !h.hid)return false;
+  const store = loadOrderConstraintStore(now);
+  const todayBase = dayStart(now);
+  let changed = false;
+  const done = h.type === 'task'
+    ? (typeof isTaskDone === 'function' ? isTaskDone(h) : Boolean(h.lastLog))
+    : completedToday(h,now);
+  const stillExists = Array.isArray(data) ? data.some(item=>item && item.hid === h.hid) : true;
+  const shouldDrop = !stillExists || done;
+  if(!shouldDrop && !(store.doingNow && store.doingNow.hid === h.hid))return false;
+  const nextEdges = (store.edges || []).filter(e=>{
+    if(e.beforeHid !== h.hid && e.afterHid !== h.hid)return true;
+    if(!stillExists){ changed = true; return false; }
+    if(done){
+      // Tasks are one-shot: drop every day. Rhythm habits only drop today/past.
+      if(h.type === 'task' || e.dayBase <= todayBase){ changed = true; return false; }
+    }
+    return true;
+  });
+  if(nextEdges.length !== store.edges.length){
+    store.edges = nextEdges;
+    changed = true;
+  }
+  if(store.doingNow && store.doingNow.hid === h.hid && (done || !stillExists)){
+    store.doingNow = null;
+    changed = true;
+  }
+  return changed ? saveOrderConstraintStore(store) : false;
+}
+
+function pruneOrderConstraintsOnLog(h,now = Date.now()){
+  return pruneOrderConstraintsForHabit(h,null,now);
+}
+
+function orderConstraintPillsForHid(hid,dayBase,data = null,store = null){
+  if(!hid)return [];
+  const edges = orderConstraintsForDay(dayBase,store);
+  const nameOf = (other)=>{
+    if(!Array.isArray(data))return other;
+    const hit = data.find(item=>item && item.hid === other);
+    return hit ? hit.name : other;
+  };
+  const pills = [];
+  for(const e of edges){
+    if(e.afterHid === hid){
+      pills.push({
+        id:e.id,
+        kind:'after',
+        adjacency:e.adjacency,
+        otherHid:e.beforeHid,
+        label:e.adjacency === 'direct' ? `right after ${nameOf(e.beforeHid)}` : `after ${nameOf(e.beforeHid)}`
+      });
+    }
+    if(e.beforeHid === hid){
+      pills.push({
+        id:e.id,
+        kind:'before',
+        adjacency:e.adjacency,
+        otherHid:e.afterHid,
+        label:e.adjacency === 'direct' ? `right before ${nameOf(e.afterHid)}` : `before ${nameOf(e.afterHid)}`
+      });
+    }
+  }
+  return pills;
 }
 
 function dataFingerprint(data){
@@ -784,6 +1039,7 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
         h.lastLog = latestActualLog(h.logs);
         h.snoozedUntil = null;
         clearPlanByDateOnLog(h);
+        if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
         changedData = true;
         credited += 1;
       }
@@ -809,6 +1065,20 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
 // (log each passed scheduled weekday/monthday day). Adds completion logs,
 // cancels scheduled pushes for tasks, and re-renders. Idempotent — safe on a
 // timer. Returns the number of items it completed.
+function effectiveAutoMarkTrigger(h,now = Date.now()){
+  if(!h)return null;
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(h.type === 'task' && doing && doing.hid === h.hid && doing.dayBase === dayStart(now)){
+    return doing.startedAt;
+  }
+  if(h.type === 'task'){
+    return h.eventTime ?? (h.dueDate !== null
+      ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+      : null);
+  }
+  return null;
+}
+
 function sweepAutoDoneTasks(){
   const chunkCount = sweepAutoMarkedBreakableChunks(Date.now(),{refresh:false,toast:true});
   const data = load();
@@ -821,10 +1091,8 @@ function sweepAutoDoneTasks(){
     if(h.autoMarkMinutes === null)return;
     if(h.breakable)return; // breakables are reconciled against placed chunks above
     if(h.type === 'task'){
-      // Trigger: fixed time, or when the task enters the agenda window.
-      const trigger = h.eventTime ?? (h.dueDate !== null
-        ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
-        : null);
+      // Trigger: doing-now override, fixed time, or when the task enters the agenda window.
+      const trigger = effectiveAutoMarkTrigger(h,now);
       if(trigger === null)return;
       if(trigger + (h.autoMarkMinutes || 0) * 60000 >= now)return;
       if(h.lastLog !== null)return; // already done (manual check-off or prior sweep)
@@ -832,6 +1100,7 @@ function sweepAutoDoneTasks(){
       logs.push(trigger);
       h.logs = normalizeLogs(logs);
       h.lastLog = latestActualLog(h.logs);
+      if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
       changed = true;
       count += 1;
       if(typeof reminderSignature === 'function')completedSigs.push(reminderSignature(h));

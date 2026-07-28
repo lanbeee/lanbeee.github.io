@@ -325,6 +325,9 @@ function doNuke(i){
     }
   }
   data.splice(i,1);
+  if(typeof pruneOrderConstraintsForHabit === 'function'){
+    pruneOrderConstraintsForHabit(removed,[],Date.now());
+  }
   if(save(data)){
     showActionToast(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
     render();

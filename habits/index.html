@@ -1168,6 +1168,33 @@
     </div>
   </div>
 
+  <!-- temporary agenda order / doing-now -->
+  <div class="sheet-wrap" id="order-link-sheet" role="dialog" aria-modal="true" aria-labelledby="order-link-title">
+    <div class="sheet order-link-sheet">
+      <p class="sheet-name" id="order-link-title">Reorder?</p>
+      <p class="sheet-sub" id="order-link-sub">Just for today. Clears when done.</p>
+      <p class="order-link-summary" id="order-link-summary"></p>
+      <div class="order-link-rows" id="order-link-rows"></div>
+      <div class="btn-row">
+        <button class="btn" type="button" id="order-link-cancel">cancel</button>
+        <button class="btn" type="button" id="order-link-clear" hidden>clear</button>
+        <button class="btn primary" type="button" id="order-link-save">save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet-wrap" id="doing-now-sheet" role="dialog" aria-modal="true" aria-labelledby="doing-now-title">
+    <div class="sheet">
+      <p class="sheet-name" id="doing-now-title">Do this now?</p>
+      <p class="sheet-sub" id="doing-now-sub">Auto-done starts from now.</p>
+      <p class="order-link-summary" id="doing-now-name"></p>
+      <div class="btn-row">
+        <button class="btn" type="button" id="doing-now-cancel">cancel</button>
+        <button class="btn primary" type="button" id="doing-now-confirm">yes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- location permission rationale (iOS / PWA: keep gesture → Allow → getCurrentPosition) -->
   <div class="sheet-wrap" id="location-permission-sheet">
     <div class="sheet location-permission-sheet">
@@ -1347,6 +1374,7 @@
 <script src="./js/shell-ui.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings.js" defer></script>
+<script src="./js/agenda-order.js" defer></script>
 <script src="./js/main.js" defer></script>
 <script>
 if ('serviceWorker' in navigator) {

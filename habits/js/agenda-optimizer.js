@@ -103,6 +103,137 @@ function optimizerWeight(c){
     + urgencyBonus;
 }
 
+// Soft boost so temporary day-order / doing-now still matter in the ILP objective.
+const ORDER_BEFORE_WEIGHT_BONUS = 35;
+const DOING_NOW_WEIGHT_BONUS = 220;
+const DIRECT_ORDER_GAP_PENALTY = 0.4; // per minute of gap after predecessor end
+
+function doingNowForDay(state){
+  if(!state || typeof getDoingNow !== 'function')return null;
+  const doing = getDoingNow();
+  if(!doing || !doing.hid)return null;
+  if(doing.dayBase !== state.dayBase)return null;
+  return doing;
+}
+
+function orderBoostForCandidate(c,dayBase){
+  if(!c || !c.h || !c.h.hid || typeof orderConstraintsForDay !== 'function')return 0;
+  let boost = 0;
+  for(const e of orderConstraintsForDay(dayBase)){
+    if(e.beforeHid === c.h.hid)boost += e.adjacency === 'direct' ? ORDER_BEFORE_WEIGHT_BONUS * 1.5 : ORDER_BEFORE_WEIGHT_BONUS;
+    if(e.afterHid === c.h.hid)boost -= 8; // slight nudge so successors yield early slots
+  }
+  return boost;
+}
+
+function applyEarlyBeforeWeights(opts,state){
+  if(!opts || !opts.length || !state || typeof orderConstraintsForDay !== 'function')return;
+  const beforeHids = new Set(orderConstraintsForDay(state.dayBase).map(e=>e.beforeHid));
+  if(!beforeHids.size)return;
+  const origin = state.startClock || state.dayBase;
+  for(const o of opts){
+    const hid = o && o.fill && o.fill.h && o.fill.h.hid;
+    if(!hid || !beforeHids.has(hid) || !o.fit)continue;
+    const delayMin = Math.max(0,(o.fit.placeStart - origin) / 60000);
+    o.weight += Math.max(0,48 - Math.min(48,delayMin));
+  }
+}
+
+function applyDoingNowWeight(o,doing){
+  if(!doing || !o || !o.fill || !o.fill.h || o.fill.h.hid !== doing.hid || !o.fit)return;
+  const delayMin = Math.max(0,(o.fit.placeStart - doing.startedAt) / 60000);
+  o.weight += DOING_NOW_WEIGHT_BONUS - Math.min(DOING_NOW_WEIGHT_BONUS,delayMin);
+}
+
+function applyDirectOrderGapWeights(opts,dayBase){
+  if(!opts || !opts.length || typeof orderConstraintsForDay !== 'function')return;
+  const edges = orderConstraintsForDay(dayBase).filter(e=>e.adjacency === 'direct');
+  if(!edges.length)return;
+  const byHid = new Map();
+  for(const o of opts){
+    const hid = o && o.fill && o.fill.h && o.fill.h.hid;
+    if(!hid)continue;
+    if(!byHid.has(hid))byHid.set(hid,[]);
+    byHid.get(hid).push(o);
+  }
+  for(const e of edges){
+    const befores = byHid.get(e.beforeHid) || [];
+    const afters = byHid.get(e.afterHid) || [];
+    if(!befores.length || !afters.length)continue;
+    for(const b of afters){
+      let bestGap = Infinity;
+      for(const a of befores){
+        if(b.fit.placeStart + 60000 < a.fit.placeEnd)continue;
+        bestGap = Math.min(bestGap,(b.fit.placeStart - a.fit.placeEnd) / 60000);
+      }
+      if(bestGap < Infinity)b.weight -= Math.min(120,bestGap) * DIRECT_ORDER_GAP_PENALTY;
+    }
+  }
+}
+
+function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase){
+  if(!opts || !opts.length || typeof orderConstraintsForDay !== 'function')return;
+  const edges = orderConstraintsForDay(dayBase);
+  if(!edges.length)return;
+  const byHid = new Map();
+  opts.forEach((o,idx)=>{
+    const hid = o && o.fill && o.fill.h && o.fill.h.hid;
+    if(!hid)return;
+    if(!byHid.has(hid))byHid.set(hid,[]);
+    byHid.get(hid).push(idx);
+  });
+  let orderClash = 0;
+  for(const e of edges){
+    const beforeIdxs = byHid.get(e.beforeHid) || [];
+    const afterIdxs = byHid.get(e.afterHid) || [];
+    for(const ai of beforeIdxs){
+      for(const bi of afterIdxs){
+        const A = opts[ai];
+        const B = opts[bi];
+        if(!A || !B || !A.fit || !B.fit)continue;
+        // sometime + direct: never start the successor before the predecessor ends.
+        if(B.fit.placeStart + 60000 < A.fit.placeEnd){
+          subjectTo.push({
+            name:`ord_${orderClash++}`,
+            vars:[{name:A.varName,coef:1},{name:B.varName,coef:1}],
+            bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
+          });
+        }
+      }
+    }
+  }
+}
+
+function orderAwareOptimizerSort(dayBase){
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const preds = new Map(); // hid → set of beforeHids that must precede it
+  const beforeBoost = new Map();
+  if(typeof orderConstraintsForDay === 'function'){
+    for(const e of orderConstraintsForDay(dayBase)){
+      if(!preds.has(e.afterHid))preds.set(e.afterHid,new Set());
+      preds.get(e.afterHid).add(e.beforeHid);
+      beforeBoost.set(e.beforeHid,(beforeBoost.get(e.beforeHid) || 0) + (e.adjacency === 'direct' ? 2 : 1));
+    }
+  }
+  return (a,b)=>{
+    const ah = a && a.h && a.h.hid;
+    const bh = b && b.h && b.h.hid;
+    if(doing && doing.dayBase === dayBase){
+      if(ah === doing.hid && bh !== doing.hid)return -1;
+      if(bh === doing.hid && ah !== doing.hid)return 1;
+    }
+    // Prefer placing a predecessor before its successor.
+    if(ah && bh){
+      if(preds.get(bh) && preds.get(bh).has(ah))return -1;
+      if(preds.get(ah) && preds.get(ah).has(bh))return 1;
+    }
+    const wa = beforeBoost.get(ah) || 0;
+    const wb = beforeBoost.get(bh) || 0;
+    if(wa !== wb)return wb - wa;
+    return optimizerWeight(b) - optimizerWeight(a);
+  };
+}
+
 function optimizerWindowForCandidate(candidate,state){
   if(!candidate || !candidate.h || !state)return null;
   if(typeof hasTimeWindow === 'function' && hasTimeWindow(candidate.h)){
@@ -120,6 +251,10 @@ function optimizerWindowForCandidate(candidate,state){
 // without paying for a minute-by-minute grid on mobile.
 function listPlaceFitsOnDay(state,fill,dayCandidates = []){
   if(typeof tryPlaceOnDay !== 'function')return [];
+  const doing = doingNowForDay(state);
+  const doingOpts = (doing && fill && fill.h && fill.h.hid === doing.hid)
+    ? {allowNetwork:false,doingNowStart:doing.startedAt}
+    : {allowNetwork:false};
   const scan = ()=>{
     const fits = [];
     const seen = new Set();
@@ -130,6 +265,30 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = []){
       if(!win)continue;
       windowEdges.push(win.start - durationMs,win.start,win.end - durationMs,win.end);
     }
+    // Temporary order links need staggered starts — otherwise every fill only
+    // gets the same ASAP option and pairwise order rows forbid co-selection.
+    const orderEdges = typeof orderConstraintsForDay === 'function'
+      ? orderConstraintsForDay(state.dayBase) : [];
+    if(orderEdges.length || doing){
+      const step = 30 * 60000;
+      const dayEnd = state.dayBase + 86400000;
+      let cursor = Math.max(state.startClock, doing && fill && fill.h && fill.h.hid === doing.hid
+        ? doing.startedAt : state.startClock);
+      let guards = 0;
+      while(cursor < dayEnd && guards < 24){
+        windowEdges.push(cursor);
+        cursor += step;
+        guards += 1;
+      }
+      // Also chain after other candidates' durations from startClock.
+      let chain = state.startClock;
+      for(const candidate of dayCandidates){
+        if(!candidate || !candidate.h || candidate.h === fill.h)continue;
+        const otherDur = clampDuration(candidate.h.durationMinutes) * 60000;
+        chain += otherDur;
+        windowEdges.push(chain);
+      }
+    }
     for(const slot of state.slots || []){
       const anchors = [slot.start,state.startClock,...windowEdges]
         .filter(ts=>Number.isFinite(ts) && ts < slot.end)
@@ -138,7 +297,7 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = []){
         const clone = clonePlacementState(state);
         clone.slots = [slot];
         clone.startClock = Math.max(state.startClock,slot.start,anchor);
-        const fit = tryPlaceOnDay(clone,fill,{allowNetwork:false});
+        const fit = tryPlaceOnDay(clone,fill,doingOpts);
         if(!fit)continue;
         const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
         if(seen.has(key))continue;
@@ -160,6 +319,7 @@ function fitsOverlap(a,b){
 // Solve set-packing ILP for one day. Returns array of {fill, fit} or null on failure.
 function solveDayPackingIlp(GLPK,state,dayCandidates){
   const options = [];
+  const doing = doingNowForDay(state);
   for(const c of dayCandidates){
     // Breakable budgets are continuous resources, not one all-or-nothing event.
     // They are fitted after this exact fixed-duration solve has reserved narrow
@@ -167,8 +327,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates){
     if(c.h && c.h.breakable)continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     const fits = listPlaceFitsOnDay(state,fill,dayCandidates);
+    const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
     for(const fit of fits){
-      options.push({c,fill,fit,weight:optimizerWeight(c)});
+      const option = {c,fill,fit,weight:baseWeight};
+      applyDoingNowWeight(option,doing);
+      options.push(option);
     }
   }
   if(!options.length)return [];
@@ -202,6 +365,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates){
       round += 1;
     }
   }
+
+  applyDirectOrderGapWeights(opts,state.dayBase);
+  applyEarlyBeforeWeights(opts,state);
 
   const vars = [];
   const binaries = [];
@@ -269,6 +435,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates){
       });
     }
   }
+  // Temporary same-day order links: forbid successor options that start before
+  // a predecessor option ends (sometime + direct).
+  appendOrderConstraintRows(GLPK,subjectTo,opts,state.dayBase);
 
   const problem = {
     name:'AgendaDayPack',
@@ -314,12 +483,15 @@ async function packDayWithOptimizer(state,dayCandidates){
 // Keeps the rest of the week on the optimizer path instead of aborting entirely.
 function packDayWithHeuristic(state,dayCandidates){
   if(typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return [];
-  const ordered = dayCandidates.slice().sort((a,b)=>optimizerWeight(b) - optimizerWeight(a));
+  const doing = doingNowForDay(state);
+  const ordered = dayCandidates.slice().sort(orderAwareOptimizerSort(state.dayBase));
   const chosen = [];
   for(const c of ordered){
     if(state.placed.has(c.i))continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const fit = tryPlaceOnDay(state,fill,{allowNetwork:true});
+    const placeOpts = {allowNetwork:true};
+    if(doing && fill.h && fill.h.hid === doing.hid)placeOpts.doingNowStart = doing.startedAt;
+    const fit = tryPlaceOnDay(state,fill,placeOpts);
     if(!fit)continue;
     chosen.push({fill,fit});
     commitPlacement(state,fill,fit);

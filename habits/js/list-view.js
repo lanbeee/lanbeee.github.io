@@ -1037,11 +1037,13 @@ function cardBreakableSlider(h){
 function pendingAutoMarkWindow(h,now = Date.now()){
   if(!h || typeof isAutoMark !== 'function' || !isAutoMark(h) || h.breakable)return null;
   if(h.type !== 'task' || h.lastLog !== null)return null;
-  const trigger = h.eventTime != null
-    ? h.eventTime
-    : (h.dueDate !== null
-      ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
-      : null);
+  const trigger = typeof effectiveAutoMarkTrigger === 'function'
+    ? effectiveAutoMarkTrigger(h,now)
+    : (h.eventTime != null
+      ? h.eventTime
+      : (h.dueDate !== null
+        ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+        : null));
   if(trigger == null)return null;
   const delayMs = Math.max(0,Number(h.autoMarkMinutes) || 0) * 60000;
   const end = trigger + delayMs;
@@ -2378,7 +2380,7 @@ function render(opts){
     return true;
   };
 
-  const appendHabitCard = (realIdx,agendaRow,earlyReasonText)=>{
+  const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null)=>{
     const h = data[realIdx];
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
@@ -2387,10 +2389,14 @@ function render(opts){
     const cue = cardCue(h);
     const agendaPill = agendaCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
+    const orderPill = (dayBase != null && typeof orderLinkPillHtml === 'function')
+      ? orderLinkPillHtml(h.hid,dayBase,data)
+      : '';
+    const nowPill = typeof doingNowPillHtml === 'function' ? doingNowPillHtml(h) : '';
     const accent = visualClassColor(cardScoreTone);
     const statusPill = sortSettings.showStatusOnCards ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
     const gatedEarlyPill = sortSettings.showEarlyOnCards ? earlyPill : '';
-    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
     const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
@@ -2415,10 +2421,17 @@ function render(opts){
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
     const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
+    const canDrag = dayBase != null && typeof isAgendaFillDraggable === 'function' && isAgendaFillDraggable(h,agendaRow);
+    const dragHandle = canDrag
+      ? `<button type="button" class="agenda-drag-handle" aria-label="drag to reorder" title="drag to reorder"><i class="ti ti-grip-vertical" aria-hidden="true"></i></button>`
+      : '';
 
     const row = document.createElement('div');
-    row.className = 'swipe-row';
+    row.className = 'swipe-row' + (canDrag ? ' has-agenda-drag' : '');
     row.dataset.realIdx = realIdx;
+    if(dayBase != null)row.dataset.dayBase = String(dayBase);
+    if(canDrag)row.dataset.agendaDraggable = '1';
+    if(h.hid)row.dataset.hid = h.hid;
     if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
       row.dataset.chunkMinutes = String(Math.round(agendaRow.chunkMinutes));
     }
@@ -2443,6 +2456,7 @@ function render(opts){
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+        ${dragHandle}
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
           ${iconHtml(h,c)}
         </button>
@@ -2451,7 +2465,7 @@ function render(opts){
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
           </div>
-          ${isBreakable ? '' : `<div class="ting-cue">${escapeHtml(cue)}</div>
+          ${isBreakable ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `<div class="ting-cue">${escapeHtml(cue)}</div>
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           <div class="ting-visual"${visualAria}>
             ${visualHtml}
@@ -2468,6 +2482,7 @@ function render(opts){
     setupSwipe(row);
     setupCardTap(row,realIdx);
     if(showBreakableSlider)setupBreakableCrown(row,realIdx);
+    if(canDrag && typeof setupAgendaDragHandle === 'function')setupAgendaDragHandle(row,realIdx,dayBase);
   };
 
   if(deferAgenda){
@@ -2575,7 +2590,7 @@ function render(opts){
         if(data[row.i]?.pinned)continue;
         const cat = todayCategory(data[row.i],sortSettings);
         const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
-        appendHabitCard(row.i,row,earlyText);
+        appendHabitCard(row.i,row,earlyText,day.dayBase);
       }
     });
 
@@ -2722,7 +2737,7 @@ function render(opts){
             }
             prevTodayLocId = cLocId || prevTodayLocId;
             const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
-            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '');
+            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '',dayStart(Date.now()));
           });
           return;
         }
@@ -2746,7 +2761,8 @@ function render(opts){
       appendHabitCard(
         realIdx,
         agendaRow,
-        (!searching && cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : ''
+        (!searching && cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : '',
+        inTodaySection ? dayStart(Date.now()) : null
       );
     });
     if(!searching && todayFirstActive && sectionCat !== 0){
@@ -3590,6 +3606,7 @@ function logTing(i,opts = {}){
   h.lastLog = latestActualLog(h.logs);
   h.snoozedUntil = null;
   if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(h);
+  if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
   if(!save(data))return false;
   // Cancel any scheduled push for this completed task.
   if(typeof cancelPush === 'function' && h.type === 'task' && isTaskDone(h)){
@@ -3641,6 +3658,7 @@ function logTingAt(i,ts){
   if(!isPlan){
     data[i].snoozedUntil = null;
     if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(data[i]);
+    if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(data[i]);
   }
   if(!save(data))return false;
   showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
