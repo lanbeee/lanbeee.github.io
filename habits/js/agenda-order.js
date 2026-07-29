@@ -2,11 +2,64 @@
 // Long-press a fill card (~450ms) to reveal the grip, then drag within that day.
 
 const AGENDA_LONGPRESS_MS = 450;
+const CARD_GESTURE_OWNERS = new Set(['hold','reorder','scrub','swipe']);
 let _orderLinkDraft = null;
 let _doingNowDraft = null;
 let _agendaDrag = null;
 let _agendaLongPress = null;
 let _agendaReadyHideTimer = null;
+
+/** Current exclusive gesture owner on a swipe-row, or null. */
+function cardGestureOwner(row){
+  if(!row || !row.dataset)return null;
+  const o = row.dataset.cardGesture || '';
+  return CARD_GESTURE_OWNERS.has(o) ? o : null;
+}
+
+/**
+ * Claim exclusive gesture ownership.
+ * opts.upgradeFrom — allow replacing that owner (e.g. hold → reorder)
+ * opts.force — take over from 'hold' (weaker prelude) after cancelling long-press
+ */
+function claimCardGesture(row,owner,opts = {}){
+  if(!row || !CARD_GESTURE_OWNERS.has(owner))return false;
+  const cur = cardGestureOwner(row);
+  if(cur === owner)return true;
+  if(opts.upgradeFrom && cur === opts.upgradeFrom){
+    row.dataset.cardGesture = owner;
+    return true;
+  }
+  if(opts.force && cur === 'hold'){
+    cancelAgendaLongPress({silent:true});
+    row.classList.remove('agenda-drag-ready','agenda-longpress-armed');
+    row.dataset.cardGesture = owner;
+    return true;
+  }
+  if(cur)return false;
+  row.dataset.cardGesture = owner;
+  return true;
+}
+
+function releaseCardGesture(row,owner = null){
+  if(!row)return false;
+  const cur = cardGestureOwner(row);
+  if(!cur)return false;
+  if(owner != null && cur !== owner)return false;
+  delete row.dataset.cardGesture;
+  return true;
+}
+
+/** True if `action` must not start while another owner holds the row. */
+function cardGestureBlocks(row,action){
+  const cur = cardGestureOwner(row);
+  if(!cur)return false;
+  if(action === 'swipe')return cur === 'reorder' || cur === 'scrub' || cur === 'hold';
+  if(action === 'scrub')return cur === 'reorder' || cur === 'swipe';
+  if(action === 'hold')return cur === 'reorder' || cur === 'scrub' || cur === 'swipe';
+  if(action === 'reorder')return cur === 'scrub' || cur === 'swipe';
+  if(action === 'tap')return cur === 'reorder' || cur === 'scrub' || cur === 'swipe';
+  return false;
+}
 
 function formatOrderDayLabel(dayBase){
   const base = clampDayTimestamp(dayBase);
@@ -44,20 +97,44 @@ function isAgendaFillDraggable(h,agendaRow){
   return true;
 }
 
+function orderMarkChipHtml(pill){
+  const arrow = pill.kind === 'after' ? 'ti-arrow-up' : 'ti-arrow-down';
+  const arrowLabel = pill.kind === 'after' ? 'after' : 'before';
+  const emoji = pill.otherEmoji || '';
+  const vars = typeof emojiBgStyleVars === 'function' ? emojiBgStyleVars(pill.otherBg) : null;
+  const style = vars
+    ? `style="--order-mark-bg:${vars.bg};--order-mark-fg:${vars.icon}"`
+    : '';
+  const emojiHtml = emoji
+    ? `<span class="order-mark-emoji" aria-hidden="true">${escapeHtml(emoji)}</span>`
+    : `<span class="order-mark-emoji is-empty" aria-hidden="true">·</span>`;
+  const adj = pill.adjacency === 'direct' ? 'next' : 'later';
+  const title = `${arrowLabel} ${pill.otherName || 'task'} (${adj})`;
+  return `<span class="order-mark${vars ? ' has-bg' : ''}" ${style} title="${escapeHtml(title)}"><i class="ti ${arrow}" aria-hidden="true"></i>${emojiHtml}</span>`;
+}
+
+/** Compact non-interactive order indicators: arrow + neighbor emoji/color. */
 function orderLinkPillHtml(hid,dayBase,data){
   if(!hid || dayBase == null || typeof orderConstraintPillsForHid !== 'function')return '';
   const pills = orderConstraintPillsForHid(hid,dayBase,data);
   if(!pills.length)return '';
-  const first = pills[0];
-  const extra = pills.length > 1 ? ` +${pills.length - 1}` : '';
-  return `<button type="button" class="context-pill order-link" data-order-pill="${escapeHtml(hid)}" data-order-day="${dayBase}" title="${escapeHtml(pills.map(p=>p.label).join(' · '))}"><i class="ti ti-arrows-vertical" aria-hidden="true"></i>${escapeHtml(first.label)}${escapeHtml(extra)}</button>`;
+  const title = pills.map(p=>p.label).join(' · ');
+  return `<span class="order-marks" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${pills.map(orderMarkChipHtml).join('')}</span>`;
 }
 
-function doingNowPillHtml(h){
+function doingNowPillHtml(h,now = Date.now()){
   if(!h || !h.hid || typeof getDoingNow !== 'function')return '';
   const doing = getDoingNow();
   if(!doing || doing.hid !== h.hid)return '';
-  return `<span class="context-pill doing-now-pill" title="doing now"><i class="ti ti-player-play" aria-hidden="true"></i>now</span>`;
+  if(typeof isDoingNowActive === 'function' && !isDoingNowActive(doing,now))return '';
+  const end = typeof doingNowAutoMarkDeadline === 'function'
+    ? doingNowAutoMarkDeadline(doing)
+    : doing.endsAt;
+  const leftMin = Number.isFinite(end)
+    ? Math.max(1,Math.ceil((end - now) / 60000))
+    : Math.max(1,Number(doing.sessionMinutes) || 0);
+  const label = leftMin ? `now · ${leftMin}m` : 'now';
+  return `<span class="context-pill doing-now-pill" title="doing now until session ends"><i class="ti ti-player-play" aria-hidden="true"></i>${escapeHtml(label)}</span>`;
 }
 
 function openDoingNowSheet(draft){
@@ -65,10 +142,11 @@ function openDoingNowSheet(draft){
   const nameEl = $('doing-now-name');
   const sub = $('doing-now-sub');
   if(nameEl)nameEl.innerHTML = habitLabelHtml(draft && draft.h);
+  const mins = draft && draft.h && typeof doingNowSessionMinutesFor === 'function'
+    ? doingNowSessionMinutesFor(draft.h)
+    : (draft && draft.h ? clampDuration(draft.h.durationMinutes) : 30);
   if(sub){
-    sub.textContent = draft && draft.h && draft.h.breakable
-      ? 'Chunks auto-log from a fresh start.'
-      : 'Auto-done starts from now.';
+    sub.textContent = `Stays on top for ${mins}m, then auto-done once.`;
   }
   if(typeof openSheet === 'function')openSheet('doing-now-sheet');
 }
@@ -79,16 +157,25 @@ function confirmDoingNow(){
   _doingNowDraft = null;
   if(!draft || !draft.h || !draft.h.hid)return;
   const now = Date.now();
-  if(typeof setDoingNow === 'function')setDoingNow(draft.h.hid,now,dayStart(now));
-  // Also prefer it first today relative to the previous first fill, if any.
+  const today = dayStart(now);
+  const sessionMinutes = typeof doingNowSessionMinutesFor === 'function'
+    ? doingNowSessionMinutesFor(draft.h,now)
+    : clampDuration(draft.h.durationMinutes);
+  if(typeof setDoingNow === 'function'){
+    setDoingNow(draft.h.hid,now,today,{
+      sessionMinutes,
+      oneShotAutoMark:true
+    });
+  }
+  // Pin ahead of whoever was previously first today (direct = right before).
   if(draft.afterHid && typeof saveOrderConstraintsForDrop === 'function'){
-    saveOrderConstraintsForDrop(dayStart(now),[{
+    saveOrderConstraintsForDrop(today,[{
       beforeHid:draft.h.hid,
       afterHid:draft.afterHid,
-      adjacency:'sometime'
+      adjacency:'direct'
     }]);
   }
-  if(typeof showToast === 'function')showToast(`doing ${shortHabitName(draft.h)} now`);
+  if(typeof showToast === 'function')showToast(`doing ${shortHabitName(draft.h)} now · ${sessionMinutes}m`);
   if(typeof render === 'function')render();
   else if(typeof refreshOpenViews === 'function')refreshOpenViews();
   if(typeof sweepAutoDoneTasks === 'function')setTimeout(sweepAutoDoneTasks,200);
@@ -327,6 +414,7 @@ function finishAgendaDrag(clientY){
   clearAgendaDropLines();
   if(!drag)return;
   drag.row.classList.remove('is-agenda-dragging','agenda-longpress-armed');
+  releaseCardGesture(drag.row,'reorder');
   if(!drag.moved){
     // Grip revealed but no move — keep ready briefly so they can grab again.
     drag.row.classList.add('agenda-drag-ready');
@@ -342,10 +430,9 @@ function finishAgendaDrag(clientY){
   const afterH = target.after != null ? data[target.after] : null;
   const todayBase = dayStart(Date.now());
   const atTop = target.index === 0;
-  const isAuto = typeof isAutoMark === 'function' && isAutoMark(h);
 
-  // Drag to top of today + auto-mark → doing now.
-  if(atTop && drag.dayBase === todayBase && isAuto){
+  // Drag to top of today → doing now (one-shot auto-done for this session).
+  if(atTop && drag.dayBase === todayBase){
     openDoingNowSheet({
       h,
       afterHid:afterH && afterH.hid ? afterH.hid : null
@@ -367,7 +454,11 @@ function finishAgendaDrag(clientY){
 }
 
 function beginAgendaDrag(row,realIdx,dayBase,pointerId,clientY,fromHandle){
+  if(cardGestureBlocks(row,'reorder') && cardGestureOwner(row) !== 'hold')return false;
+  if(!claimCardGesture(row,'reorder',{upgradeFrom:'hold'}) && !claimCardGesture(row,'reorder'))return false;
   clearAgendaDragReady(row);
+  delete row.dataset.crownGesture;
+  if(typeof closeAllSwipes === 'function')closeAllSwipes();
   row.classList.add('agenda-drag-ready','is-agenda-dragging');
   _agendaDrag = {
     row,
@@ -381,13 +472,74 @@ function beginAgendaDrag(row,realIdx,dayBase,pointerId,clientY,fromHandle){
   try{
     if(typeof navigator !== 'undefined' && navigator.vibrate)navigator.vibrate(12);
   }catch{ /* ignore */ }
+  return true;
 }
 
-function cancelAgendaLongPress(){
+function cancelAgendaLongPress(opts = {}){
   if(!_agendaLongPress)return;
+  const row = _agendaLongPress.row;
   if(_agendaLongPress.timer)clearTimeout(_agendaLongPress.timer);
-  if(_agendaLongPress.row)_agendaLongPress.row.classList.remove('agenda-longpress-armed');
+  if(row)row.classList.remove('agenda-longpress-armed');
   _agendaLongPress = null;
+  if(!opts.silent && row)releaseCardGesture(row,'hold');
+}
+
+/** Start the long-press that reveals the reorder grip (card or breakable crown). */
+function beginAgendaCardLongPress(row,realIdx,dayBase,e){
+  if(!row || realIdx == null || dayBase == null || !e)return false;
+  if(row.dataset.agendaDraggable !== '1')return false;
+  if(_agendaDrag)return false;
+  if(cardGestureBlocks(row,'hold'))return false;
+  cancelAgendaLongPress();
+  if(!claimCardGesture(row,'hold'))return false;
+  const card = row.querySelector('.ting-card');
+  const scrollHost = card ? card.closest('.pane-list,.sheet,.detail-page') : null;
+  _agendaLongPress = {
+    row,realIdx,dayBase:Number(dayBase),pointerId:e.pointerId,
+    x:e.clientX,y:e.clientY,held:true,armed:false,
+    scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY,
+    timer:setTimeout(()=>{
+      if(!_agendaLongPress || _agendaLongPress.pointerId !== e.pointerId)return;
+      _agendaLongPress.armed = true;
+      _agendaLongPress.timer = null;
+      // Crown may still soft-claim swipe — drop it so vertical drag can reorder.
+      delete row.dataset.crownGesture;
+      armAgendaReorder(row,realIdx,dayBase);
+    },AGENDA_LONGPRESS_MS)
+  };
+  return true;
+}
+
+/** After grip is armed, a vertical move from the crown starts the drag. */
+function tryAgendaDragFromArmedPress(row,e){
+  if(!_agendaLongPress || _agendaLongPress.pointerId !== e.pointerId)return false;
+  if(!_agendaLongPress.armed || !_agendaLongPress.held)return false;
+  if(Math.abs(e.clientY - _agendaLongPress.y) <= 6)return false;
+  const lp = _agendaLongPress;
+  _agendaLongPress = null;
+  return beginAgendaDrag(row,lp.realIdx,lp.dayBase,lp.pointerId,e.clientY,false);
+}
+
+/** True while a reorder long-press is timing or armed for this pointer. */
+function agendaLongPressOwnsPointer(pointerId){
+  return Boolean(_agendaLongPress && _agendaLongPress.pointerId === pointerId);
+}
+
+/** Crown / foreign pointerup: settle long-press or finish an in-flight drag. */
+function settleAgendaPointerFromForeignTarget(row,e){
+  if(_agendaDrag && _agendaDrag.pointerId === e.pointerId && _agendaDrag.row === row){
+    finishAgendaDrag(e.clientY);
+    return true;
+  }
+  if(!_agendaLongPress || _agendaLongPress.pointerId !== e.pointerId)return false;
+  _agendaLongPress.held = false;
+  if(_agendaLongPress.timer)cancelAgendaLongPress();
+  else{
+    _agendaLongPress = null;
+    releaseCardGesture(row,'hold');
+    scheduleAgendaDragReadyHide(row);
+  }
+  return true;
 }
 
 function armAgendaReorder(row,realIdx,dayBase){
@@ -407,24 +559,12 @@ function setupAgendaDragHandle(row,realIdx,dayBase){
   const card = row.querySelector('.ting-card');
   if(!handle || !card)return;
 
-  // Long-press on the card reveals the six-dot grip.
+  // Long-press on the card reveals the six-dot grip. Crown dial starts its
+  // own long-press via beginAgendaCardLongPress (it stopPropagates).
   card.addEventListener('pointerdown',e=>{
     if(e.button != null && e.button !== 0)return;
-    if(e.target.closest('.pulse-btn,.breakable-crown,.agenda-drag-handle,.context-pill.order-link,.card-action-btn'))return;
-    if(_agendaDrag)return;
-    cancelAgendaLongPress();
-    const scrollHost = card.closest('.pane-list,.sheet,.detail-page');
-    _agendaLongPress = {
-      row,realIdx,dayBase:Number(dayBase),pointerId:e.pointerId,
-      x:e.clientX,y:e.clientY,held:true,armed:false,
-      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY,
-      timer:setTimeout(()=>{
-        if(!_agendaLongPress || _agendaLongPress.pointerId !== e.pointerId)return;
-        _agendaLongPress.armed = true;
-        _agendaLongPress.timer = null;
-        armAgendaReorder(row,realIdx,dayBase);
-      },AGENDA_LONGPRESS_MS)
-    };
+    if(e.target.closest('.pulse-btn,.breakable-crown,.breakable-progress,.agenda-drag-handle,.order-marks,.card-action-btn'))return;
+    beginAgendaCardLongPress(row,realIdx,dayBase,e);
   });
 
   card.addEventListener('pointermove',e=>{
@@ -438,11 +578,7 @@ function setupAgendaDragHandle(row,realIdx,dayBase){
         return;
       }
       // Armed + still holding + vertical move → start dragging the card.
-      if(_agendaLongPress.held && Math.abs(e.clientY - _agendaLongPress.y) > 6){
-        const lp = _agendaLongPress;
-        _agendaLongPress = null;
-        beginAgendaDrag(row,realIdx,dayBase,lp.pointerId,e.clientY,false);
-      }
+      tryAgendaDragFromArmedPress(row,e);
     }
     if(!_agendaDrag || _agendaDrag.pointerId !== e.pointerId || _agendaDrag.row !== row)return;
     e.preventDefault();
@@ -458,6 +594,7 @@ function setupAgendaDragHandle(row,realIdx,dayBase){
       else{
         // Grip is visible; leave it ready for a follow-up grip drag.
         _agendaLongPress = null;
+        releaseCardGesture(row,'hold');
         scheduleAgendaDragReadyHide(row);
       }
     }
@@ -474,7 +611,9 @@ function setupAgendaDragHandle(row,realIdx,dayBase){
     e.stopPropagation();
     cancelAgendaLongPress();
     try{ handle.setPointerCapture(e.pointerId); }catch{ /* ignore */ }
-    beginAgendaDrag(row,realIdx,dayBase,e.pointerId,e.clientY,true);
+    if(!beginAgendaDrag(row,realIdx,dayBase,e.pointerId,e.clientY,true)){
+      try{ handle.releasePointerCapture(e.pointerId); }catch{ /* ignore */ }
+    }
   });
   handle.addEventListener('pointermove',e=>{
     if(!_agendaDrag || _agendaDrag.pointerId !== e.pointerId || _agendaDrag.row !== row)return;
@@ -499,13 +638,34 @@ function wireAgendaOrderSheets(){
   $('doing-now-cancel')?.addEventListener('click',cancelDoingNowSheet);
   $('doing-now-confirm')?.addEventListener('click',confirmDoingNow);
   document.addEventListener('click',e=>{
-    const pill = e.target.closest('[data-order-pill]');
-    if(pill){
+    const unlink = e.target.closest('[data-order-unlink]');
+    if(unlink){
       e.preventDefault();
       e.stopPropagation();
-      const hid = pill.dataset.orderPill;
-      const dayBase = Number(pill.dataset.orderDay);
-      openOrderLinksForHabit(hid,dayBase);
+      const id = unlink.dataset.orderUnlink;
+      if(id && typeof removeOrderConstraint === 'function'){
+        removeOrderConstraint(id);
+        if(typeof showToast === 'function')showToast('order link removed');
+        if(typeof renderDetailOrderPage === 'function')renderDetailOrderPage();
+        if(typeof render === 'function')render();
+        else if(typeof refreshOpenViews === 'function')refreshOpenViews();
+      }
+      return;
+    }
+    const clearAll = e.target.closest('[data-order-clear-hid]');
+    if(clearAll){
+      e.preventDefault();
+      e.stopPropagation();
+      const hid = clearAll.dataset.orderClearHid;
+      if(hid && typeof clearOrderConstraintsForHid === 'function'){
+        clearOrderConstraintsForHid(hid);
+      }else if(hid && typeof orderConstraintsForHid === 'function' && typeof removeOrderConstraint === 'function'){
+        for(const edge of orderConstraintsForHid(hid))removeOrderConstraint(edge.id);
+      }
+      if(typeof showToast === 'function')showToast('order cleared');
+      if(typeof renderDetailOrderPage === 'function')renderDetailOrderPage();
+      if(typeof render === 'function')render();
+      else if(typeof refreshOpenViews === 'function')refreshOpenViews();
       return;
     }
     if(!e.target.closest('.agenda-drag-handle') && !_agendaDrag){

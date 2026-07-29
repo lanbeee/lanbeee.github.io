@@ -32,6 +32,7 @@ function openDetail(i){
   $('detail-trend').textContent = trendText(h);
   $('detail-habit-message').value = h.name || '';
   $('detail-emoji').value = h.emoji || '';
+  renderEmojiBgSwatches('detail-emoji-bg',h.emojiBgColor || '');
   $('detail-days').value = h.target || '';
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
@@ -58,6 +59,7 @@ function openDetail(i){
     name:h.name || '',
     type:h.type || 'keepup',
     emoji:h.emoji || '',
+    emojiBgColor:normalizeEmojiBgColor(h.emojiBgColor),
     target:h.target || '',
     pinned:Boolean(h.pinned),
     topics:normalizeTopics(h.topics),
@@ -104,16 +106,19 @@ function openDetail(i){
   syncRhythm('detail',h.target || 7);
   syncBreakableUi();
   if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi();
-  const keepBtn = $('detail-keep-sample');
-  if(keepBtn)keepBtn.hidden = !h.sample;
-  $('detail-mark').style.background = c.bg;
-  $('detail-mark').style.color = c.icon;
+  $('detail-mark').style.cssText = '';
+  const markStyle = typeof emojiBgInlineStyle === 'function'
+    ? emojiBgInlineStyle(h,c.bg,c.icon)
+    : `background:${c.bg};color:${c.icon}`;
+  $('detail-mark').style.cssText = markStyle;
   $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
+  $('detail-mark').classList.toggle('has-emoji-bg',Boolean(normalizeEmojiBgColor(h.emojiBgColor)));
   $('detail-mark').setAttribute('aria-label',`add entry for ${h.name}`);
   $('detail-mark').innerHTML = iconHtml(h,c);
   renderStats(h);
   renderGraph(h);
   renderCalendar(h);
+  renderDetailOrderPage(h);
   setDetailDirty(false);
   openSheet('detail-sheet');
   if(changedHabit){
@@ -122,19 +127,18 @@ function openDetail(i){
     if(inner)inner.scrollTop = 0;
     if(pager){
       pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
-      // Tasks are one-off — the calendar pane is just a single dot, so land
-      // on Effort (the pane with the actual due/scheduled controls) instead
-      // of the default Calendar. Habits land on Calendar (index 0). Deferred
-      // a frame so clientWidth is measured after layout, same as
-      // openDetailSchedule() below.
-      if(h.type === 'task'){
-        requestAnimationFrame(()=>{
-          pager.scrollTo({left:pager.clientWidth * 3,behavior:'auto'});
+      // Order links → actions first so unlink is immediate.
+      // Tasks otherwise land on Effort; habits on Calendar.
+      const hasOrder = typeof habitHasOrderConstraints === 'function'
+        && habitHasOrderConstraints(h.hid);
+      requestAnimationFrame(()=>{
+        if(hasOrder)scrollDetailToNav('actions','auto');
+        else if(h.type === 'task')scrollDetailToNav('effort','auto');
+        else{
+          pager.scrollTo({left:0,behavior:'auto'});
           updateDetailPagerDots();
-        });
-      }else{
-        pager.scrollTo({left:0,behavior:'auto'});
-      }
+        }
+      });
     }
   }
   renderDetailTabs();
@@ -159,13 +163,121 @@ function openDetailCalendar(i){
 function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
-    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-    if(!pager)return;
     const h = load()[i];
-    const paneIndex = h && h.type === 'task' ? 3 : 2;
-    pager.scrollTo({left:pager.clientWidth * paneIndex,behavior:'auto'});
-    updateDetailPagerDots();
+    scrollDetailToNav(h && h.type === 'task' ? 'effort' : 'schedule','auto');
   });
+}
+
+function selectedEmojiBgColor(containerId){
+  const on = document.querySelector(`#${containerId} .emoji-bg-swatch.on`);
+  return normalizeEmojiBgColor(on && on.dataset.emojiBg);
+}
+
+function renderEmojiBgSwatches(containerId,selected = ''){
+  const wrap = $(containerId);
+  if(!wrap)return;
+  const tokens = typeof EMOJI_BG_COLOR_TOKENS !== 'undefined'
+    ? EMOJI_BG_COLOR_TOKENS
+    : ['teal','amber','red','purple','blue','green'];
+  const current = normalizeEmojiBgColor(selected);
+  const chips = [
+    `<button type="button" class="emoji-bg-swatch none${current === '' ? ' on' : ''}" data-emoji-bg="" title="none" aria-label="no emoji background" aria-pressed="${current === '' ? 'true' : 'false'}"><i class="ti ti-slash" aria-hidden="true"></i></button>`,
+    ...tokens.map(token=>{
+      const on = current === token;
+      return `<button type="button" class="emoji-bg-swatch${on ? ' on' : ''}" data-emoji-bg="${token}" title="${token}" aria-label="${token} background" aria-pressed="${on ? 'true' : 'false'}" style="--swatch-bg:var(--${token}-bg);--swatch-fg:var(--${token}-icon)"></button>`;
+    })
+  ];
+  wrap.innerHTML = chips.join('');
+  if(wrap.dataset.bound !== '1'){
+    wrap.dataset.bound = '1';
+    wrap.addEventListener('click',e=>{
+      const btn = e.target.closest('.emoji-bg-swatch');
+      if(!btn || !wrap.contains(btn))return;
+      wrap.querySelectorAll('.emoji-bg-swatch').forEach(el=>{
+        const active = el === btn;
+        el.classList.toggle('on',active);
+        el.setAttribute('aria-pressed',active ? 'true' : 'false');
+      });
+      if(containerId === 'detail-emoji-bg' && typeof setDetailDirty === 'function')setDetailDirty();
+      if(containerId === 'detail-emoji-bg'){
+        const mark = $('detail-mark');
+        if(mark){
+          const token = normalizeEmojiBgColor(btn.dataset.emojiBg);
+          mark.classList.toggle('has-emoji-bg',Boolean(token));
+          if(token){
+            mark.style.background = `var(--${token}-bg)`;
+            mark.style.color = `var(--${token}-icon)`;
+            mark.style.setProperty('--emoji-bg',`var(--${token}-bg)`);
+          }else if(detailIdx != null){
+            const h = load()[detailIdx];
+            if(h){
+              const days = daysSince(h.lastLog);
+              const c = colors(days,h.target,h.type);
+              mark.style.background = c.bg;
+              mark.style.color = c.icon;
+              mark.style.removeProperty('--emoji-bg');
+            }
+          }
+        }
+      }
+    });
+  }
+}
+
+/** RENDER: temporary order links on the actions page (hidden when none). */
+function renderDetailOrderPage(h = null){
+  const block = $('detail-order-block');
+  const list = $('detail-order-list');
+  const clearBtn = $('detail-order-clear-all');
+  if(!block || !list)return;
+  const habit = h || (detailIdx != null ? load()[detailIdx] : null);
+  if(!habit || !habit.hid || typeof orderConstraintsForHid !== 'function'){
+    block.hidden = true;
+    if(clearBtn)clearBtn.hidden = true;
+    return;
+  }
+  const edges = orderConstraintsForHid(habit.hid);
+  block.hidden = edges.length === 0;
+  if(clearBtn){
+    clearBtn.hidden = edges.length === 0;
+    clearBtn.dataset.orderClearHid = habit.hid;
+  }
+  if(!edges.length){
+    list.innerHTML = '';
+    return;
+  }
+  const data = load();
+  const byDay = new Map();
+  for(const edge of edges){
+    if(!byDay.has(edge.dayBase))byDay.set(edge.dayBase,[]);
+    byDay.get(edge.dayBase).push(edge);
+  }
+  const dayBases = [...byDay.keys()].sort((a,b)=>a - b);
+  list.innerHTML = dayBases.map(dayBase=>{
+    const dayLabel = typeof formatOrderDayLabel === 'function'
+      ? formatOrderDayLabel(dayBase)
+      : new Date(dayBase).toLocaleDateString();
+    return byDay.get(dayBase).map(edge=>{
+      const isAfter = edge.afterHid === habit.hid;
+      const otherHid = isAfter ? edge.beforeHid : edge.afterHid;
+      const other = data.find(item=>item && item.hid === otherHid);
+      const adj = edge.adjacency === 'direct' ? 'next' : 'later';
+      const mark = other
+        ? orderMarkChipHtml({
+          kind:isAfter ? 'after' : 'before',
+          adjacency:edge.adjacency,
+          otherEmoji:other.emoji || '',
+          otherBg:other.emojiBgColor || '',
+          otherName:other.name || 'task'
+        })
+        : `<span class="order-mark"><i class="ti ${isAfter ? 'ti-arrow-up' : 'ti-arrow-down'}" aria-hidden="true"></i><span class="order-mark-emoji is-empty">·</span></span>`;
+      return `<div class="detail-order-row">
+        ${mark}
+        <span class="detail-order-meta">${escapeHtml(dayLabel)} · ${adj}</span>
+        <button type="button" class="mini-text-btn detail-order-unlink" data-order-unlink="${escapeHtml(edge.id)}">unlink</button>
+      </div>`;
+    }).join('');
+  }).join('');
 }
 
 // PURE: builds header subtitle from habit state
@@ -522,6 +634,7 @@ function currentDetailTune(){
     name:$('detail-habit-message').value.trim(),
     type,
     emoji:cleanMark($('detail-emoji').value),
+    emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
     topics:selectedTopicsFrom('detail-tag-chips'),
@@ -637,6 +750,7 @@ function setDetailDirty(force){
     (current.name !== detailTuneOriginal.name ||
       current.type !== detailTuneOriginal.type ||
       current.emoji !== detailTuneOriginal.emoji ||
+      current.emojiBgColor !== detailTuneOriginal.emojiBgColor ||
       String(current.target) !== String(detailTuneOriginal.target) ||
       current.pinned !== detailTuneOriginal.pinned ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
@@ -712,6 +826,7 @@ function restoreDetailTune(){
   if(!detailTuneOriginal)return;
   $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;
+  renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
   $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
@@ -1184,30 +1299,54 @@ function renderCalendar(h){
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
 }
 
-const DETAIL_PAGE_NAV = [
-  {label:'calendar',icon:'ti-calendar-month'},
-  {label:'insight',icon:'ti-chart-line'},
-  {label:'schedule',icon:'ti-calendar-time'},
-  {label:'effort',icon:'ti-progress-check'},
-  {label:'identity',icon:'ti-id'},
-  {label:'actions',icon:'ti-dots'}
-];
+const DETAIL_PAGE_NAV = {
+  calendar:{label:'calendar',icon:'ti-calendar-month'},
+  insight:{label:'insight',icon:'ti-chart-line'},
+  schedule:{label:'schedule',icon:'ti-calendar-time'},
+  effort:{label:'effort',icon:'ti-progress-check'},
+  identity:{label:'identity',icon:'ti-id'},
+  actions:{label:'actions',icon:'ti-dots'}
+};
 
-// RENDER: syncs the compact pager navigation.
+function visibleDetailPages(pager){
+  if(!pager)return [];
+  return [...pager.querySelectorAll('.detail-page')].filter(page=>!page.hidden);
+}
+
+function detailPageIndexByNav(navKey){
+  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  if(!pager)return -1;
+  return visibleDetailPages(pager).findIndex(page=>page.dataset.detailNav === navKey);
+}
+
+function scrollDetailToNav(navKey,behavior = 'auto'){
+  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  if(!pager)return;
+  const index = detailPageIndexByNav(navKey);
+  if(index < 0)return;
+  pager.scrollTo({left:pager.clientWidth * index,behavior});
+  updateDetailPagerDots();
+}
+
+// RENDER: syncs the compact pager navigation (skips hidden pages like order).
 function updateDetailPagerDots(){
   const inner = getSheetInner('detail-sheet');
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
-  const pages = [...pager.querySelectorAll('.detail-page')];
+  const pages = visibleDetailPages(pager);
   pages.forEach((panel,i)=>{
     panel.id = panel.id || `detail-page-${i}`;
     panel.setAttribute('role','tabpanel');
   });
-  if(dotsWrap.children.length !== pages.length){
-    dotsWrap.innerHTML = pages.map((_,i)=>{
-      const item = DETAIL_PAGE_NAV[i] || {label:`page ${i + 1}`,icon:'ti-circle'};
-      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="detail-page-${i}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
+  const signature = pages.map(p=>p.dataset.detailNav || p.id).join('|');
+  if(dotsWrap.dataset.pageSig !== signature){
+    dotsWrap.dataset.pageSig = signature;
+    dotsWrap.style.gridTemplateColumns = `repeat(${Math.max(1,pages.length)},minmax(0,1fr))`;
+    dotsWrap.innerHTML = pages.map((panel,i)=>{
+      const key = panel.dataset.detailNav || `page-${i}`;
+      const item = DETAIL_PAGE_NAV[key] || {label:key,icon:'ti-circle'};
+      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="${panel.id}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
     }).join('');
   }
   if(dotsWrap.dataset.bound !== '1'){
@@ -1215,7 +1354,8 @@ function updateDetailPagerDots(){
     dotsWrap.addEventListener('click',event=>{
       const tab = event.target.closest('.detail-page-tab');
       if(!tab || !dotsWrap.contains(tab))return;
-      const index = Math.max(0,Math.min(pages.length - 1,Number(tab.dataset.detailPage) || 0));
+      const livePages = visibleDetailPages(pager);
+      const index = Math.max(0,Math.min(livePages.length - 1,Number(tab.dataset.detailPage) || 0));
       pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
     });
   }

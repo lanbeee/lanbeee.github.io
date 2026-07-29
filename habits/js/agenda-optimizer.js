@@ -113,6 +113,7 @@ function doingNowForDay(state){
   const doing = getDoingNow();
   if(!doing || !doing.hid)return null;
   if(doing.dayBase !== state.dayBase)return null;
+  if(typeof isDoingNowActive === 'function' && !isDoingNowActive(doing))return null;
   return doing;
 }
 
@@ -252,13 +253,21 @@ function optimizerWindowForCandidate(candidate,state){
 function listPlaceFitsOnDay(state,fill,dayCandidates = []){
   if(typeof tryPlaceOnDay !== 'function')return [];
   const doing = doingNowForDay(state);
+  let placeFill = fill;
   const doingOpts = (doing && fill && fill.h && fill.h.hid === doing.hid)
-    ? {allowNetwork:false,doingNowStart:doing.startedAt}
+    ? {allowNetwork:false,doingNowStart:Math.min(Number(doing.startedAt) || Date.now(), Date.now())}
     : {allowNetwork:false};
+  if(doingOpts.doingNowStart != null){
+    const sessionMin = Math.max(1,Number(doing.sessionMinutes)
+      || (typeof doingNowSessionMinutesFor === 'function'
+        ? doingNowSessionMinutesFor(fill.h)
+        : clampDuration(fill.h.durationMinutes)));
+    placeFill = {...fill, chunkMinutes:sessionMin};
+  }
   const scan = ()=>{
     const fits = [];
     const seen = new Set();
-    const durationMs = fillDurationMinutes(fill) * 60000;
+    const durationMs = fillDurationMinutes(placeFill) * 60000;
     const windowEdges = [];
     for(const candidate of dayCandidates){
       const win = optimizerWindowForCandidate(candidate,state);
@@ -297,7 +306,7 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = []){
         const clone = clonePlacementState(state);
         clone.slots = [slot];
         clone.startClock = Math.max(state.startClock,slot.start,anchor);
-        const fit = tryPlaceOnDay(clone,fill,doingOpts);
+        const fit = tryPlaceOnDay(clone,placeFill,doingOpts);
         if(!fit)continue;
         const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
         if(seen.has(key))continue;
@@ -488,9 +497,16 @@ function packDayWithHeuristic(state,dayCandidates){
   const chosen = [];
   for(const c of ordered){
     if(state.placed.has(c.i))continue;
-    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    let fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     const placeOpts = {allowNetwork:true};
-    if(doing && fill.h && fill.h.hid === doing.hid)placeOpts.doingNowStart = doing.startedAt;
+    if(doing && fill.h && fill.h.hid === doing.hid){
+      placeOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
+      const sessionMin = Math.max(1,Number(doing.sessionMinutes)
+        || (typeof doingNowSessionMinutesFor === 'function'
+          ? doingNowSessionMinutesFor(fill.h)
+          : clampDuration(fill.h.durationMinutes)));
+      fill = {...fill, chunkMinutes:sessionMin};
+    }
     const fit = tryPlaceOnDay(state,fill,placeOpts);
     if(!fit)continue;
     chosen.push({fill,fit});

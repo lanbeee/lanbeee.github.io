@@ -16,6 +16,7 @@ function applyAddDefaults(){
   const settings = loadSortSettings();
   $('ting-message').value = '';
   $('ting-emoji').value = '';
+  if(typeof renderEmojiBgSwatches === 'function')renderEmojiBgSwatches('ting-emoji-bg','');
   selectedType = settings.defaultType || 'keepup';
   const target = clampRhythm(settings.defaultTarget || 7);
   syncRhythm('ting',target);

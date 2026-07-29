@@ -428,9 +428,14 @@ function buildDayTimeline(agenda,opts = {}){
   const now = opts.now != null ? opts.now : Date.now();
   let ordered = reorderAgendaItemsByLocation(agenda.agendaItems || [],settings,now);
   ordered = reorderAgendaItemsByOrderConstraints(ordered,state.dayBase);
-  // Doing-now item claims the earliest slot today.
-  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
-  if(doing && doing.dayBase === state.dayBase && doing.hid){
+  // Doing-now item claims the earliest slot today (while session is active).
+  const doingRaw = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const doing = doingRaw
+    && doingRaw.dayBase === state.dayBase
+    && doingRaw.hid
+    && (typeof isDoingNowActive !== 'function' || isDoingNowActive(doingRaw,now))
+    ? doingRaw : null;
+  if(doing){
     const idx = ordered.findIndex(item=>item && item.h && item.h.hid === doing.hid);
     if(idx > 0){
       const [item] = ordered.splice(idx,1);
@@ -438,24 +443,30 @@ function buildDayTimeline(agenda,opts = {}){
     }
   }
   for(const fill of ordered){
+    let placeFill = fill;
     const placeOpts = {
       settings,
       urgency:typeof weekUrgency === 'function' ? weekUrgency(fill.h) : 0,
       weights:resolveAgendaScoreWeights(settings)
     };
-    if(doing && fill.h && fill.h.hid === doing.hid && doing.dayBase === state.dayBase){
-      placeOpts.doingNowStart = doing.startedAt;
+    if(doing && fill.h && fill.h.hid === doing.hid){
+      placeOpts.doingNowStart = Math.min(Number(doing.startedAt) || now, now);
+      const sessionMin = Math.max(1,Number(doing.sessionMinutes)
+        || (typeof doingNowSessionMinutesFor === 'function'
+          ? doingNowSessionMinutesFor(fill.h,now)
+          : clampDuration(fill.h.durationMinutes)));
+      placeFill = {...fill, chunkMinutes:sessionMin};
     }
     if(!isScarceScore(fill.scarcity) && !(typeof hasTimeWindow === 'function' && hasTimeWindow(fill.h))){
       const spare = scarceWindowsToSpare(ordered,state.dayBase,state.seedLocId,state.dayBase);
       if(spare.length)placeOpts.spareWindows = spare;
     }
-    if(fill.h && fill.h.breakable){
-      placeBreakableSessions(state,fill,placeOpts);
+    if(placeFill.h && placeFill.h.breakable){
+      placeBreakableSessions(state,placeFill,placeOpts);
       continue;
     }
-    const fit = tryPlaceOnDay(state,fill,placeOpts);
-    if(fit)commitPlacement(state,fill,fit);
+    const fit = tryPlaceOnDay(state,placeFill,placeOpts);
+    if(fit)commitPlacement(state,placeFill,fit);
   }
   // Classic today path: location-less, window-less leftovers may overflow past
   // the last open slot so the single-day agenda still surfaces a suggestion.
@@ -1254,6 +1265,10 @@ function orderConstraintPenalty(fill,fit,state){
 // PURE: among feasible fits on one day, pick the best by unified score.
 function pickBestScoredFit(fits,fill,state,opts = {}){
   if(!fits || !fits.length)return null;
+  // Doing-now: always take the earliest feasible start so it stays first.
+  if(opts.doingNowStart != null){
+    return fits.reduce((best,f)=>!best || f.placeStart < best.placeStart ? f : best,null);
+  }
   const weights = opts.weights || resolveAgendaScoreWeights(opts.settings || (state && state.settings));
   const spare = opts.spareWindows || [];
   const urgency = opts.urgency != null ? opts.urgency
@@ -1402,6 +1417,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
       };
       fits.push(baseFit);
       // Preferred time is a second soft candidate — score picks vs ASAP/scarce.
+      // Doing-now always wants the earliest start, so skip preferred alternatives.
+      if(opts.doingNowStart != null)continue;
       const loc = locId ? registry.find(l=>l.id === locId) : null;
       const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
       const habitPref = fillPreferredStart(fill.h,dayBase,anchor);
@@ -1937,6 +1954,30 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
     out.push(row);
     if(locId)prevLocId = locId;
   }
+
+  // Doing-now: keep the active session card first in today's home list even if
+  // the planner parked it later (windows / travel / meetings).
+  if(day.isToday){
+    const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+    if(doing && doing.hid
+      && (typeof isDoingNowActive !== 'function' || isDoingNowActive(doing))){
+      const dnIdx = out.findIndex(r=>{
+        if(r.kind !== 'fill' && r.kind !== 'scheduled')return false;
+        if(r.h && r.h.hid === doing.hid)return true;
+        return false;
+      });
+      if(dnIdx > 0){
+        const [dnRow] = out.splice(dnIdx,1);
+        // Drop a travel row that only existed to lead into the moved card.
+        if(dnIdx > 0 && out[dnIdx - 1] && out[dnIdx - 1].kind === 'travel'){
+          out.splice(dnIdx - 1,1);
+        }
+        const insertAt = out[0] && out[0].kind === 'travel' && out[0].fromCurrentCoord ? 1 : 0;
+        out.splice(insertAt,0,dnRow);
+      }
+    }
+  }
+
   // Cleanup levels: under the 12h modes, drop blocked/travel rows that start
   // beyond the next 12 hours so only the near-future extras reach the home list
   // (future-day blocks in week mode naturally fall outside this window).
@@ -2267,7 +2308,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   candidates.sort(compareScarcityThenPriority);
   // Soft boost: place "before" sides of same-day order links earlier in the
   // assignment loop so their successors can sit after them.
-  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const doingRaw = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const doing = doingRaw
+    && (typeof isDoingNowActive !== 'function' || isDoingNowActive(doingRaw))
+    ? doingRaw : null;
   if(typeof orderConstraintsForDay === 'function' || doing){
     const beforeBoost = new Map();
     for(const state of dayStates){
@@ -2321,7 +2365,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
         };
         if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
-          dayOpts.doingNowStart = doing.startedAt;
+          dayOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
         }
         if(!isScarceScore(c.scarcity)){
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
@@ -2375,7 +2419,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
         };
         if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
-          dayOpts.doingNowStart = doing.startedAt;
+          dayOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
         }
         if(!isScarceScore(c.scarcity)){
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);

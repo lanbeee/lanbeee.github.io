@@ -1033,10 +1033,27 @@ function cardBreakableSlider(h){
   </div>`;
 }
 
-// PURE: pending auto-complete window for non-breakable tasks (trigger → deadline)
+// PURE: pending auto-complete window (normal auto-mark OR doing-now one-shot)
 function pendingAutoMarkWindow(h,now = Date.now()){
-  if(!h || typeof isAutoMark !== 'function' || !isAutoMark(h) || h.breakable)return null;
-  if(h.type !== 'task' || h.lastLog !== null)return null;
+  if(!h)return null;
+  if(h.type === 'task' && h.lastLog !== null)return null;
+  if(h.type !== 'task' && typeof completedToday === 'function' && completedToday(h,now))return null;
+
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(doing && doing.hid === h.hid && doing.dayBase === dayStart(now)
+    && doing.oneShotAutoMark !== false
+    && typeof isDoingNowActive === 'function' && isDoingNowActive(doing,now)){
+    const start = Number(doing.startedAt);
+    const end = typeof doingNowAutoMarkDeadline === 'function'
+      ? doingNowAutoMarkDeadline(doing)
+      : (start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000);
+    if(!Number.isFinite(start) || !Number.isFinite(end))return null;
+    if(now < start || now >= end)return null;
+    return {kind:'auto',start,end,doingNow:true};
+  }
+
+  if(typeof isAutoMark !== 'function' || !isAutoMark(h) || h.breakable)return null;
+  if(h.type !== 'task')return null;
   const trigger = typeof effectiveAutoMarkTrigger === 'function'
     ? effectiveAutoMarkTrigger(h,now)
     : (h.eventTime != null
@@ -2457,7 +2474,7 @@ function render(opts){
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
-        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
+        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}">
@@ -3133,6 +3150,11 @@ function setupBreakableCrown(row,_realIdx){
 
   crown.addEventListener('pointerdown',e=>{
     e.stopPropagation();
+    // Exclusive gestures: refuse while reorder/swipe owns the card.
+    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'hold')){
+      pointerId = null;
+      return;
+    }
     cancelMomentum();
     cancelScrub();
     startX = e.clientX;
@@ -3147,27 +3169,73 @@ function setupBreakableCrown(row,_realIdx){
     crown._dragBase = Math.round(Number(row.dataset.progressTarget) || committed);
     // Soft-claim so a tiny move can't arm card swipe before horizontal intent is known.
     row.dataset.crownGesture = '1';
+    // Breakable crown owns most of the card — also start reorder long-press here.
+    // Horizontal scrub cancels it; a still hold reveals the grip.
+    if(row.dataset.agendaDraggable === '1' && typeof beginAgendaCardLongPress === 'function'){
+      const realIdx = Number(row.dataset.realIdx);
+      const dayBase = Number(row.dataset.dayBase);
+      if(Number.isFinite(realIdx) && Number.isFinite(dayBase)){
+        beginAgendaCardLongPress(row,realIdx,dayBase,e);
+      }
+    }
   });
 
   crown.addEventListener('pointermove',e=>{
     if(pointerId === null || e.pointerId !== pointerId)return;
     e.stopPropagation();
+    if(typeof cardGestureOwner === 'function' && cardGestureOwner(row) === 'reorder'){
+      pointerId = null;
+      delete row.dataset.crownGesture;
+      return;
+    }
     const dxTotal = e.clientX - startX;
     const dyTotal = e.clientY - startY;
 
-    if(!dragging){
-      if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
-      if(Math.abs(dyTotal) > Math.abs(dxTotal)){
-        // Vertical scroll intent — release claim so the page can pan.
+    // Reorder already armed: vertical move hands off to agenda drag.
+    if(row.classList.contains('agenda-drag-ready') || row.classList.contains('agenda-longpress-armed')){
+      if(typeof tryAgendaDragFromArmedPress === 'function' && tryAgendaDragFromArmedPress(row,e)){
         pointerId = null;
         delete row.dataset.crownGesture;
         return;
       }
+      // Stay still while holding the armed grip — don't scrub.
+      if(Math.abs(dxTotal) < 10)return;
+      if(typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress();
+    }
+
+    if(!dragging){
+      if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
+      if(Math.abs(dyTotal) > Math.abs(dxTotal)){
+        // Vertical intent before reorder arms → drop long-press + crown claim.
+        if(typeof agendaLongPressOwnsPointer === 'function' && agendaLongPressOwnsPointer(e.pointerId)
+          && !row.classList.contains('agenda-drag-ready')
+          && !row.classList.contains('agenda-longpress-armed')){
+          if(Math.abs(dyTotal) > 8 && typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress();
+          else return;
+        }else if(typeof agendaLongPressOwnsPointer === 'function' && agendaLongPressOwnsPointer(e.pointerId)){
+          // Armed: handoff handled above; keep waiting for clearer vertical.
+          return;
+        }
+        pointerId = null;
+        delete row.dataset.crownGesture;
+        return;
+      }
+      // Horizontal scrub — cancel reorder long-press so dial wins.
+      if(typeof claimCardGesture === 'function'){
+        if(!claimCardGesture(row,'scrub',{force:true})){
+          pointerId = null;
+          delete row.dataset.crownGesture;
+          return;
+        }
+      }else if(typeof cancelAgendaLongPress === 'function'){
+        cancelAgendaLongPress();
+      }
+      row.classList.remove('agenda-drag-ready','agenda-longpress-armed');
+      if(typeof closeAllSwipes === 'function')closeAllSwipes();
       dragging = true;
-      crown.setPointerCapture(e.pointerId);
+      try{ crown.setPointerCapture(e.pointerId); }catch{ /* synthetic / lost pointer */ }
       crown.classList.add('active');
       if(progressRoot)progressRoot.classList.add('is-scrubbing');
-      if(typeof closeAllSwipes === 'function')closeAllSwipes();
       e.preventDefault();
     }
 
@@ -3194,7 +3262,14 @@ function setupBreakableCrown(row,_realIdx){
     pointerId = null;
     velX = 0;
     delete row.dataset.crownGesture;
+    if(wasDragging && typeof releaseCardGesture === 'function')releaseCardGesture(row,'scrub');
+    if(typeof settleAgendaPointerFromForeignTarget === 'function'
+      && settleAgendaPointerFromForeignTarget(row,e)){
+      return;
+    }
     if(!wasDragging && e.type === 'pointerup'){
+      if(row.classList.contains('agenda-drag-ready') || row.classList.contains('agenda-longpress-armed'))return;
+      if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap'))return;
       const card = row.querySelector('.ting-card');
       if(card){
         card.dataset.approvedClickUntil = String(Date.now()+500);
@@ -3211,9 +3286,15 @@ function setupBreakableCrown(row,_realIdx){
       crown.classList.remove('active');
       if(progressRoot)progressRoot.classList.remove('is-scrubbing');
       hideTooltip();
+      if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'scrub');
     }
     dragging = false;pointerId = null;velX = 0;
     delete row.dataset.crownGesture;
+    if(typeof cancelAgendaLongPress === 'function'
+      && typeof agendaLongPressOwnsPointer === 'function'
+      && agendaLongPressOwnsPointer(e.pointerId)){
+      cancelAgendaLongPress();
+    }
   });
 
   crown.addEventListener('wheel',e=>{
@@ -3304,6 +3385,7 @@ function setupSwipe(row){
     rightActions.style.pointerEvents = 'none';
     swipeOpenCard = null;
     delete row.dataset.swipeOpen;
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
     startedOpen = false;
     moved = false;
     dx = 0;
@@ -3311,6 +3393,20 @@ function setupSwipe(row){
 
   row.addEventListener('touchstart',e=>{
     const t = e.changedTouches[0];
+    // Exclusive: reorder / scrub / hold own the pointer — swipe stands down.
+    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'swipe')){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
+    if(row.classList.contains('is-agenda-dragging')
+      || row.querySelector('.breakable-progress.is-scrubbing')){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
     // Crown dial + a small pad around it owns the gesture — never arm card swipe.
     if(e.target.closest('.breakable-crown,.breakable-progress') || row.dataset.crownGesture === '1' || touchNearCrown(t.clientX, t.clientY)){
       touchId = null;
@@ -3327,6 +3423,10 @@ function setupSwipe(row){
 
   row.addEventListener('touchmove',e=>{
     if(touchId === null || row.dataset.crownGesture === '1')return;
+    if(typeof cardGestureOwner === 'function'){
+      const owner = cardGestureOwner(row);
+      if(owner === 'reorder' || owner === 'scrub')return;
+    }
     if(e.target.closest('.breakable-crown,.breakable-progress'))return;
     const t = [...e.changedTouches].find(item=>item.identifier === touchId);
     if(!t)return;
@@ -3353,6 +3453,12 @@ function setupSwipe(row){
       moved = true;dx = 0;
       return;
     }
+    if(!moved){
+      if(typeof claimCardGesture === 'function' && !claimCardGesture(row,'swipe',{force:true})){
+        touchId = null;
+        return;
+      }
+    }
     moved = true;dx = ddx;
     const wantsLeft = dx > 0;
     const activeActions = wantsLeft ? leftActions : rightActions;
@@ -3371,9 +3477,18 @@ function setupSwipe(row){
   },{passive:false});
 
   row.addEventListener('touchend',()=>{
-    if(touchId === null || !moved)return;
+    if(touchId === null || !moved){
+      if(touchId !== null && typeof releaseCardGesture === 'function'
+        && typeof cardGestureOwner === 'function' && cardGestureOwner(row) === 'swipe'
+        && !row.dataset.swipeOpen){
+        releaseCardGesture(row,'swipe');
+      }
+      touchId = null;
+      return;
+    }
     if(startedOpen){
       startedOpen = false;
+      touchId = null;
       return;
     }
     const dir = dx > 0 ? 1 : -1;
@@ -3392,6 +3507,7 @@ function setupSwipe(row){
       inactiveActions.style.pointerEvents = 'none';
       swipeOpenCard = card;
       row.dataset.swipeOpen = String(dir);
+      if(typeof claimCardGesture === 'function')claimCardGesture(row,'swipe');
     }else{
       card.style.transform = '';
       leftActions.style.width = '0';
@@ -3400,7 +3516,9 @@ function setupSwipe(row){
       rightActions.style.pointerEvents = 'none';
       swipeOpenCard = null;
       delete row.dataset.swipeOpen;
+      if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
     }
+    touchId = null;
   });
 
   row.addEventListener('touchcancel',resetSwipe,{passive:true});
@@ -3421,6 +3539,7 @@ function closeAllSwipes(){
       actions.style.pointerEvents = 'none';
     });
     delete row.dataset.swipeOpen;
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
   });
   swipeOpenCard = null;
 }
@@ -3461,6 +3580,12 @@ function setupCardTap(row,realIdx){
   });
   card.addEventListener('click',e=>{
     if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){
+      e.preventDefault();e.stopPropagation();return;
+    }
+    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap')){
+      e.preventDefault();e.stopPropagation();return;
+    }
+    if(row.classList.contains('is-agenda-dragging') || row.classList.contains('agenda-longpress-armed')){
       e.preventDefault();e.stopPropagation();return;
     }
     if(e.target.closest('.pulse-btn'))return;

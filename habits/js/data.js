@@ -26,6 +26,7 @@
  * @property {number|null} target             — rhythm in days (may be fractional, e.g. 3.5 = 2×/7d); null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon
+ * @property {string} emojiBgColor            — curated token for emoji icon background: ''|teal|amber|red|purple|blue|green
  * @property {boolean} pinned                 — stays above auto-sorted habits
  * @property {boolean} sample                 — true if created by the sort-lab sample builder
  * @property {number|null} snoozedUntil       — ms timestamp; habit hidden on home until then
@@ -418,6 +419,7 @@ function normalize(items){
       createdAt: raw.createdAt || null,
       logs,
       emoji: raw.emoji || '',
+      emojiBgColor:normalizeEmojiBgColor(raw.emojiBgColor),
       pinned:Boolean(raw.pinned),
       sample:Boolean(raw.sample),
       snoozedUntil: raw.snoozedUntil || null,
@@ -632,6 +634,9 @@ const ORDER_CONSTRAINTS_KEY = 'tings_order_constraints_v1';
  * @property {string} hid
  * @property {number} startedAt
  * @property {number} dayBase
+ * @property {number} sessionMinutes — snapshotted session length at confirm
+ * @property {number} endsAt — startedAt + sessionMinutes
+ * @property {boolean} oneShotAutoMark — auto-complete once when endsAt passes
  */
 
 function yesterdayIso(){
@@ -662,6 +667,16 @@ function normalizeOrderConstraint(raw){
   };
 }
 
+/** PURE: minutes to run for a doing-now session (snapshotted at confirm). */
+function doingNowSessionMinutesFor(h,now = Date.now()){
+  if(!h)return typeof DEFAULT_DURATION_MINUTES === 'number' ? DEFAULT_DURATION_MINUTES : 30;
+  if(h.breakable && typeof remainingDurationMinutes === 'function'){
+    const left = remainingDurationMinutes(h,dayStart(now));
+    if(left > 0)return left;
+  }
+  return clampDuration(h.durationMinutes);
+}
+
 function normalizeDoingNow(raw,todayBase = dayStart(Date.now())){
   if(!raw || typeof raw !== 'object')return null;
   const hid = typeof raw.hid === 'string' ? raw.hid.trim() : '';
@@ -669,7 +684,18 @@ function normalizeDoingNow(raw,todayBase = dayStart(Date.now())){
   const startedAt = Number(raw.startedAt);
   if(!hid || dayBase == null || !Number.isFinite(startedAt))return null;
   if(dayBase !== todayBase)return null;
-  return {hid,startedAt,dayBase};
+  const sessionMinutes = Math.max(1,Math.min(720,Math.round(Number(raw.sessionMinutes) || 0) || 30));
+  const endsAt = Number.isFinite(Number(raw.endsAt))
+    ? Number(raw.endsAt)
+    : startedAt + sessionMinutes * 60000;
+  return {
+    hid,
+    startedAt,
+    dayBase,
+    sessionMinutes,
+    endsAt,
+    oneShotAutoMark:raw.oneShotAutoMark !== false
+  };
 }
 
 function loadOrderConstraintStore(now = Date.now()){
@@ -717,12 +743,37 @@ function getDoingNow(store = null){
   return src.doingNow || null;
 }
 
-function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now())){
+/** True while a doing-now session is active (before endsAt). */
+function isDoingNowActive(doing = null,now = Date.now()){
+  const d = doing || getDoingNow();
+  if(!d || !d.hid)return false;
+  if(d.dayBase !== dayStart(now))return false;
+  if(Number.isFinite(d.endsAt) && now >= d.endsAt)return false;
+  return true;
+}
+
+/**
+ * Start a doing-now session. opts.sessionMinutes snapshots the remaining
+ * duration at confirm time; oneShotAutoMark defaults true.
+ */
+function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now()),opts = {}){
   const todayBase = dayStart(startedAt);
   const nextDay = clampDayTimestamp(dayBase);
   if(!hid || nextDay !== todayBase)return null;
-  const store = loadOrderConstraintStore(startedAt);
-  store.doingNow = {hid:String(hid),startedAt:Number(startedAt) || Date.now(),dayBase:todayBase};
+  const start = Number(startedAt) || Date.now();
+  const sessionMinutes = Math.max(1,Math.min(720,Math.round(Number(opts.sessionMinutes) || 0) || 30));
+  const endsAt = Number.isFinite(Number(opts.endsAt))
+    ? Number(opts.endsAt)
+    : start + sessionMinutes * 60000;
+  const store = loadOrderConstraintStore(start);
+  store.doingNow = {
+    hid:String(hid),
+    startedAt:start,
+    dayBase:todayBase,
+    sessionMinutes,
+    endsAt,
+    oneShotAutoMark:opts.oneShotAutoMark !== false
+  };
   saveOrderConstraintStore(store);
   return store.doingNow;
 }
@@ -786,6 +837,17 @@ function removeOrderConstraint(id){
   return saveOrderConstraintStore(store);
 }
 
+function clearOrderConstraintsForHid(hid){
+  if(!hid)return false;
+  const store = loadOrderConstraintStore();
+  const beforeLen = store.edges.length;
+  const beforeDoing = store.doingNow;
+  store.edges = (store.edges || []).filter(e=>e.beforeHid !== hid && e.afterHid !== hid);
+  if(store.doingNow && store.doingNow.hid === hid)store.doingNow = null;
+  if(store.edges.length === beforeLen && store.doingNow === beforeDoing)return false;
+  return saveOrderConstraintStore(store);
+}
+
 function clearOrderConstraintsForDay(dayBase,hid = null){
   const base = clampDayTimestamp(dayBase);
   if(base == null)return false;
@@ -840,31 +902,54 @@ function pruneOrderConstraintsOnLog(h,now = Date.now()){
   return pruneOrderConstraintsForHabit(h,null,now);
 }
 
+function orderConstraintsForHid(hid,store = null){
+  if(!hid)return [];
+  const src = store || loadOrderConstraintStore();
+  return (src.edges || []).filter(e=>e.beforeHid === hid || e.afterHid === hid);
+}
+
+function habitHasOrderConstraints(hid,store = null){
+  return orderConstraintsForHid(hid,store).length > 0;
+}
+
 function orderConstraintPillsForHid(hid,dayBase,data = null,store = null){
   if(!hid)return [];
   const edges = orderConstraintsForDay(dayBase,store);
+  const findOther = (otherHid)=>{
+    if(!Array.isArray(data))return null;
+    return data.find(item=>item && item.hid === otherHid) || null;
+  };
   const nameOf = (other)=>{
-    if(!Array.isArray(data))return other;
-    const hit = data.find(item=>item && item.hid === other);
+    const hit = findOther(other);
     return hit ? hit.name : other;
   };
   const pills = [];
   for(const e of edges){
     if(e.afterHid === hid){
+      const other = findOther(e.beforeHid);
       pills.push({
         id:e.id,
         kind:'after',
         adjacency:e.adjacency,
         otherHid:e.beforeHid,
+        otherEmoji:other && other.emoji ? String(other.emoji).trim() : '',
+        otherBg:normalizeEmojiBgColor(other && other.emojiBgColor),
+        otherName:nameOf(e.beforeHid),
+        dayBase:e.dayBase,
         label:e.adjacency === 'direct' ? `right after ${nameOf(e.beforeHid)}` : `after ${nameOf(e.beforeHid)}`
       });
     }
     if(e.beforeHid === hid){
+      const other = findOther(e.afterHid);
       pills.push({
         id:e.id,
         kind:'before',
         adjacency:e.adjacency,
         otherHid:e.afterHid,
+        otherEmoji:other && other.emoji ? String(other.emoji).trim() : '',
+        otherBg:normalizeEmojiBgColor(other && other.emojiBgColor),
+        otherName:nameOf(e.afterHid),
+        dayBase:e.dayBase,
         label:e.adjacency === 'direct' ? `right before ${nameOf(e.afterHid)}` : `before ${nameOf(e.afterHid)}`
       });
     }
@@ -1068,7 +1153,7 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
 function effectiveAutoMarkTrigger(h,now = Date.now()){
   if(!h)return null;
   const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
-  if(h.type === 'task' && doing && doing.hid === h.hid && doing.dayBase === dayStart(now)){
+  if(doing && doing.hid === h.hid && doing.dayBase === dayStart(now) && doing.oneShotAutoMark !== false){
     return doing.startedAt;
   }
   if(h.type === 'task'){
@@ -1079,7 +1164,78 @@ function effectiveAutoMarkTrigger(h,now = Date.now()){
   return null;
 }
 
+/** PURE: end of a doing-now one-shot auto window (startedAt + session). */
+function doingNowAutoMarkDeadline(doing){
+  if(!doing)return null;
+  if(Number.isFinite(doing.endsAt))return doing.endsAt;
+  const mins = Math.max(1,Number(doing.sessionMinutes) || 30);
+  return Number(doing.startedAt) + mins * 60000;
+}
+
+/**
+ * HYBRID: when a doing-now one-shot session has reached endsAt, auto-log once
+ * even if the habit is normally manual. Clears doing-now afterward.
+ */
+function sweepDoingNowOneShot(now = Date.now(),opts = {}){
+  const doing = getDoingNow();
+  if(!doing || doing.oneShotAutoMark === false)return 0;
+  const deadline = doingNowAutoMarkDeadline(doing);
+  if(!Number.isFinite(deadline) || deadline > now)return 0;
+  const data = load();
+  const h = data.find(item=>item && item.hid === doing.hid);
+  if(!h){
+    clearDoingNow();
+    return 0;
+  }
+  if(h.type === 'task' && isTaskDone(h)){
+    clearDoingNow(h.hid);
+    return 0;
+  }
+  if(h.type !== 'task' && completedToday(h,now)){
+    clearDoingNow(h.hid);
+    return 0;
+  }
+
+  let changed = false;
+  const sessionMins = Math.max(1,Number(doing.sessionMinutes) || 30);
+  if(h.breakable){
+    const dayBase = h.type === 'task' ? dayStart(now) : (doing.dayBase || dayStart(now));
+    const left = typeof breakableBudgetMinutes === 'function' ? breakableBudgetMinutes(h,dayBase) : sessionMins;
+    const delta = Math.max(0,Math.min(sessionMins,left));
+    if(delta > 0){
+      const logTs = Math.min(now,Math.max(doing.startedAt,deadline));
+      const snapped = h.type === 'task' ? logTs : (typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,logTs) : logTs);
+      h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(snapped,{minutes:delta,note:'doing-now auto-log'})]);
+      h.lastLog = latestActualLog(h.logs);
+      h.snoozedUntil = null;
+      clearPlanByDateOnLog(h);
+      changed = true;
+    }
+  }else{
+    const logTs = Math.min(now,Math.max(doing.startedAt,deadline));
+    const snapped = h.type === 'task' ? logTs : (typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,logTs) : logTs);
+    h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(snapped,{note:'doing-now auto-log'})]);
+    h.lastLog = latestActualLog(h.logs);
+    h.snoozedUntil = null;
+    clearPlanByDateOnLog(h);
+    changed = true;
+  }
+
+  clearDoingNow(h.hid);
+  if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
+  if(!changed)return 0;
+  save(data);
+  if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h)
+    && typeof cancelPush === 'function' && typeof reminderSignature === 'function'){
+    cancelPush(reminderSignature(h));
+  }
+  if(opts.refresh !== false && typeof refreshOpenViews === 'function')refreshOpenViews();
+  if(opts.toast !== false && typeof showToast === 'function')showToast('doing-now auto-logged');
+  return 1;
+}
+
 function sweepAutoDoneTasks(){
+  const oneShotCount = sweepDoingNowOneShot(Date.now(),{refresh:false,toast:true});
   const chunkCount = sweepAutoMarkedBreakableChunks(Date.now(),{refresh:false,toast:true});
   const data = load();
   const now = Date.now();
@@ -1088,19 +1244,28 @@ function sweepAutoDoneTasks(){
   let changed = false;
   let count = 0;
   data.forEach(h=>{
+    // Doing-now one-shot is handled above; still allow normal auto-mark path
+    // for habits that already have autoMarkMinutes set.
     if(h.autoMarkMinutes === null)return;
     if(h.breakable)return; // breakables are reconciled against placed chunks above
     if(h.type === 'task'){
       // Trigger: doing-now override, fixed time, or when the task enters the agenda window.
       const trigger = effectiveAutoMarkTrigger(h,now);
       if(trigger === null)return;
-      if(trigger + (h.autoMarkMinutes || 0) * 60000 >= now)return;
+      // When doing-now owns this habit, wait until endsAt (session length), not autoMarkMinutes.
+      const doing = getDoingNow();
+      const doingOwns = doing && doing.hid === h.hid && doing.dayBase === dayStart(now);
+      const dueAt = doingOwns
+        ? doingNowAutoMarkDeadline(doing)
+        : trigger + (h.autoMarkMinutes || 0) * 60000;
+      if(dueAt == null || dueAt >= now)return;
       if(h.lastLog !== null)return; // already done (manual check-off or prior sweep)
       const logs = normalizeLogs(h.logs);
       logs.push(trigger);
       h.logs = normalizeLogs(logs);
       h.lastLog = latestActualLog(h.logs);
       if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
+      if(doingOwns)clearDoingNow(h.hid);
       changed = true;
       count += 1;
       if(typeof reminderSignature === 'function')completedSigs.push(reminderSignature(h));
@@ -1130,11 +1295,11 @@ function sweepAutoDoneTasks(){
     }
   });
   if(!changed){
-    if(chunkCount > 0){
+    if(chunkCount > 0 || oneShotCount > 0){
       if(typeof syncTimerAfterExternalCompletion === 'function')syncTimerAfterExternalCompletion();
       if(typeof refreshOpenViews === 'function')refreshOpenViews();
     }
-    return chunkCount;
+    return chunkCount + oneShotCount;
   }
   save(data);
   if(typeof cancelPush === 'function')completedSigs.forEach(sig=>cancelPush(sig));
@@ -1142,7 +1307,7 @@ function sweepAutoDoneTasks(){
   // just completed that habit (instead of waiting for the next 250ms tick).
   if(typeof syncTimerAfterExternalCompletion === 'function')syncTimerAfterExternalCompletion();
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
-  return count + chunkCount;
+  return count + chunkCount + oneShotCount;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2378,6 +2543,37 @@ function markSegments(value){
 
 function cleanMark(value){
   return markSegments(value).slice(0,2).join('');
+}
+
+/** Curated emoji tile backgrounds — maps to CSS --{token}-bg / --{token}-icon. */
+const EMOJI_BG_COLOR_TOKENS = ['teal','amber','red','purple','blue','green'];
+
+function normalizeEmojiBgColor(value){
+  const token = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return EMOJI_BG_COLOR_TOKENS.includes(token) ? token : '';
+}
+
+/** PURE: CSS custom-property pair for an emoji tile (or null when unset). */
+function emojiBgStyleVars(token){
+  const color = normalizeEmojiBgColor(token);
+  if(!color)return null;
+  return {
+    bg:`var(--${color}-bg)`,
+    icon:`var(--${color}-icon)`,
+    token:color
+  };
+}
+
+/** Inline style fragment for a pulse / mark with optional emoji bg. */
+function emojiBgInlineStyle(h,fallbackBg = '',fallbackColor = ''){
+  const vars = emojiBgStyleVars(h && h.emojiBgColor);
+  if(vars){
+    return `background:${vars.bg};color:${vars.icon};--emoji-bg:${vars.bg};`;
+  }
+  const parts = [];
+  if(fallbackBg)parts.push(`background:${fallbackBg}`);
+  if(fallbackColor)parts.push(`color:${fallbackColor}`);
+  return parts.join(';');
 }
 
 function avgInterval(logs){

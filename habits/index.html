@@ -101,6 +101,8 @@
           <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
       </div>
+      <span class="settings-sublabel">emoji background</span>
+      <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       <div class="seg" id="type-seg">
         <button class="seg-opt on" data-v="keepup">build</button>
         <button class="seg-opt" data-v="reduce">limit</button>
@@ -182,7 +184,7 @@
         </div>
       </div>
       <div class="detail-pager" aria-label="habit details">
-        <section class="detail-page month-card">
+        <section class="detail-page month-card" data-detail-nav="calendar">
           <div class="section-top">
             <span class="section-label">month</span>
             <div class="month-nav">
@@ -209,7 +211,7 @@
           </div>
           <p class="field-hint" id="detail-plan-by-hint" hidden></p>
         </section>
-        <section class="detail-page detail-card">
+        <section class="detail-page detail-card" data-detail-nav="insight">
           <p class="detail-about" id="detail-about"></p>
           <div class="section-top">
             <span class="section-label">insight</span>
@@ -218,7 +220,7 @@
           <div class="stats-row" id="detail-stats"></div>
           <div class="graph" id="detail-graph"></div>
         </section>
-        <section class="detail-page detail-section tune-section">
+        <section class="detail-page detail-section tune-section" data-detail-nav="schedule">
           <span class="section-label">schedule</span>
           <p class="field-hint" id="detail-target-help">How often — times in N days.</p>
           <div class="range-row" id="detail-slider-row">
@@ -396,7 +398,7 @@
             </div>
           </div>
         </section>
-        <section class="detail-page detail-section tune-section">
+        <section class="detail-page detail-section tune-section" data-detail-nav="effort">
           <span class="section-label">effort</span>
           <div class="planning-grid">
             <div class="planning-field">
@@ -466,7 +468,7 @@
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
         </section>
-        <section class="detail-page detail-section tune-section">
+        <section class="detail-page detail-section tune-section" data-detail-nav="identity">
           <span class="section-label">identity</span>
           <div class="name-icon-row">
             <input type="text" id="detail-habit-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
@@ -476,6 +478,8 @@
             </label>
           </div>
           <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
+          <span class="settings-sublabel">emoji background</span>
+          <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           <div class="seg" id="detail-type-seg">
             <button class="seg-opt" data-detail-type="keepup">build</button>
             <button class="seg-opt" data-detail-type="reduce">limit</button>
@@ -497,32 +501,39 @@
           <span class="settings-sublabel">topics &amp; places</span>
           <div class="topic-chip-row" id="detail-tag-chips"></div>
         </section>
-        <section class="detail-page detail-section tune-section">
+        <section class="detail-page detail-section tune-section detail-actions-page" data-detail-nav="actions">
           <span class="section-label">actions</span>
-          <label class="setting-toggle habit-toggle">
-            <span><b>pinned</b><small>Keep this habit above auto order.</small></span>
-            <button class="setting-switch" id="detail-pinned" type="button" aria-pressed="false">
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-          </label>
+          <div id="detail-order-block" class="detail-order-block" hidden>
+            <div class="detail-order-head">
+              <span class="settings-sublabel">order links</span>
+              <button type="button" class="mini-text-btn" id="detail-order-clear-all" data-order-clear-hid="" hidden>clear</button>
+            </div>
+            <div id="detail-order-list" class="detail-order-list"></div>
+          </div>
           <div class="habit-actions">
+            <label class="setting-toggle habit-toggle">
+              <span><b>pinned</b><small>Stay above auto order</small></span>
+              <button class="setting-switch" id="detail-pinned" type="button" aria-pressed="false">
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </label>
             <button class="habit-action" id="detail-export" type="button" hidden>
               <i class="ti ti-calendar-share" aria-hidden="true"></i>
-              <span><b>export to calendar</b><small>Add this to your phone's calendar for a real alert.</small></span>
+              <span><b>export to calendar</b><small>Phone calendar alert</small></span>
             </button>
             <button class="habit-action" id="detail-snooze" type="button">
               <i class="ti ti-moon" aria-hidden="true"></i>
-              <span><b>snooze habit</b><small>Hide this habit for a few days.</small></span>
+              <span><b>snooze</b><small>Hide for a few days</small></span>
             </button>
             <button class="habit-action danger" id="detail-delete" type="button">
               <i class="ti ti-trash" aria-hidden="true"></i>
-              <span><b>remove habit</b><small>Remove it from the list. Undo appears after.</small></span>
+              <span><b>remove</b><small>Undo appears after</small></span>
             </button>
             <div class="reset-confirm" id="detail-delete-confirm" hidden>
               <p>Remove this habit?</p>
               <div class="btn-row">
                 <button class="btn primary" id="detail-delete-yes" type="button">remove</button>
-                <button class="btn" id="detail-delete-no" type="button">keep habit</button>
+                <button class="btn" id="detail-delete-no" type="button">keep</button>
               </div>
             </div>
           </div>
@@ -531,7 +542,6 @@
       <div class="detail-bottom-bar">
         <div class="detail-dots" role="tablist" aria-label="detail pages"></div>
         <div class="btn-row detail-actions" id="detail-cool-row">
-          <button class="btn" id="detail-keep-sample" type="button" hidden>keep</button>
           <button class="btn primary" id="detail-cool">done</button>
         </div>
         <div class="btn-row detail-actions tune-actions" id="detail-tune-actions">
@@ -1186,7 +1196,7 @@
   <div class="sheet-wrap" id="doing-now-sheet" role="dialog" aria-modal="true" aria-labelledby="doing-now-title">
     <div class="sheet">
       <p class="sheet-name" id="doing-now-title">Do this now?</p>
-      <p class="sheet-sub" id="doing-now-sub">Auto-done starts from now.</p>
+      <p class="sheet-sub" id="doing-now-sub">Stays on top for this session, then auto-done once.</p>
       <p class="order-link-summary" id="doing-now-name"></p>
       <div class="btn-row">
         <button class="btn" type="button" id="doing-now-cancel">cancel</button>

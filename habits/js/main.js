@@ -234,6 +234,7 @@ $('do-save').addEventListener('click',()=>{
     lastLog:null,
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
+    emojiBgColor:selectedEmojiBgColor('ting-emoji-bg'),
     pinned:false,
     priority:selectedAddPriority(),
     topics:mergedTopics,
@@ -1043,6 +1044,7 @@ $('detail-save').addEventListener('click',()=>{
   h.name = current.name.slice(0,60);
   h.type = current.type;
   h.emoji = current.emoji;
+  h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
   h.topics = normalizeTopics(current.topics);
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
@@ -1321,11 +1323,6 @@ $('open-settings').addEventListener('click',()=>{
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('detail-keep-sample')?.addEventListener('click',()=>{
-  if(detailIdx == null)return;
-  if(typeof keepSampleHabit === 'function')keepSampleHabit(detailIdx);
-});
-$('detail-keep-sample')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
   if(!opt)return;

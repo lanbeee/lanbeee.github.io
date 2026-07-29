@@ -194,19 +194,30 @@ function seedScript(){
     const still = getDoingNow();
     clearDoingNow('auto1');
     const cleared = effectiveAutoMarkTrigger(h, now);
-    // Breakable tasks still use chunk path; doing-now should not invent trigger for keepup
-    const keepup = {name:'k', type:'keepup', hid:'k1', autoMarkMinutes:10, breakable:false, logs:[], lastLog:null};
-    setDoingNow('k1', now, today);
+    // Doing-now one-shot also retargets keepup / non-auto habits for the session bar
+    const keepup = {name:'k', type:'keepup', hid:'k1', autoMarkMinutes:null, breakable:false, logs:[], lastLog:null, durationMinutes:25};
+    const keepupStart = now;
+    setDoingNow('k1', keepupStart, today, {sessionMinutes:25, oneShotAutoMark:true});
     const keepupTrig = effectiveAutoMarkTrigger(keepup, now);
+    const keepupWin = pendingAutoMarkWindow(keepup, now);
+    const dn = getDoingNow();
     clearDoingNow();
-    return {before, after, winStart:win && win.start, stillHid:still && still.hid, cleared, now:now - 5*60000, keepupTrig};
+    return {
+      before, after, winStart:win && win.start, winEnd:win && win.end,
+      stillHid:still && still.hid, cleared, now:now - 5*60000, keepupTrig, keepupStart,
+      keepupWinEnd:keepupWin && keepupWin.end, sessionMinutes:dn && dn.sessionMinutes,
+      oneShot:dn && dn.oneShotAutoMark
+    };
   });
   assert(autoMark.before == null || autoMark.before > autoMark.after, 'doing-now trigger earlier than due-window trigger (or due was later)');
   assert(autoMark.after === autoMark.now, 'effective trigger equals doing-now startedAt');
   assert(autoMark.winStart === autoMark.now, 'pending auto bar uses doing-now start');
   assert(autoMark.stillHid === 'auto1', 'clearDoingNow ignores other hids');
   assert(autoMark.cleared !== autoMark.now, 'clearing doing-now restores normal trigger');
-  assert(autoMark.keepupTrig == null, 'doing-now does not invent non-task auto-mark triggers');
+  assert(autoMark.keepupTrig === autoMark.keepupStart, 'doing-now one-shot retargets keepup trigger');
+  assert(autoMark.sessionMinutes === 25, 'doing-now snapshots session minutes');
+  assert(autoMark.oneShot === true, 'doing-now defaults to one-shot auto-mark');
+  assert(autoMark.keepupWinEnd === autoMark.keepupStart + 25*60000, 'pending window ends at startedAt + session');
 
   // ════════════════════════════════════════════════════════════════════════
   // C–E. Placement for FAST and GLPK
@@ -503,13 +514,13 @@ function seedScript(){
     const tasks = [
       { name:'Email', hid:'t-email', type:'task', logs:[], lastLog:null, dueDate:today,
         eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
-        autoMarkMinutes:null, priority:1, pinned:false, emoji:'✉️' },
+        autoMarkMinutes:null, priority:1, pinned:false, emoji:'✉️', emojiBgColor:'blue' },
       { name:'Deep work', hid:'t-deep', type:'task', logs:[], lastLog:null, dueDate:today,
         eventTime:null, flexibilityDays:0, durationMinutes:45, breakable:true,
-        minChunkMinutes:20, autoMarkMinutes:5, priority:1, pinned:false, emoji:'🧠' },
+        minChunkMinutes:20, autoMarkMinutes:5, priority:1, pinned:false, emoji:'🧠', emojiBgColor:'purple' },
       { name:'Walk', hid:'t-walk', type:'task', logs:[], lastLog:null, dueDate:today,
         eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
-        autoMarkMinutes:null, priority:1, pinned:false, emoji:'🚶' }
+        autoMarkMinutes:null, priority:1, pinned:false, emoji:'🚶', emojiBgColor:'green' }
     ];
     save(tasks);
     saveSortSettings({
@@ -566,6 +577,8 @@ function seedScript(){
     const doingSummary = document.getElementById('doing-now-name')?.innerHTML || '';
     confirmDoingNow();
     const dn = getDoingNow();
+    const dnEdge = orderConstraintsForDay(dayStart(Date.now()))
+      .find(e=>e.beforeHid === 't-deep' && e.afterHid === 't-walk');
 
     // Long-press arm
     const row = document.querySelector('.swipe-row[data-agenda-draggable="1"]');
@@ -585,6 +598,9 @@ function seedScript(){
       editedNoBefore:!edited.some(e=>e.beforeHid==='t-deep' && e.afterHid==='t-walk'),
       clearedCount:cleared.length,
       doingOpen, doingSummary, dnHid:dn && dn.hid,
+      dnSession:dn && dn.sessionMinutes, dnOneShot:dn && dn.oneShotAutoMark,
+      dnEndsAt:dn && dn.endsAt, dnStarted:dn && dn.startedAt,
+      dnDirect:dnEdge && dnEdge.adjacency === 'direct',
       beforeReady, afterReady, pe
     };
   });
@@ -599,17 +615,176 @@ function seedScript(){
   assert(ui.editedCount === 1 && ui.editedDirect && ui.editedNoBefore, 'editing can set next + turn off one side');
   assert(ui.clearedCount === 0, 'clear removes that day’s links for the habit');
   assert(ui.doingOpen && ui.dnHid === 't-deep', 'doing-now confirm stores hid');
+  assert(ui.dnSession === 45, 'doing-now snapshots remaining/duration minutes');
+  assert(ui.dnOneShot === true, 'doing-now enables one-shot auto-mark');
+  assert(ui.dnEndsAt === ui.dnStarted + 45*60000, 'doing-now endsAt = start + session');
+  assert(ui.dnDirect === true, 'doing-now pins direct order vs previous top');
   assert(/🧠/.test(ui.doingSummary), 'doing-now summary shows emoji');
   assert(ui.beforeReady === false && ui.afterReady === true && ui.pe === 'auto', 'long-press arm reveals interactive grip');
+
+  // Breakable crown long-press also arms reorder (in-flow left grip slot)
+  const breakableArm = await page.evaluate(async () => {
+    const today = dayStart(Date.now());
+    const data = [
+      { name:'Email', hid:'b-email', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
+        autoMarkMinutes:null, priority:1, pinned:false, emoji:'✉️' },
+      { name:'Deep', hid:'b-deep', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:60, breakable:true,
+        minChunkMinutes:20, autoMarkMinutes:null, priority:1, pinned:false, emoji:'🧠' }
+    ];
+    save(data);
+    saveSortSettings({...loadSortSettings(), showWeekOnHome:true, agendaOptimizer:false,
+      showDueTasksInAgenda:true, availabilityMinutes:[600,600,600,600,600,600,600], blockedTimes:[]});
+    if(typeof render === 'function')render();
+    await new Promise(r=>setTimeout(r,200));
+    const row = [...document.querySelectorAll('.swipe-row[data-agenda-draggable="1"]')]
+      .find(r=>r.querySelector('.breakable-crown'));
+    if(!row)return {found:false};
+    const handle = row.querySelector('.agenda-drag-handle');
+    const handleStyle = handle ? getComputedStyle(handle) : null;
+    const crown = row.querySelector('.breakable-crown');
+    const rect = crown.getBoundingClientRect();
+    crown.dispatchEvent(new PointerEvent('pointerdown',{
+      bubbles:true, cancelable:true, pointerId:7, pointerType:'touch',
+      clientX:rect.left + rect.width/2, clientY:rect.top + rect.height/2, buttons:1
+    }));
+    await new Promise(r=>setTimeout(r,500));
+    const ready = row.classList.contains('agenda-drag-ready');
+    const pe = getComputedStyle(row.querySelector('.agenda-drag-handle')).pointerEvents;
+    const ownerHold = typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null;
+    crown.dispatchEvent(new PointerEvent('pointerup',{
+      bubbles:true, cancelable:true, pointerId:7, pointerType:'touch',
+      clientX:rect.left + rect.width/2, clientY:rect.top + rect.height/2
+    }));
+    return {
+      found:true,
+      handlePosition:handleStyle ? handleStyle.position : null,
+      handleFlex:handleStyle ? handleStyle.flexGrow + '/' + handleStyle.flexShrink + '/' + handleStyle.flexBasis : null,
+      handleWidth:handleStyle ? parseFloat(handleStyle.width) : 0,
+      ready, pe, ownerHold
+    };
+  });
+  assert(breakableArm.found, 'breakable agenda row exists for crown long-press');
+  assert(breakableArm.handlePosition === 'relative' || breakableArm.handlePosition === 'static',
+    'grip is in-flow (not absolute)');
+  assert(breakableArm.handleWidth >= 20, 'in-flow grip reserves ~22px width');
+  assert(breakableArm.ready && breakableArm.pe === 'auto', 'holding breakable crown arms reorder grip');
+
+  // Crown horizontal scrub cancels hold and does not leave grip armed
+  const crownScrub = await page.evaluate(async () => {
+    const row = [...document.querySelectorAll('.swipe-row[data-agenda-draggable="1"]')]
+      .find(r=>r.querySelector('.breakable-crown'));
+    if(!row)return {found:false};
+    row.classList.remove('agenda-drag-ready','agenda-longpress-armed','is-agenda-dragging');
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+    const crown = row.querySelector('.breakable-crown');
+    const rect = crown.getBoundingClientRect();
+    const x0 = rect.left + rect.width/2;
+    const y0 = rect.top + rect.height/2;
+    crown.dispatchEvent(new PointerEvent('pointerdown',{
+      bubbles:true, cancelable:true, pointerId:11, pointerType:'touch',
+      clientX:x0, clientY:y0, buttons:1
+    }));
+    crown.dispatchEvent(new PointerEvent('pointermove',{
+      bubbles:true, cancelable:true, pointerId:11, pointerType:'touch',
+      clientX:x0 + 40, clientY:y0, buttons:1
+    }));
+    const scrubbing = row.querySelector('.breakable-progress')?.classList.contains('is-scrubbing');
+    const owner = typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null;
+    const readyDuring = row.classList.contains('agenda-drag-ready');
+    crown.dispatchEvent(new PointerEvent('pointerup',{
+      bubbles:true, cancelable:true, pointerId:11, pointerType:'touch',
+      clientX:x0 + 40, clientY:y0
+    }));
+    return {found:true, scrubbing, owner, readyDuring,
+      ownerAfter:typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null};
+  });
+  assert(crownScrub.found && crownScrub.scrubbing && crownScrub.owner === 'scrub',
+    'horizontal crown move claims scrub');
+  assert(!crownScrub.readyDuring, 'scrub does not leave reorder grip armed');
+  assert(!crownScrub.ownerAfter, 'scrub release clears gesture owner');
+
+  // Mutual exclusion: reorder blocks swipe + scrub
+  const exclReorder = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.swipe-row[data-agenda-draggable="1"]')]
+      .find(r=>r.querySelector('.breakable-crown'))
+      || document.querySelector('.swipe-row[data-agenda-draggable="1"]');
+    if(!row)return {found:false};
+    row.classList.remove('agenda-drag-ready','agenda-longpress-armed');
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+    row.classList.add('is-agenda-dragging','agenda-drag-ready');
+    if(typeof claimCardGesture === 'function')claimCardGesture(row,'reorder');
+    const blocksSwipe = typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'swipe');
+    const blocksScrub = typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'scrub');
+    const blocksHold = typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'hold');
+    // Simulate swipe touchstart should no-op (gesture blocked)
+    let swipeArmed = false;
+    const touch = new Touch({identifier:1, target:row, clientX:10, clientY:10});
+    // Direct API checks — touchstart handlers need TouchEvent which may be limited
+    const claimScrub = typeof claimCardGesture === 'function' && claimCardGesture(row,'scrub');
+    const claimHold = typeof claimCardGesture === 'function' && claimCardGesture(row,'hold');
+    row.classList.remove('is-agenda-dragging','agenda-drag-ready');
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'reorder');
+    return {found:true, blocksSwipe, blocksScrub, blocksHold, claimScrub, claimHold, swipeArmed};
+  });
+  assert(exclReorder.found && exclReorder.blocksSwipe && exclReorder.blocksScrub && exclReorder.blocksHold,
+    'reorder owner blocks swipe, scrub, and hold');
+  assert(!exclReorder.claimScrub && !exclReorder.claimHold, 'cannot claim scrub/hold while reordering');
+
+  // Mutual exclusion: scrub blocks swipe + reorder hold
+  const exclScrub = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.swipe-row[data-agenda-draggable="1"]')]
+      .find(r=>r.querySelector('.breakable-crown'));
+    if(!row)return {found:false};
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+    row.querySelector('.breakable-progress')?.classList.add('is-scrubbing');
+    if(typeof claimCardGesture === 'function')claimCardGesture(row,'scrub');
+    const blocksSwipe = cardGestureBlocks(row,'swipe');
+    const blocksHold = cardGestureBlocks(row,'hold');
+    const blocksReorder = cardGestureBlocks(row,'reorder');
+    const claimSwipe = claimCardGesture(row,'swipe');
+    const claimHold = claimCardGesture(row,'hold');
+    row.querySelector('.breakable-progress')?.classList.remove('is-scrubbing');
+    releaseCardGesture(row,'scrub');
+    return {found:true, blocksSwipe, blocksHold, blocksReorder, claimSwipe, claimHold};
+  });
+  assert(exclScrub.found && exclScrub.blocksSwipe && exclScrub.blocksHold && exclScrub.blocksReorder,
+    'scrub owner blocks swipe, hold, and reorder');
+  assert(!exclScrub.claimSwipe && !exclScrub.claimHold, 'cannot claim swipe/hold while scrubbing');
+
+  // Mutual exclusion: swipe blocks scrub + reorder hold
+  const exclSwipe = await page.evaluate(() => {
+    const row = document.querySelector('.swipe-row[data-agenda-draggable="1"]');
+    if(!row)return {found:false};
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+    row.dataset.swipeOpen = '1';
+    if(typeof claimCardGesture === 'function')claimCardGesture(row,'swipe');
+    const blocksScrub = cardGestureBlocks(row,'scrub');
+    const blocksHold = cardGestureBlocks(row,'hold');
+    const claimScrub = claimCardGesture(row,'scrub');
+    const claimHold = claimCardGesture(row,'hold');
+    delete row.dataset.swipeOpen;
+    releaseCardGesture(row,'swipe');
+    return {found:true, blocksScrub, blocksHold, claimScrub, claimHold};
+  });
+  assert(exclSwipe.found && exclSwipe.blocksScrub && exclSwipe.blocksHold,
+    'swipe owner blocks scrub and hold');
+  assert(!exclSwipe.claimScrub && !exclSwipe.claimHold, 'cannot claim scrub/hold while swipe owns');
 
   // Future-day drag-to-top is NOT doing-now
   const futureTop = await page.evaluate(() => {
     localStorage.removeItem('tings_order_constraints_v1');
     clearDoingNow();
-    const tomorrow = dayStart(Date.now()) + 86400000;
-    const data = load();
-    const deep = data.find(h=>h.hid === 't-deep');
-    const walk = data.find(h=>h.hid === 't-walk');
+    const today = dayStart(Date.now());
+    const tomorrow = today + 86400000;
+    const deep = { name:'Deep work', hid:'t-deep', type:'task', logs:[], lastLog:null, dueDate:today,
+      eventTime:null, flexibilityDays:0, durationMinutes:45, breakable:true,
+      minChunkMinutes:20, autoMarkMinutes:5, priority:1, pinned:false, emoji:'🧠' };
+    const walk = { name:'Walk', hid:'t-walk', type:'task', logs:[], lastLog:null, dueDate:today,
+      eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
+      autoMarkMinutes:null, priority:1, pinned:false, emoji:'🚶' };
+    save([deep, walk]);
     // Simulate finishAgendaDrag path for future day top: opens order sheet, not doing now
     openOrderLinkSheet({
       h:deep, dayBase:tomorrow,
@@ -630,6 +805,152 @@ function seedScript(){
   assert(/tomorrow/.test(futureTop.sub || ''), 'future-day sheet scoped to tomorrow');
   assert(futureTop.edges.length === 1 && futureTop.edges[0].beforeHid === 't-deep', 'future top saves before-neighbor edge');
   assert(futureTop.doing == null, 'future-day top does not set doing-now');
+
+  // ════════════════════════════════════════════════════════════════════════
+  // G. Stay on top + one-shot auto-complete at endsAt
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[G] doing-now stays on top + one-shot auto-log');
+  const stay = await page.evaluate(() => {
+    localStorage.removeItem('tings_order_constraints_v1');
+    clearDoingNow();
+    const today = dayStart(Date.now());
+    const now = Date.now();
+    const data = [
+      {name:'Later preferred', hid:'stay-a', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:30, breakable:false,
+        autoMarkMinutes:null, priority:0, pinned:false, emoji:'',
+        preferredTimeStart:18*60, preferredTimeEnd:22*60},
+      {name:'Do now', hid:'stay-now', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
+        autoMarkMinutes:null, priority:5, pinned:false, emoji:''},
+      {name:'Other', hid:'stay-b', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
+        autoMarkMinutes:null, priority:1, pinned:false, emoji:''}
+    ];
+    save(data);
+    saveSortSettings({
+      ...loadSortSettings(),
+      showWeekOnHome:true,
+      agendaOptimizer:false,
+      showDueTasksInAgenda:true,
+      availabilityMinutes:[600,600,600,600,600,600,600],
+      blockedTimes:[],
+      locations:[],
+      travel:{}
+    });
+    setDoingNow('stay-now', now, today, {sessionMinutes:20, oneShotAutoMark:true});
+    upsertOrderConstraint({dayBase:today, beforeHid:'stay-now', afterHid:'stay-a', adjacency:'direct'});
+    const week = buildWeekAgenda(data, loadSortSettings(), 2);
+    const day = (week.days || []).find(d=>d.dayBase === today) || week.days[0];
+    day.isToday = true;
+    const seq = homeDaySequence(day, loadSortSettings());
+    const firstFill = seq.find(r=>r.kind === 'fill' || r.kind === 'scheduled');
+    const firstHid = firstFill && firstFill.h && firstFill.h.hid;
+
+    // Expire session and sweep one-shot
+    const started = now - 25*60000;
+    setDoingNow('stay-now', started, today, {
+      sessionMinutes:20,
+      endsAt:started + 20*60000,
+      oneShotAutoMark:true
+    });
+    const beforeLogs = (load().find(h=>h.hid === 'stay-now') || {}).logs || [];
+    const n = sweepDoingNowOneShot(now, {refresh:false, toast:false});
+    const after = load().find(h=>h.hid === 'stay-now');
+    const afterDn = getDoingNow();
+    return {
+      firstHid,
+      oneShotCount:n,
+      logged:after && after.lastLog != null,
+      logGrew:(after.logs || []).length > beforeLogs.length,
+      cleared:afterDn == null
+    };
+  });
+  assert(stay.firstHid === 'stay-now', 'homeDaySequence promotes doing-now to top of today');
+  assert(stay.oneShotCount === 1 && stay.logged && stay.logGrew, 'one-shot auto-logs when endsAt passes');
+  assert(stay.cleared, 'one-shot clears doing-now after auto-log');
+
+  // ════════════════════════════════════════════════════════════════════════
+  // H. Compact order marks + detail unlink + emoji bg
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[H] compact order marks, detail unlink, emoji bg');
+  const marks = await page.evaluate(async () => {
+    localStorage.removeItem('tings_order_constraints_v1');
+    clearDoingNow();
+    const today = dayStart(Date.now());
+    const data = [
+      { name:'Email', hid:'t-email', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
+        autoMarkMinutes:null, priority:1, pinned:false, emoji:'✉️', emojiBgColor:'blue' },
+      { name:'Deep work', hid:'t-deep', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:45, breakable:false,
+        autoMarkMinutes:null, priority:1, pinned:false, emoji:'🧠', emojiBgColor:'purple' },
+      { name:'Walk', hid:'t-walk', type:'task', logs:[], lastLog:null, dueDate:today,
+        eventTime:null, flexibilityDays:0, durationMinutes:20, breakable:false,
+        autoMarkMinutes:null, priority:1, pinned:false, emoji:'🚶', emojiBgColor:'green' }
+    ];
+    save(data);
+    if(typeof render === 'function')render();
+    upsertOrderConstraint({dayBase:today, beforeHid:'t-email', afterHid:'t-deep', adjacency:'sometime'});
+    upsertOrderConstraint({dayBase:today, beforeHid:'t-deep', afterHid:'t-walk', adjacency:'direct'});
+    if(typeof render === 'function')render();
+
+    const html = orderLinkPillHtml('t-deep', today, load());
+    const isButton = /<button/i.test(html);
+    const hasMarks = /order-marks/.test(html) && /order-mark/.test(html);
+    const hasArrows = /ti-arrow-up/.test(html) && /ti-arrow-down/.test(html);
+    const hasEmojis = /✉️/.test(html) && /🚶/.test(html);
+    const hasBg = /--order-mark-bg:var\(--blue-bg\)/.test(html) && /--order-mark-bg:var\(--green-bg\)/.test(html);
+    // Names may appear in title= for accessibility, but not as visible chip text.
+    const visibleOnly = html.replace(/\stitle="[^"]*"/g,'').replace(/\saria-label="[^"]*"/g,'');
+    const noFullName = !/Email/.test(visibleOnly) && !/Walk/.test(visibleOnly);
+
+    // Detail actions page hosts order controls; opens there when links exist
+    const deepIdx = load().findIndex(h=>h.hid === 't-deep');
+    openDetail(deepIdx);
+    const orderBlock = document.getElementById('detail-order-block');
+    const orderVisible = orderBlock && !orderBlock.hidden;
+    const unlinkBtns = document.querySelectorAll('[data-order-unlink]');
+    const clearAll = document.getElementById('detail-order-clear-all');
+    const tabCount = document.querySelectorAll('.detail-page-tab').length;
+    const orderTab = [...document.querySelectorAll('.detail-page-tab')].some(t=>/order/i.test(t.getAttribute('aria-label')||''));
+    const actionsTabOn = document.querySelector('.detail-page-tab.on')?.getAttribute('aria-label') === 'actions'
+      || document.querySelector('.detail-page-tab[aria-label="actions"]')?.classList.contains('on');
+    // Wait a frame for scrollDetailToNav
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const actionsOnAfter = document.querySelector('.detail-page-tab.on')?.getAttribute('aria-label') === 'actions';
+
+    // Unlink one
+    unlinkBtns[0]?.click();
+    const afterOne = orderConstraintsForHid('t-deep').length;
+
+    // Clear remaining via detail clear-all
+    document.getElementById('detail-order-clear-all')?.click();
+    const afterClear = orderConstraintsForHid('t-deep').length;
+    const blockHiddenAfter = document.getElementById('detail-order-block')?.hidden;
+
+    // Emoji bg normalize + swatches
+    const normOk = normalizeEmojiBgColor('Teal') === 'teal' && normalizeEmojiBgColor('nope') === '';
+    renderEmojiBgSwatches('detail-emoji-bg','purple');
+    const swatchOn = document.querySelector('#detail-emoji-bg .emoji-bg-swatch.on')?.dataset.emojiBg;
+
+    return {
+      isButton, hasMarks, hasArrows, hasEmojis, hasBg, noFullName,
+      orderVisible, unlinkCount:unlinkBtns.length, clearHidden:clearAll?.hidden,
+      tabCount, orderTab, actionsOnAfter, afterOne, afterClear, blockHiddenAfter, normOk, swatchOn,
+      htmlSnippet:html.slice(0,180)
+    };
+  });
+  assert(!marks.isButton && marks.hasMarks, 'order indicators are non-button compact marks');
+  assert(marks.hasArrows && marks.hasEmojis, 'marks show up/down arrows + neighbor emojis');
+  assert(marks.hasBg, 'marks use neighbor emoji background color tokens');
+  assert(marks.noFullName, 'marks do not show full neighbor names');
+  assert(marks.orderVisible && marks.unlinkCount >= 1, 'actions page shows order links when present');
+  assert(!marks.orderTab && marks.tabCount === 6, 'no separate order tab; six detail pages');
+  assert(marks.actionsOnAfter, 'detail opens on actions when reorder links exist');
+  assert(marks.afterOne === 1, 'unlink removes one edge');
+  assert(marks.afterClear === 0 && marks.blockHiddenAfter, 'clear all removes links and hides order block');
+  assert(marks.normOk && marks.swatchOn === 'purple', 'emoji background swatches normalize + select');
 
   assert(pageErrors.length === 0, 'no page errors (' + pageErrors.slice(0,2).join(' | ') + ')');
 
