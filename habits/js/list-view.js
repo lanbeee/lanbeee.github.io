@@ -1753,6 +1753,254 @@ function capacityTimeLabel(value){
   return new Date(value).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
 }
 
+// Last opened audit — kept so copy/export work without rebuilding the sheet.
+let _dayCapacityReport = null;
+let _dayCapacityTitle = '';
+let _dayCapacitySub = '';
+
+// PURE: plain-text dump of a day capacity scorecard (for clipboard / .txt export).
+function formatDayCapacityScorecardText(report,title = '',sub = ''){
+  if(!report)return '';
+  const lines = [];
+  const push = (s = '')=>lines.push(s);
+  const pct = n=>`${Math.round((Number(n) || 0) * 100)}%`;
+  const dayLabel = title || (report.isToday
+    ? 'today'
+    : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase());
+  push(dayLabel);
+  if(sub)push(sub);
+  push('');
+  push('ELIGIBLE WORK');
+  push(capacityMinutesLabel(report.outstandingLoad));
+  push(`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`);
+  push('WORK PLACED');
+  push(capacityMinutesLabel(report.placedLoadMinutes));
+  push(`${pct(report.eligibleCoverage)} of eligible work`);
+  push('BUDGET USED');
+  push(pct(report.budgetUtilization));
+  push(`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`);
+  push('MISSED GAPS');
+  push(String(report.missedOpportunityCount));
+  push(`${capacityMinutesLabel(report.largestGapMinutes)} largest open gap`);
+  push('PLACEMENT AUDIT');
+  push(report.missedOpportunityCount > 0
+    ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
+    : 'no unexplained placement gaps');
+  push(report.missedOpportunityCount > 0
+    ? 'eligible work still fits under the scheduler\'s current constraints'
+    : (report.budgetCappedGapCount > 0
+      ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
+      : 'remaining gaps cannot take the outstanding candidates'));
+  push('');
+  push(`open scheduler time\n${capacityMinutesLabel(report.schedulerOpenMinutes)}`);
+  push(`budget remaining\n${capacityMinutesLabel(report.placementBudgetRemaining)}`);
+  push(`scheduled events\n${capacityMinutesLabel(report.scheduledMinutes)}`);
+  push(`travel committed\n${capacityMinutesLabel(report.travelMinutes)}`);
+  push('');
+  push('HOME AGENDA OUTPUT');
+  push(String(report.agendaRows.length));
+  for(const row of report.agendaRows){
+    push(`${capacityTimeLabel(row.start)}`);
+    push(`${capacityTimeLabel(row.end)}`);
+    push(row.name);
+    push(`${capacityMinutesLabel(row.minutes).toUpperCase()} / ${String(row.kind).toUpperCase()}`);
+  }
+  if(report.hiddenAgendaRowCount){
+    push(`${report.hiddenAgendaRowCount} scheduler placement${report.hiddenAgendaRowCount === 1 ? '' : 's'} not shown because of the current pin or filter view.`);
+  }
+  push('');
+  push('REMAINING GAP AUDIT');
+  push(String(report.placementGaps.length));
+  const gapLabels = {
+    missed:'COULD PLACE',
+    'assigned-elsewhere':'PLACED ELSEWHERE',
+    'budget-capped':'BUDGET CAPPED',
+    'no-fit':'NO ELIGIBLE FIT'
+  };
+  for(const gap of report.placementGaps){
+    push(`${capacityTimeLabel(gap.start)}-${capacityTimeLabel(gap.end)}`);
+    push(capacityMinutesLabel(gap.minutes));
+    push(gapLabels[gap.status] || String(gap.status).toUpperCase());
+    push(gap.explanation || '');
+  }
+  push('');
+  push('CAPACITY CONTEXT');
+  push(`clock ${capacityMinutesLabel(report.totalCapacity)}`);
+  push(`blocked ${capacityMinutesLabel(report.blockedMinutes)}`);
+  push(`net ${capacityMinutesLabel(report.netAvailable)}`);
+  for(const block of report.blockedBreakdown || []){
+    push(`${block.label} ${capacityMinutesLabel(block.minutes)}`);
+  }
+  push('');
+  push('UNPLACED ITEMS');
+  push(String(report.unplacedItems.length));
+  for(const item of report.unplacedItems){
+    push(item.name);
+    push(`${PRIORITY_LABELS[item.priority] || `P${item.priority}`} / ${String(item.type).toUpperCase()}`);
+    push(`${capacityMinutesLabel(item.remainingMinutes)} unplaced${item.placedMinutes ? ` / ${capacityMinutesLabel(item.placedMinutes)} placed` : ''}`);
+    const reasonBits = [item.reason,item.window].filter(Boolean);
+    if(reasonBits.length)push(reasonBits.join(' / '));
+  }
+  return lines.join('\n').trim() + '\n';
+}
+
+async function copyTextToClipboard(text){
+  if(!text)return false;
+  try{
+    if(navigator.clipboard && typeof navigator.clipboard.writeText === 'function'){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(_){ /* fall through */ }
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly','');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  }catch(_){
+    return false;
+  }
+}
+
+function dayCapacityExportFilename(report){
+  const key = report && report.dayKey
+    ? report.dayKey
+    : new Date().toISOString().slice(0,10);
+  return `tings-agenda-audit-${key}.txt`;
+}
+
+function weekPlacementsExportFilename(week,now = Date.now()){
+  const days = week && Array.isArray(week.days) ? week.days : [];
+  const start = days[0] && days[0].dayBase != null ? dateKey(days[0].dayBase) : dateKey(now);
+  const end = days.length && days[days.length - 1].dayBase != null
+    ? dateKey(days[days.length - 1].dayBase)
+    : start;
+  return start === end
+    ? `tings-week-placements-${start}.txt`
+    : `tings-week-placements-${start}_to_${end}.txt`;
+}
+
+// PURE: resolve the week snapshot used for placement export (rendered home
+// week first, otherwise a fresh 7-day build).
+function weekSnapshotForExport(now = Date.now()){
+  if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) && _homeRenderedWeek.days.length){
+    return _homeRenderedWeek;
+  }
+  if(typeof buildWeekAgenda === 'function' && typeof load === 'function' && typeof sortSettings !== 'undefined'){
+    try{ return buildWeekAgenda(load(),sortSettings,7); }
+    catch(_){ /* fall through */ }
+  }
+  return null;
+}
+
+// PURE: compact week placement dump — day headers + timed rows only.
+// Meant for pasting into chat as scheduler context (not the full day audit).
+function formatWeekPlacementsText(week,now = Date.now()){
+  if(!week || !Array.isArray(week.days) || !week.days.length)return '';
+  const lines = [];
+  const push = (s = '')=>lines.push(s);
+  const first = week.days[0];
+  const last = week.days[week.days.length - 1];
+  const rangeLabel = (()=>{
+    const a = new Date(first.dayBase).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    const b = new Date(last.dayBase).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    return `${a} – ${b}`.toLowerCase();
+  })();
+  push('WEEK PLACEMENTS');
+  push(rangeLabel);
+  push(week.optimized ? 'source: optimizer week' : 'source: home week agenda');
+  push('');
+  for(const day of week.days){
+    const label = typeof homeWeekDayLabel === 'function'
+      ? homeWeekDayLabel(day,now)
+      : new Date(day.dayBase).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    const full = new Date(day.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
+    push(full.toUpperCase());
+    if(label && label.toLowerCase() !== full.toLowerCase())push(`(${label})`);
+    const rows = (day.homeDisplayedTimeline || day.timeline || [])
+      .filter(row=>row && (row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel'));
+    if(!rows.length){
+      push('  — no placements');
+      push('');
+      continue;
+    }
+    for(const row of rows){
+      const mins = Math.max(0,Math.round((row.end - row.start) / 60000));
+      const name = row.kind === 'travel'
+        ? `travel${row.toName ? ` to ${row.toName}` : ''}`
+        : (row.h && row.h.name || 'scheduled item');
+      push(`  ${capacityTimeLabel(row.start)}–${capacityTimeLabel(row.end)}  ${name}  ${capacityMinutesLabel(mins)}  ${row.kind}`);
+    }
+    push('');
+  }
+  return lines.join('\n').trim() + '\n';
+}
+
+async function copyWeekPlacements(){
+  const week = weekSnapshotForExport();
+  if(!week){
+    if(typeof showToast === 'function')showToast('no week agenda yet');
+    return;
+  }
+  const text = formatWeekPlacementsText(week);
+  const ok = await copyTextToClipboard(text);
+  if(typeof showToast === 'function')showToast(ok ? 'week placements copied' : 'copy failed');
+}
+
+function exportWeekPlacements(){
+  const week = weekSnapshotForExport();
+  if(!week){
+    if(typeof showToast === 'function')showToast('no week agenda yet');
+    return;
+  }
+  const text = formatWeekPlacementsText(week);
+  const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = weekPlacementsExportFilename(week);
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ if(a.isConnected)document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
+  if(typeof showToast === 'function')showToast('week placements exported');
+}
+
+async function copyDayCapacityScorecard(){
+  if(!_dayCapacityReport){
+    if(typeof showToast === 'function')showToast('open an audit first');
+    return;
+  }
+  const text = formatDayCapacityScorecardText(_dayCapacityReport,_dayCapacityTitle,_dayCapacitySub);
+  const ok = await copyTextToClipboard(text);
+  if(typeof showToast === 'function')showToast(ok ? 'day audit copied' : 'copy failed');
+}
+
+function exportDayCapacityScorecard(){
+  if(!_dayCapacityReport){
+    if(typeof showToast === 'function')showToast('open an audit first');
+    return;
+  }
+  const text = formatDayCapacityScorecardText(_dayCapacityReport,_dayCapacityTitle,_dayCapacitySub);
+  const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = dayCapacityExportFilename(_dayCapacityReport);
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ if(a.isConnected)document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
+  if(typeof showToast === 'function')showToast('day audit exported');
+}
+
 function renderDayCapacityScorecard(report){
   const content = $('day-capacity-content');
   if(!content || !report)return;
@@ -1813,6 +2061,10 @@ function renderDayCapacityScorecard(report){
       </div>`).join('')
     : '<p class="capacity-empty">Every eligible item was fully placed.</p>';
   content.innerHTML = `
+    <div class="capacity-export-hint">
+      <span>copy / download = entire week placements</span>
+      <button type="button" class="capacity-day-audit-copy" data-capacity-copy-day>copy this day audit</button>
+    </div>
     <div class="capacity-metrics">
       ${metric('eligible work',capacityMinutesLabel(report.outstandingLoad),`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`,'load')}
       ${metric('work placed',capacityMinutesLabel(report.placedLoadMinutes),`${coverage} of eligible work`,'net')}
@@ -1863,13 +2115,18 @@ function openDayCapacityScorecard(dayBase,weekMode = false){
   const title = $('day-capacity-title');
   const sub = $('day-capacity-sub');
   const sheet = $('day-capacity-sheet');
-  if(title)title.textContent = report.isToday
+  const titleText = report.isToday
     ? 'today agenda audit'
     : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase();
-  if(sub)sub.textContent = report.isToday
+  const subText = report.isToday
     ? `${report.usesRenderedSnapshot ? 'current home agenda' : 'remaining day'} from ${new Date(report.rangeStart).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
     : (report.usesRenderedSnapshot ? 'current home agenda, full-day audit' : 'full-day agenda placement audit');
+  if(title)title.textContent = titleText;
+  if(sub)sub.textContent = subText;
   if(sheet)sheet.dataset.dayKey = report.dayKey;
+  _dayCapacityReport = report;
+  _dayCapacityTitle = titleText;
+  _dayCapacitySub = subText;
   renderDayCapacityScorecard(report);
   openSheet('day-capacity-sheet');
 }

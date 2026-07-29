@@ -3,13 +3,16 @@
 // The week planner must honour this priority, in order:
 //   1. HARD CONSTRAINTS  — capacity, blocked/scheduled slots, location hours,
 //      closed-days, allowed windows, hard-pinned items. Never violated.
-//   2. MINIMUM TRAVEL     — co-located far errands share one trip (one commute
+//   2. MAXIMIZE PLACED HOURS / doability — week-holistic: if Work is short and
+//      a can-wait errand sits in its window, peel the errand to another day and
+//      refill Work so total week hours rise (use-it-or-lose-it first).
+//   3. MINIMUM TRAVEL     — co-located far errands share one trip (one commute
 //      + short hop), never duplicated into two home round-trips.
-//   3. ASAP / HIGH-PRIORITY — when travel is unaffected, do things sooner and
-//      favour higher priority. Flexible items may defer to save a commute; a
-//      hard-pinned/critical item never defers.
-//   4. PREFERENCES        — preferred location/time/weekday are soft tiebreakers
-//      only; they never beat travel or urgency.
+//   4. ASAP / HIGH-PRIORITY — when hours and travel are unaffected, do things
+//      sooner and favour higher priority. Flexible items may defer to save a
+//      commute; a hard-pinned/critical item never defers.
+//   5. PREFERENCES        — preferred location/time/weekday are soft tiebreakers
+//      only; they never beat hours, travel, or urgency.
 //
 // This file exists so the exact bug the user hit (two far-from-home but close-
 // to-each-other items, one a habit and one a task, getting split across days)

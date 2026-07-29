@@ -2,11 +2,20 @@
 // lazy-loads on demand; the scarcity heuristic in today-view.js is the explicit
 // off-mode and the timeout/error fallback.
 //
+// Lex objective across the week (hours first, then soft score):
+//   1. HARD CONSTRAINTS — capacity, blocks, windows, pinned items
+//   2. MAXIMIZE PLACED HOURS / doability (week-holistic repair)
+//   3. MIN TRAVEL / cluster
+//   4. ASAP / HIGH-PRIORITY
+//   5. PREFERENCES
+//
 // Per day: enumerate feasible start options via tryPlaceOnDay, then solve a
 // set-packing ILP that maximizes weighted placements subject to no overlaps and
 // the day's capacity. Fixed-duration work is packed first; breakable work then
-// fills the remaining gaps continuous-first. This keeps a broad work window from
-// winning one large binary choice and erasing a narrow habit inside that window.
+// fills the remaining gaps continuous-first. A week-level repair pass then
+// peels can-wait movables off short daily breakables so total hours rise.
+// This keeps a broad work window from winning one large binary choice and
+// erasing a narrow habit inside that window.
 
 // Cold WASM/worker bring-up can exceed a tight budget on first open.
 const AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS = 12000;
@@ -449,13 +458,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   // a predecessor option ends (sometime + direct).
   appendOrderConstraintRows(GLPK,subjectTo,opts,state.dayBase);
 
-  // Daily-breakable reservation: a movable candidate (plan-by / one-shot task /
-  // sparse rhythm that could land on another eligible day) must not consume the
-  // slice of today's breakable window that a daily recurring breakable needs to
-  // hit its target. Without this, GLPK packs plan-by errands into a busy day and
-  // the breakable (placed afterwards) falls short — the "Work deprioritized"
-  // failure. Cap the total window-overlap of selected movable options at the
-  // spare capacity left after must-place items and the breakable's own deficit.
+  // Daily-breakable reservation (week-holistic hours, then priority when packed):
+  //   - Can-wait movables (in `deferrable`) are always capped at spare.
+  //   - Packed-week movables (not in `deferrable`): only a strictly higher
+  //     priority item is exempt and may displace the breakable; equal/lower
+  //     stay under the spare cap (unplaced rather than shorting the daily).
   if(typeof movableCapacityForDay === 'function'
     && typeof dailyBreakableReservations === 'function'
     && typeof fitOverlapWithReservationsMs === 'function'){
@@ -464,21 +471,21 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     if(reservations.length){
       const cap = movableCapacityForDay(state,allCands);
       if(Number.isFinite(cap)){
-        // A daily breakable is NOT inviolable — priority decides. Only a
-        // movable that is strictly LOWER priority than the breakable it overlaps
-        // (and has a quieter alternative day) is forced to defer. A higher or
-        // equal-priority movable may legitimately displace the breakable.
         const movableRows = [];
         for(const o of opts){
           if(!o.movable)continue;
-          if(deferrable && !deferrable.has(o.c.i))continue;
-          let bestBreakPriority = Infinity;
+          const hasCleanAlt = !!(deferrable && deferrable.has(o.c.i));
+          const beats = typeof movablePriorityBeatsReservations === 'function'
+            && movablePriorityBeatsReservations(o.c,reservations,o.fit);
+          // Only packed + higher priority may fully displace the breakable.
+          if(!hasCleanAlt && beats)continue;
+          let overlapsReserve = false;
           for(const r of reservations){
             if(o.fit.placeEnd <= r.window.start || o.fit.placeStart >= r.window.end)continue;
-            if(r.priority < bestBreakPriority)bestBreakPriority = r.priority;
+            overlapsReserve = true;
+            break;
           }
-          if(!Number.isFinite(bestBreakPriority))continue;
-          if((o.c.priority != null ? o.c.priority : 2) <= bestBreakPriority)continue;
+          if(!overlapsReserve)continue;
           const overlapMin = Math.round(
             fitOverlapWithReservationsMs(o.fit,reservations) / 60000);
           if(overlapMin > 0)movableRows.push({name:o.varName,coef:overlapMin});
@@ -536,13 +543,18 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
 
 // Scarcity-order placement for one day when ILP times out or is infeasible.
 // Keeps the rest of the week on the optimizer path instead of aborting entirely.
-function packDayWithHeuristic(state,dayCandidates){
+// Honours the same can-wait / packed-priority deferral as the ILP reserve.
+function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
   if(typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return [];
   const doing = doingNowForDay(state);
   const ordered = dayCandidates.slice().sort(orderAwareOptimizerSort(state.dayBase));
+  const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
+  const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
   const chosen = [];
   for(const c of ordered){
     if(state.placed.has(c.i))continue;
+    if(typeof fastPathDefersMovable === 'function'
+      && fastPathDefersMovable(c,state,pool,states))continue;
     let fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     const placeOpts = {allowNetwork:true};
     if(doing && fill.h && fill.h.hid === doing.hid){
@@ -663,7 +675,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       if(!usedHeuristic){
         console.warn('[agenda-optimizer] day solve infeasible — using fast pack for this day');
       }
-      const heuristicChosen = packDayWithHeuristic(state,fixedCands);
+      const heuristicChosen = packDayWithHeuristic(state,fixedCands,candidates,dayStates);
       for(const {fill} of heuristicChosen){
         total += 1;
         const c = candidates.find(x=>x.i === fill.i);
@@ -706,7 +718,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     total += rescueLeftoverWeekFits(
       candidates.filter(c=>c && c.h && !c.h.breakable),
       dayStates,
-      settings
+      settings,
+      {allCandidates:candidates}
     );
   }
 
@@ -768,6 +781,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         rhythmPlacementCount += 1;
       }
     }
+  }
+  // Week-holistic hours repair: move can-wait items off short daily breakables.
+  if(typeof repairWeekPlacedHours === 'function'){
+    total += repairWeekPlacedHours(candidates,dayStates,settings);
   }
   return total >= 0;
 }

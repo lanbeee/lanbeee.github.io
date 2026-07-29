@@ -2487,7 +2487,20 @@ $('activity-calendar').addEventListener('click',()=>{
 $('activity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){activityIdx = null;closeSheet('activity-sheet');}});
 
 $('day-capacity-close').addEventListener('click',()=>closeSheet('day-capacity-sheet'));
-$('day-capacity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('day-capacity-sheet');});
+$('day-capacity-copy')?.addEventListener('click',()=>{
+  if(typeof copyWeekPlacements === 'function')copyWeekPlacements();
+});
+$('day-capacity-export')?.addEventListener('click',()=>{
+  if(typeof exportWeekPlacements === 'function')exportWeekPlacements();
+});
+$('day-capacity-sheet').addEventListener('click',e=>{
+  if(e.target === e.currentTarget){ closeSheet('day-capacity-sheet'); return; }
+  const dayCopy = e.target.closest && e.target.closest('[data-capacity-copy-day]');
+  if(dayCopy && typeof copyDayCapacityScorecard === 'function'){
+    e.preventDefault();
+    copyDayCapacityScorecard();
+  }
+});
 
 $('slipped-close').addEventListener('click',()=>closeSheet('slipped-sheet'));
 $('slipped-sheet').addEventListener('click',e=>{

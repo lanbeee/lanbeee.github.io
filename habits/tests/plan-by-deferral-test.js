@@ -1,17 +1,39 @@
-// Plan-by / movable deferral vs daily recurring breakable Work.
+// Plan-by / movable deferral vs daily recurring breakables.
 //
-// The user's rule: do everything as early as possible, BUT defer a movable
-// candidate (plan-by item, one-shot task, sparse rhythm) to a quieter eligible
-// day when placing it on the current busy day would leave a daily recurring
-// breakable (e.g. "Work 6h, M-F, 9:00–18:45") unable to reach its target.
-// A movable whose only viable day is this one still places here (no drop).
+// Rules under test (lex, week-holistic):
+//   1. Hard constraints always win.
+//   2. Maximize placed hours — daily breakables are use-it-or-lose-it.
+//   3. Can-wait movable (clean alternative day) NEVER steals a daily breakable
+//      chunk — priority irrelevant (higher/equal/lower all defer).
+//   4. Packed week (no clean alternative): ONLY strictly higher priority may
+//      take a breakable chunk; equal/lower stay unplaced (or spare-only).
+//   5. ASAP when the item fits in spare without breaching the breakable.
+//   6. Protection is by shape (breakable + target≤1), not by the name "Work".
+//   7. One-shot tasks are movables too (same can-wait / packed-priority rules).
+//   8. Must-place narrow dailies (prayers) survive inside the breakable window.
 //
-// Every scenario is run twice — once through the GLPK optimizer
-// (buildWeekAgendaAsync with agendaOptimizer:true) and once through the fast
-// scarcity planner (buildWeekAgenda with agendaOptimizer:false) — and both
-// must satisfy the same invariants. Soft-passes if GLPK cannot load.
+// Every scenario runs twice — GLPK optimizer and fast scarcity — same
+// invariants. Soft-passes the GLPK column if WASM cannot load.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/plan-by-deferral-test.js
+//
+// Case matrix:
+//   [1]  busy day, can-wait errands spread, Work full
+//   [2]  errands fit in spare → ASAP, no over-defer
+//   [3]  no-alt that fits in spare → places, Work full
+//   [4]  several can-wait movables, at most one on busy day
+//   [5]  narrow daily prayer survives + Work full
+//   [6]  prayer footprint shrinks spare correctly
+//   [7]  packed + higher pri → may take Work chunk
+//   [7b] can-wait + higher pri → still defers
+//   [7c] packed + lower pri → must not steal Work
+//   [7d] packed + equal pri → must not steal Work
+//   [7e] can-wait + equal pri → still defers
+//   [8]  max doability + front-load
+//   [9]  fragmentation / hours repair
+//   [10] daily breakable named Study (not Work) protected
+//   [11] one-shot task can-wait defers for Work
+//   [12] packed lower-pri that fits in spare still places (spare-only OK)
 //
 const { chromium } = require('playwright');
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
@@ -323,12 +345,12 @@ function windowedSettings(extra){
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // Scenario 7 — not god-tier: priority overrides the daily breakable.
-  // A higher-priority movable (Crisis, pri 0) whose only viable day is tomorrow
-  // MUST place even though it breaches Work (pri 1). The breakable is protected
-  // from LOW-priority slack, not from genuinely more important commitments.
+  // Scenario 7 — packed week + higher priority: may take a breakable chunk.
+  // Crisis (pri 0) plan-by is tomorrow only — no clean alternative. It MUST
+  // place even though it breaches Work (pri 1), because priority wins when
+  // the week is packed. Dropping Crisis would hide a more important item.
   // ════════════════════════════════════════════════════════════════════════
-  console.log('\n[7] not god-tier — higher-priority Crisis displaces Work');
+  console.log('\n[7] packed + higher priority — Crisis may take a Work chunk');
   {
     const now = atTime(19);
     const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
@@ -343,8 +365,117 @@ function windowedSettings(extra){
     for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
       if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
       assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
-      assert(minutesOnDay(r,1,'Crisis') >= 300, `${label}: higher-priority Crisis fully placed (got ${minutesOnDay(r,1,'Crisis')})`);
-      assert(minutesOnDay(r,1,'Work') <= 260, `${label}: Work yields to the more important Crisis (got ${minutesOnDay(r,1,'Work')})`);
+      assert(minutesOnDay(r,1,'Crisis') >= 300, `${label}: packed higher-pri Crisis fully placed (got ${minutesOnDay(r,1,'Crisis')})`);
+      assert(minutesOnDay(r,1,'Work') <= 260, `${label}: Work yields to higher-pri Crisis (got ${minutesOnDay(r,1,'Work')})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 7c — packed week + lower priority: may NOT take a Work chunk.
+  // Errand (pri 3) plan-by is tomorrow only — no clean alternative — but it
+  // is lower priority than Work (pri 0). Stay unplaced (or spare-only) rather
+  // than shorting the daily breakable.
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[7c] packed + lower priority — Errand must not steal Work');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const data = [
+      base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:0,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Errand', type:'keepup', target:30, durationMinutes:300, priority:3,
+        planByDate:todayBase + 1*86400000 })
+    ];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Work') >= 360, `${label}: Work stays full vs lower-pri packed Errand (got ${minutesOnDay(r,1,'Work')})`);
+      assert(minutesOnDay(r,1,'Errand') <= 200, `${label}: lower-pri Errand does not take a full Work-stealing block (got ${minutesOnDay(r,1,'Errand')})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 7b — can-wait beats priority: higher-priority Oil still defers.
+  // Oil is P0 (higher than Work P1) but plan-by is later and quieter days
+  // exist. Placing Oil tomorrow would steal Work forever; deferring Oil keeps
+  // both → more things done. Priority must NOT override "can wait → waits".
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[7b] can-wait — higher-priority Oil still defers for Work');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const at = (o,h,m) => (todayBase + o*86400000) + h*3600000 + m*60000;
+    const data = [
+      base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:1,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Clinic', type:'task', durationMinutes:120, priority:2,
+        eventTime:at(1,10,0), createdAt:now - 86400000 }),
+      base({ name:'Oil Change', type:'keepup', target:30, durationMinutes:120, priority:0,
+        planByDate:todayBase + 4*86400000 })
+    ];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Work') >= 360, `${label}: Work hits 6h; can-wait Oil must not steal (got ${minutesOnDay(r,1,'Work')})`);
+      assert(minutesOnDay(r,1,'Oil Change') === 0, `${label}: higher-priority Oil defers off busy day (got ${minutesOnDay(r,1,'Oil Change')})`);
+      assert(placedAnywhere(r,'Oil Change') >= 120, `${label}: Oil still places later in the week (got ${placedAnywhere(r,'Oil Change')})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 7d — packed week + equal priority: may NOT take a Work chunk.
+  // Peer is P0 like Work, plan-by tomorrow only. Equal is not strictly higher,
+  // so Peer must not displace Work.
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[7d] packed + equal priority — Peer must not steal Work');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const data = [
+      base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:0,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Peer', type:'keepup', target:30, durationMinutes:300, priority:0,
+        planByDate:todayBase + 1*86400000 })
+    ];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Work') >= 360, `${label}: Work stays full vs equal-pri packed Peer (got ${minutesOnDay(r,1,'Work')})`);
+      assert(minutesOnDay(r,1,'Peer') <= 200, `${label}: equal-pri Peer does not take a full Work-stealing block (got ${minutesOnDay(r,1,'Peer')})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 7e — can-wait + equal priority: still defers.
+  // Same priority as Work, but quieter days exist → wait, keep both.
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[7e] can-wait + equal priority — Peer still defers for Work');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const at = (o,h,m) => (todayBase + o*86400000) + h*3600000 + m*60000;
+    const data = [
+      base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:0,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Clinic', type:'task', durationMinutes:120, priority:2,
+        eventTime:at(1,10,0), createdAt:now - 86400000 }),
+      base({ name:'Peer', type:'keepup', target:30, durationMinutes:120, priority:0,
+        planByDate:todayBase + 4*86400000 })
+    ];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Work') >= 360, `${label}: Work hits 6h; equal-pri can-wait Peer must not steal (got ${minutesOnDay(r,1,'Work')})`);
+      assert(minutesOnDay(r,1,'Peer') === 0, `${label}: equal-pri Peer defers off busy day (got ${minutesOnDay(r,1,'Peer')})`);
+      assert(placedAnywhere(r,'Peer') >= 120, `${label}: Peer still places later (got ${placedAnywhere(r,'Peer')})`);
     }
   }
 
@@ -386,6 +517,127 @@ function windowedSettings(extra){
         if(errandCountOnDay(r,o,errands) > 0){ firstErrandDay = o; break; }
       }
       assert(firstErrandDay === 1, `${label}: errands front-load to the earliest day (1; got ${firstErrandDay})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 9 — fragmentation / hours repair (Wednesday-style).
+  // Blood Test (scheduled 90m) + two can-wait errands (90m each) sit in the
+  // Work window. Raw spare minutes may look fine, but minChunk=60 means a
+  // mid-window errand can leave Work short. Holistic packing must still hit
+  // Work 6h and place both errands somewhere in the week (max hours).
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[9] fragmentation — Work hours recovered, errands still placed');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const at = (o,h,m) => (todayBase + o*86400000) + h*3600000 + m*60000;
+    const data = [
+      base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:0,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Blood Test', type:'task', durationMinutes:90, priority:1,
+        eventTime:at(1,10,30), createdAt:now - 86400000 }),
+      base({ name:'Oil Change', type:'keepup', target:30, durationMinutes:120, priority:0,
+        planByDate:todayBase + 4*86400000 }),
+      base({ name:'Indian Grocery', type:'keepup', target:30, durationMinutes:90, priority:3,
+        planByDate:todayBase + 5*86400000 })
+    ];
+    const errands = ['Oil Change','Indian Grocery'];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Work') >= 360, `${label}: Work hits 6h after hours repair (got ${minutesOnDay(r,1,'Work')})`);
+      for(const nm of errands){
+        assert(placedAnywhere(r,nm) > 0, `${label}: ${nm} still placed somewhere (max hours)`);
+      }
+      assert(weekTotal(r,'Work') + weekTotal(r,'Oil Change') + weekTotal(r,'Indian Grocery')
+        >= 360 + 120 + 90,
+        `${label}: week hours cover Work+errands (got W${weekTotal(r,'Work')} O${weekTotal(r,'Oil Change')} G${weekTotal(r,'Indian Grocery')})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 10 — protection is by shape, not the name "Work".
+  // A daily breakable called Study must get the same can-wait protection.
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[10] name-agnostic — Study (daily breakable) protected like Work');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const at = (o,h,m) => (todayBase + o*86400000) + h*3600000 + m*60000;
+    const data = [
+      base({ name:'Study', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:1,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Clinic', type:'task', durationMinutes:120, priority:2,
+        eventTime:at(1,10,0), createdAt:now - 86400000 }),
+      base({ name:'Oil Change', type:'keepup', target:30, durationMinutes:120, priority:0,
+        planByDate:todayBase + 4*86400000 })
+    ];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Study') >= 360, `${label}: Study hits 6h (got ${minutesOnDay(r,1,'Study')})`);
+      assert(minutesOnDay(r,1,'Oil Change') === 0, `${label}: can-wait Oil defers off Study's busy day (got ${minutesOnDay(r,1,'Oil Change')})`);
+      assert(placedAnywhere(r,'Oil Change') >= 120, `${label}: Oil still places later (got ${placedAnywhere(r,'Oil Change')})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 11 — one-shot task is a movable: can-wait defers for Work.
+  // A P0 due-task with flexibility can land later in the week; it must not
+  // steal tomorrow's Work when quieter days remain.
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[11] one-shot task can-wait — defers for Work');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const at = (o,h,m) => (todayBase + o*86400000) + h*3600000 + m*60000;
+    const data = [
+      base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:1,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Clinic', type:'task', durationMinutes:120, priority:2,
+        eventTime:at(1,10,0), createdAt:now - 86400000 }),
+      base({ name:'Deadline Task', type:'task', durationMinutes:120, priority:0,
+        dueDate:todayBase + 4*86400000, flexibilityDays:4, hardDue:false,
+        target:null, createdAt:now - 86400000 })
+    ];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Work') >= 360, `${label}: Work hits 6h vs can-wait task (got ${minutesOnDay(r,1,'Work')})`);
+      assert(minutesOnDay(r,1,'Deadline Task') === 0, `${label}: can-wait task defers off busy day (got ${minutesOnDay(r,1,'Deadline Task')})`);
+      assert(placedAnywhere(r,'Deadline Task') >= 120, `${label}: task still places later (got ${placedAnywhere(r,'Deadline Task')})`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Scenario 12 — packed lower-pri that FITs in spare still places.
+  // Errand is tomorrow-only and lower priority, but 90m fits inside Work's
+  // spare — it must place ASAP without shorting Work (not over-blocked).
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[12] packed lower-pri spare-fit — places without shorting Work');
+  {
+    const now = atTime(19);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const data = [
+      base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
+        breakable:true, minChunkMinutes:60, priority:0,
+        allowedTimeStart:540, allowedTimeEnd:1125 }),
+      base({ name:'Errand', type:'keepup', target:30, durationMinutes:90, priority:3,
+        planByDate:todayBase + 1*86400000 })
+    ];
+    const res = await runBoth(data, windowedSettings(), now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,1,'Work') >= 360, `${label}: Work stays full (got ${minutesOnDay(r,1,'Work')})`);
+      assert(minutesOnDay(r,1,'Errand') >= 90, `${label}: spare-fit Errand still places tomorrow (got ${minutesOnDay(r,1,'Errand')})`);
     }
   }
 

@@ -176,6 +176,28 @@ function task(name,dueDate,priority = 1){
   assert(await page.locator('#day-capacity-content').getByText('9h',{exact:true}).count() === 1,'Today overlay missing 9h capacity');
   assert(await page.locator('[data-capacity-gap-status="budget-capped"]').count() > 0,'Overlay did not explain the obvious unused gap');
   assert(await page.locator('.capacity-agenda-row').count() > 0,'Overlay did not render the agenda builder output');
+  assert(await page.locator('#day-capacity-copy').isVisible(),'Copy week placements button missing');
+  assert(await page.locator('#day-capacity-export').isVisible(),'Export week placements button missing');
+  assert(await page.locator('[data-capacity-copy-day]').isVisible(),'Copy day audit link missing');
+  const copied = await page.evaluate(async ()=>{
+    const week = weekSnapshotForExport();
+    const weekText = formatWeekPlacementsText(week);
+    const dayText = formatDayCapacityScorecardText(_dayCapacityReport,_dayCapacityTitle,_dayCapacitySub);
+    return {
+      hasWeekHeader:weekText.includes('WEEK PLACEMENTS'),
+      hasToday: /today|wednesday|thursday|friday|saturday|sunday|monday|tuesday/i.test(weekText),
+      hasDayEligible:dayText.includes('ELIGIBLE WORK'),
+      hasDayAgenda:dayText.includes('HOME AGENDA OUTPUT'),
+      weekLines:weekText.split('\n').length,
+      dayLines:dayText.split('\n').length
+    };
+  });
+  assert(copied.hasWeekHeader && copied.hasToday,
+    `Week placements dump missing sections: ${JSON.stringify(copied)}`);
+  assert(copied.hasDayEligible && copied.hasDayAgenda,
+    `Day audit text dump missing sections: ${JSON.stringify(copied)}`);
+  assert(copied.weekLines > 5,`Week placements dump too short (${copied.weekLines} lines)`);
+  assert(copied.dayLines > 20,`Day audit text dump too short (${copied.dayLines} lines)`);
   await page.screenshot({path:'/private/tmp/habits-day-capacity-mobile.png',fullPage:true});
   await page.locator('#day-capacity-close').click();
 
