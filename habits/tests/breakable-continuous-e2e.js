@@ -111,6 +111,9 @@ async function seedAndReload(page, { data, settings, clockTs }){
     localStorage.clear();
     localStorage.setItem('tings_v2', JSON.stringify(data));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
+    // Keep in-memory settings valid for any in-flight GLPK/render callbacks
+    // that may still run before reload tears the page down.
+    if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
   }, { data, settings });
   await page.reload({ waitUntil:'networkidle' });
   // Re-assert freeze survived reload via init script.

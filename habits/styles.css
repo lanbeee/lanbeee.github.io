@@ -3315,19 +3315,19 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 
 /* ── Temporary agenda order (long-press grip + link sheet) ── */
 .swipe-row[data-day-base]{position:relative;}
-/* In-flow left grip slot — always reserved on draggable agenda cards. */
+/* Absolute grip — out of flex flow so idle cards match tings left padding. */
 .agenda-drag-handle{
-  flex:0 0 22px;width:22px;min-width:22px;align-self:stretch;
-  margin:0 0 0 -2px;border:0;background:transparent;color:var(--text3);
-  display:flex;align-items:center;justify-content:center;padding:0;
-  position:relative;z-index:2;
+  position:absolute;left:2px;top:50%;transform:translateY(-50%) scale(0.85);
+  width:22px;height:40px;margin:0;border:0;padding:0;
+  background:transparent;color:var(--text3);
+  display:flex;align-items:center;justify-content:center;z-index:3;
   cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;
-  opacity:0;pointer-events:none;transform:scale(0.85);
+  opacity:0;pointer-events:none;
   transition:opacity 0.16s ease, transform 0.16s ease, color 0.16s ease;
 }
 .swipe-row.agenda-drag-ready .agenda-drag-handle,
 .swipe-row.is-agenda-dragging .agenda-drag-handle{
-  opacity:0.95;pointer-events:auto;transform:scale(1);
+  opacity:0.95;pointer-events:auto;transform:translateY(-50%) scale(1);
   color:var(--teal-icon);
 }
 .agenda-drag-handle:active{cursor:grabbing;opacity:1;}

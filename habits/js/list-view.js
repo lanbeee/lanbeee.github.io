@@ -2269,10 +2269,11 @@ function render(opts){
   const list = $('list');
   const empty = $('empty');
   const data = load();
+  if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
   const wantsOptimizedWeek = !o.deferAgenda
     && !o.__optimizedWeek
     && !o.__optimizerFallback
-    && Boolean(sortSettings.agendaOptimizer)
+    && Boolean(sortSettings && sortSettings.agendaOptimizer)
     && sortSettings.preset === 'todayFirst'
     && Boolean(sortSettings.showWeekOnHome)
     && !searchQuery.trim()
@@ -2937,7 +2938,8 @@ function optimizerHomeStateKey(data){
 // Repaint from the already solved week so the interaction responds immediately
 // even if travel-cache background writes changed the next optimizer key.
 function renderHomePresentationOnly(){
-  if(sortSettings.agendaOptimizer && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+  if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+  if(sortSettings && sortSettings.agendaOptimizer && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     render({__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
     return;
   }
@@ -2962,11 +2964,12 @@ function queueOptimizedHomeRender(data,opts){
 
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
-  const settings = {...sortSettings};
+  const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
   void buildWeekAgendaAsync(data,settings,7).then(week=>{
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
-    if(!sortSettings.agendaOptimizer)return;
+    const live = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
+    if(!live || !live.agendaOptimizer)return;
     if(key !== optimizerHomeStateKey(load())){
       render(opts);
       _homeListFingerprint = homeListFingerprint();

@@ -642,7 +642,12 @@ function seedScript(){
       .find(r=>r.querySelector('.breakable-crown'));
     if(!row)return {found:false};
     const handle = row.querySelector('.agenda-drag-handle');
-    const handleStyle = handle ? getComputedStyle(handle) : null;
+    const pulse = row.querySelector('.pulse-btn');
+    const card = row.querySelector('.ting-card');
+    const idlePad = card ? getComputedStyle(card).paddingLeft : '';
+    const idlePulseLeft = pulse && card
+      ? pulse.getBoundingClientRect().left - card.getBoundingClientRect().left
+      : -1;
     const crown = row.querySelector('.breakable-crown');
     const rect = crown.getBoundingClientRect();
     crown.dispatchEvent(new PointerEvent('pointerdown',{
@@ -652,6 +657,7 @@ function seedScript(){
     await new Promise(r=>setTimeout(r,500));
     const ready = row.classList.contains('agenda-drag-ready');
     const pe = getComputedStyle(row.querySelector('.agenda-drag-handle')).pointerEvents;
+    const handlePos = handle ? getComputedStyle(handle).position : null;
     const ownerHold = typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null;
     crown.dispatchEvent(new PointerEvent('pointerup',{
       bubbles:true, cancelable:true, pointerId:7, pointerType:'touch',
@@ -659,16 +665,14 @@ function seedScript(){
     }));
     return {
       found:true,
-      handlePosition:handleStyle ? handleStyle.position : null,
-      handleFlex:handleStyle ? handleStyle.flexGrow + '/' + handleStyle.flexShrink + '/' + handleStyle.flexBasis : null,
-      handleWidth:handleStyle ? parseFloat(handleStyle.width) : 0,
+      handlePos, idlePad, idlePulseLeft,
       ready, pe, ownerHold
     };
   });
   assert(breakableArm.found, 'breakable agenda row exists for crown long-press');
-  assert(breakableArm.handlePosition === 'relative' || breakableArm.handlePosition === 'static',
-    'grip is in-flow (not absolute)');
-  assert(breakableArm.handleWidth >= 20, 'in-flow grip reserves ~22px width');
+  assert(breakableArm.handlePos === 'absolute', 'grip is absolute so it does not inflate card layout');
+  assert(parseFloat(breakableArm.idlePad) <= 10, 'idle card left padding stays tight like tings');
+  assert(breakableArm.idlePulseLeft <= 14, 'idle pulse sits near left edge (no grip gutter)');
   assert(breakableArm.ready && breakableArm.pe === 'auto', 'holding breakable crown arms reorder grip');
 
   // Crown horizontal scrub cancels hold and does not leave grip armed
