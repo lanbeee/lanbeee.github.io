@@ -755,9 +755,11 @@ function isDoingNowActive(doing = null,now = Date.now()){
 /**
  * Start a doing-now session. opts.sessionMinutes snapshots the remaining
  * duration at confirm time; oneShotAutoMark defaults true.
+ * dayBase must be today's calendar day; startedAt may be earlier (even
+ * before midnight) so expired sessions near day boundaries still sweep.
  */
 function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now()),opts = {}){
-  const todayBase = dayStart(startedAt);
+  const todayBase = dayStart(Date.now());
   const nextDay = clampDayTimestamp(dayBase);
   if(!hid || nextDay !== todayBase)return null;
   const start = Number(startedAt) || Date.now();
@@ -765,7 +767,7 @@ function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now()),o
   const endsAt = Number.isFinite(Number(opts.endsAt))
     ? Number(opts.endsAt)
     : start + sessionMinutes * 60000;
-  const store = loadOrderConstraintStore(start);
+  const store = loadOrderConstraintStore();
   store.doingNow = {
     hid:String(hid),
     startedAt:start,

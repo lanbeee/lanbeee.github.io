@@ -326,7 +326,7 @@ function fitsOverlap(a,b){
 }
 
 // Solve set-packing ILP for one day. Returns array of {fill, fit} or null on failure.
-function solveDayPackingIlp(GLPK,state,dayCandidates){
+function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   const options = [];
   const doing = doingNowForDay(state);
   for(const c of dayCandidates){
@@ -338,7 +338,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates){
     const fits = listPlaceFitsOnDay(state,fill,dayCandidates);
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
     for(const fit of fits){
-      const option = {c,fill,fit,weight:baseWeight};
+      const option = {c,fill,fit,weight:baseWeight,
+        movable:typeof isMovableWeekCandidate === 'function' && isMovableWeekCandidate(c)};
       applyDoingNowWeight(option,doing);
       options.push(option);
     }
@@ -448,6 +449,51 @@ function solveDayPackingIlp(GLPK,state,dayCandidates){
   // a predecessor option ends (sometime + direct).
   appendOrderConstraintRows(GLPK,subjectTo,opts,state.dayBase);
 
+  // Daily-breakable reservation: a movable candidate (plan-by / one-shot task /
+  // sparse rhythm that could land on another eligible day) must not consume the
+  // slice of today's breakable window that a daily recurring breakable needs to
+  // hit its target. Without this, GLPK packs plan-by errands into a busy day and
+  // the breakable (placed afterwards) falls short — the "Work deprioritized"
+  // failure. Cap the total window-overlap of selected movable options at the
+  // spare capacity left after must-place items and the breakable's own deficit.
+  if(typeof movableCapacityForDay === 'function'
+    && typeof dailyBreakableReservations === 'function'
+    && typeof fitOverlapWithReservationsMs === 'function'){
+    const allCands = Array.isArray(allCandidates) ? allCandidates : dayCandidates;
+    const reservations = dailyBreakableReservations(state,allCands);
+    if(reservations.length){
+      const cap = movableCapacityForDay(state,allCands);
+      if(Number.isFinite(cap)){
+        // A daily breakable is NOT inviolable — priority decides. Only a
+        // movable that is strictly LOWER priority than the breakable it overlaps
+        // (and has a quieter alternative day) is forced to defer. A higher or
+        // equal-priority movable may legitimately displace the breakable.
+        const movableRows = [];
+        for(const o of opts){
+          if(!o.movable)continue;
+          if(deferrable && !deferrable.has(o.c.i))continue;
+          let bestBreakPriority = Infinity;
+          for(const r of reservations){
+            if(o.fit.placeEnd <= r.window.start || o.fit.placeStart >= r.window.end)continue;
+            if(r.priority < bestBreakPriority)bestBreakPriority = r.priority;
+          }
+          if(!Number.isFinite(bestBreakPriority))continue;
+          if((o.c.priority != null ? o.c.priority : 2) <= bestBreakPriority)continue;
+          const overlapMin = Math.round(
+            fitOverlapWithReservationsMs(o.fit,reservations) / 60000);
+          if(overlapMin > 0)movableRows.push({name:o.varName,coef:overlapMin});
+        }
+        if(movableRows.length){
+          subjectTo.push({
+            name:'movable_breakable_reserve',
+            vars:movableRows,
+            bnds:{type:GLPK.GLP_UP,ub:Math.round(cap),lb:0}
+          });
+        }
+      }
+    }
+  }
+
   const problem = {
     name:'AgendaDayPack',
     objective:{
@@ -470,9 +516,9 @@ async function resolveSolve(maybe){
   return maybe;
 }
 
-async function packDayWithOptimizer(state,dayCandidates){
+async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable){
   const GLPK = await ensureGlpk();
-  const packed = solveDayPackingIlp(GLPK,state,dayCandidates);
+  const packed = solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable);
   if(Array.isArray(packed) && packed.length === 0)return [];
   const {result:raw,opts} = packed;
   const result = await resolveSolve(raw);
@@ -573,6 +619,27 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     }
     const fixedCands = dayCands.filter(c=>!(c.h && c.h.breakable));
     if(!fixedCands.length)continue;
+    // A movable candidate is only "deferrable" from this day when another
+    // eligible day can still take it without breaching its own breakables —
+    // otherwise forcing deferral would drop the item entirely. The reservation
+    // constraint below applies solely to deferrable movables, so a plan-by item
+    // whose only viable day is this busy one still places here.
+    const deferrable = new Set();
+    if(typeof isMovableWeekCandidate === 'function'
+      && typeof movableCapacityForDay === 'function'){
+      for(const c of fixedCands){
+        if(!isMovableWeekCandidate(c))continue;
+        const dur = clampDuration(c.h.durationMinutes);
+        for(let j = 0;j < dayStates.length;j += 1){
+          if(dayStates[j] === state)continue;
+          if(!c.eligible.has(dayStates[j].dayBase))continue;
+          if(movableCapacityForDay(dayStates[j],candidates) >= dur){
+            deferrable.add(c.i);
+            break;
+          }
+        }
+      }
+    }
     const solveMs = daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
     let chosen = null;
     let usedHeuristic = false;
@@ -582,7 +649,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       const solveStarted = (typeof performance !== 'undefined' && performance.now)
         ? performance.now() : Date.now();
       try{
-        chosen = await withTimeout(packDayWithOptimizer(state,fixedCands),solveMs);
+        chosen = await withTimeout(packDayWithOptimizer(state,fixedCands,candidates,deferrable),solveMs);
       }catch(err){
         console.warn('[agenda-optimizer] day solve timed out — using fast pack for this day:',err && err.message || err);
         chosen = null;

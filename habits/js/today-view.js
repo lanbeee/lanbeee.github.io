@@ -1446,6 +1446,156 @@ function placedBreakableMinutes(state,habitIndex){
   },0);
 }
 
+// ─── Daily-breakable reservation ──────────────────────────────────────────
+// A daily recurring breakable (e.g. "Work 6h every weekday, 9:00–18:45") has a
+// per-day target it must still reach. Movable week candidates — plan-by items,
+// one-shot tasks, sparse/flex rhythms — can satisfy their target on ANY of
+// several eligible days, so they should never consume the slice of a busy day
+// that a daily breakable needs to hit its target when a quieter day can take
+// them instead. These helpers quantify that protection and are shared by both
+// the fast scarcity planner and the GLPK optimizer so the two paths agree.
+
+// PURE: is this week candidate "movable" — i.e. it places once and could be
+// deferred to another eligible day? Daily rhythms (target ≤ 1) must place on
+// every eligible day so they are NOT movable; pinned items stay on today.
+function isMovableWeekCandidate(c){
+  if(!c || !c.h)return false;
+  if(c.pinned === true)return false;
+  if(c.h.breakable)return false;            // breakables reserve capacity, not deferred
+  if(c.h.type === 'task')return true;       // one-shot → chooses a day
+  const target = Number(c.h && c.h.target);
+  if(Number.isFinite(target) && target <= 1)return false; // daily rhythm, must place today
+  return true;                              // sparse rhythm (target > 1) / plan-by
+}
+
+// PURE: daily-recurring breakable candidates eligible on state.dayBase, each
+// with its time window (full day when none) and the minutes still needed to
+// reach today's target. An empty list means "no daily breakable to protect".
+function dailyBreakableReservations(state,candidates){
+  if(!state || !Array.isArray(candidates))return [];
+  const out = [];
+  for(const c of candidates){
+    if(!c || !c.h || !c.h.breakable)continue;
+    if(!c.eligible || !c.eligible.has(state.dayBase))continue;
+    const target = Number(c.h && c.h.target);
+    if(!Number.isFinite(target) || target > 1)continue;   // only daily rhythms
+    const budget = typeof breakableBudgetMinutes === 'function'
+      ? breakableBudgetMinutes(c.h,state.dayBase) : clampDuration(c.h.durationMinutes);
+    const placed = typeof placedBreakableMinutes === 'function'
+      ? placedBreakableMinutes(state,c.i) : 0;
+    const deficit = Math.max(0,budget - placed);
+    if(deficit <= 0)continue;
+    const win = (typeof hasTimeWindow === 'function' && hasTimeWindow(c.h))
+      ? fillTimeWindow(c.h,state.dayBase,state.seedLocId) : null;
+    out.push({
+      i:c.i,
+      priority:c.priority != null ? c.priority : 2,
+      window:win ? {start:win.start,end:win.end}
+        : {start:state.dayBase,end:state.dayBase + 86400000},
+      deficit
+    });
+  }
+  return out;
+}
+
+// PURE: free ms inside [ws,we] ∩ state.slots, minus committed fills. Mirrors
+// the gap math in tryPlaceOnDay so the reservation sees the same open time the
+// placer would actually find.
+function freeMsInWindow(state,ws,we){
+  if(!state || !Array.isArray(state.slots))return 0;
+  let total = 0;
+  for(const slot of state.slots){
+    const s = Math.max(slot.start,ws);
+    const e = Math.min(slot.end,we);
+    if(e <= s)continue;
+    let segs = [{start:s,end:e}];
+    for(const entry of state.fills){
+      const fs = entry && entry.fit && entry.fit.placeStart;
+      const fe = entry && entry.fit && entry.fit.placeEnd;
+      if(fs == null || fe == null)continue;
+      if(fe <= s || fs >= e)continue;
+      const next = [];
+      for(const seg of segs){
+        if(fe <= seg.start || fs >= seg.end){ next.push(seg); continue; } // no overlap, keep
+        if(fs <= seg.start && fe >= seg.end)continue;                      // fully covered
+        if(fs > seg.start && fs < seg.end)next.push({start:seg.start,end:fs});
+        if(fe > seg.start && fe < seg.end)next.push({start:fe,end:seg.end});
+      }
+      segs = next;
+    }
+    for(const seg of segs)total += (seg.end - seg.start);
+  }
+  return total;
+}
+
+// PURE: minutes a movable item is still allowed to consume on this day without
+// starving a daily breakable of its target. Returns Infinity when no daily
+// breakable needs protection. Must-place (non-movable) candidates are virtually
+// placed first on a clone so their footprint (e.g. daily prayers inside the
+// work window) is subtracted before the spare is measured.
+function movableCapacityForDay(state,candidates){
+  const reservations = dailyBreakableReservations(state,candidates);
+  if(!reservations.length)return Infinity;
+  const clone = clonePlacementState(state);
+  for(const c of (candidates || [])){
+    if(!c || !c.h)continue;
+    if(c.h.breakable)continue;
+    if(isMovableWeekCandidate(c))continue;          // movables don't reserve footprint
+    if(c.eligible && !c.eligible.has(state.dayBase))continue;
+    if(clone.placed.has(c.i))continue;
+    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    const fit = typeof tryPlaceOnDay === 'function'
+      ? tryPlaceOnDay(clone,fill,{allowNetwork:false}) : null;
+    if(fit)commitPlacement(clone,fill,fit);
+  }
+  let freeMin = 0;
+  let deficit = 0;
+  for(const r of reservations){
+    freeMin += freeMsInWindow(clone,r.window.start,r.window.end) / 60000;
+    deficit += r.deficit;
+  }
+  return Math.max(0,freeMin - deficit);
+}
+
+// PURE: ms of overlap between a fit and the reservation windows (reuses the
+// existing fitOverlapWithWindows shape but maps reservation→window).
+function fitOverlapWithReservationsMs(fit,reservations){
+  if(!fit || !Array.isArray(reservations) || !reservations.length)return 0;
+  return fitOverlapWithWindows(fit,reservations.map(r=>r.window));
+}
+
+// PURE: should the fast scarcity planner DEFER candidate `c` away from `state`
+// for this pass? Mirrors the GLPK reservation: a movable (plan-by / one-shot /
+// sparse rhythm) that would breach a daily breakable's target steps aside when
+// another eligible day can take it without breach, so the week packs movables
+// into quieter days instead of fragmenting a busy one. Returns false when there
+// is nothing to protect, when the item fits, or when there is no alternative —
+// in all those cases the item should place on `state` as early as possible.
+function fastPathDefersMovable(c,state,candidates,dayStates){
+  if(typeof isMovableWeekCandidate !== 'function' || !isMovableWeekCandidate(c))return false;
+  if(typeof movableCapacityForDay !== 'function')return false;
+  const cap = movableCapacityForDay(state,candidates);
+  if(!Number.isFinite(cap))return false;                 // no daily breakable here
+  const dur = clampDuration(c.h && c.h.durationMinutes);
+  if(dur <= cap)return false;                             // fits without breaching
+  // Priority decides — the breakable is not inviolable. Only defer a movable
+  // that is strictly LOWER priority than the breakable it would starve; a
+  // higher or equal-priority movable may legitimately displace it.
+  const reservations = typeof dailyBreakableReservations === 'function'
+    ? dailyBreakableReservations(state,candidates) : [];
+  let bestBreakPriority = Infinity;
+  for(const r of reservations){ if(r.priority < bestBreakPriority)bestBreakPriority = r.priority; }
+  const cp = c.priority != null ? c.priority : 2;
+  if(cp <= bestBreakPriority)return false;
+  for(const other of (dayStates || [])){
+    if(other === state)continue;
+    if(c.eligible && !c.eligible.has(other.dayBase))continue;
+    const otherCap = movableCapacityForDay(other,candidates);
+    if(!Number.isFinite(otherCap) || otherCap >= dur)return true; // viable alternative
+  }
+  return false;                                           // no alternative — place here
+}
+
 /** PURE: remaining breakable work not yet placed on this day (or across dayStates). */
 function breakableMinutesLeft(h,habitIndex,stateOrStates){
   const states = Array.isArray(stateOrStates) ? stateOrStates
@@ -2331,7 +2481,18 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     });
   }
   let totalAssigned = 0;
-  for(const c of candidates){
+  // Daily recurring breakables (e.g. "Work 6h every weekday") fill LAST so that
+  // movable candidates (plan-by errands, one-shot tasks, sparse rhythms) can
+  // claim a gap on a quiet day before the breakable greedy-splits the window
+  // into pieces too small for them. A capacity guard (fastPathDefersMovable)
+  // keeps movables out of a busy day's breakable reservation, so this is the
+  // fast-path equivalent of the GLPK reservation, not a free-for-all.
+  const isDailyBreakable = c => !!(c && c.h && c.h.breakable && c.h.type !== 'task'
+    && Number.isFinite(Number(c.h.target)) && Number(c.h.target) <= 1);
+  const ordered = [];
+  for(const c of candidates){ if(!isDailyBreakable(c))ordered.push(c); }
+  for(const c of candidates){ if(isDailyBreakable(c))ordered.push(c); }
+  for(const c of ordered){
     const pinned = c.pinned === true;
     // Breakable tasks: one-shot continuous-first pool across the week.
     // Breakable keepup/reduce: still rhythm (daily/sparse) with a fresh
@@ -2410,6 +2571,11 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(pinned && !state.isTodayDay)continue;
         if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null
           && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday))continue;
+        // Reservation: defer this movable to a quieter eligible day when placing
+        // it here would breach a daily breakable's target. No-alternative and
+        // higher-priority cases still place here (handled inside the helper).
+        if(typeof fastPathDefersMovable === 'function'
+          && fastPathDefersMovable(c,state,candidates,dayStates))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const dayOpts = {
