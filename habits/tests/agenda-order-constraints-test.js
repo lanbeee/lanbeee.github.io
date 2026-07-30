@@ -779,6 +779,13 @@ function seedScript(){
     const ready = row.classList.contains('agenda-drag-ready');
     const pe = getComputedStyle(row.querySelector('.agenda-drag-handle')).pointerEvents;
     const handlePos = handle ? getComputedStyle(handle).position : null;
+    const activePad = card ? getComputedStyle(card).paddingLeft : '';
+    const activePulseLeft = pulse && card
+      ? pulse.getBoundingClientRect().left - card.getBoundingClientRect().left
+      : -1;
+    const handleRight = handle && card
+      ? handle.getBoundingClientRect().right - card.getBoundingClientRect().left
+      : -1;
     const ownerHold = typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null;
     crown.dispatchEvent(new PointerEvent('pointerup',{
       bubbles:true, cancelable:true, pointerId:7, pointerType:'touch',
@@ -786,7 +793,7 @@ function seedScript(){
     }));
     return {
       found:true,
-      handlePos, idlePad, idlePulseLeft,
+      handlePos, idlePad, idlePulseLeft, activePad, activePulseLeft, handleRight,
       ready, pe, ownerHold
     };
   });
@@ -795,6 +802,10 @@ function seedScript(){
   assert(parseFloat(breakableArm.idlePad) <= 10, 'idle card left padding stays tight like tings');
   assert(breakableArm.idlePulseLeft <= 14, 'idle pulse sits near left edge (no grip gutter)');
   assert(breakableArm.ready && breakableArm.pe === 'auto', 'holding breakable crown arms reorder grip');
+  assert(
+    parseFloat(breakableArm.activePad) >= 30 && breakableArm.activePulseLeft > breakableArm.handleRight,
+    'armed breakable card creates a grip lane instead of overlapping the leading controls'
+  );
 
   // Crown horizontal scrub cancels hold and does not leave grip armed
   const crownScrub = await page.evaluate(async () => {
