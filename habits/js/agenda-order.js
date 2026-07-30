@@ -187,12 +187,14 @@ function cancelDoingNowSheet(){
 }
 
 function buildOrderLinkRow(kind,otherHabit,defaultAdj){
-  const directLabel = kind === 'after' ? 'next' : 'next';
+  const isBelow = kind === 'after';
+  const direction = isBelow ? 'below' : 'above';
+  const directLabel = isBelow ? 'right below' : 'right above';
   return `<div class="order-link-row" data-link-kind="${kind}">
-    <div class="order-link-row-label"><span>${kind === 'after' ? 'After' : 'Before'}</span> ${habitLabelHtml(otherHabit)}</div>
-    <div class="seg order-link-adj" role="group" aria-label="${kind === 'after' ? 'after link' : 'before link'}">
+    <div class="order-link-row-label"><span>Place ${direction}</span> ${habitLabelHtml(otherHabit)}</div>
+    <div class="seg order-link-adj" role="group" aria-label="place ${direction} ${escapeHtml(shortHabitName(otherHabit))}">
       <button type="button" class="seg-opt${defaultAdj === 'off' ? ' on' : ''}" data-adj="off">off</button>
-      <button type="button" class="seg-opt${defaultAdj === 'sometime' ? ' on' : ''}" data-adj="sometime">later</button>
+      <button type="button" class="seg-opt${defaultAdj === 'sometime' ? ' on' : ''}" data-adj="sometime">${direction}</button>
       <button type="button" class="seg-opt${defaultAdj === 'direct' ? ' on' : ''}" data-adj="direct">${directLabel}</button>
     </div>
   </div>`;
@@ -205,8 +207,8 @@ function openOrderLinkSheet(draft){
   const summary = $('order-link-summary');
   const rows = $('order-link-rows');
   const clearBtn = $('order-link-clear');
-  if(title)title.textContent = 'Reorder?';
-  if(sub)sub.textContent = `Just for ${formatOrderDayLabel(draft.dayBase)}. Clears when done.`;
+  if(title)title.textContent = 'Keep this position?';
+  if(sub)sub.textContent = `Choose above or below for ${formatOrderDayLabel(draft.dayBase)}. Clears when done.`;
   if(summary)summary.innerHTML = habitLabelHtml(draft.h);
 
   const parts = [];
@@ -332,6 +334,40 @@ function dayFillRows(dayBase){
   return [...document.querySelectorAll(`.swipe-row[data-day-base="${key}"][data-agenda-draggable="1"]`)];
 }
 
+function agendaRowHid(row,data = null){
+  if(!row)return '';
+  if(row.dataset && row.dataset.hid)return row.dataset.hid;
+  const idx = Number(row.dataset && row.dataset.realIdx);
+  const source = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  const h = Number.isInteger(idx) ? source[idx] : null;
+  return h && h.hid ? h.hid : '';
+}
+
+/**
+ * Collapse consecutive agenda chunks for the same habit into one drop target.
+ * A breakable habit may render several rows; treating those rows as separate
+ * targets can create a self-link when one chunk is dropped beside another.
+ */
+function agendaDropGroups(dayBase,dragEl){
+  const data = typeof load === 'function' ? load() : [];
+  const dragHid = agendaRowHid(dragEl,data);
+  const rows = dayFillRows(dayBase).filter(row=>
+    row !== dragEl && (!dragHid || agendaRowHid(row,data) !== dragHid)
+  );
+  const groups = [];
+  for(const row of rows){
+    const hid = agendaRowHid(row,data);
+    const last = groups[groups.length - 1];
+    if(last && hid && last.hid === hid){
+      last.rows.push(row);
+      last.lastEl = row;
+      continue;
+    }
+    groups.push({hid,rows:[row],firstEl:row,lastEl:row});
+  }
+  return groups;
+}
+
 function clearAgendaDropLines(){
   document.querySelectorAll('.agenda-drop-line').forEach(el=>el.remove());
 }
@@ -348,21 +384,24 @@ function insertDropLine(beforeEl){
 }
 
 function resolveDropTarget(clientY,dayBase,dragEl){
-  const rows = dayFillRows(dayBase).filter(r=>r !== dragEl);
-  if(!rows.length)return {index:0,beforeEl:null,before:null,after:null};
-  let insertIndex = rows.length;
+  const groups = agendaDropGroups(dayBase,dragEl);
+  if(!groups.length)return {index:0,beforeEl:null,before:null,after:null};
+  let insertIndex = groups.length;
   let beforeEl = null;
-  for(let i = 0;i < rows.length;i += 1){
-    const rect = rows[i].getBoundingClientRect();
-    const mid = rect.top + rect.height / 2;
+  for(let i = 0;i < groups.length;i += 1){
+    const firstRect = groups[i].firstEl.getBoundingClientRect();
+    const lastRect = groups[i].lastEl.getBoundingClientRect();
+    const mid = (firstRect.top + lastRect.bottom) / 2;
     if(clientY < mid){
       insertIndex = i;
-      beforeEl = rows[i];
+      beforeEl = groups[i].firstEl;
       break;
     }
   }
-  const beforeRow = insertIndex > 0 ? rows[insertIndex - 1] : null;
-  const afterRow = insertIndex < rows.length ? rows[insertIndex] : null;
+  const beforeGroup = insertIndex > 0 ? groups[insertIndex - 1] : null;
+  const afterGroup = insertIndex < groups.length ? groups[insertIndex] : null;
+  const beforeRow = beforeGroup ? beforeGroup.lastEl : null;
+  const afterRow = afterGroup ? afterGroup.firstEl : null;
   return {
     index:insertIndex,
     beforeEl,
@@ -377,8 +416,9 @@ function updateAgendaDropIndicator(clientY,dayBase,dragEl){
     insertDropLine(target.beforeEl);
     return;
   }
-  const rows = dayFillRows(dayBase).filter(r=>r !== dragEl);
-  const last = rows[rows.length - 1];
+  const groups = agendaDropGroups(dayBase,dragEl);
+  const lastGroup = groups[groups.length - 1];
+  const last = lastGroup && lastGroup.lastEl;
   clearAgendaDropLines();
   if(last && last.parentNode){
     const line = document.createElement('div');

@@ -377,6 +377,63 @@ function seedScript(){
       ], null);
       const onlyAfter = todayFills(weekOnlyAfter);
 
+      // 7) fixed → split breakable → fixed. The middle habit must remain one
+      // reorderable unit even though a blocked interval makes two chunks.
+      dataRef = [
+        mk('Top','split-a',1,{
+          dueDate:tomorrow,durationMinutes:20,
+          allowedTimeStart:540,allowedTimeEnd:560
+        }),
+        mk('Split work','split-x',1,{
+          dueDate:tomorrow,durationMinutes:60,breakable:true,minChunkMinutes:30,
+          allowedTimeStart:560,allowedTimeEnd:660
+        }),
+        mk('Bottom','split-b',1,{
+          dueDate:tomorrow,durationMinutes:20,
+          allowedTimeStart:660,allowedTimeEnd:680
+        })
+      ];
+      const splitSettings = {
+        ...settingsBase,
+        availabilityMinutes:[120,120,120,120,120,120,120],
+        blockedTimes:[{label:'separator',days:[],start:590,end:630}]
+      };
+      const weekSplit = await plan(dataRef, splitSettings, [
+        {dayBase:tomorrow,beforeHid:'split-a',afterHid:'split-x',adjacency:'direct'},
+        {dayBase:tomorrow,beforeHid:'split-x',afterHid:'split-b',adjacency:'direct'}
+      ], null);
+      const splitDay = (weekSplit.days || []).find(d=>d.dayBase === tomorrow);
+      const splitRows = (splitDay && splitDay.timeline || [])
+        .filter(r=>r.kind === 'fill' || r.kind === 'scheduled')
+        .map(r=>({
+          hid:dataRef[r.i] && dataRef[r.i].hid,
+          start:r.start,
+          end:r.end,
+          chunkMinutes:r.chunkMinutes
+        }))
+        .filter(r=>r.hid);
+
+      // 8) The visible link wins capacity over unrelated higher-priority work.
+      dataRef = [
+        mk('Linked first','space-a',5,{
+          dueDate:tomorrow,allowedTimeStart:540,allowedTimeEnd:600
+        }),
+        mk('Linked second','space-b',5,{
+          dueDate:tomorrow,allowedTimeStart:540,allowedTimeEnd:600
+        }),
+        mk('Unrelated urgent','space-u',0,{
+          dueDate:tomorrow,allowedTimeStart:540,allowedTimeEnd:600
+        })
+      ];
+      const weekMakeSpace = await plan(dataRef,settingsBase,[
+        {dayBase:tomorrow,beforeHid:'space-a',afterHid:'space-b',adjacency:'direct'}
+      ],null);
+      const spaceDay = (weekMakeSpace.days || []).find(d=>d.dayBase === tomorrow);
+      const makeSpaceOrder = (spaceDay && spaceDay.timeline || [])
+        .filter(r=>r.kind === 'fill' || r.kind === 'scheduled')
+        .map(r=>dataRef[r.i] && dataRef[r.i].hid)
+        .filter(Boolean);
+
       return {
         optimized:Boolean(weekSometime && weekSometime.optimized),
         sometimeOrder:sometime.order,
@@ -391,6 +448,8 @@ function seedScript(){
         doingStarts:doing.starts,
         onlyAfterOrder:onlyAfter.order,
         onlyAfterStarts:onlyAfter.starts,
+        splitRows,
+        makeSpaceOrder,
         now
       };
     }, {useGlpk});
@@ -458,6 +517,27 @@ function seedScript(){
     assert(
       sIdx(result.onlyAfterOrder,'one-a') < sIdx(result.onlyAfterOrder,'one-x'),
       `${label}: only-after edge places Left before Mid`
+    );
+
+    const splitA = result.splitRows.find(r=>r.hid === 'split-a');
+    const splitB = result.splitRows.find(r=>r.hid === 'split-b');
+    const splitX = result.splitRows.filter(r=>r.hid === 'split-x');
+    assert(splitX.length === 2, `${label}: breakable middle remains split into two sessions`);
+    assert(
+      splitA && splitB && splitX.length === 2
+        && splitX.every(r=>r.start >= splitA.end && r.end <= splitB.start),
+      `${label}: all breakable chunks stay below Top and above Bottom`
+    );
+
+    assert(
+      sIdx(result.makeSpaceOrder,'space-a') >= 0
+        && sIdx(result.makeSpaceOrder,'space-b') >= 0
+        && sIdx(result.makeSpaceOrder,'space-a') < sIdx(result.makeSpaceOrder,'space-b'),
+      `${label}: both visibly linked cards keep their requested order`
+    );
+    assert(
+      sIdx(result.makeSpaceOrder,'space-u') < 0,
+      `${label}: unrelated work is removed from the day when linked cards need its space`
     );
 
     return {skipped:false};
@@ -607,10 +687,14 @@ function seedScript(){
 
   assert(ui.handleCount >= 1 && ui.dayRowCount >= 1, 'draggable fill rows include hidden grip handles');
   assert(ui.sheetOpen && ui.rows === 2, 'order sheet opens with after + before rows');
-  assert(ui.title === 'Reorder?', 'sheet title uses simple language');
-  assert(/Just for/.test(ui.sub) && /Clears when done/.test(ui.sub), 'sheet sub is short');
+  assert(ui.title === 'Keep this position?', 'sheet title confirms the dropped position');
+  assert(/above or below/.test(ui.sub) && /Clears when done/.test(ui.sub), 'sheet sub explains directional choices');
   assert(/🧠/.test(ui.summaryHtml) && /✉️/.test(ui.rowHtml) && /🚶/.test(ui.rowHtml), 'sheet shows emojis');
-  assert(/>later</.test(ui.rowHtml) && />next</.test(ui.rowHtml), 'adjacency uses later/next labels');
+  assert(/Place below/.test(ui.rowHtml) && /Place above/.test(ui.rowHtml),
+    'neighbor rows say whether the habit goes below or above');
+  assert(/>below</.test(ui.rowHtml) && />above</.test(ui.rowHtml)
+    && />right below</.test(ui.rowHtml) && />right above</.test(ui.rowHtml),
+  'adjacency buttons use direction-specific labels');
   assert(ui.edgeCount === 2, 'saving sheet writes two edges');
   assert(ui.editedCount === 1 && ui.editedDirect && ui.editedNoBefore, 'editing can set next + turn off one side');
   assert(ui.clearedCount === 0, 'clear removes that day’s links for the habit');
@@ -621,6 +705,43 @@ function seedScript(){
   assert(ui.dnDirect === true, 'doing-now pins direct order vs previous top');
   assert(/🧠/.test(ui.doingSummary), 'doing-now summary shows emoji');
   assert(ui.beforeReady === false && ui.afterReady === true && ui.pe === 'auto', 'long-press arm reveals interactive grip');
+
+  const groupedDrop = await page.evaluate(() => {
+    const day = 987654321000;
+    const host = document.createElement('div');
+    const specs = [
+      {hid:'group-a',idx:0,top:0},
+      {hid:'group-x',idx:1,top:50},
+      {hid:'group-x',idx:1,top:100},
+      {hid:'group-b',idx:2,top:150}
+    ];
+    const rows = specs.map(spec=>{
+      const row = document.createElement('div');
+      row.className = 'swipe-row';
+      row.dataset.dayBase = String(day);
+      row.dataset.agendaDraggable = '1';
+      row.dataset.hid = spec.hid;
+      row.dataset.realIdx = String(spec.idx);
+      row.getBoundingClientRect = ()=>({
+        top:spec.top,bottom:spec.top + 40,height:40,left:0,right:300,width:300
+      });
+      host.appendChild(row);
+      return row;
+    });
+    document.body.appendChild(host);
+    const target = resolveDropTarget(110,day,rows[1]);
+    const groups = agendaDropGroups(day,rows[1]).map(g=>g.hid);
+    host.remove();
+    return {target,groups};
+  });
+  assert(
+    groupedDrop.target.before === 0 && groupedDrop.target.after === 2,
+    'dropping a breakable chunk beside its sibling targets the distinct habits above and below'
+  );
+  assert(
+    JSON.stringify(groupedDrop.groups) === JSON.stringify(['group-a','group-b']),
+    'all sibling chunks of the dragged breakable habit are excluded as self-targets'
+  );
 
   // Breakable crown long-press also arms reorder (in-flow left grip slot)
   const breakableArm = await page.evaluate(async () => {
@@ -805,7 +926,7 @@ function seedScript(){
       doing:getDoingNow()
     };
   });
-  assert(futureTop.title === 'Reorder?', 'future-day top drop opens reorder sheet');
+  assert(futureTop.title === 'Keep this position?', 'future-day top drop opens reorder sheet');
   assert(/tomorrow/.test(futureTop.sub || ''), 'future-day sheet scoped to tomorrow');
   assert(futureTop.edges.length === 1 && futureTop.edges[0].beforeHid === 't-deep', 'future top saves before-neighbor edge');
   assert(futureTop.doing == null, 'future-day top does not set doing-now');

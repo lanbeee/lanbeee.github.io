@@ -332,6 +332,8 @@ function reorderAgendaItemsByOrderConstraints(items,dayBase){
   if(!edges.length)return items.slice();
   const indexByHid = new Map();
   items.forEach((item,idx)=>{
+    const eligible = item && item.eligible;
+    if(eligible && typeof eligible.has === 'function' && !eligible.has(dayBase))return;
     if(item && item.h && item.h.hid)indexByHid.set(item.h.hid,idx);
   });
   const preds = new Map(); // afterHid → Set(beforeHid)
@@ -344,7 +346,8 @@ function reorderAgendaItemsByOrderConstraints(items,dayBase){
       weight.set(e.beforeHid,(weight.get(e.beforeHid) || 0) + 2);
       weight.set(e.afterHid,(weight.get(e.afterHid) || 0) + 1);
     }else{
-      weight.set(e.beforeHid,(weight.get(e.beforeHid) || 0) + 1);
+      weight.set(e.beforeHid,(weight.get(e.beforeHid) || 0) + 2);
+      weight.set(e.afterHid,(weight.get(e.afterHid) || 0) + 1);
     }
   }
   if(!preds.size)return items.slice();
@@ -1837,7 +1840,10 @@ function placeBreakableSessions(state,fill,opts = {}){
   const min = typeof clampMinChunk === 'function'
     ? clampMinChunk(fill.h.minChunkMinutes)
     : (fill.h.minChunkMinutes || 30);
-  let left = breakableMinutesLeft(fill.h,fill.i,state);
+  const availableLeft = breakableMinutesLeft(fill.h,fill.i,state);
+  let left = opts.remainingMinutes != null
+    ? Math.min(availableLeft,Math.max(0,Math.round(Number(opts.remainingMinutes) || 0)))
+    : availableLeft;
   let chunkIndex = 0;
   while(state.placed.has(`${fill.i}:${chunkIndex}`))chunkIndex += 1;
   let placedAny = false;
@@ -2561,9 +2567,16 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   // fast-path equivalent of the GLPK reservation, not a free-for-all.
   const isDailyBreakable = c => !!(c && c.h && c.h.breakable && c.h.type !== 'task'
     && Number.isFinite(Number(c.h.target)) && Number(c.h.target) <= 1);
-  const ordered = [];
+  let ordered = [];
   for(const c of candidates){ if(!isDailyBreakable(c))ordered.push(c); }
   for(const c of candidates){ if(isDailyBreakable(c))ordered.push(c); }
+  // The daily-breakable pass normally runs last for capacity protection, but
+  // an explicit drag order wins. Reapply each day's precedence graph after
+  // building that default order so A → breakable X → B is actually assigned
+  // in that sequence instead of merely receiving a soft score.
+  for(const state of dayStates){
+    ordered = reorderAgendaItemsByOrderConstraints(ordered,state.dayBase);
+  }
   for(const c of ordered){
     const pinned = c.pinned === true;
     // Breakable tasks: one-shot continuous-first pool across the week.
