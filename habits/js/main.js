@@ -2074,7 +2074,7 @@ function syncDetailTimerUi(){
   if(!btn && !display)return;
   if(habitTimer && detailIdx !== null && habitTimer.idx === detailIdx){
     if(btn){
-      btn.textContent = 'stop timer';
+      btn.textContent = 'stop session';
       btn.disabled = false;
       btn.setAttribute('aria-disabled','false');
     }
@@ -2084,7 +2084,7 @@ function syncDetailTimerUi(){
   const h = detailIdx != null && typeof load === 'function' ? load()[detailIdx] : null;
   const eligible = habitTimerEligible(h);
   if(btn){
-    btn.textContent = 'start timer';
+    btn.textContent = 'start session';
     btn.disabled = !eligible;
     btn.setAttribute('aria-disabled', eligible ? 'false' : 'true');
   }
@@ -2101,8 +2101,12 @@ function stopHabitTimer(promptLog,manual){
     clearInterval(habitTimer.interval);
     const elapsedMin = Math.max(1,Math.round((Date.now() - habitTimer.startedAt) / 60000));
     const idx = habitTimer.idx;
+    const activeHabit = typeof load === 'function' ? load()[idx] : null;
     habitTimer = null;
-    if(btn)btn.textContent = 'start timer';
+    if(activeHabit && activeHabit.hid && typeof clearDoingNow === 'function'){
+      clearDoingNow(activeHabit.hid);
+    }
+    if(btn)btn.textContent = 'start session';
     if(display)display.hidden = true;
     if(promptLog && idx != null){
       const h = load()[idx];
@@ -2152,10 +2156,15 @@ function stopHabitTimer(promptLog,manual){
 
 // Clear a running timer without logging — used when the habit was completed
 // another way (pulse, auto-mark sweep) while the timer was still open.
-function clearHabitTimerSilent(){
+function clearHabitTimerSilent(opts = {}){
   if(!habitTimer)return;
+  const idx = habitTimer.idx;
+  const h = typeof load === 'function' ? load()[idx] : null;
   clearInterval(habitTimer.interval);
   habitTimer = null;
+  if(opts.keepDoingNow !== true && h && h.hid && typeof clearDoingNow === 'function'){
+    clearDoingNow(h.hid);
+  }
   syncDetailTimerUi();
 }
 
@@ -2189,32 +2198,69 @@ function syncTimerAfterExternalCompletion(opts = {}){
   return cleared || closedSheet;
 }
 
-// HYBRID: start a session timer for habit idx (detail or home swipe)
-function startHabitTimer(idx){
+// HYBRID: start the app's single active session. The timer and doing-now
+// marker share one owner, start, deadline, and automatic log.
+function startHabitTimer(idx,opts = {}){
   if(idx == null || idx < 0)return false;
   if(habitTimer){
     if(habitTimer.idx === idx){
       syncDetailTimerUi();
       return true;
     }
-    if(typeof showToast === 'function')showToast('stop the running timer first');
+    if(typeof showToast === 'function')showToast('stop the active session first');
     return false;
   }
   const h = load()[idx];
   if(!habitTimerEligible(h))return false;
-  const autoMin = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : clampDuration(h.durationMinutes);
-  // Timer and auto-mark stay independent. Auto-complete still follows the
-  // habit's due/trigger window via sweep; the timer only measures a session
-  // and logs on stop / auto-stop. Linking autoMarkMinutes to timer-start
-  // used to double-log (mid-run mark + later auto-stop).
+  const now = Date.now();
+  let doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const doingActive = doing && typeof isDoingNowActive === 'function'
+    ? isDoingNowActive(doing,now)
+    : Boolean(doing);
+  if(doing && !doingActive){
+    if(typeof clearDoingNow === 'function')clearDoingNow();
+    doing = null;
+  }
+  if(doing && doing.hid !== h.hid){
+    const owner = load().find(item=>item && item.hid === doing.hid);
+    if(typeof showToast === 'function'){
+      showToast(`${owner ? toastItemName(owner) : 'another habit'} is already active`);
+    }
+    return false;
+  }
+  const adopted = doing && doing.hid === h.hid ? doing : null;
+  const defaultMin = typeof doingNowSessionMinutesFor === 'function'
+    ? doingNowSessionMinutesFor(h,now)
+    : clampDuration(h.durationMinutes);
+  const sessionMinutes = Math.max(1,Math.min(720,Math.round(
+    Number(opts.sessionMinutes)
+      || Number(adopted && adopted.sessionMinutes)
+      || Number(h.timerAutoStopMinutes)
+      || defaultMin
+  )));
+  const startedAt = Number(opts.startedAt)
+    || Number(adopted && adopted.startedAt)
+    || now;
+  const endsAt = Number(opts.endsAt)
+    || Number(adopted && adopted.endsAt)
+    || startedAt + sessionMinutes * 60000;
+  if(typeof setDoingNow === 'function'){
+    setDoingNow(h.hid,startedAt,dayStart(now),{
+      sessionMinutes,
+      endsAt,
+      oneShotAutoMark:true
+    });
+  }
   habitTimer = {
     idx,
-    startedAt:Date.now(),
-    autoStopMs:Math.max(1,autoMin) * 60000,
+    startedAt,
+    autoStopMs:Math.max(1,endsAt - startedAt),
     interval:setInterval(tickHabitTimer,250)
   };
   syncDetailTimerUi();
-  if(typeof showToast === 'function')showToast('timer running');
+  if(opts.toast !== false && typeof showToast === 'function'){
+    showToast(`doing ${toastItemName(h)} now · ${sessionMinutes}m`);
+  }
   if(typeof render === 'function')render();
   tickHabitTimer();
   return true;

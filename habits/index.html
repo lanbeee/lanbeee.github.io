@@ -151,7 +151,7 @@
         <div class="planning-grid">
           <div class="planning-field">
             <span>auto mark done <button type="button" class="info-btn" data-tip="ting-auto-mark-help" aria-label="about auto mark done"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and the item logs itself that long after its scheduled time. Timers are separate — they measure a session and do not change this delay.</div></span>
+              <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and the item logs itself that long after its scheduled time. Starting a session keeps it on top and logs it when the session timer ends.</div></span>
             <label class="range-value" aria-label="auto mark done minutes, blank = manual">
               <input type="text" id="ting-auto-mark" inputmode="numeric" maxlength="4" placeholder="—" />
               <span>min</span>
@@ -451,10 +451,10 @@
             </div>
           </div>
           <div class="timer-row" id="detail-timer-row">
-            <button type="button" class="btn timer-start-btn" id="detail-timer-toggle" aria-pressed="false">start timer</button>
+            <button type="button" class="btn timer-start-btn" id="detail-timer-toggle" aria-pressed="false">start session</button>
             <span class="timer-display" id="detail-timer-display" hidden>0:00</span>
-            <label class="range-value timer-auto-stop-field" aria-label="timer auto-stop minutes, blank uses duration">
-              <span class="timer-auto-stop-label">auto-stop</span>
+            <label class="range-value timer-auto-stop-field" aria-label="session length minutes, blank uses duration">
+              <span class="timer-auto-stop-label">session length</span>
               <input type="text" id="detail-timer-auto-stop" inputmode="numeric" maxlength="3" placeholder="—" />
               <span>min</span>
             </label>
@@ -1203,12 +1203,13 @@
 
   <div class="sheet-wrap" id="doing-now-sheet" role="dialog" aria-modal="true" aria-labelledby="doing-now-title">
     <div class="sheet">
-      <p class="sheet-name" id="doing-now-title">Do this now?</p>
-      <p class="sheet-sub" id="doing-now-sub">Stays on top for this session, then auto-done once.</p>
+      <p class="sheet-name" id="doing-now-title">Start this session?</p>
+      <p class="sheet-sub" id="doing-now-sub">Starts a timer, keeps this on top, then logs it when time runs out.</p>
       <p class="order-link-summary" id="doing-now-name"></p>
+      <div class="order-link-rows doing-now-link-row" id="doing-now-link-row"></div>
       <div class="btn-row">
         <button class="btn" type="button" id="doing-now-cancel">cancel</button>
-        <button class="btn primary" type="button" id="doing-now-confirm">yes</button>
+        <button class="btn primary" type="button" id="doing-now-confirm">start session</button>
       </div>
     </div>
   </div>

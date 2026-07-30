@@ -26,14 +26,14 @@ function seedScript(){
     }));
     localStorage.setItem('tings_v2', JSON.stringify([
       {
-        name:'Walk timer', type:'keepup', target:1,
+        name:'Walk timer', hid:'timer-walk', type:'keepup', target:1,
         logs:[], emoji:'🚶', pinned:true, sample:false, snoozedUntil:null,
         topics:[], locationIds:[], durationMinutes:30, priority:2,
         breakable:false, autoMarkMinutes:null, timerAutoStopMinutes:30,
         createdAt:Date.now() - 86400000, lastLog:null
       },
       {
-        name:'Auto task', type:'task', target:null,
+        name:'Auto task', hid:'timer-auto', type:'task', target:null,
         logs:[], emoji:'✅', pinned:false, sample:false, snoozedUntil:null,
         topics:[], locationIds:[], durationMinutes:15, priority:2,
         dueDate: day(0), hardDue:false, eventTime: Date.now() - 5*60000,
@@ -41,7 +41,7 @@ function seedScript(){
         createdAt:Date.now() - 86400000, lastLog:null
       },
       {
-        name:'Done task', type:'task', target:null,
+        name:'Done task', hid:'timer-done', type:'task', target:null,
         logs:[{ts:Date.now() - 3600000}], emoji:'✔️', pinned:false, sample:false, snoozedUntil:null,
         topics:[], locationIds:[], durationMinutes:15, priority:2,
         dueDate: day(0), hardDue:false, eventTime:null,
@@ -49,14 +49,14 @@ function seedScript(){
         createdAt:Date.now() - 86400000, lastLog:Date.now() - 3600000
       },
       {
-        name:'Quit habit', type:'zero', target:7,
+        name:'Quit habit', hid:'timer-quit', type:'zero', target:7,
         logs:[], emoji:'🚭', pinned:false, sample:false, snoozedUntil:null,
         topics:[], locationIds:[], durationMinutes:5, priority:2,
         breakable:false, autoMarkMinutes:null,
         createdAt:Date.now() - 86400000, lastLog:null
       },
       {
-        name:'Breakable report', type:'task', target:null,
+        name:'Breakable report', hid:'timer-report', type:'task', target:null,
         logs:[{ts:Date.now() - 7200000, minutes:30}], emoji:'📝', pinned:true, sample:false, snoozedUntil:null,
         topics:[], locationIds:[], durationMinutes:90, priority:2, minChunkMinutes:15,
         dueDate: day(0), hardDue:false, eventTime:null,
@@ -64,7 +64,7 @@ function seedScript(){
         createdAt:Date.now() - 86400000, lastLog:Date.now() - 7200000
       },
       {
-        name:'Breakable build', type:'keepup', target:1,
+        name:'Breakable build', hid:'timer-build', type:'keepup', target:1,
         logs:[], emoji:'🧱', pinned:true, sample:false, snoozedUntil:null,
         topics:[], locationIds:[], durationMinutes:60, priority:2, minChunkMinutes:15,
         breakable:true, autoMarkMinutes:null, timerAutoStopMinutes:45,
@@ -100,6 +100,8 @@ function seedScript(){
     return {
       ok,
       running: Boolean(habitTimer && habitTimer.idx === idx),
+      habitHid:load()[idx]?.hid || null,
+      doingHid: getDoingNow()?.hid || null,
       bar: !!bar,
       hasSessionClass: info?.classList.contains('has-session-progress') || false,
       hasBreakableClass: info?.classList.contains('has-breakable-progress') || false,
@@ -110,11 +112,38 @@ function seedScript(){
   });
   console.log(started);
   assert(started.ok && started.running, 'startHabitTimer starts global timer');
+  assert(started.doingHid === started.habitHid, 'timer and doing-now share the same active habit');
   assert(started.bar, 'home card shows session progress bar while timer runs');
   assert(started.hasSessionClass && !started.hasBreakableClass, 'session cards use has-session-progress, not breakable grid');
   assert(!started.overlap, 'session bar does not overlap cue text');
-  assert(started.timerBtn.some(a => /stop timer/i.test(a)), 'swipe exposes stop timer while running');
-  assert(/\d+\/\d+m/.test(started.label), 'session label shows elapsed/total minutes');
+  assert(started.timerBtn.some(a => /stop session/i.test(a)), 'swipe exposes stop session while running');
+  assert(/now · \d+m left/.test(started.label), 'session label uses the unified doing-now countdown');
+
+  const exclusive = await page.evaluate(() => {
+    const otherIdx = load().findIndex(h => h.name === 'Breakable build');
+    const blocked = startHabitTimer(otherIdx);
+    return {
+      blocked,
+      timerName:load()[habitTimer?.idx]?.name || null,
+      doingName:load().find(h=>h.hid === getDoingNow()?.hid)?.name || null
+    };
+  });
+  assert(!exclusive.blocked && exclusive.timerName === 'Walk timer' && exclusive.doingName === 'Walk timer',
+    'another timer cannot start while a different habit owns the active session');
+
+  const doingExclusive = await page.evaluate(() => {
+    clearHabitTimerSilent();
+    const data = load();
+    const walkIdx = data.findIndex(h=>h.name === 'Walk timer');
+    const build = data.find(h=>h.name === 'Breakable build');
+    setDoingNow(build.hid,Date.now(),dayStart(Date.now()),{sessionMinutes:45});
+    const blocked = startHabitTimer(walkIdx);
+    const owner = load().find(h=>h.hid === getDoingNow()?.hid);
+    clearDoingNow();
+    return {blocked,owner:owner?.name || null};
+  });
+  assert(!doingExclusive.blocked && doingExclusive.owner === 'Breakable build',
+    'a timer cannot start for a different habit while doing-now is active');
 
   console.log('\n[A4] done task / zero ineligible');
   const a4 = await page.evaluate(() => {
@@ -228,6 +257,14 @@ function seedScript(){
     data[idx].autoMarkMinutes = 5;
     save(data);
     startHabitTimer(idx);
+    const startedAt = Date.now() - 6 * 60000;
+    setDoingNow(data[idx].hid,startedAt,dayStart(Date.now()),{
+      sessionMinutes:5,
+      endsAt:startedAt + 5 * 60000,
+      oneShotAutoMark:true
+    });
+    habitTimer.startedAt = startedAt;
+    habitTimer.autoStopMs = 5 * 60000;
     const swept = sweepAutoDoneTasks();
     return {
       swept,
@@ -466,7 +503,7 @@ function seedScript(){
   console.log(dual);
   assert(dual.isTimer && !dual.isAuto, 'running timer shows timer bar, not auto bar');
   assert(dual.autoMarkAt === undefined || dual.autoMarkAt === null, 'timer does not arm mid-run autoMarkAt');
-  assert(/\d+\/\d+m/.test(dual.label), 'timer label shows elapsed/total while running on auto-mark task');
+  assert(/now · \d+m left/.test(dual.label), 'timer label matches doing-now while running on auto-mark task');
 
   console.log('\n[G] logging elsewhere clears timer without second prompt');
   const pulseClear = await page.evaluate(() => {
@@ -483,13 +520,13 @@ function seedScript(){
   assert(pulseClear.timerGone && pulseClear.done, 'logging clears running timer');
   assert(!pulseClear.sheetOpen, 'logging does not open a second session sheet');
 
-  console.log('\n[F5] create tip no longer mentions timer start');
+  console.log('\n[F5] create tip explains unified session behavior');
   const f5 = await page.evaluate(() => {
     const tip = document.getElementById('ting-auto-mark-help')?.textContent || '';
-    return { tip, mentionsTimerStart: /after you start a timer/i.test(tip) };
+    return { tip, unified: /session/i.test(tip) && /logs it/i.test(tip) };
   });
   console.log(f5);
-  assert(f5.tip.length > 0 && !f5.mentionsTimerStart, 'auto-mark tip does not claim timer-start linkage');
+  assert(f5.unified, 'auto-mark tip explains that an active session logs at its end');
 
   if(pageErrors.length){
     console.error('page errors:', pageErrors.join('\n'));

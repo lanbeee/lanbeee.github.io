@@ -655,10 +655,14 @@ function seedScript(){
     openDoingNowSheet({h:deep, afterHid:'t-walk'});
     const doingOpen = document.getElementById('doing-now-sheet')?.classList.contains('open');
     const doingSummary = document.getElementById('doing-now-name')?.innerHTML || '';
+    const doingLinkHtml = document.getElementById('doing-now-link-row')?.innerHTML || '';
+    const doingLinkDefault = document.querySelector('#doing-now-link-row .seg-opt.on')?.dataset.adj || '';
+    document.querySelector('#doing-now-link-row [data-adj="direct"]')?.click();
     confirmDoingNow();
     const dn = getDoingNow();
     const dnEdge = orderConstraintsForDay(dayStart(Date.now()))
       .find(e=>e.beforeHid === 't-deep' && e.afterHid === 't-walk');
+    const dnTimerHid = habitTimer && data[habitTimer.idx] && data[habitTimer.idx].hid;
 
     // Long-press arm
     const row = document.querySelector('.swipe-row[data-agenda-draggable="1"]');
@@ -677,7 +681,8 @@ function seedScript(){
       editedDirect:edited.some(e=>e.beforeHid==='t-email' && e.afterHid==='t-deep' && e.adjacency==='direct'),
       editedNoBefore:!edited.some(e=>e.beforeHid==='t-deep' && e.afterHid==='t-walk'),
       clearedCount:cleared.length,
-      doingOpen, doingSummary, dnHid:dn && dn.hid,
+      doingOpen, doingSummary, doingLinkHtml, doingLinkDefault,
+      dnHid:dn && dn.hid, dnTimerHid,
       dnSession:dn && dn.sessionMinutes, dnOneShot:dn && dn.oneShotAutoMark,
       dnEndsAt:dn && dn.endsAt, dnStarted:dn && dn.startedAt,
       dnDirect:dnEdge && dnEdge.adjacency === 'direct',
@@ -702,7 +707,10 @@ function seedScript(){
   assert(ui.dnSession === 45, 'doing-now snapshots remaining/duration minutes');
   assert(ui.dnOneShot === true, 'doing-now enables one-shot auto-mark');
   assert(ui.dnEndsAt === ui.dnStarted + 45*60000, 'doing-now endsAt = start + session');
-  assert(ui.dnDirect === true, 'doing-now pins direct order vs previous top');
+  assert(/Place above/.test(ui.doingLinkHtml) && ui.doingLinkDefault === 'off',
+    'top-drop sheet asks how to link the card below and does not link automatically');
+  assert(ui.dnDirect === true, 'doing-now saves the explicitly selected direct link');
+  assert(ui.dnTimerHid === 't-deep', 'doing-now starts the same habit session timer');
   assert(/🧠/.test(ui.doingSummary), 'doing-now summary shows emoji');
   assert(ui.beforeReady === false && ui.afterReady === true && ui.pe === 'auto', 'long-press arm reveals interactive grip');
 

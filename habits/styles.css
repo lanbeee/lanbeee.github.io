@@ -3450,5 +3450,8 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 }
 .order-link-row-label .order-emoji{font-size:15px;line-height:1;}
 .order-link-row-label b{color:var(--text);font-weight:600;}
-.order-link-sheet .seg{display:grid;grid-template-columns:repeat(3,1fr);}
-.order-link-sheet .seg-opt{padding:8px 4px;font-size:12px;}
+.order-link-sheet .seg,
+.doing-now-link-row .seg{display:grid;grid-template-columns:repeat(3,1fr);}
+.order-link-sheet .seg-opt,
+.doing-now-link-row .seg-opt{padding:8px 4px;font-size:12px;}
+.doing-now-link-row:empty{display:none;}

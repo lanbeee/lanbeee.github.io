@@ -1080,12 +1080,13 @@ function sessionProgressState(h,realIdx,now = Date.now()){
     const totalMs = Math.max(1,end - start);
     const elapsedMin = Math.max(0,Math.floor(elapsedMs / 60000));
     const totalMin = Math.max(1,Math.round(totalMs / 60000));
+    const leftMin = Math.max(0,Math.ceil((end - now) / 60000));
     const pct = Math.min(100,(elapsedMs / totalMs) * 100);
     return {
       kind:'timer',
       pct,
-      label:`${elapsedMin}/${totalMin}m`,
-      aria:`timer ${elapsedMin} of ${totalMin} minutes`
+      label:leftMin ? `now · ${leftMin}m left` : `${elapsedMin}/${totalMin}m`,
+      aria:`active session, ${leftMin} minutes left`
     };
   }
   if(typeof valueLogMinutes !== 'undefined' && valueLogMinutes != null
@@ -1101,10 +1102,14 @@ function sessionProgressState(h,realIdx,now = Date.now()){
     const elapsedMin = Math.min(totalMin,Math.max(0,Math.floor(elapsedMs / 60000)));
     const pct = Math.min(100,(elapsedMs / totalMs) * 100);
     return {
-      kind:'auto',
+      kind:win.doingNow ? 'timer' : 'auto',
       pct,
-      label: leftMin ? `auto in ${leftMin}m` : `${elapsedMin}/${totalMin}m`,
-      aria:`auto-complete in ${leftMin} minutes`
+      label:win.doingNow
+        ? (leftMin ? `now · ${leftMin}m left` : `${elapsedMin}/${totalMin}m`)
+        : (leftMin ? `auto in ${leftMin}m` : `${elapsedMin}/${totalMin}m`),
+      aria:win.doingNow
+        ? `active session, ${leftMin} minutes left`
+        : `auto-complete in ${leftMin} minutes`
     };
   }
   return null;
@@ -2688,8 +2693,8 @@ function render(opts){
       : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
     const timerAction = (canTimer || timerRunning)
       ? (timerRunning
-        ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop timer"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
-        : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start timer"><i class="ti ti-player-play" aria-hidden="true"></i>timer</button>`)
+        ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
+        : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
     const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample

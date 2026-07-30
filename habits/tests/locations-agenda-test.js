@@ -391,7 +391,9 @@ function seedScript(extraHabits, extraSettings){
     { name:'hard pin', type:'task', dueDate: dayStartOf(0), hardDue:true, durationMinutes:20, locationIds:['office'], priority:0 },
     { name:'planned pin', type:'keepup', target:3, logs:[Date.now()-10*86400000, {ts:Date.now(),plan:true}], durationMinutes:40, locationIds:['home'], priority:0 },
   ], {
-    availabilityMinutes:[240,90,90,90,90,90,240],
+    // Weekend capacity must fit one long inbound trip plus both errands;
+    // otherwise the clustering assertion below is physically impossible.
+    availabilityMinutes:[480,90,90,90,90,90,480],
     blockedTimes:[
       { label:'sleep', days:[0,1,2,3,4,5,6], start:0, end:420, locationId:'home' },
       { label:'work', days:[1,2,3,4,5], start:540, end:1020, locationId:'office' },

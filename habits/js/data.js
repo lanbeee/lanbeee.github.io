@@ -868,6 +868,20 @@ function clearOrderConstraintsForDay(dayBase,hid = null){
   return saveOrderConstraintStore(store);
 }
 
+/** Clear only reorder edges for a day, preserving an active doing-now session. */
+function clearOrderEdgesForDay(dayBase,hid = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return false;
+  const store = loadOrderConstraintStore();
+  const beforeLen = store.edges.length;
+  store.edges = (store.edges || []).filter(e=>{
+    if(e.dayBase !== base)return true;
+    if(hid == null)return false;
+    return e.beforeHid !== hid && e.afterHid !== hid;
+  });
+  return store.edges.length !== beforeLen ? saveOrderConstraintStore(store) : false;
+}
+
 /** Drop edges / doing-now when a habit completes or is deleted. */
 function pruneOrderConstraintsForHabit(h,data = null,now = Date.now()){
   if(!h || !h.hid)return false;
@@ -1227,6 +1241,15 @@ function sweepDoingNowOneShot(now = Date.now(),opts = {}){
   if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
   if(!changed)return 0;
   save(data);
+  // A unified timer/doing-now session has one completion owner. If the
+  // persisted deadline sweep wins the race, retire the matching live timer so
+  // its next tick cannot create a second log (especially for rhythm habits).
+  if(typeof habitTimer !== 'undefined' && habitTimer){
+    const timerHabit = data[habitTimer.idx];
+    if(timerHabit && timerHabit.hid === h.hid && typeof clearHabitTimerSilent === 'function'){
+      clearHabitTimerSilent();
+    }
+  }
   if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h)
     && typeof cancelPush === 'function' && typeof reminderSignature === 'function'){
     cancelPush(reminderSignature(h));

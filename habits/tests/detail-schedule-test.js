@@ -122,7 +122,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // Start timer
   await timerBtn.click();
   await page.waitForTimeout(200);
-  if((await timerBtn.textContent()).trim() !== 'stop timer') throw new Error('timer should show stop');
+  if((await timerBtn.textContent()).trim() !== 'stop session') throw new Error('session should show stop');
   if(!(await timerDisplay.isVisible())) throw new Error('timer display should show');
   console.log('  Timer started: OK');
 
@@ -318,9 +318,9 @@ async function assertAttr(page, selector, attr, expected, msg){
   const endY = timerBox.y + timerBox.height + 80;
   const midX = timerBox.x + timerBox.width / 2;
 
-  // Before the scroll, confirm timer is in 'start timer' state
+  // Before the scroll, confirm timer is in 'start session' state
   const beforeText = (await timerBtn2.textContent()).trim();
-  if(beforeText !== 'start timer') throw new Error(`timer should be 'start timer', got '${beforeText}'`);
+  if(beforeText !== 'start session') throw new Error(`timer should be 'start session', got '${beforeText}'`);
 
   // Reset timer state if it was left running from earlier tests
   await page.evaluate(() => {
@@ -359,9 +359,9 @@ async function assertAttr(page, selector, attr, expected, msg){
   });
   await page.waitForTimeout(300);
 
-  // Timer should NOT have started (still 'start timer', not 'stop timer')
+  // Timer should NOT have started (still 'start session', not 'stop session')
   const afterText = (await timerBtn2.textContent()).trim();
-  if(afterText !== 'start timer') {
+  if(afterText !== 'start session') {
     console.log(`  FAIL: Timer ${afterText} — scroll triggered accidental start`);
     await page.evaluate(() => {
       if(window.stopHabitTimer) stopHabitTimer(true, true);

@@ -141,12 +141,28 @@ function openDoingNowSheet(draft){
   _doingNowDraft = draft;
   const nameEl = $('doing-now-name');
   const sub = $('doing-now-sub');
+  const linkRow = $('doing-now-link-row');
   if(nameEl)nameEl.innerHTML = habitLabelHtml(draft && draft.h);
   const mins = draft && draft.h && typeof doingNowSessionMinutesFor === 'function'
     ? doingNowSessionMinutesFor(draft.h)
     : (draft && draft.h ? clampDuration(draft.h.durationMinutes) : 30);
   if(sub){
-    sub.textContent = `Stays on top for ${mins}m, then auto-done once.`;
+    sub.textContent = `Starts a ${mins}m timer, keeps this on top, then logs it when time runs out.`;
+  }
+  if(linkRow){
+    const data = typeof load === 'function' ? load() : [];
+    const afterH = draft && draft.after && draft.after.h
+      ? draft.after.h
+      : data.find(item=>item && draft && draft.afterHid && item.hid === draft.afterHid);
+    linkRow.innerHTML = afterH
+      ? buildOrderLinkRow('before',afterH,'off')
+      : '';
+    linkRow.querySelector('.order-link-adj')?.addEventListener('click',e=>{
+      const opt = e.target.closest('[data-adj]');
+      if(!opt)return;
+      const seg = opt.closest('.order-link-adj');
+      seg.querySelectorAll('.seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
+    });
   }
   if(typeof openSheet === 'function')openSheet('doing-now-sheet');
 }
@@ -161,18 +177,35 @@ function confirmDoingNow(){
   const sessionMinutes = typeof doingNowSessionMinutesFor === 'function'
     ? doingNowSessionMinutesFor(draft.h,now)
     : clampDuration(draft.h.durationMinutes);
-  if(typeof setDoingNow === 'function'){
+  const data = typeof load === 'function' ? load() : [];
+  const idx = data.findIndex(item=>item && item.hid === draft.h.hid);
+  let started = false;
+  if(idx >= 0 && typeof startHabitTimer === 'function'){
+    started = startHabitTimer(idx,{sessionMinutes,toast:false});
+  }else if(typeof setDoingNow === 'function'){
     setDoingNow(draft.h.hid,now,today,{
       sessionMinutes,
       oneShotAutoMark:true
     });
+    started = true;
   }
-  // Pin ahead of whoever was previously first today (direct = right before).
-  if(draft.afterHid && typeof saveOrderConstraintsForDrop === 'function'){
+  if(!started)return;
+
+  // Moving to top chooses the active session unconditionally, but its
+  // relationship to the card below is explicit in the sheet.
+  if(typeof clearOrderEdgesForDay === 'function'){
+    clearOrderEdgesForDay(today,draft.h.hid);
+  }
+  const afterH = draft.after && draft.after.h
+    ? draft.after.h
+    : data.find(item=>item && draft.afterHid && item.hid === draft.afterHid);
+  const selected = document.querySelector('#doing-now-link-row .order-link-row[data-link-kind="before"] .seg-opt.on');
+  const adjacency = selected && selected.dataset.adj;
+  if(afterH && adjacency && adjacency !== 'off' && typeof saveOrderConstraintsForDrop === 'function'){
     saveOrderConstraintsForDrop(today,[{
       beforeHid:draft.h.hid,
-      afterHid:draft.afterHid,
-      adjacency:'direct'
+      afterHid:afterH.hid,
+      adjacency:adjacency === 'direct' ? 'direct' : 'sometime'
     }]);
   }
   if(typeof showToast === 'function')showToast(`doing ${shortHabitName(draft.h)} now · ${sessionMinutes}m`);
@@ -475,6 +508,7 @@ function finishAgendaDrag(clientY){
   if(atTop && drag.dayBase === todayBase){
     openDoingNowSheet({
       h,
+      after:afterH ? {h:afterH} : null,
       afterHid:afterH && afterH.hid ? afterH.hid : null
     });
     return;
