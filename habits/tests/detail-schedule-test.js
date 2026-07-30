@@ -106,10 +106,10 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(flexAfter !== '3') throw new Error(`flexibility should be 3, got ${flexAfter}`);
   console.log('  OK');
 
-  // Timer auto-stop on same row as start button
+  // Session target on same row as start button
   console.log('Testing timer row layout...');
   const timerRow = page.locator('#detail-timer-row');
-  if(!(await timerRow.locator('#detail-timer-auto-stop').isVisible())) throw new Error('timer auto-stop should be on timer row');
+  if(!(await timerRow.locator('#detail-timer-auto-stop').isVisible())) throw new Error('session target should be on timer row');
   console.log('  Timer row layout: OK');
 
   // ═══════════════════════════════════════════════

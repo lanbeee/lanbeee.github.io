@@ -2044,7 +2044,7 @@ function requestLogTing(idx,after,opts){
   if(typeof after === 'function')after();
 }
 
-// Habit session timer (auto-stops, then prompts to log)
+// One live timer for the persisted active-focus session.
 let habitTimer = null;
 
 // PURE: minutes to store from a timed session
@@ -2198,12 +2198,36 @@ function syncTimerAfterExternalCompletion(opts = {}){
   return cleared || closedSheet;
 }
 
-// HYBRID: start the app's single active session. The timer and doing-now
-// marker share one owner, start, deadline, and automatic log.
+// HYBRID: start the app's single active session. Swipe/detail starts are
+// manual by default; reorder-to-top explicitly opts into auto completion.
 function startHabitTimer(idx,opts = {}){
   if(idx == null || idx < 0)return false;
   if(habitTimer){
     if(habitTimer.idx === idx){
+      if(opts.completionMode === 'auto' && habitTimer.completionMode !== 'auto'){
+        const active = load()[idx];
+        if(active && active.hid && typeof setDoingNow === 'function'){
+          const now = Date.now();
+          const sessionMinutes = Math.max(1,Math.min(720,Math.round(
+            Number(opts.sessionMinutes)
+              || Number(habitTimer.targetMs) / 60000
+              || clampDuration(active.durationMinutes)
+          )));
+          const startedAt = Number(opts.startedAt) || now;
+          const targetAt = Number(opts.targetAt)
+            || Number(opts.endsAt)
+            || startedAt + sessionMinutes * 60000;
+          habitTimer.startedAt = startedAt;
+          habitTimer.targetMs = Math.max(1,targetAt - startedAt);
+          habitTimer.autoStopMs = habitTimer.targetMs;
+          habitTimer.completionMode = 'auto';
+          setDoingNow(active.hid,startedAt,dayStart(now),{
+            sessionMinutes,
+            targetAt,
+            completionMode:'auto'
+          });
+        }
+      }
       syncDetailTimerUi();
       return true;
     }
@@ -2229,6 +2253,11 @@ function startHabitTimer(idx,opts = {}){
     return false;
   }
   const adopted = doing && doing.hid === h.hid ? doing : null;
+  const completionMode = opts.completionMode === 'auto'
+    ? 'auto'
+    : opts.completionMode === 'manual'
+      ? 'manual'
+      : (adopted && adopted.completionMode === 'auto' ? 'auto' : 'manual');
   const defaultMin = typeof doingNowSessionMinutesFor === 'function'
     ? doingNowSessionMinutesFor(h,now)
     : clampDuration(h.durationMinutes);
@@ -2241,25 +2270,30 @@ function startHabitTimer(idx,opts = {}){
   const startedAt = Number(opts.startedAt)
     || Number(adopted && adopted.startedAt)
     || now;
-  const endsAt = Number(opts.endsAt)
+  const targetAt = Number(opts.targetAt)
+    || Number(opts.endsAt)
+    || Number(adopted && adopted.targetAt)
     || Number(adopted && adopted.endsAt)
     || startedAt + sessionMinutes * 60000;
   if(typeof setDoingNow === 'function'){
     setDoingNow(h.hid,startedAt,dayStart(now),{
       sessionMinutes,
-      endsAt,
-      oneShotAutoMark:true
+      targetAt,
+      completionMode
     });
   }
   habitTimer = {
     idx,
     startedAt,
-    autoStopMs:Math.max(1,endsAt - startedAt),
+    targetMs:Math.max(1,targetAt - startedAt),
+    // Retained as a read-only alias for older view/test integrations.
+    autoStopMs:Math.max(1,targetAt - startedAt),
+    completionMode,
     interval:setInterval(tickHabitTimer,250)
   };
   syncDetailTimerUi();
   if(opts.toast !== false && typeof showToast === 'function'){
-    showToast(`doing ${toastItemName(h)} now · ${sessionMinutes}m`);
+    showToast(`session started · ${toastItemName(h)} · ${sessionMinutes}m target`);
   }
   if(typeof render === 'function')render();
   tickHabitTimer();
@@ -2280,20 +2314,57 @@ function tickHabitTimer(){
     return;
   }
   const elapsed = Date.now() - habitTimer.startedAt;
-  const left = Math.max(0,habitTimer.autoStopMs - elapsed);
+  const targetMs = Math.max(1,habitTimer.targetMs || habitTimer.autoStopMs || 0);
+  const left = Math.max(0,targetMs - elapsed);
   const display = $('detail-timer-display');
   if(display && detailIdx === habitTimer.idx){
-    const sec = Math.ceil(left / 1000);
+    const reached = elapsed >= targetMs;
+    const shownMs = reached ? elapsed : left;
+    const sec = Math.max(0,Math.floor(shownMs / 1000));
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    display.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    display.textContent = reached && habitTimer.completionMode !== 'auto'
+      ? `target reached · ${m}:${String(s).padStart(2,'0')} elapsed`
+      : `${m}:${String(s).padStart(2,'0')}`;
     display.hidden = false;
   }
   if(typeof updateHomeSessionProgress === 'function')updateHomeSessionProgress();
-  if(left <= 0){
-    showToast('timer done');
-    stopHabitTimer(true);
+  if(left <= 0 && habitTimer.completionMode === 'auto'){
+    if(typeof sweepDoingNowOneShot === 'function'){
+      const swept = sweepDoingNowOneShot(Date.now(),{refresh:true,toast:true});
+      // An already-completed habit clears its persisted Doing now record
+      // without adding another log. Retire the matching live timer too.
+      if(!swept && habitTimer && typeof getDoingNow === 'function' && !getDoingNow()){
+        clearHabitTimerSilent();
+        if(typeof render === 'function')render();
+      }
+    }
   }
+}
+
+// Restore the persisted active focus after a reload. Expired auto sessions
+// are left for the one-shot sweep; manual sessions resume beyond their target.
+function restoreHabitTimer(){
+  if(habitTimer || typeof getDoingNow !== 'function')return false;
+  const doing = getDoingNow();
+  if(!doing || !doing.hid)return false;
+  if(doing.completionMode === 'auto'
+    && typeof doingNowAutoMarkDeadline === 'function'
+    && doingNowAutoMarkDeadline(doing) <= Date.now()){
+    return false;
+  }
+  const idx = load().findIndex(h=>h && h.hid === doing.hid);
+  if(idx < 0){
+    if(typeof clearDoingNow === 'function')clearDoingNow();
+    return false;
+  }
+  return startHabitTimer(idx,{
+    sessionMinutes:doing.sessionMinutes,
+    startedAt:doing.startedAt,
+    targetAt:doing.targetAt,
+    completionMode:doing.completionMode,
+    toast:false
+  });
 }
 function bindScrollSafeTap(btn,handler){
   if(!btn)return;
@@ -2343,6 +2414,7 @@ window.stopHabitTimer = stopHabitTimer;
 window.startHabitTimer = startHabitTimer;
 window.clearHabitTimerSilent = clearHabitTimerSilent;
 window.syncTimerAfterExternalCompletion = syncTimerAfterExternalCompletion;
+window.restoreHabitTimer = restoreHabitTimer;
 bindScrollSafeTap($('detail-timer-toggle'),()=>{
   if(detailIdx === null)return;
   if(habitTimer && habitTimer.idx === detailIdx){
@@ -2584,7 +2656,9 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
-// Cold load: single sync render. Progressive (fast-then-full) was retired —
+// Cold load: restore the persisted active focus, then render once.
+restoreHabitTimer();
+// Progressive (fast-then-full) was retired —
 // the interim card order differed from the agenda and felt jittery.
 if(typeof render === 'function')render();
 ensureOverviewPlacement();

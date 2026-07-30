@@ -127,14 +127,21 @@ function doingNowPillHtml(h,now = Date.now()){
   const doing = getDoingNow();
   if(!doing || doing.hid !== h.hid)return '';
   if(typeof isDoingNowActive === 'function' && !isDoingNowActive(doing,now))return '';
-  const end = typeof doingNowAutoMarkDeadline === 'function'
-    ? doingNowAutoMarkDeadline(doing)
-    : doing.endsAt;
-  const leftMin = Number.isFinite(end)
-    ? Math.max(1,Math.ceil((end - now) / 60000))
-    : Math.max(1,Number(doing.sessionMinutes) || 0);
-  const label = leftMin ? `now · ${leftMin}m` : 'now';
-  return `<span class="context-pill doing-now-pill" title="doing now until session ends"><i class="ti ti-player-play" aria-hidden="true"></i>${escapeHtml(label)}</span>`;
+  const targetAt = Number(doing.targetAt)
+    || Number(doing.endsAt)
+    || Number(doing.startedAt) + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000;
+  const auto = doing.completionMode === 'auto';
+  const leftMin = Math.max(0,Math.ceil((targetAt - now) / 60000));
+  const elapsedMin = Math.max(1,Math.floor((now - Number(doing.startedAt)) / 60000));
+  const label = auto
+    ? `auto · ${Math.max(1,leftMin)}m`
+    : leftMin > 0
+      ? `session · ${leftMin}m`
+      : `target reached · ${elapsedMin}m`;
+  const title = auto
+    ? 'doing now — logs automatically at the end'
+    : 'manual session — continues until you stop it';
+  return `<span class="context-pill doing-now-pill" title="${title}"><i class="ti ti-player-play" aria-hidden="true"></i>${escapeHtml(label)}</span>`;
 }
 
 function openDoingNowSheet(draft){
@@ -147,7 +154,7 @@ function openDoingNowSheet(draft){
     ? doingNowSessionMinutesFor(draft.h)
     : (draft && draft.h ? clampDuration(draft.h.durationMinutes) : 30);
   if(sub){
-    sub.textContent = `Starts a ${mins}m timer, keeps this on top, then logs it when time runs out.`;
+    sub.textContent = `Keeps this on top and logs it automatically after ${mins}m.`;
   }
   if(linkRow){
     const data = typeof load === 'function' ? load() : [];
@@ -181,11 +188,11 @@ function confirmDoingNow(){
   const idx = data.findIndex(item=>item && item.hid === draft.h.hid);
   let started = false;
   if(idx >= 0 && typeof startHabitTimer === 'function'){
-    started = startHabitTimer(idx,{sessionMinutes,toast:false});
+    started = startHabitTimer(idx,{sessionMinutes,completionMode:'auto',toast:false});
   }else if(typeof setDoingNow === 'function'){
     setDoingNow(draft.h.hid,now,today,{
       sessionMinutes,
-      oneShotAutoMark:true
+      completionMode:'auto'
     });
     started = true;
   }

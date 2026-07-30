@@ -98,7 +98,7 @@
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
- * @property {number|null} timerAutoStopMinutes — optional live-timer auto-stop (null = use durationMinutes)
+ * @property {number|null} timerAutoStopMinutes — optional manual-session target (legacy field name; null = use durationMinutes)
  * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
@@ -634,9 +634,11 @@ const ORDER_CONSTRAINTS_KEY = 'tings_order_constraints_v1';
  * @property {string} hid
  * @property {number} startedAt
  * @property {number} dayBase
- * @property {number} sessionMinutes — snapshotted session length at confirm
- * @property {number} endsAt — startedAt + sessionMinutes
- * @property {boolean} oneShotAutoMark — auto-complete once when endsAt passes
+ * @property {number} sessionMinutes — snapshotted target length at start
+ * @property {number} targetAt — startedAt + sessionMinutes
+ * @property {number|null} endsAt — auto-complete deadline; null for manual sessions
+ * @property {'manual'|'auto'} completionMode
+ * @property {boolean} oneShotAutoMark — compatibility mirror of completionMode
  */
 
 function yesterdayIso(){
@@ -685,16 +687,25 @@ function normalizeDoingNow(raw,todayBase = dayStart(Date.now())){
   if(!hid || dayBase == null || !Number.isFinite(startedAt))return null;
   if(dayBase !== todayBase)return null;
   const sessionMinutes = Math.max(1,Math.min(720,Math.round(Number(raw.sessionMinutes) || 0) || 30));
-  const endsAt = Number.isFinite(Number(raw.endsAt))
+  // Records written before completionMode existed are intentionally restored
+  // as manual. That safe migration prevents an old timer from unexpectedly
+  // logging a habit after the app updates.
+  const completionMode = raw.completionMode === 'auto' ? 'auto' : 'manual';
+  const targetAt = Number.isFinite(Number(raw.targetAt))
+    ? Number(raw.targetAt)
+    : Number.isFinite(Number(raw.endsAt))
     ? Number(raw.endsAt)
     : startedAt + sessionMinutes * 60000;
+  const endsAt = completionMode === 'auto' ? targetAt : null;
   return {
     hid,
     startedAt,
     dayBase,
     sessionMinutes,
+    targetAt,
     endsAt,
-    oneShotAutoMark:raw.oneShotAutoMark !== false
+    completionMode,
+    oneShotAutoMark:completionMode === 'auto'
   };
 }
 
@@ -743,18 +754,24 @@ function getDoingNow(store = null){
   return src.doingNow || null;
 }
 
-/** True while a doing-now session is active (before endsAt). */
+/** PURE: whether this active-focus session auto-completes at its target. */
+function doingNowAutoCompletes(doing){
+  return Boolean(doing && doing.completionMode === 'auto');
+}
+
+/** True while a doing-now session is active. Manual sessions do not expire. */
 function isDoingNowActive(doing = null,now = Date.now()){
   const d = doing || getDoingNow();
   if(!d || !d.hid)return false;
   if(d.dayBase !== dayStart(now))return false;
-  if(Number.isFinite(d.endsAt) && now >= d.endsAt)return false;
+  if(doingNowAutoCompletes(d) && Number.isFinite(d.endsAt) && now >= d.endsAt)return false;
   return true;
 }
 
 /**
- * Start a doing-now session. opts.sessionMinutes snapshots the remaining
- * duration at confirm time; oneShotAutoMark defaults true.
+ * Start an active-focus session. opts.sessionMinutes snapshots the target
+ * duration at start. Manual is the safe default; auto mode completes once
+ * when the target passes.
  * dayBase must be today's calendar day; startedAt may be earlier (even
  * before midnight) so expired sessions near day boundaries still sweep.
  */
@@ -764,8 +781,14 @@ function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now()),o
   if(!hid || nextDay !== todayBase)return null;
   const start = Number(startedAt) || Date.now();
   const sessionMinutes = Math.max(1,Math.min(720,Math.round(Number(opts.sessionMinutes) || 0) || 30));
-  const endsAt = Number.isFinite(Number(opts.endsAt))
-    ? Number(opts.endsAt)
+  const completionMode = opts.completionMode === 'auto'
+    || (opts.completionMode == null && opts.oneShotAutoMark === true)
+    ? 'auto'
+    : 'manual';
+  const targetAt = Number.isFinite(Number(opts.targetAt))
+    ? Number(opts.targetAt)
+    : Number.isFinite(Number(opts.endsAt))
+      ? Number(opts.endsAt)
     : start + sessionMinutes * 60000;
   const store = loadOrderConstraintStore();
   store.doingNow = {
@@ -773,8 +796,10 @@ function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now()),o
     startedAt:start,
     dayBase:todayBase,
     sessionMinutes,
-    endsAt,
-    oneShotAutoMark:opts.oneShotAutoMark !== false
+    targetAt,
+    endsAt:completionMode === 'auto' ? targetAt : null,
+    completionMode,
+    oneShotAutoMark:completionMode === 'auto'
   };
   saveOrderConstraintStore(store);
   return store.doingNow;
@@ -1169,7 +1194,8 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
 function effectiveAutoMarkTrigger(h,now = Date.now()){
   if(!h)return null;
   const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
-  if(doing && doing.hid === h.hid && doing.dayBase === dayStart(now) && doing.oneShotAutoMark !== false){
+  if(doing && doing.hid === h.hid && doing.dayBase === dayStart(now)
+    && doingNowAutoCompletes(doing)){
     return doing.startedAt;
   }
   if(h.type === 'task'){
@@ -1182,8 +1208,9 @@ function effectiveAutoMarkTrigger(h,now = Date.now()){
 
 /** PURE: end of a doing-now one-shot auto window (startedAt + session). */
 function doingNowAutoMarkDeadline(doing){
-  if(!doing)return null;
+  if(!doing || !doingNowAutoCompletes(doing))return null;
   if(Number.isFinite(doing.endsAt))return doing.endsAt;
+  if(Number.isFinite(doing.targetAt))return doing.targetAt;
   const mins = Math.max(1,Number(doing.sessionMinutes) || 30);
   return Number(doing.startedAt) + mins * 60000;
 }
@@ -1194,7 +1221,7 @@ function doingNowAutoMarkDeadline(doing){
  */
 function sweepDoingNowOneShot(now = Date.now(),opts = {}){
   const doing = getDoingNow();
-  if(!doing || doing.oneShotAutoMark === false)return 0;
+  if(!doingNowAutoCompletes(doing))return 0;
   const deadline = doingNowAutoMarkDeadline(doing);
   if(!Number.isFinite(deadline) || deadline > now)return 0;
   const data = load();
@@ -1230,7 +1257,10 @@ function sweepDoingNowOneShot(now = Date.now(),opts = {}){
   }else{
     const logTs = Math.min(now,Math.max(doing.startedAt,deadline));
     const snapped = h.type === 'task' ? logTs : (typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,logTs) : logTs);
-    h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(snapped,{note:'doing-now auto-log'})]);
+    h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(snapped,{
+      minutes:sessionMins,
+      note:'doing-now auto-log'
+    })]);
     h.lastLog = latestActualLog(h.logs);
     h.snoozedUntil = null;
     clearPlanByDateOnLog(h);
@@ -1274,12 +1304,16 @@ function sweepAutoDoneTasks(){
     if(h.autoMarkMinutes === null)return;
     if(h.breakable)return; // breakables are reconciled against placed chunks above
     if(h.type === 'task'){
-      // Trigger: doing-now override, fixed time, or when the task enters the agenda window.
+      // Trigger: auto-completing doing-now override, fixed time, or when the
+      // task enters the agenda window. Manual sessions never change the
+      // scheduled auto-mark deadline.
       const trigger = effectiveAutoMarkTrigger(h,now);
       if(trigger === null)return;
-      // When doing-now owns this habit, wait until endsAt (session length), not autoMarkMinutes.
+      // Auto Doing now uses its session deadline; manual active focus leaves
+      // the habit's normal scheduled auto-mark behavior untouched.
       const doing = getDoingNow();
-      const doingOwns = doing && doing.hid === h.hid && doing.dayBase === dayStart(now);
+      const doingOwns = doing && doing.hid === h.hid && doing.dayBase === dayStart(now)
+        && doingNowAutoCompletes(doing);
       const dueAt = doingOwns
         ? doingNowAutoMarkDeadline(doing)
         : trigger + (h.autoMarkMinutes || 0) * 60000;

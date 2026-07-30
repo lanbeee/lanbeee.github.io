@@ -1041,7 +1041,7 @@ function pendingAutoMarkWindow(h,now = Date.now()){
 
   const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
   if(doing && doing.hid === h.hid && doing.dayBase === dayStart(now)
-    && doing.oneShotAutoMark !== false
+    && doing.completionMode === 'auto'
     && typeof isDoingNowActive === 'function' && isDoingNowActive(doing,now)){
     const start = Number(doing.startedAt);
     const end = typeof doingNowAutoMarkDeadline === 'function'
@@ -1075,18 +1075,27 @@ function sessionProgressState(h,realIdx,now = Date.now()){
   const timer = typeof habitTimer !== 'undefined' ? habitTimer : null;
   if(timer && timer.idx === realIdx){
     const start = timer.startedAt;
-    const end = start + Math.max(1,timer.autoStopMs || 0);
+    const end = start + Math.max(1,timer.targetMs || timer.autoStopMs || 0);
     const elapsedMs = Math.max(0,now - start);
     const totalMs = Math.max(1,end - start);
     const elapsedMin = Math.max(0,Math.floor(elapsedMs / 60000));
-    const totalMin = Math.max(1,Math.round(totalMs / 60000));
     const leftMin = Math.max(0,Math.ceil((end - now) / 60000));
     const pct = Math.min(100,(elapsedMs / totalMs) * 100);
+    const auto = timer.completionMode === 'auto';
+    const reached = elapsedMs >= totalMs;
     return {
       kind:'timer',
       pct,
-      label:leftMin ? `now · ${leftMin}m left` : `${elapsedMin}/${totalMin}m`,
-      aria:`active session, ${leftMin} minutes left`
+      label:auto
+        ? `auto · ${Math.max(1,leftMin)}m left`
+        : reached
+          ? `target reached · ${elapsedMin}m elapsed`
+          : `session · ${leftMin}m left`,
+      aria:auto
+        ? `auto-completing session, ${leftMin} minutes left`
+        : reached
+          ? `manual session target reached, ${elapsedMin} minutes elapsed`
+          : `manual session, ${leftMin} minutes to target`
     };
   }
   if(typeof valueLogMinutes !== 'undefined' && valueLogMinutes != null
@@ -1105,10 +1114,10 @@ function sessionProgressState(h,realIdx,now = Date.now()){
       kind:win.doingNow ? 'timer' : 'auto',
       pct,
       label:win.doingNow
-        ? (leftMin ? `now · ${leftMin}m left` : `${elapsedMin}/${totalMin}m`)
+        ? (leftMin ? `auto · ${leftMin}m left` : `${elapsedMin}/${totalMin}m`)
         : (leftMin ? `auto in ${leftMin}m` : `${elapsedMin}/${totalMin}m`),
       aria:win.doingNow
-        ? `active session, ${leftMin} minutes left`
+        ? `auto-completing session, ${leftMin} minutes left`
         : `auto-complete in ${leftMin} minutes`
     };
   }

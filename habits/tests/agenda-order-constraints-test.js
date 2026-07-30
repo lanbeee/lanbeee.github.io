@@ -186,7 +186,7 @@ function seedScript(){
       durationMinutes:30, breakable:false, autoMarkMinutes:20, priority:1
     };
     const before = effectiveAutoMarkTrigger(h, now);
-    setDoingNow('auto1', now - 5*60000, today);
+    setDoingNow('auto1', now - 5*60000, today, {completionMode:'auto'});
     const after = effectiveAutoMarkTrigger(h, now);
     const win = pendingAutoMarkWindow(h, now);
     // Wrong hid clear is a no-op
@@ -197,7 +197,7 @@ function seedScript(){
     // Doing-now one-shot also retargets keepup / non-auto habits for the session bar
     const keepup = {name:'k', type:'keepup', hid:'k1', autoMarkMinutes:null, breakable:false, logs:[], lastLog:null, durationMinutes:25};
     const keepupStart = now;
-    setDoingNow('k1', keepupStart, today, {sessionMinutes:25, oneShotAutoMark:true});
+    setDoingNow('k1', keepupStart, today, {sessionMinutes:25, completionMode:'auto'});
     const keepupTrig = effectiveAutoMarkTrigger(keepup, now);
     const keepupWin = pendingAutoMarkWindow(keepup, now);
     const dn = getDoingNow();
@@ -216,7 +216,7 @@ function seedScript(){
   assert(autoMark.cleared !== autoMark.now, 'clearing doing-now restores normal trigger');
   assert(autoMark.keepupTrig === autoMark.keepupStart, 'doing-now one-shot retargets keepup trigger');
   assert(autoMark.sessionMinutes === 25, 'doing-now snapshots session minutes');
-  assert(autoMark.oneShot === true, 'doing-now defaults to one-shot auto-mark');
+  assert(autoMark.oneShot === true, 'explicit auto doing-now enables one-shot auto-mark');
   assert(autoMark.keepupWinEnd === autoMark.keepupStart + 25*60000, 'pending window ends at startedAt + session');
 
   // ════════════════════════════════════════════════════════════════════════
@@ -982,7 +982,7 @@ function seedScript(){
       locations:[],
       travel:{}
     });
-    setDoingNow('stay-now', now, today, {sessionMinutes:20, oneShotAutoMark:true});
+    setDoingNow('stay-now', now, today, {sessionMinutes:20, completionMode:'auto'});
     upsertOrderConstraint({dayBase:today, beforeHid:'stay-now', afterHid:'stay-a', adjacency:'direct'});
     const week = buildWeekAgenda(data, loadSortSettings(), 2);
     const day = (week.days || []).find(d=>d.dayBase === today) || week.days[0];
@@ -996,7 +996,7 @@ function seedScript(){
     setDoingNow('stay-now', started, today, {
       sessionMinutes:20,
       endsAt:started + 20*60000,
-      oneShotAutoMark:true
+      completionMode:'auto'
     });
     const beforeLogs = (load().find(h=>h.hid === 'stay-now') || {}).logs || [];
     const n = sweepDoingNowOneShot(now, {refresh:false, toast:false});
