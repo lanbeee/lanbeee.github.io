@@ -1408,6 +1408,7 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   travelEl.className = `travel-card${edited ? ' is-edited' : ''}${fromCurrent ? ' is-from-current' : ''}`;
   travelEl.dataset.travelFrom = fromId;
   travelEl.dataset.travelTo = toId;
+  if(Number.isFinite(startTs))travelEl.dataset.agendaStart = String(Math.round(startTs / 60000));
   travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
   if(fromCurrent)travelEl.setAttribute('aria-disabled','true');
   travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${compactHomeDuration(mins)} · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
@@ -1496,6 +1497,9 @@ function appendHomeTravelText(list,fromId,toId,startTs){
   const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
   const el = document.createElement('div');
   el.className = 'extra-text-line travel-text';
+  el.dataset.travelFrom = fromId;
+  el.dataset.travelTo = toId;
+  if(Number.isFinite(startTs))el.dataset.agendaStart = String(Math.round(startTs / 60000));
   el.textContent = `${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`;
   list.appendChild(el);
 }
@@ -2553,6 +2557,9 @@ function render(opts){
     queueOptimizedHomeRender(data,o);
     return false;
   }
+  const readingPosition = o.preserveReadingPosition === false
+    ? null
+    : captureHomeReadingPosition(list);
   _homeRenderedWeek = null;
   list.innerHTML = '';
   empty.onclick = null;
@@ -2606,6 +2613,7 @@ function render(opts){
       };
     }
     _homeListFingerprint = homeListFingerprint();
+    restoreHomeReadingPosition(readingPosition,list);
     return;
   }
   empty.classList.remove('is-action');
@@ -2719,6 +2727,9 @@ function render(opts){
     row.className = 'swipe-row' + (canDrag ? ' has-agenda-drag' : '');
     row.dataset.realIdx = realIdx;
     if(dayBase != null)row.dataset.dayBase = String(dayBase);
+    if(agendaRow && Number.isFinite(agendaRow.start)){
+      row.dataset.agendaStart = String(Math.round(agendaRow.start / 60000));
+    }
     if(canDrag)row.dataset.agendaDraggable = '1';
     if(h.hid)row.dataset.hid = h.hid;
     if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
@@ -3120,6 +3131,7 @@ function render(opts){
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
   _homeListFingerprint = homeListFingerprint();
+  restoreHomeReadingPosition(readingPosition,list);
   return true;
 }
 
@@ -3192,6 +3204,115 @@ let _optimizerHomeRequestToken = 0;
 let _optimizerHomeReadyKey = '';
 let _optimizerHomeReadyWeek = null;
 
+// PURE: the visible scheduling result, without solver bookkeeping. Comparing
+// this after a background solve lets the current DOM stay mounted when GLPK
+// returns the same days, order, and times as the plan already on screen.
+function homeAgendaPlanSignature(week,data = (typeof load === 'function' ? load() : [])){
+  if(!week || !Array.isArray(week.days))return '';
+  return week.days.map(day=>{
+    const rows = Array.isArray(day.timeline) ? day.timeline : [];
+    const rowSig = rows.map(row=>{
+      const h = row && row.i != null ? data[row.i] : null;
+      return [
+        row && row.kind || '',
+        h && h.hid || '',
+        Number.isFinite(Number(row && row.start)) ? Math.round(Number(row.start) / 60000) : '',
+        Number.isFinite(Number(row && row.end)) ? Math.round(Number(row.end) / 60000) : '',
+        row && row.from || '',
+        row && row.to || '',
+        row && row.locationId || '',
+        row && row.label || '',
+        row && row.chunkMinutes != null ? Math.round(Number(row.chunkMinutes) || 0) : ''
+      ].join('~');
+    }).join(';');
+    return `${day.dayKey || dateKey(day.dayBase)}:${rowSig}`;
+  }).join('\n');
+}
+
+function homeReadingScrollHost(list){
+  if(!list)return null;
+  const pane = list.closest('.pane-list');
+  return pane && pane.scrollHeight > pane.clientHeight + 1 ? pane : null;
+}
+
+function homeReadingElementKey(el){
+  if(!el)return '';
+  if(el.classList.contains('swipe-row')){
+    return `row:${el.dataset.hid || el.dataset.realIdx || ''}:${el.dataset.dayBase || ''}:${el.dataset.agendaStart || ''}`;
+  }
+  if(el.classList.contains('section-header')){
+    return `section:${el.dataset.capacityDay || el.dataset.label || ''}`;
+  }
+  if(el.classList.contains('travel-card') || el.classList.contains('travel-text')){
+    return `travel:${el.dataset.travelFrom || ''}:${el.dataset.travelTo || ''}:${el.dataset.agendaStart || ''}`;
+  }
+  if(el.dataset && el.dataset.blockedGroup)return `blocked:${el.dataset.blockedGroup}`;
+  return '';
+}
+
+// READ: remember the item the user is currently reading and its viewport
+// offset. The raw scroll position is retained as a fallback if that item is
+// legitimately removed by the new plan.
+function captureHomeReadingPosition(list){
+  if(!list || !list.children.length)return null;
+  const host = homeReadingScrollHost(list);
+  const scrollTop = host ? host.scrollTop : window.scrollY;
+  if(scrollTop <= 1)return null;
+  const hostRect = host ? host.getBoundingClientRect() : {top:0,bottom:window.innerHeight};
+  const top = Math.max(0,hostRect.top);
+  const bottom = Math.min(window.innerHeight,hostRect.bottom);
+  const candidates = Array.from(list.children);
+  const anchor = candidates.find(el=>{
+    const rect = el.getBoundingClientRect();
+    return rect.bottom > top + 1 && rect.top < bottom;
+  });
+  if(!anchor)return {host,scrollTop,key:'',offset:0};
+  return {
+    host,
+    scrollTop,
+    key:homeReadingElementKey(anchor),
+    hid:anchor.dataset && anchor.dataset.hid || '',
+    dayKey:anchor.dataset && (anchor.dataset.capacityDay || (anchor.dataset.dayBase ? dateKey(Number(anchor.dataset.dayBase)) : '')) || '',
+    offset:anchor.getBoundingClientRect().top - top
+  };
+}
+
+// WRITE: put the same semantic row back under the user's eyes after a genuine
+// plan change. This prevents a background refresh from jumping them to the top
+// or losing tomorrow while still allowing rows to move when the plan changed.
+function restoreHomeReadingPosition(snapshot,list){
+  if(!snapshot || !list)return;
+  const host = homeReadingScrollHost(list);
+  const top = Math.max(0,host ? host.getBoundingClientRect().top : 0);
+  const children = Array.from(list.children);
+  let anchor = snapshot.key
+    ? children.find(el=>homeReadingElementKey(el) === snapshot.key)
+    : null;
+  if(!anchor && snapshot.hid){
+    anchor = children.find(el=>el.dataset && el.dataset.hid === snapshot.hid);
+  }
+  if(!anchor && snapshot.dayKey){
+    anchor = children.find(el=>el.dataset && (
+      el.dataset.capacityDay === snapshot.dayKey
+      || (el.dataset.dayBase && dateKey(Number(el.dataset.dayBase)) === snapshot.dayKey)
+    ));
+  }
+  if(anchor){
+    const delta = anchor.getBoundingClientRect().top - top - snapshot.offset;
+    if(Math.abs(delta) > 0.5){
+      if(host)host.scrollTop += delta;
+      else window.scrollBy({top:delta,left:0,behavior:'instant'});
+    }
+    return;
+  }
+  if(host)host.scrollTop = Math.min(snapshot.scrollTop,Math.max(0,host.scrollHeight - host.clientHeight));
+  else window.scrollTo({
+    top:Math.min(snapshot.scrollTop,Math.max(0,document.documentElement.scrollHeight - window.innerHeight)),
+    left:0,
+    behavior:'instant'
+  });
+}
+
 // The lightweight home fingerprint deliberately omits some low-frequency
 // fields. Optimizer reuse needs an exact key so edits to any habit, window,
 // location, score weight, or travel edge can never reuse a stale schedule.
@@ -3223,15 +3344,26 @@ function renderHomePresentationOnly(){
 function queueOptimizedHomeRender(data,opts){
   const key = optimizerHomeStateKey(data);
   if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
+    if(opts && opts.__backgroundRefresh
+      && homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(_optimizerHomeReadyWeek,data)){
+      _homeRenderedWeek = _optimizerHomeReadyWeek;
+      if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,_homeRenderedWeek);
+      _homeListFingerprint = homeListFingerprint();
+      return false;
+    }
     render({...opts,__fromOptimizer:true,__optimizedWeek:_optimizerHomeReadyWeek});
     _homeListFingerprint = homeListFingerprint();
-    return;
+    return true;
   }
-  if(_optimizerHomeRequestKey === key)return;
+  if(_optimizerHomeRequestKey === key)return false;
 
-  // Fast first paint so the list appears right away.
-  render({...opts,__fromOptimizer:true,__optimizerFallback:true});
-  _homeListFingerprint = homeListFingerprint();
+  // Cold load and direct edits still get an immediate fast plan. Periodic and
+  // reopen refreshes already have a complete plan on screen, so leave it
+  // mounted while GLPK works in the background.
+  if(!(opts && opts.__backgroundRefresh)){
+    render({...opts,__fromOptimizer:true,__optimizerFallback:true});
+    _homeListFingerprint = homeListFingerprint();
+  }
 
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
@@ -3242,8 +3374,8 @@ function queueOptimizedHomeRender(data,opts){
     const live = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
     if(!live || !live.agendaOptimizer)return;
     if(key !== optimizerHomeStateKey(load())){
-      render(opts);
-      _homeListFingerprint = homeListFingerprint();
+      if(opts && opts.__backgroundRefresh)queueOptimizedHomeRender(load(),opts);
+      else render(opts);
       return;
     }
     if(!week || !Array.isArray(week.days))return;
@@ -3251,6 +3383,13 @@ function queueOptimizedHomeRender(data,opts){
     if(!week.optimized)return;
     _optimizerHomeReadyKey = key;
     _optimizerHomeReadyWeek = week;
+    const liveData = load();
+    if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
+      _homeRenderedWeek = week;
+      if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
+      _homeListFingerprint = homeListFingerprint();
+      return;
+    }
     render({...opts,__fromOptimizer:true,__optimizedWeek:week});
     _homeListFingerprint = homeListFingerprint();
   }).catch(()=>{
@@ -3258,6 +3397,7 @@ function queueOptimizedHomeRender(data,opts){
     _optimizerHomeRequestKey = '';
     // Keep the fast planner already on screen.
   });
+  return true;
 }
 
 // Immediate feedback for a saved travel override. The optimized replan still
@@ -3286,6 +3426,38 @@ function markHomeTravelEdgeEdited(fromId,toId,minutes){
 function renderHomeIfChanged(force){
   const fp = homeListFingerprint();
   if(!force && fp === _homeListFingerprint)return false;
+  const data = load();
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const canCompareWeek = Boolean(
+    _homeRenderedWeek
+    && Array.isArray(_homeRenderedWeek.days)
+    && settings
+    && settings.preset === 'todayFirst'
+    && settings.showWeekOnHome
+    && !(typeof searchQuery === 'string' && searchQuery.trim())
+  );
+
+  if(canCompareWeek){
+    // Claim this state before starting work so a travel burst or visibility
+    // event cannot enqueue the same recalculation repeatedly.
+    _homeListFingerprint = fp;
+    if(settings.agendaOptimizer && typeof buildWeekAgendaAsync === 'function'){
+      queueOptimizedHomeRender(data,{__backgroundRefresh:true});
+      return true;
+    }
+    if(!settings.agendaOptimizer && typeof buildWeekAgenda === 'function'){
+      const week = buildWeekAgenda(data,settings,7);
+      if(homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(week,data)){
+        _homeRenderedWeek = week;
+        if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
+        _homeListFingerprint = homeListFingerprint();
+        return true;
+      }
+      render({__fromBackgroundRefresh:true,__optimizedWeek:week});
+      _homeListFingerprint = homeListFingerprint();
+      return true;
+    }
+  }
   const didRender = render();
   if(didRender !== false)_homeListFingerprint = homeListFingerprint();
   return true;

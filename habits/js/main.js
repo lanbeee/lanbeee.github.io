@@ -2703,8 +2703,9 @@ window.addEventListener('pageshow',e=>{
   if(e && e.persisted)scheduleReopenRefresh();
 });
 
-// WHILE OPEN: keep the home agenda fresh without rebuilding the DOM when
-// nothing placement-relevant changed (minute, place, travel, habits).
+// WHILE OPEN: keep the home agenda fresh. The fast planner compares its result
+// off-screen; GLPK solves in the background. Both keep the mounted list when
+// the resulting days/order/times are unchanged.
 const HOME_AGENDA_REFRESH_MS = 60 * 1000;
 let _homeAgendaRefreshId = null;
 let _homeAgendaRefreshTick = 0;
