@@ -1079,7 +1079,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
 
 async function buildWeekAgendaAsync(data,settings,numDays = 7){
   // Always able to fall back to the sync scarcity heuristic.
-  if(!settings || !settings.agendaOptimizer){
+  if(!settings || !settings.agendaOptimizer
+    || (typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
     return buildWeekAgenda(data,settings,numDays);
   }
   try{

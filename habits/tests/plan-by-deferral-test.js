@@ -37,6 +37,7 @@
 //
 const { chromium } = require('playwright');
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
+const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast';
 
 let pass = 0, fail = 0;
 function assert(cond, msg){
@@ -88,7 +89,7 @@ function windowedSettings(extra){
   await page.goto(BASE, { waitUntil:'networkidle' });
 
   // Confirm GLPK availability up front; soft-pass the GLPK column if missing.
-  const glpkOk = await page.evaluate(async () => {
+  const glpkOk = !FAST_ONLY && await page.evaluate(async () => {
     if(typeof ensureGlpk !== 'function')return false;
     try { const G = await ensureGlpk(); return !!G && typeof G.solve === 'function'; }
     catch(_){ return false; }
@@ -97,7 +98,7 @@ function windowedSettings(extra){
   // Run a scenario through both paths. `now` freezes the clock so "today" is
   // closed (19:00, past the 18:45 window) and errands can't escape forward.
   async function runBoth(data, settings, now){
-    return await page.evaluate(async ({ data, settings, now }) => {
+    return await page.evaluate(async ({ data, settings, now, fastOnly }) => {
       const RealDate = Date;
       function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
       FD.now = () => now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
@@ -113,17 +114,19 @@ function windowedSettings(extra){
         return byName;
       });
       let glpk = null, fast = null;
-      try{
-        const w = await buildWeekAgendaAsync(data, Object.assign({}, settings, { agendaOptimizer:true }), 7);
-        glpk = { optimized: !!w.optimized, days: summarize(w) };
-      }catch(e){ glpk = { error: String(e && e.message || e) }; }
+      if(!fastOnly){
+        try{
+          const w = await buildWeekAgendaAsync(data, Object.assign({}, settings, { agendaOptimizer:true }), 7);
+          glpk = { optimized: !!w.optimized, days: summarize(w) };
+        }catch(e){ glpk = { error: String(e && e.message || e) }; }
+      }
       try{
         const w = buildWeekAgenda(data, Object.assign({}, settings, { agendaOptimizer:false }), 7);
         fast = { days: summarize(w) };
       }catch(e){ fast = { error: String(e && e.message || e) }; }
       globalThis.Date = orig;
       return { glpk, fast };
-    }, { data, settings, now });
+    }, { data, settings, now, fastOnly:FAST_ONLY });
   }
 
   function minutesOnDay(res, offset, name){

@@ -3,6 +3,7 @@
 
 const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4182/';
+const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast';
 let pass = 0;
 let fail = 0;
 function assert(value,message){
@@ -143,7 +144,7 @@ function assert(value,message){
     },{useGlpk,variant});
   }
 
-  for(const useGlpk of [false,true]){
+  for(const useGlpk of FAST_ONLY ? [false] : [false,true]){
     const label = useGlpk ? 'GLPK' : 'Fast';
     console.log(`\n[${label}] recurring placement`);
     const after = await plannerScenario(useGlpk,'after');

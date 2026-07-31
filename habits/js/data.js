@@ -250,6 +250,18 @@ function load(){
   return normalize(Storage.read(KEY) || []);
 }
 
+// Test/debug override: `?planner=fast` exercises the whole app without loading
+// or calling GLPK. It is intentionally sessionless—the user's saved optimizer
+// preference is untouched when the query parameter is removed.
+function agendaPlannerForcedFast(){
+  try{
+    return typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('planner') === 'fast';
+  }catch{
+    return false;
+  }
+}
+
 function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
@@ -308,14 +320,21 @@ function loadSortSettings(){
     delete merged.prayerCityLat;
     delete merged.prayerCityLng;
     merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
-    merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
+    merged.agendaOptimizer = agendaPlannerForcedFast()
+      ? false
+      : Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
       try{ preloadAgendaOptimizer(); }catch(_){}
     }
     return merged;
   }catch{
-    return {...DEFAULT_SORT_SETTINGS};
+    return {
+      ...DEFAULT_SORT_SETTINGS,
+      agendaOptimizer:agendaPlannerForcedFast()
+        ? false
+        : Boolean(DEFAULT_SORT_SETTINGS.agendaOptimizer)
+    };
   }
 }
 
@@ -363,7 +382,9 @@ function saveSortSettings(settings){
   delete next.prayerCityLat;
   delete next.prayerCityLng;
   next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
-  next.agendaOptimizer = Boolean(next.agendaOptimizer);
+  next.agendaOptimizer = agendaPlannerForcedFast()
+    ? false
+    : Boolean(next.agendaOptimizer);
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);

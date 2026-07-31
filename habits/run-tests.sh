@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 PORT="${PORT:-4181}"
-HABITS_URL="http://127.0.0.1:$PORT/"
+PLANNER_MODE="${PLANNER_MODE:-default}"
+if [ "$PLANNER_MODE" = "fast" ]; then
+  HABITS_URL="http://127.0.0.1:$PORT/?planner=fast"
+elif [ "$PLANNER_MODE" = "default" ]; then
+  HABITS_URL="http://127.0.0.1:$PORT/"
+else
+  echo "unknown PLANNER_MODE '$PLANNER_MODE' (use 'default' or 'fast')" >&2
+  exit 2
+fi
 
 cleanup() { kill "$server_pid" 2>/dev/null; }
 trap cleanup EXIT
@@ -30,13 +38,23 @@ total_not_ok=0
 total_pageerrors=0
 files_passed=0
 files_failed=0
+files_skipped=0
 results=()
 
 for f in tests/*.js; do
   name=$(basename "$f")
+  if [ "$PLANNER_MODE" = "fast" ]; then
+    case "$name" in
+      agenda-optimizer-test.js|progressive-render-test.js)
+        results+=("SKIP  $name  (GLPK-specific)")
+        files_skipped=$((files_skipped + 1))
+        continue
+        ;;
+    esac
+  fi
   tmpfile=$(mktemp)
 
-  HABITS_URL="$HABITS_URL" node "$f" 2>&1 | tee "$tmpfile"
+  HABITS_PLANNER_MODE="$PLANNER_MODE" HABITS_URL="$HABITS_URL" node "$f" 2>&1 | tee "$tmpfile"
   exit_code=${PIPESTATUS[0]}
   output=$(cat "$tmpfile")
   rm "$tmpfile"
@@ -66,7 +84,8 @@ for r in "${results[@]}"; do
   echo "  $r"
 done
 echo "───────────────────────────────────────────────────────────"
-echo "  Files:           $files_passed passed, $files_failed failed"
+echo "  Planner mode:    $PLANNER_MODE"
+echo "  Files:           $files_passed passed, $files_failed failed, $files_skipped skipped"
 total_assertions=$((total_ok + total_not_ok))
 echo "  Assertions:      $total_ok ok, $total_not_ok not ok (${total_assertions} total)"
 echo "  Page errors:     $total_pageerrors"

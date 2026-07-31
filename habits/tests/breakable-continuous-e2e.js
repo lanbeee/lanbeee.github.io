@@ -26,6 +26,7 @@
  */
 
 const { chromium } = require('playwright');
+const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast';
 
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
@@ -1157,9 +1158,10 @@ async function breakableFillRows(page, name){
 
   // Default GLPK path: a partial slider commit must keep today's remaining
   // budget even when another agenda card appears before the breakable row.
-  console.log('  GLPK partial slider keeps same-day remainder...');
-  await freezeClock(page, clockTs);
-  await seedAndReload(page, {
+  if(!FAST_ONLY){
+    console.log('  GLPK partial slider keeps same-day remainder...');
+    await freezeClock(page, clockTs);
+    await seedAndReload(page, {
     clockTs,
     settings:defaultSettings({
       showWeekOnHome:true,
@@ -1182,33 +1184,33 @@ async function breakableFillRows(page, name){
         logs:[at(0,0) - 2 * 86400000],priority:1
       })
     ]
-  });
-  await page.waitForFunction(()=>{
+    });
+    await page.waitForFunction(()=>{
     const work = [...document.querySelectorAll('#list .ting-card')]
       .find(card=>(card.textContent || '').includes('GLPK partial work') && card.querySelector('.breakable-crown'));
     return Boolean(work && typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized);
-  },null,{timeout:10000});
-  const glpkBefore = await page.evaluate(()=>{
+    },null,{timeout:10000});
+    const glpkBefore = await page.evaluate(()=>{
     const cards = [...document.querySelectorAll('#list .ting-card')];
     return {
       first:cards.findIndex(card=>(card.textContent || '').includes('First appointment')),
       work:cards.findIndex(card=>(card.textContent || '').includes('GLPK partial work'))
     };
-  });
-  assert(glpkBefore.first >= 0 && glpkBefore.work > glpkBefore.first,
-    `another agenda card should precede Work: ${JSON.stringify(glpkBefore)}`);
-  const glpkWork = page.locator('#list .ting-card').filter({hasText:'GLPK partial work'}).filter({has:page.locator('.breakable-crown')}).first();
-  await glpkWork.locator('.breakable-crown').evaluate(el=>{
-    for(let i = 0; i < 120; i++) el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
-  });
-  const glpkPending = await glpkWork.evaluate(card=>{
-    const row = card.closest('.swipe-row');
-    return {dirty:row?.dataset.progressDirty,target:Number(row?.dataset.progressTarget)};
-  });
-  assert(glpkPending.dirty === '1' && glpkPending.target === 120,
-    `GLPK row should hold a 120m pending target: ${JSON.stringify(glpkPending)}`);
-  await glpkWork.locator('.pulse-btn').click();
-  await page.waitForFunction(()=>{
+    });
+    assert(glpkBefore.first >= 0 && glpkBefore.work > glpkBefore.first,
+      `another agenda card should precede Work: ${JSON.stringify(glpkBefore)}`);
+    const glpkWork = page.locator('#list .ting-card').filter({hasText:'GLPK partial work'}).filter({has:page.locator('.breakable-crown')}).first();
+    await glpkWork.locator('.breakable-crown').evaluate(el=>{
+      for(let i = 0; i < 120; i++) el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+    });
+    const glpkPending = await glpkWork.evaluate(card=>{
+      const row = card.closest('.swipe-row');
+      return {dirty:row?.dataset.progressDirty,target:Number(row?.dataset.progressTarget)};
+    });
+    assert(glpkPending.dirty === '1' && glpkPending.target === 120,
+      `GLPK row should hold a 120m pending target: ${JSON.stringify(glpkPending)}`);
+    await glpkWork.locator('.pulse-btn').click();
+    await page.waitForFunction(()=>{
     const h = load().find(x=>x.name === 'GLPK partial work');
     const idx = load().findIndex(x=>x.name === 'GLPK partial work');
     const card = [...document.querySelectorAll('#list .ting-card')]
@@ -1220,8 +1222,8 @@ async function breakableFillRows(page, name){
     return h && breakableProgressMinutes(h) === 120
       && card?.querySelector('.breakable-progress-label')?.textContent === '120/360m'
       && remainingPlaced > 0 && remainingPlaced <= 240;
-  },null,{timeout:10000});
-  const glpkAfter = await page.evaluate(()=>{
+    },null,{timeout:10000});
+    const glpkAfter = await page.evaluate(()=>{
     const data = load();
     const idx = data.findIndex(x=>x.name === 'GLPK partial work');
     const h = data[idx];
@@ -1237,13 +1239,16 @@ async function breakableFillRows(page, name){
         .filter(card=>(card.textContent || '').includes('GLPK partial work')).length,
       remainingPlaced:remainingRows.reduce((sum,row)=>sum + Math.round(Number(row.chunkMinutes) || ((row.end-row.start)/60000)),0)
     };
-  });
-  assert(glpkAfter.progress === 120 && glpkAfter.lastMinutes === 120,
-    `slider commit must log exactly 120m: ${JSON.stringify(glpkAfter)}`);
-  assert(glpkAfter.budget === 240,'GLPK partial commit should leave 240m');
-  assert(glpkAfter.cardCount >= 1 && glpkAfter.remainingPlaced > 0 && glpkAfter.remainingPlaced <= 240,
-    `GLPK must keep remaining chunks after partial log: ${JSON.stringify(glpkAfter)}`);
-  console.log('  GLPK partial slider keeps same-day remainder: OK');
+    });
+    assert(glpkAfter.progress === 120 && glpkAfter.lastMinutes === 120,
+      `slider commit must log exactly 120m: ${JSON.stringify(glpkAfter)}`);
+    assert(glpkAfter.budget === 240,'GLPK partial commit should leave 240m');
+    assert(glpkAfter.cardCount >= 1 && glpkAfter.remainingPlaced > 0 && glpkAfter.remainingPlaced <= 240,
+      `GLPK must keep remaining chunks after partial log: ${JSON.stringify(glpkAfter)}`);
+    console.log('  GLPK partial slider keeps same-day remainder: OK');
+  }else{
+    console.log('  GLPK-only partial-slider case skipped in fast planner mode');
+  }
 
   // Pure eligibility regression (no calendar UI).
   const elig = await page.evaluate(() => {

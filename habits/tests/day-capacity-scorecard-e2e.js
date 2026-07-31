@@ -10,6 +10,7 @@
 const { chromium } = require('playwright');
 
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
+const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast';
 
 function assert(condition,message){
   if(!condition)throw new Error(message);
@@ -89,7 +90,13 @@ function task(name,dueDate,priority = 1){
   await page.reload({waitUntil:'networkidle'});
   await page.waitForSelector('#list:not(.is-progressive)');
   await page.waitForSelector('#list .section-header[data-capacity-day]');
-  await page.waitForFunction(()=>typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized === true,null,{timeout:10000});
+  await page.waitForFunction(
+    fastOnly=>typeof _homeRenderedWeek !== 'undefined'
+      && Array.isArray(_homeRenderedWeek?.days)
+      && (fastOnly ? !_homeRenderedWeek.optimized : _homeRenderedWeek.optimized === true),
+    FAST_ONLY,
+    {timeout:10000}
+  );
 
   const model = await page.evaluate(({todayBase,tomorrowBase})=>{
     const d = load();
@@ -111,6 +118,7 @@ function task(name,dueDate,priority = 1){
         traceCount:today.plannerTrace.length,
         traceOnDemand:today.plannerTraceGeneratedOnDemand,
         preview:today.plannerIsPreview,
+        previewText:formatDayCapacityScorecardText(today,'today','current home agenda'),
         traceHasInputs:today.plannerTrace.some(item=>
           item.inputs.some(input=>input.startsWith('allowed '))
           && item.inputs.some(input=>input.includes('priority'))
@@ -131,7 +139,16 @@ function task(name,dueDate,priority = 1){
   assert(model.today.rows > 0,'Scorecard should expose the actual agenda output rows');
   assert(model.today.traceCount > 0,'Scorecard should expose planner decisions');
   assert(model.today.traceOnDemand === true,'Planner trace should identify itself as on-demand');
-  assert(model.today.preview === true,'Synchronous audit should label optimizer-enabled output as a fast preview/fallback');
+  if(FAST_ONLY){
+    assert(model.today.preview === false,'Forced-fast audit should be a settled fast result');
+    assert(!model.today.previewText.includes('FAST PREVIEW'),
+      'Forced-fast audit must not imply that an optimizer is still running');
+  }else{
+    assert(model.today.preview === true,'Synchronous audit should label optimizer-enabled output as a fast preview/fallback');
+    assert(model.today.previewText.includes('FAST PREVIEW — exact optimizer is still running')
+      && model.today.previewText.includes('BUDGET USED / PREVIEW'),
+    'Fast audit text should make provisional totals unmistakable');
+  }
   assert(model.today.traceHasInputs,'Planner trace should expose resolved windows and ranking inputs');
   assert(model.today.missed === 0,`Budget-capped gaps must not be reported as scheduler misses: ${JSON.stringify(model.today)}`);
   assert(model.today.budgetCapped > 0 && model.today.gapStatuses.includes('budget-capped'),
@@ -157,9 +174,9 @@ function task(name,dueDate,priority = 1){
     };
   },tomorrowBase);
   assert(snapshotParity.usesRenderedSnapshot,'Audit did not identify the rendered Home snapshot as its source');
-  assert(snapshotParity.plannerIsPreview === false,'Settled optimized snapshot was mislabeled as a preview');
+  assert(snapshotParity.plannerIsPreview === false,'Settled Home snapshot was mislabeled as a preview');
   assert(JSON.stringify(snapshotParity.audited) === JSON.stringify(snapshotParity.rendered),
-    `Audit output diverged from rendered optimized Home agenda:\n${JSON.stringify(snapshotParity,null,2)}`);
+    `Audit output diverged from rendered Home agenda:\n${JSON.stringify(snapshotParity,null,2)}`);
 
   async function tripleTap(selector){
     const header = page.locator(selector);

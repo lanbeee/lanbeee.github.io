@@ -2277,26 +2277,64 @@ function placeBreakableSessions(state,fill,opts = {}){
   return placedAny;
 }
 
-// PURE: commit a successful fit into day state (travel row + fill row + budgets).
+// MUTATE: reconcile inbound travel after a chronological insertion. The fast
+// planner can place a later item first, then insert another fill between it and
+// its old location anchor. In that case the old commute is no longer part of
+// the final route and must not remain charged to the availability budget.
+function reconcileCommittedTravel(state){
+  if(!state || !Array.isArray(state.fills))return;
+  const chron = state.fills.slice().sort(
+    (a,b)=>a.fit.placeStart - b.fit.placeStart || a.fit.placeEnd - b.fit.placeEnd);
+  const travelRows = [];
+  let travelMinutes = 0;
+  let durationMinutes = 0;
+  let lastLocId = state.seedLocId || null;
+
+  for(const entry of chron){
+    const fit = entry && entry.fit;
+    if(!fit)continue;
+    durationMinutes += Math.max(0,Number(fit.durMin) || 0);
+    const anchor = locationPresenceAt(state,fit.placeStart,chron);
+    const edge = travelEdgeBetweenIds(
+      anchor,
+      fit.locId,
+      state.registry,
+      state.mode,
+      {allowNetwork:false}
+    );
+    const travelMin = Math.max(0,Math.ceil((Number(edge.seconds) || 0) / 60));
+    fit.prevLocId = anchor;
+    fit.edge = edge;
+    fit.travelMin = travelMin;
+    travelMinutes += travelMin;
+    if(edge.seconds > 0 && anchor && fit.locId && anchor !== fit.locId){
+      const from = state.registry.find(l=>l.id === anchor);
+      const to = state.registry.find(l=>l.id === fit.locId);
+      travelRows.push({
+        kind:'travel',
+        from:anchor,
+        to:fit.locId,
+        fromName:from ? from.name : '',
+        toName:to ? to.name : '',
+        seconds:edge.seconds,
+        metres:edge.metres || 0,
+        start:Math.max(fit.placeStart - edge.seconds * 1000,state.dayBase),
+        end:fit.placeStart,
+        provider:edge.provider || state.mode
+      });
+    }
+    if(fit.locId)lastLocId = fit.locId;
+  }
+
+  state.rows = (state.rows || []).filter(row=>row.kind !== 'travel').concat(travelRows);
+  state.usedMinutes = Math.max(0,durationMinutes + travelMinutes);
+  state.remaining = Math.max(0,(Number(state.totalMinutes) || 0) - state.usedMinutes);
+  state.prevLocId = lastLocId;
+}
+
+// MUTATE: commit a successful fit into day state (travel row + fill row + budgets).
 function commitPlacement(state,fill,fit){
   if(!fit)return;
-  const {registry,mode} = state;
-  if(fit.edge && fit.edge.seconds > 0 && fit.prevLocId && fit.locId && fit.prevLocId !== fit.locId){
-    const from = registry.find(l=>l.id === fit.prevLocId);
-    const to = registry.find(l=>l.id === fit.locId);
-    state.rows.push({
-      kind:'travel',
-      from:fit.prevLocId,
-      to:fit.locId,
-      fromName:from ? from.name : '',
-      toName:to ? to.name : '',
-      seconds:fit.edge.seconds,
-      metres:fit.edge.metres || 0,
-      start:Math.max(fit.placeStart - fit.edge.seconds * 1000, state.dayBase),
-      end:fit.placeStart,
-      provider:fit.edge.provider || mode
-    });
-  }
   state.rows.push({
     kind:'fill', h:fill.h, i:fill.i, start:fit.placeStart, end:fit.placeEnd, hard:false,
     locationId:fit.locId,
@@ -2311,10 +2349,8 @@ function commitPlacement(state,fill,fit){
       ? fit.optimizerDelayMinutes : null
   });
   state.fills.push({ fill, fit, slotStart:fit.slotStart });
-  state.remaining = Math.max(0,state.remaining - fit.travelMin - fit.durMin);
-  state.usedMinutes += fit.travelMin + fit.durMin;
-  if(fit.locId)state.prevLocId = fit.locId;
   state.placed.add(fit.placeKey != null ? fit.placeKey : fill.i);
+  reconcileCommittedTravel(state);
 }
 
 function finalizePlacementRows(state){
@@ -3197,6 +3233,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   if(typeof repairWeekPlacedHours === 'function'){
     totalAssigned += repairWeekPlacedHours(candidates,dayStates,settings);
   }
+  compactFastTravelRoutes(dayStates,candidates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
   return totalAssigned;
 }
@@ -3491,6 +3528,89 @@ function applyPlacementState(target,source){
   target.prevLocId = source.prevLocId;
   if(target.day && source.day)target.day.agendaItems = source.day.agendaItems;
   else syncDayAgendaItemsFromFills(target);
+}
+
+// PURE: compare the work retained by two day states. Route compaction is only
+// allowed to change the order/times of already-accepted fills, never which
+// candidate (or how many of its minutes) survived placement.
+function dayFillMinuteSignature(state){
+  const totals = new Map();
+  for(const entry of (state && state.fills) || []){
+    const fill = entry && entry.fill;
+    const fit = entry && entry.fit;
+    if(!fill || !fit)continue;
+    const key = fill.i;
+    totals.set(key,(totals.get(key) || 0) + Math.max(0,Number(fit.durMin) || 0));
+  }
+  return [...totals.entries()]
+    .sort((a,b)=>String(a[0]).localeCompare(String(b[0])))
+    .map(([key,minutes])=>`${key}:${minutes}`)
+    .join('|');
+}
+
+function dayTravelSecondsFromState(state){
+  return ((state && state.rows) || []).reduce(
+    (sum,row)=>sum + (row && row.kind === 'travel' ? Number(row.seconds) || 0 : 0),0);
+}
+
+// PURE: nearest-neighbour replay order for fills already selected on one day.
+// The actual replay still goes through tryPlaceOnDay, so allowed windows,
+// scheduled rows, capacity, and persistent order constraints remain hard gates.
+function routeCompactFillOrder(state){
+  const left = (state && state.fills ? state.fills : []).map(entry=>entry.fill);
+  const out = [];
+  let anchor = state && state.seedLocId || null;
+  while(left.length){
+    let bestIdx = 0;
+    let bestSeconds = Infinity;
+    for(let i = 0;i < left.length;i += 1){
+      const fill = left[i];
+      const locId = fill.locationId
+        || pickHabitLocationId(fill.h,anchor,state.registry,state.mode);
+      const seconds = travelEdgeBetweenIds(
+        anchor,locId,state.registry,state.mode,{allowNetwork:false}
+      ).seconds || 0;
+      if(seconds < bestSeconds){
+        bestSeconds = seconds;
+        bestIdx = i;
+      }
+    }
+    const picked = left.splice(bestIdx,1)[0];
+    out.push(picked);
+    const locId = picked.locationId
+      || pickHabitLocationId(picked.h,anchor,state.registry,state.mode);
+    if(locId)anchor = locId;
+  }
+  return reorderAgendaItemsByOrderConstraints(out,state.dayBase);
+}
+
+// MUTATE: make a bounded, deterministic route improvement after Fast has
+// decided what belongs on each day. This closes the common greedy artifact
+// "far errand → flexible home task → nearby far errand". A replay is adopted
+// only when it preserves the exact per-candidate minutes and strictly reduces
+// travel, so placement coverage cannot regress.
+function compactFastTravelRoutes(dayStates,candidates,settings){
+  let improved = 0;
+  for(const state of dayStates || []){
+    if(!state || !Array.isArray(state.fills) || state.fills.length < 2)continue;
+    const beforeSignature = dayFillMinuteSignature(state);
+    const beforeTravel = dayTravelSecondsFromState(state);
+    if(beforeTravel <= 0)continue;
+    const order = routeCompactFillOrder(state);
+    const isolated = {
+      ...state,
+      day:{...state.day,agendaItems:(state.day.agendaItems || []).slice()}
+    };
+    const rebuilt = rebuildDayFromFills(
+      isolated,order,candidates,{settings,allowNetwork:false}
+    );
+    if(!rebuilt)continue;
+    if(dayFillMinuteSignature(rebuilt) !== beforeSignature)continue;
+    if(dayTravelSecondsFromState(rebuilt) >= beforeTravel)continue;
+    applyPlacementState(state,rebuilt);
+    improved += 1;
+  }
+  return improved;
 }
 
 function addScheduleLinkOmission(day,subjectHid,reason){

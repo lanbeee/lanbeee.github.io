@@ -7,6 +7,7 @@
 //
 const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
+const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast';
 
 let pass = 0, fail = 0;
 function assert(cond, msg){
@@ -561,7 +562,7 @@ function seedScript(){
   }
 
   await runPlacementSuite('C', false);
-  await runPlacementSuite('D', true);
+  if(!FAST_ONLY)await runPlacementSuite('D', true);
 
   // ════════════════════════════════════════════════════════════════════════
   // E. Heuristic packer mirrors order (timeout fallback path unit)

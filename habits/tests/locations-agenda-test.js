@@ -219,6 +219,56 @@ function seedScript(extraHabits, extraSettings){
   assert(blocks.blockLoc.find(b => b.label === 'work')?.loc === 'office', 'work block carries office locationId');
   assert(blocks.seedHasHome, 'day seed includes home (from sleep block)');
 
+  // ── E2. A later chronological insertion replaces stale inbound travel ──
+  console.log('\n[E2] insertion reconciles the final travel chain');
+  const insertionTravel = await page.evaluate(() => {
+    const settings = loadSortSettings();
+    settings.locations = [
+      {id:'home',name:'Home',lat:40.7,lng:-74},
+      {id:'away',name:'Away',lat:40.71,lng:-74}
+    ];
+    settings.defaultTravelMode = 'walking';
+    settings.travel = {
+      [edgeKey('home','away')]:{
+        a:'away',b:'home',seconds:300,metres:500,provider:'manual',fetchedAt:Date.now()
+      }
+    };
+    sortSettings = settings;
+    const dayBase = dayStart(Date.now()) + 86400000;
+    const state = createDayPlacementState({
+      scheduled:[],totalMinutes:300,slots:[{start:dayBase,end:dayBase + 86400000}],
+      dayBase,weekday:new Date(dayBase).getDay(),isToday:false
+    },settings,{dayBase,startClock:dayBase});
+    state.seedLocId = 'home';
+    state.prevLocId = 'home';
+    const put = (i,locId,startMin,prevLocId) => {
+      const edge = travelEdgeBetweenIds(prevLocId,locId,state.registry,state.mode,{allowNetwork:false});
+      commitPlacement(state,{h:{name:`item ${i}`,durationMinutes:10},i},{
+        placeStart:dayBase + startMin * 60000,
+        placeEnd:dayBase + (startMin + 10) * 60000,
+        locId,edge,travelMin:Math.ceil((edge.seconds || 0) / 60),durMin:10,
+        slotStart:dayBase,prevLocId,placeKey:i
+      });
+    };
+    put(0,'away',600,'home');
+    put(1,'home',720,'away');
+    // Insert Home between the prior two commits. The 12:00 Home fill's old
+    // Away→Home charge is now obsolete; only two route legs should remain.
+    put(2,'home',660,'away');
+    const later = state.fills.find(entry=>entry.fill.i === 1);
+    return {
+      usedMinutes:state.usedMinutes,
+      remaining:state.remaining,
+      travelRows:state.rows.filter(row=>row.kind === 'travel').length,
+      laterTravelMinutes:later && later.fit.travelMin
+    };
+  });
+  assert(insertionTravel.usedMinutes === 40,
+    `chronological route uses 30m work + 10m travel (got ${insertionTravel.usedMinutes}m)`);
+  assert(insertionTravel.remaining === 260,'reconciled travel restores the five-minute budget');
+  assert(insertionTravel.travelRows === 2,'final route contains only Home→Away→Home');
+  assert(insertionTravel.laterTravelMinutes === 0,'later Home fill drops its obsolete inbound commute');
+
   // ── F. Week plan on home screen (showWeekOnHome setting) ──
   console.log('\n[F] showWeekOnHome integrates day sections into #list');
   // Enable showWeekOnHome and switch to 'cards' extra mode so all blocked

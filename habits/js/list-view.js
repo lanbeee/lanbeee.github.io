@@ -1814,6 +1814,9 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
     : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase());
   push(dayLabel);
   if(sub)push(sub);
+  if(report.plannerIsPreview){
+    push('FAST PREVIEW — exact optimizer is still running; placements and totals may change');
+  }
   push('');
   push('ELIGIBLE WORK');
   push(capacityMinutesLabel(report.outstandingLoad));
@@ -1821,7 +1824,7 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   push('WORK PLACED');
   push(capacityMinutesLabel(report.placedLoadMinutes));
   push(`${pct(report.eligibleCoverage)} of eligible work`);
-  push('BUDGET USED');
+  push(report.plannerIsPreview ? 'BUDGET USED / PREVIEW' : 'BUDGET USED');
   push(pct(report.budgetUtilization));
   push(`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`);
   push('MISSED GAPS');
@@ -2146,6 +2149,9 @@ function renderDayCapacityScorecard(report){
     }).join('')
     : '<p class="capacity-empty">No planner decisions were present for this day.</p>';
   content.innerHTML = `
+    ${report.plannerIsPreview
+      ? '<p class="capacity-note capacity-preview-note"><b>Fast preview:</b> the exact optimizer is still running, so placements and totals may change.</p>'
+      : ''}
     <div class="capacity-export-hint">
       <span>copy / download = entire week placements</span>
       <button type="button" class="capacity-day-audit-copy" data-capacity-copy-day>copy this day audit</button>
@@ -2153,7 +2159,7 @@ function renderDayCapacityScorecard(report){
     <div class="capacity-metrics">
       ${metric('eligible work',capacityMinutesLabel(report.outstandingLoad),`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`,'load')}
       ${metric('work placed',capacityMinutesLabel(report.placedLoadMinutes),`${coverage} of eligible work`,'net')}
-      ${metric('budget used',budgetUse,`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`)}
+      ${metric(report.plannerIsPreview ? 'budget used · preview' : 'budget used',budgetUse,`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`)}
       ${metric('missed gaps',String(report.missedOpportunityCount),`${capacityMinutesLabel(report.largestGapMinutes)} largest open gap`,report.missedOpportunityCount ? 'warning' : '')}
     </div>
     <div class="capacity-balance ${report.missedOpportunityCount ? 'deficit' : 'surplus'}">
