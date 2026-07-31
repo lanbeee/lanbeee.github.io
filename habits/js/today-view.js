@@ -878,6 +878,215 @@ function diagnosticsFromRenderedDay(data,settings,day){
   return buildPlacementDiagnostics(candidates,state);
 }
 
+// PURE: compact same-day clock labels for the decision trace. These are the
+// resolved windows the placer actually saw, including both pieces of a daily
+// overnight window (for example 12:00 AM–1:00 PM and 9:45 PM–12:00 AM).
+function plannerTraceWindowLabels(windows){
+  return (windows || []).filter(win=>win && win.end > win.start).map(win=>
+    `${agendaTimeLabel(win.start)}–${agendaTimeLabel(win.end)}`
+  );
+}
+
+// PURE: earliest fit using clock geometry only. This intentionally does not
+// pretend to reproduce location, travel, budget, ordering, or the whole-day
+// optimizer objective. Comparing it with the selected start makes surprising
+// delays visible while keeping the trace cheap and honest.
+function plannerTraceEarliestClockFit(h,i,dayBase,dayEnd,rangeStart,rawBlocks,agendaRows,neededMinutes){
+  if(!h || neededMinutes <= 0)return null;
+  const windows = (typeof hasTimeWindow === 'function' && hasTimeWindow(h))
+    ? (fillDayWindows(h,dayBase,null) || [])
+    : [{start:dayBase,end:dayEnd}];
+  if(!windows.length)return null;
+  const occupied = [];
+  for(const block of rawBlocks || []){
+    occupied.push({start:block.start,end:block.end});
+  }
+  for(const row of agendaRows || []){
+    if(row.i === i)continue;
+    occupied.push({start:row.start,end:row.end});
+  }
+  const merged = mergeIntervals(occupied
+    .map(block=>({
+      start:Math.max(dayBase,block.start),
+      end:Math.min(dayEnd,block.end)
+    }))
+    .filter(block=>block.end > block.start));
+  const cost = neededMinutes * 60000;
+  for(const window of windows){
+    const start = Math.max(rangeStart,dayBase,window.start);
+    const end = Math.min(dayEnd,window.end);
+    if(end - start < cost)continue;
+    let cursor = start;
+    for(const block of merged){
+      if(block.end <= cursor)continue;
+      if(block.start >= end)break;
+      if(block.start - cursor >= cost)return cursor;
+      cursor = Math.max(cursor,block.end);
+      if(cursor + cost > end)break;
+    }
+    if(cursor + cost <= end)return cursor;
+  }
+  return null;
+}
+
+// PURE: a readable planner decision trace assembled only when the hidden audit
+// is requested. It exposes inputs, resolved constraints, ranking signals, and
+// final outcomes; it is not a continuous log and does not rerun the optimizer.
+function buildPlannerDecisionTrace(data,settings,context){
+  const {
+    agenda,agendaRows,dayBase,dayEnd,rangeStart,rawBlocks,eligible,
+    unplacedItems,plannerEngine
+  } = context;
+  const registry = typeof normalizeLocationRegistry === 'function'
+    ? normalizeLocationRegistry(settings && settings.locations) : [];
+  const unplacedByIndex = new Map((unplacedItems || []).map(item=>[item.i,item]));
+  const placedByIndex = new Map();
+  for(const row of agendaRows || []){
+    if(row.kind !== 'fill' || row.i == null)continue;
+    if(!placedByIndex.has(row.i))placedByIndex.set(row.i,[]);
+    placedByIndex.get(row.i).push(row);
+  }
+  const candidateMeta = new Map((agenda && agenda.agendaItems || [])
+    .filter(item=>item && item.i != null)
+    .map(item=>[item.i,item]));
+  const constraints = typeof plannerOrderConstraintsForDay === 'function'
+    ? plannerOrderConstraintsForDay(dayBase) : [];
+  const nameByHid = new Map((data || [])
+    .filter(h=>h && h.hid)
+    .map(h=>[h.hid,h.name || 'item']));
+  const trace = [];
+
+  for(const row of (agendaRows || []).filter(item=>item.kind === 'scheduled')){
+    trace.push({
+      i:row.i,
+      name:row.name,
+      status:'fixed',
+      selected:`${agendaTimeLabel(row.start)}–${agendaTimeLabel(row.end)}`,
+      earliestClockFit:row.start,
+      decision:'fixed event time; fills were packed around this hard reservation',
+      inputs:[`duration ${Math.max(0,Math.round((row.end - row.start) / 60000))}m`],
+      engine:'fixed schedule',
+      score:null,
+      scoreTerms:null,
+      optimizerWeight:null
+    });
+  }
+
+  for(const i of eligible || []){
+    const h = data[i];
+    if(!h)continue;
+    const rows = (placedByIndex.get(i) || []).slice().sort((a,b)=>a.start - b.start);
+    const meta = candidateMeta.get(i) || {};
+    const unplaced = unplacedByIndex.get(i);
+    const duration = todayCandidateLoadMinutes(h,dayBase);
+    const minChunk = h.breakable
+      ? (typeof clampMinChunk === 'function' ? clampMinChunk(h.minChunkMinutes) : Math.max(1,h.minChunkMinutes || 30))
+      : duration;
+    const hardWindows = (typeof hasTimeWindow === 'function' && hasTimeWindow(h))
+      ? (fillDayWindows(h,dayBase,null) || []) : [];
+    const preferredWindow = (typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(h))
+      ? fillPreferredWindow(h,dayBase,null) : null;
+    const hardLabels = plannerTraceWindowLabels(hardWindows);
+    const preferredLabels = plannerTraceWindowLabels(preferredWindow ? [preferredWindow] : []);
+    const locationIds = typeof normalizeLocationIds === 'function'
+      ? normalizeLocationIds(h.locationIds,registry) : [];
+    const locationNames = locationIds.map(id=>{
+      const loc = registry.find(item=>item.id === id);
+      return loc && loc.name || id;
+    });
+    const priority = effectivePriority(h);
+    const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
+    const attention = typeof attentionScore === 'function'
+      ? attentionScore(h,i,settings) : null;
+    const pinned = typeof isWeekPinnedToday === 'function'
+      ? isWeekPinnedToday(h,settings) : Boolean(h.pinned);
+    const orderInputs = [];
+    if(h.hid){
+      for(const edge of constraints){
+        if(edge.beforeHid === h.hid){
+          orderInputs.push(`before ${nameByHid.get(edge.afterHid) || 'linked item'}${edge.adjacency === 'direct' ? ' directly' : ''}`);
+        }
+        if(edge.afterHid === h.hid){
+          orderInputs.push(`after ${nameByHid.get(edge.beforeHid) || 'linked item'}${edge.adjacency === 'direct' ? ' directly' : ''}`);
+        }
+      }
+    }
+    const inputs = [
+      `duration ${duration}m${h.breakable ? `; breakable, ${minChunk}m minimum chunk` : ''}`,
+      `${PRIORITY_LABELS[priority] || `P${priority}`} priority`,
+      `urgency ${Math.round(urgency)}`,
+      Number.isFinite(attention) ? `attention ${attention.toFixed(2)}` : '',
+      pinned ? 'pinned to today' : 'not pinned',
+      hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
+      preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
+      locationNames.length ? `locations ${locationNames.join(', ')}` : 'no location constraint',
+      orderInputs.length ? `order ${orderInputs.join('; ')}` : ''
+    ].filter(Boolean);
+    const earliestClockFit = plannerTraceEarliestClockFit(
+      h,i,dayBase,dayEnd,rangeStart,rawBlocks,agendaRows,minChunk
+    );
+    const first = rows[0] || null;
+    const selected = rows.length
+      ? rows.map(row=>`${agendaTimeLabel(row.start)}–${agendaTimeLabel(row.end)}`).join('; ')
+      : 'not placed';
+    let decision = '';
+    if(!rows.length){
+      decision = unplaced && unplaced.reason || 'not committed by the placement pass';
+    }else{
+      const adjacent = [];
+      for(const block of rawBlocks || []){
+        if(Math.abs(block.end - first.start) <= 60000)adjacent.push(block.label || 'blocked time');
+      }
+      for(const row of agendaRows || []){
+        if(row.i === i)continue;
+        if(Math.abs(row.end - first.start) <= 60000)adjacent.push(row.name);
+      }
+      if(rows.length > 1){
+        decision = `split into ${rows.length} valid chunks`;
+      }else if(earliestClockFit != null && Math.abs(first.start - earliestClockFit) <= 60000){
+        decision = `selected the earliest open clock-fit boundary${adjacent.length ? ` after ${[...new Set(adjacent)].join(', ')}` : ''}`;
+      }else if(earliestClockFit != null && first.start > earliestClockFit + 60000){
+        decision = `selected ${agendaTimeLabel(first.start)}; an earlier clock-only fit begins ${agendaTimeLabel(earliestClockFit)}, so full location, travel, order, budget, and whole-day competition determined the later choice`;
+      }else{
+        decision = `selected a compatible non-overlapping slot${adjacent.length ? ` after ${[...new Set(adjacent)].join(', ')}` : ''}`;
+      }
+      if(unplaced && unplaced.remainingMinutes > 0){
+        decision += `; ${unplaced.remainingMinutes}m remains because ${unplaced.reason}`;
+      }
+    }
+    const scoreRow = rows.find(row=>Number.isFinite(row.plannerScore)
+      || Number.isFinite(row.optimizerWeight)) || first;
+    trace.push({
+      i,
+      name:h.name,
+      status:rows.length ? (unplaced ? 'partial' : 'placed') : 'unplaced',
+      selected,
+      earliestClockFit,
+      decision,
+      inputs,
+      engine:rows.length
+        ? (Number.isFinite(scoreRow && scoreRow.optimizerWeight)
+          ? 'exact optimizer'
+          : (h.breakable ? 'continuous gap fill' : plannerEngine))
+        : plannerEngine,
+      score:Number.isFinite(scoreRow && scoreRow.plannerScore) ? scoreRow.plannerScore : null,
+      scoreTerms:scoreRow && scoreRow.plannerScoreTerms || null,
+      optimizerWeight:Number.isFinite(scoreRow && scoreRow.optimizerWeight)
+        ? scoreRow.optimizerWeight : null,
+      optimizerCandidateWeight:Number.isFinite(scoreRow && scoreRow.optimizerCandidateWeight)
+        ? scoreRow.optimizerCandidateWeight : null,
+      scarcity:Number.isFinite(meta.scarcity) ? meta.scarcity : null
+    });
+  }
+  return trace.sort((a,b)=>{
+    const aTime = a.status === 'unplaced' ? Infinity
+      : ((agendaRows || []).find(row=>row.i === a.i)?.start ?? a.earliestClockFit ?? Infinity);
+    const bTime = b.status === 'unplaced' ? Infinity
+      : ((agendaRows || []).find(row=>row.i === b.i)?.start ?? b.earliestClockFit ?? Infinity);
+    return aTime - bTime || String(a.name).localeCompare(String(b.name));
+  });
+}
+
 // PURE: scorecard model for the hidden day-header diagnostic overlay. Classic
 // home uses the single-day agenda; week home uses the same cross-day assignment
 // that produced the visible day sections.
@@ -1001,7 +1210,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const homeTimeline = Array.isArray(agenda.homeDisplayedTimeline)
     ? agenda.homeDisplayedTimeline
     : timeline;
-  const agendaRows = homeTimeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel').map(row=>({
+  const mapAgendaRow = row=>({
     kind:row.kind,
     i:row.i != null ? row.i : null,
     name:row.kind === 'travel'
@@ -1009,8 +1218,20 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       : (row.h && row.h.name || 'scheduled item'),
     start:row.start,
     end:row.end,
-    minutes:Math.max(0,Math.round((row.end - row.start) / 60000))
-  }));
+    minutes:Math.max(0,Math.round((row.end - row.start) / 60000)),
+    locationId:row.locationId || null,
+    plannerScore:Number.isFinite(row.plannerScore) ? row.plannerScore : null,
+    plannerScoreTerms:row.plannerScoreTerms || null,
+    optimizerWeight:Number.isFinite(row.optimizerWeight) ? row.optimizerWeight : null,
+    optimizerCandidateWeight:Number.isFinite(row.optimizerCandidateWeight)
+      ? row.optimizerCandidateWeight : null
+  });
+  const agendaRows = homeTimeline
+    .filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel')
+    .map(mapAgendaRow);
+  const traceAgendaRows = timeline
+    .filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel')
+    .map(mapAgendaRow);
   const schedulerPlacementRowCount = timeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').length;
   const displayedPlacementRowCount = homeTimeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').length;
 
@@ -1020,6 +1241,13 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     blockedByLabel.set(label,(blockedByLabel.get(label) || 0) + Math.round((block.end - block.start) / 60000));
   }
   const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
+  const plannerEngine = week
+    ? (week.optimized ? 'exact optimizer' : 'fast scarcity planner')
+    : 'fast day planner';
+  const plannerTrace = buildPlannerDecisionTrace(data,settings,{
+    agenda,agendaRows:traceAgendaRows,dayBase,dayEnd,rangeStart,rawBlocks,eligible,
+    unplacedItems,plannerEngine
+  });
   return {
     generatedAt:now,
     usesRenderedSnapshot:Boolean(opts.weekMode && opts.weekSnapshot),
@@ -1050,6 +1278,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     budgetCappedGapCount,
     placementGaps,
     agendaRows,
+    plannerEngine,
+    plannerTraceGeneratedOnDemand:true,
+    plannerTrace,
     hiddenAgendaRowCount:Math.max(0,schedulerPlacementRowCount - displayedPlacementRowCount),
     unplacedItems,
     blockedBreakdown:[...blockedByLabel.entries()].map(([label,minutes])=>({label,minutes}))
@@ -1357,11 +1588,12 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
   const earliest = fits.reduce((m,f)=>Math.min(m,f.placeStart),fits[0].placeStart);
   let best = null;
   let bestScore = Infinity;
+  let bestTerms = null;
   for(const fit of fits){
     const prefPen = typeof weekPreferencePenalty === 'function'
       ? weekPreferencePenalty(fill.h,fit,state,state.registry)
       : (fit.preferredHit ? -40 : 0);
-    const score = scoreAgendaPlacement({
+    const terms = {
       travelSeconds:fit.edge && fit.edge.seconds || 0,
       clusterBonus:opts.clusterBonus != null ? opts.clusterBonus : 0,
       coLocHint:opts.coLocHint != null ? opts.coLocHint : 0,
@@ -1371,10 +1603,15 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       preferencePenalty:prefPen,
       urgency,
       orderPenalty:orderConstraintPenalty(fill,fit,state)
-    },weights);
+    };
+    const score = scoreAgendaPlacement(terms,weights);
     fit.score = score;
-    if(score < bestScore){ bestScore = score; best = fit; }
+    if(score < bestScore){ bestScore = score; best = fit; bestTerms = terms; }
   }
+  // These values were already calculated to choose the fit. Keeping them only
+  // on the winning option makes the on-demand day audit explain the decision
+  // without enabling a continuous planner log or adding another scoring pass.
+  if(best)best.scoreTerms = bestTerms;
   return best;
 }
 
@@ -2024,7 +2261,12 @@ function commitPlacement(state,fill,fit){
     kind:'fill', h:fill.h, i:fill.i, start:fit.placeStart, end:fit.placeEnd, hard:false,
     locationId:fit.locId,
     chunkMinutes:fit.durMin,
-    chunkIndex:fill.chunkIndex != null ? fill.chunkIndex : null
+    chunkIndex:fill.chunkIndex != null ? fill.chunkIndex : null,
+    plannerScore:Number.isFinite(fit.score) ? fit.score : null,
+    plannerScoreTerms:fit.scoreTerms || null,
+    optimizerWeight:Number.isFinite(fit.optimizerWeight) ? fit.optimizerWeight : null,
+    optimizerCandidateWeight:Number.isFinite(fit.optimizerCandidateWeight)
+      ? fit.optimizerCandidateWeight : null
   });
   state.fills.push({ fill, fit, slotStart:fit.slotStart });
   state.remaining = Math.max(0,state.remaining - fit.travelMin - fit.durMin);

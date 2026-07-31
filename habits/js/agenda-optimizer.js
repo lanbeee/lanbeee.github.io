@@ -325,15 +325,19 @@ function orderAwareOptimizerSort(dayBase){
   };
 }
 
-function optimizerWindowForCandidate(candidate,state){
-  if(!candidate || !candidate.h || !state)return null;
+function optimizerWindowsForCandidate(candidate,state){
+  if(!candidate || !candidate.h || !state)return [];
   if(typeof hasTimeWindow === 'function' && hasTimeWindow(candidate.h)){
-    return fillTimeWindow(candidate.h,state.dayBase,state.seedLocId);
+    const windows = typeof fillDayWindows === 'function'
+      ? fillDayWindows(candidate.h,state.dayBase,state.seedLocId)
+      : null;
+    return windows || [];
   }
   if(typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(candidate.h)){
-    return fillPreferredWindow(candidate.h,state.dayBase,state.seedLocId);
+    const window = fillPreferredWindow(candidate.h,state.dayBase,state.seedLocId);
+    return window ? [window] : [];
   }
-  return null;
+  return [];
 }
 
 // PURE: all useful feasible fits for a fill on this day. In addition to each
@@ -360,9 +364,9 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = []){
     const durationMs = fillDurationMinutes(placeFill) * 60000;
     const windowEdges = [];
     for(const candidate of dayCandidates){
-      const win = optimizerWindowForCandidate(candidate,state);
-      if(!win)continue;
-      windowEdges.push(win.start - durationMs,win.start,win.end - durationMs,win.end);
+      for(const win of optimizerWindowsForCandidate(candidate,state)){
+        windowEdges.push(win.start - durationMs,win.start,win.end - durationMs,win.end);
+      }
     }
     // Temporary order links need staggered starts — otherwise every fill only
     // gets the same ASAP option and pairwise order rows forbid co-selection.
@@ -427,8 +431,17 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     const fits = listPlaceFitsOnDay(state,fill,dayCandidates);
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
+    const earliestStart = fits.reduce(
+      (min,fit)=>Math.min(min,fit.placeStart),Infinity);
     for(const fit of fits){
-      const option = {c,fill,fit,weight:baseWeight,
+      // Same candidate, same duration, same hard feasibility: prefer the
+      // earliest option by a small deterministic tiebreak. Without this GLPK
+      // may choose an arbitrary later slot after a narrow item claims the
+      // candidate's original start (for example Call Amma after Fajr).
+      const delayMin = Number.isFinite(earliestStart)
+        ? Math.max(0,(fit.placeStart - earliestStart) / 60000)
+        : 0;
+      const option = {c,fill,fit,weight:baseWeight - Math.min(1440,delayMin) * 0.001,
         movable:typeof isMovableWeekCandidate === 'function' && isMovableWeekCandidate(c)};
       applyDoingNowWeight(option,doing);
       options.push(option);
@@ -664,7 +677,14 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
   const vars = (result.result && result.result.vars) || {};
   const chosen = [];
   opts.forEach(o=>{
-    if((vars[o.varName] || 0) > 0.5)chosen.push({fill:o.fill,fit:o.fit});
+    if((vars[o.varName] || 0) > 0.5){
+      // Preserve objective values already computed by this solve. The day
+      // header audit can then expose them without rerunning GLPK or recording
+      // its branch-by-branch search.
+      o.fit.optimizerWeight = o.weight;
+      o.fit.optimizerCandidateWeight = optimizerWeight(o.c);
+      chosen.push({fill:o.fill,fit:o.fit});
+    }
   });
   chosen.sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   return chosen;

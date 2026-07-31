@@ -41,6 +41,21 @@ function seedScript(){
   const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
+  // Doing-now is intentionally today-only. Freeze this suite in a roomy part
+  // of the day so its 30–45 minute placement/UI cases do not disappear when
+  // the real clock happens to be close to midnight.
+  const testClock = new Date();
+  testClock.setHours(9,0,0,0);
+  await page.addInitScript(clock=>{
+    const RealDate = window.Date;
+    function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(clock); }
+    FrozenDate.now = ()=>clock;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    window.Date = FrozenDate;
+  },testClock.getTime());
 
   // ════════════════════════════════════════════════════════════════════════
   // A. Data layer

@@ -107,7 +107,13 @@ function task(name,dueDate,priority = 1){
         total:today.totalCapacity,blocked:today.blockedMinutes,net:today.netAvailable,
         unplaced:today.unplacedItems.length,rows:today.agendaRows.length,
         missed:today.missedOpportunityCount,budgetCapped:today.budgetCappedGapCount,
-        gapStatuses:today.placementGaps.map(gap=>gap.status)
+        gapStatuses:today.placementGaps.map(gap=>gap.status),
+        traceCount:today.plannerTrace.length,
+        traceOnDemand:today.plannerTraceGeneratedOnDemand,
+        traceHasInputs:today.plannerTrace.some(item=>
+          item.inputs.some(input=>input.startsWith('allowed '))
+          && item.inputs.some(input=>input.includes('priority'))
+        )
       },
       tomorrow:{total:tomorrow.totalCapacity,blocked:tomorrow.blockedMinutes,net:tomorrow.netAvailable,unplaced:tomorrow.unplacedItems.length},
       syntheticMissed:emptyAudit.gapAudit.gaps.some(gap=>gap.feasibleCandidateIndices.includes(0))
@@ -122,6 +128,9 @@ function task(name,dueDate,priority = 1){
   assert(model.today.unplaced > 0,'Today should expose at least one unplaced eligible item');
   assert(model.tomorrow.unplaced > 0,'Tomorrow should expose at least one unplaced eligible item');
   assert(model.today.rows > 0,'Scorecard should expose the actual agenda output rows');
+  assert(model.today.traceCount > 0,'Scorecard should expose planner decisions');
+  assert(model.today.traceOnDemand === true,'Planner trace should identify itself as on-demand');
+  assert(model.today.traceHasInputs,'Planner trace should expose resolved windows and ranking inputs');
   assert(model.today.missed === 0,`Budget-capped gaps must not be reported as scheduler misses: ${JSON.stringify(model.today)}`);
   assert(model.today.budgetCapped > 0 && model.today.gapStatuses.includes('budget-capped'),
     `Expected an obvious clock gap explained by the agenda budget: ${JSON.stringify(model.today)}`);
@@ -176,6 +185,10 @@ function task(name,dueDate,priority = 1){
   assert(await page.locator('#day-capacity-content').getByText('9h',{exact:true}).count() === 1,'Today overlay missing 9h capacity');
   assert(await page.locator('[data-capacity-gap-status="budget-capped"]').count() > 0,'Overlay did not explain the obvious unused gap');
   assert(await page.locator('.capacity-agenda-row').count() > 0,'Overlay did not render the agenda builder output');
+  assert(await page.locator('[data-capacity-trace-item]').count() > 0,'Overlay did not render planner decision trace');
+  const firstTrace = page.locator('[data-capacity-trace-item]').first();
+  await firstTrace.locator('summary').click();
+  assert(await firstTrace.locator('.capacity-trace-body').isVisible(),'Planner decision details did not expand');
   assert(await page.locator('#day-capacity-copy').isVisible(),'Copy week placements button missing');
   assert(await page.locator('#day-capacity-export').isVisible(),'Export week placements button missing');
   assert(await page.locator('[data-capacity-copy-day]').isVisible(),'Copy day audit link missing');
@@ -188,6 +201,9 @@ function task(name,dueDate,priority = 1){
       hasToday: /today|wednesday|thursday|friday|saturday|sunday|monday|tuesday/i.test(weekText),
       hasDayEligible:dayText.includes('ELIGIBLE WORK'),
       hasDayAgenda:dayText.includes('HOME AGENDA OUTPUT'),
+      hasDecisionTrace:dayText.includes('PLANNER DECISION TRACE')
+        && dayText.includes('generated on demand')
+        && dayText.includes('input allowed '),
       weekLines:weekText.split('\n').length,
       dayLines:dayText.split('\n').length
     };
@@ -196,6 +212,8 @@ function task(name,dueDate,priority = 1){
     `Week placements dump missing sections: ${JSON.stringify(copied)}`);
   assert(copied.hasDayEligible && copied.hasDayAgenda,
     `Day audit text dump missing sections: ${JSON.stringify(copied)}`);
+  assert(copied.hasDecisionTrace,
+    `Day audit text dump missing planner decision trace: ${JSON.stringify(copied)}`);
   assert(copied.weekLines > 5,`Week placements dump too short (${copied.weekLines} lines)`);
   assert(copied.dayLines > 20,`Day audit text dump too short (${copied.dayLines} lines)`);
   await page.screenshot({path:'/private/tmp/habits-day-capacity-mobile.png',fullPage:true});

@@ -1771,6 +1771,30 @@ function capacityTimeLabel(value){
   return new Date(value).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
 }
 
+function plannerTraceScoreSummary(item){
+  if(!item)return '';
+  const parts = [];
+  if(Number.isFinite(item.optimizerWeight)){
+    parts.push(`optimizer option ${item.optimizerWeight.toFixed(3)} (higher wins)`);
+  }
+  if(Number.isFinite(item.optimizerCandidateWeight)){
+    parts.push(`candidate ${item.optimizerCandidateWeight.toFixed(2)}`);
+  }
+  if(Number.isFinite(item.score)){
+    parts.push(`slot cost ${item.score.toFixed(2)} (lower wins)`);
+  }
+  const t = item.scoreTerms;
+  if(t){
+    const travelMin = Math.round((Number(t.travelSeconds) || 0) / 60);
+    const delayMin = Math.round(Number(t.asapDelayMin) || 0);
+    const scarceMin = Math.round((Number(t.scarceOverlapMs) || 0) / 60000);
+    const pref = Math.round(Number(t.preferencePenalty) || 0);
+    const order = Math.round(Number(t.orderPenalty) || 0);
+    parts.push(`signals: travel ${travelMin}m, asap delay ${delayMin}m, scarce overlap ${scarceMin}m, preference ${pref}, order ${order}`);
+  }
+  return parts.join(' / ');
+}
+
 // Last opened audit — kept so copy/export work without rebuilding the sheet.
 let _dayCapacityReport = null;
 let _dayCapacityTitle = '';
@@ -1825,6 +1849,25 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   }
   if(report.hiddenAgendaRowCount){
     push(`${report.hiddenAgendaRowCount} scheduler placement${report.hiddenAgendaRowCount === 1 ? '' : 's'} not shown because of the current pin or filter view.`);
+  }
+  push('');
+  push('PLANNER DECISION TRACE');
+  push(`${(report.plannerTrace || []).length} decisions`);
+  push(`engine ${report.plannerEngine || 'planner'}`);
+  push('generated on demand when this audit opened; no continuous solver log');
+  push('earliest clock fit ignores location, travel, ordering, budget, and cross-item objective');
+  for(const item of report.plannerTrace || []){
+    push('');
+    push(`${String(item.status).toUpperCase()} / ${item.name}`);
+    push(`selected ${item.selected}`);
+    if(item.earliestClockFit != null){
+      push(`earliest clock-only fit ${capacityTimeLabel(item.earliestClockFit)}`);
+    }
+    push(`engine ${item.engine}`);
+    push(`decision ${item.decision}`);
+    for(const input of item.inputs || [])push(`input ${input}`);
+    const score = plannerTraceScoreSummary(item);
+    if(score)push(`score ${score}`);
   }
   push('');
   push('REMAINING GAP AUDIT');
@@ -2078,6 +2121,24 @@ function renderDayCapacityScorecard(report){
         <small>${escapeHtml(item.reason)}${item.window ? ` / ${escapeHtml(item.window)}` : ''}</small>
       </div>`).join('')
     : '<p class="capacity-empty">Every eligible item was fully placed.</p>';
+  const traceRows = (report.plannerTrace || []).length
+    ? report.plannerTrace.map(item=>{
+      const score = plannerTraceScoreSummary(item);
+      return `
+        <details class="capacity-trace-item ${escapeHtml(item.status)}" data-capacity-trace-item>
+          <summary>
+            <span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.status)} / ${escapeHtml(item.engine)}</small></span>
+            <time>${escapeHtml(item.selected)}</time>
+          </summary>
+          <div class="capacity-trace-body">
+            <p>${escapeHtml(item.decision)}</p>
+            ${item.earliestClockFit != null ? `<p class="capacity-trace-clock">earliest clock-only fit <b>${capacityTimeLabel(item.earliestClockFit)}</b></p>` : ''}
+            <ul>${(item.inputs || []).map(input=>`<li>${escapeHtml(input)}</li>`).join('')}</ul>
+            ${score ? `<code>${escapeHtml(score)}</code>` : ''}
+          </div>
+        </details>`;
+    }).join('')
+    : '<p class="capacity-empty">No planner decisions were present for this day.</p>';
   content.innerHTML = `
     <div class="capacity-export-hint">
       <span>copy / download = entire week placements</span>
@@ -2103,6 +2164,11 @@ function renderDayCapacityScorecard(report){
       <div class="capacity-section-head"><h3>home agenda output</h3><span>${report.agendaRows.length}</span></div>
       <div class="capacity-agenda">${agendaRows}</div>
       ${report.hiddenAgendaRowCount ? `<p class="capacity-note">${report.hiddenAgendaRowCount} scheduler placement${report.hiddenAgendaRowCount === 1 ? '' : 's'} not shown in this day section because of the current pin or filter view.</p>` : ''}
+    </section>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>planner decision trace</h3><span>${(report.plannerTrace || []).length}</span></div>
+      <p class="capacity-note">Built only when this audit opens. It shows the planner’s inputs, resolved constraints, scores, and outcomes—not a continuous GLPK branch log. “Earliest clock-only fit” intentionally excludes location, travel, ordering, budget, and whole-day competition.</p>
+      <div class="capacity-trace">${traceRows}</div>
     </section>
     <section class="capacity-section">
       <div class="capacity-section-head"><h3>remaining gap audit</h3><span>${report.placementGaps.length}</span></div>

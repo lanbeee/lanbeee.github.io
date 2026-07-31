@@ -92,6 +92,87 @@ function base(props) {
   }
   check('optimizer glpk loads', glpkOk.ok, glpkOk.reason);
 
+  console.log('\n[Optimizer] overnight morning tail refills immediately after Fajr');
+  const overnightResult = await page.evaluate(async ({now,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      const week = await buildWeekAgendaAsync(data,settings,1);
+      const day = week.days[0];
+      const fills = (day.timeline || []).filter(row=>row.kind === 'fill');
+      const starts = Object.fromEntries(fills.map(row=>[
+        row.h.name,
+        Math.round((row.start - day.dayBase) / 60000)
+      ]));
+      const audit = buildDayCapacityScorecard(data,settings,day.dayBase,now,{
+        weekMode:true,
+        weekSnapshot:week
+      });
+      const callTrace = audit.plannerTrace.find(item=>item.name === 'Call Amma');
+      return {
+        optimized:Boolean(week.optimized),
+        starts,
+        names:fills.map(row=>row.h.name),
+        callTrace:callTrace ? {
+          selected:callTrace.selected,
+          earliestMin:Math.round((callTrace.earliestClockFit - day.dayBase) / 60000),
+          allowed:callTrace.inputs.find(input=>input.startsWith('allowed ')) || '',
+          decision:callTrace.decision
+        } : null
+      };
+    }finally{
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(4),
+    data:[
+      base({
+        name:'Fajr',type:'keepup',target:1,durationMinutes:2,priority:2,
+        allowedTimeStart:335,allowedTimeEnd:337,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        name:'Call Amma',type:'keepup',target:1,durationMinutes:32,priority:2,
+        allowedTimeStart:1305,allowedTimeEnd:780,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        name:'Tasks Discussion',type:'task',target:null,durationMinutes:15,priority:2,
+        eventTime:atTime(0) + 570 * 60000,
+        dueDate:atTime(0)
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[600,600,600,600,600,600,600],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      locations:[],travel:{},
+      blockedTimes:[
+        {label:'sleep',days:[],start:0,end:335},
+        {label:'breakfast',days:[],start:530,end:540}
+      ]
+    }
+  });
+  check('overnight/Fajr scenario uses optimizer',overnightResult.optimized,
+    JSON.stringify(overnightResult));
+  check('Fajr keeps its narrow 5:35 AM slot',overnightResult.starts.Fajr === 335,
+    JSON.stringify(overnightResult));
+  check('Call Amma refills immediately after Fajr',overnightResult.starts['Call Amma'] === 337,
+    JSON.stringify(overnightResult));
+  check('Call Amma audit exposes both daily overnight pieces',
+    overnightResult.callTrace
+      && overnightResult.callTrace.allowed.includes(';')
+      && overnightResult.callTrace.allowed.includes('1:00 PM')
+      && overnightResult.callTrace.allowed.includes('9:45 PM'),
+    JSON.stringify(overnightResult.callTrace));
+  check('Call Amma audit identifies 5:37 AM as earliest clock fit',
+    overnightResult.callTrace && overnightResult.callTrace.earliestMin === 337,
+    JSON.stringify(overnightResult.callTrace));
+
   console.log('\n[Optimizer] sunrise vs flexible P0');
   const result = await page.evaluate(async ({ now }) => {
     const RealDate = Date;
