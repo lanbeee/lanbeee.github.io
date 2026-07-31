@@ -2335,6 +2335,35 @@ function reconcileCommittedTravel(state){
 // MUTATE: commit a successful fit into day state (travel row + fill row + budgets).
 function commitPlacement(state,fill,fit){
   if(!fit)return;
+  // Most placements append after the existing fills. Preserve the original
+  // O(1) commit for that common path; a full route reconciliation is only
+  // needed when this fit was inserted before something already committed, or
+  // when GLPK is committing a precomputed option whose location anchor became
+  // stale after an earlier chosen option was committed.
+  const insertedBeforeExisting = state.fills.some(
+    entry=>entry && entry.fit && entry.fit.placeStart > fit.placeStart);
+  const stalePrecomputedAnchor = state.fills.length > 0
+    && (fit.prevLocId || null) !== (state.prevLocId || null);
+  const needsTravelReconciliation = insertedBeforeExisting || stalePrecomputedAnchor;
+  const {registry,mode} = state;
+  if(!needsTravelReconciliation
+    && fit.edge && fit.edge.seconds > 0
+    && fit.prevLocId && fit.locId && fit.prevLocId !== fit.locId){
+    const from = registry.find(l=>l.id === fit.prevLocId);
+    const to = registry.find(l=>l.id === fit.locId);
+    state.rows.push({
+      kind:'travel',
+      from:fit.prevLocId,
+      to:fit.locId,
+      fromName:from ? from.name : '',
+      toName:to ? to.name : '',
+      seconds:fit.edge.seconds,
+      metres:fit.edge.metres || 0,
+      start:Math.max(fit.placeStart - fit.edge.seconds * 1000,state.dayBase),
+      end:fit.placeStart,
+      provider:fit.edge.provider || mode
+    });
+  }
   state.rows.push({
     kind:'fill', h:fill.h, i:fill.i, start:fit.placeStart, end:fit.placeEnd, hard:false,
     locationId:fit.locId,
@@ -2350,7 +2379,13 @@ function commitPlacement(state,fill,fit){
   });
   state.fills.push({ fill, fit, slotStart:fit.slotStart });
   state.placed.add(fit.placeKey != null ? fit.placeKey : fill.i);
-  reconcileCommittedTravel(state);
+  if(needsTravelReconciliation){
+    reconcileCommittedTravel(state);
+  }else{
+    state.remaining = Math.max(0,state.remaining - fit.travelMin - fit.durMin);
+    state.usedMinutes += fit.travelMin + fit.durMin;
+    if(fit.locId)state.prevLocId = fit.locId;
+  }
 }
 
 function finalizePlacementRows(state){
