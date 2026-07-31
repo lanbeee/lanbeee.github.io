@@ -751,6 +751,40 @@ $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-monthday-chips').addEventListener('click',toggleScheduleChip);
+$('detail-schedule-order')?.addEventListener('change',e=>{
+  if(!e.target.closest('.schedule-link-habit'))return;
+  const editor = e.target.closest('.schedule-link-editor');
+  const h = detailIdx != null ? load()[detailIdx] : null;
+  if(!editor || !h)return;
+  const links = readScheduleLinksFromDetail(h.hid);
+  renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:links});
+  setDetailDirty();
+});
+$('detail-schedule-order')?.addEventListener('click',e=>{
+  const editor = e.target.closest('.schedule-link-editor');
+  if(!editor)return;
+  const adj = e.target.closest('[data-adjacency]');
+  if(adj){
+    editor.querySelectorAll('[data-adjacency]').forEach(btn=>btn.classList.toggle('on',btn === adj));
+    setDetailDirty();
+    return;
+  }
+  const sameDay = e.target.closest('.schedule-link-same-day');
+  if(sameDay){
+    sameDay.setAttribute('aria-pressed',sameDay.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    const h = detailIdx != null ? load()[detailIdx] : null;
+    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    setDetailDirty();
+    return;
+  }
+  if(e.target.closest('.schedule-link-clear')){
+    const picker = editor.querySelector('.schedule-link-habit');
+    if(picker)picker.value = '';
+    const h = detailIdx != null ? load()[detailIdx] : null;
+    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    setDetailDirty();
+  }
+});
 $('detail-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-time-clear').addEventListener('click',()=>{
@@ -1037,6 +1071,14 @@ $('detail-save').addEventListener('click',()=>{
   if(!h)return;
   const current = currentDetailTune();
   if(!current.name){$('detail-habit-message').focus();return;}
+  h.scheduleLinks = normalizeScheduleLinks(current.scheduleLinks,h.hid);
+  if(typeof validateScheduleLinkGraph === 'function'){
+    const linkValidation = validateScheduleLinkGraph(data);
+    if(!linkValidation.ok){
+      showToast(linkValidation.message);
+      return;
+    }
+  }
   // Cancel scheduled push for the pre-edit state (sig may change after edit).
   if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && h.type === 'task'){
     cancelPush(reminderSignature(h));

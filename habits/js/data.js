@@ -52,6 +52,9 @@
  * @property {string|null} preferredTimeEndAnchor
  * @property {number}      preferredTimeEndOffsetMin
  *
+ * — Persistent planner order (optional; recurring, unlike drag reorder) —
+ * @property {{before:ScheduleLink|null,after:ScheduleLink|null}} scheduleLinks
+ *
  * — Habit-relative anchors (optional; only meaningful when *Anchor = 'habit') —
  * When an anchor field is set to 'habit', the matching *AnchorHabitId references another habit's
  * stable `hid`. The endpoint resolves to that habit's most-recent log time + the signed offset,
@@ -119,6 +122,15 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
+ */
+
+/**
+ * A recurring planner relationship, stored from the subject habit's point of
+ * view. Direct links allow required travel/fixed blocks, but no movable card.
+ * @typedef {Object} ScheduleLink
+ * @property {string} anchorHid
+ * @property {'sometime'|'direct'} adjacency
+ * @property {boolean} requireSameDay
  */
 
 /**
@@ -363,7 +375,7 @@ function saveSortSettings(settings){
 // ─────────────────────────────────────────────────────────────────────────
 
 function normalize(items){
-  return items.map(raw => {
+  const normalized = items.map(raw => {
     // Tasks and legacy events are now a single one-off type. Legacy 'event' records
     // migrate to 'task' with eventTime preserved (a timed task = appointment).
     let type = raw.type || 'keepup';
@@ -404,6 +416,7 @@ function normalize(items){
     // when habit A is logged"). Generated once on first normalize; legacy records
     // get one transparently so the feature can opt-in on any habit.
     const hid = cleanHabitId(raw.hid) || generateHabitId();
+    const scheduleLinkMigration = normalizeScheduleLinksWithMigration(raw,hid);
     const h = {
       hid,
       name: raw.name || '',
@@ -447,6 +460,7 @@ function normalize(items){
       allowedTimeEndAnchorHabitId:(raw.allowedTimeEndAnchor === 'habit' ? cleanHabitId(raw.allowedTimeEndAnchorHabitId) : '') || null,
       preferredTimeStartAnchorHabitId:(raw.preferredTimeStartAnchor === 'habit' ? cleanHabitId(raw.preferredTimeStartAnchorHabitId) : '') || null,
       preferredTimeEndAnchorHabitId:(raw.preferredTimeEndAnchor === 'habit' ? cleanHabitId(raw.preferredTimeEndAnchorHabitId) : '') || null,
+      scheduleLinks:scheduleLinkMigration.links,
       // Combined expressions (later/earlier of two) + optional +1d day shift.
       ...normalizeCombineFields(raw, 'allowedTimeStart'),
       ...normalizeCombineFields(raw, 'allowedTimeEnd'),
@@ -467,6 +481,21 @@ function normalize(items){
       source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,
       importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
     };
+    // Only zero-offset, uncombined start anchors have an exact planner-order
+    // equivalent. Move those out of Dynamic timing; preserve all other habit
+    // expressions as explicit legacy completion-trigger timing.
+    for(const field of scheduleLinkMigration.migratedFields){
+      h[field + 'Anchor'] = null;
+      h[field + 'OffsetMin'] = 0;
+      h[field + 'AnchorHabitId'] = null;
+      h[field + 'Combine'] = null;
+      h[field + 'Anchor2'] = null;
+      h[field + 'OffsetMin2'] = 0;
+      h[field + 'AnchorHabitId2'] = null;
+      h[field + 'FixedMin2'] = null;
+      h[field + 'DayOffset'] = 0;
+      h[field + 'DayOffset2'] = 0;
+    }
     // Migration: a degenerate 0/0 fixed window with no anchor is the signature
     // of the Number(null)===0 render bug in detail-view.js (an empty time
     // input rendered as "00:00" and got saved back as 0/0). hasTimeWindow
@@ -485,6 +514,15 @@ function normalize(items){
     h.lastLog = latestActualLog(h.logs);
     return h;
   });
+  const validHids = new Set(normalized.map(h=>h.hid));
+  for(const h of normalized){
+    const links = normalizeScheduleLinks(h.scheduleLinks,h.hid);
+    for(const direction of ['before','after']){
+      if(links[direction] && !validHids.has(links[direction].anchorHid))links[direction] = null;
+    }
+    h.scheduleLinks = links;
+  }
+  return normalized;
 }
 
 // PURE: true when this item has automatic logging enabled. Breakables use each
@@ -749,6 +787,61 @@ function orderConstraintsForDay(dayBase,store = null){
   return (src.edges || []).filter(e=>e.dayBase === base);
 }
 
+// PURE: recurring Schedule relationships expressed as the same directed edge
+// shape used by one-day reorder. They are intentionally not stored in the
+// device-local reorder store.
+function persistentOrderConstraintsForDay(dayBase,data = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return [];
+  const items = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  const valid = new Set(items.filter(Boolean).map(h=>cleanHabitId(h.hid)).filter(Boolean));
+  const edges = [];
+  for(const h of items){
+    const subjectHid = cleanHabitId(h && h.hid);
+    if(!subjectHid)continue;
+    const links = normalizeScheduleLinks(h.scheduleLinks,subjectHid);
+    for(const direction of ['before','after']){
+      const link = links[direction];
+      if(!link || !valid.has(link.anchorHid))continue;
+      edges.push({
+        id:`schedule:${subjectHid}:${direction}`,
+        dayBase:base,
+        beforeHid:direction === 'before' ? subjectHid : link.anchorHid,
+        afterHid:direction === 'before' ? link.anchorHid : subjectHid,
+        adjacency:link.adjacency,
+        persistent:true,
+        requiresPair:link.requireSameDay,
+        requireSameDay:link.requireSameDay,
+        subjectHid,
+        anchorHid:link.anchorHid,
+        direction
+      });
+    }
+  }
+  return edges;
+}
+
+// IMPURE by default (reads saved habits): the planner-facing edge set. A
+// persistent relationship wins over a contradictory stale one-day edge.
+function agendaOrderConstraintsForDay(dayBase,data = null,store = null){
+  const merged = persistentOrderConstraintsForDay(dayBase,data).map(edge=>({...edge}));
+  for(const edge of orderConstraintsForDay(dayBase,store)){
+    const same = merged.find(item=>item.beforeHid === edge.beforeHid && item.afterHid === edge.afterHid);
+    if(same){
+      // A compatible one-day drag may strengthen recurring "before" to
+      // "right before" for this date, and retains reorder's explicit pair.
+      if(edge.adjacency === 'direct')same.adjacency = 'direct';
+      same.requiresPair = true;
+      same.temporaryUpgrade = true;
+      continue;
+    }
+    const reverse = merged.some(item=>item.beforeHid === edge.afterHid && item.afterHid === edge.beforeHid);
+    if(reverse)continue;
+    merged.push({...edge,persistent:false,requiresPair:true});
+  }
+  return merged;
+}
+
 function getDoingNow(store = null){
   const src = store || loadOrderConstraintStore();
   return src.doingNow || null;
@@ -955,7 +1048,7 @@ function habitHasOrderConstraints(hid,store = null){
 
 function orderConstraintPillsForHid(hid,dayBase,data = null,store = null){
   if(!hid)return [];
-  const edges = orderConstraintsForDay(dayBase,store);
+  const edges = agendaOrderConstraintsForDay(dayBase,data,store);
   const findOther = (otherHid)=>{
     if(!Array.isArray(data))return null;
     return data.find(item=>item && item.hid === otherHid) || null;
@@ -977,7 +1070,9 @@ function orderConstraintPillsForHid(hid,dayBase,data = null,store = null){
         otherBg:normalizeEmojiBgColor(other && other.emojiBgColor),
         otherName:nameOf(e.beforeHid),
         dayBase:e.dayBase,
-        label:e.adjacency === 'direct' ? `right after ${nameOf(e.beforeHid)}` : `after ${nameOf(e.beforeHid)}`
+        persistent:Boolean(e.persistent),
+        label:(e.adjacency === 'direct' ? `right after ${nameOf(e.beforeHid)}` : `after ${nameOf(e.beforeHid)}`)
+          + (e.persistent ? ' · recurring' : '')
       });
     }
     if(e.beforeHid === hid){
@@ -991,15 +1086,95 @@ function orderConstraintPillsForHid(hid,dayBase,data = null,store = null){
         otherBg:normalizeEmojiBgColor(other && other.emojiBgColor),
         otherName:nameOf(e.afterHid),
         dayBase:e.dayBase,
-        label:e.adjacency === 'direct' ? `right before ${nameOf(e.afterHid)}` : `before ${nameOf(e.afterHid)}`
+        persistent:Boolean(e.persistent),
+        label:(e.adjacency === 'direct' ? `right before ${nameOf(e.afterHid)}` : `before ${nameOf(e.afterHid)}`)
+          + (e.persistent ? ' · recurring' : '')
       });
     }
   }
   return pills;
 }
 
+// PURE: validate the complete persistent graph after applying an in-flight
+// edit. Returns a concise user-facing error rather than silently saving a
+// relationship the planners cannot honor.
+function validateScheduleLinkGraph(items){
+  const data = Array.isArray(items) ? items : [];
+  const byHid = new Map(data.filter(Boolean).map(h=>[cleanHabitId(h.hid),h]));
+  const edges = [];
+  for(const h of data){
+    const subject = cleanHabitId(h && h.hid);
+    if(!subject)continue;
+    const links = normalizeScheduleLinks(h.scheduleLinks,subject);
+    if(links.before && links.after && links.before.anchorHid === links.after.anchorHid){
+      const name = byHid.get(links.before.anchorHid)?.name || 'that habit';
+      return {ok:false,message:`choose either before or after ${name}, not both`};
+    }
+    for(const direction of ['before','after']){
+      const link = links[direction];
+      if(!link)continue;
+      const anchor = byHid.get(link.anchorHid);
+      if(!anchor)return {ok:false,message:'one linked habit no longer exists'};
+      edges.push({
+        beforeHid:direction === 'before' ? subject : link.anchorHid,
+        afterHid:direction === 'before' ? link.anchorHid : subject,
+        adjacency:link.adjacency
+      });
+    }
+  }
+
+  const next = new Map();
+  const directNext = new Map();
+  const directPrev = new Map();
+  for(const edge of edges){
+    if(!next.has(edge.beforeHid))next.set(edge.beforeHid,new Set());
+    next.get(edge.beforeHid).add(edge.afterHid);
+    if(edge.adjacency !== 'direct')continue;
+    if(directNext.has(edge.beforeHid) && directNext.get(edge.beforeHid) !== edge.afterHid){
+      const name = byHid.get(edge.beforeHid)?.name || 'a habit';
+      return {ok:false,message:`${name} already has a right-after habit`};
+    }
+    if(directPrev.has(edge.afterHid) && directPrev.get(edge.afterHid) !== edge.beforeHid){
+      const name = byHid.get(edge.afterHid)?.name || 'a habit';
+      return {ok:false,message:`${name} already has a right-before habit`};
+    }
+    directNext.set(edge.beforeHid,edge.afterHid);
+    directPrev.set(edge.afterHid,edge.beforeHid);
+  }
+
+  const visiting = new Set();
+  const visited = new Set();
+  const walk = hid=>{
+    if(visiting.has(hid))return true;
+    if(visited.has(hid))return false;
+    visiting.add(hid);
+    for(const child of next.get(hid) || []){
+      if(walk(child))return true;
+    }
+    visiting.delete(hid);
+    visited.add(hid);
+    return false;
+  };
+  for(const hid of byHid.keys()){
+    if(walk(hid))return {ok:false,message:'habit order creates a cycle'};
+  }
+  return {ok:true,message:''};
+}
+
+// PURE: whether a proposed temporary edge contradicts a recurring link.
+function temporaryOrderConflict(dayBase,edges,data = null){
+  const permanent = persistentOrderConstraintsForDay(dayBase,data);
+  const graph = new Set(permanent.map(e=>`${e.beforeHid}>${e.afterHid}`));
+  for(const edge of edges || []){
+    if(graph.has(`${edge.afterHid}>${edge.beforeHid}`)){
+      return permanent.find(e=>e.beforeHid === edge.afterHid && e.afterHid === edge.beforeHid) || null;
+    }
+  }
+  return null;
+}
+
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || {})].join(':')).join('|');
 }
 
 function loadTodaySuggested(){
@@ -1883,6 +2058,64 @@ function cleanLocationId(value){
 // PURE: trim + cap a stable habit id. Empty string when falsy.
 function cleanHabitId(value){
   return String(value || '').trim().slice(0,64);
+}
+
+// PURE: normalize one persistent Schedule relationship.
+function normalizeScheduleLink(value,subjectHid){
+  if(!value || typeof value !== 'object')return null;
+  const anchorHid = cleanHabitId(value.anchorHid);
+  if(!anchorHid || anchorHid === cleanHabitId(subjectHid))return null;
+  return {
+    anchorHid,
+    adjacency:value.adjacency === 'direct' ? 'direct' : 'sometime',
+    requireSameDay:Boolean(value.requireSameDay)
+  };
+}
+
+// PURE: normalize the two recurring relationship slots and conservatively
+// migrate old zero-offset, standalone "start after habit" expressions.
+function normalizeScheduleLinksWithMigration(raw,subjectHid){
+  const source = raw && raw.scheduleLinks && typeof raw.scheduleLinks === 'object'
+    ? raw.scheduleLinks : {};
+  const links = {
+    before:normalizeScheduleLink(source.before,subjectHid),
+    after:normalizeScheduleLink(source.after,subjectHid)
+  };
+  const migratedFields = [];
+  if(!links.after){
+    for(const field of ['allowedTimeStart','preferredTimeStart']){
+      const anchorHid = cleanHabitId(raw && raw[field + 'AnchorHabitId']);
+      const cleanStandalone = raw && raw[field + 'Anchor'] === 'habit'
+        && normalizePrayerOffset(raw[field + 'OffsetMin']) === 0
+        && !cleanTimeCombine(raw[field + 'Combine'])
+        && !cleanAnchor(raw[field + 'Anchor2'])
+        && anchorHid && anchorHid !== cleanHabitId(subjectHid);
+      if(!cleanStandalone)continue;
+      links.after = {anchorHid,adjacency:'sometime',requireSameDay:false};
+      migratedFields.push(field);
+      break;
+    }
+  }
+  // If allowed + preferred carried the same clean link, clear both copies.
+  if(links.after){
+    for(const field of ['allowedTimeStart','preferredTimeStart']){
+      const same = raw && raw[field + 'Anchor'] === 'habit'
+        && cleanHabitId(raw[field + 'AnchorHabitId']) === links.after.anchorHid
+        && normalizePrayerOffset(raw[field + 'OffsetMin']) === 0
+        && !cleanTimeCombine(raw[field + 'Combine'])
+        && !cleanAnchor(raw[field + 'Anchor2']);
+      if(same && !migratedFields.includes(field))migratedFields.push(field);
+    }
+  }
+  return {links,migratedFields};
+}
+
+function normalizeScheduleLinks(value,subjectHid){
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    before:normalizeScheduleLink(source.before,subjectHid),
+    after:normalizeScheduleLink(source.after,subjectHid)
+  };
 }
 
 // PURE: coerce the later/earlier-of + dayOffset fields for one habit endpoint

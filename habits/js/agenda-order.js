@@ -110,7 +110,8 @@ function orderMarkChipHtml(pill){
     : `<span class="order-mark-emoji is-empty" aria-hidden="true">·</span>`;
   const adj = pill.adjacency === 'direct' ? 'next' : 'later';
   const title = `${arrowLabel} ${pill.otherName || 'task'} (${adj})`;
-  return `<span class="order-mark${vars ? ' has-bg' : ''}" ${style} title="${escapeHtml(title)}"><i class="ti ${arrow}" aria-hidden="true"></i>${emojiHtml}</span>`;
+  const recurring = pill.persistent ? ' is-recurring' : '';
+  return `<span class="order-mark${vars ? ' has-bg' : ''}${recurring}" ${style} title="${escapeHtml(title)}"><i class="ti ${arrow}" aria-hidden="true"></i>${emojiHtml}${pill.persistent ? '<i class="ti ti-repeat order-mark-recurring" aria-hidden="true"></i>' : ''}</span>`;
 }
 
 /** Compact non-interactive order indicators: arrow + neighbor emoji/color. */
@@ -306,6 +307,12 @@ function saveOrderLinkSheet(){
   const draft = _orderLinkDraft;
   if(!draft || !draft.h){ cancelOrderLinkSheet(); return; }
   const edges = readOrderLinkChoices();
+  const conflict = typeof temporaryOrderConflict === 'function'
+    ? temporaryOrderConflict(draft.dayBase,edges) : null;
+  if(conflict){
+    if(typeof showToast === 'function')showToast('This conflicts with a recurring Schedule link. Edit Habit order in Schedule.');
+    return;
+  }
   // Clear prior links for this habit on this day, then write the new set.
   if(typeof clearOrderConstraintsForDay === 'function'){
     clearOrderConstraintsForDay(draft.dayBase,draft.h.hid);

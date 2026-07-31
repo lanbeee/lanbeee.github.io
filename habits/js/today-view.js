@@ -47,6 +47,20 @@ function buildTodayAgenda(data,settings){
     candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
   }
   const dayBase = dayStart(Date.now());
+  const candidateHids = new Set(candidates.map(c=>c.h && c.h.hid).filter(Boolean));
+  const linkOmissions = [];
+  for(let i = candidates.length - 1;i >= 0;i -= 1){
+    const candidate = candidates[i];
+    const links = normalizeScheduleLinks(candidate.h.scheduleLinks,candidate.h.hid);
+    const missing = ['before','after'].map(direction=>links[direction])
+      .find(link=>link && link.requireSameDay
+        && !candidateHids.has(link.anchorHid)
+        && !scheduleAnchorCommitForDay(link.anchorHid,dayBase,data));
+    if(!missing)continue;
+    const anchorName = data.find(h=>h && h.hid === missing.anchorHid)?.name || 'anchor';
+    linkOmissions.push({subjectHid:candidate.h.hid,reason:`waiting for ${anchorName} to be eligible this day`});
+    candidates.splice(i,1);
+  }
   const scarcityState = createDayPlacementState(
     {scheduled,agendaItems:[],totalMinutes:totalCap,slots,dayBase,weekday:new Date(dayBase).getDay(),isToday:true},
     settings,
@@ -57,7 +71,7 @@ function buildTodayAgenda(data,settings){
   // Capacity (including travel) is charged during location-aware placement in
   // buildTodayTimeline — duration-only pre-cuts would under-count travel.
   const agendaItems = candidates.map(({h,i,priority,scarcity})=>({h,i,priority,scarcity}));
-  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots };
+  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, linkOmissions };
 }
 
 // PURE: applies user-facing Today agenda inclusion settings.
@@ -325,10 +339,40 @@ function pickHabitLocationId(h,anchorId,registry,mode){
 // pass. Items with no location stay zero-cost floaters.
 // Soft day-order constraints (sometime/direct) bias candidate order first so
 // "before" items claim slots ahead of "after" items when both are free.
+function plannerOrderConstraintsForDay(dayBase){
+  if(typeof agendaOrderConstraintsForDay === 'function')return agendaOrderConstraintsForDay(dayBase);
+  return typeof orderConstraintsForDay === 'function' ? orderConstraintsForDay(dayBase) : [];
+}
+
+// A completed/active/fixed anchor is a committed boundary even when it is not
+// a movable candidate in the current placement pass.
+function scheduleAnchorCommitForDay(hid,dayBase,data = null){
+  const items = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  const h = items.find(item=>item && item.hid === hid);
+  if(!h)return null;
+  const base = dayStart(dayBase);
+  const logs = typeof actualLogs === 'function' ? actualLogs(h.logs || []) : [];
+  const todayLogs = logs.filter(ts=>dayStart(ts) === base);
+  if(todayLogs.length){
+    const ts = Math.max(...todayLogs);
+    return {start:ts,end:ts,kind:'completed'};
+  }
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(doing && doing.hid === hid && doing.dayBase === base
+    && (typeof isDoingNowActive !== 'function' || isDoingNowActive(doing))){
+    const start = Number(doing.startedAt) || Date.now();
+    const end = Number(doing.targetAt) || start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000;
+    return {start,end,kind:'active'};
+  }
+  if(h.type === 'task' && h.eventTime != null && dayStart(h.eventTime) === base){
+    return {start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
+  }
+  return null;
+}
+
 function reorderAgendaItemsByOrderConstraints(items,dayBase){
   if(!Array.isArray(items) || items.length < 2)return Array.isArray(items) ? items.slice() : [];
-  if(typeof orderConstraintsForDay !== 'function')return items.slice();
-  const edges = orderConstraintsForDay(dayBase);
+  const edges = plannerOrderConstraintsForDay(dayBase);
   if(!edges.length)return items.slice();
   const indexByHid = new Map();
   items.forEach((item,idx)=>{
@@ -506,6 +550,7 @@ function buildDayTimeline(agenda,opts = {}){
       commitPlacement(state,fill,fit);
     }
   }
+  enforcePersistentLinkInvariants([state],ordered,settings);
   agenda.usedMinutes = state.usedMinutes;
   agenda.remainingMinutes = Math.max(0,(Number(agenda.totalMinutes) || 0) - state.usedMinutes);
   if(opts.diagnostics)agenda.placementDiagnostics = buildPlacementDiagnostics(ordered,state);
@@ -845,6 +890,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     return sum + Math.max(0,Math.round((end - start) / 60000));
   },0);
   const diagByIndex = new Map(diagnostics.items.map(item=>[item.i,item]));
+  const linkReasonByHid = new Map((agenda.linkOmissions || [])
+    .filter(item=>item && item.subjectHid)
+    .map(item=>[item.subjectHid,item.reason || 'linked placement could not be honored']));
 
   const eligible = visibleIndices(data,settings).filter(i=>{
     const h = data[i];
@@ -893,7 +941,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       remainingMinutes,
       reason:elsewhereLabel
         ? `assigned ${elsewhereLabel}`
-        : (diag.reason || (remainingMinutes > 0 ? 'not committed by the placement pass' : '')),
+        : (linkReasonByHid.get(h.hid) || diag.reason || (remainingMinutes > 0 ? 'not committed by the placement pass' : '')),
       window:typeof timeWindowSummary === 'function' && hasTimeWindow(h) ? timeWindowSummary(h) : ''
     };
   }).filter(item=>item.remainingMinutes > 0);
@@ -1236,8 +1284,7 @@ function scoreAgendaPlacement(terms,weights){
 // direct: prefer the earliest slot after the predecessor (gap becomes cost).
 function orderConstraintPenalty(fill,fit,state){
   if(!fill || !fill.h || !fill.h.hid || !fit || !state)return 0;
-  if(typeof orderConstraintsForDay !== 'function')return 0;
-  const edges = orderConstraintsForDay(state.dayBase);
+  const edges = plannerOrderConstraintsForDay(state.dayBase);
   if(!edges.length)return 0;
   const hid = fill.h.hid;
   const placedByHid = new Map();
@@ -1326,13 +1373,27 @@ function tryPlaceOnDay(state,fill,opts = {}){
 
   // Temporary day-order: never start before a placed predecessor finishes.
   let orderFloor = 0;
-  if(fill.h && fill.h.hid && typeof orderConstraintsForDay === 'function'){
-    for(const e of orderConstraintsForDay(dayBase)){
-      if(e.afterHid !== fill.h.hid)continue;
-      for(const entry of chron){
-        const ph = entry && entry.fill && entry.fill.h;
-        if(ph && ph.hid === e.beforeHid && entry.fit){
-          orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+  let orderCeiling = Infinity;
+  if(fill.h && fill.h.hid){
+    for(const e of plannerOrderConstraintsForDay(dayBase)){
+      if(e.afterHid === fill.h.hid){
+        const committed = scheduleAnchorCommitForDay(e.beforeHid,dayBase);
+        if(committed)orderFloor = Math.max(orderFloor,committed.end);
+        for(const entry of chron){
+          const ph = entry && entry.fill && entry.fill.h;
+          if(ph && ph.hid === e.beforeHid && entry.fit){
+            orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+          }
+        }
+      }
+      if(e.beforeHid === fill.h.hid){
+        const committed = scheduleAnchorCommitForDay(e.afterHid,dayBase);
+        if(committed)orderCeiling = Math.min(orderCeiling,committed.start);
+        for(const entry of chron){
+          const ph = entry && entry.fill && entry.fill.h;
+          if(ph && ph.hid === e.afterHid && entry.fit){
+            orderCeiling = Math.min(orderCeiling,Number(entry.fit.placeStart) || Infinity);
+          }
         }
       }
     }
@@ -1402,6 +1463,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
       const presenceLocId = locId || anchor;
       const leaveBy = outboundLeaveByMs(state,presenceLocId,placeStart,opts);
       if(leaveBy != null)cap = Math.min(cap,leaveBy);
+      cap = Math.min(cap,orderCeiling);
       const cost = durMin * 60000;
       let placeEnd = placeStart + cost;
       if(placeEnd > cap || placeEnd > gap.end)continue;
@@ -1709,13 +1771,27 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
   const candidates = [];
 
   let orderFloor = 0;
-  if(fill.h && fill.h.hid && typeof orderConstraintsForDay === 'function'){
-    for(const e of orderConstraintsForDay(dayBase)){
-      if(e.afterHid !== fill.h.hid)continue;
-      for(const entry of chron){
-        const ph = entry && entry.fill && entry.fill.h;
-        if(ph && ph.hid === e.beforeHid && entry.fit){
-          orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+  let orderCeiling = Infinity;
+  if(fill.h && fill.h.hid){
+    for(const e of plannerOrderConstraintsForDay(dayBase)){
+      if(e.afterHid === fill.h.hid){
+        const committed = scheduleAnchorCommitForDay(e.beforeHid,dayBase);
+        if(committed)orderFloor = Math.max(orderFloor,committed.end);
+        for(const entry of chron){
+          const ph = entry && entry.fill && entry.fill.h;
+          if(ph && ph.hid === e.beforeHid && entry.fit){
+            orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+          }
+        }
+      }
+      if(e.beforeHid === fill.h.hid){
+        const committed = scheduleAnchorCommitForDay(e.afterHid,dayBase);
+        if(committed)orderCeiling = Math.min(orderCeiling,committed.start);
+        for(const entry of chron){
+          const ph = entry && entry.fill && entry.fill.h;
+          if(ph && ph.hid === e.afterHid && entry.fit){
+            orderCeiling = Math.min(orderCeiling,Number(entry.fit.placeStart) || Infinity);
+          }
         }
       }
     }
@@ -1768,6 +1844,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       const presenceLocId = locId || anchor;
       const leaveBy = outboundLeaveByMs(state,presenceLocId,placeStart,opts);
       if(leaveBy != null)cap = Math.min(cap,leaveBy);
+      cap = Math.min(cap,orderCeiling);
       if(placeStart >= cap)continue;
       const usableMs = Math.min(cap,gap.end) - placeStart;
       const usableMin = Math.floor(usableMs / 60000);
@@ -2424,6 +2501,36 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   return false;
 }
 
+// Mutates only each candidate's derived eligible Set. A same-day relationship
+// never makes an otherwise-not-due anchor eligible; it only prevents the
+// dependent from appearing alone.
+function applyPersistentLinkEligibility(candidates,dayStates){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return candidates;
+  const byHid = new Map(candidates.filter(c=>c && c.h && c.h.hid).map(c=>[c.h.hid,c]));
+  for(const candidate of candidates){
+    const subjectHid = candidate && candidate.h && candidate.h.hid;
+    if(!subjectHid || !candidate.eligible)continue;
+    const links = normalizeScheduleLinks(candidate.h.scheduleLinks,subjectHid);
+    for(const direction of ['before','after']){
+      const link = links[direction];
+      if(!link || !link.requireSameDay)continue;
+      const anchorCandidate = byHid.get(link.anchorHid);
+      for(const dayBase of [...candidate.eligible]){
+        const committed = scheduleAnchorCommitForDay(link.anchorHid,dayBase);
+        const anchorEligible = anchorCandidate && anchorCandidate.eligible && anchorCandidate.eligible.has(dayBase);
+        if(!committed && !anchorEligible){
+          candidate.eligible.delete(dayBase);
+          const holder = dayStates.find(item=>(item && item.dayBase) === dayBase);
+          const day = holder && holder.day ? holder.day : holder;
+          const anchorName = (typeof load === 'function' ? load() : []).find(item=>item && item.hid === link.anchorHid)?.name || 'anchor';
+          addScheduleLinkOmission(day,subjectHid,`waiting for ${anchorName} to be eligible this day`);
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
 // PURE helper: planned-for-day predicate. hasPlannedToday checks today; this
 // generalises to any day. Mirrors the actualLogs/plannedLogs intersection.
 function hasPlannedForDay(h,dayBase){
@@ -2540,10 +2647,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   const doing = doingRaw
     && (typeof isDoingNowActive !== 'function' || isDoingNowActive(doingRaw))
     ? doingRaw : null;
-  if(typeof orderConstraintsForDay === 'function' || doing){
+  if(typeof plannerOrderConstraintsForDay === 'function' || doing){
     const beforeBoost = new Map();
     for(const state of dayStates){
-      for(const e of orderConstraintsForDay(state.dayBase)){
+      for(const e of plannerOrderConstraintsForDay(state.dayBase)){
         beforeBoost.set(e.beforeHid,(beforeBoost.get(e.beforeHid) || 0) + (e.adjacency === 'direct' ? 2 : 1));
       }
     }
@@ -2754,6 +2861,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   if(typeof repairWeekPlacedHours === 'function'){
     totalAssigned += repairWeekPlacedHours(candidates,dayStates,settings);
   }
+  enforcePersistentLinkInvariants(dayStates,candidates,settings);
   return totalAssigned;
 }
 
@@ -3047,6 +3155,76 @@ function applyPlacementState(target,source){
   target.prevLocId = source.prevLocId;
   if(target.day && source.day)target.day.agendaItems = source.day.agendaItems;
   else syncDayAgendaItemsFromFills(target);
+}
+
+function addScheduleLinkOmission(day,subjectHid,reason){
+  if(!day || !subjectHid || !reason)return;
+  if(!Array.isArray(day.linkOmissions))day.linkOmissions = [];
+  if(day.linkOmissions.some(item=>item.subjectHid === subjectHid && item.reason === reason))return;
+  day.linkOmissions.push({subjectHid,reason});
+}
+
+function persistentLinkViolationsForState(state){
+  const violations = new Map();
+  if(!state)return violations;
+  const edges = typeof persistentOrderConstraintsForDay === 'function'
+    ? persistentOrderConstraintsForDay(state.dayBase) : [];
+  const chron = (state.fills || []).slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+  const bounds = new Map();
+  for(const entry of chron){
+    const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
+    if(!hid || !entry.fit)continue;
+    const prev = bounds.get(hid);
+    bounds.set(hid,{
+      start:prev ? Math.min(prev.start,entry.fit.placeStart) : entry.fit.placeStart,
+      end:prev ? Math.max(prev.end,entry.fit.placeEnd) : entry.fit.placeEnd
+    });
+  }
+  for(const edge of edges){
+    const subject = bounds.get(edge.subjectHid);
+    if(!subject)continue;
+    const anchor = bounds.get(edge.anchorHid) || scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase);
+    if(!anchor){
+      if(edge.requiresPair)violations.set(edge.subjectHid,'anchor is not planned or done this day');
+      continue;
+    }
+    const before = edge.direction === 'before' ? subject : anchor;
+    const after = edge.direction === 'before' ? anchor : subject;
+    if(before.end > after.start + 60000){
+      violations.set(edge.subjectHid,`cannot be ${edge.direction} its anchor`);
+      continue;
+    }
+    if(edge.adjacency === 'direct'){
+      const between = chron.some(entry=>{
+        const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
+        if(!hid || hid === edge.subjectHid || hid === edge.anchorHid || !entry.fit)return false;
+        return entry.fit.placeStart + 60000 >= before.end && entry.fit.placeEnd <= after.start + 60000;
+      });
+      if(between)violations.set(edge.subjectHid,`no right-${edge.direction} slot is available`);
+    }
+  }
+  return violations;
+}
+
+// Final invariant pass shared by Fast and GLPK. Repair/rescue stages are free
+// to move unrelated work, but may never leave a visibly linked subject in a
+// violating position.
+function enforcePersistentLinkInvariants(dayStates,candidates,settings){
+  if(!Array.isArray(dayStates))return;
+  for(const state of dayStates){
+    let guard = 0;
+    while(guard++ < 8){
+      const violations = persistentLinkViolationsForState(state);
+      if(!violations.size)break;
+      for(const [hid,reason] of violations)addScheduleLinkOmission(state.day,hid,reason);
+      const keep = (state.fills || [])
+        .filter(entry=>!violations.has(entry && entry.fill && entry.fill.h && entry.fill.h.hid))
+        .map(entry=>entry.fill);
+      const rebuilt = rebuildDayFromFills(state,keep,candidates,{settings,allowNetwork:false});
+      if(!rebuilt)break;
+      applyPlacementState(state,rebuilt);
+    }
+  }
 }
 
 // Week-holistic repair: when a daily breakable (e.g. Work) is short and a
@@ -3378,6 +3556,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
       eligible
     });
   }
+  applyPersistentLinkEligibility(candidates,days);
 
   // Pass 1 — greedy discovery of each location's natural day.
   let dayStates = makeStates();

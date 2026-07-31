@@ -183,7 +183,9 @@ async function toastText(page){
       name:'stretch', type:'keepup', target:7,
       allowedTimeStartAnchor:'habit',
       allowedTimeStartAnchorHabitId:gym.hid,
-      allowedTimeStartOffsetMin:0,
+      // Nonzero offsets intentionally remain legacy completion-trigger timing;
+      // only exact zero-offset starts migrate to persistent planner order.
+      allowedTimeStartOffsetMin:1,
       allowedTimeEnd:12 * 60,
       durationMinutes:30,
       logs:[]
@@ -194,7 +196,7 @@ async function toastText(page){
     const winConsumed = fillTimeWindow(consumed, today);
     const eff = effectiveLocationWindow(stretch, null, new Date().getDay());
     const effConsumed = effectiveLocationWindow(consumed, null, new Date().getDay());
-    const expectedStart = dayStart(t) === today ? 7 * 60 : 0;
+    const expectedStart = (dayStart(t) === today ? 7 * 60 : 0) + 1;
     return {
       winStart: win && Math.round((win.start - today) / 60000),
       winEnd: win && Math.round((win.end - today) / 60000),
@@ -340,7 +342,7 @@ async function toastText(page){
     const today = dayStart(Date.now());
     const gymLog = Date.now() - 2 * 3600000; // past actual log
     const gym = normalize([{
-      name:'Gym', type:'keepup', target:7,
+      name:'Gym with a deliberately long habit name', type:'keepup', target:7,
       logs:[gymLog]
     }])[0];
     const stretch = normalize([{
@@ -354,6 +356,12 @@ async function toastText(page){
       allowedTimeEnd:720,
       logs:[]
     }])[0];
+    // normalize() cannot retain an inter-record reference when called on one
+    // record in isolation; seed the already-migrated recurring equivalent.
+    other.scheduleLinks = {
+      before:null,
+      after:{anchorHid:stretch.hid,adjacency:'sometime',requireSameDay:false}
+    };
     save([gym, stretch, other]);
     if(typeof render === 'function')render();
     return load().findIndex(h => h.name === 'Stretch');
@@ -369,73 +377,71 @@ async function toastText(page){
   });
   await page.waitForTimeout(200);
 
-  // Toggle start endpoint to dynamic; pick "after another habit…".
+  // Habit ordering now has a dedicated recurring editor rather than being
+  // disguised as a dynamic clock endpoint.
   const startEndpoint = page.locator('.time-endpoint[data-field="allowedTimeStart"]');
-  await startEndpoint.locator('.time-mode-toggle').click();
-  await page.waitForTimeout(100);
-  const isDyn = await startEndpoint.evaluate(el => el.classList.contains('is-dynamic'));
-  assert(isDyn === true, 'gear toggles start endpoint to dynamic');
-
   const habitOpt = await startEndpoint.locator('.time-anchor option[value="habit"]').count();
-  assert(habitOpt === 1, 'anchor dropdown includes habit option');
+  assert(habitOpt === 0, 'new dynamic-time dropdown omits habit order');
+  const afterPicker = page.locator('#detail-link-after-habit');
+  assert(await afterPicker.count() === 1, 'Schedule includes dedicated after-habit picker');
 
-  await startEndpoint.locator('.time-anchor').selectOption('habit');
+  // Other migrated from a clean old start anchor to a recurring Other-after-
+  // Stretch relationship. Stretch-after-Other would close the cycle.
+  await afterPicker.selectOption({ label:'Other' });
   await page.waitForTimeout(100);
-  const pickerVisible = await startEndpoint.locator('.time-habit-wrap').evaluate(el => !el.hidden);
-  assert(pickerVisible === true, 'habit picker revealed when habit selected');
-
-  // Save without picking a habit → toast.
-  // Also need an end so the window is complete — set end to fixed noon via the other endpoint.
-  const endEndpoint = page.locator('.time-endpoint[data-field="allowedTimeEnd"]');
-  // Ensure end is fixed with a value.
-  const endIsDyn = await endEndpoint.evaluate(el => el.classList.contains('is-dynamic'));
-  if(endIsDyn)await endEndpoint.locator('.time-mode-toggle').click();
-  await endEndpoint.locator('.time-fixed').fill('12:00');
-  await page.locator('#detail-save').click();
-  await page.waitForTimeout(400);
-  let toast = await toastText(page);
-  assert(toast.indexOf('pick a habit') >= 0, 'save without habit → toast (' + toast + ')');
-  // Sheet should still be open (save aborted).
-  const stillOpen = await page.locator('#detail-sheet.open').count();
-  assert(stillOpen === 1, 'detail sheet stays open after rejected save');
-
-  // Pick Other as the anchor → creates Stretch→Other and Other→Stretch cycle.
-  await startEndpoint.locator('.time-habit').selectOption({ label:'Other' });
-  await page.waitForTimeout(100);
-  // Self should not appear in the picker.
-  const selfInPicker = await startEndpoint.locator('.time-habit option').evaluateAll(opts =>
+  const selfInPicker = await afterPicker.locator('option').evaluateAll(opts =>
     opts.some(o => (o.textContent || '').trim() === 'Stretch')
   );
   assert(selfInPicker === false, 'current habit excluded from picker');
 
   await page.locator('#detail-save').click();
   await page.waitForTimeout(400);
-  toast = await toastText(page);
+  let toast = await toastText(page);
   assert(toast.indexOf('cycle') >= 0, 'cycle save → toast (' + toast + ')');
   assert(toast.indexOf('[object Object]') < 0, 'cycle toast uses habit names not objects (' + toast + ')');
-  assert(toast.indexOf('Other') >= 0 && toast.indexOf('Stretch') >= 0, 'cycle toast names both habits');
+  assert(await page.locator('#detail-sheet.open').count() === 1, 'cycle keeps detail open');
 
-  // Pick Gym instead → should save (no cycle; habit anchors don't need location).
-  await startEndpoint.locator('.time-habit').selectOption({ label:'Gym' });
+  // Pick a long-named habit, choose right-after + same-day, then save without a location.
+  await afterPicker.selectOption({ label:'Gym with a deliberately long habit name' });
   await page.waitForTimeout(100);
+  await page.locator('[data-schedule-link="after"] [data-adjacency="direct"]').click();
+  const sameDayToggle = page.locator('[data-schedule-link="after"] .schedule-link-same-day');
+  const sameDayHelp = page.locator('#detail-link-after-same-day-help');
+  await page.locator('[data-tip="detail-link-after-same-day-help"]').click();
+  assert(await sameDayHelp.isVisible(), 'same-day explanation opens from info button');
+  assert((await sameDayHelp.textContent()).indexOf('Gym with a deliberately long habit name') >= 0, 'same-day explanation names anchor habit');
+  assert(await sameDayToggle.getAttribute('aria-pressed') === 'false', 'same-day toggle starts off');
+  assert(await sameDayToggle.locator('.schedule-link-state').count() === 0, 'same-day toggle omits redundant state label');
+  await sameDayToggle.click();
+  assert(await sameDayToggle.getAttribute('aria-pressed') === 'true', 'same-day toggle turns on');
+  const sameDayLayout = await page.locator('[data-schedule-link="after"] .schedule-link-same-day-row').evaluate(row => {
+    const label = row.querySelector('.schedule-link-same-day-label');
+    const info = row.querySelector('.info-btn');
+    const toggle = row.querySelector('.schedule-link-same-day');
+    const a = label.getBoundingClientRect();
+    const b = info.getBoundingClientRect();
+    const c = toggle.getBoundingClientRect();
+    return {labelRight:a.right,infoRight:b.right,toggleLeft:c.left,rowWidth:row.getBoundingClientRect().width};
+  });
+  assert(sameDayLayout.infoRight <= sameDayLayout.toggleLeft, 'same-day info and switch do not overlap');
+  assert(sameDayLayout.rowWidth > 0, 'same-day row has a stable layout');
+  await page.locator('#detail-schedule-order').screenshot({path:'/private/tmp/habit-order-refined.png'});
   await page.locator('#detail-save').click();
   await page.waitForTimeout(500);
   toast = await toastText(page);
-  assert(toast === 'saved' || toast.indexOf('saved') >= 0, 'habit-anchor save without location ok (' + toast + ')');
+  assert(toast === 'saved' || toast.indexOf('saved') >= 0, 'schedule-link save without location ok (' + toast + ')');
 
   const persisted = await page.evaluate(() => {
     const h = load().find(x => x.name === 'Stretch');
     return h && {
-      anchor: h.allowedTimeStartAnchor,
-      hid: h.allowedTimeStartAnchorHabitId,
-      end: h.allowedTimeEnd,
+      link:h.scheduleLinks && h.scheduleLinks.after,
       locs: h.locationIds
     };
   });
-  assert(persisted && persisted.anchor === 'habit', 'persisted startAnchor=habit');
-  assert(persisted && typeof persisted.hid === 'string' && persisted.hid.length > 0, 'persisted AnchorHabitId');
-  assert(persisted && persisted.end === 720, 'mixed habit+fixed end kept (720)');
-  assert(persisted && (!persisted.locs || !persisted.locs.length), 'no location required for habit anchor');
+  assert(persisted && persisted.link && typeof persisted.link.anchorHid === 'string', 'persistent after anchor saved');
+  assert(persisted && persisted.link.adjacency === 'direct', 'right-after adjacency saved');
+  assert(persisted && persisted.link.requireSameDay === true, 'same-day requirement saved');
+  assert(persisted && (!persisted.locs || !persisted.locs.length), 'no location required for schedule link');
 
   // Prayer anchor without location still blocked.
   const stretchIdx2 = await page.evaluate(() => load().findIndex(h => h.name === 'Stretch'));

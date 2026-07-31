@@ -127,9 +127,9 @@ function doingNowForDay(state){
 }
 
 function orderBoostForCandidate(c,dayBase){
-  if(!c || !c.h || !c.h.hid || typeof orderConstraintsForDay !== 'function')return 0;
+  if(!c || !c.h || !c.h.hid || typeof plannerOrderConstraintsForDay !== 'function')return 0;
   let boost = 0;
-  for(const e of orderConstraintsForDay(dayBase)){
+  for(const e of plannerOrderConstraintsForDay(dayBase)){
     if(e.beforeHid === c.h.hid)boost += e.adjacency === 'direct' ? ORDER_BEFORE_WEIGHT_BONUS * 1.5 : ORDER_BEFORE_WEIGHT_BONUS;
     if(e.afterHid === c.h.hid)boost -= 8; // slight nudge so successors yield early slots
   }
@@ -137,8 +137,8 @@ function orderBoostForCandidate(c,dayBase){
 }
 
 function applyEarlyBeforeWeights(opts,state){
-  if(!opts || !opts.length || !state || typeof orderConstraintsForDay !== 'function')return;
-  const beforeHids = new Set(orderConstraintsForDay(state.dayBase).map(e=>e.beforeHid));
+  if(!opts || !opts.length || !state || typeof plannerOrderConstraintsForDay !== 'function')return;
+  const beforeHids = new Set(plannerOrderConstraintsForDay(state.dayBase).map(e=>e.beforeHid));
   if(!beforeHids.size)return;
   const origin = state.startClock || state.dayBase;
   for(const o of opts){
@@ -156,8 +156,8 @@ function applyDoingNowWeight(o,doing){
 }
 
 function applyDirectOrderGapWeights(opts,dayBase){
-  if(!opts || !opts.length || typeof orderConstraintsForDay !== 'function')return;
-  const edges = orderConstraintsForDay(dayBase).filter(e=>e.adjacency === 'direct');
+  if(!opts || !opts.length || typeof plannerOrderConstraintsForDay !== 'function')return;
+  const edges = plannerOrderConstraintsForDay(dayBase).filter(e=>e.adjacency === 'direct');
   if(!edges.length)return;
   const byHid = new Map();
   for(const o of opts){
@@ -185,7 +185,7 @@ function applyDirectOrderGapWeights(opts,dayBase){
 // Reward successor options that begin close to its final chunk; pairwise GLPK
 // rows cannot express this because the predecessor is no longer a solver var.
 function applyPlacedOrderWeights(opts,state){
-  if(!opts || !opts.length || !state || typeof orderConstraintsForDay !== 'function')return;
+  if(!opts || !opts.length || !state || typeof plannerOrderConstraintsForDay !== 'function')return;
   const placedEnd = new Map();
   for(const entry of state.fills || []){
     const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
@@ -193,7 +193,7 @@ function applyPlacedOrderWeights(opts,state){
     placedEnd.set(hid,Math.max(placedEnd.get(hid) || 0,Number(entry.fit.placeEnd) || 0));
   }
   if(!placedEnd.size)return;
-  for(const edge of orderConstraintsForDay(state.dayBase)){
+  for(const edge of plannerOrderConstraintsForDay(state.dayBase)){
     if(edge.adjacency !== 'direct' || !placedEnd.has(edge.beforeHid))continue;
     const end = placedEnd.get(edge.beforeHid);
     for(const o of opts){
@@ -206,8 +206,8 @@ function applyPlacedOrderWeights(opts,state){
 }
 
 function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
-  if(!opts || !opts.length || typeof orderConstraintsForDay !== 'function')return;
-  const edges = orderConstraintsForDay(dayBase);
+  if(!opts || !opts.length || typeof plannerOrderConstraintsForDay !== 'function')return;
+  const edges = plannerOrderConstraintsForDay(dayBase);
   if(!edges.length)return;
   const byHid = new Map();
   opts.forEach((o,idx)=>{
@@ -299,8 +299,8 @@ function orderAwareOptimizerSort(dayBase){
   const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
   const preds = new Map(); // hid → set of beforeHids that must precede it
   const beforeBoost = new Map();
-  if(typeof orderConstraintsForDay === 'function'){
-    for(const e of orderConstraintsForDay(dayBase)){
+  if(typeof plannerOrderConstraintsForDay === 'function'){
+    for(const e of plannerOrderConstraintsForDay(dayBase)){
       if(!preds.has(e.afterHid))preds.set(e.afterHid,new Set());
       preds.get(e.afterHid).add(e.beforeHid);
       beforeBoost.set(e.beforeHid,(beforeBoost.get(e.beforeHid) || 0) + (e.adjacency === 'direct' ? 2 : 1));
@@ -366,8 +366,8 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = []){
     }
     // Temporary order links need staggered starts — otherwise every fill only
     // gets the same ASAP option and pairwise order rows forbid co-selection.
-    const orderEdges = typeof orderConstraintsForDay === 'function'
-      ? orderConstraintsForDay(state.dayBase) : [];
+    const orderEdges = typeof plannerOrderConstraintsForDay === 'function'
+      ? plannerOrderConstraintsForDay(state.dayBase) : [];
     if(orderEdges.length || doing){
       const step = 30 * 60000;
       const dayEnd = state.dayBase + 86400000;
@@ -485,13 +485,23 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   // a linked candidate has feasible options, require one of them so unrelated
   // work moves or drops instead of silently defeating the reorder.
   const byCand = new Map();
+  const optionNamesByHid = new Map();
   opts.forEach((o,idx)=>{
     if(!byCand.has(o.c.i))byCand.set(o.c.i,[]);
     byCand.get(o.c.i).push(o.varName);
+    const hid = o && o.fill && o.fill.h && o.fill.h.hid;
+    if(hid){
+      if(!optionNamesByHid.has(hid))optionNamesByHid.set(hid,[]);
+      optionNamesByHid.get(hid).push(o.varName);
+    }
   });
   const requiredHids = new Set();
-  if(typeof orderConstraintsForDay === 'function'){
-    for(const edge of orderConstraintsForDay(state.dayBase)){
+  const dayOrderEdges = typeof plannerOrderConstraintsForDay === 'function'
+    ? plannerOrderConstraintsForDay(state.dayBase) : [];
+  for(const edge of dayOrderEdges){
+    // One-day reorder is an explicit promise for both visible cards. Recurring
+    // links only couple selection when their own same-day switch is enabled.
+    if(!edge.persistent || edge.temporaryUpgrade){
       requiredHids.add(edge.beforeHid);
       requiredHids.add(edge.afterHid);
     }
@@ -505,6 +515,26 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
       bnds:required
         ? {type:GLPK.GLP_FX,ub:1,lb:1}
         : {type:GLPK.GLP_UP,ub:1,lb:0}
+    });
+  }
+  let schedulePairRow = 0;
+  for(const edge of dayOrderEdges){
+    if(!edge.persistent || !edge.requiresPair || !edge.subjectHid || !edge.anchorHid)continue;
+    const subjectNames = optionNamesByHid.get(edge.subjectHid) || [];
+    if(!subjectNames.length)continue;
+    const anchorNames = optionNamesByHid.get(edge.anchorHid) || [];
+    const committed = typeof scheduleAnchorCommitForDay === 'function'
+      ? scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase) : null;
+    if(committed)continue;
+    subjectTo.push({
+      name:`schedule_pair_${schedulePairRow++}`,
+      vars:[
+        ...subjectNames.map(name=>({name,coef:1})),
+        ...anchorNames.map(name=>({name,coef:-1}))
+      ],
+      // subject selected implies anchor selected. The independently eligible
+      // anchor may still remain when the dependent cannot fit.
+      bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
     });
   }
   // Availability is a real aggregate constraint. tryPlaceOnDay validates one
@@ -762,8 +792,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     // breakables afterward. A drag chain such as A → breakable X → B needs a
     // small staged pass instead: place fixed ancestors, fill X, then let GLPK
     // solve B and the rest around those committed chunks.
-    const dayEdges = typeof orderConstraintsForDay === 'function'
-      ? orderConstraintsForDay(state.dayBase) : [];
+    const dayEdges = typeof plannerOrderConstraintsForDay === 'function'
+      ? plannerOrderConstraintsForDay(state.dayBase) : [];
     const byHid = new Map(dayCands
       .filter(c=>c && c.h && c.h.hid)
       .map(c=>[c.h.hid,c]));
@@ -1002,6 +1032,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   if(typeof repairWeekPlacedHours === 'function'){
     total += repairWeekPlacedHours(candidates,dayStates,settings);
   }
+  if(typeof enforcePersistentLinkInvariants === 'function'){
+    enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  }
   return total >= 0;
 }
 
@@ -1054,6 +1087,9 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7){
       urgency:pinned ? Math.max(200,weekUrgency(h)) : weekUrgency(h),
       eligible
     });
+  }
+  if(typeof applyPersistentLinkEligibility === 'function'){
+    applyPersistentLinkEligibility(candidates,dayStates);
   }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 

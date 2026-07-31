@@ -2677,7 +2677,7 @@ function render(opts){
     return true;
   };
 
-  const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null)=>{
+  const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null,scheduleLinkReason = '')=>{
     const h = data[realIdx];
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
@@ -2690,10 +2690,13 @@ function render(opts){
       ? orderLinkPillHtml(h.hid,dayBase,data)
       : '';
     const nowPill = typeof doingNowPillHtml === 'function' ? doingNowPillHtml(h) : '';
+    const scheduleLinkPill = scheduleLinkReason
+      ? `<span class="context-pill schedule-link-blocked-pill" title="${escapeHtml(scheduleLinkReason)}"><i class="ti ti-link-off" aria-hidden="true"></i>linked</span>`
+      : '';
     const accent = visualClassColor(cardScoreTone);
     const statusPill = sortSettings.showStatusOnCards ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
     const gatedEarlyPill = sortSettings.showEarlyOnCards ? earlyPill : '';
-    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
     const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
     const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
@@ -2831,7 +2834,13 @@ function render(opts){
     if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
     const agendaMap = new Map();
     const weekAssigned = new Set();
+    const scheduleOmissionByHid = new Map();
     const dayPlans = week.days.map(day=>{
+      for(const omission of day.linkOmissions || []){
+        if(omission && omission.subjectHid && !scheduleOmissionByHid.has(omission.subjectHid)){
+          scheduleOmissionByHid.set(omission.subjectHid,omission.reason || 'linked placement could not be honored');
+        }
+      }
       const seq = homeDaySequence(day,sortSettings,{visibleSet});
       day.homeDisplayedTimeline = seq.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
         && row.i != null
@@ -2914,7 +2923,7 @@ function render(opts){
         if(label)appendSectionHeader(list,label);
         leftoverCat = key;
       }
-      appendHabitCard(realIdx,null,'');
+      appendHabitCard(realIdx,null,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
     });
   }else{
     const agendaRows = homeAgendaRows(data);

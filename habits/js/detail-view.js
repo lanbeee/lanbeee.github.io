@@ -45,6 +45,7 @@ function openDetail(i){
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
+  renderScheduleLinkEditors(h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
@@ -56,6 +57,7 @@ function openDetail(i){
   setDetailTypeUi(h.type);
   setDetailPriorityUi(effectivePriority(h));
   detailTuneOriginal = {
+    hid:h.hid,
     name:h.name || '',
     type:h.type || 'keepup',
     emoji:h.emoji || '',
@@ -87,6 +89,7 @@ function openDetail(i){
     allowedTimeEndAnchorHabitId:cleanHabitId(h.allowedTimeEndAnchorHabitId) || null,
     preferredTimeStartAnchorHabitId:cleanHabitId(h.preferredTimeStartAnchorHabitId) || null,
     preferredTimeEndAnchorHabitId:cleanHabitId(h.preferredTimeEndAnchorHabitId) || null,
+    scheduleLinks:normalizeScheduleLinks(h.scheduleLinks,h.hid),
     ...snapshotCombineFields(h, 'allowedTimeStart'),
     ...snapshotCombineFields(h, 'allowedTimeEnd'),
     ...snapshotCombineFields(h, 'preferredTimeStart'),
@@ -224,7 +227,7 @@ function renderEmojiBgSwatches(containerId,selected = ''){
   }
 }
 
-/** RENDER: temporary order links on the actions page (hidden when none). */
+/** RENDER: recurring Schedule links + temporary reorder links on Actions. */
 function renderDetailOrderPage(h = null){
   const block = $('detail-order-block');
   const list = $('detail-order-list');
@@ -237,23 +240,43 @@ function renderDetailOrderPage(h = null){
     return;
   }
   const edges = orderConstraintsForHid(habit.hid);
-  block.hidden = edges.length === 0;
+  const persistentLinks = normalizeScheduleLinks(habit.scheduleLinks,habit.hid);
+  const recurring = ['after','before'].filter(direction=>persistentLinks[direction]);
+  block.hidden = edges.length === 0 && recurring.length === 0;
   if(clearBtn){
     clearBtn.hidden = edges.length === 0;
     clearBtn.dataset.orderClearHid = habit.hid;
   }
-  if(!edges.length){
+  if(!edges.length && !recurring.length){
     list.innerHTML = '';
     return;
   }
   const data = load();
+  const recurringHtml = recurring.map(direction=>{
+    const link = persistentLinks[direction];
+    const other = data.find(item=>item && item.hid === link.anchorHid);
+    const label = `${link.adjacency === 'direct' ? 'right ' : ''}${direction} ${other && other.name || 'missing habit'}`;
+    const mark = other ? orderMarkChipHtml({
+      kind:direction,
+      adjacency:link.adjacency,
+      persistent:true,
+      otherEmoji:other.emoji || '',
+      otherBg:other.emojiBgColor || '',
+      otherName:other.name || 'habit'
+    }) : '';
+    return `<div class="detail-order-row">
+      ${mark}
+        <span class="detail-order-meta">recurring · ${escapeHtml(label)}${link.requireSameDay ? ` · only on days with ${escapeHtml(other && other.name || 'the other habit')}` : ''}</span>
+      <span class="detail-order-edit-note">Schedule</span>
+    </div>`;
+  }).join('');
   const byDay = new Map();
   for(const edge of edges){
     if(!byDay.has(edge.dayBase))byDay.set(edge.dayBase,[]);
     byDay.get(edge.dayBase).push(edge);
   }
   const dayBases = [...byDay.keys()].sort((a,b)=>a - b);
-  list.innerHTML = dayBases.map(dayBase=>{
+  list.innerHTML = recurringHtml + dayBases.map(dayBase=>{
     const dayLabel = typeof formatOrderDayLabel === 'function'
       ? formatOrderDayLabel(dayBase)
       : new Date(dayBase).toLocaleDateString();
@@ -333,6 +356,73 @@ function renderTimeWindowInputs(h = {}){
   syncTimeClearBtn();
 }
 
+function scheduleLinkHabitOptions(subjectHid,selectedHid){
+  const items = typeof load === 'function' ? load() : [];
+  const options = ['<option value="">— no anchor —</option>'];
+  for(const item of items){
+    if(!item || cleanHabitId(item.hid) === cleanHabitId(subjectHid) || item.type === 'zero')continue;
+    const hid = cleanHabitId(item.hid);
+    options.push(`<option value="${escapeHtml(hid)}"${hid === selectedHid ? ' selected' : ''}>${escapeHtml((item.name || 'untitled').slice(0,60))}</option>`);
+  }
+  return options.join('');
+}
+
+function renderScheduleLinkEditor(editor,direction,h){
+  if(!editor)return;
+  const links = normalizeScheduleLinks(h && h.scheduleLinks,h && h.hid);
+  const link = links[direction];
+  const picker = editor.querySelector('.schedule-link-habit');
+  const adj = editor.querySelector('.schedule-link-adjacency');
+  const sameDay = editor.querySelector('.schedule-link-same-day');
+  const sameDayRow = editor.querySelector('.schedule-link-same-day-row');
+  const clear = editor.querySelector('.schedule-link-clear');
+  const anchorHid = link ? link.anchorHid : '';
+  if(picker)picker.innerHTML = scheduleLinkHabitOptions(h && h.hid,anchorHid);
+  if(adj){
+    adj.hidden = !link;
+    adj.querySelectorAll('[data-adjacency]').forEach(btn=>{
+      btn.classList.toggle('on',btn.dataset.adjacency === (link ? link.adjacency : 'sometime'));
+    });
+  }
+  if(sameDay){
+    if(sameDayRow)sameDayRow.hidden = !link;
+    const isRequired = Boolean(link && link.requireSameDay);
+    sameDay.setAttribute('aria-pressed',isRequired ? 'true' : 'false');
+    if(sameDayRow)sameDayRow.classList.toggle('is-on',isRequired);
+    const anchor = (typeof load === 'function' ? load() : []).find(item=>item && item.hid === anchorHid);
+    const title = sameDayRow && sameDayRow.querySelector('.setting-title');
+    const help = sameDayRow && sameDayRow.querySelector('.schedule-link-same-day-help');
+    const anchorName = anchor && anchor.name || 'the other habit';
+    if(title)title.textContent = `Only on days with ${anchorName}`;
+    if(help)help.textContent = `When on, this habit is planned only if ${anchorName} is also planned or already completed that day.`;
+    sameDay.setAttribute('aria-label',`Only on days with ${anchorName}: ${isRequired ? 'on' : 'off'}`);
+  }
+  if(clear)clear.hidden = !link;
+}
+
+function renderScheduleLinkEditors(h = {}){
+  document.querySelectorAll('#detail-schedule-order .schedule-link-editor').forEach(editor=>{
+    renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,h);
+  });
+}
+
+function readScheduleLinksFromDetail(subjectHid){
+  const out = {before:null,after:null};
+  document.querySelectorAll('#detail-schedule-order .schedule-link-editor').forEach(editor=>{
+    const direction = editor.dataset.scheduleLink;
+    const anchorHid = cleanHabitId(editor.querySelector('.schedule-link-habit')?.value);
+    if(!anchorHid)return;
+    const adjacency = editor.querySelector('[data-adjacency].on')?.dataset.adjacency === 'direct'
+      ? 'direct' : 'sometime';
+    out[direction] = normalizeScheduleLink({
+      anchorHid,
+      adjacency,
+      requireSameDay:editor.querySelector('.schedule-link-same-day')?.getAttribute('aria-pressed') === 'true'
+    },subjectHid);
+  });
+  return out;
+}
+
 // PURE: snapshot the later/earlier-of fields for one endpoint into the tune object.
 function snapshotCombineFields(h, prefix){
   return {
@@ -348,24 +438,33 @@ function snapshotCombineFields(h, prefix){
 
 // RENDER (idempotent): populate every anchor <select> with the standard list.
 // Re-running on every openDetail is harmless — the options are stable. Primary
-// gets prayer + habit; secondary also gets a fixed clock option.
+// gets prayers; secondary also gets a fixed clock option. Habit choices are
+// now created in the dedicated recurring Habit order editor. A legacy option
+// is injected only while rendering an older non-migratable expression.
 function populateAnchorOptions(){
   const prayerOpts = PRAYER_ANCHORS.map(a => `<option value="${a}">${prayerDisplayName(a)}</option>`).join('');
   document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
     if(sel.dataset.populated === '1')return;
     sel.innerHTML = '<option value="">— anchor —</option>'
-      + prayerOpts
-      + '<option value="habit">after another habit…</option>';
+      + prayerOpts;
     sel.dataset.populated = '1';
   });
   document.querySelectorAll('.time-endpoint .time-anchor2').forEach(sel => {
     if(sel.dataset.populated === '1')return;
     sel.innerHTML = '<option value="">— anchor —</option>'
       + prayerOpts
-      + '<option value="habit">after another habit…</option>'
       + '<option value="fixed">clock time…</option>';
     sel.dataset.populated = '1';
   });
+}
+
+function ensureLegacyHabitAnchorOption(select){
+  if(!select || select.querySelector('option[value="habit"]'))return;
+  const option = document.createElement('option');
+  option.value = 'habit';
+  option.textContent = 'after completion (legacy)…';
+  const fixed = select.querySelector('option[value="fixed"]');
+  select.insertBefore(option,fixed || null);
 }
 
 // RENDER: build/rebuild a habit-picker dropdown. `which` is '' (primary) or '2'.
@@ -432,6 +531,7 @@ function renderTimeEndpoint(endpoint, field, h){
   const offset2Input = endpoint.querySelector('.time-offset2');
   const anchor = cleanAnchor(h && h[field + 'Anchor']);
   if(anchor){
+    if(anchor === 'habit')ensureLegacyHabitAnchorOption(anchorSel);
     endpoint.classList.add('is-dynamic');
     if(fixedInput)fixedInput.hidden = true;
     if(dynWrap)dynWrap.hidden = false;
@@ -446,6 +546,7 @@ function renderTimeEndpoint(endpoint, field, h){
     if(combineSel)combineSel.value = combine || '';
     if(expr2)expr2.hidden = !combine;
     if(combine){
+      if(cleanAnchor(h[field + 'Anchor2']) === 'habit')ensureLegacyHabitAnchorOption(anchor2Sel);
       if(anchor2Sel)anchor2Sel.value = cleanAnchor(h[field + 'Anchor2']) || '';
       if(offset2Input){
         const off2 = normalizePrayerOffset(h[field + 'OffsetMin2']);
@@ -630,6 +731,7 @@ function currentDetailTune(){
   const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
   const locationIds = selectedLocationIdsFrom('detail-tag-chips');
   const locationPrefs = selectedLocationPrefsFrom('detail-tag-chips');
+  const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
   return {
     name:$('detail-habit-message').value.trim(),
     type,
@@ -662,6 +764,7 @@ function currentDetailTune(){
     allowedTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-time-end'),
     preferredTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-start'),
     preferredTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-end'),
+    scheduleLinks:readScheduleLinksFromDetail(subjectHid),
     ...(() => {
       const c = readCombineFromEndpoint('detail-time-start');
       return {
@@ -789,6 +892,7 @@ function setDetailDirty(force){
       (current.allowedTimeEndAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId || null) ||
       (current.preferredTimeStartAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId || null) ||
       (current.preferredTimeEndAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId || null) ||
+      JSON.stringify(current.scheduleLinks || {}) !== JSON.stringify(detailTuneOriginal.scheduleLinks || {}) ||
       (current.allowedTimeStartCombine || null) !== (detailTuneOriginal.allowedTimeStartCombine || null) ||
       (current.allowedTimeStartAnchor2 || null) !== (detailTuneOriginal.allowedTimeStartAnchor2 || null) ||
       current.allowedTimeStartOffsetMin2 !== detailTuneOriginal.allowedTimeStartOffsetMin2 ||
@@ -843,6 +947,7 @@ function restoreDetailTune(){
   if($('detail-auto-mark'))$('detail-auto-mark').value = detailTuneOriginal.autoMarkMinutes != null ? detailTuneOriginal.autoMarkMinutes : '';
   syncBreakableUi();
   renderScheduleChips('detail',detailTuneOriginal);
+  renderScheduleLinkEditors(detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
   setDetailPriorityUi(detailTuneOriginal.priority);
