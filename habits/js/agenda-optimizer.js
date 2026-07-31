@@ -344,7 +344,7 @@ function optimizerWindowsForCandidate(candidate,state){
 // open-slot start, enumerate starts immediately before/after competing windows.
 // Those boundary options let GLPK move flexible work out of a narrow window
 // without paying for a minute-by-minute grid on mobile.
-function listPlaceFitsOnDay(state,fill,dayCandidates = []){
+function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges = []){
   if(typeof tryPlaceOnDay !== 'function')return [];
   const doing = doingNowForDay(state);
   let placeFill = fill;
@@ -362,7 +362,7 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = []){
     const fits = [];
     const seen = new Set();
     const durationMs = fillDurationMinutes(placeFill) * 60000;
-    const windowEdges = [];
+    const windowEdges = candidateBoundaryEdges.slice();
     for(const candidate of dayCandidates){
       for(const win of optimizerWindowsForCandidate(candidate,state)){
         windowEdges.push(win.start - durationMs,win.start,win.end - durationMs,win.end);
@@ -423,13 +423,27 @@ function fitsOverlap(a,b){
 function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   const options = [];
   const doing = doingNowForDay(state);
+  // One cheap probe per candidate exposes actual earliest completion
+  // boundaries after blocks/startClock (not merely the end of its allowed
+  // window). Other candidates can then start immediately after a short item:
+  // Fajr 5:35–5:37 creates a 5:37 option for Call Amma even when Fajr itself
+  // remains allowed until sunrise at 5:58.
+  const candidateBoundaryEdges = [];
+  for(const c of dayCandidates){
+    if(!c || !c.h || c.h.breakable)continue;
+    const probeFill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    const probe = tryPlaceOnDay(state,probeFill,{allowNetwork:false});
+    if(probe){
+      candidateBoundaryEdges.push(probe.placeStart,probe.placeEnd);
+    }
+  }
   for(const c of dayCandidates){
     // Breakable budgets are continuous resources, not one all-or-nothing event.
     // They are fitted after this exact fixed-duration solve has reserved narrow
     // windows, then split only when a continuous placement is impossible.
     if(c.h && c.h.breakable)continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const fits = listPlaceFitsOnDay(state,fill,dayCandidates);
+    const fits = listPlaceFitsOnDay(state,fill,dayCandidates,candidateBoundaryEdges);
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
     const earliestStart = fits.reduce(
       (min,fit)=>Math.min(min,fit.placeStart),Infinity);
@@ -441,6 +455,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
       const delayMin = Number.isFinite(earliestStart)
         ? Math.max(0,(fit.placeStart - earliestStart) / 60000)
         : 0;
+      fit.optimizerDelayMinutes = delayMin;
       const option = {c,fill,fit,weight:baseWeight - Math.min(1440,delayMin) * 0.001,
         movable:typeof isMovableWeekCandidate === 'function' && isMovableWeekCandidate(c)};
       applyDoingNowWeight(option,doing);

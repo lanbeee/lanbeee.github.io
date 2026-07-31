@@ -110,6 +110,7 @@ function task(name,dueDate,priority = 1){
         gapStatuses:today.placementGaps.map(gap=>gap.status),
         traceCount:today.plannerTrace.length,
         traceOnDemand:today.plannerTraceGeneratedOnDemand,
+        preview:today.plannerIsPreview,
         traceHasInputs:today.plannerTrace.some(item=>
           item.inputs.some(input=>input.startsWith('allowed '))
           && item.inputs.some(input=>input.includes('priority'))
@@ -130,6 +131,7 @@ function task(name,dueDate,priority = 1){
   assert(model.today.rows > 0,'Scorecard should expose the actual agenda output rows');
   assert(model.today.traceCount > 0,'Scorecard should expose planner decisions');
   assert(model.today.traceOnDemand === true,'Planner trace should identify itself as on-demand');
+  assert(model.today.preview === true,'Synchronous audit should label optimizer-enabled output as a fast preview/fallback');
   assert(model.today.traceHasInputs,'Planner trace should expose resolved windows and ranking inputs');
   assert(model.today.missed === 0,`Budget-capped gaps must not be reported as scheduler misses: ${JSON.stringify(model.today)}`);
   assert(model.today.budgetCapped > 0 && model.today.gapStatuses.includes('budget-capped'),
@@ -150,10 +152,12 @@ function task(name,dueDate,priority = 1){
       audited:report.agendaRows
         .filter(row=>row.kind === 'fill' || row.kind === 'scheduled')
         .map(row=>({kind:row.kind,i:row.i,start:row.start,end:row.end,name:row.name})),
-      usesRenderedSnapshot:report.usesRenderedSnapshot
+      usesRenderedSnapshot:report.usesRenderedSnapshot,
+      plannerIsPreview:report.plannerIsPreview
     };
   },tomorrowBase);
   assert(snapshotParity.usesRenderedSnapshot,'Audit did not identify the rendered Home snapshot as its source');
+  assert(snapshotParity.plannerIsPreview === false,'Settled optimized snapshot was mislabeled as a preview');
   assert(JSON.stringify(snapshotParity.audited) === JSON.stringify(snapshotParity.rendered),
     `Audit output diverged from rendered optimized Home agenda:\n${JSON.stringify(snapshotParity,null,2)}`);
 

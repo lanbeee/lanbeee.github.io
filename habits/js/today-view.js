@@ -887,6 +887,18 @@ function plannerTraceWindowLabels(windows){
   );
 }
 
+function plannerTraceScarcityInput(score){
+  if(!Number.isFinite(score))return '';
+  if(score >= SCARCITY_UNBOUNDED){
+    return 'scarcity unbounded/flexible';
+  }
+  const preferredOnly = score >= 500000;
+  const local = preferredOnly ? score - 500000 : score;
+  const feasibleSlots = Math.max(0,Math.floor(local / 10000));
+  const slackMinutes = Math.max(0,Math.round(local % 10000));
+  return `scarcity ${preferredOnly ? 'preferred-window' : 'hard-window'}: ${feasibleSlots} feasible slot${feasibleSlots === 1 ? '' : 's'}, ${slackMinutes}m window slack`;
+}
+
 // PURE: earliest fit using clock geometry only. This intentionally does not
 // pretend to reproduce location, travel, budget, ordering, or the whole-day
 // optimizer objective. Comparing it with the selected start makes surprising
@@ -935,7 +947,7 @@ function plannerTraceEarliestClockFit(h,i,dayBase,dayEnd,rangeStart,rawBlocks,ag
 function buildPlannerDecisionTrace(data,settings,context){
   const {
     agenda,agendaRows,dayBase,dayEnd,rangeStart,rawBlocks,eligible,
-    unplacedItems,plannerEngine
+    unplacedItems,plannerEngine,candidateMeta:providedCandidateMeta
   } = context;
   const registry = typeof normalizeLocationRegistry === 'function'
     ? normalizeLocationRegistry(settings && settings.locations) : [];
@@ -946,9 +958,11 @@ function buildPlannerDecisionTrace(data,settings,context){
     if(!placedByIndex.has(row.i))placedByIndex.set(row.i,[]);
     placedByIndex.get(row.i).push(row);
   }
-  const candidateMeta = new Map((agenda && agenda.agendaItems || [])
-    .filter(item=>item && item.i != null)
-    .map(item=>[item.i,item]));
+  const candidateMeta = providedCandidateMeta instanceof Map
+    ? providedCandidateMeta
+    : new Map((agenda && agenda.agendaItems || [])
+      .filter(item=>item && item.i != null)
+      .map(item=>[item.i,item]));
   const constraints = typeof plannerOrderConstraintsForDay === 'function'
     ? plannerOrderConstraintsForDay(dayBase) : [];
   const nameByHid = new Map((data || [])
@@ -1016,6 +1030,7 @@ function buildPlannerDecisionTrace(data,settings,context){
       `${PRIORITY_LABELS[priority] || `P${priority}`} priority`,
       `urgency ${Math.round(urgency)}`,
       Number.isFinite(attention) ? `attention ${attention.toFixed(2)}` : '',
+      plannerTraceScarcityInput(meta.scarcity),
       pinned ? 'pinned to today' : 'not pinned',
       hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
       preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
@@ -1075,6 +1090,8 @@ function buildPlannerDecisionTrace(data,settings,context){
         ? scoreRow.optimizerWeight : null,
       optimizerCandidateWeight:Number.isFinite(scoreRow && scoreRow.optimizerCandidateWeight)
         ? scoreRow.optimizerCandidateWeight : null,
+      optimizerDelayMinutes:Number.isFinite(scoreRow && scoreRow.optimizerDelayMinutes)
+        ? scoreRow.optimizerDelayMinutes : null,
       scarcity:Number.isFinite(meta.scarcity) ? meta.scarcity : null
     });
   }
@@ -1160,6 +1177,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     if(elsewhere == null)return '';
     return homeWeekDayLabel({
       dayBase:elsewhere,
+      weekday:new Date(elsewhere).getDay(),
       isToday:elsewhere === dayStart(now),
       offset:Math.round((elsewhere - dayStart(now)) / 86400000)
     },now).toLowerCase();
@@ -1224,7 +1242,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     plannerScoreTerms:row.plannerScoreTerms || null,
     optimizerWeight:Number.isFinite(row.optimizerWeight) ? row.optimizerWeight : null,
     optimizerCandidateWeight:Number.isFinite(row.optimizerCandidateWeight)
-      ? row.optimizerCandidateWeight : null
+      ? row.optimizerCandidateWeight : null,
+    optimizerDelayMinutes:Number.isFinite(row.optimizerDelayMinutes)
+      ? row.optimizerDelayMinutes : null
   });
   const agendaRows = homeTimeline
     .filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel')
@@ -1241,12 +1261,23 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     blockedByLabel.set(label,(blockedByLabel.get(label) || 0) + Math.round((block.end - block.start) / 60000));
   }
   const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
+  const plannerIsPreview = Boolean(week && !week.optimized && settings && settings.agendaOptimizer);
   const plannerEngine = week
-    ? (week.optimized ? 'exact optimizer' : 'fast scarcity planner')
+    ? (week.optimized ? 'exact optimizer'
+      : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner'))
     : 'fast day planner';
+  const traceCandidateMeta = new Map();
+  const metaDays = week && Array.isArray(week.days) ? week.days : [agenda];
+  for(const metaDay of metaDays){
+    for(const item of metaDay && metaDay.agendaItems || []){
+      if(item && item.i != null && !traceCandidateMeta.has(item.i)){
+        traceCandidateMeta.set(item.i,item);
+      }
+    }
+  }
   const plannerTrace = buildPlannerDecisionTrace(data,settings,{
     agenda,agendaRows:traceAgendaRows,dayBase,dayEnd,rangeStart,rawBlocks,eligible,
-    unplacedItems,plannerEngine
+    unplacedItems,plannerEngine,candidateMeta:traceCandidateMeta
   });
   return {
     generatedAt:now,
@@ -1279,6 +1310,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     placementGaps,
     agendaRows,
     plannerEngine,
+    plannerIsPreview,
     plannerTraceGeneratedOnDemand:true,
     plannerTrace,
     hiddenAgendaRowCount:Math.max(0,schedulerPlacementRowCount - displayedPlacementRowCount),
@@ -1428,17 +1460,25 @@ function scarcityScoreInner(candidate,dayStates){
   let minFeasible = Infinity;
   let minSlack = Infinity;
   let any = false;
+  let anyFeasible = false;
   for(const state of states){
     if(candidate.eligible && !candidate.eligible.has(state.dayBase))continue;
     any = true;
     const fill = {h,i:candidate.i,priority:candidate.priority};
     const n = feasibleStartCount(h,state,fill);
-    if(n < minFeasible)minFeasible = n;
+    // A zero means this candidate cannot use that day at all; treating zero as
+    // "most scarce" lets a broad multi-day item jump ahead of a genuinely
+    // narrow item on a different feasible day. Rank by the tightest POSITIVE
+    // option count, and put candidates with no feasible day at the back.
+    if(n > 0){
+      anyFeasible = true;
+      if(n < minFeasible)minFeasible = n;
+    }
     const slack = windowSlackMinutes(h,state);
     if(slack < minSlack)minSlack = slack;
   }
   if(!any)return SCARCITY_UNBOUNDED;
-  if(minFeasible === Infinity)minFeasible = 0;
+  if(!anyFeasible)return SCARCITY_UNBOUNDED;
   if(minSlack === Infinity)minSlack = SCARCITY_UNBOUNDED;
   return softBias + minFeasible * 10000 + Math.min(minSlack,9999);
 }
@@ -2266,7 +2306,9 @@ function commitPlacement(state,fill,fit){
     plannerScoreTerms:fit.scoreTerms || null,
     optimizerWeight:Number.isFinite(fit.optimizerWeight) ? fit.optimizerWeight : null,
     optimizerCandidateWeight:Number.isFinite(fit.optimizerCandidateWeight)
-      ? fit.optimizerCandidateWeight : null
+      ? fit.optimizerCandidateWeight : null,
+    optimizerDelayMinutes:Number.isFinite(fit.optimizerDelayMinutes)
+      ? fit.optimizerDelayMinutes : null
   });
   state.fills.push({ fill, fit, slotStart:fit.slotStart });
   state.remaining = Math.max(0,state.remaining - fit.travelMin - fit.durMin);

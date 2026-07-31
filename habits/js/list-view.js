@@ -1780,8 +1780,11 @@ function plannerTraceScoreSummary(item){
   if(Number.isFinite(item.optimizerCandidateWeight)){
     parts.push(`candidate ${item.optimizerCandidateWeight.toFixed(2)}`);
   }
+  if(Number.isFinite(item.optimizerDelayMinutes)){
+    parts.push(`option delay ${Math.round(item.optimizerDelayMinutes)}m`);
+  }
   if(Number.isFinite(item.score)){
-    parts.push(`slot cost ${item.score.toFixed(2)} (lower wins)`);
+    parts.push(`fit-generator cost ${item.score.toFixed(2)} (lower wins)`);
   }
   const t = item.scoreTerms;
   if(t){
@@ -1790,7 +1793,7 @@ function plannerTraceScoreSummary(item){
     const scarceMin = Math.round((Number(t.scarceOverlapMs) || 0) / 60000);
     const pref = Math.round(Number(t.preferencePenalty) || 0);
     const order = Math.round(Number(t.orderPenalty) || 0);
-    parts.push(`signals: travel ${travelMin}m, asap delay ${delayMin}m, scarce overlap ${scarceMin}m, preference ${pref}, order ${order}`);
+    parts.push(`fit signals: travel ${travelMin}m, local delay ${delayMin}m, scarce overlap ${scarceMin}m, preference ${pref}, order ${order}`);
   }
   return parts.join(' / ');
 }
@@ -1854,6 +1857,9 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   push('PLANNER DECISION TRACE');
   push(`${(report.plannerTrace || []).length} decisions`);
   push(`engine ${report.plannerEngine || 'planner'}`);
+  if(report.plannerIsPreview){
+    push('snapshot status fast preview; the exact optimizer may replace these placements when ready');
+  }
   push('generated on demand when this audit opened; no continuous solver log');
   push('earliest clock fit ignores location, travel, ordering, budget, and cross-item objective');
   for(const item of report.plannerTrace || []){
@@ -2167,7 +2173,7 @@ function renderDayCapacityScorecard(report){
     </section>
     <section class="capacity-section">
       <div class="capacity-section-head"><h3>planner decision trace</h3><span>${(report.plannerTrace || []).length}</span></div>
-      <p class="capacity-note">Built only when this audit opens. It shows the planner’s inputs, resolved constraints, scores, and outcomes—not a continuous GLPK branch log. “Earliest clock-only fit” intentionally excludes location, travel, ordering, budget, and whole-day competition.</p>
+      <p class="capacity-note">${report.plannerIsPreview ? 'This is the fast preview/fallback snapshot; the exact optimizer may replace it when ready. ' : ''}Built only when this audit opens. It shows the planner’s inputs, resolved constraints, scores, and outcomes—not a continuous GLPK branch log. “Earliest clock-only fit” intentionally excludes location, travel, ordering, budget, and whole-day competition.</p>
       <div class="capacity-trace">${traceRows}</div>
     </section>
     <section class="capacity-section">

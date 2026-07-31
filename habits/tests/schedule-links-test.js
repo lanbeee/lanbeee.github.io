@@ -106,8 +106,6 @@ function assert(value,message){
         hid:'p-noise',name:'Noise',type:'keepup',target:7,logs:[],
         durationMinutes:60,priority:5
       };
-      save([anchor,subject,noise]);
-      const data = load();
       // Freeze the planner at 9am so late-night suite runs do not clip today's
       // slots or make completion logs appear in the frozen clock's future.
       const RealDate = Date;
@@ -124,6 +122,10 @@ function assert(value,message){
       globalThis.Date = FrozenDate;
       let week;
       try{
+        // Persist and load after freezing: this makes synthetic 8am logs
+        // actual completions even when the real clock is earlier than 8am.
+        save([anchor,subject,noise]);
+        const data = load();
         week = useGlpk
           ? await buildWeekAgendaAsync(data,loadSortSettings(),2)
           : buildWeekAgenda(data,loadSortSettings(),2);

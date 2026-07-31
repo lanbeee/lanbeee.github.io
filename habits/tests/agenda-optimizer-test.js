@@ -131,7 +131,9 @@ function base(props) {
     data:[
       base({
         name:'Fajr',type:'keepup',target:1,durationMinutes:2,priority:2,
-        allowedTimeStart:335,allowedTimeEnd:337,
+        // Realistic broad prayer window: sleep makes 5:35 the first usable
+        // minute, while the allowed window itself remains open until 5:58.
+        allowedTimeStart:271,allowedTimeEnd:358,
         lastLog:ago1d,logs:[ago1d]
       }),
       base({
@@ -172,6 +174,111 @@ function base(props) {
   check('Call Amma audit identifies 5:37 AM as earliest clock fit',
     overnightResult.callTrace && overnightResult.callTrace.earliestMin === 337,
     JSON.stringify(overnightResult.callTrace));
+
+  console.log('\n[Optimizer] impossible days do not make broad windows look scarcer');
+  const scarcityResult = await page.evaluate((now)=>{
+    const day0 = new Date(now).setHours(0,0,0,0);
+    const day1 = day0 + 86400000;
+    const settings = {
+      availabilityMinutes:[600,600,600,600,600,600,600],
+      blockedTimes:[],locations:[],travel:{},defaultTravelMode:'walking'
+    };
+    const makeState = (dayBase,slots)=>createDayPlacementState({
+      scheduled:[],agendaItems:[],totalMinutes:600,slots,
+      dayBase,weekday:new Date(dayBase).getDay(),isToday:false
+    },settings,{dayBase,weekMode:true});
+    const makeHabit = props=>({
+      name:'item',type:'keepup',target:1,flexibilityDays:0,durationMinutes:30,
+      breakable:false,minChunkMinutes:30,allowedTimeStart:null,allowedTimeEnd:null,
+      preferredTimeStart:null,preferredTimeEnd:null,lastLog:null,logs:[],
+      locationIds:[],priority:2,...props
+    });
+    const states = [
+      makeState(day0,[{start:day0 + 14*3600000,end:day0 + 15*3600000}]),
+      makeState(day1,[{start:day1 + 335*60000,end:day1 + 600*60000}])
+    ];
+    const broad = makeHabit({
+      name:'Broad overnight',durationMinutes:32,
+      allowedTimeStart:1305,allowedTimeEnd:780
+    });
+    const narrow = makeHabit({
+      name:'Narrow dawn',durationMinutes:2,
+      allowedTimeStart:271,allowedTimeEnd:358
+    });
+    const broadScore = scarcityScore({
+      h:broad,i:0,priority:2,eligible:new Set([day0,day1])
+    },states);
+    const narrowScore = scarcityScore({
+      h:narrow,i:1,priority:0,eligible:new Set([day1])
+    },states);
+    return {broadScore,narrowScore};
+  },atTime(4));
+  check('tight feasible dawn window ranks before broad overnight window',
+    scarcityResult.narrowScore < scarcityResult.broadScore,
+    JSON.stringify(scarcityResult));
+
+  console.log('\n[Fast preview] narrow Fajr survives before optimizer settles');
+  const fastPreview = await page.evaluate((now)=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      const today = dayStart(now);
+      const friday = today + 86400000;
+      const prior = today - 86400000;
+      const makeHabit = props=>({
+        name:'item',hid:'item',type:'keepup',target:1,flexibilityDays:0,
+        durationMinutes:30,breakable:false,minChunkMinutes:30,
+        allowedTimeStart:null,allowedTimeEnd:null,
+        preferredTimeStart:null,preferredTimeEnd:null,
+        lastLog:prior,logs:[prior],emoji:'',pinned:false,sample:false,
+        snoozedUntil:null,topics:[],allowedWeekdays:[],allowedMonthDays:[],
+        preferredWeekdays:[],preferredMonthDays:[],dueDate:null,eventTime:null,
+        hardDue:false,locationIds:[],priority:2,...props
+      });
+      const data = [
+        makeHabit({
+          name:'Fajr',hid:'fajr',target:7,durationMinutes:2,priority:0,
+          allowedTimeStart:271,allowedTimeEnd:358,
+          logs:[prior,{ts:friday + 12*3600000,plan:true}]
+        }),
+        makeHabit({
+          name:'Call Amma',hid:'call',target:1,durationMinutes:32,
+          allowedTimeStart:1305,allowedTimeEnd:780
+        }),
+        {
+          ...makeHabit({name:'Tasks Discussion',hid:'discussion'}),
+          type:'task',target:null,durationMinutes:15,
+          dueDate:friday,eventTime:friday + 570*60000
+        }
+      ];
+      const settings = {
+        preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:false,focus:'balanced',
+        availabilityMinutes:[600,600,600,600,600,600,600],availabilityOverrides:{},
+        showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+        showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+        locations:[],travel:{},blockedTimes:[
+          {label:'sleep',days:[],start:0,end:335},
+          {label:'breakfast',days:[],start:530,end:540}
+        ]
+      };
+      const week = buildWeekAgenda(data,settings,2);
+      const day = week.days.find(item=>item.dayBase === friday);
+      const starts = Object.fromEntries((day.timeline || [])
+        .filter(row=>row.kind === 'fill')
+        .map(row=>[row.h.name,Math.round((row.start - friday) / 60000)]));
+      return {starts,names:Object.keys(starts)};
+    }finally{
+      globalThis.Date = orig;
+    }
+  },atTime(4));
+  check('fast preview keeps Fajr at 5:35 AM',fastPreview.starts.Fajr === 335,
+    JSON.stringify(fastPreview));
+  check('fast preview places Call Amma immediately after Fajr',
+    fastPreview.starts['Call Amma'] === 337,
+    JSON.stringify(fastPreview));
 
   console.log('\n[Optimizer] sunrise vs flexible P0');
   const result = await page.evaluate(async ({ now }) => {
