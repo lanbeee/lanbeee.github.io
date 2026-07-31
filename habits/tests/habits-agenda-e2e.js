@@ -48,8 +48,9 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const blocksFinal = await page.locator('#blocked-time-list .blocked-time-row').count();
   if (blocksFinal !== blocks) throw new Error('remove busy time failed');
 
+  await page.locator('#settings-close').click();
   await page.setViewportSize({ width: 1180, height: 850 });
-  await page.waitForTimeout(250);
+  await page.waitForSelector('.ting-card .context-pill.agenda-lead',{timeout:10000});
   if (await page.locator('#bar-open-today').count()) throw new Error('agenda wide button still exists');
   if (await page.locator('#home-agenda').count()) throw new Error('duplicate home agenda section exists on desktop');
   if (!(await page.locator('.ting-card .context-pill.agenda-lead').first().isVisible())) throw new Error('card time pill hidden on desktop');

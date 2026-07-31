@@ -2615,23 +2615,22 @@ function summarizeTrailTone(tones){
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
-// agenda work and emits a basic grouped list. Normal home renders kick off the
-// GLPK planner in the background after a fast sync paint.
+// agenda work and emits a basic grouped list. Normal home renders reuse a
+// same-day plan cache, then refresh either planner in a worker.
 function render(opts){
   const o = opts || {};
   const list = $('list');
   const empty = $('empty');
   const data = load();
   if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
-  const wantsOptimizedWeek = !o.deferAgenda
+  const wantsPlannedWeek = !o.deferAgenda
     && !o.__optimizedWeek
     && !o.__optimizerFallback
-    && Boolean(sortSettings && sortSettings.agendaOptimizer)
     && sortSettings.preset === 'todayFirst'
     && Boolean(sortSettings.showWeekOnHome)
     && !searchQuery.trim()
-    && typeof buildWeekAgendaAsync === 'function';
-  if(wantsOptimizedWeek){
+    && typeof buildWeekAgendaOffMain === 'function';
+  if(wantsPlannedWeek){
     queueOptimizedHomeRender(data,o);
     return false;
   }
@@ -2867,11 +2866,10 @@ function render(opts){
   };
 
   if(deferAgenda){
-    // PROGRESSIVE FIRST PAINT — no buildWeekAgenda, no homeAgendaRows, no
-    // homeEarlyMap. Show pinned first, then everyone in todayCategory order
-    // (today / overdue / upcoming / others) so the list is sensible within a
-    // frame. Full agenda replaces this on the next idle paint.
-    list.classList.add('is-progressive');
+    // IMMEDIATE FIRST PAINT — no planner work, homeAgendaRows, or homeEarlyMap.
+    // A same-day plan cache normally avoids this compatibility list; it exists
+    // for the first launch after install or after a placement-changing edit.
+    list.classList.remove('is-progressive');
     const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
     const fastOrder = todayFirstActive && !searching
       ? [...indices].sort((a,b)=>{
@@ -3286,6 +3284,7 @@ function homeListFingerprint(now = Date.now()){
 
 let _homeListFingerprint = '';
 let _homeRenderedWeek = null;
+let _fastHomeRefreshToken = 0;
 let _optimizerHomeRequestKey = '';
 let _optimizerHomeRequestToken = 0;
 let _optimizerHomeReadyKey = '';
@@ -3403,14 +3402,66 @@ function restoreHomeReadingPosition(snapshot,list){
 // The lightweight home fingerprint deliberately omits some low-frequency
 // fields. Optimizer reuse needs an exact key so edits to any habit, window,
 // location, score weight, or travel edge can never reuse a stale schedule.
-function optimizerHomeStateKey(data){
+function homePlannerStateKey(data,fingerprintNow = Date.now()){
   // Use persisted records for the exact data signature. normalize() gives
   // legacy records a generated hid in memory; hashing that transient value
   // would make every load look different until the record is next saved.
   const persisted = (typeof Storage !== 'undefined' && typeof KEY !== 'undefined')
     ? (Storage.read(KEY) || data || [])
     : (data || []);
-  return `${homeListFingerprint()}\n${JSON.stringify(persisted)}\n${JSON.stringify(sortSettings || {})}`;
+  const plannerSettings = {...(sortSettings || {})};
+  // Presentation-only state must not invalidate either planner. In particular,
+  // homeExtraMode only changes whether existing blocked/travel rows are cards,
+  // text, or hidden outside twelve hours.
+  delete plannerSettings.homeExtraMode;
+  return `${homeListFingerprint(fingerprintNow)}\n${JSON.stringify(persisted)}\n${JSON.stringify(plannerSettings)}`;
+}
+
+function optimizerHomeStateKey(data){
+  return homePlannerStateKey(data);
+}
+
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v1';
+
+function homeAgendaCacheStateKey(data){
+  return homePlannerStateKey(data,dayStart(Date.now()));
+}
+
+function cachedHomeAgenda(data){
+  try{
+    const cached = Storage.read(HOME_AGENDA_CACHE_KEY);
+    if(!cached || cached.version !== 1 || !cached.week)return null;
+    if(cached.key !== homeAgendaCacheStateKey(data))return null;
+    if(dateKey(cached.savedAt) !== dateKey(Date.now()))return null;
+    const week = cached.week;
+    for(const day of week.days || []){
+      for(const row of day.timeline || []){
+        if(row && row.i != null)row.h = data[row.i] || null;
+      }
+      for(const item of day.agendaItems || []){
+        if(item && item.i != null)item.h = data[item.i] || null;
+      }
+    }
+    return week;
+  }catch(_){
+    return null;
+  }
+}
+
+function saveHomeAgendaCache(data,week){
+  if(!week || !Array.isArray(week.days))return;
+  try{
+    // Habit records are already persisted once and every planner row carries
+    // its stable data index. Omitting repeated `h` objects keeps this cache
+    // small even for histories with hundreds of logs.
+    const leanWeek = JSON.parse(JSON.stringify(week,(key,value)=>key === 'h' ? undefined : value));
+    Storage.write(HOME_AGENDA_CACHE_KEY,{
+      version:1,
+      savedAt:Date.now(),
+      key:homeAgendaCacheStateKey(data),
+      week:leanWeek
+    });
+  }catch(_){}
 }
 
 // View-only state such as an expanded blocked group does not change placement.
@@ -3418,18 +3469,19 @@ function optimizerHomeStateKey(data){
 // even if travel-cache background writes changed the next optimizer key.
 function renderHomePresentationOnly(){
   if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
-  if(sortSettings && sortSettings.agendaOptimizer && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+  if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     render({__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
     return;
   }
   render();
 }
 
-// ASYNC COORDINATOR: paint the sync heuristic week immediately, then upgrade
-// in place when GLPK finishes. Waiting on the solver before first paint left
-// home blank for seconds on cold load.
+// ASYNC COORDINATOR: keep week planning outside the UI thread in both modes.
+// A same-day cached week provides a stable first paint; on a first-ever load a
+// basic list is shown until the worker supplies the agenda.
 function queueOptimizedHomeRender(data,opts){
   const key = optimizerHomeStateKey(data);
+  const exactMode = Boolean(sortSettings && sortSettings.agendaOptimizer);
   if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
     if(opts && opts.__backgroundRefresh
       && homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(_optimizerHomeReadyWeek,data)){
@@ -3444,33 +3496,48 @@ function queueOptimizedHomeRender(data,opts){
   }
   if(_optimizerHomeRequestKey === key)return false;
 
-  // Cold load and direct edits still get an immediate fast plan. Periodic and
-  // reopen refreshes already have a complete plan on screen, so leave it
-  // mounted while GLPK works in the background.
+  // Background refreshes keep the current DOM. Direct/cold renders use the
+  // latest compatible plan, avoiding both a blank launch and reordered phases.
   if(!(opts && opts.__backgroundRefresh)){
-    render({...opts,__fromOptimizer:true,__optimizerFallback:true});
+    const cached = cachedHomeAgenda(data);
+    if(cached)render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
+    else render({...opts,deferAgenda:true});
     _homeListFingerprint = homeListFingerprint();
   }
 
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
   const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
-  void buildWeekAgendaAsync(data,settings,7).then(week=>{
+  const optimizerBuild = typeof buildWeekAgendaOffMain === 'function'
+    ? buildWeekAgendaOffMain(data,settings,7,exactMode ? 'exact' : 'fast')
+    : buildWeekAgendaAsync(data,settings,7);
+  void optimizerBuild.then(week=>{
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
     const live = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
-    if(!live || !live.agendaOptimizer)return;
+    if(!live)return;
     if(key !== optimizerHomeStateKey(load())){
       if(opts && opts.__backgroundRefresh)queueOptimizedHomeRender(load(),opts);
       else render(opts);
       return;
     }
     if(!week || !Array.isArray(week.days))return;
-    // Heuristic paint already on screen; only replace when GLPK produced a plan.
-    if(!week.optimized)return;
+    // In exact mode a timed-out solve returns the heuristic fallback. A cached
+    // planned week can stay mounted; on a first-ever load, use that fallback
+    // rather than leaving the user on the unplanned basic list.
+    if(exactMode && !week.optimized){
+      if(!_homeRenderedWeek){
+        const liveData = load();
+        saveHomeAgendaCache(liveData,week);
+        render({...opts,__fromOptimizer:true,__optimizedWeek:week});
+        _homeListFingerprint = homeListFingerprint();
+      }
+      return;
+    }
     _optimizerHomeReadyKey = key;
     _optimizerHomeReadyWeek = week;
     const liveData = load();
+    saveHomeAgendaCache(liveData,week);
     if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
       _homeRenderedWeek = week;
       if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
@@ -3532,16 +3599,33 @@ function renderHomeIfChanged(force){
       queueOptimizedHomeRender(data,{__backgroundRefresh:true});
       return true;
     }
-    if(!settings.agendaOptimizer && typeof buildWeekAgenda === 'function'){
-      const week = buildWeekAgenda(data,settings,7);
-      if(homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(week,data)){
-        _homeRenderedWeek = week;
-        if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
+    if(!settings.agendaOptimizer && typeof buildWeekAgendaOffMain === 'function'){
+      const token = ++_fastHomeRefreshToken;
+      const requestedFingerprint = fp;
+      const settingsSnapshot = {...settings};
+      void buildWeekAgendaOffMain(data,settingsSnapshot,7,'fast').then(week=>{
+        if(token !== _fastHomeRefreshToken || !week || !Array.isArray(week.days))return;
+        const liveData = load();
+        // A real edit/location update arrived while the worker was planning.
+        // Discard this stale result and let the latest state schedule its own.
+        if(requestedFingerprint !== homeListFingerprint()){
+          renderHomeIfChanged();
+          return;
+        }
+        if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
+          _homeRenderedWeek = week;
+          if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
+          _homeListFingerprint = homeListFingerprint();
+          return;
+        }
+        render({__fromBackgroundRefresh:true,__optimizedWeek:week});
         _homeListFingerprint = homeListFingerprint();
-        return true;
-      }
-      render({__fromBackgroundRefresh:true,__optimizedWeek:week});
-      _homeListFingerprint = homeListFingerprint();
+      }).catch(()=>{
+        if(token !== _fastHomeRefreshToken)return;
+        // Workers are widely available in the supported browsers. If creation
+        // is blocked, keep the current plan instead of freezing touch input
+        // with the old synchronous comparison path.
+      });
       return true;
     }
   }

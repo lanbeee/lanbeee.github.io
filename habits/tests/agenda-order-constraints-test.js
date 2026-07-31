@@ -643,7 +643,7 @@ function seedScript(){
     });
   });
   await page.reload({ waitUntil:'load' });
-  await page.waitForTimeout(600);
+  await page.waitForSelector('.swipe-row[data-agenda-draggable="1"]',{timeout:5000});
 
   const ui = await page.evaluate(() => {
     const handles = document.querySelectorAll('.agenda-drag-handle');
@@ -652,6 +652,14 @@ function seedScript(){
     const deep = data.find(h=>h.hid === 't-deep');
     const email = data.find(h=>h.hid === 't-email');
     const walk = data.find(h=>h.hid === 't-walk');
+    // Exercise the grip before sheet saves intentionally trigger asynchronous
+    // replans and replace the original row.
+    const row = document.querySelector('.swipe-row[data-agenda-draggable="1"]');
+    const beforeReady = row?.classList.contains('agenda-drag-ready');
+    armAgendaReorder(row, Number(row.dataset.realIdx), Number(row.dataset.dayBase));
+    const afterReady = row?.classList.contains('agenda-drag-ready');
+    void row?.offsetWidth;
+    const pe = row ? getComputedStyle(row.querySelector('.agenda-drag-handle')).pointerEvents : 'none';
     openOrderLinkSheet({
       h:deep, dayBase:dayStart(Date.now()),
       before:{h:email}, after:{h:walk},
@@ -693,14 +701,6 @@ function seedScript(){
     const dnEdge = orderConstraintsForDay(dayStart(Date.now()))
       .find(e=>e.beforeHid === 't-deep' && e.afterHid === 't-walk');
     const dnTimerHid = habitTimer && data[habitTimer.idx] && data[habitTimer.idx].hid;
-
-    // Long-press arm
-    const row = document.querySelector('.swipe-row[data-agenda-draggable="1"]');
-    const beforeReady = row?.classList.contains('agenda-drag-ready');
-    armAgendaReorder(row, Number(row.dataset.realIdx), Number(row.dataset.dayBase));
-    const afterReady = row?.classList.contains('agenda-drag-ready');
-    void row?.offsetWidth;
-    const pe = row ? getComputedStyle(row.querySelector('.agenda-drag-handle')).pointerEvents : 'none';
 
     return {
       handleCount:handles.length,

@@ -68,6 +68,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
   await page.goto(BASE,{waitUntil:'load'});
   await page.waitForSelector('#list .ting-card');
+  await page.waitForSelector('.blocked-card:not(.blocked-card-merge) span',{timeout:10000});
 
   const compact = await page.evaluate(()=>({
     nine:compactHomeTime(new Date(2026,6,22,9,0).getTime()),

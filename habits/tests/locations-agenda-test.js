@@ -458,7 +458,12 @@ function seedScript(extraHabits, extraSettings){
     saveSortSettings(s);
     if(typeof render === 'function')render();
   });
-  await page.waitForFunction(()=>document.querySelectorAll('#list .section-header').length > 0,null,{timeout:10000});
+  await page.waitForFunction(()=>Boolean(
+    typeof _homeRenderedWeek !== 'undefined'
+    && _homeRenderedWeek
+    && _homeRenderedWeek.days
+    && document.querySelector('#list .context-pill.agenda-lead')
+  ),null,{timeout:10000});
   const overload = await page.evaluate(() => {
     const list = document.getElementById('list');
     const headers = [...list.querySelectorAll('.section-header')].map(el => el.dataset.label || el.textContent.trim());

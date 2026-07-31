@@ -105,8 +105,43 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     loadState.hasFingerprint && loadState.hasRenderIfChanged && loadState.hasPlanSignature,
     JSON.stringify(loadState));
 
+  const displayOnly = await page.evaluate(()=>{
+    const original = buildWeekAgendaOffMain;
+    let plannerCalls = 0;
+    buildWeekAgendaOffMain = (...args)=>{
+      plannerCalls += 1;
+      return original(...args);
+    };
+    const current = normalizeHomeExtraMode(sortSettings.homeExtraMode);
+    const next = current === 'cards' ? 'cards12h' : 'cards';
+    const target = document.querySelector(`#home-extra-seg [data-seg-value="${next}"]`);
+    const started = performance.now();
+    target?.click();
+    const elapsed = performance.now() - started;
+    buildWeekAgendaOffMain = original;
+    return {
+      elapsed,
+      plannerCalls,
+      next,
+      saved:normalizeHomeExtraMode(sortSettings.homeExtraMode),
+      selected:target?.classList.contains('on'),
+      hasWeek:Boolean(_homeRenderedWeek?.days)
+    };
+  });
+  check('display-only range switch reuses the planned week',
+    displayOnly.plannerCalls === 0 && displayOnly.saved === displayOnly.next
+      && displayOnly.selected && displayOnly.hasWeek,
+    JSON.stringify(displayOnly));
+  check('display-only range switch returns without a planner-sized task',
+    displayOnly.elapsed < 250,
+    JSON.stringify(displayOnly));
+
   const skip = await page.evaluate(()=>{
     const before = document.querySelectorAll('#list .ting-card').length;
+    // Routing cache writes may legitimately move the live fingerprint just
+    // after the first plan settles. Pin this assertion to the current state so
+    // it tests the unchanged-key short circuit itself.
+    _homeListFingerprint = homeListFingerprint();
     const skipped = renderHomeIfChanged() === false;
     const after = document.querySelectorAll('#list .ting-card').length;
     const forced = renderHomeIfChanged(true) === true;
@@ -156,6 +191,11 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   check('fast identical background calculation keeps mounted cards',
     fastRefresh.started && fastRefresh.sameNode && fastRefresh.after === fastRefresh.before && !fastRefresh.optimized,
     JSON.stringify(fastRefresh));
+  await page.waitForFunction(()=>Boolean(
+    typeof _homeRenderedWeek !== 'undefined'
+    && _homeRenderedWeek?.days
+    && !_homeRenderedWeek.optimized
+  ),null,{timeout:15000});
 
   // A genuine repaint must keep the day/item currently being read at the same
   // viewport offset instead of sorting the user back to the top.

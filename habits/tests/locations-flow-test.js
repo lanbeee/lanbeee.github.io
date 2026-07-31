@@ -191,17 +191,20 @@ async function openSettings(page){
   // sheet; the equivalent presence-picker flow is covered above in [B].
 
   // Home today section should show thin travel cards when consecutive items differ.
-  const homeTravel = await page.evaluate(() => {
+  await page.evaluate(() => {
     const settings = loadSortSettings();
     if(settings.preset !== 'todayFirst'){
       saveSortSettings({...settings,preset:'todayFirst'});
     }
     render();
-    return {
+  });
+  await page.waitForFunction(()=>Boolean(
+    typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.days
+  ),null,{timeout:10000});
+  const homeTravel = await page.evaluate(() => ({
       travelCards:document.querySelectorAll('#list .travel-card').length,
       travelCopy:[...document.querySelectorAll('#list .travel-card')].slice(0,2).map(el=>el.textContent.replace(/\s+/g,' ').trim())
-    };
-  });
+  }));
   console.log(homeTravel);
   // Late-day runs can leave no room for consecutive place-changing items, so
   // travel cards are best-effort — require them only when the day still has room

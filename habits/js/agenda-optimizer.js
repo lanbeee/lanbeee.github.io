@@ -37,9 +37,74 @@ function glpkCandidateUrls(){
     const el = document.querySelector('script[src*="agenda-optimizer.js"]');
     if(el && el.src)urls.push(new URL('../lib/js/glpk.mjs',el.src).href);
   }catch(_){}
+  try{
+    if(typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope){
+      urls.push(new URL('../lib/js/glpk.mjs',self.location.href).href);
+    }
+  }catch(_){}
   try{ urls.push(new URL('./lib/js/glpk.mjs',location.href).href); }catch(_){}
   // De-dupe while preserving order.
   return urls.filter((url,i)=>url && urls.indexOf(url) === i);
+}
+
+let _plannerWorker = null;
+let _plannerWorkerSeq = 0;
+const _plannerWorkerRequests = new Map();
+
+function plannerWorkerStorageSnapshot(){
+  const snapshot = {};
+  try{
+    for(let i = 0;i < localStorage.length;i += 1){
+      const key = localStorage.key(i);
+      if(key != null)snapshot[key] = localStorage.getItem(key);
+    }
+  }catch(_){}
+  return snapshot;
+}
+
+function ensureAgendaPlannerWorker(){
+  if(_plannerWorker)return _plannerWorker;
+  if(typeof Worker !== 'function')return null;
+  const worker = new Worker('./js/agenda-planner-worker.js');
+  worker.addEventListener('message',event=>{
+    const message = event.data || {};
+    const request = _plannerWorkerRequests.get(message.id);
+    if(!request)return;
+    _plannerWorkerRequests.delete(message.id);
+    if(message.error)request.reject(new Error(message.error));
+    else request.resolve(message.week);
+  });
+  worker.addEventListener('error',error=>{
+    const pending = [..._plannerWorkerRequests.values()];
+    _plannerWorkerRequests.clear();
+    _plannerWorker = null;
+    worker.terminate();
+    pending.forEach(request=>request.reject(
+      new Error(error && error.message ? error.message : 'agenda planner worker failed')
+    ));
+  });
+  _plannerWorker = worker;
+  return worker;
+}
+
+// ASYNC: construct a week without occupying the UI thread. The worker receives
+// a storage snapshot because order constraints, auto-chunks, and planner inputs
+// are persisted independently of the habit array.
+function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast'){
+  const worker = ensureAgendaPlannerWorker();
+  if(!worker)return Promise.reject(new Error('agenda planner worker unavailable'));
+  const id = ++_plannerWorkerSeq;
+  return new Promise((resolve,reject)=>{
+    _plannerWorkerRequests.set(id,{resolve,reject});
+    worker.postMessage({
+      id,
+      data,
+      settings,
+      numDays,
+      mode,
+      storage:plannerWorkerStorageSnapshot()
+    });
+  });
 }
 
 function ensureGlpk(){

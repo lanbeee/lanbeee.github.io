@@ -1389,7 +1389,17 @@ document.getElementById('setting-prayer-method')?.addEventListener('change',e=>{
 $('home-extra-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');
   if(!opt)return;
-  updateSortSetting({homeExtraMode:normalizeHomeExtraMode(opt.dataset.segValue)});
+  const mode = normalizeHomeExtraMode(opt.dataset.segValue);
+  if(mode === normalizeHomeExtraMode(sortSettings && sortSettings.homeExtraMode))return;
+  // This setting only changes how already-planned blocked/travel rows look.
+  // Reflect the tap immediately and reuse the mounted week; rebuilding the
+  // seven-day plan here made this two-button display control take seconds.
+  document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === mode);
+  });
+  updateSortSetting({homeExtraMode:mode},{sync:false,renderNow:false});
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  else render();
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{
@@ -2720,24 +2730,34 @@ if (typeof sweepAutoDoneTasks === 'function'){
 // light debounce keeps rapid events from thrashing the DOM. Sync-only (no
 // progressive) so returning never flashes a different card order.
 let _reopenRefreshTimer = null;
-function scheduleReopenRefresh(){
+let _homeHiddenAt = 0;
+function scheduleReopenRefresh(refreshAgenda = true){
   if(_reopenRefreshTimer)return;
   _reopenRefreshTimer = setTimeout(()=>{
     _reopenRefreshTimer = null;
     if(typeof requestLocationAccess === 'function' && typeof resumeLocationWatchIfOptedIn === 'function'){
       resumeLocationWatchIfOptedIn({fresh:true});
     }
-    // Force on reopen: wall-clock / place may have moved while we were hidden
-    // even if the minute-bucket fingerprint has not rolled yet.
-    if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true);
-    else if(typeof render === 'function')render();
+    if(refreshAgenda){
+      if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true);
+      else if(typeof render === 'function')render();
+    }else if(typeof updateHomeSessionProgress === 'function'){
+      updateHomeSessionProgress();
+    }
     if(typeof checkReminders === 'function')checkReminders();
   },200);
 }
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden)return;
+  if(document.hidden){
+    _homeHiddenAt = Date.now();
+    return;
+  }
   closeAllSwipes();
-  scheduleReopenRefresh();
+  // A quick app switch cannot make a schedule materially stale. Replanning on
+  // every brief foreground transition blocked touch scrolling for the entire
+  // Fast solve. Longer absences still get the normal freshness check.
+  const hiddenFor = _homeHiddenAt ? Date.now() - _homeHiddenAt : Infinity;
+  scheduleReopenRefresh(hiddenFor >= HOME_AGENDA_REFRESH_MS);
 });
 window.addEventListener('pageshow',e=>{
   // bfcache restore (back/forward) — also refresh, since a lot of wall-clock
