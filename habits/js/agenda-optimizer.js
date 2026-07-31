@@ -606,7 +606,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
           if(!hasCleanAlt && beats)continue;
           let overlapsReserve = false;
           for(const r of reservations){
-            if(o.fit.placeEnd <= r.window.start || o.fit.placeStart >= r.window.end)continue;
+            const windows = typeof breakableReservationWindows === 'function'
+              ? breakableReservationWindows(r)
+              : (r.window ? [r.window] : []);
+            if(!windows.some(win=>
+              o.fit.placeEnd > win.start && o.fit.placeStart < win.end))continue;
             overlapsReserve = true;
             break;
           }

@@ -144,11 +144,25 @@ function assert(cond,msg){
   // ══════════════════════════════════════════════════════════════════════
   console.log('\n[F] Non-week mode today pill');
   await page.evaluate(() => {
-    // Ensure a "today" section exists even late at night (otherwise free pill
-    // has no header to attach to — only "coming up" would render).
+    // Freeze this isolated render at 9am. Near midnight the real calendar day
+    // has less than the pill's 10-minute threshold left, regardless of blocks.
+    const RealDate = Date;
+    const fixedNow = dayStart(RealDate.now()) + 9 * 3600000;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(fixedNow);
+    }
+    FrozenDate.now = ()=>fixedNow;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    globalThis.__freeTimeIndicatorRealDate = RealDate;
+    globalThis.Date = FrozenDate;
+
+    // Ensure a "today" section exists so the free pill has a header to attach
+    // to instead of rendering only a "coming up" section.
     const data = load();
-    // Plan-for-today forces the today section even when remaining evening time
-    // is shorter than a default-duration keepup (late-night suite runs).
+    // Plan-for-today forces the today section.
     data.push({
       hid:'ft-today-keepup',
       name:'Evening stretch',
@@ -175,6 +189,12 @@ function assert(cond,msg){
   await page.waitForTimeout(1000);
   const todayPill = await page.locator('.section-header:has-text("today") .free-pill').count();
   assert(todayPill >= 1, `today header in non-week mode has free pill (found ${todayPill})`);
+  await page.evaluate(() => {
+    if(globalThis.__freeTimeIndicatorRealDate){
+      globalThis.Date = globalThis.__freeTimeIndicatorRealDate;
+      delete globalThis.__freeTimeIndicatorRealDate;
+    }
+  });
 
   // ══════════════════════════════════════════════════════════════════════
   // G. No page errors

@@ -8,10 +8,9 @@
 //   Issue 2 — a timed task planned today must show exactly ONE "scheduled" pill
 //             on its home card, not two identical purple calendar-time pills.
 //
-//   Issue 8 — a late/overnight allowed-time window (e.g. 10pm-11am) still
-//             surfaces a suggested time at its window start even when today's
-//             availability budget is spent before the window opens. Overnight
-//             windows extend into tomorrow as one span.
+//   Issue 8 — a daily overnight allowed-time window (e.g. 10pm-11am) exposes
+//             both portions on each calendar day: midnight-11am and
+//             10pm-midnight.
 //
 //   Issue 9 — an "anywhere" habit (no locationIds) with a dynamic prayer
 //             anchor resolves its window against the running agenda anchor /
@@ -841,20 +840,17 @@ function defaultSettings(overrides = {}) {
   }
 
   // ==========================================================================
-  // ISSUE 8 — a late/overnight allowed-time window lands at its window start.
+  // ISSUE 8 — a daily overnight allowed-time window exposes both clock-day
+  //          portions: midnight→end and start→midnight.
   //          The availability budget caps TASK minutes, not open time, so a
-  //          habit allowed 10pm-11am still gets placed at 10pm even when the
-  //          budget is tiny and "now" is early — idle open time earlier in the
-  //          day no longer eats the slot a late window needs. Conversely, when
-  //          a block (sleep/other) actually covers the window start, the item
-  //          gets NO suggestion (it is genuinely unavailable today).
-  //          Overnight windows (end <= start) extend into tomorrow as one span.
+  //          habit allowed 10pm-11am is eligible in today's morning tail and
+  //          again after 10pm. In the closed afternoon portion it waits for
+  //          the evening opening.
   // ==========================================================================
-  console.log('\n[Issue 8] late/overnight window lands at its window start');
+  console.log('\n[Issue 8] daily overnight window exposes both day portions');
 
-  // (a) THE REPORTED BUG: 10pm-11am overnight window, now=9am, tiny 90min
-  //     availability. Idle morning time must NOT eat the budget and starve the
-  //     10pm window — the habit lands at its 10pm window start.
+  // (a) THE REPORTED BUG: 10pm-11am is a daily recurring clock window.
+  //     At 9am, today's morning tail is still open, so place immediately.
   {
     const ago = atTime(9) - 2 * 86400000;
     await seed(
@@ -865,12 +861,11 @@ function defaultSettings(overrides = {}) {
     );
     const rows = await timelineFor(atTime(9, 0), true);
     const fill = rows.find(r => r.name === 'Overnight 10pm-11am');
-    check('8a overnight window lands at its 10pm window start (budget does not starve it)',
-      fill && fill.startLabel === '10:00 PM',
+    check('8a overnight window uses today morning tail',
+      fill && fill.startLabel === '9:00 AM',
       fill ? `start=${fill.startLabel}` : 'missing');
-    // The suggestion must stay inside the allowed window (end <= 11am tomorrow).
-    check('8a overnight suggested end stays inside the window',
-      fill && fill.endMs <= atTime(11, 0) + 24 * 3600000,
+    check('8a morning-tail suggestion ends by 11am',
+      fill && fill.endMs <= atTime(11, 0),
       fill ? `end=${fill.endLabel}` : 'missing');
 
     // DOM: the home card must surface an agenda lead time pill.

@@ -48,7 +48,9 @@ function assert(value,message){
 
   async function plannerScenario(useGlpk,variant){
     return page.evaluate(async ({useGlpk,variant})=>{
-      const now = Date.now();
+      // Keep the planner scenarios independent of the wall clock. They need
+      // up to 120 minutes of today's open timeline and may run near midnight.
+      const now = dayStart(Date.now()) + 9 * 3600000;
       const settings = {
         ...loadSortSettings(),
         preset:'todayFirst',
@@ -106,16 +108,35 @@ function assert(value,message){
       };
       save([anchor,subject,noise]);
       const data = load();
-      const week = useGlpk
-        ? await buildWeekAgendaAsync(data,loadSortSettings(),2)
-        : buildWeekAgenda(data,loadSortSettings(),2);
-      const today = week.days[0];
-      const fills = (today.timeline || []).filter(row=>row.kind === 'fill');
+      // Freeze the planner at 9am so late-night suite runs do not clip today's
+      // slots or make completion logs appear in the frozen clock's future.
+      const RealDate = Date;
+      const planNow = now;
+      function FrozenDate(...args){
+        return args.length ? new RealDate(...args) : new RealDate(planNow);
+      }
+      FrozenDate.now = ()=>planNow;
+      FrozenDate.parse = RealDate.parse;
+      FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate,RealDate);
+      FrozenDate.prototype = RealDate.prototype;
+      const originalDate = globalThis.Date;
+      globalThis.Date = FrozenDate;
+      let week;
+      try{
+        week = useGlpk
+          ? await buildWeekAgendaAsync(data,loadSortSettings(),2)
+          : buildWeekAgenda(data,loadSortSettings(),2);
+      }finally{
+        globalThis.Date = originalDate;
+      }
+      const targetDay = week.days[0];
+      const fills = (targetDay.timeline || []).filter(row=>row.kind === 'fill');
       return {
         optimized:Boolean(week.optimized),
         order:fills.map(row=>row.h && row.h.hid),
         starts:Object.fromEntries(fills.map(row=>[row.h && row.h.hid,row.start])),
-        omissions:today.linkOmissions || []
+        omissions:targetDay.linkOmissions || []
       };
     },{useGlpk,variant});
   }
@@ -142,7 +163,8 @@ function assert(value,message){
     const breakable = await plannerScenario(useGlpk,'breakable');
     const lastAnchor = breakable.order.lastIndexOf('p-anchor');
     const firstSubject = breakable.order.indexOf('p-subject');
-    assert(lastAnchor >= 0 && firstSubject > lastAnchor,`${label}: breakable boundary chunks honor right-after`);
+    assert(lastAnchor >= 0 && firstSubject > lastAnchor,
+      `${label}: breakable boundary chunks honor right-after (${breakable.order.join(' → ')})`);
   }
 
   assert(errors.length === 0,'no page errors');

@@ -287,8 +287,8 @@ function seedScript(){
         return buildWeekAgenda(data, settings, 2);
       }
 
-      function todayFills(week){
-        const day = (week.days || []).find(d=>d.dayBase === today) || week.days[0];
+      function dayFills(week,dayBase = today){
+        const day = (week.days || []).find(d=>d.dayBase === dayBase) || week.days[0];
         const rows = (day && day.timeline || []).filter(r=>r.kind === 'fill' || r.kind === 'scheduled');
         return {
           day,
@@ -306,38 +306,40 @@ function seedScript(){
 
       let dataRef = [];
 
-      // 1) sometime: C before A
+      // 1) sometime: C before A. Use tomorrow for placement-only scenarios
+      // so they retain a full clock day when the suite runs near midnight.
       dataRef = [
-        mk('A','ord-a',1),
-        mk('B','ord-b',1),
-        mk('C','ord-c',1)
+        mk('A','ord-a',1,{dueDate:tomorrow}),
+        mk('B','ord-b',1,{dueDate:tomorrow}),
+        mk('C','ord-c',1,{dueDate:tomorrow})
       ];
       const weekSometime = await plan(dataRef, settingsBase, [
-        {dayBase:today, beforeHid:'ord-c', afterHid:'ord-a', adjacency:'sometime'}
+        {dayBase:tomorrow, beforeHid:'ord-c', afterHid:'ord-a', adjacency:'sometime'}
       ], null);
-      const sometime = todayFills(weekSometime);
+      const sometime = dayFills(weekSometime,tomorrow);
 
       // 2) direct: A then B should be adjacent-ish (B after A)
       dataRef = [
-        mk('Alpha','dir-a',1),
-        mk('Beta','dir-b',1)
+        mk('Alpha','dir-a',1,{dueDate:tomorrow}),
+        mk('Beta','dir-b',1,{dueDate:tomorrow})
       ];
       const weekDirect = await plan(dataRef, settingsBase, [
-        {dayBase:today, beforeHid:'dir-a', afterHid:'dir-b', adjacency:'direct'}
+        {dayBase:tomorrow, beforeHid:'dir-a', afterHid:'dir-b', adjacency:'direct'}
       ], null);
-      const direct = todayFills(weekDirect);
+      const direct = dayFills(weekDirect,tomorrow);
 
-      // 3) between: A → X → B
+      // 3) between: A → X → B. Use tomorrow so the assertion is independent
+      // of how much open clock time remains when this suite runs late at night.
       dataRef = [
-        mk('Email','btw-a',1,{emoji:'✉️'}),
-        mk('Deep','btw-x',1,{emoji:'🧠'}),
-        mk('Walk','btw-b',1,{emoji:'🚶'})
+        mk('Email','btw-a',1,{emoji:'✉️',dueDate:tomorrow}),
+        mk('Deep','btw-x',1,{emoji:'🧠',dueDate:tomorrow}),
+        mk('Walk','btw-b',1,{emoji:'🚶',dueDate:tomorrow})
       ];
       const weekBetween = await plan(dataRef, settingsBase, [
-        {dayBase:today, beforeHid:'btw-a', afterHid:'btw-x', adjacency:'sometime'},
-        {dayBase:today, beforeHid:'btw-x', afterHid:'btw-b', adjacency:'sometime'}
+        {dayBase:tomorrow, beforeHid:'btw-a', afterHid:'btw-x', adjacency:'sometime'},
+        {dayBase:tomorrow, beforeHid:'btw-x', afterHid:'btw-b', adjacency:'sometime'}
       ], null);
-      const between = todayFills(weekBetween);
+      const between = dayFills(weekBetween,tomorrow);
 
       // 4) day isolation: tomorrow constraint must not reorder today
       dataRef = [
@@ -350,7 +352,7 @@ function seedScript(){
       const weekIso = await plan(dataRef, settingsBase, [
         {dayBase:tomorrow, beforeHid:'iso-t2', afterHid:'iso-t1', adjacency:'sometime'}
       ], null);
-      const isoToday = todayFills(weekIso);
+      const isoToday = dayFills(weekIso);
       const tomDay = (weekIso.days || []).find(d=>d.dayBase === tomorrow);
       const tomRows = (tomDay && tomDay.timeline || []).filter(r=>r.kind === 'fill' || r.kind === 'scheduled');
       const tomOrder = tomRows.map(r=>dataRef[r.i] && dataRef[r.i].hid).filter(Boolean);
@@ -364,18 +366,18 @@ function seedScript(){
       const weekDoing = await plan(dataRef, settingsBase, null, {
         hid:'dn-now', startedAt:now, dayBase:today
       });
-      const doing = todayFills(weekDoing);
+      const doing = dayFills(weekDoing);
 
       // 6) only-after / only-before (single edge)
       dataRef = [
-        mk('Left','one-a',1),
-        mk('Mid','one-x',1),
-        mk('Right','one-b',1)
+        mk('Left','one-a',1,{dueDate:tomorrow}),
+        mk('Mid','one-x',1,{dueDate:tomorrow}),
+        mk('Right','one-b',1,{dueDate:tomorrow})
       ];
       const weekOnlyAfter = await plan(dataRef, settingsBase, [
-        {dayBase:today, beforeHid:'one-a', afterHid:'one-x', adjacency:'sometime'}
+        {dayBase:tomorrow, beforeHid:'one-a', afterHid:'one-x', adjacency:'sometime'}
       ], null);
-      const onlyAfter = todayFills(weekOnlyAfter);
+      const onlyAfter = dayFills(weekOnlyAfter,tomorrow);
 
       // 7) fixed → split breakable → fixed. The middle habit must remain one
       // reorderable unit even though a blocked interval makes two chunks.
@@ -487,7 +489,7 @@ function seedScript(){
         && sIdx(result.betweenOrder,'btw-b') >= 0
         && sIdx(result.betweenOrder,'btw-a') < sIdx(result.betweenOrder,'btw-x')
         && sIdx(result.betweenOrder,'btw-x') < sIdx(result.betweenOrder,'btw-b'),
-      `${label}: between chain A → X → B`
+      `${label}: between chain A → X → B (${result.betweenOrder.join(' → ')})`
     );
     if(result.betweenStarts['btw-a'] != null && result.betweenStarts['btw-x'] != null && result.betweenStarts['btw-b'] != null){
       assert(
@@ -553,7 +555,7 @@ function seedScript(){
   const heur = await page.evaluate(() => {
     localStorage.removeItem('tings_order_constraints_v1');
     const today = dayStart(Date.now());
-    const now = Date.now();
+    const now = today + 9 * 3600000;
     const data = [
       {name:'H1', hid:'h1', type:'task', logs:[], lastLog:null, dueDate:today, eventTime:null,
         flexibilityDays:0, durationMinutes:20, breakable:false, autoMarkMinutes:null, priority:2, pinned:false},
@@ -571,7 +573,18 @@ function seedScript(){
       blockedTimes:[],
       showDueTasksInAgenda:true
     };
-    const day = buildDayAgenda(data, settings, today, {weekMode:true});
+    const day = {
+      scheduled:[],
+      agendaItems:[],
+      totalMinutes:600,
+      usedMinutes:0,
+      remainingMinutes:600,
+      slots:[{start:now,end:today + 86400000}],
+      dayKey:dateKey(today),
+      weekday:new Date(today).getDay(),
+      dayBase:today,
+      isToday:true
+    };
     // Manually seed candidates like week mode would
     day.agendaItems = data.map((h,i)=>({h,i,priority:h.priority,scarcity:999999}));
     const state = createDayPlacementState(day, settings, {dayBase:today, now, weekMode:true});

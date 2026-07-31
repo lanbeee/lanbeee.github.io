@@ -133,6 +133,34 @@ function fillTimeWindow(h,dayBase,contextLocId){
   return {start,end};
 }
 
+// PURE: strict allowed-time intervals that fall on this calendar day.
+// A recurring overnight clock window contributes two pieces every day:
+// midnight→end (the tail opened yesterday) and start→midnight (today's
+// opening). This is the day-bounded counterpart to fillTimeWindow(), whose
+// continuous start→next-day span remains useful for display/scoring.
+function fillDayWindows(h,dayBase,contextLocId){
+  if(!hasTimeWindow(h))return null;
+  const rawStart = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
+  const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
+  if(rawStart == null || rawEnd == null)return null;
+  const folded = typeof foldBlockedMinutes === 'function'
+    ? foldBlockedMinutes(rawStart,rawEnd)
+    : {startMin:rawStart,endMin:rawEnd};
+  const startMin = folded.startMin;
+  const endMin = folded.endMin;
+  if(!Number.isFinite(startMin) || !Number.isFinite(endMin))return null;
+  const dayEnd = dayBase + 24 * 3600000;
+  if(endMin > startMin){
+    return [{start:dayBase + startMin * 60000,end:dayBase + endMin * 60000}];
+  }
+  // Preserve the existing equal-endpoint meaning (a 24-hour window).
+  if(endMin === startMin)return [{start:dayBase,end:dayEnd}];
+  return [
+    {start:dayBase,end:dayBase + endMin * 60000},
+    {start:dayBase + startMin * 60000,end:dayEnd}
+  ].filter(win=>win.end > win.start);
+}
+
 // PURE: the soft preferred-time anchor for a fill item today, or null.
 // preferredTimeStart/End is a HINT, not a constraint: the timeline nudges a
 // fill toward this time when it fits, and otherwise falls back to the clock.
@@ -197,11 +225,13 @@ function windowStillDoableToday(h,now = Date.now()){
       const remaining = dayEnd - now - blockedMsIn(now,dayEnd);
       return remaining >= cost;
     }
-    const win = fillTimeWindow(h,dayBase);
-    if(!win)return true;
-    const from = Math.max(now,win.start);
-    const remaining = win.end - from - blockedMsIn(from,win.end);
-    return remaining >= cost;
+    const windows = fillDayWindows(h,dayBase);
+    if(!windows)return true;
+    return windows.some(win=>{
+      const from = Math.max(now,win.start);
+      const remaining = win.end - from - blockedMsIn(from,win.end);
+      return remaining >= cost;
+    });
   }
   return locIds.some(id=>{
     const loc = registry.find(l=>l.id === id);
@@ -717,9 +747,10 @@ function explainUnplacedAgendaFill(state,fill,remainingLoad){
   const maxGap = largestGapMinutes(gaps);
   if(maxGap < needed)return `largest open gap is ${maxGap}m; needs ${needed}m`;
 
-  const hardWindow = fillTimeWindow(h,state.dayBase,state.seedLocId);
-  if(hardWindow){
-    const inWindow = largestGapMinutes(gaps,hardWindow);
+  const hardWindows = fillDayWindows(h,state.dayBase,state.seedLocId);
+  if(hardWindows){
+    const inWindow = hardWindows.reduce(
+      (max,win)=>Math.max(max,largestGapMinutes(gaps,win)),0);
     if(inWindow < needed)return `allowed window has no ${needed}m open gap`;
   }
 
@@ -1217,10 +1248,10 @@ function scarceWindowsToSpare(candidates,dayBase,seedLocId,eligibleDayBase){
     const soft = typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(c.h);
     if(!isScarceScore(c.scarcity) && !hard && !soft)continue;
     if(eligibleDayBase != null && c.eligible && !c.eligible.has(eligibleDayBase))continue;
-    const win = hard
-      ? fillTimeWindow(c.h,dayBase,seedLocId)
-      : fillPreferredWindow(c.h,dayBase,seedLocId);
-    if(win)windows.push(win);
+    const resolved = hard
+      ? fillDayWindows(c.h,dayBase,seedLocId)
+      : [fillPreferredWindow(c.h,dayBase,seedLocId)].filter(Boolean);
+    if(resolved)windows.push(...resolved);
   }
   return windows;
 }
@@ -1449,10 +1480,16 @@ function tryPlaceOnDay(state,fill,opts = {}){
         }
         cap = Math.min(cap, dayBase + iv.end * 60000);
       }else{
-        const win = fillTimeWindow(fill.h,dayBase,anchor);
+        const windows = fillDayWindows(fill.h,dayBase,anchor);
+        const win = windows && (
+          windows.find(x=>placeStart >= x.start && placeStart < x.end)
+          || windows.find(x=>x.start >= placeStart)
+        );
         if(win){
           placeStart = Math.max(placeStart,win.start);
           cap = Math.min(cap,win.end);
+        }else if(windows){
+          continue;
         }
       }
       // Placement must stay inside this open gap (blocks/scheduled already carved).
@@ -1550,13 +1587,12 @@ function dailyBreakableReservations(state,candidates){
       ? placedBreakableMinutes(state,c.i) : 0;
     const deficit = Math.max(0,budget - placed);
     if(deficit <= 0)continue;
-    const win = (typeof hasTimeWindow === 'function' && hasTimeWindow(c.h))
-      ? fillTimeWindow(c.h,state.dayBase,state.seedLocId) : null;
+    const windows = (typeof hasTimeWindow === 'function' && hasTimeWindow(c.h))
+      ? fillDayWindows(c.h,state.dayBase,state.seedLocId) : null;
     out.push({
       i:c.i,
       priority:c.priority != null ? c.priority : 2,
-      window:win ? {start:win.start,end:win.end}
-        : {start:state.dayBase,end:state.dayBase + 86400000},
+      windows:windows || [{start:state.dayBase,end:state.dayBase + 86400000}],
       deficit,
       minChunk:typeof clampMinChunk === 'function'
         ? clampMinChunk(c.h.minChunkMinutes)
@@ -1564,6 +1600,12 @@ function dailyBreakableReservations(state,candidates){
     });
   }
   return out;
+}
+
+function breakableReservationWindows(reservation){
+  if(!reservation)return [];
+  if(Array.isArray(reservation.windows))return reservation.windows;
+  return reservation.window ? [reservation.window] : [];
 }
 
 // PURE: free segments inside [ws,we] ∩ state.slots, minus committed fills and
@@ -1663,7 +1705,8 @@ function movableCapacityForDay(state,candidates){
   }
   let spare = 0;
   for(const r of reservations){
-    const segs = freeSegmentsInWindow(clone,r.window.start,r.window.end);
+    const segs = breakableReservationWindows(r).flatMap(
+      win=>freeSegmentsInWindow(clone,win.start,win.end));
     const lengths = segs.map(seg=>Math.round((seg.end - seg.start) / 60000));
     const minChunk = r.minChunk != null ? r.minChunk
       : (typeof clampMinChunk === 'function' ? clampMinChunk(30) : 30);
@@ -1676,7 +1719,8 @@ function movableCapacityForDay(state,candidates){
 // existing fitOverlapWithWindows shape but maps reservation→window).
 function fitOverlapWithReservationsMs(fit,reservations){
   if(!fit || !Array.isArray(reservations) || !reservations.length)return 0;
-  return fitOverlapWithWindows(fit,reservations.map(r=>r.window));
+  return fitOverlapWithWindows(
+    fit,reservations.flatMap(r=>breakableReservationWindows(r)));
 }
 
 // PURE: does this movable have another eligible day whose breakable-spare can
@@ -1703,7 +1747,9 @@ function movablePriorityBeatsReservations(c,reservations,fit){
   let best = Infinity;
   for(const r of reservations){
     if(fit){
-      if(fit.placeEnd <= r.window.start || fit.placeStart >= r.window.end)continue;
+      const overlaps = breakableReservationWindows(r).some(
+        win=>fit.placeEnd > win.start && fit.placeStart < win.end);
+      if(!overlaps)continue;
     }
     if(r.priority < best)best = r.priority;
   }
@@ -1832,10 +1878,16 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         }
         cap = Math.min(cap, dayBase + iv.end * 60000);
       }else{
-        const win = fillTimeWindow(fill.h,dayBase,anchor);
+        const windows = fillDayWindows(fill.h,dayBase,anchor);
+        const win = windows && (
+          windows.find(x=>placeStart >= x.start && placeStart < x.end)
+          || windows.find(x=>x.start >= placeStart)
+        );
         if(win){
           placeStart = Math.max(placeStart,win.start);
           cap = Math.min(cap,win.end);
+        }else if(windows){
+          continue;
         }
       }
       placeStart = Math.max(placeStart,gap.start);
@@ -3277,12 +3329,13 @@ function repairWeekPlacedHours(candidates,dayStates,settings){
     }
     if(!short)break;
 
-    const win = short.r.window;
+    const windows = breakableReservationWindows(short.r);
     const victims = short.state.fills.filter(entry=>{
       if(!entry || !entry.fill || !entry.fit)return false;
       const c = byIndex.get(entry.fill.i);
       if(!c || !isDeferrableFrom(c,short.state))return false;
-      if(entry.fit.placeEnd <= win.start || entry.fit.placeStart >= win.end)return false;
+      if(!windows.some(win=>
+        entry.fit.placeEnd > win.start && entry.fit.placeStart < win.end))return false;
       return true;
     });
     // Prefer longer victims first — more likely to unlock a Work chunk.
