@@ -16,6 +16,7 @@ function applyAddDefaults(){
   const settings = loadSortSettings();
   $('ting-message').value = '';
   $('ting-emoji').value = '';
+  if(typeof renderEmojiBgSwatches === 'function')renderEmojiBgSwatches('ting-emoji-bg','');
   selectedType = settings.defaultType || 'keepup';
   const target = clampRhythm(settings.defaultTarget || 7);
   syncRhythm('ting',target);
@@ -37,6 +38,7 @@ function applyAddDefaults(){
   if(moreToggle)moreToggle.setAttribute('aria-expanded','false');
   syncAddTypeUi(selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
+  if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
 }
 
 // HYBRID: reset the settings sheet to its fresh-open defaults — collapse
@@ -67,7 +69,6 @@ function syncSettingsControls(){
   if(resetConfirm)resetConfirm.hidden = true;
   updateSortSampleCount();
   renderTopicList();
-  renderAvailabilityControls();
   renderBlockedTimeControls();
   renderLocationControls();
   if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
@@ -387,28 +388,18 @@ function cleanupLegacySortSamples(){
   return save(current.filter(h=>!h.sample));
 }
 
-// RENDER: draw weekday availability inputs
+// RENDER: weekday availability inputs (removed from Settings; kept no-op for
+// any leftover callers / backup-compat paths that still invoke it).
 function renderAvailabilityControls(){
   const wrap = $('availability-grid');
   if(!wrap)return;
-  const availability = normalizeAvailability(sortSettings.availabilityMinutes);
-  wrap.innerHTML = WEEKDAY_LABELS.map((label,i)=>`
-    <label>
-      <span>${label}</span>
-      <input type="number" min="0" max="1440" inputmode="numeric" data-availability-day="${i}" value="${availability[i]}" aria-label="${label} free minutes" />
-      <span class="loc-unit">min</span>
-    </label>
-  `).join('');
+  wrap.innerHTML = '';
 }
 
-// HANDLER: save edited availability day value
+// HANDLER: save edited availability day value (no-op — weekly capacity removed)
 function saveAvailabilityDay(index,value){
-  const availability = normalizeAvailability(sortSettings.availabilityMinutes);
-  availability[index] = Math.max(0,Math.min(1440,parseInt(value,10) || 0));
-  updateSortSetting({availabilityMinutes:availability},{renderNow:false});
-  renderAvailabilityControls();
-  render();
-  if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayAvailability(dayLogsKey);
+  // Weekly availabilityMinutes is unused; per-day overrides live on the
+  // calendar day sheet. Keep this stub so old callers don't throw.
 }
 
 // PURE: <option> list for a blocked-time prayer-anchor picker.
@@ -1178,6 +1169,16 @@ function toggleAppSettingButton(btn){
   if(key === 'reminders'){toggleReminders();return;}
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
+  // Presentation-only: reuse the mounted week plan (same pattern as homeExtraMode).
+  // A full render() would still be cheap once the planner key ignores minimalMode,
+  // but presentation-only avoids even entering the async planner coordinator.
+  if(key === 'minimalMode'){
+    updateSortSetting(patch,{renderNow:false});
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    else render();
+    if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
+    return;
+  }
   updateSortSetting(patch);
   if(key === 'agendaOptimizer' && patch.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
     preloadAgendaOptimizer();
@@ -1240,10 +1241,15 @@ function isFeatureSample(h){
   return Boolean(h && h.sample && !String(h.hid || '').startsWith('sample-prayer-'));
 }
 
-// RENDER: update sample count label text
+// RENDER: update sample count label + remove button on sample sheet
 function updateSortSampleCount(){
+  const n = sortSampleCount();
   const label = $('sort-sample-count');
-  if(label)label.textContent = sortSampleCount() ? `${sortSampleCount()} sample habits currently in the list.` : 'No sample habits are in the list.';
+  if(label)label.textContent = n
+    ? `${n} tagged sample${n === 1 ? '' : 's'} on home · remove drops the rest`
+    : 'No tagged samples on home.';
+  const btn = $('remove-sort-samples');
+  if(btn)btn.disabled = n === 0;
 }
 
 // PURE: display name without Sample: prefix
@@ -1347,6 +1353,7 @@ function refreshSampleHabitsSheet(){
 // HYBRID: open sample habits sheet from About
 function openSampleHabitsSheet(){
   refreshSampleHabitsSheet();
+  updateSortSampleCount();
   const prayersBody = $('sample-prayers-body');
   const prayersHead = $('sample-prayers-head');
   if(prayersBody)prayersBody.hidden = true;
@@ -1666,7 +1673,14 @@ function commitSampleHabits(samples,{setPresence = true, closeSheets = false, to
     refreshSampleHabitsSheet();
   }
   if(typeof render === 'function')render();
-  if(toast && typeof showToast === 'function')showToast(toast);
+  if(toast){
+    const hids = fresh.map(h => h.hid).filter(Boolean);
+    if(typeof showActionToast === 'function' && hids.length){
+      showActionToast(toast,{type:'add-samples',hids,openAction:false});
+    }else if(typeof showToast === 'function'){
+      showToast(toast);
+    }
+  }
   return true;
 }
 
@@ -1776,14 +1790,9 @@ function keepSampleHabit(idx){
   return true;
 }
 
-// HANDLER: remove remaining sample habits (+ drop unused sample-* locations)
-function removeSortSamples(){
-  const current = load();
-  const next = current.filter(h=>!h.sample);
-  if(next.length === current.length){
-    showToast('no samples');
-    return;
-  }
+// HYBRID: drop unused sample-* places/travel from settings; return reconciled habits
+function pruneUnusedSamplePlaces(habits){
+  const next = habits || [];
   const usedIds = new Set();
   next.forEach(h=>(h.locationIds || []).forEach(id=>{ if(id)usedIds.add(id); }));
   next.forEach(h=>{ if(h.preferredLocationId)usedIds.add(h.preferredLocationId); });
@@ -1806,12 +1815,25 @@ function removeSortSamples(){
     ? null
     : sortSettings.lastKnownLocationId;
   updateSortSetting({locations,travel,lastKnownLocationId:lastKnown},{renderNow:false,sync:false});
-  const reconciled = reconcileLocations(next,{...sortSettings,locations,travel});
-  if(save(reconciled.data)){
+  return reconcileLocations(next,{...sortSettings,locations,travel}).data;
+}
+
+// HANDLER: remove remaining sample habits (+ drop unused sample-* locations)
+function removeSortSamples(){
+  const current = load();
+  const next = current.filter(h=>!h.sample);
+  if(next.length === current.length){
+    if(typeof showToast === 'function')showToast('no samples');
+    updateSortSampleCount();
+    return;
+  }
+  const reconciled = pruneUnusedSamplePlaces(next);
+  if(save(reconciled)){
     updateSortSampleCount();
     syncSettingsControls();
-    render();
-    showToast('samples removed');
+    if(typeof refreshSampleHabitsSheet === 'function')refreshSampleHabitsSheet();
+    if(typeof render === 'function')render();
+    if(typeof showToast === 'function')showToast('samples removed');
   }
 }
 
@@ -1846,13 +1868,32 @@ function bindSettingRange(name,key,suffix,options = {}){
 }
 
 // ── Appearance ──────────────────────────────────────────────────────────
+function isMinimalMode(){
+  return Boolean(sortSettings && sortSettings.minimalMode);
+}
+
 function applyAppearanceSettings(){
   const s = sortSettings || {};
   document.body.classList.toggle('compact-mode', !!s.compactMode);
+  document.body.classList.toggle('minimal-mode', !!s.minimalMode);
   document.documentElement.dataset.fontScale = s.fontScale || 'medium';
   const mode = s.themeMode || 'system';
   if(mode === 'system')document.documentElement.removeAttribute('data-theme');
   else document.documentElement.dataset.theme = mode;
+  if(typeof applyDetailMinimalMode === 'function')applyDetailMinimalMode();
+  applyAddMinimalMode();
+}
+
+// Visual-only: collapse add-sheet chrome (emoji bg, more options) in minimal mode.
+function applyAddMinimalMode(){
+  const minimal = isMinimalMode();
+  const sheet = $('add-sheet');
+  if(sheet)sheet.classList.toggle('minimal-add', minimal);
+  if(!minimal)return;
+  const body = $('add-more-options');
+  const toggle = $('add-more-toggle');
+  if(body)body.hidden = true;
+  if(toggle)toggle.setAttribute('aria-expanded','false');
 }
 
 // ── Home city (general area for prayer, weather, etc.) ───────────────────

@@ -234,6 +234,7 @@ $('do-save').addEventListener('click',()=>{
     lastLog:null,
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
+    emojiBgColor:selectedEmojiBgColor('ting-emoji-bg'),
     pinned:false,
     priority:selectedAddPriority(),
     topics:mergedTopics,
@@ -750,6 +751,40 @@ $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-monthday-chips').addEventListener('click',toggleScheduleChip);
+$('detail-schedule-order')?.addEventListener('change',e=>{
+  if(!e.target.closest('.schedule-link-habit'))return;
+  const editor = e.target.closest('.schedule-link-editor');
+  const h = detailIdx != null ? load()[detailIdx] : null;
+  if(!editor || !h)return;
+  const links = readScheduleLinksFromDetail(h.hid);
+  renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:links});
+  setDetailDirty();
+});
+$('detail-schedule-order')?.addEventListener('click',e=>{
+  const editor = e.target.closest('.schedule-link-editor');
+  if(!editor)return;
+  const adj = e.target.closest('[data-adjacency]');
+  if(adj){
+    editor.querySelectorAll('[data-adjacency]').forEach(btn=>btn.classList.toggle('on',btn === adj));
+    setDetailDirty();
+    return;
+  }
+  const sameDay = e.target.closest('.schedule-link-same-day');
+  if(sameDay){
+    sameDay.setAttribute('aria-pressed',sameDay.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    const h = detailIdx != null ? load()[detailIdx] : null;
+    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    setDetailDirty();
+    return;
+  }
+  if(e.target.closest('.schedule-link-clear')){
+    const picker = editor.querySelector('.schedule-link-habit');
+    if(picker)picker.value = '';
+    const h = detailIdx != null ? load()[detailIdx] : null;
+    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    setDetailDirty();
+  }
+});
 $('detail-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-time-clear').addEventListener('click',()=>{
@@ -1036,6 +1071,14 @@ $('detail-save').addEventListener('click',()=>{
   if(!h)return;
   const current = currentDetailTune();
   if(!current.name){$('detail-habit-message').focus();return;}
+  h.scheduleLinks = normalizeScheduleLinks(current.scheduleLinks,h.hid);
+  if(typeof validateScheduleLinkGraph === 'function'){
+    const linkValidation = validateScheduleLinkGraph(data);
+    if(!linkValidation.ok){
+      showToast(linkValidation.message);
+      return;
+    }
+  }
   // Cancel scheduled push for the pre-edit state (sig may change after edit).
   if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && h.type === 'task'){
     cancelPush(reminderSignature(h));
@@ -1043,6 +1086,7 @@ $('detail-save').addEventListener('click',()=>{
   h.name = current.name.slice(0,60);
   h.type = current.type;
   h.emoji = current.emoji;
+  h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
   h.topics = normalizeTopics(current.topics);
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
@@ -1285,22 +1329,32 @@ $('open-sample-habits')?.addEventListener('click',()=>{
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
 $('sample-habits-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('remove-sort-samples')?.addEventListener('click',()=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded($('remove-sort-samples')))return;
+  if(typeof removeSortSamples === 'function')removeSortSamples();
+});
+$('remove-sort-samples')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('sample-habits-add')?.addEventListener('click',()=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded($('sample-habits-add')))return;
   if(typeof addSortSamples === 'function')addSortSamples({closeSheets:true});
 });
 $('sample-prayers-add')?.addEventListener('click',()=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded($('sample-prayers-add')))return;
   if(typeof addPrayerSamples === 'function')addPrayerSamples({closeSheets:true});
 });
 $('sample-habits-preview')?.addEventListener('click',e=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded(e.target))return;
   const btn = e.target.closest('[data-add-sample]');
   if(!btn || btn.disabled)return;
   if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
 });
 $('sample-prayers-preview')?.addEventListener('click',e=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded(e.target))return;
   const btn = e.target.closest('[data-add-sample]');
   if(!btn || btn.disabled)return;
   if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
 });
+addScrollGuard(document.querySelector('.sample-habits-sheet'),'y');
 $('open-settings').addEventListener('click',()=>{
   closeSheet('about-sheet');
   closeSheet('sample-habits-sheet');
@@ -1311,11 +1365,6 @@ $('open-settings').addEventListener('click',()=>{
 $('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-$('detail-keep-sample')?.addEventListener('click',()=>{
-  if(detailIdx == null)return;
-  if(typeof keepSampleHabit === 'function')keepSampleHabit(detailIdx);
-});
-$('detail-keep-sample')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
   if(!opt)return;
@@ -1340,7 +1389,17 @@ document.getElementById('setting-prayer-method')?.addEventListener('change',e=>{
 $('home-extra-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');
   if(!opt)return;
-  updateSortSetting({homeExtraMode:normalizeHomeExtraMode(opt.dataset.segValue)});
+  const mode = normalizeHomeExtraMode(opt.dataset.segValue);
+  if(mode === normalizeHomeExtraMode(sortSettings && sortSettings.homeExtraMode))return;
+  // This setting only changes how already-planned blocked/travel rows look.
+  // Reflect the tap immediately and reuse the mounted week; rebuilding the
+  // seven-day plan here made this two-button display control take seconds.
+  document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === mode);
+  });
+  updateSortSetting({homeExtraMode:mode},{sync:false,renderNow:false});
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  else render();
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{
@@ -1375,11 +1434,6 @@ $('topic-list').addEventListener('click',e=>{
   const btn = e.target.closest('[data-remove-topic]');
   if(!btn)return;
   removeTopic(btn.dataset.removeTopic);
-});
-$('availability-grid').addEventListener('change',e=>{
-  const field = e.target.closest('[data-availability-day]');
-  if(!field)return;
-  saveAvailabilityDay(parseInt(field.dataset.availabilityDay,10),field.value);
 });
 $('blocked-time-add')?.addEventListener('click',addBlockedTime);
 $('blocked-time-list')?.addEventListener('change',e=>{
@@ -1660,8 +1714,6 @@ $('calendar-pdf-cancel')?.addEventListener('click',cancelCalendarPdfImport);
 $('calendar-pdf-clear')?.addEventListener('click',clearImportedCalendarMeetings);
 $('calendar-credit-habit')?.addEventListener('change',onCalendarCreditHabitChange);
 $('calendar-allday-mode')?.addEventListener('change',onCalendarAllDayModeChange);
-$('add-sort-samples')?.addEventListener('click',addSortSamples);
-$('remove-sort-samples')?.addEventListener('click',removeSortSamples);
 $('settings-reset').addEventListener('click',()=>{
   $('settings-reset-confirm').hidden = false;
 });
@@ -2044,7 +2096,7 @@ function requestLogTing(idx,after,opts){
   if(typeof after === 'function')after();
 }
 
-// Habit session timer (auto-stops, then prompts to log)
+// One live timer for the persisted active-focus session.
 let habitTimer = null;
 
 // PURE: minutes to store from a timed session
@@ -2074,7 +2126,7 @@ function syncDetailTimerUi(){
   if(!btn && !display)return;
   if(habitTimer && detailIdx !== null && habitTimer.idx === detailIdx){
     if(btn){
-      btn.textContent = 'stop timer';
+      btn.textContent = 'stop session';
       btn.disabled = false;
       btn.setAttribute('aria-disabled','false');
     }
@@ -2084,7 +2136,7 @@ function syncDetailTimerUi(){
   const h = detailIdx != null && typeof load === 'function' ? load()[detailIdx] : null;
   const eligible = habitTimerEligible(h);
   if(btn){
-    btn.textContent = 'start timer';
+    btn.textContent = 'start session';
     btn.disabled = !eligible;
     btn.setAttribute('aria-disabled', eligible ? 'false' : 'true');
   }
@@ -2101,8 +2153,12 @@ function stopHabitTimer(promptLog,manual){
     clearInterval(habitTimer.interval);
     const elapsedMin = Math.max(1,Math.round((Date.now() - habitTimer.startedAt) / 60000));
     const idx = habitTimer.idx;
+    const activeHabit = typeof load === 'function' ? load()[idx] : null;
     habitTimer = null;
-    if(btn)btn.textContent = 'start timer';
+    if(activeHabit && activeHabit.hid && typeof clearDoingNow === 'function'){
+      clearDoingNow(activeHabit.hid);
+    }
+    if(btn)btn.textContent = 'start session';
     if(display)display.hidden = true;
     if(promptLog && idx != null){
       const h = load()[idx];
@@ -2152,10 +2208,15 @@ function stopHabitTimer(promptLog,manual){
 
 // Clear a running timer without logging — used when the habit was completed
 // another way (pulse, auto-mark sweep) while the timer was still open.
-function clearHabitTimerSilent(){
+function clearHabitTimerSilent(opts = {}){
   if(!habitTimer)return;
+  const idx = habitTimer.idx;
+  const h = typeof load === 'function' ? load()[idx] : null;
   clearInterval(habitTimer.interval);
   habitTimer = null;
+  if(opts.keepDoingNow !== true && h && h.hid && typeof clearDoingNow === 'function'){
+    clearDoingNow(h.hid);
+  }
   syncDetailTimerUi();
 }
 
@@ -2189,32 +2250,103 @@ function syncTimerAfterExternalCompletion(opts = {}){
   return cleared || closedSheet;
 }
 
-// HYBRID: start a session timer for habit idx (detail or home swipe)
-function startHabitTimer(idx){
+// HYBRID: start the app's single active session. Swipe/detail starts are
+// manual by default; reorder-to-top explicitly opts into auto completion.
+function startHabitTimer(idx,opts = {}){
   if(idx == null || idx < 0)return false;
   if(habitTimer){
     if(habitTimer.idx === idx){
+      if(opts.completionMode === 'auto' && habitTimer.completionMode !== 'auto'){
+        const active = load()[idx];
+        if(active && active.hid && typeof setDoingNow === 'function'){
+          const now = Date.now();
+          const sessionMinutes = Math.max(1,Math.min(720,Math.round(
+            Number(opts.sessionMinutes)
+              || Number(habitTimer.targetMs) / 60000
+              || clampDuration(active.durationMinutes)
+          )));
+          const startedAt = Number(opts.startedAt) || now;
+          const targetAt = Number(opts.targetAt)
+            || Number(opts.endsAt)
+            || startedAt + sessionMinutes * 60000;
+          habitTimer.startedAt = startedAt;
+          habitTimer.targetMs = Math.max(1,targetAt - startedAt);
+          habitTimer.autoStopMs = habitTimer.targetMs;
+          habitTimer.completionMode = 'auto';
+          setDoingNow(active.hid,startedAt,dayStart(now),{
+            sessionMinutes,
+            targetAt,
+            completionMode:'auto'
+          });
+        }
+      }
       syncDetailTimerUi();
       return true;
     }
-    if(typeof showToast === 'function')showToast('stop the running timer first');
+    if(typeof showToast === 'function')showToast('stop the active session first');
     return false;
   }
   const h = load()[idx];
   if(!habitTimerEligible(h))return false;
-  const autoMin = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : clampDuration(h.durationMinutes);
-  // Timer and auto-mark stay independent. Auto-complete still follows the
-  // habit's due/trigger window via sweep; the timer only measures a session
-  // and logs on stop / auto-stop. Linking autoMarkMinutes to timer-start
-  // used to double-log (mid-run mark + later auto-stop).
+  const now = Date.now();
+  let doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const doingActive = doing && typeof isDoingNowActive === 'function'
+    ? isDoingNowActive(doing,now)
+    : Boolean(doing);
+  if(doing && !doingActive){
+    if(typeof clearDoingNow === 'function')clearDoingNow();
+    doing = null;
+  }
+  if(doing && doing.hid !== h.hid){
+    const owner = load().find(item=>item && item.hid === doing.hid);
+    if(typeof showToast === 'function'){
+      showToast(`${owner ? toastItemName(owner) : 'another habit'} is already active`);
+    }
+    return false;
+  }
+  const adopted = doing && doing.hid === h.hid ? doing : null;
+  const completionMode = opts.completionMode === 'auto'
+    ? 'auto'
+    : opts.completionMode === 'manual'
+      ? 'manual'
+      : (adopted && adopted.completionMode === 'auto' ? 'auto' : 'manual');
+  const defaultMin = typeof doingNowSessionMinutesFor === 'function'
+    ? doingNowSessionMinutesFor(h,now)
+    : clampDuration(h.durationMinutes);
+  const sessionMinutes = Math.max(1,Math.min(720,Math.round(
+    Number(opts.sessionMinutes)
+      || Number(adopted && adopted.sessionMinutes)
+      || Number(h.timerAutoStopMinutes)
+      || defaultMin
+  )));
+  const startedAt = Number(opts.startedAt)
+    || Number(adopted && adopted.startedAt)
+    || now;
+  const targetAt = Number(opts.targetAt)
+    || Number(opts.endsAt)
+    || Number(adopted && adopted.targetAt)
+    || Number(adopted && adopted.endsAt)
+    || startedAt + sessionMinutes * 60000;
+  if(typeof setDoingNow === 'function'){
+    setDoingNow(h.hid,startedAt,dayStart(now),{
+      sessionMinutes,
+      targetAt,
+      completionMode
+    });
+  }
   habitTimer = {
     idx,
-    startedAt:Date.now(),
-    autoStopMs:Math.max(1,autoMin) * 60000,
+    startedAt,
+    targetMs:Math.max(1,targetAt - startedAt),
+    // Retained as a read-only alias for older view/test integrations.
+    autoStopMs:Math.max(1,targetAt - startedAt),
+    completionMode,
     interval:setInterval(tickHabitTimer,250)
   };
   syncDetailTimerUi();
-  if(typeof showToast === 'function')showToast('timer running');
+  if(opts.toast !== false && typeof showToast === 'function'){
+    showToast(`session started · ${toastItemName(h)} · ${sessionMinutes}m target`);
+  }
   if(typeof render === 'function')render();
   tickHabitTimer();
   return true;
@@ -2234,20 +2366,57 @@ function tickHabitTimer(){
     return;
   }
   const elapsed = Date.now() - habitTimer.startedAt;
-  const left = Math.max(0,habitTimer.autoStopMs - elapsed);
+  const targetMs = Math.max(1,habitTimer.targetMs || habitTimer.autoStopMs || 0);
+  const left = Math.max(0,targetMs - elapsed);
   const display = $('detail-timer-display');
   if(display && detailIdx === habitTimer.idx){
-    const sec = Math.ceil(left / 1000);
+    const reached = elapsed >= targetMs;
+    const shownMs = reached ? elapsed : left;
+    const sec = Math.max(0,Math.floor(shownMs / 1000));
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    display.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    display.textContent = reached && habitTimer.completionMode !== 'auto'
+      ? `target reached · ${m}:${String(s).padStart(2,'0')} elapsed`
+      : `${m}:${String(s).padStart(2,'0')}`;
     display.hidden = false;
   }
   if(typeof updateHomeSessionProgress === 'function')updateHomeSessionProgress();
-  if(left <= 0){
-    showToast('timer done');
-    stopHabitTimer(true);
+  if(left <= 0 && habitTimer.completionMode === 'auto'){
+    if(typeof sweepDoingNowOneShot === 'function'){
+      const swept = sweepDoingNowOneShot(Date.now(),{refresh:true,toast:true});
+      // An already-completed habit clears its persisted Doing now record
+      // without adding another log. Retire the matching live timer too.
+      if(!swept && habitTimer && typeof getDoingNow === 'function' && !getDoingNow()){
+        clearHabitTimerSilent();
+        if(typeof render === 'function')render();
+      }
+    }
   }
+}
+
+// Restore the persisted active focus after a reload. Expired auto sessions
+// are left for the one-shot sweep; manual sessions resume beyond their target.
+function restoreHabitTimer(){
+  if(habitTimer || typeof getDoingNow !== 'function')return false;
+  const doing = getDoingNow();
+  if(!doing || !doing.hid)return false;
+  if(doing.completionMode === 'auto'
+    && typeof doingNowAutoMarkDeadline === 'function'
+    && doingNowAutoMarkDeadline(doing) <= Date.now()){
+    return false;
+  }
+  const idx = load().findIndex(h=>h && h.hid === doing.hid);
+  if(idx < 0){
+    if(typeof clearDoingNow === 'function')clearDoingNow();
+    return false;
+  }
+  return startHabitTimer(idx,{
+    sessionMinutes:doing.sessionMinutes,
+    startedAt:doing.startedAt,
+    targetAt:doing.targetAt,
+    completionMode:doing.completionMode,
+    toast:false
+  });
 }
 function bindScrollSafeTap(btn,handler){
   if(!btn)return;
@@ -2297,6 +2466,7 @@ window.stopHabitTimer = stopHabitTimer;
 window.startHabitTimer = startHabitTimer;
 window.clearHabitTimerSilent = clearHabitTimerSilent;
 window.syncTimerAfterExternalCompletion = syncTimerAfterExternalCompletion;
+window.restoreHabitTimer = restoreHabitTimer;
 bindScrollSafeTap($('detail-timer-toggle'),()=>{
   if(detailIdx === null)return;
   if(habitTimer && habitTimer.idx === detailIdx){
@@ -2487,13 +2657,34 @@ $('activity-calendar').addEventListener('click',()=>{
 $('activity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){activityIdx = null;closeSheet('activity-sheet');}});
 
 $('day-capacity-close').addEventListener('click',()=>closeSheet('day-capacity-sheet'));
-$('day-capacity-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('day-capacity-sheet');});
+$('day-capacity-copy')?.addEventListener('click',()=>{
+  if(typeof copyWeekPlacements === 'function')copyWeekPlacements();
+});
+$('day-capacity-export')?.addEventListener('click',()=>{
+  if(typeof exportWeekPlacements === 'function')exportWeekPlacements();
+});
+$('day-capacity-sheet').addEventListener('click',e=>{
+  if(e.target === e.currentTarget){ closeSheet('day-capacity-sheet'); return; }
+  const dayCopy = e.target.closest && e.target.closest('[data-capacity-copy-day]');
+  if(dayCopy && typeof copyDayCapacityScorecard === 'function'){
+    e.preventDefault();
+    copyDayCapacityScorecard();
+  }
+});
 
 $('slipped-close').addEventListener('click',()=>closeSheet('slipped-sheet'));
-$('slipped-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('slipped-sheet');});
+$('slipped-sheet').addEventListener('click',e=>{
+  if(e.target !== e.currentTarget)return;
+  if(typeof sheetBackdropArmed === 'function' && sheetBackdropArmed('slipped-sheet'))return;
+  closeSheet('slipped-sheet');
+});
 
 $('free-time-close').addEventListener('click',()=>closeSheet('free-time-sheet'));
-$('free-time-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('free-time-sheet');});
+$('free-time-sheet').addEventListener('click',e=>{
+  if(e.target !== e.currentTarget)return;
+  if(typeof sheetBackdropArmed === 'function' && sheetBackdropArmed('free-time-sheet'))return;
+  closeSheet('free-time-sheet');
+});
 
 $('action-undo').addEventListener('click',executeUndo);
 $('action-open')?.addEventListener('click',()=>{
@@ -2517,7 +2708,9 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
-// Cold load: single sync render. Progressive (fast-then-full) was retired —
+// Cold load: restore the persisted active focus, then render once.
+restoreHabitTimer();
+// Progressive (fast-then-full) was retired —
 // the interim card order differed from the agenda and felt jittery.
 if(typeof render === 'function')render();
 ensureOverviewPlacement();
@@ -2537,24 +2730,34 @@ if (typeof sweepAutoDoneTasks === 'function'){
 // light debounce keeps rapid events from thrashing the DOM. Sync-only (no
 // progressive) so returning never flashes a different card order.
 let _reopenRefreshTimer = null;
-function scheduleReopenRefresh(){
+let _homeHiddenAt = 0;
+function scheduleReopenRefresh(refreshAgenda = true){
   if(_reopenRefreshTimer)return;
   _reopenRefreshTimer = setTimeout(()=>{
     _reopenRefreshTimer = null;
     if(typeof requestLocationAccess === 'function' && typeof resumeLocationWatchIfOptedIn === 'function'){
       resumeLocationWatchIfOptedIn({fresh:true});
     }
-    // Force on reopen: wall-clock / place may have moved while we were hidden
-    // even if the minute-bucket fingerprint has not rolled yet.
-    if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true);
-    else if(typeof render === 'function')render();
+    if(refreshAgenda){
+      if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true);
+      else if(typeof render === 'function')render();
+    }else if(typeof updateHomeSessionProgress === 'function'){
+      updateHomeSessionProgress();
+    }
     if(typeof checkReminders === 'function')checkReminders();
   },200);
 }
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden)return;
+  if(document.hidden){
+    _homeHiddenAt = Date.now();
+    return;
+  }
   closeAllSwipes();
-  scheduleReopenRefresh();
+  // A quick app switch cannot make a schedule materially stale. Replanning on
+  // every brief foreground transition blocked touch scrolling for the entire
+  // Fast solve. Longer absences still get the normal freshness check.
+  const hiddenFor = _homeHiddenAt ? Date.now() - _homeHiddenAt : Infinity;
+  scheduleReopenRefresh(hiddenFor >= HOME_AGENDA_REFRESH_MS);
 });
 window.addEventListener('pageshow',e=>{
   // bfcache restore (back/forward) — also refresh, since a lot of wall-clock
@@ -2562,8 +2765,9 @@ window.addEventListener('pageshow',e=>{
   if(e && e.persisted)scheduleReopenRefresh();
 });
 
-// WHILE OPEN: keep the home agenda fresh without rebuilding the DOM when
-// nothing placement-relevant changed (minute, place, travel, habits).
+// WHILE OPEN: keep the home agenda fresh. The fast planner compares its result
+// off-screen; GLPK solves in the background. Both keep the mounted list when
+// the resulting days/order/times are unchanged.
 const HOME_AGENDA_REFRESH_MS = 60 * 1000;
 let _homeAgendaRefreshId = null;
 let _homeAgendaRefreshTick = 0;

@@ -65,7 +65,15 @@ function plannerWorkerStorageSnapshot(){
 function ensureAgendaPlannerWorker(){
   if(_plannerWorker)return _plannerWorker;
   if(typeof Worker !== 'function')return null;
-  const worker = new Worker('./js/agenda-planner-worker.js');
+  // Workers (and dynamic import of glpk.mjs) are blocked on file:// — fall back
+  // to the main-thread heuristic. Serve over http(s) for the full planner.
+  let worker;
+  try{
+    worker = new Worker('./js/agenda-planner-worker.js');
+  }catch(err){
+    console.warn('[agenda-optimizer] planner worker unavailable',err && err.message || err);
+    return null;
+  }
   worker.addEventListener('message',event=>{
     const message = event.data || {};
     const request = _plannerWorkerRequests.get(message.id);

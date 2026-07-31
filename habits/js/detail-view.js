@@ -123,6 +123,7 @@ function openDetail(i){
   renderCalendar(h);
   renderDetailOrderPage(h);
   setDetailDirty(false);
+  applyDetailMinimalMode();
   openSheet('detail-sheet');
   if(changedHabit){
     const inner = getSheetInner('detail-sheet');
@@ -131,12 +132,13 @@ function openDetail(i){
     if(pager){
       pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
       // Order links → actions first so unlink is immediate.
-      // Tasks otherwise land on Effort; habits on Calendar.
+      // Tasks otherwise land on Effort (or Schedule in minimal); habits on Calendar.
       const hasOrder = typeof habitHasOrderConstraints === 'function'
         && habitHasOrderConstraints(h.hid);
+      const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
       requestAnimationFrame(()=>{
         if(hasOrder)scrollDetailToNav('actions','auto');
-        else if(h.type === 'task')scrollDetailToNav('effort','auto');
+        else if(h.type === 'task')scrollDetailToNav(minimal ? 'schedule' : 'effort','auto');
         else{
           pager.scrollTo({left:0,behavior:'auto'});
           updateDetailPagerDots();
@@ -167,7 +169,8 @@ function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
     const h = load()[i];
-    scrollDetailToNav(h && h.type === 'task' ? 'effort' : 'schedule','auto');
+    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+    scrollDetailToNav(h && h.type === 'task' && !minimal ? 'effort' : 'schedule','auto');
   });
 }
 
@@ -305,18 +308,20 @@ function renderDetailOrderPage(h = null){
 
 // PURE: builds header subtitle from habit state
 function detailHeaderLine(h){
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(h.type === 'task'){
     const parts = [];
     if(h.eventTime !== null)parts.push(scheduledWhenLabel(h.eventTime));
     else parts.push(cardCue(h));
-    if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
-    if(hasDaySchedule(h)){
+    if(!minimal && h.durationMinutes)parts.push(`${h.durationMinutes}m`);
+    if(!minimal && hasDaySchedule(h)){
       const next = nextEligibleShort(h);
       if(next)parts.push(next);
     }
     return parts.filter(Boolean).join(' · ');
   }
   const parts = [cardCue(h)];
+  if(minimal)return parts.filter(Boolean).join(' · ');
   if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
   if(hasDaySchedule(h)){
     const next = nextEligibleShort(h);
@@ -1412,6 +1417,66 @@ const DETAIL_PAGE_NAV = {
   identity:{label:'identity',icon:'ti-id'},
   actions:{label:'actions',icon:'ti-dots'}
 };
+
+// Visual-only: hide insight/effort tabs, fold duration + auto-mark into schedule,
+// and strip schedule/identity chrome. Does not change saved habit fields.
+let _minimalEffortHomes = null;
+function applyDetailMinimalMode(){
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  const sheet = $('detail-sheet');
+  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  if(sheet)sheet.classList.toggle('minimal-detail', minimal);
+  if(pager){
+    const insight = pager.querySelector('.detail-page[data-detail-nav="insight"]');
+    const effort = pager.querySelector('.detail-page[data-detail-nav="effort"]');
+    if(insight)insight.hidden = minimal;
+    if(effort)effort.hidden = minimal;
+    if(minimal){
+      const pages = visibleDetailPages(pager);
+      const width = Math.max(1,pager.clientWidth);
+      const idx = Math.round(pager.scrollLeft / width);
+      if(idx < 0 || idx >= pages.length)pager.scrollTo({left:0,behavior:'auto'});
+    }
+  }
+
+  const slot = $('detail-minimal-effort');
+  const durationField = $('detail-duration-field');
+  const autoMarkField = $('detail-auto-mark-field');
+  const dueRow = $('detail-due-row');
+  const dueHint = $('detail-due-hint');
+  if(!_minimalEffortHomes && durationField && autoMarkField){
+    _minimalEffortHomes = {
+      durationParent:durationField.parentElement,
+      durationNext:durationField.nextElementSibling,
+      autoParent:autoMarkField.parentElement,
+      autoNext:autoMarkField.nextElementSibling,
+      dueParent:dueRow ? dueRow.parentElement : null,
+      dueNext:dueRow ? dueRow.nextElementSibling : null,
+      hintParent:dueHint ? dueHint.parentElement : null,
+      hintNext:dueHint ? dueHint.nextElementSibling : null
+    };
+  }
+  const restoreNode = (node,parent,next)=>{
+    if(!node || !parent)return;
+    if(next && next.parentElement === parent)parent.insertBefore(node,next);
+    else parent.appendChild(node);
+  };
+  if(minimal && slot && durationField && autoMarkField){
+    slot.appendChild(durationField);
+    slot.appendChild(autoMarkField);
+    if(dueRow)slot.appendChild(dueRow);
+    if(dueHint)slot.appendChild(dueHint);
+    slot.hidden = false;
+  }else if(_minimalEffortHomes){
+    restoreNode(durationField,_minimalEffortHomes.durationParent,_minimalEffortHomes.durationNext);
+    restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
+    restoreNode(dueRow,_minimalEffortHomes.dueParent,_minimalEffortHomes.dueNext);
+    restoreNode(dueHint,_minimalEffortHomes.hintParent,_minimalEffortHomes.hintNext);
+    if(slot)slot.hidden = true;
+  }
+
+  if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
+}
 
 function visibleDetailPages(pager){
   if(!pager)return [];

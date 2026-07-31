@@ -38,6 +38,7 @@ function applyAddDefaults(){
   if(moreToggle)moreToggle.setAttribute('aria-expanded','false');
   syncAddTypeUi(selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
+  if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
 }
 
 // HYBRID: reset the settings sheet to its fresh-open defaults — collapse
@@ -1168,6 +1169,16 @@ function toggleAppSettingButton(btn){
   if(key === 'reminders'){toggleReminders();return;}
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
+  // Presentation-only: reuse the mounted week plan (same pattern as homeExtraMode).
+  // A full render() would still be cheap once the planner key ignores minimalMode,
+  // but presentation-only avoids even entering the async planner coordinator.
+  if(key === 'minimalMode'){
+    updateSortSetting(patch,{renderNow:false});
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    else render();
+    if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
+    return;
+  }
   updateSortSetting(patch);
   if(key === 'agendaOptimizer' && patch.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
     preloadAgendaOptimizer();
@@ -1857,13 +1868,32 @@ function bindSettingRange(name,key,suffix,options = {}){
 }
 
 // ── Appearance ──────────────────────────────────────────────────────────
+function isMinimalMode(){
+  return Boolean(sortSettings && sortSettings.minimalMode);
+}
+
 function applyAppearanceSettings(){
   const s = sortSettings || {};
   document.body.classList.toggle('compact-mode', !!s.compactMode);
+  document.body.classList.toggle('minimal-mode', !!s.minimalMode);
   document.documentElement.dataset.fontScale = s.fontScale || 'medium';
   const mode = s.themeMode || 'system';
   if(mode === 'system')document.documentElement.removeAttribute('data-theme');
   else document.documentElement.dataset.theme = mode;
+  if(typeof applyDetailMinimalMode === 'function')applyDetailMinimalMode();
+  applyAddMinimalMode();
+}
+
+// Visual-only: collapse add-sheet chrome (emoji bg, more options) in minimal mode.
+function applyAddMinimalMode(){
+  const minimal = isMinimalMode();
+  const sheet = $('add-sheet');
+  if(sheet)sheet.classList.toggle('minimal-add', minimal);
+  if(!minimal)return;
+  const body = $('add-more-options');
+  const toggle = $('add-more-toggle');
+  if(body)body.hidden = true;
+  if(toggle)toggle.setAttribute('aria-expanded','false');
 }
 
 // ── Home city (general area for prayer, weather, etc.) ───────────────────

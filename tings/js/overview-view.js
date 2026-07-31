@@ -84,12 +84,17 @@ function renderOverviewFilters(data){
   const wrap = $('overview-filter');
   if(!wrap)return;
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   const topicChoices = overviewTopicChoices(data);
   const locChoices = overviewLocationChoices(data);
-  const hasTopics = topicChoices.length > 0;
-  const hasLocs = locChoices.length > 1;
+  const hasTopics = !minimal && topicChoices.length > 0;
+  const hasLocs = !minimal && locChoices.length > 1;
   if(hasTopics && !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
   if(hasLocs && !locChoices.some(choice=>choice.key === overviewLocationFilter))overviewLocationFilter = 'all';
+  if(minimal){
+    overviewTopicFilter = 'all';
+    overviewLocationFilter = 'all';
+  }
 
   const rangeHtml = OVERVIEW_RANGES.map(r=>`
     <button type="button" class="topic-filter range-filter ${r.key === overviewRangeFilter ? 'on' : ''}" data-overview-range="${r.key}">${escapeHtml(r.label)}</button>
@@ -254,14 +259,20 @@ function overviewAgendaByDay(data){
 // RENDER: most-active habits (month / all-time)
 function renderOverviewLists(data,countForHabit,scopeNote = ''){
   hideOverviewStretchChrome();
+  const list = $('overview-list');
+  if(!list)return;
+  if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode)){
+    list.innerHTML = '';
+    return;
+  }
   const rows = data.map(h=>({h,count:countForHabit(h),c:colors(daysSince(h.lastLog),h.target,h.type)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,5);
 
   if(!rows.length){
-    $('overview-list').innerHTML = '<div class="overview-item"><span class="overview-name">quiet stretch</span><span class="overview-meta">no entries yet</span></div>';
+    list.innerHTML = '<div class="overview-item"><span class="overview-name">quiet stretch</span><span class="overview-meta">no entries yet</span></div>';
     return;
   }
-  $('overview-list').innerHTML = `<p class="overview-section-title">most active${scopeNote}</p>${rows.map(({h,count,c})=>`
+  list.innerHTML = `<p class="overview-section-title">most active${scopeNote}</p>${rows.map(({h,count,c})=>`
     <div class="overview-item">
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
       <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
@@ -501,6 +512,13 @@ function pickOverviewListPane(lists){
 
 // RENDER: around-today insight + one detail pane
 function renderOverviewStretchLists(data,tally,start,end){
+  if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode)){
+    hideOverviewStretchChrome();
+    const list = $('overview-list');
+    if(list)list.innerHTML = '';
+    syncOverviewLegend(true);
+    return;
+  }
   const capacity = overviewRecentOffset === 0 ? overviewWeekCapacity(data) : null;
   const lists = buildOverviewStretchLists(data,tally,start,end);
   overviewListPane = pickOverviewListPane(lists);
@@ -897,10 +915,9 @@ function renderDayLogsAvailStep(key){
   const overrides = normalizeAvailabilityOverrides(sortSettings.availabilityOverrides);
   const hasOverride = Object.prototype.hasOwnProperty.call(overrides,key);
   const minutes = effectiveAvailabilityMinutes(key);
-  const date = new Date(`${key}T12:00:00`);
   const source = hasOverride
     ? 'custom for this date'
-    : `${WEEKDAY_LABELS[date.getDay()]} default`;
+    : 'full day';
 
   $('day-logs-body').innerHTML = `
     <div class="day-availability day-availability-step">
@@ -912,7 +929,7 @@ function renderDayLogsAvailStep(key){
       <button class="mini-text-btn" id="day-availability-save" type="button">save</button>
       <button class="mini-text-btn" id="day-availability-clear" type="button" ${hasOverride ? '' : 'hidden'}>clear</button>
     </div>
-    <p class="field-hint">Override how many minutes this day has for planning.</p>`;
+    <p class="field-hint">Override how many minutes this day has for planning. Clear returns to a full day (busy times still carve open slots).</p>`;
 
   $('day-logs-footer').innerHTML = `
     <button class="btn" type="button" id="day-logs-back-list">back</button>

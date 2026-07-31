@@ -265,6 +265,12 @@ function matchesHomeLocation(h,id){
 function renderHomeTagFilter(data){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  if(minimal){
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
   const registry = locationOptions();
   // "Real" usage = at least one habit carries this dimension. Without this
   // gate, the row shows filler like "all places" + "anywhere" even when no
@@ -920,6 +926,17 @@ function cardTone(h){
 
 // PURE: build card meta pills markup
 function cardMeta(h,options = {}){
+  if(options.minimalOnly){
+    if(h.type === 'task'){
+      if(h.eventTime !== null && !options.suppressScheduled){
+        return `<span class="context-pill scheduled" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(compactScheduledLabel(h.eventTime))}</span>`;
+      }
+      if(h.dueDate === null)return '<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>';
+      return `<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`;
+    }
+    if(h.type !== 'zero')return `<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`;
+    return '<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>';
+  }
   const plan = nextPlannedLog(h);
   const parts = [];
   if(options.extraPills)parts.push(options.extraPills);
@@ -1033,15 +1050,34 @@ function cardBreakableSlider(h){
   </div>`;
 }
 
-// PURE: pending auto-complete window for non-breakable tasks (trigger → deadline)
+// PURE: pending auto-complete window (normal auto-mark OR doing-now one-shot)
 function pendingAutoMarkWindow(h,now = Date.now()){
-  if(!h || typeof isAutoMark !== 'function' || !isAutoMark(h) || h.breakable)return null;
-  if(h.type !== 'task' || h.lastLog !== null)return null;
-  const trigger = h.eventTime != null
-    ? h.eventTime
-    : (h.dueDate !== null
-      ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
-      : null);
+  if(!h)return null;
+  if(h.type === 'task' && h.lastLog !== null)return null;
+  if(h.type !== 'task' && typeof completedToday === 'function' && completedToday(h,now))return null;
+
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(doing && doing.hid === h.hid && doing.dayBase === dayStart(now)
+    && doing.completionMode === 'auto'
+    && typeof isDoingNowActive === 'function' && isDoingNowActive(doing,now)){
+    const start = Number(doing.startedAt);
+    const end = typeof doingNowAutoMarkDeadline === 'function'
+      ? doingNowAutoMarkDeadline(doing)
+      : (start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000);
+    if(!Number.isFinite(start) || !Number.isFinite(end))return null;
+    if(now < start || now >= end)return null;
+    return {kind:'auto',start,end,doingNow:true};
+  }
+
+  if(typeof isAutoMark !== 'function' || !isAutoMark(h) || h.breakable)return null;
+  if(h.type !== 'task')return null;
+  const trigger = typeof effectiveAutoMarkTrigger === 'function'
+    ? effectiveAutoMarkTrigger(h,now)
+    : (h.eventTime != null
+      ? h.eventTime
+      : (h.dueDate !== null
+        ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+        : null));
   if(trigger == null)return null;
   const delayMs = Math.max(0,Number(h.autoMarkMinutes) || 0) * 60000;
   const end = trigger + delayMs;
@@ -1056,17 +1092,27 @@ function sessionProgressState(h,realIdx,now = Date.now()){
   const timer = typeof habitTimer !== 'undefined' ? habitTimer : null;
   if(timer && timer.idx === realIdx){
     const start = timer.startedAt;
-    const end = start + Math.max(1,timer.autoStopMs || 0);
+    const end = start + Math.max(1,timer.targetMs || timer.autoStopMs || 0);
     const elapsedMs = Math.max(0,now - start);
     const totalMs = Math.max(1,end - start);
     const elapsedMin = Math.max(0,Math.floor(elapsedMs / 60000));
-    const totalMin = Math.max(1,Math.round(totalMs / 60000));
+    const leftMin = Math.max(0,Math.ceil((end - now) / 60000));
     const pct = Math.min(100,(elapsedMs / totalMs) * 100);
+    const auto = timer.completionMode === 'auto';
+    const reached = elapsedMs >= totalMs;
     return {
       kind:'timer',
       pct,
-      label:`${elapsedMin}/${totalMin}m`,
-      aria:`timer ${elapsedMin} of ${totalMin} minutes`
+      label:auto
+        ? `auto · ${Math.max(1,leftMin)}m left`
+        : reached
+          ? `target reached · ${elapsedMin}m elapsed`
+          : `session · ${leftMin}m left`,
+      aria:auto
+        ? `auto-completing session, ${leftMin} minutes left`
+        : reached
+          ? `manual session target reached, ${elapsedMin} minutes elapsed`
+          : `manual session, ${leftMin} minutes to target`
     };
   }
   if(typeof valueLogMinutes !== 'undefined' && valueLogMinutes != null
@@ -1082,10 +1128,14 @@ function sessionProgressState(h,realIdx,now = Date.now()){
     const elapsedMin = Math.min(totalMin,Math.max(0,Math.floor(elapsedMs / 60000)));
     const pct = Math.min(100,(elapsedMs / totalMs) * 100);
     return {
-      kind:'auto',
+      kind:win.doingNow ? 'timer' : 'auto',
       pct,
-      label: leftMin ? `auto in ${leftMin}m` : `${elapsedMin}/${totalMin}m`,
-      aria:`auto-complete in ${leftMin} minutes`
+      label:win.doingNow
+        ? (leftMin ? `auto · ${leftMin}m left` : `${elapsedMin}/${totalMin}m`)
+        : (leftMin ? `auto in ${leftMin}m` : `${elapsedMin}/${totalMin}m`),
+      aria:win.doingNow
+        ? `auto-completing session, ${leftMin} minutes left`
+        : `auto-complete in ${leftMin} minutes`
     };
   }
   return null;
@@ -1375,6 +1425,7 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   travelEl.className = `travel-card${edited ? ' is-edited' : ''}${fromCurrent ? ' is-from-current' : ''}`;
   travelEl.dataset.travelFrom = fromId;
   travelEl.dataset.travelTo = toId;
+  if(Number.isFinite(startTs))travelEl.dataset.agendaStart = String(Math.round(startTs / 60000));
   travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
   if(fromCurrent)travelEl.setAttribute('aria-disabled','true');
   travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${compactHomeDuration(mins)} · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
@@ -1435,6 +1486,7 @@ function homeExtraMode(){
 // whose start lies past the next 12 hours (still-active blocks keep their past
 // start, so an in-progress block stays visible).
 function homeExtraRowVisible(ts){
+  if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode))return false;
   if(homeExtraMode() === 'cards')return true;
   return Number.isFinite(ts) && ts < Date.now() + HOME_EXTRA_WINDOW_MS;
 }
@@ -1463,6 +1515,9 @@ function appendHomeTravelText(list,fromId,toId,startTs){
   const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
   const el = document.createElement('div');
   el.className = 'extra-text-line travel-text';
+  el.dataset.travelFrom = fromId;
+  el.dataset.travelTo = toId;
+  if(Number.isFinite(startTs))el.dataset.agendaStart = String(Math.round(startTs / 60000));
   el.textContent = `${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`;
   list.appendChild(el);
 }
@@ -1734,6 +1789,306 @@ function capacityTimeLabel(value){
   return new Date(value).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
 }
 
+function plannerTraceScoreSummary(item){
+  if(!item)return '';
+  const parts = [];
+  if(Number.isFinite(item.optimizerWeight)){
+    parts.push(`optimizer option ${item.optimizerWeight.toFixed(3)} (higher wins)`);
+  }
+  if(Number.isFinite(item.optimizerCandidateWeight)){
+    parts.push(`candidate ${item.optimizerCandidateWeight.toFixed(2)}`);
+  }
+  if(Number.isFinite(item.optimizerDelayMinutes)){
+    parts.push(`option delay ${Math.round(item.optimizerDelayMinutes)}m`);
+  }
+  if(Number.isFinite(item.score)){
+    parts.push(`fit-generator cost ${item.score.toFixed(2)} (lower wins)`);
+  }
+  const t = item.scoreTerms;
+  if(t){
+    const travelMin = Math.round((Number(t.travelSeconds) || 0) / 60);
+    const delayMin = Math.round(Number(t.asapDelayMin) || 0);
+    const scarceMin = Math.round((Number(t.scarceOverlapMs) || 0) / 60000);
+    const pref = Math.round(Number(t.preferencePenalty) || 0);
+    const order = Math.round(Number(t.orderPenalty) || 0);
+    parts.push(`fit signals: travel ${travelMin}m, local delay ${delayMin}m, scarce overlap ${scarceMin}m, preference ${pref}, order ${order}`);
+  }
+  return parts.join(' / ');
+}
+
+// Last opened audit — kept so copy/export work without rebuilding the sheet.
+let _dayCapacityReport = null;
+let _dayCapacityTitle = '';
+let _dayCapacitySub = '';
+
+// PURE: plain-text dump of a day capacity scorecard (for clipboard / .txt export).
+function formatDayCapacityScorecardText(report,title = '',sub = ''){
+  if(!report)return '';
+  const lines = [];
+  const push = (s = '')=>lines.push(s);
+  const pct = n=>`${Math.round((Number(n) || 0) * 100)}%`;
+  const dayLabel = title || (report.isToday
+    ? 'today'
+    : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase());
+  push(dayLabel);
+  if(sub)push(sub);
+  if(report.plannerIsPreview){
+    push('FAST PREVIEW — exact optimizer is still running; placements and totals may change');
+  }
+  push('');
+  push('ELIGIBLE WORK');
+  push(capacityMinutesLabel(report.outstandingLoad));
+  push(`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`);
+  push('WORK PLACED');
+  push(capacityMinutesLabel(report.placedLoadMinutes));
+  push(`${pct(report.eligibleCoverage)} of eligible work`);
+  push(report.plannerIsPreview ? 'BUDGET USED / PREVIEW' : 'BUDGET USED');
+  push(pct(report.budgetUtilization));
+  push(`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`);
+  push('MISSED GAPS');
+  push(String(report.missedOpportunityCount));
+  push(`${capacityMinutesLabel(report.largestGapMinutes)} largest open gap`);
+  push('PLACEMENT AUDIT');
+  push(report.missedOpportunityCount > 0
+    ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
+    : 'no unexplained placement gaps');
+  push(report.missedOpportunityCount > 0
+    ? 'eligible work still fits under the scheduler\'s current constraints'
+    : (report.budgetCappedGapCount > 0
+      ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
+      : 'remaining gaps cannot take the outstanding candidates'));
+  push('');
+  push(`open scheduler time\n${capacityMinutesLabel(report.schedulerOpenMinutes)}`);
+  push(`budget remaining\n${capacityMinutesLabel(report.placementBudgetRemaining)}`);
+  push(`scheduled events\n${capacityMinutesLabel(report.scheduledMinutes)}`);
+  push(`travel committed\n${capacityMinutesLabel(report.travelMinutes)}`);
+  push('');
+  push('HOME AGENDA OUTPUT');
+  push(String(report.agendaRows.length));
+  for(const row of report.agendaRows){
+    push(`${capacityTimeLabel(row.start)}`);
+    push(`${capacityTimeLabel(row.end)}`);
+    push(row.name);
+    push(`${capacityMinutesLabel(row.minutes).toUpperCase()} / ${String(row.kind).toUpperCase()}`);
+  }
+  if(report.hiddenAgendaRowCount){
+    push(`${report.hiddenAgendaRowCount} scheduler placement${report.hiddenAgendaRowCount === 1 ? '' : 's'} not shown because of the current pin or filter view.`);
+  }
+  push('');
+  push('PLANNER DECISION TRACE');
+  push(`${(report.plannerTrace || []).length} decisions`);
+  push(`engine ${report.plannerEngine || 'planner'}`);
+  if(report.plannerIsPreview){
+    push('snapshot status fast preview; the exact optimizer may replace these placements when ready');
+  }
+  push('generated on demand when this audit opened; no continuous solver log');
+  push('earliest clock fit ignores location, travel, ordering, budget, and cross-item objective');
+  for(const item of report.plannerTrace || []){
+    push('');
+    push(`${String(item.status).toUpperCase()} / ${item.name}`);
+    push(`selected ${item.selected}`);
+    if(item.earliestClockFit != null){
+      push(`earliest clock-only fit ${capacityTimeLabel(item.earliestClockFit)}`);
+    }
+    push(`engine ${item.engine}`);
+    push(`decision ${item.decision}`);
+    for(const input of item.inputs || [])push(`input ${input}`);
+    const score = plannerTraceScoreSummary(item);
+    if(score)push(`score ${score}`);
+  }
+  push('');
+  push('REMAINING GAP AUDIT');
+  push(String(report.placementGaps.length));
+  const gapLabels = {
+    missed:'COULD PLACE',
+    'assigned-elsewhere':'PLACED ELSEWHERE',
+    'budget-capped':'BUDGET CAPPED',
+    'no-fit':'NO ELIGIBLE FIT'
+  };
+  for(const gap of report.placementGaps){
+    push(`${capacityTimeLabel(gap.start)}-${capacityTimeLabel(gap.end)}`);
+    push(capacityMinutesLabel(gap.minutes));
+    push(gapLabels[gap.status] || String(gap.status).toUpperCase());
+    push(gap.explanation || '');
+  }
+  push('');
+  push('CAPACITY CONTEXT');
+  push(`clock ${capacityMinutesLabel(report.totalCapacity)}`);
+  push(`blocked ${capacityMinutesLabel(report.blockedMinutes)}`);
+  push(`net ${capacityMinutesLabel(report.netAvailable)}`);
+  for(const block of report.blockedBreakdown || []){
+    push(`${block.label} ${capacityMinutesLabel(block.minutes)}`);
+  }
+  push('');
+  push('UNPLACED ITEMS');
+  push(String(report.unplacedItems.length));
+  for(const item of report.unplacedItems){
+    push(item.name);
+    push(`${PRIORITY_LABELS[item.priority] || `P${item.priority}`} / ${String(item.type).toUpperCase()}`);
+    push(`${capacityMinutesLabel(item.remainingMinutes)} unplaced${item.placedMinutes ? ` / ${capacityMinutesLabel(item.placedMinutes)} placed` : ''}`);
+    const reasonBits = [item.reason,item.window].filter(Boolean);
+    if(reasonBits.length)push(reasonBits.join(' / '));
+  }
+  return lines.join('\n').trim() + '\n';
+}
+
+async function copyTextToClipboard(text){
+  if(!text)return false;
+  try{
+    if(navigator.clipboard && typeof navigator.clipboard.writeText === 'function'){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(_){ /* fall through */ }
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly','');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  }catch(_){
+    return false;
+  }
+}
+
+function dayCapacityExportFilename(report){
+  const key = report && report.dayKey
+    ? report.dayKey
+    : new Date().toISOString().slice(0,10);
+  return `tings-agenda-audit-${key}.txt`;
+}
+
+function weekPlacementsExportFilename(week,now = Date.now()){
+  const days = week && Array.isArray(week.days) ? week.days : [];
+  const start = days[0] && days[0].dayBase != null ? dateKey(days[0].dayBase) : dateKey(now);
+  const end = days.length && days[days.length - 1].dayBase != null
+    ? dateKey(days[days.length - 1].dayBase)
+    : start;
+  return start === end
+    ? `tings-week-placements-${start}.txt`
+    : `tings-week-placements-${start}_to_${end}.txt`;
+}
+
+// PURE: resolve the week snapshot used for placement export (rendered home
+// week first, otherwise a fresh 7-day build).
+function weekSnapshotForExport(now = Date.now()){
+  if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) && _homeRenderedWeek.days.length){
+    return _homeRenderedWeek;
+  }
+  if(typeof buildWeekAgenda === 'function' && typeof load === 'function' && typeof sortSettings !== 'undefined'){
+    try{ return buildWeekAgenda(load(),sortSettings,7); }
+    catch(_){ /* fall through */ }
+  }
+  return null;
+}
+
+// PURE: compact week placement dump — day headers + timed rows only.
+// Meant for pasting into chat as scheduler context (not the full day audit).
+function formatWeekPlacementsText(week,now = Date.now()){
+  if(!week || !Array.isArray(week.days) || !week.days.length)return '';
+  const lines = [];
+  const push = (s = '')=>lines.push(s);
+  const first = week.days[0];
+  const last = week.days[week.days.length - 1];
+  const rangeLabel = (()=>{
+    const a = new Date(first.dayBase).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    const b = new Date(last.dayBase).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    return `${a} – ${b}`.toLowerCase();
+  })();
+  push('WEEK PLACEMENTS');
+  push(rangeLabel);
+  push(week.optimized ? 'source: optimizer week' : 'source: home week agenda');
+  push('');
+  for(const day of week.days){
+    const label = typeof homeWeekDayLabel === 'function'
+      ? homeWeekDayLabel(day,now)
+      : new Date(day.dayBase).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    const full = new Date(day.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
+    push(full.toUpperCase());
+    if(label && label.toLowerCase() !== full.toLowerCase())push(`(${label})`);
+    const rows = (day.homeDisplayedTimeline || day.timeline || [])
+      .filter(row=>row && (row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel'));
+    if(!rows.length){
+      push('  — no placements');
+      push('');
+      continue;
+    }
+    for(const row of rows){
+      const mins = Math.max(0,Math.round((row.end - row.start) / 60000));
+      const name = row.kind === 'travel'
+        ? `travel${row.toName ? ` to ${row.toName}` : ''}`
+        : (row.h && row.h.name || 'scheduled item');
+      push(`  ${capacityTimeLabel(row.start)}–${capacityTimeLabel(row.end)}  ${name}  ${capacityMinutesLabel(mins)}  ${row.kind}`);
+    }
+    push('');
+  }
+  return lines.join('\n').trim() + '\n';
+}
+
+async function copyWeekPlacements(){
+  const week = weekSnapshotForExport();
+  if(!week){
+    if(typeof showToast === 'function')showToast('no week agenda yet');
+    return;
+  }
+  const text = formatWeekPlacementsText(week);
+  const ok = await copyTextToClipboard(text);
+  if(typeof showToast === 'function')showToast(ok ? 'week placements copied' : 'copy failed');
+}
+
+function exportWeekPlacements(){
+  const week = weekSnapshotForExport();
+  if(!week){
+    if(typeof showToast === 'function')showToast('no week agenda yet');
+    return;
+  }
+  const text = formatWeekPlacementsText(week);
+  const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = weekPlacementsExportFilename(week);
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ if(a.isConnected)document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
+  if(typeof showToast === 'function')showToast('week placements exported');
+}
+
+async function copyDayCapacityScorecard(){
+  if(!_dayCapacityReport){
+    if(typeof showToast === 'function')showToast('open an audit first');
+    return;
+  }
+  const text = formatDayCapacityScorecardText(_dayCapacityReport,_dayCapacityTitle,_dayCapacitySub);
+  const ok = await copyTextToClipboard(text);
+  if(typeof showToast === 'function')showToast(ok ? 'day audit copied' : 'copy failed');
+}
+
+function exportDayCapacityScorecard(){
+  if(!_dayCapacityReport){
+    if(typeof showToast === 'function')showToast('open an audit first');
+    return;
+  }
+  const text = formatDayCapacityScorecardText(_dayCapacityReport,_dayCapacityTitle,_dayCapacitySub);
+  const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = dayCapacityExportFilename(_dayCapacityReport);
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ if(a.isConnected)document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
+  if(typeof showToast === 'function')showToast('day audit exported');
+}
+
 function renderDayCapacityScorecard(report){
   const content = $('day-capacity-content');
   if(!content || !report)return;
@@ -1793,11 +2148,36 @@ function renderDayCapacityScorecard(report){
         <small>${escapeHtml(item.reason)}${item.window ? ` / ${escapeHtml(item.window)}` : ''}</small>
       </div>`).join('')
     : '<p class="capacity-empty">Every eligible item was fully placed.</p>';
+  const traceRows = (report.plannerTrace || []).length
+    ? report.plannerTrace.map(item=>{
+      const score = plannerTraceScoreSummary(item);
+      return `
+        <details class="capacity-trace-item ${escapeHtml(item.status)}" data-capacity-trace-item>
+          <summary>
+            <span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.status)} / ${escapeHtml(item.engine)}</small></span>
+            <time>${escapeHtml(item.selected)}</time>
+          </summary>
+          <div class="capacity-trace-body">
+            <p>${escapeHtml(item.decision)}</p>
+            ${item.earliestClockFit != null ? `<p class="capacity-trace-clock">earliest clock-only fit <b>${capacityTimeLabel(item.earliestClockFit)}</b></p>` : ''}
+            <ul>${(item.inputs || []).map(input=>`<li>${escapeHtml(input)}</li>`).join('')}</ul>
+            ${score ? `<code>${escapeHtml(score)}</code>` : ''}
+          </div>
+        </details>`;
+    }).join('')
+    : '<p class="capacity-empty">No planner decisions were present for this day.</p>';
   content.innerHTML = `
+    ${report.plannerIsPreview
+      ? '<p class="capacity-note capacity-preview-note"><b>Fast preview:</b> the exact optimizer is still running, so placements and totals may change.</p>'
+      : ''}
+    <div class="capacity-export-hint">
+      <span>copy / download = entire week placements</span>
+      <button type="button" class="capacity-day-audit-copy" data-capacity-copy-day>copy this day audit</button>
+    </div>
     <div class="capacity-metrics">
       ${metric('eligible work',capacityMinutesLabel(report.outstandingLoad),`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`,'load')}
       ${metric('work placed',capacityMinutesLabel(report.placedLoadMinutes),`${coverage} of eligible work`,'net')}
-      ${metric('budget used',budgetUse,`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`)}
+      ${metric(report.plannerIsPreview ? 'budget used · preview' : 'budget used',budgetUse,`${capacityMinutesLabel(report.agendaUsedMinutes)} of ${capacityMinutesLabel(report.agendaBudgetMinutes)}`)}
       ${metric('missed gaps',String(report.missedOpportunityCount),`${capacityMinutesLabel(report.largestGapMinutes)} largest open gap`,report.missedOpportunityCount ? 'warning' : '')}
     </div>
     <div class="capacity-balance ${report.missedOpportunityCount ? 'deficit' : 'surplus'}">
@@ -1814,6 +2194,11 @@ function renderDayCapacityScorecard(report){
       <div class="capacity-section-head"><h3>home agenda output</h3><span>${report.agendaRows.length}</span></div>
       <div class="capacity-agenda">${agendaRows}</div>
       ${report.hiddenAgendaRowCount ? `<p class="capacity-note">${report.hiddenAgendaRowCount} scheduler placement${report.hiddenAgendaRowCount === 1 ? '' : 's'} not shown in this day section because of the current pin or filter view.</p>` : ''}
+    </section>
+    <section class="capacity-section">
+      <div class="capacity-section-head"><h3>planner decision trace</h3><span>${(report.plannerTrace || []).length}</span></div>
+      <p class="capacity-note">${report.plannerIsPreview ? 'This is the fast preview/fallback snapshot; the exact optimizer may replace it when ready. ' : ''}Built only when this audit opens. It shows the planner’s inputs, resolved constraints, scores, and outcomes—not a continuous GLPK branch log. “Earliest clock-only fit” intentionally excludes location, travel, ordering, budget, and whole-day competition.</p>
+      <div class="capacity-trace">${traceRows}</div>
     </section>
     <section class="capacity-section">
       <div class="capacity-section-head"><h3>remaining gap audit</h3><span>${report.placementGaps.length}</span></div>
@@ -1844,13 +2229,18 @@ function openDayCapacityScorecard(dayBase,weekMode = false){
   const title = $('day-capacity-title');
   const sub = $('day-capacity-sub');
   const sheet = $('day-capacity-sheet');
-  if(title)title.textContent = report.isToday
+  const titleText = report.isToday
     ? 'today agenda audit'
     : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase();
-  if(sub)sub.textContent = report.isToday
+  const subText = report.isToday
     ? `${report.usesRenderedSnapshot ? 'current home agenda' : 'remaining day'} from ${new Date(report.rangeStart).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
     : (report.usesRenderedSnapshot ? 'current home agenda, full-day audit' : 'full-day agenda placement audit');
+  if(title)title.textContent = titleText;
+  if(sub)sub.textContent = subText;
   if(sheet)sheet.dataset.dayKey = report.dayKey;
+  _dayCapacityReport = report;
+  _dayCapacityTitle = titleText;
+  _dayCapacitySub = subText;
   renderDayCapacityScorecard(report);
   openSheet('day-capacity-sheet');
 }
@@ -1890,13 +2280,14 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   header.className = 'section-header';
   header.dataset.label = label;
   header.textContent = label;
-  if(dayContext && dayContext.dayBase != null){
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  if(!minimal && dayContext && dayContext.dayBase != null){
     setupDayCapacityHeader(header,dayContext.dayBase,true);
     attachFreeTimeIndicator(header,dayContext);
-  }else if(label === 'today'){
+  }else if(!minimal && label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
-  if(label === 'today' && todayHids){
+  if(!minimal && label === 'today' && todayHids){
     attachDroppedIndicator(header,list,todayHids);
   }
   list.appendChild(header);
@@ -2243,25 +2634,28 @@ function summarizeTrailTone(tones){
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
-// agenda work and emits a basic grouped list. Normal home renders kick off the
-// GLPK planner in the background after a fast sync paint.
+// agenda work and emits a basic grouped list. Normal home renders reuse a
+// same-day plan cache, then refresh either planner in a worker.
 function render(opts){
   const o = opts || {};
   const list = $('list');
   const empty = $('empty');
   const data = load();
-  const wantsOptimizedWeek = !o.deferAgenda
+  if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+  const wantsPlannedWeek = !o.deferAgenda
     && !o.__optimizedWeek
     && !o.__optimizerFallback
-    && Boolean(sortSettings.agendaOptimizer)
     && sortSettings.preset === 'todayFirst'
     && Boolean(sortSettings.showWeekOnHome)
     && !searchQuery.trim()
-    && typeof buildWeekAgendaAsync === 'function';
-  if(wantsOptimizedWeek){
+    && typeof buildWeekAgendaOffMain === 'function';
+  if(wantsPlannedWeek){
     queueOptimizedHomeRender(data,o);
     return false;
   }
+  const readingPosition = o.preserveReadingPosition === false
+    ? null
+    : captureHomeReadingPosition(list);
   _homeRenderedWeek = null;
   list.innerHTML = '';
   empty.onclick = null;
@@ -2315,6 +2709,7 @@ function render(opts){
       };
     }
     _homeListFingerprint = homeListFingerprint();
+    restoreHomeReadingPosition(readingPosition,list);
     return;
   }
   empty.classList.remove('is-action');
@@ -2378,47 +2773,67 @@ function render(opts){
     return true;
   };
 
-  const appendHabitCard = (realIdx,agendaRow,earlyReasonText)=>{
+  const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null,scheduleLinkReason = '')=>{
     const h = data[realIdx];
+    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const agendaPill = agendaCardPill(agendaRow,h);
+    const agendaPill = minimal ? '' : agendaCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
+    const orderPill = (!minimal && dayBase != null && typeof orderLinkPillHtml === 'function')
+      ? orderLinkPillHtml(h.hid,dayBase,data)
+      : '';
+    const nowPill = (!minimal && typeof doingNowPillHtml === 'function') ? doingNowPillHtml(h) : '';
+    const scheduleLinkPill = (!minimal && scheduleLinkReason)
+      ? `<span class="context-pill schedule-link-blocked-pill" title="${escapeHtml(scheduleLinkReason)}"><i class="ti ti-link-off" aria-hidden="true"></i>linked</span>`
+      : '';
     const accent = visualClassColor(cardScoreTone);
-    const statusPill = sortSettings.showStatusOnCards ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
-    const gatedEarlyPill = sortSettings.showEarlyOnCards ? earlyPill : '';
-    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+    const statusPill = (!minimal && sortSettings.showStatusOnCards) ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
+    const gatedEarlyPill = (!minimal && sortSettings.showEarlyOnCards) ? earlyPill : '';
+    const context = minimal
+      ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
+      : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
-    const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
-    const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
+    const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
+    const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
     // so the user can see the session without opening detail.
-    const sessionHtml = (timerRunning || !showBreakableSlider) ? cardSessionProgress(h,realIdx) : '';
-    const visualHtml = showBreakableSlider
+    const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
+    const visualHtml = minimal ? '' : (showBreakableSlider
       ? `${cardBreakableSlider(h)}${sessionHtml}`
-      : (sessionHtml || `<div class="ting-trail">${trail}</div>`);
+      : (sessionHtml || `<div class="ting-trail">${trail}</div>`));
     const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
       ? habitTimerEligible(h)
       : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
-    const timerAction = (canTimer || timerRunning)
+    const timerAction = (!minimal && (canTimer || timerRunning))
       ? (timerRunning
-        ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop timer"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
-        : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start timer"><i class="ti ti-player-play" aria-hidden="true"></i>timer</button>`)
+        ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
+        : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
-    const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
+    const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
-    const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
+    const activityAction = minimal ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
+    const canDrag = !minimal && dayBase != null && typeof isAgendaFillDraggable === 'function' && isAgendaFillDraggable(h,agendaRow);
+    const dragHandle = canDrag
+      ? `<button type="button" class="agenda-drag-handle" aria-label="drag to reorder" title="drag to reorder"><i class="ti ti-grip-vertical" aria-hidden="true"></i></button>`
+      : '';
 
     const row = document.createElement('div');
-    row.className = 'swipe-row';
+    row.className = 'swipe-row' + (canDrag ? ' has-agenda-drag' : '');
     row.dataset.realIdx = realIdx;
+    if(dayBase != null)row.dataset.dayBase = String(dayBase);
+    if(agendaRow && Number.isFinite(agendaRow.start)){
+      row.dataset.agendaStart = String(Math.round(agendaRow.start / 60000));
+    }
+    if(canDrag)row.dataset.agendaDraggable = '1';
+    if(h.hid)row.dataset.hid = h.hid;
     if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
       row.dataset.chunkMinutes = String(Math.round(agendaRow.chunkMinutes));
     }
@@ -2442,8 +2857,9 @@ function render(opts){
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
-        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="background:${c.bg};color:${c.icon};">
+      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+        ${dragHandle}
+        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}">
@@ -2451,13 +2867,13 @@ function render(opts){
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
           </div>
-          ${isBreakable ? '' : `<div class="ting-cue">${escapeHtml(cue)}</div>
+          ${(!minimal && isBreakable) ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `<div class="ting-cue">${escapeHtml(cue)}</div>
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
-          <div class="ting-visual"${visualAria}>
+          ${minimal ? '' : `<div class="ting-visual"${visualAria}>
             ${visualHtml}
-          </div>
+          </div>`}
         </div>
-        ${isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
+        ${minimal || isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="snooze" aria-label="snooze" title="snooze"><i class="ti ti-moon" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
@@ -2468,14 +2884,14 @@ function render(opts){
     setupSwipe(row);
     setupCardTap(row,realIdx);
     if(showBreakableSlider)setupBreakableCrown(row,realIdx);
+    if(canDrag && typeof setupAgendaDragHandle === 'function')setupAgendaDragHandle(row,realIdx,dayBase);
   };
 
   if(deferAgenda){
-    // PROGRESSIVE FIRST PAINT — no buildWeekAgenda, no homeAgendaRows, no
-    // homeEarlyMap. Show pinned first, then everyone in todayCategory order
-    // (today / overdue / upcoming / others) so the list is sensible within a
-    // frame. Full agenda replaces this on the next idle paint.
-    list.classList.add('is-progressive');
+    // IMMEDIATE FIRST PAINT — no planner work, homeAgendaRows, or homeEarlyMap.
+    // A same-day plan cache normally avoids this compatibility list; it exists
+    // for the first launch after install or after a placement-changing edit.
+    list.classList.remove('is-progressive');
     const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
     const fastOrder = todayFirstActive && !searching
       ? [...indices].sort((a,b)=>{
@@ -2516,7 +2932,13 @@ function render(opts){
     if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
     const agendaMap = new Map();
     const weekAssigned = new Set();
+    const scheduleOmissionByHid = new Map();
     const dayPlans = week.days.map(day=>{
+      for(const omission of day.linkOmissions || []){
+        if(omission && omission.subjectHid && !scheduleOmissionByHid.has(omission.subjectHid)){
+          scheduleOmissionByHid.set(omission.subjectHid,omission.reason || 'linked placement could not be honored');
+        }
+      }
       const seq = homeDaySequence(day,sortSettings,{visibleSet});
       day.homeDisplayedTimeline = seq.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
         && row.i != null
@@ -2575,7 +2997,7 @@ function render(opts){
         if(data[row.i]?.pinned)continue;
         const cat = todayCategory(data[row.i],sortSettings);
         const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
-        appendHabitCard(row.i,row,earlyText);
+        appendHabitCard(row.i,row,earlyText,day.dayBase);
       }
     });
 
@@ -2599,7 +3021,7 @@ function render(opts){
         if(label)appendSectionHeader(list,label);
         leftoverCat = key;
       }
-      appendHabitCard(realIdx,null,'');
+      appendHabitCard(realIdx,null,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
     });
   }else{
     const agendaRows = homeAgendaRows(data);
@@ -2722,7 +3144,7 @@ function render(opts){
             }
             prevTodayLocId = cLocId || prevTodayLocId;
             const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
-            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '');
+            appendHabitCard(realIdx,chunkRow,ci === 0 ? earlyText : '',dayStart(Date.now()));
           });
           return;
         }
@@ -2746,24 +3168,28 @@ function render(opts){
       appendHabitCard(
         realIdx,
         agendaRow,
-        (!searching && cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : ''
+        (!searching && cat === 2 && earlyToday(realIdx)) ? earlyMap.get(realIdx) : '',
+        inTodaySection ? dayStart(Date.now()) : null
       );
     });
     if(!searching && todayFirstActive && sectionCat !== 0){
-      const _snap = loadTodaySuggested();
-      if(!_droppedDayBaseline && _snap.prevProjection){
-        _droppedDayBaseline = _snap.prevProjection;
-        _droppedDayBaselineDay = todayIso();
-      }
-      if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
-        const header = document.createElement('div');
-        header.className = 'section-header';
-        header.dataset.label = 'today';
-        header.textContent = 'today';
-        setupDayCapacityHeader(header,dayStart(Date.now()),false);
-        attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
-        attachDroppedIndicator(header,list,todayHids);
-        if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
+      const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+      if(!minimal){
+        const _snap = loadTodaySuggested();
+        if(!_droppedDayBaseline && _snap.prevProjection){
+          _droppedDayBaseline = _snap.prevProjection;
+          _droppedDayBaselineDay = todayIso();
+        }
+        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          header.dataset.label = 'today';
+          header.textContent = 'today';
+          setupDayCapacityHeader(header,dayStart(Date.now()),false);
+          attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
+          attachDroppedIndicator(header,list,todayHids);
+          if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
+        }
       }
     }
   }
@@ -2815,6 +3241,7 @@ function render(opts){
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
   _homeListFingerprint = homeListFingerprint();
+  restoreHomeReadingPosition(readingPosition,list);
   return true;
 }
 
@@ -2882,68 +3309,268 @@ function homeListFingerprint(now = Date.now()){
 
 let _homeListFingerprint = '';
 let _homeRenderedWeek = null;
+let _fastHomeRefreshToken = 0;
 let _optimizerHomeRequestKey = '';
 let _optimizerHomeRequestToken = 0;
 let _optimizerHomeReadyKey = '';
 let _optimizerHomeReadyWeek = null;
 
+// PURE: the visible scheduling result, without solver bookkeeping. Comparing
+// this after a background solve lets the current DOM stay mounted when GLPK
+// returns the same days, order, and times as the plan already on screen.
+function homeAgendaPlanSignature(week,data = (typeof load === 'function' ? load() : [])){
+  if(!week || !Array.isArray(week.days))return '';
+  return week.days.map(day=>{
+    const rows = Array.isArray(day.timeline) ? day.timeline : [];
+    const rowSig = rows.map(row=>{
+      const h = row && row.i != null ? data[row.i] : null;
+      return [
+        row && row.kind || '',
+        h && h.hid || '',
+        Number.isFinite(Number(row && row.start)) ? Math.round(Number(row.start) / 60000) : '',
+        Number.isFinite(Number(row && row.end)) ? Math.round(Number(row.end) / 60000) : '',
+        row && row.from || '',
+        row && row.to || '',
+        row && row.locationId || '',
+        row && row.label || '',
+        row && row.chunkMinutes != null ? Math.round(Number(row.chunkMinutes) || 0) : ''
+      ].join('~');
+    }).join(';');
+    return `${day.dayKey || dateKey(day.dayBase)}:${rowSig}`;
+  }).join('\n');
+}
+
+function homeReadingScrollHost(list){
+  if(!list)return null;
+  const pane = list.closest('.pane-list');
+  return pane && pane.scrollHeight > pane.clientHeight + 1 ? pane : null;
+}
+
+function homeReadingElementKey(el){
+  if(!el)return '';
+  if(el.classList.contains('swipe-row')){
+    return `row:${el.dataset.hid || el.dataset.realIdx || ''}:${el.dataset.dayBase || ''}:${el.dataset.agendaStart || ''}`;
+  }
+  if(el.classList.contains('section-header')){
+    return `section:${el.dataset.capacityDay || el.dataset.label || ''}`;
+  }
+  if(el.classList.contains('travel-card') || el.classList.contains('travel-text')){
+    return `travel:${el.dataset.travelFrom || ''}:${el.dataset.travelTo || ''}:${el.dataset.agendaStart || ''}`;
+  }
+  if(el.dataset && el.dataset.blockedGroup)return `blocked:${el.dataset.blockedGroup}`;
+  return '';
+}
+
+// READ: remember the item the user is currently reading and its viewport
+// offset. The raw scroll position is retained as a fallback if that item is
+// legitimately removed by the new plan.
+function captureHomeReadingPosition(list){
+  if(!list || !list.children.length)return null;
+  const host = homeReadingScrollHost(list);
+  const scrollTop = host ? host.scrollTop : window.scrollY;
+  if(scrollTop <= 1)return null;
+  const hostRect = host ? host.getBoundingClientRect() : {top:0,bottom:window.innerHeight};
+  const top = Math.max(0,hostRect.top);
+  const bottom = Math.min(window.innerHeight,hostRect.bottom);
+  const candidates = Array.from(list.children);
+  const anchor = candidates.find(el=>{
+    const rect = el.getBoundingClientRect();
+    return rect.bottom > top + 1 && rect.top < bottom;
+  });
+  if(!anchor)return {host,scrollTop,key:'',offset:0};
+  return {
+    host,
+    scrollTop,
+    key:homeReadingElementKey(anchor),
+    hid:anchor.dataset && anchor.dataset.hid || '',
+    dayKey:anchor.dataset && (anchor.dataset.capacityDay || (anchor.dataset.dayBase ? dateKey(Number(anchor.dataset.dayBase)) : '')) || '',
+    offset:anchor.getBoundingClientRect().top - top
+  };
+}
+
+// WRITE: put the same semantic row back under the user's eyes after a genuine
+// plan change. This prevents a background refresh from jumping them to the top
+// or losing tomorrow while still allowing rows to move when the plan changed.
+function restoreHomeReadingPosition(snapshot,list){
+  if(!snapshot || !list)return;
+  const host = homeReadingScrollHost(list);
+  const top = Math.max(0,host ? host.getBoundingClientRect().top : 0);
+  const children = Array.from(list.children);
+  let anchor = snapshot.key
+    ? children.find(el=>homeReadingElementKey(el) === snapshot.key)
+    : null;
+  if(!anchor && snapshot.hid){
+    anchor = children.find(el=>el.dataset && el.dataset.hid === snapshot.hid);
+  }
+  if(!anchor && snapshot.dayKey){
+    anchor = children.find(el=>el.dataset && (
+      el.dataset.capacityDay === snapshot.dayKey
+      || (el.dataset.dayBase && dateKey(Number(el.dataset.dayBase)) === snapshot.dayKey)
+    ));
+  }
+  if(anchor){
+    const delta = anchor.getBoundingClientRect().top - top - snapshot.offset;
+    if(Math.abs(delta) > 0.5){
+      if(host)host.scrollTop += delta;
+      else window.scrollBy({top:delta,left:0,behavior:'instant'});
+    }
+    return;
+  }
+  if(host)host.scrollTop = Math.min(snapshot.scrollTop,Math.max(0,host.scrollHeight - host.clientHeight));
+  else window.scrollTo({
+    top:Math.min(snapshot.scrollTop,Math.max(0,document.documentElement.scrollHeight - window.innerHeight)),
+    left:0,
+    behavior:'instant'
+  });
+}
+
 // The lightweight home fingerprint deliberately omits some low-frequency
 // fields. Optimizer reuse needs an exact key so edits to any habit, window,
 // location, score weight, or travel edge can never reuse a stale schedule.
-function optimizerHomeStateKey(data){
+function homePlannerStateKey(data,fingerprintNow = Date.now()){
   // Use persisted records for the exact data signature. normalize() gives
   // legacy records a generated hid in memory; hashing that transient value
   // would make every load look different until the record is next saved.
   const persisted = (typeof Storage !== 'undefined' && typeof KEY !== 'undefined')
     ? (Storage.read(KEY) || data || [])
     : (data || []);
-  return `${homeListFingerprint()}\n${JSON.stringify(persisted)}\n${JSON.stringify(sortSettings || {})}`;
+  const plannerSettings = {...(sortSettings || {})};
+  // Presentation-only state must not invalidate either planner. In particular,
+  // homeExtraMode only changes whether existing blocked/travel rows are cards,
+  // text, or hidden outside twelve hours. minimalMode is the same class of
+  // chrome (card/detail/overview visuals) and must not bust the agenda cache.
+  delete plannerSettings.homeExtraMode;
+  delete plannerSettings.minimalMode;
+  return `${homeListFingerprint(fingerprintNow)}\n${JSON.stringify(persisted)}\n${JSON.stringify(plannerSettings)}`;
+}
+
+function optimizerHomeStateKey(data){
+  return homePlannerStateKey(data);
+}
+
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v1';
+
+function homeAgendaCacheStateKey(data){
+  return homePlannerStateKey(data,dayStart(Date.now()));
+}
+
+function cachedHomeAgenda(data){
+  try{
+    const cached = Storage.read(HOME_AGENDA_CACHE_KEY);
+    if(!cached || cached.version !== 1 || !cached.week)return null;
+    if(cached.key !== homeAgendaCacheStateKey(data))return null;
+    if(dateKey(cached.savedAt) !== dateKey(Date.now()))return null;
+    const week = cached.week;
+    for(const day of week.days || []){
+      for(const row of day.timeline || []){
+        if(row && row.i != null)row.h = data[row.i] || null;
+      }
+      for(const item of day.agendaItems || []){
+        if(item && item.i != null)item.h = data[item.i] || null;
+      }
+    }
+    return week;
+  }catch(_){
+    return null;
+  }
+}
+
+function saveHomeAgendaCache(data,week){
+  if(!week || !Array.isArray(week.days))return;
+  try{
+    // Habit records are already persisted once and every planner row carries
+    // its stable data index. Omitting repeated `h` objects keeps this cache
+    // small even for histories with hundreds of logs.
+    const leanWeek = JSON.parse(JSON.stringify(week,(key,value)=>key === 'h' ? undefined : value));
+    Storage.write(HOME_AGENDA_CACHE_KEY,{
+      version:1,
+      savedAt:Date.now(),
+      key:homeAgendaCacheStateKey(data),
+      week:leanWeek
+    });
+  }catch(_){}
 }
 
 // View-only state such as an expanded blocked group does not change placement.
 // Repaint from the already solved week so the interaction responds immediately
 // even if travel-cache background writes changed the next optimizer key.
 function renderHomePresentationOnly(){
-  if(sortSettings.agendaOptimizer && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+  if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+  if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     render({__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
     return;
   }
   render();
 }
 
-// ASYNC COORDINATOR: paint the sync heuristic week immediately, then upgrade
-// in place when GLPK finishes. Waiting on the solver before first paint left
-// home blank for seconds on cold load.
+// ASYNC COORDINATOR: keep week planning outside the UI thread in both modes.
+// A same-day cached week provides a stable first paint; on a first-ever load a
+// basic list is shown until the worker supplies the agenda.
 function queueOptimizedHomeRender(data,opts){
   const key = optimizerHomeStateKey(data);
+  const exactMode = Boolean(sortSettings && sortSettings.agendaOptimizer);
   if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
+    if(opts && opts.__backgroundRefresh
+      && homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(_optimizerHomeReadyWeek,data)){
+      _homeRenderedWeek = _optimizerHomeReadyWeek;
+      if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,_homeRenderedWeek);
+      _homeListFingerprint = homeListFingerprint();
+      return false;
+    }
     render({...opts,__fromOptimizer:true,__optimizedWeek:_optimizerHomeReadyWeek});
     _homeListFingerprint = homeListFingerprint();
-    return;
+    return true;
   }
-  if(_optimizerHomeRequestKey === key)return;
+  if(_optimizerHomeRequestKey === key)return false;
 
-  // Fast first paint so the list appears right away.
-  render({...opts,__fromOptimizer:true,__optimizerFallback:true});
-  _homeListFingerprint = homeListFingerprint();
+  // Background refreshes keep the current DOM. Direct/cold renders use the
+  // latest compatible plan, avoiding both a blank launch and reordered phases.
+  if(!(opts && opts.__backgroundRefresh)){
+    const cached = cachedHomeAgenda(data);
+    if(cached)render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
+    else render({...opts,deferAgenda:true});
+    _homeListFingerprint = homeListFingerprint();
+  }
 
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
-  const settings = {...sortSettings};
-  void buildWeekAgendaAsync(data,settings,7).then(week=>{
+  const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
+  const optimizerBuild = typeof buildWeekAgendaOffMain === 'function'
+    ? buildWeekAgendaOffMain(data,settings,7,exactMode ? 'exact' : 'fast')
+    : buildWeekAgendaAsync(data,settings,7);
+  void optimizerBuild.then(week=>{
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
-    if(!sortSettings.agendaOptimizer)return;
+    const live = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
+    if(!live)return;
     if(key !== optimizerHomeStateKey(load())){
-      render(opts);
-      _homeListFingerprint = homeListFingerprint();
+      if(opts && opts.__backgroundRefresh)queueOptimizedHomeRender(load(),opts);
+      else render(opts);
       return;
     }
     if(!week || !Array.isArray(week.days))return;
-    // Heuristic paint already on screen; only replace when GLPK produced a plan.
-    if(!week.optimized)return;
+    // In exact mode a timed-out solve returns the heuristic fallback. A cached
+    // planned week can stay mounted; on a first-ever load, use that fallback
+    // rather than leaving the user on the unplanned basic list.
+    if(exactMode && !week.optimized){
+      if(!_homeRenderedWeek){
+        const liveData = load();
+        saveHomeAgendaCache(liveData,week);
+        render({...opts,__fromOptimizer:true,__optimizedWeek:week});
+        _homeListFingerprint = homeListFingerprint();
+      }
+      return;
+    }
     _optimizerHomeReadyKey = key;
     _optimizerHomeReadyWeek = week;
+    const liveData = load();
+    saveHomeAgendaCache(liveData,week);
+    if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
+      _homeRenderedWeek = week;
+      if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
+      _homeListFingerprint = homeListFingerprint();
+      return;
+    }
     render({...opts,__fromOptimizer:true,__optimizedWeek:week});
     _homeListFingerprint = homeListFingerprint();
   }).catch(()=>{
@@ -2951,6 +3578,7 @@ function queueOptimizedHomeRender(data,opts){
     _optimizerHomeRequestKey = '';
     // Keep the fast planner already on screen.
   });
+  return true;
 }
 
 // Immediate feedback for a saved travel override. The optimized replan still
@@ -2979,6 +3607,55 @@ function markHomeTravelEdgeEdited(fromId,toId,minutes){
 function renderHomeIfChanged(force){
   const fp = homeListFingerprint();
   if(!force && fp === _homeListFingerprint)return false;
+  const data = load();
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const canCompareWeek = Boolean(
+    _homeRenderedWeek
+    && Array.isArray(_homeRenderedWeek.days)
+    && settings
+    && settings.preset === 'todayFirst'
+    && settings.showWeekOnHome
+    && !(typeof searchQuery === 'string' && searchQuery.trim())
+  );
+
+  if(canCompareWeek){
+    // Claim this state before starting work so a travel burst or visibility
+    // event cannot enqueue the same recalculation repeatedly.
+    _homeListFingerprint = fp;
+    if(settings.agendaOptimizer && typeof buildWeekAgendaAsync === 'function'){
+      queueOptimizedHomeRender(data,{__backgroundRefresh:true});
+      return true;
+    }
+    if(!settings.agendaOptimizer && typeof buildWeekAgendaOffMain === 'function'){
+      const token = ++_fastHomeRefreshToken;
+      const requestedFingerprint = fp;
+      const settingsSnapshot = {...settings};
+      void buildWeekAgendaOffMain(data,settingsSnapshot,7,'fast').then(week=>{
+        if(token !== _fastHomeRefreshToken || !week || !Array.isArray(week.days))return;
+        const liveData = load();
+        // A real edit/location update arrived while the worker was planning.
+        // Discard this stale result and let the latest state schedule its own.
+        if(requestedFingerprint !== homeListFingerprint()){
+          renderHomeIfChanged();
+          return;
+        }
+        if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
+          _homeRenderedWeek = week;
+          if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
+          _homeListFingerprint = homeListFingerprint();
+          return;
+        }
+        render({__fromBackgroundRefresh:true,__optimizedWeek:week});
+        _homeListFingerprint = homeListFingerprint();
+      }).catch(()=>{
+        if(token !== _fastHomeRefreshToken)return;
+        // Workers are widely available in the supported browsers. If creation
+        // is blocked, keep the current plan instead of freezing touch input
+        // with the old synchronous comparison path.
+      });
+      return true;
+    }
+  }
   const didRender = render();
   if(didRender !== false)_homeListFingerprint = homeListFingerprint();
   return true;
@@ -3117,6 +3794,11 @@ function setupBreakableCrown(row,_realIdx){
 
   crown.addEventListener('pointerdown',e=>{
     e.stopPropagation();
+    // Exclusive gestures: refuse while reorder/swipe owns the card.
+    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'hold')){
+      pointerId = null;
+      return;
+    }
     cancelMomentum();
     cancelScrub();
     startX = e.clientX;
@@ -3131,27 +3813,73 @@ function setupBreakableCrown(row,_realIdx){
     crown._dragBase = Math.round(Number(row.dataset.progressTarget) || committed);
     // Soft-claim so a tiny move can't arm card swipe before horizontal intent is known.
     row.dataset.crownGesture = '1';
+    // Breakable crown owns most of the card — also start reorder long-press here.
+    // Horizontal scrub cancels it; a still hold reveals the grip.
+    if(row.dataset.agendaDraggable === '1' && typeof beginAgendaCardLongPress === 'function'){
+      const realIdx = Number(row.dataset.realIdx);
+      const dayBase = Number(row.dataset.dayBase);
+      if(Number.isFinite(realIdx) && Number.isFinite(dayBase)){
+        beginAgendaCardLongPress(row,realIdx,dayBase,e);
+      }
+    }
   });
 
   crown.addEventListener('pointermove',e=>{
     if(pointerId === null || e.pointerId !== pointerId)return;
     e.stopPropagation();
+    if(typeof cardGestureOwner === 'function' && cardGestureOwner(row) === 'reorder'){
+      pointerId = null;
+      delete row.dataset.crownGesture;
+      return;
+    }
     const dxTotal = e.clientX - startX;
     const dyTotal = e.clientY - startY;
 
-    if(!dragging){
-      if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
-      if(Math.abs(dyTotal) > Math.abs(dxTotal)){
-        // Vertical scroll intent — release claim so the page can pan.
+    // Reorder already armed: vertical move hands off to agenda drag.
+    if(row.classList.contains('agenda-drag-ready') || row.classList.contains('agenda-longpress-armed')){
+      if(typeof tryAgendaDragFromArmedPress === 'function' && tryAgendaDragFromArmedPress(row,e)){
         pointerId = null;
         delete row.dataset.crownGesture;
         return;
       }
+      // Stay still while holding the armed grip — don't scrub.
+      if(Math.abs(dxTotal) < 10)return;
+      if(typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress();
+    }
+
+    if(!dragging){
+      if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
+      if(Math.abs(dyTotal) > Math.abs(dxTotal)){
+        // Vertical intent before reorder arms → drop long-press + crown claim.
+        if(typeof agendaLongPressOwnsPointer === 'function' && agendaLongPressOwnsPointer(e.pointerId)
+          && !row.classList.contains('agenda-drag-ready')
+          && !row.classList.contains('agenda-longpress-armed')){
+          if(Math.abs(dyTotal) > 8 && typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress();
+          else return;
+        }else if(typeof agendaLongPressOwnsPointer === 'function' && agendaLongPressOwnsPointer(e.pointerId)){
+          // Armed: handoff handled above; keep waiting for clearer vertical.
+          return;
+        }
+        pointerId = null;
+        delete row.dataset.crownGesture;
+        return;
+      }
+      // Horizontal scrub — cancel reorder long-press so dial wins.
+      if(typeof claimCardGesture === 'function'){
+        if(!claimCardGesture(row,'scrub',{force:true})){
+          pointerId = null;
+          delete row.dataset.crownGesture;
+          return;
+        }
+      }else if(typeof cancelAgendaLongPress === 'function'){
+        cancelAgendaLongPress();
+      }
+      row.classList.remove('agenda-drag-ready','agenda-longpress-armed');
+      if(typeof closeAllSwipes === 'function')closeAllSwipes();
       dragging = true;
-      crown.setPointerCapture(e.pointerId);
+      try{ crown.setPointerCapture(e.pointerId); }catch{ /* synthetic / lost pointer */ }
       crown.classList.add('active');
       if(progressRoot)progressRoot.classList.add('is-scrubbing');
-      if(typeof closeAllSwipes === 'function')closeAllSwipes();
       e.preventDefault();
     }
 
@@ -3178,7 +3906,14 @@ function setupBreakableCrown(row,_realIdx){
     pointerId = null;
     velX = 0;
     delete row.dataset.crownGesture;
+    if(wasDragging && typeof releaseCardGesture === 'function')releaseCardGesture(row,'scrub');
+    if(typeof settleAgendaPointerFromForeignTarget === 'function'
+      && settleAgendaPointerFromForeignTarget(row,e)){
+      return;
+    }
     if(!wasDragging && e.type === 'pointerup'){
+      if(row.classList.contains('agenda-drag-ready') || row.classList.contains('agenda-longpress-armed'))return;
+      if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap'))return;
       const card = row.querySelector('.ting-card');
       if(card){
         card.dataset.approvedClickUntil = String(Date.now()+500);
@@ -3195,9 +3930,15 @@ function setupBreakableCrown(row,_realIdx){
       crown.classList.remove('active');
       if(progressRoot)progressRoot.classList.remove('is-scrubbing');
       hideTooltip();
+      if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'scrub');
     }
     dragging = false;pointerId = null;velX = 0;
     delete row.dataset.crownGesture;
+    if(typeof cancelAgendaLongPress === 'function'
+      && typeof agendaLongPressOwnsPointer === 'function'
+      && agendaLongPressOwnsPointer(e.pointerId)){
+      cancelAgendaLongPress();
+    }
   });
 
   crown.addEventListener('wheel',e=>{
@@ -3255,10 +3996,14 @@ function setupSwipe(row){
   let startedOpen = false;
   const CROWN_SWIPE_PAD = 10;
   // Match CSS collapsed default so first paint never shows action chrome.
-  leftActions.style.width = '0';
-  rightActions.style.width = '0';
-  leftActions.style.pointerEvents = 'none';
-  rightActions.style.pointerEvents = 'none';
+  if(leftActions){
+    leftActions.style.width = '0';
+    leftActions.style.pointerEvents = 'none';
+  }
+  if(rightActions){
+    rightActions.style.width = '0';
+    rightActions.style.pointerEvents = 'none';
+  }
 
   // PURE: touch is on/near the crown dial (layout box + pad), so swipe must stand down.
   function touchNearCrown(clientX, clientY){
@@ -3273,6 +4018,7 @@ function setupSwipe(row){
 
   // PURE: measure total swipe action width
   function revealWidth(actions){
+    if(!actions)return 0;
     return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
   }
 
@@ -3280,14 +4026,19 @@ function setupSwipe(row){
   function resetSwipe(){
     card.style.transition = SNAP_TRANSITION;
     card.style.transform = '';
-    leftActions.style.transition = WIDTH_TRANSITION;
-    rightActions.style.transition = WIDTH_TRANSITION;
-    leftActions.style.width = '0';
-    rightActions.style.width = '0';
-    leftActions.style.pointerEvents = 'none';
-    rightActions.style.pointerEvents = 'none';
+    if(leftActions){
+      leftActions.style.transition = WIDTH_TRANSITION;
+      leftActions.style.width = '0';
+      leftActions.style.pointerEvents = 'none';
+    }
+    if(rightActions){
+      rightActions.style.transition = WIDTH_TRANSITION;
+      rightActions.style.width = '0';
+      rightActions.style.pointerEvents = 'none';
+    }
     swipeOpenCard = null;
     delete row.dataset.swipeOpen;
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
     startedOpen = false;
     moved = false;
     dx = 0;
@@ -3295,6 +4046,22 @@ function setupSwipe(row){
 
   row.addEventListener('touchstart',e=>{
     const t = e.changedTouches[0];
+    // Reorder and crown scrub are committed gestures. A long-press `hold` is
+    // deliberately trackable here: pointerdown fires before touchstart on
+    // phones, and horizontal movement upgrades that soft hold to swipe below.
+    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'swipe')){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
+    if(row.classList.contains('is-agenda-dragging')
+      || row.querySelector('.breakable-progress.is-scrubbing')){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
     // Crown dial + a small pad around it owns the gesture — never arm card swipe.
     if(e.target.closest('.breakable-crown,.breakable-progress') || row.dataset.crownGesture === '1' || touchNearCrown(t.clientX, t.clientY)){
       touchId = null;
@@ -3311,6 +4078,10 @@ function setupSwipe(row){
 
   row.addEventListener('touchmove',e=>{
     if(touchId === null || row.dataset.crownGesture === '1')return;
+    if(typeof cardGestureOwner === 'function'){
+      const owner = cardGestureOwner(row);
+      if(owner === 'reorder' || owner === 'scrub')return;
+    }
     if(e.target.closest('.breakable-crown,.breakable-progress'))return;
     const t = [...e.changedTouches].find(item=>item.identifier === touchId);
     if(!t)return;
@@ -3337,27 +4108,51 @@ function setupSwipe(row){
       moved = true;dx = 0;
       return;
     }
+    if(!moved){
+      if(typeof claimCardGesture === 'function' && !claimCardGesture(row,'swipe',{force:true})){
+        touchId = null;
+        return;
+      }
+    }
     moved = true;dx = ddx;
     const wantsLeft = dx > 0;
     const activeActions = wantsLeft ? leftActions : rightActions;
     const inactiveActions = wantsLeft ? rightActions : leftActions;
     const reveal = revealWidth(activeActions);
-    const clamped = reveal ? Math.max(-reveal,Math.min(reveal,dx)) : 0;
+    if(!reveal){
+      card.style.transition = 'none';
+      card.style.transform = '';
+      return;
+    }
+    const clamped = Math.max(-reveal,Math.min(reveal,dx));
     card.style.transition = 'none';
-    activeActions.style.transition = 'none';
-    inactiveActions.style.transition = 'none';
+    if(activeActions)activeActions.style.transition = 'none';
+    if(inactiveActions)inactiveActions.style.transition = 'none';
     card.style.transform = `translateX(${clamped}px)`;
-    const pct = reveal ? Math.min(1,Math.abs(clamped) / reveal) : 0;
-    activeActions.style.width = `${Math.abs(clamped)}px`;
-    activeActions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
-    inactiveActions.style.width = '0';
-    inactiveActions.style.pointerEvents = 'none';
+    const pct = Math.min(1,Math.abs(clamped) / reveal);
+    if(activeActions){
+      activeActions.style.width = `${Math.abs(clamped)}px`;
+      activeActions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
+    }
+    if(inactiveActions){
+      inactiveActions.style.width = '0';
+      inactiveActions.style.pointerEvents = 'none';
+    }
   },{passive:false});
 
   row.addEventListener('touchend',()=>{
-    if(touchId === null || !moved)return;
+    if(touchId === null || !moved){
+      if(touchId !== null && typeof releaseCardGesture === 'function'
+        && typeof cardGestureOwner === 'function' && cardGestureOwner(row) === 'swipe'
+        && !row.dataset.swipeOpen){
+        releaseCardGesture(row,'swipe');
+      }
+      touchId = null;
+      return;
+    }
     if(startedOpen){
       startedOpen = false;
+      touchId = null;
       return;
     }
     const dir = dx > 0 ? 1 : -1;
@@ -3366,25 +4161,36 @@ function setupSwipe(row){
     const reveal = revealWidth(activeActions);
     const snap = reveal > 0 && Math.abs(dx) > Math.min(SWIPE_THRESHOLD,reveal * 0.55);
     card.style.transition = SNAP_TRANSITION;
-    activeActions.style.transition = WIDTH_TRANSITION;
-    inactiveActions.style.transition = WIDTH_TRANSITION;
+    if(activeActions)activeActions.style.transition = WIDTH_TRANSITION;
+    if(inactiveActions)inactiveActions.style.transition = WIDTH_TRANSITION;
     if(snap){
       card.style.transform = `translateX(${dir * reveal}px)`;
-      activeActions.style.width = `${reveal}px`;
-      activeActions.style.pointerEvents = 'auto';
-      inactiveActions.style.width = '0';
-      inactiveActions.style.pointerEvents = 'none';
+      if(activeActions){
+        activeActions.style.width = `${reveal}px`;
+        activeActions.style.pointerEvents = 'auto';
+      }
+      if(inactiveActions){
+        inactiveActions.style.width = '0';
+        inactiveActions.style.pointerEvents = 'none';
+      }
       swipeOpenCard = card;
       row.dataset.swipeOpen = String(dir);
+      if(typeof claimCardGesture === 'function')claimCardGesture(row,'swipe');
     }else{
       card.style.transform = '';
-      leftActions.style.width = '0';
-      rightActions.style.width = '0';
-      leftActions.style.pointerEvents = 'none';
-      rightActions.style.pointerEvents = 'none';
+      if(leftActions){
+        leftActions.style.width = '0';
+        leftActions.style.pointerEvents = 'none';
+      }
+      if(rightActions){
+        rightActions.style.width = '0';
+        rightActions.style.pointerEvents = 'none';
+      }
       swipeOpenCard = null;
       delete row.dataset.swipeOpen;
+      if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
     }
+    touchId = null;
   });
 
   row.addEventListener('touchcancel',resetSwipe,{passive:true});
@@ -3405,6 +4211,7 @@ function closeAllSwipes(){
       actions.style.pointerEvents = 'none';
     });
     delete row.dataset.swipeOpen;
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
   });
   swipeOpenCard = null;
 }
@@ -3445,6 +4252,12 @@ function setupCardTap(row,realIdx){
   });
   card.addEventListener('click',e=>{
     if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){
+      e.preventDefault();e.stopPropagation();return;
+    }
+    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap')){
+      e.preventDefault();e.stopPropagation();return;
+    }
+    if(row.classList.contains('is-agenda-dragging') || row.classList.contains('agenda-longpress-armed')){
       e.preventDefault();e.stopPropagation();return;
     }
     if(e.target.closest('.pulse-btn'))return;
@@ -3590,6 +4403,7 @@ function logTing(i,opts = {}){
   h.lastLog = latestActualLog(h.logs);
   h.snoozedUntil = null;
   if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(h);
+  if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
   if(!save(data))return false;
   // Cancel any scheduled push for this completed task.
   if(typeof cancelPush === 'function' && h.type === 'task' && isTaskDone(h)){
@@ -3641,6 +4455,7 @@ function logTingAt(i,ts){
   if(!isPlan){
     data[i].snoozedUntil = null;
     if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(data[i]);
+    if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(data[i]);
   }
   if(!save(data))return false;
   showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
@@ -3893,9 +4708,22 @@ function executeUndo(){
     else delete availabilityOverrides[dayKey];
     saveSortSettings({...s,blockedTimeOverrides:blockOverrides,availabilityOverrides});
   }
+  if(pendingAction.type === 'add-samples'){
+    const hids = new Set((pendingAction.hids || []).filter(Boolean));
+    for(let i = data.length - 1; i >= 0; i--){
+      if(hids.has(data[i].hid))data.splice(i,1);
+    }
+    if(typeof pruneUnusedSamplePlaces === 'function'){
+      const pruned = pruneUnusedSamplePlaces(data);
+      data.length = 0;
+      data.push(...pruned);
+    }
+  }
   if(save(data)){
     hideActionToast();
     showToast('undone');
+    if(typeof updateSortSampleCount === 'function')updateSortSampleCount();
+    if(typeof refreshSampleHabitsSheet === 'function')refreshSampleHabitsSheet();
     refreshOpenViews();
   }
 }

@@ -176,6 +176,10 @@ const DEFAULT_SORT_SETTINGS = {
   showStatusOnCards:true,
   showEarlyOnCards:true,
 
+  // Visual-only: strip home cards, detail panes, and calendar overview chrome.
+  // Does not change scoring, agenda packing, or what is due.
+  minimalMode:false,
+
   compactMode:true,
   fontScale:'medium',
   themeMode:'system',

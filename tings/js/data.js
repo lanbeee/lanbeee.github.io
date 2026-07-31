@@ -26,6 +26,7 @@
  * @property {number|null} target             — rhythm in days (may be fractional, e.g. 3.5 = 2×/7d); null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon
+ * @property {string} emojiBgColor            — curated token for emoji icon background: ''|teal|amber|red|purple|blue|green
  * @property {boolean} pinned                 — stays above auto-sorted habits
  * @property {boolean} sample                 — true if created by the sort-lab sample builder
  * @property {number|null} snoozedUntil       — ms timestamp; habit hidden on home until then
@@ -50,6 +51,9 @@
  * @property {number}      preferredTimeStartOffsetMin
  * @property {string|null} preferredTimeEndAnchor
  * @property {number}      preferredTimeEndOffsetMin
+ *
+ * — Persistent planner order (optional; recurring, unlike drag reorder) —
+ * @property {{before:ScheduleLink|null,after:ScheduleLink|null}} scheduleLinks
  *
  * — Habit-relative anchors (optional; only meaningful when *Anchor = 'habit') —
  * When an anchor field is set to 'habit', the matching *AnchorHabitId references another habit's
@@ -97,7 +101,7 @@
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
- * @property {number|null} timerAutoStopMinutes — optional live-timer auto-stop (null = use durationMinutes)
+ * @property {number|null} timerAutoStopMinutes — optional manual-session target (legacy field name; null = use durationMinutes)
  * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
@@ -118,6 +122,15 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
+ */
+
+/**
+ * A recurring planner relationship, stored from the subject habit's point of
+ * view. Direct links allow required travel/fixed blocks, but no movable card.
+ * @typedef {Object} ScheduleLink
+ * @property {string} anchorHid
+ * @property {'sometime'|'direct'} adjacency
+ * @property {boolean} requireSameDay
  */
 
 /**
@@ -157,6 +170,7 @@
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
+ * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview
  * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
  * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
@@ -176,7 +190,7 @@
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
  * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
- * @property {number[]} availabilityMinutes                    — 7 entries, minutes free per weekday (Sun-Sat)
+ * @property {number[]} availabilityMinutes                    — legacy weekly minutes (Sun-Sat); unused for packing (default is full day / overrides)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly
  * @property {{label:string,days:number[],start:number,end:number,locationId:?string,startAnchor:?string,startOffsetMin:number,startCombine:?string,startAnchor2:?string,startOffsetMin2:number,startFixedMin2:?number,startDayOffset:number,startDayOffset2:number,endAnchor:?string,endOffsetMin:number,endCombine:?string,endAnchor2:?string,endOffsetMin2:number,endFixedMin2:?number,endDayOffset:number,endDayOffset2:number}[]} blockedTimes — recurring unavailable blocks. Anchor fields mirror habits (prayer + fixed secondary; later/earlier-of + +1d supported).
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
@@ -237,6 +251,18 @@ function load(){
   return normalize(Storage.read(KEY) || []);
 }
 
+// Test/debug override: `?planner=fast` exercises the whole app without loading
+// or calling GLPK. It is intentionally sessionless—the user's saved optimizer
+// preference is untouched when the query parameter is removed.
+function agendaPlannerForcedFast(){
+  try{
+    return typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('planner') === 'fast';
+  }catch{
+    return false;
+  }
+}
+
 function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
@@ -274,6 +300,7 @@ function loadSortSettings(){
     merged.defaultAutoMarkMinutes = Number.isFinite(merged.defaultAutoMarkMinutes) && merged.defaultAutoMarkMinutes > 0 ? Math.round(merged.defaultAutoMarkMinutes) : null;
     merged.showStatusOnCards = merged.showStatusOnCards !== false;
     merged.showEarlyOnCards = merged.showEarlyOnCards !== false;
+    merged.minimalMode = Boolean(merged.minimalMode);
     merged.compactMode = Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
     merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';
@@ -295,14 +322,21 @@ function loadSortSettings(){
     delete merged.prayerCityLat;
     delete merged.prayerCityLng;
     merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
-    merged.agendaOptimizer = Boolean(merged.agendaOptimizer);
+    merged.agendaOptimizer = agendaPlannerForcedFast()
+      ? false
+      : Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
       try{ preloadAgendaOptimizer(); }catch(_){}
     }
     return merged;
   }catch{
-    return {...DEFAULT_SORT_SETTINGS};
+    return {
+      ...DEFAULT_SORT_SETTINGS,
+      agendaOptimizer:agendaPlannerForcedFast()
+        ? false
+        : Boolean(DEFAULT_SORT_SETTINGS.agendaOptimizer)
+    };
   }
 }
 
@@ -335,6 +369,7 @@ function saveSortSettings(settings){
   next.defaultAutoMarkMinutes = Number.isFinite(next.defaultAutoMarkMinutes) && next.defaultAutoMarkMinutes > 0 ? Math.round(next.defaultAutoMarkMinutes) : null;
   next.showStatusOnCards = next.showStatusOnCards !== false;
   next.showEarlyOnCards = next.showEarlyOnCards !== false;
+  next.minimalMode = Boolean(next.minimalMode);
   next.compactMode = Boolean(next.compactMode);
   next.fontScale = ['small','medium','large'].includes(next.fontScale) ? next.fontScale : 'medium';
   next.themeMode = ['light','dark','system'].includes(next.themeMode) ? next.themeMode : 'system';
@@ -350,7 +385,9 @@ function saveSortSettings(settings){
   delete next.prayerCityLat;
   delete next.prayerCityLng;
   next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
-  next.agendaOptimizer = Boolean(next.agendaOptimizer);
+  next.agendaOptimizer = agendaPlannerForcedFast()
+    ? false
+    : Boolean(next.agendaOptimizer);
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
@@ -362,7 +399,7 @@ function saveSortSettings(settings){
 // ─────────────────────────────────────────────────────────────────────────
 
 function normalize(items){
-  return items.map(raw => {
+  const normalized = items.map(raw => {
     // Tasks and legacy events are now a single one-off type. Legacy 'event' records
     // migrate to 'task' with eventTime preserved (a timed task = appointment).
     let type = raw.type || 'keepup';
@@ -403,6 +440,7 @@ function normalize(items){
     // when habit A is logged"). Generated once on first normalize; legacy records
     // get one transparently so the feature can opt-in on any habit.
     const hid = cleanHabitId(raw.hid) || generateHabitId();
+    const scheduleLinkMigration = normalizeScheduleLinksWithMigration(raw,hid);
     const h = {
       hid,
       name: raw.name || '',
@@ -418,6 +456,7 @@ function normalize(items){
       createdAt: raw.createdAt || null,
       logs,
       emoji: raw.emoji || '',
+      emojiBgColor:normalizeEmojiBgColor(raw.emojiBgColor),
       pinned:Boolean(raw.pinned),
       sample:Boolean(raw.sample),
       snoozedUntil: raw.snoozedUntil || null,
@@ -445,6 +484,7 @@ function normalize(items){
       allowedTimeEndAnchorHabitId:(raw.allowedTimeEndAnchor === 'habit' ? cleanHabitId(raw.allowedTimeEndAnchorHabitId) : '') || null,
       preferredTimeStartAnchorHabitId:(raw.preferredTimeStartAnchor === 'habit' ? cleanHabitId(raw.preferredTimeStartAnchorHabitId) : '') || null,
       preferredTimeEndAnchorHabitId:(raw.preferredTimeEndAnchor === 'habit' ? cleanHabitId(raw.preferredTimeEndAnchorHabitId) : '') || null,
+      scheduleLinks:scheduleLinkMigration.links,
       // Combined expressions (later/earlier of two) + optional +1d day shift.
       ...normalizeCombineFields(raw, 'allowedTimeStart'),
       ...normalizeCombineFields(raw, 'allowedTimeEnd'),
@@ -465,6 +505,21 @@ function normalize(items){
       source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,
       importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
     };
+    // Only zero-offset, uncombined start anchors have an exact planner-order
+    // equivalent. Move those out of Dynamic timing; preserve all other habit
+    // expressions as explicit legacy completion-trigger timing.
+    for(const field of scheduleLinkMigration.migratedFields){
+      h[field + 'Anchor'] = null;
+      h[field + 'OffsetMin'] = 0;
+      h[field + 'AnchorHabitId'] = null;
+      h[field + 'Combine'] = null;
+      h[field + 'Anchor2'] = null;
+      h[field + 'OffsetMin2'] = 0;
+      h[field + 'AnchorHabitId2'] = null;
+      h[field + 'FixedMin2'] = null;
+      h[field + 'DayOffset'] = 0;
+      h[field + 'DayOffset2'] = 0;
+    }
     // Migration: a degenerate 0/0 fixed window with no anchor is the signature
     // of the Number(null)===0 render bug in detail-view.js (an empty time
     // input rendered as "00:00" and got saved back as 0/0). hasTimeWindow
@@ -483,6 +538,15 @@ function normalize(items){
     h.lastLog = latestActualLog(h.logs);
     return h;
   });
+  const validHids = new Set(normalized.map(h=>h.hid));
+  for(const h of normalized){
+    const links = normalizeScheduleLinks(h.scheduleLinks,h.hid);
+    for(const direction of ['before','after']){
+      if(links[direction] && !validHids.has(links[direction].anchorHid))links[direction] = null;
+    }
+    h.scheduleLinks = links;
+  }
+  return normalized;
 }
 
 // PURE: true when this item has automatic logging enabled. Breakables use each
@@ -613,12 +677,528 @@ function saveAutoChunkPlans(plans){
 
 const TODAY_SUGGESTED_KEY = 'tings_today_suggested_v1';
 
+// Temporary same-day agenda precedence links (device-local; not in habit backup).
+// dayBase → edges; each edge says beforeHid should be planned before afterHid that day.
+const ORDER_CONSTRAINTS_KEY = 'tings_order_constraints_v1';
+
+/**
+ * @typedef {Object} OrderConstraint
+ * @property {string} id
+ * @property {number} dayBase
+ * @property {string} beforeHid
+ * @property {string} afterHid
+ * @property {'sometime'|'direct'} adjacency
+ * @property {number} createdAt
+ */
+
+/**
+ * @typedef {Object} DoingNowState
+ * @property {string} hid
+ * @property {number} startedAt
+ * @property {number} dayBase
+ * @property {number} sessionMinutes — snapshotted target length at start
+ * @property {number} targetAt — startedAt + sessionMinutes
+ * @property {number|null} endsAt — auto-complete deadline; null for manual sessions
+ * @property {'manual'|'auto'} completionMode
+ * @property {boolean} oneShotAutoMark — compatibility mirror of completionMode
+ */
+
 function yesterdayIso(){
   return dateKey(Date.now() - 86400000);
 }
 
+function newOrderConstraintId(){
+  return `oc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+}
+
+function normalizeOrderAdjacency(raw){
+  return raw === 'direct' ? 'direct' : 'sometime';
+}
+
+function normalizeOrderConstraint(raw){
+  if(!raw || typeof raw !== 'object')return null;
+  const dayBase = clampDayTimestamp(raw.dayBase);
+  const beforeHid = typeof raw.beforeHid === 'string' ? raw.beforeHid.trim() : '';
+  const afterHid = typeof raw.afterHid === 'string' ? raw.afterHid.trim() : '';
+  if(dayBase == null || !beforeHid || !afterHid || beforeHid === afterHid)return null;
+  return {
+    id:typeof raw.id === 'string' && raw.id ? raw.id : newOrderConstraintId(),
+    dayBase,
+    beforeHid,
+    afterHid,
+    adjacency:normalizeOrderAdjacency(raw.adjacency),
+    createdAt:Number.isFinite(Number(raw.createdAt)) ? Number(raw.createdAt) : Date.now()
+  };
+}
+
+/** PURE: minutes to run for a doing-now session (snapshotted at confirm). */
+function doingNowSessionMinutesFor(h,now = Date.now()){
+  if(!h)return typeof DEFAULT_DURATION_MINUTES === 'number' ? DEFAULT_DURATION_MINUTES : 30;
+  if(h.breakable && typeof remainingDurationMinutes === 'function'){
+    const left = remainingDurationMinutes(h,dayStart(now));
+    if(left > 0)return left;
+  }
+  return clampDuration(h.durationMinutes);
+}
+
+function normalizeDoingNow(raw,todayBase = dayStart(Date.now())){
+  if(!raw || typeof raw !== 'object')return null;
+  const hid = typeof raw.hid === 'string' ? raw.hid.trim() : '';
+  const dayBase = clampDayTimestamp(raw.dayBase);
+  const startedAt = Number(raw.startedAt);
+  if(!hid || dayBase == null || !Number.isFinite(startedAt))return null;
+  if(dayBase !== todayBase)return null;
+  const sessionMinutes = Math.max(1,Math.min(720,Math.round(Number(raw.sessionMinutes) || 0) || 30));
+  // Records written before completionMode existed are intentionally restored
+  // as manual. That safe migration prevents an old timer from unexpectedly
+  // logging a habit after the app updates.
+  const completionMode = raw.completionMode === 'auto' ? 'auto' : 'manual';
+  const targetAt = Number.isFinite(Number(raw.targetAt))
+    ? Number(raw.targetAt)
+    : Number.isFinite(Number(raw.endsAt))
+    ? Number(raw.endsAt)
+    : startedAt + sessionMinutes * 60000;
+  const endsAt = completionMode === 'auto' ? targetAt : null;
+  return {
+    hid,
+    startedAt,
+    dayBase,
+    sessionMinutes,
+    targetAt,
+    endsAt,
+    completionMode,
+    oneShotAutoMark:completionMode === 'auto'
+  };
+}
+
+function loadOrderConstraintStore(now = Date.now()){
+  const raw = Storage.read(ORDER_CONSTRAINTS_KEY);
+  const todayBase = dayStart(now);
+  const edges = [];
+  const seen = new Set();
+  const list = raw && Array.isArray(raw.edges) ? raw.edges
+    : (raw && raw.byDay && typeof raw.byDay === 'object'
+      ? Object.values(raw.byDay).flatMap(v=>Array.isArray(v) ? v : [])
+      : []);
+  for(const item of list){
+    const edge = normalizeOrderConstraint(item);
+    if(!edge)continue;
+    if(edge.dayBase < todayBase)continue; // past days drop
+    const key = `${edge.dayBase}|${edge.beforeHid}|${edge.afterHid}`;
+    if(seen.has(key))continue;
+    seen.add(key);
+    edges.push(edge);
+  }
+  const doingNow = normalizeDoingNow(raw && raw.doingNow,todayBase);
+  return {edges,doingNow};
+}
+
+function saveOrderConstraintStore(store){
+  const next = {
+    edges:Array.isArray(store && store.edges) ? store.edges.map(normalizeOrderConstraint).filter(Boolean) : [],
+    doingNow:store && store.doingNow ? normalizeDoingNow(store.doingNow) : null
+  };
+  const current = Storage.read(ORDER_CONSTRAINTS_KEY);
+  if(JSON.stringify(current || {edges:[],doingNow:null}) === JSON.stringify(next))return false;
+  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); return true; }
+  catch{ return false; }
+}
+
+function orderConstraintsForDay(dayBase,store = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return [];
+  const src = store || loadOrderConstraintStore();
+  return (src.edges || []).filter(e=>e.dayBase === base);
+}
+
+// PURE: recurring Schedule relationships expressed as the same directed edge
+// shape used by one-day reorder. They are intentionally not stored in the
+// device-local reorder store.
+function persistentOrderConstraintsForDay(dayBase,data = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return [];
+  const items = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  const valid = new Set(items.filter(Boolean).map(h=>cleanHabitId(h.hid)).filter(Boolean));
+  const edges = [];
+  for(const h of items){
+    const subjectHid = cleanHabitId(h && h.hid);
+    if(!subjectHid)continue;
+    const links = normalizeScheduleLinks(h.scheduleLinks,subjectHid);
+    for(const direction of ['before','after']){
+      const link = links[direction];
+      if(!link || !valid.has(link.anchorHid))continue;
+      edges.push({
+        id:`schedule:${subjectHid}:${direction}`,
+        dayBase:base,
+        beforeHid:direction === 'before' ? subjectHid : link.anchorHid,
+        afterHid:direction === 'before' ? link.anchorHid : subjectHid,
+        adjacency:link.adjacency,
+        persistent:true,
+        requiresPair:link.requireSameDay,
+        requireSameDay:link.requireSameDay,
+        subjectHid,
+        anchorHid:link.anchorHid,
+        direction
+      });
+    }
+  }
+  return edges;
+}
+
+// IMPURE by default (reads saved habits): the planner-facing edge set. A
+// persistent relationship wins over a contradictory stale one-day edge.
+function agendaOrderConstraintsForDay(dayBase,data = null,store = null){
+  const merged = persistentOrderConstraintsForDay(dayBase,data).map(edge=>({...edge}));
+  for(const edge of orderConstraintsForDay(dayBase,store)){
+    const same = merged.find(item=>item.beforeHid === edge.beforeHid && item.afterHid === edge.afterHid);
+    if(same){
+      // A compatible one-day drag may strengthen recurring "before" to
+      // "right before" for this date, and retains reorder's explicit pair.
+      if(edge.adjacency === 'direct')same.adjacency = 'direct';
+      same.requiresPair = true;
+      same.temporaryUpgrade = true;
+      continue;
+    }
+    const reverse = merged.some(item=>item.beforeHid === edge.afterHid && item.afterHid === edge.beforeHid);
+    if(reverse)continue;
+    merged.push({...edge,persistent:false,requiresPair:true});
+  }
+  return merged;
+}
+
+function getDoingNow(store = null){
+  const src = store || loadOrderConstraintStore();
+  return src.doingNow || null;
+}
+
+/** PURE: whether this active-focus session auto-completes at its target. */
+function doingNowAutoCompletes(doing){
+  return Boolean(doing && doing.completionMode === 'auto');
+}
+
+/** True while a doing-now session is active. Manual sessions do not expire. */
+function isDoingNowActive(doing = null,now = Date.now()){
+  const d = doing || getDoingNow();
+  if(!d || !d.hid)return false;
+  if(d.dayBase !== dayStart(now))return false;
+  if(doingNowAutoCompletes(d) && Number.isFinite(d.endsAt) && now >= d.endsAt)return false;
+  return true;
+}
+
+/**
+ * Start an active-focus session. opts.sessionMinutes snapshots the target
+ * duration at start. Manual is the safe default; auto mode completes once
+ * when the target passes.
+ * dayBase must be today's calendar day; startedAt may be earlier (even
+ * before midnight) so expired sessions near day boundaries still sweep.
+ */
+function setDoingNow(hid,startedAt = Date.now(),dayBase = dayStart(Date.now()),opts = {}){
+  const todayBase = dayStart(Date.now());
+  const nextDay = clampDayTimestamp(dayBase);
+  if(!hid || nextDay !== todayBase)return null;
+  const start = Number(startedAt) || Date.now();
+  const sessionMinutes = Math.max(1,Math.min(720,Math.round(Number(opts.sessionMinutes) || 0) || 30));
+  const completionMode = opts.completionMode === 'auto'
+    || (opts.completionMode == null && opts.oneShotAutoMark === true)
+    ? 'auto'
+    : 'manual';
+  const targetAt = Number.isFinite(Number(opts.targetAt))
+    ? Number(opts.targetAt)
+    : Number.isFinite(Number(opts.endsAt))
+      ? Number(opts.endsAt)
+    : start + sessionMinutes * 60000;
+  const store = loadOrderConstraintStore();
+  store.doingNow = {
+    hid:String(hid),
+    startedAt:start,
+    dayBase:todayBase,
+    sessionMinutes,
+    targetAt,
+    endsAt:completionMode === 'auto' ? targetAt : null,
+    completionMode,
+    oneShotAutoMark:completionMode === 'auto'
+  };
+  saveOrderConstraintStore(store);
+  return store.doingNow;
+}
+
+function clearDoingNow(hid = null){
+  const store = loadOrderConstraintStore();
+  if(!store.doingNow)return false;
+  if(hid != null && store.doingNow.hid !== hid)return false;
+  store.doingNow = null;
+  return saveOrderConstraintStore(store);
+}
+
+/** Upsert one day-scoped edge; replaces any existing same before→after that day. */
+function upsertOrderConstraint({dayBase,beforeHid,afterHid,adjacency = 'sometime'}){
+  const edge = normalizeOrderConstraint({
+    id:newOrderConstraintId(),
+    dayBase,
+    beforeHid,
+    afterHid,
+    adjacency,
+    createdAt:Date.now()
+  });
+  if(!edge)return null;
+  const store = loadOrderConstraintStore();
+  store.edges = (store.edges || []).filter(e=>!(
+    e.dayBase === edge.dayBase && e.beforeHid === edge.beforeHid && e.afterHid === edge.afterHid
+  ));
+  store.edges.push(edge);
+  saveOrderConstraintStore(store);
+  return edge;
+}
+
+/** Write the chosen edges for a drop; replaces same-day pairs among touched hids. */
+function saveOrderConstraintsForDrop(dayBase,edges){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return [];
+  const store = loadOrderConstraintStore();
+  const incoming = (edges || []).map(e=>normalizeOrderConstraint({...e,dayBase:base})).filter(Boolean);
+  const touch = new Set();
+  for(const e of incoming){
+    touch.add(e.beforeHid);
+    touch.add(e.afterHid);
+  }
+  store.edges = (store.edges || []).filter(e=>{
+    if(e.dayBase !== base)return true;
+    if(!touch.size)return true;
+    // Replace any prior same-day edge that touches the moved cluster pairs.
+    return !(touch.has(e.beforeHid) && touch.has(e.afterHid));
+  });
+  for(const e of incoming)store.edges.push(e);
+  saveOrderConstraintStore(store);
+  return incoming;
+}
+
+function removeOrderConstraint(id){
+  if(!id)return false;
+  const store = loadOrderConstraintStore();
+  const next = (store.edges || []).filter(e=>e.id !== id);
+  if(next.length === store.edges.length)return false;
+  store.edges = next;
+  return saveOrderConstraintStore(store);
+}
+
+function clearOrderConstraintsForHid(hid){
+  if(!hid)return false;
+  const store = loadOrderConstraintStore();
+  const beforeLen = store.edges.length;
+  const beforeDoing = store.doingNow;
+  store.edges = (store.edges || []).filter(e=>e.beforeHid !== hid && e.afterHid !== hid);
+  if(store.doingNow && store.doingNow.hid === hid)store.doingNow = null;
+  if(store.edges.length === beforeLen && store.doingNow === beforeDoing)return false;
+  return saveOrderConstraintStore(store);
+}
+
+function clearOrderConstraintsForDay(dayBase,hid = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return false;
+  const store = loadOrderConstraintStore();
+  const beforeLen = store.edges.length;
+  const beforeDoing = store.doingNow;
+  store.edges = (store.edges || []).filter(e=>{
+    if(e.dayBase !== base)return true;
+    if(hid == null)return false;
+    return e.beforeHid !== hid && e.afterHid !== hid;
+  });
+  if(store.doingNow && store.doingNow.dayBase === base && (hid == null || store.doingNow.hid === hid)){
+    store.doingNow = null;
+  }
+  if(store.edges.length === beforeLen && store.doingNow === beforeDoing)return false;
+  return saveOrderConstraintStore(store);
+}
+
+/** Clear only reorder edges for a day, preserving an active doing-now session. */
+function clearOrderEdgesForDay(dayBase,hid = null){
+  const base = clampDayTimestamp(dayBase);
+  if(base == null)return false;
+  const store = loadOrderConstraintStore();
+  const beforeLen = store.edges.length;
+  store.edges = (store.edges || []).filter(e=>{
+    if(e.dayBase !== base)return true;
+    if(hid == null)return false;
+    return e.beforeHid !== hid && e.afterHid !== hid;
+  });
+  return store.edges.length !== beforeLen ? saveOrderConstraintStore(store) : false;
+}
+
+/** Drop edges / doing-now when a habit completes or is deleted. */
+function pruneOrderConstraintsForHabit(h,data = null,now = Date.now()){
+  if(!h || !h.hid)return false;
+  const store = loadOrderConstraintStore(now);
+  const todayBase = dayStart(now);
+  let changed = false;
+  const done = h.type === 'task'
+    ? (typeof isTaskDone === 'function' ? isTaskDone(h) : Boolean(h.lastLog))
+    : completedToday(h,now);
+  const stillExists = Array.isArray(data) ? data.some(item=>item && item.hid === h.hid) : true;
+  const shouldDrop = !stillExists || done;
+  if(!shouldDrop && !(store.doingNow && store.doingNow.hid === h.hid))return false;
+  const nextEdges = (store.edges || []).filter(e=>{
+    if(e.beforeHid !== h.hid && e.afterHid !== h.hid)return true;
+    if(!stillExists){ changed = true; return false; }
+    if(done){
+      // Tasks are one-shot: drop every day. Rhythm habits only drop today/past.
+      if(h.type === 'task' || e.dayBase <= todayBase){ changed = true; return false; }
+    }
+    return true;
+  });
+  if(nextEdges.length !== store.edges.length){
+    store.edges = nextEdges;
+    changed = true;
+  }
+  if(store.doingNow && store.doingNow.hid === h.hid && (done || !stillExists)){
+    store.doingNow = null;
+    changed = true;
+  }
+  return changed ? saveOrderConstraintStore(store) : false;
+}
+
+function pruneOrderConstraintsOnLog(h,now = Date.now()){
+  return pruneOrderConstraintsForHabit(h,null,now);
+}
+
+function orderConstraintsForHid(hid,store = null){
+  if(!hid)return [];
+  const src = store || loadOrderConstraintStore();
+  return (src.edges || []).filter(e=>e.beforeHid === hid || e.afterHid === hid);
+}
+
+function habitHasOrderConstraints(hid,store = null){
+  return orderConstraintsForHid(hid,store).length > 0;
+}
+
+function orderConstraintPillsForHid(hid,dayBase,data = null,store = null){
+  if(!hid)return [];
+  const edges = agendaOrderConstraintsForDay(dayBase,data,store);
+  const findOther = (otherHid)=>{
+    if(!Array.isArray(data))return null;
+    return data.find(item=>item && item.hid === otherHid) || null;
+  };
+  const nameOf = (other)=>{
+    const hit = findOther(other);
+    return hit ? hit.name : other;
+  };
+  const pills = [];
+  for(const e of edges){
+    if(e.afterHid === hid){
+      const other = findOther(e.beforeHid);
+      pills.push({
+        id:e.id,
+        kind:'after',
+        adjacency:e.adjacency,
+        otherHid:e.beforeHid,
+        otherEmoji:other && other.emoji ? String(other.emoji).trim() : '',
+        otherBg:normalizeEmojiBgColor(other && other.emojiBgColor),
+        otherName:nameOf(e.beforeHid),
+        dayBase:e.dayBase,
+        persistent:Boolean(e.persistent),
+        label:(e.adjacency === 'direct' ? `right after ${nameOf(e.beforeHid)}` : `after ${nameOf(e.beforeHid)}`)
+          + (e.persistent ? ' · recurring' : '')
+      });
+    }
+    if(e.beforeHid === hid){
+      const other = findOther(e.afterHid);
+      pills.push({
+        id:e.id,
+        kind:'before',
+        adjacency:e.adjacency,
+        otherHid:e.afterHid,
+        otherEmoji:other && other.emoji ? String(other.emoji).trim() : '',
+        otherBg:normalizeEmojiBgColor(other && other.emojiBgColor),
+        otherName:nameOf(e.afterHid),
+        dayBase:e.dayBase,
+        persistent:Boolean(e.persistent),
+        label:(e.adjacency === 'direct' ? `right before ${nameOf(e.afterHid)}` : `before ${nameOf(e.afterHid)}`)
+          + (e.persistent ? ' · recurring' : '')
+      });
+    }
+  }
+  return pills;
+}
+
+// PURE: validate the complete persistent graph after applying an in-flight
+// edit. Returns a concise user-facing error rather than silently saving a
+// relationship the planners cannot honor.
+function validateScheduleLinkGraph(items){
+  const data = Array.isArray(items) ? items : [];
+  const byHid = new Map(data.filter(Boolean).map(h=>[cleanHabitId(h.hid),h]));
+  const edges = [];
+  for(const h of data){
+    const subject = cleanHabitId(h && h.hid);
+    if(!subject)continue;
+    const links = normalizeScheduleLinks(h.scheduleLinks,subject);
+    if(links.before && links.after && links.before.anchorHid === links.after.anchorHid){
+      const name = byHid.get(links.before.anchorHid)?.name || 'that habit';
+      return {ok:false,message:`choose either before or after ${name}, not both`};
+    }
+    for(const direction of ['before','after']){
+      const link = links[direction];
+      if(!link)continue;
+      const anchor = byHid.get(link.anchorHid);
+      if(!anchor)return {ok:false,message:'one linked habit no longer exists'};
+      edges.push({
+        beforeHid:direction === 'before' ? subject : link.anchorHid,
+        afterHid:direction === 'before' ? link.anchorHid : subject,
+        adjacency:link.adjacency
+      });
+    }
+  }
+
+  const next = new Map();
+  const directNext = new Map();
+  const directPrev = new Map();
+  for(const edge of edges){
+    if(!next.has(edge.beforeHid))next.set(edge.beforeHid,new Set());
+    next.get(edge.beforeHid).add(edge.afterHid);
+    if(edge.adjacency !== 'direct')continue;
+    if(directNext.has(edge.beforeHid) && directNext.get(edge.beforeHid) !== edge.afterHid){
+      const name = byHid.get(edge.beforeHid)?.name || 'a habit';
+      return {ok:false,message:`${name} already has a right-after habit`};
+    }
+    if(directPrev.has(edge.afterHid) && directPrev.get(edge.afterHid) !== edge.beforeHid){
+      const name = byHid.get(edge.afterHid)?.name || 'a habit';
+      return {ok:false,message:`${name} already has a right-before habit`};
+    }
+    directNext.set(edge.beforeHid,edge.afterHid);
+    directPrev.set(edge.afterHid,edge.beforeHid);
+  }
+
+  const visiting = new Set();
+  const visited = new Set();
+  const walk = hid=>{
+    if(visiting.has(hid))return true;
+    if(visited.has(hid))return false;
+    visiting.add(hid);
+    for(const child of next.get(hid) || []){
+      if(walk(child))return true;
+    }
+    visiting.delete(hid);
+    visited.add(hid);
+    return false;
+  };
+  for(const hid of byHid.keys()){
+    if(walk(hid))return {ok:false,message:'habit order creates a cycle'};
+  }
+  return {ok:true,message:''};
+}
+
+// PURE: whether a proposed temporary edge contradicts a recurring link.
+function temporaryOrderConflict(dayBase,edges,data = null){
+  const permanent = persistentOrderConstraintsForDay(dayBase,data);
+  const graph = new Set(permanent.map(e=>`${e.beforeHid}>${e.afterHid}`));
+  for(const edge of edges || []){
+    if(graph.has(`${edge.afterHid}>${edge.beforeHid}`)){
+      return permanent.find(e=>e.beforeHid === edge.afterHid && e.afterHid === edge.beforeHid) || null;
+    }
+  }
+  return null;
+}
+
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || {})].join(':')).join('|');
 }
 
 function loadTodaySuggested(){
@@ -784,6 +1364,7 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
         h.lastLog = latestActualLog(h.logs);
         h.snoozedUntil = null;
         clearPlanByDateOnLog(h);
+        if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
         changedData = true;
         credited += 1;
       }
@@ -809,7 +1390,106 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
 // (log each passed scheduled weekday/monthday day). Adds completion logs,
 // cancels scheduled pushes for tasks, and re-renders. Idempotent — safe on a
 // timer. Returns the number of items it completed.
+function effectiveAutoMarkTrigger(h,now = Date.now()){
+  if(!h)return null;
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(doing && doing.hid === h.hid && doing.dayBase === dayStart(now)
+    && doingNowAutoCompletes(doing)){
+    return doing.startedAt;
+  }
+  if(h.type === 'task'){
+    return h.eventTime ?? (h.dueDate !== null
+      ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+      : null);
+  }
+  return null;
+}
+
+/** PURE: end of a doing-now one-shot auto window (startedAt + session). */
+function doingNowAutoMarkDeadline(doing){
+  if(!doing || !doingNowAutoCompletes(doing))return null;
+  if(Number.isFinite(doing.endsAt))return doing.endsAt;
+  if(Number.isFinite(doing.targetAt))return doing.targetAt;
+  const mins = Math.max(1,Number(doing.sessionMinutes) || 30);
+  return Number(doing.startedAt) + mins * 60000;
+}
+
+/**
+ * HYBRID: when a doing-now one-shot session has reached endsAt, auto-log once
+ * even if the habit is normally manual. Clears doing-now afterward.
+ */
+function sweepDoingNowOneShot(now = Date.now(),opts = {}){
+  const doing = getDoingNow();
+  if(!doingNowAutoCompletes(doing))return 0;
+  const deadline = doingNowAutoMarkDeadline(doing);
+  if(!Number.isFinite(deadline) || deadline > now)return 0;
+  const data = load();
+  const h = data.find(item=>item && item.hid === doing.hid);
+  if(!h){
+    clearDoingNow();
+    return 0;
+  }
+  if(h.type === 'task' && isTaskDone(h)){
+    clearDoingNow(h.hid);
+    return 0;
+  }
+  if(h.type !== 'task' && completedToday(h,now)){
+    clearDoingNow(h.hid);
+    return 0;
+  }
+
+  let changed = false;
+  const sessionMins = Math.max(1,Number(doing.sessionMinutes) || 30);
+  if(h.breakable){
+    const dayBase = h.type === 'task' ? dayStart(now) : (doing.dayBase || dayStart(now));
+    const left = typeof breakableBudgetMinutes === 'function' ? breakableBudgetMinutes(h,dayBase) : sessionMins;
+    const delta = Math.max(0,Math.min(sessionMins,left));
+    if(delta > 0){
+      const logTs = Math.min(now,Math.max(doing.startedAt,deadline));
+      const snapped = h.type === 'task' ? logTs : (typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,logTs) : logTs);
+      h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(snapped,{minutes:delta,note:'doing-now auto-log'})]);
+      h.lastLog = latestActualLog(h.logs);
+      h.snoozedUntil = null;
+      clearPlanByDateOnLog(h);
+      changed = true;
+    }
+  }else{
+    const logTs = Math.min(now,Math.max(doing.startedAt,deadline));
+    const snapped = h.type === 'task' ? logTs : (typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,logTs) : logTs);
+    h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(snapped,{
+      minutes:sessionMins,
+      note:'doing-now auto-log'
+    })]);
+    h.lastLog = latestActualLog(h.logs);
+    h.snoozedUntil = null;
+    clearPlanByDateOnLog(h);
+    changed = true;
+  }
+
+  clearDoingNow(h.hid);
+  if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
+  if(!changed)return 0;
+  save(data);
+  // A unified timer/doing-now session has one completion owner. If the
+  // persisted deadline sweep wins the race, retire the matching live timer so
+  // its next tick cannot create a second log (especially for rhythm habits).
+  if(typeof habitTimer !== 'undefined' && habitTimer){
+    const timerHabit = data[habitTimer.idx];
+    if(timerHabit && timerHabit.hid === h.hid && typeof clearHabitTimerSilent === 'function'){
+      clearHabitTimerSilent();
+    }
+  }
+  if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h)
+    && typeof cancelPush === 'function' && typeof reminderSignature === 'function'){
+    cancelPush(reminderSignature(h));
+  }
+  if(opts.refresh !== false && typeof refreshOpenViews === 'function')refreshOpenViews();
+  if(opts.toast !== false && typeof showToast === 'function')showToast('doing-now auto-logged');
+  return 1;
+}
+
 function sweepAutoDoneTasks(){
+  const oneShotCount = sweepDoingNowOneShot(Date.now(),{refresh:false,toast:true});
   const chunkCount = sweepAutoMarkedBreakableChunks(Date.now(),{refresh:false,toast:true});
   const data = load();
   const now = Date.now();
@@ -818,20 +1498,32 @@ function sweepAutoDoneTasks(){
   let changed = false;
   let count = 0;
   data.forEach(h=>{
+    // Doing-now one-shot is handled above; still allow normal auto-mark path
+    // for habits that already have autoMarkMinutes set.
     if(h.autoMarkMinutes === null)return;
     if(h.breakable)return; // breakables are reconciled against placed chunks above
     if(h.type === 'task'){
-      // Trigger: fixed time, or when the task enters the agenda window.
-      const trigger = h.eventTime ?? (h.dueDate !== null
-        ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
-        : null);
+      // Trigger: auto-completing doing-now override, fixed time, or when the
+      // task enters the agenda window. Manual sessions never change the
+      // scheduled auto-mark deadline.
+      const trigger = effectiveAutoMarkTrigger(h,now);
       if(trigger === null)return;
-      if(trigger + (h.autoMarkMinutes || 0) * 60000 >= now)return;
+      // Auto Doing now uses its session deadline; manual active focus leaves
+      // the habit's normal scheduled auto-mark behavior untouched.
+      const doing = getDoingNow();
+      const doingOwns = doing && doing.hid === h.hid && doing.dayBase === dayStart(now)
+        && doingNowAutoCompletes(doing);
+      const dueAt = doingOwns
+        ? doingNowAutoMarkDeadline(doing)
+        : trigger + (h.autoMarkMinutes || 0) * 60000;
+      if(dueAt == null || dueAt >= now)return;
       if(h.lastLog !== null)return; // already done (manual check-off or prior sweep)
       const logs = normalizeLogs(h.logs);
       logs.push(trigger);
       h.logs = normalizeLogs(logs);
       h.lastLog = latestActualLog(h.logs);
+      if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
+      if(doingOwns)clearDoingNow(h.hid);
       changed = true;
       count += 1;
       if(typeof reminderSignature === 'function')completedSigs.push(reminderSignature(h));
@@ -861,11 +1553,11 @@ function sweepAutoDoneTasks(){
     }
   });
   if(!changed){
-    if(chunkCount > 0){
+    if(chunkCount > 0 || oneShotCount > 0){
       if(typeof syncTimerAfterExternalCompletion === 'function')syncTimerAfterExternalCompletion();
       if(typeof refreshOpenViews === 'function')refreshOpenViews();
     }
-    return chunkCount;
+    return chunkCount + oneShotCount;
   }
   save(data);
   if(typeof cancelPush === 'function')completedSigs.forEach(sig=>cancelPush(sig));
@@ -873,7 +1565,7 @@ function sweepAutoDoneTasks(){
   // just completed that habit (instead of waiting for the next 250ms tick).
   if(typeof syncTimerAfterExternalCompletion === 'function')syncTimerAfterExternalCompletion();
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
-  return count + chunkCount;
+  return count + chunkCount + oneShotCount;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1392,6 +2084,64 @@ function cleanHabitId(value){
   return String(value || '').trim().slice(0,64);
 }
 
+// PURE: normalize one persistent Schedule relationship.
+function normalizeScheduleLink(value,subjectHid){
+  if(!value || typeof value !== 'object')return null;
+  const anchorHid = cleanHabitId(value.anchorHid);
+  if(!anchorHid || anchorHid === cleanHabitId(subjectHid))return null;
+  return {
+    anchorHid,
+    adjacency:value.adjacency === 'direct' ? 'direct' : 'sometime',
+    requireSameDay:Boolean(value.requireSameDay)
+  };
+}
+
+// PURE: normalize the two recurring relationship slots and conservatively
+// migrate old zero-offset, standalone "start after habit" expressions.
+function normalizeScheduleLinksWithMigration(raw,subjectHid){
+  const source = raw && raw.scheduleLinks && typeof raw.scheduleLinks === 'object'
+    ? raw.scheduleLinks : {};
+  const links = {
+    before:normalizeScheduleLink(source.before,subjectHid),
+    after:normalizeScheduleLink(source.after,subjectHid)
+  };
+  const migratedFields = [];
+  if(!links.after){
+    for(const field of ['allowedTimeStart','preferredTimeStart']){
+      const anchorHid = cleanHabitId(raw && raw[field + 'AnchorHabitId']);
+      const cleanStandalone = raw && raw[field + 'Anchor'] === 'habit'
+        && normalizePrayerOffset(raw[field + 'OffsetMin']) === 0
+        && !cleanTimeCombine(raw[field + 'Combine'])
+        && !cleanAnchor(raw[field + 'Anchor2'])
+        && anchorHid && anchorHid !== cleanHabitId(subjectHid);
+      if(!cleanStandalone)continue;
+      links.after = {anchorHid,adjacency:'sometime',requireSameDay:false};
+      migratedFields.push(field);
+      break;
+    }
+  }
+  // If allowed + preferred carried the same clean link, clear both copies.
+  if(links.after){
+    for(const field of ['allowedTimeStart','preferredTimeStart']){
+      const same = raw && raw[field + 'Anchor'] === 'habit'
+        && cleanHabitId(raw[field + 'AnchorHabitId']) === links.after.anchorHid
+        && normalizePrayerOffset(raw[field + 'OffsetMin']) === 0
+        && !cleanTimeCombine(raw[field + 'Combine'])
+        && !cleanAnchor(raw[field + 'Anchor2']);
+      if(same && !migratedFields.includes(field))migratedFields.push(field);
+    }
+  }
+  return {links,migratedFields};
+}
+
+function normalizeScheduleLinks(value,subjectHid){
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    before:normalizeScheduleLink(source.before,subjectHid),
+    after:normalizeScheduleLink(source.after,subjectHid)
+  };
+}
+
 // PURE: coerce the later/earlier-of + dayOffset fields for one habit endpoint
 // prefix (e.g. 'allowedTimeStart'). Secondary fields only stick when Combine
 // is set and Anchor2 is a real anchor (prayer, habit, or fixed clock); otherwise
@@ -1726,10 +2476,10 @@ function reconcileLocations(data,settings){
 function effectiveAvailabilityMinutes(key,settings = sortSettings){
   const normalized = {...DEFAULT_SORT_SETTINGS,...settings};
   const overrides = normalizeAvailabilityOverrides(normalized.availabilityOverrides);
+  // Weekly availabilityMinutes is unused for packing — default is a full day
+  // (1440). Open slots after busy times still cap via min(budget, slots).
   if(Object.prototype.hasOwnProperty.call(overrides,key))return overrides[key];
-  const d = new Date(`${key}T12:00:00`);
-  const weekly = normalizeAvailability(normalized.availabilityMinutes);
-  return weekly[d.getDay()] ?? 0;
+  return 1440;
 }
 function retentionWeight(h,log){
   if(isPlanLog(log))return Infinity;
@@ -2109,6 +2859,37 @@ function markSegments(value){
 
 function cleanMark(value){
   return markSegments(value).slice(0,2).join('');
+}
+
+/** Curated emoji tile backgrounds — maps to CSS --{token}-bg / --{token}-icon. */
+const EMOJI_BG_COLOR_TOKENS = ['teal','amber','red','purple','blue','green'];
+
+function normalizeEmojiBgColor(value){
+  const token = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return EMOJI_BG_COLOR_TOKENS.includes(token) ? token : '';
+}
+
+/** PURE: CSS custom-property pair for an emoji tile (or null when unset). */
+function emojiBgStyleVars(token){
+  const color = normalizeEmojiBgColor(token);
+  if(!color)return null;
+  return {
+    bg:`var(--${color}-bg)`,
+    icon:`var(--${color}-icon)`,
+    token:color
+  };
+}
+
+/** Inline style fragment for a pulse / mark with optional emoji bg. */
+function emojiBgInlineStyle(h,fallbackBg = '',fallbackColor = ''){
+  const vars = emojiBgStyleVars(h && h.emojiBgColor);
+  if(vars){
+    return `background:${vars.bg};color:${vars.icon};--emoji-bg:${vars.bg};`;
+  }
+  const parts = [];
+  if(fallbackBg)parts.push(`background:${fallbackBg}`);
+  if(fallbackColor)parts.push(`color:${fallbackColor}`);
+  return parts.join(';');
 }
 
 function avgInterval(logs){

@@ -265,6 +265,12 @@ function matchesHomeLocation(h,id){
 function renderHomeTagFilter(data){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  if(minimal){
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
   const registry = locationOptions();
   // "Real" usage = at least one habit carries this dimension. Without this
   // gate, the row shows filler like "all places" + "anywhere" even when no
@@ -920,6 +926,17 @@ function cardTone(h){
 
 // PURE: build card meta pills markup
 function cardMeta(h,options = {}){
+  if(options.minimalOnly){
+    if(h.type === 'task'){
+      if(h.eventTime !== null && !options.suppressScheduled){
+        return `<span class="context-pill scheduled" title="${escapeHtml(entryWhen(h.eventTime))}"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(compactScheduledLabel(h.eventTime))}</span>`;
+      }
+      if(h.dueDate === null)return '<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>';
+      return `<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`;
+    }
+    if(h.type !== 'zero')return `<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`;
+    return '<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>';
+  }
   const plan = nextPlannedLog(h);
   const parts = [];
   if(options.extraPills)parts.push(options.extraPills);
@@ -1469,6 +1486,7 @@ function homeExtraMode(){
 // whose start lies past the next 12 hours (still-active blocks keep their past
 // start, so an in-progress block stays visible).
 function homeExtraRowVisible(ts){
+  if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode))return false;
   if(homeExtraMode() === 'cards')return true;
   return Number.isFinite(ts) && ts < Date.now() + HOME_EXTRA_WINDOW_MS;
 }
@@ -2262,13 +2280,14 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   header.className = 'section-header';
   header.dataset.label = label;
   header.textContent = label;
-  if(dayContext && dayContext.dayBase != null){
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  if(!minimal && dayContext && dayContext.dayBase != null){
     setupDayCapacityHeader(header,dayContext.dayBase,true);
     attachFreeTimeIndicator(header,dayContext);
-  }else if(label === 'today'){
+  }else if(!minimal && label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
-  if(label === 'today' && todayHids){
+  if(!minimal && label === 'today' && todayHids){
     attachDroppedIndicator(header,list,todayHids);
   }
   list.appendChild(header);
@@ -2756,49 +2775,52 @@ function render(opts){
 
   const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null,scheduleLinkReason = '')=>{
     const h = data[realIdx];
+    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
     const days = daysSince(h.lastLog);
     const c = colors(days,h.target,h.type);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
-    const agendaPill = agendaCardPill(agendaRow,h);
+    const agendaPill = minimal ? '' : agendaCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
-    const orderPill = (dayBase != null && typeof orderLinkPillHtml === 'function')
+    const orderPill = (!minimal && dayBase != null && typeof orderLinkPillHtml === 'function')
       ? orderLinkPillHtml(h.hid,dayBase,data)
       : '';
-    const nowPill = typeof doingNowPillHtml === 'function' ? doingNowPillHtml(h) : '';
-    const scheduleLinkPill = scheduleLinkReason
+    const nowPill = (!minimal && typeof doingNowPillHtml === 'function') ? doingNowPillHtml(h) : '';
+    const scheduleLinkPill = (!minimal && scheduleLinkReason)
       ? `<span class="context-pill schedule-link-blocked-pill" title="${escapeHtml(scheduleLinkReason)}"><i class="ti ti-link-off" aria-hidden="true"></i>linked</span>`
       : '';
     const accent = visualClassColor(cardScoreTone);
-    const statusPill = sortSettings.showStatusOnCards ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
-    const gatedEarlyPill = sortSettings.showEarlyOnCards ? earlyPill : '';
-    const context = cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+    const statusPill = (!minimal && sortSettings.showStatusOnCards) ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
+    const gatedEarlyPill = (!minimal && sortSettings.showEarlyOnCards) ? earlyPill : '';
+    const context = minimal
+      ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
+      : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
     const trail = cardTrail(h);
-    const showBreakableSlider = isBreakableSliderRow(realIdx,agendaRow);
-    const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
+    const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
+    const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
     // so the user can see the session without opening detail.
-    const sessionHtml = (timerRunning || !showBreakableSlider) ? cardSessionProgress(h,realIdx) : '';
-    const visualHtml = showBreakableSlider
+    const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
+    const visualHtml = minimal ? '' : (showBreakableSlider
       ? `${cardBreakableSlider(h)}${sessionHtml}`
-      : (sessionHtml || `<div class="ting-trail">${trail}</div>`);
+      : (sessionHtml || `<div class="ting-trail">${trail}</div>`));
     const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
       ? habitTimerEligible(h)
       : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
-    const timerAction = (canTimer || timerRunning)
+    const timerAction = (!minimal && (canTimer || timerRunning))
       ? (timerRunning
         ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
-    const pinAction = `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
+    const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
-    const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
-    const canDrag = dayBase != null && typeof isAgendaFillDraggable === 'function' && isAgendaFillDraggable(h,agendaRow);
+    const activityAction = minimal ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
+    const canDrag = !minimal && dayBase != null && typeof isAgendaFillDraggable === 'function' && isAgendaFillDraggable(h,agendaRow);
     const dragHandle = canDrag
       ? `<button type="button" class="agenda-drag-handle" aria-label="drag to reorder" title="drag to reorder"><i class="ti ti-grip-vertical" aria-hidden="true"></i></button>`
       : '';
@@ -2835,7 +2857,7 @@ function render(opts){
         <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
@@ -2845,13 +2867,13 @@ function render(opts){
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
           </div>
-          ${isBreakable ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `<div class="ting-cue">${escapeHtml(cue)}</div>
+          ${(!minimal && isBreakable) ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `<div class="ting-cue">${escapeHtml(cue)}</div>
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
-          <div class="ting-visual"${visualAria}>
+          ${minimal ? '' : `<div class="ting-visual"${visualAria}>
             ${visualHtml}
-          </div>
+          </div>`}
         </div>
-        ${isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
+        ${minimal || isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="snooze" aria-label="snooze" title="snooze"><i class="ti ti-moon" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
@@ -3151,20 +3173,23 @@ function render(opts){
       );
     });
     if(!searching && todayFirstActive && sectionCat !== 0){
-      const _snap = loadTodaySuggested();
-      if(!_droppedDayBaseline && _snap.prevProjection){
-        _droppedDayBaseline = _snap.prevProjection;
-        _droppedDayBaselineDay = todayIso();
-      }
-      if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
-        const header = document.createElement('div');
-        header.className = 'section-header';
-        header.dataset.label = 'today';
-        header.textContent = 'today';
-        setupDayCapacityHeader(header,dayStart(Date.now()),false);
-        attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
-        attachDroppedIndicator(header,list,todayHids);
-        if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
+      const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+      if(!minimal){
+        const _snap = loadTodaySuggested();
+        if(!_droppedDayBaseline && _snap.prevProjection){
+          _droppedDayBaseline = _snap.prevProjection;
+          _droppedDayBaselineDay = todayIso();
+        }
+        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          header.dataset.label = 'today';
+          header.textContent = 'today';
+          setupDayCapacityHeader(header,dayStart(Date.now()),false);
+          attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
+          attachDroppedIndicator(header,list,todayHids);
+          if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
+        }
       }
     }
   }
@@ -3412,8 +3437,10 @@ function homePlannerStateKey(data,fingerprintNow = Date.now()){
   const plannerSettings = {...(sortSettings || {})};
   // Presentation-only state must not invalidate either planner. In particular,
   // homeExtraMode only changes whether existing blocked/travel rows are cards,
-  // text, or hidden outside twelve hours.
+  // text, or hidden outside twelve hours. minimalMode is the same class of
+  // chrome (card/detail/overview visuals) and must not bust the agenda cache.
   delete plannerSettings.homeExtraMode;
+  delete plannerSettings.minimalMode;
   return `${homeListFingerprint(fingerprintNow)}\n${JSON.stringify(persisted)}\n${JSON.stringify(plannerSettings)}`;
 }
 
@@ -3969,10 +3996,14 @@ function setupSwipe(row){
   let startedOpen = false;
   const CROWN_SWIPE_PAD = 10;
   // Match CSS collapsed default so first paint never shows action chrome.
-  leftActions.style.width = '0';
-  rightActions.style.width = '0';
-  leftActions.style.pointerEvents = 'none';
-  rightActions.style.pointerEvents = 'none';
+  if(leftActions){
+    leftActions.style.width = '0';
+    leftActions.style.pointerEvents = 'none';
+  }
+  if(rightActions){
+    rightActions.style.width = '0';
+    rightActions.style.pointerEvents = 'none';
+  }
 
   // PURE: touch is on/near the crown dial (layout box + pad), so swipe must stand down.
   function touchNearCrown(clientX, clientY){
@@ -3987,6 +4018,7 @@ function setupSwipe(row){
 
   // PURE: measure total swipe action width
   function revealWidth(actions){
+    if(!actions)return 0;
     return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
   }
 
@@ -3994,12 +4026,16 @@ function setupSwipe(row){
   function resetSwipe(){
     card.style.transition = SNAP_TRANSITION;
     card.style.transform = '';
-    leftActions.style.transition = WIDTH_TRANSITION;
-    rightActions.style.transition = WIDTH_TRANSITION;
-    leftActions.style.width = '0';
-    rightActions.style.width = '0';
-    leftActions.style.pointerEvents = 'none';
-    rightActions.style.pointerEvents = 'none';
+    if(leftActions){
+      leftActions.style.transition = WIDTH_TRANSITION;
+      leftActions.style.width = '0';
+      leftActions.style.pointerEvents = 'none';
+    }
+    if(rightActions){
+      rightActions.style.transition = WIDTH_TRANSITION;
+      rightActions.style.width = '0';
+      rightActions.style.pointerEvents = 'none';
+    }
     swipeOpenCard = null;
     delete row.dataset.swipeOpen;
     if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
@@ -4083,16 +4119,25 @@ function setupSwipe(row){
     const activeActions = wantsLeft ? leftActions : rightActions;
     const inactiveActions = wantsLeft ? rightActions : leftActions;
     const reveal = revealWidth(activeActions);
-    const clamped = reveal ? Math.max(-reveal,Math.min(reveal,dx)) : 0;
+    if(!reveal){
+      card.style.transition = 'none';
+      card.style.transform = '';
+      return;
+    }
+    const clamped = Math.max(-reveal,Math.min(reveal,dx));
     card.style.transition = 'none';
-    activeActions.style.transition = 'none';
-    inactiveActions.style.transition = 'none';
+    if(activeActions)activeActions.style.transition = 'none';
+    if(inactiveActions)inactiveActions.style.transition = 'none';
     card.style.transform = `translateX(${clamped}px)`;
-    const pct = reveal ? Math.min(1,Math.abs(clamped) / reveal) : 0;
-    activeActions.style.width = `${Math.abs(clamped)}px`;
-    activeActions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
-    inactiveActions.style.width = '0';
-    inactiveActions.style.pointerEvents = 'none';
+    const pct = Math.min(1,Math.abs(clamped) / reveal);
+    if(activeActions){
+      activeActions.style.width = `${Math.abs(clamped)}px`;
+      activeActions.style.pointerEvents = pct > 0.2 ? 'auto' : 'none';
+    }
+    if(inactiveActions){
+      inactiveActions.style.width = '0';
+      inactiveActions.style.pointerEvents = 'none';
+    }
   },{passive:false});
 
   row.addEventListener('touchend',()=>{
@@ -4116,23 +4161,31 @@ function setupSwipe(row){
     const reveal = revealWidth(activeActions);
     const snap = reveal > 0 && Math.abs(dx) > Math.min(SWIPE_THRESHOLD,reveal * 0.55);
     card.style.transition = SNAP_TRANSITION;
-    activeActions.style.transition = WIDTH_TRANSITION;
-    inactiveActions.style.transition = WIDTH_TRANSITION;
+    if(activeActions)activeActions.style.transition = WIDTH_TRANSITION;
+    if(inactiveActions)inactiveActions.style.transition = WIDTH_TRANSITION;
     if(snap){
       card.style.transform = `translateX(${dir * reveal}px)`;
-      activeActions.style.width = `${reveal}px`;
-      activeActions.style.pointerEvents = 'auto';
-      inactiveActions.style.width = '0';
-      inactiveActions.style.pointerEvents = 'none';
+      if(activeActions){
+        activeActions.style.width = `${reveal}px`;
+        activeActions.style.pointerEvents = 'auto';
+      }
+      if(inactiveActions){
+        inactiveActions.style.width = '0';
+        inactiveActions.style.pointerEvents = 'none';
+      }
       swipeOpenCard = card;
       row.dataset.swipeOpen = String(dir);
       if(typeof claimCardGesture === 'function')claimCardGesture(row,'swipe');
     }else{
       card.style.transform = '';
-      leftActions.style.width = '0';
-      rightActions.style.width = '0';
-      leftActions.style.pointerEvents = 'none';
-      rightActions.style.pointerEvents = 'none';
+      if(leftActions){
+        leftActions.style.width = '0';
+        leftActions.style.pointerEvents = 'none';
+      }
+      if(rightActions){
+        rightActions.style.width = '0';
+        rightActions.style.pointerEvents = 'none';
+      }
       swipeOpenCard = null;
       delete row.dataset.swipeOpen;
       if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');

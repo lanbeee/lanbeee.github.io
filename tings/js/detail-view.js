@@ -32,6 +32,7 @@ function openDetail(i){
   $('detail-trend').textContent = trendText(h);
   $('detail-habit-message').value = h.name || '';
   $('detail-emoji').value = h.emoji || '';
+  renderEmojiBgSwatches('detail-emoji-bg',h.emojiBgColor || '');
   $('detail-days').value = h.target || '';
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
@@ -44,6 +45,7 @@ function openDetail(i){
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
+  renderScheduleLinkEditors(h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
@@ -55,9 +57,11 @@ function openDetail(i){
   setDetailTypeUi(h.type);
   setDetailPriorityUi(effectivePriority(h));
   detailTuneOriginal = {
+    hid:h.hid,
     name:h.name || '',
     type:h.type || 'keepup',
     emoji:h.emoji || '',
+    emojiBgColor:normalizeEmojiBgColor(h.emojiBgColor),
     target:h.target || '',
     pinned:Boolean(h.pinned),
     topics:normalizeTopics(h.topics),
@@ -85,6 +89,7 @@ function openDetail(i){
     allowedTimeEndAnchorHabitId:cleanHabitId(h.allowedTimeEndAnchorHabitId) || null,
     preferredTimeStartAnchorHabitId:cleanHabitId(h.preferredTimeStartAnchorHabitId) || null,
     preferredTimeEndAnchorHabitId:cleanHabitId(h.preferredTimeEndAnchorHabitId) || null,
+    scheduleLinks:normalizeScheduleLinks(h.scheduleLinks,h.hid),
     ...snapshotCombineFields(h, 'allowedTimeStart'),
     ...snapshotCombineFields(h, 'allowedTimeEnd'),
     ...snapshotCombineFields(h, 'preferredTimeStart'),
@@ -104,17 +109,21 @@ function openDetail(i){
   syncRhythm('detail',h.target || 7);
   syncBreakableUi();
   if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi();
-  const keepBtn = $('detail-keep-sample');
-  if(keepBtn)keepBtn.hidden = !h.sample;
-  $('detail-mark').style.background = c.bg;
-  $('detail-mark').style.color = c.icon;
+  $('detail-mark').style.cssText = '';
+  const markStyle = typeof emojiBgInlineStyle === 'function'
+    ? emojiBgInlineStyle(h,c.bg,c.icon)
+    : `background:${c.bg};color:${c.icon}`;
+  $('detail-mark').style.cssText = markStyle;
   $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
+  $('detail-mark').classList.toggle('has-emoji-bg',Boolean(normalizeEmojiBgColor(h.emojiBgColor)));
   $('detail-mark').setAttribute('aria-label',`add entry for ${h.name}`);
   $('detail-mark').innerHTML = iconHtml(h,c);
   renderStats(h);
   renderGraph(h);
   renderCalendar(h);
+  renderDetailOrderPage(h);
   setDetailDirty(false);
+  applyDetailMinimalMode();
   openSheet('detail-sheet');
   if(changedHabit){
     const inner = getSheetInner('detail-sheet');
@@ -122,19 +131,19 @@ function openDetail(i){
     if(inner)inner.scrollTop = 0;
     if(pager){
       pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
-      // Tasks are one-off — the calendar pane is just a single dot, so land
-      // on Effort (the pane with the actual due/scheduled controls) instead
-      // of the default Calendar. Habits land on Calendar (index 0). Deferred
-      // a frame so clientWidth is measured after layout, same as
-      // openDetailSchedule() below.
-      if(h.type === 'task'){
-        requestAnimationFrame(()=>{
-          pager.scrollTo({left:pager.clientWidth * 3,behavior:'auto'});
+      // Order links → actions first so unlink is immediate.
+      // Tasks otherwise land on Effort (or Schedule in minimal); habits on Calendar.
+      const hasOrder = typeof habitHasOrderConstraints === 'function'
+        && habitHasOrderConstraints(h.hid);
+      const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+      requestAnimationFrame(()=>{
+        if(hasOrder)scrollDetailToNav('actions','auto');
+        else if(h.type === 'task')scrollDetailToNav(minimal ? 'schedule' : 'effort','auto');
+        else{
+          pager.scrollTo({left:0,behavior:'auto'});
           updateDetailPagerDots();
-        });
-      }else{
-        pager.scrollTo({left:0,behavior:'auto'});
-      }
+        }
+      });
     }
   }
   renderDetailTabs();
@@ -159,29 +168,160 @@ function openDetailCalendar(i){
 function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
-    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-    if(!pager)return;
     const h = load()[i];
-    const paneIndex = h && h.type === 'task' ? 3 : 2;
-    pager.scrollTo({left:pager.clientWidth * paneIndex,behavior:'auto'});
-    updateDetailPagerDots();
+    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+    scrollDetailToNav(h && h.type === 'task' && !minimal ? 'effort' : 'schedule','auto');
   });
+}
+
+function selectedEmojiBgColor(containerId){
+  const on = document.querySelector(`#${containerId} .emoji-bg-swatch.on`);
+  return normalizeEmojiBgColor(on && on.dataset.emojiBg);
+}
+
+function renderEmojiBgSwatches(containerId,selected = ''){
+  const wrap = $(containerId);
+  if(!wrap)return;
+  const tokens = typeof EMOJI_BG_COLOR_TOKENS !== 'undefined'
+    ? EMOJI_BG_COLOR_TOKENS
+    : ['teal','amber','red','purple','blue','green'];
+  const current = normalizeEmojiBgColor(selected);
+  const chips = [
+    `<button type="button" class="emoji-bg-swatch none${current === '' ? ' on' : ''}" data-emoji-bg="" title="none" aria-label="no emoji background" aria-pressed="${current === '' ? 'true' : 'false'}"><i class="ti ti-slash" aria-hidden="true"></i></button>`,
+    ...tokens.map(token=>{
+      const on = current === token;
+      return `<button type="button" class="emoji-bg-swatch${on ? ' on' : ''}" data-emoji-bg="${token}" title="${token}" aria-label="${token} background" aria-pressed="${on ? 'true' : 'false'}" style="--swatch-bg:var(--${token}-bg);--swatch-fg:var(--${token}-icon)"></button>`;
+    })
+  ];
+  wrap.innerHTML = chips.join('');
+  if(wrap.dataset.bound !== '1'){
+    wrap.dataset.bound = '1';
+    wrap.addEventListener('click',e=>{
+      const btn = e.target.closest('.emoji-bg-swatch');
+      if(!btn || !wrap.contains(btn))return;
+      wrap.querySelectorAll('.emoji-bg-swatch').forEach(el=>{
+        const active = el === btn;
+        el.classList.toggle('on',active);
+        el.setAttribute('aria-pressed',active ? 'true' : 'false');
+      });
+      if(containerId === 'detail-emoji-bg' && typeof setDetailDirty === 'function')setDetailDirty();
+      if(containerId === 'detail-emoji-bg'){
+        const mark = $('detail-mark');
+        if(mark){
+          const token = normalizeEmojiBgColor(btn.dataset.emojiBg);
+          mark.classList.toggle('has-emoji-bg',Boolean(token));
+          if(token){
+            mark.style.background = `var(--${token}-bg)`;
+            mark.style.color = `var(--${token}-icon)`;
+            mark.style.setProperty('--emoji-bg',`var(--${token}-bg)`);
+          }else if(detailIdx != null){
+            const h = load()[detailIdx];
+            if(h){
+              const days = daysSince(h.lastLog);
+              const c = colors(days,h.target,h.type);
+              mark.style.background = c.bg;
+              mark.style.color = c.icon;
+              mark.style.removeProperty('--emoji-bg');
+            }
+          }
+        }
+      }
+    });
+  }
+}
+
+/** RENDER: recurring Schedule links + temporary reorder links on Actions. */
+function renderDetailOrderPage(h = null){
+  const block = $('detail-order-block');
+  const list = $('detail-order-list');
+  const clearBtn = $('detail-order-clear-all');
+  if(!block || !list)return;
+  const habit = h || (detailIdx != null ? load()[detailIdx] : null);
+  if(!habit || !habit.hid || typeof orderConstraintsForHid !== 'function'){
+    block.hidden = true;
+    if(clearBtn)clearBtn.hidden = true;
+    return;
+  }
+  const edges = orderConstraintsForHid(habit.hid);
+  const persistentLinks = normalizeScheduleLinks(habit.scheduleLinks,habit.hid);
+  const recurring = ['after','before'].filter(direction=>persistentLinks[direction]);
+  block.hidden = edges.length === 0 && recurring.length === 0;
+  if(clearBtn){
+    clearBtn.hidden = edges.length === 0;
+    clearBtn.dataset.orderClearHid = habit.hid;
+  }
+  if(!edges.length && !recurring.length){
+    list.innerHTML = '';
+    return;
+  }
+  const data = load();
+  const recurringHtml = recurring.map(direction=>{
+    const link = persistentLinks[direction];
+    const other = data.find(item=>item && item.hid === link.anchorHid);
+    const label = `${link.adjacency === 'direct' ? 'right ' : ''}${direction} ${other && other.name || 'missing habit'}`;
+    const mark = other ? orderMarkChipHtml({
+      kind:direction,
+      adjacency:link.adjacency,
+      persistent:true,
+      otherEmoji:other.emoji || '',
+      otherBg:other.emojiBgColor || '',
+      otherName:other.name || 'habit'
+    }) : '';
+    return `<div class="detail-order-row">
+      ${mark}
+        <span class="detail-order-meta">recurring · ${escapeHtml(label)}${link.requireSameDay ? ` · only on days with ${escapeHtml(other && other.name || 'the other habit')}` : ''}</span>
+      <span class="detail-order-edit-note">Schedule</span>
+    </div>`;
+  }).join('');
+  const byDay = new Map();
+  for(const edge of edges){
+    if(!byDay.has(edge.dayBase))byDay.set(edge.dayBase,[]);
+    byDay.get(edge.dayBase).push(edge);
+  }
+  const dayBases = [...byDay.keys()].sort((a,b)=>a - b);
+  list.innerHTML = recurringHtml + dayBases.map(dayBase=>{
+    const dayLabel = typeof formatOrderDayLabel === 'function'
+      ? formatOrderDayLabel(dayBase)
+      : new Date(dayBase).toLocaleDateString();
+    return byDay.get(dayBase).map(edge=>{
+      const isAfter = edge.afterHid === habit.hid;
+      const otherHid = isAfter ? edge.beforeHid : edge.afterHid;
+      const other = data.find(item=>item && item.hid === otherHid);
+      const adj = edge.adjacency === 'direct' ? 'next' : 'later';
+      const mark = other
+        ? orderMarkChipHtml({
+          kind:isAfter ? 'after' : 'before',
+          adjacency:edge.adjacency,
+          otherEmoji:other.emoji || '',
+          otherBg:other.emojiBgColor || '',
+          otherName:other.name || 'task'
+        })
+        : `<span class="order-mark"><i class="ti ${isAfter ? 'ti-arrow-up' : 'ti-arrow-down'}" aria-hidden="true"></i><span class="order-mark-emoji is-empty">·</span></span>`;
+      return `<div class="detail-order-row">
+        ${mark}
+        <span class="detail-order-meta">${escapeHtml(dayLabel)} · ${adj}</span>
+        <button type="button" class="mini-text-btn detail-order-unlink" data-order-unlink="${escapeHtml(edge.id)}">unlink</button>
+      </div>`;
+    }).join('');
+  }).join('');
 }
 
 // PURE: builds header subtitle from habit state
 function detailHeaderLine(h){
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(h.type === 'task'){
     const parts = [];
     if(h.eventTime !== null)parts.push(scheduledWhenLabel(h.eventTime));
     else parts.push(cardCue(h));
-    if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
-    if(hasDaySchedule(h)){
+    if(!minimal && h.durationMinutes)parts.push(`${h.durationMinutes}m`);
+    if(!minimal && hasDaySchedule(h)){
       const next = nextEligibleShort(h);
       if(next)parts.push(next);
     }
     return parts.filter(Boolean).join(' · ');
   }
   const parts = [cardCue(h)];
+  if(minimal)return parts.filter(Boolean).join(' · ');
   if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
   if(hasDaySchedule(h)){
     const next = nextEligibleShort(h);
@@ -221,6 +361,73 @@ function renderTimeWindowInputs(h = {}){
   syncTimeClearBtn();
 }
 
+function scheduleLinkHabitOptions(subjectHid,selectedHid){
+  const items = typeof load === 'function' ? load() : [];
+  const options = ['<option value="">— no anchor —</option>'];
+  for(const item of items){
+    if(!item || cleanHabitId(item.hid) === cleanHabitId(subjectHid) || item.type === 'zero')continue;
+    const hid = cleanHabitId(item.hid);
+    options.push(`<option value="${escapeHtml(hid)}"${hid === selectedHid ? ' selected' : ''}>${escapeHtml((item.name || 'untitled').slice(0,60))}</option>`);
+  }
+  return options.join('');
+}
+
+function renderScheduleLinkEditor(editor,direction,h){
+  if(!editor)return;
+  const links = normalizeScheduleLinks(h && h.scheduleLinks,h && h.hid);
+  const link = links[direction];
+  const picker = editor.querySelector('.schedule-link-habit');
+  const adj = editor.querySelector('.schedule-link-adjacency');
+  const sameDay = editor.querySelector('.schedule-link-same-day');
+  const sameDayRow = editor.querySelector('.schedule-link-same-day-row');
+  const clear = editor.querySelector('.schedule-link-clear');
+  const anchorHid = link ? link.anchorHid : '';
+  if(picker)picker.innerHTML = scheduleLinkHabitOptions(h && h.hid,anchorHid);
+  if(adj){
+    adj.hidden = !link;
+    adj.querySelectorAll('[data-adjacency]').forEach(btn=>{
+      btn.classList.toggle('on',btn.dataset.adjacency === (link ? link.adjacency : 'sometime'));
+    });
+  }
+  if(sameDay){
+    if(sameDayRow)sameDayRow.hidden = !link;
+    const isRequired = Boolean(link && link.requireSameDay);
+    sameDay.setAttribute('aria-pressed',isRequired ? 'true' : 'false');
+    if(sameDayRow)sameDayRow.classList.toggle('is-on',isRequired);
+    const anchor = (typeof load === 'function' ? load() : []).find(item=>item && item.hid === anchorHid);
+    const title = sameDayRow && sameDayRow.querySelector('.setting-title');
+    const help = sameDayRow && sameDayRow.querySelector('.schedule-link-same-day-help');
+    const anchorName = anchor && anchor.name || 'the other habit';
+    if(title)title.textContent = `Only on days with ${anchorName}`;
+    if(help)help.textContent = `When on, this habit is planned only if ${anchorName} is also planned or already completed that day.`;
+    sameDay.setAttribute('aria-label',`Only on days with ${anchorName}: ${isRequired ? 'on' : 'off'}`);
+  }
+  if(clear)clear.hidden = !link;
+}
+
+function renderScheduleLinkEditors(h = {}){
+  document.querySelectorAll('#detail-schedule-order .schedule-link-editor').forEach(editor=>{
+    renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,h);
+  });
+}
+
+function readScheduleLinksFromDetail(subjectHid){
+  const out = {before:null,after:null};
+  document.querySelectorAll('#detail-schedule-order .schedule-link-editor').forEach(editor=>{
+    const direction = editor.dataset.scheduleLink;
+    const anchorHid = cleanHabitId(editor.querySelector('.schedule-link-habit')?.value);
+    if(!anchorHid)return;
+    const adjacency = editor.querySelector('[data-adjacency].on')?.dataset.adjacency === 'direct'
+      ? 'direct' : 'sometime';
+    out[direction] = normalizeScheduleLink({
+      anchorHid,
+      adjacency,
+      requireSameDay:editor.querySelector('.schedule-link-same-day')?.getAttribute('aria-pressed') === 'true'
+    },subjectHid);
+  });
+  return out;
+}
+
 // PURE: snapshot the later/earlier-of fields for one endpoint into the tune object.
 function snapshotCombineFields(h, prefix){
   return {
@@ -236,24 +443,33 @@ function snapshotCombineFields(h, prefix){
 
 // RENDER (idempotent): populate every anchor <select> with the standard list.
 // Re-running on every openDetail is harmless — the options are stable. Primary
-// gets prayer + habit; secondary also gets a fixed clock option.
+// gets prayers; secondary also gets a fixed clock option. Habit choices are
+// now created in the dedicated recurring Habit order editor. A legacy option
+// is injected only while rendering an older non-migratable expression.
 function populateAnchorOptions(){
   const prayerOpts = PRAYER_ANCHORS.map(a => `<option value="${a}">${prayerDisplayName(a)}</option>`).join('');
   document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
     if(sel.dataset.populated === '1')return;
     sel.innerHTML = '<option value="">— anchor —</option>'
-      + prayerOpts
-      + '<option value="habit">after another habit…</option>';
+      + prayerOpts;
     sel.dataset.populated = '1';
   });
   document.querySelectorAll('.time-endpoint .time-anchor2').forEach(sel => {
     if(sel.dataset.populated === '1')return;
     sel.innerHTML = '<option value="">— anchor —</option>'
       + prayerOpts
-      + '<option value="habit">after another habit…</option>'
       + '<option value="fixed">clock time…</option>';
     sel.dataset.populated = '1';
   });
+}
+
+function ensureLegacyHabitAnchorOption(select){
+  if(!select || select.querySelector('option[value="habit"]'))return;
+  const option = document.createElement('option');
+  option.value = 'habit';
+  option.textContent = 'after completion (legacy)…';
+  const fixed = select.querySelector('option[value="fixed"]');
+  select.insertBefore(option,fixed || null);
 }
 
 // RENDER: build/rebuild a habit-picker dropdown. `which` is '' (primary) or '2'.
@@ -320,6 +536,7 @@ function renderTimeEndpoint(endpoint, field, h){
   const offset2Input = endpoint.querySelector('.time-offset2');
   const anchor = cleanAnchor(h && h[field + 'Anchor']);
   if(anchor){
+    if(anchor === 'habit')ensureLegacyHabitAnchorOption(anchorSel);
     endpoint.classList.add('is-dynamic');
     if(fixedInput)fixedInput.hidden = true;
     if(dynWrap)dynWrap.hidden = false;
@@ -334,6 +551,7 @@ function renderTimeEndpoint(endpoint, field, h){
     if(combineSel)combineSel.value = combine || '';
     if(expr2)expr2.hidden = !combine;
     if(combine){
+      if(cleanAnchor(h[field + 'Anchor2']) === 'habit')ensureLegacyHabitAnchorOption(anchor2Sel);
       if(anchor2Sel)anchor2Sel.value = cleanAnchor(h[field + 'Anchor2']) || '';
       if(offset2Input){
         const off2 = normalizePrayerOffset(h[field + 'OffsetMin2']);
@@ -518,10 +736,12 @@ function currentDetailTune(){
   const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
   const locationIds = selectedLocationIdsFrom('detail-tag-chips');
   const locationPrefs = selectedLocationPrefsFrom('detail-tag-chips');
+  const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
   return {
     name:$('detail-habit-message').value.trim(),
     type,
     emoji:cleanMark($('detail-emoji').value),
+    emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
     topics:selectedTopicsFrom('detail-tag-chips'),
@@ -549,6 +769,7 @@ function currentDetailTune(){
     allowedTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-time-end'),
     preferredTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-start'),
     preferredTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-end'),
+    scheduleLinks:readScheduleLinksFromDetail(subjectHid),
     ...(() => {
       const c = readCombineFromEndpoint('detail-time-start');
       return {
@@ -637,6 +858,7 @@ function setDetailDirty(force){
     (current.name !== detailTuneOriginal.name ||
       current.type !== detailTuneOriginal.type ||
       current.emoji !== detailTuneOriginal.emoji ||
+      current.emojiBgColor !== detailTuneOriginal.emojiBgColor ||
       String(current.target) !== String(detailTuneOriginal.target) ||
       current.pinned !== detailTuneOriginal.pinned ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
@@ -675,6 +897,7 @@ function setDetailDirty(force){
       (current.allowedTimeEndAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId || null) ||
       (current.preferredTimeStartAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId || null) ||
       (current.preferredTimeEndAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId || null) ||
+      JSON.stringify(current.scheduleLinks || {}) !== JSON.stringify(detailTuneOriginal.scheduleLinks || {}) ||
       (current.allowedTimeStartCombine || null) !== (detailTuneOriginal.allowedTimeStartCombine || null) ||
       (current.allowedTimeStartAnchor2 || null) !== (detailTuneOriginal.allowedTimeStartAnchor2 || null) ||
       current.allowedTimeStartOffsetMin2 !== detailTuneOriginal.allowedTimeStartOffsetMin2 ||
@@ -712,6 +935,7 @@ function restoreDetailTune(){
   if(!detailTuneOriginal)return;
   $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;
+  renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
   $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
@@ -728,6 +952,7 @@ function restoreDetailTune(){
   if($('detail-auto-mark'))$('detail-auto-mark').value = detailTuneOriginal.autoMarkMinutes != null ? detailTuneOriginal.autoMarkMinutes : '';
   syncBreakableUi();
   renderScheduleChips('detail',detailTuneOriginal);
+  renderScheduleLinkEditors(detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
   setDetailPriorityUi(detailTuneOriginal.priority);
@@ -1184,30 +1409,114 @@ function renderCalendar(h){
   $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
 }
 
-const DETAIL_PAGE_NAV = [
-  {label:'calendar',icon:'ti-calendar-month'},
-  {label:'insight',icon:'ti-chart-line'},
-  {label:'schedule',icon:'ti-calendar-time'},
-  {label:'effort',icon:'ti-progress-check'},
-  {label:'identity',icon:'ti-id'},
-  {label:'actions',icon:'ti-dots'}
-];
+const DETAIL_PAGE_NAV = {
+  calendar:{label:'calendar',icon:'ti-calendar-month'},
+  insight:{label:'insight',icon:'ti-chart-line'},
+  schedule:{label:'schedule',icon:'ti-calendar-time'},
+  effort:{label:'effort',icon:'ti-progress-check'},
+  identity:{label:'identity',icon:'ti-id'},
+  actions:{label:'actions',icon:'ti-dots'}
+};
 
-// RENDER: syncs the compact pager navigation.
+// Visual-only: hide insight/effort tabs, fold duration + auto-mark into schedule,
+// and strip schedule/identity chrome. Does not change saved habit fields.
+let _minimalEffortHomes = null;
+function applyDetailMinimalMode(){
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  const sheet = $('detail-sheet');
+  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  if(sheet)sheet.classList.toggle('minimal-detail', minimal);
+  if(pager){
+    const insight = pager.querySelector('.detail-page[data-detail-nav="insight"]');
+    const effort = pager.querySelector('.detail-page[data-detail-nav="effort"]');
+    if(insight)insight.hidden = minimal;
+    if(effort)effort.hidden = minimal;
+    if(minimal){
+      const pages = visibleDetailPages(pager);
+      const width = Math.max(1,pager.clientWidth);
+      const idx = Math.round(pager.scrollLeft / width);
+      if(idx < 0 || idx >= pages.length)pager.scrollTo({left:0,behavior:'auto'});
+    }
+  }
+
+  const slot = $('detail-minimal-effort');
+  const durationField = $('detail-duration-field');
+  const autoMarkField = $('detail-auto-mark-field');
+  const dueRow = $('detail-due-row');
+  const dueHint = $('detail-due-hint');
+  if(!_minimalEffortHomes && durationField && autoMarkField){
+    _minimalEffortHomes = {
+      durationParent:durationField.parentElement,
+      durationNext:durationField.nextElementSibling,
+      autoParent:autoMarkField.parentElement,
+      autoNext:autoMarkField.nextElementSibling,
+      dueParent:dueRow ? dueRow.parentElement : null,
+      dueNext:dueRow ? dueRow.nextElementSibling : null,
+      hintParent:dueHint ? dueHint.parentElement : null,
+      hintNext:dueHint ? dueHint.nextElementSibling : null
+    };
+  }
+  const restoreNode = (node,parent,next)=>{
+    if(!node || !parent)return;
+    if(next && next.parentElement === parent)parent.insertBefore(node,next);
+    else parent.appendChild(node);
+  };
+  if(minimal && slot && durationField && autoMarkField){
+    slot.appendChild(durationField);
+    slot.appendChild(autoMarkField);
+    if(dueRow)slot.appendChild(dueRow);
+    if(dueHint)slot.appendChild(dueHint);
+    slot.hidden = false;
+  }else if(_minimalEffortHomes){
+    restoreNode(durationField,_minimalEffortHomes.durationParent,_minimalEffortHomes.durationNext);
+    restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
+    restoreNode(dueRow,_minimalEffortHomes.dueParent,_minimalEffortHomes.dueNext);
+    restoreNode(dueHint,_minimalEffortHomes.hintParent,_minimalEffortHomes.hintNext);
+    if(slot)slot.hidden = true;
+  }
+
+  if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
+}
+
+function visibleDetailPages(pager){
+  if(!pager)return [];
+  return [...pager.querySelectorAll('.detail-page')].filter(page=>!page.hidden);
+}
+
+function detailPageIndexByNav(navKey){
+  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  if(!pager)return -1;
+  return visibleDetailPages(pager).findIndex(page=>page.dataset.detailNav === navKey);
+}
+
+function scrollDetailToNav(navKey,behavior = 'auto'){
+  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  if(!pager)return;
+  const index = detailPageIndexByNav(navKey);
+  if(index < 0)return;
+  pager.scrollTo({left:pager.clientWidth * index,behavior});
+  updateDetailPagerDots();
+}
+
+// RENDER: syncs the compact pager navigation (skips hidden pages like order).
 function updateDetailPagerDots(){
   const inner = getSheetInner('detail-sheet');
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
-  const pages = [...pager.querySelectorAll('.detail-page')];
+  const pages = visibleDetailPages(pager);
   pages.forEach((panel,i)=>{
     panel.id = panel.id || `detail-page-${i}`;
     panel.setAttribute('role','tabpanel');
   });
-  if(dotsWrap.children.length !== pages.length){
-    dotsWrap.innerHTML = pages.map((_,i)=>{
-      const item = DETAIL_PAGE_NAV[i] || {label:`page ${i + 1}`,icon:'ti-circle'};
-      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="detail-page-${i}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
+  const signature = pages.map(p=>p.dataset.detailNav || p.id).join('|');
+  if(dotsWrap.dataset.pageSig !== signature){
+    dotsWrap.dataset.pageSig = signature;
+    dotsWrap.style.gridTemplateColumns = `repeat(${Math.max(1,pages.length)},minmax(0,1fr))`;
+    dotsWrap.innerHTML = pages.map((panel,i)=>{
+      const key = panel.dataset.detailNav || `page-${i}`;
+      const item = DETAIL_PAGE_NAV[key] || {label:key,icon:'ti-circle'};
+      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="${panel.id}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
     }).join('');
   }
   if(dotsWrap.dataset.bound !== '1'){
@@ -1215,7 +1524,8 @@ function updateDetailPagerDots(){
     dotsWrap.addEventListener('click',event=>{
       const tab = event.target.closest('.detail-page-tab');
       if(!tab || !dotsWrap.contains(tab))return;
-      const index = Math.max(0,Math.min(pages.length - 1,Number(tab.dataset.detailPage) || 0));
+      const livePages = visibleDetailPages(pager);
+      const index = Math.max(0,Math.min(livePages.length - 1,Number(tab.dataset.detailPage) || 0));
       pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
     });
   }

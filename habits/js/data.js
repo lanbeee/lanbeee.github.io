@@ -170,6 +170,7 @@
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
+ * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview
  * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
  * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
@@ -299,6 +300,7 @@ function loadSortSettings(){
     merged.defaultAutoMarkMinutes = Number.isFinite(merged.defaultAutoMarkMinutes) && merged.defaultAutoMarkMinutes > 0 ? Math.round(merged.defaultAutoMarkMinutes) : null;
     merged.showStatusOnCards = merged.showStatusOnCards !== false;
     merged.showEarlyOnCards = merged.showEarlyOnCards !== false;
+    merged.minimalMode = Boolean(merged.minimalMode);
     merged.compactMode = Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
     merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';
@@ -367,6 +369,7 @@ function saveSortSettings(settings){
   next.defaultAutoMarkMinutes = Number.isFinite(next.defaultAutoMarkMinutes) && next.defaultAutoMarkMinutes > 0 ? Math.round(next.defaultAutoMarkMinutes) : null;
   next.showStatusOnCards = next.showStatusOnCards !== false;
   next.showEarlyOnCards = next.showEarlyOnCards !== false;
+  next.minimalMode = Boolean(next.minimalMode);
   next.compactMode = Boolean(next.compactMode);
   next.fontScale = ['small','medium','large'].includes(next.fontScale) ? next.fontScale : 'medium';
   next.themeMode = ['light','dark','system'].includes(next.themeMode) ? next.themeMode : 'system';

@@ -101,8 +101,8 @@
           <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
       </div>
-      <span class="settings-sublabel">emoji background</span>
-      <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
+      <span class="settings-sublabel add-full-only">emoji background</span>
+      <div class="emoji-bg-swatches add-full-only" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       <div class="seg" id="type-seg">
         <button class="seg-opt on" data-v="keepup">build</button>
         <button class="seg-opt" data-v="reduce">limit</button>
@@ -131,11 +131,11 @@
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
 
-      <button type="button" class="add-more-toggle" id="add-more-toggle" aria-expanded="false" aria-controls="add-more-options">
+      <button type="button" class="add-more-toggle add-full-only" id="add-more-toggle" aria-expanded="false" aria-controls="add-more-options">
         <span>more options</span>
         <i class="ti ti-chevron-down" aria-hidden="true"></i>
       </button>
-      <div class="add-more-options" id="add-more-options" hidden>
+      <div class="add-more-options add-full-only" id="add-more-options" hidden>
         <div class="priority-field">
           <span class="priority-label">priority <button type="button" class="info-btn" data-tip="ting-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
             <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
@@ -235,7 +235,8 @@
               <span>d</span>
             </label>
           </div>
-          <div class="schedule-order-block" id="detail-schedule-order">
+          <div class="planning-grid detail-minimal-effort" id="detail-minimal-effort" hidden></div>
+          <div class="schedule-order-block detail-full-only" id="detail-schedule-order">
             <div class="schedule-order-heading">
               <span class="settings-sublabel schedule-order-label">habit order
                 <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about habit order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
@@ -285,11 +286,11 @@
               </div>
             </div>
           </div>
-          <div class="seg schedule-seg" id="detail-schedule-view-seg">
+          <div class="seg schedule-seg detail-full-only" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
             <button class="seg-opt" data-schedule-view="preferred">preferred</button>
           </div>
-          <div id="detail-schedule-allowed">
+          <div id="detail-schedule-allowed" class="detail-full-only">
             <span class="settings-sublabel">days</span>
             <div class="schedule-chip-row" id="detail-weekday-chips"></div>
             <span class="settings-sublabel compact-label">month days</span>
@@ -368,7 +369,7 @@
               <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
             </div>
           </div>
-          <div id="detail-schedule-preferred" hidden>
+          <div id="detail-schedule-preferred" class="detail-full-only" hidden>
             <span class="settings-sublabel">days</span>
             <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
             <span class="settings-sublabel compact-label">month days</span>
@@ -450,15 +451,15 @@
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="effort">
           <span class="section-label">effort</span>
-          <div class="planning-grid">
-            <div class="planning-field">
+          <div class="planning-grid" id="detail-effort-duration-grid">
+            <div class="planning-field" id="detail-duration-field">
               <span>duration</span>
               <label class="range-value" aria-label="duration in minutes">
                 <input type="text" id="detail-duration" inputmode="numeric" maxlength="3" value="30" />
                 <span>min</span>
               </label>
             </div>
-            <div class="planning-field">
+            <div class="planning-field detail-full-only">
               <span class="flexibility-label">flexibility <button type="button" class="info-btn" data-tip="detail-flexibility-help" aria-label="about flexibility"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
                 <div class="info-tooltip" id="detail-flexibility-help" role="tooltip" hidden>Adds a buffer to your target for planning purposes.</div></span>
               <label class="range-value" aria-label="flexibility in days">
@@ -467,13 +468,13 @@
               </label>
             </div>
           </div>
-          <label class="setting-toggle compact-toggle" id="detail-breakable-row">
+          <label class="setting-toggle compact-toggle detail-full-only" id="detail-breakable-row">
             <span>breakable into chunks</span>
             <button class="setting-switch" id="detail-breakable" type="button" aria-pressed="false">
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </label>
-          <div class="planning-grid planning-grid-single" id="detail-min-chunk-row" hidden>
+          <div class="planning-grid planning-grid-single detail-full-only" id="detail-min-chunk-row" hidden>
             <div class="planning-field">
               <span>min chunk <button type="button" class="info-btn" data-tip="detail-min-chunk-help" aria-label="about min chunk"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
                 <div class="info-tooltip" id="detail-min-chunk-help" role="tooltip" hidden>Smallest piece when work must be split. Prefer one continuous session when time allows — this is a floor, not a suggested chunk size.</div></span>
@@ -483,13 +484,13 @@
               </label>
             </div>
           </div>
-          <label class="setting-toggle compact-toggle">
+          <label class="setting-toggle compact-toggle detail-full-only">
             <span>log a value or note (e.g. weight)</span>
             <button class="setting-switch" id="detail-track-value" type="button" aria-pressed="false">
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
           </label>
-          <div class="planning-grid planning-grid-single">
+          <div class="planning-grid planning-grid-single" id="detail-auto-mark-field">
             <div class="planning-field">
               <span><span id="detail-auto-mark-label">auto mark done</span> <button type="button" class="info-btn" data-tip="detail-auto-mark-help" aria-label="about automatic logging"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
                 <div class="info-tooltip" id="detail-auto-mark-help" role="tooltip" hidden>Blank keeps scheduled completion manual. For breakable items, each planned agenda chunk is credited after it ends. This setting never completes a manual session.</div></span>
@@ -500,7 +501,7 @@
               </label>
             </div>
           </div>
-          <div class="timer-row" id="detail-timer-row">
+          <div class="timer-row detail-full-only" id="detail-timer-row">
             <button type="button" class="btn timer-start-btn" id="detail-timer-toggle" aria-pressed="false">start session</button>
             <span class="timer-display" id="detail-timer-display" hidden>0:00</span>
             <label class="range-value timer-auto-stop-field" aria-label="session target minutes, blank uses duration">
@@ -536,7 +537,7 @@
             <button class="seg-opt" data-detail-type="zero">stop</button>
             <button class="seg-opt" data-detail-type="task">task</button>
           </div>
-          <div class="priority-field">
+          <div class="priority-field detail-full-only">
             <span class="priority-label">priority <button type="button" class="info-btn" data-tip="detail-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
               <div class="info-tooltip" id="detail-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
             <div class="seg priority-seg" id="detail-priority-seg">
@@ -548,8 +549,8 @@
               <button class="seg-opt" data-priority="5">P5</button>
             </div>
           </div>
-          <span class="settings-sublabel">topics &amp; places</span>
-          <div class="topic-chip-row" id="detail-tag-chips"></div>
+          <span class="settings-sublabel detail-full-only" id="detail-topics-label">topics &amp; places</span>
+          <div class="topic-chip-row detail-full-only" id="detail-tag-chips"></div>
         </section>
         <section class="detail-page detail-section tune-section detail-actions-page" data-detail-nav="actions">
           <span class="section-label">actions</span>
@@ -767,6 +768,15 @@
       <p class="sheet-title">settings</p>
       <p class="about-copy">Adjust what shows on home, your places, and how new habits start.</p>
       <div class="settings-stack">
+        <section class="settings-block">
+          <span class="settings-label">display</span>
+          <div class="settings-grid">
+            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="minimalMode" aria-pressed="false">
+              <span><b>minimal mode</b><small>Show emoji, name, status line, and how often. Hide agenda times, trails, insights, and other extras. Does not change what’s due or how the planner works.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-home-head" data-collapse-target="settings-home-body" aria-expanded="false" aria-controls="settings-home-body">
             <span class="settings-label">home page</span>
