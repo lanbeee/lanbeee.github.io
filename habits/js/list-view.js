@@ -3926,7 +3926,9 @@ function setupSwipe(row){
 
   row.addEventListener('touchstart',e=>{
     const t = e.changedTouches[0];
-    // Exclusive: reorder / scrub / hold own the pointer — swipe stands down.
+    // Reorder and crown scrub are committed gestures. A long-press `hold` is
+    // deliberately trackable here: pointerdown fires before touchstart on
+    // phones, and horizontal movement upgrades that soft hold to swipe below.
     if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'swipe')){
       touchId = null;
       moved = false;

@@ -53,7 +53,10 @@ function releaseCardGesture(row,owner = null){
 function cardGestureBlocks(row,action){
   const cur = cardGestureOwner(row);
   if(!cur)return false;
-  if(action === 'swipe')return cur === 'reorder' || cur === 'scrub' || cur === 'hold';
+  // `hold` is only the long-press prelude. On touch browsers pointerdown
+  // claims it before touchstart, so swipe must be allowed to track the same
+  // pointer and then take over with {force:true} once horizontal intent wins.
+  if(action === 'swipe')return cur === 'reorder' || cur === 'scrub';
   if(action === 'scrub')return cur === 'reorder' || cur === 'swipe';
   if(action === 'hold')return cur === 'reorder' || cur === 'scrub' || cur === 'swipe';
   if(action === 'reorder')return cur === 'scrub' || cur === 'swipe';

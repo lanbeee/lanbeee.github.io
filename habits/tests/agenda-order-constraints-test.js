@@ -40,6 +40,7 @@ function seedScript(){
 (async () => {
   const browser = await chromium.launch({ headless:true });
   const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
+  const client = await page.context().newCDPSession(page);
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
   // Doing-now is intentionally today-only. Freeze this suite in a roomy part
@@ -944,6 +945,99 @@ function seedScript(){
   assert(exclSwipe.found && exclSwipe.blocksScrub && exclSwipe.blocksHold,
     'swipe owner blocks scrub and hold');
   assert(!exclSwipe.claimScrub && !exclSwipe.claimHold, 'cannot claim scrub/hold while swipe owns');
+
+  // Browser order on phones is pointerdown → touchstart. Reorder therefore
+  // owns a soft `hold` before swipe starts tracking; horizontal intent must be
+  // able to take that hold over instead of making every agenda card unswipeable.
+  const holdToSwipe = await page.evaluate(() => {
+    const row = document.querySelector('.swipe-row[data-agenda-draggable="1"]');
+    if(!row)return {found:false};
+    if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+    const held = claimCardGesture(row,'hold');
+    const blocksTracking = cardGestureBlocks(row,'swipe');
+    const claimedSwipe = claimCardGesture(row,'swipe',{force:true});
+    const owner = cardGestureOwner(row);
+    const longPressGone = !row.classList.contains('agenda-longpress-armed');
+    releaseCardGesture(row,'swipe');
+    return {found:true, held, blocksTracking, claimedSwipe, owner, longPressGone};
+  });
+  assert(
+    holdToSwipe.found && holdToSwipe.held && !holdToSwipe.blocksTracking,
+    'soft reorder hold does not block swipe tracking after pointerdown'
+  );
+  assert(
+    holdToSwipe.claimedSwipe && holdToSwipe.owner === 'swipe' && holdToSwipe.longPressGone,
+    'horizontal swipe can take ownership from the reorder hold'
+  );
+
+  // Exercise the real phone event order, not just the ownership API:
+  // CDP emits pointerdown before touchstart, then horizontal touch moves.
+  const swipePoint = await page.evaluate(() => {
+    closeAllSwipes();
+    const row = [...document.querySelectorAll('.swipe-row[data-agenda-draggable="1"]')]
+      .find(r=>!r.querySelector('.breakable-crown'))
+      || document.querySelector('.swipe-row[data-agenda-draggable="1"]');
+    if(!row)return null;
+    const target = row.querySelector('.ting-info') || row.querySelector('.ting-card');
+    const rect = target.getBoundingClientRect();
+    return {
+      x:Math.min(rect.right - 8, rect.left + rect.width * 0.72),
+      y:rect.top + rect.height / 2
+    };
+  });
+  assert(Boolean(swipePoint), 'draggable agenda card available for real touch swipe');
+  if(swipePoint){
+    await client.send('Input.dispatchTouchEvent',{
+      type:'touchStart',
+      touchPoints:[{x:swipePoint.x,y:swipePoint.y,radiusX:8,radiusY:8,force:1,id:21}],
+      modifiers:0,timestamp:Date.now()
+    });
+    for(let step=1;step<=6;step++){
+      await client.send('Input.dispatchTouchEvent',{
+        type:'touchMove',
+        touchPoints:[{
+          x:swipePoint.x - (110 * step / 6),y:swipePoint.y,
+          radiusX:8,radiusY:8,force:1,id:21
+        }],
+        modifiers:0,timestamp:Date.now()
+      });
+      await page.waitForTimeout(16);
+    }
+    await client.send('Input.dispatchTouchEvent',{
+      type:'touchEnd',
+      touchPoints:[],
+      modifiers:0,timestamp:Date.now()
+    });
+    await page.waitForTimeout(80);
+  }
+  const realSwipe = await page.evaluate(() => {
+    const row = document.querySelector('.swipe-row[data-swipe-open="-1"]');
+    if(!row)return {open:false};
+    const card = row.querySelector('.ting-card');
+    const actions = row.querySelector('.swipe-actions-right');
+    const snooze = row.querySelector('.sa-snooze');
+    const remove = row.querySelector('.sa-nuke');
+    const result = {
+      open:true,
+      owner:typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null,
+      transform:card?.style.transform || '',
+      width:parseFloat(actions?.style.width || '0'),
+      pointerEvents:actions?.style.pointerEvents || '',
+      hasSnooze:Boolean(snooze),
+      hasRemove:Boolean(remove)
+    };
+    closeAllSwipes();
+    return result;
+  });
+  assert(
+    realSwipe.open && realSwipe.owner === 'swipe'
+      && realSwipe.width >= 120 && /translateX\(-/.test(realSwipe.transform),
+    'real left swipe reveals and owns the right-side actions'
+  );
+  assert(
+    realSwipe.pointerEvents === 'auto' && realSwipe.hasSnooze && realSwipe.hasRemove,
+    'revealed actions expose snooze and remove buttons'
+  );
 
   // Future-day drag-to-top is NOT doing-now
   const futureTop = await page.evaluate(() => {
