@@ -369,35 +369,63 @@ function pickHabitLocationId(h,anchorId,registry,mode){
 // pass. Items with no location stay zero-cost floaters.
 // Soft day-order constraints (sometime/direct) bias candidate order first so
 // "before" items claim slots ahead of "after" items when both are free.
-function plannerOrderConstraintsForDay(dayBase){
-  if(typeof agendaOrderConstraintsForDay === 'function')return agendaOrderConstraintsForDay(dayBase);
-  return typeof orderConstraintsForDay === 'function' ? orderConstraintsForDay(dayBase) : [];
+function plannerOrderConstraintsForDay(dayBase,data = null){
+  const key = String(dayStart(dayBase));
+  if(data == null && _plannerOrderCache.has(key))return _plannerOrderCache.get(key);
+  const edges = typeof agendaOrderConstraintsForDay === 'function'
+    ? agendaOrderConstraintsForDay(dayBase,data != null ? data : _plannerSolveData)
+    : (typeof orderConstraintsForDay === 'function' ? orderConstraintsForDay(dayBase) : []);
+  if(data == null)_plannerOrderCache.set(key,edges);
+  return edges;
 }
 
 // A completed/active/fixed anchor is a committed boundary even when it is not
 // a movable candidate in the current placement pass.
 function scheduleAnchorCommitForDay(hid,dayBase,data = null){
-  const items = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
-  const h = items.find(item=>item && item.hid === hid);
-  if(!h)return null;
   const base = dayStart(dayBase);
-  const logs = typeof actualLogs === 'function' ? actualLogs(h.logs || []) : [];
-  const todayLogs = logs.filter(ts=>dayStart(ts) === base);
-  if(todayLogs.length){
-    const ts = Math.max(...todayLogs);
-    return {start:ts,end:ts,kind:'completed'};
+  const cacheKey = `${hid}|${base}`;
+  if(data == null && _plannerAnchorCache.has(cacheKey))return _plannerAnchorCache.get(cacheKey);
+  const items = Array.isArray(data)
+    ? data
+    : (_plannerSolveData || (typeof load === 'function' ? load() : []));
+  const h = items.find(item=>item && item.hid === hid);
+  let result = null;
+  if(h){
+    const logs = typeof actualLogs === 'function' ? actualLogs(h.logs || []) : [];
+    const todayLogs = logs.filter(ts=>dayStart(ts) === base);
+    if(todayLogs.length){
+      const ts = Math.max(...todayLogs);
+      result = {start:ts,end:ts,kind:'completed'};
+    }else{
+      const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+      if(doing && doing.hid === hid && doing.dayBase === base
+        && (typeof isDoingNowActive !== 'function' || isDoingNowActive(doing))){
+        const start = Number(doing.startedAt) || Date.now();
+        const end = Number(doing.targetAt) || start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000;
+        result = {start,end,kind:'active'};
+      }else if(h.type === 'task' && h.eventTime != null && dayStart(h.eventTime) === base){
+        result = {start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
+      }
+    }
   }
-  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
-  if(doing && doing.hid === hid && doing.dayBase === base
-    && (typeof isDoingNowActive !== 'function' || isDoingNowActive(doing))){
-    const start = Number(doing.startedAt) || Date.now();
-    const end = Number(doing.targetAt) || start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000;
-    return {start,end,kind:'active'};
-  }
-  if(h.type === 'task' && h.eventTime != null && dayStart(h.eventTime) === base){
-    return {start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
-  }
-  return null;
+  if(data == null)_plannerAnchorCache.set(cacheKey,result);
+  return result;
+}
+
+let _plannerOrderCache = new Map();
+let _plannerAnchorCache = new Map();
+let _plannerSolveData = null;
+
+function beginPlannerSolveCaches(data = null){
+  _plannerOrderCache = new Map();
+  _plannerAnchorCache = new Map();
+  _plannerSolveData = Array.isArray(data) ? data : (typeof load === 'function' ? load() : null);
+}
+
+function endPlannerSolveCaches(){
+  _plannerOrderCache = new Map();
+  _plannerAnchorCache = new Map();
+  _plannerSolveData = null;
 }
 
 function reorderAgendaItemsByOrderConstraints(items,dayBase){
@@ -1233,7 +1261,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     i:row.i != null ? row.i : null,
     name:row.kind === 'travel'
       ? `travel${row.toName ? ` to ${row.toName}` : ''}`
-      : (row.h && row.h.name || 'scheduled item'),
+      : (row.h && row.h.name
+        || (row.i != null && data[row.i] && data[row.i].name)
+        || 'scheduled item'),
     start:row.start,
     end:row.end,
     minutes:Math.max(0,Math.round((row.end - row.start) / 60000)),
@@ -1356,6 +1386,7 @@ function createDayPlacementState(day,settings,opts = {}){
     isTodayDay,
     settings,
     registry,
+    registryById:new Map(registry.map(loc=>[loc.id,loc])),
     mode,
     slots,
     startClock,
@@ -1380,7 +1411,8 @@ function clonePlacementState(state){
     placed:new Set(state.placed),
     remaining:state.remaining,
     usedMinutes:state.usedMinutes,
-    prevLocId:state.prevLocId
+    prevLocId:state.prevLocId,
+    registryById:state.registryById
   };
 }
 
@@ -1662,10 +1694,16 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
 // opts.spareWindows: scarce windows to penalize overlapping (soft).
 // opts.urgency / opts.weights / opts.settings: scoring context.
 function tryPlaceOnDay(state,fill,opts = {}){
+  if(typeof plannerPerfCountTryPlace === 'function')plannerPerfCountTryPlace();
   if(!state || !fill || !fill.h)return null;
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
+  const registryLookup = id=>{
+    if(!id)return null;
+    if(state.registryById)return state.registryById.get(id) || null;
+    return registry.find(l=>l.id === id) || null;
+  };
   const remaining = state.remaining;
   const usedMinutes = state.usedMinutes;
   const resolveLoc = (anchor)=>fill.locationId || pickHabitLocationId(fill.h,anchor,registry,mode);
@@ -1729,7 +1767,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
 
       const locId = resolveLoc(anchor);
       if(locId){
-        const loc = registry.find(l=>l.id === locId);
+        const loc = registryLookup(locId);
         const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         if(!intervals.length)continue;
       }
@@ -1746,7 +1784,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
       let cap = gap.end;
       if(locId){
-        const loc = registry.find(l=>l.id === locId);
+        const loc = registryLookup(locId);
         const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         const arriveMin = Math.floor((placeStart - dayBase) / 60000);
         let iv = intervals.find(x=>arriveMin >= x.start && arriveMin < x.end);
@@ -4050,15 +4088,27 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   }
   applyPersistentLinkEligibility(candidates,days);
 
+  if(typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
+  if(typeof plannerPerfResetTryPlace === 'function')plannerPerfResetTryPlace();
+
   // Pass 1 — greedy discovery of each location's natural day.
   let dayStates = makeStates();
   assignWeekCandidatesByPlacement(candidates,dayStates,settings,null);
   const locHints = collectLocationHints(dayStates);
 
   // Pass 2 — re-place from clean states, pulled toward co-located partners.
-  days.forEach(d=>{ d.agendaItems = []; });
-  dayStates = makeStates();
-  assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints);
+  // Skip when ≤1 distinct location (no clustering to discover).
+  const distinctLocs = new Set();
+  for(const c of candidates){
+    for(const id of (c.h && c.h.locationIds) || []){
+      if(id)distinctLocs.add(id);
+    }
+  }
+  if(distinctLocs.size > 1){
+    days.forEach(d=>{ d.agendaItems = []; });
+    dayStates = makeStates();
+    assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints);
+  }
 
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){
@@ -4076,6 +4126,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
+  if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
   return { days, totalTravelSeconds, candidateCount:candidates.length };
 }
 

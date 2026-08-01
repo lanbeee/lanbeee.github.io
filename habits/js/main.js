@@ -2712,7 +2712,20 @@ $('list').addEventListener('touchstart',e=>{
 restoreHabitTimer();
 // Progressive (fast-then-full) was retired —
 // the interim card order differed from the agenda and felt jittery.
+plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
+plannerPerfMark('app-first-render-returned');
+// After first paint: warm the planner worker (script parse + GLPK) off the
+// critical path so the next real request is not a cold bring-up. Exact mode only.
+if(typeof warmAgendaPlannerWorker === 'function'
+  && typeof agendaPlannerWorkerAvailable === 'function'
+  && agendaPlannerWorkerAvailable()
+  && sortSettings && sortSettings.agendaOptimizer
+  && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
+  const warm = ()=>{ void warmAgendaPlannerWorker(); };
+  if(typeof requestIdleCallback === 'function')requestIdleCallback(warm,{timeout:300});
+  else setTimeout(warm,100);
+}
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
 if (typeof initReminders === 'function') initReminders();

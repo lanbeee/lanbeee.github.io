@@ -49,14 +49,24 @@ function glpkCandidateUrls(){
 
 let _plannerWorker = null;
 let _plannerWorkerSeq = 0;
+let _plannerWorkerWarmed = false;
+let _plannerWorkerWarmPromise = null;
 const _plannerWorkerRequests = new Map();
+
+// Only the planner-relevant persisted keys. Avoid shipping the multi-KB home
+// agenda cache and unrelated app keys on every request.
+const PLANNER_WORKER_STORAGE_KEYS = [
+  typeof ORDER_CONSTRAINTS_KEY !== 'undefined' ? ORDER_CONSTRAINTS_KEY : 'tings_order_constraints_v1',
+  typeof AUTO_CHUNK_PLAN_KEY !== 'undefined' ? AUTO_CHUNK_PLAN_KEY : 'tings_auto_chunk_plans_v1',
+  typeof TODAY_SUGGESTED_KEY !== 'undefined' ? TODAY_SUGGESTED_KEY : 'tings_today_suggested_v1'
+];
 
 function plannerWorkerStorageSnapshot(){
   const snapshot = {};
   try{
-    for(let i = 0;i < localStorage.length;i += 1){
-      const key = localStorage.key(i);
-      if(key != null)snapshot[key] = localStorage.getItem(key);
+    for(const key of PLANNER_WORKER_STORAGE_KEYS){
+      const value = localStorage.getItem(key);
+      if(value != null)snapshot[key] = value;
     }
   }catch(_){}
   return snapshot;
@@ -67,6 +77,7 @@ function ensureAgendaPlannerWorker(){
   if(typeof Worker !== 'function')return null;
   // Workers (and dynamic import of glpk.mjs) are blocked on file:// — fall back
   // to the main-thread heuristic. Serve over http(s) for the full planner.
+  plannerPerfMark('planner-worker-spawn-start');
   let worker;
   try{
     worker = new Worker('./js/agenda-planner-worker.js');
@@ -80,36 +91,123 @@ function ensureAgendaPlannerWorker(){
     if(!request)return;
     _plannerWorkerRequests.delete(message.id);
     if(message.error)request.reject(new Error(message.error));
-    else request.resolve(message.week);
+    else if(message.ready){
+      _plannerWorkerWarmed = true;
+      request.resolve(true);
+    }else request.resolve(message.week);
   });
   worker.addEventListener('error',error=>{
     const pending = [..._plannerWorkerRequests.values()];
     _plannerWorkerRequests.clear();
     _plannerWorker = null;
+    _plannerWorkerWarmed = false;
     worker.terminate();
     pending.forEach(request=>request.reject(
       new Error(error && error.message ? error.message : 'agenda planner worker failed')
     ));
   });
   _plannerWorker = worker;
+  plannerPerfMark('planner-worker-spawn-end');
   return worker;
 }
 
+// Idle warm: parse worker scripts + compile GLPK inside the worker so the first
+// real request does not pay cold bring-up on the critical path. Exact mode only —
+// fast mode never loads GLPK.
+function warmAgendaPlannerWorker(){
+  if(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast()){
+    return Promise.resolve(false);
+  }
+  const settings = typeof sortSettings !== 'undefined' ? sortSettings : null;
+  if(settings && settings.agendaOptimizer === false)return Promise.resolve(false);
+  const worker = ensureAgendaPlannerWorker();
+  if(!worker)return Promise.resolve(false);
+  if(_plannerWorkerWarmed)return Promise.resolve(true);
+  if(_plannerWorkerWarmPromise)return _plannerWorkerWarmPromise;
+  const id = ++_plannerWorkerSeq;
+  plannerPerfMark('planner-worker-warm-start');
+  _plannerWorkerWarmPromise = new Promise(resolve=>{
+    _plannerWorkerRequests.set(id,{
+      resolve:()=>{
+        plannerPerfMark('planner-worker-warm-end');
+        _plannerWorkerWarmPromise = null;
+        resolve(true);
+      },
+      reject:()=>{
+        _plannerWorkerWarmPromise = null;
+        resolve(false);
+      }
+    });
+    try{ worker.postMessage({id,warm:true}); }
+    catch(_){
+      _plannerWorkerRequests.delete(id);
+      _plannerWorkerWarmPromise = null;
+      resolve(false);
+    }
+  });
+  return _plannerWorkerWarmPromise;
+}
+
+function leanAgendaWeek(week){
+  if(!week || !Array.isArray(week.days))return week;
+  if(week.__lean)return week;
+  const strip = row=>{
+    if(!row || typeof row !== 'object')return row;
+    const out = {...row};
+    delete out.h;
+    return out;
+  };
+  return {
+    days:week.days.map(day=>({
+      ...day,
+      timeline:Array.isArray(day.timeline) ? day.timeline.map(strip) : day.timeline,
+      agendaItems:Array.isArray(day.agendaItems) ? day.agendaItems.map(strip) : day.agendaItems
+    })),
+    totalTravelSeconds:week.totalTravelSeconds,
+    candidateCount:week.candidateCount,
+    optimized:week.optimized,
+    __lean:true
+  };
+}
+
+// Re-attach habit refs from data indices after a lean worker/cache week arrives.
+function rehydrateAgendaWeekHabits(week,data){
+  if(!week || !Array.isArray(week.days) || !Array.isArray(data))return week;
+  for(const day of week.days){
+    for(const row of day.timeline || []){
+      if(row && row.i != null)row.h = data[row.i] || null;
+    }
+    for(const item of day.agendaItems || []){
+      if(item && item.i != null)item.h = data[item.i] || null;
+    }
+  }
+  if(week.__lean)delete week.__lean;
+  return week;
+}
+
 // ASYNC: construct a week without occupying the UI thread. The worker receives
-// a storage snapshot because order constraints, auto-chunks, and planner inputs
-// are persisted independently of the habit array.
-function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast'){
+// a compact storage snapshot (order constraints, auto-chunks, today-suggested).
+function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {}){
   const worker = ensureAgendaPlannerWorker();
   if(!worker)return Promise.reject(new Error('agenda planner worker unavailable'));
   const id = ++_plannerWorkerSeq;
+  plannerPerfMark('planner-request-post');
   return new Promise((resolve,reject)=>{
-    _plannerWorkerRequests.set(id,{resolve,reject});
+    _plannerWorkerRequests.set(id,{
+      resolve:week=>{
+        plannerPerfMark('planner-response');
+        resolve(week);
+      },
+      reject
+    });
     worker.postMessage({
       id,
       data,
       settings,
       numDays,
       mode,
+      dirtyKey:opts.dirtyKey || (typeof homePlannerDirtyKey === 'function' ? homePlannerDirtyKey(data) : ''),
+      day0Only:Boolean(opts.day0Only),
       storage:plannerWorkerStorageSnapshot()
     });
   });
@@ -447,11 +545,23 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
       ? plannerOrderConstraintsForDay(state.dayBase) : [];
     if(orderEdges.length || doing){
       const step = 30 * 60000;
-      const dayEnd = state.dayBase + 86400000;
+      // Cap the stepped grid by THIS fill's latest relevant window end — not
+      // Math.min across every candidate (that erased late-window options).
+      let gridEnd = state.dayBase + 86400000;
+      const ownWindows = optimizerWindowsForCandidate(
+        {h:placeFill.h,i:placeFill.i},state
+      );
+      if(ownWindows.length){
+        let ownEnd = 0;
+        for(const win of ownWindows){
+          if(Number.isFinite(win.end))ownEnd = Math.max(ownEnd,win.end);
+        }
+        if(ownEnd > 0)gridEnd = Math.min(gridEnd,ownEnd);
+      }
       let cursor = Math.max(state.startClock, doing && fill && fill.h && fill.h.hid === doing.hid
         ? doing.startedAt : state.startClock);
       let guards = 0;
-      while(cursor < dayEnd && guards < 24){
+      while(cursor < gridEnd && guards < 24){
         windowEdges.push(cursor);
         cursor += step;
         guards += 1;
@@ -667,17 +777,38 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
       });
     }
   }
-  // Pairwise non-overlap for overlapping fits (dense but N<=180 and bounded).
+  // Pairwise non-overlap. Bucket by coarse time bands first so non-overlapping
+  // bands never emit rows (still correct; fewer constraints when dense).
   let clash = 0;
-  for(let a = 0;a < opts.length;a += 1){
-    for(let b = a + 1;b < opts.length;b += 1){
-      if(opts[a].c.i === opts[b].c.i)continue;
-      if(!fitsOverlap(opts[a].fit,opts[b].fit))continue;
-      subjectTo.push({
-        name:`ov_${clash++}`,
-        vars:[{name:opts[a].varName,coef:1},{name:opts[b].varName,coef:1}],
-        bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
-      });
+  const BAND_MS = 3 * 3600000;
+  const bands = new Map();
+  for(let i = 0;i < opts.length;i += 1){
+    const start = Number(opts[i].fit.placeStart) || 0;
+    const end = Number(opts[i].fit.placeEnd) || start;
+    const from = Math.floor(start / BAND_MS);
+    const to = Math.floor((end - 1) / BAND_MS);
+    for(let b = from;b <= to;b += 1){
+      if(!bands.has(b))bands.set(b,[]);
+      bands.get(b).push(i);
+    }
+  }
+  const seenPairs = new Set();
+  for(const idxs of bands.values()){
+    for(let ai = 0;ai < idxs.length;ai += 1){
+      for(let bi = ai + 1;bi < idxs.length;bi += 1){
+        const a = idxs[ai];
+        const b = idxs[bi];
+        if(opts[a].c.i === opts[b].c.i)continue;
+        const pairKey = a < b ? `${a}:${b}` : `${b}:${a}`;
+        if(seenPairs.has(pairKey))continue;
+        seenPairs.add(pairKey);
+        if(!fitsOverlap(opts[a].fit,opts[b].fit))continue;
+        subjectTo.push({
+          name:`ov_${clash++}`,
+          vars:[{name:opts[a].varName,coef:1},{name:opts[b].varName,coef:1}],
+          bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
+        });
+      }
     }
   }
   // Temporary same-day order links: forbid successor options that start before
@@ -1030,6 +1161,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
     const solveMs = daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
     let chosen = null;
     let usedHeuristic = false;
+    // Far days still enter GLPK while budget remains; structural dayOffset>=3
+    // cutoff was reverted — it skipped exact packing for scarce far-day windows.
     if(budgetLeft < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS){
       usedHeuristic = true;
     }else{
@@ -1150,21 +1283,39 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   return total >= 0;
 }
 
-async function buildWeekAgendaAsync(data,settings,numDays = 7){
+let _plannerWeekDayMemo = {dirtyKey:'',todayBase:0,days:null};
+
+async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   // Always able to fall back to the sync scarcity heuristic.
   if(!settings || !settings.agendaOptimizer
     || (typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
-    return buildWeekAgenda(data,settings,numDays);
+    return buildWeekAgenda(data,settings,numDays,opts);
   }
+  if(typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
+  if(typeof plannerPerfResetTryPlace === 'function')plannerPerfResetTryPlace();
+  plannerPerfMark('planner-exact-start');
+  try{
+  plannerPerfMark('planner-glpk-warm-start');
   try{
     await withTimeout(ensureGlpk(),AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS);
   }catch(err){
     // Silent fallback — the fast planner still builds a usable week.
     console.warn('[agenda-optimizer] GLPK unavailable:',err && err.message || err);
-    return buildWeekAgenda(data,settings,numDays);
+    return buildWeekAgenda(data,settings,numDays,opts);
   }
+  plannerPerfMark('planner-glpk-warm-end');
 
+  const dirtyKey = opts.dirtyKey || '';
   const todayBase = dayStart(Date.now());
+  const reuseFarDays = Boolean(
+    opts.day0Only
+    && dirtyKey
+    && _plannerWeekDayMemo.dirtyKey === dirtyKey
+    && _plannerWeekDayMemo.todayBase === todayBase
+    && Array.isArray(_plannerWeekDayMemo.days)
+    && _plannerWeekDayMemo.days.length
+  );
+
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
   const days = [];
   for(let offset = 0;offset < count;offset += 1){
@@ -1206,22 +1357,54 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7){
   }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 
-  const ok = await assignWeekCandidatesOptimized(candidates,dayStates,settings);
+  const solveStates = reuseFarDays ? dayStates.slice(0,1) : dayStates;
+  plannerPerfMark('planner-exact-solve-start');
+  const ok = await assignWeekCandidatesOptimized(candidates,solveStates,settings);
+  plannerPerfMark('planner-exact-solve-end');
   if(!ok){
     // Packing timed out or a day was infeasible — use the fast planner quietly.
     // The "unavailable" toast is reserved for GLPK failing to load.
-    return buildWeekAgenda(data,settings,numDays);
+    return buildWeekAgenda(data,settings,numDays,opts);
   }
 
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){
-    const state = dayStates[d];
     const day = days[d];
+    if(reuseFarDays && d > 0){
+      const memoDay = _plannerWeekDayMemo.days[d];
+      if(memoDay){
+        day.timeline = memoDay.timeline;
+        day.usedMinutes = memoDay.usedMinutes;
+        day.remainingMinutes = memoDay.remainingMinutes;
+        day.travelSeconds = memoDay.travelSeconds || 0;
+        totalTravelSeconds += day.travelSeconds;
+        continue;
+      }
+    }
+    const state = dayStates[d];
     day.timeline = finalizePlacementRows(state);
     day.usedMinutes = state.usedMinutes;
     day.remainingMinutes = Math.max(0,(Number(day.totalMinutes) || 0) - state.usedMinutes);
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
-  return {days,totalTravelSeconds,candidateCount:candidates.length,optimized:true};
+  const week = {days,totalTravelSeconds,candidateCount:candidates.length,optimized:true};
+  if(dirtyKey){
+    _plannerWeekDayMemo = {
+      dirtyKey,
+      todayBase,
+      days:days.map(day=>({
+        timeline:day.timeline,
+        usedMinutes:day.usedMinutes,
+        remainingMinutes:day.remainingMinutes,
+        travelSeconds:day.travelSeconds
+      }))
+    };
+  }
+  plannerPerfMark('planner-exact-end');
+  if(typeof plannerPerfDump === 'function')plannerPerfDump('exact');
+  return week;
+  }finally{
+    if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
+  }
 }

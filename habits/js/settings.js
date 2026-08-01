@@ -1180,7 +1180,8 @@ function toggleAppSettingButton(btn){
     return;
   }
   updateSortSetting(patch);
-  if(key === 'agendaOptimizer' && patch.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
+  if(key === 'agendaOptimizer' && patch.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
+    && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
     preloadAgendaOptimizer();
   }
   if(key === 'prayerIslamicNames'){

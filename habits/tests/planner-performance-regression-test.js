@@ -179,6 +179,50 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     && _homeRenderedWeek.days.length
   ),null,{timeout:20000});
 
+  const dirtyKeyContract = await page.evaluate(()=>{
+    const data = load();
+    const a = homePlannerDirtyKey(data);
+    const b = homePlannerDirtyKey(data);
+    // Minute bucket must not be part of the dirty key — only the revision/live sig.
+    const hasWarm = typeof warmAgendaPlannerWorker === 'function';
+    const hasCompactSnapshot = typeof plannerWorkerStorageSnapshot === 'function'
+      && !JSON.stringify(plannerWorkerStorageSnapshot()).includes('tings_home_agenda_cache_v1');
+    const workerGatedPreload = typeof agendaPlannerWorkerAvailable === 'function'
+      && agendaPlannerWorkerAvailable() === true;
+    return {
+      stable:a === b && Boolean(a),
+      hasWarm,
+      hasCompactSnapshot,
+      workerGatedPreload,
+      readyDirty:typeof _optimizerHomeReadyDirtyKey === 'string' && _optimizerHomeReadyDirtyKey.length > 0
+    };
+  });
+  check('dirty key is stable and worker warm/compact snapshot APIs exist',
+    dirtyKeyContract.stable
+      && dirtyKeyContract.hasWarm
+      && dirtyKeyContract.hasCompactSnapshot
+      && dirtyKeyContract.workerGatedPreload
+      && dirtyKeyContract.readyDirty,
+    JSON.stringify(dirtyKeyContract));
+
+  const dirtySkip = await page.evaluate(()=>{
+    const original = buildWeekAgendaOffMain;
+    let calls = 0;
+    buildWeekAgendaOffMain=(...args)=>{calls += 1; return original(...args);};
+    // Align ready markers with the live dirty key so the tick is a pure no-op.
+    _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(load());
+    _optimizerHomeReadyKey = optimizerHomeStateKey(load());
+    _optimizerHomeRequestKey = '';
+    const started = performance.now();
+    const result = queueOptimizedHomeRender(load(),{__backgroundRefresh:true});
+    const elapsed = performance.now() - started;
+    buildWeekAgendaOffMain=original;
+    return {calls,result,elapsed};
+  });
+  check('unchanged dirty key skips background worker replan',
+    dirtySkip.calls === 0 && dirtySkip.result === false && dirtySkip.elapsed < 250,
+    JSON.stringify(dirtySkip));
+
   // The 12-hour/all-cards control is presentation only. It must reuse the
   // mounted week and must not enter any planner, including a synchronous one.
   const displayOnly = await page.evaluate(()=>{
@@ -341,6 +385,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
 
     _optimizerHomeReadyKey = '';
     _optimizerHomeReadyWeek = null;
+    _optimizerHomeRequestKey = '';
     _homeListFingerprint = 'forced-stale-performance-regression';
     const node = document.querySelector('#list .swipe-row');
     const startedAt = performance.now();

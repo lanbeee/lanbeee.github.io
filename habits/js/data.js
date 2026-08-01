@@ -263,6 +263,93 @@ function agendaPlannerForcedFast(){
   }
 }
 
+// Workers (and dynamic import of glpk.mjs) are blocked on file://. Main-thread
+// GLPK preload only pays off in that fallback; otherwise the worker warms its own.
+function agendaPlannerWorkerAvailable(){
+  try{
+    if(typeof Worker !== 'function')return false;
+    if(typeof location !== 'undefined' && location.protocol === 'file:')return false;
+    return true;
+  }catch{
+    return false;
+  }
+}
+
+// Bumped whenever persisted planner inputs change. Combined with a cheap live
+// location/travel signature (see homePlannerDirtyKey) so background refreshes
+// can skip a full replan when only the wall-clock minute bucket moved.
+// Persisted so disk-cache keys survive cold open after the first save of the day.
+const PLANNER_REVISION_KEY = 'tings_planner_revision_v1';
+let _plannerDataRevision = (()=>{
+  try{
+    const n = Number(localStorage.getItem(PLANNER_REVISION_KEY));
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  }catch{
+    return 0;
+  }
+})();
+function bumpPlannerDataRevision(){
+  _plannerDataRevision += 1;
+  try{ localStorage.setItem(PLANNER_REVISION_KEY,String(_plannerDataRevision)); }catch(_){}
+  if(typeof endPlannerSolveCaches === 'function'){
+    try{ endPlannerSolveCaches(); }catch(_){}
+  }
+  return _plannerDataRevision;
+}
+function plannerDataRevision(){
+  return _plannerDataRevision;
+}
+
+// ?perf=1 — console.table phase timings for cold-open / planner work.
+function plannerPerfEnabled(){
+  try{
+    return typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('perf') === '1';
+  }catch{
+    return false;
+  }
+}
+const _plannerPerfMarks = [];
+let _plannerPerfTryPlace = 0;
+function plannerPerfMark(name){
+  if(!plannerPerfEnabled())return;
+  try{
+    if(typeof performance !== 'undefined' && performance.mark)performance.mark(name);
+  }catch(_){}
+  _plannerPerfMarks.push({name,t:typeof performance !== 'undefined' ? performance.now() : Date.now()});
+  // Bound growth in long ?perf=1 sessions.
+  if(_plannerPerfMarks.length > 200)_plannerPerfMarks.splice(0,_plannerPerfMarks.length - 100);
+}
+function plannerPerfMeasure(name,startMark,endMark){
+  if(!plannerPerfEnabled())return;
+  try{
+    if(typeof performance !== 'undefined' && performance.measure){
+      performance.measure(name,startMark,endMark);
+    }
+  }catch(_){}
+}
+function plannerPerfCountTryPlace(){
+  _plannerPerfTryPlace += 1;
+}
+function plannerPerfResetTryPlace(){
+  _plannerPerfTryPlace = 0;
+}
+function plannerPerfTryPlaceCount(){
+  return _plannerPerfTryPlace;
+}
+function plannerPerfDump(label = 'planner'){
+  if(!plannerPerfEnabled())return;
+  const rows = [];
+  for(let i = 1;i < _plannerPerfMarks.length;i += 1){
+    rows.push({
+      phase:_plannerPerfMarks[i].name,
+      ms:Math.round((_plannerPerfMarks[i].t - _plannerPerfMarks[i - 1].t) * 10) / 10
+    });
+  }
+  if(_plannerPerfTryPlace)rows.push({phase:'tryPlaceOnDay_calls',ms:_plannerPerfTryPlace});
+  try{ console.table(rows); }catch(_){ console.log(label,rows); }
+}
+
 function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
@@ -326,7 +413,9 @@ function loadSortSettings(){
       ? false
       : Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
-    if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
+    // Prefer worker-side GLPK warm. Main-thread preload only when workers cannot run.
+    if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
+      && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
       try{ preloadAgendaOptimizer(); }catch(_){}
     }
     return merged;
@@ -592,6 +681,7 @@ function save(data){
       str = JSON.stringify(next);
     }
     Storage.writeRaw(KEY, str);
+    bumpPlannerDataRevision();
     updateQuotaBar(sizeKb(next));
     return true;
   }catch(e){
@@ -599,6 +689,7 @@ function save(data){
       const pruned = pruneForStorage(normalize(data),QUOTA_HARD_KB - 360);
       const str = JSON.stringify(pruned);
       Storage.writeRaw(KEY, str);
+      bumpPlannerDataRevision();
       updateQuotaBar(sizeKb(pruned));
       showToast('old dense activity compacted');
       return true;
@@ -671,7 +762,7 @@ function saveAutoChunkPlans(plans){
   const next = plans && plans.groups ? plans : {groups:{}};
   const current = Storage.read(AUTO_CHUNK_PLAN_KEY);
   if(JSON.stringify(current || {groups:{}}) === JSON.stringify(next))return false;
-  try{ Storage.write(AUTO_CHUNK_PLAN_KEY,next); return true; }
+  try{ Storage.write(AUTO_CHUNK_PLAN_KEY,next); bumpPlannerDataRevision(); return true; }
   catch{ return false; }
 }
 
@@ -800,7 +891,7 @@ function saveOrderConstraintStore(store){
   };
   const current = Storage.read(ORDER_CONSTRAINTS_KEY);
   if(JSON.stringify(current || {edges:[],doingNow:null}) === JSON.stringify(next))return false;
-  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); return true; }
+  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); bumpPlannerDataRevision(); return true; }
   catch{ return false; }
 }
 
@@ -1215,7 +1306,7 @@ function loadTodaySuggested(){
 function saveTodaySuggested(snapshot){
   const current = Storage.read(TODAY_SUGGESTED_KEY);
   if(JSON.stringify(current) === JSON.stringify(snapshot))return false;
-  try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); return true; }
+  try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); bumpPlannerDataRevision(); return true; }
   catch{ return false; }
 }
 
