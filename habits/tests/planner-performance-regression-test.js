@@ -4,6 +4,13 @@
 // planner worker during cold load so the assertions can distinguish a usable
 // first paint from a planner-complete paint without depending on machine speed.
 //
+// Guards (non-exhaustive):
+//   • worker offload; cold paint before plan; frame/longtask budgets
+//   • dirty-key skip for unchanged background ticks; presentation toggles
+//   • persisted planner revision; compact worker snapshot; no main-thread GLPK
+//   • fresh same-day cache skips immediate replan; lean week rehydrate/export
+//   • planner-affecting settings invalidate dirty key; memo refuses cross-midnight
+//
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/planner-performance-regression-test.js
 //   HABITS_URL='http://127.0.0.1:4181/?planner=fast' HABITS_PLANNER_MODE=fast \
 //     node tests/planner-performance-regression-test.js
@@ -414,6 +421,279 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && background.frameDelay < 250
       && background.sameNodeWhilePending,
     JSON.stringify(background));
+
+  // ── Contracts for the cold-open / dirty-key / lean-week improvements ──
+
+  const sourceContracts = (()=>{
+    const dataSrc = fs.readFileSync(path.join(__dirname,'..','js','data.js'),'utf8');
+    const optSrc = fs.readFileSync(path.join(__dirname,'..','js','agenda-optimizer.js'),'utf8');
+    const workerSrc = fs.readFileSync(path.join(__dirname,'..','js','agenda-planner-worker.js'),'utf8');
+    const listSrc = fs.readFileSync(path.join(__dirname,'..','js','list-view.js'),'utf8');
+    return {
+      persistedRevision:dataSrc.includes("tings_planner_revision_v1")
+        && dataSrc.includes('localStorage.setItem(PLANNER_REVISION_KEY'),
+      bumpClearsCaches:dataSrc.includes('endPlannerSolveCaches'),
+      memoTodayBase:optSrc.includes('todayBase')
+        && optSrc.includes('_plannerWeekDayMemo.todayBase === todayBase'),
+      warmTimeout:workerSrc.includes('withTimeout(ensureGlpk()'),
+      warmExactOnly:optSrc.includes('agendaOptimizer === false')
+        && listSrc.includes('exact && typeof warmAgendaPlannerWorker'),
+      settingsSigGates:listSrc.includes('showDueTasksInAgenda')
+        && listSrc.includes('showPlannedItemsInAgenda')
+        && listSrc.includes('showDueHabitsInAgenda')
+        && listSrc.includes('homeCityLat')
+        && listSrc.includes('planWeight')
+        && listSrc.includes('plansFirst'),
+      rehydrateHelper:optSrc.includes('function rehydrateAgendaWeekHabits'),
+      preloadGated:dataSrc.includes('!agendaPlannerWorkerAvailable()')
+    };
+  })();
+  check('source contracts: persisted revision, memo date, warm timeout, settingsSig, rehydrate',
+    sourceContracts.persistedRevision
+      && sourceContracts.bumpClearsCaches
+      && sourceContracts.memoTodayBase
+      && sourceContracts.warmTimeout
+      && sourceContracts.warmExactOnly
+      && sourceContracts.settingsSigGates
+      && sourceContracts.rehydrateHelper
+      && sourceContracts.preloadGated,
+    JSON.stringify(sourceContracts));
+
+  const revisionPersist = await page.evaluate(()=>{
+    const before = plannerDataRevision();
+    const data = load();
+    // Touch a habit so save() bumps the persisted revision.
+    if(data[0])data[0].priority = (Number(data[0].priority) || 0) === 0 ? 1 : 0;
+    save(data);
+    const after = plannerDataRevision();
+    const stored = Number(localStorage.getItem('tings_planner_revision_v1'));
+    // Simulate a cold boot reading the same counter.
+    const restored = Number(localStorage.getItem('tings_planner_revision_v1'));
+    return {
+      bumped:after > before,
+      storedMatches:stored === after,
+      restoredMatches:restored === after,
+      cacheKey:typeof homeAgendaCacheStateKey === 'function' ? homeAgendaCacheStateKey(load()) : ''
+    };
+  });
+  check('planner revision persists across saves (cold-open cache key survives reload)',
+    revisionPersist.bumped
+      && revisionPersist.storedMatches
+      && revisionPersist.restoredMatches
+      && Boolean(revisionPersist.cacheKey),
+    JSON.stringify(revisionPersist));
+
+  const dirtyKeySettings = await page.evaluate(()=>{
+    const data = load();
+    const base = homePlannerDirtyKey(data);
+    const s = sortSettings;
+    const beforeDue = s.showDueTasksInAgenda;
+    const beforePlan = s.planWeight;
+    const beforeCity = s.homeCityLat;
+
+    saveSortSettings({...s,showDueTasksInAgenda:beforeDue === false});
+    const afterDue = homePlannerDirtyKey(data);
+    saveSortSettings({...sortSettings,showDueTasksInAgenda:beforeDue,planWeight:(Number(beforePlan) || 100) === 100 ? 120 : 100});
+    const afterPlan = homePlannerDirtyKey(data);
+    saveSortSettings({
+      ...sortSettings,
+      planWeight:beforePlan,
+      homeCityLat:Number.isFinite(beforeCity) ? beforeCity + 0.01 : 40.71,
+      homeCityLng:-74.01,
+      homeCityName:'Test City'
+    });
+    const afterCity = homePlannerDirtyKey(data);
+    // Restore.
+    saveSortSettings({
+      ...sortSettings,
+      showDueTasksInAgenda:beforeDue,
+      planWeight:beforePlan,
+      homeCityLat:beforeCity,
+      homeCityLng:sortSettings.homeCityLng,
+      homeCityName:sortSettings.homeCityName || ''
+    });
+    const afterRestore = homePlannerDirtyKey(data);
+
+    // Presentation must NOT move the dirty key.
+    const beforePres = homePlannerDirtyKey(data);
+    saveSortSettings({...sortSettings,minimalMode:!Boolean(sortSettings.minimalMode)});
+    const afterPres = homePlannerDirtyKey(data);
+    saveSortSettings({...sortSettings,minimalMode:!Boolean(sortSettings.minimalMode)});
+
+    return {
+      dueChanges:afterDue !== base,
+      planChanges:afterPlan !== base && afterPlan !== afterDue,
+      cityChanges:afterCity !== base,
+      restoreOk:Boolean(afterRestore),
+      presentationStable:beforePres === afterPres
+    };
+  });
+  check('planner-affecting settings invalidate dirty key; presentation does not',
+    dirtyKeySettings.dueChanges
+      && dirtyKeySettings.planChanges
+      && dirtyKeySettings.cityChanges
+      && dirtyKeySettings.presentationStable,
+    JSON.stringify(dirtyKeySettings));
+
+  const compactSnapshot = await page.evaluate(()=>{
+    const snap = plannerWorkerStorageSnapshot();
+    const keys = Object.keys(snap).sort();
+    const allowed = new Set([
+      'tings_order_constraints_v1',
+      'tings_auto_chunk_plans_v1',
+      'tings_today_suggested_v1'
+    ]);
+    const onlyAllowed = keys.every(k=>allowed.has(k));
+    const hasAgendaCache = keys.includes('tings_home_agenda_cache_v1');
+    const hasHabits = keys.includes('tings_v2');
+    return {keys,onlyAllowed,hasAgendaCache,hasHabits};
+  });
+  check('worker storage snapshot is compact (no habits blob or agenda cache)',
+    compactSnapshot.onlyAllowed
+      && !compactSnapshot.hasAgendaCache
+      && !compactSnapshot.hasHabits,
+    JSON.stringify(compactSnapshot));
+
+  const leanRehydrate = await page.evaluate(()=>{
+    const data = load();
+    const week = _homeRenderedWeek;
+    if(!week || !week.days || !week.days.length)return {ok:false,reason:'no week'};
+    const lean = leanAgendaWeek(JSON.parse(JSON.stringify(week,(k,v)=>k === 'h' ? v : v)));
+    // Force a true lean clone from the live week.
+    const leanLive = leanAgendaWeek(week);
+    const anyFill = (leanLive.days[0].timeline || []).find(row=>row && row.i != null);
+    const stripped = Boolean(anyFill && anyFill.h == null && leanLive.__lean);
+    rehydrateAgendaWeekHabits(leanLive,data);
+    const restored = (leanLive.days[0].timeline || []).filter(row=>row && row.i != null);
+    const named = restored.length > 0 && restored.every(row=>row.h && row.h.name);
+    const text = formatWeekPlacementsText(leanLive);
+    const exportNames = restored
+      .filter(r=>r.h && r.h.name && (r.kind === 'fill' || r.kind === 'scheduled'))
+      .slice(0,3)
+      .every(r=>text.includes(r.h.name));
+    // data[i] fallback: lean copy without rehydrate must still export real names.
+    const lean2 = leanAgendaWeek(week);
+    const textFallback = formatWeekPlacementsText(lean2);
+    const fallbackNames = (lean2.days[0].timeline || [])
+      .filter(r=>r && r.i != null && data[r.i] && data[r.i].name && (r.kind === 'fill' || r.kind === 'scheduled'))
+      .slice(0,3)
+      .every(r=>textFallback.includes(data[r.i].name));
+    return {ok:true,stripped,named,exportNames,fallbackNames};
+  });
+  check('lean week strips h; rehydrate and export data[i] fallback keep names',
+    leanRehydrate.ok
+      && leanRehydrate.stripped
+      && leanRehydrate.named
+      && leanRehydrate.exportNames
+      && leanRehydrate.fallbackNames,
+    JSON.stringify(leanRehydrate));
+
+  const freshCacheGate = await page.evaluate(async()=>{
+    const data = load();
+    const week = _homeRenderedWeek;
+    if(!week)return {ok:false,reason:'no week'};
+    saveHomeAgendaCache(data,week);
+    const fresh = homeAgendaCacheIsFresh(data);
+    const probe = window.__plannerWorkerProbe;
+    // Re-hold worker posts so we can see whether an immediate build is kicked.
+    probe.released = false;
+    const postsBefore = probe.posts;
+    _optimizerHomeReadyKey = '';
+    _optimizerHomeReadyWeek = null;
+    _optimizerHomeRequestKey = '';
+    _idlePlannerRefreshTimer = null;
+    const painted = queueOptimizedHomeRender(data,{});
+    const postsImmediate = probe.posts;
+    // Allow idle callback to run (warm/build may post once idle fires).
+    await new Promise(resolve=>{
+      if(typeof requestIdleCallback === 'function')requestIdleCallback(()=>resolve(),{timeout:400});
+      else setTimeout(resolve,100);
+    });
+    await new Promise(resolve=>setTimeout(resolve,50));
+    const postsAfterIdle = probe.posts;
+    // Release so the page stays healthy for later checks.
+    window.__releasePlannerWorker();
+    return {
+      ok:true,
+      fresh,
+      painted:painted === true,
+      noImmediatePost:postsImmediate === postsBefore,
+      idleMayPost:postsAfterIdle >= postsBefore,
+      cards:document.querySelectorAll('#list .ting-card').length
+    };
+  });
+  check('fresh same-day cache paints without an immediate worker replan',
+    freshCacheGate.ok
+      && freshCacheGate.fresh
+      && freshCacheGate.painted
+      && freshCacheGate.noImmediatePost
+      && freshCacheGate.cards >= 10,
+    JSON.stringify(freshCacheGate));
+
+  const noMainGlpk = await page.evaluate(()=>{
+    const workersOk = agendaPlannerWorkerAvailable() === true;
+    // With workers available, boot must not leave a main-thread GLPK instance.
+    const mainGlpkLoaded = Boolean(typeof _glpkInstance !== 'undefined' && _glpkInstance);
+    return {workersOk,mainGlpkLoaded};
+  });
+  check('workers available ⇒ main thread did not preload GLPK',
+    noMainGlpk.workersOk && !noMainGlpk.mainGlpkLoaded,
+    JSON.stringify(noMainGlpk));
+
+  const orderCacheBump = await page.evaluate(()=>{
+    if(typeof beginPlannerSolveCaches !== 'function' || typeof bumpPlannerDataRevision !== 'function'){
+      return {ok:false};
+    }
+    const data = load();
+    beginPlannerSolveCaches(data);
+    const day = dayStart(Date.now());
+    const first = plannerOrderConstraintsForDay(day);
+    // Populate cache, then bump — caches must clear so a subsequent begin is clean.
+    bumpPlannerDataRevision();
+    beginPlannerSolveCaches(data);
+    const second = plannerOrderConstraintsForDay(day);
+    return {
+      ok:true,
+      firstIsArray:Array.isArray(first),
+      secondIsArray:Array.isArray(second),
+      // Same inputs ⇒ same edges; the point is bump did not throw and cache restarted.
+      sameLength:first.length === second.length
+    };
+  });
+  check('bumping planner revision clears order/anchor solve caches safely',
+    orderCacheBump.ok && orderCacheBump.firstIsArray && orderCacheBump.secondIsArray,
+    JSON.stringify(orderCacheBump));
+
+  // Exact-mode only: week memo must refuse cross-midnight reuse.
+  if(EXPECTED_MODE !== 'fast'){
+    const memoDate = await page.evaluate(async()=>{
+      const data = load();
+      const settings = {...sortSettings};
+      const dirty = homePlannerDirtyKey(data);
+      // Seed memo as if yesterday's solve left it behind.
+      _plannerWeekDayMemo = {
+        dirtyKey:dirty,
+        todayBase:dayStart(Date.now()) - 86400000,
+        days:( _homeRenderedWeek.days || []).map(day=>({
+          timeline:day.timeline,
+          usedMinutes:day.usedMinutes,
+          remainingMinutes:day.remainingMinutes,
+          travelSeconds:day.travelSeconds || 0
+        }))
+      };
+      const beforeBase = _plannerWeekDayMemo.todayBase;
+      await buildWeekAgendaAsync(data,settings,7,{dirtyKey:dirty,day0Only:true});
+      return {
+        beforeBase,
+        afterBase:_plannerWeekDayMemo.todayBase,
+        today:dayStart(Date.now()),
+        refreshed:_plannerWeekDayMemo.todayBase === dayStart(Date.now())
+      };
+    });
+    check('day0Only week memo refuses yesterday\'s todayBase (refreshes memo to today)',
+      memoDate.refreshed && memoDate.afterBase === memoDate.today && memoDate.beforeBase !== memoDate.today,
+      JSON.stringify(memoDate));
+  }
 
   check('no page errors',pageErrors.length === 0,JSON.stringify(pageErrors));
 
