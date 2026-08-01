@@ -602,6 +602,44 @@ function fitsOverlap(a,b){
   return a.placeStart < b.placeEnd && b.placeStart < a.placeEnd;
 }
 
+// Presence after a fit for route checks: location-tied work wins; otherwise the
+// inbound anchor the option was generated against (anywhere keeps prior place).
+function fitPresenceLocId(fit){
+  if(!fit)return null;
+  return fit.locId || fit.prevLocId || null;
+}
+
+// Work∩work, or earlier work intersecting inbound travel into the later option
+// from the earlier presence. Matches homeDaySequence / reconcileCommittedTravel
+// paint: travel is [late.placeStart − edge, late.placeStart]. Without this,
+// GLPK can co-select Home@4:25–4:30 and Spresh@4:31–5:01 and the UI draws the
+// commute over the Home fill.
+function fitsExclusiveClash(a,b,state){
+  if(!a || !b)return false;
+  if(fitsOverlap(a,b))return true;
+  let early = a;
+  let late = b;
+  if(a.placeStart > b.placeStart
+    || (a.placeStart === b.placeStart && a.placeEnd > b.placeEnd)){
+    early = b;
+    late = a;
+  }
+  const fromLoc = fitPresenceLocId(early);
+  const toLoc = late.locId || null;
+  if(!fromLoc || !toLoc || fromLoc === toLoc)return false;
+  if(typeof travelEdgeBetweenIds !== 'function')return false;
+  const edge = travelEdgeBetweenIds(
+    fromLoc,
+    toLoc,
+    (state && state.registry) || [],
+    state && state.mode,
+    {allowNetwork:false}
+  );
+  const travelMs = Math.max(0,Number(edge && edge.seconds) || 0) * 1000;
+  if(travelMs <= 0)return false;
+  return early.placeEnd > late.placeStart - travelMs;
+}
+
 // Solve set-packing ILP for one day. Returns array of {fill, fit} or null on failure.
 function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   const options = [];
@@ -777,16 +815,20 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
       });
     }
   }
-  // Pairwise non-overlap. Bucket by coarse time bands first so non-overlapping
-  // bands never emit rows (still correct; fewer constraints when dense).
+  // Pairwise exclusive intervals (work + inbound travel into the later option).
+  // Bucket by coarse time bands first so far-apart options never emit rows.
+  // Pad each option one band earlier so pairs that only clash on commute still
+  // share a bucket when their work intervals sit near a band boundary.
   let clash = 0;
   const BAND_MS = 3 * 3600000;
   const bands = new Map();
   for(let i = 0;i < opts.length;i += 1){
-    const start = Number(opts[i].fit.placeStart) || 0;
-    const end = Number(opts[i].fit.placeEnd) || start;
+    const placeStart = Number(opts[i].fit.placeStart) || 0;
+    const placeEnd = Number(opts[i].fit.placeEnd) || placeStart;
+    const start = placeStart - BAND_MS;
+    const end = placeEnd;
     const from = Math.floor(start / BAND_MS);
-    const to = Math.floor((end - 1) / BAND_MS);
+    const to = Math.floor((Math.max(end,start + 1) - 1) / BAND_MS);
     for(let b = from;b <= to;b += 1){
       if(!bands.has(b))bands.set(b,[]);
       bands.get(b).push(i);
@@ -802,7 +844,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
         const pairKey = a < b ? `${a}:${b}` : `${b}:${a}`;
         if(seenPairs.has(pairKey))continue;
         seenPairs.add(pairKey);
-        if(!fitsOverlap(opts[a].fit,opts[b].fit))continue;
+        if(!fitsExclusiveClash(opts[a].fit,opts[b].fit,state))continue;
         subjectTo.push({
           name:`ov_${clash++}`,
           vars:[{name:opts[a].varName,coef:1},{name:opts[b].varName,coef:1}],

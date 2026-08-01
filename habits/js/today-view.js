@@ -634,6 +634,15 @@ function todayCandidateLoadMinutes(h,dayBase){
   return clampDuration(h.durationMinutes);
 }
 
+// PURE: clock when a committed fill's inbound travel begins (floored at
+// `floorTs`). Matches homeDaySequence / reconcileCommittedTravel paint so open
+// gaps never include minutes that will be drawn as commute.
+function inboundOccupiedStart(fit,floorTs){
+  const travelMs = Math.max(0,Number(fit && fit.edge && fit.edge.seconds) || 0) * 1000;
+  const start = (Number(fit && fit.placeStart) || 0) - travelMs;
+  return Math.max(Number(floorTs) || 0, start);
+}
+
 // PURE: open sub-intervals after every committed fill, used only to explain
 // why a remaining candidate could not fit the final placement state.
 function remainingPlacementGaps(state){
@@ -645,7 +654,7 @@ function remainingPlacementGaps(state){
     for(const entry of chron){
       const fit = entry && entry.fit;
       if(!fit || fit.placeStart >= slot.end || fit.placeEnd <= cursor)continue;
-      const occupiedStart = Math.max(slot.start,fit.placeStart - Math.max(0,Number(fit.edge && fit.edge.seconds) || 0) * 1000);
+      const occupiedStart = inboundOccupiedStart(fit,slot.start);
       if(occupiedStart > cursor)gaps.push({start:cursor,end:Math.min(occupiedStart,slot.end)});
       cursor = Math.max(cursor,fit.placeEnd);
       if(cursor >= slot.end)break;
@@ -1750,11 +1759,14 @@ function tryPlaceOnDay(state,fill,opts = {}){
     const lowerBound = Math.max(slot.start,startClock,orderFloor,doingFloor);
     const inSlot = chron
       .filter(c=>c.fit.placeStart >= slot.start && c.fit.placeStart < slot.end);
-    // Build the open sub-intervals (gaps) within this slot.
+    // Build the open sub-intervals (gaps) within this slot. Carve inbound
+    // travel into each committed fill so a later insert cannot sit under the
+    // commute homeDaySequence will draw.
     const gaps = [];
     let cursor = lowerBound;
     for(const c of inSlot){
-      if(c.fit.placeStart > cursor)gaps.push({start:cursor, end:c.fit.placeStart});
+      const occupiedStart = inboundOccupiedStart(c.fit,slot.start);
+      if(occupiedStart > cursor)gaps.push({start:cursor, end:Math.min(occupiedStart,slot.end)});
       cursor = Math.max(cursor, c.fit.placeEnd);
     }
     if(cursor < slot.end)gaps.push({start:cursor, end:slot.end});
@@ -2165,7 +2177,8 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     const gaps = [];
     let cursor = lowerBound;
     for(const c of inSlot){
-      if(c.fit.placeStart > cursor)gaps.push({start:cursor, end:c.fit.placeStart});
+      const occupiedStart = inboundOccupiedStart(c.fit,slot.start);
+      if(occupiedStart > cursor)gaps.push({start:cursor, end:Math.min(occupiedStart,slot.end)});
       cursor = Math.max(cursor, c.fit.placeEnd);
     }
     if(cursor < slot.end)gaps.push({start:cursor, end:slot.end});

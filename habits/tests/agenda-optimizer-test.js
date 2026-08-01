@@ -445,6 +445,103 @@ function base(props) {
   check('fixed fills respect aggregate day capacity',invariantResult.constrainedUsed <= 90,
     JSON.stringify(invariantResult));
 
+  console.log('\n[Optimizer] inbound travel does not overlap a prior fill');
+  const travelOverlapResult = await page.evaluate(async ({now,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      const week = await buildWeekAgendaAsync(data,settings,1);
+      const day = week.days[0];
+      day.isToday = true;
+      const seq = homeDaySequence(day,settings);
+      const travels = seq.filter(row=>row.kind === 'travel');
+      const works = seq.filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
+      const overlaps = [];
+      for(const t of travels){
+        for(const w of works){
+          if(t.start < w.end && w.start < t.end){
+            overlaps.push({
+              travel:`${t.fromName || t.from}→${t.toName || t.to}`,
+              travelStart:Math.round((t.start - day.dayBase) / 60000),
+              travelEnd:Math.round((t.end - day.dayBase) / 60000),
+              work:w.h && w.h.name,
+              workStart:Math.round((w.start - day.dayBase) / 60000),
+              workEnd:Math.round((w.end - day.dayBase) / 60000)
+            });
+          }
+        }
+      }
+      const fills = works.filter(row=>row.kind === 'fill').map(row=>({
+        name:row.h.name,
+        start:Math.round((row.start - day.dayBase) / 60000),
+        end:Math.round((row.end - day.dayBase) / 60000),
+        loc:row.locationId || null
+      }));
+      return {
+        optimized:Boolean(week.optimized),
+        fills,
+        travelCount:travels.length,
+        overlaps
+      };
+    }finally{
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(16,22),
+    data:[
+      base({
+        name:'Zuhr',type:'keepup',target:1,durationMinutes:5,priority:0,
+        locationIds:['home'],
+        allowedTimeStart:16 * 60 + 22,allowedTimeEnd:17 * 60 + 9,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        name:'Indian Grocery',type:'task',durationMinutes:30,priority:3,
+        locationIds:['spresh'],pinned:true,
+        dueDate:atTime(16,22),
+        allowedTimeStart:10 * 60,allowedTimeEnd:20 * 60 + 30
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[600,600,600,600,600,600,600],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      lastKnownLocationId:'home',
+      defaultTravelMode:'walking',
+      locations:[
+        {id:'home',name:'Home',lat:40.70,lng:-74.00},
+        {id:'spresh',name:'Spresh',lat:40.71,lng:-74.01}
+      ],
+      travel:{
+        'home|spresh':{
+          a:'home',b:'spresh',seconds:6 * 60,metres:900,
+          provider:'manual',fetchedAt:Date.now()
+        }
+      },
+      blockedTimes:[{label:'sleep',days:[],start:0,end:420,locationId:'home'}]
+    }
+  });
+  check('travel-overlap scenario uses optimizer',travelOverlapResult.optimized,
+    JSON.stringify(travelOverlapResult));
+  check('Zuhr and grocery both place when travel fits',
+    travelOverlapResult.fills.some(f=>f.name === 'Zuhr')
+      && travelOverlapResult.fills.some(f=>f.name === 'Indian Grocery'),
+    JSON.stringify(travelOverlapResult));
+  check('no travel card overlaps a fill or scheduled row',
+    travelOverlapResult.overlaps.length === 0,
+    JSON.stringify(travelOverlapResult.overlaps));
+  const zuhrFill = travelOverlapResult.fills.find(f=>f.name === 'Zuhr');
+  const groceryFill = travelOverlapResult.fills.find(f=>f.name === 'Indian Grocery');
+  if(zuhrFill && groceryFill && groceryFill.start >= zuhrFill.end){
+    check('grocery starts after Zuhr plus inbound commute',
+      groceryFill.start >= zuhrFill.end + 6,
+      JSON.stringify({zuhr:zuhrFill,grocery:groceryFill}));
+  }
+
   // Fallback path: force timeout / broken glpk should not throw — heuristic still works.
   console.log('\n[Optimizer] heuristic fallback still works with optimizer flag');
   const fallback = await page.evaluate(async ({ now }) => {
