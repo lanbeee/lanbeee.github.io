@@ -1,11 +1,13 @@
 // Regression contract for the planner performance work.
 //
 // This intentionally runs in both default (GLPK) and fast suites. It pauses the
-// planner worker during cold load so the assertions can distinguish a usable
-// first paint from a planner-complete paint without depending on machine speed.
+// planner worker during cold load so the assertions can distinguish the loading
+// skeleton (first paint) from a planner-complete agenda paint without depending
+// on machine speed.
 //
 // Guards (non-exhaustive):
-//   • worker offload; cold paint before plan; frame/longtask budgets
+//   • worker offload; skeleton cold paint before plan (no interim basic list);
+//     frame/longtask budgets; one-shot agenda after release
 //   • dirty-key skip for unchanged background ticks; presentation toggles
 //   • persisted planner revision; compact worker snapshot; no main-thread GLPK
 //   • fresh same-day cache skips immediate replan; lean week rehydrate/export
@@ -148,8 +150,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
   },{expectedMode:EXPECTED_MODE});
 
   await page.goto(BASE,{waitUntil:'load'});
-  await page.waitForSelector('#list .ting-card',{timeout:5000});
+  // No same-day cache in this fixture: cold open must keep the skeleton while
+  // the worker is held, not flash an unplanned basic list first.
   await page.waitForFunction(()=>window.__plannerWorkerProbe?.posts > 0,null,{timeout:5000});
+  await page.waitForSelector('#list .home-loading',{timeout:5000});
 
   const cold = await page.evaluate(async()=>{
     const frameStarted = performance.now();
@@ -157,6 +161,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     const probe = window.__plannerWorkerProbe;
     return {
       cards:document.querySelectorAll('#list .ting-card').length,
+      loading:Boolean(document.querySelector('#list .home-loading')),
       workerCreated:probe.created,
       workerPosts:probe.posts,
       held:probe.held.length,
@@ -169,8 +174,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
   check('cold load delegates planning to the dedicated worker',
     cold.workerCreated === 1 && cold.workerPosts >= 1 && cold.held >= 1,
     JSON.stringify(cold));
-  check('cold load paints usable cards before planning completes',
-    cold.cards >= 10 && !cold.plannerMounted,
+  check('cold load keeps skeleton until planning completes (no interim basic list)',
+    cold.loading && cold.cards === 0 && !cold.plannerMounted,
     JSON.stringify(cold));
   check('cold first paint leaves the event loop responsive',
     cold.frameDelay < 250 && cold.longestTask < 750,
@@ -185,6 +190,16 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     && Array.isArray(_homeRenderedWeek?.days)
     && _homeRenderedWeek.days.length
   ),null,{timeout:20000});
+  await page.waitForSelector('#list .ting-card',{timeout:5000});
+
+  const afterPlan = await page.evaluate(()=>({
+    cards:document.querySelectorAll('#list .ting-card').length,
+    loading:Boolean(document.querySelector('#list .home-loading')),
+    plannerMounted:Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.days?.length)
+  }));
+  check('planner release paints the agenda in one pass',
+    afterPlan.cards >= 10 && !afterPlan.loading && afterPlan.plannerMounted,
+    JSON.stringify(afterPlan));
 
   const dirtyKeyContract = await page.evaluate(()=>{
     const data = load();
@@ -438,6 +453,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       warmTimeout:workerSrc.includes('withTimeout(ensureGlpk()'),
       warmExactOnly:optSrc.includes('agendaOptimizer === false')
         && listSrc.includes('exact && typeof warmAgendaPlannerWorker'),
+      skeletonColdOpen:listSrc.includes("querySelector('.home-loading')")
+        && listSrc.includes('deferAgenda:true'),
       settingsSigGates:listSrc.includes('showDueTasksInAgenda')
         && listSrc.includes('showPlannedItemsInAgenda')
         && listSrc.includes('showDueHabitsInAgenda')
@@ -454,6 +471,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.memoTodayBase
       && sourceContracts.warmTimeout
       && sourceContracts.warmExactOnly
+      && sourceContracts.skeletonColdOpen
       && sourceContracts.settingsSigGates
       && sourceContracts.rehydrateHelper
       && sourceContracts.preloadGated,

@@ -3688,12 +3688,12 @@ function queueOptimizedHomeRender(data,opts){
       render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
       paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
     }else if(!$('list')?.querySelector('.home-loading')){
-      // No cache and no skeleton on screen (warm edit path): paint the basic
-      // list now; the optimized week replaces it when the worker resolves.
+      // No cache and no skeleton (warm edit path): paint a basic list now;
+      // the optimized week replaces it when the worker resolves.
       render({...opts,deferAgenda:true});
     }
-    // Cold open with no cache: keep the skeleton animation up until the
-    // planner supplies the week, then render the agenda in one pass.
+    // Cold open with no cache: keep the HTML skeleton until the planner
+    // supplies the week, then paint the agenda once (no interim basic list).
     //
     // PREVIOUS BEHAVIOR (instant basic list, skeleton skipped) — swap back by
     // removing the `.home-loading` guard above and uncommenting the line below:

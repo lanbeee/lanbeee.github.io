@@ -1,5 +1,5 @@
-// Fast heuristic first paint, then optional GLPK upgrade.
-// Cards appear immediately; the optimized week may replace them once.
+// Cold open: keep the HTML skeleton until the planner supplies a week, then
+// paint the agenda once. Avoids the confusing basic-list → refined-list swap.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/progressive-render-test.js
 //
@@ -19,13 +19,15 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   }
 
   await page.addInitScript(()=>{
-    window.__progressiveObs = { saw:false, cardsSeen:false, destructive:0 };
+    window.__progressiveObs = { saw:false, cardsSeen:false, destructive:0, sawLoading:false };
     const attachObs = ()=>{
       const list = document.getElementById('list');
       if(!list || list.__progressiveObsAttached)return;
       list.__progressiveObsAttached = true;
+      if(list.querySelector('.home-loading'))window.__progressiveObs.sawLoading = true;
       new MutationObserver(records=>{
         const state = window.__progressiveObs;
+        if(list.querySelector('.home-loading'))state.sawLoading = true;
         records.forEach(record=>{
           if(record.type === 'attributes' && list.classList.contains('is-progressive'))state.saw = true;
           if(record.type !== 'childList')return;
@@ -68,18 +70,23 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
 
   await page.goto(BASE,{ waitUntil:'load' });
-  // Fast path: cards must appear without waiting on GLPK.
-  await page.waitForSelector('#list .ting-card',{ timeout:3000 });
+  // No cache in this fixture: skeleton must be the first paint (or already
+  // swapped to the agenda if the planner was extremely fast).
   const early = await page.evaluate(()=>({
     cards:document.querySelectorAll('#list .ting-card').length,
+    loading:Boolean(document.querySelector('#list .home-loading')),
     progressive:document.getElementById('list')?.classList.contains('is-progressive'),
     sawProgressive:Boolean(window.__progressiveObs && window.__progressiveObs.saw),
+    sawLoading:Boolean(window.__progressiveObs && window.__progressiveObs.sawLoading),
     optimized:Boolean(_homeRenderedWeek && _homeRenderedWeek.optimized)
   }));
-  check('cards appear before GLPK finishes', early.cards >= 3, JSON.stringify(early));
+  check('cold open shows skeleton or a finished agenda (never an interim basic list)',
+    early.loading || (early.cards >= 3 && early.optimized),
+    JSON.stringify(early));
   check('fast paint does not use is-progressive', !early.sawProgressive && !early.progressive, JSON.stringify(early));
 
   await page.waitForFunction(()=>Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),null,{ timeout:15000 });
+  await page.waitForSelector('#list .ting-card',{ timeout:5000 });
   await page.waitForTimeout(100);
 
   const loadState = await page.evaluate(()=>{
@@ -87,6 +94,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     return {
       sawProgressive:Boolean(window.__progressiveObs && window.__progressiveObs.saw),
       progressiveNow:Boolean(list && list.classList.contains('is-progressive')),
+      sawLoading:Boolean(window.__progressiveObs && window.__progressiveObs.sawLoading),
+      loadingNow:Boolean(list && list.querySelector('.home-loading')),
       cards:list ? list.querySelectorAll('.ting-card').length : 0,
       optimizerDefault:loadSortSettings().agendaOptimizer,
       optimized:Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),
@@ -98,9 +107,10 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
   check('cold load does not use is-progressive', !loadState.sawProgressive && !loadState.progressiveNow, JSON.stringify(loadState));
   check('GLPK optimizer is the default planner', loadState.optimizerDefault && loadState.optimized, JSON.stringify(loadState));
-  // One heuristic→optimized replace is expected; more churn is not.
+  // Skeleton→agenda is one replace; further churn is not.
   check('cold load upgrades at most once', loadState.destructiveRenders <= 1, JSON.stringify(loadState));
-  check('cards render on cold load', loadState.cards >= 3, JSON.stringify(loadState));
+  check('cards render on cold load after agenda', loadState.cards >= 3 && !loadState.loadingNow, JSON.stringify(loadState));
+  check('cold open used the loading skeleton before agenda', loadState.sawLoading, JSON.stringify(loadState));
   check('background comparison helpers exist',
     loadState.hasFingerprint && loadState.hasRenderIfChanged && loadState.hasPlanSignature,
     JSON.stringify(loadState));
