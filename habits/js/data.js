@@ -2953,7 +2953,7 @@ function cleanMark(value){
 }
 
 /** Curated emoji tile backgrounds — maps to CSS --{token}-bg / --{token}-icon. */
-const EMOJI_BG_COLOR_TOKENS = ['teal','amber','red','purple','blue','green'];
+const EMOJI_BG_COLOR_TOKENS = ['teal','amber','red','purple','blue','green','pink','orange','indigo','cyan','lime','slate'];
 
 function normalizeEmojiBgColor(value){
   const token = typeof value === 'string' ? value.trim().toLowerCase() : '';

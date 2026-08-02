@@ -228,6 +228,7 @@ function seedScript(extraHabits, extraSettings){
       {id:'away',name:'Away',lat:40.71,lng:-74}
     ];
     settings.defaultTravelMode = 'walking';
+    settings.blockedTimes = [];
     settings.travel = {
       [edgeKey('home','away')]:{
         a:'away',b:'home',seconds:300,metres:500,provider:'manual',fetchedAt:Date.now()

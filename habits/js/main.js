@@ -98,6 +98,7 @@ function syncAddTypeUi(type){
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
   if(type === 'task')syncTaskDueUi();
+  if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
 }
 
 // PURE: next clean hour, used to make scheduled tasks one tap lighter.
@@ -307,11 +308,34 @@ function rhythmHelp(type){
   return 'Something to do regularly. Use times in N days — e.g. 2× in 7d is every 3.5 days.';
 }
 
+// PURE: map stored habit type <-> mode seg value (build/limit/stop)
+function typeToMode(type){
+  if(type === 'reduce')return 'limit';
+  if(type === 'zero')return 'stop';
+  return 'build';
+}
+function modeToType(mode){
+  if(mode === 'limit')return 'reduce';
+  if(mode === 'stop')return 'zero';
+  return 'keepup';
+}
+
 // RENDER: update detail type segmented control + help
 function setDetailTypeUi(type){
+  const isTask = type === 'task';
+  const mainType = isTask ? 'task' : 'keepup';
   document.querySelectorAll('#detail-type-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.detailType === type);
-  });  const isHabit = type === 'keepup' || type === 'reduce';
+    btn.classList.toggle('on',btn.dataset.detailType === mainType);
+  });
+  const modeField = $('detail-mode-field');
+  if(modeField)modeField.hidden = isTask;
+  if(!isTask){
+    const mode = typeToMode(type);
+    document.querySelectorAll('#detail-mode-seg .seg-opt').forEach(btn=>{
+      btn.classList.toggle('on',btn.dataset.mode === mode);
+    });
+  }
+  const isHabit = type === 'keepup' || type === 'reduce';
   $('detail-slider-row').style.display = isHabit ? 'flex' : 'none';
   $('detail-target-help').style.display = 'block';
   $('detail-target-help').textContent = rhythmHelp(type);
@@ -963,7 +987,18 @@ $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');
   if(!opt)return;
-  setDetailTypeUi(opt.dataset.detailType);
+  if(opt.dataset.detailType === 'task'){
+    setDetailTypeUi('task');
+  }else{
+    const mode = document.querySelector('#detail-mode-seg .seg-opt.on')?.dataset.mode || 'build';
+    setDetailTypeUi(modeToType(mode));
+  }
+  setDetailDirty();
+});
+$('detail-mode-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-mode]');
+  if(!opt)return;
+  setDetailTypeUi(modeToType(opt.dataset.mode));
   setDetailDirty();
 });
 $('detail-pinned').addEventListener('click',function(){

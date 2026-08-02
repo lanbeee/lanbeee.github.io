@@ -226,6 +226,7 @@ function renderEmojiBgSwatches(containerId,selected = ''){
           }
         }
       }
+      if(containerId === 'ting-emoji-bg' && typeof updateEmojiPreview === 'function')updateEmojiPreview();
     });
   }
 }
@@ -733,7 +734,14 @@ function readCombineFromEndpoint(fixedInputId){
 
 // HYBRID: reads form DOM into tune object
 function currentDetailTune(){
-  const type = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
+  const mainType = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
+  let type;
+  if(mainType === 'task'){
+    type = 'task';
+  }else{
+    const mode = document.querySelector('#detail-mode-seg .seg-opt.on')?.dataset.mode || 'build';
+    type = modeToType(mode);
+  }
   const locationIds = selectedLocationIdsFrom('detail-tag-chips');
   const locationPrefs = selectedLocationPrefsFrom('detail-tag-chips');
   const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';

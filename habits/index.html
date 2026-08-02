@@ -92,21 +92,25 @@
   <div class="sheet-wrap" id="add-sheet">
     <div class="sheet add-sheet">
       <p class="sheet-title">new habit</p>
-      <span id="emoji-suggestion" class="emoji-suggestion" hidden role="button" tabindex="0"></span>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="edit emoji"></button>
+      </div>
+      <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <label class="emoji-field">
           <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. Use an emoji like 🏃 or 📚; blank uses the default habit icon.</div></span></span>
+            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. An emoji like 🏃 or 📚 is suggested from the name; no match? Tap any quick-pick chip. Blank uses the default habit icon.</div></span></span>
           <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
+        <div class="generic-emoji-wrap">
+          <span class="settings-sublabel">quick pick</span>
+          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="quick pick emojis"></div>
+        </div>
+        <span class="settings-sublabel">emoji background</span>
+        <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       </div>
-      <span class="settings-sublabel add-full-only">emoji background</span>
-      <div class="emoji-bg-swatches add-full-only" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       <div class="seg" id="type-seg">
-        <button class="seg-opt on" data-v="keepup">build</button>
-        <button class="seg-opt" data-v="reduce">limit</button>
-        <button class="seg-opt" data-v="zero">stop</button>
+        <button class="seg-opt on" data-v="keepup">habit</button>
         <button class="seg-opt" data-v="task">task</button>
       </div>
       <p class="field-hint" id="target-help">How often — times in N days (e.g. 2× in 7d).</p>
@@ -528,14 +532,24 @@
               <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
             </label>
           </div>
+          <div class="generic-emoji-wrap">
+            <span class="settings-sublabel">quick pick</span>
+            <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="quick pick emojis"></div>
+          </div>
           <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
           <span class="settings-sublabel">emoji background</span>
           <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           <div class="seg" id="detail-type-seg">
-            <button class="seg-opt" data-detail-type="keepup">build</button>
-            <button class="seg-opt" data-detail-type="reduce">limit</button>
-            <button class="seg-opt" data-detail-type="zero">stop</button>
+            <button class="seg-opt" data-detail-type="keepup">habit</button>
             <button class="seg-opt" data-detail-type="task">task</button>
+          </div>
+          <div id="detail-mode-field" hidden>
+            <span class="settings-sublabel">kind</span>
+            <div class="seg" id="detail-mode-seg">
+              <button class="seg-opt" data-mode="build">build</button>
+              <button class="seg-opt" data-mode="limit">limit</button>
+              <button class="seg-opt" data-mode="stop">stop</button>
+            </div>
           </div>
           <div class="priority-field detail-full-only">
             <span class="priority-label">priority <button type="button" class="info-btn" data-tip="detail-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>

@@ -95,15 +95,72 @@ function defaultSettings(overrides = {}){
 
 async function freezeClock(page, clockTs){
   await page.addInitScript(clock => {
-    const RealDate = window.Date;
+    const RealDate = globalThis.Date;
     function FrozenDate(...a){ return a.length ? new RealDate(...a) : new RealDate(clock); }
     FrozenDate.now = () => clock;
     FrozenDate.parse = RealDate.parse;
     FrozenDate.UTC = RealDate.UTC;
     Object.setPrototypeOf(FrozenDate, RealDate);
     FrozenDate.prototype = RealDate.prototype;
-    window.__tingsRealDate = RealDate;
-    window.Date = FrozenDate;
+    globalThis.__tingsRealDate = RealDate;
+    globalThis.Date = FrozenDate;
+    // The agenda planner runs in a dedicated worker whose Date cannot be frozen
+    // from the test harness (addInitScript never reaches worker contexts). When
+    // the suite runs late in the day, today's worker slot is clipped to the real
+    // wall clock and section I times out. Stub Worker so the planner builds on
+    // the main thread against the frozen clock instead.
+    try{
+      if(typeof globalThis.Worker !== 'function')return;
+      if(globalThis.__tingsPlannerStubInstalled)return;
+      globalThis.__tingsPlannerStubInstalled = true;
+      const RealWorker = globalThis.Worker;
+      globalThis.Worker = class extends RealWorker {
+        constructor(url, options){
+          if(String(url).includes('agenda-planner-worker')){
+            const listeners = { message: [], error: [] };
+            const fake = {
+              addEventListener(type, cb){
+                if(listeners[type])listeners[type].push(cb);
+              },
+              removeEventListener(type, cb){
+                if(listeners[type])listeners[type] = listeners[type].filter(f => f !== cb);
+              },
+              terminate(){},
+              postMessage(message){
+                if(!message || typeof message !== 'object')return;
+                const id = message.id;
+                const fire = (type, data) => {
+                  for(const cb of [...(listeners[type] || [])]){
+                    try{ cb({ data, type }); }catch(_){}
+                  }
+                };
+                if(message.warm){
+                  setTimeout(() => fire('message', { id, ready:true }), 0);
+                  return;
+                }
+                setTimeout(() => {
+                  let week = null;
+                  let error = null;
+                  try{
+                    if(typeof buildWeekAgenda !== 'function'){
+                      throw new Error('buildWeekAgenda unavailable on main thread');
+                    }
+                    const settings = { ...(message.settings || {}), agendaOptimizer:false };
+                    week = buildWeekAgenda(message.data, settings, message.numDays || 7, {});
+                    if(message.mode === 'exact')week.optimized = true;
+                  }catch(err){
+                    error = String(err && err.message ? err.message : err);
+                  }
+                  fire('message', error ? { id, error } : { id, week });
+                }, 0);
+              }
+            };
+            return fake;
+          }
+          super(url, options);
+        }
+      };
+    }catch(_){}
   }, clockTs);
 }
 
