@@ -3687,7 +3687,25 @@ function queueOptimizedHomeRender(data,opts){
     if(cached){
       render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
       paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
-    }else render({...opts,deferAgenda:true});
+    }else if(!$('list')?.querySelector('.home-loading')){
+      // No cache and no skeleton on screen (warm edit path): paint the basic
+      // list now; the optimized week replaces it when the worker resolves.
+      render({...opts,deferAgenda:true});
+    }
+    // Cold open with no cache: keep the skeleton animation up until the
+    // planner supplies the week, then render the agenda in one pass.
+    //
+    // PREVIOUS BEHAVIOR (instant basic list, skeleton skipped) — swap back by
+    // removing the `.home-loading` guard above and uncommenting the line below:
+    //
+    //   }else render({...opts,deferAgenda:true});
+    //
+    // i.e. the cold-open branch becomes:
+    //
+    //   if(cached){
+    //     render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
+    //     paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
+    //   }else render({...opts,deferAgenda:true});
     _homeListFingerprint = homeListFingerprint();
     plannerPerfMark('planner-first-paint');
   }
@@ -3756,7 +3774,11 @@ function queueOptimizedHomeRender(data,opts){
   }).catch(()=>{
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
-    // Keep the fast planner already on screen.
+    // Keep the fast planner already on screen. A cold open still sitting on
+    // the skeleton animation gets the basic list instead of loading forever.
+    // (If the skeleton behavior is disabled above, this guard never fires:
+    // the deferAgenda paint has already replaced the skeleton.)
+    if($('list')?.querySelector('.home-loading'))render({...opts,deferAgenda:true});
   });
   return true;
 }
