@@ -646,6 +646,13 @@ bindRhythm('detail');
 ['ting','detail'].forEach(prefix=>{
   const times = $(`${prefix}-times`);
   if(!times)return;
+  times.addEventListener('focus',e=>{
+    e.target.dataset.orig = e.target.value;
+    e.target.value = '';
+  });
+  times.addEventListener('blur',()=>{
+    if(!times.value.trim())times.value = 1;
+  });
   times.addEventListener('input',()=>{
     const days = parseInt($(`${prefix}-days`)?.value,10) || 7;
     const t = Math.max(1,Math.min(30,parseInt(times.value,10) || 1));
