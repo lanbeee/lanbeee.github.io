@@ -783,6 +783,12 @@ $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-monthday-chips').addEventListener('click',toggleScheduleChip);
+$('detail-monthday-toggle')?.addEventListener('click',()=>{
+  toggleMonthDayDisclosure($('detail-monthday-toggle'));
+});
+$('detail-preferred-monthday-toggle')?.addEventListener('click',()=>{
+  toggleMonthDayDisclosure($('detail-preferred-monthday-toggle'));
+});
 $('detail-schedule-order')?.addEventListener('change',e=>{
   if(!e.target.closest('.schedule-link-habit'))return;
   const editor = e.target.closest('.schedule-link-editor');

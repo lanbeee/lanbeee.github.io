@@ -574,29 +574,53 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
 
   const leanRehydrate = await page.evaluate(()=>{
     const data = load();
-    const week = _homeRenderedWeek;
-    if(!week || !week.days || !week.days.length)return {ok:false,reason:'no week'};
-    const lean = leanAgendaWeek(JSON.parse(JSON.stringify(week,(k,v)=>k === 'h' ? v : v)));
-    // Force a true lean clone from the live week.
+    // Don't depend on live _homeRenderedWeek placements: late wall-clock (or a
+    // budget that exhausts today) can leave every day with an empty timeline
+    // while cards still render. Exercise lean/rehydrate on a synthetic week.
+    const sample = data.find(h=>h && h.name) || data[0];
+    if(!sample)return {ok:false,reason:'no habits'};
+    const i = Math.max(0, data.indexOf(sample));
+    const week = {
+      days:[{
+        dayBase:Date.now(),
+        timeline:[
+          {kind:'fill', i, start:Date.now(), end:Date.now() + 30 * 60000, h:sample},
+          {kind:'scheduled', i, start:Date.now() + 60 * 60000, end:Date.now() + 90 * 60000, h:sample}
+        ],
+        agendaItems:[{kind:'fill', i, h:sample}]
+      }],
+      totalTravelSeconds:0,
+      candidateCount:1,
+      optimized:false
+    };
     const leanLive = leanAgendaWeek(week);
-    const anyFill = (leanLive.days[0].timeline || []).find(row=>row && row.i != null);
-    const stripped = Boolean(anyFill && anyFill.h == null && leanLive.__lean);
+    const leanRows = (leanLive.days[0].timeline || []).filter(row=>row && row.i != null);
+    const leanItems = (leanLive.days[0].agendaItems || []).filter(row=>row && row.i != null);
+    if(!leanRows.length)return {ok:false,reason:'lean lost timeline rows'};
+    const stripped = leanLive.__lean === true
+      && leanRows.every(row=>row.h == null)
+      && leanItems.every(row=>row.h == null);
     rehydrateAgendaWeekHabits(leanLive,data);
     const restored = (leanLive.days[0].timeline || []).filter(row=>row && row.i != null);
     const named = restored.length > 0 && restored.every(row=>row.h && row.h.name);
     const text = formatWeekPlacementsText(leanLive);
     const exportNames = restored
       .filter(r=>r.h && r.h.name && (r.kind === 'fill' || r.kind === 'scheduled'))
-      .slice(0,3)
       .every(r=>text.includes(r.h.name));
     // data[i] fallback: lean copy without rehydrate must still export real names.
     const lean2 = leanAgendaWeek(week);
     const textFallback = formatWeekPlacementsText(lean2);
     const fallbackNames = (lean2.days[0].timeline || [])
       .filter(r=>r && r.i != null && data[r.i] && data[r.i].name && (r.kind === 'fill' || r.kind === 'scheduled'))
-      .slice(0,3)
       .every(r=>textFallback.includes(data[r.i].name));
-    return {ok:true,stripped,named,exportNames,fallbackNames};
+    return {
+      ok:true,
+      stripped,
+      named,
+      exportNames,
+      fallbackNames,
+      rowCount:leanRows.length
+    };
   });
   check('lean week strips h; rehydrate and export data[i] fallback keep names',
     leanRehydrate.ok

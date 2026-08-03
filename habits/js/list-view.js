@@ -335,6 +335,58 @@ function selectedMonthDaysFrom(containerId){
   return [...$(containerId).querySelectorAll('.monthday-chip.on')].map(btn=>parseInt(btn.dataset.monthday,10));
 }
 
+/** PURE: compact summary for selected month days ("any", "1, 15", "1–5, 20"). */
+function formatMonthDaySummary(days){
+  const sorted = normalizeAllowedMonthDays(days);
+  if(!sorted.length)return 'any';
+  const parts = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for(let i = 1; i <= sorted.length; i++){
+    const day = sorted[i];
+    if(day === prev + 1){
+      prev = day;
+      continue;
+    }
+    parts.push(start === prev ? String(start) : `${start}–${prev}`);
+    start = prev = day;
+  }
+  return parts.join(', ');
+}
+
+/** RENDER: sync a month-day disclosure summary from selected chips. */
+function syncMonthDayDisclosureSummary(chipRowId,summaryId){
+  const summary = $(summaryId);
+  if(!summary)return;
+  const days = $(chipRowId) ? selectedMonthDaysFrom(chipRowId) : [];
+  summary.textContent = formatMonthDaySummary(days);
+  summary.title = days.length ? formatMonthDaySummary(days) : 'any day of the month';
+}
+
+/** RENDER: collapse month-day chip grids (detail schedule starts compact). */
+function collapseMonthDayDisclosures(){
+  [
+    ['detail-monthday-toggle','detail-monthday-chips'],
+    ['detail-preferred-monthday-toggle','detail-preferred-monthday-chips']
+  ].forEach(([toggleId,rowId])=>{
+    const toggle = $(toggleId);
+    const row = $(rowId);
+    if(row)row.hidden = true;
+    if(toggle)toggle.setAttribute('aria-expanded','false');
+  });
+}
+
+/** HANDLER: expand/collapse a month-day chip grid from its disclosure head. */
+function toggleMonthDayDisclosure(toggle){
+  if(!toggle)return;
+  const rowId = toggle.getAttribute('aria-controls');
+  const row = rowId ? $(rowId) : null;
+  if(!row)return;
+  const opening = toggle.getAttribute('aria-expanded') !== 'true';
+  row.hidden = !opening;
+  toggle.setAttribute('aria-expanded',String(opening));
+}
+
 // RENDER: draw weekday and month-day chips
 function renderScheduleChips(prefix,h = {}){
   const weekdays = new Set(normalizeAllowedWeekdays(h.allowedWeekdays));
@@ -370,6 +422,11 @@ function renderScheduleChips(prefix,h = {}){
       const on = prefMonthDays.has(day);
       return `<button type="button" class="monthday-chip preferred ${on ? 'on' : ''}" data-monthday="${day}" aria-pressed="${on}">${day}</button>`;
     }).join('');
+  }
+  if(prefix === 'detail'){
+    collapseMonthDayDisclosures();
+    syncMonthDayDisclosureSummary('detail-monthday-chips','detail-monthday-summary');
+    syncMonthDayDisclosureSummary('detail-preferred-monthday-chips','detail-preferred-monthday-summary');
   }
 }
 
@@ -426,6 +483,11 @@ function toggleScheduleChip(e){
   btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
   if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips')){
     setDetailDirty();
+  }
+  if(btn.closest('#detail-monthday-chips')){
+    syncMonthDayDisclosureSummary('detail-monthday-chips','detail-monthday-summary');
+  }else if(btn.closest('#detail-preferred-monthday-chips')){
+    syncMonthDayDisclosureSummary('detail-preferred-monthday-chips','detail-preferred-monthday-summary');
   }
 }
 
@@ -2771,9 +2833,9 @@ function render(opts){
       }
       return primary === agendaRow;
     }
-    // No today timeline placement (progressive paint / unplaced leftover):
-    // allow one catch-up slider on a lone card.
-    if(agendaRow != null)return false;
+    // No today timeline placement (progressive paint, unplaced leftover, or
+    // only later-day chunks because today is already full): allow one catch-up
+    // slider on the first card we render for this habit.
     if(breakableCatchupShown.has(realIdx))return false;
     breakableCatchupShown.add(realIdx);
     return true;

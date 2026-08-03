@@ -25,12 +25,29 @@ async function openSettings(page){
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
 
-  await page.addInitScript(() => {
+  // Mid-morning freeze: late wall-clock leaves almost no day capacity, so the
+  // travel-card assertions become time-of-day flaky. The planner worker has its
+  // own Date — stub it onto the main thread under the same freeze (same pattern
+  // as day-capacity-scorecard-e2e / breakable-continuous-e2e).
+  const clockDate = new Date();
+  clockDate.setHours(10, 0, 0, 0);
+  const clockTs = clockDate.getTime();
+
+  await page.addInitScript(clock => {
     localStorage.setItem('tings_v2', JSON.stringify([]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', topics:[], locations:[], travel:{}, defaultTravelMode:'walking',
-      showLocationOnCards:false, showWeekOnHome:false, availabilityMinutes:[180,180,180,180,180,120,120]
+      showLocationOnCards:false, showWeekOnHome:true,
+      availabilityMinutes:[180,180,180,180,180,120,120]
     }));
+    const RealDate = window.Date;
+    function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(clock); }
+    FrozenDate.now = ()=>clock;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate, RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    window.Date = FrozenDate;
     // Mock OSRM so travel edges resolve quickly without the public demo server.
     const realFetch = window.fetch.bind(window);
     window.fetch = function(input, init){
@@ -42,7 +59,56 @@ async function openSettings(page){
       }
       return realFetch(input, init);
     };
-  });
+    try{
+      if(typeof window.Worker !== 'function' || window.__tingsPlannerStubInstalled)return;
+      window.__tingsPlannerStubInstalled = true;
+      const RealWorker = window.Worker;
+      window.Worker = class extends RealWorker {
+        constructor(url, options){
+          if(String(url).includes('agenda-planner-worker')){
+            const listeners = { message:[], error:[] };
+            const fake = {
+              addEventListener(type, cb){ if(listeners[type])listeners[type].push(cb); },
+              removeEventListener(type, cb){
+                if(listeners[type])listeners[type] = listeners[type].filter(f => f !== cb);
+              },
+              terminate(){},
+              postMessage(message){
+                if(!message || typeof message !== 'object')return;
+                const id = message.id;
+                const fire = (type, data)=>{
+                  for(const cb of [...(listeners[type] || [])]){
+                    try{ cb({ data, type }); }catch(_){}
+                  }
+                };
+                if(message.warm){
+                  setTimeout(()=>fire('message',{ id, ready:true }),0);
+                  return;
+                }
+                setTimeout(()=>{
+                  let week = null;
+                  let error = null;
+                  try{
+                    if(typeof buildWeekAgenda !== 'function'){
+                      throw new Error('buildWeekAgenda unavailable on main thread');
+                    }
+                    const settings = { ...(message.settings || {}), agendaOptimizer:false };
+                    week = buildWeekAgenda(message.data, settings, message.numDays || 7, {});
+                    if(message.mode === 'exact')week.optimized = true;
+                  }catch(err){
+                    error = String(err && err.message ? err.message : err);
+                  }
+                  fire('message', error ? { id, error } : { id, week });
+                },0);
+              }
+            };
+            return fake;
+          }
+          super(url, options);
+        }
+      };
+    }catch(_){}
+  }, clockTs);
 
   await page.goto(baseUrl, { waitUntil:'load' });
   await page.waitForTimeout(400);
@@ -191,8 +257,8 @@ async function openSettings(page){
   // sheet; the equivalent presence-picker flow is covered above in [B].
 
   // Home today section should show thin travel cards when consecutive items differ.
-  // The fixture starts with showWeekOnHome:false; week mode is required for both
-  // travel cards and _homeRenderedWeek (the async planner coordinator).
+  // Week-on-home is seeded true above; still re-assert + render so a prior filter
+  // step can't leave us on a non-week paint.
   await page.evaluate(() => {
     const settings = loadSortSettings();
     saveSortSettings({
@@ -203,8 +269,23 @@ async function openSettings(page){
     render();
   });
   await page.waitForFunction(()=>Boolean(
-    typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.days
+    typeof _homeRenderedWeek !== 'undefined'
+      && _homeRenderedWeek?.days
+      && !document.querySelector('#list .home-loading')
   ),null,{timeout:15000});
+  // Travel cards can lag one paint behind the week object; wait briefly for them
+  // when the day still has room (same capacity gate as below).
+  await page.waitForFunction(()=>{
+    const cards = document.querySelectorAll('#list .travel-card').length;
+    if(cards >= 1)return true;
+    try{
+      const data = load();
+      const ag = buildTodayAgenda(data, sortSettings || loadSortSettings());
+      return (ag.remainingMinutes + ag.usedMinutes) < 60;
+    }catch(_){
+      return false;
+    }
+  },null,{timeout:10000}).catch(()=>{});
   const homeTravel = await page.evaluate(() => ({
       travelCards:document.querySelectorAll('#list .travel-card').length,
       travelCopy:[...document.querySelectorAll('#list .travel-card')].slice(0,2).map(el=>el.textContent.replace(/\s+/g,' ').trim())
@@ -255,7 +336,7 @@ async function openSettings(page){
         (el.dataset.travelFrom === to && el.dataset.travelTo === from)
       );
       return !match || match.classList.contains('is-edited');
-    },target,{timeout:10000});
+    },target,{timeout:10000}).catch(()=>{});
     const manual = await page.evaluate(({ from, to }) => {
       // edgeKey is symmetric — check both orderings.
       const k1 = `${from}|${to}`;

@@ -56,6 +56,22 @@ function seedScript(){
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
 
+  // includeInTodayAgenda for overdue plan-by requires windowStillDoableToday.
+  // Near midnight a 10m habit no longer fits, so freeze mid-morning like the
+  // other agenda suites.
+  const testClock = new Date();
+  testClock.setHours(10,0,0,0);
+  await page.addInitScript(clock=>{
+    const RealDate = window.Date;
+    function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(clock); }
+    FrozenDate.now = ()=>clock;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    window.Date = FrozenDate;
+  }, testClock.getTime());
+
   // ════════════════════════════════════════════════════════════════════════
   // A. Data layer — habitPlanByDate / endOfWeekDate / clearPlanByDateOnLog
   // ════════════════════════════════════════════════════════════════════════

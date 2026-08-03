@@ -201,7 +201,7 @@ async function stickyState(page, headerSel){
 
   // ── A. Exact tap, non-sticky mid-list pill (prefer 2nd+ day header) ──
   console.log('\n[A] Exact CDP tap on non-sticky open pill');
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top:0, left:0, behavior:'instant' }));
   await sleep(200);
   // Use the last free-pill that is still below the fold / not stuck.
   const midIdx = Math.min(freeCount - 1, 2);
@@ -209,7 +209,7 @@ async function stickyState(page, headerSel){
   await midPill.scrollIntoViewIfNeeded();
   await sleep(200);
   // Nudge so sticky ancestor (if any) is not flush-stuck when possible.
-  await page.evaluate(() => window.scrollBy(0, -40));
+  await page.evaluate(() => window.scrollBy({ top:-40, left:0, behavior:'instant' }));
   await sleep(150);
   let pt = await pillCenter(page, `.free-pill >> nth=${midIdx}`);
   await cdpTap(client, pt.x, pt.y);
@@ -229,9 +229,9 @@ async function stickyState(page, headerSel){
   const stickyResult = await page.evaluate(async () => {
     const headers = [...document.querySelectorAll('#list .section-header.has-pill')];
     for(const header of headers){
-      header.scrollIntoView({ block:'start' });
+      header.scrollIntoView({ block:'start', behavior:'instant' });
       await new Promise(r => setTimeout(r, 30));
-      window.scrollBy(0, 48);
+      window.scrollBy({ top:48, left:0, behavior:'instant' });
       await new Promise(r => setTimeout(r, 60));
       const r = header.getBoundingClientRect();
       const pill = header.querySelector('.free-pill');
@@ -250,8 +250,8 @@ async function stickyState(page, headerSel){
     // Fallback: force first has-pill header to the top.
     const first = headers[0];
     if(!first)return { ok:false };
-    first.scrollIntoView({ block:'start' });
-    window.scrollBy(0, 80);
+    first.scrollIntoView({ block:'start', behavior:'instant' });
+    window.scrollBy({ top:80, left:0, behavior:'instant' });
     await new Promise(r => setTimeout(r, 80));
     const pill = first.querySelector('.free-pill');
     const pr = pill.getBoundingClientRect();
@@ -282,7 +282,7 @@ async function stickyState(page, headerSel){
   // ── C. Drift tap (forgiving path) ──
   console.log('\n[C] Drift tap (~20px) on open pill');
   await closeFreeSheet(page);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top:0, left:0, behavior:'instant' }));
   await sleep(200);
   // Measure and return coordinates in one turn — sticky/layout can shift scrollY
   // between a paused measure and the CDP gesture, landing the tap on a card.
@@ -290,10 +290,10 @@ async function stickyState(page, headerSel){
   const driftTarget = await page.evaluate((idx) => {
     const pill = document.querySelectorAll('.free-pill')[idx];
     if(!pill)return { ok:false, tag:'missing' };
-    pill.scrollIntoView({ block:'center', inline:'nearest' });
+    pill.scrollIntoView({ block:'center', inline:'nearest', behavior:'instant' });
     const mid = (window.innerHeight || 844) * 0.4;
     let r = pill.getBoundingClientRect();
-    window.scrollBy(0, r.top + r.height / 2 - mid);
+    window.scrollBy({ top: r.top + r.height / 2 - mid, left:0, behavior:'instant' });
     r = pill.getBoundingClientRect();
     const x = r.left + r.width / 2;
     const y = r.top + r.height / 2;
@@ -306,6 +306,7 @@ async function stickyState(page, headerSel){
     };
   }, driftIdx);
   assert(driftTarget.ok, `drift target hits free-pill (got ${driftTarget.tag})`);
+  await sleep(150);
   await cdpTapWithDrift(client, driftTarget.x, driftTarget.y, 20, 4);
   await waitSheetOpen(page, '#free-time-sheet', '20px drift tap opens open-time sheet');
   await sleep(250);
@@ -317,16 +318,18 @@ async function stickyState(page, headerSel){
 
   // ── D. Near-miss start outside pill ──
   console.log('\n[D] Near-miss start outside pill');
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top:0, left:0, behavior:'instant' }));
   await sleep(150);
   const nearPill = page.locator('.free-pill').nth(Math.min(1, freeCount - 1));
   await nearPill.scrollIntoViewIfNeeded();
   await sleep(150);
   const nearBox = await nearPill.boundingBox();
-  // Start ~10px left of the pill edge, drift into the center.
-  const startX = nearBox.x - 10;
+  // Start just left of the pill edge and drift a short way onto it. Keep total
+  // finger travel under the forgiving-click 32px cap (wider pills make
+  // edge→center exceed that and look like a swipe).
+  const startX = nearBox.x - 8;
   const startY = nearBox.y + nearBox.height / 2;
-  const endX = nearBox.x + nearBox.width / 2;
+  const endX = nearBox.x + Math.min(12, nearBox.width / 4);
   await cdpTapWithDrift(client, startX, startY, endX - startX, 0);
   await waitSheetOpen(page, '#free-time-sheet', 'near-miss drift onto pill opens sheet');
   await closeFreeSheet(page);
@@ -358,8 +361,8 @@ async function stickyState(page, headerSel){
     const headers = [...document.querySelectorAll('#list .section-header.has-pill')];
     const first = headers[0];
     if(!first)return null;
-    first.scrollIntoView({ block:'start' });
-    window.scrollBy(0, 80);
+    first.scrollIntoView({ block:'start', behavior:'instant' });
+    window.scrollBy({ top:80, left:0, behavior:'instant' });
     await new Promise(r => setTimeout(r, 120));
     const pill = first.querySelector('.free-pill');
     if(!pill)return null;
@@ -421,7 +424,7 @@ async function stickyState(page, headerSel){
   await page.waitForSelector('.dropped-pill', { timeout:5000 });
   await page.evaluate(() => {
     const header = document.querySelector('.section-header.has-dropped');
-    if(header)header.scrollIntoView({ block:'center' });
+    if(header)header.scrollIntoView({ block:'center', behavior:'instant' });
   });
   await sleep(300);
 
@@ -437,7 +440,7 @@ async function stickyState(page, headerSel){
 
   await page.evaluate(() => {
     const header = document.querySelector('.section-header.has-dropped');
-    if(header)header.scrollIntoView({ block:'center' });
+    if(header)header.scrollIntoView({ block:'center', behavior:'instant' });
   });
   await sleep(400);
   // Prefer a today header missed pill that is not paired with a free-pill overlap.
@@ -445,7 +448,7 @@ async function stickyState(page, headerSel){
     const pair = document.querySelector('.section-header.has-dropped.has-pill .dropped-pill');
     const solo = [...document.querySelectorAll('.dropped-pill')].find(p => !p.closest('.has-pill'));
     const target = solo || pair;
-    if(target)target.scrollIntoView({ block:'center' });
+    if(target)target.scrollIntoView({ block:'center', behavior:'instant' });
   });
   await sleep(200);
 

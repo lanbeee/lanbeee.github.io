@@ -77,6 +77,7 @@ function ensureAgendaPlannerWorker(){
   if(typeof Worker !== 'function')return null;
   // Workers (and dynamic import of glpk.mjs) are blocked on file:// — fall back
   // to the main-thread heuristic. Serve over http(s) for the full planner.
+  if(typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable())return null;
   plannerPerfMark('planner-worker-spawn-start');
   let worker;
   try{

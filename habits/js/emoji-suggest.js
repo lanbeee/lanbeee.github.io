@@ -482,15 +482,14 @@ function pickUniqueColor(emoji){
   return '';
 }
 
-// RENDER: reflect current emoji + selected color (or the type's default icon
-// when blank) in the add-sheet preview tile — exactly what the home tile shows.
-function updateEmojiPreview(){
-  syncGenericEmojiRows();
-  const preview = document.getElementById('ting-emoji-preview');
+// RENDER: fill one preview tile with the current emoji + selected color (or
+// the type's default icon when blank) — exactly what the home tile shows.
+function renderPreviewTile(previewId,emojiId,bgId,type){
+  const preview = document.getElementById(previewId);
   if(!preview)return;
-  const emoji = document.getElementById('ting-emoji').value.trim();
+  const emoji = document.getElementById(emojiId).value.trim();
   const color = typeof selectedEmojiBgColor === 'function'
-    ? selectedEmojiBgColor('ting-emoji-bg')
+    ? selectedEmojiBgColor(bgId)
     : '';
   if(emoji){
     preview.textContent = emoji;
@@ -503,11 +502,24 @@ function updateEmojiPreview(){
     }
     return;
   }
-  const type = typeof selectedType !== 'undefined' ? selectedType : 'keepup';
   const icon = typeof defaultIcon === 'function' ? defaultIcon(type) : 'ti-heart';
   preview.innerHTML = `<i class="ti ${icon}" aria-hidden="true"></i>`;
   preview.style.background = 'var(--bg2)';
   preview.style.color = 'var(--text3)';
+}
+
+// RENDER: reflect current emoji + selected color in both preview tiles (the
+// add sheet's, next to the name, and the detail identity tab's).
+function updateEmojiPreview(){
+  syncGenericEmojiRows();
+  const addType = typeof selectedType !== 'undefined' ? selectedType : 'keepup';
+  renderPreviewTile('ting-emoji-preview','ting-emoji','ting-emoji-bg',addType);
+  let detailType = 'keepup';
+  if(typeof detailIdx === 'number' && typeof load === 'function'){
+    const h = (load() || [])[detailIdx];
+    if(h)detailType = h.type;
+  }
+  renderPreviewTile('detail-emoji-preview','detail-emoji','detail-emoji-bg',detailType);
 }
 
 // RENDER: select a background swatch in the add color grid without revealing it.
@@ -623,6 +635,16 @@ function setupEmojiSuggestion(){
       if(emojiInput)emojiInput.focus({preventScroll:true});
     });
   }
+  // detail identity tab: same affordance, keeps the page clean until tapped
+  const detailPreview = document.getElementById('detail-emoji-preview');
+  const detailEditArea = document.getElementById('detail-emoji-edit');
+  if(detailPreview){
+    detailPreview.addEventListener('click',()=>{
+      if(detailEditArea)detailEditArea.hidden = false;
+      const el = document.getElementById('detail-emoji');
+      if(el)el.focus({preventScroll:true});
+    });
+  }
   if(typeSeg){
     typeSeg.addEventListener('click',()=>setTimeout(updateEmojiPreview,0));
   }
@@ -654,9 +676,12 @@ function setupEmojiSuggestion(){
     window.openDetail = function(i){
       _detailEmojiUserEdited = false;
       clearTimeout(_detailSuggestTimer);
+      const edit = document.getElementById('detail-emoji-edit');
+      if(edit)edit.hidden = true;
       const r = orig(i);
       const el = document.getElementById('detail-emoji');
       _detailEmojiAtOpen = el ? el.value.trim() : '';
+      updateEmojiPreview();
       return r;
     };
   }

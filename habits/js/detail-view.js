@@ -227,6 +227,7 @@ function renderEmojiBgSwatches(containerId,selected = ''){
         }
       }
       if(containerId === 'ting-emoji-bg' && typeof updateEmojiPreview === 'function')updateEmojiPreview();
+      if(containerId === 'detail-emoji-bg' && typeof updateEmojiPreview === 'function')updateEmojiPreview();
     });
   }
 }

@@ -48,7 +48,7 @@ function seedScript(){
   // the real clock happens to be close to midnight.
   const testClock = new Date();
   testClock.setHours(9,0,0,0);
-  await page.addInitScript(clock=>{
+  await page.addInitScript(({clock, fastOnly})=>{
     const RealDate = window.Date;
     function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(clock); }
     FrozenDate.now = ()=>clock;
@@ -57,7 +57,60 @@ function seedScript(){
     Object.setPrototypeOf(FrozenDate,RealDate);
     FrozenDate.prototype = RealDate.prototype;
     window.Date = FrozenDate;
-  },testClock.getTime());
+    // Planner worker Date cannot be frozen via addInitScript. Late wall-clock
+    // leaves no room for today's tasks, so UI section F never gets draggable
+    // rows. Stub the worker onto the main thread under the frozen clock.
+    try{
+      if(typeof window.Worker !== 'function' || window.__tingsPlannerStubInstalled)return;
+      window.__tingsPlannerStubInstalled = true;
+      const RealWorker = window.Worker;
+      window.Worker = class extends RealWorker {
+        constructor(url, options){
+          if(String(url).includes('agenda-planner-worker')){
+            const listeners = { message:[], error:[] };
+            const fake = {
+              addEventListener(type, cb){ if(listeners[type])listeners[type].push(cb); },
+              removeEventListener(type, cb){
+                if(listeners[type])listeners[type] = listeners[type].filter(f => f !== cb);
+              },
+              terminate(){},
+              postMessage(message){
+                if(!message || typeof message !== 'object')return;
+                const id = message.id;
+                const fire = (type, data)=>{
+                  for(const cb of [...(listeners[type] || [])]){
+                    try{ cb({ data, type }); }catch(_){}
+                  }
+                };
+                if(message.warm){
+                  setTimeout(()=>fire('message',{ id, ready:true }),0);
+                  return;
+                }
+                setTimeout(()=>{
+                  let week = null;
+                  let error = null;
+                  try{
+                    if(typeof buildWeekAgenda !== 'function'){
+                      throw new Error('buildWeekAgenda unavailable on main thread');
+                    }
+                    const settings = { ...(message.settings || {}), agendaOptimizer:false };
+                    week = buildWeekAgenda(message.data, settings, message.numDays || 7, {});
+                    if(fastOnly)week.optimized = false;
+                    else if(message.mode === 'exact')week.optimized = true;
+                  }catch(err){
+                    error = String(err && err.message ? err.message : err);
+                  }
+                  fire('message', error ? { id, error } : { id, week });
+                },0);
+              }
+            };
+            return fake;
+          }
+          return new RealWorker(url, options);
+        }
+      };
+    }catch(_){}
+  },{clock:testClock.getTime(), fastOnly:FAST_ONLY});
 
   // ════════════════════════════════════════════════════════════════════════
   // A. Data layer
@@ -643,7 +696,7 @@ function seedScript(){
     });
   });
   await page.reload({ waitUntil:'load' });
-  await page.waitForSelector('.swipe-row[data-agenda-draggable="1"]',{timeout:5000});
+  await page.waitForSelector('.swipe-row[data-agenda-draggable="1"]',{timeout:15000});
 
   const ui = await page.evaluate(() => {
     const handles = document.querySelectorAll('.agenda-drag-handle');

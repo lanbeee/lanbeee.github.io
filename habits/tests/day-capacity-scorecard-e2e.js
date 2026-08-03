@@ -10,7 +10,15 @@
 const { chromium } = require('playwright');
 
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
-const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast';
+const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast'
+  || /[?&]planner=fast\b/.test(BASE);
+// Forced-fast mode is URL-gated in data.js (agendaOptimizer coerced off). If the
+// suite only sets HABITS_PLANNER_MODE=fast, still hit the page with ?planner=fast.
+function withPlannerFast(url){
+  if(!FAST_ONLY || /[?&]planner=fast\b/.test(url))return url;
+  return url.includes('?') ? `${url}&planner=fast` : `${url.replace(/\/?$/,'/')}?planner=fast`;
+}
+const PAGE_URL = withPlannerFast(BASE);
 
 function assert(condition,message){
   if(!condition)throw new Error(message);
@@ -68,7 +76,7 @@ function task(name,dueDate,priority = 1){
   const errors = [];
   page.on('pageerror',error=>errors.push(`pageerror: ${error.message}`));
   page.on('console',message=>{ if(message.type() === 'error')errors.push(`console: ${message.text()}`); });
-  await page.addInitScript(clock=>{
+  await page.addInitScript(({clock, fastOnly})=>{
     if(navigator.serviceWorker){
       navigator.serviceWorker.register = ()=>Promise.resolve({update:()=>Promise.resolve()});
     }
@@ -80,8 +88,63 @@ function task(name,dueDate,priority = 1){
     Object.setPrototypeOf(FrozenDate,RealDate);
     FrozenDate.prototype = RealDate.prototype;
     window.Date = FrozenDate;
-  },clockTs);
-  await page.goto(BASE,{waitUntil:'networkidle'});
+    // Planner worker Date cannot be frozen via addInitScript. Late wall-clock
+    // clips today's slots and the overlay gap audit reports no-fit instead of
+    // budget-capped. Stub the worker so planning runs on the main thread under
+    // the frozen clock (same pattern as breakable-continuous-e2e).
+    try{
+      if(typeof window.Worker !== 'function' || window.__tingsPlannerStubInstalled)return;
+      window.__tingsPlannerStubInstalled = true;
+      const RealWorker = window.Worker;
+      window.Worker = class extends RealWorker {
+        constructor(url, options){
+          if(String(url).includes('agenda-planner-worker')){
+            const listeners = { message:[], error:[] };
+            const fake = {
+              addEventListener(type, cb){ if(listeners[type])listeners[type].push(cb); },
+              removeEventListener(type, cb){
+                if(listeners[type])listeners[type] = listeners[type].filter(f => f !== cb);
+              },
+              terminate(){},
+              postMessage(message){
+                if(!message || typeof message !== 'object')return;
+                const id = message.id;
+                const fire = (type, data)=>{
+                  for(const cb of [...(listeners[type] || [])]){
+                    try{ cb({ data, type }); }catch(_){}
+                  }
+                };
+                if(message.warm){
+                  setTimeout(()=>fire('message',{ id, ready:true }),0);
+                  return;
+                }
+                setTimeout(()=>{
+                  let week = null;
+                  let error = null;
+                  try{
+                    if(typeof buildWeekAgenda !== 'function'){
+                      throw new Error('buildWeekAgenda unavailable on main thread');
+                    }
+                    const settings = { ...(message.settings || {}), agendaOptimizer:false };
+                    week = buildWeekAgenda(message.data, settings, message.numDays || 7, {});
+                    // Honor the suite's fast-only wait (!optimized) vs exact wait.
+                    if(fastOnly)week.optimized = false;
+                    else if(message.mode === 'exact')week.optimized = true;
+                  }catch(err){
+                    error = String(err && err.message ? err.message : err);
+                  }
+                  fire('message', error ? { id, error } : { id, week });
+                },0);
+              }
+            };
+            return fake;
+          }
+          super(url, options);
+        }
+      };
+    }catch(_){}
+  },{clock:clockTs, fastOnly:FAST_ONLY});
+  await page.goto(PAGE_URL,{waitUntil:'networkidle'});
   await page.evaluate(({data,settings})=>{
     localStorage.clear();
     localStorage.setItem('tings_v2',JSON.stringify(data));

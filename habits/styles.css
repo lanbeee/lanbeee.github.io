@@ -1855,6 +1855,30 @@ body[data-pane-count="3"] .detail-sheet{
 .monthday-chip-row{
   display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:-2px 0 10px;
 }
+.monthday-disclosure{margin:-2px 0 10px;}
+.monthday-disclosure-head{
+  display:flex;align-items:center;gap:8px;width:100%;margin:0 0 6px;padding:8px 10px;
+  background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  text-align:left;
+}
+.monthday-disclosure-head:hover{opacity:0.88;}
+.monthday-disclosure-head:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+.monthday-disclosure-label{
+  flex-shrink:0;color:var(--text2);font-size:12px;font-weight:700;
+}
+.monthday-disclosure-summary{
+  flex:1 1 auto;min-width:0;color:var(--text);font-size:12.5px;font-weight:600;
+  font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.monthday-disclosure-head i{
+  flex-shrink:0;font-size:14px;color:var(--text3);
+  transition:transform var(--dur-fast) ease;
+}
+.monthday-disclosure-head[aria-expanded="true"] i{transform:rotate(180deg);}
+.monthday-disclosure .monthday-chip-row{margin:0;}
+.monthday-disclosure .monthday-chip-row[hidden]{display:none;}
 .schedule-chip{text-transform:lowercase;}
 .monthday-chip{
   width:100%;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;

@@ -297,8 +297,14 @@
           <div id="detail-schedule-allowed" class="detail-full-only">
             <span class="settings-sublabel">days</span>
             <div class="schedule-chip-row" id="detail-weekday-chips"></div>
-            <span class="settings-sublabel compact-label">month days</span>
-            <div class="monthday-chip-row" id="detail-monthday-chips"></div>
+            <div class="monthday-disclosure">
+              <button type="button" class="monthday-disclosure-head" id="detail-monthday-toggle" aria-expanded="false" aria-controls="detail-monthday-chips">
+                <span class="monthday-disclosure-label">month days</span>
+                <span class="monthday-disclosure-summary" id="detail-monthday-summary">any</span>
+                <i class="ti ti-chevron-down" aria-hidden="true"></i>
+              </button>
+              <div class="monthday-chip-row" id="detail-monthday-chips" hidden></div>
+            </div>
             <div class="schedule-time-row">
               <span class="settings-sublabel compact-label">time window</span>
               <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed">
@@ -376,8 +382,14 @@
           <div id="detail-schedule-preferred" class="detail-full-only" hidden>
             <span class="settings-sublabel">days</span>
             <div class="schedule-chip-row preferred" id="detail-preferred-weekday-chips"></div>
-            <span class="settings-sublabel compact-label">month days</span>
-            <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips"></div>
+            <div class="monthday-disclosure preferred">
+              <button type="button" class="monthday-disclosure-head" id="detail-preferred-monthday-toggle" aria-expanded="false" aria-controls="detail-preferred-monthday-chips">
+                <span class="monthday-disclosure-label">month days</span>
+                <span class="monthday-disclosure-summary" id="detail-preferred-monthday-summary">any</span>
+                <i class="ti ti-chevron-down" aria-hidden="true"></i>
+              </button>
+              <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips" hidden></div>
+            </div>
             <div class="schedule-time-row preferred">
               <span class="settings-sublabel compact-label">best time</span>
               <div class="time-endpoints detail-time-endpoints" id="detail-preferred-time-row" data-field-prefix="preferred">
@@ -527,18 +539,21 @@
           <span class="section-label">identity</span>
           <div class="name-icon-row">
             <input type="text" id="detail-habit-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+            <button type="button" class="ting-emoji-preview" id="detail-emoji-preview" aria-label="edit emoji"></button>
+          </div>
+          <div class="ting-emoji-edit" id="detail-emoji-edit" hidden>
             <label class="emoji-field">
               <span>emoji</span>
               <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
             </label>
+            <div class="generic-emoji-wrap">
+              <span class="settings-sublabel">quick pick</span>
+              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="quick pick emojis"></div>
+            </div>
+            <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
+            <span class="settings-sublabel">emoji background</span>
+            <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           </div>
-          <div class="generic-emoji-wrap">
-            <span class="settings-sublabel">quick pick</span>
-            <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="quick pick emojis"></div>
-          </div>
-          <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
-          <span class="settings-sublabel">emoji background</span>
-          <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           <div class="seg" id="detail-type-seg">
             <button class="seg-opt" data-detail-type="keepup">habit</button>
             <button class="seg-opt" data-detail-type="task">task</button>

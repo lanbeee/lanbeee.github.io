@@ -839,18 +839,47 @@ document.addEventListener('pointerdown',e=>{
   searchDismissPointer = null;
   const btn = forgivingButtonTarget(e.target, e.clientX, e.clientY);
   if(!btn)return;
-  // Home list scrolls on window (mobile) or .pane-list (multi-pane); sheets
-  // scroll themselves. Track the real scroller so pointercancel recovery does
-  // not treat an actual scroll as a tap.
-  const scrollHost = btn.closest('.pane-list,.sheet,.detail-page');
-  const hostScrolls = scrollHost && (scrollHost.scrollHeight > scrollHost.clientHeight + 1);
+  // Snapshot every scrollable ancestor (vertical and horizontal) so a scroll
+  // or swipe that starts anywhere over the button is never mistaken for a tap,
+  // no matter which element actually moves — home window, pane list, sheets,
+  // detail pages and the detail pager all land here.
+  const scrollers = [];
+  for(let el = btn.parentElement; el; el = el.parentElement){
+    if((el.scrollHeight > el.clientHeight + 1) || (el.scrollWidth > el.clientWidth + 1)){
+      scrollers.push([el,el.scrollTop,el.scrollLeft]);
+    }
+    if(el === document.documentElement)break;
+  }
+  // Window scroll (home list) can disagree with documentElement/body accounting
+  // across engines — track it explicitly as a virtual scroller.
+  scrollers.push([
+    {get scrollTop(){return window.scrollY;},get scrollLeft(){return window.scrollX;}},
+    window.scrollY,
+    window.scrollX
+  ]);
+  // Detail-head buttons are siblings of the scrollable pages, so a page scroll
+  // or pager swipe that starts on the head would escape the ancestor walk.
+  // Snapshot the detail pager and its live pages explicitly.
+  const detailSheet = btn.closest('.detail-sheet');
+  if(detailSheet){
+    const pager = detailSheet.querySelector('.detail-pager');
+    if(pager){
+      if(pager.scrollWidth > pager.clientWidth + 1){
+        scrollers.push([pager,pager.scrollTop,pager.scrollLeft]);
+      }
+      for(const page of pager.querySelectorAll('.detail-page')){
+        if(!page.hidden && page.scrollHeight > page.clientHeight + 1){
+          scrollers.push([page,page.scrollTop,page.scrollLeft]);
+        }
+      }
+    }
+  }
   buttonPointer = {
     btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),
     maxMove:0,
     // True when the finger missed the button box but hit-slop still armed it.
     armedBySlop: e.target.closest('button') !== btn,
-    scrollHost: hostScrolls ? scrollHost : null,
-    scrollTop: hostScrolls ? scrollHost.scrollTop : window.scrollY
+    scrollers
   };
 },true);
 
@@ -874,7 +903,7 @@ document.addEventListener('pointerup',e=>{
     }
   }
   if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
-  const {btn,x,y,time,armedBySlop} = buttonPointer;
+  const {btn,x,y,time,armedBySlop,scrollers} = buttonPointer;
   buttonPointer = null;
   if(btn.disabled)return;
   const dx = Math.abs(e.clientX - x);
@@ -882,7 +911,12 @@ document.addEventListener('pointerup',e=>{
   const moved = Math.hypot(dx,dy);
   if(btn.disabled)return;
   if(btn.classList.contains('timer-start-btn'))return;
-  if(Date.now() - time >= 1200 || moved > 160)return;
+  // Movement cap for the forgiving click. A sloppy tap drifts a few tens of
+  // pixels at most (pointercancel recovery already caps at 32); anything
+  // larger is a scroll or swipe gesture (e.g. one that starts on a
+  // touch-action:none pill, which never moves the page and so can't be caught
+  // by the scroll checks below).
+  if(Date.now() - time >= 1200 || moved > 32)return;
 
   const headerPill = btn.matches('.free-pill,.dropped-pill');
   // Drift → forgiving click. Slop-armed header pills (finger never on the
@@ -894,9 +928,86 @@ document.addEventListener('pointerup',e=>{
   suppressNativeButton = btn;
   e.preventDefault();
   e.stopPropagation();
-  btn.click();
-  setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},80);
+  // Clear suppress if settle-wait bails (scroll/swipe) so later taps still work;
+  // also covers a trailing native click after a cancelled-looking gesture.
+  setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},400);
+  deferForgivingClick(scrollers,btn);
 },true);
+
+// The forgiving click must not land when the gesture actually scrolled or
+// swiped a page: in touch browsers a pointercancel (and sometimes a pointerup)
+// can arrive before the page starts moving, so the scroll deltas read at
+// cancel/up time are still zero. Wait until snapshotted scrollers settle (or
+// a short timeout), then bail if any moved — CDP may trickle scroll slowly,
+// while real devices usually jump in one frame. Any real pan is "not a tap";
+// leftover smooth scrollIntoView animations are a test concern (use instant).
+const FORGIVING_SCROLL_FLOOR = 2;
+const FORGIVING_SETTLE_MS = 150;
+const FORGIVING_MIN_WAIT_MS = 32;
+
+function scrollerDelta(scrollers){
+  let moved = 0;
+  for(const [el,top,left] of scrollers){
+    const dTop = Math.abs(el.scrollTop - top);
+    const dLeft = Math.abs(el.scrollLeft - left);
+    if(dTop > moved)moved = dTop;
+    if(dLeft > moved)moved = dLeft;
+  }
+  return moved;
+}
+
+function deferForgivingClick(scrollers,btn){
+  const t0 = performance.now();
+  let lastMoved = scrollerDelta(scrollers);
+  let stableFrames = 0;
+  let done = false;
+  const onScroll = ()=>{
+    if(done)return;
+    if(scrollerDelta(scrollers) > FORGIVING_SCROLL_FLOOR)finish(false);
+  };
+  const listened = [];
+  for(const [el] of scrollers){
+    if(!el || typeof el.addEventListener !== 'function')continue;
+    el.addEventListener('scroll',onScroll,{passive:true,capture:true});
+    listened.push(el);
+  }
+  window.addEventListener('scroll',onScroll,{passive:true,capture:true});
+
+  function cleanup(){
+    for(const el of listened)el.removeEventListener('scroll',onScroll,{capture:true});
+    window.removeEventListener('scroll',onScroll,{capture:true});
+  }
+
+  function finish(shouldClick){
+    if(done)return;
+    done = true;
+    cleanup();
+    if(!shouldClick || btn.disabled)return;
+    // Let our own click through, then re-arm so the browser's own trailing
+    // click (a cancelled gesture can still synthesize one over the button)
+    // is eaten by the suppression listener.
+    suppressNativeButton = null;
+    btn.click();
+    suppressNativeButton = btn;
+    setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},80);
+  }
+
+  function tick(){
+    if(done)return;
+    if(btn.disabled){finish(false);return;}
+    const moved = scrollerDelta(scrollers);
+    if(moved > FORGIVING_SCROLL_FLOOR){finish(false);return;}
+    if(moved === lastMoved)stableFrames += 1;
+    else{lastMoved = moved;stableFrames = 0;}
+    const elapsed = performance.now() - t0;
+    if((stableFrames >= 2 && elapsed >= FORGIVING_MIN_WAIT_MS) || elapsed >= FORGIVING_SETTLE_MS){
+      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR);
+      return;
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
 
 // On a phone, a tap inside a scrollable sheet often drifts a few pixels, which
 // makes the browser claim the gesture as the start of a scroll and fire
@@ -911,29 +1022,30 @@ document.addEventListener('pointercancel',e=>{
   buttonPointer = null;
   if(tap.btn.disabled)return;
   if(tap.btn.classList.contains('timer-start-btn'))return;
-  const scrolled = tap.scrollHost
-    ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop)
-    : Math.abs(window.scrollY - tap.scrollTop);
-  // Day-header pills sit in sticky chrome; finger drift often nudges
-  // window.scrollY (or the browser cancels into a pan) even when the user meant
-  // a tap. For those pills, recover on short cancels regardless of scroll delta.
-  const headerPill = tap.btn.matches('.free-pill,.dropped-pill');
-  if(tap.maxMove <= 32 && Date.now() - tap.time < 450 && (headerPill || scrolled === 0)){
-    suppressNativeButton = tap.btn;
-    tap.btn.click();
-    setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},80);
+  // A cancelled gesture means the browser claimed the pointer for a pan. It
+  // may still synthesize a click over the button once the pan settles (the
+  // same late click bindCalendarTap defends against), so always suppress the
+  // button's trailing click; a real tap-with-drift is re-fired by
+  // deferForgivingClick below. The scroll deltas read here are often still
+  // zero (the browser cancels into a pan before the page moves), so the real
+  // scroll/swipe check runs inside deferForgivingClick after the gesture has
+  // settled.
+  suppressNativeButton = tap.btn;
+  setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},400);
+  if(tap.maxMove <= 32 && Date.now() - tap.time < 450){
+    deferForgivingClick(tap.scrollers,tap.btn);
   }
 },true);
 
 document.addEventListener('click',e=>{
-  if(suppressNativeButton && e.target.closest('button') === suppressNativeButton && e.isTrusted){
+  if(suppressNativeButton && e.target.closest('button') === suppressNativeButton){
     e.preventDefault();
     e.stopPropagation();
     suppressNativeButton = null;
     return;
   }
   const btn = forgivingButtonTarget(e.target, e.clientX, e.clientY);
-  if(btn && btn === suppressNativeButton && e.isTrusted){
+  if(btn && btn === suppressNativeButton){
     e.preventDefault();
     e.stopPropagation();
     suppressNativeButton = null;

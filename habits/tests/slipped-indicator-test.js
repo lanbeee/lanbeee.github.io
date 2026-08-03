@@ -25,6 +25,23 @@ function assert(cond,msg){
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
 
+  // Late wall-clock: windowStillDoableToday needs duration fit before midnight,
+  // and missing flexibilityDays normalizes to DEFAULT_FLEXIBILITY_DAYS (1), which
+  // bumps effectiveTarget so "daily" seeds stop counting as today. Freeze mid-
+  // morning like agenda-order / day-capacity suites.
+  const testClock = new Date();
+  testClock.setHours(10,0,0,0);
+  await page.addInitScript(clock => {
+    const RealDate = window.Date;
+    function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(clock); }
+    FrozenDate.now = ()=>clock;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    window.Date = FrozenDate;
+  }, testClock.getTime());
+
   await page.addInitScript(() => {
     try{
       if(navigator.serviceWorker){
@@ -53,8 +70,8 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'seed-1', name:'Run', emoji:'🏃', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false },
-      { hid:'seed-2', name:'Read', emoji:'📚', type:'keepup', target:2, logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs, pinned:false },
+      { hid:'seed-1', name:'Run', emoji:'🏃', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
+      { hid:'seed-2', name:'Read', emoji:'📚', type:'keepup', target:2, logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     render();
@@ -74,7 +91,7 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'drop-1', name:'Swim', emoji:'🏊', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
+      { hid:'drop-1', name:'Swim', emoji:'🏊', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     render();
@@ -106,8 +123,8 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'roll-x', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false },
-      { hid:'roll-y', name:'Deep Work', emoji:'🎯', type:'keepup', target:5, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, pinned:false },
+      { hid:'roll-x', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
+      { hid:'roll-y', name:'Deep Work', emoji:'🎯', type:'keepup', target:5, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
     ]));
     const d = new Date(now - dayMs);
     const yesterday = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -155,8 +172,8 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'proj-a', name:'Stretch', emoji:'🤸', type:'keepup', target:1, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, pinned:false },
-      { hid:'proj-b', name:'Exercise', emoji:'💪', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false },
+      { hid:'proj-a', name:'Stretch', emoji:'🤸', type:'keepup', target:1, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
+      { hid:'proj-b', name:'Exercise', emoji:'💪', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
@@ -188,8 +205,8 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'snz-1', name:'Meditate', emoji:'🧘', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
-      { hid:'snz-2', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false },
+      { hid:'snz-1', name:'Meditate', emoji:'🧘', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
+      { hid:'snz-2', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
@@ -225,8 +242,8 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'empty-1', name:'Yoga', emoji:'🧘', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
-      { hid:'empty-2', name:'Journal', emoji:'📝', type:'keepup', target:7, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, pinned:false },
+      { hid:'empty-1', name:'Yoga', emoji:'🧘', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
+      { hid:'empty-2', name:'Journal', emoji:'📝', type:'keepup', target:7, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     render();
@@ -275,8 +292,8 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'miss-a', name:'Yoga', emoji:'🧘', type:'keepup', target:1, flexibilityDays:0, logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1 },
-      { hid:'miss-b', name:'Run', emoji:'🏃', type:'keepup', target:1, flexibilityDays:0, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
+      { hid:'miss-a', name:'Yoga', emoji:'🧘', type:'keepup', target:1, flexibilityDays:0, durationMinutes:15, logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1 },
+      { hid:'miss-b', name:'Run', emoji:'🏃', type:'keepup', target:1, flexibilityDays:0, durationMinutes:15, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
     ]));
     const d = new Date(now - dayMs);
     const yesterday = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -343,7 +360,7 @@ function assert(cond,msg){
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'nobase-1', name:'Swim', emoji:'🏊', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
+      { hid:'nobase-1', name:'Swim', emoji:'🏊', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
