@@ -60,7 +60,9 @@ for f in tests/*.js; do
   rm "$tmpfile"
 
   ok_count=$(echo "$output" | grep -c '^  ok' || true)
-  not_ok_count=$(echo "$output" | grep -c 'not ok' || true)
+  # Match TAP-style failure lines ("not ok …" / "  not ok: …"), not summary
+  # text like "# 54 ok, 0 not ok" which also contains the substring.
+  not_ok_count=$(echo "$output" | grep -cE '^[[:space:]]*not ok' || true)
   pe_count=$(echo "$output" | grep -c 'pageerror:' || true)
 
   total_ok=$((total_ok + ok_count))

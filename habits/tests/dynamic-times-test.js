@@ -558,17 +558,29 @@ async function toastText(page){
   assert(cleared && cleared.startAnchor == null, 'gear off clears startAnchor');
   assert(cleared && Number.isFinite(cleared.start), 'fixed start minutes kept as fallback');
 
-  // Clearing location while dynamic strips the anchor on normalize.
+  // Clearing location while dynamic keeps the anchor — resolution now falls
+  // back to the home city (see resolveBlockedTimeMinutes).
   await rows.first().locator('[data-blocked-start-mode]').click();
   await page.waitForTimeout(200);
   await rows.first().locator('[data-blocked-location]').selectOption('');
   await page.waitForTimeout(300);
-  const strippedLoc = await page.evaluate(() => {
+  const keptLoc = await page.evaluate(() => {
     const b = normalizeBlockedTimes(loadSortSettings().blockedTimes)[0];
     return b && { startAnchor:b.startAnchor, locationId:b.locationId };
   });
-  assert(strippedLoc && strippedLoc.locationId == null, 'location cleared');
-  assert(strippedLoc && strippedLoc.startAnchor == null, 'anchor stripped when location cleared');
+  assert(keptLoc && keptLoc.locationId == null, 'location cleared');
+  assert(keptLoc && keptLoc.startAnchor === 'fajr', 'anchor kept when location cleared (home-city fallback)');
+
+  // With a home city set, the anchor now resolves without any place.
+  const cityResolved = await page.evaluate(() => {
+    const s = loadSortSettings();
+    s.homeCityName = 'NYC'; s.homeCityLat = 40.7; s.homeCityLng = -74.0;
+    saveSortSettings(s);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
+    const b = normalizeBlockedTimes(loadSortSettings().blockedTimes)[0];
+    return Number.isFinite(resolveBlockedTimeMinutes(b, 'start', dayStart(Date.now())));
+  });
+  assert(cityResolved === true, 'anchor resolves against home city without a place');
 
   assert(pageErrors.length === 0, 'no page errors during run (' + pageErrors.length + ')');
 

@@ -115,6 +115,10 @@ async function openSettings(page){
 
   // ── A. Add samples seeds 5 places + location-linked habits ──
   console.log('\n[A] add samples → locations registry');
+  // Stretch/sleep samples use sunrise windows, so a home city is required first.
+  await page.evaluate(() => {
+    updateSortSetting({ homeCityName:'New York, United States', homeCityLat:40.7128, homeCityLng:-74.0060 }, { renderNow:true, sync:true });
+  });
   await page.evaluate(() => addSortSamples({closeSheets:true}));
   await page.waitForTimeout(500);
 

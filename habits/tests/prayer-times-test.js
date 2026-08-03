@@ -515,7 +515,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     s.blockedTimes = [
       {label:'sleep', days:[], start:1320, end:420, locationId:'home', startAnchor:'isha', startOffsetMin:0, endAnchor:'sunrise', endOffsetMin:0},
       {label:'work', days:[1,2,3,4,5], start:540, end:1020}, // fixed, no anchors
-      {label:'bad', days:[], start:600, end:720, startAnchor:'fajr'} // anchor without location → stripped
+      {label:'bad', days:[], start:600, end:720, startAnchor:'fajr'} // anchor kept without a locationId (home-city fallback)
     ];
     saveSortSettings(s);
     const blocks = normalizeBlockedTimes(loadSortSettings().blockedTimes);
@@ -547,7 +547,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(blocked.sleepStart > blocked.sleepEnd, 'overnight: isha minute > sunrise minute (' + blocked.sleepStart + ' > ' + blocked.sleepEnd + ')');
   assert(blocked.workStart === 540, 'fixed block returns literal start');
   assert(blocked.workStartAnchor == null, 'fixed block has no startAnchor');
-  assert(blocked.badAnchor == null, 'anchor without locationId stripped');
+  assert(blocked.badAnchor === 'fajr', 'anchor kept without locationId (home-city fallback)');
   assert(blocked.badKept === true, 'block itself still kept (fixed fallback)');
 
   // ── Q. cleanAnchor accepts both kinds ──

@@ -770,6 +770,16 @@
           <button type="button" class="btn" id="sample-habits-add">add all demos</button>
         </div>
         <section class="settings-block settings-collapsible sample-prayers-block">
+          <button type="button" class="settings-collapse-head" id="sample-blocks-head" data-collapse-target="sample-blocks-body" aria-expanded="false" aria-controls="sample-blocks-body">
+            <span class="settings-label">sample busy time</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="sample-blocks-body" hidden>
+            <p class="field-hint">Sun-based sleep on your busy-time schedule: starts at the later of Isha +15m and 8h before next sunrise, ends 40m before sunrise. Needs your city (Settings → Locations), same as the prayers.</p>
+            <div class="sample-habits-list" id="sample-blocks-preview" aria-label="sample busy time demos"></div>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible sample-prayers-block">
           <button type="button" class="settings-collapse-head" id="sample-prayers-head" data-collapse-target="sample-prayers-body" aria-expanded="false" aria-controls="sample-prayers-body">
             <span class="settings-label">daily prayers</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>

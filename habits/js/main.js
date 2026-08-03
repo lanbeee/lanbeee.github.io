@@ -1403,6 +1403,12 @@ $('sample-prayers-preview')?.addEventListener('click',e=>{
   if(!btn || btn.disabled)return;
   if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
 });
+$('sample-blocks-preview')?.addEventListener('click',e=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded(e.target))return;
+  const btn = e.target.closest('[data-add-sample]');
+  if(!btn || btn.disabled)return;
+  if(typeof addBlockSample === 'function')addBlockSample();
+});
 addScrollGuard(document.querySelector('.sample-habits-sheet'),'y');
 $('open-settings').addEventListener('click',()=>{
   closeSheet('about-sheet');
@@ -1594,8 +1600,9 @@ $('blocked-time-list')?.addEventListener('click',e=>{
     saveBlockedTimePatch(index,{[patchKey]: on ? 0 : 1});
     return;
   }
-  // Gear toggle: swap fixed ↔ prayer-anchor mode for one endpoint. Requires
-  // a location on the block (normalize would strip the anchor otherwise).
+  // Gear toggle: swap fixed ↔ prayer-anchor mode for one endpoint. Requires a
+  // place on the block or a home city (normalize keeps the anchor either way;
+  // resolution falls back to the city, see resolveBlockedTimeMinutes).
   const startMode = e.target.closest('[data-blocked-start-mode]');
   const endMode = e.target.closest('[data-blocked-end-mode]');
   if(startMode || endMode){
@@ -1616,8 +1623,11 @@ $('blocked-time-list')?.addEventListener('click',e=>{
       });
     }else{
       if(!block.locationId){
-        showToast('pick a location to use prayer times');
-        return;
+        const s = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+        if(!(Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng))){
+          showToast('pick a location or set your city first');
+          return;
+        }
       }
       saveBlockedTimePatch(index,{[anchorKey]:'fajr',[offsetKey]:0});
     }

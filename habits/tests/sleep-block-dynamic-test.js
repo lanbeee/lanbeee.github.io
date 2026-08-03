@@ -187,7 +187,8 @@ function assert(cond, msg){
   const fallback = await page.evaluate(() => {
     const today = dayStart(Date.now());
     const s = loadSortSettings();
-    // Location removed → normalize strips anchors → falls back to fixed.
+    // No place and no home city → the anchor is kept (it may resolve via a
+    // city later) but can't resolve today, so the agenda uses the fixed clock.
     s.blockedTimes = [{
       label:'sleep', days:[0,1,2,3,4,5,6],
       start:0, end:420,
@@ -197,24 +198,30 @@ function assert(cond, msg){
     }];
     saveSortSettings(s);
     const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)[0];
-    // resolveBlockedTimeMinutes falls back to block.start/block.end when
-    // anchor is stripped (no location → no anchor).
     const startMin = resolveBlockedTimeMinutes(block, 'start', today);
     const endMin = resolveBlockedTimeMinutes(block, 'end', today);
+    // Agenda-level fixed fallback (resolve ?? block.start / block.end).
+    const d = new Date(today);
+    const dayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const intervals = agendaBlockedIntervals(dayKey, loadSortSettings(), today, today + 86400000);
+    const sleep = intervals.filter(b => b.label === 'sleep');
     return {
       startMin, endMin,
       startAnchor: block.startAnchor,
       endAnchor: block.endAnchor,
       start: block.start,
-      end: block.end
+      end: block.end,
+      segStart: sleep[0] && Math.round((sleep[0].start - today) / 60000),
+      segEnd: sleep[0] && Math.round((sleep[0].end - today) / 60000)
     };
   });
-  // Anchors stripped because no location.
-  assert(fallback.startAnchor == null, 'startAnchor stripped without location');
-  assert(fallback.endAnchor == null, 'endAnchor stripped without location');
-  // Falls back to fixed values.
-  assert(fallback.startMin === 0, 'start falls back to midnight (0)');
-  assert(fallback.endMin === 420, 'end falls back to 7am (420)');
+  // Anchors are kept (home-city fallback), but can't resolve without coords.
+  assert(fallback.startAnchor === 'sunrise', 'startAnchor kept without location (home-city fallback)');
+  assert(fallback.endAnchor === 'sunrise', 'endAnchor kept without location');
+  assert(fallback.startMin == null, 'start unresolvable without coords');
+  // Agenda falls back to fixed values.
+  assert(fallback.segStart === 0, 'agenda falls back to midnight start (0)');
+  assert(fallback.segEnd === 420, 'agenda falls back to 7am end (420)');
 
   // ══════════════════════════════════════════════════════════════════════
   // D. Normalization round-trip

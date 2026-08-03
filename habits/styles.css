@@ -999,6 +999,10 @@ body.reach-pad #list{padding-top:220px;}
 }
 .sample-habit-row.is-on-home{opacity:0.72;}
 .sample-habit-emoji{font-size:22px;line-height:1.2;flex:0 0 auto;}
+.sample-habit-emoji.tinted{
+  width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:9px;background:var(--sample-tint-bg);color:var(--sample-tint-icon);
+}
 .sample-habit-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px;}
 .sample-habit-copy b{font-size:14px;font-weight:600;color:var(--text);}
 .sample-habit-copy small{font-size:12px;color:var(--text3);line-height:1.35;}

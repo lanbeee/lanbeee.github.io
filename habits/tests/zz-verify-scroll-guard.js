@@ -16,6 +16,31 @@ async function drag(client, x, y, dx, dy, steps = 12, stepMs = 16){
 }
 async function sheetCount(page, id){ return page.locator(`${id}.open`).count(); }
 
+// Today often has no free-pill (full/blocked). Bring the first has-pill header
+// into view so CDP taps land inside the viewport — off-screen coords make
+// "sheet did not open" vacuously pass and "exact tap opens" always fail.
+async function visibleFreePill(page){
+  return page.evaluate(() => {
+    const header = document.querySelector('#list .section-header.has-pill');
+    const pill = header && header.querySelector('.free-pill');
+    if(!pill)return null;
+    header.scrollIntoView({ block:'center', behavior:'instant' });
+    // Nudge so a sticky header is not flush-stuck when possible.
+    window.scrollBy({ top:-40, left:0, behavior:'instant' });
+    const r = pill.getBoundingClientRect();
+    const hr = header.getBoundingClientRect();
+    const vh = window.innerHeight;
+    if(!(r.bottom > 8 && r.top < vh - 8))return null;
+    return {
+      x: r.left + r.width / 2,
+      y: r.top + r.height / 2,
+      headerX: Math.max(12, r.left - 30),
+      headerY: hr.top + hr.height / 2,
+      scrollY: window.scrollY
+    };
+  });
+}
+
 (async () => {
   const browser = await chromium.launch({ headless:true });
   const page = await browser.newPage({ viewport:{ width:390, height:600 }, isMobile:true, hasTouch:true });
@@ -41,13 +66,8 @@ async function sheetCount(page, id){ return page.locator(`${id}.open`).count(); 
 
   // ── 1. Home: vertical scroll attempts on/around the open pill ──
   console.log('\n[1] Home scroll attempt starting on the open pill (touch-action:none)');
-  await page.evaluate(() => window.scrollTo({ top:300, left:0, behavior:'instant' }));
-  await sleep(400);
-  const pillPt = await page.evaluate(() => {
-    const pill = document.querySelector('.section-header.has-pill .free-pill');
-    const r = pill.getBoundingClientRect();
-    return { x: r.left + r.width/2, y: r.top + r.height/2 };
-  });
+  const pillPt = await visibleFreePill(page);
+  await sleep(200);
   assert(Boolean(pillPt), 'found day header pill');
   // 60px drag starting ON the pill — a scroll attempt the pill swallows
   await drag(client, pillPt.x, pillPt.y, 0, 60);
@@ -55,29 +75,22 @@ async function sheetCount(page, id){ return page.locator(`${id}.open`).count(); 
   assert(await sheetCount(page, '#slipped-sheet') === 0, 'slipped sheet NOT opened after scroll attempt on pill');
 
   // also from the header text near the pill (within hit slop, actually scrollable)
-  const hdr = await page.evaluate(() => {
-    const header = document.querySelector('.section-header.has-pill');
-    const pill = header.querySelector('.free-pill');
-    const pr = pill.getBoundingClientRect();
-    const hr = header.getBoundingClientRect();
-    return { x: pr.left - 30, y: hr.top + hr.height / 2, scrollY: window.scrollY };
-  });
-  await drag(client, hdr.x, hdr.y, 0, 150);
+  const hdr = await visibleFreePill(page);
+  await sleep(150);
+  assert(Boolean(hdr), 'header pill still visible for scroll drag');
+  await drag(client, hdr.headerX, hdr.headerY, 0, 150);
   const scrollY = await page.evaluate(() => window.scrollY);
   assert(scrollY !== hdr.scrollY, `page scrolled during header drag (${hdr.scrollY} -> ${scrollY})`);
   assert(await sheetCount(page, '#free-time-sheet') === 0, 'free-time sheet NOT opened after header scroll');
 
-  // sanity: exact tap on the same pill still opens the sheet
-  const tapPt = await page.evaluate(() => {
-    const pill = document.querySelector('.section-header.has-pill .free-pill');
-    const r = pill.getBoundingClientRect();
-    return { x: r.left + r.width/2, y: r.top + r.height/2 };
-  });
+  // sanity: exact tap on a visible pill still opens the sheet
+  const tapPt = await visibleFreePill(page);
   await sleep(300);
+  assert(Boolean(tapPt), 'pill visible for exact tap');
   await client.send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[{x:tapPt.x, y:tapPt.y, radiusX:10, radiusY:10, force:1, id:0}], modifiers:0 });
   await sleep(40);
   await client.send('Input.dispatchTouchEvent', { type:'touchEnd', touchPoints:[{x:tapPt.x, y:tapPt.y, id:0}], modifiers:0 });
-  await sleep(60);
+  await sleep(120);
   assert(await sheetCount(page, '#free-time-sheet') === 1, 'exact tap on pill still opens the sheet');
   await page.locator('#free-time-close').click({ force:true });
   await sleep(150);

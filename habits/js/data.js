@@ -2047,25 +2047,27 @@ function normalizeBlockedTimes(value){
     // Stripped to a clean id; absent = location-agnostic (busy, place unknown).
     const locationId = cleanLocationId(raw?.locationId) || null;
     // Prayer anchors mirror habits: when set, the matching start/end is
-    // resolved via adhan against the block's locationId. Blocked times do NOT
-    // support habit-anchors (they're a settings-level recurring block, not
-    // tied to a habit's log stream).
+    // resolved via adhan against the block's locationId — or, when the block
+    // has no place, against the home city (Settings → Locations). Blocked
+    // times do NOT support habit-anchors (they're a settings-level recurring
+    // block, not tied to a habit's log stream).
     const startAnchor = cleanPrayerAnchor(raw?.startAnchor);
     const endAnchor = cleanPrayerAnchor(raw?.endAnchor);
-    // Require a locationId when an anchor is set — no coords, no computation.
-    // If the user toggles dynamic without a location, the anchor silently drops.
-    const safeStartAnchor = startAnchor && locationId ? startAnchor : null;
-    const safeEndAnchor = endAnchor && locationId ? endAnchor : null;
+    // Anchors are kept even without a place; resolution falls back to the
+    // home city at runtime (see resolveBlockedTimeMinutes). With neither, the
+    // resolved value is null and callers use the fixed clock fallback.
+    const safeStartAnchor = startAnchor;
+    const safeEndAnchor = endAnchor;
     const startCombine = safeStartAnchor && typeof cleanTimeCombine === 'function'
       ? cleanTimeCombine(raw?.startCombine) : null;
-    const startAnchor2 = startCombine && locationId
+    const startAnchor2 = startCombine
       ? (typeof cleanBlockedAnchor2 === 'function'
         ? cleanBlockedAnchor2(raw?.startAnchor2)
         : cleanPrayerAnchor(raw?.startAnchor2))
       : null;
     const endCombine = safeEndAnchor && typeof cleanTimeCombine === 'function'
       ? cleanTimeCombine(raw?.endCombine) : null;
-    const endAnchor2 = endCombine && locationId
+    const endAnchor2 = endCombine
       ? (typeof cleanBlockedAnchor2 === 'function'
         ? cleanBlockedAnchor2(raw?.endAnchor2)
         : cleanPrayerAnchor(raw?.endAnchor2))

@@ -77,10 +77,16 @@ function assert(cond, msg){
       add: r.querySelector('[data-add-sample]')?.textContent?.trim() || ''
     }));
     const prayersBody = document.getElementById('sample-prayers-body');
+    const blocksBody = document.getElementById('sample-blocks-body');
+    const blockRows = blocksBody ? [...blocksBody.querySelectorAll('.sample-habit-row')] : [];
     return {
       rows: rows.length,
       titles: rows.map(r => r.title),
       rowAdds: rows.filter(r => r.add === 'add').length,
+      noSleepHabit: !rows.some(r => r.title === 'sleep'),
+      blocksCollapsed: blocksBody ? blocksBody.hidden : null,
+      hasBlockSleep: blockRows.some(r => r.querySelector('b')?.textContent === 'sleep'),
+      blockAddBtn: blockRows.length ? blockRows[0].querySelector('[data-add-sample]')?.textContent?.trim() : null,
       prayersCollapsed: prayersBody ? prayersBody.hidden : null,
       addAll: !!document.getElementById('sample-habits-add'),
       addPrayers: !!document.getElementById('sample-prayers-add'),
@@ -93,6 +99,8 @@ function assert(cond, msg){
   console.log(sheet);
   assert(sheet.aboutClosed, 'About closes when opening sample habits');
   assert(sheet.rows >= 8 && sheet.addAll && sheet.rowAdds >= 8, 'feature rows each have add + add all');
+  assert(sheet.noSleepHabit, 'sleep is a busy time sample, not a habit row');
+  assert(sheet.blocksCollapsed === true && sheet.hasBlockSleep && sheet.blockAddBtn === 'add', 'busy-time section has sleep sample to add');
   assert(sheet.removeSamples && sheet.removeDisabled, 'remove samples on sheet, disabled when none');
   assert(sheet.testdataGone, 'settings test data section removed');
   assert(sheet.prayersCollapsed === true, 'daily prayers collapsed by default');
@@ -144,7 +152,33 @@ function assert(cond, msg){
   assert(afterFew.waterLabel === 'added' && afterFew.waterDisabled, 'added row shows added state');
   assert(afterFew.placeCount === 1 && afterFew.placeIds[0] === 'sample-park', 'only places referenced by added demos are seeded');
 
-  console.log('\n[D] Add all demos fills the rest');
+  console.log('\n[D] Add all demos requires home city (sunrise windows), then fills');
+  // Stretch / night work / sleep all use dynamic times, so add-all is gated
+  // on the home city like the prayers — it redirects to Settings → Locations.
+  await page.locator('#sample-habits-add').click();
+  await page.waitForTimeout(400);
+  const blockedAll = await page.evaluate(() => ({
+    sampleCount: load().filter(h => h.sample).length,
+    settingsOpen: document.getElementById('settings-sheet')?.classList.contains('open'),
+    locationsOpen: document.getElementById('settings-locations-body')
+      ? !document.getElementById('settings-locations-body').hidden
+      : false
+  }));
+  console.log(blockedAll);
+  assert(blockedAll.sampleCount === 0, 'add-all blocked without home city');
+  assert(blockedAll.settingsOpen && blockedAll.locationsOpen, 'add-all opens Settings → Locations to set city');
+
+  await page.evaluate(() => {
+    updateSortSetting({
+      homeCityName:'New York, United States',
+      homeCityLat:40.7128,
+      homeCityLng:-74.0060
+    },{renderNow:false,sync:false});
+  });
+  await page.locator('#settings-close').click();
+  await page.locator('#open-about').click();
+  await page.locator('#open-sample-habits').click();
+  await page.waitForSelector('#sample-habits-sheet.open');
   await page.locator('#sample-habits-add').click();
   await page.waitForTimeout(500);
   const afterTour = await page.evaluate(() => {
@@ -157,6 +191,7 @@ function assert(cond, msg){
       prayerCount: prayers.length,
       hasSunrise: samples.some(h => h.allowedTimeStartAnchor === 'sunrise'),
       hasBreakable: samples.some(h => h.breakable),
+      noSleepHabit: !samples.some(h => (h.hid || '') === 'sample-feature-sleep'),
       sheetClosed: !document.getElementById('sample-habits-sheet')?.classList.contains('open'),
       placeCount: samplePlaces.length
     };
@@ -165,28 +200,43 @@ function assert(cond, msg){
   assert(afterTour.sheetClosed, 'sample sheet closes after add all');
   assert(afterTour.sampleCount >= 8 && afterTour.prayerCount === 0, 'feature samples filled without prayers');
   assert(afterTour.hasSunrise && afterTour.hasBreakable, 'showcase fields present');
+  assert(afterTour.noSleepHabit, 'add-all does not create a sleep habit');
   assert(afterTour.placeCount >= 6, 'add-all demos seeds all referenced sample places');
 
-  console.log('\n[E] Prayer add requires home city, then seeds no places');
+  console.log('\n[E] Sleep busy time requires home city, then replaces default sleep block');
   await page.locator('#open-about').click();
   await page.locator('#open-sample-habits').click();
   await page.waitForSelector('#sample-habits-sheet.open');
-  await page.locator('#sample-prayers-head').click();
-  await page.waitForSelector('#sample-prayers-body:not([hidden])');
-  // No city yet → blocked, redirected to Settings → Locations.
-  await page.locator('#sample-prayers-preview [data-add-sample="sample-prayer-fajr"]').click();
+  // Default sleep block is fixed 11pm–5am; sample row is not marked added.
+  const defaultSleep = await page.evaluate(() => {
+    const blocks = normalizeBlockedTimes(loadSortSettings().blockedTimes);
+    return {
+      sleep: blocks.find(b => String(b.label || '').toLowerCase() === 'sleep'),
+      rowState: document.querySelector('#sample-blocks-preview [data-add-sample="sample-block-sleep"]')?.textContent?.trim()
+    };
+  });
+  assert(defaultSleep.sleep && defaultSleep.sleep.startAnchor == null, 'default sleep block is fixed');
+  assert(defaultSleep.rowState === 'add', 'sleep sample row not added before install');
+
+  await page.evaluate(() => {
+    // No city → blocked, redirected to Settings → Locations.
+    const s = loadSortSettings();
+    s.homeCityName = ''; s.homeCityLat = null; s.homeCityLng = null;
+    saveSortSettings(s);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings, loadSortSettings());
+  });
+  await page.locator('#sample-blocks-head').click();
+  await page.waitForSelector('#sample-blocks-body:not([hidden])');
+  await page.locator('#sample-blocks-preview [data-add-sample="sample-block-sleep"]').click();
   await page.waitForTimeout(400);
-  const blockedPrayer = await page.evaluate(() => ({
-    fajrExists: load().some(h => (h.hid || '') === 'sample-prayer-fajr'),
+  const blockedSleep = await page.evaluate(() => ({
+    dynamic: normalizeBlockedTimes(loadSortSettings().blockedTimes).some(b => String(b.label || '').toLowerCase() === 'sleep' && b.startAnchor),
     settingsOpen: document.getElementById('settings-sheet')?.classList.contains('open'),
-    locationsOpen: document.getElementById('settings-locations-body')
-      ? !document.getElementById('settings-locations-body').hidden
-      : false,
-    placeCount: (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
+    locationsOpen: !document.getElementById('settings-locations-body')?.hidden
   }));
-  console.log(blockedPrayer);
-  assert(!blockedPrayer.fajrExists, 'prayer not added without home city');
-  assert(blockedPrayer.settingsOpen && blockedPrayer.locationsOpen, 'opens Settings → Locations to set city');
+  console.log(blockedSleep);
+  assert(!blockedSleep.dynamic, 'sleep busy time not added without home city');
+  assert(blockedSleep.settingsOpen && blockedSleep.locationsOpen, 'opens Settings → Locations to set city');
 
   await page.evaluate(() => {
     updateSortSetting({
@@ -196,6 +246,51 @@ function assert(cond, msg){
     },{renderNow:false,sync:false});
   });
   await page.locator('#settings-close').click();
+  await page.locator('#open-about').click();
+  await page.locator('#open-sample-habits').click();
+  await page.waitForSelector('#sample-habits-sheet.open');
+  await page.locator('#sample-blocks-head').click();
+  await page.waitForSelector('#sample-blocks-body:not([hidden])');
+  await page.locator('#sample-blocks-preview [data-add-sample="sample-block-sleep"]').click();
+  await page.waitForTimeout(400);
+  const afterSleep = await page.evaluate(() => {
+    const blocks = normalizeBlockedTimes(loadSortSettings().blockedTimes);
+    const sleep = blocks.filter(b => String(b.label || '').toLowerCase() === 'sleep');
+    return {
+      count: sleep.length,
+      block: sleep[0],
+      rowState: document.querySelector('#sample-blocks-preview [data-add-sample="sample-block-sleep"]')?.textContent?.trim(),
+      rowDisabled: document.querySelector('#sample-blocks-preview [data-add-sample="sample-block-sleep"]')?.disabled === true
+    };
+  });
+  console.log(afterSleep);
+  assert(afterSleep.count === 1, 'sleep block replaced, not duplicated');
+  assert(
+    afterSleep.block && afterSleep.block.startAnchor === 'isha' && afterSleep.block.startOffsetMin === 15
+    && afterSleep.block.startCombine === 'later' && afterSleep.block.startAnchor2 === 'sunrise'
+    && afterSleep.block.startOffsetMin2 === -480 && afterSleep.block.startDayOffset2 === 1,
+    'sleep block start = later of isha +15m · sunrise −8h +1d'
+  );
+  assert(
+    afterSleep.block && afterSleep.block.endAnchor === 'sunrise' && afterSleep.block.endOffsetMin === -40,
+    'sleep block end = sunrise −40m'
+  );
+  assert(afterSleep.rowState === 'added' && afterSleep.rowDisabled, 'sleep sample row shows added');
+  const resolvedSleep = await page.evaluate(() => {
+    const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)
+      .find(b => String(b.label || '').toLowerCase() === 'sleep');
+    const base = dayStart(Date.now());
+    const start = resolveBlockedTimeMinutes(block, 'start', base);
+    const end = resolveBlockedTimeMinutes(block, 'end', base);
+    return { start, end };
+  });
+  assert(resolvedSleep.start != null && resolvedSleep.start >= 1290, 'sleep start resolves to evening (got ' + resolvedSleep.start + ')');
+  assert(resolvedSleep.end != null && resolvedSleep.end < 400, 'sleep ends before sunrise (got ' + resolvedSleep.end + ')');
+  assert(resolvedSleep.start != null && resolvedSleep.end != null && resolvedSleep.start > resolvedSleep.end, 'sleep is an overnight window (wrap)');
+
+  console.log('\n[F] Prayer add with city set, then add all prayers');
+  await page.locator('#sample-habits-close').click();
+  await page.waitForTimeout(200);
   await page.locator('#open-about').click();
   await page.locator('#open-sample-habits').click();
   await page.waitForSelector('#sample-habits-sheet.open');
@@ -248,7 +343,7 @@ function assert(cond, msg){
   );
   assert(afterPrayers.placeCount >= 6, 'add-all prayers still seeds no extra places');
 
-  console.log('\n[F] Keep one prayer — survives remove samples; city clear blocked');
+  console.log('\n[G] Keep one prayer — survives remove samples; city clear blocked');
   const keepResult = await page.evaluate(() => {
     const idx = load().findIndex(h => h.sample && (h.hid || '') === 'sample-prayer-dhuhr');
     keepSampleHabit(idx);
@@ -280,7 +375,7 @@ function assert(cond, msg){
   assert(keepResult.remainingSamples === 0, 'unkept samples removed');
   assert(keepResult.cityBlocked, 'clearHomeCity blocked while prayer habits rely on city');
 
-  console.log('\n[G] Blank home still opens sample habits');
+  console.log('\n[H] Blank home still opens sample habits');
   await page.evaluate(() => {
     localStorage.clear();
   });

@@ -147,6 +147,9 @@ function atDay(offset,hour = 12,minute = 0){
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'how it works' }).click();
   await page.locator('#open-sample-habits').click();
+  await page.evaluate(() => {
+    updateSortSetting({ homeCityName:'New York, United States', homeCityLat:40.7128, homeCityLng:-74.0060 }, { renderNow:true, sync:true });
+  });
   await page.locator('#sample-habits-add').click();
   await page.locator('.ting-card:has-text("do early because")').first().waitFor({state:'visible',timeout:10000});
   // Samples load without the old standalone "do it early" section. The
