@@ -3002,12 +3002,48 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings){
   return false;
 }
 
+/** Subjects that list `anchorHid` in a same-day schedule link. */
+function sameDaySubjectsForAnchor(anchorHid,candidates){
+  const hid = cleanHabitId(anchorHid);
+  if(!hid || !Array.isArray(candidates))return [];
+  const out = [];
+  for(const candidate of candidates){
+    if(!candidate || !candidate.h || candidate.h.hid === hid)continue;
+    const links = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(candidate.h)
+      : normalizeScheduleLinks(candidate.h.scheduleLinks,candidate.h.hid).filter(l=>l && l.requireSameDay);
+    for(const link of links){
+      if(link && link.anchorHid === hid)out.push({candidate,link});
+    }
+  }
+  return out;
+}
+
+// Build (keepup) habits may run extra times for a same-day linked partner even
+// when the raw target gap has not elapsed — doing more is fine. Limit extras to
+// scarce partners (e.g. Friday-only Juma) or the partner's earliest eligible
+// day (e.g. Exercise's first due day), not every later day the partner remains
+// theoretically eligible.
+function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
+  if(!h || h.type !== 'keepup' || dayBase == null)return false;
+  for(const {candidate} of sameDaySubjectsForAnchor(h.hid,candidates)){
+    if(!candidate || !candidate.eligible || !candidate.eligible.has(dayBase))continue;
+    if(candidate.eligible.size > 0 && candidate.eligible.size <= 2)return true;
+    let earliest = null;
+    for(const d of candidate.eligible){
+      if(earliest == null || d < earliest)earliest = d;
+    }
+    if(earliest === dayBase)return true;
+  }
+  return false;
+}
+
 // Mutates each candidate's derived eligible Set.
-// Same-day links are OR'd: the subject may appear on day D when any linked
-// same-day anchor is eligible/committed there. When flex+schedule allow D,
-// the subject is pulled onto D (even if rhythm alone had not listed it).
-// Days where no same-day anchor is present are removed so the dependent
-// never appears alone.
+// Same-day links are OR'd and bidirectional for flex pull:
+//  1) Pull flexible anchors onto days where a same-day subject is eligible
+//     (Juma Fri → Shower Fri when Shower's flex allows).
+//  2) Pull flexible subjects onto days where any same-day anchor is present.
+//  3) Filter subjects off days where no same-day anchor is present.
 function applyPersistentLinkEligibility(candidates,dayStates,settings){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates))return candidates;
   const cfg = settings || (typeof sortSettings !== 'undefined' ? sortSettings : {});
@@ -3018,12 +3054,53 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
     return {dayBase,day,weekday:day && day.weekday != null ? day.weekday : (dayBase != null ? new Date(dayBase).getDay() : null)};
   }).filter(item=>item.dayBase != null);
 
+  const dayMeta = (dayBase)=>dayHolders.find(d=>d.dayBase === dayBase) || {
+    dayBase,
+    weekday:new Date(dayBase).getDay(),
+    day:null
+  };
+
   const anchorPresent = (anchorHid,dayBase)=>{
     if(scheduleAnchorCommitForDay(anchorHid,dayBase))return true;
     const anchorCandidate = byHid.get(anchorHid);
     return Boolean(anchorCandidate && anchorCandidate.eligible && anchorCandidate.eligible.has(dayBase));
   };
 
+  const subjectDays = (candidate)=>{
+    if(candidate.eligible && candidate.eligible.size)return [...candidate.eligible];
+    // Day-pinned subjects may still be week-candidates on sparse days even
+    // when an earlier empty eligible set was seeded for reverse pull.
+    const days = [];
+    for(const {dayBase,weekday} of dayHolders){
+      if(typeof isWeekCandidate === 'function' && isWeekCandidate(candidate.h,cfg,dayBase,weekday)){
+        days.push(dayBase);
+      }
+    }
+    return days;
+  };
+
+  // Pass 1 — reverse pull: subject days attract flexible anchors.
+  for(const subject of candidates){
+    if(!subject || !subject.h)continue;
+    const links = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(subject.h)
+      : normalizeScheduleLinks(subject.h.scheduleLinks,subject.h.hid).filter(l=>l && l.requireSameDay);
+    if(!links.length)continue;
+    for(const dayBase of subjectDays(subject)){
+      const {weekday} = dayMeta(dayBase);
+      for(const link of links){
+        const anchor = byHid.get(link.anchorHid);
+        if(!anchor)continue;
+        if(!anchor.eligible)anchor.eligible = new Set();
+        if(anchor.eligible.has(dayBase))continue;
+        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg)){
+          anchor.eligible.add(dayBase);
+        }
+      }
+    }
+  }
+
+  // Pass 2 — forward pull: anchor days attract flexible subjects.
   for(const candidate of candidates){
     const subjectHid = candidate && candidate.h && candidate.h.hid;
     if(!subjectHid)continue;
@@ -3033,21 +3110,69 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
       : normalizeScheduleLinks(candidate.h.scheduleLinks,subjectHid).filter(l=>l && l.requireSameDay);
     if(!sameDayLinks.length)continue;
 
-    for(const {dayBase,day,weekday} of dayHolders){
+    for(const {dayBase,weekday} of dayHolders){
       const anyAnchor = sameDayLinks.some(link=>anchorPresent(link.anchorHid,dayBase));
-      if(anyAnchor){
-        // Flex-gated pull: add D when early/flex window or week candidate allows it.
-        const already = candidate.eligible.has(dayBase);
-        const allowed = already || scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg);
-        if(allowed){
-          if(!already)candidate.eligible.add(dayBase);
-        }
-      }else if(candidate.eligible.has(dayBase)){
-        candidate.eligible.delete(dayBase);
-        const anchorName = (typeof load === 'function' ? load() : []).find(item=>item && item.hid === sameDayLinks[0].anchorHid)?.name
-          || 'anchor';
-        addScheduleLinkOmission(day,subjectHid,`waiting for ${anchorName} to be eligible this day`);
+      if(!anyAnchor)continue;
+      if(candidate.eligible.has(dayBase))continue;
+      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg)){
+        candidate.eligible.add(dayBase);
       }
+    }
+  }
+
+  // Pass 3 — filter: subjects with same-day links cannot appear alone.
+  for(const candidate of candidates){
+    const subjectHid = candidate && candidate.h && candidate.h.hid;
+    if(!subjectHid || !candidate.eligible)continue;
+    const sameDayLinks = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(candidate.h)
+      : normalizeScheduleLinks(candidate.h.scheduleLinks,subjectHid).filter(l=>l && l.requireSameDay);
+    if(!sameDayLinks.length)continue;
+    for(const dayBase of [...candidate.eligible]){
+      if(sameDayLinks.some(link=>anchorPresent(link.anchorHid,dayBase)))continue;
+      candidate.eligible.delete(dayBase);
+      const {day} = dayMeta(dayBase);
+      const anchorName = (typeof load === 'function' ? load() : []).find(item=>item && item.hid === sameDayLinks[0].anchorHid)?.name
+        || 'anchor';
+      addScheduleLinkOmission(day,subjectHid,`waiting for ${anchorName} to be eligible this day`);
+    }
+  }
+
+  // Pass 4 — non-build anchors must not burn a later same-day partner day.
+  // Example: reduce every 3 days linked before a Friday-only partner — drop
+  // Thursday (gap 1 < target) so solvers do not place Thu and leave Fri bare.
+  // Keepup/build skips this: extra reps for partners are fine, so an earlier
+  // due day (Mon) must not be dropped just because a Wed exercise also needs it.
+  for(const anchor of candidates){
+    if(!anchor || !anchor.h || !anchor.eligible || !anchor.eligible.size)continue;
+    if(anchor.h.type === 'keepup')continue;
+    const subjects = sameDaySubjectsForAnchor(anchor.h.hid,candidates);
+    if(!subjects.length)continue;
+    const partnerDays = new Set();
+    for(const {candidate:subject} of subjects){
+      for(const dayBase of subjectDays(subject)){
+        const {weekday} = dayMeta(dayBase);
+        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg)){
+          partnerDays.add(dayBase);
+        }
+      }
+    }
+    if(!partnerDays.size)continue;
+    const rawTarget = Math.max(1,Number(anchor.h.target) || 7);
+    for(const dayBase of [...anchor.eligible]){
+      if(partnerDays.has(dayBase))continue;
+      let burnsPartner = false;
+      for(const partnerDay of partnerDays){
+        if(partnerDay <= dayBase)continue;
+        const gap = Math.round((partnerDay - dayBase) / 86400000);
+        // Match rhythmEligibleOnDay: a log on dayBase blocks partnerDay when
+        // gap < raw target (flex does not reopen a second placement that soon).
+        if(gap < rawTarget){
+          burnsPartner = true;
+          break;
+        }
+      }
+      if(burnsPartner)anchor.eligible.delete(dayBase);
     }
   }
   return candidates;
@@ -3230,7 +3355,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(pinned && !state.isTodayDay)continue;
         if(rhythmPlacementCount > 0 && virtualLastLog != null
-          && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday))continue;
+          && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday)
+          && !(state.dayBase > dayStart(virtualLastLog)
+            && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates)))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const dayOpts = {
@@ -3278,13 +3405,23 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     }
     // Sparse rhythm / one-shot: pick the best-scoring feasible day, then
     // (for rhythm) advance and repeat for later eligible days only.
+    // Due days (age ≥ raw target) compete without schedule-link bonuses so a
+    // 3-day Shower still lands on Monday before a Friday Juma co-place; early
+    // flex days keep the link bonus so partners can pull forward.
     while(true){
-      let best = null;
+      let dueBest = null;
+      let earlyBest = null;
+      const rawTarget = rhythmHabit
+        ? Math.max(1,Number(c.h && c.h.target) || 7) : null;
       for(const state of dayStates){
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(pinned && !state.isTodayDay)continue;
-        if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null
-          && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday))continue;
+        if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null){
+          const afterLast = state.dayBase > dayStart(virtualLastLog);
+          const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday);
+          const linkExtra = afterLast && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
+          if(!spaced && !linkExtra)continue;
+        }
         // Reservation: defer this movable to a quieter eligible day when placing
         // it here would breach a daily breakable's target. No-alternative and
         // higher-priority cases still place here (handled inside the helper).
@@ -3305,6 +3442,34 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
           if(spare.length)dayOpts.spareWindows = spare;
         }
+        const consider = (cand,withLink,linkBonus)=>{
+          if(!rhythmHabit){
+            // One-shots: shop with link bonus.
+            if(!earlyBest || cand.score < earlyBest.score)earlyBest = cand;
+            return;
+          }
+          const refLog = virtualLastLog;
+          const isDue = refLog == null
+            || Math.round((state.dayBase - dayStart(refLog)) / 86400000) >= rawTarget;
+          if(isDue){
+            if(!withLink && (!dueBest || cand.score < dueBest.score))dueBest = cand;
+            return;
+          }
+          if(!withLink)return;
+          // Early flex: prefer linked partner days; among those, earliest so
+          // Wed exercise+shower is not skipped for a later Fri Juma bonus.
+          const bonus = Number(linkBonus) || 0;
+          const tagged = {...cand, linkBonus:bonus};
+          if(!earlyBest){ earlyBest = tagged; return; }
+          const bestBonus = Number(earlyBest.linkBonus) || 0;
+          if(bonus > 0 && bestBonus <= 0){ earlyBest = tagged; return; }
+          if(bonus <= 0 && bestBonus > 0)return;
+          if(bonus > 0 && bestBonus > 0){
+            if(state.dayBase < earlyBest.state.dayBase)earlyBest = tagged;
+            return;
+          }
+          if(cand.score < earlyBest.score)earlyBest = tagged;
+        };
         if(breakableRhythm){
           // Dry-run continuous-first / largest piece for scoring without commit.
           const clone = clonePlacementState(state);
@@ -3317,18 +3482,27 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
           const coLocHint = colocateHintBonus(state,fitProbe.locId,c.i,locHints,registry,mode);
           const linkDayBonus = scheduleLinkDayBonus(c.h,state.dayBase,candidates);
-          const score = scoreAgendaPlacement({
+          const scoreTerms = {
             travelSeconds:travel,
-            clusterBonus:clusterBonus + linkDayBonus,
             coLocHint,
             dayOffsetPenalty:dayOpts.dayOffsetPenalty,
             asapDelayMin:0,
             scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
             preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
             urgency:c.urgency
-          },weights);
-          const cand = { state, fill, dayOpts, score, breakable:true };
-          if(!best || score < best.score)best = cand;
+          };
+          const dueCand = {
+            state, fill, dayOpts, breakable:true,
+            score:scoreAgendaPlacement({...scoreTerms,clusterBonus},weights)
+          };
+          const earlyCand = {
+            state, fill, dayOpts, breakable:true,
+            score:scoreAgendaPlacement({
+              ...scoreTerms,clusterBonus:clusterBonus + linkDayBonus
+            },weights)
+          };
+          consider(dueCand,false,0);
+          consider(earlyCand,true,linkDayBonus);
           continue;
         }
         const fitProbe = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
@@ -3337,18 +3511,35 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
         const coLocHint = colocateHintBonus(state,fitProbe.locId,c.i,locHints,registry,mode);
         const linkDayBonus = scheduleLinkDayBonus(c.h,state.dayBase,candidates);
-        const score = scoreAgendaPlacement({
+        const scoreTerms = {
           travelSeconds:travel,
-          clusterBonus:clusterBonus + linkDayBonus,
           coLocHint,
           dayOffsetPenalty:dayOpts.dayOffsetPenalty,
           asapDelayMin:0,
           scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
           preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
           urgency:c.urgency
-        },weights);
-        const cand = { state, fill, fit:fitProbe, score };
-        if(!best || score < best.score)best = cand;
+        };
+        const dueCand = {
+          state, fill, fit:fitProbe,
+          score:scoreAgendaPlacement({...scoreTerms,clusterBonus},weights)
+        };
+        const earlyCand = {
+          state, fill, fit:fitProbe,
+          score:scoreAgendaPlacement({
+            ...scoreTerms,clusterBonus:clusterBonus + linkDayBonus
+          },weights)
+        };
+        consider(dueCand,false,0);
+        consider(earlyCand,true,linkDayBonus);
+      }
+      // Earliest of due vs early-link wins so a Wed partner is not deferred
+      // behind a later due day (Thu) that would then block it.
+      let best = null;
+      if(dueBest && earlyBest){
+        best = earlyBest.state.dayBase < dueBest.state.dayBase ? earlyBest : dueBest;
+      }else{
+        best = dueBest || earlyBest;
       }
       if(!best)break;
       if(best.breakable){
@@ -3774,26 +3965,41 @@ function addScheduleLinkOmission(day,subjectHid,reason){
   day.linkOmissions.push({subjectHid,reason});
 }
 
-// Soft preference: prefer days where a same-day OR partner is already
-// eligible/committed so linked habits co-place instead of using an earlier
-// empty flex day.
+// Soft preference: prefer days that share a same-day OR partner (either my
+// linked anchors, or subjects that same-day-link to me). Scarce partners
+// (few eligible days, e.g. Friday-only Juma) get a stronger pull so a flexible
+// Shower chooses Friday over an earlier empty flex day.
 function scheduleLinkDayBonus(h,dayBase,candidates){
   if(!h || dayBase == null)return 0;
-  const sameDayLinks = typeof sameDayScheduleLinks === 'function'
-    ? sameDayScheduleLinks(h)
-    : normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay);
-  if(!sameDayLinks.length)return 0;
   const byHid = Array.isArray(candidates)
     ? new Map(candidates.filter(c=>c && c.h && c.h.hid).map(c=>[c.h.hid,c]))
     : null;
+  let best = 0;
+  const bump = (partner,base)=>{
+    if(!partner)return;
+    const scarce = partner.eligible && partner.eligible.size > 0 && partner.eligible.size <= 2;
+    best = Math.max(best, scarce ? base + 220 : base);
+  };
+  const sameDayLinks = typeof sameDayScheduleLinks === 'function'
+    ? sameDayScheduleLinks(h)
+    : normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay);
   for(const link of sameDayLinks){
     if(typeof scheduleAnchorCommitForDay === 'function' && scheduleAnchorCommitForDay(link.anchorHid,dayBase)){
-      return 180;
+      best = Math.max(best,400);
+      continue;
     }
     const anchor = byHid && byHid.get(link.anchorHid);
-    if(anchor && anchor.eligible && anchor.eligible.has(dayBase))return 180;
+    if(anchor && anchor.eligible && anchor.eligible.has(dayBase)){
+      bump(anchor,180);
+    }
   }
-  return 0;
+  for(const {candidate,link} of sameDaySubjectsForAnchor(h.hid,candidates)){
+    if(!candidate.eligible || !candidate.eligible.has(dayBase))continue;
+    // Direction from the subject's link: if they are "after" me, I am before them.
+    const base = link && link.direction === 'after' ? 280 : 240;
+    bump(candidate,base);
+  }
+  return best;
 }
 
 function persistentLinkViolationsForState(state){
@@ -4218,9 +4424,16 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     const hasSameDayLinks = typeof sameDayScheduleLinks === 'function'
       ? sameDayScheduleLinks(h).length > 0
       : normalizeScheduleLinks(h.scheduleLinks,h.hid).some(l=>l && l.requireSameDay);
-    // Keep same-day-linked habits even with an empty set so pull can add
-    // flex-allowed anchor days in applyPersistentLinkEligibility.
-    if(!eligible.size && !hasSameDayLinks)continue;
+    const isSameDayAnchor = data.some(other=>{
+      if(!other || other === h)return false;
+      const links = typeof sameDayScheduleLinks === 'function'
+        ? sameDayScheduleLinks(other)
+        : normalizeScheduleLinks(other.scheduleLinks,other.hid).filter(l=>l && l.requireSameDay);
+      return links.some(l=>l && l.anchorHid === h.hid);
+    });
+    // Keep same-day-linked habits and their anchors even with an empty set so
+    // bidirectional pull can add flex-allowed partner days.
+    if(!eligible.size && !hasSameDayLinks && !isSameDayAnchor)continue;
     seen.add(i);
     candidates.push({
       h, i,

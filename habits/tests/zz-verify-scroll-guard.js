@@ -3,7 +3,10 @@ const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 let pass = 0, fail = 0;
-function assert(cond, msg){ if(cond){ pass++; console.log('  ok: ' + msg); } else { fail++; console.error('  FAIL: ' + msg); } }
+function assert(cond, msg){
+  if(cond){ pass++; console.log('  ok: ' + msg); }
+  else { fail++; console.error('  not ok: ' + msg); }
+}
 
 async function drag(client, x, y, dx, dy, steps = 12, stepMs = 16){
   await client.send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[{x, y, radiusX:10, radiusY:10, force:1, id:0}], modifiers:0 });
@@ -16,33 +19,63 @@ async function drag(client, x, y, dx, dy, steps = 12, stepMs = 16){
 }
 async function sheetCount(page, id){ return page.locator(`${id}.open`).count(); }
 
-// Today often has no free-pill (full/blocked). Bring the first has-pill header
-// into view so CDP taps land inside the viewport — off-screen coords make
+// Today often has no free-pill (full/blocked). Bring a has-pill header into
+// view so CDP taps land inside the viewport — off-screen coords make
 // "sheet did not open" vacuously pass and "exact tap opens" always fail.
-async function visibleFreePill(page){
-  return page.evaluate(() => {
-    const header = document.querySelector('#list .section-header.has-pill');
-    const pill = header && header.querySelector('.free-pill');
-    if(!pill)return null;
-    header.scrollIntoView({ block:'center', behavior:'instant' });
-    // Nudge so a sticky header is not flush-stuck when possible.
-    window.scrollBy({ top:-40, left:0, behavior:'instant' });
-    const r = pill.getBoundingClientRect();
-    const hr = header.getBoundingClientRect();
+// preferLower: use a later day header and keep scrollY headroom so a
+// finger-down drag can still move the page (scrollY cannot go below 0).
+async function visibleFreePill(page, preferLower = false){
+  return page.evaluate((preferLower)=>{
+    const headers = [...document.querySelectorAll('#list .section-header.has-pill')];
+    if(!headers.length)return null;
+    const anchor = preferLower
+      ? (headers[Math.min(2, headers.length - 1)] || headers[0])
+      : headers[0];
+    anchor.scrollIntoView({ block:'center', behavior:'instant' });
+    if(preferLower && window.scrollY < 160){
+      window.scrollBy({ top:160 - window.scrollY, left:0, behavior:'instant' });
+    }else if(!preferLower){
+      window.scrollBy({ top:-40, left:0, behavior:'instant' });
+    }
     const vh = window.innerHeight;
-    if(!(r.bottom > 8 && r.top < vh - 8))return null;
-    return {
-      x: r.left + r.width / 2,
-      y: r.top + r.height / 2,
-      headerX: Math.max(12, r.left - 30),
-      headerY: hr.top + hr.height / 2,
-      scrollY: window.scrollY
-    };
-  });
+    const order = preferLower ? headers.slice().reverse() : headers;
+    for(const header of order){
+      const pill = header.querySelector('.free-pill');
+      if(!pill)continue;
+      const r = pill.getBoundingClientRect();
+      if(!(r.bottom > 8 && r.top < vh - 8 && r.height > 0))continue;
+      const hr = header.getBoundingClientRect();
+      return {
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+        headerX: Math.max(12, r.left - 30),
+        headerY: Math.min(vh - 12, Math.max(12, hr.top + hr.height / 2)),
+        scrollY: window.scrollY
+      };
+    }
+    return null;
+  }, preferLower);
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless:true });
+  let browser;
+  const launchAttempts = [
+    { headless:true, channel:'chrome' },
+    { headless:true },
+    { headless:true, args:['--disable-gpu'] }
+  ];
+  let lastErr = null;
+  for(const opts of launchAttempts){
+    try{
+      browser = await chromium.launch(opts);
+      lastErr = null;
+      break;
+    }catch(err){
+      lastErr = err;
+      await sleep(300);
+    }
+  }
+  if(!browser)throw lastErr || new Error('chromium.launch failed');
   const page = await browser.newPage({ viewport:{ width:390, height:600 }, isMobile:true, hasTouch:true });
   page.on('pageerror', e => console.log('PAGEERROR:', String(e).slice(0,200)));
   const client = await page.context().newCDPSession(page);
@@ -50,7 +83,10 @@ async function visibleFreePill(page){
   const dayMs = 86400000;
   const seedData = [];
   for(let i = 0; i < 14; i++){
-    seedData.push({ hid:`tap-${i}`, name:`Tap Habit ${i}`, emoji:'🧪', type:'habit', target:1, logs:[], durationMinutes:25, createdAt:now - dayMs * (i + 2) });
+    seedData.push({
+      hid:`tap-${i}`,name:`Tap Habit ${i}`,emoji:'🧪',type:'keepup',target:1,
+      logs:[],durationMinutes:25,createdAt:now - dayMs * (i + 2)
+    });
   }
   const seedSettings = { preset:'todayFirst', showWeekOnHome:true, agendaOptimizer:false, topics:[], locations:[], travel:{}, defaultTravelMode:'driving', blockedTimes:[{label:'sleep', start:0, end:420},{label:'work', start:540, end:1020},{label:'sleep', start:1320, end:1440}] };
   await page.addInitScript(({ data, settings }) => {
@@ -74,10 +110,12 @@ async function visibleFreePill(page){
   assert(await sheetCount(page, '#free-time-sheet') === 0, 'free-time sheet NOT opened after scroll attempt on pill');
   assert(await sheetCount(page, '#slipped-sheet') === 0, 'slipped sheet NOT opened after scroll attempt on pill');
 
-  // also from the header text near the pill (within hit slop, actually scrollable)
-  const hdr = await visibleFreePill(page);
+  // Header text near the pill (scrollable). Prefer a lower day so scrollY has
+  // headroom — finger-down drag cannot move the page when already at top.
+  const hdr = await visibleFreePill(page, true);
   await sleep(150);
   assert(Boolean(hdr), 'header pill still visible for scroll drag');
+  assert(hdr.scrollY >= 80, 'header drag starts with scroll headroom (' + hdr.scrollY + ')');
   await drag(client, hdr.headerX, hdr.headerY, 0, 150);
   const scrollY = await page.evaluate(() => window.scrollY);
   assert(scrollY !== hdr.scrollY, `page scrolled during header drag (${hdr.scrollY} -> ${scrollY})`);
@@ -97,9 +135,25 @@ async function visibleFreePill(page){
 
   // ── 2. Detail: vertical scroll starting ON a chip button ──
   console.log('\n[2] Detail vertical scroll starting on a chip button');
-  await page.evaluate(() => { document.querySelector('.ting-card').click(); });
+  await page.evaluate(() => {
+    const card = document.querySelector('.ting-card[data-real]');
+    if(card)card.click();
+    else document.querySelector('.ting-card')?.click();
+  });
   await page.waitForSelector('#detail-sheet.open', { timeout:5000 });
-  await sleep(500);
+  await sleep(300);
+  // Land on the schedule pager page before probing weekday chips.
+  await page.evaluate(() => {
+    if(typeof openDetailSchedule === 'function'){
+      const idx = Number(document.querySelector('.ting-card[data-real]')?.dataset.real);
+      if(Number.isFinite(idx))openDetailSchedule(idx);
+      return;
+    }
+    const pager = document.querySelector('#detail-sheet .detail-pager');
+    const schedule = pager && pager.querySelector('.detail-page[data-detail-nav="schedule"]');
+    if(pager && schedule)pager.scrollLeft = schedule.offsetLeft;
+  });
+  await sleep(400);
   const chipInfo = await page.evaluate(() => {
     const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]');
     if(!pageEl)return null;
@@ -115,11 +169,27 @@ async function visibleFreePill(page){
   });
   assert(Boolean(chipInfo), 'found weekday chip button in detail schedule page');
   if(chipInfo){
-    assert(chipInfo.scrollHeight > chipInfo.clientHeight, `schedule page is scrollable (${chipInfo.scrollHeight} > ${chipInfo.clientHeight})`);
+    // Guarantee overflow so the scroll-guard assertion is meaningful.
+    if(!(chipInfo.scrollHeight > chipInfo.clientHeight)){
+      await page.evaluate(() => {
+        const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]');
+        if(!pageEl)return;
+        const pad = document.createElement('div');
+        pad.dataset.scrollGuardPad = '1';
+        pad.style.height = '240px';
+        pageEl.appendChild(pad);
+      });
+    }
+    const scrollable = await page.evaluate(() => {
+      const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]');
+      return pageEl ? { scrollHeight:pageEl.scrollHeight, clientHeight:pageEl.clientHeight, scrollTop:pageEl.scrollTop } : null;
+    });
+    assert(scrollable && scrollable.scrollHeight > scrollable.clientHeight,
+      `schedule page is scrollable (${scrollable && scrollable.scrollHeight} > ${scrollable && scrollable.clientHeight})`);
     await sleep(250);
     await drag(client, chipInfo.x, chipInfo.y, 0, -160); // drag up → page scrolls down
     const afterScroll = await page.evaluate(() => document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]').scrollTop);
-    assert(afterScroll !== chipInfo.scrollTop, `schedule page scrolled (${chipInfo.scrollTop} -> ${afterScroll})`);
+    assert(afterScroll !== (scrollable.scrollTop || 0), `schedule page scrolled (${scrollable.scrollTop || 0} -> ${afterScroll})`);
     const chipNow = await page.evaluate(() => {
       const c = document.querySelector('#detail-weekday-chips button');
       return c ? c.classList.contains('on') : null;
@@ -132,7 +202,10 @@ async function visibleFreePill(page){
   console.log('\n[3] Detail pager swipe starting on a chip button');
   const swipeInfo = await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
+    const schedule = pager && pager.querySelector('.detail-page[data-detail-nav="schedule"]');
+    if(pager && schedule)pager.scrollLeft = schedule.offsetLeft;
     const chip = document.querySelector('#detail-weekday-chips button');
+    if(!chip || !pager)return null;
     chip.scrollIntoView({ block:'center', inline:'center', behavior:'instant' });
     const r = chip.getBoundingClientRect();
     const pr = pager.getBoundingClientRect();

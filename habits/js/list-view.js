@@ -1428,13 +1428,13 @@ function earlyReason(data,i,settings){
   if(!canDoEarlyToday(h,target))return '';
 
   // Schedule-link pull: a same-day OR partner is due/committed today.
+  const todayBase = dayStart(Date.now());
   const sameDayLinks = typeof sameDayScheduleLinks === 'function'
     ? sameDayScheduleLinks(h)
     : (typeof normalizeScheduleLinks === 'function'
       ? normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay)
       : []);
   if(sameDayLinks.length){
-    const todayBase = dayStart(Date.now());
     for(const link of sameDayLinks){
       const anchor = data.find(item=>item && item.hid === link.anchorHid);
       if(!anchor)continue;
@@ -1449,6 +1449,26 @@ function earlyReason(data,i,settings){
       if(link.direction === 'after')return `after ${name}`;
       return `with ${name}`;
     }
+  }
+  // Reverse: I am the anchor for someone else's same-day link (Juma after Shower).
+  for(const other of data){
+    if(!other || other.hid === h.hid)continue;
+    const links = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(other)
+      : (typeof normalizeScheduleLinks === 'function'
+        ? normalizeScheduleLinks(other.scheduleLinks,other.hid).filter(l=>l && l.requireSameDay)
+        : []);
+    const hit = links.find(l=>l && l.anchorHid === h.hid);
+    if(!hit)continue;
+    const otherDue = includeInTodayAgenda(other,settings)
+      || (typeof isWeekCandidate === 'function'
+        && isWeekCandidate(other,settings,todayBase,new Date(todayBase).getDay()));
+    if(!otherDue && !(typeof scheduleAnchorCommitForDay === 'function'
+      && scheduleAnchorCommitForDay(other.hid,todayBase,data)))continue;
+    const name = (other.name || 'linked habit').slice(0,40);
+    if(hit.direction === 'after')return `before ${name}`;
+    if(hit.direction === 'before')return `after ${name}`;
+    return `with ${name}`;
   }
 
   const preferred = nextPreferredOnOrAfter(h,Date.now(),target);

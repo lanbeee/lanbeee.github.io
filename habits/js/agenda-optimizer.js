@@ -1059,8 +1059,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       const breakableRhythm = !!(c.h && c.h.breakable && rhythmHabit);
       if(rhythmHabit && virtualLogs.has(c.i)){
         const vLog = virtualLogs.get(c.i);
-        if(typeof rhythmEligibleOnDay === 'function'
-          && !rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday))continue;
+        const spaced = typeof rhythmEligibleOnDay === 'function'
+          && rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday);
+        const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
+        const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
+          && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
+        if(!spaced && !linkExtra)continue;
       }
       if(c.h && c.h.breakable && c.h.type === 'task'){
         const left = typeof breakableMinutesLeft === 'function'
@@ -1308,8 +1312,13 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         // Only apply rhythm spacing after this optimizer pass has placed a
         // session; otherwise a new partial log makes lastLog=today and wrongly
         // removes the rest of today's budget from the agenda.
-        if(rhythmPlacementCount > 0 && vLog != null && typeof rhythmEligibleOnDay === 'function'
-          && !rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday))continue;
+        if(rhythmPlacementCount > 0 && vLog != null && typeof rhythmEligibleOnDay === 'function'){
+          const spaced = rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday);
+          const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
+          const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
+            && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
+          if(!spaced && !linkExtra)continue;
+        }
         const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
         const before = state.fills.length;
         if(!placeBreakableSessions(state,fill,{settings,weights,allowNetwork:true}))continue;
@@ -1401,7 +1410,16 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
       ? sameDayScheduleLinks(h).length > 0
       : (typeof normalizeScheduleLinks === 'function'
         && normalizeScheduleLinks(h.scheduleLinks,h.hid).some(l=>l && l.requireSameDay));
-    if(!eligible.size && !hasSameDayLinks)continue;
+    const isSameDayAnchor = data.some(other=>{
+      if(!other || other === h)return false;
+      const links = typeof sameDayScheduleLinks === 'function'
+        ? sameDayScheduleLinks(other)
+        : (typeof normalizeScheduleLinks === 'function'
+          ? normalizeScheduleLinks(other.scheduleLinks,other.hid).filter(l=>l && l.requireSameDay)
+          : []);
+      return links.some(l=>l && l.anchorHid === h.hid);
+    });
+    if(!eligible.size && !hasSameDayLinks && !isSameDayAnchor)continue;
     seen.add(i);
     candidates.push({
       h,i,pinned,

@@ -379,6 +379,146 @@ function assert(value,message){
   assert(earlyCase.cat === 2,'link-pull subject is upcoming for early path');
   assert(/after Tennis/.test(earlyCase.reason || ''),'early reason names after Tennis (' + earlyCase.reason + ')');
 
+  console.log('\n[C] Shower keepup + Exercise + Juma — extras OK for build habits');
+  const jumaCase = await page.evaluate(()=>{
+    // Freeze to Monday Aug 3, 2026 9am so the week includes Mon→Fri.
+    const monBase = dayStart(new Date(2026,7,3).getTime());
+    const wedBase = monBase + 2 * 86400000;
+    const thuBase = monBase + 3 * 86400000;
+    const friBase = monBase + 4 * 86400000;
+    const now = monBase + 9 * 3600000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showWeekOnHome:true,
+      agendaOptimizer:false,
+      availabilityMinutes:Array(7).fill(300),
+      availabilityOverrides:{},
+      blockedTimes:[],
+      locations:[],
+      travel:{},
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showScheduledTasksInAgenda:true,
+      showPlannedItemsInAgenda:true
+    };
+    for(let o = 0;o < 7;o += 1){
+      settings.availabilityOverrides[dateKey(monBase + o * 86400000)] = 300;
+    }
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+
+    // Shower: keepup every 3 days, flex 3. Last done Fri before this Monday → due Mon.
+    // Extra showers for Exercise / Juma are fine (build habit).
+    const shower = {
+      hid:'shower',name:'Shower',type:'keepup',target:3,flexibilityDays:3,
+      logs:[monBase - 3 * 86400000],durationMinutes:5,priority:1
+    };
+    // Exercise every 3 days, due Wednesday. Link on Exercise (like Juma): before
+    // Shower same-day → Shower always after Exercise.
+    const exercise = {
+      hid:'exercise',name:'Exercise',type:'keepup',target:3,flexibilityDays:0,
+      logs:[monBase - 1 * 86400000],durationMinutes:40,priority:1,
+      scheduleLinks:[
+        {anchorHid:'shower',direction:'before',adjacency:'sometime',requireSameDay:true}
+      ]
+    };
+    // Juma Friday-only after Shower same-day.
+    const juma = {
+      hid:'juma',name:'Juma Prayer',type:'keepup',target:7,flexibilityDays:0,
+      logs:[monBase - 10 * 86400000],durationMinutes:25,priority:0,
+      allowedWeekdays:[5],
+      allowedTimeStart:13 * 60 + 30,allowedTimeEnd:15 * 60 + 30,
+      scheduleLinks:[
+        {anchorHid:'shower',direction:'after',adjacency:'sometime',requireSameDay:true}
+      ]
+    };
+
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let week;
+    let showerElig;
+    let reverseEarly = '';
+    try{
+      save([shower,exercise,juma]);
+      const data = load();
+      const days = [];
+      for(let o = 0;o < 7;o += 1){
+        const dayBase = monBase + o * 86400000;
+        days.push({dayBase,weekday:new Date(dayBase).getDay(),isToday:o === 0,linkOmissions:[]});
+      }
+      const cands = data.map((h,i)=>{
+        const eligible = new Set();
+        days.forEach(d=>{
+          if(isWeekCandidate(h,settings,d.dayBase,d.weekday))eligible.add(d.dayBase);
+        });
+        return {h,i,eligible,priority:1,urgency:40};
+      });
+      applyPersistentLinkEligibility(cands,days,settings);
+      showerElig = [...(cands.find(c=>c.h.hid === 'shower').eligible || new Set())].map(dateKey);
+      week = buildWeekAgenda(data,settings,7);
+      const friNow = friBase + 10 * 3600000;
+      FrozenDate.now = ()=>friNow;
+      // Probe reverse early with Shower still upcoming into Friday.
+      const friData = load().map(h=>{
+        if(h.hid !== 'shower')return h;
+        return {...h,logs:[friBase - 1 * 86400000],lastLog:friBase - 1 * 86400000};
+      });
+      const showerIdx = friData.findIndex(h=>h.hid === 'shower');
+      reverseEarly = earlyReason(friData,showerIdx,settings);
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    const fillsOn = (dayBase)=>{
+      const day = week.days.find(d=>d.dayBase === dayBase);
+      return ((day && day.timeline) || []).filter(r=>r.kind === 'fill').map(r=>r.h && r.h.hid);
+    };
+    const mon = fillsOn(monBase);
+    const wed = fillsOn(wedBase);
+    const thu = fillsOn(thuBase);
+    const fri = fillsOn(friBase);
+    const showerDays = week.days
+      .filter(d=>(d.timeline || []).some(r=>r.kind === 'fill' && r.h && r.h.hid === 'shower'))
+      .map(d=>dateKey(d.dayBase));
+    return {
+      showerElig,
+      mon,
+      wed,
+      thu,
+      fri,
+      showerDays,
+      exerciseBeforeShower:wed.indexOf('exercise') >= 0 && wed.indexOf('shower') >= 0
+        && wed.indexOf('exercise') < wed.indexOf('shower'),
+      showerBeforeJuma:fri.indexOf('shower') >= 0 && fri.indexOf('juma') >= 0
+        && fri.indexOf('shower') < fri.indexOf('juma'),
+      reverseEarly
+    };
+  });
+  assert(jumaCase.showerElig.includes('2026-08-03'),'Mon due day stays eligible');
+  assert(jumaCase.showerElig.includes('2026-08-05'),'Exercise Wed reverse-pulls Shower');
+  assert(jumaCase.showerElig.includes('2026-08-07'),'Juma Fri reverse-pulls Shower');
+  assert(jumaCase.mon.includes('shower'),
+    'Shower still places on its 3-day rhythm Monday (' + jumaCase.showerDays.join(',') + ')');
+  assert(jumaCase.wed.includes('exercise') && jumaCase.wed.includes('shower'),
+    'Wednesday has Exercise and Shower (' + jumaCase.wed.join(',') + ')');
+  assert(jumaCase.exerciseBeforeShower,'Shower is ordered after Exercise on Wednesday');
+  assert(jumaCase.fri.includes('juma') && jumaCase.fri.includes('shower'),
+    'Friday has both Juma and Shower (' + jumaCase.fri.join(',') + ')');
+  assert(jumaCase.showerBeforeJuma,'Shower is ordered before Juma on Friday');
+  assert(jumaCase.showerDays.length >= 3,
+    'keepup Shower may land extra times for partners (' + jumaCase.showerDays.join(',') + ')');
+  assert(/before Juma|after Exercise/.test(jumaCase.reverseEarly || ''),
+    'reverse early reason names a partner (' + jumaCase.reverseEarly + ')');
+
   assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
