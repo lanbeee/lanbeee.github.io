@@ -473,13 +473,15 @@ function updateFullPageState(){
   }
 }
 
-// RENDER: shows and auto-hides the toast message
-function showToast(text){
+// RENDER: shows and auto-hides the toast message. Optional durationMs for
+// longer notices (e.g. monthly retention cleanup).
+function showToast(text,durationMs = 900){
   const toast = $('toast');
   toast.textContent = text;
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>toast.classList.remove('show'),900);
+  const ms = Number.isFinite(durationMs) ? Math.max(900,durationMs) : 900;
+  toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
 }
 
 // HYBRID: shows action toast and stores pending action state

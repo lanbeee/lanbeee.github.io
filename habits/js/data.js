@@ -196,6 +196,9 @@
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
  * @property {string|null} calendarCreditHabitId — breakable habit hid that receives imported meeting minutes as progress credit; null = none
  * @property {'skip'|'tasks'} calendarAllDayMode — how PDF/calendar all-day events are imported: skip them, or land as dated untimed tasks
+ * @property {2|3|7} completedTaskRetentionDays — auto-delete completed tasks older than this many days
+ * @property {0|12|30|60} habitLogKeepCount — keep newest N actual logs per non-task habit (0 = off)
+ * @property {number} lastRetentionCleanupAt — ms timestamp of last monthly auto cleanup (0 = never)
  */
 
 /**
@@ -378,6 +381,9 @@ function loadSortSettings(){
     merged.blockedTimeOverrides = normalizeBlockedTimeOverrides(merged.blockedTimeOverrides);
     merged.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(merged.calendarCreditHabitId) : '') || null;
     merged.calendarAllDayMode = normalizeCalendarAllDayMode(merged.calendarAllDayMode);
+    merged.completedTaskRetentionDays = normalizeCompletedTaskRetentionDays(merged.completedTaskRetentionDays);
+    merged.habitLogKeepCount = normalizeHabitLogKeepCount(merged.habitLogKeepCount);
+    merged.lastRetentionCleanupAt = normalizeRetentionCleanupAt(merged.lastRetentionCleanupAt);
     merged.defaultPriority = clampPriority(merged.defaultPriority);
     merged.defaultDurationMinutes = clampDuration(merged.defaultDurationMinutes);
     merged.defaultFlexibilityDays = clampFlexibility(merged.defaultFlexibilityDays);
@@ -449,6 +455,9 @@ function saveSortSettings(settings){
   next.blockedTimeOverrides = normalizeBlockedTimeOverrides(next.blockedTimeOverrides);
   next.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(next.calendarCreditHabitId) : '') || null;
   next.calendarAllDayMode = normalizeCalendarAllDayMode(next.calendarAllDayMode);
+  next.completedTaskRetentionDays = normalizeCompletedTaskRetentionDays(next.completedTaskRetentionDays);
+  next.habitLogKeepCount = normalizeHabitLogKeepCount(next.habitLogKeepCount);
+  next.lastRetentionCleanupAt = normalizeRetentionCleanupAt(next.lastRetentionCleanupAt);
   next.defaultPriority = clampPriority(next.defaultPriority);
   next.defaultDurationMinutes = clampDuration(next.defaultDurationMinutes);
   next.defaultFlexibilityDays = clampFlexibility(next.defaultFlexibilityDays);
@@ -2448,6 +2457,33 @@ function normalizeCalendarAllDayMode(value){
 function normalizeHomeExtraMode(value){
   return value === 'cards12h' ? 'cards12h' : 'cards';
 }
+/** PURE: completed-task auto-delete window in days (2 | 3 | 7). */
+function normalizeCompletedTaskRetentionDays(value){
+  const n = parseInt(value,10);
+  return (typeof COMPLETED_TASK_RETENTION_DAYS !== 'undefined' && COMPLETED_TASK_RETENTION_DAYS.includes(n))
+    ? n
+    : 7;
+}
+/** PURE: keep newest N actual logs per non-task habit; 0 disables trimming. */
+function normalizeHabitLogKeepCount(value){
+  const n = parseInt(value,10);
+  return (typeof HABIT_LOG_KEEP_COUNTS !== 'undefined' && HABIT_LOG_KEEP_COUNTS.includes(n))
+    ? n
+    : 30;
+}
+/** PURE: last auto-cleanup timestamp (ms), or 0. */
+function normalizeRetentionCleanupAt(value){
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+/** PURE: whether the monthly auto-cleanup gate is due. */
+function shouldRunRetentionCleanup(settings, now = Date.now()){
+  const last = normalizeRetentionCleanupAt(settings && settings.lastRetentionCleanupAt);
+  const interval = typeof RETENTION_CLEANUP_INTERVAL_MS === 'number'
+    ? RETENTION_CLEANUP_INTERVAL_MS
+    : 30 * 86400000;
+  return !last || (now - last) >= interval;
+}
 // PURE: true iff the location has any hours constraint at all. Locations with
 // no hours resolve to 24h every day and skip all window math — the "Home"
 // case stays literally zero-cost.
@@ -2563,6 +2599,134 @@ function reconcileLocations(data,settings){
     return moved ? {...h,locationIds,locationPrefs,preferredLocationId} : h;
   });
   return {data:next,changed};
+}
+
+const RETENTION_TIME_FIELDS = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
+
+/** PURE: habit ids referenced as dynamic-time or schedule-link anchors. */
+function collectReferencedHabitIds(data,settings = null){
+  const refs = new Set();
+  const credit = cleanHabitId(settings && settings.calendarCreditHabitId);
+  if(credit)refs.add(credit);
+  (Array.isArray(data) ? data : []).forEach(h=>{
+    if(!h)return;
+    RETENTION_TIME_FIELDS.forEach(field=>{
+      const id1 = cleanHabitId(h[field + 'AnchorHabitId']);
+      const id2 = cleanHabitId(h[field + 'AnchorHabitId2']);
+      if(id1)refs.add(id1);
+      if(id2)refs.add(id2);
+    });
+    const links = normalizeScheduleLinks(h.scheduleLinks,h.hid);
+    if(links.before && links.before.anchorHid)refs.add(links.before.anchorHid);
+    if(links.after && links.after.anchorHid)refs.add(links.after.anchorHid);
+  });
+  return refs;
+}
+
+/** PURE: drop schedule-link / habit-anchor pointers to removed habit ids. */
+function scrubRemovedHabitReferences(data,removedIds){
+  const gone = removedIds instanceof Set ? removedIds : new Set(removedIds || []);
+  if(!gone.size)return Array.isArray(data) ? data : [];
+  return (Array.isArray(data) ? data : []).map(h=>{
+    if(!h)return h;
+    let next = h;
+    let touched = false;
+    RETENTION_TIME_FIELDS.forEach(field=>{
+      ['','2'].forEach(suffix=>{
+        const key = field + 'AnchorHabitId' + suffix;
+        const id = cleanHabitId(next[key]);
+        if(id && gone.has(id)){
+          if(!touched){ next = {...next}; touched = true; }
+          next[key] = null;
+          if(next[field + 'Anchor' + suffix] === 'habit')next[field + 'Anchor' + suffix] = null;
+        }
+      });
+    });
+    const links = normalizeScheduleLinks(next.scheduleLinks,next.hid);
+    let linkTouched = false;
+    const scrubbed = {before:links.before,after:links.after};
+    for(const dir of ['before','after']){
+      if(scrubbed[dir] && gone.has(scrubbed[dir].anchorHid)){
+        scrubbed[dir] = null;
+        linkTouched = true;
+      }
+    }
+    if(linkTouched){
+      if(!touched){ next = {...next}; touched = true; }
+      next.scheduleLinks = scrubbed;
+    }
+    return next;
+  });
+}
+
+/** PURE: keep newest N actual log entries; always preserve plan logs. */
+function trimHabitActualLogs(h,keepCount){
+  if(!h || h.type === 'task' || !(keepCount > 0))return {habit:h,trimmed:0};
+  const logs = normalizeLogs(h.logs);
+  const actual = [];
+  const plans = [];
+  logs.forEach(log=>{
+    if(isPlanLog(log))plans.push(log);
+    else actual.push(log);
+  });
+  if(actual.length <= keepCount)return {habit:h,trimmed:0};
+  actual.sort((a,b)=>logTime(a) - logTime(b));
+  const kept = actual.slice(-keepCount);
+  const nextLogs = normalizeLogs([...kept,...plans]);
+  return {
+    habit:{...h,logs:nextLogs,lastLog:latestActualLog(nextLogs)},
+    trimmed:actual.length - keepCount
+  };
+}
+
+/**
+ * PURE: hard-delete expired completed tasks and trim non-task habit logs.
+ * Protects habits still used as dynamic-time or schedule-link anchors.
+ * @returns {{data:Habit[],changed:boolean,removedTasks:Habit[],trimmedLogs:number,trimmedHabits:number}}
+ */
+function runRetentionCleanup(data,settings,now = Date.now()){
+  const retentionDays = normalizeCompletedTaskRetentionDays(settings && settings.completedTaskRetentionDays);
+  const keepCount = normalizeHabitLogKeepCount(settings && settings.habitLogKeepCount);
+  const cutoff = now - retentionDays * 86400000;
+  const items = Array.isArray(data) ? data : [];
+  const protectedIds = collectReferencedHabitIds(items,settings);
+  const removedTasks = [];
+  const survivors = [];
+  items.forEach(h=>{
+    if(!h)return;
+    if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h)){
+      const doneAt = Number(h.lastLog) || 0;
+      const hid = cleanHabitId(h.hid);
+      if(doneAt > 0 && doneAt <= cutoff && hid && !protectedIds.has(hid)){
+        removedTasks.push(h);
+        return;
+      }
+    }
+    survivors.push(h);
+  });
+  let next = survivors;
+  if(removedTasks.length){
+    next = scrubRemovedHabitReferences(survivors,new Set(removedTasks.map(h=>cleanHabitId(h.hid))));
+  }
+  let trimmedLogs = 0;
+  let trimmedHabits = 0;
+  if(keepCount > 0){
+    next = next.map(h=>{
+      const result = trimHabitActualLogs(h,keepCount);
+      if(result.trimmed > 0){
+        trimmedLogs += result.trimmed;
+        trimmedHabits += 1;
+      }
+      return result.habit;
+    });
+  }
+  return {
+    data:next,
+    changed:removedTasks.length > 0 || trimmedLogs > 0,
+    removedTasks,
+    trimmedLogs,
+    trimmedHabits
+  };
 }
 function effectiveAvailabilityMinutes(key,settings = sortSettings){
   const normalized = {...DEFAULT_SORT_SETTINGS,...settings};

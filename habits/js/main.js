@@ -32,6 +32,7 @@ applyAppearanceSettings();
   const reconciled = reconcileLocations(load(),sortSettings);
   if(reconciled.changed)save(reconciled.data);
 }
+if(typeof scheduleMonthlyRetentionCleanup === 'function')scheduleMonthlyRetentionCleanup();
 // A single travel-edge refresh triggers a re-render so the new time lands on
 // screen — but warming a matrix fires many refreshes in a burst, and for
 // non-driving modes fetchEdge is fully synchronous (pure haversine, no await),
@@ -1442,6 +1443,23 @@ $('home-extra-seg')?.addEventListener('click',e=>{
   updateSortSetting({homeExtraMode:mode},{sync:false,renderNow:false});
   if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   else render();
+});
+$('completed-task-retention-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  const days = normalizeCompletedTaskRetentionDays(opt.dataset.segValue);
+  if(days === normalizeCompletedTaskRetentionDays(sortSettings && sortSettings.completedTaskRetentionDays))return;
+  updateSortSetting({completedTaskRetentionDays:days});
+});
+$('habit-log-keep-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  const keep = normalizeHabitLogKeepCount(opt.dataset.segValue);
+  if(keep === normalizeHabitLogKeepCount(sortSettings && sortSettings.habitLogKeepCount))return;
+  updateSortSetting({habitLogKeepCount:keep});
+});
+$('retention-clean-now')?.addEventListener('click',()=>{
+  applyRetentionCleanup({force:true});
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{

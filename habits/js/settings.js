@@ -103,6 +103,14 @@ function syncSettingsControls(){
   document.querySelectorAll('#theme-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === sortSettings.themeMode);
   });
+  const taskRetention = normalizeCompletedTaskRetentionDays(sortSettings.completedTaskRetentionDays);
+  document.querySelectorAll('#completed-task-retention-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',parseInt(btn.dataset.segValue,10) === taskRetention);
+  });
+  const logKeep = normalizeHabitLogKeepCount(sortSettings.habitLogKeepCount);
+  document.querySelectorAll('#habit-log-keep-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',parseInt(btn.dataset.segValue,10) === logKeep);
+  });
   syncHomeCityStatus();
   renderDefaultTopicsChips();
   applyAppearanceSettings();
@@ -1154,6 +1162,96 @@ function updateSortSetting(patch,options = {}){
   if(sync)syncSettingsControls();
   if(sortSettings.reachAssist === false)document.body.classList.remove('reach-pad');
   if(renderNow)render();
+}
+
+/** PURE: human summary for a retention cleanup result. */
+function retentionCleanupSummary(result,{automatic = false} = {}){
+  if(!result || !result.changed){
+    return automatic ? '' : 'nothing to clean';
+  }
+  const parts = [];
+  const removed = (result.removedTasks || []).length;
+  if(removed)parts.push(`removed ${removed} old completed task${removed === 1 ? '' : 's'}`);
+  if(result.trimmedHabits > 0){
+    parts.push(`trimmed history on ${result.trimmedHabits} habit${result.trimmedHabits === 1 ? '' : 's'}`);
+  }
+  const body = parts.join(' · ') || 'cleaned up';
+  return automatic ? `Automatic cleanup — ${body}` : `Cleanup — ${body}`;
+}
+
+/**
+ * HYBRID: run retention cleanup, persist when needed, show a clear notice.
+ * @param {{force?:boolean,automatic?:boolean}} options
+ *   force — ignore the monthly gate (Clean now)
+ *   automatic — monthly boot path; stamps lastRetentionCleanupAt even if empty
+ */
+function applyRetentionCleanup(options = {}){
+  const {force = false,automatic = false} = options;
+  const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (sortSettings || {});
+  const now = Date.now();
+  if(automatic && !force && typeof shouldRunRetentionCleanup === 'function'
+    && !shouldRunRetentionCleanup(settings,now)){
+    return {ran:false,changed:false};
+  }
+  if(typeof runRetentionCleanup !== 'function' || typeof load !== 'function'){
+    return {ran:false,changed:false};
+  }
+  let openHid = null;
+  if(typeof detailIdx !== 'undefined' && detailIdx != null){
+    const cur = load()[detailIdx];
+    openHid = cur ? cleanHabitId(cur.hid) : null;
+  }
+  const result = runRetentionCleanup(load(),settings,now);
+  if(result.changed && typeof save === 'function'){
+    const removedHids = new Set((result.removedTasks || []).map(h=>cleanHabitId(h.hid)));
+    (result.removedTasks || []).forEach(removed=>{
+      if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && removed.type === 'task'){
+        try{ cancelPush(reminderSignature(removed)); }catch(_){}
+      }
+      if(typeof pruneOrderConstraintsForHabit === 'function'){
+        try{ pruneOrderConstraintsForHabit(removed,[],now); }catch(_){}
+      }
+    });
+    if(openHid){
+      if(removedHids.has(openHid)){
+        detailIdx = null;
+        if(typeof closeSheet === 'function'){
+          try{ closeSheet('detail-sheet'); }catch(_){}
+        }
+      }else{
+        const newIdx = result.data.findIndex(h=>cleanHabitId(h.hid) === openHid);
+        if(newIdx >= 0)detailIdx = newIdx;
+      }
+    }
+    save(result.data);
+    const creditId = cleanHabitId(settings.calendarCreditHabitId);
+    if(creditId && removedHids.has(creditId)){
+      saveSortSettings({...loadSortSettings(),calendarCreditHabitId:null});
+    }
+  }
+  if(automatic){
+    saveSortSettings({...loadSortSettings(),lastRetentionCleanupAt:now});
+  }
+  const summary = retentionCleanupSummary(result,{automatic});
+  const status = $('retention-cleanup-status');
+  if(status)status.textContent = summary || (force ? 'nothing to clean' : '');
+  if(summary && typeof showToast === 'function')showToast(summary,5200);
+  else if(force && !result.changed && typeof showToast === 'function')showToast('nothing to clean',1800);
+  if(result.changed && typeof render === 'function')render();
+  return {ran:true,changed:result.changed,result,summary};
+}
+
+/** Schedule the monthly retention pass after first paint (near-zero cost when gated). */
+function scheduleMonthlyRetentionCleanup(){
+  const run = ()=>{
+    try{ applyRetentionCleanup({automatic:true}); }
+    catch(_){}
+  };
+  if(typeof requestIdleCallback === 'function'){
+    requestIdleCallback(()=>setTimeout(run,0),{timeout:4000});
+  }else{
+    setTimeout(run,1800);
+  }
 }
 
 // PURE: check if key is a sort setting

@@ -850,6 +850,34 @@
             </div>
           </div>
         </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-cleanup-head" data-collapse-target="settings-cleanup-body" aria-expanded="false" aria-controls="settings-cleanup-body">
+            <span class="settings-label">cleanup</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-cleanup-body" hidden>
+            <p class="field-hint">About once a month when you open the app, old completed tasks and extra habit history are removed automatically. You will see a notice when that runs.</p>
+            <span class="settings-sublabel">completed tasks</span>
+            <div class="seg compact-seg" id="completed-task-retention-seg" role="group" aria-label="completed task retention">
+              <button type="button" class="seg-opt" data-seg-value="2">2 days</button>
+              <button type="button" class="seg-opt" data-seg-value="3">3 days</button>
+              <button type="button" class="seg-opt" data-seg-value="7">7 days</button>
+            </div>
+            <p class="field-hint">Delete completed tasks older than this.</p>
+            <span class="settings-sublabel">habit history</span>
+            <div class="seg compact-seg" id="habit-log-keep-seg" role="group" aria-label="habit log keep count">
+              <button type="button" class="seg-opt" data-seg-value="12">12</button>
+              <button type="button" class="seg-opt" data-seg-value="30">30</button>
+              <button type="button" class="seg-opt" data-seg-value="60">60</button>
+              <button type="button" class="seg-opt" data-seg-value="0">off</button>
+            </div>
+            <p class="field-hint">Keep the newest N entries per habit. Older ones are trimmed. Tasks are not trimmed here.</p>
+            <div class="btn-row">
+              <button class="btn" id="retention-clean-now" type="button">clean now</button>
+            </div>
+            <p class="field-hint sample-count" id="retention-cleanup-status"></p>
+          </div>
+        </section>
         <div class="settings-group-head">schedule &amp; places</div>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
