@@ -1788,6 +1788,13 @@ $('calendar-pdf-input')?.addEventListener('change',e=>{
 $('calendar-pdf-import')?.addEventListener('click',confirmCalendarPdfImport);
 $('calendar-pdf-cancel')?.addEventListener('click',cancelCalendarPdfImport);
 $('calendar-pdf-clear')?.addEventListener('click',clearImportedCalendarMeetings);
+$('calendar-pdf-preview')?.addEventListener('change',onCalendarPdfSelectChange);
+$('calendar-pdf-preview')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-calendar-select-all],[data-calendar-select-none]');
+  if(!btn)return;
+  if(btn.hasAttribute('data-calendar-select-all'))onCalendarPdfSelectAll();
+  else onCalendarPdfSelectNone();
+});
 $('calendar-credit-habit')?.addEventListener('change',onCalendarCreditHabitChange);
 $('calendar-allday-mode')?.addEventListener('change',onCalendarAllDayModeChange);
 $('settings-reset').addEventListener('click',()=>{

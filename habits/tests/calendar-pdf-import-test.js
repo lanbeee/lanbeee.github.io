@@ -206,17 +206,44 @@ Calendar: holidays@example.com
   }, null, { timeout:5000 });
   const previewCount = await page.locator('#calendar-pdf-preview li').count();
   assert(previewCount >= 5, `preview should list >=5 meetings, got ${previewCount}`);
+  const summaryText = await page.locator('#calendar-pdf-preview .calendar-pdf-summary').textContent();
+  assert(/5 of 5 selected/.test(summaryText), `all selected by default: ${summaryText}`);
+
+  // ── 4b. select none → summary drops to 0, then select all → back to 5 ──
+  await page.locator('#calendar-pdf-preview [data-calendar-select-none]').click();
+  await page.waitForFunction(()=>{
+    const h = document.querySelector('#calendar-pdf-preview .calendar-pdf-summary');
+    return h && /0 of 5 selected/.test(h.textContent);
+  }, null, { timeout:5000 });
+  const noneSummary = await page.locator('#calendar-pdf-preview .calendar-pdf-summary').textContent();
+  assert(/0 of 5 selected/.test(noneSummary), `none selected summary: ${noneSummary}`);
+  await page.locator('#calendar-pdf-preview [data-calendar-select-all]').click();
+  await page.waitForFunction(()=>{
+    const h = document.querySelector('#calendar-pdf-preview .calendar-pdf-summary');
+    return h && /5 of 5 selected/.test(h.textContent);
+  }, null, { timeout:5000 });
+
+  // ── 4c. deselect one row → only 4 import ──
+  await page.locator('#calendar-pdf-preview input[data-calendar-select]').first().uncheck({ force:true });
+  await page.waitForFunction(()=>{
+    const h = document.querySelector('#calendar-pdf-preview .calendar-pdf-summary');
+    return h && /4 of 5 selected/.test(h.textContent);
+  }, null, { timeout:5000 });
+  const deselectSummary = await page.locator('#calendar-pdf-preview .calendar-pdf-summary').textContent();
+  assert(/4 of 5 selected/.test(deselectSummary), `deselected summary: ${deselectSummary}`);
+  const deselectedRowDim = await page.locator('#calendar-pdf-preview li.calendar-pdf-deselected').count();
+  assert(deselectedRowDim === 1, `one row dimmed as deselected, got ${deselectedRowDim}`);
   await page.locator('#calendar-pdf-import').click({ force:true });
   await page.waitForFunction(()=>{
     const s = (document.getElementById('calendar-pdf-status')||{}).textContent || '';
     return /added|updated|credited/i.test(s);
   }, null, { timeout:10000 });
   const fromUi = await page.evaluate(()=>load().filter(h=>h.source === 'pdf').length);
-  assert(fromUi >= 5, `UI import stored >=5 meetings, got ${fromUi}`);
+  assert(fromUi === 4, `UI import stored only the 4 selected meetings, got ${fromUi}`);
 
   // ── 5. clear imported ──
   const cleared = await page.evaluate(()=>clearCalendarImport('pdf'));
-  assert(cleared.removed >= 5, `cleared >=5, got ${cleared.removed}`);
+  assert(cleared.removed === 4, `cleared the 4 imported meetings, got ${cleared.removed}`);
   const after = await page.evaluate(()=>({
     meetings:load().filter(h=>h.source === 'pdf').length,
     credits:normalizeLogs(load().find(h=>h.hid === 'work-habit-1').logs).filter(l=>isCalendarCreditLog(l)).length

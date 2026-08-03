@@ -2933,6 +2933,25 @@ button.setting-toggle{
   font-size:12.5px;line-height:1.35;color:var(--text);
 }
 .calendar-pdf-list li span{color:var(--text2);font-size:12px;}
+.calendar-pdf-item{
+  display:flex;align-items:flex-start;gap:8px;cursor:pointer;
+  min-width:0;flex:1;
+}
+.calendar-pdf-item input{
+  flex-shrink:0;margin-top:1px;accent-color:var(--text);
+}
+.calendar-pdf-item-body{
+  display:flex;flex-direction:column;gap:2px;min-width:0;
+}
+.calendar-pdf-row.calendar-pdf-deselected{opacity:0.45;}
+.calendar-pdf-toolbar{
+  display:flex;justify-content:flex-end;gap:14px;margin:8px 0 2px;
+}
+.calendar-pdf-toolbar button{
+  background:none;border:none;padding:0;font-size:12.5px;
+  color:var(--text2);cursor:pointer;
+}
+.calendar-pdf-toolbar button:hover{color:var(--text);text-decoration:underline;}
 #calendar-credit-habit,#calendar-allday-mode{margin:6px 0 4px;}
 /* iOS Safari: keep file inputs in the layout (not display:none / [hidden]) so
    a native <label for> can open the picker inside the PWA. */

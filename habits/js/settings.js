@@ -197,9 +197,18 @@ function cancelBackupImport(){
 
 // ── Calendar PDF import (temporary until OAuth providers) ──
 let pendingCalendarEvents = null;
+// Set of event keys the user wants imported; every parsed event is in it by
+// default so "import" acts as before unless the user deselects rows.
+let pendingCalendarSelection = null;
+
+function calendarPdfSelectionKey(ev, index){
+  const id = ev && ev.id;
+  return (id != null && id !== '') ? `id:${id}` : `idx:${index}`;
+}
 
 function clearCalendarPdfPreview({keepStatus = true} = {}){
   pendingCalendarEvents = null;
+  pendingCalendarSelection = null;
   const preview = $('calendar-pdf-preview');
   if(preview){ preview.hidden = true; preview.innerHTML = ''; }
   const actions = $('calendar-pdf-actions');
@@ -212,7 +221,7 @@ function clearCalendarPdfPreview({keepStatus = true} = {}){
   }
 }
 
-function formatCalendarEventPreview(ev, allDayMode){
+function formatCalendarEventPreview(ev, allDayMode, index){
   const mode = typeof normalizeCalendarAllDayMode === 'function'
     ? normalizeCalendarAllDayMode(allDayMode)
     : (allDayMode === 'tasks' ? 'tasks' : 'skip');
@@ -229,7 +238,66 @@ function formatCalendarEventPreview(ev, allDayMode){
     const mins = Number.isFinite(end - start) ? Math.round((end - start) / 60000) : 0;
     if(mins)when += ` · ${mins}m`;
   }
-  return `<li><strong>${escapeHtml(ev.subject || 'untitled')}</strong><span>${escapeHtml(when)}</span></li>`;
+  const key = calendarPdfSelectionKey(ev, index);
+  const checked = !pendingCalendarSelection || pendingCalendarSelection.has(key);
+  return `<li class="calendar-pdf-row${checked ? '' : ' calendar-pdf-deselected'}">
+    <label class="calendar-pdf-item">
+      <input type="checkbox" data-calendar-select="${escapeHtml(key)}"${checked ? ' checked' : ''} />
+      <span class="calendar-pdf-item-body"><strong>${escapeHtml(ev.subject || 'untitled')}</strong><span>${escapeHtml(when)}</span></span>
+    </label>
+  </li>`;
+}
+
+function currentCalendarAllDayMode(){
+  return typeof normalizeCalendarAllDayMode === 'function'
+    ? normalizeCalendarAllDayMode((sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {})).calendarAllDayMode)
+    : 'skip';
+}
+
+function calendarPdfSelectionSummary(mode){
+  if(!pendingCalendarEvents || !pendingCalendarSelection)return '';
+  const selected = pendingCalendarEvents.filter((ev,i)=>pendingCalendarSelection.has(calendarPdfSelectionKey(ev,i)));
+  const timed = selected.filter(e=>!e.isAllDay).length;
+  const allDay = selected.length - timed;
+  let s = `${selected.length} of ${pendingCalendarEvents.length} selected`;
+  if(timed)s += ` · ${timed} timed`;
+  if(allDay)s += ` · ${allDay} all-day (${mode === 'skip' ? 'will skip' : 'will import'})`;
+  return s;
+}
+
+function refreshCalendarPdfSelectionUI(){
+  const preview = $('calendar-pdf-preview');
+  if(!preview || !pendingCalendarEvents || !pendingCalendarSelection)return;
+  preview.querySelectorAll('li.calendar-pdf-row').forEach(li=>{
+    const input = li.querySelector('input[data-calendar-select]');
+    const key = input && input.dataset.calendarSelect;
+    const on = !!key && pendingCalendarSelection.has(key);
+    if(input)input.checked = on;
+    li.classList.toggle('calendar-pdf-deselected', !on);
+  });
+  const hint = preview.querySelector('.calendar-pdf-summary');
+  if(hint)hint.textContent = calendarPdfSelectionSummary(currentCalendarAllDayMode());
+}
+
+function onCalendarPdfSelectChange(e){
+  const input = e.target;
+  if(!input || !input.dataset || !input.dataset.calendarSelect)return;
+  const key = input.dataset.calendarSelect;
+  if(input.checked)pendingCalendarSelection.add(key);
+  else pendingCalendarSelection.delete(key);
+  refreshCalendarPdfSelectionUI();
+}
+
+function onCalendarPdfSelectAll(){
+  if(!pendingCalendarEvents)return;
+  pendingCalendarSelection = new Set(pendingCalendarEvents.map((ev,i)=>calendarPdfSelectionKey(ev,i)));
+  refreshCalendarPdfSelectionUI();
+}
+
+function onCalendarPdfSelectNone(){
+  if(!pendingCalendarEvents)return;
+  pendingCalendarSelection = new Set();
+  refreshCalendarPdfSelectionUI();
 }
 
 function escapeHtml(value){
@@ -279,19 +347,22 @@ function renderCalendarImportControls(){
 
 function showCalendarPdfPreview(events){
   pendingCalendarEvents = events || [];
+  if(!pendingCalendarSelection){
+    pendingCalendarSelection = new Set(pendingCalendarEvents.map((ev,i)=>calendarPdfSelectionKey(ev,i)));
+  }
   const settings = sortSettings || loadSortSettings();
   const mode = normalizeCalendarAllDayMode(settings.calendarAllDayMode);
-  const timed = pendingCalendarEvents.filter(e=>!e.isAllDay).length;
-  const allDay = pendingCalendarEvents.length - timed;
   const preview = $('calendar-pdf-preview');
   const actions = $('calendar-pdf-actions');
   const status = $('calendar-pdf-status');
   if(preview){
     preview.hidden = false;
-    const summary = allDay
-      ? `${pendingCalendarEvents.length} event${pendingCalendarEvents.length === 1 ? '' : 's'} found · ${timed} timed · ${allDay} all-day (${mode === 'skip' ? 'will skip' : 'will import'})`
-      : `${pendingCalendarEvents.length} meeting${pendingCalendarEvents.length === 1 ? '' : 's'} found`;
-    preview.innerHTML = `<p class="field-hint">${escapeHtml(summary)}</p><ul class="calendar-pdf-list">${pendingCalendarEvents.map(ev=>formatCalendarEventPreview(ev, mode)).join('')}</ul>`;
+    preview.innerHTML = `<p class="field-hint calendar-pdf-summary">${escapeHtml(calendarPdfSelectionSummary(mode))}</p>
+      <div class="calendar-pdf-toolbar">
+        <button type="button" class="calendar-pdf-select-all" data-calendar-select-all>select all</button>
+        <button type="button" class="calendar-pdf-select-none" data-calendar-select-none>none</button>
+      </div>
+      <ul class="calendar-pdf-list">${pendingCalendarEvents.map((ev,i)=>formatCalendarEventPreview(ev, mode, i)).join('')}</ul>`;
   }
   if(actions)actions.hidden = false;
   if(status)status.textContent = '';
@@ -306,6 +377,7 @@ async function handleCalendarPdfChosen(file){
   if(status)status.textContent = 'Reading PDF…';
   try{
     const {events} = await parseCalendarPdfFile(file);
+    pendingCalendarSelection = null;
     showCalendarPdfPreview(events);
     if(typeof showToast === 'function')showToast(`${events.length} event${events.length === 1 ? '' : 's'} ready`);
   }catch(err){
@@ -318,6 +390,14 @@ async function handleCalendarPdfChosen(file){
 
 function confirmCalendarPdfImport(){
   if(!pendingCalendarEvents || !pendingCalendarEvents.length)return;
+  const selected = pendingCalendarEvents.filter((ev,i)=>{
+    return !pendingCalendarSelection || pendingCalendarSelection.has(calendarPdfSelectionKey(ev,i));
+  });
+  if(!selected.length){
+    const status = $('calendar-pdf-status');
+    if(status)status.textContent = 'Select at least one meeting to import.';
+    return;
+  }
   const select = $('calendar-credit-habit');
   const allDaySelect = $('calendar-allday-mode');
   const creditHabitId = select && select.value ? select.value : null;
@@ -329,7 +409,7 @@ function confirmCalendarPdfImport(){
     calendarAllDayMode:allDayMode
   });
   sortSettings = loadSortSettings();
-  const result = applyCalendarImport(pendingCalendarEvents, {
+  const result = applyCalendarImport(selected, {
     source:'pdf',
     creditHabitId,
     allDayMode
