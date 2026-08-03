@@ -303,10 +303,10 @@ function clampRhythm(value){
 
 // PURE: return help text for a rhythm type
 function rhythmHelp(type){
-  if(type === 'reduce')return 'Something to space out. Use times in N days (e.g. 1× in 3d).';
+  if(type === 'reduce')return 'Times in N days — e.g. 1× in 3d.';
   if(type === 'zero')return 'Something to avoid. Log it each time it happens; the aim is longer gaps.';
   if(type === 'task')return 'A one-off to-do. Add a due date, a fixed scheduled time, or leave it dateless.';
-  return 'Something to do regularly. Use times in N days — e.g. 2× in 7d is every 3.5 days.';
+  return 'Times in N days — e.g. 2× in 7d = 3.5d.';
 }
 
 // PURE: map stored habit type <-> mode seg value (build/limit/stop)
@@ -794,13 +794,24 @@ $('detail-schedule-order')?.addEventListener('change',e=>{
   const editor = e.target.closest('.schedule-link-editor');
   const h = detailIdx != null ? load()[detailIdx] : null;
   if(!editor || !h)return;
-  const links = readScheduleLinksFromDetail(h.hid);
-  renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:links});
+  refreshScheduleLinkEditorRow(editor,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
   setDetailDirty();
 });
 $('detail-schedule-order')?.addEventListener('click',e=>{
+  if(e.target.closest('#detail-schedule-link-add') || e.target.closest('.schedule-link-add')){
+    if(typeof addBlankScheduleLinkRow === 'function')addBlankScheduleLinkRow();
+    return;
+  }
   const editor = e.target.closest('.schedule-link-editor');
   if(!editor)return;
+  const dirBtn = e.target.closest('[data-link-direction]');
+  if(dirBtn){
+    editor.querySelectorAll('[data-link-direction]').forEach(btn=>btn.classList.toggle('on',btn === dirBtn));
+    const h = detailIdx != null ? load()[detailIdx] : null;
+    if(h)refreshScheduleLinkEditorRow(editor,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    setDetailDirty();
+    return;
+  }
   const adj = e.target.closest('[data-adjacency]');
   if(adj){
     editor.querySelectorAll('[data-adjacency]').forEach(btn=>btn.classList.toggle('on',btn === adj));
@@ -811,15 +822,16 @@ $('detail-schedule-order')?.addEventListener('click',e=>{
   if(sameDay){
     sameDay.setAttribute('aria-pressed',sameDay.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
     const h = detailIdx != null ? load()[detailIdx] : null;
-    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    if(h)refreshScheduleLinkEditorRow(editor,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
     setDetailDirty();
     return;
   }
   if(e.target.closest('.schedule-link-clear')){
-    const picker = editor.querySelector('.schedule-link-habit');
-    if(picker)picker.value = '';
-    const h = detailIdx != null ? load()[detailIdx] : null;
-    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    editor.remove();
+    // Reindex remaining editors for stable data-link-index values.
+    document.querySelectorAll('#detail-schedule-link-list .schedule-link-editor').forEach((row,idx)=>{
+      row.dataset.linkIndex = String(idx);
+    });
     setDetailDirty();
   }
 });

@@ -33,16 +33,34 @@ function assert(value,message){
     const offsetLegacy = normalize([anchor,{
       ...legacyRaw,hid:'link-offset',name:'Offset',allowedTimeStartOffsetMin:15
     }]).find(h=>h.hid === 'link-offset');
-    const cycleA = {...anchor,scheduleLinks:{before:{anchorHid:'link-subject',adjacency:'sometime',requireSameDay:false},after:null}};
-    const cycleB = {...migrated,scheduleLinks:{before:{anchorHid:'link-anchor',adjacency:'sometime',requireSameDay:false},after:null}};
+    const legacyObject = normalize([{
+      hid:'legacy-obj',name:'Legacy',type:'keepup',target:7,
+      scheduleLinks:{
+        before:{anchorHid:'link-anchor',adjacency:'sometime',requireSameDay:true},
+        after:{anchorHid:'link-subject',adjacency:'direct',requireSameDay:false}
+      }
+    },anchor,{hid:'link-subject',name:'Subject',type:'keepup',target:7}])
+      .find(h=>h.hid === 'legacy-obj');
+    const cycleA = {...anchor,scheduleLinks:[
+      {anchorHid:'link-subject',direction:'before',adjacency:'sometime',requireSameDay:false}
+    ]};
+    const cycleB = {...migrated,scheduleLinks:[
+      {anchorHid:'link-anchor',direction:'before',adjacency:'sometime',requireSameDay:false}
+    ]};
+    const afterLink = (migrated.scheduleLinks || []).find(l=>l.direction === 'after');
     return {
-      migratedLink:migrated.scheduleLinks.after,
+      migratedLink:afterLink,
+      migratedIsArray:Array.isArray(migrated.scheduleLinks),
+      legacyMigratedCount:(legacyObject.scheduleLinks || []).length,
+      legacyHasBefore:(legacyObject.scheduleLinks || []).some(l=>l.direction === 'before' && l.anchorHid === 'link-anchor'),
       migratedAnchor:migrated.allowedTimeStartAnchor,
       legacyAnchor:offsetLegacy.allowedTimeStartAnchor,
       cycle:validateScheduleLinkGraph([cycleA,cycleB])
     };
   });
+  assert(model.migratedIsArray,'scheduleLinks normalizes to an array');
   assert(model.migratedLink && model.migratedLink.anchorHid === 'link-anchor','zero-offset start migrates to recurring after link');
+  assert(model.legacyMigratedCount === 2 && model.legacyHasBefore,'legacy {before,after} object migrates to array');
   assert(model.migratedAnchor === null,'migrated time anchor is cleared');
   assert(model.legacyAnchor === 'habit','offset completion-trigger timing remains legacy');
   assert(model.cycle && model.cycle.ok === false && /cycle/.test(model.cycle.message),'persistent cycles are rejected');
@@ -84,12 +102,12 @@ function assert(value,message){
       const subject = {
         hid:'p-subject',name:'Subject',type:'keepup',target:7,logs:[],
         durationMinutes:30,priority:1,
-        scheduleLinks:{
-          before:direction === 'before'
-            ? {anchorHid:'p-anchor',adjacency:'direct',requireSameDay} : null,
-          after:direction === 'after'
-            ? {anchorHid:'p-anchor',adjacency:'direct',requireSameDay} : null
-        }
+        scheduleLinks:[{
+          anchorHid:'p-anchor',
+          direction,
+          adjacency:'direct',
+          requireSameDay
+        }]
       };
       if(variant === 'breakable'){
         anchor.breakable = true;
@@ -170,7 +188,198 @@ function assert(value,message){
       `${label}: breakable boundary chunks honor right-after (${breakable.order.join(' → ')})`);
   }
 
-  assert(errors.length === 0,'no page errors');
+  console.log('\n[B] flex pull + multi OR + early reason');
+  const flexPull = await page.evaluate(()=>{
+    const today = dayStart(Date.now());
+    // Friday within the next 7 days (or today if already Friday).
+    let friday = today;
+    while(new Date(friday).getDay() !== 5)friday += 86400000;
+    if(friday > today + 6 * 86400000){
+      friday = today;
+      while(new Date(friday).getDay() !== 5)friday -= 86400000;
+    }
+    const fridayOffset = Math.round((friday - today) / 86400000);
+    const now = today + 9 * 3600000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showWeekOnHome:true,
+      agendaOptimizer:false,
+      availabilityMinutes:Array(7).fill(180),
+      availabilityOverrides:{},
+      blockedTimes:[],
+      locations:[],
+      travel:{},
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showScheduledTasksInAgenda:true,
+      showPlannedItemsInAgenda:true
+    };
+    for(let offset = 0;offset < 7;offset += 1){
+      settings.availabilityOverrides[dateKey(today + offset * 86400000)] = 180;
+    }
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+
+    const goingOut = {
+      hid:'go-out',name:'Going out',type:'keepup',target:7,
+      logs:[today - 8 * 86400000],
+      allowedWeekdays:[5],
+      durationMinutes:30,priority:1,flexibilityDays:0
+    };
+    const exercise = {
+      hid:'exercise',name:'Exercise',type:'keepup',target:7,
+      logs:[today - 8 * 86400000],
+      allowedWeekdays:[3],
+      durationMinutes:30,priority:1,flexibilityDays:0
+    };
+    const ageFriday = 2 + fridayOffset;
+    const showerTarget = 14;
+    const showerFlex = Math.max(showerTarget - ageFriday + 1, fridayOffset + 2, 5);
+
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+
+    const fillsOn = (day)=>((day && day.timeline) || []).filter(row=>row.kind === 'fill').map(row=>row.h && row.h.hid);
+    let fridayHids = [];
+    let orPartnered = false;
+    let alone = false;
+    let earlyStiff = '';
+    try{
+      // 1) Flex pull: only going-out link → must land Friday with going out.
+      const shower = {
+        hid:'shower',name:'Shower',type:'keepup',target:showerTarget,
+        logs:[today - 2 * 86400000],
+        durationMinutes:15,priority:1,
+        flexibilityDays:showerFlex,
+        scheduleLinks:[
+          {anchorHid:'go-out',direction:'before',adjacency:'sometime',requireSameDay:true}
+        ]
+      };
+      const showerNoFlex = {
+        ...shower,hid:'shower-noflex',name:'Shower stiff',flexibilityDays:0
+      };
+      save([goingOut,shower,showerNoFlex]);
+      let data = load();
+      let week = buildWeekAgenda(data,loadSortSettings(),7);
+      const fridayDay = week.days.find(d=>d.dayBase === friday) || week.days[fridayOffset] || null;
+      fridayHids = fillsOn(fridayDay);
+      earlyStiff = earlyReason(data,data.findIndex(h=>h.hid === 'shower-noflex'),loadSortSettings());
+
+      // 2) Multi OR: going-out (Fri) + exercise (Wed) → shower with either, never alone.
+      const showerOr = {
+        ...shower,hid:'shower-or',name:'Shower OR',
+        scheduleLinks:[
+          {anchorHid:'go-out',direction:'before',adjacency:'sometime',requireSameDay:true},
+          {anchorHid:'exercise',direction:'after',adjacency:'sometime',requireSameDay:true}
+        ]
+      };
+      save([goingOut,exercise,showerOr]);
+      data = load();
+      week = buildWeekAgenda(data,loadSortSettings(),7);
+      alone = week.days.some(d=>{
+        const hids = fillsOn(d);
+        return hids.includes('shower-or') && !hids.includes('go-out') && !hids.includes('exercise');
+      });
+      orPartnered = week.days.some(d=>{
+        const hids = fillsOn(d);
+        return hids.includes('shower-or') && (hids.includes('go-out') || hids.includes('exercise'));
+      });
+    }finally{
+      globalThis.Date = originalDate;
+    }
+
+    return {
+      fridayOffset,
+      // Early flex window uses raw target (not effectiveTarget = raw+flex).
+      flexCoversFriday:ageFriday >= showerTarget - showerFlex,
+      fridayHids,
+      orPartnered,
+      alone,
+      earlyStiff,
+      showerFlex,
+      ageFriday,
+      showerTarget
+    };
+  });
+  assert(flexPull.flexCoversFriday,'test flex window covers Friday (flex=' + flexPull.showerFlex + ', ageFri=' + flexPull.ageFriday + ', target=' + flexPull.showerTarget + ')');
+  assert(flexPull.fridayHids.includes('go-out'),'going out appears Friday');
+  assert(flexPull.fridayHids.includes('shower'),'flex+same-day pulls shower onto Friday with going out (' + flexPull.fridayHids.join(',') + ')');
+  assert(flexPull.orPartnered,'OR places shower with at least one linked partner');
+  assert(!flexPull.alone,'shower does not appear alone without an OR partner');
+  if(flexPull.fridayOffset === 0){
+    assert(true,'Friday-is-today early path covered by dedicated case below');
+  }else{
+    assert(true,'early reason checked when Friday is today (skipped; Friday offset ' + flexPull.fridayOffset + ')');
+  }
+  assert(!flexPull.earlyStiff || flexPull.earlyStiff === '','zero-flex linked habit does not get link early reason without canDoEarly');
+
+  // Dedicated early-reason case: today has the anchor, subject is upcoming with flex.
+  const earlyCase = await page.evaluate(()=>{
+    const today = dayStart(Date.now());
+    const now = today + 10 * 3600000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,
+      availabilityMinutes:Array(7).fill(240),
+      availabilityOverrides:{[dateKey(today)]:240},
+      blockedTimes:[],locations:[],travel:{}
+    };
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+    const anchor = {
+      hid:'early-anchor',name:'Tennis',type:'keepup',target:1,
+      logs:[today - 2 * 86400000],
+      durationMinutes:30,priority:1,flexibilityDays:0
+    };
+    const subject = {
+      hid:'early-subject',name:'Shower',type:'keepup',target:7,
+      logs:[today - 1 * 86400000],
+      durationMinutes:15,priority:2,flexibilityDays:6,
+      scheduleLinks:[
+        {anchorHid:'early-anchor',direction:'after',adjacency:'sometime',requireSameDay:true}
+      ]
+    };
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let reason = '';
+    let cat = null;
+    try{
+      save([anchor,subject]);
+      const data = load();
+      const idx = data.findIndex(h=>h.hid === 'early-subject');
+      cat = todayCategory(data[idx],loadSortSettings());
+      reason = earlyReason(data,idx,loadSortSettings());
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    return {reason,cat};
+  });
+  assert(earlyCase.cat === 2,'link-pull subject is upcoming for early path');
+  assert(/after Tennis/.test(earlyCase.reason || ''),'early reason names after Tennis (' + earlyCase.reason + ')');
+
+  assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   if(fail)process.exit(1);

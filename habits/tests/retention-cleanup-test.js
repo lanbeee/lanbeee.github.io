@@ -113,7 +113,7 @@ function assert(cond, msg){
       {hid:'link-task', name:'linked', type:'task', lastLog:now - 20 * day, logs:[now - 20 * day], target:7, priority:3},
       {
         hid:'follower', name:'follower', type:'keepup', lastLog:null, logs:[], target:7, priority:3,
-        scheduleLinks:{ after:{anchorHid:'link-task', adjacency:'sometime', requireSameDay:false}, before:null }
+        scheduleLinks:[{anchorHid:'link-task', direction:'after', adjacency:'sometime', requireSameDay:false}]
       }
     ];
     const result = runRetentionCleanup(data, {
@@ -212,7 +212,7 @@ function assert(cond, msg){
         preferredTimeEndAnchor:'habit',
         preferredTimeEndAnchorHabitId:'noise-task',
         preferredTimeEndOffsetMin:5,
-        scheduleLinks:{ before:{anchorHid:'gone-task', adjacency:'sometime', requireSameDay:false}, after:null }
+        scheduleLinks:[{anchorHid:'gone-task', direction:'before', adjacency:'sometime', requireSameDay:false}]
       }
     ];
     // Wait — schedule link TO gone-task protects it. Use a habit that does NOT
@@ -227,13 +227,13 @@ function assert(cond, msg){
         hid:'refers', name:'refers', type:'keepup',
         preferredTimeEndAnchor:'habit',
         preferredTimeEndAnchorHabitId:'noise-task',
-        scheduleLinks:{ before:{anchorHid:'gone-task', adjacency:'sometime', requireSameDay:false}, after:null }
+        scheduleLinks:[{anchorHid:'gone-task', direction:'before', adjacency:'sometime', requireSameDay:false}]
       }
     ], new Set(['noise-task','gone-task']));
     const h = scrubbed[0];
     return {
       anchorCleared: h.preferredTimeEndAnchorHabitId == null && h.preferredTimeEndAnchor == null,
-      beforeCleared: !(h.scheduleLinks && h.scheduleLinks.before)
+      beforeCleared: !(h.scheduleLinks || []).some(l => l.direction === 'before')
     };
   });
   assert(scrubCase.anchorCleared === true, 'scrub clears habit-anchor ids');

@@ -1426,6 +1426,31 @@ function earlyReason(data,i,settings){
   if(todayCategory(h,settings) !== 2)return '';
   const target = targetDayForEarly(h);
   if(!canDoEarlyToday(h,target))return '';
+
+  // Schedule-link pull: a same-day OR partner is due/committed today.
+  const sameDayLinks = typeof sameDayScheduleLinks === 'function'
+    ? sameDayScheduleLinks(h)
+    : (typeof normalizeScheduleLinks === 'function'
+      ? normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay)
+      : []);
+  if(sameDayLinks.length){
+    const todayBase = dayStart(Date.now());
+    for(const link of sameDayLinks){
+      const anchor = data.find(item=>item && item.hid === link.anchorHid);
+      if(!anchor)continue;
+      const committed = typeof scheduleAnchorCommitForDay === 'function'
+        && scheduleAnchorCommitForDay(link.anchorHid,todayBase,data);
+      const anchorDue = includeInTodayAgenda(anchor,settings)
+        || (typeof isWeekCandidate === 'function'
+          && isWeekCandidate(anchor,settings,todayBase,new Date(todayBase).getDay()));
+      if(!committed && !anchorDue)continue;
+      const name = (anchor.name || 'linked habit').slice(0,40);
+      if(link.direction === 'before')return `before ${name}`;
+      if(link.direction === 'after')return `after ${name}`;
+      return `with ${name}`;
+    }
+  }
+
   const preferred = nextPreferredOnOrAfter(h,Date.now(),target);
   const pressureDay = preferred || target;
   if(!pressureDay)return '';

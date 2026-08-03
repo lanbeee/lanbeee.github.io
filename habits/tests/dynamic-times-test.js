@@ -358,10 +358,9 @@ async function toastText(page){
     }])[0];
     // normalize() cannot retain an inter-record reference when called on one
     // record in isolation; seed the already-migrated recurring equivalent.
-    other.scheduleLinks = {
-      before:null,
-      after:{anchorHid:stretch.hid,adjacency:'sometime',requireSameDay:false}
-    };
+    other.scheduleLinks = [
+      {anchorHid:stretch.hid,direction:'after',adjacency:'sometime',requireSameDay:false}
+    ];
     save([gym, stretch, other]);
     if(typeof render === 'function')render();
     return load().findIndex(h => h.name === 'Stretch');
@@ -382,8 +381,12 @@ async function toastText(page){
   const startEndpoint = page.locator('.time-endpoint[data-field="allowedTimeStart"]');
   const habitOpt = await startEndpoint.locator('.time-anchor option[value="habit"]').count();
   assert(habitOpt === 0, 'new dynamic-time dropdown omits habit order');
-  const afterPicker = page.locator('#detail-link-after-habit');
-  assert(await afterPicker.count() === 1, 'Schedule includes dedicated after-habit picker');
+  await page.locator('#detail-schedule-link-add').click();
+  await page.waitForTimeout(50);
+  const afterEditor = page.locator('#detail-schedule-link-list .schedule-link-editor').last();
+  const afterPicker = afterEditor.locator('.schedule-link-habit');
+  assert(await afterPicker.count() === 1, 'Schedule includes dedicated habit picker');
+  await afterEditor.locator('[data-link-direction="after"]').click();
 
   // Other migrated from a clean old start anchor to a recurring Other-after-
   // Stretch relationship. Stretch-after-Other would close the cycle.
@@ -404,17 +407,17 @@ async function toastText(page){
   // Pick a long-named habit, choose right-after + same-day, then save without a location.
   await afterPicker.selectOption({ label:'Gym with a deliberately long habit name' });
   await page.waitForTimeout(100);
-  await page.locator('[data-schedule-link="after"] [data-adjacency="direct"]').click();
-  const sameDayToggle = page.locator('[data-schedule-link="after"] .schedule-link-same-day');
-  const sameDayHelp = page.locator('#detail-link-after-same-day-help');
-  await page.locator('[data-tip="detail-link-after-same-day-help"]').click();
+  await afterEditor.locator('[data-adjacency="direct"]').click();
+  const sameDayToggle = afterEditor.locator('.schedule-link-same-day');
+  const sameDayHelp = afterEditor.locator('.schedule-link-same-day-help');
+  await afterEditor.locator('[data-tip^="detail-link-same-day-help"]').click();
   assert(await sameDayHelp.isVisible(), 'same-day explanation opens from info button');
   assert((await sameDayHelp.textContent()).indexOf('Gym with a deliberately long habit name') >= 0, 'same-day explanation names anchor habit');
   assert(await sameDayToggle.getAttribute('aria-pressed') === 'false', 'same-day toggle starts off');
   assert(await sameDayToggle.locator('.schedule-link-state').count() === 0, 'same-day toggle omits redundant state label');
   await sameDayToggle.click();
   assert(await sameDayToggle.getAttribute('aria-pressed') === 'true', 'same-day toggle turns on');
-  const sameDayLayout = await page.locator('[data-schedule-link="after"] .schedule-link-same-day-row').evaluate(row => {
+  const sameDayLayout = await afterEditor.locator('.schedule-link-same-day-row').evaluate(row => {
     const label = row.querySelector('.schedule-link-same-day-label');
     const info = row.querySelector('.info-btn');
     const toggle = row.querySelector('.schedule-link-same-day');
@@ -433,8 +436,10 @@ async function toastText(page){
 
   const persisted = await page.evaluate(() => {
     const h = load().find(x => x.name === 'Stretch');
+    const links = (h && h.scheduleLinks) || [];
+    const link = links.find(l => l.direction === 'after') || links[0];
     return h && {
-      link:h.scheduleLinks && h.scheduleLinks.after,
+      link,
       locs: h.locationIds
     };
   });

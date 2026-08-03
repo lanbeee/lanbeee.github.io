@@ -53,7 +53,7 @@
  * @property {number}      preferredTimeEndOffsetMin
  *
  * — Persistent planner order (optional; recurring, unlike drag reorder) —
- * @property {{before:ScheduleLink|null,after:ScheduleLink|null}} scheduleLinks
+ * @property {ScheduleLink[]} scheduleLinks   — OR list of before/after relationships; any number
  *
  * — Habit-relative anchors (optional; only meaningful when *Anchor = 'habit') —
  * When an anchor field is set to 'habit', the matching *AnchorHabitId references another habit's
@@ -127,8 +127,10 @@
 /**
  * A recurring planner relationship, stored from the subject habit's point of
  * view. Direct links allow required travel/fixed blocks, but no movable card.
+ * Multiple links on one subject are OR'd for same-day pull/gating.
  * @typedef {Object} ScheduleLink
  * @property {string} anchorHid
+ * @property {'before'|'after'} direction
  * @property {'sometime'|'direct'} adjacency
  * @property {boolean} requireSameDay
  */
@@ -638,11 +640,8 @@ function normalize(items){
   });
   const validHids = new Set(normalized.map(h=>h.hid));
   for(const h of normalized){
-    const links = normalizeScheduleLinks(h.scheduleLinks,h.hid);
-    for(const direction of ['before','after']){
-      if(links[direction] && !validHids.has(links[direction].anchorHid))links[direction] = null;
-    }
-    h.scheduleLinks = links;
+    h.scheduleLinks = normalizeScheduleLinks(h.scheduleLinks,h.hid)
+      .filter(link=>validHids.has(link.anchorHid));
   }
   return normalized;
 }
@@ -924,11 +923,11 @@ function persistentOrderConstraintsForDay(dayBase,data = null){
     const subjectHid = cleanHabitId(h && h.hid);
     if(!subjectHid)continue;
     const links = normalizeScheduleLinks(h.scheduleLinks,subjectHid);
-    for(const direction of ['before','after']){
-      const link = links[direction];
-      if(!link || !valid.has(link.anchorHid))continue;
+    links.forEach((link,linkIdx)=>{
+      if(!link || !valid.has(link.anchorHid))return;
+      const direction = link.direction;
       edges.push({
-        id:`schedule:${subjectHid}:${direction}`,
+        id:`schedule:${subjectHid}:${direction}:${link.anchorHid}:${linkIdx}`,
         dayBase:base,
         beforeHid:direction === 'before' ? subjectHid : link.anchorHid,
         afterHid:direction === 'before' ? link.anchorHid : subjectHid,
@@ -940,7 +939,7 @@ function persistentOrderConstraintsForDay(dayBase,data = null){
         anchorHid:link.anchorHid,
         direction
       });
-    }
+    });
   }
   return edges;
 }
@@ -1230,18 +1229,24 @@ function validateScheduleLinkGraph(items){
     const subject = cleanHabitId(h && h.hid);
     if(!subject)continue;
     const links = normalizeScheduleLinks(h.scheduleLinks,subject);
-    if(links.before && links.after && links.before.anchorHid === links.after.anchorHid){
-      const name = byHid.get(links.before.anchorHid)?.name || 'that habit';
-      return {ok:false,message:`choose either before or after ${name}, not both`};
-    }
-    for(const direction of ['before','after']){
-      const link = links[direction];
+    const seenAnchors = new Map(); // anchorHid → direction
+    for(const link of links){
       if(!link)continue;
+      const prevDir = seenAnchors.get(link.anchorHid);
+      if(prevDir && prevDir !== link.direction){
+        const name = byHid.get(link.anchorHid)?.name || 'that habit';
+        return {ok:false,message:`choose either before or after ${name}, not both`};
+      }
+      if(prevDir === link.direction){
+        const name = byHid.get(link.anchorHid)?.name || 'that habit';
+        return {ok:false,message:`${name} is already linked`};
+      }
+      seenAnchors.set(link.anchorHid,link.direction);
       const anchor = byHid.get(link.anchorHid);
       if(!anchor)return {ok:false,message:'one linked habit no longer exists'};
       edges.push({
-        beforeHid:direction === 'before' ? subject : link.anchorHid,
-        afterHid:direction === 'before' ? link.anchorHid : subject,
+        beforeHid:link.direction === 'before' ? subject : link.anchorHid,
+        afterHid:link.direction === 'before' ? link.anchorHid : subject,
         adjacency:link.adjacency
       });
     }
@@ -1298,7 +1303,7 @@ function temporaryOrderConflict(dayBase,edges,data = null){
 }
 
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || {})].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || [])].join(':')).join('|');
 }
 
 function loadTodaySuggested(){
@@ -2187,28 +2192,53 @@ function cleanHabitId(value){
 }
 
 // PURE: normalize one persistent Schedule relationship.
-function normalizeScheduleLink(value,subjectHid){
+function normalizeScheduleLink(value,subjectHid,fallbackDirection = null){
   if(!value || typeof value !== 'object')return null;
   const anchorHid = cleanHabitId(value.anchorHid);
   if(!anchorHid || anchorHid === cleanHabitId(subjectHid))return null;
+  const direction = value.direction === 'before' || value.direction === 'after'
+    ? value.direction
+    : (fallbackDirection === 'before' || fallbackDirection === 'after' ? fallbackDirection : null);
+  if(!direction)return null;
   return {
     anchorHid,
+    direction,
     adjacency:value.adjacency === 'direct' ? 'direct' : 'sometime',
     requireSameDay:Boolean(value.requireSameDay)
   };
 }
 
-// PURE: normalize the two recurring relationship slots and conservatively
+// PURE: coerce legacy {before,after} object or modern array into ScheduleLink[].
+function coerceScheduleLinksSource(value){
+  if(Array.isArray(value))return value;
+  if(value && typeof value === 'object'){
+    // Modern accidental shape: {links:[...]}
+    if(Array.isArray(value.links))return value.links;
+    const out = [];
+    if(value.after)out.push({...value.after,direction:value.after.direction || 'after'});
+    if(value.before)out.push({...value.before,direction:value.before.direction || 'before'});
+    return out;
+  }
+  return [];
+}
+
+// PURE: normalize the recurring relationship list and conservatively
 // migrate old zero-offset, standalone "start after habit" expressions.
 function normalizeScheduleLinksWithMigration(raw,subjectHid){
-  const source = raw && raw.scheduleLinks && typeof raw.scheduleLinks === 'object'
-    ? raw.scheduleLinks : {};
-  const links = {
-    before:normalizeScheduleLink(source.before,subjectHid),
-    after:normalizeScheduleLink(source.after,subjectHid)
-  };
+  const source = coerceScheduleLinksSource(raw && raw.scheduleLinks);
+  const links = [];
+  const seen = new Set();
+  for(const entry of source){
+    const link = normalizeScheduleLink(entry,subjectHid,entry && entry.direction);
+    if(!link)continue;
+    const key = `${link.direction}:${link.anchorHid}`;
+    if(seen.has(key))continue;
+    seen.add(key);
+    links.push(link);
+  }
   const migratedFields = [];
-  if(!links.after){
+  const hasAfter = links.some(l=>l.direction === 'after');
+  if(!hasAfter){
     for(const field of ['allowedTimeStart','preferredTimeStart']){
       const anchorHid = cleanHabitId(raw && raw[field + 'AnchorHabitId']);
       const cleanStandalone = raw && raw[field + 'Anchor'] === 'habit'
@@ -2217,16 +2247,17 @@ function normalizeScheduleLinksWithMigration(raw,subjectHid){
         && !cleanAnchor(raw[field + 'Anchor2'])
         && anchorHid && anchorHid !== cleanHabitId(subjectHid);
       if(!cleanStandalone)continue;
-      links.after = {anchorHid,adjacency:'sometime',requireSameDay:false};
+      links.push({anchorHid,direction:'after',adjacency:'sometime',requireSameDay:false});
       migratedFields.push(field);
       break;
     }
   }
+  const afterLink = links.find(l=>l.direction === 'after');
   // If allowed + preferred carried the same clean link, clear both copies.
-  if(links.after){
+  if(afterLink){
     for(const field of ['allowedTimeStart','preferredTimeStart']){
       const same = raw && raw[field + 'Anchor'] === 'habit'
-        && cleanHabitId(raw[field + 'AnchorHabitId']) === links.after.anchorHid
+        && cleanHabitId(raw[field + 'AnchorHabitId']) === afterLink.anchorHid
         && normalizePrayerOffset(raw[field + 'OffsetMin']) === 0
         && !cleanTimeCombine(raw[field + 'Combine'])
         && !cleanAnchor(raw[field + 'Anchor2']);
@@ -2237,11 +2268,28 @@ function normalizeScheduleLinksWithMigration(raw,subjectHid){
 }
 
 function normalizeScheduleLinks(value,subjectHid){
-  const source = value && typeof value === 'object' ? value : {};
-  return {
-    before:normalizeScheduleLink(source.before,subjectHid),
-    after:normalizeScheduleLink(source.after,subjectHid)
-  };
+  const source = coerceScheduleLinksSource(value);
+  const links = [];
+  const seen = new Set();
+  for(const entry of source){
+    const fallback = entry && (entry.direction === 'before' || entry.direction === 'after')
+      ? entry.direction : null;
+    const link = normalizeScheduleLink(entry,subjectHid,fallback);
+    if(!link)continue;
+    const key = `${link.direction}:${link.anchorHid}`;
+    if(seen.has(key))continue;
+    seen.add(key);
+    links.push(link);
+  }
+  return links;
+}
+
+/** PURE: same-day links on a subject (OR partners for pull/gating). */
+function sameDayScheduleLinks(hOrLinks,subjectHid = null){
+  const links = Array.isArray(hOrLinks)
+    ? normalizeScheduleLinks(hOrLinks,subjectHid)
+    : normalizeScheduleLinks(hOrLinks && hOrLinks.scheduleLinks,subjectHid || (hOrLinks && hOrLinks.hid));
+  return links.filter(link=>link && link.requireSameDay);
 }
 
 // PURE: coerce the later/earlier-of + dayOffset fields for one habit endpoint
@@ -2619,8 +2667,7 @@ function collectReferencedHabitIds(data,settings = null){
       if(id2)refs.add(id2);
     });
     const links = normalizeScheduleLinks(h.scheduleLinks,h.hid);
-    if(links.before && links.before.anchorHid)refs.add(links.before.anchorHid);
-    if(links.after && links.after.anchorHid)refs.add(links.after.anchorHid);
+    links.forEach(link=>{ if(link && link.anchorHid)refs.add(link.anchorHid); });
   });
   return refs;
 }
@@ -2645,15 +2692,8 @@ function scrubRemovedHabitReferences(data,removedIds){
       });
     });
     const links = normalizeScheduleLinks(next.scheduleLinks,next.hid);
-    let linkTouched = false;
-    const scrubbed = {before:links.before,after:links.after};
-    for(const dir of ['before','after']){
-      if(scrubbed[dir] && gone.has(scrubbed[dir].anchorHid)){
-        scrubbed[dir] = null;
-        linkTouched = true;
-      }
-    }
-    if(linkTouched){
+    const scrubbed = links.filter(link=>link && !gone.has(link.anchorHid));
+    if(scrubbed.length !== links.length){
       if(!touched){ next = {...next}; touched = true; }
       next.scheduleLinks = scrubbed;
     }

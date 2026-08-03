@@ -244,51 +244,11 @@
             <div class="schedule-order-heading">
               <span class="settings-sublabel schedule-order-label">habit order
                 <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about habit order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>These relationships recur whenever both habits share a plan. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times.</span>
+                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>Link this habit before or after any number of others. Links are OR’d: plan with whichever partner lands that day. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. Same-day pull uses flexibility so this habit can join a partner early (shown with the early indicator).</span>
               </span>
+              <button type="button" class="mini-text-btn schedule-link-add" id="detail-schedule-link-add">add link</button>
             </div>
-            <div class="schedule-link-editor" data-schedule-link="after">
-              <div class="schedule-link-main">
-                <label class="schedule-link-label" for="detail-link-after-habit">Do this after</label>
-                <select class="mini-select schedule-link-habit" id="detail-link-after-habit" aria-label="habit to do this after"></select>
-                <button type="button" class="mini-text-btn schedule-link-clear" aria-label="clear after relationship" hidden>clear</button>
-              </div>
-              <div class="seg schedule-link-adjacency" role="group" aria-label="after relationship strength" hidden>
-                <button type="button" class="seg-opt on" data-adjacency="sometime">after</button>
-                <button type="button" class="seg-opt" data-adjacency="direct">right after</button>
-              </div>
-              <div class="schedule-link-same-day-row" hidden>
-                <span class="schedule-link-same-day-label">
-                  <span class="setting-title">Only on days with the other habit</span>
-                  <button type="button" class="info-btn" data-tip="detail-link-after-same-day-help" aria-label="explain this same-day setting"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                  <span class="info-tooltip schedule-link-same-day-help" id="detail-link-after-same-day-help" role="tooltip" hidden>When on, this habit is planned only if the other habit is also planned or already completed that day.</span>
-                </span>
-                <button type="button" class="setting-switch schedule-link-same-day" aria-pressed="false" aria-label="Only on days with the other habit: off">
-                  <span class="switch-ui" aria-hidden="true"></span>
-                </button>
-              </div>
-            </div>
-            <div class="schedule-link-editor" data-schedule-link="before">
-              <div class="schedule-link-main">
-                <label class="schedule-link-label" for="detail-link-before-habit">Do this before</label>
-                <select class="mini-select schedule-link-habit" id="detail-link-before-habit" aria-label="habit to do this before"></select>
-                <button type="button" class="mini-text-btn schedule-link-clear" aria-label="clear before relationship" hidden>clear</button>
-              </div>
-              <div class="seg schedule-link-adjacency" role="group" aria-label="before relationship strength" hidden>
-                <button type="button" class="seg-opt on" data-adjacency="sometime">before</button>
-                <button type="button" class="seg-opt" data-adjacency="direct">right before</button>
-              </div>
-              <div class="schedule-link-same-day-row" hidden>
-                <span class="schedule-link-same-day-label">
-                  <span class="setting-title">Only on days with the other habit</span>
-                  <button type="button" class="info-btn" data-tip="detail-link-before-same-day-help" aria-label="explain this same-day setting"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                  <span class="info-tooltip schedule-link-same-day-help" id="detail-link-before-same-day-help" role="tooltip" hidden>When on, this habit is planned only if the other habit is also planned or already completed that day.</span>
-                </span>
-                <button type="button" class="setting-switch schedule-link-same-day" aria-pressed="false" aria-label="Only on days with the other habit: off">
-                  <span class="switch-ui" aria-hidden="true"></span>
-                </button>
-              </div>
-            </div>
+            <div id="detail-schedule-link-list" class="schedule-link-list"></div>
           </div>
           <div class="seg schedule-seg detail-full-only" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed">allowed</button>

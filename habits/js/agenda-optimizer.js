@@ -768,22 +768,34 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     });
   }
   let schedulePairRow = 0;
+  // Same-day persistent links are OR'd per subject: selecting the subject
+  // requires at least one of its same-day anchors (unless one is committed).
+  const pairEdgesBySubject = new Map();
   for(const edge of dayOrderEdges){
     if(!edge.persistent || !edge.requiresPair || !edge.subjectHid || !edge.anchorHid)continue;
-    const subjectNames = optionNamesByHid.get(edge.subjectHid) || [];
+    if(!pairEdgesBySubject.has(edge.subjectHid))pairEdgesBySubject.set(edge.subjectHid,[]);
+    pairEdgesBySubject.get(edge.subjectHid).push(edge);
+  }
+  for(const [subjectHid,subjectEdges] of pairEdgesBySubject){
+    const subjectNames = optionNamesByHid.get(subjectHid) || [];
     if(!subjectNames.length)continue;
-    const anchorNames = optionNamesByHid.get(edge.anchorHid) || [];
-    const committed = typeof scheduleAnchorCommitForDay === 'function'
-      ? scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase) : null;
-    if(committed)continue;
+    const anyCommitted = subjectEdges.some(edge=>
+      typeof scheduleAnchorCommitForDay === 'function'
+        && scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase)
+    );
+    if(anyCommitted)continue;
+    const anchorNameSet = new Set();
+    for(const edge of subjectEdges){
+      for(const name of (optionNamesByHid.get(edge.anchorHid) || []))anchorNameSet.add(name);
+    }
+    const anchorNames = [...anchorNameSet];
+    // subject ⇒ ∨ anchors  →  sum(subject) - sum(anchors) ≤ 0
     subjectTo.push({
       name:`schedule_pair_${schedulePairRow++}`,
       vars:[
         ...subjectNames.map(name=>({name,coef:1})),
         ...anchorNames.map(name=>({name,coef:-1}))
       ],
-      // subject selected implies anchor selected. The independently eligible
-      // anchor may still remain when the dependent cannot fit.
       bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
     });
   }
@@ -1385,7 +1397,11 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
         eligible.add(day.dayBase);
       }
     }
-    if(!eligible.size)continue;
+    const hasSameDayLinks = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(h).length > 0
+      : (typeof normalizeScheduleLinks === 'function'
+        && normalizeScheduleLinks(h.scheduleLinks,h.hid).some(l=>l && l.requireSameDay));
+    if(!eligible.size && !hasSameDayLinks)continue;
     seen.add(i);
     candidates.push({
       h,i,pinned,
@@ -1396,7 +1412,10 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     });
   }
   if(typeof applyPersistentLinkEligibility === 'function'){
-    applyPersistentLinkEligibility(candidates,dayStates);
+    applyPersistentLinkEligibility(candidates,dayStates,settings);
+  }
+  for(let i = candidates.length - 1;i >= 0;i -= 1){
+    if(!candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 
