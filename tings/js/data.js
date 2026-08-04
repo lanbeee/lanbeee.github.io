@@ -53,7 +53,7 @@
  * @property {number}      preferredTimeEndOffsetMin
  *
  * — Persistent planner order (optional; recurring, unlike drag reorder) —
- * @property {{before:ScheduleLink|null,after:ScheduleLink|null}} scheduleLinks
+ * @property {ScheduleLink[]} scheduleLinks   — OR list of before/after relationships; any number
  *
  * — Habit-relative anchors (optional; only meaningful when *Anchor = 'habit') —
  * When an anchor field is set to 'habit', the matching *AnchorHabitId references another habit's
@@ -127,8 +127,10 @@
 /**
  * A recurring planner relationship, stored from the subject habit's point of
  * view. Direct links allow required travel/fixed blocks, but no movable card.
+ * Multiple links on one subject are OR'd for same-day pull/gating.
  * @typedef {Object} ScheduleLink
  * @property {string} anchorHid
+ * @property {'before'|'after'} direction
  * @property {'sometime'|'direct'} adjacency
  * @property {boolean} requireSameDay
  */
@@ -196,6 +198,9 @@
  * @property {Object<string,string[]>} cancelledBlocks — day-key → cancelled block signatures for that date only
  * @property {string|null} calendarCreditHabitId — breakable habit hid that receives imported meeting minutes as progress credit; null = none
  * @property {'skip'|'tasks'} calendarAllDayMode — how PDF/calendar all-day events are imported: skip them, or land as dated untimed tasks
+ * @property {2|3|7} completedTaskRetentionDays — auto-delete completed tasks older than this many days
+ * @property {0|12|30|60} habitLogKeepCount — keep newest N actual logs per non-task habit (0 = off)
+ * @property {number} lastRetentionCleanupAt — ms timestamp of last monthly auto cleanup (0 = never)
  */
 
 /**
@@ -263,6 +268,93 @@ function agendaPlannerForcedFast(){
   }
 }
 
+// Workers (and dynamic import of glpk.mjs) are blocked on file://. Main-thread
+// GLPK preload only pays off in that fallback; otherwise the worker warms its own.
+function agendaPlannerWorkerAvailable(){
+  try{
+    if(typeof Worker !== 'function')return false;
+    if(typeof location !== 'undefined' && location.protocol === 'file:')return false;
+    return true;
+  }catch{
+    return false;
+  }
+}
+
+// Bumped whenever persisted planner inputs change. Combined with a cheap live
+// location/travel signature (see homePlannerDirtyKey) so background refreshes
+// can skip a full replan when only the wall-clock minute bucket moved.
+// Persisted so disk-cache keys survive cold open after the first save of the day.
+const PLANNER_REVISION_KEY = 'tings_planner_revision_v1';
+let _plannerDataRevision = (()=>{
+  try{
+    const n = Number(localStorage.getItem(PLANNER_REVISION_KEY));
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  }catch{
+    return 0;
+  }
+})();
+function bumpPlannerDataRevision(){
+  _plannerDataRevision += 1;
+  try{ localStorage.setItem(PLANNER_REVISION_KEY,String(_plannerDataRevision)); }catch(_){}
+  if(typeof endPlannerSolveCaches === 'function'){
+    try{ endPlannerSolveCaches(); }catch(_){}
+  }
+  return _plannerDataRevision;
+}
+function plannerDataRevision(){
+  return _plannerDataRevision;
+}
+
+// ?perf=1 — console.table phase timings for cold-open / planner work.
+function plannerPerfEnabled(){
+  try{
+    return typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('perf') === '1';
+  }catch{
+    return false;
+  }
+}
+const _plannerPerfMarks = [];
+let _plannerPerfTryPlace = 0;
+function plannerPerfMark(name){
+  if(!plannerPerfEnabled())return;
+  try{
+    if(typeof performance !== 'undefined' && performance.mark)performance.mark(name);
+  }catch(_){}
+  _plannerPerfMarks.push({name,t:typeof performance !== 'undefined' ? performance.now() : Date.now()});
+  // Bound growth in long ?perf=1 sessions.
+  if(_plannerPerfMarks.length > 200)_plannerPerfMarks.splice(0,_plannerPerfMarks.length - 100);
+}
+function plannerPerfMeasure(name,startMark,endMark){
+  if(!plannerPerfEnabled())return;
+  try{
+    if(typeof performance !== 'undefined' && performance.measure){
+      performance.measure(name,startMark,endMark);
+    }
+  }catch(_){}
+}
+function plannerPerfCountTryPlace(){
+  _plannerPerfTryPlace += 1;
+}
+function plannerPerfResetTryPlace(){
+  _plannerPerfTryPlace = 0;
+}
+function plannerPerfTryPlaceCount(){
+  return _plannerPerfTryPlace;
+}
+function plannerPerfDump(label = 'planner'){
+  if(!plannerPerfEnabled())return;
+  const rows = [];
+  for(let i = 1;i < _plannerPerfMarks.length;i += 1){
+    rows.push({
+      phase:_plannerPerfMarks[i].name,
+      ms:Math.round((_plannerPerfMarks[i].t - _plannerPerfMarks[i - 1].t) * 10) / 10
+    });
+  }
+  if(_plannerPerfTryPlace)rows.push({phase:'tryPlaceOnDay_calls',ms:_plannerPerfTryPlace});
+  try{ console.table(rows); }catch(_){ console.log(label,rows); }
+}
+
 function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
@@ -291,6 +383,9 @@ function loadSortSettings(){
     merged.blockedTimeOverrides = normalizeBlockedTimeOverrides(merged.blockedTimeOverrides);
     merged.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(merged.calendarCreditHabitId) : '') || null;
     merged.calendarAllDayMode = normalizeCalendarAllDayMode(merged.calendarAllDayMode);
+    merged.completedTaskRetentionDays = normalizeCompletedTaskRetentionDays(merged.completedTaskRetentionDays);
+    merged.habitLogKeepCount = normalizeHabitLogKeepCount(merged.habitLogKeepCount);
+    merged.lastRetentionCleanupAt = normalizeRetentionCleanupAt(merged.lastRetentionCleanupAt);
     merged.defaultPriority = clampPriority(merged.defaultPriority);
     merged.defaultDurationMinutes = clampDuration(merged.defaultDurationMinutes);
     merged.defaultFlexibilityDays = clampFlexibility(merged.defaultFlexibilityDays);
@@ -326,7 +421,9 @@ function loadSortSettings(){
       ? false
       : Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
-    if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'){
+    // Prefer worker-side GLPK warm. Main-thread preload only when workers cannot run.
+    if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
+      && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
       try{ preloadAgendaOptimizer(); }catch(_){}
     }
     return merged;
@@ -360,6 +457,9 @@ function saveSortSettings(settings){
   next.blockedTimeOverrides = normalizeBlockedTimeOverrides(next.blockedTimeOverrides);
   next.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(next.calendarCreditHabitId) : '') || null;
   next.calendarAllDayMode = normalizeCalendarAllDayMode(next.calendarAllDayMode);
+  next.completedTaskRetentionDays = normalizeCompletedTaskRetentionDays(next.completedTaskRetentionDays);
+  next.habitLogKeepCount = normalizeHabitLogKeepCount(next.habitLogKeepCount);
+  next.lastRetentionCleanupAt = normalizeRetentionCleanupAt(next.lastRetentionCleanupAt);
   next.defaultPriority = clampPriority(next.defaultPriority);
   next.defaultDurationMinutes = clampDuration(next.defaultDurationMinutes);
   next.defaultFlexibilityDays = clampFlexibility(next.defaultFlexibilityDays);
@@ -540,11 +640,8 @@ function normalize(items){
   });
   const validHids = new Set(normalized.map(h=>h.hid));
   for(const h of normalized){
-    const links = normalizeScheduleLinks(h.scheduleLinks,h.hid);
-    for(const direction of ['before','after']){
-      if(links[direction] && !validHids.has(links[direction].anchorHid))links[direction] = null;
-    }
-    h.scheduleLinks = links;
+    h.scheduleLinks = normalizeScheduleLinks(h.scheduleLinks,h.hid)
+      .filter(link=>validHids.has(link.anchorHid));
   }
   return normalized;
 }
@@ -592,6 +689,7 @@ function save(data){
       str = JSON.stringify(next);
     }
     Storage.writeRaw(KEY, str);
+    bumpPlannerDataRevision();
     updateQuotaBar(sizeKb(next));
     return true;
   }catch(e){
@@ -599,6 +697,7 @@ function save(data){
       const pruned = pruneForStorage(normalize(data),QUOTA_HARD_KB - 360);
       const str = JSON.stringify(pruned);
       Storage.writeRaw(KEY, str);
+      bumpPlannerDataRevision();
       updateQuotaBar(sizeKb(pruned));
       showToast('old dense activity compacted');
       return true;
@@ -671,7 +770,7 @@ function saveAutoChunkPlans(plans){
   const next = plans && plans.groups ? plans : {groups:{}};
   const current = Storage.read(AUTO_CHUNK_PLAN_KEY);
   if(JSON.stringify(current || {groups:{}}) === JSON.stringify(next))return false;
-  try{ Storage.write(AUTO_CHUNK_PLAN_KEY,next); return true; }
+  try{ Storage.write(AUTO_CHUNK_PLAN_KEY,next); bumpPlannerDataRevision(); return true; }
   catch{ return false; }
 }
 
@@ -800,7 +899,7 @@ function saveOrderConstraintStore(store){
   };
   const current = Storage.read(ORDER_CONSTRAINTS_KEY);
   if(JSON.stringify(current || {edges:[],doingNow:null}) === JSON.stringify(next))return false;
-  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); return true; }
+  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); bumpPlannerDataRevision(); return true; }
   catch{ return false; }
 }
 
@@ -824,11 +923,11 @@ function persistentOrderConstraintsForDay(dayBase,data = null){
     const subjectHid = cleanHabitId(h && h.hid);
     if(!subjectHid)continue;
     const links = normalizeScheduleLinks(h.scheduleLinks,subjectHid);
-    for(const direction of ['before','after']){
-      const link = links[direction];
-      if(!link || !valid.has(link.anchorHid))continue;
+    links.forEach((link,linkIdx)=>{
+      if(!link || !valid.has(link.anchorHid))return;
+      const direction = link.direction;
       edges.push({
-        id:`schedule:${subjectHid}:${direction}`,
+        id:`schedule:${subjectHid}:${direction}:${link.anchorHid}:${linkIdx}`,
         dayBase:base,
         beforeHid:direction === 'before' ? subjectHid : link.anchorHid,
         afterHid:direction === 'before' ? link.anchorHid : subjectHid,
@@ -840,7 +939,7 @@ function persistentOrderConstraintsForDay(dayBase,data = null){
         anchorHid:link.anchorHid,
         direction
       });
-    }
+    });
   }
   return edges;
 }
@@ -1130,18 +1229,24 @@ function validateScheduleLinkGraph(items){
     const subject = cleanHabitId(h && h.hid);
     if(!subject)continue;
     const links = normalizeScheduleLinks(h.scheduleLinks,subject);
-    if(links.before && links.after && links.before.anchorHid === links.after.anchorHid){
-      const name = byHid.get(links.before.anchorHid)?.name || 'that habit';
-      return {ok:false,message:`choose either before or after ${name}, not both`};
-    }
-    for(const direction of ['before','after']){
-      const link = links[direction];
+    const seenAnchors = new Map(); // anchorHid → direction
+    for(const link of links){
       if(!link)continue;
+      const prevDir = seenAnchors.get(link.anchorHid);
+      if(prevDir && prevDir !== link.direction){
+        const name = byHid.get(link.anchorHid)?.name || 'that habit';
+        return {ok:false,message:`choose either before or after ${name}, not both`};
+      }
+      if(prevDir === link.direction){
+        const name = byHid.get(link.anchorHid)?.name || 'that habit';
+        return {ok:false,message:`${name} is already linked`};
+      }
+      seenAnchors.set(link.anchorHid,link.direction);
       const anchor = byHid.get(link.anchorHid);
       if(!anchor)return {ok:false,message:'one linked habit no longer exists'};
       edges.push({
-        beforeHid:direction === 'before' ? subject : link.anchorHid,
-        afterHid:direction === 'before' ? link.anchorHid : subject,
+        beforeHid:link.direction === 'before' ? subject : link.anchorHid,
+        afterHid:link.direction === 'before' ? link.anchorHid : subject,
         adjacency:link.adjacency
       });
     }
@@ -1198,7 +1303,7 @@ function temporaryOrderConflict(dayBase,edges,data = null){
 }
 
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || {})].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || [])].join(':')).join('|');
 }
 
 function loadTodaySuggested(){
@@ -1215,7 +1320,7 @@ function loadTodaySuggested(){
 function saveTodaySuggested(snapshot){
   const current = Storage.read(TODAY_SUGGESTED_KEY);
   if(JSON.stringify(current) === JSON.stringify(snapshot))return false;
-  try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); return true; }
+  try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); bumpPlannerDataRevision(); return true; }
   catch{ return false; }
 }
 
@@ -1947,25 +2052,27 @@ function normalizeBlockedTimes(value){
     // Stripped to a clean id; absent = location-agnostic (busy, place unknown).
     const locationId = cleanLocationId(raw?.locationId) || null;
     // Prayer anchors mirror habits: when set, the matching start/end is
-    // resolved via adhan against the block's locationId. Blocked times do NOT
-    // support habit-anchors (they're a settings-level recurring block, not
-    // tied to a habit's log stream).
+    // resolved via adhan against the block's locationId — or, when the block
+    // has no place, against the home city (Settings → Locations). Blocked
+    // times do NOT support habit-anchors (they're a settings-level recurring
+    // block, not tied to a habit's log stream).
     const startAnchor = cleanPrayerAnchor(raw?.startAnchor);
     const endAnchor = cleanPrayerAnchor(raw?.endAnchor);
-    // Require a locationId when an anchor is set — no coords, no computation.
-    // If the user toggles dynamic without a location, the anchor silently drops.
-    const safeStartAnchor = startAnchor && locationId ? startAnchor : null;
-    const safeEndAnchor = endAnchor && locationId ? endAnchor : null;
+    // Anchors are kept even without a place; resolution falls back to the
+    // home city at runtime (see resolveBlockedTimeMinutes). With neither, the
+    // resolved value is null and callers use the fixed clock fallback.
+    const safeStartAnchor = startAnchor;
+    const safeEndAnchor = endAnchor;
     const startCombine = safeStartAnchor && typeof cleanTimeCombine === 'function'
       ? cleanTimeCombine(raw?.startCombine) : null;
-    const startAnchor2 = startCombine && locationId
+    const startAnchor2 = startCombine
       ? (typeof cleanBlockedAnchor2 === 'function'
         ? cleanBlockedAnchor2(raw?.startAnchor2)
         : cleanPrayerAnchor(raw?.startAnchor2))
       : null;
     const endCombine = safeEndAnchor && typeof cleanTimeCombine === 'function'
       ? cleanTimeCombine(raw?.endCombine) : null;
-    const endAnchor2 = endCombine && locationId
+    const endAnchor2 = endCombine
       ? (typeof cleanBlockedAnchor2 === 'function'
         ? cleanBlockedAnchor2(raw?.endAnchor2)
         : cleanPrayerAnchor(raw?.endAnchor2))
@@ -2085,28 +2192,53 @@ function cleanHabitId(value){
 }
 
 // PURE: normalize one persistent Schedule relationship.
-function normalizeScheduleLink(value,subjectHid){
+function normalizeScheduleLink(value,subjectHid,fallbackDirection = null){
   if(!value || typeof value !== 'object')return null;
   const anchorHid = cleanHabitId(value.anchorHid);
   if(!anchorHid || anchorHid === cleanHabitId(subjectHid))return null;
+  const direction = value.direction === 'before' || value.direction === 'after'
+    ? value.direction
+    : (fallbackDirection === 'before' || fallbackDirection === 'after' ? fallbackDirection : null);
+  if(!direction)return null;
   return {
     anchorHid,
+    direction,
     adjacency:value.adjacency === 'direct' ? 'direct' : 'sometime',
     requireSameDay:Boolean(value.requireSameDay)
   };
 }
 
-// PURE: normalize the two recurring relationship slots and conservatively
+// PURE: coerce legacy {before,after} object or modern array into ScheduleLink[].
+function coerceScheduleLinksSource(value){
+  if(Array.isArray(value))return value;
+  if(value && typeof value === 'object'){
+    // Modern accidental shape: {links:[...]}
+    if(Array.isArray(value.links))return value.links;
+    const out = [];
+    if(value.after)out.push({...value.after,direction:value.after.direction || 'after'});
+    if(value.before)out.push({...value.before,direction:value.before.direction || 'before'});
+    return out;
+  }
+  return [];
+}
+
+// PURE: normalize the recurring relationship list and conservatively
 // migrate old zero-offset, standalone "start after habit" expressions.
 function normalizeScheduleLinksWithMigration(raw,subjectHid){
-  const source = raw && raw.scheduleLinks && typeof raw.scheduleLinks === 'object'
-    ? raw.scheduleLinks : {};
-  const links = {
-    before:normalizeScheduleLink(source.before,subjectHid),
-    after:normalizeScheduleLink(source.after,subjectHid)
-  };
+  const source = coerceScheduleLinksSource(raw && raw.scheduleLinks);
+  const links = [];
+  const seen = new Set();
+  for(const entry of source){
+    const link = normalizeScheduleLink(entry,subjectHid,entry && entry.direction);
+    if(!link)continue;
+    const key = `${link.direction}:${link.anchorHid}`;
+    if(seen.has(key))continue;
+    seen.add(key);
+    links.push(link);
+  }
   const migratedFields = [];
-  if(!links.after){
+  const hasAfter = links.some(l=>l.direction === 'after');
+  if(!hasAfter){
     for(const field of ['allowedTimeStart','preferredTimeStart']){
       const anchorHid = cleanHabitId(raw && raw[field + 'AnchorHabitId']);
       const cleanStandalone = raw && raw[field + 'Anchor'] === 'habit'
@@ -2115,16 +2247,17 @@ function normalizeScheduleLinksWithMigration(raw,subjectHid){
         && !cleanAnchor(raw[field + 'Anchor2'])
         && anchorHid && anchorHid !== cleanHabitId(subjectHid);
       if(!cleanStandalone)continue;
-      links.after = {anchorHid,adjacency:'sometime',requireSameDay:false};
+      links.push({anchorHid,direction:'after',adjacency:'sometime',requireSameDay:false});
       migratedFields.push(field);
       break;
     }
   }
+  const afterLink = links.find(l=>l.direction === 'after');
   // If allowed + preferred carried the same clean link, clear both copies.
-  if(links.after){
+  if(afterLink){
     for(const field of ['allowedTimeStart','preferredTimeStart']){
       const same = raw && raw[field + 'Anchor'] === 'habit'
-        && cleanHabitId(raw[field + 'AnchorHabitId']) === links.after.anchorHid
+        && cleanHabitId(raw[field + 'AnchorHabitId']) === afterLink.anchorHid
         && normalizePrayerOffset(raw[field + 'OffsetMin']) === 0
         && !cleanTimeCombine(raw[field + 'Combine'])
         && !cleanAnchor(raw[field + 'Anchor2']);
@@ -2135,11 +2268,28 @@ function normalizeScheduleLinksWithMigration(raw,subjectHid){
 }
 
 function normalizeScheduleLinks(value,subjectHid){
-  const source = value && typeof value === 'object' ? value : {};
-  return {
-    before:normalizeScheduleLink(source.before,subjectHid),
-    after:normalizeScheduleLink(source.after,subjectHid)
-  };
+  const source = coerceScheduleLinksSource(value);
+  const links = [];
+  const seen = new Set();
+  for(const entry of source){
+    const fallback = entry && (entry.direction === 'before' || entry.direction === 'after')
+      ? entry.direction : null;
+    const link = normalizeScheduleLink(entry,subjectHid,fallback);
+    if(!link)continue;
+    const key = `${link.direction}:${link.anchorHid}`;
+    if(seen.has(key))continue;
+    seen.add(key);
+    links.push(link);
+  }
+  return links;
+}
+
+/** PURE: same-day links on a subject (OR partners for pull/gating). */
+function sameDayScheduleLinks(hOrLinks,subjectHid = null){
+  const links = Array.isArray(hOrLinks)
+    ? normalizeScheduleLinks(hOrLinks,subjectHid)
+    : normalizeScheduleLinks(hOrLinks && hOrLinks.scheduleLinks,subjectHid || (hOrLinks && hOrLinks.hid));
+  return links.filter(link=>link && link.requireSameDay);
 }
 
 // PURE: coerce the later/earlier-of + dayOffset fields for one habit endpoint
@@ -2357,6 +2507,33 @@ function normalizeCalendarAllDayMode(value){
 function normalizeHomeExtraMode(value){
   return value === 'cards12h' ? 'cards12h' : 'cards';
 }
+/** PURE: completed-task auto-delete window in days (2 | 3 | 7). */
+function normalizeCompletedTaskRetentionDays(value){
+  const n = parseInt(value,10);
+  return (typeof COMPLETED_TASK_RETENTION_DAYS !== 'undefined' && COMPLETED_TASK_RETENTION_DAYS.includes(n))
+    ? n
+    : 7;
+}
+/** PURE: keep newest N actual logs per non-task habit; 0 disables trimming. */
+function normalizeHabitLogKeepCount(value){
+  const n = parseInt(value,10);
+  return (typeof HABIT_LOG_KEEP_COUNTS !== 'undefined' && HABIT_LOG_KEEP_COUNTS.includes(n))
+    ? n
+    : 30;
+}
+/** PURE: last auto-cleanup timestamp (ms), or 0. */
+function normalizeRetentionCleanupAt(value){
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+/** PURE: whether the monthly auto-cleanup gate is due. */
+function shouldRunRetentionCleanup(settings, now = Date.now()){
+  const last = normalizeRetentionCleanupAt(settings && settings.lastRetentionCleanupAt);
+  const interval = typeof RETENTION_CLEANUP_INTERVAL_MS === 'number'
+    ? RETENTION_CLEANUP_INTERVAL_MS
+    : 30 * 86400000;
+  return !last || (now - last) >= interval;
+}
 // PURE: true iff the location has any hours constraint at all. Locations with
 // no hours resolve to 24h every day and skip all window math — the "Home"
 // case stays literally zero-cost.
@@ -2472,6 +2649,126 @@ function reconcileLocations(data,settings){
     return moved ? {...h,locationIds,locationPrefs,preferredLocationId} : h;
   });
   return {data:next,changed};
+}
+
+const RETENTION_TIME_FIELDS = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
+
+/** PURE: habit ids referenced as dynamic-time or schedule-link anchors. */
+function collectReferencedHabitIds(data,settings = null){
+  const refs = new Set();
+  const credit = cleanHabitId(settings && settings.calendarCreditHabitId);
+  if(credit)refs.add(credit);
+  (Array.isArray(data) ? data : []).forEach(h=>{
+    if(!h)return;
+    RETENTION_TIME_FIELDS.forEach(field=>{
+      const id1 = cleanHabitId(h[field + 'AnchorHabitId']);
+      const id2 = cleanHabitId(h[field + 'AnchorHabitId2']);
+      if(id1)refs.add(id1);
+      if(id2)refs.add(id2);
+    });
+    const links = normalizeScheduleLinks(h.scheduleLinks,h.hid);
+    links.forEach(link=>{ if(link && link.anchorHid)refs.add(link.anchorHid); });
+  });
+  return refs;
+}
+
+/** PURE: drop schedule-link / habit-anchor pointers to removed habit ids. */
+function scrubRemovedHabitReferences(data,removedIds){
+  const gone = removedIds instanceof Set ? removedIds : new Set(removedIds || []);
+  if(!gone.size)return Array.isArray(data) ? data : [];
+  return (Array.isArray(data) ? data : []).map(h=>{
+    if(!h)return h;
+    let next = h;
+    let touched = false;
+    RETENTION_TIME_FIELDS.forEach(field=>{
+      ['','2'].forEach(suffix=>{
+        const key = field + 'AnchorHabitId' + suffix;
+        const id = cleanHabitId(next[key]);
+        if(id && gone.has(id)){
+          if(!touched){ next = {...next}; touched = true; }
+          next[key] = null;
+          if(next[field + 'Anchor' + suffix] === 'habit')next[field + 'Anchor' + suffix] = null;
+        }
+      });
+    });
+    const links = normalizeScheduleLinks(next.scheduleLinks,next.hid);
+    const scrubbed = links.filter(link=>link && !gone.has(link.anchorHid));
+    if(scrubbed.length !== links.length){
+      if(!touched){ next = {...next}; touched = true; }
+      next.scheduleLinks = scrubbed;
+    }
+    return next;
+  });
+}
+
+/** PURE: keep newest N actual log entries; always preserve plan logs. */
+function trimHabitActualLogs(h,keepCount){
+  if(!h || h.type === 'task' || !(keepCount > 0))return {habit:h,trimmed:0};
+  const logs = normalizeLogs(h.logs);
+  const actual = [];
+  const plans = [];
+  logs.forEach(log=>{
+    if(isPlanLog(log))plans.push(log);
+    else actual.push(log);
+  });
+  if(actual.length <= keepCount)return {habit:h,trimmed:0};
+  actual.sort((a,b)=>logTime(a) - logTime(b));
+  const kept = actual.slice(-keepCount);
+  const nextLogs = normalizeLogs([...kept,...plans]);
+  return {
+    habit:{...h,logs:nextLogs,lastLog:latestActualLog(nextLogs)},
+    trimmed:actual.length - keepCount
+  };
+}
+
+/**
+ * PURE: hard-delete expired completed tasks and trim non-task habit logs.
+ * Protects habits still used as dynamic-time or schedule-link anchors.
+ * @returns {{data:Habit[],changed:boolean,removedTasks:Habit[],trimmedLogs:number,trimmedHabits:number}}
+ */
+function runRetentionCleanup(data,settings,now = Date.now()){
+  const retentionDays = normalizeCompletedTaskRetentionDays(settings && settings.completedTaskRetentionDays);
+  const keepCount = normalizeHabitLogKeepCount(settings && settings.habitLogKeepCount);
+  const cutoff = now - retentionDays * 86400000;
+  const items = Array.isArray(data) ? data : [];
+  const protectedIds = collectReferencedHabitIds(items,settings);
+  const removedTasks = [];
+  const survivors = [];
+  items.forEach(h=>{
+    if(!h)return;
+    if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h)){
+      const doneAt = Number(h.lastLog) || 0;
+      const hid = cleanHabitId(h.hid);
+      if(doneAt > 0 && doneAt <= cutoff && hid && !protectedIds.has(hid)){
+        removedTasks.push(h);
+        return;
+      }
+    }
+    survivors.push(h);
+  });
+  let next = survivors;
+  if(removedTasks.length){
+    next = scrubRemovedHabitReferences(survivors,new Set(removedTasks.map(h=>cleanHabitId(h.hid))));
+  }
+  let trimmedLogs = 0;
+  let trimmedHabits = 0;
+  if(keepCount > 0){
+    next = next.map(h=>{
+      const result = trimHabitActualLogs(h,keepCount);
+      if(result.trimmed > 0){
+        trimmedLogs += result.trimmed;
+        trimmedHabits += 1;
+      }
+      return result.habit;
+    });
+  }
+  return {
+    data:next,
+    changed:removedTasks.length > 0 || trimmedLogs > 0,
+    removedTasks,
+    trimmedLogs,
+    trimmedHabits
+  };
 }
 function effectiveAvailabilityMinutes(key,settings = sortSettings){
   const normalized = {...DEFAULT_SORT_SETTINGS,...settings};
@@ -2862,7 +3159,7 @@ function cleanMark(value){
 }
 
 /** Curated emoji tile backgrounds — maps to CSS --{token}-bg / --{token}-icon. */
-const EMOJI_BG_COLOR_TOKENS = ['teal','amber','red','purple','blue','green'];
+const EMOJI_BG_COLOR_TOKENS = ['teal','amber','red','purple','blue','green','pink','orange','indigo','cyan','lime','slate'];
 
 function normalizeEmojiBgColor(value){
   const token = typeof value === 'string' ? value.trim().toLowerCase() : '';

@@ -134,10 +134,46 @@ importScripts(
 );
 
 let plannerQueue = Promise.resolve();
+let _workerGlpkWarmed = false;
+
+function stripWeekHabitRefs(week){
+  if(typeof leanAgendaWeek === 'function')return leanAgendaWeek(week);
+  if(!week || !Array.isArray(week.days))return week;
+  const strip = row=>{
+    if(!row || typeof row !== 'object')return row;
+    const out = {...row};
+    delete out.h;
+    return out;
+  };
+  return {
+    ...week,
+    days:week.days.map(day=>({
+      ...day,
+      timeline:Array.isArray(day.timeline) ? day.timeline.map(strip) : day.timeline,
+      agendaItems:Array.isArray(day.agendaItems) ? day.agendaItems.map(strip) : day.agendaItems
+    })),
+    __lean:true
+  };
+}
 
 async function runPlannerMessage(message){
   const id = message.id;
   try{
+    if(message.warm){
+      if(!_workerGlpkWarmed && typeof ensureGlpk === 'function'){
+        try{
+          if(typeof withTimeout === 'function'){
+            await withTimeout(ensureGlpk(),AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS);
+          }else{
+            await ensureGlpk();
+          }
+          _workerGlpkWarmed = true;
+        }catch(_){}
+      }
+      self.postMessage({id,ready:true});
+      return;
+    }
+
     plannerStore.clear();
     for(const [key,value] of Object.entries(message.storage || {})){
       plannerStore.set(String(key),String(value));
@@ -147,10 +183,15 @@ async function runPlannerMessage(message){
     sortSettings = loadSortSettings();
 
     const count = Math.max(1,Math.min(14,Math.round(message.numDays) || 7));
+    const buildOpts = {
+      dirtyKey:message.dirtyKey || '',
+      day0Only:Boolean(message.day0Only)
+    };
+    const data = load();
     const week = message.mode === 'exact' && typeof buildWeekAgendaAsync === 'function'
-      ? await buildWeekAgendaAsync(load(),sortSettings,count)
-      : buildWeekAgenda(load(),sortSettings,count);
-    self.postMessage({id,week});
+      ? await buildWeekAgendaAsync(data,sortSettings,count,buildOpts)
+      : buildWeekAgenda(data,sortSettings,count,buildOpts);
+    self.postMessage({id,week:stripWeekHabitRefs(week)});
   }catch(error){
     self.postMessage({
       id,

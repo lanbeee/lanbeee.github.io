@@ -32,6 +32,7 @@ applyAppearanceSettings();
   const reconciled = reconcileLocations(load(),sortSettings);
   if(reconciled.changed)save(reconciled.data);
 }
+if(typeof scheduleMonthlyRetentionCleanup === 'function')scheduleMonthlyRetentionCleanup();
 // A single travel-edge refresh triggers a re-render so the new time lands on
 // screen — but warming a matrix fires many refreshes in a burst, and for
 // non-driving modes fetchEdge is fully synchronous (pure haversine, no await),
@@ -98,6 +99,7 @@ function syncAddTypeUi(type){
   $('task-due-row').hidden = type !== 'task';
   $('task-due-hint').hidden = type !== 'task';
   if(type === 'task')syncTaskDueUi();
+  if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
 }
 
 // PURE: next clean hour, used to make scheduled tasks one tap lighter.
@@ -301,17 +303,40 @@ function clampRhythm(value){
 
 // PURE: return help text for a rhythm type
 function rhythmHelp(type){
-  if(type === 'reduce')return 'Something to space out. Use times in N days (e.g. 1× in 3d).';
+  if(type === 'reduce')return 'Times in N days — e.g. 1× in 3d.';
   if(type === 'zero')return 'Something to avoid. Log it each time it happens; the aim is longer gaps.';
   if(type === 'task')return 'A one-off to-do. Add a due date, a fixed scheduled time, or leave it dateless.';
-  return 'Something to do regularly. Use times in N days — e.g. 2× in 7d is every 3.5 days.';
+  return 'Times in N days — e.g. 2× in 7d = 3.5d.';
+}
+
+// PURE: map stored habit type <-> mode seg value (build/limit/stop)
+function typeToMode(type){
+  if(type === 'reduce')return 'limit';
+  if(type === 'zero')return 'stop';
+  return 'build';
+}
+function modeToType(mode){
+  if(mode === 'limit')return 'reduce';
+  if(mode === 'stop')return 'zero';
+  return 'keepup';
 }
 
 // RENDER: update detail type segmented control + help
 function setDetailTypeUi(type){
+  const isTask = type === 'task';
+  const mainType = isTask ? 'task' : 'keepup';
   document.querySelectorAll('#detail-type-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.detailType === type);
-  });  const isHabit = type === 'keepup' || type === 'reduce';
+    btn.classList.toggle('on',btn.dataset.detailType === mainType);
+  });
+  const modeField = $('detail-mode-field');
+  if(modeField)modeField.hidden = isTask;
+  if(!isTask){
+    const mode = typeToMode(type);
+    document.querySelectorAll('#detail-mode-seg .seg-opt').forEach(btn=>{
+      btn.classList.toggle('on',btn.dataset.mode === mode);
+    });
+  }
+  const isHabit = type === 'keepup' || type === 'reduce';
   $('detail-slider-row').style.display = isHabit ? 'flex' : 'none';
   $('detail-target-help').style.display = 'block';
   $('detail-target-help').textContent = rhythmHelp(type);
@@ -622,6 +647,13 @@ bindRhythm('detail');
 ['ting','detail'].forEach(prefix=>{
   const times = $(`${prefix}-times`);
   if(!times)return;
+  times.addEventListener('focus',e=>{
+    e.target.dataset.orig = e.target.value;
+    e.target.value = '';
+  });
+  times.addEventListener('blur',()=>{
+    if(!times.value.trim())times.value = 1;
+  });
   times.addEventListener('input',()=>{
     const days = parseInt($(`${prefix}-days`)?.value,10) || 7;
     const t = Math.max(1,Math.min(30,parseInt(times.value,10) || 1));
@@ -751,18 +783,35 @@ $('detail-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-monthday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-weekday-chips').addEventListener('click',toggleScheduleChip);
 $('detail-preferred-monthday-chips').addEventListener('click',toggleScheduleChip);
+$('detail-monthday-toggle')?.addEventListener('click',()=>{
+  toggleMonthDayDisclosure($('detail-monthday-toggle'));
+});
+$('detail-preferred-monthday-toggle')?.addEventListener('click',()=>{
+  toggleMonthDayDisclosure($('detail-preferred-monthday-toggle'));
+});
 $('detail-schedule-order')?.addEventListener('change',e=>{
   if(!e.target.closest('.schedule-link-habit'))return;
   const editor = e.target.closest('.schedule-link-editor');
   const h = detailIdx != null ? load()[detailIdx] : null;
   if(!editor || !h)return;
-  const links = readScheduleLinksFromDetail(h.hid);
-  renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:links});
+  refreshScheduleLinkEditorRow(editor,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
   setDetailDirty();
 });
 $('detail-schedule-order')?.addEventListener('click',e=>{
+  if(e.target.closest('#detail-schedule-link-add') || e.target.closest('.schedule-link-add')){
+    if(typeof addBlankScheduleLinkRow === 'function')addBlankScheduleLinkRow();
+    return;
+  }
   const editor = e.target.closest('.schedule-link-editor');
   if(!editor)return;
+  const dirBtn = e.target.closest('[data-link-direction]');
+  if(dirBtn){
+    editor.querySelectorAll('[data-link-direction]').forEach(btn=>btn.classList.toggle('on',btn === dirBtn));
+    const h = detailIdx != null ? load()[detailIdx] : null;
+    if(h)refreshScheduleLinkEditorRow(editor,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    setDetailDirty();
+    return;
+  }
   const adj = e.target.closest('[data-adjacency]');
   if(adj){
     editor.querySelectorAll('[data-adjacency]').forEach(btn=>btn.classList.toggle('on',btn === adj));
@@ -773,15 +822,16 @@ $('detail-schedule-order')?.addEventListener('click',e=>{
   if(sameDay){
     sameDay.setAttribute('aria-pressed',sameDay.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
     const h = detailIdx != null ? load()[detailIdx] : null;
-    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    if(h)refreshScheduleLinkEditorRow(editor,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
     setDetailDirty();
     return;
   }
   if(e.target.closest('.schedule-link-clear')){
-    const picker = editor.querySelector('.schedule-link-habit');
-    if(picker)picker.value = '';
-    const h = detailIdx != null ? load()[detailIdx] : null;
-    if(h)renderScheduleLinkEditor(editor,editor.dataset.scheduleLink,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+    editor.remove();
+    // Reindex remaining editors for stable data-link-index values.
+    document.querySelectorAll('#detail-schedule-link-list .schedule-link-editor').forEach((row,idx)=>{
+      row.dataset.linkIndex = String(idx);
+    });
     setDetailDirty();
   }
 });
@@ -963,7 +1013,18 @@ $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');
   if(!opt)return;
-  setDetailTypeUi(opt.dataset.detailType);
+  if(opt.dataset.detailType === 'task'){
+    setDetailTypeUi('task');
+  }else{
+    const mode = document.querySelector('#detail-mode-seg .seg-opt.on')?.dataset.mode || 'build';
+    setDetailTypeUi(modeToType(mode));
+  }
+  setDetailDirty();
+});
+$('detail-mode-seg').addEventListener('click',e=>{
+  const opt = e.target.closest('[data-mode]');
+  if(!opt)return;
+  setDetailTypeUi(modeToType(opt.dataset.mode));
   setDetailDirty();
 });
 $('detail-pinned').addEventListener('click',function(){
@@ -1354,6 +1415,12 @@ $('sample-prayers-preview')?.addEventListener('click',e=>{
   if(!btn || btn.disabled)return;
   if(typeof addOneSample === 'function')addOneSample(btn.getAttribute('data-add-sample'));
 });
+$('sample-blocks-preview')?.addEventListener('click',e=>{
+  if(typeof isScrollGuarded === 'function' && isScrollGuarded(e.target))return;
+  const btn = e.target.closest('[data-add-sample]');
+  if(!btn || btn.disabled)return;
+  if(typeof addBlockSample === 'function')addBlockSample();
+});
 addScrollGuard(document.querySelector('.sample-habits-sheet'),'y');
 $('open-settings').addEventListener('click',()=>{
   closeSheet('about-sheet');
@@ -1400,6 +1467,23 @@ $('home-extra-seg')?.addEventListener('click',e=>{
   updateSortSetting({homeExtraMode:mode},{sync:false,renderNow:false});
   if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   else render();
+});
+$('completed-task-retention-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  const days = normalizeCompletedTaskRetentionDays(opt.dataset.segValue);
+  if(days === normalizeCompletedTaskRetentionDays(sortSettings && sortSettings.completedTaskRetentionDays))return;
+  updateSortSetting({completedTaskRetentionDays:days});
+});
+$('habit-log-keep-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  const keep = normalizeHabitLogKeepCount(opt.dataset.segValue);
+  if(keep === normalizeHabitLogKeepCount(sortSettings && sortSettings.habitLogKeepCount))return;
+  updateSortSetting({habitLogKeepCount:keep});
+});
+$('retention-clean-now')?.addEventListener('click',()=>{
+  applyRetentionCleanup({force:true});
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{
@@ -1528,8 +1612,9 @@ $('blocked-time-list')?.addEventListener('click',e=>{
     saveBlockedTimePatch(index,{[patchKey]: on ? 0 : 1});
     return;
   }
-  // Gear toggle: swap fixed ↔ prayer-anchor mode for one endpoint. Requires
-  // a location on the block (normalize would strip the anchor otherwise).
+  // Gear toggle: swap fixed ↔ prayer-anchor mode for one endpoint. Requires a
+  // place on the block or a home city (normalize keeps the anchor either way;
+  // resolution falls back to the city, see resolveBlockedTimeMinutes).
   const startMode = e.target.closest('[data-blocked-start-mode]');
   const endMode = e.target.closest('[data-blocked-end-mode]');
   if(startMode || endMode){
@@ -1550,8 +1635,11 @@ $('blocked-time-list')?.addEventListener('click',e=>{
       });
     }else{
       if(!block.locationId){
-        showToast('pick a location to use prayer times');
-        return;
+        const s = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+        if(!(Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng))){
+          showToast('pick a location or set your city first');
+          return;
+        }
       }
       saveBlockedTimePatch(index,{[anchorKey]:'fajr',[offsetKey]:0});
     }
@@ -1712,6 +1800,13 @@ $('calendar-pdf-input')?.addEventListener('change',e=>{
 $('calendar-pdf-import')?.addEventListener('click',confirmCalendarPdfImport);
 $('calendar-pdf-cancel')?.addEventListener('click',cancelCalendarPdfImport);
 $('calendar-pdf-clear')?.addEventListener('click',clearImportedCalendarMeetings);
+$('calendar-pdf-preview')?.addEventListener('change',onCalendarPdfSelectChange);
+$('calendar-pdf-preview')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-calendar-select-all],[data-calendar-select-none]');
+  if(!btn)return;
+  if(btn.hasAttribute('data-calendar-select-all'))onCalendarPdfSelectAll();
+  else onCalendarPdfSelectNone();
+});
 $('calendar-credit-habit')?.addEventListener('change',onCalendarCreditHabitChange);
 $('calendar-allday-mode')?.addEventListener('change',onCalendarAllDayModeChange);
 $('settings-reset').addEventListener('click',()=>{
@@ -2712,7 +2807,20 @@ $('list').addEventListener('touchstart',e=>{
 restoreHabitTimer();
 // Progressive (fast-then-full) was retired —
 // the interim card order differed from the agenda and felt jittery.
+plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
+plannerPerfMark('app-first-render-returned');
+// After first paint: warm the planner worker (script parse + GLPK) off the
+// critical path so the next real request is not a cold bring-up. Exact mode only.
+if(typeof warmAgendaPlannerWorker === 'function'
+  && typeof agendaPlannerWorkerAvailable === 'function'
+  && agendaPlannerWorkerAvailable()
+  && sortSettings && sortSettings.agendaOptimizer
+  && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
+  const warm = ()=>{ void warmAgendaPlannerWorker(); };
+  if(typeof requestIdleCallback === 'function')requestIdleCallback(warm,{timeout:300});
+  else setTimeout(warm,100);
+}
 ensureOverviewPlacement();
 if (paneTierActive() && typeof renderOverview === 'function') renderOverview();
 if (typeof initReminders === 'function') initReminders();

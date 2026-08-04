@@ -335,6 +335,58 @@ function selectedMonthDaysFrom(containerId){
   return [...$(containerId).querySelectorAll('.monthday-chip.on')].map(btn=>parseInt(btn.dataset.monthday,10));
 }
 
+/** PURE: compact summary for selected month days ("any", "1, 15", "1–5, 20"). */
+function formatMonthDaySummary(days){
+  const sorted = normalizeAllowedMonthDays(days);
+  if(!sorted.length)return 'any';
+  const parts = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for(let i = 1; i <= sorted.length; i++){
+    const day = sorted[i];
+    if(day === prev + 1){
+      prev = day;
+      continue;
+    }
+    parts.push(start === prev ? String(start) : `${start}–${prev}`);
+    start = prev = day;
+  }
+  return parts.join(', ');
+}
+
+/** RENDER: sync a month-day disclosure summary from selected chips. */
+function syncMonthDayDisclosureSummary(chipRowId,summaryId){
+  const summary = $(summaryId);
+  if(!summary)return;
+  const days = $(chipRowId) ? selectedMonthDaysFrom(chipRowId) : [];
+  summary.textContent = formatMonthDaySummary(days);
+  summary.title = days.length ? formatMonthDaySummary(days) : 'any day of the month';
+}
+
+/** RENDER: collapse month-day chip grids (detail schedule starts compact). */
+function collapseMonthDayDisclosures(){
+  [
+    ['detail-monthday-toggle','detail-monthday-chips'],
+    ['detail-preferred-monthday-toggle','detail-preferred-monthday-chips']
+  ].forEach(([toggleId,rowId])=>{
+    const toggle = $(toggleId);
+    const row = $(rowId);
+    if(row)row.hidden = true;
+    if(toggle)toggle.setAttribute('aria-expanded','false');
+  });
+}
+
+/** HANDLER: expand/collapse a month-day chip grid from its disclosure head. */
+function toggleMonthDayDisclosure(toggle){
+  if(!toggle)return;
+  const rowId = toggle.getAttribute('aria-controls');
+  const row = rowId ? $(rowId) : null;
+  if(!row)return;
+  const opening = toggle.getAttribute('aria-expanded') !== 'true';
+  row.hidden = !opening;
+  toggle.setAttribute('aria-expanded',String(opening));
+}
+
 // RENDER: draw weekday and month-day chips
 function renderScheduleChips(prefix,h = {}){
   const weekdays = new Set(normalizeAllowedWeekdays(h.allowedWeekdays));
@@ -370,6 +422,11 @@ function renderScheduleChips(prefix,h = {}){
       const on = prefMonthDays.has(day);
       return `<button type="button" class="monthday-chip preferred ${on ? 'on' : ''}" data-monthday="${day}" aria-pressed="${on}">${day}</button>`;
     }).join('');
+  }
+  if(prefix === 'detail'){
+    collapseMonthDayDisclosures();
+    syncMonthDayDisclosureSummary('detail-monthday-chips','detail-monthday-summary');
+    syncMonthDayDisclosureSummary('detail-preferred-monthday-chips','detail-preferred-monthday-summary');
   }
 }
 
@@ -426,6 +483,11 @@ function toggleScheduleChip(e){
   btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
   if(btn.closest('#detail-weekday-chips,#detail-monthday-chips,#detail-preferred-weekday-chips,#detail-preferred-monthday-chips')){
     setDetailDirty();
+  }
+  if(btn.closest('#detail-monthday-chips')){
+    syncMonthDayDisclosureSummary('detail-monthday-chips','detail-monthday-summary');
+  }else if(btn.closest('#detail-preferred-monthday-chips')){
+    syncMonthDayDisclosureSummary('detail-preferred-monthday-chips','detail-preferred-monthday-summary');
   }
 }
 
@@ -1364,6 +1426,51 @@ function earlyReason(data,i,settings){
   if(todayCategory(h,settings) !== 2)return '';
   const target = targetDayForEarly(h);
   if(!canDoEarlyToday(h,target))return '';
+
+  // Schedule-link pull: a same-day OR partner is due/committed today.
+  const todayBase = dayStart(Date.now());
+  const sameDayLinks = typeof sameDayScheduleLinks === 'function'
+    ? sameDayScheduleLinks(h)
+    : (typeof normalizeScheduleLinks === 'function'
+      ? normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay)
+      : []);
+  if(sameDayLinks.length){
+    for(const link of sameDayLinks){
+      const anchor = data.find(item=>item && item.hid === link.anchorHid);
+      if(!anchor)continue;
+      const committed = typeof scheduleAnchorCommitForDay === 'function'
+        && scheduleAnchorCommitForDay(link.anchorHid,todayBase,data);
+      const anchorDue = includeInTodayAgenda(anchor,settings)
+        || (typeof isWeekCandidate === 'function'
+          && isWeekCandidate(anchor,settings,todayBase,new Date(todayBase).getDay()));
+      if(!committed && !anchorDue)continue;
+      const name = (anchor.name || 'linked habit').slice(0,40);
+      if(link.direction === 'before')return `before ${name}`;
+      if(link.direction === 'after')return `after ${name}`;
+      return `with ${name}`;
+    }
+  }
+  // Reverse: I am the anchor for someone else's same-day link (Juma after Shower).
+  for(const other of data){
+    if(!other || other.hid === h.hid)continue;
+    const links = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(other)
+      : (typeof normalizeScheduleLinks === 'function'
+        ? normalizeScheduleLinks(other.scheduleLinks,other.hid).filter(l=>l && l.requireSameDay)
+        : []);
+    const hit = links.find(l=>l && l.anchorHid === h.hid);
+    if(!hit)continue;
+    const otherDue = includeInTodayAgenda(other,settings)
+      || (typeof isWeekCandidate === 'function'
+        && isWeekCandidate(other,settings,todayBase,new Date(todayBase).getDay()));
+    if(!otherDue && !(typeof scheduleAnchorCommitForDay === 'function'
+      && scheduleAnchorCommitForDay(other.hid,todayBase,data)))continue;
+    const name = (other.name || 'linked habit').slice(0,40);
+    if(hit.direction === 'after')return `before ${name}`;
+    if(hit.direction === 'before')return `after ${name}`;
+    return `with ${name}`;
+  }
+
   const preferred = nextPreferredOnOrAfter(h,Date.now(),target);
   const pressureDay = preferred || target;
   if(!pressureDay)return '';
@@ -1377,11 +1484,14 @@ function earlyReason(data,i,settings){
 }
 
 function homeEarlyMap(data,settings){
+  const key = homePlannerDirtyKey(data);
+  if(_homeEarlyMapCache.key === key && _homeEarlyMapCache.map)return _homeEarlyMapCache.map;
   const map = new Map();
   data.forEach((_,i)=>{
     const reason = earlyReason(data,i,settings);
     if(reason)map.set(i,reason);
   });
+  _homeEarlyMapCache = {key,map};
   return map;
 }
 
@@ -1994,6 +2104,7 @@ function weekSnapshotForExport(now = Date.now()){
 // Meant for pasting into chat as scheduler context (not the full day audit).
 function formatWeekPlacementsText(week,now = Date.now()){
   if(!week || !Array.isArray(week.days) || !week.days.length)return '';
+  const data = typeof load === 'function' ? load() : [];
   const lines = [];
   const push = (s = '')=>lines.push(s);
   const first = week.days[0];
@@ -2025,7 +2136,9 @@ function formatWeekPlacementsText(week,now = Date.now()){
       const mins = Math.max(0,Math.round((row.end - row.start) / 60000));
       const name = row.kind === 'travel'
         ? `travel${row.toName ? ` to ${row.toName}` : ''}`
-        : (row.h && row.h.name || 'scheduled item');
+        : (row.h && row.h.name
+          || (row.i != null && data[row.i] && data[row.i].name)
+          || 'scheduled item');
       push(`  ${capacityTimeLabel(row.start)}–${capacityTimeLabel(row.end)}  ${name}  ${capacityMinutesLabel(mins)}  ${row.kind}`);
     }
     push('');
@@ -2765,9 +2878,9 @@ function render(opts){
       }
       return primary === agendaRow;
     }
-    // No today timeline placement (progressive paint / unplaced leftover):
-    // allow one catch-up slider on a lone card.
-    if(agendaRow != null)return false;
+    // No today timeline placement (progressive paint, unplaced leftover, or
+    // only later-day chunks because today is already full): allow one catch-up
+    // slider on the first card we render for this habit.
     if(breakableCatchupShown.has(realIdx))return false;
     breakableCatchupShown.add(realIdx);
     return true;
@@ -3314,6 +3427,9 @@ let _optimizerHomeRequestKey = '';
 let _optimizerHomeRequestToken = 0;
 let _optimizerHomeReadyKey = '';
 let _optimizerHomeReadyWeek = null;
+let _optimizerHomeReadyDirtyKey = '';
+let _idlePlannerRefreshTimer = null;
+let _homeEarlyMapCache = {key:'',map:null};
 
 // PURE: the visible scheduling result, without solver bookkeeping. Comparing
 // this after a background solve lets the current DOM stay mounted when GLPK
@@ -3424,24 +3540,90 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
+// PURE: planner dirty signature without the wall-clock minute bucket. Background
+// refreshes use this so a clock tick alone cannot force a full worker replan.
+function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
+  const s = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const loc = typeof currentLocationId === 'function' ? currentLocationId() : null;
+  const travel = s.travel || {};
+  const travelSig = Object.keys(travel).sort().map(k=>{
+    const e = travel[k] || {};
+    return `${k}:${e.seconds || 0}:${e.provider || ''}`;
+  }).join('|');
+  const coord = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+  const coordSig = coord
+    ? `${Math.round(coord.lat * 1000)},${Math.round(coord.lng * 1000)}`
+    : '';
+  const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
+  const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
+  // Planner-relevant settings only — presentation (minimalMode, homeExtraMode,
+  // showScheduledTasksInAgenda, showStatusOnCards, …) omitted.
+  const settingsSig = JSON.stringify({
+    agendaOptimizer:Boolean(s.agendaOptimizer),
+    showWeekOnHome:Boolean(s.showWeekOnHome),
+    // Candidate gates (isWeekCandidate) — toggles must invalidate the plan.
+    showDueTasksInAgenda:s.showDueTasksInAgenda !== false,
+    showPlannedItemsInAgenda:s.showPlannedItemsInAgenda !== false,
+    showDueHabitsInAgenda:s.showDueHabitsInAgenda !== false,
+    availabilityMinutes:s.availabilityMinutes || [],
+    availabilityOverrides:s.availabilityOverrides || {},
+    blockedTimes:s.blockedTimes || [],
+    cancelledBlocks:s.cancelledBlocks || {},
+    blockedTimeOverrides:s.blockedTimeOverrides || {},
+    agendaScoreWeights:s.agendaScoreWeights || null,
+    prayerMethod:s.prayerMethod || '',
+    prayerMadhab:s.prayerMadhab || '',
+    // Prayer/location windows resolve from home city coords.
+    homeCityLat:Number.isFinite(s.homeCityLat) ? s.homeCityLat : null,
+    homeCityLng:Number.isFinite(s.homeCityLng) ? s.homeCityLng : null,
+    focus:s.focus || '',
+    defaultTravelMode:s.defaultTravelMode || '',
+    locations:(s.locations || []).map(l=>`${l.id}:${l.lat}:${l.lng}`).join('|'),
+    // attentionScore / sort-lab inputs (isSortSettingKey list).
+    plansFirst:Boolean(s.plansFirst),
+    planWindowDays:s.planWindowDays || 0,
+    planWeight:s.planWeight || 0,
+    dueWeight:s.dueWeight || 0,
+    progressWeight:s.progressWeight || 0,
+    trendWeight:s.trendWeight || 0,
+    rhythmWeight:s.rhythmWeight || 0,
+    buildWeight:s.buildWeight || 0,
+    limitWeight:s.limitWeight || 0,
+    stopWeight:s.stopWeight || 0,
+    newWeight:s.newWeight || 0,
+    newBuildMode:s.newBuildMode || '',
+    dueMode:s.dueMode || '',
+    buildLookAheadDays:s.buildLookAheadDays || 0,
+    buildRiseAt:s.buildRiseAt || 0,
+    limitMode:s.limitMode || '',
+    stopMode:s.stopMode || '',
+    rhythmBias:s.rhythmBias || 0
+  });
+  return [
+    rev,
+    loc || '',
+    s.pinnedLocationId || '',
+    s.lastKnownLocationId || '',
+    travelSig,
+    coordSig,
+    currentEdgeSig,
+    settingsSig,
+    Array.isArray(data) ? data.length : 0
+  ].join('\n');
+}
+
 // The lightweight home fingerprint deliberately omits some low-frequency
 // fields. Optimizer reuse needs an exact key so edits to any habit, window,
 // location, score weight, or travel edge can never reuse a stale schedule.
+// Prefer the dirty-counter + live sig for request dedupe; keep a compact
+// persisted digest for same-day disk cache identity (day-stable via dayStart).
 function homePlannerStateKey(data,fingerprintNow = Date.now()){
-  // Use persisted records for the exact data signature. normalize() gives
-  // legacy records a generated hid in memory; hashing that transient value
-  // would make every load look different until the record is next saved.
-  const persisted = (typeof Storage !== 'undefined' && typeof KEY !== 'undefined')
-    ? (Storage.read(KEY) || data || [])
-    : (data || []);
-  const plannerSettings = {...(sortSettings || {})};
-  // Presentation-only state must not invalidate either planner. In particular,
-  // homeExtraMode only changes whether existing blocked/travel rows are cards,
-  // text, or hidden outside twelve hours. minimalMode is the same class of
-  // chrome (card/detail/overview visuals) and must not bust the agenda cache.
-  delete plannerSettings.homeExtraMode;
-  delete plannerSettings.minimalMode;
-  return `${homeListFingerprint(fingerprintNow)}\n${JSON.stringify(persisted)}\n${JSON.stringify(plannerSettings)}`;
+  const dirty = homePlannerDirtyKey(data);
+  // Include a coarse time bucket only for live optimizer keys (not dayStart),
+  // so a genuine "now moved" reopen can still refresh day 0 via day0Only.
+  const isDayStable = fingerprintNow === dayStart(fingerprintNow);
+  const timePart = isDayStable ? 'day' : String(Math.floor(fingerprintNow / 60000));
+  return `${dirty}\n${timePart}`;
 }
 
 function optimizerHomeStateKey(data){
@@ -3449,17 +3631,28 @@ function optimizerHomeStateKey(data){
 }
 
 const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v1';
+const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 
 function homeAgendaCacheStateKey(data){
   return homePlannerStateKey(data,dayStart(Date.now()));
 }
 
-function cachedHomeAgenda(data){
+function readHomeAgendaCacheRecord(data){
   try{
     const cached = Storage.read(HOME_AGENDA_CACHE_KEY);
     if(!cached || cached.version !== 1 || !cached.week)return null;
     if(cached.key !== homeAgendaCacheStateKey(data))return null;
     if(dateKey(cached.savedAt) !== dateKey(Date.now()))return null;
+    return cached;
+  }catch(_){
+    return null;
+  }
+}
+
+function cachedHomeAgenda(data){
+  try{
+    const cached = readHomeAgendaCacheRecord(data);
+    if(!cached)return null;
     const week = cached.week;
     for(const day of week.days || []){
       for(const row of day.timeline || []){
@@ -3475,19 +3668,49 @@ function cachedHomeAgenda(data){
   }
 }
 
+function homeAgendaCacheIsFresh(data){
+  const cached = readHomeAgendaCacheRecord(data);
+  if(!cached)return false;
+  return (Date.now() - Number(cached.savedAt || 0)) <= HOME_AGENDA_CACHE_FRESH_MS;
+}
+
+function leanAgendaWeekForCache(week){
+  if(typeof leanAgendaWeek === 'function')return leanAgendaWeek(week);
+  if(!week || !Array.isArray(week.days))return week;
+  const strip = row=>{
+    if(!row || typeof row !== 'object')return row;
+    const out = {...row};
+    delete out.h;
+    return out;
+  };
+  return {
+    days:week.days.map(day=>({
+      ...day,
+      timeline:Array.isArray(day.timeline) ? day.timeline.map(strip) : day.timeline,
+      agendaItems:Array.isArray(day.agendaItems) ? day.agendaItems.map(strip) : day.agendaItems
+    })),
+    totalTravelSeconds:week.totalTravelSeconds,
+    candidateCount:week.candidateCount,
+    optimized:week.optimized
+  };
+}
+
 function saveHomeAgendaCache(data,week){
   if(!week || !Array.isArray(week.days))return;
   try{
+    plannerPerfMark('planner-cache-write-start');
     // Habit records are already persisted once and every planner row carries
     // its stable data index. Omitting repeated `h` objects keeps this cache
     // small even for histories with hundreds of logs.
-    const leanWeek = JSON.parse(JSON.stringify(week,(key,value)=>key === 'h' ? undefined : value));
+    const leanWeek = week.__lean ? week : leanAgendaWeekForCache(week);
+    if(leanWeek && leanWeek.__lean)delete leanWeek.__lean;
     Storage.write(HOME_AGENDA_CACHE_KEY,{
       version:1,
       savedAt:Date.now(),
       key:homeAgendaCacheStateKey(data),
       week:leanWeek
     });
+    plannerPerfMark('planner-cache-write-end');
   }catch(_){}
 }
 
@@ -3506,8 +3729,38 @@ function renderHomePresentationOnly(){
 // ASYNC COORDINATOR: keep week planning outside the UI thread in both modes.
 // A same-day cached week provides a stable first paint; on a first-ever load a
 // basic list is shown until the worker supplies the agenda.
+function scheduleIdlePlannerWarmAndBuild(data,opts){
+  if(_idlePlannerRefreshTimer != null)return;
+  const run = ()=>{
+    _idlePlannerRefreshTimer = null;
+    // Warm is fire-and-forget and exact-mode only — never block the replan
+    // behind a GLPK compile (especially in fast mode).
+    const exact = Boolean(
+      (typeof sortSettings !== 'undefined' && sortSettings && sortSettings.agendaOptimizer)
+      && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())
+    );
+    if(exact && typeof warmAgendaPlannerWorker === 'function'){
+      void warmAgendaPlannerWorker();
+    }
+    queueOptimizedHomeRender(typeof load === 'function' ? load() : data,{
+      ...(opts || {}),
+      __backgroundRefresh:true,
+      __fromIdleRefresh:true,
+      __skipFreshnessGate:true,
+      __forceReplan:true
+    });
+  };
+  if(typeof requestIdleCallback === 'function'){
+    _idlePlannerRefreshTimer = requestIdleCallback(run,{timeout:200});
+  }else{
+    _idlePlannerRefreshTimer = setTimeout(run,50);
+  }
+}
+
 function queueOptimizedHomeRender(data,opts){
+  plannerPerfMark('planner-queue-start');
   const key = optimizerHomeStateKey(data);
+  const dirtyKey = homePlannerDirtyKey(data);
   const exactMode = Boolean(sortSettings && sortSettings.agendaOptimizer);
   if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
     if(opts && opts.__backgroundRefresh
@@ -3521,23 +3774,68 @@ function queueOptimizedHomeRender(data,opts){
     _homeListFingerprint = homeListFingerprint();
     return true;
   }
+  // Background tick: dirty key unchanged → skip the worker entirely.
+  // Forced reopen (hidden ≥60s) still replans; may use day0Only when dirty matches.
+  if(opts && opts.__backgroundRefresh && !opts.__forceReplan
+    && _optimizerHomeReadyDirtyKey
+    && _optimizerHomeReadyDirtyKey === dirtyKey
+    && _optimizerHomeReadyWeek){
+    _homeListFingerprint = homeListFingerprint();
+    return false;
+  }
   if(_optimizerHomeRequestKey === key)return false;
 
   // Background refreshes keep the current DOM. Direct/cold renders use the
   // latest compatible plan, avoiding both a blank launch and reordered phases.
+  let paintedFromFreshCache = false;
   if(!(opts && opts.__backgroundRefresh)){
+    plannerPerfMark('planner-cache-read');
     const cached = cachedHomeAgenda(data);
-    if(cached)render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
-    else render({...opts,deferAgenda:true});
+    if(cached){
+      render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
+      paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
+    }else if(!$('list')?.querySelector('.home-loading')){
+      // No cache and no skeleton (warm edit path): paint a basic list now;
+      // the optimized week replaces it when the worker resolves.
+      render({...opts,deferAgenda:true});
+    }
+    // Cold open with no cache: keep the HTML skeleton until the planner
+    // supplies the week, then paint the agenda once (no interim basic list).
+    //
+    // PREVIOUS BEHAVIOR (instant basic list, skeleton skipped) — swap back by
+    // removing the `.home-loading` guard above and uncommenting the line below:
+    //
+    //   }else render({...opts,deferAgenda:true});
+    //
+    // i.e. the cold-open branch becomes:
+    //
+    //   if(cached){
+    //     render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
+    //     paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
+    //   }else render({...opts,deferAgenda:true});
     _homeListFingerprint = homeListFingerprint();
+    plannerPerfMark('planner-first-paint');
+  }
+
+  // Fresh same-day cache: let idle warm+build own the refresh so cold open
+  // does not immediately pay a full worker replan.
+  if(paintedFromFreshCache && !(opts && opts.__skipFreshnessGate)){
+    scheduleIdlePlannerWarmAndBuild(data,opts);
+    return true;
   }
 
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
   const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
+  const day0Only = Boolean(
+    opts && opts.__forceReplan
+    && _optimizerHomeReadyDirtyKey === dirtyKey
+    && _optimizerHomeReadyWeek
+  );
+  const buildOpts = {dirtyKey,day0Only};
   const optimizerBuild = typeof buildWeekAgendaOffMain === 'function'
-    ? buildWeekAgendaOffMain(data,settings,7,exactMode ? 'exact' : 'fast')
-    : buildWeekAgendaAsync(data,settings,7);
+    ? buildWeekAgendaOffMain(data,settings,7,exactMode ? 'exact' : 'fast',buildOpts)
+    : buildWeekAgendaAsync(data,settings,7,buildOpts);
   void optimizerBuild.then(week=>{
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
@@ -3549,12 +3847,14 @@ function queueOptimizedHomeRender(data,opts){
       return;
     }
     if(!week || !Array.isArray(week.days))return;
+    const liveData = load();
+    // Worker posts a lean week (no `h`). Re-attach before any consumer reads names.
+    if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(week,liveData);
     // In exact mode a timed-out solve returns the heuristic fallback. A cached
     // planned week can stay mounted; on a first-ever load, use that fallback
     // rather than leaving the user on the unplanned basic list.
     if(exactMode && !week.optimized){
       if(!_homeRenderedWeek){
-        const liveData = load();
         saveHomeAgendaCache(liveData,week);
         render({...opts,__fromOptimizer:true,__optimizedWeek:week});
         _homeListFingerprint = homeListFingerprint();
@@ -3563,20 +3863,29 @@ function queueOptimizedHomeRender(data,opts){
     }
     _optimizerHomeReadyKey = key;
     _optimizerHomeReadyWeek = week;
-    const liveData = load();
+    // Capture dirty key from live state after the solve. Travel/location can
+    // change while the worker runs; stamping the request-start key would make
+    // the next background tick look dirty and replan for no reason.
+    _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(liveData);
     saveHomeAgendaCache(liveData,week);
     if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
       _homeRenderedWeek = week;
       if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
       _homeListFingerprint = homeListFingerprint();
+      if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
       return;
     }
     render({...opts,__fromOptimizer:true,__optimizedWeek:week});
     _homeListFingerprint = homeListFingerprint();
+    if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
   }).catch(()=>{
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
-    // Keep the fast planner already on screen.
+    // Keep the fast planner already on screen. A cold open still sitting on
+    // the skeleton animation gets the basic list instead of loading forever.
+    // (If the skeleton behavior is disabled above, this guard never fires:
+    // the deferAgenda paint has already replaced the skeleton.)
+    if($('list')?.querySelector('.home-loading'))render({...opts,deferAgenda:true});
   });
   return true;
 }
@@ -3623,7 +3932,7 @@ function renderHomeIfChanged(force){
     // event cannot enqueue the same recalculation repeatedly.
     _homeListFingerprint = fp;
     if(settings.agendaOptimizer && typeof buildWeekAgendaAsync === 'function'){
-      queueOptimizedHomeRender(data,{__backgroundRefresh:true});
+      queueOptimizedHomeRender(data,{__backgroundRefresh:true,__forceReplan:Boolean(force)});
       return true;
     }
     if(!settings.agendaOptimizer && typeof buildWeekAgendaOffMain === 'function'){

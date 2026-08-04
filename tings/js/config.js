@@ -208,8 +208,19 @@ const DEFAULT_SORT_SETTINGS = {
   /** Breakable habit that receives imported calendar minutes as progress (null = off). */
   calendarCreditHabitId:null,
   /** All-day calendar rows: 'skip' (default) or 'tasks' (dated untimed). */
-  calendarAllDayMode:'skip'
+  calendarAllDayMode:'skip',
+
+  /** Auto-delete completed tasks older than this many days (2 | 3 | 7). */
+  completedTaskRetentionDays:7,
+  /** Keep newest N actual logs per non-task habit; 0 = off (12 | 30 | 60 | 0). */
+  habitLogKeepCount:30,
+  /** Timestamp of last monthly auto retention cleanup (0 = never). */
+  lastRetentionCleanupAt:0
 };
+/** Minimum gap between automatic retention cleanup passes (≈1 month). */
+const RETENTION_CLEANUP_INTERVAL_MS = 30 * 86400000;
+const COMPLETED_TASK_RETENTION_DAYS = [2,3,7];
+const HABIT_LOG_KEEP_COUNTS = [12,30,60,0];
 const LIMIT_MODE_POLICY = {
   quiet:{readyAt:1.8,threshold:2.1,ceiling:54,base:8,earlyBase:0,earlyRise:1,progress:0.08,progressEarly:0.01,trend:0.08,trendEarly:0},
   overdue:{readyAt:1,threshold:1.25,ceiling:66,base:14,earlyBase:0,earlyRise:2,progress:0.16,progressEarly:0.02,trend:0.22,trendEarly:0.02},

@@ -506,8 +506,10 @@ function foldBlockedMinutes(startMin, endMin){
 // relative to dayBase for the given day, or null when the block has no anchor.
 // Supports the same later/earlier-of combine + +1d dayOffset as habits
 // (prayer anchors on primary; secondary may be prayer or a fixed clock).
-// Callers that need overnight agenda segments should run the pair through
-// foldBlockedMinutes() so negative / >1440 values become a wrap encoding.
+// Coords come from the block's own locationId, falling back to the home city
+// (Settings → Locations) when the block has no place. Callers that need
+// overnight agenda segments should run the pair through foldBlockedMinutes()
+// so negative / >1440 values become a wrap encoding.
 function resolveBlockedTimeMinutes(block, fieldName, dayBase){
   if(!block)return null;
   const anchor = cleanPrayerAnchor(block[fieldName + 'Anchor']);
@@ -518,8 +520,12 @@ function resolveBlockedTimeMinutes(block, fieldName, dayBase){
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const registry = normalizeLocationRegistry(settings.locations);
   const loc = block.locationId ? (registry.find(l => l.id === block.locationId) || null) : null;
-  if(!loc)return null;
-  const coords = {latitude:loc.lat, longitude:loc.lng};
+  const coords = loc
+    ? {latitude:loc.lat, longitude:loc.lng}
+    : (Number.isFinite(settings.homeCityLat) && Number.isFinite(settings.homeCityLng)
+      ? {latitude:settings.homeCityLat, longitude:settings.homeCityLng}
+      : null);
+  if(!coords)return null;
   const primary = resolvePrayerExprMinutes(
     coords, anchor, block[fieldName + 'OffsetMin'], dayBase, block[fieldName + 'DayOffset']
   );
