@@ -4,15 +4,37 @@
 //
 const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
 let pass = 0, fail = 0;
 function assert(cond, msg){
   if(cond){ pass += 1; console.log('  ok: ' + msg); }
-  else { fail += 1; console.error('  FAIL: ' + msg); }
+  else { fail += 1; console.error('  not ok: ' + msg); }
+}
+
+async function launchBrowser(){
+  // Bundled headless_shell can SEGV under suite load; prefer system Chrome, then retry.
+  const attempts = [
+    { headless:true, channel:'chrome' },
+    { headless:true },
+    { headless:true, args:['--disable-gpu'] }
+  ];
+  let lastErr = null;
+  for(const opts of attempts){
+    for(let i = 0; i < 2; i++){
+      try{
+        return await chromium.launch(opts);
+      }catch(err){
+        lastErr = err;
+        await sleep(400);
+      }
+    }
+  }
+  throw lastErr || new Error('chromium.launch failed');
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless:true });
+  const browser = await launchBrowser();
   const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));

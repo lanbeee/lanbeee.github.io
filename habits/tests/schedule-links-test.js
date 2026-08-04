@@ -519,6 +519,127 @@ function assert(value,message){
   assert(/before Juma|after Exercise/.test(jumaCase.reverseEarly || ''),
     'reverse early reason names a partner (' + jumaCase.reverseEarly + ')');
 
+  console.log('\n[D] right-after Shower → Juma (direct adjacency, morning competition)');
+  const rightAfter = await page.evaluate(()=>{
+    const friBase = dayStart(new Date(2026,7,7).getTime()); // Friday Aug 7
+    const now = friBase + 9 * 3600000;
+    const home = {id:'home',name:'Home',lat:43.65,lng:-79.38};
+    const mosque = {id:'mosque',name:'Mosque',lat:43.66,lng:-79.40};
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showWeekOnHome:true,
+      agendaOptimizer:false,
+      availabilityMinutes:Array(7).fill(600),
+      availabilityOverrides:{},
+      blockedTimes:[
+        {label:'sleep',start:0,end:5 * 60 + 30,locationId:'home'},
+        {label:'sleep',start:22 * 60 + 30,end:24 * 60,locationId:'home'}
+      ],
+      locations:[home,mosque],
+      travel:{
+        [`${home.id}|${mosque.id}`]:{seconds:10 * 60,metres:2000,provider:'test'},
+        [`${mosque.id}|${home.id}`]:{seconds:10 * 60,metres:2000,provider:'test'}
+      },
+      defaultTravelMode:'driving',
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showScheduledTasksInAgenda:true,
+      showPlannedItemsInAgenda:true
+    };
+    settings.availabilityOverrides[dateKey(friBase)] = 600;
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+
+    // Morning Home filler that would otherwise steal an early Shower.
+    const trim = {
+      hid:'trim',name:'Trim Beard',type:'keepup',target:1,flexibilityDays:0,
+      logs:[friBase - 2 * 86400000],durationMinutes:30,priority:2,
+      locationIds:['home'],
+      allowedTimeStart:5 * 60 + 30,allowedTimeEnd:12 * 60
+    };
+    const shower = {
+      hid:'shower',name:'Shower',type:'keepup',target:3,flexibilityDays:3,
+      logs:[friBase - 3 * 86400000],durationMinutes:5,priority:1,
+      locationIds:['home']
+    };
+    const work = {
+      hid:'work',name:'Work',type:'keepup',target:1,flexibilityDays:0,
+      logs:[friBase - 1 * 86400000],durationMinutes:300,priority:0,
+      breakable:true,minChunkMinutes:45,
+      locationIds:['home'],
+      allowedTimeStart:9 * 60,allowedTimeEnd:18 * 60
+    };
+    const juma = {
+      hid:'juma',name:'Juma Prayer',type:'keepup',target:7,flexibilityDays:0,
+      logs:[friBase - 10 * 86400000],durationMinutes:25,priority:0,
+      allowedWeekdays:[5],
+      allowedTimeStart:13 * 60 + 30,allowedTimeEnd:15 * 60 + 30,
+      locationIds:['mosque'],
+      scheduleLinks:[
+        {anchorHid:'shower',direction:'after',adjacency:'direct',requireSameDay:true}
+      ]
+    };
+
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let timeline = [];
+    try{
+      save([trim,shower,work,juma]);
+      const data = load();
+      // Single-day week so Friday is today.
+      const week = buildWeekAgenda(data,settings,1);
+      const day = week.days.find(d=>d.dayBase === friBase) || week.days[0];
+      timeline = (day && day.timeline) || [];
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    const fills = timeline.filter(r=>r.kind === 'fill');
+    const hids = fills.map(r=>r.h && r.h.hid);
+    const showerRows = fills.filter(r=>r.h && r.h.hid === 'shower');
+    const jumaRow = fills.find(r=>r.h && r.h.hid === 'juma');
+    const lastShower = showerRows.length
+      ? showerRows.reduce((a,b)=>a.end > b.end ? a : b)
+      : null;
+    let gapMin = null;
+    let interloper = null;
+    if(lastShower && jumaRow){
+      gapMin = Math.round((jumaRow.start - lastShower.end) / 60000);
+      interloper = fills.some(r=>{
+        const hid = r.h && r.h.hid;
+        if(!hid || hid === 'shower' || hid === 'juma')return false;
+        return r.start + 60000 >= lastShower.end && r.end <= jumaRow.start + 60000;
+      });
+    }
+    return {
+      hids,
+      hasShower:hids.includes('shower'),
+      hasJuma:hids.includes('juma'),
+      showerBeforeJuma:lastShower && jumaRow && lastShower.end <= jumaRow.start + 60000,
+      gapMin,
+      interloper,
+      showerEnd:lastShower && new Date(lastShower.end).toISOString(),
+      jumaStart:jumaRow && new Date(jumaRow.start).toISOString()
+    };
+  });
+  assert(rightAfter.hasJuma,'right-after: Juma is placed');
+  assert(rightAfter.hasShower,'right-after: Shower is placed');
+  assert(rightAfter.showerBeforeJuma,'right-after: Shower ends before Juma starts');
+  assert(!rightAfter.interloper,
+    'right-after: no habit between latest Shower and Juma (gap=' + rightAfter.gapMin + 'm)');
+  assert(rightAfter.gapMin != null && rightAfter.gapMin <= 90,
+    'right-after: Shower abuts Juma within travel slack (gap=' + rightAfter.gapMin
+      + 'm, showerEnd=' + rightAfter.showerEnd + ', jumaStart=' + rightAfter.jumaStart + ')');
+
   assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -310,12 +310,28 @@ function orderBoostForCandidate(c,dayBase){
 
 function applyEarlyBeforeWeights(opts,state){
   if(!opts || !opts.length || !state || typeof plannerOrderConstraintsForDay !== 'function')return;
-  const beforeHids = new Set(plannerOrderConstraintsForDay(state.dayBase).map(e=>e.beforeHid));
+  const edges = plannerOrderConstraintsForDay(state.dayBase);
+  // Skip early-ASAP boost when this hid is a direct predecessor of a timed /
+  // scarce successor — those should pack late against the partner instead.
+  const packLate = new Set();
+  const byHid = new Map(opts.filter(o=>o && o.fill && o.fill.h).map(o=>[o.fill.h.hid,o]));
+  for(const e of edges){
+    if(!e || e.adjacency !== 'direct' || !e.beforeHid)continue;
+    const afterOpt = byHid.get(e.afterHid);
+    const afterH = afterOpt && afterOpt.fill && afterOpt.fill.h;
+    const scarceAfter = afterH && (
+      (typeof hasTimeWindow === 'function' && hasTimeWindow(afterH))
+      || (typeof hasDaySchedule === 'function' && hasDaySchedule(afterH))
+    );
+    if(scarceAfter)packLate.add(e.beforeHid);
+  }
+  const beforeHids = new Set(edges.map(e=>e.beforeHid).filter(Boolean));
   if(!beforeHids.size)return;
   const origin = state.startClock || state.dayBase;
   for(const o of opts){
     const hid = o && o.fill && o.fill.h && o.fill.h.hid;
     if(!hid || !beforeHids.has(hid) || !o.fit)continue;
+    if(packLate.has(hid))continue;
     const delayMin = Math.max(0,(o.fit.placeStart - origin) / 60000);
     o.weight += Math.max(0,48 - Math.min(48,delayMin));
   }
@@ -348,7 +364,16 @@ function applyDirectOrderGapWeights(opts,dayBase){
         if(b.fit.placeStart + 60000 < a.fit.placeEnd)continue;
         bestGap = Math.min(bestGap,(b.fit.placeStart - a.fit.placeEnd) / 60000);
       }
-      if(bestGap < Infinity)b.weight -= Math.min(120,bestGap) * DIRECT_ORDER_GAP_PENALTY;
+      if(bestGap < Infinity)b.weight -= Math.min(480,bestGap) * DIRECT_ORDER_GAP_PENALTY;
+    }
+    // Pack flexible predecessors against scarce successors (Shower just before Juma).
+    for(const a of befores){
+      let bestGap = Infinity;
+      for(const b of afters){
+        if(b.fit.placeStart + 60000 < a.fit.placeEnd)continue;
+        bestGap = Math.min(bestGap,(b.fit.placeStart - a.fit.placeEnd) / 60000);
+      }
+      if(bestGap < Infinity)a.weight -= Math.min(480,bestGap) * DIRECT_ORDER_GAP_PENALTY * 1.5;
     }
   }
 }
@@ -359,20 +384,38 @@ function applyDirectOrderGapWeights(opts,dayBase){
 function applyPlacedOrderWeights(opts,state){
   if(!opts || !opts.length || !state || typeof plannerOrderConstraintsForDay !== 'function')return;
   const placedEnd = new Map();
+  const placedStart = new Map();
   for(const entry of state.fills || []){
     const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
     if(!hid || !entry.fit)continue;
     placedEnd.set(hid,Math.max(placedEnd.get(hid) || 0,Number(entry.fit.placeEnd) || 0));
+    const start = Number(entry.fit.placeStart) || 0;
+    placedStart.set(hid,placedStart.has(hid) ? Math.min(placedStart.get(hid),start) : start);
   }
-  if(!placedEnd.size)return;
+  if(!placedEnd.size && !placedStart.size)return;
   for(const edge of plannerOrderConstraintsForDay(state.dayBase)){
-    if(edge.adjacency !== 'direct' || !placedEnd.has(edge.beforeHid))continue;
-    const end = placedEnd.get(edge.beforeHid);
-    for(const o of opts){
-      const hid = o && o.fill && o.fill.h && o.fill.h.hid;
-      if(hid !== edge.afterHid || !o.fit)continue;
-      const gapMin = Math.max(0,(o.fit.placeStart - end) / 60000);
-      o.weight -= Math.min(120,gapMin) * DIRECT_ORDER_GAP_PENALTY;
+    if(edge.adjacency !== 'direct')continue;
+    if(placedEnd.has(edge.beforeHid)){
+      const end = placedEnd.get(edge.beforeHid);
+      for(const o of opts){
+        const hid = o && o.fill && o.fill.h && o.fill.h.hid;
+        if(hid !== edge.afterHid || !o.fit)continue;
+        const gapMin = Math.max(0,(o.fit.placeStart - end) / 60000);
+        o.weight -= Math.min(480,gapMin) * DIRECT_ORDER_GAP_PENALTY;
+      }
+    }
+    if(placedStart.has(edge.afterHid)){
+      const start = placedStart.get(edge.afterHid);
+      for(const o of opts){
+        const hid = o && o.fill && o.fill.h && o.fill.h.hid;
+        if(hid !== edge.beforeHid || !o.fit)continue;
+        if(o.fit.placeEnd > start + 60000){
+          o.weight -= 80;
+          continue;
+        }
+        const gapMin = Math.max(0,(start - o.fit.placeEnd) / 60000);
+        o.weight -= Math.min(480,gapMin) * DIRECT_ORDER_GAP_PENALTY * 1.5;
+      }
     }
   }
 }
@@ -574,6 +617,23 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         const otherDur = clampDuration(candidate.h.durationMinutes) * 60000;
         chain += otherDur;
         windowEdges.push(chain);
+      }
+      // Direct-order partners: seed starts that abut the successor window /
+      // already-committed successor so keepup anchors can pack right before.
+      const fillHid = placeFill && placeFill.h && placeFill.h.hid;
+      for(const edge of orderEdges){
+        if(!edge || edge.adjacency !== 'direct' || edge.beforeHid !== fillHid)continue;
+        for(const candidate of dayCandidates){
+          if(!candidate || !candidate.h || candidate.h.hid !== edge.afterHid)continue;
+          for(const win of optimizerWindowsForCandidate(candidate,state)){
+            windowEdges.push(win.start - durationMs,win.start);
+          }
+        }
+        for(const entry of state.fills || []){
+          const ph = entry && entry.fill && entry.fill.h;
+          if(!ph || ph.hid !== edge.afterHid || !entry.fit)continue;
+          windowEdges.push(entry.fit.placeStart - durationMs,entry.fit.placeStart);
+        }
       }
     }
     for(const slot of state.slots || []){

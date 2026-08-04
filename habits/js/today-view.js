@@ -1628,7 +1628,8 @@ function scoreAgendaPlacement(terms,weights){
 
 // PURE: soft penalty when a fit would break same-day temporary order links.
 // sometime: heavy if starting before the predecessor ends.
-// direct: prefer the earliest slot after the predecessor (gap becomes cost).
+// direct: prefer abutment — after packs next to pred end; before packs next to
+// already-placed successor start (keepup Shower just before scarce Juma).
 function orderConstraintPenalty(fill,fit,state){
   if(!fill || !fill.h || !fill.h.hid || !fit || !state)return 0;
   const edges = plannerOrderConstraintsForDay(state.dayBase);
@@ -1641,19 +1642,32 @@ function orderConstraintPenalty(fill,fit,state){
   }
   let pen = 0;
   for(const e of edges){
-    if(e.afterHid !== hid)continue;
-    const pred = placedByHid.get(e.beforeHid);
-    if(!pred)continue;
-    const predEnd = Number(pred.placeEnd) || 0;
-    if(fit.placeStart + 60000 < predEnd){
-      // Starting before the predecessor finishes — strong soft violation.
-      pen += 8000 + Math.max(0,(predEnd - fit.placeStart) / 60000) * 40;
+    if(e.afterHid === hid){
+      const pred = placedByHid.get(e.beforeHid);
+      if(!pred)continue;
+      const predEnd = Number(pred.placeEnd) || 0;
+      if(fit.placeStart + 60000 < predEnd){
+        // Starting before the predecessor finishes — strong soft violation.
+        pen += 8000 + Math.max(0,(predEnd - fit.placeStart) / 60000) * 40;
+        continue;
+      }
+      if(e.adjacency === 'direct'){
+        const gapMin = Math.max(0,(fit.placeStart - predEnd) / 60000);
+        // Uncapped enough that multi-hour gaps cannot beat an abutting fit.
+        pen += Math.min(480,gapMin) * 12;
+      }
       continue;
     }
-    if(e.adjacency === 'direct'){
-      const gapMin = Math.max(0,(fit.placeStart - predEnd) / 60000);
-      // Prefer next feasible slot; large gaps drift away from "right after".
-      pen += Math.min(120,gapMin) * 6;
+    if(e.beforeHid === hid && e.adjacency === 'direct'){
+      const succ = placedByHid.get(e.afterHid);
+      if(!succ)continue;
+      const succStart = Number(succ.placeStart) || 0;
+      if(fit.placeEnd > succStart + 60000){
+        pen += 8000 + Math.max(0,(fit.placeEnd - succStart) / 60000) * 40;
+        continue;
+      }
+      const gapMin = Math.max(0,(succStart - fit.placeEnd) / 60000);
+      pen += Math.min(480,gapMin) * 12;
     }
   }
   return pen;
@@ -1863,6 +1877,23 @@ function tryPlaceOnDay(state,fill,opts = {}){
           placeEnd:prefTs + cost,
           preferredHit:true
         });
+      }
+      // Direct-order abutment: when a successor is already placed, also offer
+      // packing against the gap cap (leave-by / orderCeiling) so a flexible
+      // keepup lands just before the scarce partner instead of ASAP morning.
+      if(Number.isFinite(orderCeiling) && orderCeiling < Infinity && cap < Infinity){
+        const packEnd = Math.min(cap,gap.end);
+        const packStart = packEnd - cost;
+        if(packStart > placeStart + 60000
+          && packStart >= gap.start
+          && packStart + cost <= packEnd + 1){
+          fits.push({
+            ...baseFit,
+            placeStart:packStart,
+            placeEnd:packStart + cost,
+            preferredHit:true
+          });
+        }
       }
     }
   }
@@ -4009,6 +4040,7 @@ function persistentLinkViolationsForState(state){
     ? persistentOrderConstraintsForDay(state.dayBase) : [];
   const chron = (state.fills || []).slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   const bounds = new Map();
+  const chunksByHid = new Map();
   for(const entry of chron){
     const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
     if(!hid || !entry.fit)continue;
@@ -4017,9 +4049,37 @@ function persistentLinkViolationsForState(state){
       start:prev ? Math.min(prev.start,entry.fit.placeStart) : entry.fit.placeStart,
       end:prev ? Math.max(prev.end,entry.fit.placeEnd) : entry.fit.placeEnd
     });
+    if(!chunksByHid.has(hid))chunksByHid.set(hid,[]);
+    chunksByHid.get(hid).push(entry);
   }
   const resolveAnchor = (anchorHid)=>
     bounds.get(anchorHid) || scheduleAnchorCommitForDay(anchorHid,state.dayBase);
+
+  // Direct adjacency: use the latest before-chunk that ends at/before the
+  // after start (so a morning keepup shower does not "span" through Work to
+  // afternoon Juma). Empty multi-hour gaps also fail — right-after means the
+  // next feasible slot, not same calendar day with idle hours between.
+  const DIRECT_EMPTY_GAP_MAX_MIN = 90;
+  const directAdjacencyOk = (beforeHid,afterHid,afterStart)=>{
+    const chunks = (chunksByHid.get(beforeHid) || [])
+      .filter(entry=>entry.fit.placeEnd <= afterStart + 60000)
+      .sort((a,b)=>b.fit.placeEnd - a.fit.placeEnd);
+    if(!chunks.length){
+      const committed = scheduleAnchorCommitForDay(beforeHid,state.dayBase);
+      if(!committed || committed.end > afterStart + 60000)return false;
+      const gapMin = Math.max(0,(afterStart - committed.end) / 60000);
+      return gapMin <= DIRECT_EMPTY_GAP_MAX_MIN;
+    }
+    const predEnd = chunks[0].fit.placeEnd;
+    const interloper = chron.some(entry=>{
+      const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
+      if(!hid || hid === beforeHid || hid === afterHid || !entry.fit)return false;
+      return entry.fit.placeStart + 60000 >= predEnd && entry.fit.placeEnd <= afterStart + 60000;
+    });
+    if(interloper)return false;
+    const gapMin = Math.max(0,(afterStart - predEnd) / 60000);
+    return gapMin <= DIRECT_EMPTY_GAP_MAX_MIN;
+  };
 
   // Same-day (requiresPair) edges are OR'd per subject: placed alone is a
   // violation only when none of the OR partners are present.
@@ -4037,23 +4097,28 @@ function persistentLinkViolationsForState(state){
       violations.set(subjectHid,'anchor is not planned or done this day');
       continue;
     }
+    // OR: satisfied if any present partner meets order (+ direct when required).
+    let anyOk = false;
+    let bestReason = null;
     for(const edge of present){
       const anchor = resolveAnchor(edge.anchorHid);
+      const beforeHid = edge.direction === 'before' ? edge.subjectHid : edge.anchorHid;
+      const afterHid = edge.direction === 'before' ? edge.anchorHid : edge.subjectHid;
       const before = edge.direction === 'before' ? subject : anchor;
       const after = edge.direction === 'before' ? anchor : subject;
       if(before.end > after.start + 60000){
-        violations.set(edge.subjectHid,`cannot be ${edge.direction} its anchor`);
+        bestReason = bestReason || `cannot be ${edge.direction} its anchor`;
         continue;
       }
       if(edge.adjacency === 'direct'){
-        const between = chron.some(entry=>{
-          const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
-          if(!hid || hid === edge.subjectHid || hid === edge.anchorHid || !entry.fit)return false;
-          return entry.fit.placeStart + 60000 >= before.end && entry.fit.placeEnd <= after.start + 60000;
-        });
-        if(between)violations.set(edge.subjectHid,`no right-${edge.direction} slot is available`);
+        if(directAdjacencyOk(beforeHid,afterHid,after.start)){ anyOk = true; break; }
+        bestReason = `no right-${edge.direction} slot is available`;
+        continue;
       }
+      anyOk = true;
+      break;
     }
+    if(!anyOk && bestReason)violations.set(subjectHid,bestReason);
   }
 
   // Order-only (non-same-day) edges still enforce order when both are placed.
@@ -4063,22 +4128,72 @@ function persistentLinkViolationsForState(state){
     if(!subject)continue;
     const anchor = resolveAnchor(edge.anchorHid);
     if(!anchor)continue;
+    const beforeHid = edge.direction === 'before' ? edge.subjectHid : edge.anchorHid;
+    const afterHid = edge.direction === 'before' ? edge.anchorHid : edge.subjectHid;
     const before = edge.direction === 'before' ? subject : anchor;
     const after = edge.direction === 'before' ? anchor : subject;
     if(before.end > after.start + 60000){
       violations.set(edge.subjectHid,`cannot be ${edge.direction} its anchor`);
       continue;
     }
-    if(edge.adjacency === 'direct'){
-      const between = chron.some(entry=>{
-        const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
-        if(!hid || hid === edge.subjectHid || hid === edge.anchorHid || !entry.fit)return false;
-        return entry.fit.placeStart + 60000 >= before.end && entry.fit.placeEnd <= after.start + 60000;
-      });
-      if(between)violations.set(edge.subjectHid,`no right-${edge.direction} slot is available`);
+    if(edge.adjacency === 'direct' && !directAdjacencyOk(beforeHid,afterHid,after.start)){
+      violations.set(edge.subjectHid,`no right-${edge.direction} slot is available`);
     }
   }
   return violations;
+}
+
+// Try moving a flexible keepup/task predecessor to abut its direct successor
+// (Shower just before Juma) before dropping either side.
+function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings){
+  if(!state || !edge || edge.adjacency !== 'direct')return false;
+  const beforeHid = edge.beforeHid;
+  const afterHid = edge.afterHid;
+  if(!beforeHid || !afterHid)return false;
+  if(!(state.fills || []).some(entry=>entry && entry.fill && entry.fill.h && entry.fill.h.hid === afterHid)){
+    return false;
+  }
+  const beforeCand = (candidates || []).find(c=>c && c.h && c.h.hid === beforeHid);
+  if(!beforeCand || !beforeCand.h)return false;
+  if(beforeCand.h.type !== 'keepup' && beforeCand.h.type !== 'task')return false;
+
+  const keepFills = (state.fills || [])
+    .filter(entry=>entry && entry.fill && entry.fill.h && entry.fill.h.hid !== beforeHid)
+    .map(entry=>entry.fill);
+  // Replay fixed items first so daily Work does not swallow the pre-Juma gap
+  // before the keepup anchor can pack against it.
+  const fixed = keepFills.filter(f=>f && f.h && !f.h.breakable);
+  const breakables = keepFills.filter(f=>f && f.h && f.h.breakable);
+  const scoreOpts = {
+    settings,
+    allowNetwork:false,
+    weights:typeof resolveAgendaScoreWeights === 'function'
+      ? resolveAgendaScoreWeights(settings) : null
+  };
+  const rebuilt = rebuildDayFromFills(state,fixed,candidates,scoreOpts);
+  if(!rebuilt)return false;
+  const fill = {
+    h:beforeCand.h,i:beforeCand.i,
+    priority:beforeCand.priority,scarcity:beforeCand.scarcity
+  };
+  const fit = tryPlaceOnDay(rebuilt,fill,scoreOpts);
+  if(!fit)return false;
+  commitPlacement(rebuilt,fill,fit);
+  for(const bFill of breakables){
+    if(!bFill || !bFill.h)continue;
+    if(typeof placeBreakableSessions === 'function'){
+      placeBreakableSessions(rebuilt,bFill,scoreOpts);
+    }else{
+      const bFit = tryPlaceOnDay(rebuilt,bFill,scoreOpts);
+      if(bFit)commitPlacement(rebuilt,bFill,bFit);
+    }
+  }
+  syncDayAgendaItemsFromFills(rebuilt);
+  const stillBad = persistentLinkViolationsForState(rebuilt);
+  if(edge.subjectHid && stillBad.has(edge.subjectHid))return false;
+  applyPlacementState(state,rebuilt);
+  syncDayAgendaItemsFromFills(state);
+  return true;
 }
 
 // Final invariant pass shared by Fast and GLPK. Repair/rescue stages are free
@@ -4091,6 +4206,20 @@ function enforcePersistentLinkInvariants(dayStates,candidates,settings){
     while(guard++ < 8){
       const violations = persistentLinkViolationsForState(state);
       if(!violations.size)break;
+      // Prefer relocating flexible direct predecessors over dropping Juma.
+      let relocated = false;
+      const edges = typeof persistentOrderConstraintsForDay === 'function'
+        ? persistentOrderConstraintsForDay(state.dayBase) : [];
+      for(const edge of edges){
+        if(!edge || edge.adjacency !== 'direct')continue;
+        const subjectHit = edge.subjectHid && violations.has(edge.subjectHid);
+        if(!subjectHit)continue;
+        if(tryRelocateDirectBeforeAnchor(state,edge,candidates,settings)){
+          relocated = true;
+          break;
+        }
+      }
+      if(relocated)continue;
       for(const [hid,reason] of violations)addScheduleLinkOmission(state.day,hid,reason);
       const keep = (state.fills || [])
         .filter(entry=>!violations.has(entry && entry.fill && entry.fill.h && entry.fill.h.hid))
