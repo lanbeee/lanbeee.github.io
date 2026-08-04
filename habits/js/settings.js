@@ -85,6 +85,10 @@ function syncSettingsControls(){
   document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === homeExtraMode);
   });
+  const agendaTimeMode = normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards);
+  document.querySelectorAll('#agenda-time-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === agendaTimeMode);
+  });
   document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
     btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
   });

@@ -1468,6 +1468,18 @@ $('home-extra-seg')?.addEventListener('click',e=>{
   if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   else render();
 });
+$('agenda-time-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  const mode = normalizeAgendaTimeMode(opt.dataset.segValue);
+  if(mode === normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards))return;
+  document.querySelectorAll('#agenda-time-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === mode);
+  });
+  updateSortSetting({showAgendaTimesOnCards:mode},{sync:false,renderNow:false});
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  else render();
+});
 $('completed-task-retention-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');
   if(!opt)return;

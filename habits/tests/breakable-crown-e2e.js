@@ -677,6 +677,118 @@ function manualLog(minutes, tsOffset = 0){
     console.log('  ok P — zero progress renders correctly');
   }
 
+  // ─── Q. Crown tap opens detail; direction-split gestures ───────────────
+  {
+    const h = breakableHabit({ name:'Gesture split', logs:[manualLog(20)] });
+    await seedAndReload(page, { data:[h], settings:defaultSettings({ showWeekOnHome:true }), clockTs });
+    await new Promise(r => setTimeout(r, 250));
+
+    // Q1 — swipe-left on the crown reveals the card actions
+    const leftInfo = await page.evaluate(async () => {
+      const row = [...document.querySelectorAll('.swipe-row')]
+        .find(r => r.querySelector('.breakable-crown'));
+      if(!row)return { found:false };
+      const crown = row.querySelector('.breakable-crown');
+      const card = row.querySelector('.ting-card');
+      const r = crown.getBoundingClientRect();
+      const x0 = r.left + r.width * 0.6, y0 = r.top + r.height / 2;
+      const x1 = x0 - 100;
+      const mkTouch = (id, x, y) => new Touch({ identifier:id, target:crown, clientX:x, clientY:y });
+      crown.dispatchEvent(new PointerEvent('pointerdown',{ bubbles:true, cancelable:true, pointerId:22, pointerType:'touch', clientX:x0, clientY:y0, buttons:1 }));
+      crown.dispatchEvent(new TouchEvent('touchstart',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(22,x0,y0)], touches:[mkTouch(22,x0,y0)] }));
+      crown.dispatchEvent(new PointerEvent('pointermove',{ bubbles:true, cancelable:true, pointerId:22, pointerType:'touch', clientX:x1, clientY:y0, buttons:1 }));
+      crown.dispatchEvent(new TouchEvent('touchmove',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(22,x1,y0)], touches:[mkTouch(22,x1,y0)] }));
+      await new Promise(res => setTimeout(res, 20));
+      const during = {
+        owner:typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null,
+        transform:card.style.transform
+      };
+      crown.dispatchEvent(new TouchEvent('touchend',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(22,x1,y0)], touches:[] }));
+      crown.dispatchEvent(new PointerEvent('pointerup',{ bubbles:true, cancelable:true, pointerId:22, pointerType:'touch', clientX:x1, clientY:y0 }));
+      return { found:true, during, swipeOpen:row.dataset.swipeOpen || null, transform:card.style.transform };
+    });
+    assert(leftInfo.found, 'Q: breakable row exists for gesture split');
+    assert(leftInfo.during.owner === 'swipe', 'Q: leftward crown drag claims the card swipe');
+    assert(/translateX\(-\d/.test(leftInfo.during.transform), 'Q: crown-left drag translates the card');
+    assert(leftInfo.swipeOpen === '-1', `Q: left swipe snaps open right actions, got ${leftInfo.swipeOpen}`);
+    console.log('  ok Q1 — swipe-left on the crown reveals actions');
+
+    // Q2 — swipe-right on the crown still scrubs progress
+    const rightInfo = await page.evaluate(async () => {
+      const row = [...document.querySelectorAll('.swipe-row')]
+        .find(r => r.querySelector('.breakable-crown'));
+      if(!row)return { found:false };
+      if(typeof closeAllSwipes === 'function')closeAllSwipes();
+      if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+      const crown = row.querySelector('.breakable-crown');
+      const r = crown.getBoundingClientRect();
+      const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+      crown.dispatchEvent(new PointerEvent('pointerdown',{ bubbles:true, cancelable:true, pointerId:23, pointerType:'touch', clientX:x0, clientY:y0, buttons:1 }));
+      crown.dispatchEvent(new PointerEvent('pointermove',{ bubbles:true, cancelable:true, pointerId:23, pointerType:'touch', clientX:x0 + 40, clientY:y0, buttons:1 }));
+      const scrubbing = row.querySelector('.breakable-progress')?.classList.contains('is-scrubbing');
+      const owner = typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null;
+      crown.dispatchEvent(new PointerEvent('pointerup',{ bubbles:true, cancelable:true, pointerId:23, pointerType:'touch', clientX:x0 + 40, clientY:y0 }));
+      return { found:true, scrubbing, owner,
+        ownerAfter:typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null };
+    });
+    assert(rightInfo.found && rightInfo.scrubbing && rightInfo.owner === 'scrub',
+      'Q: rightward crown drag still claims scrub');
+    assert(!rightInfo.ownerAfter, 'Q: scrub release clears the gesture owner');
+    console.log('  ok Q2 — swipe-right on the crown still scrubs');
+
+    // Q3 — status bar / label surface swipes like a normal card
+    const stripInfo = await page.evaluate(async () => {
+      const row = [...document.querySelectorAll('.swipe-row')]
+        .find(r => r.querySelector('.breakable-crown'));
+      if(!row)return { found:false };
+      if(typeof closeAllSwipes === 'function')closeAllSwipes();
+      if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+      const bar = row.querySelector('.breakable-status-bar');
+      const card = row.querySelector('.ting-card');
+      if(!bar)return { found:false };
+      const r = bar.getBoundingClientRect();
+      const x0 = r.right - 40, y0 = r.top + r.height / 2;
+      const x1 = x0 + 100;
+      const mkTouch = (id, x, y) => new Touch({ identifier:id, target:bar, clientX:x, clientY:y });
+      bar.dispatchEvent(new TouchEvent('touchstart',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(24,x0,y0)], touches:[mkTouch(24,x0,y0)] }));
+      bar.dispatchEvent(new TouchEvent('touchmove',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(24,x1,y0)], touches:[mkTouch(24,x1,y0)] }));
+      await new Promise(res => setTimeout(res, 20));
+      bar.dispatchEvent(new TouchEvent('touchend',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(24,x1,y0)], touches:[] }));
+      return { found:true, swipeOpen:row.dataset.swipeOpen || null, transform:card.style.transform };
+    });
+    assert(stripInfo.found && stripInfo.swipeOpen === '1',
+      `Q: status bar swipe-right reveals left actions, got ${stripInfo.swipeOpen}`);
+    console.log('  ok Q3 — status bar surface swipes like a normal card');
+
+    // Q4 — tapping the crown opens the detail page
+    const tapInfo = await page.evaluate(async () => {
+      const row = [...document.querySelectorAll('.swipe-row')]
+        .find(r => r.querySelector('.breakable-crown'));
+      if(!row)return { found:false };
+      if(typeof closeAllSwipes === 'function')closeAllSwipes();
+      if(typeof releaseCardGesture === 'function')releaseCardGesture(row);
+      const crown = row.querySelector('.breakable-crown');
+      const r = crown.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      crown.dispatchEvent(new PointerEvent('pointerdown',{ bubbles:true, cancelable:true, pointerId:25, pointerType:'touch', clientX:x, clientY:y, buttons:1 }));
+      crown.dispatchEvent(new PointerEvent('pointerup',{ bubbles:true, cancelable:true, pointerId:25, pointerType:'touch', clientX:x, clientY:y }));
+      await new Promise(res => setTimeout(res, 450));
+      const sheet = document.querySelector('#detail-sheet');
+      const pane = typeof getPane === 'function' ? getPane() : null;
+      return {
+        found:true,
+        draggable:row.dataset.agendaDraggable === '1',
+        detailOpen:!!(sheet && sheet.classList.contains('open'))
+          || !!(pane && pane.dataset.activeSheet === 'detail-sheet')
+          || !!document.querySelector('.detail-pager')
+      };
+    });
+    assert(tapInfo.found, 'Q: breakable row exists for tap');
+    assert(tapInfo.draggable, 'Q: agenda fill row is draggable (hold claims the dial)');
+    assert(tapInfo.detailOpen, 'Q: tapping the crown opens the detail page');
+    console.log('  ok Q4 — crown tap opens detail');
+  }
+
   await browser.close();
   console.log(`\nAll ${passed} assertions passed.`);
   process.exit(0);

@@ -1350,12 +1350,16 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
 // PURE: compact right-side agenda marker for a home card
 function agendaCardPill(row,h = null,now = Date.now()){
   if(!row)return '';
+  const mode = normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards);
+  if(mode === 'hide')return '';
   const status = agendaLeadStatus(row,h,now);
   const label = compactHomeTime(row.start);
   const chunk = status.chunkMinutes != null
     ? ` · ${compactHomeDuration(status.chunkMinutes)}`
     : '';
-  return `<span class="context-pill agenda-lead ${status.cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i><span>${escapeHtml(label)}${escapeHtml(chunk)}</span></span>`;
+  const timeHtml = mode === 'icon' ? '' : `<span>${escapeHtml(label)}${escapeHtml(chunk)}</span>`;
+  const cls = `${status.cls}${mode === 'icon' ? ' icon-only' : ''}`;
+  return `<span class="context-pill agenda-lead ${cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i>${timeHtml}</span>`;
 }
 
 // PURE: the former score ring as a compact, readable metadata pill.
@@ -2896,20 +2900,23 @@ function render(opts){
     const cue = cardCue(h);
     const agendaPill = minimal ? '' : agendaCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
-    const orderPill = (!minimal && dayBase != null && typeof orderLinkPillHtml === 'function')
+    const showOrderPills = sortSettings.showOrderPillsOnCards !== false;
+    const orderPill = (!minimal && showOrderPills && dayBase != null && typeof orderLinkPillHtml === 'function')
       ? orderLinkPillHtml(h.hid,dayBase,data)
       : '';
-    const nowPill = (!minimal && typeof doingNowPillHtml === 'function') ? doingNowPillHtml(h) : '';
-    const scheduleLinkPill = (!minimal && scheduleLinkReason)
+    const nowPill = (!minimal && showOrderPills && typeof doingNowPillHtml === 'function') ? doingNowPillHtml(h) : '';
+    const scheduleLinkPill = (!minimal && showOrderPills && scheduleLinkReason)
       ? `<span class="context-pill schedule-link-blocked-pill" title="${escapeHtml(scheduleLinkReason)}"><i class="ti ti-link-off" aria-hidden="true"></i>linked</span>`
       : '';
     const accent = visualClassColor(cardScoreTone);
     const statusPill = (!minimal && sortSettings.showStatusOnCards) ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
     const gatedEarlyPill = (!minimal && sortSettings.showEarlyOnCards) ? earlyPill : '';
+    const agendaTimeHidden = agendaPill === '';
     const context = minimal
       ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
-      : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled'});
+      : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     const trail = cardTrail(h);
+    const showTrail = !minimal && sortSettings.showTrailOnCards !== false;
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
     const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
@@ -2917,7 +2924,7 @@ function render(opts){
     const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
     const visualHtml = minimal ? '' : (showBreakableSlider
       ? `${cardBreakableSlider(h)}${sessionHtml}`
-      : (sessionHtml || `<div class="ting-trail">${trail}</div>`));
+      : (sessionHtml || (showTrail ? `<div class="ting-trail">${trail}</div>` : '')));
     const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
@@ -2975,14 +2982,14 @@ function render(opts){
         <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
         </button>
-        <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}">
+        <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
           </div>
-          ${(!minimal && isBreakable) ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `<div class="ting-cue">${escapeHtml(cue)}</div>
+          ${(!minimal && isBreakable) ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
-          ${minimal ? '' : `<div class="ting-visual"${visualAria}>
+          ${minimal || !visualHtml ? '' : `<div class="ting-visual"${visualAria}>
             ${visualHtml}
           </div>`}
         </div>
@@ -4173,6 +4180,14 @@ function setupBreakableCrown(row,_realIdx){
         delete row.dataset.crownGesture;
         return;
       }
+      // Leftward swipe on the dial hands off to the card swipe (reveals
+      // actions). Scrub is forward-only, so a left drag is useless here.
+      if(dxTotal <= -SWIPE_HANDOFF_DX){
+        delete row.dataset.crownGesture;
+        if(typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress();
+        pointerId = null;
+        return;
+      }
       // Horizontal scrub — cancel reorder long-press so dial wins.
       if(typeof claimCardGesture === 'function'){
         if(!claimCardGesture(row,'scrub',{force:true})){
@@ -4216,12 +4231,14 @@ function setupBreakableCrown(row,_realIdx){
     velX = 0;
     delete row.dataset.crownGesture;
     if(wasDragging && typeof releaseCardGesture === 'function')releaseCardGesture(row,'scrub');
-    if(typeof settleAgendaPointerFromForeignTarget === 'function'
-      && settleAgendaPointerFromForeignTarget(row,e)){
-      return;
-    }
     if(!wasDragging && e.type === 'pointerup'){
-      if(row.classList.contains('agenda-drag-ready') || row.classList.contains('agenda-longpress-armed'))return;
+      // A drag or an armed long-press ending on the crown is not a tap.
+      // Capture BEFORE settle: the drag finish clears these classes.
+      const wasArmed = row.classList.contains('agenda-drag-ready') || row.classList.contains('agenda-longpress-armed');
+      if(typeof settleAgendaPointerFromForeignTarget === 'function'){
+        settleAgendaPointerFromForeignTarget(row,e);
+      }
+      if(wasArmed)return;
       if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap'))return;
       const card = row.querySelector('.ting-card');
       if(card){
@@ -4281,10 +4298,11 @@ function setupBreakableCrown(row,_realIdx){
     }
   });
 
-  // Always isolate crown gestures from card swipe/tap handlers on the row.
-  // Waiting until `dragging` lets touchstart bubble and arm swipe first.
+  // Isolate the dial's pointer and mouse gestures from the row's tap
+  // tracking. Touch events must bubble: the row swipe takes over leftward
+  // drags on the dial, while rightward drags stay with the crown scrub.
   const stop = e=>{ e.stopPropagation(); };
-  ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel','mousedown','mouseup'].forEach(ev=>{
+  ['pointerdown','pointermove','pointerup','pointercancel','mousedown','mouseup'].forEach(ev=>{
     crown.addEventListener(ev,stop,{ passive:true });
   });
   crown.addEventListener('click',e=>{ e.stopPropagation(); },{ passive:true });
@@ -4303,7 +4321,6 @@ function setupSwipe(row){
   const rightActions = row.querySelector('.swipe-actions-right');
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
   let startedOpen = false;
-  const CROWN_SWIPE_PAD = 10;
   // Match CSS collapsed default so first paint never shows action chrome.
   if(leftActions){
     leftActions.style.width = '0';
@@ -4312,17 +4329,6 @@ function setupSwipe(row){
   if(rightActions){
     rightActions.style.width = '0';
     rightActions.style.pointerEvents = 'none';
-  }
-
-  // PURE: touch is on/near the crown dial (layout box + pad), so swipe must stand down.
-  function touchNearCrown(clientX, clientY){
-    const crown = row.querySelector('.breakable-crown');
-    if(!crown)return false;
-    const r = crown.getBoundingClientRect();
-    return clientX >= r.left - CROWN_SWIPE_PAD
-      && clientX <= r.right + CROWN_SWIPE_PAD
-      && clientY >= r.top - CROWN_SWIPE_PAD
-      && clientY <= r.bottom + CROWN_SWIPE_PAD;
   }
 
   // PURE: measure total swipe action width
@@ -4371,13 +4377,9 @@ function setupSwipe(row){
       dx = 0;
       return;
     }
-    // Crown dial + a small pad around it owns the gesture — never arm card swipe.
-    if(e.target.closest('.breakable-crown,.breakable-progress') || row.dataset.crownGesture === '1' || touchNearCrown(t.clientX, t.clientY)){
-      touchId = null;
-      moved = false;
-      dx = 0;
-      return;
-    }
+    // Touches on the breakable crown track too: the dial's own pointer
+    // handlers claim rightward drags (scrub) before the touch handlers run,
+    // while leftward drags back off and let this swipe reveal the actions.
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     startedOpen = swipeOpenCard === card;
     if(swipeOpenCard && swipeOpenCard !== card){
@@ -4386,20 +4388,13 @@ function setupSwipe(row){
   },{passive:true});
 
   row.addEventListener('touchmove',e=>{
-    if(touchId === null || row.dataset.crownGesture === '1')return;
+    if(touchId === null)return;
     if(typeof cardGestureOwner === 'function'){
       const owner = cardGestureOwner(row);
       if(owner === 'reorder' || owner === 'scrub')return;
     }
-    if(e.target.closest('.breakable-crown,.breakable-progress'))return;
     const t = [...e.changedTouches].find(item=>item.identifier === touchId);
     if(!t)return;
-    // If the finger drifts into the crown pad mid-gesture, drop swipe instead of fighting the dial.
-    if(touchNearCrown(t.clientX, t.clientY)){
-      touchId = null;
-      if(moved)resetSwipe();
-      return;
-    }
     const ddx = t.clientX - startX;
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;

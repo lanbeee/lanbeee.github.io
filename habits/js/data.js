@@ -172,6 +172,10 @@
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
+ * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
+ * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
+ * @property {boolean} showCueOnCards                          — show one-line status on home cards
+ * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
  * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview
  * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
  * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
@@ -395,6 +399,10 @@ function loadSortSettings(){
     merged.defaultAutoMarkMinutes = Number.isFinite(merged.defaultAutoMarkMinutes) && merged.defaultAutoMarkMinutes > 0 ? Math.round(merged.defaultAutoMarkMinutes) : null;
     merged.showStatusOnCards = merged.showStatusOnCards !== false;
     merged.showEarlyOnCards = merged.showEarlyOnCards !== false;
+    merged.showAgendaTimesOnCards = normalizeAgendaTimeMode(merged.showAgendaTimesOnCards);
+    merged.showTrailOnCards = merged.showTrailOnCards !== false;
+    merged.showCueOnCards = merged.showCueOnCards !== false;
+    merged.showOrderPillsOnCards = merged.showOrderPillsOnCards !== false;
     merged.minimalMode = Boolean(merged.minimalMode);
     merged.compactMode = Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
@@ -469,6 +477,10 @@ function saveSortSettings(settings){
   next.defaultAutoMarkMinutes = Number.isFinite(next.defaultAutoMarkMinutes) && next.defaultAutoMarkMinutes > 0 ? Math.round(next.defaultAutoMarkMinutes) : null;
   next.showStatusOnCards = next.showStatusOnCards !== false;
   next.showEarlyOnCards = next.showEarlyOnCards !== false;
+  next.showAgendaTimesOnCards = normalizeAgendaTimeMode(next.showAgendaTimesOnCards);
+  next.showTrailOnCards = next.showTrailOnCards !== false;
+  next.showCueOnCards = next.showCueOnCards !== false;
+  next.showOrderPillsOnCards = next.showOrderPillsOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);
   next.compactMode = Boolean(next.compactMode);
   next.fontScale = ['small','medium','large'].includes(next.fontScale) ? next.fontScale : 'medium';
@@ -1682,13 +1694,21 @@ function sizeKb(data){return Math.round((JSON.stringify(data).length * 2) / 1024
 function clampRhythmValue(value){
   const n = Number(value);
   if(!Number.isFinite(n))return 7;
-  const rounded = Math.round(n * 2) / 2;
-  return Math.max(MIN_RHYTHM_DAYS,Math.min(MAX_RHYTHM_DAYS,rounded));
+  return Math.max(MIN_RHYTHM_DAYS,Math.min(MAX_RHYTHM_DAYS,n));
 }
 /** PURE: split a (possibly fractional) target into {times, days} for UI. */
 function rhythmParts(target){
   const t = clampRhythmValue(target);
   if(Math.abs(t - Math.round(t)) < 0.01)return {times:1,days:Math.max(1,Math.round(t))};
+  // Exact rational first: a target like 7/3 must round-trip back to 3×/7d
+  // instead of being approximated as 2×/5d by the tolerance pass below.
+  for(let times = 2; times <= 30; times += 1){
+    const days = Math.round(t * times);
+    if(days >= 1 && days <= MAX_RHYTHM_DAYS && Math.abs(days / times - t) < 1e-9){
+      return {times,days};
+    }
+  }
+  // Approximate fit for legacy/non-rational targets (smallest times first).
   for(let times = 2; times <= 14; times += 1){
     const days = Math.round(t * times);
     if(days >= 1 && days <= MAX_RHYTHM_DAYS && Math.abs(days / times - t) < 0.051){
@@ -2506,6 +2526,10 @@ function normalizeCalendarAllDayMode(value){
 // PURE: normalize the home blocked/travel presentation mode.
 function normalizeHomeExtraMode(value){
   return value === 'cards12h' ? 'cards12h' : 'cards';
+}
+// PURE: normalize the agenda-time presentation mode on home cards.
+function normalizeAgendaTimeMode(value){
+  return value === 'icon' ? 'icon' : (value === 'hide' ? 'hide' : 'time');
 }
 /** PURE: completed-task auto-delete window in days (2 | 3 | 7). */
 function normalizeCompletedTaskRetentionDays(value){
