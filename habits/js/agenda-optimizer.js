@@ -620,19 +620,26 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
       }
       // Direct-order partners: seed starts that abut the successor window /
       // already-committed successor so keepup anchors can pack right before.
+      // Include travel slack seeds — mosque partners need leave-by room.
       const fillHid = placeFill && placeFill.h && placeFill.h.hid;
       for(const edge of orderEdges){
         if(!edge || edge.adjacency !== 'direct' || edge.beforeHid !== fillHid)continue;
         for(const candidate of dayCandidates){
           if(!candidate || !candidate.h || candidate.h.hid !== edge.afterHid)continue;
           for(const win of optimizerWindowsForCandidate(candidate,state)){
-            windowEdges.push(win.start - durationMs,win.start);
+            for(const slackMin of [0,5,10,15,30,45,60]){
+              windowEdges.push(win.start - durationMs - slackMin * 60000);
+            }
+            windowEdges.push(win.start);
           }
         }
         for(const entry of state.fills || []){
           const ph = entry && entry.fill && entry.fill.h;
           if(!ph || ph.hid !== edge.afterHid || !entry.fit)continue;
-          windowEdges.push(entry.fit.placeStart - durationMs,entry.fit.placeStart);
+          for(const slackMin of [0,5,10,15,30,45,60]){
+            windowEdges.push(entry.fit.placeStart - durationMs - slackMin * 60000);
+          }
+          windowEdges.push(entry.fit.placeStart);
         }
       }
     }
@@ -652,9 +659,50 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         fits.push(fit);
       }
     }
-    return fits
-      .sort((a,b)=>(a.score || 0) - (b.score || 0) || a.placeStart - b.placeStart)
-      .slice(0,16);
+    // ASAP scoring keeps only the earliest 16 fits — that erases afternoon
+    // pack-before-Juma options before GLPK can prefer them. Pin fits that end
+    // near a direct successor window so right-after stays in the solver.
+    const fillHid = placeFill && placeFill.h && placeFill.h.hid;
+    const successorStarts = [];
+    if(fillHid && orderEdges.length){
+      for(const edge of orderEdges){
+        if(!edge || edge.adjacency !== 'direct' || edge.beforeHid !== fillHid)continue;
+        for(const candidate of dayCandidates){
+          if(!candidate || !candidate.h || candidate.h.hid !== edge.afterHid)continue;
+          for(const win of optimizerWindowsForCandidate(candidate,state)){
+            if(Number.isFinite(win.start))successorStarts.push(win.start);
+          }
+        }
+        for(const entry of state.fills || []){
+          const ph = entry && entry.fill && entry.fill.h;
+          if(!ph || ph.hid !== edge.afterHid || !entry.fit)continue;
+          successorStarts.push(entry.fit.placeStart);
+        }
+      }
+    }
+    const isPinnedAbut = (fit)=>{
+      if(!fit || !successorStarts.length)return false;
+      return successorStarts.some(start=>{
+        if(fit.placeEnd > start + 60000)return false;
+        const gapMin = Math.max(0,(start - fit.placeEnd) / 60000);
+        return gapMin <= 90;
+      });
+    };
+    const pinned = fits.filter(isPinnedAbut)
+      .sort((a,b)=>(a.score || 0) - (b.score || 0) || a.placeStart - b.placeStart);
+    const rest = fits.filter(f=>!isPinnedAbut(f))
+      .sort((a,b)=>(a.score || 0) - (b.score || 0) || a.placeStart - b.placeStart);
+    const out = [];
+    const outSeen = new Set();
+    for(const fit of pinned.concat(rest)){
+      const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
+      if(outSeen.has(key))continue;
+      outSeen.add(key);
+      out.push(fit);
+      // Always keep every pinned abut; fill remaining slots from ASAP rest.
+      if(out.length >= Math.max(16,pinned.length))break;
+    }
+    return out;
   };
   return typeof withTravelNetworkPaused === 'function' ? withTravelNetworkPaused(scan) : scan();
 }

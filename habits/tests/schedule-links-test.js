@@ -520,7 +520,8 @@ function assert(value,message){
     'reverse early reason names a partner (' + jumaCase.reverseEarly + ')');
 
   console.log('\n[D] right-after Shower → Juma (direct adjacency, morning competition)');
-  const rightAfter = await page.evaluate(()=>{
+  async function runRightAfter(label, useExact){
+    return page.evaluate(async ({label, useExact})=>{
     const friBase = dayStart(new Date(2026,7,7).getTime()); // Friday Aug 7
     const now = friBase + 9 * 3600000;
     const home = {id:'home',name:'Home',lat:43.65,lng:-79.38};
@@ -529,11 +530,12 @@ function assert(value,message){
       ...loadSortSettings(),
       preset:'todayFirst',
       showWeekOnHome:true,
-      agendaOptimizer:false,
+      agendaOptimizer:!!useExact,
       availabilityMinutes:Array(7).fill(600),
       availabilityOverrides:{},
       blockedTimes:[
         {label:'sleep',start:0,end:5 * 60 + 30,locationId:'home'},
+        {label:'breakfast',start:7 * 60 + 33,end:7 * 60 + 43,locationId:'home'},
         {label:'sleep',start:22 * 60 + 30,end:24 * 60,locationId:'home'}
       ],
       locations:[home,mosque],
@@ -580,6 +582,12 @@ function assert(value,message){
         {anchorHid:'shower',direction:'after',adjacency:'direct',requireSameDay:true}
       ]
     };
+    // Extra morning options so ASAP slice would otherwise drop afternoon pack fits.
+    const distractors = Array.from({length:12},(_,i)=>({
+      hid:`dist-${i}`,name:`Dist ${i}`,type:'keepup',target:1,flexibilityDays:0,
+      logs:[friBase - 2 * 86400000],durationMinutes:15,priority:3,
+      allowedTimeStart:8 * 60,allowedTimeEnd:12 * 60
+    }));
 
     const RealDate = Date;
     function FrozenDate(...args){
@@ -594,10 +602,11 @@ function assert(value,message){
     globalThis.Date = FrozenDate;
     let timeline = [];
     try{
-      save([trim,shower,work,juma]);
+      save([trim,shower,work,juma,...distractors]);
       const data = load();
-      // Single-day week so Friday is today.
-      const week = buildWeekAgenda(data,settings,1);
+      const week = useExact && typeof buildWeekAgendaAsync === 'function'
+        ? await buildWeekAgendaAsync(data,settings,1)
+        : buildWeekAgenda(data,settings,1);
       const day = week.days.find(d=>d.dayBase === friBase) || week.days[0];
       timeline = (day && day.timeline) || [];
     }finally{
@@ -621,6 +630,7 @@ function assert(value,message){
       });
     }
     return {
+      label,
       hids,
       hasShower:hids.includes('shower'),
       hasJuma:hids.includes('juma'),
@@ -630,15 +640,19 @@ function assert(value,message){
       showerEnd:lastShower && new Date(lastShower.end).toISOString(),
       jumaStart:jumaRow && new Date(jumaRow.start).toISOString()
     };
-  });
-  assert(rightAfter.hasJuma,'right-after: Juma is placed');
-  assert(rightAfter.hasShower,'right-after: Shower is placed');
-  assert(rightAfter.showerBeforeJuma,'right-after: Shower ends before Juma starts');
-  assert(!rightAfter.interloper,
-    'right-after: no habit between latest Shower and Juma (gap=' + rightAfter.gapMin + 'm)');
-  assert(rightAfter.gapMin != null && rightAfter.gapMin <= 90,
-    'right-after: Shower abuts Juma within travel slack (gap=' + rightAfter.gapMin
-      + 'm, showerEnd=' + rightAfter.showerEnd + ', jumaStart=' + rightAfter.jumaStart + ')');
+    }, {label, useExact});
+  }
+  for(const [label, useExact] of [['fast', false], ['exact', true]]){
+    const rightAfter = await runRightAfter(label, useExact);
+    assert(rightAfter.hasJuma,`${rightAfter.label}: Juma is placed`);
+    assert(rightAfter.hasShower,`${rightAfter.label}: Shower is placed`);
+    assert(rightAfter.showerBeforeJuma,`${rightAfter.label}: Shower ends before Juma starts`);
+    assert(!rightAfter.interloper,
+      `${rightAfter.label}: no habit between latest Shower and Juma (gap=${rightAfter.gapMin}m)`);
+    assert(rightAfter.gapMin != null && rightAfter.gapMin <= 90,
+      `${rightAfter.label}: Shower abuts Juma within travel slack (gap=${rightAfter.gapMin}`
+        + `m, showerEnd=${rightAfter.showerEnd}, jumaStart=${rightAfter.jumaStart})`);
+  }
 
   assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();

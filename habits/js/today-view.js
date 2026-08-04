@@ -1065,6 +1065,45 @@ function buildPlannerDecisionTrace(data,settings,context){
           orderInputs.push(`after ${nameByHid.get(edge.beforeHid) || 'linked item'}${edge.adjacency === 'direct' ? ' directly' : ''}`);
         }
       }
+      // Direct-pack outcome on this day's agenda — makes morning-vs-Juma misses obvious.
+      for(const edge of constraints){
+        if(edge.adjacency !== 'direct')continue;
+        if(edge.beforeHid !== h.hid && edge.afterHid !== h.hid)continue;
+        const beforeHid = edge.beforeHid;
+        const afterHid = edge.afterHid;
+        const partnerHid = beforeHid === h.hid ? afterHid : beforeHid;
+        const afterRows = (agendaRows || [])
+          .filter(row=>row && row.kind === 'fill' && row.h && row.h.hid === afterHid)
+          .sort((a,b)=>a.start - b.start);
+        const beforeRows = (agendaRows || [])
+          .filter(row=>row && row.kind === 'fill' && row.h && row.h.hid === beforeHid)
+          .sort((a,b)=>a.start - b.start);
+        if(!afterRows.length || !beforeRows.length){
+          orderInputs.push(`direct pack vs ${nameByHid.get(partnerHid) || 'partner'}: partner or self not on this day`);
+          continue;
+        }
+        const afterStart = afterRows[0].start;
+        const pred = beforeRows
+          .filter(row=>row.end <= afterStart + 60000)
+          .sort((a,b)=>b.end - a.end)[0];
+        if(!pred){
+          orderInputs.push(`direct pack vs ${nameByHid.get(partnerHid) || 'partner'}: no before-chunk ends before partner`);
+          continue;
+        }
+        const gapMin = Math.max(0,Math.round((afterStart - pred.end) / 60000));
+        const interloper = (agendaRows || []).some(row=>{
+          if(!row || row.kind !== 'fill' || !row.h)return false;
+          const id = row.h.hid;
+          if(id === beforeHid || id === afterHid)return false;
+          return row.start + 60000 >= pred.end && row.end <= afterStart + 60000;
+        });
+        const ok = !interloper && gapMin <= 90;
+        orderInputs.push(
+          `direct pack vs ${nameByHid.get(partnerHid) || 'partner'}: ${ok ? 'ok' : 'miss'}`
+          + ` gap ${gapMin}m${interloper ? ' with interloper' : ''}`
+          + ` (want ≤90m, travel ok, no other habit between)`
+        );
+      }
     }
     const inputs = [
       `duration ${duration}m${h.breakable ? `; breakable, ${minChunk}m minimum chunk` : ''}`,
@@ -1640,6 +1679,10 @@ function orderConstraintPenalty(fill,fit,state){
     const h = entry && entry.fill && entry.fill.h;
     if(h && h.hid && entry.fit)placedByHid.set(h.hid,entry.fit);
   }
+  const habitByHid = (()=>{
+    const items = _plannerSolveData || (typeof load === 'function' ? load() : []);
+    return new Map((items || []).filter(h=>h && h.hid).map(h=>[h.hid,h]));
+  })();
   let pen = 0;
   for(const e of edges){
     if(e.afterHid === hid){
@@ -1660,14 +1703,38 @@ function orderConstraintPenalty(fill,fit,state){
     }
     if(e.beforeHid === hid && e.adjacency === 'direct'){
       const succ = placedByHid.get(e.afterHid);
-      if(!succ)continue;
-      const succStart = Number(succ.placeStart) || 0;
-      if(fit.placeEnd > succStart + 60000){
-        pen += 8000 + Math.max(0,(fit.placeEnd - succStart) / 60000) * 40;
+      if(succ){
+        const succStart = Number(succ.placeStart) || 0;
+        if(fit.placeEnd > succStart + 60000){
+          pen += 8000 + Math.max(0,(fit.placeEnd - succStart) / 60000) * 40;
+          continue;
+        }
+        const gapMin = Math.max(0,(succStart - fit.placeEnd) / 60000);
+        pen += Math.min(480,gapMin) * 12;
         continue;
       }
-      const gapMin = Math.max(0,(succStart - fit.placeEnd) / 60000);
-      pen += Math.min(480,gapMin) * 12;
+      // Successor not committed yet (option enumeration): still pack toward its
+      // earliest hard/preferred window so afternoon abut fits beat morning ASAP.
+      const afterH = habitByHid.get(e.afterHid);
+      if(!afterH)continue;
+      let targetStart = null;
+      if(typeof hasTimeWindow === 'function' && hasTimeWindow(afterH)){
+        const wins = fillDayWindows(afterH,state.dayBase,state.seedLocId) || [];
+        for(const win of wins){
+          if(!Number.isFinite(win.start))continue;
+          targetStart = targetStart == null ? win.start : Math.min(targetStart,win.start);
+        }
+      }else if(typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(afterH)){
+        const win = fillPreferredWindow(afterH,state.dayBase,state.seedLocId);
+        if(win && Number.isFinite(win.start))targetStart = win.start;
+      }
+      if(targetStart == null)continue;
+      if(fit.placeEnd > targetStart + 60000){
+        pen += 4000 + Math.max(0,(fit.placeEnd - targetStart) / 60000) * 20;
+        continue;
+      }
+      const gapMin = Math.max(0,(targetStart - fit.placeEnd) / 60000);
+      pen += Math.min(480,gapMin) * 8;
     }
   }
   return pen;
@@ -4157,41 +4224,57 @@ function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings){
   if(!beforeCand || !beforeCand.h)return false;
   if(beforeCand.h.type !== 'keepup' && beforeCand.h.type !== 'task')return false;
 
-  const keepFills = (state.fills || [])
-    .filter(entry=>entry && entry.fill && entry.fill.h && entry.fill.h.hid !== beforeHid)
-    .map(entry=>entry.fill);
-  // Replay fixed items first so daily Work does not swallow the pre-Juma gap
-  // before the keepup anchor can pack against it.
-  const fixed = keepFills.filter(f=>f && f.h && !f.h.breakable);
-  const breakables = keepFills.filter(f=>f && f.h && f.h.breakable);
+  // Reuse committed fits for fixed items — a full re-place often fails when
+  // Lunch/Work/prayer order is fragile, which left morning Shower + Juma intact.
+  const fixedEntries = (state.fills || [])
+    .filter(entry=>{
+      const h = entry && entry.fill && entry.fill.h;
+      return h && h.hid !== beforeHid && !h.breakable && entry.fit;
+    })
+    .slice()
+    .sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+  const breakableByIndex = new Map();
+  for(const entry of state.fills || []){
+    const h = entry && entry.fill && entry.fill.h;
+    if(!h || !h.breakable || h.hid === beforeHid)continue;
+    if(!breakableByIndex.has(entry.fill.i))breakableByIndex.set(entry.fill.i,entry.fill);
+  }
   const scoreOpts = {
     settings,
     allowNetwork:false,
     weights:typeof resolveAgendaScoreWeights === 'function'
       ? resolveAgendaScoreWeights(settings) : null
   };
-  const rebuilt = rebuildDayFromFills(state,fixed,candidates,scoreOpts);
-  if(!rebuilt)return false;
+  const trial = clonePlacementState(state);
+  trial.fills = [];
+  trial.placed = new Set();
+  trial.usedMinutes = 0;
+  trial.remaining = Math.max(0,Number(state.totalMinutes) || 0);
+  trial.prevLocId = state.seedLocId;
+  trial.rows = (state.rows || []).filter(r=>r && r.kind === 'scheduled');
+  for(const entry of fixedEntries){
+    commitPlacement(trial,entry.fill,entry.fit);
+  }
   const fill = {
     h:beforeCand.h,i:beforeCand.i,
     priority:beforeCand.priority,scarcity:beforeCand.scarcity
   };
-  const fit = tryPlaceOnDay(rebuilt,fill,scoreOpts);
+  const fit = tryPlaceOnDay(trial,fill,scoreOpts);
   if(!fit)return false;
-  commitPlacement(rebuilt,fill,fit);
-  for(const bFill of breakables){
+  commitPlacement(trial,fill,fit);
+  for(const bFill of breakableByIndex.values()){
     if(!bFill || !bFill.h)continue;
     if(typeof placeBreakableSessions === 'function'){
-      placeBreakableSessions(rebuilt,bFill,scoreOpts);
+      placeBreakableSessions(trial,bFill,scoreOpts);
     }else{
-      const bFit = tryPlaceOnDay(rebuilt,bFill,scoreOpts);
-      if(bFit)commitPlacement(rebuilt,bFill,bFit);
+      const bFit = tryPlaceOnDay(trial,bFill,scoreOpts);
+      if(bFit)commitPlacement(trial,bFill,bFit);
     }
   }
-  syncDayAgendaItemsFromFills(rebuilt);
-  const stillBad = persistentLinkViolationsForState(rebuilt);
+  syncDayAgendaItemsFromFills(trial);
+  const stillBad = persistentLinkViolationsForState(trial);
   if(edge.subjectHid && stillBad.has(edge.subjectHid))return false;
-  applyPlacementState(state,rebuilt);
+  applyPlacementState(state,trial);
   syncDayAgendaItemsFromFills(state);
   return true;
 }
