@@ -368,6 +368,72 @@ function pickHabitLocationId(h,anchorId,registry,mode){
   return best;
 }
 
+// PURE: diagnostic twin of pickHabitLocationId. Returns the per-location
+// scoring used to choose where a multi-location fill lands, so the on-demand
+// planner trace can explain a surprising commute (e.g. Zuhr at KhadijaM when
+// Home was allowed and was the current anchor). Mirrors pickHabitLocationId
+// exactly, including the single-location short-circuit and the anywhere floor.
+// Never called from the placement path — only from buildPlannerDecisionTrace.
+function locationChoiceBreakdown(h,anchorId,registry,mode){
+  const ids = normalizeLocationIds(h.locationIds,registry);
+  if(!ids.length)return null;
+  const locName = id => {
+    const loc = registry.find(l=>l.id === id);
+    return (loc && loc.name) || id;
+  };
+  if(ids.length === 1 && !h.anywhereAllowed){
+    return {
+      anchorId:anchorId || null,
+      chosenId:ids[0],
+      reason:'single allowed location (no scoring)',
+      candidates:[{
+        id:ids[0],
+        name:locName(ids[0]),
+        prefLevel:locationPrefLevel(h,ids[0]) || 'neutral',
+        edgeSeconds:Number(travelEdgeBetweenIds(anchorId,ids[0],registry,mode).seconds) || 0,
+        prefBias:0,
+        sameAnchorBonus:(anchorId && ids[0] === anchorId) ? -60 : 0,
+        total:0,
+        isWinner:true
+      }]
+    };
+  }
+  const candidates = ids.map(id=>{
+    const edge = travelEdgeBetweenIds(anchorId,id,registry,mode);
+    const prefLevel = locationPrefLevel(h,id);
+    const prefBias = -locationPrefScore(prefLevel) * 30;
+    const sameAnchorBonus = (anchorId && id === anchorId) ? -60 : 0;
+    const edgeSeconds = Number(edge && edge.seconds) || 0;
+    const total = edgeSeconds + prefBias + sameAnchorBonus;
+    return {
+      id,
+      name:locName(id),
+      prefLevel:prefLevel || 'neutral',
+      edgeSeconds,
+      prefBias,
+      sameAnchorBonus,
+      total
+    };
+  });
+  let chosenId = null;
+  let bestScore = h.anywhereAllowed ? 0 : Infinity;
+  for(const c of candidates){
+    if(c.total < bestScore){ bestScore = c.total; chosenId = c.id; }
+  }
+  for(const c of candidates)c.isWinner = (c.id === chosenId);
+  const reason = chosenId
+    ? (h.anywhereAllowed
+      ? 'lowest total under anywhere-allowed floor 0'
+      : 'lowest total = travel + preference bias + stay-anchor bonus (lower wins)')
+    : 'no location beat the anywhere-allowed floor 0 (stays anchorless)';
+  return {
+    anchorId:anchorId || null,
+    chosenId,
+    reason,
+    candidates:candidates.sort((a,b)=>a.total - b.total)
+  };
+}
+
 // PURE: within each priority band, greedy nearest-neighbour reorder. Revisiting
 // a location later in the day is allowed — this is NOT a hard cluster-by-place
 // pass. Items with no location stay zero-cost floaters.
@@ -992,6 +1058,40 @@ function buildPlannerDecisionTrace(data,settings,context){
   } = context;
   const registry = typeof normalizeLocationRegistry === 'function'
     ? normalizeLocationRegistry(settings && settings.locations) : [];
+  const travelMode = typeof normalizeTravelMode === 'function'
+    ? normalizeTravelMode(settings && settings.defaultTravelMode) : 'driving';
+  const locNameById = id => {
+    if(!id)return 'none';
+    const loc = registry.find(l=>l.id === id);
+    return (loc && loc.name) || id;
+  };
+  // PURE: reconstruct the location anchor the planner would have used at the
+  // start of a fill — the latest location-bearing scheduled row, location-tied
+  // blocked interval, or committed fill that has already started, else the day
+  // seed. Mirrors locationPresenceAt() (which ignores travel rows) but built
+  // only from trace data so it stays off the placement path. Used to explain
+  // multi-location choices in the on-demand audit.
+  const anchorAt = targetStart => {
+    const at = Number(targetStart) || 0;
+    const marks = [];
+    for(const r of agendaRows || []){
+      if(!(r.start < at))continue;
+      if(r.kind === 'scheduled' && r.locationId){
+        marks.push({start:r.start, locationId:r.locationId, source:`scheduled ${r.name || ''}`.trim()});
+      }
+      if(r.kind === 'fill' && r.locationId){
+        marks.push({start:r.start, locationId:r.locationId, source:`prior fill ${r.name || ''}`.trim()});
+      }
+    }
+    for(const block of rawBlocks || []){
+      if(!block.locationId || !(block.start < at))continue;
+      marks.push({start:block.start, locationId:block.locationId, source:`blocked:${block.label || ''}`});
+    }
+    if(!marks.length)return {id:null, source:'day seed'};
+    marks.sort((a,b)=>a.start - b.start);
+    const last = marks[marks.length - 1];
+    return {id:last.locationId, source:last.source};
+  };
   const unplacedByIndex = new Map((unplacedItems || []).map(item=>[item.i,item]));
   const placedByIndex = new Map();
   for(const row of agendaRows || []){
@@ -1114,13 +1214,45 @@ function buildPlannerDecisionTrace(data,settings,context){
       pinned ? 'pinned to today' : 'not pinned',
       hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
       preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
-      locationNames.length ? `locations ${locationNames.join(', ')}` : 'no location constraint',
+      locationNames.length
+        ? `locations ${locationIds.map((id,k)=>{
+            const lvl = typeof locationPrefLevel === 'function'
+              ? (locationPrefLevel(h,id) || 'neutral') : 'neutral';
+            return `${locationNames[k]}=${lvl}`;
+          }).join(', ')}`
+        : 'no location constraint',
       orderInputs.length ? `order ${orderInputs.join('; ')}` : ''
     ].filter(Boolean);
     const earliestClockFit = plannerTraceEarliestClockFit(
       h,i,dayBase,dayEnd,rangeStart,rawBlocks,agendaRows,minChunk
     );
     const first = rows[0] || null;
+    // Location choice audit (on-demand only). For placed items with location
+    // constraints, surface the anchor the planner used at this fill's start and
+    // the full per-location scoring (travel + preference bias + stay-anchor
+    // bonus) so a surprising commute like "Zuhr at KhadijaM when Home was
+    // allowed and was the anchor" becomes explainable. Mirrors
+    // pickHabitLocationId exactly via locationChoiceBreakdown().
+    if(first && locationIds.length && typeof locationChoiceBreakdown === 'function'){
+      const anchor = anchorAt(first.start);
+      const breakdown = locationChoiceBreakdown(h,anchor.id,registry,travelMode);
+      if(breakdown){
+        const chosenName = breakdown.chosenId
+          ? locNameById(breakdown.chosenId) : 'none';
+        inputs.push(`location anchor ${locNameById(anchor.id)} (from ${anchor.source})`);
+        inputs.push(`location chosen ${chosenName} — ${breakdown.reason}`);
+        const parts = breakdown.candidates.map(c=>{
+          const travelMin = Math.round(c.edgeSeconds / 60);
+          const bits = [
+            `${travelMin}m travel`,
+            `pref ${c.prefLevel}${c.prefBias ? ` (${c.prefBias > 0 ? '+' : ''}${c.prefBias})` : ''}`,
+            c.sameAnchorBonus ? `stay ${c.sameAnchorBonus}` : null
+          ].filter(Boolean);
+          return `${c.name}=${c.total} [${bits.join(', ')}]${c.isWinner ? ' *' : ''}`;
+        });
+        inputs.push(`location candidates ${parts.join('; ')}`);
+      }
+    }
     const selected = rows.length
       ? rows.map(row=>`${agendaTimeLabel(row.start)}–${agendaTimeLabel(row.end)}`).join('; ')
       : 'not placed';
@@ -1320,6 +1452,12 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     end:row.end,
     minutes:Math.max(0,Math.round((row.end - row.start) / 60000)),
     locationId:row.locationId || null,
+    // Travel-leg endpoints are preserved so the on-demand planner trace can
+    // reconstruct the location anchor at any fill without re-running placement.
+    from:row.from || null,
+    to:row.to || null,
+    fromName:row.fromName || '',
+    toName:row.toName || '',
     plannerScore:Number.isFinite(row.plannerScore) ? row.plannerScore : null,
     plannerScoreTerms:row.plannerScoreTerms || null,
     optimizerWeight:Number.isFinite(row.optimizerWeight) ? row.optimizerWeight : null,
