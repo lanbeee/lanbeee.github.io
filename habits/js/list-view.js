@@ -3061,8 +3061,7 @@ function render(opts){
       }
       const seq = homeDaySequence(day,sortSettings,{visibleSet});
       day.homeDisplayedTimeline = seq.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
-        && row.i != null
-        && !data[row.i]?.pinned);
+        && row.i != null);
       for(const row of seq){
         if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
           weekAssigned.add(row.i);
@@ -3073,7 +3072,9 @@ function render(opts){
       return {day,seq};
     });
 
-    indices.filter(i=>data[i].pinned).forEach(realIdx=>{
+    const pinnedIndices = indices.filter(i=>data[i].pinned);
+    if(pinnedIndices.length)appendSectionHeader(list,'pinned');
+    pinnedIndices.forEach(realIdx=>{
       const agendaRow = agendaMap.get(realIdx);
       const cat = todayCategory(data[realIdx],sortSettings);
       const earlyText = (cat === 2 && earlyMap.get(realIdx) && agendaMap.has(realIdx)) ? earlyMap.get(realIdx) : '';
@@ -3114,7 +3115,9 @@ function render(opts){
         }
         i += 1;
         if(row.kind !== 'fill' && row.kind !== 'scheduled')continue;
-        if(data[row.i]?.pinned)continue;
+        // Pinned cards also render here — in their natural time slot — so the
+        // travel/blocked cards around them keep their context. They still
+        // appear in the separate pinned section above via the pre-pass.
         const cat = todayCategory(data[row.i],sortSettings);
         const earlyText = (day.isToday && cat === 2 && earlyMap.get(row.i)) ? earlyMap.get(row.i) : '';
         appendHabitCard(row.i,row,earlyText,day.dayBase);
@@ -3165,8 +3168,9 @@ function render(opts){
     // the day cannot give and the card never shows an "early" pill it can't honour.
     const earlyToday = i => Boolean(earlyMap.get(i)) && agendaMap.has(i);
     const renderIndices = todayFirstActive && !searching ? [...indices].sort((a,b)=>{
-      const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
-      if(pin)return pin;
+      // Pinned cards are NOT sorted to the top here — they render in their
+      // natural time/category position so the timeline stays time-ordered.
+      // A separate pinned-section pre-pass below mirrors week view.
       const catA = todayCategory(data[a],sortSettings);
       const catB = todayCategory(data[b],sortSettings);
       const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
@@ -3204,7 +3208,7 @@ function render(opts){
         const registry = locationOptions();
         for(const seedIdx of renderIndices){
           const sh = data[seedIdx];
-          if(!sh || sh.pinned)continue;
+          if(!sh)continue;
           const scat = todayCategory(sh,sortSettings);
           const sEarly = scat === 2 && earlyToday(seedIdx);
           if(scat !== 0 && !sEarly)continue;
@@ -3230,13 +3234,27 @@ function render(opts){
         }).map(i=>data[i].hid).filter(Boolean)
       : [];
 
+    // Pinned-section pre-pass: pinned cards render up here (separate section,
+    // mirrors week view) AND again below in their natural timeline slot so
+    // travel/blocked cards around them keep their context.
+    const pinnedTodayIndices = renderIndices.filter(i=>data[i].pinned);
+    if(pinnedTodayIndices.length){
+      appendSectionHeader(list,'pinned');
+      pinnedTodayIndices.forEach(realIdx=>{
+        const agendaRow = agendaMap.get(realIdx);
+        const cat = todayCategory(data[realIdx],sortSettings);
+        const earlyText = (cat === 2 && earlyMap.get(realIdx) && agendaMap.has(realIdx)) ? earlyMap.get(realIdx) : '';
+        appendHabitCard(realIdx,agendaRow,earlyText);
+      });
+    }
+
     renderIndices.forEach(realIdx=>{
       const h = data[realIdx];
       const cat = todayFirstActive ? todayCategory(h,sortSettings) : -1;
       const isEarlyToday = todayFirstActive && cat === 2 && earlyToday(realIdx);
-      const inTodaySection = !searching && todayFirstActive && !h.pinned && (cat === 0 || isEarlyToday);
+      const inTodaySection = !searching && todayFirstActive && (cat === 0 || isEarlyToday);
 
-      if(!searching && todayFirstActive && !h.pinned){
+      if(!searching && todayFirstActive){
         const sectionKey = isEarlyToday ? 0 : cat;
         if(sectionKey !== sectionCat){
           const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};

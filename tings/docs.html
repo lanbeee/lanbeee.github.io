@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<meta name="description" content="Tings user guide — every feature of the local-first habit, task and week-agenda planner, explained." />
+<title>Tings · Help &amp; Documentation</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
+<script>
+(function(l){l.media='not all';l.onload=function(){l.media='all'};l.onerror=function(){l.remove()}})(document.querySelector('link[href*="tabler-icons"]'));
+</script>
+<style>
+/* Design tokens mirrored from the app's styles.css */
+:root{
+  --bg:#ffffff; --bg2:#f5f4f0; --bg3:#e8e7e2;
+  --text:#1a1a1a; --text2:#6b6a65; --text3:#9e9d98;
+  --border:rgba(0,0,0,0.11); --border2:rgba(0,0,0,0.2);
+  --radius:16px; --radius-sm:10px;
+  --teal:#0F6E56; --teal-bg:#E1F5EE; --teal-text:#085041;
+  --amber:#BA7517; --amber-bg:#FAEEDA; --amber-text:#633806;
+  --red:#A32D2D; --red-bg:#FCEBEB; --red-text:#791F1F;
+  --purple:#534AB7; --purple-bg:#EEEDFE; --purple-text:#3C3489;
+  --blue:#176B91; --blue-bg:#E6F2FA; --blue-text:#0B4E6E;
+  --green-bg:#E8F5E9; --green-text:#1B5E20;
+  --pink-bg:#FCE7F0; --pink-text:#7A1E54;
+  --shadow:0 1px 2px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06);
+  --maxw:840px; --sidebar-w:290px;
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+:root[data-theme="dark"],:root:not([data-theme="light"]){color-scheme:dark;}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#1c1c1e; --bg2:#2c2c2e; --bg3:#3a3a3c;
+    --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
+    --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
+    --teal:#5DCAA5; --teal-bg:#085041; --teal-text:#9FE1CB;
+    --amber:#EF9F27; --amber-bg:#633806; --amber-text:#FAC775;
+    --red:#F09595; --red-bg:#791F1F; --red-text:#F7C1C1;
+    --purple:#AFA9EC; --purple-bg:#3C3489; --purple-text:#CECBF6;
+    --blue:#84CDEE; --blue-bg:#0B4E6E; --blue-text:#BFE8F7;
+    --green-bg:#1B5E20; --green-text:#A5D6A7;
+    --pink-bg:#5C1A40; --pink-text:#F7C2D8;
+    --shadow:0 1px 2px rgba(0,0,0,0.3), 0 10px 30px rgba(0,0,0,0.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1c1c1e; --bg2:#2c2c2e; --bg3:#3a3a3c;
+  --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
+  --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
+  --teal:#5DCAA5; --teal-bg:#085041; --teal-text:#9FE1CB;
+  --amber:#EF9F27; --amber-bg:#633806; --amber-text:#FAC775;
+  --red:#F09595; --red-bg:#791F1F; --red-text:#F7C1C1;
+  --purple:#AFA9EC; --purple-bg:#3C3489; --purple-text:#CECBF6;
+  --blue:#84CDEE; --blue-bg:#0B4E6E; --blue-text:#BFE8F7;
+  --green-bg:#1B5E20; --green-text:#A5D6A7;
+  --pink-bg:#5C1A40; --pink-text:#F7C2D8;
+  --shadow:0 1px 2px rgba(0,0,0,0.3), 0 10px 30px rgba(0,0,0,0.4);
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;scroll-padding-top:84px;}
+body{margin:0;background:var(--bg2);color:var(--text);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+a{color:var(--teal);text-decoration:none;}a:hover{text-decoration:underline;}
+
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;
+  background:color-mix(in srgb,var(--bg2) 88%,transparent);
+  backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);
+  border-bottom:1px solid var(--border);padding:12px 20px;}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--text);}
+.topbar .brand img{width:28px;height:28px;}
+.topbar .brand small{font-weight:500;color:var(--text2);font-size:13px;}
+.topbar .spacer{flex:1;}
+.topbar .search{flex:1;max-width:420px;display:flex;align-items:center;gap:8px;
+  background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:8px 14px;}
+.topbar .search i{color:var(--text3);}
+.topbar .search input{flex:1;border:0;outline:0;background:transparent;color:var(--text);font-size:14px;}
+.topbar .search input::placeholder{color:var(--text3);}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;
+  border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;
+  transition:background .15s var(--ease),color .15s var(--ease);}
+.icon-btn:hover{background:var(--bg3);color:var(--text);}
+.topbar a.back-app{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;
+  background:var(--teal-bg);color:var(--teal-text);font-weight:600;font-size:14px;border:1px solid transparent;}
+.topbar a.back-app:hover{text-decoration:none;filter:brightness(.97);}
+
+.layout{display:flex;align-items:flex-start;max-width:1320px;margin:0 auto;}
+.sidebar{position:sticky;top:65px;width:var(--sidebar-w);flex-shrink:0;height:calc(100vh - 65px);
+  overflow-y:auto;padding:24px 12px 80px 20px;border-right:1px solid var(--border);}
+.sidebar nav{display:flex;flex-direction:column;gap:2px;}
+.sidebar .group-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text3);margin:18px 8px 6px;}
+.sidebar .group-label:first-child{margin-top:0;}
+.sidebar a{display:block;padding:6px 10px;border-radius:8px;color:var(--text2);font-size:14px;line-height:1.3;}
+.sidebar a:hover{background:var(--bg3);color:var(--text);text-decoration:none;}
+.sidebar a.active{color:var(--teal-text);background:var(--teal-bg);font-weight:600;}
+.sidebar a.sub{padding-left:22px;font-size:13px;}
+.sidebar a.sub2{padding-left:34px;font-size:12.5px;color:var(--text3);}
+
+.content{flex:1;min-width:0;padding:32px 32px 120px;max-width:var(--maxw);margin:0 auto;}
+.content section{margin-bottom:52px;scroll-margin-top:84px;}
+.content h1{font-size:34px;line-height:1.15;margin:0 0 8px;letter-spacing:-.02em;}
+.content .lede{font-size:19px;color:var(--text2);margin:0 0 24px;max-width:60ch;}
+.content h2{font-size:24px;margin:0 0 14px;padding-top:34px;letter-spacing:-.01em;
+  display:flex;align-items:center;gap:10px;border-top:1px solid var(--border);}
+.content h2:first-of-type{border-top:0;padding-top:0;}
+.content h2 .ti{color:var(--teal);font-size:26px;}
+.content h3{font-size:18px;margin:24px 0 8px;letter-spacing:-.005em;}
+.content h4{font-size:15.5px;margin:18px 0 6px;color:var(--text);}
+.content p{margin:0 0 13px;}
+.content ul,.content ol{margin:0 0 13px;padding-left:22px;}
+.content li{margin-bottom:5px;}
+.content strong{color:var(--text);}
+.content code,.content kbd{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.88em;
+  background:var(--bg3);color:var(--text);padding:2px 6px;border-radius:6px;}
+
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin:14px 0;box-shadow:var(--shadow);}
+.callout{display:flex;gap:12px;padding:13px 15px;border-radius:var(--radius-sm);font-size:14.5px;margin:14px 0;}
+.callout .ti{font-size:20px;flex-shrink:0;margin-top:1px;}
+.callout.tip{background:var(--teal-bg);color:var(--teal-text);}
+.callout.tip .ti{color:var(--teal);}
+.callout.note{background:var(--blue-bg);color:var(--blue-text);}
+.callout.note .ti{color:var(--blue);}
+.callout.warn{background:var(--amber-bg);color:var(--amber-text);}
+.callout.warn .ti{color:var(--amber);}
+.callout.danger{background:var(--red-bg);color:var(--red-text);}
+.callout.danger .ti{color:var(--red);}
+.callout>div{flex:1;}.callout p:last-child{margin-bottom:0;}
+.callout .ch{display:block;font-weight:700;margin-bottom:2px;}
+
+.steps{counter-reset:step;list-style:none;padding:0;margin:16px 0;}
+.steps li{position:relative;padding:0 0 16px 44px;}
+.steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:0;
+  width:28px;height:28px;border-radius:50%;background:var(--teal-bg);color:var(--teal-text);
+  font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;}
+.steps li::after{content:"";position:absolute;left:13px;top:30px;bottom:0;width:2px;background:var(--border);}
+.steps li:last-child::after{display:none;}
+.steps li>:last-child{margin-bottom:0;}
+
+.scenario{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 18px;margin:14px 0;box-shadow:var(--shadow);}
+.scenario .sc-head{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:8px;}
+.scenario .sc-head .ti{color:var(--teal);}
+.scenario .sc-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:600px){.scenario .sc-grid{grid-template-columns:1fr;}}
+.scenario .sc-part{font-size:14px;}
+.scenario .sc-part .sc-label{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--text3);margin-bottom:4px;}
+.scenario .sc-part ul{margin:0;padding-left:18px;}
+
+.shot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  min-height:200px;margin:16px 0;padding:26px;
+  background:repeating-linear-gradient(45deg,var(--bg3) 0 10px,transparent 10px 20px),var(--bg);
+  border:2px dashed var(--border2);border-radius:var(--radius);color:var(--text3);text-align:center;}
+.shot .ti{font-size:32px;color:var(--text3);}
+.shot .shot-label{font-size:14px;font-weight:600;color:var(--text2);}
+.shot .shot-hint{font-size:12px;}
+.shot.tall{min-height:340px;}
+.shot.wide{min-height:140px;}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600;
+  background:var(--bg3);color:var(--text2);border:1px solid var(--border);}
+.chip.teal{background:var(--teal-bg);color:var(--teal-text);border-color:transparent;}
+.chip.amber{background:var(--amber-bg);color:var(--amber-text);border-color:transparent;}
+.chip.red{background:var(--red-bg);color:var(--red-text);border-color:transparent;}
+.chip.purple{background:var(--purple-bg);color:var(--purple-text);border-color:transparent;}
+.chip.blue{background:var(--blue-bg);color:var(--blue-text);border-color:transparent;}
+.chip.green{background:var(--green-bg);color:var(--green-text);border-color:transparent;}
+.chip.pink{background:var(--pink-bg);color:var(--pink-text);border-color:transparent;}
+
+.defs{display:grid;grid-template-columns:1fr;gap:8px;margin:14px 0;}
+.defs .row{display:grid;grid-template-columns:150px 1fr;gap:14px;padding:11px 14px;
+  border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);}
+.defs .row .term{font-weight:700;color:var(--text);}
+.defs .row .desc{color:var(--text2);font-size:14px;}
+.defs .row .desc p{margin:0;}
+@media(max-width:560px){.defs .row{grid-template-columns:1fr;gap:4px;}}
+
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);}
+td{color:var(--text2);}
+tbody tr:last-child td{border-bottom:0;}
+
+.hero{background:linear-gradient(135deg,var(--teal-bg),var(--bg));border:1px solid var(--border);
+  border-radius:24px;padding:34px 26px;margin-bottom:34px;}
+.hero h1{margin-bottom:6px;}
+.hero .hero-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;
+  font-weight:600;font-size:14px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;}
+.btn:hover{text-decoration:none;background:var(--bg3);}
+.btn.primary{background:var(--teal);color:#fff;border-color:transparent;}
+.btn.primary:hover{filter:brightness(1.05);background:var(--teal);}
+
+.kbd-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+
+.footer{border-top:1px solid var(--border);margin-top:60px;padding-top:22px;color:var(--text3);font-size:13px;}
+.footer a{color:var(--text2);}
+
+.menu-toggle{display:none;}
+@media(max-width:980px){
+  .sidebar{position:fixed;top:65px;left:0;z-index:40;width:290px;background:var(--bg2);
+    transform:translateX(-105%);transition:transform .25s var(--ease);border-right:1px solid var(--border);}
+  .sidebar.open{transform:translateX(0);}
+  .menu-toggle{display:inline-flex;}
+  .content{padding:24px 18px 100px;}
+  .topbar .search{display:none;}
+  .hero{padding:26px 20px;}
+  .content h1{font-size:28px;}
+  .content h2{font-size:21px;}
+}
+@media(max-width:520px){.topbar .brand small{display:none;}.defs .row{grid-template-columns:1fr;}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto;}*{transition:none!important;}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="show table of contents"><i class="ti ti-menu-2"></i></button>
+  <a class="brand" href="#welcome"><img src="./favicon.svg" alt="" aria-hidden="true" /><span>Tings <small>· Help</small></span></a>
+  <label class="search" aria-label="search the guide"><i class="ti ti-search" aria-hidden="true"></i>
+    <input type="search" id="nav-filter" placeholder="filter topics…" autocomplete="off" /></label>
+  <span class="spacer"></span>
+  <button class="icon-btn" id="theme-toggle" aria-label="toggle theme" title="theme"><i class="ti ti-moon-stars"></i></button>
+  <a class="back-app" href="./index.html"><i class="ti ti-arrow-left" aria-hidden="true"></i> Back to app</a>
+</header>
+
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="table of contents">
+<nav id="toc">
+  <div class="group-label">Start here</div>
+  <a href="#welcome">Welcome</a>
+  <a href="#what-is">What is Tings?</a>
+  <a href="#philosophy">How it thinks</a>
+  <a href="#getting-started">Getting started</a>
+
+  <div class="group-label">The planner</div>
+  <a href="#planner">How the planner works</a>
+  <a href="#scenarios" class="sub">Planner scenarios</a>
+  <a href="#capacity" class="sub">Capacity &amp; open hours</a>
+  <a href="#priority" class="sub">Priority &amp; urgency</a>
+  <a href="#rhythm" class="sub">Rhythm &amp; flexibility</a>
+  <a href="#status" class="sub">Status: done / almost / behind</a>
+
+  <div class="group-label">Your tings</div>
+  <a href="#tings">Tings, explained</a>
+  <a href="#habits" class="sub">Habits — build / limit / stop</a>
+  <a href="#tasks" class="sub">Tasks</a>
+  <a href="#events" class="sub">Fixed-time events</a>
+  <a href="#emoji">Emoji &amp; visual identity</a>
+
+  <div class="group-label">Home screen</div>
+  <a href="#home">Home: agenda + your list</a>
+  <a href="#card-anatomy" class="sub">Reading a card</a>
+  <a href="#logging" class="sub">Logging &amp; value logs</a>
+  <a href="#swipe-actions" class="sub">Swipe actions</a>
+  <a href="#reorder" class="sub">Reorder &amp; doing now</a>
+  <a href="#reach" class="sub">Easier reach</a>
+  <a href="#filters" class="sub">Search &amp; filters</a>
+  <a href="#day-sections" class="sub">Day sections &amp; week view</a>
+  <a href="#indicators" class="sub">Pills &amp; indicators</a>
+  <a href="#toasts" class="sub">Toasts &amp; undo</a>
+  <a href="#empty-states" class="sub">Empty states</a>
+
+  <div class="group-label">Create &amp; edit</div>
+  <a href="#add-sheet">The add sheet</a>
+  <a href="#detail" class="sub">The detail view</a>
+  <a href="#detail-month" class="sub2">Month page</a>
+  <a href="#detail-insight" class="sub2">Insight page</a>
+  <a href="#detail-schedule" class="sub2">Schedule page</a>
+  <a href="#detail-effort" class="sub2">Effort page</a>
+  <a href="#detail-identity" class="sub2">Identity page</a>
+  <a href="#detail-actions" class="sub2">Actions page</a>
+
+  <div class="group-label">Scheduling</div>
+  <a href="#days">Days &amp; time windows</a>
+  <a href="#dynamic-times" class="sub">Dynamic &amp; prayer-anchored times</a>
+  <a href="#order-links" class="sub">Habit order &amp; links</a>
+
+  <div class="group-label">Places &amp; calendar</div>
+  <a href="#places">Places &amp; travel</a>
+  <a href="#overview" class="sub">Calendar overview</a>
+  <a href="#calendar-import" class="sub">Calendar PDF import</a>
+  <a href="#prayer" class="sub">Prayer times</a>
+
+  <div class="group-label">Reference</div>
+  <a href="#appearance">Look &amp; feel</a>
+  <a href="#settings">Settings reference</a>
+  <a href="#samples" class="sub">Sample habits</a>
+  <a href="#backup" class="sub">Backup, restore &amp; cleanup</a>
+  <a href="#privacy" class="sub">Privacy &amp; data</a>
+  <a href="#install" class="sub">Install as an app</a>
+
+  <div class="group-label">More</div>
+  <a href="#recipes">Tips &amp; recipes</a>
+  <a href="#faq">FAQ &amp; troubleshooting</a>
+</nav>
+</aside>
+
+<main class="content">
+
+<!-- ============================= WELCOME ============================= -->
+<section id="welcome">
+  <div class="hero">
+    <h1>The Tings guide</h1>
+    <p class="lede">Tings is a local-first planner for habits, tasks, and a week agenda that fits around your real life. This guide covers every feature, screen, and setting — start at <a href="#getting-started" style="color:inherit;text-decoration:underline">Getting started</a> if you're new.</p>
+    <div class="hero-actions">
+      <a class="btn primary" href="#getting-started"><i class="ti ti-rocket"></i> Get started in 2 minutes</a>
+      <a class="btn" href="#planner"><i class="ti ti-calendar-week"></i> How the planner thinks</a>
+      <a class="btn" href="./index.html"><i class="ti ti-app-window"></i> Open the app</a>
+    </div>
+  </div>
+  <p>Use the search box above or the contents on the left to jump around. Throughout the guide you'll see <span class="chip"><i class="ti ti-photo"></i> screenshot placeholders</span> marking spots where a real picture of the screen will go.</p>
+  <div class="callout tip"><i class="ti ti-bulb"></i><div>
+    <p><strong>One-line summary:</strong> Tings turns "I want to do X about Y times a week" into a today list and a packed week — without the anxiety of rigid due dates, and without the vagueness of endless to-do lists.</p>
+  </div></div>
+</section>
+
+<!-- ============================ WHAT IS ============================ -->
+<section id="what-is">
+  <h2><i class="ti ti-info-circle"></i> What is Tings?</h2>
+  <p>Tings is a personal planner that lives entirely on your device. It blends three things that usually live in separate apps:</p>
+  <div class="chips">
+    <span class="chip teal"><i class="ti ti-repeat"></i> Habit tracker</span>
+    <span class="chip purple"><i class="ti ti-checkbox"></i> To-do list</span>
+    <span class="chip blue"><i class="ti ti-calendar-week"></i> Week agenda / calendar</span>
+  </div>
+  <p>Each thing you want to track is a <strong>Ting</strong>. A Ting can be a <strong>habit</strong> (repeats on a rhythm), a <strong>task</strong> (a one-off job, optionally with a due date), or a <strong>fixed-time event</strong> (a hard appointment like "Dentist Tue 3pm"). All three share one list, one history, and one search.</p>
+  <p>The planner looks at everything together — your habits, your tasks, the time you actually have free this week, the places you'll be — and produces a short <strong>today list</strong> plus a <strong>week agenda</strong> that slots work into the gaps that genuinely exist.</p>
+  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the home list — today's agenda plus your habits and tasks</span></div>
+  <h3>Who it's for</h3>
+  <ul>
+    <li>People who want to <strong>build habits</strong> (exercise, reading, prayer, deep work) but hate rigid streaks.</li>
+    <li>People juggling <strong>recurring work and one-off tasks</strong> who don't want two apps.</li>
+    <li>Anyone who wants their planner to <strong>respect real life</strong> — sleep, meals, commuting, the gym being across town.</li>
+    <li>Privacy-conscious users: <strong>no account, no server, no sync.</strong> Your data never leaves the device.</li>
+  </ul>
+</section>
+
+<!-- ========================== PHILOSOPHY ========================== -->
+<section id="philosophy">
+  <h2><i class="ti ti-heart"></i> How it thinks</h2>
+  <p>A few ideas shape every screen. Understanding them once makes the whole app click.</p>
+  <div class="defs">
+    <div class="row"><div class="term">Rhythm over dates</div><div class="desc"><p>You say "about 3× in 7 days," not "every Monday." Tings tracks whether you're on pace, not whether you broke a streak.</p></div></div>
+    <div class="row"><div class="term">No streak guilt</div><div class="desc"><p>Missing a day resets nothing. A <em>behind</em> card just means "do it soon" — the target rolls forward.</p></div></div>
+    <div class="row"><div class="term">Capacity is real</div><div class="desc"><p>The week has finite free hours. Tings knows your sleep, work, meals and travel, so the agenda only plans into time that actually exists.</p></div></div>
+    <div class="row"><div class="term">Whole week at once</div><div class="desc"><p>Tings plans the whole week together, not day-by-day. Something that doesn't fit today gets pulled forward to tomorrow, not dropped.</p></div></div>
+    <div class="row"><div class="term">Local &amp; private</div><div class="desc"><p>Everything is stored on your device. Export a backup when you want; there is no cloud to leak.</p></div></div>
+    <div class="row"><div class="term">One pipeline</div><div class="desc"><p>Habits, tasks, and events share one list with common search, topics, places, and history — not three separate silos.</p></div></div>
+  </div>
+</section>
+
+<!-- ======================= GETTING STARTED ======================= -->
+<section id="getting-started">
+  <h2><i class="ti ti-rocket"></i> Getting started</h2>
+  <p>From a blank install to a working today list in a couple of minutes.</p>
+  <ol class="steps">
+    <li><p><strong>Open the app.</strong> Tap the Tings logo (top-left) any time for help and settings. A brand-new install shows an empty home with a hint.</p></li>
+    <li><p><strong>Try samples (optional but recommended).</strong> Tap the empty message, or open the Tings menu → <em>sample habits</em>. Add one demo or a whole tagged set — timers, places, breakable tasks, prayer demos and more are in there. Sample items are tagged so you can remove them in one tap later. (See <a href="#samples">Sample habits</a>.)</p>
+      <div class="shot wide"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the sample habits sheet</span></div></li>
+    <li><p><strong>Add your first Ting.</strong> Tap the <kbd>+</kbd> button (bottom nav or top bar). Name it, pick <em>habit</em> or <em>task</em>, set "how often," and tap <em>add</em>. The detail view opens so you can fine-tune. See <a href="#add-sheet">The add sheet</a>.</p></li>
+    <li><p><strong>Log it.</strong> On the home list, tap the pulsing icon (or double-tap the card) to log a completion. That's the core loop.</p></li>
+    <li><p><strong>Tell Tings about your week.</strong> When you're ready, open <em>settings</em> and set your <a href="#capacity">busy times</a> (sleep, work, meals) and <a href="#places">places</a>. The agenda immediately becomes smarter.</p></li>
+  </ol>
+  <div class="callout note"><i class="ti ti-info-square-rounded"></i><div><p>You can use Tings forever without configuring busy times or places — it still tracks habits and tasks perfectly. Those settings only make the <em>planner</em> sharper.</p></div></div>
+</section>
+
+<!-- =========================== PLANNER =========================== -->
+<section id="planner">
+  <h2><i class="ti ti-calendar-week"></i> How the planner works</h2>
+  <p>The planner is what turns "I want to read 3× a week and exercise daily and call mom and do a 6h deep-work block" into a sane day. It's worth understanding the big picture before the details.</p>
+
+  <h3>The short version</h3>
+  <p>Each time you open the app (or change something), Tings builds the <strong>whole week at once</strong> in a background worker, then shows you today's slice. It places things in this strict priority order — top tier always beats the tier below:</p>
+  <div class="card">
+    <ol>
+      <li><strong>Hard rules win.</strong> Capacity, busy blocks, allowed time windows, pinned items — never broken.</li>
+      <li><strong>Maximise hours placed.</strong> Fill as many real minutes as possible across the week. If a can-wait item is squatting on a slot a daily block needs, it's peeled to another day.</li>
+      <li><strong>Minimise travel.</strong> Co-located errands share one trip; far clusters get grouped to cut commuting.</li>
+      <li><strong>Sooner &amp; higher priority.</strong> When hours and travel are unaffected, do things sooner and favour higher priority.</li>
+      <li><strong>Preferences.</strong> Preferred time/place/weekday are soft nudges — they never beat hours, travel, or urgency.</li>
+    </ol>
+  </div>
+
+  <h3>The inputs</h3>
+  <div class="defs">
+    <div class="row"><div class="term">Busy times</div><div class="desc"><p>Recurring blocks to avoid — sleep, work, meals, commute. See <a href="#capacity">Capacity &amp; open hours</a>.</p></div></div>
+    <div class="row"><div class="term">Open hours</div><div class="desc"><p>The budget left after busy times. This caps <em>how many minutes of items</em> a day can hold, not just clock time.</p></div></div>
+    <div class="row"><div class="term">Fixed events</div><div class="desc"><p>Timed tasks and appointments — placed by clock first, everything else works around them.</p></div></div>
+    <div class="row"><div class="term">Habit fields</div><div class="desc"><p>Duration, priority, flexibility, allowed/preferred windows, breakable + min chunk, places, days.</p></div></div>
+    <div class="row"><div class="term">Places &amp; travel</div><div class="desc"><p>Your saved places plus travel edges between them (drive/walk/bike/transit).</p></div></div>
+    <div class="row"><div class="term">Order links</div><div class="desc"><p>"Before/after" chains you set up — temporary for today, or recurring in Schedule. See <a href="#order-links">Habit order</a>.</p></div></div>
+  </div>
+
+  <h3>Two engines: simple vs smarter packing</h3>
+  <p>There are two packers, switched by the <strong>smarter packing</strong> toggle (Settings → advanced; on by default):</p>
+  <ul>
+    <li><strong>Off (simple)</strong> — a fast greedy pass. Instant; used for previews and as a fallback.</li>
+    <li><strong>On (smarter)</strong> — an exact optimizer that solves each day globally, can hold multiple candidate start times per item and pick the best non-overlapping set, plus a week-level repair pass. Better on <em>tight</em> days where several items compete for one narrow gap, and it protects items that have very few open slots.</li>
+  </ul>
+  <p>Both satisfy the same hard rules. If the optimizer can't load or a day's solve times out, Tings silently falls back to the simple packer so the agenda always renders. While the exact optimizer is still running you may briefly see a "fast preview" state in the day audit.</p>
+
+  <h3>What happens when a day overflows</h3>
+  <p>When capacity runs out, the weight function picks winners: a <strong>scarce narrow window beats a broad higher-priority item</strong> (the gym opens 6–7am; reading can happen anytime). Within the same scarcity band, higher priority wins (P0 before P5), and within a priority your home creation order is kept. Anything that can't fit today is <strong>pulled forward to another eligible day</strong> rather than dropped — only items with no viable day anywhere are left out. A habit whose hard window is genuinely too small for its duration is never force-fit.</p>
+
+  <div class="callout tip"><i class="ti ti-bulb"></i><div><p>Because the whole week is solved together, an item that doesn't fit today quietly lands tomorrow or later — you don't have to reschedule anything by hand.</p></div></div>
+
+  <div class="shot tall"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: a packed week with busy blocks, travel cards, and habit placements</span></div>
+</section>
+
+<!-- ========================== SCENARIOS ========================== -->
+<section id="scenarios">
+  <h2><i class="ti ti-theater"></i> Planner scenarios</h2>
+  <p>The best way to understand the planner is to see what it does in real situations. Each scenario shows a setup and the resulting agenda.</p>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-flame"></i> 1. Packed day drops the lowest priority</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>Cardio, 50 min, <strong>P0</strong></li><li>Reading, 50 min, <strong>P5</strong></li><li>Only 60 min of capacity today</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Cardio gets the slot</li><li>Reading is dropped today, rolled forward to a lighter day</li><li>The unused gap is flagged "budget-capped," not a scheduler miss</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-route"></i> 2. Errands across town share one trip</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>A morning home routine</li><li>Two errands at far-but-adjacent places (~28 km away, ~500 m apart)</li><li>Travel mode: walking</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Both errands land on the <strong>same day</strong> with a short hop between them</li><li>A thin <strong>travel card</strong> reads "leave by … · Nm · Home → FarA"</li><li>Total commuting is a fraction of two separate round-trips</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-puzzle"></i> 3. A breakable task splits into chunks</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>"Write report," 90 min, <strong>breakable</strong>, min chunk 30</li><li>Day fragmented by blocks into a 40-min gap and a 50-min gap</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Splits into <strong>40 + 50</strong> (the largest valid piece per gap — never 30+30+30)</li><li>If forced into three 30-min gaps plus a 10-min gap, you get 30+30+30+10</li><li>The first card shows a progress crown; later chunks show trail dots</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-link"></i> 4. Habit chained after a morning routine</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>Three habits; you drag one to be <strong>right after</strong> "Morning routine"</li><li>An unrelated high-priority item also wants that slot</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>The chained habit sits directly after the routine, nothing between them</li><li>The <strong>unrelated item is the one removed</strong>, not the linked pair</li><li>Order-link marks on the card show the partner's emoji</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-mosque"></i> 5. Prayer-anchored window beats a flexible P0</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>"Sunrise stretch," 5 min, allowed sunrise+5 → sunrise+35, P2</li><li>"Deep work," 60 min, anywhere, <strong>P0</strong></li><li>Sleep until sunrise−8h</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>The <strong>scarce sunrise window wins</strong> the morning gap for stretch</li><li>The flexible P0 deep work places <em>outside</em> that gap despite higher priority</li><li>A prayer whose window already closed rolls to tomorrow's window</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-moon-stars"></i> 6. Sleep block shifts with the sunrise</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>The sample sun-based sleep block (sunrise−8h → sunrise)</li><li>Your city is set</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Sleep always totals exactly 8h, wrapping overnight across seasons</li><li>The first open minute tracks sunrise — earlier in summer, later in winter</li><li>A sunrise habit between sleep and breakfast now places correctly</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-calendar-share"></i> 7. Plan-by defers to a lighter day</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>Work, 6h breakable, P0</li><li>A 1h clinic meeting tomorrow</li><li>Two plan-by errands (2h each) due later this week</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Work still hits 6h tomorrow</li><li>At most one errand lands tomorrow; both place on quieter days within their plan-by windows</li><li>If they'd fit the slack, both place ASAP — no over-deferring</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-pin-top"></i> 8. "Do this now" jumps something to the top</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>Three equal-priority tasks on today</li><li>You long-press-drag one to the very top of today</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>That task is pinned to the top and starts a session timer from now</li><li>It <strong>auto-logs</strong> after its duration, then clears</li><li>Completing any habit clears today's order edges touching it</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-bolt"></i> 9. Do-early pulls a flexible item into today</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>"Laundry," target 2× / 7d, flexibility 2 days</li><li>Its target day is overloaded; today has 4h free</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Laundry is pulled into <strong>today</strong>, shown under today with an <strong>early pill</strong></li><li>If today were full, it'd fall back to "coming up" with no early pill</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-door-open"></i> 10. Open-time pill reveals the gaps</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>Busy blocks for sleep, work, dinner</li><li>A few habits with windows</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Each day header shows an <strong>"open time" pill</strong>: "3h open · 1h biggest stretch"</li><li>Tap it for a free/busy strip and a list of every open gap</li><li>No pill when the day has under 10 min free</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="sc-head"><i class="ti ti-clock-2"></i> 11. Preferred time is a soft nudge</div>
+    <div class="sc-grid">
+      <div class="sc-part"><span class="sc-label">You set up</span>
+        <ul><li>A habit with an allowed window all day and a <strong>preferred</strong> start of 2pm</li></ul>
+      </div>
+      <div class="sc-part"><span class="sc-label">The agenda</span>
+        <ul><li>Placed at ~2pm when the session fits</li><li>But the nudge never overrides a hard allowed window or a busy block</li><li>If 2pm is blocked, it falls back to the clock</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== CAPACITY ========================== -->
+<section id="capacity">
+  <h2><i class="ti ti-clock-hour-4"></i> Capacity &amp; open hours</h2>
+  <p>The planner treats your week as a finite container of <em>open minutes</em>. Two things define it:</p>
+  <div class="defs">
+    <div class="row"><div class="term">Busy times</div><div class="desc"><p>Recurring blocks you don't want filled — sleep, work, meals, commute, school. Add them in <a href="#settings">Settings → busy times</a>. Each has a start/end (fixed clock or <a href="#dynamic-times">dynamic</a>), chosen weekdays, and optional place. You can override a single date without touching the recurring rule.</p></div></div>
+    <div class="row"><div class="term">Open hours</div><div class="desc"><p>What's left after busy times. The budget caps <strong>minutes of doable items</strong> per day, not raw clock time — so a 600-min budget means 600 min of items even if the clock has more literal gaps.</p></div></div>
+  </div>
+  <h3>How free time shows up</h3>
+  <ul>
+    <li><strong>Open-time pill</strong> on each day header — tap for a free/busy strip and the list of gaps.</li>
+    <li><strong>Day audit</strong> — triple-tap a day header for a detailed scorecard (capacity, eligible work, the planner's decision trace). Power-user tool.</li>
+    <li><strong>Cancelling a busy block</strong> for a date frees its exact minutes and writes a one-day override; undo restores it.</li>
+  </ul>
+  <div class="callout tip"><i class="ti ti-bulb"></i><div><p>If a day is overfull, the lowest-priority items are dropped first and rolled forward — Tings never silently overbooks you.</p></div></div>
+</section>
+
+<!-- ========================== PRIORITY ========================== -->
+<section id="priority">
+  <h2><i class="ti ti-flag-star"></i> Priority &amp; urgency</h2>
+  <p>Every Ting has a <strong>priority</strong> from <strong>P0</strong> (critical) to <strong>P5</strong> (someday). Priority claims today's time first, and is dropped first when a day overflows.</p>
+  <table>
+    <thead><tr><th>Priority</th><th>Meaning</th><th>Use for</th></tr></thead>
+    <tbody>
+      <tr><td><strong>P0</strong></td><td>Critical — claims time first</td><td>Non-negotiables, deadlines</td></tr>
+      <tr><td><strong>P1</strong></td><td>High</td><td>Important recurring work</td></tr>
+      <tr><td><strong>P2</strong></td><td>Normal (default)</td><td>Most habits</td></tr>
+      <tr><td><strong>P3</strong></td><td>Low</td><td>Nice-to-haves</td></tr>
+      <tr><td><strong>P4</strong></td><td>Lower</td><td>Background goals</td></tr>
+      <tr><td><strong>P5</strong></td><td>Someday — dropped first</td><td>Backlog, wishful items</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Urgency is separate from priority.</strong> A low-priority habit that's been missed for days still surfaces, while a high-priority one that's comfortably ahead stays calm. The card's status color reflects the combination. Note: a <strong>scarce narrow time window beats a broad higher-priority item</strong> — the planner protects things that can only happen in one slot.</p>
+  <p>Priority also shows as a colored accent on the card left bar (P0 = strongest tone, P5 = muted).</p>
+</section>
+
+<!-- =========================== RHYTHM =========================== -->
+<section id="rhythm">
+  <h2><i class="ti ti-repeat"></i> Rhythm &amp; flexibility</h2>
+  <p>Two numbers define a habit's rhythm:</p>
+  <div class="defs">
+    <div class="row"><div class="term">Target</div><div class="desc"><p><code>times × in N days</code> — e.g. <code>3× in 7d</code> or <code>1× in 30d</code>. The crown dial in the add/detail sheet picks the period (1–183 days).</p></div></div>
+    <div class="row"><div class="term">Flexibility</div><div class="desc"><p>How many days <em>early</em> a session can count. "2× in 7d, 2d flexible" lets Tuesday's session move to Sunday if the week is packed. On <strong>tasks</strong>, flexibility flips: how many days <em>before</em> the due date it starts surfacing.</p></div></div>
+  </div>
+  <p>Based on these, a card shows a status instead of a brittle streak (see <a href="#status">Status</a>). There's no streak counter and nothing "resets" — the rhythm just rolls forward.</p>
+</section>
+
+<!-- =========================== STATUS =========================== -->
+<section id="status">
+  <h2><i class="ti ti-traffic-light"></i> Status: done / almost / behind</h2>
+  <p>Every card carries a status driven by how recent your last log is versus your target rhythm:</p>
+  <div class="chips">
+    <span class="chip teal">done — on pace</span>
+    <span class="chip amber">almost — close</span>
+    <span class="chip red">behind — needs attention</span>
+    <span class="chip">new — not started yet</span>
+  </div>
+  <ul>
+    <li><strong>Build habits:</strong> "done" when last log is within target days; "almost" up to ~1.35× target; "behind" beyond that.</li>
+    <li><strong>Limit habits:</strong> direction inverts — "done" when enough days have <em>passed</em> since the last log.</li>
+    <li><strong>Stop habits:</strong> tracked by clean days; each clean day is a green dot.</li>
+    <li><strong>New:</strong> never logged yet — surfaced gently so it doesn't nag.</li>
+  </ul>
+  <p>The status pill on a card can show a percentage too (e.g. <code>72%</code>), tinted to match. Toggle which marks appear in <a href="#appearance">Look &amp; feel</a>.</p>
+</section>
+
+<!-- ============================ TINGS ============================ -->
+<section id="tings">
+  <h2><i class="ti ti-list-details"></i> Tings, explained</h2>
+  <p>Every item in your list is a <strong>Ting</strong>. There are three families, each modelling a different kind of commitment.</p>
+
+  <h3 id="habits">Habits — build, limit, stop</h3>
+  <p>Habits repeat on a rhythm. When you add one you choose a <em>kind</em>:</p>
+  <div class="chips">
+    <span class="chip teal"><i class="ti ti-trending-up"></i> build — keep it up</span>
+    <span class="chip amber"><i class="ti ti-trending-down"></i> limit — do less</span>
+    <span class="chip red"><i class="ti ti-ban"></i> stop — quit entirely</span>
+  </div>
+  <div class="defs">
+    <div class="row"><div class="term">build</div><div class="desc"><p>"Exercise 3× in 7 days." You want this to happen often. Turns green when you're on pace.</p></div></div>
+    <div class="row"><div class="term">limit</div><div class="desc"><p>"Social media under 30 min/day." You're capping something. Logging still counts; the target frames it as a ceiling.</p></div></div>
+    <div class="row"><div class="term">stop</div><div class="desc"><p>"No snooze." A quit. Clean days (no slip) are good days; the month grid shows your streak of clean days.</p></div></div>
+  </div>
+  <p>Each habit has a <strong>target</strong> ("how often") like <code>2× in 7d</code>, optional <strong>flexibility</strong>, a <strong>duration</strong>, and a <strong>priority</strong>. Stop habits deprioritise in the today list (they're absence-tracking, not something to schedule).</p>
+
+  <h3 id="tasks">Tasks — one-off</h3>
+  <p>A task happens <em>once</em>. No rhythm — just an optional due date. "Call the dentist back." Completion is simply your first log.</p>
+  <ul>
+    <li><strong>No due date</strong> → a "someday" task; sits in <em>coming up</em> until you plan or finish it.</li>
+    <li><strong>Due date only</strong> → surfaces as it approaches (controlled by its flexibility window). A flexibility of 0 makes it a firm deadline.</li>
+    <li><strong>Due date + time</strong> → becomes a <em>fixed appointment</em> on the agenda, exported to your phone calendar as a timed event.</li>
+  </ul>
+
+  <h3 id="events">Fixed-time events</h3>
+  <p>An event is a hard point in time — "Dentist Tue 3:00pm," "Flight 6am." Events are <strong>never rescored or shuffled</strong>; they're placed by clock and everything else is planned around them. They appear on the agenda and can be exported to your phone calendar. (You create one by giving a task a date <em>and</em> a time, or via calendar import.)</p>
+
+  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the type selector (habit / task) with the target slider</span></div>
+</section>
+
+<!-- ============================ EMOJI ============================ -->
+<section id="emoji">
+  <h2><i class="ti ti-mood-happy"></i> Emoji &amp; visual identity</h2>
+  <p>Tings leans on emoji to make your list <strong>scannable at a glance</strong>. A coloured circle with a familiar glyph is far faster to recognise than a wall of text — that's why the pulse icon on every card, the detail header, and the order-link marks all show the habit's emoji.</p>
+
+  <h3>Auto-suggested from the name</h3>
+  <p>When you type a name, Tings suggests an emoji after a short pause. The matcher tries, in order:</p>
+  <ol>
+    <li><strong>Multi-word phrases</strong> — "walk the dog" → 🐕 (longest phrase wins).</li>
+    <li><strong>Single strong keywords</strong> — "run" → 🏃.</li>
+    <li><strong>Fuzzy matches</strong> — small typos still resolve.</li>
+    <li><strong>Modifier words</strong> (morning, daily, weekly) as a last resort.</li>
+  </ol>
+  <p>The map covers ~300 concepts — fitness, food, faith (pray, quran, dua, ramadan, masjid…), study, work, parenting, home, sports, money, travel, screen time, and abstract goals (resolution → ⭐, quit/stop → 🚫, limit → ⛔).</p>
+
+  <h3>Quick pick &amp; your own</h3>
+  <p>No good match? Tap the emoji preview tile to open the editor and either type any emoji or pick from <strong>18 neutral quick-pick chips</strong> (🔥 🌟 📌 🏆 ✨ …). These are deliberately chosen so a chip never fights an auto-suggestion.</p>
+
+  <h3>Emoji background colours (disambiguation)</h3>
+  <p>Every emoji sits on a coloured disk from a 12-colour palette (teal, amber, red, purple, blue, green, pink, orange, indigo, cyan, lime, slate) — or no background. Tings <strong>auto-disambiguates</strong>: if two habits share the same emoji, the second one is auto-assigned a different colour so the <em>emoji + colour</em> pair stays unique across your list.</p>
+  <div class="chips">
+    <span class="chip teal">🏃 teal</span><span class="chip amber">🏃 amber</span><span class="chip purple">🏃 purple</span>
+    <span class="chip">no background</span>
+  </div>
+
+  <h3>Default icon when blank</h3>
+  <p>Leave the emoji blank and the card shows a tasteful default icon for the type (a heart-ish glyph for build, down-arrow for limit, etc.) in a muted tone.</p>
+
+  <div class="callout tip"><i class="ti ti-bulb"></i><div><p>Once you manually edit an emoji, auto-suggestion stops overriding it — your choice sticks. In the detail sheet, a habit that already had an emoji when you opened it is never auto-changed on rename.</p></div></div>
+</section>
+
+<!-- ============================ HOME ============================ -->
+<section id="home">
+  <h2><i class="ti ti-home"></i> Home: today's agenda + your list</h2>
+  <p>Home is the screen you'll see most. It's <strong>today's agenda plus your full list of habits and tasks</strong> — not a dump of everything, but not just today either. What floats up: pinned items, things due or ready today, fixed appointments, and anything you've planned for soon. Everything else sits in <em>coming up</em> / <em>the rest</em>.</p>
+
+  <div class="shot tall"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: full home screen — top bar, agenda list with day sections, bottom nav</span></div>
+
+  <h3>Regions, top to bottom</h3>
+  <div class="defs">
+    <div class="row"><div class="term">Top bar</div><div class="desc"><p>Tings logo (tap for help &amp; settings — "how it works"), search field, calendar icon, <kbd>+</kbd>, search toggle. Hides on scroll-down, reappears on scroll-up.</p></div></div>
+    <div class="row"><div class="term">Quota bar</div><div class="desc"><p>Only shows if storage gets large — warns that old dense activity may be compacted.</p></div></div>
+    <div class="row"><div class="term">Filter row</div><div class="desc"><p>Presence picker, place chips, topic chips. Narrows the list without changing what's due. Hidden in minimal mode.</p></div></div>
+    <div class="row"><div class="term">The list</div><div class="desc"><p>Day section headers + habit/task cards + busy-block/travel cards. A loading skeleton shows on cold open until the planner supplies the week.</p></div></div>
+    <div class="row"><div class="term">Bottom nav</div><div class="desc"><p>Calendar · <kbd>+</kbd> (emphasised centre) · search. Search and calendar are hidden until you have enough to use them.</p></div></div>
+  </div>
+</section>
+
+<!-- ======================== CARD ANATOMY ======================== -->
+<section id="card-anatomy">
+  <h2><i class="ti ti-id-badge-2"></i> Reading a card</h2>
+  <p>A card packs a lot into a small space. Every mark is optional (toggle in <a href="#appearance">Look &amp; feel</a>).</p>
+  <div class="defs">
+    <div class="row"><div class="term">Pulse icon (left)</div><div class="desc"><p>The coloured circle with your emoji. Colour reflects status: <strong>teal</strong> (on track/fresh), <strong>amber</strong> (due soon), <strong>red</strong> (overdue/urgent), <strong>purple</strong> (a quit habit, recent), <strong>quiet</strong> (a never-logged task). Tap to log.</p></div></div>
+    <div class="row"><div class="term">Name + agenda pill</div><div class="desc"><p>The title (ellipsises first), and if it has a placed agenda row, a small time pill like "5:30p".</p></div></div>
+    <div class="row"><div class="term">Status line (cue)</div><div class="desc"><p>A short phrase: "Ready to start", "Planned today", "Clean today", "N days clean", "Snoozed for now", "Needs a day by today", "2d overdue", "Scheduled", "Someday"…</p></div></div>
+    <div class="row"><div class="term">Context marks</div><div class="desc"><p>Small icon pills: progress %, early, doing-now, order-link (arrow + partner emoji), sample, pin, due/scheduled/plan-by, rhythm, duration, flexibility, day-schedule, time-window, topics, place, next-plan, snoozed-until.</p></div></div>
+    <div class="row"><div class="term">Trail / crown</div><div class="desc"><p>Most cards show a two-week <strong>trail</strong> of dots (one for last week, seven for this week, today highlighted). <strong>Breakable</strong> cards show a progress crown slider instead. A running <strong>session timer</strong> overlays a progress bar.</p></div></div>
+    <div class="row"><div class="term">Quick actions (right)</div><div class="desc"><p>Three icon buttons on full cards: activity, snooze, remove (mirror the swipe actions). Hidden in minimal mode and on breakable cards.</p></div></div>
+  </div>
+  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: a single habit card, annotated</span></div>
+</section>
+
+<!-- =========================== LOGGING =========================== -->
+<section id="logging">
+  <h2><i class="ti ti-checks"></i> Logging &amp; value logs</h2>
+  <h3>Three ways to log</h3>
+  <ul>
+    <li><strong>Tap the pulse icon</strong> — quick log right now.</li>
+    <li><strong>Double-tap the card body</strong> — same quick log (a single tap on the body opens detail instead).</li>
+    <li><strong>Detail header pulse</strong> — logs from inside the detail view.</li>
+  </ul>
+  <p>Taps are forgiving: if your finger drifts while scrolling, the tap is suppressed so you never log by accident.</p>
+
+  <h3>Breakable cards log a chunk, not the whole budget</h3>
+  <p>Tapping the pulse on a breakable habit logs a <strong>suggested chunk</strong> (the min, or the placed partial) — never the full remaining budget — so one tap can't accidentally "finish" a multi-hour task. Drag the crown to set a larger chunk; the pulse commits it.</p>
+
+  <h3>Logging a value or note</h3>
+  <p>If "log a value or note" is on (Effort page), each log can carry a number (weight, reps, pages, $) and an optional note. A small sheet asks for it; tap <em>skip</em> to log without a value.</p>
+
+  <h3>Plans vs actual logs</h3>
+  <p>You can also <strong>plan</strong> a session for a future/past day from the activity sheet or month grid. Plans are tentative; an actual log later consumes the plan. Toasts offer quick follow-ups like "done now", "plan instead", or "plan today" (see <a href="#toasts">Toasts</a>).</p>
+</section>
+
+<!-- ========================= SWIPE ACTIONS ======================= -->
+<section id="swipe-actions">
+  <h2><i class="ti ti-arrows-horizontal"></i> Swipe actions</h2>
+  <p>Swipe a card horizontally to reveal quick actions. <strong>Swipe right</strong> reveals the left shelf; <strong>swipe left</strong> reveals the right shelf. Only one row is open at a time.</p>
+
+  <h3>Swipe right → (left shelf)</h3>
+  <div class="chips">
+    <span class="chip teal"><i class="ti ti-pinned"></i> pin / unpin</span>
+    <span class="chip green"><i class="ti ti-check"></i> keep (samples only)</span>
+    <span class="chip"><i class="ti ti-history"></i> activity</span>
+    <span class="chip blue"><i class="ti ti-player-play"></i> session / stop</span>
+  </div>
+  <ul>
+    <li><strong>Pin</strong> — keep above the auto-ordering (e.g. a morning anchor).</li>
+    <li><strong>Keep</strong> — sample habits only: converts it into a permanent habit.</li>
+    <li><strong>Activity</strong> — opens the per-habit activity and trend sheet.</li>
+    <li><strong>Session / stop</strong> — start or stop a focus timer (timer-eligible habits only).</li>
+  </ul>
+
+  <h3>Swipe left → (right shelf)</h3>
+  <div class="chips">
+    <span class="chip amber"><i class="ti ti-moon"></i> snooze</span>
+    <span class="chip red"><i class="ti ti-trash"></i> remove</span>
+  </div>
+  <ul>
+    <li><strong>Snooze</strong> — open the snooze sheet: 1d / 3d / 7d / 14d, or 1 / 2 repetitions.</li>
+    <li><strong>Remove</strong> — delete, with an undo in the toast right after.</li>
+  </ul>
+  <p>The crown-dial area is excluded from swipe arming, so turning a breakable dial never swipes the card.</p>
+</section>
+
+<!-- =========================== REORDER =========================== -->
+<section id="reorder">
+  <h2><i class="ti ti-arrows-sort"></i> Reorder &amp; doing now</h2>
+  <p>Placed agenda rows can be reordered by hand for today. This is separate from the recurring <a href="#order-links">Schedule links</a>.</p>
+
+  <h3>Long-press, then drag</h3>
+  <ol class="steps">
+    <li><p><strong>Long-press</strong> a card for a moment — it vibrates, a six-dot grip appears, and the card is armed.</p></li>
+    <li><p><strong>Drag</strong> it vertically. Drop indicator lines appear between rows.</p></li>
+    <li><p><strong>Drop</strong> between two cards to set an adjacency, or at the very top of today for "doing now".</p></li>
+  </ol>
+
+  <h3>The "Reorder?" sheet — temporary links</h3>
+  <p>Dropping between cards opens <em>"Reorder? · Just for today. Clears when done."</em> For each neighbour you pick:</p>
+  <div class="defs">
+    <div class="row"><div class="term">off</div><div class="desc"><p>No link.</p></div></div>
+    <div class="row"><div class="term">below / above</div><div class="desc"><p>"Sometime" adjacency — comes after/before the neighbour, but other things can go between.</p></div></div>
+    <div class="row"><div class="term">right below / right above</div><div class="desc"><p>"Direct" adjacency — nothing may go between them.</p></div></div>
+  </div>
+  <p>These order links are <strong>today-only</strong>. Completing a habit clears today's edges touching it; completing a one-shot task also clears future-day edges. The Actions page lists every link with an unlink button and a clear-all.</p>
+
+  <h3>"Do this now" — drop at the top of today</h3>
+  <p>Dropping a card at the <strong>very top of today</strong> opens <em>"Do this Now? · Keeps this on top and logs it automatically after Nm."</em> Confirming:</p>
+  <ul>
+    <li>Pins it to the top of today from this moment.</li>
+    <li>Starts a session timer that <strong>auto-logs</strong> the habit when its target time passes, then clears.</li>
+    <li>Optionally links the card below (right-above / sometime).</li>
+  </ul>
+  <p>Doing-now is per calendar day and clears on day rollover. Manual mode (if you start a session by hand) never auto-expires — it runs until you stop it.</p>
+  <div class="callout note"><i class="ti ti-info-square-rounded"></i><div><p>Order links never conflict with recurring Schedule links — if you try to set one that clashes, Tings tells you to edit Habit order in Schedule instead.</p></div></div>
+</section>
+
+<!-- ============================ REACH ============================ -->
+<section id="reach">
+  <h2><i class="ti ti-hand-grab"></i> Easier reach</h2>
+  <p>On big phones the top cards can be a stretch. Turn on <strong>easier reach</strong> (default on) and <strong>pull down and hold at the top</strong> — the first cards slide down into thumb range for a few seconds. A hard upward flick at the top triggers it too. The gesture auto-dismisses and any touch cancels the hold.</p>
+</section>
+
+<!-- =========================== FILTERS =========================== -->
+<section id="filters">
+  <h2><i class="ti ti-filter"></i> Search &amp; filters</h2>
+  <h3>Search</h3>
+  <p>Tap the search icon to look up habits by name, topic, or place. Search is a <em>lookup</em>, not an agenda view — it skips day sections, busy/travel cards, and today/overdue grouping; results are matching habits ranked by relevance. (Search appears once you have ~10 habits or a completed task.)</p>
+
+  <h3>Filter chips</h3>
+  <p>The row above the list narrows what's shown <strong>without changing what's due</strong>:</p>
+  <div class="defs">
+    <div class="row"><div class="term">Presence</div><div class="desc"><p>"Where are you?" — sets today's starting place for travel/leave-by math. Shows "at {place}" / "near {place}" when GPS-matched. Doesn't filter the list.</p></div></div>
+    <div class="row"><div class="term">Place chips</div><div class="desc"><p>One per place actually used by a habit, plus "anywhere" / "no place". Toggle on/off.</p></div></div>
+    <div class="row"><div class="term">Topic chips</div><div class="desc"><p>One per topic in use, plus "no topic". Toggle on/off.</p></div></div>
+  </div>
+  <p>Stale filters reset to "all" if the underlying dimension disappears, and sideways scrolling on the chip rows won't accidentally toggle a chip.</p>
+</section>
+
+<!-- ======================== DAY SECTIONS ======================== -->
+<section id="day-sections">
+  <h2><i class="ti ti-layout-list"></i> Day sections &amp; week view</h2>
+  <p>Home groups your list into day sections. Two layouts, switched by the <strong>week by day</strong> setting:</p>
+  <ul>
+    <li><strong>Week by day (default)</strong> — sections for <em>today</em>, <em>tomorrow</em>, then weekday+date ("Wed 15"), followed by <em>overdue</em>, <em>coming up</em>, <em>the rest</em>.</li>
+    <li><strong>Today / overdue / coming up</strong> — the classic three buckets plus <em>the rest</em>.</li>
+  </ul>
+  <p><strong>Pinned</strong> habits always render first under their own header, regardless of mode. Section headers are sticky and stack as you scroll.</p>
+
+  <h3>Busy blocks &amp; travel cards</h3>
+  <p>Inside the day sequence you'll also see:</p>
+  <ul>
+    <li><strong>Busy cards</strong> — "{label} · 9AM–5PM · {place}" with an X to clear it for today. Tap to edit. Consecutive blocks collapse into a merge with a chevron.</li>
+    <li><strong>Travel cards</strong> — "leave by {time} · Nm · {from} → {to}" with a pencil if you manually edited it. Tap to edit the leg (or open in maps, or reset to estimate).</li>
+  </ul>
+  <p>The <strong>busy blocks &amp; travel</strong> setting chooses whether to show them for all days or just the next 12 hours.</p>
+</section>
+
+<!-- ========================= INDICATORS ========================= -->
+<section id="indicators">
+  <h2><i class="ti ti-dots-circle"></i> Pills &amp; indicators</h2>
+  <div class="defs">
+    <div class="row"><div class="term">Open-time pill</div><div class="desc"><p>On day headers: "3h open · 1h biggest stretch". Tap for the free/busy strip + gap list. Hidden under 10 min free.</p></div></div>
+    <div class="row"><div class="term">Missed / slipped pill</div><div class="desc"><p>On the today header: "N missed" — habits that were suggested but slipped off today. Tap for the missed sheet (today's misses + "still open from yesterday").</p></div></div>
+    <div class="row"><div class="term">Early pill</div><div class="desc"><p>On cards pulled forward into today: "early" with a reason in the tooltip ("preferred day is packed", "after {linked}").</p></div></div>
+    <div class="row"><div class="term">Doing-now pill</div><div class="desc"><p>"auto · Nm" or "session · Nm" on the card being focused right now.</p></div></div>
+    <div class="row"><div class="term">Status pill</div><div class="desc"><p>"72%" tinted to done/almost/behind, or "new".</p></div></div>
+  </div>
+</section>
+
+<!-- =========================== TOASTS =========================== -->
+<section id="toasts">
+  <h2><i class="ti ti-message-2"></i> Toasts &amp; undo</h2>
+  <p>After most actions a small toast appears with quick follow-ups. The <strong>action toast</strong> can carry up to four buttons:</p>
+  <div class="defs">
+    <div class="row"><div class="term">undo / restore / show</div><div class="desc"><p>Always reversible — reverses logging, planning, deleting, snoozing, or freeing a busy block.</p></div></div>
+    <div class="row"><div class="term">open</div><div class="desc"><p>Re-opens the detail for the item you just logged.</p></div></div>
+    <div class="row"><div class="term">action</div><div class="desc"><p>Context-sensitive: "done now", "plan instead", "plan today", or "keep plan" after a log.</p></div></div>
+    <div class="row"><div class="term">snooze until planned</div><div class="desc"><p>After planning a future session: hides the habit until exactly that planned time.</p></div></div>
+  </div>
+</section>
+
+<!-- ======================== EMPTY STATES ======================== -->
+<section id="empty-states">
+  <h2><i class="ti ti-empty"></i> Empty states</h2>
+  <p>Home's empty state changes with context:</p>
+  <ul>
+    <li><strong>Brand new:</strong> "habits, tasks, and planning" — tap to try samples.</li>
+    <li><strong>No search matches:</strong> "no matches — try a habit name, topic, or place".</li>
+    <li><strong>Filter excludes everything:</strong> "no habits in {filter}" — tap to reset.</li>
+    <li><strong>All snoozed &amp; hidden:</strong> "hidden for now — tap to show".</li>
+    <li><strong>Everything done:</strong> "all clear".</li>
+    <li><strong>Nothing active:</strong> "nothing active — use Calendar for scheduled items, or + to add".</li>
+  </ul>
+</section>
+
+<!-- ========================== ADD SHEET ========================== -->
+<section id="add-sheet">
+  <h2><i class="ti ti-circle-plus"></i> The add sheet</h2>
+  <p>Tap <kbd>+</kbd> to add a Ting. The basics are on top; tap <em>more options</em> for the rest.</p>
+
+  <h3>Top-level fields</h3>
+  <div class="defs">
+    <div class="row"><div class="term">Name</div><div class="desc"><p>Up to 60 chars. An emoji is auto-suggested from the name; tap the preview tile to edit it (input, quick-pick chips, background colours). See <a href="#emoji">Emoji</a>.</p></div></div>
+    <div class="row"><div class="term">Type</div><div class="desc"><p><em>habit</em> or <em>task</em>.</p></div></div>
+    <div class="row"><div class="term">How often</div><div class="desc"><p>For habits: a crown dial plus <code>times × in N days</code> (1–183). For tasks: a due date field instead. Help text adapts to the kind (build / limit / stop / task).</p></div></div>
+    <div class="row"><div class="term">Due date &amp; time</div><div class="desc"><p>Tasks only. Date alone = soft deadline (flexibility 0 makes it firm). Date + time = a fixed appointment on the agenda and calendar export.</p></div></div>
+  </div>
+
+  <h3>More options (disclosure)</h3>
+  <div class="defs">
+    <div class="row"><div class="term">Priority</div><div class="desc"><p>P0–P5. "P0 claims today's time first; P5 is dropped first when the day overflows."</p></div></div>
+    <div class="row"><div class="term">Auto mark done</div><div class="desc"><p>Blank = you tap manually. Set minutes and a planned/scheduled occurrence logs itself that long after its start. Manual sessions keep counting until you stop them.</p></div></div>
+    <div class="row"><div class="term">Topics &amp; places</div><div class="desc"><p>Tag the item and/or restrict it to places. Tap <em>+ new place</em> to drop a pin on the map; tap <em>+ new topic</em> to make a label. Place chips cycle preference: off → on → little ☆ → high ★ → avoid –.</p></div></div>
+  </div>
+
+  <p>On save (limit 300 habits), the sheet closes, the list re-renders, and the new item's detail opens on the <strong>Schedule</strong> page so you can fine-tune.</p>
+
+  <div class="callout tip"><i class="ti ti-bulb"></i><div><p>Set your usual <a href="#settings-defaults">new-habit defaults</a> once (duration, priority, topics, splitting) and every new Ting starts that way.</p></div></div>
+</section>
+
+<!-- =========================== DETAIL =========================== -->
+<section id="detail">
+  <h2><i class="ti ti-adjustments-horizontal"></i> The detail view</h2>
+  <p>Tap a card's body (not its icon) to open detail. It's a swipeable <strong>pager</strong> of six pages with dots at the bottom; on wider screens the same pages behave like tabs. The header card shows the pulse (tap to log), name, and a cue line.</p>
+  <div class="chips">
+    <span class="chip teal"><i class="ti ti-calendar-month"></i> calendar</span>
+    <span class="chip purple"><i class="ti ti-chart-line"></i> insight</span>
+    <span class="chip blue"><i class="ti ti-calendar-time"></i> schedule</span>
+    <span class="chip amber"><i class="ti ti-progress-check"></i> effort</span>
+    <span class="chip"><i class="ti ti-id"></i> identity</span>
+    <span class="chip red"><i class="ti ti-dots"></i> actions</span>
+  </div>
+  <p>The page you land on is chosen for you: a habit with order constraints opens on <em>actions</em>; a task opens on <em>effort</em>; otherwise a habit opens on <em>calendar</em>. In <strong>minimal mode</strong>, insight &amp; effort pages are hidden and the essentials (duration, auto-mark, due) move onto the schedule page.</p>
+  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: detail view with the six page dots</span></div>
+</section>
+
+<!-- ====================== DETAIL: MONTH ====================== -->
+<section id="detail-month">
+  <h2><i class="ti ti-calendar-month"></i> Month page</h2>
+  <p>A calendar of this habit's history, with prev/next month nav and a label like "Aug 2026 · 5".</p>
+  <ul>
+    <li><strong>Summary stats</strong> — days, entries, planned counts.</li>
+    <li><strong>Month grid</strong> — each day color-coded with a dot: <span class="chip teal">done</span> <span class="chip amber">almost</span> <span class="chip red">behind</span> <span class="chip blue">planned</span>. Tap a day to open the day-logs sheet for that day/habit.</li>
+    <li><strong>Plan-by date</strong> (habits only) — a soft one-off target. "Set a one-off plan-by date to pull this habit into the week planner without picking a specific day." Buttons: <em>this week</em> (sets end of week) and <em>clear</em>. The planner finds a free day on or before it; logging clears it.</li>
+  </ul>
+  <div class="callout note"><i class="ti ti-info-square-rounded"></i><div><p>Plan-by overrides weekday exclusion — a plan-by-today habit stays on today's agenda even if its allowed weekdays would normally skip today.</p></div></div>
+</section>
+
+<!-- ===================== DETAIL: INSIGHT ===================== -->
+<section id="detail-insight">
+  <h2><i class="ti ti-chart-line"></i> Insight page</h2>
+  <ul>
+    <li><strong>About text</strong> — a plain sentence: "Last entry was 2d ago. 5 days left in this rhythm." / "This is 3 days overdue." / "A someday task — pin it or add a due date to bring it forward."</li>
+    <li><strong>Trend label</strong> — on pace / behind / overdue / due today / watch / completed / someday / no entries yet.</li>
+    <li><strong>Stats</strong> — a score ring (0–100) with a title, plus tiles: since last / until next, usual gap, last-30d done, streak (or clear days for limit/stop), recent gaps pace strip, total entries.</li>
+    <li><strong>Gap-history graph</strong> — bar chart of recent gaps with the target line. "Shorter is better" for build; "longer is better" for limit/stop.</li>
+  </ul>
+</section>
+
+<!-- ==================== DETAIL: SCHEDULE ==================== -->
+<section id="detail-schedule">
+  <h2><i class="ti ti-calendar-time"></i> Schedule page</h2>
+  <p>Tells the planner <em>when</em> a Ting is allowed and <em>when it's best</em>. Two layers: <strong>allowed</strong> (hard) and <strong>preferred</strong> (soft). Toggle between them at the top.</p>
+  <ul>
+    <li><strong>Rhythm</strong> (habits) — the crown dial + times × in N days.</li>
+    <li><strong>Habit order</strong> — persistent <a href="#order-links">schedule links</a> (before/after another habit, direct or sometime, optional same-day).</li>
+    <li><strong>Days</strong> — weekday chips (sun–sat) and a "month days" disclosure for specific days of the month (1–31), summarised as "1–5, 15, 22–31".</li>
+    <li><strong>Time window</strong> (allowed) / <strong>best time</strong> (preferred) — see <a href="#days">Days &amp; time windows</a> and <a href="#dynamic-times">Dynamic times</a>.</li>
+  </ul>
+</section>
+
+<!-- ===================== DETAIL: EFFORT ===================== -->
+<section id="detail-effort">
+  <h2><i class="ti ti-progress-check"></i> Effort page</h2>
+  <div class="defs">
+    <div class="row"><div class="term">Duration</div><div class="desc"><p>Length of one session (default 30 min). Drives packing.</p></div></div>
+    <div class="row"><div class="term">Flexibility</div><div class="desc"><p>Days early it can be done (habits) / days before due it surfaces (tasks). "Adds a buffer to your target for planning purposes."</p></div></div>
+    <div class="row"><div class="term">Breakable into chunks</div><div class="desc"><p>Allow splitting, with a <strong>min chunk</strong> floor. "Smallest piece when work must be split. Prefer one continuous session when time allows — this is a floor, not a suggested chunk size."</p></div></div>
+    <div class="row"><div class="term">Log a value or note</div><div class="desc"><p>Track a number each log (weight, reps, pages) plus an optional note.</p></div></div>
+    <div class="row"><div class="term">Auto mark done</div><div class="desc"><p>Blank = manual tap. For breakables the label becomes "auto-log agenda chunks" — each placed chunk is credited after it ends. "This setting never completes a manual session."</p></div></div>
+    <div class="row"><div class="term">Timer / session</div><div class="desc"><p>Start a focused session with an optional <strong>session target</strong> (blank uses duration). Manual sessions count until you stop them.</p></div></div>
+    <div class="row"><div class="term">Due</div><div class="desc"><p>Tasks only — date and optional time (time makes it a fixed appointment).</p></div></div>
+  </div>
+</section>
+
+<!-- ==================== DETAIL: IDENTITY ==================== -->
+<section id="detail-identity">
+  <h2><i class="ti ti-id"></i> Identity page</h2>
+  <ul>
+    <li><strong>Name + emoji</strong> — same editor as the add sheet.</li>
+    <li><strong>Type</strong> — habit / task.</li>
+    <li><strong>Kind</strong> (habits only) — build / limit / stop.</li>
+    <li><strong>Priority</strong> — P0–P5.</li>
+    <li><strong>Topics &amp; places</strong> — same chip rows as the add sheet, including <em>+ new place</em>.</li>
+  </ul>
+</section>
+
+<!-- ==================== DETAIL: ACTIONS ==================== -->
+<section id="detail-actions">
+  <h2><i class="ti ti-dots"></i> Actions page</h2>
+  <h3>Order links block</h3>
+  <p>Lists both kinds of links with per-link unlink and a clear-all:</p>
+  <ul>
+    <li><strong>Recurring (Schedule)</strong> — "recurring · after {name} · with {name} when flex allows". Edit note points to the Schedule page.</li>
+    <li><strong>Per-day reorder edges</strong> — grouped by day, each "{day} · next" (direct) or "{day} · later", with unlink.</li>
+  </ul>
+  <h3>Habit actions</h3>
+  <div class="defs">
+    <div class="row"><div class="term">Pinned</div><div class="desc"><p>"Stay above auto order." A simple toggle.</p></div></div>
+    <div class="row"><div class="term">Export to calendar</div><div class="desc"><p>Tasks only — downloads an <code>.ics</code>. Timed tasks become timed events; due-date tasks become all-day with a reminder. "Add a time or due date first" if neither is set.</p></div></div>
+    <div class="row"><div class="term">Snooze</div><div class="desc"><p>"Hide for a few days." Opens 1d / 3d / 7d / 14d / 1 time / 2 times.</p></div></div>
+    <div class="row"><div class="term">Remove</div><div class="desc"><p>"Remove this habit?" confirm → removes and prunes its order edges; <strong>restore</strong> undo appears in the toast.</p></div></div>
+  </div>
+</section>
+
+<!-- ============================ DAYS ============================ -->
+<section id="days">
+  <h2><i class="ti ti-calendar-time"></i> Days &amp; time windows</h2>
+  <h3>Days</h3>
+  <p>Pick <strong>weekdays</strong> (sun–sat) and, behind the "month days" disclosure, specific <strong>days of the month</strong> (1–31). "Any" is the default.</p>
+
+  <h3>Time windows — allowed vs preferred</h3>
+  <div class="defs">
+    <div class="row"><div class="term">Allowed (hard)</div><div class="desc"><p>A <code>starts</code>–<code>ends</code> window the planner must respect. Once it closes, the habit leaves today's agenda and is marked overdue.</p></div></div>
+    <div class="row"><div class="term">Preferred (soft)</div><div class="desc"><p>A "best time" nudge. The day stays open and the habit still places late if needed — the nudge never overrides a busy block.</p></div></div>
+  </div>
+
+  <h3>Two modes per endpoint</h3>
+  <ul>
+    <li><strong>Fixed</strong> — a clock time like <code>06:00</code>.</li>
+    <li><strong>Dynamic</strong> — relative to an <a href="#dynamic-times">anchor</a>: sunrise/sunset/prayer times, or even another habit's last log. Add a signed offset, combine two expressions, and see a live resolved preview.</li>
+  </ul>
+  <p>Each endpoint has a gear toggle to switch between fixed and dynamic, and a clear button. A live "resolved" line shows the current clock time the expression computes to.</p>
+</section>
+
+<!-- ======================= DYNAMIC TIMES ======================= -->
+<section id="dynamic-times">
+  <h2><i class="ti ti-clock-code"></i> Dynamic &amp; prayer-anchored times</h2>
+  <p>Dynamic windows are how Tings handles times that move — sunrise, sunset, prayer times, or "after my workout habit." Any start/end on a habit window <em>or</em> a busy time can be dynamic.</p>
+
+  <h3>Anchors</h3>
+  <div class="chips">
+    <span class="chip blue">sunrise</span><span class="chip blue">sunset / maghrib</span>
+    <span class="chip purple">fajr · dhuhr · asr · isha</span>
+    <span class="chip teal">another habit</span>
+    <span class="chip">clock time</span>
+  </div>
+  <p>Generic names are Dawn / Noon / Afternoon / Sunset / Night; turn on <strong>Islamic prayer names</strong> for Fajr / Dhuhr / Asr / Maghrib / Isha.</p>
+
+  <h3>Building an expression</h3>
+  <ol class="steps">
+    <li><p>Pick an <strong>anchor</strong> (prayer, sunrise/sunset, or a habit).</p></li>
+    <li><p>Add an <strong>offset</strong> in minutes with a <kbd>+</kbd>/<kbd>−</kbd> sign toggle (e.g. "sunrise +30", "isha −15m", "sunrise −8h"). Clamped to ±720 min.</p></li>
+    <li><p>Optionally toggle <strong>+1d</strong> to use next day's anchor (so "sunrise −8h +1d" means tonight's bedtime against tomorrow's sunrise).</p></li>
+    <li><p>Optionally <strong>combine</strong> a second expression with <em>later of</em> / <em>earlier of</em> — e.g. "earlier of maghrib+1h · isha−15m". The second expression can be another anchor or a clock time.</p></li>
+  </ol>
+  <p>A live resolved preview shows the clock time, or tells you what's missing ("add a location", "pick a habit", "never logged").</p>
+
+  <h3>Habit-relative anchors</h3>
+  <p>An anchor can be <strong>another habit's last log</strong> — "start 15 min after Gym ends." The window updates as that habit gets logged. Cycles (A after B after A) are detected and blocked on save. (Busy times support prayer/fixed anchors only, not habit anchors.)</p>
+
+  <div class="callout note"><i class="ti ti-info-square-rounded"></i><div><p>Prayer anchors need a <strong>city</strong> or place with coordinates. "Set your city to use prayer times" if you haven't.</p></div></div>
+</section>
+
+<!-- ========================= ORDER LINKS ======================== -->
+<section id="order-links">
+  <h2><i class="ti ti-link"></i> Habit order &amp; links</h2>
+  <p>There are two flavours of "this goes with that" — temporary and recurring.</p>
+
+  <h3>Temporary order links (today only)</h3>
+  <p>Created by <a href="#reorder">dragging cards</a> on home. "Just for today. Clears when done." Sometime or direct adjacency; cleared when the involved habits are completed.</p>
+
+  <h3>Recurring schedule links</h3>
+  <p>Defined in the Schedule page's <strong>habit order</strong> block ("add link"). Each link:</p>
+  <div class="defs">
+    <div class="row"><div class="term">Direction</div><div class="desc"><p>before / after the chosen partner habit.</p></div></div>
+    <div class="row"><div class="term">Adjacency</div><div class="desc"><p><em>sometime</em> (other things can go between) or <em>right before/after</em> (direct — nothing between; travel and fixed events can still appear).</p></div></div>
+    <div class="row"><div class="term">Same-day</div><div class="desc"><p>"Only on days with {partner}" — when on, this habit only plans with the partner (uses flexibility to join early, shown with the early indicator). Multiple same-day links are <strong>OR'd</strong> — it plans with whichever partner lands that day.</p></div></div>
+  </div>
+  <p class="card" style="font-size:14px">"Link this habit before or after any number of others. Links are OR'd: plan with whichever partner lands that day. 'Right before/after' keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. Same-day pull uses flexibility so this habit can join a partner early (shown with the early indicator)."</p>
+</section>
+
+<!-- =========================== PLACES =========================== -->
+<section id="places">
+  <h2><i class="ti ti-map-pin"></i> Places &amp; travel</h2>
+  <p>A <strong>place</strong> is a real location with coordinates: Home, Office, Gym. Habits can be restricted to places, and the planner accounts for <strong>travel time</strong> between consecutive places on the agenda.</p>
+
+  <h3>Adding places (map picker)</h3>
+  <p>In <a href="#settings">Settings → locations</a>, tap <em>add place</em>. Search an address, drag the map, drop the pin, or enter coordinates. Each place has a name, address, coordinates, a <strong>radius</strong> ("how close means you're here", default 75 m), and optional emoji.</p>
+
+  <h3>Per-place hours</h3>
+  <p>Each place can have open hours and closed days — layered resolution: per-weekday override → closed days → default hours → 24h. A habit's effective window is the intersection of its own window and the place's resolved hours.</p>
+
+  <h3>Live location (opt-in, private)</h3>
+  <p>Enable <strong>live location</strong> so Tings knows which place you're currently at. Raw coordinates are <strong>never stored or sent</strong> — only the matched place id is kept. First enable shows a rationale sheet and requires a tap (an OS requirement).</p>
+
+  <h3>City</h3>
+  <p>A general area used for sunrise/sunset and prayer calculations when live location is off or a habit has no place. Set automatically from your first place, or type one (e.g. "Lahore"). Required for prayer-anchored windows and the sample sleep block.</p>
+
+  <h3>Travel time</h3>
+  <p>Travel between places is estimated (drive/walk/bike/transit), <strong>cached so it's never recomputed</strong>, and shown as a thin card between agenda items. Tap a travel card to override the minutes, open it in maps, or reset to the estimate. The default travel mode is set in locations settings.</p>
+
+  <h3>Presence — "where are you?"</h3>
+  <p>The presence picker sets today's starting place for travel math (it does <em>not</em> filter the list). Resolution: your manual pick → GPS geofence match → last known place → nearest place.</p>
+
+  <div class="callout note"><i class="ti ti-info-square-rounded"></i><div><p>Home ranking stays <strong>location-blind</strong> — places only change the agenda order and insert travel cards, not what's "most important." A place used by any habit can't be removed until you clear the reference.</p></div></div>
+  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the map picker adding a "Gym" place</span></div>
+</section>
+
+<!-- ========================== OVERVIEW ========================== -->
+<section id="overview">
+  <h2><i class="ti ti-calendar-month"></i> Calendar overview</h2>
+  <p>Tap the calendar icon to open the <strong>overview</strong> — the companion view to the plan. It's a month grid plus insight panes.</p>
+  <div class="chips">
+    <span class="chip"><i class="ti ti-calendar"></i> month grid</span>
+    <span class="chip teal"><i class="ti ti-door-open"></i> open hours</span>
+    <span class="chip blue"><i class="ti ti-feather"></i> lightest days</span>
+    <span class="chip purple"><i class="ti ti-arrow-forward-up"></i> coming up</span>
+    <span class="chip amber"><i class="ti ti-alert-triangle"></i> needs attention</span>
+    <span class="chip"><i class="ti ti-history"></i> recent</span>
+  </div>
+  <ul>
+    <li><strong>Open hours</strong> — how much free time each day actually has.</li>
+    <li><strong>Lightest days</strong> — where to move things if the week is tight.</li>
+    <li><strong>Coming up / needs attention / recent</strong> — focused lists across all your Tings.</li>
+    <li><strong>Month grid legend</strong> — done / planned / on agenda.</li>
+  </ul>
+  <p>Tap any day or chip to dig in. Triple-tap a day header for the hidden <em>day agenda audit</em> (a power-user scorecard with copy/export).</p>
+</section>
+
+<!-- ===================== CALENDAR IMPORT ===================== -->
+<section id="calendar-import">
+  <h2><i class="ti ti-file-import"></i> Calendar PDF import</h2>
+  <p>You can <strong>import a calendar PDF</strong> (Settings → calendar import). Tings reads meetings from an Outlook/Teams agenda print or a Google Calendar schedule print and adds them as timed items already marked done on today's list.</p>
+  <ol class="steps">
+    <li><p><strong>Choose PDF</strong> — Tings extracts events and shows a count ("N event(s) ready").</p></li>
+    <li><p><strong>Preview</strong> — every parsed event as a checkbox row with a live summary ("N of M selected · X timed · Y all-day"). Select all / none, deselect individually.</p></li>
+    <li><p><strong>Import meetings</strong> — only checked rows are added. Status reports what happened.</p></li>
+  </ol>
+  <div class="defs">
+    <div class="row"><div class="term">Credit habit</div><div class="desc"><p>"Count meeting time toward" a build/limit habit (like Work). Meeting minutes merge per day (overlaps union, not double-count); the habit is auto-flipped to breakable if it isn't already.</p></div></div>
+    <div class="row"><div class="term">All-day events</div><div class="desc"><p><em>skip them</em> (default) or <em>add as tasks with a date</em>. Dated tasks never count toward Work hours.</p></div></div>
+    <div class="row"><div class="term">Re-import</div><div class="desc"><p>Updates existing rows by a stable id — unless you renamed a local copy, in which case your edit is preserved.</p></div></div>
+    <div class="row"><div class="term">Clear imported</div><div class="desc"><p>Removes every imported meeting and strips calendar-credit logs.</p></div></div>
+  </div>
+  <p>For a one-off export the other way, use a task's <em>export to calendar</em> action to push a single item to your phone calendar as an <code>.ics</code>.</p>
+</section>
+
+<!-- =========================== PRAYER =========================== -->
+<section id="prayer">
+  <h2><i class="ti ti-mosque"></i> Prayer times</h2>
+  <p>Tings computes the six daily times (Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha) from your <a href="#places">city/place</a> and uses them as <strong>dynamic anchors</strong> for time windows — so a habit tied to "Fajr +20m" moves correctly all year.</p>
+  <ul>
+    <li><strong>Islamic prayer names</strong> — show Fajr/Dhuhr/Asr/Maghrib/Isha vs Dawn/Noon/Afternoon/Sunset/Night.</li>
+    <li><strong>Calculation method</strong> — North America (ISNA) by default; only change if your mosque uses a specific method (MWL, Egyptian, Karachi, Umm al-Qura, Dubai, Moonsighting, Kuwait, Qatar, Singapore, Tehran, Turkey, Other).</li>
+    <li><strong>Asr school</strong> — Shafi (standard) or Hanafi (later Asr). Affects only Asr.</li>
+    <li><strong>Sample prayers</strong> — the sample-habits sheet can add Fajr–Isha demos with ready-made windows.</li>
+  </ul>
+  <div class="callout tip"><i class="ti ti-bulb"></i><div><p>No faith required — the same solar anchors (sunrise, sunset, dawn) work for secular routines like "walk at sunrise."</p></div></div>
+</section>
+
+<!-- ========================= APPEARANCE ========================= -->
+<section id="appearance">
+  <h2><i class="ti ti-palette"></i> Look &amp; feel</h2>
+  <ul>
+    <li><strong>Theme</strong> — light, dark, or follow system.</li>
+    <li><strong>Font size</strong> — small / medium / large.</li>
+    <li><strong>Compact mode</strong> — tighter list, more items per screen.</li>
+    <li><strong>Minimal mode</strong> — strip cards to emoji, name, status line, how often; hide agenda times, trails, insights. Doesn't change what's due or how planning works.</li>
+    <li><strong>Per-card marks</strong> — toggle each badge/line on or off (see <a href="#settings-cards">What shows on each item</a>).</li>
+    <li><strong>Easier reach</strong> — pull-and-hold to bring top items down.</li>
+  </ul>
+  <div class="shot wide"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: light vs dark, compact vs default, minimal vs full</span></div>
+</section>
+
+<!-- =========================== SETTINGS =========================== -->
+<section id="settings">
+  <h2><i class="ti ti-adjustments"></i> Settings reference</h2>
+  <p>Open settings from the Tings menu. Every section and toggle, in order:</p>
+
+  <h3 id="settings-display">Display</h3>
+  <p><strong>Minimal mode</strong> — "Show emoji, name, status line, and how often. Hide agenda times, trails, insights, and other extras. Does not change what's due or how the planner works."</p>
+
+  <h3 id="settings-home">Home page</h3>
+  <ul>
+    <li><strong>Bring planned items up</strong> — items planned soon move toward the top.</li>
+    <li><strong>Fixed-time tasks</strong> — tasks with a set time show on today's list.</li>
+    <li><strong>Tasks due today</strong> — tasks due today fill open time.</li>
+    <li><strong>Planned for today</strong> — things planned for today fill open time.</li>
+    <li><strong>Habits ready today</strong> — habits that belong today fill open time.</li>
+    <li><strong>Week by day</strong> — day-by-day week instead of today / overdue / coming up.</li>
+    <li><strong>Busy blocks &amp; travel</strong> — "show for all days" or "next 12 hours".</li>
+  </ul>
+
+  <h3>Backup</h3>
+  <p>Export/import a JSON backup. See <a href="#backup">Backup, restore &amp; cleanup</a>.</p>
+
+  <h3>Cleanup</h3>
+  <p>Retention for completed tasks (2 / 3 / 7 days) and habit history (12 / 30 / 60 / off), plus a "clean now" button. See <a href="#backup">Backup, restore &amp; cleanup</a>.</p>
+
+  <h3>Calendar import</h3>
+  <p>See <a href="#calendar-import">Calendar PDF import</a>.</p>
+
+  <h3>Topics</h3>
+  <p>Create and manage topic labels (≤32 chars) for search and filtering. "They don't change what's due today."</p>
+
+  <h3>Locations</h3>
+  <p>See <a href="#places">Places &amp; travel</a> — live location toggle, city, place list, default travel mode (drive / walk / bike / transit).</p>
+
+  <h3>Busy times</h3>
+  <p>See <a href="#capacity">Capacity &amp; open hours</a>. Add recurring blocks (label, fixed or dynamic start/end, weekdays, optional place). Per-day edits: "save this date" (instance) vs "update recurring" (series).</p>
+
+  <h3 id="settings-cards">What shows on each item</h3>
+  <p>"Pick which marks appear on home list items." All 16 toggles:</p>
+  <div class="defs">
+    <div class="row"><div class="term">show hidden habits</div><div class="desc"><p>Show snoozed habits, faded on home.</p></div></div>
+    <div class="row"><div class="term">show sample tag</div><div class="desc"><p>Mark sample habits on the list.</p></div></div>
+    <div class="row"><div class="term">show pinned</div><div class="desc"><p>Pin mark on pinned items.</p></div></div>
+    <div class="row"><div class="term">show task dates</div><div class="desc"><p>Due / someday / fixed-time marks on tasks.</p></div></div>
+    <div class="row"><div class="term">show planned</div><div class="desc"><p>When something is planned next.</p></div></div>
+    <div class="row"><div class="term">show which days</div><div class="desc"><p>Which weekdays or month days it runs.</p></div></div>
+    <div class="row"><div class="term">show time of day</div><div class="desc"><p>The hours it's allowed.</p></div></div>
+    <div class="row"><div class="term">show snooze label</div><div class="desc"><p>When hidden items return.</p></div></div>
+    <div class="row"><div class="term">show duration</div><div class="desc"><p>Keep duration visible.</p></div></div>
+    <div class="row"><div class="term">show how often</div><div class="desc"><p>Every N days or stop.</p></div></div>
+    <div class="row"><div class="term">show early window</div><div class="desc"><p>How many days early it can be done.</p></div></div>
+    <div class="row"><div class="term">show topics</div><div class="desc"><p>Topic labels on the list.</p></div></div>
+    <div class="row"><div class="term">show place</div><div class="desc"><p>The place on each item.</p></div></div>
+    <div class="row"><div class="term">show progress <em>(on)</em></div><div class="desc"><p>Done / almost / behind (or new).</p></div></div>
+    <div class="row"><div class="term">show early <em>(on)</em></div><div class="desc"><p>Early when it helps a packed day.</p></div></div>
+    <div class="row"><div class="term">easier reach</div><div class="desc"><p>Pull and hold at the top to bring items down.</p></div></div>
+  </div>
+
+  <h3 id="settings-defaults">New habit defaults</h3>
+  <p>"Used only when you tap + to create a new habit."</p>
+  <ul>
+    <li><strong>Default type</strong> — build / limit / stop / task.</li>
+    <li><strong>How often</strong> — range, 1–183 days.</li>
+    <li><strong>Importance</strong> — P0–P5.</li>
+    <li><strong>Duration</strong> — 5–120 min.</li>
+    <li><strong>Can do early</strong> — 0–14 days.</li>
+    <li><strong>Allow splitting</strong> + <strong>shortest session</strong> (15–120 min).</li>
+    <li><strong>Default topics</strong> — chip row.</li>
+  </ul>
+
+  <h3>Appearance</h3>
+  <p>Compact mode, font size (small/medium/large), theme (light/dark/system). See <a href="#appearance">Look &amp; feel</a>.</p>
+
+  <h3>Prayer times</h3>
+  <p>Islamic names toggle, calculation method, Asr madhab. See <a href="#prayer">Prayer times</a>.</p>
+
+  <h3>Advanced</h3>
+  <p><strong>Smarter packing</strong> — "Takes longer, but packs tight days better and protects items with fewer open slots. Off = faster, simpler packing." See <a href="#planner">How the planner works</a>.</p>
+
+  <h3>Start over</h3>
+  <p>"Reset only changes these app settings. Your habits and entries stay safe." Confirm panel resets settings to defaults.</p>
+</section>
+
+<!-- =========================== SAMPLES =========================== -->
+<section id="samples">
+  <h2><i class="ti ti-flask"></i> Sample habits</h2>
+  <p>Reachable from About → <em>sample habits</em> or the empty home state. "Try one demo or a few — timers, places, breakable tasks, and more."</p>
+
+  <h3>Feature demos (add one or all)</h3>
+  <p>Each showcases a different capability. <strong>Add all</strong> tags them as samples and seeds the sample places; adding one keeps it un-tagged as if it were your own (with an undo toast).</p>
+  <table>
+    <thead><tr><th>Demo</th><th>What it shows</th></tr></thead>
+    <tbody>
+      <tr><td>🌅 stretch after sunrise</td><td>Dynamic prayer-anchored window (sunrise +10m), pinned</td></tr>
+      <tr><td>🌙 night deep work</td><td>Evening window after Isha · Home</td></tr>
+      <tr><td>📝 write report in chunks</td><td>Breakable task, splits across sessions (min 20)</td></tr>
+      <tr><td>🏃 timed run</td><td>Timer + session progress bar · Park</td></tr>
+      <tr><td>🦷 dentist (auto)</td><td>Timed task that auto-completes</td></tr>
+      <tr><td>⚖️ weigh-in</td><td>Log a number with each entry · Home</td></tr>
+      <tr><td>🌳 walk to the park</td><td>Place + travel on today's list · Park, preferred, pinned</td></tr>
+      <tr><td>🧺 do early (Tuesday packed)</td><td>Flexibility pulls it forward · Home</td></tr>
+      <tr><td>💪 gym session</td><td>Place-gated workout · Gym</td></tr>
+      <tr><td>🤸 stretch at gym or home</td><td>Multi-place habit · Gym · Home</td></tr>
+      <tr><td>☎️ call family</td><td>Home or Mom's (preferred Mom's)</td></tr>
+      <tr><td>☕ coffee on office days</td><td>Limit habit · Office · Cafe (Mon/Wed)</td></tr>
+      <tr><td>💧 drink water</td><td>Simple daily habit, pinned</td></tr>
+      <tr><td>🍪 less late snacks</td><td>Limit how often · Home</td></tr>
+      <tr><td>🥤 quit soda</td><td>Stop habit</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Sample busy time (sun-based sleep)</h3>
+  <p>A collapsible section installing a sleep block that starts at the <strong>later of Isha +15m and sunrise −8h</strong> (next day) and ends at <strong>sunrise −40m</strong> — always totalling ~8h across seasons. Replaces the default fixed 11pm–5am block so there's no duplicate. Needs your city.</p>
+
+  <h3>Daily prayers</h3>
+  <p>A collapsible section with Fajr–Isha demos using ready-made windows (Fajr until sunrise−10m, Dhuhr until Asr−15m, Asr until Maghrib−15m, Maghrib until earlier-of (maghrib+1h, isha−15m), Isha until next Fajr−30m). <strong>Add all prayers</strong> seeds the <em>prayer</em> topic; needs your city.</p>
+
+  <h3>Managing samples</h3>
+  <p>Swipe-right <strong>keep</strong> on a sample makes it permanent. <strong>Remove samples</strong> drops every tagged sample and prunes now-unused sample places. The count line shows how many tagged samples are on home.</p>
+</section>
+
+<!-- =========================== BACKUP =========================== -->
+<section id="backup">
+  <h2><i class="ti ti-database"></i> Backup, restore &amp; cleanup</h2>
+  <div class="callout danger"><i class="ti ti-shield-lock"></i><div><p>Everything lives <strong>only on this device</strong>. Export a backup regularly — and especially before clearing browser data or switching phones. There's no cloud copy.</p></div></div>
+
+  <h3>Export / import</h3>
+  <ol class="steps">
+    <li><p>Settings → backup → <strong>export backup</strong>. A file <code>tings-backup-YYYY-MM-DD.json</code> downloads.</p></li>
+    <li><p>Move it somewhere safe (cloud drive, email to yourself).</p></li>
+    <li><p>On any device: Settings → backup → <strong>import backup</strong>, pick the file, confirm <em>replace</em>. A summary tells you exactly what will change before you confirm.</p></li>
+  </ol>
+  <p>Invalid files are rejected with a clear reason and never ask you to confirm. Legacy bare-array exports are still accepted.</p>
+
+  <h3>Cleanup / retention</h3>
+  <p>Old completed tasks and extra habit history are trimmed <strong>about once a month</strong> when you open the app (you'll see a notice). Tune it under Settings → cleanup:</p>
+  <ul>
+    <li><strong>Completed tasks</strong> — delete after 2 / 3 / 7 days. Protected if still referenced (as a dynamic-time anchor, schedule-link anchor, or calendar credit habit).</li>
+    <li><strong>Habit history</strong> — keep newest 12 / 30 / 60 entries per habit (or off). Always preserves plan logs; tasks aren't trimmed here.</li>
+    <li><strong>Clean now</strong> — runs immediately, ignoring the monthly gate.</li>
+  </ul>
+</section>
+
+<!-- =========================== PRIVACY =========================== -->
+<section id="privacy">
+  <h2><i class="ti ti-shield-check"></i> Privacy &amp; data</h2>
+  <div class="defs">
+    <div class="row"><div class="term">No account</div><div class="desc"><p>Nothing to sign up for. Nothing identifies you.</p></div></div>
+    <div class="row"><div class="term">No sync, no cloud</div><div class="desc"><p>Your habits live in local storage on this device only.</p></div></div>
+    <div class="row"><div class="term">Location is opt-in</div><div class="desc"><p>Requested from a tap; raw coordinates are never stored or sent — only the matched place is remembered.</p></div></div>
+    <div class="row"><div class="term">Map lookups</div><div class="desc"><p>Carry only coordinate pairs for travel estimates and geocoding — never habit names or your data.</p></div></div>
+    <div class="row"><div class="term">Backups are yours</div><div class="desc"><p>Exported JSON files go wherever you put them.</p></div></div>
+  </div>
+</section>
+
+<!-- =========================== INSTALL =========================== -->
+<section id="install">
+  <h2><i class="ti ti-app-window"></i> Install as an app</h2>
+  <p>Tings is a <strong>Progressive Web App (PWA)</strong> — installable to your home screen / desktop, full-screen, with offline support via a service worker.</p>
+  <ul>
+    <li><strong>iOS Safari</strong> — Share → <em>Add to Home Screen</em>.</li>
+    <li><strong>Android Chrome</strong> — menu → <em>Install app</em> / <em>Add to Home screen</em>.</li>
+    <li><strong>Desktop Chrome/Edge</strong> — install icon in the address bar.</li>
+  </ul>
+  <div class="callout note"><i class="ti ti-info-square-rounded"></i><div><p>Installed, Tings behaves like a native app — app icon, launch screen, and offline use.</p></div></div>
+</section>
+
+<!-- =========================== RECIPES =========================== -->
+<section id="recipes">
+  <h2><i class="ti ti-tools-kitchen-2"></i> Tips &amp; recipes</h2>
+  <h3>Morning anchor</h3>
+  <p>Pin your keystone habit (meditation, workout) and link a couple of small ones <em>right after</em> it in Schedule. The chain runs itself each morning.</p>
+  <h3>Cap a bad habit</h3>
+  <p>Add a <strong>limit</strong> habit ("Coffee ≤ 2 cups") with a value log. The card stays calm while you're under.</p>
+  <h3>Quit tracking</h3>
+  <p>Add a <strong>stop</strong> habit. Each clean day is a green dot on the month grid.</p>
+  <h3>Gym across town</h3>
+  <p>Give "Workout" the Gym place and a window; the planner inserts a travel card and picks a slot when you're actually near Gym.</p>
+  <h3>Deep work blocks</h3>
+  <p>Make a big task <strong>breakable</strong> with a 25-min min chunk; Tings splits it across the day's gaps, preferring one continuous session when time allows.</p>
+  <h3>Prayer-anchored routine</h3>
+  <p>Set windows relative to Fajr/Isha so your routine moves with the seasons automatically.</p>
+  <h3>Count meetings toward Work</h3>
+  <p>Import your calendar PDF and pick "Work" as the credit habit — meeting minutes count toward your daily work hours.</p>
+  <h3>Plan-by for a soft deadline</h3>
+  <p>Set a plan-by date on a habit and the planner finds a free day on or before it — no manual scheduling.</p>
+</section>
+
+<!-- ============================= FAQ ============================= -->
+<section id="faq">
+  <h2><i class="ti ti-help-circle"></i> FAQ &amp; troubleshooting</h2>
+  <h3>Where is my data stored?</h3>
+  <p>Only in this browser/device's local storage. Clearing site data wipes it — <a href="#backup">export a backup</a> first.</p>
+  <h3>I lost my habits — can I get them back?</h3>
+  <p>Only from a backup file. Without one there's no recovery (there's no server).</p>
+  <h3>Why isn't my habit on today's list?</h3>
+  <p>Check: is it snoozed? Hidden by a filter? Not actually due today (look in <em>coming up</em> in the overview)? Outside its allowed days/window? Lower priority than the day can fit? Has a same-day schedule link whose partner isn't eligible today?</p>
+  <h3>Why does the agenda look empty / sparse?</h3>
+  <p>The planner needs <a href="#capacity">busy times</a> and/or <a href="#places">places</a> to do its best work. Without them it still lists what's due, but won't show travel or open-hour calculations. Also check your home-page settings for which categories fill open time.</p>
+  <h3>A habit shows "early" — what does that mean?</h3>
+  <p>It has flexibility and was pulled forward into today because its usual day is packed and today has room. If today were full it would simply stay in "coming up."</p>
+  <h3>The "missed" pill appeared — what happened?</h3>
+  <p>Something was suggested for today but slipped off (its window closed, or the day overflowed). Tap the pill to see today's misses and anything still open from yesterday.</p>
+  <h3>Can I sync between devices?</h3>
+  <p>Not automatically. Use export/import to move a snapshot between devices.</p>
+  <h3>How do I start completely fresh?</h3>
+  <p>Settings → start over resets <em>settings only</em>. To wipe habits too, clear site data (after exporting a backup).</p>
+  <h3>My prayer-anchored window says "add a location"</h3>
+  <p>Prayer/solar anchors need coordinates. Set your <a href="#places">city</a> (or give the habit a place) and the resolved time will appear.</p>
+  <h3>The optimizer feels slow</h3>
+  <p>Turn off <strong>smarter packing</strong> (Settings → advanced) for a faster, simpler pack. The simple packer satisfies the same hard rules; it just doesn't squeeze tight days as hard.</p>
+</section>
+
+<footer class="footer">
+  <p>Tings is local-first and works offline. This guide lives at <code>./docs.html</code> next to the app.</p>
+  <p><a href="#welcome">↑ Back to top</a> · <a href="./index.html">Open the app</a></p>
+</footer>
+
+</main>
+</div>
+
+<script>
+/* Theme toggle */
+(function(){
+  var root=document.documentElement,btn=document.getElementById('theme-toggle'),icon=btn.querySelector('i');
+  function apply(t){
+    if(t==='light'||t==='dark')root.setAttribute('data-theme',t);else root.removeAttribute('data-theme');
+    try{localStorage.setItem('tings-docs-theme',t);}catch(e){}
+    icon.className=(t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme:dark)').matches))?'ti ti-sun':'ti ti-moon-stars';
+  }
+  var saved='system';try{saved=localStorage.getItem('tings-docs-theme')||'system';}catch(e){}
+  apply(saved);
+  btn.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+    apply(cur==='dark'?'light':'dark');
+  });
+})();
+/* Mobile sidebar */
+(function(){
+  var t=document.getElementById('menu-toggle'),s=document.getElementById('sidebar');
+  t.addEventListener('click',function(){s.classList.toggle('open');});
+  s.addEventListener('click',function(e){if(e.target.tagName==='A')s.classList.remove('open');});
+})();
+/* Nav filter */
+(function(){
+  var input=document.getElementById('nav-filter'),groups=document.querySelectorAll('#toc .group-label');
+  input.addEventListener('input',function(){
+    var q=input.value.trim().toLowerCase();
+    groups.forEach(function(g){
+      var n=g.nextElementSibling,any=false;
+      while(n&&!n.classList.contains('group-label')){
+        if(n.tagName==='A'){var hit=!q||n.textContent.toLowerCase().indexOf(q)>-1;n.style.display=hit?'':'none';if(hit)any=true;}
+        n=n.nextElementSibling;
+      }
+      g.style.display=any?'':'none';
+    });
+  });
+})();
+/* Active section */
+(function(){
+  var links=Array.prototype.slice.call(document.querySelectorAll('#toc a[href^="#"]')),map={};
+  links.forEach(function(l){map[l.getAttribute('href').slice(1)]=l;});
+  var secs=document.querySelectorAll('main.content section[id]');
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){links.forEach(function(l){l.classList.remove('active');});var a=map[e.target.id];if(a)a.classList.add('active');}
+    });
+  },{rootMargin:'-30% 0px -60% 0px',threshold:0});
+  secs.forEach(function(s){io.observe(s);});
+})();
+</script>
+</body>
+</html>
