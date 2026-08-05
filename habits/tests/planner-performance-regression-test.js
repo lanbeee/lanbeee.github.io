@@ -2,12 +2,12 @@
 //
 // This intentionally runs in both default (GLPK) and fast suites. It pauses the
 // planner worker during cold load so the assertions can distinguish the loading
-// skeleton (first paint) from a planner-complete agenda paint without depending
-// on machine speed.
+// skeleton (responsive shell) from planner completion without depending on
+// machine speed.
 //
 // Guards (non-exhaustive):
-//   • worker offload; skeleton cold paint before plan (no interim basic list);
-//     frame/longtask budgets; one-shot agenda after release
+//   • worker offload; stable skeleton/current agenda while solving;
+//     frame/longtask budgets; one planner-complete paint
 //   • dirty-key skip for unchanged background ticks; presentation toggles
 //   • persisted planner revision; compact worker snapshot; no main-thread GLPK
 //   • fresh same-day cache skips immediate replan; lean week rehydrate/export
@@ -185,20 +185,73 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     JSON.stringify({expected:EXPECTED_MODE,actualFast:cold.fastMode}));
 
   await page.evaluate(()=>window.__releasePlannerWorker());
+  // Planner-affecting foreground actions (done/log/add all save then render)
+  // must remain responsive even when an older solve is active. They do not
+  // need to publish a new agenda immediately: keep the stable shell/view until
+  // the new single solve is ready.
+  const foregroundAction = await page.evaluate(async()=>{
+    const originalCancel = cancelAgendaPlannerWorkerRequests;
+    let cancelCalls = 0;
+    cancelAgendaPlannerWorkerRequests=(...args)=>{
+      cancelCalls += 1;
+      return originalCancel(...args);
+    };
+    const data = load();
+    data[0].priority = (Number(data[0].priority) || 0) === 0 ? 1 : 0;
+    const saved = save(data);
+    const started = performance.now();
+    render();
+    const returnElapsed = performance.now() - started;
+    const frameStarted = performance.now();
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    const frameDelay = performance.now() - frameStarted;
+    const result = {
+      saved,
+      cancelCalls,
+      returnElapsed,
+      frameDelay,
+      cards:document.querySelectorAll('#list .ting-card').length,
+      loading:Boolean(document.querySelector('#list .home-loading')),
+      requestActive:Boolean(_optimizerHomeRequestKey),
+      plannerMounted:Boolean(_homeRenderedWeek?.days)
+    };
+    cancelAgendaPlannerWorkerRequests=originalCancel;
+    return result;
+  });
+  check('save/log/add-style foreground replan returns and yields a frame immediately',
+    foregroundAction.saved
+      && foregroundAction.returnElapsed < 250
+      && foregroundAction.frameDelay < 250
+      && foregroundAction.loading
+      && foregroundAction.cards === 0
+      && !foregroundAction.plannerMounted
+      && foregroundAction.requestActive,
+    JSON.stringify(foregroundAction));
+  check('foreground data change supersedes obsolete exact work',
+    foregroundAction.cancelCalls === 1,
+    JSON.stringify(foregroundAction));
+
+  // Solve duration is not treated as interaction latency. Exact mode may use
+  // its full background budget; the frame assertions above guard cold-open and
+  // action responsiveness during that time.
   await page.waitForFunction(()=>Boolean(
     typeof _homeRenderedWeek !== 'undefined'
     && Array.isArray(_homeRenderedWeek?.days)
     && _homeRenderedWeek.days.length
-  ),null,{timeout:20000});
+    && (sortSettings.agendaOptimizer === false || _homeRenderedWeek.optimized)
+  ),null,{timeout:70000});
   await page.waitForSelector('#list .ting-card',{timeout:5000});
-
   const afterPlan = await page.evaluate(()=>({
     cards:document.querySelectorAll('#list .ting-card').length,
     loading:Boolean(document.querySelector('#list .home-loading')),
-    plannerMounted:Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.days?.length)
+    optimized:Boolean(_homeRenderedWeek?.optimized),
+    plannerMounted:Boolean(_homeRenderedWeek?.days?.length)
   }));
-  check('planner release paints the agenda in one pass',
-    afterPlan.cards >= 10 && !afterPlan.loading && afterPlan.plannerMounted,
+  check('completed solve replaces the stable shell with one agenda',
+    afterPlan.cards >= 10
+      && !afterPlan.loading
+      && afterPlan.plannerMounted
+      && (EXPECTED_MODE === 'fast' || afterPlan.optimized),
     JSON.stringify(afterPlan));
 
   const dirtyKeyContract = await page.evaluate(()=>{
@@ -453,8 +506,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       warmTimeout:workerSrc.includes('withTimeout(ensureGlpk()'),
       warmExactOnly:optSrc.includes('agendaOptimizer === false')
         && listSrc.includes('exact && typeof warmAgendaPlannerWorker'),
-      skeletonColdOpen:listSrc.includes("querySelector('.home-loading')")
-        && listSrc.includes('deferAgenda:true'),
+      responsiveForeground:listSrc.includes('existing agenda mounted')
+        && listSrc.includes('cancelAgendaPlannerWorkerRequests')
+        && optSrc.includes('function cancelAgendaPlannerWorkerRequests'),
       settingsSigGates:listSrc.includes('showDueTasksInAgenda')
         && listSrc.includes('showPlannedItemsInAgenda')
         && listSrc.includes('showDueHabitsInAgenda')
@@ -471,7 +525,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.memoTodayBase
       && sourceContracts.warmTimeout
       && sourceContracts.warmExactOnly
-      && sourceContracts.skeletonColdOpen
+      && sourceContracts.responsiveForeground
       && sourceContracts.settingsSigGates
       && sourceContracts.rehydrateHelper
       && sourceContracts.preloadGated,

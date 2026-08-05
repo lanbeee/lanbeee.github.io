@@ -282,6 +282,12 @@ function seedScript(extraHabits, extraSettings){
     if(typeof render === 'function')render();
   });
   await page.waitForTimeout(100);
+  // Foreground planner changes intentionally keep the previous agenda mounted
+  // until the worker publishes the new one.
+  await page.waitForFunction(()=>_optimizerHomeRequestKey === '',null,{timeout:70000});
+  await page.evaluate(()=>{
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  });
   await page.waitForFunction(()=>{
     const headers = [...document.querySelectorAll('#list .section-header')].map(el=>el.dataset.label || el.textContent.trim());
     // Late at night today can be an empty seq (past blocks clipped), so only

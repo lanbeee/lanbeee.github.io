@@ -1,5 +1,5 @@
-// Cold open: keep the HTML skeleton until the planner supplies a week, then
-// paint the agenda once. Avoids the confusing basic-list → refined-list swap.
+// Cold open: keep the responsive HTML skeleton until the planner supplies a
+// week, then paint the agenda once. Solve duration is not UI-thread latency.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/progressive-render-test.js
 //
@@ -85,7 +85,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     JSON.stringify(early));
   check('fast paint does not use is-progressive', !early.sawProgressive && !early.progressive, JSON.stringify(early));
 
-  await page.waitForFunction(()=>Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),null,{ timeout:15000 });
+  await page.waitForFunction(()=>Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),null,{ timeout:70000 });
   await page.waitForSelector('#list .ting-card',{ timeout:5000 });
   await page.waitForTimeout(100);
 
@@ -171,7 +171,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const started = renderHomeIfChanged(true);
     return {started,destructive};
   });
-  await page.waitForFunction(()=>_optimizerHomeRequestKey === '',null,{timeout:15000});
+  await page.waitForFunction(()=>_optimizerHomeRequestKey === '',null,{timeout:70000});
   const glpkAfter = await page.evaluate(()=>({
     sameNode:window.__stableGlpkNode === document.querySelector('#list .swipe-row'),
     destructive:Number(window.__progressiveObs?.destructive || 0),
@@ -183,29 +183,32 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
   // Fast planner refresh: use the same stale fingerprint path with GLPK off.
   // The sync recalculation should also compare off-screen and preserve nodes.
-  const fastRefresh = await page.evaluate(()=>{
+  const fastBefore = await page.evaluate(()=>{
     sortSettings = {...sortSettings,agendaOptimizer:false};
     render();
-    const node = document.querySelector('#list .swipe-row');
+    window.__stableFastNode = document.querySelector('#list .swipe-row');
     const destructive = Number(window.__progressiveObs?.destructive || 0);
     _homeListFingerprint = 'stale-for-fast-refresh-test';
     const started = renderHomeIfChanged(true);
     return {
       started,
-      sameNode:node === document.querySelector('#list .swipe-row'),
-      before:destructive,
-      after:Number(window.__progressiveObs?.destructive || 0),
-      optimized:Boolean(_homeRenderedWeek?.optimized)
+      before:destructive
     };
   });
+  await page.waitForFunction(()=>_optimizerHomeRequestKey === '',null,{timeout:70000});
+  const fastAfter = await page.evaluate(()=>({
+    sameNode:window.__stableFastNode === document.querySelector('#list .swipe-row'),
+    after:Number(window.__progressiveObs?.destructive || 0),
+    optimized:Boolean(_homeRenderedWeek?.optimized)
+  }));
   check('fast identical background calculation keeps mounted cards',
-    fastRefresh.started && fastRefresh.sameNode && fastRefresh.after === fastRefresh.before && !fastRefresh.optimized,
-    JSON.stringify(fastRefresh));
+    fastBefore.started && fastAfter.sameNode && fastAfter.after === fastBefore.before && !fastAfter.optimized,
+    JSON.stringify({fastBefore,fastAfter}));
   await page.waitForFunction(()=>Boolean(
     typeof _homeRenderedWeek !== 'undefined'
     && _homeRenderedWeek?.days
     && !_homeRenderedWeek.optimized
-  ),null,{timeout:15000});
+  ),null,{timeout:70000});
 
   // A genuine repaint must keep the day/item currently being read at the same
   // viewport offset instead of sorting the user back to the top.
@@ -237,7 +240,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     _optimizerHomeReadyWeek = null;
     render();
   });
-  await page.waitForFunction(()=>Boolean(_homeRenderedWeek?.optimized),null,{timeout:15000});
+  await page.waitForFunction(()=>Boolean(_homeRenderedWeek?.optimized),null,{timeout:70000});
 
   // Reopen should stay sync (no progressive class).
   await page.evaluate(()=>{

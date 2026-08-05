@@ -208,7 +208,7 @@ function task(name,dueDate,priority = 1){
       'Forced-fast audit must not imply that an optimizer is still running');
   }else{
     assert(model.today.preview === true,'Synchronous audit should label optimizer-enabled output as a fast preview/fallback');
-    assert(model.today.previewText.includes('FAST PREVIEW — exact optimizer is still running')
+    assert(model.today.previewText.includes('FAST PREVIEW — GLPK optimizer is still running')
       && model.today.previewText.includes('BUDGET USED / PREVIEW'),
     'Fast audit text should make provisional totals unmistakable');
   }

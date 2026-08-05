@@ -400,14 +400,14 @@ tbody tr:last-child td{border-bottom:0;}
   <p>There are two packers, switched by the <strong>smarter packing</strong> toggle (Settings → advanced; on by default):</p>
   <ul>
     <li><strong>Off (simple)</strong> — a fast greedy pass. Instant; used for previews and as a fallback.</li>
-    <li><strong>On (smarter)</strong> — an exact optimizer that solves each day globally, can hold multiple candidate start times per item and pick the best non-overlapping set, plus a week-level repair pass. Better on <em>tight</em> days where several items compete for one narrow gap, and it protects items that have very few open slots.</li>
+    <li><strong>On (smarter)</strong> — GLPK chooses the best non-overlapping set from generated time-and-location options for each day, then a complete-day route optimizer minimizes travel across every selected item and fixed location anchor. Breakable work fills the remaining gaps, and a week-level repair pass moves deferrable work to improve coverage.</li>
   </ul>
-  <p>Both satisfy the same hard rules. If the optimizer can't load or a day's solve times out, Tings silently falls back to the simple packer so the agenda always renders. While the exact optimizer is still running you may briefly see a "fast preview" state in the day audit.</p>
+  <p>Both satisfy the same hard rules. If GLPK cannot load or a day's solve reaches its background budget, Tings falls back to the simple packer so the agenda still renders. While GLPK is running you may briefly see a "fast preview" state in the day audit.</p>
 
   <h3>What happens when a day overflows</h3>
   <p>When capacity runs out, the weight function picks winners: a <strong>scarce narrow window beats a broad higher-priority item</strong> (the gym opens 6–7am; reading can happen anytime). Within the same scarcity band, higher priority wins (P0 before P5), and within a priority your home creation order is kept. Anything that can't fit today is <strong>pulled forward to another eligible day</strong> rather than dropped — only items with no viable day anywhere are left out. A habit whose hard window is genuinely too small for its duration is never force-fit.</p>
 
-  <div class="callout tip"><i class="ti ti-bulb"></i><div><p>Because the whole week is solved together, an item that doesn't fit today quietly lands tomorrow or later — you don't have to reschedule anything by hand.</p></div></div>
+  <div class="callout tip"><i class="ti ti-bulb"></i><div><p>The planner evaluates eligible days and repairs the week after daily packing, so an item that does not fit today can quietly land tomorrow or later — you do not have to reschedule it by hand.</p></div></div>
 
   <div class="shot tall"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: a packed week with busy blocks, travel cards, and habit placements</span></div>
 </section>

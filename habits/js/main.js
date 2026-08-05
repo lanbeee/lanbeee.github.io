@@ -2820,10 +2820,9 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
-// Cold load: restore the persisted active focus, then render once.
+// Cold load: restore the persisted active focus, then start the worker-backed
+// render. The shell remains responsive while the single planner result runs.
 restoreHabitTimer();
-// Progressive (fast-then-full) was retired —
-// the interim card order differed from the agenda and felt jittery.
 plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');

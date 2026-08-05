@@ -1947,7 +1947,7 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   push(dayLabel);
   if(sub)push(sub);
   if(report.plannerIsPreview){
-    push('FAST PREVIEW — exact optimizer is still running; placements and totals may change');
+    push('FAST PREVIEW — GLPK optimizer is still running; placements and totals may change');
   }
   push('');
   push('ELIGIBLE WORK');
@@ -1993,7 +1993,7 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   push(`${(report.plannerTrace || []).length} decisions`);
   push(`engine ${report.plannerEngine || 'planner'}`);
   if(report.plannerIsPreview){
-    push('snapshot status fast preview; the exact optimizer may replace these placements when ready');
+    push('snapshot status fast preview; the GLPK optimizer may replace these placements when ready');
   }
   push('generated on demand when this audit opened; no continuous solver log');
   push('earliest clock fit ignores location, travel, ordering, budget, and cross-item objective');
@@ -2285,7 +2285,7 @@ function renderDayCapacityScorecard(report){
     : '<p class="capacity-empty">No planner decisions were present for this day.</p>';
   content.innerHTML = `
     ${report.plannerIsPreview
-      ? '<p class="capacity-note capacity-preview-note"><b>Fast preview:</b> the exact optimizer is still running, so placements and totals may change.</p>'
+      ? '<p class="capacity-note capacity-preview-note"><b>Fast preview:</b> the GLPK optimizer is still running, so placements and totals may change.</p>'
       : ''}
     <div class="capacity-export-hint">
       <span>copy / download = entire week placements</span>
@@ -2314,7 +2314,7 @@ function renderDayCapacityScorecard(report){
     </section>
     <section class="capacity-section">
       <div class="capacity-section-head"><h3>planner decision trace</h3><span>${(report.plannerTrace || []).length}</span></div>
-      <p class="capacity-note">${report.plannerIsPreview ? 'This is the fast preview/fallback snapshot; the exact optimizer may replace it when ready. ' : ''}Built only when this audit opens. It shows the planner’s inputs, resolved constraints, scores, and outcomes—not a continuous GLPK branch log. “Earliest clock-only fit” intentionally excludes location, travel, ordering, budget, and whole-day competition.</p>
+      <p class="capacity-note">${report.plannerIsPreview ? 'This is the fast preview/fallback snapshot; the GLPK optimizer may replace it when ready. ' : ''}Built only when this audit opens. It shows the planner’s inputs, resolved constraints, scores, and outcomes—not a continuous GLPK branch log. “Earliest clock-only fit” intentionally excludes location, travel, ordering, budget, and whole-day competition.</p>
       <div class="capacity-trace">${traceRows}</div>
     </section>
     <section class="capacity-section">
@@ -3565,6 +3565,8 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
+const HOME_PLANNER_ALGORITHM_VERSION = 2;
+
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
 function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
@@ -3625,6 +3627,7 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     rhythmBias:s.rhythmBias || 0
   });
   return [
+    `algorithm:${HOME_PLANNER_ALGORITHM_VERSION}`,
     rev,
     loc || '',
     s.pinnedLocationId || '',
@@ -3752,8 +3755,8 @@ function renderHomePresentationOnly(){
 }
 
 // ASYNC COORDINATOR: keep week planning outside the UI thread in both modes.
-// A same-day cached week provides a stable first paint; on a first-ever load a
-// basic list is shown until the worker supplies the agenda.
+// A same-day cached or currently mounted week provides a stable view while the
+// worker solves. A first-ever cold open keeps its skeleton until that result.
 function scheduleIdlePlannerWarmAndBuild(data,opts){
   if(_idlePlannerRefreshTimer != null)return;
   const run = ()=>{
@@ -3808,7 +3811,29 @@ function queueOptimizedHomeRender(data,opts){
     _homeListFingerprint = homeListFingerprint();
     return false;
   }
-  if(_optimizerHomeRequestKey === key)return false;
+  if(_optimizerHomeRequestKey === key){
+    // Request de-dupe must not swallow a foreground presentation change made
+    // while that solve is active. Repaint from the stable mounted plan; do not
+    // start or publish another scheduling result.
+    if(!(opts && opts.__backgroundRefresh)
+      && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+      render({...opts,__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
+      _homeListFingerprint = homeListFingerprint();
+      return true;
+    }
+    return false;
+  }
+  // A save/log/add can invalidate an exact solve that is still running. Do not
+  // queue the user's new plan behind obsolete work: terminate it and let this
+  // foreground request start a fresh solve.
+  if(_optimizerHomeRequestKey && _optimizerHomeRequestKey !== key
+    && !(opts && opts.__backgroundRefresh)){
+    ++_optimizerHomeRequestToken;
+    _optimizerHomeRequestKey = '';
+    if(typeof cancelAgendaPlannerWorkerRequests === 'function'){
+      cancelAgendaPlannerWorkerRequests('planner state changed during solve');
+    }
+  }
 
   // Background refreshes keep the current DOM. Direct/cold renders use the
   // latest compatible plan, avoiding both a blank launch and reordered phases.
@@ -3819,25 +3844,16 @@ function queueOptimizedHomeRender(data,opts){
     if(cached){
       render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
       paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
+    }else if(_homeRenderedWeek && $('list')?.querySelector('.ting-card')){
+      // A done/log/add render keeps the existing agenda mounted. The action has
+      // already been persisted; replace the agenda only when its new solve is
+      // ready instead of flashing an unplanned intermediate list.
     }else if(!$('list')?.querySelector('.home-loading')){
       // No cache and no skeleton (warm edit path): paint a basic list now;
       // the optimized week replaces it when the worker resolves.
       render({...opts,deferAgenda:true});
     }
-    // Cold open with no cache: keep the HTML skeleton until the planner
-    // supplies the week, then paint the agenda once (no interim basic list).
-    //
-    // PREVIOUS BEHAVIOR (instant basic list, skeleton skipped) — swap back by
-    // removing the `.home-loading` guard above and uncommenting the line below:
-    //
-    //   }else render({...opts,deferAgenda:true});
-    //
-    // i.e. the cold-open branch becomes:
-    //
-    //   if(cached){
-    //     render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
-    //     paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
-    //   }else render({...opts,deferAgenda:true});
+    // Cold open with no cache keeps the HTML skeleton until the worker result.
     _homeListFingerprint = homeListFingerprint();
     plannerPerfMark('planner-first-paint');
   }

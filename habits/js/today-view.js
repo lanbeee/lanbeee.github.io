@@ -368,41 +368,10 @@ function pickHabitLocationId(h,anchorId,registry,mode){
   return best;
 }
 
-// PURE: round-trip-aware location picker. Same scoring as pickHabitLocationId,
-// but when the next fill's location (nextLocId) is known the outbound leg is
-// added too — so a multi-location item sandwiched between two anchors picks
-// the location that minimises the WHOLE commute, not just inbound. Fixes the
-// "why detour to KhadijaM when Lunch is at Home next" case: from Spresh,
-// KhadijaM is 3m in but 5m back out (8m rt), while Home is 6m in / 0m out
-// (6m rt) — Home wins on the round trip even though it loses inbound. Used
-// only by the reconcile post-pass, where the next fill is already committed.
-function pickHabitLocationIdRoundTrip(h,anchorId,nextLocId,registry,mode){
-  const ids = normalizeLocationIds(h.locationIds,registry);
-  if(!ids.length)return null;
-  if(ids.length === 1 && !h.anywhereAllowed)return ids[0];
-  let best = null;
-  let bestScore = h.anywhereAllowed ? 0 : Infinity;
-  for(const id of ids){
-    const inEdge = travelEdgeBetweenIds(anchorId,id,registry,mode);
-    const outEdge = nextLocId
-      ? travelEdgeBetweenIds(id,nextLocId,registry,mode) : {seconds:0};
-    const pref = locationPrefLevel(h,id);
-    const prefBias = -locationPrefScore(pref) * 30;
-    const stayBonus = (anchorId && id === anchorId) ? -60 : 0;
-    const score = (inEdge.seconds || 0) + (outEdge.seconds || 0) + prefBias + stayBonus;
-    if(score < bestScore){ bestScore = score; best = id; }
-  }
-  return best;
-}
-
-// PURE: diagnostic twin of the location pickers. Returns the per-location
-// scoring used to choose where a multi-location fill lands, so the on-demand
-// planner trace can explain a surprising commute (e.g. Zuhr at KhadijaM when
-// Home was allowed). Mirrors pickHabitLocationId when next is unknown, and
-// pickHabitLocationIdRoundTrip when nextLocId is supplied — so the audit's
-// "chosen" line matches the reconcile post-pass that actually paints travel.
-// Never called from the placement path — only from buildPlannerDecisionTrace.
-function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
+// PURE: adjacent-leg diagnostic for a route-wide location decision. The active
+// placement path optimizes the complete committed chain; this helper only
+// explains the incoming/outgoing contribution around one fill.
+function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId,actualChosenId){
   const ids = normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return null;
   const locName = id => {
@@ -459,10 +428,12 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
       roundTrip
     };
   });
-  let chosenId = null;
-  let bestScore = h.anywhereAllowed ? 0 : Infinity;
-  for(const c of candidates){
-    if(c.total < bestScore){ bestScore = c.total; chosenId = c.id; }
+  let chosenId = actualChosenId || null;
+  if(actualChosenId === undefined){
+    let bestScore = h.anywhereAllowed ? 0 : Infinity;
+    for(const c of candidates){
+      if(c.total < bestScore){ bestScore = c.total; chosenId = c.id; }
+    }
   }
   for(const c of candidates){
     c.isWinner = (c.id === chosenId);
@@ -472,7 +443,9 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
       : null;
   }
   let reason;
-  if(!chosenId){
+  if(actualChosenId !== undefined){
+    reason = 'complete-day route optimum (all selected fills and fixed location anchors)';
+  }else if(!chosenId){
     reason = 'no location beat the anywhere-allowed floor 0 (stays anchorless)';
   }else if(h.anywhereAllowed){
     reason = 'lowest total under anywhere-allowed floor 0';
@@ -1299,23 +1272,23 @@ function buildPlannerDecisionTrace(data,settings,context){
       h,i,dayBase,dayEnd,rangeStart,rawBlocks,agendaRows,minChunk
     );
     const first = rows[0] || null;
-    // Location choice audit (on-demand only). For placed items with location
-    // constraints, surface the anchor the planner used at this fill's start and
-    // the full per-location scoring (travel + preference bias + stay-anchor
-    // bonus) so a surprising commute like "Zuhr at KhadijaM when Home was
-    // allowed and was the anchor" becomes explainable. Mirrors
-    // pickHabitLocationId exactly via locationChoiceBreakdown().
+    // Location choice audit (on-demand only). The selected location comes from
+    // complete-day route optimization. Adjacent inbound/outbound totals remain
+    // useful diagnostics, but are not mislabeled as the whole decision rule.
     if(first && locationIds.length && typeof locationChoiceBreakdown === 'function'){
       const anchor = anchorAt(first.start);
       const lastRow = rows[rows.length - 1] || first;
       const next = nextLocAfter(lastRow.end);
-      const breakdown = locationChoiceBreakdown(h,anchor.id,registry,travelMode,next.id);
+      const actualLocationId = first.locationId === undefined ? null : first.locationId;
+      const breakdown = locationChoiceBreakdown(
+        h,anchor.id,registry,travelMode,next.id,actualLocationId
+      );
       if(breakdown){
         const chosenName = breakdown.chosenId
           ? locNameById(breakdown.chosenId) : 'none';
         inputs.push(`location anchor ${locNameById(anchor.id)} (from ${anchor.source})`);
         if(next.id){
-          inputs.push(`location next ${locNameById(next.id)} (from ${next.source}) — picker minimises inbound + outbound`);
+          inputs.push(`location next ${locNameById(next.id)} (from ${next.source}) — adjacent legs shown; optimizer evaluates the complete day route`);
         }
         inputs.push(`location chosen ${chosenName} — ${breakdown.reason}`);
         const parts = breakdown.candidates.map(c=>{
@@ -1376,7 +1349,7 @@ function buildPlannerDecisionTrace(data,settings,context){
       inputs,
       engine:rows.length
         ? (Number.isFinite(scoreRow && scoreRow.optimizerWeight)
-          ? 'exact optimizer'
+          ? 'GLPK option optimizer'
           : (h.breakable ? 'continuous gap fill' : plannerEngine))
         : plannerEngine,
       score:Number.isFinite(scoreRow && scoreRow.plannerScore) ? scoreRow.plannerScore : null,
@@ -1566,7 +1539,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
   const plannerIsPreview = Boolean(week && !week.optimized && settings && settings.agendaOptimizer);
   const plannerEngine = week
-    ? (week.optimized ? 'exact optimizer'
+    ? (week.optimized ? 'GLPK option optimizer + complete-day route'
       : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner'))
     : 'fast day planner';
   const traceCandidateMeta = new Map();
@@ -2021,7 +1994,13 @@ function tryPlaceOnDay(state,fill,opts = {}){
   };
   const remaining = state.remaining;
   const usedMinutes = state.usedMinutes;
-  const resolveLoc = (anchor)=>fill.locationId || pickHabitLocationId(fill.h,anchor,registry,mode);
+  // `locationId` may deliberately be null. The exact optimizer uses that as
+  // the "stay wherever the route already is" option for anywhere-allowed
+  // habits, so presence of the property matters (truthiness does not).
+  const hasForcedLocation = Object.prototype.hasOwnProperty.call(fill,'locationId');
+  const resolveLoc = (anchor)=>hasForcedLocation
+    ? fill.locationId
+    : pickHabitLocationId(fill.h,anchor,registry,mode);
   const fits = [];
 
   // Chronological list of all committed fills, reused per gap so the travel
@@ -2651,6 +2630,176 @@ function placeBreakableSessions(state,fill,opts = {}){
   return placedAny;
 }
 
+// PURE: allowed location decisions for an already-timed fill. `null` means the
+// item is locationless and preserves the route's current location.
+function committedFillLocationChoices(entry,state){
+  const h = entry && entry.fill && entry.fill.h;
+  const fit = entry && entry.fit;
+  if(!h || !fit)return [];
+  if(Object.prototype.hasOwnProperty.call(entry.fill,'locationId')){
+    return [entry.fill.locationId || null];
+  }
+  const ids = normalizeLocationIds(h.locationIds,state.registry);
+  // Preserve an explicitly committed legacy/synthetic fit even when its habit
+  // record has no locationIds. Normal planner fills derive choices from the
+  // habit and therefore still expose every allowed location to the route DP.
+  const choices = h.anywhereAllowed
+    ? [null,...ids]
+    : (ids.length ? ids : (fit.locId ? [fit.locId] : [null]));
+  return choices.filter(locId=>{
+    if(!locId)return true;
+    const loc = state.registryById
+      ? state.registryById.get(locId)
+      : state.registry.find(item=>item.id === locId);
+    if(!loc)return false;
+    const intervals = effectiveLocationWindow(h,loc,state.weekday,state.dayBase);
+    const startMin = (fit.placeStart - state.dayBase) / 60000;
+    const endMin = (fit.placeEnd - state.dayBase) / 60000;
+    return intervals.some(iv=>startMin >= iv.start && endMin <= iv.end);
+  });
+}
+
+// PURE: dynamic-programming shortest route for the selected clock intervals.
+// This is global across the whole day: unlike the old inbound/round-trip
+// picker, it considers every allowed location and every committed successor at
+// once. Scheduled and blocked work participate as fixed/busy route events, so
+// travel can never be hidden underneath them.
+function optimalCommittedLocationRoute(state,chron){
+  if(!state || !Array.isArray(chron))return null;
+  const startClock = Number(state.startClock) || Number(state.dayBase) || 0;
+  const initialLoc = locationPresenceAt(state,startClock,[]) || state.seedLocId || null;
+  const events = [];
+
+  for(const entry of chron){
+    if(!entry || !entry.fit)continue;
+    events.push({
+      kind:'fill',entry,
+      start:entry.fit.placeStart,
+      end:entry.fit.placeEnd
+    });
+  }
+  for(const row of state.rows || []){
+    if(!row || row.kind !== 'scheduled' || row.end <= startClock)continue;
+    events.push({
+      kind:'hard',start:Math.max(row.start,startClock),end:row.end,
+      locationId:row.locationId || null
+    });
+  }
+  if(typeof agendaBlockedIntervals === 'function' && typeof dateKey === 'function'){
+    const dayEnd = state.dayBase + 86400000;
+    for(const block of agendaBlockedIntervals(
+      dateKey(state.dayBase),state.settings,state.dayBase,dayEnd
+    )){
+      if(!block || block.end <= startClock)continue;
+      events.push({
+        kind:'hard',start:Math.max(block.start,startClock),end:block.end,
+        locationId:block.locationId || null
+      });
+    }
+  }
+  events.sort((a,b)=>a.start - b.start
+    || (a.kind === 'hard' ? -1 : 1)
+    || a.end - b.end);
+
+  let states = new Map();
+  states.set(initialLoc || '',{
+    loc:initialLoc,
+    end:startClock,
+    cost:0,
+    travelSeconds:0,
+    assignments:new Map(),
+    arrivals:new Map(),
+    legs:[]
+  });
+
+  for(const event of events){
+    const next = new Map();
+    for(const route of states.values()){
+      const choices = event.kind === 'fill'
+        ? committedFillLocationChoices(event.entry,state)
+        : [event.locationId || null];
+      for(const choice of choices){
+        const destination = choice || route.loc || null;
+        const edge = travelEdgeBetweenIds(
+          route.loc,destination,state.registry,state.mode,{allowNetwork:false}
+        );
+        const travelSeconds = Math.max(0,Number(edge && edge.seconds) || 0);
+        // Travel is rendered immediately before the destination. Every event,
+        // including a locationless one, advances `end`, so this single check
+        // also prevents travel from overlapping work between two locations.
+        if(route.end + travelSeconds * 1000 > event.start)continue;
+
+        let cost = route.cost + travelSeconds;
+        if(event.kind === 'fill' && choice){
+          const h = event.entry.fill.h;
+          cost += -locationPrefScore(locationPrefLevel(h,choice)) * 30;
+          if(route.loc && route.loc === choice)cost -= 60;
+        }
+        const assignments = new Map(route.assignments);
+        if(event.kind === 'fill')assignments.set(event.entry,choice);
+        const arrivals = new Map(route.arrivals);
+        if(event.kind === 'fill')arrivals.set(event.entry,{
+          from:route.loc || null,
+          to:choice || null,
+          edge,
+          travelSeconds
+        });
+        const legs = route.legs.slice();
+        if(travelSeconds > 0 && route.loc && destination && route.loc !== destination){
+          legs.push({
+            from:route.loc,to:destination,seconds:travelSeconds,
+            metres:Number(edge && edge.metres) || 0,
+            provider:edge && edge.provider || state.mode,
+            start:event.start - travelSeconds * 1000,
+            end:event.start,
+            entry:event.kind === 'fill' ? event.entry : null
+          });
+        }
+        const key = destination || '';
+        const candidate = {
+          loc:destination,
+          end:Math.max(route.end,event.end),
+          cost,
+          travelSeconds:route.travelSeconds + travelSeconds,
+          assignments,
+          arrivals,
+          legs
+        };
+        const prior = next.get(key);
+        if(!prior || candidate.cost < prior.cost)next.set(key,candidate);
+      }
+    }
+    if(!next.size)return null;
+    states = next;
+  }
+
+  let best = null;
+  for(const route of states.values()){
+    if(!best || route.cost < best.cost)best = route;
+  }
+  return best;
+}
+
+// MUTATE: apply the globally cheapest feasible location chain without changing
+// any selected start/end. Returns false if the clock selections themselves do
+// not admit a feasible route; callers may then use the defensive repair path.
+function optimizeCommittedRouteLocations(state,chron){
+  const route = optimalCommittedLocationRoute(state,chron);
+  state._committedRoutePlan = route || null;
+  if(!route)return false;
+  for(const entry of chron){
+    if(!entry || !entry.fit || !route.assignments.has(entry))continue;
+    entry.fit.locId = route.assignments.get(entry);
+    const arrival = route.arrivals.get(entry);
+    if(arrival){
+      entry.fit.prevLocId = arrival.from;
+      entry.fit.edge = arrival.edge;
+      entry.fit.travelMin = Math.ceil(arrival.travelSeconds / 60);
+    }
+  }
+  return true;
+}
+
 // MUTATE: reconcile inbound travel after a chronological insertion. The fast
 // planner can place a later item first, then insert another fill between it and
 // its old location anchor. In that case the old commute is no longer part of
@@ -2663,6 +2812,7 @@ function reconcileCommittedTravel(state){
   let travelMinutes = 0;
   let durationMinutes = 0;
   let lastLocId = state.seedLocId || null;
+  const routeOptimized = optimizeCommittedRouteLocations(state,chron);
   // Running end of the previous (already-reconciled) fill in clock time. Used
   // to guarantee a commute never starts before the prior fill ends — the
   // out-of-order commit / anchor-drift case where Lunch places at Zuhr.end
@@ -2671,25 +2821,25 @@ function reconcileCommittedTravel(state){
   let prevEndMs = null;
 
   const patchFillRow = (entry,fit)=>{
+    const entryChunk = entry.fill && entry.fill.chunkIndex != null
+      ? entry.fill.chunkIndex : null;
     for(const r of state.rows || []){
-      if(r && r.kind === 'fill' && r.i === (entry.fill && entry.fill.i)){
+      const rowChunk = r && r.chunkIndex != null ? r.chunkIndex : null;
+      if(r && r.kind === 'fill'
+        && r.i === (entry.fill && entry.fill.i)
+        && rowChunk === entryChunk){
         r.locationId = fit.locId;
         r.start = fit.placeStart;
         r.end = fit.placeEnd;
       }
     }
+    for(const item of state.day && state.day.agendaItems || []){
+      const itemChunk = item && item.chunkIndex != null ? item.chunkIndex : null;
+      if(item && item.i === (entry.fill && entry.fill.i) && itemChunk === entryChunk){
+        item.locationId = fit.locId;
+      }
+    }
   };
-  const sameSlotOpen = (habit,locId,placeStart)=>{
-    if(!locId)return false;
-    const loc = state.registry.find(l=>l.id === locId);
-    if(!loc)return false;
-    const intervals = typeof effectiveLocationWindow === 'function'
-      ? effectiveLocationWindow(habit,loc,state.weekday,state.dayBase) : [];
-    const arriveMin = Math.floor((placeStart - state.dayBase) / 60000);
-    return Array.isArray(intervals)
-      && intervals.some(iv=>arriveMin >= iv.start && arriveMin < iv.end);
-  };
-
   for(let ci = 0; ci < chron.length; ci += 1){
     const entry = chron[ci];
     const fit = entry && entry.fit;
@@ -2697,48 +2847,26 @@ function reconcileCommittedTravel(state){
     durationMinutes += Math.max(0,Number(fit.durMin) || 0);
     const fitHabit = entry.fill && entry.fill.h;
 
-    // Outbound-aware location re-resolution. GLPK froze each option's locId
-    // during enumeration against whatever anchor existed THEN, counting only
-    // the INBOUND leg. By commit time the next fill is known, so we re-pick
-    // minimizing the WHOLE commute (inbound + outbound to the next fill's
-    // committed location). This both fixes anchor drift (the in-leg now
-    // reflects the real anchor) AND the "detour for no reason" case: Zuhr
-    // won't go to KhadijaM when Lunch is Home-locked next, because Home wins
-    // the round trip. Single-location / anywhere items are left untouched.
-    if(fitHabit && fit.locId
-      && typeof pickHabitLocationIdRoundTrip === 'function'
-      && typeof normalizeLocationIds === 'function'
-      && normalizeLocationIds(fitHabit.locationIds,state.registry).length > 1){
-      const anchor0 = locationPresenceAt(state,fit.placeStart,chron);
-      const nextLocId = (()=>{
-        for(let ni = ci + 1; ni < chron.length; ni += 1){
-          const nloc = chron[ni] && chron[ni].fit && chron[ni].fit.locId;
-          if(nloc)return nloc;
-        }
-        return null;
-      })();
-      const resolved = pickHabitLocationIdRoundTrip(
-        fitHabit,anchor0,nextLocId,state.registry,state.mode);
-      if(resolved && resolved !== fit.locId && sameSlotOpen(fitHabit,resolved,fit.placeStart)){
-        fit.locId = resolved;
-        patchFillRow(entry,fit);
-      }
-    }
-
-    const anchor = locationPresenceAt(state,fit.placeStart,chron);
-    const edge = travelEdgeBetweenIds(
-      anchor,
-      fit.locId,
-      state.registry,
-      state.mode,
-      {allowNetwork:false}
-    );
+    const routeArrival = routeOptimized && state._committedRoutePlan
+      ? state._committedRoutePlan.arrivals.get(entry) : null;
+    const anchor = routeArrival
+      ? routeArrival.from
+      : locationPresenceAt(state,fit.placeStart,chron);
+    const edge = routeArrival
+      ? routeArrival.edge
+      : travelEdgeBetweenIds(
+          anchor,
+          fit.locId,
+          state.registry,
+          state.mode,
+          {allowNetwork:false}
+        );
     // Re-time guard: if the inbound commute would start before the previous
     // fill ends (out-of-order commit left no room), push this fill forward so
     // the commute fits. Updates the fill row's start/end so homeDaySequence
     // never draws a travel card overlapping a fill.
     const commuteMs = Math.max(0,Number(edge && edge.seconds) || 0) * 1000;
-    if(prevEndMs != null && fit.placeStart - commuteMs < prevEndMs){
+    if(!routeOptimized && prevEndMs != null && fit.placeStart - commuteMs < prevEndMs){
       const pushedStart = prevEndMs + commuteMs;
       // Only push forward when the new slot still sits inside the fill's own
       // hard window end (avoid blowing past the allowed end; if it can't fit,
@@ -2746,10 +2874,11 @@ function reconcileCommittedTravel(state){
       const newEnd = pushedStart + (Number(fit.durMin) || 0) * 60000;
       const hardEndMs = (()=>{
         if(!fitHabit || typeof hasTimeWindow !== 'function' || !hasTimeWindow(fitHabit))return Infinity;
-        const end = (typeof fillDayWindows === 'function'
-          ? fillDayWindows(fitHabit,state.dayBase,null) || [] : [])
-          .map(w=>Number(w.end)).filter(Number.isFinite);
-        return end.length ? Math.min(...end) * 60000 + state.dayBase : Infinity;
+        const windows = typeof fillDayWindows === 'function'
+          ? fillDayWindows(fitHabit,state.dayBase,null) || [] : [];
+        const active = windows.find(w=>
+          Number(w.start) <= fit.placeStart && fit.placeStart < Number(w.end));
+        return active && Number.isFinite(Number(active.end)) ? Number(active.end) : Infinity;
       })();
       if(newEnd <= hardEndMs){
         fit.placeStart = pushedStart;
@@ -2761,6 +2890,7 @@ function reconcileCommittedTravel(state){
     fit.prevLocId = anchor;
     fit.edge = edge;
     fit.travelMin = travelMin;
+    patchFillRow(entry,fit);
     travelMinutes += travelMin;
     if(edge.seconds > 0 && anchor && fit.locId && anchor !== fit.locId){
       const from = state.registry.find(l=>l.id === anchor);
@@ -2792,6 +2922,26 @@ function reconcileCommittedTravel(state){
     prevEndMs = Math.max(prevEndMs || 0,fit.placeEnd);
   }
 
+  if(routeOptimized && state._committedRoutePlan){
+    travelRows.length = 0;
+    travelMinutes = 0;
+    for(const leg of state._committedRoutePlan.legs){
+      const from = state.registry.find(l=>l.id === leg.from);
+      const to = state.registry.find(l=>l.id === leg.to);
+      travelRows.push({
+        kind:'travel',
+        from:leg.from,to:leg.to,
+        fromName:from ? from.name : '',
+        toName:to ? to.name : '',
+        seconds:leg.seconds,
+        metres:leg.metres,
+        start:leg.start,end:leg.end,
+        provider:leg.provider || state.mode
+      });
+      travelMinutes += Math.ceil(leg.seconds / 60);
+    }
+    lastLocId = state._committedRoutePlan.loc || lastLocId;
+  }
   state.rows = (state.rows || []).filter(row=>row.kind !== 'travel').concat(travelRows);
   state.usedMinutes = Math.max(0,durationMinutes + travelMinutes);
   state.remaining = Math.max(0,(Number(state.totalMinutes) || 0) - state.usedMinutes);
@@ -2855,6 +3005,10 @@ function commitPlacement(state,fill,fit){
 }
 
 function finalizePlacementRows(state){
+  // The last append often takes the O(1) commit path. Reconcile once here so
+  // every published timeline receives the same whole-day route optimization
+  // and invariant check, independent of candidate commit order.
+  reconcileCommittedTravel(state);
   return state.rows.slice().sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
 }
 

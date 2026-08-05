@@ -846,6 +846,83 @@ function base(props) {
       JSON.stringify({zuhr:overlapZuhr,lunch:overlapLunch,travel:overlapResult.travelDetail}));
   }
 
+  // Whole-route location optimum. A one-step/round-trip picker misses the
+  // final scheduled anchor here: A is closest to Home and staying at A looks
+  // locally cheap, but A→End is expensive. The globally best chain is A→B→End.
+  console.log('\n[Optimizer] multi-stop locations minimize the complete route');
+  const routeOptimum = await page.evaluate(({now,settings})=>{
+    const previous = localStorage.getItem('tings_app_settings_v2');
+    try{
+      if(typeof saveSortSettings === 'function')saveSortSettings(settings);
+      const base = dayStart(now);
+      const habit = (hid,name)=>({
+        hid,name,type:'keepup',target:1,durationMinutes:5,
+        locationIds:['a','b'],locationPrefs:{a:'neutral',b:'neutral'}
+      });
+      const h1 = habit('route-1','Route one');
+      const h2 = habit('route-2','Route two');
+      const endHabit = {
+        hid:'route-end',name:'Fixed end',type:'task',durationMinutes:5,
+        eventTime:base + (10 * 60 + 40) * 60000,locationIds:['end']
+      };
+      const day = {
+        dayBase:base,weekday:new Date(base).getDay(),isToday:true,
+        totalMinutes:600,slots:[{start:base + 9 * 3600000,end:base + 18 * 3600000}],
+        scheduled:[{h:endHabit,i:2}],agendaItems:[]
+      };
+      const state = createDayPlacementState(day,settings,{
+        now,startClock:base + (9 * 60 + 45) * 60000
+      });
+      state.seedLocId = 'home';
+      state.prevLocId = 'home';
+      const entry = (h,i,startMin,locId)=>({
+        fill:{h,i,priority:0},
+        fit:{
+          placeStart:base + startMin * 60000,
+          placeEnd:base + (startMin + 5) * 60000,
+          durMin:5,travelMin:0,locId,prevLocId:'home'
+        }
+      });
+      const chron = [entry(h1,0,10 * 60,'a'),entry(h2,1,10 * 60 + 20,'a')];
+      state.fills = chron;
+      const route = optimalCommittedLocationRoute(state,chron);
+      const applied = optimizeCommittedRouteLocations(state,chron);
+      return {
+        found:Boolean(route),applied,
+        locations:chron.map(item=>item.fit.locId),
+        cost:route && route.cost
+      };
+    }finally{
+      if(previous == null)localStorage.removeItem('tings_app_settings_v2');
+      else localStorage.setItem('tings_app_settings_v2',previous);
+    }
+  },{
+    now:atTime(9,45),
+    settings:{
+      preset:'todayFirst',agendaOptimizer:true,lastKnownLocationId:'home',
+      defaultTravelMode:'walking',blockedTimes:[],
+      locations:[
+        {id:'home',name:'Home',lat:40.70,lng:-74.00},
+        {id:'a',name:'A',lat:40.701,lng:-74.001},
+        {id:'b',name:'B',lat:40.702,lng:-74.002},
+        {id:'end',name:'End',lat:40.703,lng:-74.003}
+      ],
+      travel:{
+        'a|home':{a:'a',b:'home',seconds:60,metres:100,provider:'manual',fetchedAt:Date.now()},
+        'b|home':{a:'b',b:'home',seconds:5 * 60,metres:500,provider:'manual',fetchedAt:Date.now()},
+        'a|b':{a:'a',b:'b',seconds:60,metres:100,provider:'manual',fetchedAt:Date.now()},
+        'a|end':{a:'a',b:'end',seconds:10 * 60,metres:1000,provider:'manual',fetchedAt:Date.now()},
+        'b|end':{a:'b',b:'end',seconds:60,metres:100,provider:'manual',fetchedAt:Date.now()},
+        'end|home':{a:'end',b:'home',seconds:60,metres:100,provider:'manual',fetchedAt:Date.now()}
+      }
+    }
+  });
+  check('complete route has a feasible solution',
+    routeOptimum.found && routeOptimum.applied,JSON.stringify(routeOptimum));
+  check('complete route chooses A then B (not locally-sticky A then A)',
+    routeOptimum.locations[0] === 'a' && routeOptimum.locations[1] === 'b',
+    JSON.stringify(routeOptimum));
+
   // Fallback path: force timeout / broken glpk should not throw — heuristic still works.
   console.log('\n[Optimizer] heuristic fallback still works with optimizer flag');
   const fallback = await page.evaluate(async ({ now }) => {
