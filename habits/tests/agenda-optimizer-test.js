@@ -542,6 +542,146 @@ function base(props) {
       JSON.stringify({zuhr:zuhrFill,grocery:groceryFill}));
   }
 
+  // Stale-anchor location pinning: when GLPK enumerates a multi-location
+  // habit's option against one anchor (e.g. Spresh, after grocery) but later
+  // commits a Home-locked item before it, the option's frozen location must be
+  // re-resolved against the now-current anchor. Otherwise a 5m commute to
+  // KhadijaM (+5m back for Home-locked Lunch) is bought for a prayer that
+  // could be done at Home. Reproduces the Zuhr audit finding.
+  console.log('\n[Optimizer] stale-anchor location re-resolution');
+  const staleAnchorResult = await page.evaluate(async ({now,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const orig = globalThis.Date; globalThis.Date = FD;
+    // Capture localStorage so seeding the travel cache doesn't poison the
+    // heuristic-fallback test that runs after this one.
+    const prevSettingsItem = localStorage.getItem('tings_app_settings_v2');
+    try{
+      // Seed the module-level travel cache so the manual edges (standing in
+      // for real OSRM data) are honored by travelBetween() instead of falling
+      // back to haversine. Settings passed directly to buildWeekAgendaAsync
+      // do not, by themselves, populate that cache.
+      if(typeof saveSortSettings === 'function')saveSortSettings(settings);
+      const week = await buildWeekAgendaAsync(data,settings,1);
+      const day = week.days[0];
+      day.isToday = true;
+      const seq = homeDaySequence(day,settings);
+      const travels = seq.filter(row=>row.kind === 'travel');
+      const fills = seq.filter(row=>row.kind === 'fill').map(row=>({
+        name:row.h.name,
+        start:Math.round((row.start - day.dayBase) / 60000),
+        end:Math.round((row.end - day.dayBase) / 60000),
+        loc:row.locationId || null
+      }));
+      const totalTravelMinutes = travels.reduce(
+        (sum,t)=>sum + Math.round((t.end - t.start) / 60000),0);
+      const travelsToKhadijam = travels.filter(t=>t.to === 'khadijam').length;
+      const travelDetail = travels.map(t=>({
+        from:t.fromName || t.from,
+        to:t.toName || t.to,
+        start:Math.round((t.start - day.dayBase) / 60000),
+        end:Math.round((t.end - day.dayBase) / 60000)
+      }));
+      return {
+        optimized:Boolean(week.optimized),
+        fills,
+        totalTravelMinutes,
+        travelsToKhadijam,
+        travelDetail
+      };
+    }finally{
+      if(prevSettingsItem != null)localStorage.setItem('tings_app_settings_v2',prevSettingsItem);
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(10,53),
+    data:[
+      base({
+        // Scheduled (hard) grocery at Spresh: a fixed time anchor committed
+        // before GLPK enumerates the flexible candidates, so Zuhr's options
+        // are generated against the Spresh anchor (where KhadijaM is 3m away
+        // vs Home 6m). That freezes KhadijaM into Zuhr's option; the bug is
+        // that this frozen location survives even after Work (Home) commits
+        // earlier and shifts the real anchor to Home.
+        name:'Indian Grocery',type:'task',durationMinutes:30,priority:3,
+        locationIds:['spresh'],
+        eventTime:atTime(10,55) + 6 * 60000
+      }),
+      base({
+        name:'Work',type:'keepup',target:1,durationMinutes:266,breakable:true,
+        minChunkMinutes:45,priority:0,locationIds:['home'],
+        allowedTimeStart:8 * 60 + 45,allowedTimeEnd:18 * 60 + 45,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        // Home-locked morning standup: GLPK commits it in the post-grocery
+        // gap, BEFORE Zuhr. That makes the real anchor at Zuhr's commit = Home,
+        // while Zuhr's option was frozen against the Spresh (grocery) anchor
+        // during enumeration. This is the stale-anchor condition: pre-fix the
+        // reconciler keeps KhadijaM; post-fix it re-resolves to Home.
+        name:'Standup',type:'keepup',target:1,durationMinutes:15,priority:1,
+        locationIds:['home'],
+        allowedTimeStart:11 * 60 + 31,allowedTimeEnd:13 * 60,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        name:'Zuhr',type:'keepup',target:1,durationMinutes:5,priority:0,
+        locationIds:['home','khadijam'],
+        allowedTimeStart:13 * 60 + 22,allowedTimeEnd:17 * 60 + 7,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        name:'Lunch',type:'keepup',target:1,durationMinutes:30,priority:0,
+        locationIds:['home'],
+        allowedTimeStart:13 * 60 + 22,allowedTimeEnd:15 * 60 + 22,
+        lastLog:ago1d,logs:[ago1d]
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[600,600,600,600,600,600,600],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      lastKnownLocationId:'home',
+      defaultTravelMode:'walking',
+      locations:[
+        {id:'home',name:'Home',lat:40.70,lng:-74.00},
+        {id:'spresh',name:'Spresh',lat:40.71,lng:-74.01},
+        {id:'khadijam',name:'KhadijaM',lat:40.705,lng:-74.005}
+      ],
+      travel:{
+        'home|spresh':{
+          a:'home',b:'spresh',seconds:6 * 60,metres:900,
+          provider:'manual',fetchedAt:Date.now()
+        },
+        'home|khadijam':{
+          a:'home',b:'khadijam',seconds:5 * 60,metres:700,
+          provider:'manual',fetchedAt:Date.now()
+        },
+        'khadijam|spresh':{
+          a:'khadijam',b:'spresh',seconds:3 * 60,metres:400,
+          provider:'manual',fetchedAt:Date.now()
+        }
+      },
+      blockedTimes:[{label:'sleep',days:[],start:0,end:420,locationId:'home'}]
+    }
+  });
+  check('stale-anchor scenario uses optimizer',staleAnchorResult.optimized,
+    JSON.stringify(staleAnchorResult));
+  const staleZuhr = staleAnchorResult.fills.find(f=>f.name === 'Zuhr');
+  check('Zuhr is placed',Boolean(staleZuhr),JSON.stringify(staleAnchorResult.fills));
+  check('Zuhr lands at Home (not KhadijaM)',
+    staleZuhr && staleZuhr.loc === 'home',
+    staleZuhr ? `got loc=${staleZuhr.loc}` : 'no Zuhr fill');
+  check('no travel card to KhadijaM',
+    staleAnchorResult.travelsToKhadijam === 0,
+    `got ${staleAnchorResult.travelsToKhadijam} travel(s) to khadijam`);
+  check('total travel is grocery round-trip only (12m)',
+    staleAnchorResult.totalTravelMinutes === 12,
+    `got ${staleAnchorResult.totalTravelMinutes}m :: ${JSON.stringify({fills:staleAnchorResult.fills,travel:staleAnchorResult.travelDetail})}`);
+
   // Fallback path: force timeout / broken glpk should not throw — heuristic still works.
   console.log('\n[Optimizer] heuristic fallback still works with optimizer flag');
   const fallback = await page.evaluate(async ({ now }) => {

@@ -2586,6 +2586,46 @@ function reconcileCommittedTravel(state){
     if(!fit)continue;
     durationMinutes += Math.max(0,Number(fit.durMin) || 0);
     const anchor = locationPresenceAt(state,fit.placeStart,chron);
+    // Stale-anchor location re-resolution. GLPK commits pre-computed options
+    // whose locId was resolved during enumeration against whatever anchor was
+    // current THEN (often a scheduled/blocked anchor, before other flexible
+    // fills were committed). By the time the option commits in chronological
+    // order, the real anchor may have moved (e.g. a Home-locked Work chunk
+    // committed earlier). The frozen locId then buys an avoidable commute
+    // (e.g. Zuhr at KhadijaM when Home is now the anchor and is allowed).
+    // Re-run pickHabitLocationId against the current anchor and swap only
+    // when the new location is open at the SAME placed time slot (we cannot
+    // nudge placeStart here without cascading into successors). Single-
+    // location and anywhere items are left untouched.
+    const fitHabit = entry.fill && entry.fill.h;
+    if(fitHabit && fit.locId && anchor
+      && (fit.prevLocId || null) !== (anchor || null)
+      && typeof pickHabitLocationId === 'function'
+      && typeof normalizeLocationIds === 'function'
+      && normalizeLocationIds(fitHabit.locationIds,state.registry).length > 1){
+      const resolved = pickHabitLocationId(fitHabit,anchor,state.registry,state.mode);
+      if(resolved && resolved !== fit.locId){
+        const newLoc = state.registry.find(l=>l.id === resolved);
+        const intervals = newLoc && typeof effectiveLocationWindow === 'function'
+          ? effectiveLocationWindow(fitHabit,newLoc,state.weekday,state.dayBase) : [];
+        const arriveMin = Math.floor((fit.placeStart - state.dayBase) / 60000);
+        const sameSlotOpen = Array.isArray(intervals)
+          && intervals.some(iv=>arriveMin >= iv.start && arriveMin < iv.end);
+        if(sameSlotOpen){
+          fit.locId = resolved;
+          // The fill row was pushed with the stale locationId; patch it so
+          // homeDaySequence renders the re-resolved location. (Reconcile only
+          // rebuilds travel rows; fill rows are preserved in place.)
+          for(const r of state.rows || []){
+            if(r && r.kind === 'fill'
+              && r.start === fit.placeStart && r.end === fit.placeEnd
+              && r.i === (entry.fill && entry.fill.i)){
+              r.locationId = resolved;
+            }
+          }
+        }
+      }
+    }
     const edge = travelEdgeBetweenIds(
       anchor,
       fit.locId,
