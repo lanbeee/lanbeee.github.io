@@ -368,15 +368,39 @@ function pickHabitLocationId(h,anchorId,registry,mode){
   return best;
 }
 
-// PURE: diagnostic twin of pickHabitLocationId. Returns the per-location
+// PURE: round-trip-aware location picker. Same scoring as pickHabitLocationId,
+// but when the next fill's location (nextLocId) is known the outbound leg is
+// added too — so a multi-location item sandwiched between two anchors picks
+// the location that minimises the WHOLE commute, not just inbound. Fixes the
+// "why detour to KhadijaM when Lunch is at Home next" case: from Spresh,
+// KhadijaM is 3m in but 5m back out (8m rt), while Home is 6m in / 0m out
+// (6m rt) — Home wins on the round trip even though it loses inbound. Used
+// only by the reconcile post-pass, where the next fill is already committed.
+function pickHabitLocationIdRoundTrip(h,anchorId,nextLocId,registry,mode){
+  const ids = normalizeLocationIds(h.locationIds,registry);
+  if(!ids.length)return null;
+  if(ids.length === 1 && !h.anywhereAllowed)return ids[0];
+  let best = null;
+  let bestScore = h.anywhereAllowed ? 0 : Infinity;
+  for(const id of ids){
+    const inEdge = travelEdgeBetweenIds(anchorId,id,registry,mode);
+    const outEdge = nextLocId
+      ? travelEdgeBetweenIds(id,nextLocId,registry,mode) : {seconds:0};
+    const pref = locationPrefLevel(h,id);
+    const prefBias = -locationPrefScore(pref) * 30;
+    const stayBonus = (anchorId && id === anchorId) ? -60 : 0;
+    const score = (inEdge.seconds || 0) + (outEdge.seconds || 0) + prefBias + stayBonus;
+    if(score < bestScore){ bestScore = score; best = id; }
+  }
+  return best;
+}
+
+// PURE: diagnostic twin of the location pickers. Returns the per-location
 // scoring used to choose where a multi-location fill lands, so the on-demand
 // planner trace can explain a surprising commute (e.g. Zuhr at KhadijaM when
-// Home was allowed and was the current anchor). Mirrors pickHabitLocationId
-// exactly, including the single-location short-circuit and the anywhere floor.
-// When nextLocId is supplied (the next fill's committed location), also reports
-// the outbound + round-trip cost so an outbound-blind choice becomes visible:
-// the real picker only minimises inbound, so the inbound winner can lose on the
-// round trip when the next item is locked elsewhere (e.g. Lunch @Home).
+// Home was allowed). Mirrors pickHabitLocationId when next is unknown, and
+// pickHabitLocationIdRoundTrip when nextLocId is supplied — so the audit's
+// "chosen" line matches the reconcile post-pass that actually paints travel.
 // Never called from the placement path — only from buildPlannerDecisionTrace.
 function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
   const ids = normalizeLocationIds(h.locationIds,registry);
@@ -408,6 +432,7 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
       candidates:[c]
     };
   }
+  const useRoundTrip = Boolean(nextLocId);
   const candidates = ids.map(id=>{
     const edge = travelEdgeBetweenIds(anchorId,id,registry,mode);
     const prefLevel = locationPrefLevel(h,id);
@@ -416,7 +441,9 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
     const edgeSeconds = Number(edge && edge.seconds) || 0;
     const outboundSeconds = nextLocId
       ? Number(travelEdgeBetweenIds(id,nextLocId,registry,mode).seconds) || 0 : null;
-    const total = edgeSeconds + prefBias + sameAnchorBonus;
+    const inboundTotal = edgeSeconds + prefBias + sameAnchorBonus;
+    const roundTrip = nextLocId
+      ? (edgeSeconds + outboundSeconds + prefBias + sameAnchorBonus) : null;
     return {
       id,
       name:locName(id),
@@ -425,8 +452,11 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
       outboundSeconds,
       prefBias,
       sameAnchorBonus,
-      total,
-      roundTrip:nextLocId ? (edgeSeconds + outboundSeconds + prefBias + sameAnchorBonus) : null
+      // `total` is the score the active picker minimises (inbound-only, or
+      // round-trip when the next fill's location is known at reconcile time).
+      total:useRoundTrip ? roundTrip : inboundTotal,
+      inboundTotal,
+      roundTrip
     };
   });
   let chosenId = null;
@@ -436,20 +466,18 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
   }
   for(const c of candidates){
     c.isWinner = (c.id === chosenId);
-    c.isRoundTripWinner = nextLocId
-      ? candidates.every(o=>c.roundTrip <= o.roundTrip) && candidates.some(o=>c.roundTrip < o.roundTrip)
+    c.isRoundTripWinner = useRoundTrip
+      ? candidates.every(o=>c.roundTrip <= o.roundTrip)
+        && candidates.some(o=>c.roundTrip < o.roundTrip)
       : null;
   }
-  const roundTripMismatch = nextLocId && chosenId
-    && !candidates.find(c=>c.id === chosenId).isRoundTripWinner;
   let reason;
   if(!chosenId){
     reason = 'no location beat the anywhere-allowed floor 0 (stays anchorless)';
   }else if(h.anywhereAllowed){
     reason = 'lowest total under anywhere-allowed floor 0';
-  }else if(roundTripMismatch){
-    const rtWinner = candidates.find(c=>c.isRoundTripWinner);
-    reason = `lowest INBOUND total wins (picker is outbound-blind) — ${rtWinner ? rtWinner.name : '?'} is cheaper on the round trip`;
+  }else if(useRoundTrip){
+    reason = 'lowest ROUND-TRIP total wins (inbound + outbound to next fill)';
   }else{
     reason = 'lowest total = travel + preference bias + stay-anchor bonus (lower wins)';
   }
@@ -1121,9 +1149,9 @@ function buildPlannerDecisionTrace(data,settings,context){
     return {id:last.locationId, source:last.source};
   };
   // PURE: the committed location of the next fill/scheduled row after this
-  // one, if any. Surfaces the outbound leg the inbound-only picker ignores:
-  // when the next item is locked elsewhere (e.g. Lunch @Home), the inbound
-  // winner (KhadijaM) can lose on the round trip. Built only from trace data.
+  // one, if any. Feeds the round-trip location picker / audit so a multi-
+  // location fill sandwiched before a Home-locked item (e.g. Lunch) picks
+  // the location that minimises inbound + outbound, not inbound alone.
   const nextLocAfter = targetEnd => {
     const at = Number(targetEnd) || 0;
     let earliest = null;
@@ -1287,7 +1315,7 @@ function buildPlannerDecisionTrace(data,settings,context){
           ? locNameById(breakdown.chosenId) : 'none';
         inputs.push(`location anchor ${locNameById(anchor.id)} (from ${anchor.source})`);
         if(next.id){
-          inputs.push(`location next ${locNameById(next.id)} (from ${next.source}) — picker counts inbound only, round trip shown for diagnosis`);
+          inputs.push(`location next ${locNameById(next.id)} (from ${next.source}) — picker minimises inbound + outbound`);
         }
         inputs.push(`location chosen ${chosenName} — ${breakdown.reason}`);
         const parts = breakdown.candidates.map(c=>{
@@ -1301,7 +1329,6 @@ function buildPlannerDecisionTrace(data,settings,context){
           if(c.outboundSeconds != null){
             const outMin = Math.round(c.outboundSeconds / 60);
             label += ` · ${outMin}m out · rt ${c.roundTrip}`;
-            if(c.isRoundTripWinner && !c.isWinner)label += ' (round-trip winner)';
           }
           if(c.isWinner)label += ' *';
           return label;
@@ -2636,52 +2663,69 @@ function reconcileCommittedTravel(state){
   let travelMinutes = 0;
   let durationMinutes = 0;
   let lastLocId = state.seedLocId || null;
+  // Running end of the previous (already-reconciled) fill in clock time. Used
+  // to guarantee a commute never starts before the prior fill ends — the
+  // out-of-order commit / anchor-drift case where Lunch places at Zuhr.end
+  // with a 0-minute commute, then Zuhr inserts at KhadijaM and Lunch's real
+  // commute gets drawn backward on top of Zuhr.
+  let prevEndMs = null;
 
-  for(const entry of chron){
+  const patchFillRow = (entry,fit)=>{
+    for(const r of state.rows || []){
+      if(r && r.kind === 'fill' && r.i === (entry.fill && entry.fill.i)){
+        r.locationId = fit.locId;
+        r.start = fit.placeStart;
+        r.end = fit.placeEnd;
+      }
+    }
+  };
+  const sameSlotOpen = (habit,locId,placeStart)=>{
+    if(!locId)return false;
+    const loc = state.registry.find(l=>l.id === locId);
+    if(!loc)return false;
+    const intervals = typeof effectiveLocationWindow === 'function'
+      ? effectiveLocationWindow(habit,loc,state.weekday,state.dayBase) : [];
+    const arriveMin = Math.floor((placeStart - state.dayBase) / 60000);
+    return Array.isArray(intervals)
+      && intervals.some(iv=>arriveMin >= iv.start && arriveMin < iv.end);
+  };
+
+  for(let ci = 0; ci < chron.length; ci += 1){
+    const entry = chron[ci];
     const fit = entry && entry.fit;
     if(!fit)continue;
     durationMinutes += Math.max(0,Number(fit.durMin) || 0);
-    const anchor = locationPresenceAt(state,fit.placeStart,chron);
-    // Stale-anchor location re-resolution. GLPK commits pre-computed options
-    // whose locId was resolved during enumeration against whatever anchor was
-    // current THEN (often a scheduled/blocked anchor, before other flexible
-    // fills were committed). By the time the option commits in chronological
-    // order, the real anchor may have moved (e.g. a Home-locked Work chunk
-    // committed earlier). The frozen locId then buys an avoidable commute
-    // (e.g. Zuhr at KhadijaM when Home is now the anchor and is allowed).
-    // Re-run pickHabitLocationId against the current anchor and swap only
-    // when the new location is open at the SAME placed time slot (we cannot
-    // nudge placeStart here without cascading into successors). Single-
-    // location and anywhere items are left untouched.
     const fitHabit = entry.fill && entry.fill.h;
-    if(fitHabit && fit.locId && anchor
-      && (fit.prevLocId || null) !== (anchor || null)
-      && typeof pickHabitLocationId === 'function'
+
+    // Outbound-aware location re-resolution. GLPK froze each option's locId
+    // during enumeration against whatever anchor existed THEN, counting only
+    // the INBOUND leg. By commit time the next fill is known, so we re-pick
+    // minimizing the WHOLE commute (inbound + outbound to the next fill's
+    // committed location). This both fixes anchor drift (the in-leg now
+    // reflects the real anchor) AND the "detour for no reason" case: Zuhr
+    // won't go to KhadijaM when Lunch is Home-locked next, because Home wins
+    // the round trip. Single-location / anywhere items are left untouched.
+    if(fitHabit && fit.locId
+      && typeof pickHabitLocationIdRoundTrip === 'function'
       && typeof normalizeLocationIds === 'function'
       && normalizeLocationIds(fitHabit.locationIds,state.registry).length > 1){
-      const resolved = pickHabitLocationId(fitHabit,anchor,state.registry,state.mode);
-      if(resolved && resolved !== fit.locId){
-        const newLoc = state.registry.find(l=>l.id === resolved);
-        const intervals = newLoc && typeof effectiveLocationWindow === 'function'
-          ? effectiveLocationWindow(fitHabit,newLoc,state.weekday,state.dayBase) : [];
-        const arriveMin = Math.floor((fit.placeStart - state.dayBase) / 60000);
-        const sameSlotOpen = Array.isArray(intervals)
-          && intervals.some(iv=>arriveMin >= iv.start && arriveMin < iv.end);
-        if(sameSlotOpen){
-          fit.locId = resolved;
-          // The fill row was pushed with the stale locationId; patch it so
-          // homeDaySequence renders the re-resolved location. (Reconcile only
-          // rebuilds travel rows; fill rows are preserved in place.)
-          for(const r of state.rows || []){
-            if(r && r.kind === 'fill'
-              && r.start === fit.placeStart && r.end === fit.placeEnd
-              && r.i === (entry.fill && entry.fill.i)){
-              r.locationId = resolved;
-            }
-          }
+      const anchor0 = locationPresenceAt(state,fit.placeStart,chron);
+      const nextLocId = (()=>{
+        for(let ni = ci + 1; ni < chron.length; ni += 1){
+          const nloc = chron[ni] && chron[ni].fit && chron[ni].fit.locId;
+          if(nloc)return nloc;
         }
+        return null;
+      })();
+      const resolved = pickHabitLocationIdRoundTrip(
+        fitHabit,anchor0,nextLocId,state.registry,state.mode);
+      if(resolved && resolved !== fit.locId && sameSlotOpen(fitHabit,resolved,fit.placeStart)){
+        fit.locId = resolved;
+        patchFillRow(entry,fit);
       }
     }
+
+    const anchor = locationPresenceAt(state,fit.placeStart,chron);
     const edge = travelEdgeBetweenIds(
       anchor,
       fit.locId,
@@ -2689,7 +2733,31 @@ function reconcileCommittedTravel(state){
       state.mode,
       {allowNetwork:false}
     );
-    const travelMin = Math.max(0,Math.ceil((Number(edge.seconds) || 0) / 60));
+    // Re-time guard: if the inbound commute would start before the previous
+    // fill ends (out-of-order commit left no room), push this fill forward so
+    // the commute fits. Updates the fill row's start/end so homeDaySequence
+    // never draws a travel card overlapping a fill.
+    const commuteMs = Math.max(0,Number(edge && edge.seconds) || 0) * 1000;
+    if(prevEndMs != null && fit.placeStart - commuteMs < prevEndMs){
+      const pushedStart = prevEndMs + commuteMs;
+      // Only push forward when the new slot still sits inside the fill's own
+      // hard window end (avoid blowing past the allowed end; if it can't fit,
+      // leave the time and let the commute clamp at render instead).
+      const newEnd = pushedStart + (Number(fit.durMin) || 0) * 60000;
+      const hardEndMs = (()=>{
+        if(!fitHabit || typeof hasTimeWindow !== 'function' || !hasTimeWindow(fitHabit))return Infinity;
+        const end = (typeof fillDayWindows === 'function'
+          ? fillDayWindows(fitHabit,state.dayBase,null) || [] : [])
+          .map(w=>Number(w.end)).filter(Number.isFinite);
+        return end.length ? Math.min(...end) * 60000 + state.dayBase : Infinity;
+      })();
+      if(newEnd <= hardEndMs){
+        fit.placeStart = pushedStart;
+        fit.placeEnd = newEnd;
+        patchFillRow(entry,fit);
+      }
+    }
+    const travelMin = Math.max(0,Math.ceil(Number(edge.seconds || 0) / 60));
     fit.prevLocId = anchor;
     fit.edge = edge;
     fit.travelMin = travelMin;
@@ -2697,20 +2765,31 @@ function reconcileCommittedTravel(state){
     if(edge.seconds > 0 && anchor && fit.locId && anchor !== fit.locId){
       const from = state.registry.find(l=>l.id === anchor);
       const to = state.registry.find(l=>l.id === fit.locId);
-      travelRows.push({
-        kind:'travel',
-        from:anchor,
-        to:fit.locId,
-        fromName:from ? from.name : '',
-        toName:to ? to.name : '',
-        seconds:edge.seconds,
-        metres:edge.metres || 0,
-        start:Math.max(fit.placeStart - edge.seconds * 1000,state.dayBase),
-        end:fit.placeStart,
-        provider:edge.provider || state.mode
-      });
+      // Floor travel start at the previous fill's end so a failed re-time
+      // (hard window blocked the push) can never paint a commute on top of
+      // an earlier fill. Zero-length cards are dropped.
+      const travelStart = Math.max(
+        fit.placeStart - edge.seconds * 1000,
+        state.dayBase,
+        prevEndMs || 0
+      );
+      if(travelStart < fit.placeStart){
+        travelRows.push({
+          kind:'travel',
+          from:anchor,
+          to:fit.locId,
+          fromName:from ? from.name : '',
+          toName:to ? to.name : '',
+          seconds:edge.seconds,
+          metres:edge.metres || 0,
+          start:travelStart,
+          end:fit.placeStart,
+          provider:edge.provider || state.mode
+        });
+      }
     }
     if(fit.locId)lastLocId = fit.locId;
+    prevEndMs = Math.max(prevEndMs || 0,fit.placeEnd);
   }
 
   state.rows = (state.rows || []).filter(row=>row.kind !== 'travel').concat(travelRows);

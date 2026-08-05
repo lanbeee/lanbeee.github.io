@@ -578,6 +578,20 @@ function base(props) {
       const totalTravelMinutes = travels.reduce(
         (sum,t)=>sum + Math.round((t.end - t.start) / 60000),0);
       const travelsToKhadijam = travels.filter(t=>t.to === 'khadijam').length;
+      // Overlap invariant (past bug e15fb67): no travel card may overlap any
+      // fill/scheduled row. A commute drawn backward from a fill's start must
+      // never land on top of the previous fill.
+      const overlaps = [];
+      for(const t of travels){
+        for(const w of fills){
+          if(t.start < w.end * 60000 + day.dayBase && w.start * 60000 + day.dayBase < t.end){
+            overlaps.push({
+              travel:`${t.fromName || t.from}→${t.toName || t.to}`,
+              fill:w.name
+            });
+          }
+        }
+      }
       const travelDetail = travels.map(t=>({
         from:t.fromName || t.from,
         to:t.toName || t.to,
@@ -589,6 +603,7 @@ function base(props) {
         fills,
         totalTravelMinutes,
         travelsToKhadijam,
+        overlaps,
         travelDetail
       };
     }finally{
@@ -681,6 +696,155 @@ function base(props) {
   check('total travel is grocery round-trip only (12m)',
     staleAnchorResult.totalTravelMinutes === 12,
     `got ${staleAnchorResult.totalTravelMinutes}m :: ${JSON.stringify({fills:staleAnchorResult.fills,travel:staleAnchorResult.travelDetail})}`);
+  check('no travel card overlaps any fill (stale-anchor scenario)',
+    staleAnchorResult.overlaps.length === 0,
+    JSON.stringify(staleAnchorResult.overlaps));
+
+  // Commute-vs-fill overlap regression. When a Home-locked fill (Lunch) is
+  // committed before a prior multi-location fill (Zuhr) resolves to a non-Home
+  // location (KhadijaM), Lunch's inbound commute gets drawn backward from its
+  // start and can land on top of Zuhr. The invariant: a travel card must NEVER
+  // overlap a fill, regardless of commit order or anchor drift. This is the
+  // e15fb67 class of bug, now extended to the reconcile/re-time path.
+  console.log('\n[Optimizer] commute never overlaps a fill (out-of-order commit)');
+  const overlapResult = await page.evaluate(async ({now,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const prevSettingsItem = localStorage.getItem('tings_app_settings_v2');
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      if(typeof saveSortSettings === 'function')saveSortSettings(settings);
+      const week = await buildWeekAgendaAsync(data,settings,1);
+      const day = week.days[0];
+      day.isToday = true;
+      const seq = homeDaySequence(day,settings);
+      const travels = seq.filter(row=>row.kind === 'travel');
+      const works = seq.filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
+      const overlaps = [];
+      for(const t of travels){
+        for(const w of works){
+          if(t.start < w.end && w.start < t.end){
+            overlaps.push({
+              travel:`${t.fromName || t.from}→${t.toName || t.to}`,
+              fill:w.h && w.h.name,
+              travelStart:Math.round((t.start - day.dayBase) / 60000),
+              travelEnd:Math.round((t.end - day.dayBase) / 60000),
+              fillStart:Math.round((w.start - day.dayBase) / 60000),
+              fillEnd:Math.round((w.end - day.dayBase) / 60000)
+            });
+          }
+        }
+      }
+      const fills = works.filter(row=>row.kind === 'fill').map(row=>({
+        name:row.h.name,
+        start:Math.round((row.start - day.dayBase) / 60000),
+        end:Math.round((row.end - day.dayBase) / 60000),
+        loc:row.locationId || null
+      }));
+      const travelDetail = travels.map(t=>({
+        from:t.fromName || t.from,
+        to:t.toName || t.to,
+        start:Math.round((t.start - day.dayBase) / 60000),
+        end:Math.round((t.end - day.dayBase) / 60000)
+      }));
+      return {
+        optimized:Boolean(week.optimized),
+        fills,
+        travelDetail,
+        overlaps,
+        travelsToKhadijam:travels.filter(t=>t.to === 'khadijam').length,
+        totalTravelMinutes:travels.reduce(
+          (sum,t)=>sum + Math.round((t.end - t.start) / 60000),0)
+      };
+    }finally{
+      if(prevSettingsItem != null)localStorage.setItem('tings_app_settings_v2',prevSettingsItem);
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(11,44),
+    data:[
+      base({
+        name:'Indian Grocery',type:'task',durationMinutes:30,priority:3,
+        locationIds:['spresh'],
+        eventTime:atTime(11,51)
+      }),
+      base({
+        // Multi-location prayer: inbound-only would pick KhadijaM (3m from
+        // Spresh) over Home (6m). With Lunch Home-locked next, round-trip
+        // must pick Home (6m vs 3+5=8m) — the today's-agenda audit case.
+        name:'Zuhr',type:'keepup',target:1,durationMinutes:5,priority:0,
+        locationIds:['home','khadijam','zainb','zohab','noor'],
+        allowedTimeStart:13 * 60 + 22,allowedTimeEnd:17 * 60 + 7,
+        preferredTimeStart:13 * 60 + 22,preferredTimeEnd:15 * 60 + 22,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        name:'Lunch',type:'keepup',target:1,durationMinutes:30,priority:0,
+        locationIds:['home'],
+        allowedTimeStart:13 * 60 + 22,allowedTimeEnd:15 * 60 + 22,
+        lastLog:ago1d,logs:[ago1d]
+      }),
+      base({
+        name:'Work',type:'keepup',target:1,durationMinutes:191,breakable:true,
+        minChunkMinutes:45,priority:0,locationIds:['home'],
+        allowedTimeStart:8 * 60 + 45,allowedTimeEnd:18 * 60 + 45,
+        lastLog:ago1d,logs:[ago1d]
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[600,600,600,600,600,600,600],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      lastKnownLocationId:'home',
+      defaultTravelMode:'walking',
+      locations:[
+        {id:'home',name:'Home',lat:40.70,lng:-74.00},
+        {id:'spresh',name:'Spresh',lat:40.71,lng:-74.01},
+        {id:'khadijam',name:'KhadijaM',lat:40.705,lng:-74.005},
+        {id:'zainb',name:'ZainB',lat:40.702,lng:-74.003},
+        {id:'zohab',name:'ZohaB',lat:40.715,lng:-74.02},
+        {id:'noor',name:'Noor',lat:40.716,lng:-74.018}
+      ],
+      travel:{
+        'home|spresh':{a:'home',b:'spresh',seconds:6 * 60,metres:900,provider:'manual',fetchedAt:Date.now()},
+        'home|khadijam':{a:'home',b:'khadijam',seconds:5 * 60,metres:700,provider:'manual',fetchedAt:Date.now()},
+        'khadijam|spresh':{a:'khadijam',b:'spresh',seconds:3 * 60,metres:400,provider:'manual',fetchedAt:Date.now()},
+        'home|zainb':{a:'home',b:'zainb',seconds:4 * 60,metres:500,provider:'manual',fetchedAt:Date.now()},
+        'spresh|zainb':{a:'spresh',b:'zainb',seconds:5 * 60,metres:600,provider:'manual',fetchedAt:Date.now()},
+        'home|zohab':{a:'home',b:'zohab',seconds:12 * 60,metres:1600,provider:'manual',fetchedAt:Date.now()},
+        'spresh|zohab':{a:'spresh',b:'zohab',seconds:11 * 60,metres:1500,provider:'manual',fetchedAt:Date.now()},
+        'home|noor':{a:'home',b:'noor',seconds:11 * 60,metres:1400,provider:'manual',fetchedAt:Date.now()},
+        'spresh|noor':{a:'spresh',b:'noor',seconds:11 * 60,metres:1400,provider:'manual',fetchedAt:Date.now()}
+      },
+      blockedTimes:[{label:'sleep',days:[],start:0,end:420,locationId:'home'}]
+    }
+  });
+  check('overlap scenario uses optimizer',overlapResult.optimized,
+    JSON.stringify(overlapResult));
+  const overlapZuhr = overlapResult.fills.find(f=>f.name === 'Zuhr');
+  const overlapLunch = overlapResult.fills.find(f=>f.name === 'Lunch');
+  check('Zuhr lands at Home when next fill (Lunch) is Home-locked',
+    overlapZuhr && overlapZuhr.loc === 'home',
+    overlapZuhr ? `got loc=${overlapZuhr.loc} :: ${JSON.stringify({fills:overlapResult.fills,travel:overlapResult.travelDetail})}` : 'no Zuhr fill');
+  check('no detour travel to KhadijaM',
+    overlapResult.travelsToKhadijam === 0,
+    `got ${overlapResult.travelsToKhadijam} :: ${JSON.stringify(overlapResult.travelDetail)}`);
+  check('no travel card overlaps any fill (out-of-order commit)',
+    overlapResult.overlaps.length === 0,
+    JSON.stringify({overlaps:overlapResult.overlaps,fills:overlapResult.fills,travel:overlapResult.travelDetail}));
+  // After round-trip re-resolve: Spresh grocery + return Home for Zuhr/Lunch.
+  // Must not charge the old Spresh→KhadijaM→Home 3+5 detour on top of Zuhr.
+  check('total travel is grocery round-trip only (12m)',
+    overlapResult.totalTravelMinutes === 12,
+    `got ${overlapResult.totalTravelMinutes}m :: ${JSON.stringify(overlapResult.travelDetail)}`);
+  if(overlapZuhr && overlapLunch){
+    check('Lunch starts at or after Zuhr ends (no commute-on-Zuhr)',
+      overlapLunch.start >= overlapZuhr.end,
+      JSON.stringify({zuhr:overlapZuhr,lunch:overlapLunch,travel:overlapResult.travelDetail}));
+  }
 
   // Fallback path: force timeout / broken glpk should not throw — heuristic still works.
   console.log('\n[Optimizer] heuristic fallback still works with optimizer flag');
