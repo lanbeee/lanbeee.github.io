@@ -65,10 +65,11 @@ function assert(cond, msg){
   const mergeCount = await page.locator('.blocked-card-merge').count();
   assert(mergeCount >= 1, 'blocked-card-merge rendered (got ' + mergeCount + ')');
 
-  // ── 2. Toggle text shows merged format (+N, count) ──
+  // ── 2. Toggle text shows the count as the primary label and a compact
+  // summary below it. The +N suffix keeps long groups scannable.
   const toggleText = await page.locator('.blocked-card-merge').first().textContent();
   assert(toggleText.includes('+2'), 'text shows +N merge suffix (got: ' + JSON.stringify(toggleText) + ')');
-  assert(toggleText.includes('· 4'), 'text shows block count (got: ' + JSON.stringify(toggleText) + ')');
+  assert(toggleText.includes('4 busy times'), 'text shows block count (got: ' + JSON.stringify(toggleText) + ')');
 
   // ── 3. CSS truncation rules applied ──
   const mergeStyle = await page.locator('.blocked-card-merge').first().evaluate(el => ({
@@ -78,7 +79,8 @@ function assert(cond, msg){
   assert(mergeStyle.overflow === 'hidden', 'merge card overflow:hidden');
   assert(mergeStyle.flexWrap === 'nowrap', 'merge card flex-wrap:nowrap');
 
-  const spanStyle = await page.locator('.blocked-card-merge span').first().evaluate(el => ({
+  const summary = page.locator('.blocked-card-merge .timeline-card-copy small').first();
+  const spanStyle = await summary.evaluate(el => ({
     overflow: getComputedStyle(el).overflow,
     textOverflow: getComputedStyle(el).textOverflow,
     whiteSpace: getComputedStyle(el).whiteSpace,
@@ -87,7 +89,7 @@ function assert(cond, msg){
   assert(spanStyle.whiteSpace === 'nowrap', 'span white-space:nowrap');
 
   // ── 4. Text actually overflows (truncation active) ──
-  const isOverflowing = await page.locator('.blocked-card-merge span').first().evaluate(el =>
+  const isOverflowing = await summary.evaluate(el =>
     el.scrollWidth > el.clientWidth
   );
   assert(isOverflowing, 'span content overflows horizontally (truncation in effect)');

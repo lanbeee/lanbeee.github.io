@@ -308,7 +308,11 @@ function renderHomeTagFilter(data){
     else if(presence.kind === 'near')label = `near ${presence.name}`;
     else if(anchorLoc){ label = `at ${anchorLoc.name}`; kind = 'at'; }
     const gpsClass = presence.gps && presence.kind === 'at' ? 'gps-matched' : '';
-    statusHtml = `<button type="button" class="topic-filter presence-filter ${kind} ${gpsClass}" data-home-presence="1" title="starting place for today"><i class="ti ti-current-location" aria-hidden="true"></i>${escapeHtml(label)}</button>`;
+    statusHtml = `<button type="button" class="topic-filter presence-filter ${kind} ${gpsClass}" data-home-presence="1" title="change today’s starting place">
+      <span class="presence-icon"><i class="ti ti-current-location" aria-hidden="true"></i><i class="presence-signal" aria-hidden="true"></i></span>
+      <span class="presence-copy"><small>today’s place</small><b>${escapeHtml(label)}</b></span>
+      <i class="ti ti-chevron-down presence-chevron" aria-hidden="true"></i>
+    </button>`;
   }
   const activeLoc = hasLocs && homeLocationFilter !== 'all'
     ? locChoices.find(choice=>choice.key === homeLocationFilter)
@@ -1150,17 +1154,23 @@ function cardBreakableSlider(h){
   const isComplete = done >= total;
   const label = `progress ${done} of ${total} minutes`;
   return `<div class="breakable-progress" data-breakable-progress>
+    <div class="breakable-progress-head">
+      <span class="breakable-progress-title"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>progress</span>
+      <span class="breakable-progress-label" aria-hidden="true">${done}/${total}m</span>
+    </div>
     <div class="breakable-status-bar" aria-hidden="true">
       <span class="bar-calendar" style="width:${calPct}%"></span>
       <span class="bar-manual" style="width:${manualPct}%"></span>
       <span class="bar-adding" style="width:0%"></span>
     </div>
-    <div class="crown-dial breakable-crown${isComplete ? ' complete' : ''}" role="slider" tabindex="0"
-      aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"
-      data-committed="${done}" data-total="${total}" data-calendar="${cappedCal}" data-manual="${cappedManual}">
-      <canvas class="crown-canvas"></canvas>
+    <div class="breakable-scrub-row">
+      <div class="crown-dial breakable-crown${isComplete ? ' complete' : ''}" role="slider" tabindex="0"
+        aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"
+        data-committed="${done}" data-total="${total}" data-calendar="${cappedCal}" data-manual="${cappedManual}">
+        <canvas class="crown-canvas"></canvas>
+      </div>
+      <span class="breakable-scrub-hint"><i class="ti ti-arrows-horizontal" aria-hidden="true"></i>${isComplete ? 'complete' : 'drag to adjust'}</span>
     </div>
-    <span class="breakable-progress-label" aria-hidden="true">${done}/${total}m</span>
   </div>`;
 }
 
@@ -1594,7 +1604,7 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   if(Number.isFinite(startTs))travelEl.dataset.agendaStart = String(Math.round(startTs / 60000));
   travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
   if(fromCurrent)travelEl.setAttribute('aria-disabled','true');
-  travelEl.innerHTML = `<i class="ti ti-route" aria-hidden="true"></i><span>${depart}${compactHomeDuration(mins)} · ${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-hidden="true"></i>' : ''}`;
+  travelEl.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-route" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${compactHomeDuration(mins)} travel</b><small>${depart}${escapeHtml(fromName)} → ${escapeHtml(toName)}</small></span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-label="custom time"></i>' : ''}${fromCurrent ? '' : '<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i>'}`;
   list.appendChild(travelEl);
   // Synthetic current-coord legs are not editable — skip all gesture wiring.
   if(fromCurrent)return;
@@ -1811,7 +1821,7 @@ function appendHomeBlockedCard(list,row){
   el.tabIndex = 0;
   el.setAttribute('role','button');
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
-  el.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(row.label || 'blocked')} · ${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</span><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
+  el.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${escapeHtml(row.label || 'blocked')}</b><small>${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</small></span><i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
   const xBtn = el.querySelector('.blocked-cancel-mark');
   if(xBtn)xBtn.addEventListener('click',e=>{
     e.preventDefault();
@@ -1900,7 +1910,7 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
       ? `collapse ${blocks.length} busy times`
       : `${blocks.length} busy times ${start} to ${end}, tap to expand`
   );
-  toggle.innerHTML = `<i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)} · ${blocks.length}</span><i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
+  toggle.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${blocks.length} busy times</b><small>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)}</small></span><i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
   let mergePointer = null;
   toggle.addEventListener('pointerdown',e=>{
     mergePointer = {el:toggle,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
@@ -2584,7 +2594,7 @@ function renderDroppedPanel(items,opts = {}){
     const tagHtml = item.snoozed
       ? '<span class="dropped-tag">snoozed</span>'
       : (showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '');
-    row.innerHTML = `${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : ''}<span class="dropped-name">${escapeHtml(item.name)}</span>${tagHtml}`;
+    row.innerHTML = `<span class="dropped-mark">${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : '<i class="ti ti-circle-dashed" aria-hidden="true"></i>'}</span><span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>Tap to review</small></span>${tagHtml}<i class="ti ti-chevron-right dropped-chevron" aria-hidden="true"></i>`;
     row.addEventListener('click',()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); });
     panel.appendChild(row);
   });
@@ -2665,7 +2675,7 @@ function freeDayTickMarks(windowStart,windowEnd){
   return ticks;
 }
 
-function renderFreeDayStrip(info){
+function renderFreeDayStrip(info,onPick){
   const wrap = document.createElement('div');
   wrap.className = 'free-day-strip';
   const winStart = info.windowStart;
@@ -2686,7 +2696,7 @@ function renderFreeDayStrip(info){
   }
   if(cursor < winEnd)pieces.push({kind:'free',start:cursor,end:winEnd});
 
-  wrap.setAttribute('role','img');
+  wrap.setAttribute('role',typeof onPick === 'function' ? 'group' : 'img');
   wrap.setAttribute(
     'aria-label',
     `${formatFreeDuration(info.totalFreeMinutes)} open · ${formatFreeDuration(info.largestGapMinutes)} biggest stretch`
@@ -2701,11 +2711,16 @@ function renderFreeDayStrip(info){
     track.appendChild(seg);
   }else{
     pieces.forEach(piece=>{
-      const seg = document.createElement('span');
+      const seg = document.createElement(typeof onPick === 'function' ? 'button' : 'span');
       seg.className = `free-day-seg ${piece.kind}`;
+      if(seg.tagName === 'BUTTON')seg.type = 'button';
       seg.style.flex = String(Math.max(1, piece.end - piece.start));
       const mins = Math.round((piece.end - piece.start) / 60000);
       seg.title = `${piece.kind === 'busy' ? 'busy' : 'open'} · ${freeDayClockLabel(piece.start)} – ${freeDayClockLabel(piece.end)} · ${formatFreeDuration(mins)}`;
+      if(typeof onPick === 'function'){
+        seg.setAttribute('aria-label',`${piece.kind === 'busy' ? 'check busy stretch' : 'select open stretch'}, ${freeDayClockLabel(piece.start)} to ${freeDayClockLabel(piece.end)}`);
+        seg.addEventListener('click',()=>onPick(piece.start,piece.end,seg));
+      }
       track.appendChild(seg);
     });
   }
@@ -2758,14 +2773,214 @@ function bindDayHeaderPill(pill,open){
   });
 }
 
+function freeWindowInputValue(ts){
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function freeWindowTimestamp(info,value){
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value || ''));
+  if(!match)return null;
+  const base = new Date(info.windowStart);
+  base.setHours(Number(match[1]),Number(match[2]),0,0);
+  return base.getTime();
+}
+
+function freeWindowDefault(info){
+  const base = new Date(info.windowStart);
+  const dayBase = dayStart(base.getTime());
+  let start = dayBase + 17 * 3600000;
+  if(info.windowStart > start){
+    start = Math.ceil(info.windowStart / 1800000) * 1800000;
+  }
+  start = Math.min(start,dayBase + 22.5 * 3600000);
+  return {start,end:Math.min(dayBase + 24 * 3600000 - 60000,start + 90 * 60000)};
+}
+
+function freeWindowOverlapMinutes(gaps,start,end){
+  return (gaps || []).reduce((sum,gap)=>{
+    const overlap = Math.max(0,Math.min(end,gap.end) - Math.max(start,gap.start));
+    return sum + Math.round(overlap / 60000);
+  },0);
+}
+
+function weekFillMinutesForDay(week,dayBase){
+  const day = week && Array.isArray(week.days) && week.days.find(item=>item.dayBase === dayBase);
+  const minutes = new Map();
+  for(const row of day && day.timeline || []){
+    if(row.kind !== 'fill' || row.i == null)continue;
+    minutes.set(row.i,(minutes.get(row.i) || 0) + Math.max(0,Math.round((row.end - row.start) / 60000)));
+  }
+  return minutes;
+}
+
+function weekPlacementDayForIndex(week,index,exceptDay){
+  const days = (week && week.days || []).filter(day=>day.dayBase !== exceptDay && (day.timeline || []).some(row=>row.kind === 'fill' && row.i === index));
+  return days.length ? days.sort((a,b)=>a.dayBase - b.dayBase)[0].dayBase : null;
+}
+
+function fixedConflictForWindow(dayBase,start,end,settings,baselineDay){
+  const blocks = typeof agendaBlockedIntervals === 'function'
+    ? agendaBlockedIntervals(dateKey(dayBase),settings,dayBase,dayBase + 86400000)
+    : [];
+  const fixed = blocks.map(block=>({start:block.start,end:block.end,name:block.label || 'busy time'}));
+  for(const row of baselineDay && baselineDay.timeline || []){
+    if(row.kind === 'scheduled')fixed.push({start:row.start,end:row.end,name:row.h?.name || row.name || 'fixed plan'});
+  }
+  return fixed.find(item=>item.start < end && item.end > start) || null;
+}
+
+async function analyzeFreeWindow(info,start,end){
+  const duration = Math.max(0,Math.round((end - start) / 60000));
+  const openMinutes = freeWindowOverlapMinutes(info.gaps,start,end);
+  if(openMinutes >= duration){
+    return {tone:'open',icon:'check',title:'Already open',copy:`All ${formatFreeDuration(duration)} are available now.`};
+  }
+
+  const data = load();
+  const settings = sortSettings || loadSortSettings();
+  const dayBase = dayStart(info.windowStart);
+  let baseline = _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) ? _homeRenderedWeek : null;
+  if(!baseline){
+    baseline = typeof buildWeekAgendaOffMain === 'function'
+      ? await buildWeekAgendaOffMain(data,settings,7,settings.agendaOptimizer ? 'exact' : 'fast')
+      : buildWeekAgenda(data,settings,7);
+    if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(baseline,data);
+  }
+  const baselineDay = baseline.days.find(day=>day.dayBase === dayBase);
+  const fixed = fixedConflictForWindow(dayBase,start,end,settings,baselineDay);
+  if(fixed){
+    return {tone:'blocked',icon:'lock',title:'Not movable as planned',copy:`This overlaps ${fixed.name}, which is fixed on the day.`};
+  }
+
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const whatIfBlock = {
+    label:'time check',
+    days:[startDate.getDay()],
+    start:startDate.getHours() * 60 + startDate.getMinutes(),
+    end:endDate.getHours() * 60 + endDate.getMinutes()
+  };
+  // Put the temporary reservation first so it is retained even when a user
+  // already has the maximum number of recurring busy-time rules.
+  const hypotheticalSettings = {...settings,blockedTimes:[whatIfBlock,...normalizeBlockedTimes(settings.blockedTimes)]};
+  let hypothetical = typeof buildWeekAgendaOffMain === 'function'
+    ? await buildWeekAgendaOffMain(data,hypotheticalSettings,7,settings.agendaOptimizer ? 'exact' : 'fast')
+    : buildWeekAgenda(data,hypotheticalSettings,7);
+  if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(hypothetical,data);
+
+  const before = weekFillMinutesForDay(baseline,dayBase);
+  const after = weekFillMinutesForDay(hypothetical,dayBase);
+  const displaced = [...before.entries()].filter(([index,minutes])=>(after.get(index) || 0) < minutes);
+  if(!displaced.length){
+    const movedNames = [...before.keys()].filter(index=>{
+      const oldRows = (baselineDay?.timeline || []).filter(row=>row.kind === 'fill' && row.i === index);
+      const nextDay = hypothetical.days.find(day=>day.dayBase === dayBase);
+      const newRows = (nextDay?.timeline || []).filter(row=>row.kind === 'fill' && row.i === index);
+      return oldRows.some((row,i)=>!newRows[i] || Math.abs(row.start - newRows[i].start) > 60000);
+    }).map(index=>data[index]?.name).filter(Boolean).slice(0,2);
+    const detail = movedNames.length ? ` It would move ${movedNames.join(' and ')} within the day.` : '';
+    return {tone:'possible',icon:'arrows-shuffle',title:'Can be made open',copy:`The planner can keep everything on this day.${detail}`};
+  }
+
+  const later = [];
+  const unscheduled = [];
+  for(const [index] of displaced){
+    const destination = weekPlacementDayForIndex(hypothetical,index,dayBase);
+    const name = data[index]?.name || 'an item';
+    if(destination != null && destination > dayBase)later.push({name,destination});
+    else unscheduled.push(name);
+  }
+  if(later.length){
+    const first = later[0];
+    const dayLabel = homeWeekDayLabel({dayBase:first.destination,weekday:new Date(first.destination).getDay(),isToday:false,offset:Math.round((first.destination-dayStart(Date.now()))/86400000)}).toLowerCase();
+    return {tone:'spill',icon:'arrow-forward-up',title:'Would spill into a later day',copy:`Making this space would move ${first.name}${later.length > 1 ? ` and ${later.length - 1} more` : ''} to ${dayLabel}.`};
+  }
+  return {tone:'spill',icon:'calendar-off',title:'Doesn’t fit cleanly',copy:`Making this space would push ${unscheduled.slice(0,2).join(' and ') || 'planned work'} out of this day.`};
+}
+
+function renderFreeWindowChecker(info){
+  const checker = document.createElement('section');
+  checker.className = 'free-fit-checker';
+  checker.setAttribute('aria-label','check whether a time can be made open');
+  const initial = freeWindowDefault(info);
+  checker.innerHTML = `
+    <button type="button" class="free-fit-toggle" aria-expanded="false" aria-controls="free-fit-body">
+      <span class="free-fit-toggle-icon"><i class="ti ti-sparkles" aria-hidden="true"></i></span>
+      <span class="free-fit-toggle-copy"><b>Could I make room?</b><small>Test a time without changing anything</small></span>
+      <i class="ti ti-chevron-down free-fit-chevron" aria-hidden="true"></i>
+    </button>
+    <div class="free-fit-body" id="free-fit-body" hidden>
+      <div class="free-fit-fields">
+        <label><span>from</span><input class="free-fit-start" type="time" step="900" value="${freeWindowInputValue(initial.start)}" /></label>
+        <i class="ti ti-arrow-right" aria-hidden="true"></i>
+        <label><span>to</span><input class="free-fit-end" type="time" step="900" value="${freeWindowInputValue(initial.end)}" /></label>
+        <button type="button" class="free-fit-run">check</button>
+      </div>
+      <div class="free-fit-result" role="status" aria-live="polite"><i class="ti ti-pointer" aria-hidden="true"></i><span><b>Choose a time</b><small>Or tap a section of the timeline above.</small></span></div>
+    </div>`;
+  const toggle = checker.querySelector('.free-fit-toggle');
+  const body = checker.querySelector('.free-fit-body');
+  const startInput = checker.querySelector('.free-fit-start');
+  const endInput = checker.querySelector('.free-fit-end');
+  const run = checker.querySelector('.free-fit-run');
+  const result = checker.querySelector('.free-fit-result');
+  const setExpanded = expanded=>{
+    checker.classList.toggle('is-expanded',expanded);
+    toggle.setAttribute('aria-expanded',String(expanded));
+    body.hidden = !expanded;
+    const chevron = toggle.querySelector('.free-fit-chevron');
+    if(chevron)chevron.className = `ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} free-fit-chevron`;
+  };
+  toggle.addEventListener('click',()=>setExpanded(toggle.getAttribute('aria-expanded') !== 'true'));
+  let request = 0;
+  const check = async()=>{
+    const start = freeWindowTimestamp(info,startInput.value);
+    let end = freeWindowTimestamp(info,endInput.value);
+    if(start != null && end != null && end <= start && endInput.value === '00:00')end += 86400000;
+    if(start == null || end == null || end <= start){
+      result.className = 'free-fit-result blocked';
+      result.innerHTML = '<i class="ti ti-alert-circle" aria-hidden="true"></i><span><b>Check the times</b><small>The end needs to be after the start.</small></span>';
+      return;
+    }
+    const token = ++request;
+    run.disabled = true;
+    result.className = 'free-fit-result checking';
+    result.innerHTML = '<i class="ti ti-loader-2" aria-hidden="true"></i><span><b>Checking the day…</b><small>Testing a rearranged plan without saving it.</small></span>';
+    try{
+      const answer = await analyzeFreeWindow(info,start,end);
+      if(token !== request)return;
+      result.className = `free-fit-result ${answer.tone}`;
+      result.innerHTML = `<i class="ti ti-${answer.icon}" aria-hidden="true"></i><span><b>${escapeHtml(answer.title)}</b><small>${escapeHtml(answer.copy)}</small></span>`;
+    }catch(_){
+      if(token !== request)return;
+      result.className = 'free-fit-result blocked';
+      result.innerHTML = '<i class="ti ti-alert-circle" aria-hidden="true"></i><span><b>Couldn’t check this window</b><small>Your current open stretches are still shown above.</small></span>';
+    }finally{
+      if(token === request)run.disabled = false;
+    }
+  };
+  run.addEventListener('click',check);
+  [startInput,endInput].forEach(input=>input.addEventListener('change',()=>{ result.className = 'free-fit-result'; result.innerHTML = '<i class="ti ti-arrow-right" aria-hidden="true"></i><span><b>Ready to check</b><small>This won’t change your plan.</small></span>'; }));
+  checker.pickWindow = (start,end)=>{
+    setExpanded(true);
+    startInput.value = freeWindowInputValue(start);
+    endInput.value = freeWindowInputValue(end);
+    void check();
+  };
+  return checker;
+}
+
 function renderFreePanel(info){
   const panel = document.createElement('div');
   panel.className = 'free-panel';
-  panel.appendChild(renderFreeDayStrip(info));
   const summary = document.createElement('div');
-  summary.className = 'free-panel-row';
-  summary.innerHTML = `<span>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(info.largestGapMinutes))} biggest stretch</span>`;
+  summary.className = 'free-panel-row free-panel-hero';
+  summary.innerHTML = `<span class="free-panel-metric"><small>total room</small><b>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</b></span><span class="free-panel-metric"><small>biggest stretch</small><b>${escapeHtml(formatFreeDuration(info.largestGapMinutes))}</b></span>`;
   panel.appendChild(summary);
+  const checker = renderFreeWindowChecker(info);
+  panel.appendChild(renderFreeDayStrip(info,(start,end)=>checker.pickWindow(start,end)));
+  panel.appendChild(checker);
   const bigGaps = info.gaps.filter(g=>Math.round((g.end - g.start) / 60000) >= 30);
   const shortMinutes = info.totalFreeMinutes - bigGaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);
   bigGaps.forEach(g=>{
@@ -2773,9 +2988,12 @@ function renderFreePanel(info){
     const sd = new Date(g.start), ed = new Date(g.end);
     const startLabel = formatTimeShort(sd.getHours() * 60 + sd.getMinutes());
     const endLabel = formatTimeShort(ed.getHours() * 60 + ed.getMinutes());
-    const row = document.createElement('div');
-    row.className = 'free-panel-row';
-    row.innerHTML = `<span>${escapeHtml(startLabel)} – ${escapeHtml(endLabel)}</span><span class="free-panel-value">${escapeHtml(formatFreeDuration(mins))}</span>`;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'free-panel-row free-gap-row';
+    row.innerHTML = `<span class="free-gap-icon"><i class="ti ti-sun" aria-hidden="true"></i></span><span class="free-gap-copy"><b>${escapeHtml(startLabel)} – ${escapeHtml(endLabel)}</b><small>available stretch</small></span><span class="free-panel-value">${escapeHtml(formatFreeDuration(mins))}</span>`;
+    row.setAttribute('aria-label',`check ${startLabel} to ${endLabel}, ${formatFreeDuration(mins)} open`);
+    row.addEventListener('click',()=>checker.pickWindow(g.start,g.end));
     panel.appendChild(row);
   });
   if(shortMinutes >= 10){
@@ -3037,7 +3255,7 @@ function render(opts){
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
-        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="add entry for ${escapeHtml(h.name)}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
+        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">

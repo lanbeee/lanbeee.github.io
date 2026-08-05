@@ -1365,8 +1365,10 @@ $('open-about').addEventListener('click',()=>{
   openSheet('about-sheet');
 });
 $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
+$('about-head-close')?.addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
 $('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('about-head-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
   head.addEventListener('click',()=>{
     const body = $(head.dataset.collapseTarget);
