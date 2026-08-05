@@ -74,39 +74,87 @@ const OVERVIEW_RECENT_PAST = 7;
 const OVERVIEW_RECENT_AHEAD = 6;
 const OVERVIEW_RECENT_DAYS = OVERVIEW_RECENT_PAST + 1 + OVERVIEW_RECENT_AHEAD;
 const OVERVIEW_RANGES = [
-  {key:'recent',label:'around today'},
-  {key:'month',label:'by month'},
+  {key:'recent',label:'2 weeks'},
+  {key:'month',label:'month'},
   {key:'all',label:'all time'}
 ];
 
-// HYBRID: one filter row — range + places + topics
+// HYBRID: compact view switcher + active filter summary. The full place/topic
+// library lives in a dedicated sheet so the calendar header never becomes a
+// long horizontal rail.
 function renderOverviewFilters(data){
   const wrap = $('overview-filter');
   if(!wrap)return;
+  const groups = $('calendar-filter-groups');
+  const summary = $('calendar-filter-summary');
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   const topicChoices = overviewTopicChoices(data);
   const locChoices = overviewLocationChoices(data);
-  const hasTopics = !minimal && topicChoices.length > 0;
-  const hasLocs = !minimal && locChoices.length > 1;
+  const hasTopics = !minimal && topicChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
+  const hasLocs = !minimal && locChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
   if(hasTopics && !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
   if(hasLocs && !locChoices.some(choice=>choice.key === overviewLocationFilter))overviewLocationFilter = 'all';
-  if(minimal){
+  if(minimal || !hasTopics){
     overviewTopicFilter = 'all';
+  }
+  if(minimal || !hasLocs){
     overviewLocationFilter = 'all';
   }
 
+  const activeLoc = hasLocs && overviewLocationFilter !== 'all'
+    ? locChoices.find(choice=>choice.key === overviewLocationFilter)
+    : null;
+  const activeTopic = hasTopics && overviewTopicFilter !== 'all'
+    ? topicChoices.find(choice=>choice.key === overviewTopicFilter)
+    : null;
+  const activeCount = Number(Boolean(activeLoc)) + Number(Boolean(activeTopic));
   const rangeHtml = OVERVIEW_RANGES.map(r=>`
-    <button type="button" class="topic-filter range-filter ${r.key === overviewRangeFilter ? 'on' : ''}" data-overview-range="${r.key}">${escapeHtml(r.label)}</button>
+    <button type="button" class="overview-range-option ${r.key === overviewRangeFilter ? 'on' : ''}" data-overview-range="${r.key}" aria-pressed="${r.key === overviewRangeFilter}">${escapeHtml(r.label)}</button>
   `).join('');
-  const locHtml = hasLocs ? locChoices.map(choice=>`
-    <button type="button" class="topic-filter location-filter ${choice.key === overviewLocationFilter ? 'on' : ''}" data-overview-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
-  `).join('') : '';
-  const topicHtml = hasTopics ? topicChoices.map(choice=>`
-    <button type="button" class="topic-filter ${choice.key === overviewTopicFilter ? 'on' : ''}" data-overview-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
-  `).join('') : '';
   wrap.hidden = false;
-  wrap.innerHTML = rangeHtml + locHtml + topicHtml;
+  wrap.innerHTML = `
+    <div class="overview-range-seg" role="group" aria-label="calendar period">${rangeHtml}</div>
+    ${!minimal && (hasLocs || hasTopics) ? `<div class="overview-filter-summary-row">
+      <div class="overview-active-filters" aria-label="active calendar filters">
+        ${activeLoc ? `<button type="button" class="home-active-filter location-filter" data-clear-overview-location="1" aria-label="clear place filter ${escapeHtml(activeLoc.label)}"><i class="ti ti-map-pin" aria-hidden="true"></i><span>${escapeHtml(activeLoc.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+        ${activeTopic ? `<button type="button" class="home-active-filter topic-active" data-clear-overview-topic="1" aria-label="clear topic filter ${escapeHtml(activeTopic.label)}"><i class="ti ti-tag" aria-hidden="true"></i><span>${escapeHtml(activeTopic.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+        ${!activeCount ? '<span>Showing every item</span>' : ''}
+      </div>
+      <button type="button" class="home-filter-trigger${activeCount ? ' has-active' : ''}" data-open-overview-filters="1" aria-label="open calendar filters${activeCount ? `, ${activeCount} active` : ''}">
+        <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i><span>Filters</span>${activeCount ? `<b>${activeCount}</b>` : ''}
+      </button>
+    </div>` : ''}`;
+
+  if(summary){
+    summary.textContent = activeCount
+      ? `${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'} · the calendar updates immediately.`
+      : 'Narrow the calendar by one place, one topic, or both.';
+  }
+  if(!groups)return;
+  const optionMarkup = (choice,kind)=>{
+    const on = kind === 'location' ? choice.key === overviewLocationFilter : choice.key === overviewTopicFilter;
+    const count = data.filter(h=>kind === 'location'
+      ? matchesOverviewLocation(h,choice.key)
+      : matchesOverviewTopic(h,choice.key)).length;
+    const icon = kind === 'location' ? 'ti-map-pin' : 'ti-tag';
+    const label = choice.key === 'all' ? (kind === 'location' ? 'All places' : 'All topics') : choice.label;
+    const attr = kind === 'location' ? 'data-overview-location' : 'data-overview-topic';
+    return `<button type="button" class="home-filter-option ${kind}${on ? ' on' : ''}" ${attr}="${escapeHtml(choice.key)}" aria-pressed="${on}">
+      <i class="ti ${icon} home-filter-option-icon" aria-hidden="true"></i>
+      <span><b>${escapeHtml(label)}</b><small>${count} ${count === 1 ? 'item' : 'items'}</small></span>
+      <i class="ti ti-check home-filter-check" aria-hidden="true"></i>
+    </button>`;
+  };
+  groups.innerHTML = `
+    ${hasLocs ? `<section class="home-filter-group" aria-labelledby="calendar-filter-places-label">
+      <div class="home-filter-group-head"><span id="calendar-filter-places-label">Place</span><small>${Math.max(0,locChoices.length - 1)} options</small></div>
+      <div class="home-filter-option-grid">${locChoices.map(choice=>optionMarkup(choice,'location')).join('')}</div>
+    </section>` : ''}
+    ${hasTopics ? `<section class="home-filter-group" aria-labelledby="calendar-filter-topics-label">
+      <div class="home-filter-group-head"><span id="calendar-filter-topics-label">Topic</span><small>${Math.max(0,topicChoices.length - 1)} options</small></div>
+      <div class="home-filter-option-grid">${topicChoices.map(choice=>optionMarkup(choice,'topic')).join('')}</div>
+    </section>` : ''}`;
 }
 
 // Compat aliases (filters now share one row)
@@ -188,7 +236,9 @@ function cellMarkup(key,date,entries,extraSpans = ''){
     key === dayLogsKey ? 'selected' : '',
     'pickable'
   ].filter(Boolean).join(' ');
-  return `<button class="cal-day ${cls}" data-log-day="${key}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
+  const dateLabel = date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  const itemLabel = entries.length ? `, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}` : ', no items';
+  return `<button type="button" class="cal-day ${cls}" data-log-day="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
 }
 
 // PURE: build an N-day strip's tally + cell HTML starting at startTs.
@@ -265,18 +315,19 @@ function renderOverviewLists(data,countForHabit,scopeNote = ''){
     list.innerHTML = '';
     return;
   }
-  const rows = data.map(h=>({h,count:countForHabit(h),c:colors(daysSince(h.lastLog),h.target,h.type)}))
+  const rows = data.map((h,index)=>({h,index,count:countForHabit(h),c:colors(daysSince(h.lastLog),h.target,h.type)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,5);
 
   if(!rows.length){
     list.innerHTML = '<div class="overview-item"><span class="overview-name">quiet stretch</span><span class="overview-meta">no entries yet</span></div>';
     return;
   }
-  list.innerHTML = `<p class="overview-section-title">most active${scopeNote}</p>${rows.map(({h,count,c})=>`
-    <div class="overview-item">
+  list.innerHTML = `<p class="overview-section-title">most active${scopeNote}</p>${rows.map(({h,index,count,c})=>`
+    <button type="button" class="overview-item overview-link-row" data-open-overview-item="${index}">
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
       <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
-    </div>
+      <i class="ti ti-chevron-right" aria-hidden="true"></i>
+    </button>
   `).join('')}`;
 }
 
@@ -475,10 +526,11 @@ function renderOverviewStretchPane(data,cache,capacity){
     ? rows.slice(0,limit).map(({key,entry,label})=>{
       const h = data.find(item=>item.name === entry.name);
       const c = h ? colors(daysSince(h.lastLog),h.target,h.type) : colors(null,null,entry.type);
-      return `<div class="overview-item">
+      return `<button type="button" class="overview-item overview-link-row" data-log-day="${escapeHtml(key)}">
         <span class="overview-name">${h ? iconHtml(h,c) : ''}${escapeHtml(entry.name)}</span>
         <span class="overview-meta">${escapeHtml(label)} · ${escapeHtml(fmtDay(key))}</span>
-      </div>`;
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>`;
     }).join('')
     : `<div class="overview-item"><span class="overview-name">${escapeHtml(emptyName)}</span><span class="overview-meta">${escapeHtml(emptyMeta)}</span></div>`;
 
@@ -567,6 +619,8 @@ function setOverviewMonthNav(showNav,label){
   $('overview-prev-month').hidden = !showNav;
   $('overview-next-month').hidden = !showNav;
   $('overview-calendar-label').textContent = label;
+  const today = $('overview-today');
+  if(today)today.hidden = overviewRangeFilter === 'recent' ? overviewRecentOffset === 0 : overviewMonthOffset === 0;
 }
 
 // RENDER: orchestrates full overview sheet render
@@ -601,6 +655,10 @@ function renderOverviewRecent(data){
   const grid = $('overview-calendar');
   grid.className = 'month-grid rich-month-grid strip-grid';
   grid.innerHTML = cells;
+  const kicker = $('overview-calendar-kicker');
+  const hint = $('overview-calendar-hint');
+  if(kicker)kicker.textContent = 'Past 7 · next 6';
+  if(hint)hint.textContent = 'Tap any day to review it or add a plan.';
 
   renderOverviewStretchLists(data,tally,start,end);
 }
@@ -634,6 +692,10 @@ function renderOverviewMonth(data,allTime){
   const grid = $('overview-calendar');
   grid.className = 'month-grid rich-month-grid';
   grid.innerHTML = [...heads,...blanks,...days].join('');
+  const kicker = $('overview-calendar-kicker');
+  const hint = $('overview-calendar-hint');
+  if(kicker)kicker.textContent = allTime ? 'Browse history' : 'Month view';
+  if(hint)hint.textContent = allTime ? 'Browse any month; the list below ranks all-time activity.' : 'Tap any day to see what happened or what is planned.';
 
   const countForHabit = allTime
     ? h=>actualLogs(h.logs).length
@@ -762,13 +824,13 @@ function renderDayLogsListStep(key){
   const rows = collectDayLogRows(key);
   const ts = new Date(`${key}T12:00:00`).getTime();
   const itemCount = rows.reduce((sum,row)=>sum + row.entries.length + row.scheduled.length,0);
-  $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   $('day-logs-sub').textContent = rows.length
-    ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'}`
-    : 'no entries yet';
+    ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'} · tap an item for actions`
+    : 'Nothing planned or completed yet';
 
   const body = $('day-logs-body');
-  body.innerHTML = rows.length ? `<div class="overview-list day-logs-list">${rows.map(row=>{
+  const listHtml = rows.length ? `<div class="overview-list day-logs-list">${rows.map(row=>{
     const meta = dayRowMeta(row);
     return `
     <button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
@@ -776,13 +838,28 @@ function renderDayLogsListStep(key){
       <span class="overview-meta">${escapeHtml(meta)}</span>
       <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
     </button>`;
-  }).join('')}</div>` : '<div class="overview-list"><div class="overview-item"><span class="overview-name">nothing here yet</span><span class="overview-meta">plan something</span></div></div>';
+  }).join('')}</div>` : `<div class="day-empty-state">
+    <span class="day-empty-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
+    <b>This day is open</b>
+    <small>Add a plan, or adjust how much time the planner can use.</small>
+  </div>`;
+  body.innerHTML = `${listHtml}
+    <div class="day-quick-actions" aria-label="day actions">
+      <button type="button" class="day-quick-action primary" id="day-logs-plan">
+        <i class="ti ti-calendar-plus" aria-hidden="true"></i>
+        <span><b>Plan something</b><small>Add an item, with an optional time</small></span>
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="day-quick-action" id="day-logs-day">
+        <i class="ti ti-clock-edit" aria-hidden="true"></i>
+        <span><b>Adjust open time</b><small>Tell the planner how much room this day has</small></span>
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>
+    </div>`;
 
   $('day-logs-footer').innerHTML = `
-    <button class="btn" type="button" id="day-logs-plan">plan</button>
-    <button class="btn" type="button" id="day-logs-day">day</button>
-    <button class="btn" type="button" id="day-logs-overview">calendar</button>
-    <button class="btn primary" type="button" id="day-logs-home">home</button>`;
+    <button class="btn primary" type="button" id="day-logs-overview"><i class="ti ti-arrow-left" aria-hidden="true"></i> back to calendar</button>
+    <button class="btn" type="button" id="day-logs-home"><i class="ti ti-home" aria-hidden="true"></i> home</button>`;
 }
 
 // RENDER: item step — actions for one habit on that day
@@ -827,16 +904,19 @@ function renderDayLogsItemStep(key){
       <button class="mini-text-btn" type="button" data-move-cancel>cancel</button>
     </label>` : '';
 
+  const actionMarkup = (attrs,icon,title,copy,extraClass = '')=>`<button class="day-item-action ${extraClass}" type="button" ${attrs}>
+    <i class="ti ${icon}" aria-hidden="true"></i><span><b>${title}</b><small>${copy}</small></span><i class="ti ti-chevron-right" aria-hidden="true"></i>
+  </button>`;
   const actions = [];
   if(!dayLogsScoped()){
-    actions.push(`<button class="btn" type="button" data-open-day-item="${idx}">open</button>`);
+    actions.push(actionMarkup(`data-open-day-item="${idx}"`,'ti-external-link','Open item','View details, history, and schedule','primary'));
   }
   if(plannedCount && !dayLogsMoving){
-    actions.push(`<button class="btn" type="button" data-move-plan="${idx}" data-plan-day="${key}">move plan</button>`);
-    actions.push(`<button class="btn" type="button" data-remove-plan="${idx}" data-plan-day="${key}">remove plan</button>`);
+    actions.push(actionMarkup(`data-move-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-forward','Move plan','Choose a different day'));
+    actions.push(actionMarkup(`data-remove-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-x','Remove plan','Keep the item, remove it from this day','danger'));
   }
   if(dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving){
-    actions.push(`<button class="btn" type="button" id="day-logs-plan">plan</button>`);
+    actions.push(actionMarkup('id="day-logs-plan"','ti-calendar-plus','Plan this item','Add it to this day','primary'));
   }
 
   const emptyNote = !row.entries.length && !row.scheduled.length
@@ -845,7 +925,7 @@ function renderDayLogsItemStep(key){
 
   $('day-logs-body').innerHTML = `
     <div class="day-item-card">
-      <div class="overview-item">
+      <div class="overview-item day-item-summary">
         <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
         <span class="overview-meta">${escapeHtml(habitTypeLabel(h.type))}</span>
       </div>
@@ -860,8 +940,7 @@ function renderDayLogsItemStep(key){
       <button class="btn primary" type="button" id="day-logs-done">done</button>`;
   }else{
     $('day-logs-footer').innerHTML = `
-      <button class="btn" type="button" id="day-logs-back-list">back</button>
-      <button class="btn primary" type="button" id="day-logs-home">home</button>`;
+      <button class="btn primary" type="button" id="day-logs-back-list"><i class="ti ti-arrow-left" aria-hidden="true"></i> back to day</button>`;
   }
 }
 
@@ -870,7 +949,7 @@ function renderDayLogsAddStep(key){
   const data = load();
   const ts = new Date(`${key}T12:00:00`).getTime();
   const dateLabel = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
-  $('day-logs-title').textContent = 'plan';
+  $('day-logs-title').textContent = 'Add a plan';
   $('day-logs-sub').textContent = dateLabel;
 
   let addOptions;
@@ -896,6 +975,7 @@ function renderDayLogsAddStep(key){
 
   $('day-logs-body').innerHTML = `
     <div class="day-add-step">
+      <div class="day-step-intro"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span><b>Add to this day</b><small>Pick an item. A time is optional—the planner can place it for you.</small></span></div>
       ${pickerHtml}
       <label class="field-label" for="day-log-time">time <span class="field-optional">optional</span></label>
       <input type="time" id="day-log-time" class="time-input" step="900" aria-label="optional plan time" />
@@ -909,7 +989,7 @@ function renderDayLogsAddStep(key){
 // RENDER: availability step
 function renderDayLogsAvailStep(key){
   const ts = new Date(`${key}T12:00:00`).getTime();
-  $('day-logs-title').textContent = 'day';
+  $('day-logs-title').textContent = 'Open time';
   $('day-logs-sub').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
 
   const overrides = normalizeAvailabilityOverrides(sortSettings.availabilityOverrides);
@@ -920,20 +1000,24 @@ function renderDayLogsAvailStep(key){
     : 'full day';
 
   $('day-logs-body').innerHTML = `
-    <div class="day-availability day-availability-step">
-      <div>
-        <b id="day-availability-label">${minutes} min available</b>
-        <small id="day-availability-source">${escapeHtml(source)}</small>
-      </div>
-      <input type="number" id="day-availability-minutes" min="0" max="1440" inputmode="numeric" value="${minutes}" />
-      <button class="mini-text-btn" id="day-availability-save" type="button">save</button>
-      <button class="mini-text-btn" id="day-availability-clear" type="button" ${hasOverride ? '' : 'hidden'}>clear</button>
+    <div class="day-availability-hero">
+      <span><i class="ti ti-clock" aria-hidden="true"></i></span>
+      <div><b id="day-availability-label">${overviewMinutesLabel(minutes)} open</b><small id="day-availability-source">${escapeHtml(source)}</small></div>
     </div>
-    <p class="field-hint">Override how many minutes this day has for planning. Clear returns to a full day (busy times still carve open slots).</p>`;
+    <div class="day-availability-presets" role="group" aria-label="open time presets">
+      ${[0,120,240,480].map(value=>`<button type="button" class="day-availability-preset ${minutes === value ? 'on' : ''}" data-day-availability-preset="${value}">${value === 0 ? 'No time' : overviewMinutesLabel(value)}</button>`).join('')}
+    </div>
+    <label class="field-label" for="day-availability-minutes">custom minutes</label>
+    <div class="day-availability-input-row">
+      <input type="number" id="day-availability-minutes" min="0" max="1440" inputmode="numeric" value="${minutes}" aria-describedby="day-availability-help" />
+      <span>minutes</span>
+      <button class="mini-text-btn" id="day-availability-clear" type="button" ${hasOverride ? '' : 'hidden'}>use default</button>
+    </div>
+    <p class="field-hint" id="day-availability-help">This is the total planning room before busy times are applied. Use default removes the one-day override.</p>`;
 
   $('day-logs-footer').innerHTML = `
     <button class="btn" type="button" id="day-logs-back-list">back</button>
-    <button class="btn primary" type="button" id="day-logs-home">home</button>`;
+    <button class="btn primary" id="day-availability-save" type="button">save open time</button>`;
 }
 
 // RENDER: writes day availability override UI (compat for settings refresh)

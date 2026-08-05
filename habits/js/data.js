@@ -1724,6 +1724,34 @@ function targetFromRhythmParts(times,days){
   const d = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt(days,10) || 7));
   return clampRhythmValue(d / t);
 }
+/**
+ * PURE: integer calendar gap for the next completion in a fractional rhythm.
+ * Alternating rounded cumulative boundaries preserves the requested average:
+ * 5x/8d becomes 2,1,2,1,2 days instead of rounding 1.6 up to 2 every time.
+ * `completionOffset` advances the phase for virtual week-plan placements.
+ */
+function rhythmCadenceGapDays(h,completionOffset = 0){
+  const target = clampRhythmValue(h && h.target);
+  const {times,days} = rhythmParts(target);
+  if(times <= 1)return Math.max(1,days);
+  const storedCount = h && Array.isArray(h.logs)
+    ? actualLogs(h.logs).length
+    : 0;
+  const knownCount = Math.max(storedCount,h && h.lastLog != null ? 1 : 0);
+  const offset = Math.max(0,Math.round(Number(completionOffset) || 0));
+  const phase = Math.max(0,knownCount - 1 + offset) % times;
+  const start = Math.round((phase * days) / times);
+  const end = Math.round(((phase + 1) * days) / times);
+  return Math.max(1,end - start);
+}
+/** PURE: initial due gap with keepup/reduce flexibility applied. */
+function effectiveRhythmCadenceGapDays(h){
+  const gap = rhythmCadenceGapDays(h,0);
+  const flex = clampFlexibility(h && h.flexibilityDays);
+  if(h && h.type === 'keepup')return gap + flex;
+  if(h && h.type === 'reduce')return Math.max(1,gap - flex);
+  return gap;
+}
 /** PURE: card/meta label for a rhythm target. */
 function formatRhythmLabel(target){
   if(target == null)return '';
@@ -3054,6 +3082,47 @@ function preferredDays(h){
 function hasDaySchedule(h){
   const schedule = scheduledDays(h);
   return Boolean(schedule.weekdays.length || schedule.monthDays.length);
+}
+const SCHEDULE_OPPORTUNITY_RATE_CACHE = new Map();
+// PURE (memoized): average eligible calendar dates per day. Weekday-only
+// schedules have an exact seven-day rate. Month-day schedules use one complete
+// 400-year Gregorian cycle so February/leap years, 30/31-day months, and
+// weekday + month-day intersections all have a stable exact rate.
+function scheduledOpportunityRate(h){
+  const schedule = scheduledDays(h);
+  if(!schedule.weekdays.length && !schedule.monthDays.length)return 1;
+  if(!schedule.monthDays.length)return schedule.weekdays.length / 7;
+  const key = `${schedule.weekdays.join(',')}|${schedule.monthDays.join(',')}`;
+  if(SCHEDULE_OPPORTUNITY_RATE_CACHE.has(key))return SCHEDULE_OPPORTUNITY_RATE_CACHE.get(key);
+  const weekdays = new Set(schedule.weekdays);
+  let opportunities = 0;
+  for(let year = 2000;year < 2400;year += 1){
+    for(let month = 0;month < 12;month += 1){
+      for(const monthDay of schedule.monthDays){
+        const date = new Date(Date.UTC(year,month,monthDay));
+        if(date.getUTCFullYear() !== year || date.getUTCMonth() !== month)continue;
+        if(weekdays.size && !weekdays.has(date.getUTCDay()))continue;
+        opportunities += 1;
+      }
+    }
+  }
+  const rate = opportunities / 146097; // days in a 400-year Gregorian cycle
+  SCHEDULE_OPPORTUNITY_RATE_CACHE.set(key,rate);
+  return rate;
+}
+// PURE: true when the requested completion rate consumes every eligible date.
+// Examples: 3x/7d on Tue/Fri/Sat, 2x/7d on Fri/Sat, or 2x/30d on month days
+// 1 and 2. In these cases calendar-gap spacing must yield to the constrained
+// schedule, including adjacent eligible dates.
+function rhythmFillsEveryEligibleDay(h){
+  if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return false;
+  const target = Number(h.target);
+  if(!Number.isFinite(target) || target <= 0)return false;
+  if(!hasDaySchedule(h))return false;
+  const opportunityRate = scheduledOpportunityRate(h);
+  if(opportunityRate <= 0)return false;
+  const requestedRate = 1 / target;
+  return requestedRate + 1e-9 >= opportunityRate;
 }
 function hasPreferredDays(h){
   const pref = preferredDays(h);

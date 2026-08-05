@@ -123,6 +123,8 @@ function seedScript(){
     return {
       label: document.getElementById('overview-calendar-label')?.textContent || '',
       filter: document.querySelector('#overview-filter [data-overview-range="recent"]')?.textContent || '',
+      rangeButtons: document.querySelectorAll('#overview-filter [data-overview-range]').length,
+      hasFilterTrigger: !!document.querySelector('#overview-filter [data-open-overview-filters]'),
       count: cells.length,
       todayIdx,
       future: cells.filter(c => c.classList.contains('future')).length,
@@ -140,7 +142,9 @@ function seedScript(){
   });
   console.log(strip);
   assert(strip.label === 'around today', 'nav label is around today');
-  assert(strip.filter === 'around today', 'filter pill says around today');
+  assert(strip.filter === '2 weeks', 'compact period switcher labels the two-week view');
+  assert(strip.rangeButtons === 3, 'period switcher offers 2 weeks, month, and all time');
+  assert(strip.hasFilterTrigger, 'place/topic choices live behind one filter trigger');
   assert(strip.count === 14, 'strip has 14 days');
   assert(strip.todayIdx === 7, 'today sits after 7 past days');
   assert(strip.future === 6, 'six future days ahead');
@@ -152,6 +156,27 @@ function seedScript(){
   assert(strip.paneLabels.some(t => /recent/i.test(t)), 'recent pane label');
   assert(/coming up|nothing coming|best day to plan/i.test(strip.listText), 'coming-up pane list renders');
   assert(strip.defaultPane === 'plan', 'defaults to coming-up pane when ahead has items');
+
+  // Place/topic libraries are grouped in an on-demand sheet, not the header.
+  await page.locator('#overview-filter [data-open-overview-filters]').click();
+  await page.waitForSelector('#calendar-filter-sheet.open');
+  const filterSheet = await page.evaluate(() => ({
+    places: document.getElementById('calendar-filter-places-label')?.textContent || '',
+    topics: document.getElementById('calendar-filter-topics-label')?.textContent || '',
+    options: document.querySelectorAll('#calendar-filter-groups .home-filter-option').length,
+  }));
+  assert(filterSheet.places === 'Place' && filterSheet.topics === 'Topic', 'filter sheet groups Place before Topic');
+  assert(filterSheet.options >= 4, 'filter sheet exposes grouped choices with counts');
+  await page.locator('#calendar-filter-groups [data-overview-location="__none__"]').click();
+  assert(await page.locator('#overview-filter [data-clear-overview-location]').count() === 1, 'selected place is summarized above the calendar');
+  await page.locator('#calendar-filter-reset').click();
+  assert(await page.locator('#overview-filter [data-clear-overview-location]').count() === 0, 'reset clears active calendar filters');
+  await page.locator('#calendar-filter-done').click();
+  assert(await page.locator('#calendar-filter-sheet.open').count() === 0, 'show results closes the filter sheet');
+  await page.locator('#overview-filter [data-open-overview-filters]').click();
+  await page.keyboard.press('Escape');
+  assert(await page.locator('#calendar-filter-sheet.open').count() === 0, 'Escape closes only the filter sheet');
+  assert(await page.locator('#overview-sheet.open').count() === 1, 'calendar remains open after dismissing a nested filter sheet');
 
   // Progressive panes + week insight
   const insight = await page.evaluate(() => {
@@ -223,6 +248,24 @@ function seedScript(){
   console.log(futurePlanLit);
   assert(futurePlanLit.hasEntry, 'day+2 with plans/dues is marked in the strip');
   assert(futurePlanLit.hasPlanDot, 'day+2 shows plan or agenda dot');
+
+  const dayMenu = await page.evaluate(() => {
+    const key = todayIso();
+    resetDayLogsStep();
+    renderDayLogs(key);
+    const quickActions = [...document.querySelectorAll('#day-logs-body .day-quick-action')].map(btn => btn.textContent.replace(/\s+/g,' ').trim());
+    const listFooter = document.getElementById('day-logs-footer')?.innerText || '';
+    setDayLogsStep('avail');
+    const presets = [...document.querySelectorAll('[data-day-availability-preset]')].map(btn => btn.textContent.trim());
+    const saveCopy = document.getElementById('day-availability-save')?.textContent.trim() || '';
+    resetDayLogsStep();
+    return {quickActions,listFooter,presets,saveCopy};
+  });
+  assert(dayMenu.quickActions.some(text => /plan something/i.test(text)), 'day menu leads with Plan something');
+  assert(dayMenu.quickActions.some(text => /adjust open time/i.test(text)), 'day menu exposes open-time adjustment as a clear action');
+  assert(/back to calendar/i.test(dayMenu.listFooter) && /home/i.test(dayMenu.listFooter), 'day menu has clear calendar and home exits');
+  assert(dayMenu.presets.join(',') === 'No time,2h,4h,8h', 'open-time editor offers understandable presets');
+  assert(/save open time/i.test(dayMenu.saveCopy), 'open-time editor has an explicit save action');
 
   // ── C. Detail calendar scopes the day sheet to that habit ───────────────
   console.log('\n[C] detail calendar day sheet is habit-scoped');

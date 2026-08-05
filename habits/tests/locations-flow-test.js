@@ -158,20 +158,16 @@ async function openSettings(page){
   assert(filterVisible, 'home tag filter visible');
   const presenceChip = await page.locator('#home-tag-filter [data-home-presence]').count();
   assert(presenceChip === 1, 'presence status chip present');
-  const firstFilterKind = await page.evaluate(() => {
-    const kids = [...document.querySelectorAll('#home-tag-filter > button')];
-    return {
-      firstIsPresence:kids[0] && kids[0].hasAttribute('data-home-presence'),
-      firstLocationIdx:kids.findIndex(b=>b.hasAttribute('data-home-location')),
-      firstTopicIdx:kids.findIndex(b=>b.hasAttribute('data-home-topic'))
-    };
-  });
-  assert(firstFilterKind.firstIsPresence, 'presence chip is first');
-  assert(firstFilterKind.firstLocationIdx >= 0 && firstFilterKind.firstLocationIdx < firstFilterKind.firstTopicIdx, 'places before topics');
-  const filterCount = await page.locator('#home-tag-filter .location-filter').count();
+  const triggerCount = await page.locator('#home-tag-filter [data-open-home-filters]').count();
+  assert(triggerCount === 1, 'compact filter trigger present');
+  await page.locator('#home-tag-filter [data-open-home-filters]').click();
+  await page.waitForSelector('#home-filter-sheet.open');
+  const groupOrder = await page.locator('#home-filter-groups .home-filter-group-head span').allTextContents();
+  assert(groupOrder[0] === 'Place' && groupOrder[1] === 'Topic', 'places grouped before topics');
+  const filterCount = await page.locator('#home-filter-groups .home-filter-option.location').count();
   assert(filterCount >= 3, 'location filters present (got ' + filterCount + ')');
   // Filter to Gym.
-  await page.locator('#home-tag-filter [data-home-location="sample-gym"]').click();
+  await page.locator('#home-filter-groups [data-home-location="sample-gym"]').click();
   await page.waitForTimeout(200);
   const gymOnly = await page.evaluate(() => {
     const data = load();
@@ -181,7 +177,17 @@ async function openSettings(page){
   assert(gymOnly, 'Gym filter shows only Gym-linked habits');
   const pinVisible = await page.locator('.ting-card .ti-map-pin').count();
   assert(pinVisible > 0, 'location pin labels on cards (got ' + pinVisible + ')');
-  await page.locator('#home-tag-filter [data-home-location="all"]').click();
+  const activeHomeChip = await page.locator('#home-tag-filter [data-clear-home-location]').count();
+  assert(activeHomeChip === 1, 'selected place is summarized on the home bar');
+  await page.locator('#home-filter-groups [data-home-location="all"]').click();
+  const firstTopic = page.locator('#home-filter-groups [data-home-topic]:not([data-home-topic="all"])').first();
+  await firstTopic.click();
+  const activeTopicChip = await page.locator('#home-tag-filter [data-clear-home-topic]').count();
+  assert(activeTopicChip === 1, 'selected topic is summarized on the home bar');
+  await page.locator('#home-filter-reset').click();
+  const filtersReset = await page.evaluate(()=>homeLocationFilter === 'all' && homeTopicFilter === 'all');
+  assert(filtersReset, 'filter sheet reset clears place and topic');
+  await page.locator('#home-filter-done').click();
 
   // Presence picker sets agenda anchor without filtering. Manual picks now
   // pin into pinnedLocationId (sticky override of auto detection) rather

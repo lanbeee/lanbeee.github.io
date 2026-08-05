@@ -259,16 +259,19 @@ function matchesHomeLocation(h,id){
   return ids.includes(id);
 }
 
-// HYBRID: one home filter row — presence status, then places, then topics.
-// Each group only renders when at least one habit actually uses that
-// dimension — otherwise the row would just show redundant "all/no" chips.
+// HYBRID: compact home context bar + the full on-demand filter sheet. The bar
+// only exposes current presence and active filters, so a large topic/location
+// library never turns the top of Home into an endless horizontal chip rail.
 function renderHomeTagFilter(data){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
+  const groups = $('home-filter-groups');
+  const summary = $('home-filter-summary');
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(minimal){
     wrap.innerHTML = '';
     wrap.hidden = true;
+    if(groups)groups.innerHTML = '';
     return;
   }
   const registry = locationOptions();
@@ -284,6 +287,7 @@ function renderHomeTagFilter(data){
   if(!hasTopics && !hasLocs && !hasPresence){
     wrap.innerHTML = '';
     wrap.hidden = true;
+    if(groups)groups.innerHTML = '';
     return;
   }
   const topicChoices = homeTopicChoices(data);
@@ -306,13 +310,61 @@ function renderHomeTagFilter(data){
     const gpsClass = presence.gps && presence.kind === 'at' ? 'gps-matched' : '';
     statusHtml = `<button type="button" class="topic-filter presence-filter ${kind} ${gpsClass}" data-home-presence="1" title="starting place for today"><i class="ti ti-current-location" aria-hidden="true"></i>${escapeHtml(label)}</button>`;
   }
-  const locHtml = hasLocs ? locChoices.map(choice=>`
-    <button type="button" class="topic-filter location-filter ${choice.key === homeLocationFilter ? 'on' : ''}" data-home-location="${escapeHtml(choice.key)}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(choice.label)}</button>
-  `).join('') : '';
-  const topicHtml = hasTopics ? topicChoices.map(choice=>`
-    <button type="button" class="topic-filter ${choice.key === homeTopicFilter ? 'on' : ''}" data-home-topic="${escapeHtml(choice.key)}">${escapeHtml(choice.label)}</button>
-  `).join('') : '';
-  wrap.innerHTML = statusHtml + locHtml + topicHtml;
+  const activeLoc = hasLocs && homeLocationFilter !== 'all'
+    ? locChoices.find(choice=>choice.key === homeLocationFilter)
+    : null;
+  const activeTopic = hasTopics && homeTopicFilter !== 'all'
+    ? topicChoices.find(choice=>choice.key === homeTopicFilter)
+    : null;
+  const activeCount = Number(Boolean(activeLoc)) + Number(Boolean(activeTopic));
+  const activeHtml = `
+    <div class="home-filter-active" aria-label="active filters">
+      ${statusHtml}
+      ${activeLoc ? `<button type="button" class="home-active-filter location-filter" data-clear-home-location="1" aria-label="clear place filter ${escapeHtml(activeLoc.label)}"><i class="ti ti-map-pin" aria-hidden="true"></i><span>${escapeHtml(activeLoc.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+      ${activeTopic ? `<button type="button" class="home-active-filter topic-active" data-clear-home-topic="1" aria-label="clear topic filter ${escapeHtml(activeTopic.label)}"><i class="ti ti-tag" aria-hidden="true"></i><span>${escapeHtml(activeTopic.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+      ${!hasPresence && !activeCount ? '<span class="home-filter-default">All habits</span>' : ''}
+    </div>
+    <button type="button" class="home-filter-trigger${activeCount ? ' has-active' : ''}" data-open-home-filters="1" aria-label="open filters${activeCount ? `, ${activeCount} active` : ''}">
+      <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
+      <span>Filters</span>
+      ${activeCount ? `<b>${activeCount}</b>` : ''}
+    </button>`;
+  wrap.innerHTML = activeHtml;
+
+  if(summary){
+    summary.textContent = activeCount
+      ? `${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'} · changes apply immediately`
+      : 'Narrow your agenda by one place, one topic, or both.';
+  }
+  if(!groups)return;
+  const baseIndices = visibleIndices(data,sortSettings);
+  const optionMarkup = (choice,kind)=>{
+    const on = kind === 'location' ? choice.key === homeLocationFilter : choice.key === homeTopicFilter;
+    const count = choice.key === 'all'
+      ? baseIndices.length
+      : baseIndices.filter(i=>kind === 'location'
+        ? matchesHomeLocation(data[i],choice.key)
+        : matchesHomeTopic(data[i],choice.key)).length;
+    const icon = kind === 'location' ? 'ti-map-pin' : 'ti-tag';
+    const label = choice.key === 'all'
+      ? (kind === 'location' ? 'All places' : 'All topics')
+      : choice.label;
+    const attr = kind === 'location' ? 'data-home-location' : 'data-home-topic';
+    return `<button type="button" class="home-filter-option ${kind}${on ? ' on' : ''}" ${attr}="${escapeHtml(choice.key)}" aria-pressed="${on}">
+      <i class="ti ${icon} home-filter-option-icon" aria-hidden="true"></i>
+      <span><b>${escapeHtml(label)}</b><small>${count} ${count === 1 ? 'item' : 'items'}</small></span>
+      <i class="ti ti-check home-filter-check" aria-hidden="true"></i>
+    </button>`;
+  };
+  groups.innerHTML = `
+    ${hasLocs ? `<section class="home-filter-group" aria-labelledby="home-filter-places-label">
+      <div class="home-filter-group-head"><span id="home-filter-places-label">Place</span><small>${Math.max(0,locChoices.length - 1)} options</small></div>
+      <div class="home-filter-option-grid">${locChoices.map(choice=>optionMarkup(choice,'location')).join('')}</div>
+    </section>` : ''}
+    ${hasTopics ? `<section class="home-filter-group" aria-labelledby="home-filter-topics-label">
+      <div class="home-filter-group-head"><span id="home-filter-topics-label">Topic</span><small>${Math.max(0,topicChoices.length - 1)} options</small></div>
+      <div class="home-filter-option-grid">${topicChoices.map(choice=>optionMarkup(choice,'topic')).join('')}</div>
+    </section>` : ''}`;
 }
 
 // HYBRID: draw home location filter (compat — routes to unified row)

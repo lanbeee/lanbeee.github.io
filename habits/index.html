@@ -58,12 +58,13 @@
           <img src="./favicon.svg" alt="" aria-hidden="true" />
           <span class="wordmark-copy">
             <span>Tings</span>
+            <small class="wordmark-date" id="home-date" aria-hidden="true"></small>
           </span>
         </button>
       </div>
       <div id="quota-bar"></div>
       <div id="reminder-banner" class="reminder-banner" hidden></div>
-      <div id="home-tag-filter" class="topic-filter-row" aria-label="topic and location filter"></div>
+      <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
       <div id="list"><div class="home-loading" role="status" aria-label="loading agenda"><span></span><span></span><span></span></div></div>
       <div id="home-week-plan" class="home-week-plan" hidden></div>
       <p id="empty" style="display:none">habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span></p>
@@ -595,21 +596,28 @@
   <!-- overview sheet -->
   <div class="sheet-wrap" id="overview-sheet">
     <div class="sheet overview-sheet">
-      <div class="page-head">
-        <div>
-          <p class="sheet-title">calendar</p>
-          <div class="topic-filter-row overview-filter-row" id="overview-filter" aria-label="calendar filters"></div>
+      <div class="overview-page-head">
+        <div class="overview-page-title">
+          <span class="overview-eyebrow">your time</span>
+          <p class="sheet-title">Calendar</p>
+          <p class="overview-page-sub">See what is planned, what needs attention, and where there is room.</p>
         </div>
+        <button type="button" class="icon-btn overview-page-close" id="overview-head-close" aria-label="close calendar">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
       </div>
+      <div class="overview-toolbar" id="overview-filter" aria-label="calendar view and filters"></div>
       <div class="overview-insight" id="overview-insight" hidden></div>
-      <div class="topic-filter-row overview-pane-row" id="overview-pane-filter" hidden aria-label="calendar details"></div>
-      <div class="overview-list" id="overview-list"></div>
       <div class="month-card overview-card">
           <div class="section-top">
-            <span class="section-label">days</span>
+            <div class="overview-calendar-copy">
+              <span class="section-label" id="overview-calendar-kicker">days</span>
+              <small id="overview-calendar-hint">Tap a day to see its plans and activity.</small>
+            </div>
             <div class="month-nav">
             <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
             <span class="trend-copy" id="overview-calendar-label"></span>
+            <button class="mini-text-btn overview-today-btn" id="overview-today" type="button">today</button>
             <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
             </div>
           </div>
@@ -619,6 +627,10 @@
           <span><b class="plan"></b>planned</span>
           <span><b class="agenda"></b>on agenda</span>
         </div>
+      </div>
+      <div class="overview-detail-block">
+        <div class="topic-filter-row overview-pane-row" id="overview-pane-filter" hidden aria-label="calendar details"></div>
+        <div class="overview-list" id="overview-list"></div>
       </div>
       <div class="btn-row overview-actions">
         <button class="btn primary" id="overview-close">done</button>
@@ -1287,6 +1299,7 @@
           <p class="sheet-name" id="day-logs-title"></p>
           <p class="sheet-sub" id="day-logs-sub"></p>
         </div>
+        <button type="button" class="mini-nav day-logs-close" id="day-logs-close" aria-label="close day"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
       <div id="day-logs-body"></div>
       <div class="btn-row" id="day-logs-footer"></div>
@@ -1379,6 +1392,46 @@
       <div class="btn-row">
         <button class="btn primary" type="button" id="picker-save">save place</button>
         <button class="btn" type="button" id="picker-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- compact home filters -->
+  <div class="sheet-wrap" id="home-filter-sheet">
+    <div class="sheet home-filter-sheet" role="dialog" aria-modal="true" aria-labelledby="home-filter-title">
+      <div class="home-filter-sheet-head">
+        <div>
+          <p class="sheet-title" id="home-filter-title">filter home</p>
+          <p class="about-copy" id="home-filter-summary">Choose a place or topic.</p>
+        </div>
+        <button type="button" class="icon-btn home-filter-close" id="home-filter-close" aria-label="close filters">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="home-filter-groups" id="home-filter-groups"></div>
+      <div class="btn-row home-filter-sheet-actions">
+        <button class="btn" type="button" id="home-filter-reset">reset</button>
+        <button class="btn primary" type="button" id="home-filter-done">show results</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- calendar place/topic filters -->
+  <div class="sheet-wrap" id="calendar-filter-sheet">
+    <div class="sheet home-filter-sheet calendar-filter-sheet" role="dialog" aria-modal="true" aria-labelledby="calendar-filter-title">
+      <div class="home-filter-sheet-head">
+        <div>
+          <p class="sheet-title" id="calendar-filter-title">filter calendar</p>
+          <p class="about-copy" id="calendar-filter-summary">Choose a place or topic.</p>
+        </div>
+        <button type="button" class="icon-btn home-filter-close" id="calendar-filter-close" aria-label="close calendar filters">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="home-filter-groups" id="calendar-filter-groups"></div>
+      <div class="btn-row home-filter-sheet-actions">
+        <button class="btn" type="button" id="calendar-filter-reset">reset</button>
+        <button class="btn primary" type="button" id="calendar-filter-done">show results</button>
       </div>
     </div>
   </div>

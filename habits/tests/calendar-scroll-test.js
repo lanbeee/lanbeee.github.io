@@ -85,13 +85,13 @@ function seedScript(){
   await page.waitForSelector('#overview-sheet.open');
   await page.waitForTimeout(300);
 
-  // ── 1. Horizontal scroll on filter row does NOT change filter ──
-  console.log('\n--- 1. Horizontal scroll on filter row ---');
+  // ── 1. Compact toolbar stays stable under a horizontal gesture ──
+  console.log('\n--- 1. Horizontal gesture on compact toolbar ---');
   const filterRow = page.locator('#overview-filter');
   assert(await filterRow.isVisible(), 'filter row visible');
 
   const activeFilterBefore = await page.evaluate(() =>
-    document.querySelector('#overview-filter .topic-filter.on')?.textContent.trim()
+    document.querySelector('#overview-filter .overview-range-option.on')?.textContent.trim()
   );
   console.log('  active filter before: ' + activeFilterBefore);
 
@@ -110,7 +110,7 @@ function seedScript(){
     assert(scrollAfter !== scrollBefore, 'filter row actually scrolled');
 
     const activeFilterAfter = await page.evaluate(() =>
-      document.querySelector('#overview-filter .topic-filter.on')?.textContent.trim()
+      document.querySelector('#overview-filter .overview-range-option.on')?.textContent.trim()
     );
     assert(activeFilterAfter === activeFilterBefore, 'active filter unchanged after horizontal scroll');
   } else {
@@ -197,7 +197,7 @@ function seedScript(){
     await monthPill.click();
     await page.waitForTimeout(200);
     const activeAfterTap = await page.evaluate(() =>
-      document.querySelector('#overview-filter .topic-filter.on')?.dataset.overviewRange
+      document.querySelector('#overview-filter .overview-range-option.on')?.dataset.overviewRange
     );
     assert(activeAfterTap === 'month', 'tap on month pill activates it');
     // Restore

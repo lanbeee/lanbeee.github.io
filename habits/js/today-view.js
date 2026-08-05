@@ -98,7 +98,18 @@ function includeInTodayAgenda(h,settings){
     }
   }
   const days = daysSince(h.lastLog);
-  const target = effectiveTarget(h);
+  const target = typeof effectiveRhythmCadenceGapDays === 'function'
+    ? effectiveRhythmCadenceGapDays(h)
+    : effectiveTarget(h);
+  // A calendar-constrained frequency can require every allowed opportunity.
+  // 3x/7d on Tue/Fri/Sat (or 2x/7d on Fri/Sat) must therefore surface on
+  // Saturday even when Friday was completed. A completion earlier today still
+  // clears a non-breakable habit normally.
+  if(settings.showDueHabitsInAgenda !== false
+    && scheduleDistance === 0 && windowStillDoableToday(h)
+    && typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h)
+    && (days === null || days > 0))return true;
   // Breakable keepup/reduce: a partial log today must NOT clear the rest of
   // today's duration budget off the agenda (that looked like "all chunks done").
   if(h.breakable && settings.showDueHabitsInAgenda !== false
@@ -3454,7 +3465,9 @@ function weekUrgency(h){
     return 35;
   }
   const days = daysSince(h.lastLog);
-  const target = effectiveTarget(h);
+  const target = typeof effectiveRhythmCadenceGapDays === 'function'
+    ? effectiveRhythmCadenceGapDays(h)
+    : effectiveTarget(h);
   if(days === null)return 10;
   if(days > target)return 130;
   if(days >= target)return 100;
@@ -3497,11 +3510,8 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     if(ready !== null && dayBase < dayStart(ready))return false;
     return true;
   }
-  // Habit: schedule must allow this weekday.
-  if(hasDaySchedule(h)){
-    const schedule = scheduledDays(h);
-    if(schedule.weekdays.length && !schedule.weekdays.includes(weekday))return false;
-  }
+  // Habit: both weekday and month-day gates must allow this calendar date.
+  if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
   if(hasPlannedForDay(h,dayBase))return settings.showPlannedItemsInAgenda !== false;
   if(settings.showDueHabitsInAgenda === false)return false;
   // One-off soft plan-by: eligible any day from today through the deadline
@@ -3516,7 +3526,9 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     return true;
   }
   const days = daysSince(h.lastLog);
-  const target = effectiveTarget(h);
+  const target = typeof effectiveRhythmCadenceGapDays === 'function'
+    ? effectiveRhythmCadenceGapDays(h)
+    : effectiveTarget(h);
   // Never-logged habits are due immediately (treated as infinitely overdue) so
   // a freshly created habit enters the week plan. Future-dated logs (days < 0)
   // are not yet due. After the first log, the normal rhythm applies.
@@ -3524,6 +3536,11 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(days === null)return true;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
+  // When every allowed calendar date is needed to meet the requested rate, each
+  // later eligible day is a candidate regardless of the raw calendar gap.
+  // Do not offer another session on the same day it was completed.
+  if(typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h))return ageOnDay > 0;
   if(ageOnDay >= target)return true;               // due/overdue by this day
   // Breakable daily rhythm: after a partial log, today's budget is still open
   // even though lastLog reset the rhythm clock (days < target). Keep placing
@@ -3842,19 +3859,22 @@ function weekPreferencePenalty(h,fit,day,registry){
 // after each prior placement this pass), is it due again on dayBase? Mirrors
 // the rhythm logic in isWeekCandidate but accepts a lastLog override so the
 // placement loop can simulate "if I did this on Tuesday, am I due again on
-// Wednesday?". Schedule weekday-gates still apply. Flexibility pull-forward
+// Wednesday?". Schedule calendar-date gates still apply. Flexibility pull-forward
 // is intentionally NOT consulted here — flex only widens the INITIAL eligible
 // set (via isWeekCandidate); spacing between successive placements uses the
 // raw target so a daily habit lands on every day, not every (target+flex) days.
-function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday){
+function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday,completionOffset = 0){
   if(!h)return false;
-  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)){
-    const schedule = typeof scheduledDays === 'function' ? scheduledDays(h) : null;
-    if(schedule && schedule.weekdays && schedule.weekdays.length && !schedule.weekdays.includes(weekday))return false;
-  }
-  const target = Math.max(1,Number(h && h.target) || 7);
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof isDateEligibleForHabit === 'function'
+    && !isDateEligibleForHabit(h,dayBase))return false;
+  const target = typeof rhythmCadenceGapDays === 'function'
+    ? rhythmCadenceGapDays(h,completionOffset)
+    : Math.max(1,Number(h && h.target) || 7);
   if(lastLogTs == null)return true; // never completed → due immediately
   const ageDays = Math.round((dayBase - dayStart(lastLogTs)) / 86400000);
+  if(typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h))return ageDays > 0;
   return ageDays >= target;
 }
 function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints){
@@ -3933,7 +3953,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(pinned && !state.isTodayDay)continue;
         if(rhythmPlacementCount > 0 && virtualLastLog != null
-          && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday)
+          && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount)
           && !(state.dayBase > dayStart(virtualLastLog)
             && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates)))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
@@ -3996,7 +4016,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(pinned && !state.isTodayDay)continue;
         if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null){
           const afterLast = state.dayBase > dayStart(virtualLastLog);
-          const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday);
+          const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount);
           const linkExtra = afterLast && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
           if(!spaced && !linkExtra)continue;
         }
@@ -4317,10 +4337,12 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
       && Number.isFinite(Number(c.h.target)));
     const breakableRhythm = !!(c.h.breakable && rhythmHabit);
     let lastPlaced = rhythmHabit ? c.h.lastLog : null;
+    let rhythmPlacementCount = 0;
     let alreadyOneShot = false;
     for(const state of dayStates){
       if(state.placed.has(c.i)){
         lastPlaced = state.dayBase;
+        if(rhythmHabit)rhythmPlacementCount += 1;
         if(!rhythmHabit)alreadyOneShot = true;
       }
     }
@@ -4333,7 +4355,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
         continue;
       }
       if(rhythmHabit && lastPlaced != null
-        && !rhythmEligibleOnDay(c.h,lastPlaced,state.dayBase,state.weekday))continue;
+        && !rhythmEligibleOnDay(c.h,lastPlaced,state.dayBase,state.weekday,rhythmPlacementCount))continue;
       // Same week-holistic rule as the ILP reserve: can-wait yields; packed
       // equal/lower priority must not steal a daily breakable chunk.
       if(typeof fastPathDefersMovable === 'function'
@@ -4361,6 +4383,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
         h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:fit.locId
       });
       lastPlaced = state.dayBase;
+      if(rhythmHabit)rhythmPlacementCount += 1;
       gained += 1;
       if(!rhythmHabit)break;
     }

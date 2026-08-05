@@ -28,26 +28,33 @@ async function visibleFreePill(page, preferLower = false){
   return page.evaluate((preferLower)=>{
     const headers = [...document.querySelectorAll('#list .section-header.has-pill')];
     if(!headers.length)return null;
-    const anchor = preferLower
-      ? (headers[Math.min(2, headers.length - 1)] || headers[0])
-      : headers[0];
-    anchor.scrollIntoView({ block:'center', behavior:'instant' });
-    if(preferLower && window.scrollY < 160){
-      window.scrollBy({ top:160 - window.scrollY, left:0, behavior:'instant' });
-    }else if(!preferLower){
-      window.scrollBy({ top:-40, left:0, behavior:'instant' });
-    }
     const vh = window.innerHeight;
     const order = preferLower ? headers.slice().reverse() : headers;
     for(const header of order){
       const pill = header.querySelector('.free-pill');
       if(!pill)continue;
+      // Position each candidate before measuring it. At compact heights a
+      // sibling sticky header can otherwise obscure a pill that merely happens
+      // to be in the viewport.
+      header.scrollIntoView({ block:'center', behavior:'instant' });
+      if(preferLower && window.scrollY < 160){
+        window.scrollBy({ top:160 - window.scrollY, left:0, behavior:'instant' });
+      }else if(!preferLower){
+        window.scrollBy({ top:-40, left:0, behavior:'instant' });
+      }
       const r = pill.getBoundingClientRect();
       if(!(r.bottom > 8 && r.top < vh - 8 && r.height > 0))continue;
+      // A geometrically visible sticky pill can still sit beneath the app
+      // header at this compact viewport height. Only return a coordinate that
+      // actually resolves back to this interactive control.
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const hit = document.elementFromPoint(cx, cy);
+      if(!hit || !hit.closest('.free-pill'))continue;
       const hr = header.getBoundingClientRect();
       return {
-        x: r.left + r.width / 2,
-        y: r.top + r.height / 2,
+        x: cx,
+        y: cy,
         headerX: Math.max(12, r.left - 30),
         headerY: Math.min(vh - 12, Math.max(12, hr.top + hr.height / 2)),
         scrollY: window.scrollY
@@ -128,7 +135,10 @@ async function visibleFreePill(page, preferLower = false){
   await client.send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[{x:tapPt.x, y:tapPt.y, radiusX:10, radiusY:10, force:1, id:0}], modifiers:0 });
   await sleep(40);
   await client.send('Input.dispatchTouchEvent', { type:'touchEnd', touchPoints:[{x:tapPt.x, y:tapPt.y, id:0}], modifiers:0 });
-  await sleep(120);
+  // The sheet now uses the same short entrance transition as the other
+  // calendar/home surfaces. Wait for its settled state rather than sampling
+  // partway through a legitimate touch-open animation.
+  await sleep(280);
   assert(await sheetCount(page, '#free-time-sheet') === 1, 'exact tap on pill still opens the sheet');
   await page.locator('#free-time-close').click({ force:true });
   await sleep(150);

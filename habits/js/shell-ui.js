@@ -1079,7 +1079,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
@@ -1109,9 +1109,39 @@ document.addEventListener('click',e=>{
   }, 0);
 });
 
-// Escape closes the pane.
+// Escape closes only the topmost visible surface. Nested calendar filters/day
+// details sit above the overview; dismissing one should reveal the calendar,
+// not close the entire stack in a single keypress.
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape') return;
+  const modalIds = ['add-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'];
+  const openModals = modalIds
+    .map((id,index)=>({id,index,el:$(id)}))
+    .filter(item=>item.el?.classList.contains('open'))
+    .sort((a,b)=>{
+      const za = parseInt(getComputedStyle(a.el).zIndex,10) || 0;
+      const zb = parseInt(getComputedStyle(b.el).zIndex,10) || 0;
+      return zb - za || b.index - a.index;
+    });
+  const top = openModals[0];
+  if(top){
+    e.preventDefault();
+    const id = top.id;
+    if (id === 'add-sheet' && typeof cancelAdd === 'function') cancelAdd();
+    else if (id === 'overview-sheet') closeSheet('overview-sheet');
+    else if (id === 'settings-sheet') closeSheet('settings-sheet');
+    else if (id === 'about-sheet') closeSheet('about-sheet');
+    else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');
+    else if (id === 'home-filter-sheet') closeSheet('home-filter-sheet');
+    else if (id === 'calendar-filter-sheet') closeSheet('calendar-filter-sheet');
+    else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
+    else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
+    else if (id === 'day-capacity-sheet') closeSheet('day-capacity-sheet');
+    else if (id === 'day-logs-sheet') { if(typeof closeDayLogsSheet === 'function') closeDayLogsSheet({refreshOverview:!dayLogsScoped()}); else { dayLogsKey = null; if(typeof resetDayLogsStep === 'function')resetDayLogsStep(); closeSheet('day-logs-sheet'); } }
+    else if (id === 'slipped-sheet') closeSheet('slipped-sheet');
+    else if (id === 'free-time-sheet') closeSheet('free-time-sheet');
+    return;
+  }
   const pane = getPane();
   if (pane && pane.dataset.activeSheet) {
     e.preventDefault();
@@ -1119,23 +1149,4 @@ document.addEventListener('keydown',e=>{
     unmountPane();
     if (id === 'detail-sheet' && typeof closeDetail === 'function') closeDetail();
   }
-  // Also close centered modals on Escape
-  ['add-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'].forEach(id=>{
-    const el = $(id);
-    if (el && el.classList.contains('open')) {
-      e.preventDefault();
-      // delegate to known close handlers
-      if (id === 'add-sheet' && typeof cancelAdd === 'function') cancelAdd();
-      else if (id === 'overview-sheet') closeSheet('overview-sheet');
-      else if (id === 'settings-sheet') closeSheet('settings-sheet');
-      else if (id === 'about-sheet') closeSheet('about-sheet');
-      else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');
-      else if (id === 'snooze-sheet' && typeof closeSheet === 'function') closeSheet('snooze-sheet');
-      else if (id === 'activity-sheet') { activityIdx = null; closeSheet('activity-sheet'); }
-      else if (id === 'day-capacity-sheet') closeSheet('day-capacity-sheet');
-      else if (id === 'day-logs-sheet') { if(typeof closeDayLogsSheet === 'function') closeDayLogsSheet({refreshOverview:!dayLogsScoped()}); else { dayLogsKey = null; if(typeof resetDayLogsStep === 'function')resetDayLogsStep(); closeSheet('day-logs-sheet'); } }
-      else if (id === 'slipped-sheet') closeSheet('slipped-sheet');
-      else if (id === 'free-time-sheet') closeSheet('free-time-sheet');
-    }
-  });
 });

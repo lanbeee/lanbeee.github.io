@@ -1181,6 +1181,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   }
   // Chronological days so rhythm virtual lastLog advances naturally.
   const virtualLogs = new Map();
+  const virtualCompletionCounts = new Map();
   const oneShotPlaced = new Set();
   let total = 0;
   let budgetLeft = AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS;
@@ -1198,6 +1199,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       if(c && c.h && c.h.type === 'task')oneShotPlaced.add(c.i);
       if(c && c.h && c.h.type !== 'task' && Number.isFinite(Number(c.h.target))){
         virtualLogs.set(c.i,state.dayBase);
+        virtualCompletionCounts.set(c.i,(virtualCompletionCounts.get(c.i) || 0) + 1);
       }
     }
   };
@@ -1229,7 +1231,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       if(rhythmHabit && virtualLogs.has(c.i)){
         const vLog = virtualLogs.get(c.i);
         const spaced = typeof rhythmEligibleOnDay === 'function'
-          && rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday);
+          && rhythmEligibleOnDay(
+            c.h,vLog,state.dayBase,state.weekday,
+            virtualCompletionCounts.get(c.i) || 0
+          );
         const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
         const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
           && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
@@ -1482,7 +1487,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         // session; otherwise a new partial log makes lastLog=today and wrongly
         // removes the rest of today's budget from the agenda.
         if(rhythmPlacementCount > 0 && vLog != null && typeof rhythmEligibleOnDay === 'function'){
-          const spaced = rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday);
+          const spaced = rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday,rhythmPlacementCount);
           const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
           const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
             && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
