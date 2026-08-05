@@ -1387,6 +1387,11 @@ document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
 $('open-sample-habits')?.addEventListener('click',()=>{
   if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
 });
+$('open-docs')?.addEventListener('click',()=>{
+  closeSheet('about-sheet');
+  closeSheet('sample-habits-sheet');
+  window.location.href = './docs.html';
+});
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
 $('sample-habits-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});

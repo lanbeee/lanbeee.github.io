@@ -921,6 +921,9 @@ body.reach-pad #list{padding-top:220px;}
   justify-content:flex-end;flex-wrap:wrap;gap:4px 5px;min-width:0;
   max-width:min(50vw,160px);max-height:50px;overflow:hidden;
 }
+/* Activity dots hidden: drop the empty third grid row so the card doesn't
+   keep a fixed 20px track under cue/meta. */
+.ting-info.no-trail{grid-template-rows:auto minmax(20px,auto);}
 .ting-info.has-breakable-progress{
   grid-template-rows:auto minmax(20px,auto);
 }

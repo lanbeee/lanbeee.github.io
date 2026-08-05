@@ -1387,6 +1387,11 @@ document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
 $('open-sample-habits')?.addEventListener('click',()=>{
   if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
 });
+$('open-docs')?.addEventListener('click',()=>{
+  closeSheet('about-sheet');
+  closeSheet('sample-habits-sheet');
+  window.location.href = './docs.html';
+});
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
 $('sample-habits-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
@@ -1465,6 +1470,18 @@ $('home-extra-seg')?.addEventListener('click',e=>{
     btn.classList.toggle('on',btn.dataset.segValue === mode);
   });
   updateSortSetting({homeExtraMode:mode},{sync:false,renderNow:false});
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  else render();
+});
+$('agenda-time-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-seg-value]');
+  if(!opt)return;
+  const mode = normalizeAgendaTimeMode(opt.dataset.segValue);
+  if(mode === normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards))return;
+  document.querySelectorAll('#agenda-time-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue === mode);
+  });
+  updateSortSetting({showAgendaTimesOnCards:mode},{sync:false,renderNow:false});
   if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   else render();
 });
