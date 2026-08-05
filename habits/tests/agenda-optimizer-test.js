@@ -846,6 +846,66 @@ function base(props) {
       JSON.stringify({zuhr:overlapZuhr,lunch:overlapLunch,travel:overlapResult.travelDetail}));
   }
 
+  // Week-hours repair replays selected fills. An omitted location used to be
+  // copied as an own `locationId: undefined` property, which tryPlaceOnDay
+  // misread as an explicit locationless decision and erased required travel.
+  console.log('\n[Optimizer] replay seeds preserve required locations');
+  const replayLocations = await page.evaluate(({now,settings})=>{
+    const base = dayStart(now);
+    const day = {
+      dayBase:base,weekday:new Date(base).getDay(),isToday:true,
+      totalMinutes:240,slots:[{start:base + 9 * 3600000,end:base + 13 * 3600000}],
+      scheduled:[],agendaItems:[]
+    };
+    const state = createDayPlacementState(day,settings,{now,startClock:base + 9 * 3600000});
+    state.seedLocId = null;
+    state.prevLocId = null;
+    const grocery = {
+      hid:'replay-grocery',name:'Replay grocery',type:'task',durationMinutes:30,
+      locationIds:['spresh'],anywhereAllowed:false
+    };
+    const home = {
+      hid:'replay-home',name:'Replay home',type:'task',durationMinutes:30,
+      locationIds:['home'],anywhereAllowed:false
+    };
+    const first = {h:grocery,i:0,priority:0,locationId:undefined};
+    const firstFit = tryPlaceOnDay(state,first,{allowNetwork:false});
+    if(firstFit)commitPlacement(state,first,firstFit);
+    // Null is also invalid for a non-anywhere habit with a required location.
+    const second = {h:home,i:1,priority:0,locationId:null};
+    const secondFit = tryPlaceOnDay(state,second,{allowNetwork:false});
+    if(secondFit)commitPlacement(state,second,secondFit);
+    const timeline = finalizePlacementRows(state);
+    return {
+      firstLoc:firstFit && firstFit.locId,
+      secondLoc:secondFit && secondFit.locId,
+      travel:timeline.filter(row=>row.kind === 'travel').map(row=>({
+        from:row.from,to:row.to,start:row.start,end:row.end
+      })),
+      fills:timeline.filter(row=>row.kind === 'fill').map(row=>({
+        name:row.h && row.h.name,loc:row.locationId,start:row.start,end:row.end
+      }))
+    };
+  },{
+    now:atTime(9,0),
+    settings:{
+      preset:'todayFirst',agendaOptimizer:true,lastKnownLocationId:null,
+      defaultTravelMode:'walking',blockedTimes:[],
+      locations:[
+        {id:'home',name:'Home',lat:40.700,lng:-74.000},
+        {id:'spresh',name:'Spresh',lat:40.710,lng:-74.000}
+      ],
+      travel:{}
+    }
+  });
+  check('undefined replay location resolves to required Spresh',
+    replayLocations.firstLoc === 'spresh',JSON.stringify(replayLocations));
+  check('null replay location cannot erase required Home',
+    replayLocations.secondLoc === 'home',JSON.stringify(replayLocations));
+  check('replayed Spresh→Home transition includes travel',
+    replayLocations.travel.some(row=>row.from === 'spresh' && row.to === 'home'),
+    JSON.stringify(replayLocations));
+
   // Whole-route location optimum. A one-step/round-trip picker misses the
   // final scheduled anchor here: A is closest to Home and staying at A looks
   // locally cheap, but A→End is expensive. The globally best chain is A→B→End.

@@ -3060,8 +3060,11 @@ function render(opts){
         }
       }
       const seq = homeDaySequence(day,sortSettings,{visibleSet});
-      day.homeDisplayedTimeline = seq.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
-        && row.i != null);
+      // Preserve the exact rows shown on Home for audit/export. Placement maps
+      // below still consume only indexed fills/scheduled rows, while travel
+      // remains visible in HOME AGENDA OUTPUT.
+      day.homeDisplayedTimeline = seq.filter(row=>row.kind === 'travel'
+        || ((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null));
       for(const row of seq){
         if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
           weekAssigned.add(row.i);
@@ -3565,7 +3568,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 2;
+const HOME_PLANNER_ALGORITHM_VERSION = 3;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.

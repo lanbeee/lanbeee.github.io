@@ -379,6 +379,8 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId,actualChosen
     return (loc && loc.name) || id;
   };
   if(ids.length === 1 && !h.anywhereAllowed){
+    const chosenId = actualChosenId === undefined ? ids[0] : actualChosenId;
+    const requiredLocationMissing = chosenId !== ids[0];
     const c = {
       id:ids[0],
       name:locName(ids[0]),
@@ -390,14 +392,16 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId,actualChosen
       sameAnchorBonus:(anchorId && ids[0] === anchorId) ? -60 : 0,
       total:0,
       roundTrip:null,
-      isWinner:true
+      isWinner:!requiredLocationMissing
     };
     if(nextLocId)c.roundTrip = c.edgeSeconds + c.outboundSeconds;
     return {
       anchorId:anchorId || null,
       nextLocId:nextLocId || null,
-      chosenId:ids[0],
-      reason:'single allowed location (no scoring)',
+      chosenId,
+      reason:requiredLocationMissing
+        ? 'INVALID: committed placement lost its single required location'
+        : 'single allowed location (no scoring)',
       candidates:[c]
     };
   }
@@ -1994,10 +1998,14 @@ function tryPlaceOnDay(state,fill,opts = {}){
   };
   const remaining = state.remaining;
   const usedMinutes = state.usedMinutes;
-  // `locationId` may deliberately be null. The exact optimizer uses that as
-  // the "stay wherever the route already is" option for anywhere-allowed
-  // habits, so presence of the property matters (truthiness does not).
-  const hasForcedLocation = Object.prototype.hasOwnProperty.call(fill,'locationId');
+  // `locationId` may deliberately be null only for anywhere/locationless work.
+  // `undefined` is an omitted decision, not an instruction to erase a required
+  // location (week-hours repair used to manufacture that property).
+  const hasLocationProperty = Object.prototype.hasOwnProperty.call(fill,'locationId');
+  const candidateLocIds = normalizeLocationIds(fill.h.locationIds,registry);
+  const hasForcedLocation = hasLocationProperty
+    && fill.locationId !== undefined
+    && (fill.locationId !== null || fill.h.anywhereAllowed || !candidateLocIds.length);
   const resolveLoc = (anchor)=>hasForcedLocation
     ? fill.locationId
     : pickHabitLocationId(fill.h,anchor,registry,mode);
@@ -2636,10 +2644,15 @@ function committedFillLocationChoices(entry,state){
   const h = entry && entry.fill && entry.fill.h;
   const fit = entry && entry.fit;
   if(!h || !fit)return [];
-  if(Object.prototype.hasOwnProperty.call(entry.fill,'locationId')){
-    return [entry.fill.locationId || null];
-  }
   const ids = normalizeLocationIds(h.locationIds,state.registry);
+  if(Object.prototype.hasOwnProperty.call(entry.fill,'locationId')
+    && entry.fill.locationId !== undefined){
+    // Explicit null is legal only for genuinely anywhere/locationless work.
+    // A malformed replay seed must never erase a required saved location.
+    if(entry.fill.locationId !== null || h.anywhereAllowed || !ids.length){
+      return [entry.fill.locationId || null];
+    }
+  }
   // Preserve an explicitly committed legacy/synthetic fit even when its habit
   // record has no locationIds. Normal planner fills derive choices from the
   // habit and therefore still expose every allowed location to the route DP.
@@ -4873,7 +4886,10 @@ function repairWeekPlacedHours(candidates,dayStates,settings){
             seenBreak.add(f.i);
             collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity});
           }else{
-            collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity,locationId:f.locationId});
+            // Re-run location choice from the habit constraints. Adding an
+            // `undefined` locationId property here used to mean "force none"
+            // and silently removed Grocery/Home travel during hours repair.
+            collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity});
           }
         }
 
