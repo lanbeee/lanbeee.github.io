@@ -1755,6 +1755,7 @@ function appendHomeBlockedCard(list,row){
   // Tap opens the per-instance editor; the X frees this occurrence for today.
   const el = document.createElement('div');
   el.className = 'blocked-card';
+  el.dataset.blockedDay = dateKey(row.start);
   el.tabIndex = 0;
   el.setAttribute('role','button');
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
@@ -1805,6 +1806,11 @@ function cancelHomeBlockedRow(row){
   const current = effectiveAvailabilityMinutes(dayKey,s);
   overrides[dayKey] = Math.max(0,current + freedMin);
   saveSortSettings({...s,availabilityOverrides:overrides});
+  // Keep the solved fill placements mounted, but rebuild presentation-only
+  // rows from the newly saved block settings immediately. Otherwise the old
+  // cancelled X remains actionable until the replacement solve completes and
+  // a quick second tap can free the same block twice.
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   if(typeof render === 'function')render();
   showActionToast(`Freed ${row.label || 'blocked'} for today`,{
     type:'restore-blocked',
@@ -4953,6 +4959,8 @@ function movePlanTo(idx,fromKey,toKey){
 // HYBRID: revert last action and refresh
 function executeUndo(){
   if(!pendingAction)return;
+  const refreshBlockedPresentation = pendingAction.type === 'restore-blocked'
+    || pendingAction.type === 'restore-block-adjust';
   const data = load();
   if(pendingAction.type === 'entry'){
     const {idx,ts,snoozedUntil,consumedPlanTs} = pendingAction;
@@ -5061,6 +5069,12 @@ function executeUndo(){
     }
   }
   if(save(data)){
+    // Block undo changes only presentation/capacity immediately. Repaint those
+    // rows from the mounted exact week before queueing the replacement solve,
+    // mirroring cancelHomeBlockedRow and avoiding a stale missing/editable row.
+    if(refreshBlockedPresentation && typeof renderHomePresentationOnly === 'function'){
+      renderHomePresentationOnly();
+    }
     hideActionToast();
     showToast('undone');
     if(typeof updateSortSampleCount === 'function')updateSortSampleCount();

@@ -87,20 +87,25 @@ function localTodayKey(){
     return page.evaluate(({key,s})=>effectiveAvailabilityMinutes(key,s),{key:dayKey,s});
   }
 
-  async function expandBlockedGroups(){
-    // 2+ blocks on a day collapse into a `.blocked-card-merge` toggle whose
-    // individual cancel-marks only appear after expanding. `seed()` reloads
-    // the page so every group starts collapsed — click each merge once.
-    const merges = await page.locator('.blocked-card-merge').all();
-    for(const m of merges){
-      await m.click();
+  async function expandTodayBlockedGroup(){
+    // Only today's group is relevant. Expanding every day used a pre-collected
+    // list of nth() locators; if the exact planner replaced Home mid-loop, the
+    // final locator no longer existed and the test timed out despite correct
+    // cancellation/capacity behavior.
+    const merge = page.locator(
+      `.blocked-group[data-blocked-group^="${todayK}:"] > .blocked-card-merge[aria-expanded="false"]`
+    ).first();
+    if(await merge.count()){
+      await merge.click();
       await page.waitForTimeout(120);
     }
   }
 
   async function cancelFirstBlockedCard(){
-    await expandBlockedGroups();
-    const x = page.locator('.blocked-card .blocked-cancel-mark').first();
+    await expandTodayBlockedGroup();
+    const x = page.locator(
+      `.blocked-card[data-blocked-day="${todayK}"] .blocked-cancel-mark`
+    ).first();
     if(!await x.count())throw new Error('no blocked-cancel-mark visible');
     await x.click();
     await page.waitForTimeout(250);
