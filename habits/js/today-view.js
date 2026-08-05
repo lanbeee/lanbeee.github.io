@@ -373,8 +373,12 @@ function pickHabitLocationId(h,anchorId,registry,mode){
 // planner trace can explain a surprising commute (e.g. Zuhr at KhadijaM when
 // Home was allowed and was the current anchor). Mirrors pickHabitLocationId
 // exactly, including the single-location short-circuit and the anywhere floor.
+// When nextLocId is supplied (the next fill's committed location), also reports
+// the outbound + round-trip cost so an outbound-blind choice becomes visible:
+// the real picker only minimises inbound, so the inbound winner can lose on the
+// round trip when the next item is locked elsewhere (e.g. Lunch @Home).
 // Never called from the placement path — only from buildPlannerDecisionTrace.
-function locationChoiceBreakdown(h,anchorId,registry,mode){
+function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId){
   const ids = normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return null;
   const locName = id => {
@@ -382,20 +386,26 @@ function locationChoiceBreakdown(h,anchorId,registry,mode){
     return (loc && loc.name) || id;
   };
   if(ids.length === 1 && !h.anywhereAllowed){
+    const c = {
+      id:ids[0],
+      name:locName(ids[0]),
+      prefLevel:locationPrefLevel(h,ids[0]) || 'neutral',
+      edgeSeconds:Number(travelEdgeBetweenIds(anchorId,ids[0],registry,mode).seconds) || 0,
+      outboundSeconds:nextLocId
+        ? Number(travelEdgeBetweenIds(ids[0],nextLocId,registry,mode).seconds) || 0 : null,
+      prefBias:0,
+      sameAnchorBonus:(anchorId && ids[0] === anchorId) ? -60 : 0,
+      total:0,
+      roundTrip:null,
+      isWinner:true
+    };
+    if(nextLocId)c.roundTrip = c.edgeSeconds + c.outboundSeconds;
     return {
       anchorId:anchorId || null,
+      nextLocId:nextLocId || null,
       chosenId:ids[0],
       reason:'single allowed location (no scoring)',
-      candidates:[{
-        id:ids[0],
-        name:locName(ids[0]),
-        prefLevel:locationPrefLevel(h,ids[0]) || 'neutral',
-        edgeSeconds:Number(travelEdgeBetweenIds(anchorId,ids[0],registry,mode).seconds) || 0,
-        prefBias:0,
-        sameAnchorBonus:(anchorId && ids[0] === anchorId) ? -60 : 0,
-        total:0,
-        isWinner:true
-      }]
+      candidates:[c]
     };
   }
   const candidates = ids.map(id=>{
@@ -404,15 +414,19 @@ function locationChoiceBreakdown(h,anchorId,registry,mode){
     const prefBias = -locationPrefScore(prefLevel) * 30;
     const sameAnchorBonus = (anchorId && id === anchorId) ? -60 : 0;
     const edgeSeconds = Number(edge && edge.seconds) || 0;
+    const outboundSeconds = nextLocId
+      ? Number(travelEdgeBetweenIds(id,nextLocId,registry,mode).seconds) || 0 : null;
     const total = edgeSeconds + prefBias + sameAnchorBonus;
     return {
       id,
       name:locName(id),
       prefLevel:prefLevel || 'neutral',
       edgeSeconds,
+      outboundSeconds,
       prefBias,
       sameAnchorBonus,
-      total
+      total,
+      roundTrip:nextLocId ? (edgeSeconds + outboundSeconds + prefBias + sameAnchorBonus) : null
     };
   });
   let chosenId = null;
@@ -420,14 +434,28 @@ function locationChoiceBreakdown(h,anchorId,registry,mode){
   for(const c of candidates){
     if(c.total < bestScore){ bestScore = c.total; chosenId = c.id; }
   }
-  for(const c of candidates)c.isWinner = (c.id === chosenId);
-  const reason = chosenId
-    ? (h.anywhereAllowed
-      ? 'lowest total under anywhere-allowed floor 0'
-      : 'lowest total = travel + preference bias + stay-anchor bonus (lower wins)')
-    : 'no location beat the anywhere-allowed floor 0 (stays anchorless)';
+  for(const c of candidates){
+    c.isWinner = (c.id === chosenId);
+    c.isRoundTripWinner = nextLocId
+      ? candidates.every(o=>c.roundTrip <= o.roundTrip) && candidates.some(o=>c.roundTrip < o.roundTrip)
+      : null;
+  }
+  const roundTripMismatch = nextLocId && chosenId
+    && !candidates.find(c=>c.id === chosenId).isRoundTripWinner;
+  let reason;
+  if(!chosenId){
+    reason = 'no location beat the anywhere-allowed floor 0 (stays anchorless)';
+  }else if(h.anywhereAllowed){
+    reason = 'lowest total under anywhere-allowed floor 0';
+  }else if(roundTripMismatch){
+    const rtWinner = candidates.find(c=>c.isRoundTripWinner);
+    reason = `lowest INBOUND total wins (picker is outbound-blind) — ${rtWinner ? rtWinner.name : '?'} is cheaper on the round trip`;
+  }else{
+    reason = 'lowest total = travel + preference bias + stay-anchor bonus (lower wins)';
+  }
   return {
     anchorId:anchorId || null,
+    nextLocId:nextLocId || null,
     chosenId,
     reason,
     candidates:candidates.sort((a,b)=>a.total - b.total)
@@ -1092,6 +1120,22 @@ function buildPlannerDecisionTrace(data,settings,context){
     const last = marks[marks.length - 1];
     return {id:last.locationId, source:last.source};
   };
+  // PURE: the committed location of the next fill/scheduled row after this
+  // one, if any. Surfaces the outbound leg the inbound-only picker ignores:
+  // when the next item is locked elsewhere (e.g. Lunch @Home), the inbound
+  // winner (KhadijaM) can lose on the round trip. Built only from trace data.
+  const nextLocAfter = targetEnd => {
+    const at = Number(targetEnd) || 0;
+    let earliest = null;
+    for(const r of agendaRows || []){
+      if(r.kind !== 'fill' && r.kind !== 'scheduled')continue;
+      if(!r.locationId)continue;
+      if(r.start < at)continue;
+      if(!earliest || r.start < earliest.start)earliest = r;
+    }
+    if(!earliest)return {id:null, source:'none'};
+    return {id:earliest.locationId, source:`next ${earliest.kind} ${earliest.name || ''}`.trim()};
+  };
   const unplacedByIndex = new Map((unplacedItems || []).map(item=>[item.i,item]));
   const placedByIndex = new Map();
   for(const row of agendaRows || []){
@@ -1235,20 +1279,32 @@ function buildPlannerDecisionTrace(data,settings,context){
     // pickHabitLocationId exactly via locationChoiceBreakdown().
     if(first && locationIds.length && typeof locationChoiceBreakdown === 'function'){
       const anchor = anchorAt(first.start);
-      const breakdown = locationChoiceBreakdown(h,anchor.id,registry,travelMode);
+      const lastRow = rows[rows.length - 1] || first;
+      const next = nextLocAfter(lastRow.end);
+      const breakdown = locationChoiceBreakdown(h,anchor.id,registry,travelMode,next.id);
       if(breakdown){
         const chosenName = breakdown.chosenId
           ? locNameById(breakdown.chosenId) : 'none';
         inputs.push(`location anchor ${locNameById(anchor.id)} (from ${anchor.source})`);
+        if(next.id){
+          inputs.push(`location next ${locNameById(next.id)} (from ${next.source}) — picker counts inbound only, round trip shown for diagnosis`);
+        }
         inputs.push(`location chosen ${chosenName} — ${breakdown.reason}`);
         const parts = breakdown.candidates.map(c=>{
           const travelMin = Math.round(c.edgeSeconds / 60);
           const bits = [
-            `${travelMin}m travel`,
+            `${travelMin}m in`,
             `pref ${c.prefLevel}${c.prefBias ? ` (${c.prefBias > 0 ? '+' : ''}${c.prefBias})` : ''}`,
             c.sameAnchorBonus ? `stay ${c.sameAnchorBonus}` : null
           ].filter(Boolean);
-          return `${c.name}=${c.total} [${bits.join(', ')}]${c.isWinner ? ' *' : ''}`;
+          let label = `${c.name}=${c.total} [${bits.join(', ')}]`;
+          if(c.outboundSeconds != null){
+            const outMin = Math.round(c.outboundSeconds / 60);
+            label += ` · ${outMin}m out · rt ${c.roundTrip}`;
+            if(c.isRoundTripWinner && !c.isWinner)label += ' (round-trip winner)';
+          }
+          if(c.isWinner)label += ' *';
+          return label;
         });
         inputs.push(`location candidates ${parts.join('; ')}`);
       }
