@@ -1392,7 +1392,7 @@ $('open-sample-habits')?.addEventListener('click',()=>{
 $('open-docs')?.addEventListener('click',()=>{
   closeSheet('about-sheet');
   closeSheet('sample-habits-sheet');
-  window.location.href = './docs.html';
+  window.open('https://aretefoundry.github.io/tings/', '_blank', 'noopener');
 });
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
