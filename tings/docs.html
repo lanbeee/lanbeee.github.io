@@ -159,6 +159,14 @@ a{color:var(--teal);text-decoration:none;}a:hover{text-decoration:underline;}
 .shot .shot-hint{font-size:12px;}
 .shot.tall{min-height:340px;}
 .shot.wide{min-height:140px;}
+/* When a real screenshot is present, the <img> loads, swaps the placeholder
+   in, and the dashed frame clears. Missing files fall back to the placeholder
+   via onerror. Drop a new file into docs-img/ and reload — no rebuild needed. */
+.shot img{display:none;width:100%;height:auto;border-radius:var(--radius);
+  border:1px solid var(--border);box-shadow:var(--shadow);}
+.shot.loaded{background:none;border:0;min-height:0;padding:0;}
+.shot.loaded>.ti,.shot.loaded>.shot-label{display:none;}
+.shot.loaded img{display:block;}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600;
@@ -313,7 +321,7 @@ tbody tr:last-child td{border-bottom:0;}
       <a class="btn" href="./index.html"><i class="ti ti-app-window"></i> Open the app</a>
     </div>
   </div>
-  <p>Use the search box above or the contents on the left to jump around. Throughout the guide you'll see <span class="chip"><i class="ti ti-photo"></i> screenshot placeholders</span> marking spots where a real picture of the screen will go.</p>
+  <p>Use the search box above or the contents on the left to jump around. Throughout the guide you'll see <span class="chip"><i class="ti ti-photo"></i> screenshots</span> of the app in action. <em>Note: they were all captured in light mode — the frames adapt to dark mode, so they read fine on either theme.</em></p>
   <div class="callout tip"><i class="ti ti-bulb"></i><div>
     <p><strong>One-line summary:</strong> Tings turns "I want to do X about Y times a week" into a today list and a packed week — without the anxiety of rigid due dates, and without the vagueness of endless to-do lists.</p>
   </div></div>
@@ -330,7 +338,7 @@ tbody tr:last-child td{border-bottom:0;}
   </div>
   <p>Each thing you want to track is a <strong>Ting</strong>. A Ting can be a <strong>habit</strong> (repeats on a rhythm), a <strong>task</strong> (a one-off job, optionally with a due date), or a <strong>fixed-time event</strong> (a hard appointment like "Dentist Tue 3pm"). All three share one list, one history, and one search.</p>
   <p>The planner looks at everything together — your habits, your tasks, the time you actually have free this week, the places you'll be — and produces a short <strong>today list</strong> plus a <strong>week agenda</strong> that slots work into the gaps that genuinely exist.</p>
-  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the home list — today's agenda plus your habits and tasks</span></div>
+  <div class="shot" data-shot="home-list"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the home list — today's agenda plus your habits and tasks</span><img src="docs-img/home-list.png" alt="The home list — today's agenda plus your habits and tasks" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
   <h3>Who it's for</h3>
   <ul>
     <li>People who want to <strong>build habits</strong> (exercise, reading, prayer, deep work) but hate rigid streaks.</li>
@@ -361,7 +369,7 @@ tbody tr:last-child td{border-bottom:0;}
   <ol class="steps">
     <li><p><strong>Open the app.</strong> Tap the Tings logo (top-left) any time for help and settings. A brand-new install shows an empty home with a hint.</p></li>
     <li><p><strong>Try samples (optional but recommended).</strong> Tap the empty message, or open the Tings menu → <em>sample habits</em>. Add one demo or a whole tagged set — timers, places, breakable tasks, prayer demos and more are in there. Sample items are tagged so you can remove them in one tap later. (See <a href="#samples">Sample habits</a>.)</p>
-      <div class="shot wide"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the sample habits sheet</span></div></li>
+      <div class="shot wide" data-shot="sample-habits"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the sample habits sheet</span><img src="docs-img/sample-habits.png" alt="The sample habits sheet" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div></li>
     <li><p><strong>Add your first Ting.</strong> Tap the <kbd>+</kbd> button (bottom nav or top bar). Name it, pick <em>habit</em> or <em>task</em>, set "how often," and tap <em>add</em>. The detail view opens so you can fine-tune. See <a href="#add-sheet">The add sheet</a>.</p></li>
     <li><p><strong>Log it.</strong> On the home list, tap the pulsing icon (or double-tap the card) to log a completion. That's the core loop.</p></li>
     <li><p><strong>Tell Tings about your week.</strong> When you're ready, open <em>settings</em> and set your <a href="#capacity">busy times</a> (sleep, work, meals) and <a href="#places">places</a>. The agenda immediately becomes smarter.</p></li>
@@ -409,7 +417,7 @@ tbody tr:last-child td{border-bottom:0;}
 
   <div class="callout tip"><i class="ti ti-bulb"></i><div><p>Because the whole week is solved together, an item that doesn't fit today quietly lands tomorrow or later — you don't have to reschedule anything by hand.</p></div></div>
 
-  <div class="shot tall"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: a packed week with busy blocks, travel cards, and habit placements</span></div>
+  <div class="shot tall" data-shot="planner-week"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: a packed week with busy blocks, travel cards, and habit placements</span><img src="docs-img/planner-week.png" alt="A packed week with busy blocks, travel cards, and habit placements" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
 </section>
 
 <!-- ========================== SCENARIOS ========================== -->
@@ -646,7 +654,7 @@ tbody tr:last-child td{border-bottom:0;}
   <h3 id="events">Fixed-time events</h3>
   <p>An event is a hard point in time — "Dentist Tue 3:00pm," "Flight 6am." Events are <strong>never rescored or shuffled</strong>; they're placed by clock and everything else is planned around them. They appear on the agenda and can be exported to your phone calendar. (You create one by giving a task a date <em>and</em> a time, or via calendar import.)</p>
 
-  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the type selector (habit / task) with the target slider</span></div>
+  <div class="shot" data-shot="add-sheet"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the type selector (habit / task) with the target slider</span><img src="docs-img/add-sheet.png" alt="The add sheet with the habit/task type selector and target slider" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
 </section>
 
 <!-- ============================ EMOJI ============================ -->
@@ -685,7 +693,7 @@ tbody tr:last-child td{border-bottom:0;}
   <h2><i class="ti ti-home"></i> Home: today's agenda + your list</h2>
   <p>Home is the screen you'll see most. It's <strong>today's agenda plus your full list of habits and tasks</strong> — not a dump of everything, but not just today either. What floats up: pinned items, things due or ready today, fixed appointments, and anything you've planned for soon. Everything else sits in <em>coming up</em> / <em>the rest</em>.</p>
 
-  <div class="shot tall"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: full home screen — top bar, agenda list with day sections, bottom nav</span></div>
+  <div class="shot tall" data-shot="home-full"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: full home screen — top bar, agenda list with day sections, bottom nav</span><img src="docs-img/home-full.png" alt="The full home screen — top bar, agenda list, and bottom nav" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
 
   <h3>Regions, top to bottom</h3>
   <div class="defs">
@@ -709,7 +717,7 @@ tbody tr:last-child td{border-bottom:0;}
     <div class="row"><div class="term">Trail / crown</div><div class="desc"><p>Most cards show a two-week <strong>trail</strong> of dots (one for last week, seven for this week, today highlighted). <strong>Breakable</strong> cards show a progress crown slider instead. A running <strong>session timer</strong> overlays a progress bar.</p></div></div>
     <div class="row"><div class="term">Quick actions (right)</div><div class="desc"><p>Three icon buttons on full cards: activity, snooze, remove (mirror the swipe actions). Hidden in minimal mode and on breakable cards.</p></div></div>
   </div>
-  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: a single habit card, annotated</span></div>
+  <div class="shot" data-shot="card-anatomy"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: a single habit card, annotated</span><img src="docs-img/card-anatomy.png" alt="A single habit card, annotated" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
 </section>
 
 <!-- =========================== LOGGING =========================== -->
@@ -913,7 +921,7 @@ tbody tr:last-child td{border-bottom:0;}
     <span class="chip red"><i class="ti ti-dots"></i> actions</span>
   </div>
   <p>The page you land on is chosen for you: a habit with order constraints opens on <em>actions</em>; a task opens on <em>effort</em>; otherwise a habit opens on <em>calendar</em>. In <strong>minimal mode</strong>, insight &amp; effort pages are hidden and the essentials (duration, auto-mark, due) move onto the schedule page.</p>
-  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: detail view with the six page dots</span></div>
+  <div class="shot" data-shot="detail-view"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: detail view with the six page dots</span><img src="docs-img/detail-view.png" alt="The detail view with its six page dots" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
 </section>
 
 <!-- ====================== DETAIL: MONTH ====================== -->
@@ -1086,7 +1094,7 @@ tbody tr:last-child td{border-bottom:0;}
   <p>The presence picker sets today's starting place for travel math (it does <em>not</em> filter the list). Resolution: your manual pick → GPS geofence match → last known place → nearest place.</p>
 
   <div class="callout note"><i class="ti ti-info-square-rounded"></i><div><p>Home ranking stays <strong>location-blind</strong> — places only change the agenda order and insert travel cards, not what's "most important." A place used by any habit can't be removed until you clear the reference.</p></div></div>
-  <div class="shot"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the map picker adding a "Gym" place</span></div>
+  <div class="shot" data-shot="map-picker"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: the map picker adding a "Gym" place</span><img src="docs-img/map-picker.png" alt="The map picker adding a Gym place" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
 </section>
 
 <!-- ========================== OVERVIEW ========================== -->
@@ -1152,7 +1160,7 @@ tbody tr:last-child td{border-bottom:0;}
     <li><strong>Per-card marks</strong> — toggle each badge/line on or off (see <a href="#settings-cards">What shows on each item</a>).</li>
     <li><strong>Easier reach</strong> — pull-and-hold to bring top items down.</li>
   </ul>
-  <div class="shot wide"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: light vs dark, compact vs default, minimal vs full</span></div>
+  <div class="shot wide" data-shot="appearance"><i class="ti ti-photo"></i><span class="shot-label">Screenshot: light vs dark, compact vs default, minimal vs full</span><img src="docs-img/appearance.png" alt="Light vs dark, compact vs default, and minimal vs full modes side by side" onload="this.parentElement.classList.add('loaded')" onerror="this.remove()"></div>
 </section>
 
 <!-- =========================== SETTINGS =========================== -->
