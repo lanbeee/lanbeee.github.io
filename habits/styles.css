@@ -669,6 +669,13 @@ body.fullpage-open .bottom-nav{
   background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 96%,transparent) 74%,transparent);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
 }
+/* The floating wordmark bar sits above the home feed. Keep a pinned day
+   header below it while it is visible so its open/missed actions never end up
+   underneath an untappable layer. Once the bar retreats on scroll, the day
+   header returns to the very top. */
+body[data-pane-count="1"] .section-header{top:76px;}
+body[data-pane-count="1"].header-hidden .section-header,
+body[data-pane-count="1"].search-active .section-header{top:0;}
 .section-header:first-child{border-top:none;margin-top:0;padding-top:0;}
 .section-header[data-label="today"]{
   font-size:17px;font-weight:740;letter-spacing:-0.025em;
@@ -725,9 +732,11 @@ body.fullpage-open .bottom-nav{
   display:flex;align-items:center;
 }
 .section-header.has-pill.has-dropped{
-  justify-content:flex-start;
-  gap:12px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:6px;
 }
+.section-header.has-pill.has-dropped .free-pill{margin-left:0;}
 .section-header .free-pill{margin-left:auto;}
 .free-pill{
   appearance:none;-webkit-appearance:none;

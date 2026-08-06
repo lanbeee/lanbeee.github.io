@@ -150,7 +150,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   check('scheduled agenda lead stays purple calendar cue',tones.scheduled.cls.includes('scheduled') && tones.scheduled.icon === 'ti-calendar-time',JSON.stringify(tones.scheduled));
 
   const homeCopy = await page.evaluate(()=>({
-    block:document.querySelector('.blocked-card:not(.blocked-card-merge) span')?.textContent || '',
+    block:document.querySelector('.blocked-card:not(.blocked-card-merge) .timeline-card-copy small')?.textContent || '',
     duration:[...document.querySelectorAll('.context-pill[title^="duration "]')].map(el=>el.textContent.trim())
   }));
   check('blocked rows use compact time ranges',homeCopy.block.includes('9AM–5PM') && !homeCopy.block.includes(':00'),JSON.stringify(homeCopy));
@@ -215,7 +215,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       return {width:style.width,height:style.height,radius:style.borderRadius};
     });
   });
-  check('travel adjustment buttons remain circular',travelButtons.length === 2 && travelButtons.every(x=>x.width === x.height && x.radius === '50%'),JSON.stringify(travelButtons));
+  check('travel adjustment buttons remain compact rounded-square controls',travelButtons.length === 2 && travelButtons.every(x=>x.width === x.height && x.radius === '14px'),JSON.stringify(travelButtons));
   check('no page errors',pageErrors.length === 0,JSON.stringify(pageErrors));
 
   await browser.close();

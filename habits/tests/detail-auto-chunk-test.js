@@ -59,7 +59,10 @@ function ok(value,message){
       viewport:innerHeight,overlap:Math.max(0,pager.bottom - bar.top),overflow:document.body.scrollWidth - innerWidth
     };
   });
-  ok(compactShell.head <= 64 && compactShell.pager >= compactShell.viewport * 0.68,'compact header leaves most of the short viewport to pane content');
+  // The refreshed identity header intentionally has a little more breathing
+  // room than the old single-line treatment, while keeping the actual pane
+  // comfortably dominant on a short phone viewport.
+  ok(compactShell.head <= 84 && compactShell.pager >= compactShell.viewport * 0.68,'compact header leaves most of the short viewport to pane content');
   ok(compactShell.bar <= 50 && compactShell.overlap <= 0 && compactShell.overflow <= 0,'integrated bottom dock does not overlap content or overflow');
   ok(compactShell.done >= compactShell.tab * 1.8,'done remains substantially larger than a pane shortcut');
   const dirtyDock = await page.evaluate(()=>{

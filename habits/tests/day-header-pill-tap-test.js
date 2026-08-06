@@ -438,28 +438,20 @@ async function stickyState(page, headerSel){
   assert(binderOk, 'missed pill click binder opens slipped sheet');
   await closeSlippedSheet(page);
 
-  await page.evaluate(() => {
-    const header = document.querySelector('.section-header.has-dropped');
-    if(header)header.scrollIntoView({ block:'center', behavior:'instant' });
-  });
-  await sleep(400);
-  // Prefer a today header missed pill that is not paired with a free-pill overlap.
-  await page.evaluate(() => {
-    const pair = document.querySelector('.section-header.has-dropped.has-pill .dropped-pill');
-    const solo = [...document.querySelectorAll('.dropped-pill')].find(p => !p.closest('.has-pill'));
-    const target = solo || pair;
-    if(target)target.scrollIntoView({ block:'center', behavior:'instant' });
-  });
+  // A missed item belongs to today. Exercise the visible home state rather
+  // than an older sticky header that is correctly covered by the current day.
+  await page.evaluate(() => window.scrollTo({ top:0, left:0, behavior:'instant' }));
   await sleep(200);
 
-  const missBox = await page.locator('.dropped-pill').first().boundingBox();
+  const missedPill = page.locator('.dropped-pill').first();
+  const missBox = await missedPill.boundingBox();
   assert(Boolean(missBox), 'missed pill is measurable');
   let missedOpened = false;
   let openedHow = '';
   for(const drift of [0, 12, 18]){
     await closeFreeSheet(page);
     await closeSlippedSheet(page);
-    const box = await page.locator('.dropped-pill').first().boundingBox();
+    const box = await missedPill.boundingBox();
     if(!box)break;
     if(drift)await cdpTapWithDrift(client, box.x + box.width / 2, box.y + box.height / 2, drift, 3);
     else await cdpTap(client, box.x + box.width / 2, box.y + box.height / 2);
