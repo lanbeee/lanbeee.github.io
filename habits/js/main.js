@@ -2920,7 +2920,7 @@ function updateHomeDateLabel(now = Date.now()){
   const label = $('home-date');
   if(!label)return;
   label.textContent = new Date(now).toLocaleDateString(undefined,{
-    weekday:'long',month:'short',day:'numeric'
+    weekday:'short',month:'short',day:'numeric'
   });
 }
 

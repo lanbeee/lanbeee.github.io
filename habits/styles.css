@@ -424,23 +424,45 @@ body[data-pane-count="3"] .pane-detail .sheet{
 }
 
 .topbar{
-  display:flex;align-items:center;justify-content:flex-start;
-  padding:10px 12px;position:sticky;top:8px;
+  display:flex;flex-direction:row;gap:10px;align-items:center;
+  padding:10px 12px;
   background:color-mix(in srgb,var(--bg) 84%,transparent);
   z-index:10;border:0.5px solid color-mix(in srgb,var(--border2) 58%,transparent);border-radius:18px;
   box-shadow:var(--floating-shadow);
   backdrop-filter:blur(20px) saturate(1.2);-webkit-backdrop-filter:blur(20px) saturate(1.2);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,max-height var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy);
   width:calc(100% - 4px);margin:8px 2px 0;
-  max-height:120px;
+  max-height:88px;
   will-change:transform,opacity;
+}
+/* The header's three controls (wordmark · place · filters) share one surface:
+   strip the inner pills' own chrome so the outer card reads as a single bar
+   instead of three crammed boxes. The wordmark sits left; place + filters are
+   pushed right (grouped together) with a hairline divider between them. */
+.topbar .presence-filter{
+  border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
+}
+.topbar .presence-filter.at,
+.topbar .presence-filter.near,
+.topbar .presence-filter.away,
+.topbar .presence-filter.set,
+.topbar .presence-filter.gps-matched{ background:transparent;border:0;box-shadow:none; }
+.topbar .home-filter-trigger{
+  border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
+}
+.topbar .home-filter-trigger.has-active{ border:0;background:transparent;box-shadow:none; }
+.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end; }
+.topbar .home-filter-trigger{ position:relative; }
+.topbar .home-filter-trigger::before{
+  content:"";position:absolute;left:-4px;top:9px;bottom:9px;width:0.5px;background:var(--border);
 }
 body[data-pane-count="2"] .topbar,
 body[data-pane-count="3"] .topbar{
   display:none;
 }
 body.header-hidden .topbar{
-  opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
+  /* Non-sticky: the header scrolls away with the feed, so there is nothing to
+     hide here. The class is still toggled for other state consumers. */
 }
 body.search-active .topbar,
 body.search-active #home-tag-filter{
@@ -465,7 +487,7 @@ body[data-pane-count="1"].search-active{--nav-bottom:6px;}
   border:none;background:transparent;padding:0;margin:0;
   font:inherit;
   color:var(--text);cursor:pointer;-webkit-tap-highlight-color:transparent;
-  display:flex;align-items:center;gap:10px;
+  display:flex;align-items:center;gap:10px;flex:0 0 auto;
 }
 .wordmark img{
   width:36px;height:36px;display:block;border-radius:11px;
@@ -474,7 +496,7 @@ body[data-pane-count="1"].search-active{--nav-bottom:6px;}
 .wordmark-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;line-height:1;}
 .wordmark-copy > span{font-size:18px;font-weight:720;letter-spacing:-0.025em;}
 .wordmark-date{
-  color:var(--text2);font-size:11px;font-weight:580;letter-spacing:0.01em;line-height:1.2;
+  color:var(--text2);font-size:9px;font-weight:580;letter-spacing:0;line-height:1.2;white-space:nowrap;
 }
 
 .top-actions{display:flex;align-items:center;gap:8px;}
@@ -666,20 +688,34 @@ body.fullpage-open .bottom-nav{
   padding:18px 4px 7px;line-height:1.2;margin-top:2px;
   border-top:0;
   position:sticky;top:0;z-index:5;
-  background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 96%,transparent) 74%,transparent);
+  background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--bg) 96%,transparent) 14px,color-mix(in srgb,var(--bg) 96%,transparent) 78%,transparent);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
 }
-/* The floating wordmark bar sits above the home feed. Keep a pinned day
-   header below it while it is visible so its open/missed actions never end up
-   underneath an untappable layer. Once the bar retreats on scroll, the day
-   header returns to the very top. */
-body[data-pane-count="1"] .section-header{top:76px;}
+/* Fade the FIRST header's top edge — background AND the backdrop-blur rectangle
+   — into the feed so Pinned/Today doesn't show a hard band against the page.
+   Mask clips the blur box itself; text sits at 18px, safely below the 12px
+   fade, so it stays fully opaque. */
+.section-header:first-child{
+  -webkit-mask-image:linear-gradient(180deg,transparent,#000 12px);
+  mask-image:linear-gradient(180deg,transparent,#000 12px);
+}
+/* Solid once it actually sticks: drop the mask so scrolling content can't show
+   through the faded top edge. */
+.section-header:first-child.is-stuck{
+  -webkit-mask-image:none;
+  mask-image:none;
+}
+/* The home header (wordmark + filter) is a non-sticky card at the top of the
+   feed, so it scrolls away naturally and is only visible at the scroll top.
+   Day headers stick flush at the viewport top (top:0, z-index:5) once the
+   header has scrolled out of the way. The offset is constant in every state,
+   so headers never jump on scroll. */
+body[data-pane-count="1"] .section-header{top:0;}
 body[data-pane-count="1"].header-hidden .section-header,
 body[data-pane-count="1"].search-active .section-header{top:0;}
-.section-header:first-child{border-top:none;margin-top:0;padding-top:0;}
-.section-header[data-label="today"]{
-  font-size:17px;font-weight:740;letter-spacing:-0.025em;
-}
+/* All sticky headers (Pinned · Today · Tomorrow · …) share one uniform
+   treatment: identical type and spacing, plus a background that fades in at
+   the top so no header shows a hard "bar" against the feed above it. */
 .section-header:not(:first-child)::before{
   content:"";position:absolute;left:4px;right:4px;top:8px;height:0.5px;background:var(--border);
 }
@@ -3097,8 +3133,8 @@ select{
   transition:max-height var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy);
 }
 .home-filter-bar{
-  display:flex;align-items:center;gap:8px;width:100%;min-width:0;
-  margin:12px 0 14px;max-height:64px;
+  display:flex;align-items:center;gap:8px;flex:1 1 auto;width:auto;min-width:0;
+  margin:0;max-height:64px;
   transition:max-height var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy),opacity var(--dur-med) ease,transform var(--dur-med) var(--ease-tight);
 }
 .home-filter-active{
@@ -3775,6 +3811,15 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .presence-chevron{color:var(--text3);font-size:12px;}
 .presence-filter.gps-matched{box-shadow:none;border-color:color-mix(in srgb,var(--teal-icon) 52%,var(--border));}
 .presence-filter.away,.presence-filter.set,.presence-filter.near{background:color-mix(in srgb,var(--bg2) 70%,var(--bg));color:var(--text);}
+
+/* Narrow screens: collapse the header row to icons-only — drop the "Filters"
+   label and the presence text, keeping just the location + filter icons so the
+   wordmark and both controls fit a phone-portrait card. */
+@media (max-width:380px){
+  .home-filter-trigger > span{ display:none; }
+  .presence-filter{ grid-template-columns:31px; padding:5px !important; }
+  .presence-copy,.presence-chevron{ display:none; }
+}
 
 .about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 18px;padding:16px;border-radius:20px;background:linear-gradient(145deg,color-mix(in srgb,var(--teal-bg) 70%,var(--bg)),color-mix(in srgb,var(--bg2) 78%,var(--bg)));border:0.5px solid color-mix(in srgb,var(--teal-icon) 16%,var(--border));}
 .about-hero img{width:64px;height:64px;border-radius:18px;box-shadow:0 8px 20px color-mix(in srgb,var(--teal-icon) 18%,transparent);}
