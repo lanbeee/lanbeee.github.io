@@ -3710,12 +3710,24 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   overflow:visible;
 }
 .ting-card .pulse-btn::after{
-  content:"+";position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;
-  display:grid;place-items:center;border:2px solid var(--bg);border-radius:999px;
-  background:var(--text);color:var(--bg);font-size:15px;font-weight:760;line-height:1;
+  content:"";position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;
+  border:2px solid var(--bg);border-radius:999px;background:var(--text);
   box-shadow:0 2px 7px color-mix(in srgb,var(--text) 20%,transparent);
 }
-.ting-card.is-done .pulse-btn::after{content:"✓";background:var(--teal-icon);color:var(--teal-bg);}
+.ting-card .pulse-btn::before{
+  content:"";position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;
+  border-radius:999px;background:var(--bg);z-index:1;
+  -webkit-mask:center/12px 12px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E");
+  mask:center/12px 12px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E");
+}
+.ting-card.is-done .pulse-btn::before{display:none;}
+.ting-card.is-done .pulse-btn::after{
+  content:"✓";display:grid;place-items:center;
+  border:2px solid var(--bg);border-radius:999px;
+  background:var(--teal-icon);color:var(--teal-bg);
+  font-size:13px;font-weight:760;line-height:1;
+  box-shadow:0 2px 7px color-mix(in srgb,var(--teal-icon) 20%,transparent);
+}
 .ting-card .pulse-btn .ti{font-size:35px;}
 .ting-card .pulse-btn .emoji-mark,
 .ting-card .pulse-btn.emoji-pulse .emoji-mark{font-size:39px;line-height:1;}
@@ -3725,7 +3737,7 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 
 .travel-card,.blocked-card{
   min-height:56px;display:grid;grid-template-columns:38px minmax(0,1fr) auto;
-  align-items:center;justify-content:stretch;gap:10px;padding:8px 11px;
+  grid-auto-flow:column;align-items:center;justify-content:stretch;gap:10px;padding:8px 11px;
   border-radius:16px;text-align:left;flex-wrap:nowrap;
   transition:transform var(--dur-fast) var(--ease-tight),border-color var(--dur-fast) ease,background var(--dur-fast) ease;
 }
