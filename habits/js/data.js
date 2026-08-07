@@ -1365,6 +1365,14 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
 function completedToday(h,now = Date.now()){
   if(!h)return false;
   if(h.type === 'task')return isTaskDone(h);
+  // A breakable habit is only "done" when its full daily budget is met — a
+  // partial chunk log must not hide the card from the home list.
+  if(h.breakable && typeof breakableProgressMinutes === 'function'
+    && typeof breakableTotalMinutes === 'function'){
+    const base = dayStart(now);
+    const total = breakableTotalMinutes(h);
+    return total > 0 && breakableProgressMinutes(h,base) >= total;
+  }
   const start = dayStart(now);
   const end = start + 86400000;
   return actualLogs(h.logs).some(ts=>ts >= start && ts < end);

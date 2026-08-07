@@ -3536,15 +3536,11 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(days === null)return true;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
-  // When every allowed calendar date is needed to meet the requested rate, each
-  // later eligible day is a candidate regardless of the raw calendar gap.
-  // Do not offer another session on the same day it was completed.
-  if(typeof rhythmFillsEveryEligibleDay === 'function'
-    && rhythmFillsEveryEligibleDay(h))return ageOnDay > 0;
-  if(ageOnDay >= target)return true;               // due/overdue by this day
   // Breakable daily rhythm: after a partial log, today's budget is still open
   // even though lastLog reset the rhythm clock (days < target). Keep placing
-  // the leftover so one pulse cannot wipe every chunk off the timeline.
+  // the leftover so one pulse cannot wipe every chunk off the timeline. This
+  // must precede the rhythmFillsEveryEligibleDay early-return below, which
+  // would otherwise exclude today for a daily breakable that logged a chunk.
   if(typeof isBreakableRhythmHabit === 'function' && isBreakableRhythmHabit(h)
     && typeof breakableBudgetMinutes === 'function'
     && breakableBudgetMinutes(h,dayBase) > 0
@@ -3552,6 +3548,12 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     && loggedChunkMinutesOnDay(h,dayBase) > 0){
     return true;
   }
+  // When every allowed calendar date is needed to meet the requested rate, each
+  // later eligible day is a candidate regardless of the raw calendar gap.
+  // Do not offer another session on the same day it was completed.
+  if(typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h))return ageOnDay > 0;
+  if(ageOnDay >= target)return true;               // due/overdue by this day
   // Pull forward within flexibility so the week can absorb upcoming work.
   const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
   if(flex > 0 && ageOnDay >= target - flex)return true;
