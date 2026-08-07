@@ -4694,10 +4694,20 @@ function setupSwipe(row){
       dx = 0;
       return;
     }
-    // Touches that begin on the breakable crown are owned by the dial's own
-    // pointer handlers (scrub, both directions), so they never reach swipe.
-    // Touches that begin anywhere else — title, status bar, or the dedicated
-    // right-edge swipe zone — drive this card swipe as normal.
+    // The breakable-progress block is dial territory — the crown, its status
+    // bar, and the progress header all sit in the card's center. Swipes on a
+    // breakable card start only from an edge area: the left edge (pulse button
+    // / name, handled here as normal) or the right edge (the dedicated
+    // .breakable-scrub-hint zone). Touches that begin anywhere inside the
+    // progress block — except that right-edge hint — never arm a card swipe.
+    const onDial = t.target.closest && t.target.closest('.breakable-progress')
+      && !(t.target.closest && t.target.closest('.breakable-scrub-hint'));
+    if(onDial){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     startedOpen = swipeOpenCard === card;
     if(swipeOpenCard && swipeOpenCard !== card){

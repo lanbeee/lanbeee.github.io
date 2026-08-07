@@ -748,7 +748,9 @@ function manualLog(minutes, tsOffset = 0){
     assert(!rightInfo.ownerAfter, 'Q: scrub release clears the gesture owner');
     console.log('  ok Q2 — swipe-right on the crown still scrubs');
 
-    // Q3 — status bar / label surface swipes like a normal card
+    // Q3 — the progress block is dial territory (center = crown only): a swipe
+    // that starts on the status bar must NOT arm the card swipe. Swiping still
+    // works from a non-progress surface (the title/name area) like a normal card.
     const stripInfo = await page.evaluate(async () => {
       const row = [...document.querySelectorAll('.swipe-row')]
         .find(r => r.querySelector('.breakable-crown'));
@@ -765,12 +767,30 @@ function manualLog(minutes, tsOffset = 0){
       bar.dispatchEvent(new TouchEvent('touchstart',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(24,x0,y0)], touches:[mkTouch(24,x0,y0)] }));
       bar.dispatchEvent(new TouchEvent('touchmove',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(24,x1,y0)], touches:[mkTouch(24,x1,y0)] }));
       await new Promise(res => setTimeout(res, 20));
+      const barTransform = card.style.transform;
       bar.dispatchEvent(new TouchEvent('touchend',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(24,x1,y0)], touches:[] }));
-      return { found:true, swipeOpen:row.dataset.swipeOpen || null, transform:card.style.transform };
+      const barOpen = row.dataset.swipeOpen || null;
+      // Now swipe from the title/name area (outside .breakable-progress)
+      const name = row.querySelector('.ting-name');
+      let nameOpen = null;
+      if(name){
+        const nr = name.getBoundingClientRect();
+        const nx0 = nr.left + nr.width / 2, ny0 = nr.top + nr.height / 2, nx1 = nx0 + 110;
+        const nmk = (id,x,y) => new Touch({ identifier:id, target:name, clientX:x, clientY:y });
+        name.dispatchEvent(new TouchEvent('touchstart',{ bubbles:true, cancelable:true, changedTouches:[nmk(27,nx0,ny0)], touches:[nmk(27,nx0,ny0)] }));
+        name.dispatchEvent(new TouchEvent('touchmove',{ bubbles:true, cancelable:true, changedTouches:[nmk(27,nx1,ny0)], touches:[nmk(27,nx1,ny0)] }));
+        await new Promise(res => setTimeout(res, 20));
+        name.dispatchEvent(new TouchEvent('touchend',{ bubbles:true, cancelable:true, changedTouches:[nmk(27,nx1,ny0)], touches:[] }));
+        nameOpen = row.dataset.swipeOpen || null;
+      }
+      return { found:true, barMoved: /translateX\(\d/.test(barTransform), barOpen, nameOpen };
     });
-    assert(stripInfo.found && stripInfo.swipeOpen === '1',
-      `Q: status bar swipe-right reveals left actions, got ${stripInfo.swipeOpen}`);
-    console.log('  ok Q3 — status bar surface swipes like a normal card');
+    assert(stripInfo.found, 'Q: status bar / name surfaces exist');
+    assert(!stripInfo.barMoved && stripInfo.barOpen === null,
+      `Q: status bar (center) does NOT swipe, got moved=${stripInfo.barMoved} open=${stripInfo.barOpen}`);
+    assert(stripInfo.nameOpen === '1',
+      `Q: title/name surface still swipes like a normal card, got ${stripInfo.nameOpen}`);
+    console.log('  ok Q3 — center is dial-only; title edge still swipes');
 
     // Q3b — swipe-left from the dedicated right-edge zone reveals the right
     // actions. This is the intended home for swiping now that the crown owns
