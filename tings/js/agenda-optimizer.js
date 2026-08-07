@@ -1,4 +1,4 @@
-// Exact agenda packer (ILP via GLPK). It is the default week-planning path and
+// Agenda option packer (ILP via GLPK). It is the default week-planning path and
 // lazy-loads on demand; the scarcity heuristic in today-view.js is the explicit
 // off-mode and the timeout/error fallback.
 //
@@ -19,11 +19,12 @@
 
 // Cold WASM/worker bring-up can exceed a tight budget on first open.
 const AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS = 12000;
-// Shared week solve budget. Near days take a larger share; unused time rolls
-// forward. Far days still get a small floor so they can try GLPK briefly.
-const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 12000;
-const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 600;
-const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 4500;
+// Shared background solve budget. The UI renders a fast preview while this
+// worker runs, so do not abandon an exact day solve merely to meet a foreground
+// paint deadline. Near days take a larger share; unused time rolls forward.
+const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
+const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
+const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -98,6 +99,9 @@ function ensureAgendaPlannerWorker(){
     }else request.resolve(message.week);
   });
   worker.addEventListener('error',error=>{
+    // A superseded worker may report its termination after its replacement is
+    // already active. It must not reject the replacement's request map.
+    if(_plannerWorker !== worker)return;
     const pending = [..._plannerWorkerRequests.values()];
     _plannerWorkerRequests.clear();
     _plannerWorker = null;
@@ -110,6 +114,22 @@ function ensureAgendaPlannerWorker(){
   _plannerWorker = worker;
   plannerPerfMark('planner-worker-spawn-end');
   return worker;
+}
+
+// A foreground edit must not wait behind an exact solve for data that no
+// longer exists. Terminate that worker and reject its promises; the caller can
+// immediately create a fresh worker for a fast preview of the new state.
+function cancelAgendaPlannerWorkerRequests(reason = 'planner request superseded'){
+  const worker = _plannerWorker;
+  if(!worker)return false;
+  const pending = [..._plannerWorkerRequests.values()];
+  _plannerWorkerRequests.clear();
+  _plannerWorker = null;
+  _plannerWorkerWarmed = false;
+  try{ worker.terminate(); }catch(_){}
+  const error = new Error(reason);
+  pending.forEach(request=>request.reject(error));
+  return true;
 }
 
 // Idle warm: parse worker scripts + compile GLPK inside the worker so the first
@@ -555,6 +575,37 @@ function optimizerWindowsForCandidate(candidate,state){
   return [];
 }
 
+// Every allowed location is a real optimizer alternative. Previously
+// tryPlaceOnDay picked one location greedily while options were enumerated;
+// GLPK could optimize times only, then reconciliation changed the location
+// (and sometimes the time) after the solve. An explicit null is the valid
+// anchor-preserving choice for an anywhere-allowed habit.
+function optimizerLocationVariants(fill,state){
+  if(!fill || !fill.h || !state)return [undefined];
+  const ids = typeof normalizeLocationIds === 'function'
+    ? normalizeLocationIds(fill.h.locationIds,state.registry || [])
+    : (Array.isArray(fill.h.locationIds) ? fill.h.locationIds.filter(Boolean) : []);
+  if(!ids.length)return [null];
+  return fill.h.anywhereAllowed ? [null,...ids] : ids;
+}
+
+function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
+  const out = [];
+  const seen = new Set();
+  for(const locationId of optimizerLocationVariants(fill,state)){
+    const locatedFill = {...fill,locationId};
+    for(const fit of listPlaceFitsOnDay(
+      state,locatedFill,dayCandidates,candidateBoundaryEdges
+    )){
+      const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
+      if(seen.has(key))continue;
+      seen.add(key);
+      out.push(fit);
+    }
+  }
+  return out;
+}
+
 // PURE: all useful feasible fits for a fill on this day. In addition to each
 // open-slot start, enumerate starts immediately before/after competing windows.
 // Those boundary options let GLPK move flexible work out of a narrow window
@@ -773,7 +824,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     // windows, then split only when a continuous placement is impossible.
     if(c.h && c.h.breakable)continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const fits = listPlaceFitsOnDay(state,fill,dayCandidates,candidateBoundaryEdges);
+    const fits = optimizerFitsForFill(
+      state,fill,dayCandidates,candidateBoundaryEdges
+    );
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
     const earliestStart = fits.reduce(
       (min,fit)=>Math.min(min,fit.placeStart),Infinity);
@@ -786,7 +839,15 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
         ? Math.max(0,(fit.placeStart - earliestStart) / 60000)
         : 0;
       fit.optimizerDelayMinutes = delayMin;
-      const option = {c,fill,fit,weight:baseWeight - Math.min(1440,delayMin) * 0.001,
+      // Keep candidate selection dominant, but let GLPK compare location,
+      // preference, scarce-window and initial travel quality instead of being
+      // indifferent among same-time location variants. The route reconciler
+      // then solves the complete selected chain exactly.
+      const boundedFitScore = Math.max(-1000,Math.min(1000,Number(fit.score) || 0));
+      const option = {c,fill,fit,
+        weight:baseWeight
+          - Math.min(1440,delayMin) * 0.001
+          - boundedFitScore * 0.01,
         movable:typeof isMovableWeekCandidate === 'function' && isMovableWeekCandidate(c)};
       applyDoingNowWeight(option,doing);
       options.push(option);
@@ -1120,6 +1181,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   }
   // Chronological days so rhythm virtual lastLog advances naturally.
   const virtualLogs = new Map();
+  const virtualCompletionCounts = new Map();
   const oneShotPlaced = new Set();
   let total = 0;
   let budgetLeft = AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS;
@@ -1137,6 +1199,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       if(c && c.h && c.h.type === 'task')oneShotPlaced.add(c.i);
       if(c && c.h && c.h.type !== 'task' && Number.isFinite(Number(c.h.target))){
         virtualLogs.set(c.i,state.dayBase);
+        virtualCompletionCounts.set(c.i,(virtualCompletionCounts.get(c.i) || 0) + 1);
       }
     }
   };
@@ -1168,7 +1231,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       if(rhythmHabit && virtualLogs.has(c.i)){
         const vLog = virtualLogs.get(c.i);
         const spaced = typeof rhythmEligibleOnDay === 'function'
-          && rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday);
+          && rhythmEligibleOnDay(
+            c.h,vLog,state.dayBase,state.weekday,
+            virtualCompletionCounts.get(c.i) || 0
+          );
         const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
         const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
           && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
@@ -1421,7 +1487,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         // session; otherwise a new partial log makes lastLog=today and wrongly
         // removes the rest of today's budget from the agenda.
         if(rhythmPlacementCount > 0 && vLog != null && typeof rhythmEligibleOnDay === 'function'){
-          const spaced = rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday);
+          const spaced = rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday,rhythmPlacementCount);
           const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
           const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
             && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);

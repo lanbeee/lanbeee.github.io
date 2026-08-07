@@ -84,9 +84,6 @@ const DEFAULT_BLOCKED_TIMES = [
 const WEEKDAY_LABELS = ['sun','mon','tue','wed','thu','fri','sat'];
 const SWIPE_THRESHOLD = 60;
 const SWIPE_ACTION_WIDTH = 68;
-// Leftward drag distance on the breakable crown dial before it hands the
-// gesture to the card swipe (revealing actions instead of scrubbing).
-const SWIPE_HANDOFF_DX = 14;
 const TAP_DELAY = 310;
 const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
 const WIDTH_TRANSITION = 'width 190ms cubic-bezier(.3,.7,.2,1)';

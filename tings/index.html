@@ -58,12 +58,13 @@
           <img src="./favicon.svg" alt="" aria-hidden="true" />
           <span class="wordmark-copy">
             <span>Tings</span>
+            <small class="wordmark-date" id="home-date" aria-hidden="true"></small>
           </span>
         </button>
+        <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
       </div>
       <div id="quota-bar"></div>
       <div id="reminder-banner" class="reminder-banner" hidden></div>
-      <div id="home-tag-filter" class="topic-filter-row" aria-label="topic and location filter"></div>
       <div id="list"><div class="home-loading" role="status" aria-label="loading agenda"><span></span><span></span><span></span></div></div>
       <div id="home-week-plan" class="home-week-plan" hidden></div>
       <p id="empty" style="display:none">habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span></p>
@@ -595,21 +596,28 @@
   <!-- overview sheet -->
   <div class="sheet-wrap" id="overview-sheet">
     <div class="sheet overview-sheet">
-      <div class="page-head">
-        <div>
-          <p class="sheet-title">calendar</p>
-          <div class="topic-filter-row overview-filter-row" id="overview-filter" aria-label="calendar filters"></div>
+      <div class="overview-page-head">
+        <div class="overview-page-title">
+          <span class="overview-eyebrow">your time</span>
+          <p class="sheet-title">Calendar</p>
+          <p class="overview-page-sub">See what is planned, what needs attention, and where there is room.</p>
         </div>
+        <button type="button" class="icon-btn overview-page-close" id="overview-head-close" aria-label="close calendar">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
       </div>
+      <div class="overview-toolbar" id="overview-filter" aria-label="calendar view and filters"></div>
       <div class="overview-insight" id="overview-insight" hidden></div>
-      <div class="topic-filter-row overview-pane-row" id="overview-pane-filter" hidden aria-label="calendar details"></div>
-      <div class="overview-list" id="overview-list"></div>
       <div class="month-card overview-card">
           <div class="section-top">
-            <span class="section-label">days</span>
+            <div class="overview-calendar-copy">
+              <span class="section-label" id="overview-calendar-kicker">days</span>
+              <small id="overview-calendar-hint">Tap a day to see its plans and activity.</small>
+            </div>
             <div class="month-nav">
             <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
             <span class="trend-copy" id="overview-calendar-label"></span>
+            <button class="mini-text-btn overview-today-btn" id="overview-today" type="button">today</button>
             <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
             </div>
           </div>
@@ -620,6 +628,10 @@
           <span><b class="agenda"></b>on agenda</span>
         </div>
       </div>
+      <div class="overview-detail-block">
+        <div class="topic-filter-row overview-pane-row" id="overview-pane-filter" hidden aria-label="calendar details"></div>
+        <div class="overview-list" id="overview-list"></div>
+      </div>
       <div class="btn-row overview-actions">
         <button class="btn primary" id="overview-close">done</button>
       </div>
@@ -629,8 +641,15 @@
   <!-- about sheet -->
   <div class="sheet-wrap" id="about-sheet">
     <div class="sheet about-sheet">
-      <p class="sheet-title">Tings</p>
-      <p class="about-copy">Local list for habits and tasks, and a week agenda that plans around your life. No account; everything stays on this device.</p>
+      <div class="about-hero">
+        <img src="./favicon.svg" alt="" aria-hidden="true" />
+        <div>
+          <span class="sheet-eyebrow">your days, in rhythm</span>
+          <p class="sheet-title">Tings</p>
+          <p class="about-copy">Habits, tasks, and a week plan shaped around your real time. Private by default; everything stays on this device.</p>
+        </div>
+        <button type="button" class="icon-btn about-hero-close" id="about-head-close" aria-label="close about Tings"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
       <div class="about-stack">
         <section class="about-block about-collapsible calm-block">
           <button type="button" class="about-collapse-head" data-collapse-target="about-start-body" aria-expanded="false" aria-controls="about-start-body">
@@ -713,9 +732,9 @@
       </div>
       <div class="btn-row about-actions">
         <button class="btn" id="open-docs" type="button"><i class="ti ti-book-2" aria-hidden="true"></i> help &amp; docs</button>
-        <button class="btn" id="open-sample-habits">sample habits</button>
-        <button class="btn" id="open-settings">settings</button>
-        <button class="btn primary" id="about-close">done</button>
+        <button class="btn" id="open-sample-habits"><i class="ti ti-sparkles" aria-hidden="true"></i> samples</button>
+        <button class="btn" id="open-settings"><i class="ti ti-settings" aria-hidden="true"></i> settings</button>
+        <button class="btn primary" id="about-close"><i class="ti ti-check" aria-hidden="true"></i> done</button>
       </div>
     </div>
   </div>
@@ -1254,9 +1273,14 @@
 
   <!-- slipped habits sheet -->
   <div class="sheet-wrap" id="slipped-sheet" role="dialog" aria-modal="true" aria-labelledby="slipped-title">
-    <div class="sheet">
-      <div class="capacity-sheet-head">
-        <p class="sheet-name" id="slipped-title">missed</p>
+    <div class="sheet context-sheet slipped-sheet">
+      <div class="context-sheet-head">
+        <span class="context-sheet-icon missed"><i class="ti ti-arrow-back-up" aria-hidden="true"></i></span>
+        <div class="context-sheet-copy">
+          <span class="sheet-eyebrow">needs a next step</span>
+          <p class="sheet-name" id="slipped-title">missed</p>
+          <p class="sheet-sub">Open an item to reschedule it, log it, or adjust its rhythm.</p>
+        </div>
         <button class="mini-nav" id="slipped-close" type="button" aria-label="close missed list">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
@@ -1267,9 +1291,14 @@
 
   <!-- free time sheet -->
   <div class="sheet-wrap" id="free-time-sheet" role="dialog" aria-modal="true" aria-labelledby="free-time-title">
-    <div class="sheet">
-      <div class="capacity-sheet-head">
-        <p class="sheet-name" id="free-time-title">open time</p>
+    <div class="sheet context-sheet free-time-sheet">
+      <div class="context-sheet-head">
+        <span class="context-sheet-icon open"><i class="ti ti-clock-hour-4" aria-hidden="true"></i></span>
+        <div class="context-sheet-copy">
+          <span class="sheet-eyebrow">room in your day</span>
+          <p class="sheet-name" id="free-time-title">open time</p>
+          <p class="sheet-sub">See the stretches that can still hold a habit or task.</p>
+        </div>
         <button class="mini-nav" id="free-time-close" type="button" aria-label="close open time">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
@@ -1287,6 +1316,7 @@
           <p class="sheet-name" id="day-logs-title"></p>
           <p class="sheet-sub" id="day-logs-sub"></p>
         </div>
+        <button type="button" class="mini-nav day-logs-close" id="day-logs-close" aria-label="close day"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
       <div id="day-logs-body"></div>
       <div class="btn-row" id="day-logs-footer"></div>
@@ -1383,11 +1413,53 @@
     </div>
   </div>
 
+  <!-- compact home filters -->
+  <div class="sheet-wrap" id="home-filter-sheet">
+    <div class="sheet home-filter-sheet" role="dialog" aria-modal="true" aria-labelledby="home-filter-title">
+      <div class="home-filter-sheet-head">
+        <div>
+          <p class="sheet-title" id="home-filter-title">filter home</p>
+          <p class="about-copy" id="home-filter-summary">Choose a place or topic.</p>
+        </div>
+        <button type="button" class="icon-btn home-filter-close" id="home-filter-close" aria-label="close filters">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="home-filter-groups" id="home-filter-groups"></div>
+      <div class="btn-row home-filter-sheet-actions">
+        <button class="btn" type="button" id="home-filter-reset">reset</button>
+        <button class="btn primary" type="button" id="home-filter-done">show results</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- calendar place/topic filters -->
+  <div class="sheet-wrap" id="calendar-filter-sheet">
+    <div class="sheet home-filter-sheet calendar-filter-sheet" role="dialog" aria-modal="true" aria-labelledby="calendar-filter-title">
+      <div class="home-filter-sheet-head">
+        <div>
+          <p class="sheet-title" id="calendar-filter-title">filter calendar</p>
+          <p class="about-copy" id="calendar-filter-summary">Choose a place or topic.</p>
+        </div>
+        <button type="button" class="icon-btn home-filter-close" id="calendar-filter-close" aria-label="close calendar filters">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="home-filter-groups" id="calendar-filter-groups"></div>
+      <div class="btn-row home-filter-sheet-actions">
+        <button class="btn" type="button" id="calendar-filter-reset">reset</button>
+        <button class="btn primary" type="button" id="calendar-filter-done">show results</button>
+      </div>
+    </div>
+  </div>
+
   <!-- presence / I-am-at from home -->
   <div class="sheet-wrap" id="presence-picker-sheet">
     <div class="sheet presence-picker-sheet">
-      <div class="page-head">
-        <div>
+      <div class="utility-sheet-head">
+        <span class="utility-sheet-icon teal"><i class="ti ti-map-pin" aria-hidden="true"></i></span>
+        <div class="utility-sheet-copy">
+          <span class="sheet-eyebrow">today’s context</span>
           <p class="sheet-title">where are you?</p>
           <p class="about-copy">This sets today’s starting place. It does not filter the list.</p>
         </div>
@@ -1402,21 +1474,27 @@
   <!-- travel time editor -->
   <div class="sheet-wrap" id="travel-edit-sheet">
     <div class="sheet travel-edit-sheet">
-      <div class="page-head">
-        <div>
+      <div class="utility-sheet-head">
+        <span class="utility-sheet-icon teal"><i class="ti ti-route" aria-hidden="true"></i></span>
+        <div class="utility-sheet-copy">
+          <span class="sheet-eyebrow">agenda connection</span>
           <p class="sheet-title">travel time</p>
           <p class="about-copy" id="travel-edit-copy">Home → Gym</p>
         </div>
       </div>
-      <p class="field-hint" id="travel-edit-mode"></p>
-      <div class="travel-dest" id="travel-edit-dest"></div>
-      <div class="travel-edit-row">
-        <button type="button" class="icon-btn" id="travel-edit-minus" aria-label="fewer minutes"><i class="ti ti-minus" aria-hidden="true"></i></button>
-        <input type="number" id="travel-edit-minutes" min="1" max="240" step="1" inputmode="numeric" aria-label="travel minutes" />
-        <span class="travel-edit-unit">min</span>
-        <button type="button" class="icon-btn" id="travel-edit-plus" aria-label="more minutes"><i class="ti ti-plus" aria-hidden="true"></i></button>
+      <div class="utility-sheet-panel travel-edit-panel">
+        <div class="travel-edit-context">
+          <p class="field-hint" id="travel-edit-mode"></p>
+          <div class="travel-dest" id="travel-edit-dest"></div>
+        </div>
+        <span class="field-label utility-field-label">How long should this leg take?</span>
+        <div class="travel-edit-row">
+          <button type="button" class="icon-btn" id="travel-edit-minus" aria-label="fewer minutes"><i class="ti ti-minus" aria-hidden="true"></i></button>
+          <label class="travel-minute-field"><input type="number" id="travel-edit-minutes" min="1" max="240" step="1" inputmode="numeric" aria-label="travel minutes" /><span class="travel-edit-unit">minutes</span></label>
+          <button type="button" class="icon-btn" id="travel-edit-plus" aria-label="more minutes"><i class="ti ti-plus" aria-hidden="true"></i></button>
+        </div>
       </div>
-      <div class="btn-row">
+      <div class="btn-row utility-sheet-actions">
         <button class="btn primary" type="button" id="travel-edit-save">save</button>
         <button class="btn" type="button" id="travel-edit-maps">open in maps</button>
         <button class="btn" type="button" id="travel-edit-reset">reset to estimate</button>
@@ -1428,19 +1506,23 @@
   <!-- blocked-time editor -->
   <div class="sheet-wrap" id="block-edit-sheet">
     <div class="sheet block-edit-sheet">
-      <div class="page-head">
-        <div>
+      <div class="utility-sheet-head">
+        <span class="utility-sheet-icon amber"><i class="ti ti-lock" aria-hidden="true"></i></span>
+        <div class="utility-sheet-copy">
+          <span class="sheet-eyebrow">busy time</span>
           <p class="sheet-title" id="block-edit-title">busy time</p>
           <p class="about-copy" id="block-edit-copy"></p>
         </div>
       </div>
-      <div class="block-edit-hours">
-        <label><span>starts</span><input type="time" id="block-edit-start" step="300" /></label>
-        <span aria-hidden="true">to</span>
-        <label><span>ends</span><input type="time" id="block-edit-end" step="300" /></label>
+      <div class="utility-sheet-panel">
+        <div class="block-edit-hours">
+          <label><span>starts</span><input type="time" id="block-edit-start" step="300" /></label>
+          <i class="ti ti-arrow-right" aria-hidden="true"></i>
+          <label><span>ends</span><input type="time" id="block-edit-end" step="300" /></label>
+        </div>
+        <p class="field-hint utility-panel-hint">Choose whether this change is only for this date or part of the recurring schedule.</p>
       </div>
-      <p class="field-hint">Change only this date, or update the recurring block used on future matching days.</p>
-      <div class="btn-row block-edit-actions">
+      <div class="btn-row block-edit-actions utility-sheet-actions">
         <button class="btn primary" type="button" id="block-edit-instance">save this date</button>
         <button class="btn" type="button" id="block-edit-series">update recurring</button>
         <button class="btn" type="button" id="block-edit-cancel">cancel</button>

@@ -1365,8 +1365,10 @@ $('open-about').addEventListener('click',()=>{
   openSheet('about-sheet');
 });
 $('about-close').addEventListener('click',()=>closeSheet('about-sheet'));
+$('about-head-close')?.addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
 $('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('about-head-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
   head.addEventListener('click',()=>{
     const body = $(head.dataset.collapseTarget);
@@ -1853,6 +1855,7 @@ $('open-overview').addEventListener('click',()=>{
 });
 bindOverviewScrollGuards();
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
+$('overview-head-close')?.addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('overview-sheet');});
 $('overview-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('overview-prev-month').addEventListener('click',()=>{
@@ -1867,18 +1870,26 @@ $('overview-next-month').addEventListener('click',()=>{
   else overviewMonthOffset += 1;
   renderOverview();
 });
+$('overview-today')?.addEventListener('click',()=>{
+  overviewMonthOffset = 0;
+  overviewRecentOffset = 0;
+  dayLogsKey = null;
+  renderOverview();
+});
 $('overview-filter')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
-  const topicBtn = e.target.closest('[data-overview-topic]');
-  if(topicBtn){
-    overviewTopicFilter = topicBtn.dataset.overviewTopic || 'all';
+  if(e.target.closest('[data-open-overview-filters]')){
+    openSheet('calendar-filter-sheet');
+    return;
+  }
+  if(e.target.closest('[data-clear-overview-topic]')){
+    overviewTopicFilter = 'all';
     dayLogsKey = null;
     renderOverview();
     return;
   }
-  const locBtn = e.target.closest('[data-overview-location]');
-  if(locBtn){
-    overviewLocationFilter = locBtn.dataset.overviewLocation || 'all';
+  if(e.target.closest('[data-clear-overview-location]')){
+    overviewLocationFilter = 'all';
     dayLogsKey = null;
     renderOverview();
     return;
@@ -1892,6 +1903,27 @@ $('overview-filter')?.addEventListener('click',e=>{
     dayLogsKey = null;
     renderOverview();
   }
+});
+$('calendar-filter-groups')?.addEventListener('click',e=>{
+  const topicBtn = e.target.closest('[data-overview-topic]');
+  const locBtn = e.target.closest('[data-overview-location]');
+  if(topicBtn)overviewTopicFilter = topicBtn.dataset.overviewTopic || 'all';
+  else if(locBtn)overviewLocationFilter = locBtn.dataset.overviewLocation || 'all';
+  else return;
+  dayLogsKey = null;
+  renderOverview();
+});
+const closeCalendarFilters = ()=>closeSheet('calendar-filter-sheet');
+$('calendar-filter-close')?.addEventListener('click',closeCalendarFilters);
+$('calendar-filter-done')?.addEventListener('click',closeCalendarFilters);
+$('calendar-filter-reset')?.addEventListener('click',()=>{
+  overviewTopicFilter = 'all';
+  overviewLocationFilter = 'all';
+  dayLogsKey = null;
+  renderOverview();
+});
+$('calendar-filter-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget)closeCalendarFilters();
 });
 $('overview-pane-filter')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
@@ -1907,26 +1939,65 @@ $('overview-insight')?.addEventListener('click',e=>{
 });
 $('overview-list')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
+  const itemBtn = e.target.closest('[data-open-overview-item]');
+  if(itemBtn){
+    const idx = parseInt(itemBtn.dataset.openOverviewItem,10);
+    if(!Number.isNaN(idx))openDetail(idx);
+    return;
+  }
   const dayBtn = e.target.closest('[data-log-day]');
-  if(!dayBtn || !dayBtn.closest('.overview-plan-tip'))return;
+  if(!dayBtn)return;
   openDayLogsAfterCalendarGesture(dayBtn.dataset.logDay,{refreshOverview:true});
 });
+function applyHomeFilterChange(){
+  // Filter chrome is cheap and should respond immediately even when the week
+  // planner defers the full list render to its worker-backed path.
+  if(typeof renderHomeTagFilter === 'function')renderHomeTagFilter(load());
+  render();
+}
+
 $('home-tag-filter')?.addEventListener('click',e=>{
+  if(e.target.closest('[data-open-home-filters]')){
+    openSheet('home-filter-sheet');
+    return;
+  }
   if(e.target.closest('[data-home-presence]')){
     openPresencePicker();
     return;
   }
+  if(e.target.closest('[data-clear-home-topic]')){
+    homeTopicFilter = 'all';
+    applyHomeFilterChange();
+    return;
+  }
+  if(e.target.closest('[data-clear-home-location]')){
+    homeLocationFilter = 'all';
+    applyHomeFilterChange();
+    return;
+  }
+});
+$('home-filter-groups')?.addEventListener('click',e=>{
   const topicBtn = e.target.closest('[data-home-topic]');
   if(topicBtn){
     homeTopicFilter = topicBtn.dataset.homeTopic || 'all';
-    render();
+    applyHomeFilterChange();
     return;
   }
   const locBtn = e.target.closest('[data-home-location]');
   if(locBtn){
     homeLocationFilter = locBtn.dataset.homeLocation || 'all';
-    render();
+    applyHomeFilterChange();
   }
+});
+$('home-filter-reset')?.addEventListener('click',()=>{
+  homeTopicFilter = 'all';
+  homeLocationFilter = 'all';
+  applyHomeFilterChange();
+});
+$('home-filter-close')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));
+$('home-filter-done')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));
+$('home-filter-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget)closeSheet('home-filter-sheet');
 });
 $('presence-picker-chips')?.addEventListener('click',async e=>{
   const gps = e.target.closest('[data-presence-gps]');
@@ -2632,6 +2703,10 @@ $('day-logs-sheet').addEventListener('click',e=>{
     closeDayLogsSheet({refreshOverview:false});
     return;
   }
+  if(e.target.closest('#day-logs-close')){
+    closeDayLogsSheet({refreshOverview:!dayLogsScoped()});
+    return;
+  }
 
   if(e.target.closest('#day-logs-back') || e.target.closest('#day-logs-back-list')){
     if(dayLogsScoped()){
@@ -2731,12 +2806,31 @@ $('day-logs-sheet').addEventListener('click',e=>{
     saveDayAvailabilityOverride();
     return;
   }
+  const availabilityPreset = e.target.closest('[data-day-availability-preset]');
+  if(availabilityPreset){
+    const minutes = parseInt(availabilityPreset.dataset.dayAvailabilityPreset,10);
+    const input = $('day-availability-minutes');
+    if(input && !Number.isNaN(minutes))input.value = String(minutes);
+    document.querySelectorAll('[data-day-availability-preset]').forEach(btn=>btn.classList.toggle('on',btn === availabilityPreset));
+    const label = $('day-availability-label');
+    if(label && !Number.isNaN(minutes))label.textContent = `${overviewMinutesLabel(minutes)} open`;
+    return;
+  }
   if(e.target.closest('#day-availability-clear')){
     clearDayAvailabilityOverride();
   }
 });
 $('day-logs-sheet').addEventListener('keydown',e=>{
   if(e.key === 'Enter' && e.target?.id === 'day-availability-minutes')saveDayAvailabilityOverride();
+});
+$('day-logs-sheet').addEventListener('input',e=>{
+  if(e.target?.id !== 'day-availability-minutes')return;
+  const minutes = Math.max(0,Math.min(1440,parseInt(e.target.value,10) || 0));
+  const label = $('day-availability-label');
+  if(label)label.textContent = `${overviewMinutesLabel(minutes)} open`;
+  document.querySelectorAll('[data-day-availability-preset]').forEach(btn=>{
+    btn.classList.toggle('on',parseInt(btn.dataset.dayAvailabilityPreset,10) === minutes);
+  });
 });
 $('day-logs-sheet').addEventListener('pointerup',e=>{
   if(e.target === e.currentTarget){
@@ -2820,10 +2914,18 @@ $('list').addEventListener('touchstart',e=>{
   if(swipeOpenCard && !e.target.closest('.swipe-actions') && !e.target.closest('.ting-card'))closeAllSwipes();
 },{passive:true});
 
-// Cold load: restore the persisted active focus, then render once.
+// Cold load: restore the persisted active focus, then start the worker-backed
+// render. The shell remains responsive while the single planner result runs.
+function updateHomeDateLabel(now = Date.now()){
+  const label = $('home-date');
+  if(!label)return;
+  label.textContent = new Date(now).toLocaleDateString(undefined,{
+    weekday:'short',month:'short',day:'numeric'
+  });
+}
+
+updateHomeDateLabel();
 restoreHabitTimer();
-// Progressive (fast-then-full) was retired —
-// the interim card order differed from the agenda and felt jittery.
 plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');
@@ -2899,6 +3001,7 @@ let _homeAgendaRefreshTick = 0;
 
 function refreshHomeAgendaWhileOpen(){
   if(document.hidden)return;
+  updateHomeDateLabel();
   if(typeof swipeOpenCard !== 'undefined' && swipeOpenCard)return;
   if(typeof sweepAutoDoneTasks === 'function'){
     const swept = sweepAutoDoneTasks();

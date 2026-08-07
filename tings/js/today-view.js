@@ -98,7 +98,18 @@ function includeInTodayAgenda(h,settings){
     }
   }
   const days = daysSince(h.lastLog);
-  const target = effectiveTarget(h);
+  const target = typeof effectiveRhythmCadenceGapDays === 'function'
+    ? effectiveRhythmCadenceGapDays(h)
+    : effectiveTarget(h);
+  // A calendar-constrained frequency can require every allowed opportunity.
+  // 3x/7d on Tue/Fri/Sat (or 2x/7d on Fri/Sat) must therefore surface on
+  // Saturday even when Friday was completed. A completion earlier today still
+  // clears a non-breakable habit normally.
+  if(settings.showDueHabitsInAgenda !== false
+    && scheduleDistance === 0 && windowStillDoableToday(h)
+    && typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h)
+    && (days === null || days > 0))return true;
   // Breakable keepup/reduce: a partial log today must NOT clear the rest of
   // today's duration budget off the agenda (that looked like "all chunks done").
   if(h.breakable && settings.showDueHabitsInAgenda !== false
@@ -366,6 +377,105 @@ function pickHabitLocationId(h,anchorId,registry,mode){
     if(score < bestScore){ bestScore = score; best = id; }
   }
   return best;
+}
+
+// PURE: adjacent-leg diagnostic for a route-wide location decision. The active
+// placement path optimizes the complete committed chain; this helper only
+// explains the incoming/outgoing contribution around one fill.
+function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId,actualChosenId){
+  const ids = normalizeLocationIds(h.locationIds,registry);
+  if(!ids.length)return null;
+  const locName = id => {
+    const loc = registry.find(l=>l.id === id);
+    return (loc && loc.name) || id;
+  };
+  if(ids.length === 1 && !h.anywhereAllowed){
+    const chosenId = actualChosenId === undefined ? ids[0] : actualChosenId;
+    const requiredLocationMissing = chosenId !== ids[0];
+    const c = {
+      id:ids[0],
+      name:locName(ids[0]),
+      prefLevel:locationPrefLevel(h,ids[0]) || 'neutral',
+      edgeSeconds:Number(travelEdgeBetweenIds(anchorId,ids[0],registry,mode).seconds) || 0,
+      outboundSeconds:nextLocId
+        ? Number(travelEdgeBetweenIds(ids[0],nextLocId,registry,mode).seconds) || 0 : null,
+      prefBias:0,
+      sameAnchorBonus:(anchorId && ids[0] === anchorId) ? -60 : 0,
+      total:0,
+      roundTrip:null,
+      isWinner:!requiredLocationMissing
+    };
+    if(nextLocId)c.roundTrip = c.edgeSeconds + c.outboundSeconds;
+    return {
+      anchorId:anchorId || null,
+      nextLocId:nextLocId || null,
+      chosenId,
+      reason:requiredLocationMissing
+        ? 'INVALID: committed placement lost its single required location'
+        : 'single allowed location (no scoring)',
+      candidates:[c]
+    };
+  }
+  const useRoundTrip = Boolean(nextLocId);
+  const candidates = ids.map(id=>{
+    const edge = travelEdgeBetweenIds(anchorId,id,registry,mode);
+    const prefLevel = locationPrefLevel(h,id);
+    const prefBias = -locationPrefScore(prefLevel) * 30;
+    const sameAnchorBonus = (anchorId && id === anchorId) ? -60 : 0;
+    const edgeSeconds = Number(edge && edge.seconds) || 0;
+    const outboundSeconds = nextLocId
+      ? Number(travelEdgeBetweenIds(id,nextLocId,registry,mode).seconds) || 0 : null;
+    const inboundTotal = edgeSeconds + prefBias + sameAnchorBonus;
+    const roundTrip = nextLocId
+      ? (edgeSeconds + outboundSeconds + prefBias + sameAnchorBonus) : null;
+    return {
+      id,
+      name:locName(id),
+      prefLevel:prefLevel || 'neutral',
+      edgeSeconds,
+      outboundSeconds,
+      prefBias,
+      sameAnchorBonus,
+      // `total` is the score the active picker minimises (inbound-only, or
+      // round-trip when the next fill's location is known at reconcile time).
+      total:useRoundTrip ? roundTrip : inboundTotal,
+      inboundTotal,
+      roundTrip
+    };
+  });
+  let chosenId = actualChosenId || null;
+  if(actualChosenId === undefined){
+    let bestScore = h.anywhereAllowed ? 0 : Infinity;
+    for(const c of candidates){
+      if(c.total < bestScore){ bestScore = c.total; chosenId = c.id; }
+    }
+  }
+  for(const c of candidates){
+    c.isWinner = (c.id === chosenId);
+    c.isRoundTripWinner = useRoundTrip
+      ? candidates.every(o=>c.roundTrip <= o.roundTrip)
+        && candidates.some(o=>c.roundTrip < o.roundTrip)
+      : null;
+  }
+  let reason;
+  if(actualChosenId !== undefined){
+    reason = 'complete-day route optimum (all selected fills and fixed location anchors)';
+  }else if(!chosenId){
+    reason = 'no location beat the anywhere-allowed floor 0 (stays anchorless)';
+  }else if(h.anywhereAllowed){
+    reason = 'lowest total under anywhere-allowed floor 0';
+  }else if(useRoundTrip){
+    reason = 'lowest ROUND-TRIP total wins (inbound + outbound to next fill)';
+  }else{
+    reason = 'lowest total = travel + preference bias + stay-anchor bonus (lower wins)';
+  }
+  return {
+    anchorId:anchorId || null,
+    nextLocId:nextLocId || null,
+    chosenId,
+    reason,
+    candidates:candidates.sort((a,b)=>a.total - b.total)
+  };
 }
 
 // PURE: within each priority band, greedy nearest-neighbour reorder. Revisiting
@@ -992,6 +1102,56 @@ function buildPlannerDecisionTrace(data,settings,context){
   } = context;
   const registry = typeof normalizeLocationRegistry === 'function'
     ? normalizeLocationRegistry(settings && settings.locations) : [];
+  const travelMode = typeof normalizeTravelMode === 'function'
+    ? normalizeTravelMode(settings && settings.defaultTravelMode) : 'driving';
+  const locNameById = id => {
+    if(!id)return 'none';
+    const loc = registry.find(l=>l.id === id);
+    return (loc && loc.name) || id;
+  };
+  // PURE: reconstruct the location anchor the planner would have used at the
+  // start of a fill — the latest location-bearing scheduled row, location-tied
+  // blocked interval, or committed fill that has already started, else the day
+  // seed. Mirrors locationPresenceAt() (which ignores travel rows) but built
+  // only from trace data so it stays off the placement path. Used to explain
+  // multi-location choices in the on-demand audit.
+  const anchorAt = targetStart => {
+    const at = Number(targetStart) || 0;
+    const marks = [];
+    for(const r of agendaRows || []){
+      if(!(r.start < at))continue;
+      if(r.kind === 'scheduled' && r.locationId){
+        marks.push({start:r.start, locationId:r.locationId, source:`scheduled ${r.name || ''}`.trim()});
+      }
+      if(r.kind === 'fill' && r.locationId){
+        marks.push({start:r.start, locationId:r.locationId, source:`prior fill ${r.name || ''}`.trim()});
+      }
+    }
+    for(const block of rawBlocks || []){
+      if(!block.locationId || !(block.start < at))continue;
+      marks.push({start:block.start, locationId:block.locationId, source:`blocked:${block.label || ''}`});
+    }
+    if(!marks.length)return {id:null, source:'day seed'};
+    marks.sort((a,b)=>a.start - b.start);
+    const last = marks[marks.length - 1];
+    return {id:last.locationId, source:last.source};
+  };
+  // PURE: the committed location of the next fill/scheduled row after this
+  // one, if any. Feeds the round-trip location picker / audit so a multi-
+  // location fill sandwiched before a Home-locked item (e.g. Lunch) picks
+  // the location that minimises inbound + outbound, not inbound alone.
+  const nextLocAfter = targetEnd => {
+    const at = Number(targetEnd) || 0;
+    let earliest = null;
+    for(const r of agendaRows || []){
+      if(r.kind !== 'fill' && r.kind !== 'scheduled')continue;
+      if(!r.locationId)continue;
+      if(r.start < at)continue;
+      if(!earliest || r.start < earliest.start)earliest = r;
+    }
+    if(!earliest)return {id:null, source:'none'};
+    return {id:earliest.locationId, source:`next ${earliest.kind} ${earliest.name || ''}`.trim()};
+  };
   const unplacedByIndex = new Map((unplacedItems || []).map(item=>[item.i,item]));
   const placedByIndex = new Map();
   for(const row of agendaRows || []){
@@ -1114,13 +1274,56 @@ function buildPlannerDecisionTrace(data,settings,context){
       pinned ? 'pinned to today' : 'not pinned',
       hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
       preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
-      locationNames.length ? `locations ${locationNames.join(', ')}` : 'no location constraint',
+      locationNames.length
+        ? `locations ${locationIds.map((id,k)=>{
+            const lvl = typeof locationPrefLevel === 'function'
+              ? (locationPrefLevel(h,id) || 'neutral') : 'neutral';
+            return `${locationNames[k]}=${lvl}`;
+          }).join(', ')}`
+        : 'no location constraint',
       orderInputs.length ? `order ${orderInputs.join('; ')}` : ''
     ].filter(Boolean);
     const earliestClockFit = plannerTraceEarliestClockFit(
       h,i,dayBase,dayEnd,rangeStart,rawBlocks,agendaRows,minChunk
     );
     const first = rows[0] || null;
+    // Location choice audit (on-demand only). The selected location comes from
+    // complete-day route optimization. Adjacent inbound/outbound totals remain
+    // useful diagnostics, but are not mislabeled as the whole decision rule.
+    if(first && locationIds.length && typeof locationChoiceBreakdown === 'function'){
+      const anchor = anchorAt(first.start);
+      const lastRow = rows[rows.length - 1] || first;
+      const next = nextLocAfter(lastRow.end);
+      const actualLocationId = first.locationId === undefined ? null : first.locationId;
+      const breakdown = locationChoiceBreakdown(
+        h,anchor.id,registry,travelMode,next.id,actualLocationId
+      );
+      if(breakdown){
+        const chosenName = breakdown.chosenId
+          ? locNameById(breakdown.chosenId) : 'none';
+        inputs.push(`location anchor ${locNameById(anchor.id)} (from ${anchor.source})`);
+        if(next.id){
+          inputs.push(`location next ${locNameById(next.id)} (from ${next.source}) — adjacent legs shown; optimizer evaluates the complete day route`);
+        }
+        inputs.push(`location chosen ${chosenName} — ${breakdown.reason}`);
+        const parts = breakdown.candidates.map(c=>{
+          const travelMin = Math.round(c.edgeSeconds / 60);
+          const bits = [
+            `${travelMin}m in`,
+            `pref ${c.prefLevel}${c.prefBias ? ` (${c.prefBias > 0 ? '+' : ''}${c.prefBias})` : ''}`,
+            c.sameAnchorBonus ? `stay ${c.sameAnchorBonus}` : null
+          ].filter(Boolean);
+          let label = `${c.name}=${c.total} [${bits.join(', ')}]`;
+          if(c.outboundSeconds != null){
+            const outMin = Math.round(c.outboundSeconds / 60);
+            label += ` · ${outMin}m out · rt ${c.roundTrip}`;
+          }
+          if(c.isWinner)label += ' *';
+          return label;
+        });
+        inputs.push(`location candidates ${parts.join('; ')}`);
+      }
+    }
     const selected = rows.length
       ? rows.map(row=>`${agendaTimeLabel(row.start)}–${agendaTimeLabel(row.end)}`).join('; ')
       : 'not placed';
@@ -1161,7 +1364,7 @@ function buildPlannerDecisionTrace(data,settings,context){
       inputs,
       engine:rows.length
         ? (Number.isFinite(scoreRow && scoreRow.optimizerWeight)
-          ? 'exact optimizer'
+          ? 'GLPK option optimizer'
           : (h.breakable ? 'continuous gap fill' : plannerEngine))
         : plannerEngine,
       score:Number.isFinite(scoreRow && scoreRow.plannerScore) ? scoreRow.plannerScore : null,
@@ -1320,6 +1523,12 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     end:row.end,
     minutes:Math.max(0,Math.round((row.end - row.start) / 60000)),
     locationId:row.locationId || null,
+    // Travel-leg endpoints are preserved so the on-demand planner trace can
+    // reconstruct the location anchor at any fill without re-running placement.
+    from:row.from || null,
+    to:row.to || null,
+    fromName:row.fromName || '',
+    toName:row.toName || '',
     plannerScore:Number.isFinite(row.plannerScore) ? row.plannerScore : null,
     plannerScoreTerms:row.plannerScoreTerms || null,
     optimizerWeight:Number.isFinite(row.optimizerWeight) ? row.optimizerWeight : null,
@@ -1345,7 +1554,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
   const plannerIsPreview = Boolean(week && !week.optimized && settings && settings.agendaOptimizer);
   const plannerEngine = week
-    ? (week.optimized ? 'exact optimizer'
+    ? (week.optimized ? 'GLPK option optimizer + complete-day route'
       : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner'))
     : 'fast day planner';
   const traceCandidateMeta = new Map();
@@ -1800,7 +2009,17 @@ function tryPlaceOnDay(state,fill,opts = {}){
   };
   const remaining = state.remaining;
   const usedMinutes = state.usedMinutes;
-  const resolveLoc = (anchor)=>fill.locationId || pickHabitLocationId(fill.h,anchor,registry,mode);
+  // `locationId` may deliberately be null only for anywhere/locationless work.
+  // `undefined` is an omitted decision, not an instruction to erase a required
+  // location (week-hours repair used to manufacture that property).
+  const hasLocationProperty = Object.prototype.hasOwnProperty.call(fill,'locationId');
+  const candidateLocIds = normalizeLocationIds(fill.h.locationIds,registry);
+  const hasForcedLocation = hasLocationProperty
+    && fill.locationId !== undefined
+    && (fill.locationId !== null || fill.h.anywhereAllowed || !candidateLocIds.length);
+  const resolveLoc = (anchor)=>hasForcedLocation
+    ? fill.locationId
+    : pickHabitLocationId(fill.h,anchor,registry,mode);
   const fits = [];
 
   // Chronological list of all committed fills, reused per gap so the travel
@@ -2430,6 +2649,181 @@ function placeBreakableSessions(state,fill,opts = {}){
   return placedAny;
 }
 
+// PURE: allowed location decisions for an already-timed fill. `null` means the
+// item is locationless and preserves the route's current location.
+function committedFillLocationChoices(entry,state){
+  const h = entry && entry.fill && entry.fill.h;
+  const fit = entry && entry.fit;
+  if(!h || !fit)return [];
+  const ids = normalizeLocationIds(h.locationIds,state.registry);
+  if(Object.prototype.hasOwnProperty.call(entry.fill,'locationId')
+    && entry.fill.locationId !== undefined){
+    // Explicit null is legal only for genuinely anywhere/locationless work.
+    // A malformed replay seed must never erase a required saved location.
+    if(entry.fill.locationId !== null || h.anywhereAllowed || !ids.length){
+      return [entry.fill.locationId || null];
+    }
+  }
+  // Preserve an explicitly committed legacy/synthetic fit even when its habit
+  // record has no locationIds. Normal planner fills derive choices from the
+  // habit and therefore still expose every allowed location to the route DP.
+  const choices = h.anywhereAllowed
+    ? [null,...ids]
+    : (ids.length ? ids : (fit.locId ? [fit.locId] : [null]));
+  return choices.filter(locId=>{
+    if(!locId)return true;
+    const loc = state.registryById
+      ? state.registryById.get(locId)
+      : state.registry.find(item=>item.id === locId);
+    if(!loc)return false;
+    const intervals = effectiveLocationWindow(h,loc,state.weekday,state.dayBase);
+    const startMin = (fit.placeStart - state.dayBase) / 60000;
+    const endMin = (fit.placeEnd - state.dayBase) / 60000;
+    return intervals.some(iv=>startMin >= iv.start && endMin <= iv.end);
+  });
+}
+
+// PURE: dynamic-programming shortest route for the selected clock intervals.
+// This is global across the whole day: unlike the old inbound/round-trip
+// picker, it considers every allowed location and every committed successor at
+// once. Scheduled and blocked work participate as fixed/busy route events, so
+// travel can never be hidden underneath them.
+function optimalCommittedLocationRoute(state,chron){
+  if(!state || !Array.isArray(chron))return null;
+  const startClock = Number(state.startClock) || Number(state.dayBase) || 0;
+  const initialLoc = locationPresenceAt(state,startClock,[]) || state.seedLocId || null;
+  const events = [];
+
+  for(const entry of chron){
+    if(!entry || !entry.fit)continue;
+    events.push({
+      kind:'fill',entry,
+      start:entry.fit.placeStart,
+      end:entry.fit.placeEnd
+    });
+  }
+  for(const row of state.rows || []){
+    if(!row || row.kind !== 'scheduled' || row.end <= startClock)continue;
+    events.push({
+      kind:'hard',start:Math.max(row.start,startClock),end:row.end,
+      locationId:row.locationId || null
+    });
+  }
+  if(typeof agendaBlockedIntervals === 'function' && typeof dateKey === 'function'){
+    const dayEnd = state.dayBase + 86400000;
+    for(const block of agendaBlockedIntervals(
+      dateKey(state.dayBase),state.settings,state.dayBase,dayEnd
+    )){
+      if(!block || block.end <= startClock)continue;
+      events.push({
+        kind:'hard',start:Math.max(block.start,startClock),end:block.end,
+        locationId:block.locationId || null
+      });
+    }
+  }
+  events.sort((a,b)=>a.start - b.start
+    || (a.kind === 'hard' ? -1 : 1)
+    || a.end - b.end);
+
+  let states = new Map();
+  states.set(initialLoc || '',{
+    loc:initialLoc,
+    end:startClock,
+    cost:0,
+    travelSeconds:0,
+    assignments:new Map(),
+    arrivals:new Map(),
+    legs:[]
+  });
+
+  for(const event of events){
+    const next = new Map();
+    for(const route of states.values()){
+      const choices = event.kind === 'fill'
+        ? committedFillLocationChoices(event.entry,state)
+        : [event.locationId || null];
+      for(const choice of choices){
+        const destination = choice || route.loc || null;
+        const edge = travelEdgeBetweenIds(
+          route.loc,destination,state.registry,state.mode,{allowNetwork:false}
+        );
+        const travelSeconds = Math.max(0,Number(edge && edge.seconds) || 0);
+        // Travel is rendered immediately before the destination. Every event,
+        // including a locationless one, advances `end`, so this single check
+        // also prevents travel from overlapping work between two locations.
+        if(route.end + travelSeconds * 1000 > event.start)continue;
+
+        let cost = route.cost + travelSeconds;
+        if(event.kind === 'fill' && choice){
+          const h = event.entry.fill.h;
+          cost += -locationPrefScore(locationPrefLevel(h,choice)) * 30;
+          if(route.loc && route.loc === choice)cost -= 60;
+        }
+        const assignments = new Map(route.assignments);
+        if(event.kind === 'fill')assignments.set(event.entry,choice);
+        const arrivals = new Map(route.arrivals);
+        if(event.kind === 'fill')arrivals.set(event.entry,{
+          from:route.loc || null,
+          to:choice || null,
+          edge,
+          travelSeconds
+        });
+        const legs = route.legs.slice();
+        if(travelSeconds > 0 && route.loc && destination && route.loc !== destination){
+          legs.push({
+            from:route.loc,to:destination,seconds:travelSeconds,
+            metres:Number(edge && edge.metres) || 0,
+            provider:edge && edge.provider || state.mode,
+            start:event.start - travelSeconds * 1000,
+            end:event.start,
+            entry:event.kind === 'fill' ? event.entry : null
+          });
+        }
+        const key = destination || '';
+        const candidate = {
+          loc:destination,
+          end:Math.max(route.end,event.end),
+          cost,
+          travelSeconds:route.travelSeconds + travelSeconds,
+          assignments,
+          arrivals,
+          legs
+        };
+        const prior = next.get(key);
+        if(!prior || candidate.cost < prior.cost)next.set(key,candidate);
+      }
+    }
+    if(!next.size)return null;
+    states = next;
+  }
+
+  let best = null;
+  for(const route of states.values()){
+    if(!best || route.cost < best.cost)best = route;
+  }
+  return best;
+}
+
+// MUTATE: apply the globally cheapest feasible location chain without changing
+// any selected start/end. Returns false if the clock selections themselves do
+// not admit a feasible route; callers may then use the defensive repair path.
+function optimizeCommittedRouteLocations(state,chron){
+  const route = optimalCommittedLocationRoute(state,chron);
+  state._committedRoutePlan = route || null;
+  if(!route)return false;
+  for(const entry of chron){
+    if(!entry || !entry.fit || !route.assignments.has(entry))continue;
+    entry.fit.locId = route.assignments.get(entry);
+    const arrival = route.arrivals.get(entry);
+    if(arrival){
+      entry.fit.prevLocId = arrival.from;
+      entry.fit.edge = arrival.edge;
+      entry.fit.travelMin = Math.ceil(arrival.travelSeconds / 60);
+    }
+  }
+  return true;
+}
+
 // MUTATE: reconcile inbound travel after a chronological insertion. The fast
 // planner can place a later item first, then insert another fill between it and
 // its old location anchor. In that case the old commute is no longer part of
@@ -2442,43 +2836,136 @@ function reconcileCommittedTravel(state){
   let travelMinutes = 0;
   let durationMinutes = 0;
   let lastLocId = state.seedLocId || null;
+  const routeOptimized = optimizeCommittedRouteLocations(state,chron);
+  // Running end of the previous (already-reconciled) fill in clock time. Used
+  // to guarantee a commute never starts before the prior fill ends — the
+  // out-of-order commit / anchor-drift case where Lunch places at Zuhr.end
+  // with a 0-minute commute, then Zuhr inserts at KhadijaM and Lunch's real
+  // commute gets drawn backward on top of Zuhr.
+  let prevEndMs = null;
 
-  for(const entry of chron){
+  const patchFillRow = (entry,fit)=>{
+    const entryChunk = entry.fill && entry.fill.chunkIndex != null
+      ? entry.fill.chunkIndex : null;
+    for(const r of state.rows || []){
+      const rowChunk = r && r.chunkIndex != null ? r.chunkIndex : null;
+      if(r && r.kind === 'fill'
+        && r.i === (entry.fill && entry.fill.i)
+        && rowChunk === entryChunk){
+        r.locationId = fit.locId;
+        r.start = fit.placeStart;
+        r.end = fit.placeEnd;
+      }
+    }
+    for(const item of state.day && state.day.agendaItems || []){
+      const itemChunk = item && item.chunkIndex != null ? item.chunkIndex : null;
+      if(item && item.i === (entry.fill && entry.fill.i) && itemChunk === entryChunk){
+        item.locationId = fit.locId;
+      }
+    }
+  };
+  for(let ci = 0; ci < chron.length; ci += 1){
+    const entry = chron[ci];
     const fit = entry && entry.fit;
     if(!fit)continue;
     durationMinutes += Math.max(0,Number(fit.durMin) || 0);
-    const anchor = locationPresenceAt(state,fit.placeStart,chron);
-    const edge = travelEdgeBetweenIds(
-      anchor,
-      fit.locId,
-      state.registry,
-      state.mode,
-      {allowNetwork:false}
-    );
-    const travelMin = Math.max(0,Math.ceil((Number(edge.seconds) || 0) / 60));
+    const fitHabit = entry.fill && entry.fill.h;
+
+    const routeArrival = routeOptimized && state._committedRoutePlan
+      ? state._committedRoutePlan.arrivals.get(entry) : null;
+    const anchor = routeArrival
+      ? routeArrival.from
+      : locationPresenceAt(state,fit.placeStart,chron);
+    const edge = routeArrival
+      ? routeArrival.edge
+      : travelEdgeBetweenIds(
+          anchor,
+          fit.locId,
+          state.registry,
+          state.mode,
+          {allowNetwork:false}
+        );
+    // Re-time guard: if the inbound commute would start before the previous
+    // fill ends (out-of-order commit left no room), push this fill forward so
+    // the commute fits. Updates the fill row's start/end so homeDaySequence
+    // never draws a travel card overlapping a fill.
+    const commuteMs = Math.max(0,Number(edge && edge.seconds) || 0) * 1000;
+    if(!routeOptimized && prevEndMs != null && fit.placeStart - commuteMs < prevEndMs){
+      const pushedStart = prevEndMs + commuteMs;
+      // Only push forward when the new slot still sits inside the fill's own
+      // hard window end (avoid blowing past the allowed end; if it can't fit,
+      // leave the time and let the commute clamp at render instead).
+      const newEnd = pushedStart + (Number(fit.durMin) || 0) * 60000;
+      const hardEndMs = (()=>{
+        if(!fitHabit || typeof hasTimeWindow !== 'function' || !hasTimeWindow(fitHabit))return Infinity;
+        const windows = typeof fillDayWindows === 'function'
+          ? fillDayWindows(fitHabit,state.dayBase,null) || [] : [];
+        const active = windows.find(w=>
+          Number(w.start) <= fit.placeStart && fit.placeStart < Number(w.end));
+        return active && Number.isFinite(Number(active.end)) ? Number(active.end) : Infinity;
+      })();
+      if(newEnd <= hardEndMs){
+        fit.placeStart = pushedStart;
+        fit.placeEnd = newEnd;
+        patchFillRow(entry,fit);
+      }
+    }
+    const travelMin = Math.max(0,Math.ceil(Number(edge.seconds || 0) / 60));
     fit.prevLocId = anchor;
     fit.edge = edge;
     fit.travelMin = travelMin;
+    patchFillRow(entry,fit);
     travelMinutes += travelMin;
     if(edge.seconds > 0 && anchor && fit.locId && anchor !== fit.locId){
       const from = state.registry.find(l=>l.id === anchor);
       const to = state.registry.find(l=>l.id === fit.locId);
-      travelRows.push({
-        kind:'travel',
-        from:anchor,
-        to:fit.locId,
-        fromName:from ? from.name : '',
-        toName:to ? to.name : '',
-        seconds:edge.seconds,
-        metres:edge.metres || 0,
-        start:Math.max(fit.placeStart - edge.seconds * 1000,state.dayBase),
-        end:fit.placeStart,
-        provider:edge.provider || state.mode
-      });
+      // Floor travel start at the previous fill's end so a failed re-time
+      // (hard window blocked the push) can never paint a commute on top of
+      // an earlier fill. Zero-length cards are dropped.
+      const travelStart = Math.max(
+        fit.placeStart - edge.seconds * 1000,
+        state.dayBase,
+        prevEndMs || 0
+      );
+      if(travelStart < fit.placeStart){
+        travelRows.push({
+          kind:'travel',
+          from:anchor,
+          to:fit.locId,
+          fromName:from ? from.name : '',
+          toName:to ? to.name : '',
+          seconds:edge.seconds,
+          metres:edge.metres || 0,
+          start:travelStart,
+          end:fit.placeStart,
+          provider:edge.provider || state.mode
+        });
+      }
     }
     if(fit.locId)lastLocId = fit.locId;
+    prevEndMs = Math.max(prevEndMs || 0,fit.placeEnd);
   }
 
+  if(routeOptimized && state._committedRoutePlan){
+    travelRows.length = 0;
+    travelMinutes = 0;
+    for(const leg of state._committedRoutePlan.legs){
+      const from = state.registry.find(l=>l.id === leg.from);
+      const to = state.registry.find(l=>l.id === leg.to);
+      travelRows.push({
+        kind:'travel',
+        from:leg.from,to:leg.to,
+        fromName:from ? from.name : '',
+        toName:to ? to.name : '',
+        seconds:leg.seconds,
+        metres:leg.metres,
+        start:leg.start,end:leg.end,
+        provider:leg.provider || state.mode
+      });
+      travelMinutes += Math.ceil(leg.seconds / 60);
+    }
+    lastLocId = state._committedRoutePlan.loc || lastLocId;
+  }
   state.rows = (state.rows || []).filter(row=>row.kind !== 'travel').concat(travelRows);
   state.usedMinutes = Math.max(0,durationMinutes + travelMinutes);
   state.remaining = Math.max(0,(Number(state.totalMinutes) || 0) - state.usedMinutes);
@@ -2542,6 +3029,10 @@ function commitPlacement(state,fill,fit){
 }
 
 function finalizePlacementRows(state){
+  // The last append often takes the O(1) commit path. Reconcile once here so
+  // every published timeline receives the same whole-day route optimization
+  // and invariant check, independent of candidate commit order.
+  reconcileCommittedTravel(state);
   return state.rows.slice().sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
 }
 
@@ -2974,7 +3465,9 @@ function weekUrgency(h){
     return 35;
   }
   const days = daysSince(h.lastLog);
-  const target = effectiveTarget(h);
+  const target = typeof effectiveRhythmCadenceGapDays === 'function'
+    ? effectiveRhythmCadenceGapDays(h)
+    : effectiveTarget(h);
   if(days === null)return 10;
   if(days > target)return 130;
   if(days >= target)return 100;
@@ -3017,11 +3510,8 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     if(ready !== null && dayBase < dayStart(ready))return false;
     return true;
   }
-  // Habit: schedule must allow this weekday.
-  if(hasDaySchedule(h)){
-    const schedule = scheduledDays(h);
-    if(schedule.weekdays.length && !schedule.weekdays.includes(weekday))return false;
-  }
+  // Habit: both weekday and month-day gates must allow this calendar date.
+  if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
   if(hasPlannedForDay(h,dayBase))return settings.showPlannedItemsInAgenda !== false;
   if(settings.showDueHabitsInAgenda === false)return false;
   // One-off soft plan-by: eligible any day from today through the deadline
@@ -3036,7 +3526,9 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     return true;
   }
   const days = daysSince(h.lastLog);
-  const target = effectiveTarget(h);
+  const target = typeof effectiveRhythmCadenceGapDays === 'function'
+    ? effectiveRhythmCadenceGapDays(h)
+    : effectiveTarget(h);
   // Never-logged habits are due immediately (treated as infinitely overdue) so
   // a freshly created habit enters the week plan. Future-dated logs (days < 0)
   // are not yet due. After the first log, the normal rhythm applies.
@@ -3044,6 +3536,11 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(days === null)return true;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
+  // When every allowed calendar date is needed to meet the requested rate, each
+  // later eligible day is a candidate regardless of the raw calendar gap.
+  // Do not offer another session on the same day it was completed.
+  if(typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h))return ageOnDay > 0;
   if(ageOnDay >= target)return true;               // due/overdue by this day
   // Breakable daily rhythm: after a partial log, today's budget is still open
   // even though lastLog reset the rhythm clock (days < target). Keep placing
@@ -3064,7 +3561,7 @@ function isWeekCandidate(h,settings,dayBase,weekday){
 // Flex window for schedule-link pull. Keepup effectiveTarget is (raw+flex), so
 // isWeekCandidate only opens at the raw target — too late for "do early with
 // my linked habit". This mirrors canDoEarlyToday: raw target − flex.
-function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings){
+function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   if(!h || dayBase == null)return false;
   if(h.type === 'zero')return false;
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
@@ -3091,6 +3588,11 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings){
   const days = daysSince(h.lastLog);
   if(days !== null && days < 0)return false;
   if(days === null)return true;
+  // OR semantics (same-day link pull): when a partner is present on this day a
+  // build (keepup) habit is eligible regardless of its own cadence; reduce keeps
+  // its ceiling. opts.partnerPresent is set only by the link pull passes, where a
+  // partner is known to be eligible on dayBase.
+  if(opts && opts.partnerPresent && h.type === 'keepup')return true;
   const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
   const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
@@ -3117,23 +3619,34 @@ function sameDaySubjectsForAnchor(anchorHid,candidates){
   return out;
 }
 
-// Build (keepup) habits may run extra times for a same-day linked partner even
-// when the raw target gap has not elapsed — doing more is fine. Limit extras to
-// scarce partners (e.g. Friday-only Juma) or the partner's earliest eligible
-// day (e.g. Exercise's first due day), not every later day the partner remains
-// theoretically eligible.
-function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
-  if(!h || h.type !== 'keepup' || dayBase == null)return false;
+// Cadence OR semantics: a same-day-linked partner's presence satisfies the
+// cadence for build (keepup) habits — extra reps are fine, so the partner's
+// day is honoured regardless of the habit's own rhythm. Reduce habits keep
+// their ceiling (target is a max interval), so a partner cannot make them
+// fire more often than their target.
+function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
+  if(!h || !h.hid || dayBase == null || !Array.isArray(candidates))return false;
+  const byHid = new Map(candidates.filter(c=>c && c.h && c.h.hid).map(c=>[c.h.hid,c]));
+  // h as a same-day subject: any of its anchors eligible on dayBase.
+  const links = typeof sameDayScheduleLinks === 'function'
+    ? sameDayScheduleLinks(h)
+    : normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay);
+  for(const link of links){
+    const anchor = byHid.get(link.anchorHid);
+    if(anchor && anchor.eligible && anchor.eligible.has(dayBase))return true;
+  }
+  // h as a same-day anchor: any subject eligible on dayBase.
   for(const {candidate} of sameDaySubjectsForAnchor(h.hid,candidates)){
-    if(!candidate || !candidate.eligible || !candidate.eligible.has(dayBase))continue;
-    if(candidate.eligible.size > 0 && candidate.eligible.size <= 2)return true;
-    let earliest = null;
-    for(const d of candidate.eligible){
-      if(earliest == null || d < earliest)earliest = d;
-    }
-    if(earliest === dayBase)return true;
+    if(candidate && candidate.eligible && candidate.eligible.has(dayBase))return true;
   }
   return false;
+}
+
+// A keepup habit may place an extra rep on any day a same-day-linked partner is
+// eligible — the OR between rhythm and same-day links (more is fine for build).
+function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
+  if(!h || h.type !== 'keepup' || dayBase == null)return false;
+  return sameDayPartnerEligibleOnDay(h,dayBase,candidates);
 }
 
 // Mutates each candidate's derived eligible Set.
@@ -3191,7 +3704,7 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
         if(!anchor)continue;
         if(!anchor.eligible)anchor.eligible = new Set();
         if(anchor.eligible.has(dayBase))continue;
-        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg)){
+        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg,{partnerPresent:true})){
           anchor.eligible.add(dayBase);
         }
       }
@@ -3212,7 +3725,7 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
       const anyAnchor = sameDayLinks.some(link=>anchorPresent(link.anchorHid,dayBase));
       if(!anyAnchor)continue;
       if(candidate.eligible.has(dayBase))continue;
-      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg)){
+      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg,{partnerPresent:true})){
         candidate.eligible.add(dayBase);
       }
     }
@@ -3362,19 +3875,22 @@ function weekPreferencePenalty(h,fit,day,registry){
 // after each prior placement this pass), is it due again on dayBase? Mirrors
 // the rhythm logic in isWeekCandidate but accepts a lastLog override so the
 // placement loop can simulate "if I did this on Tuesday, am I due again on
-// Wednesday?". Schedule weekday-gates still apply. Flexibility pull-forward
+// Wednesday?". Schedule calendar-date gates still apply. Flexibility pull-forward
 // is intentionally NOT consulted here — flex only widens the INITIAL eligible
 // set (via isWeekCandidate); spacing between successive placements uses the
 // raw target so a daily habit lands on every day, not every (target+flex) days.
-function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday){
+function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday,completionOffset = 0){
   if(!h)return false;
-  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)){
-    const schedule = typeof scheduledDays === 'function' ? scheduledDays(h) : null;
-    if(schedule && schedule.weekdays && schedule.weekdays.length && !schedule.weekdays.includes(weekday))return false;
-  }
-  const target = Math.max(1,Number(h && h.target) || 7);
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof isDateEligibleForHabit === 'function'
+    && !isDateEligibleForHabit(h,dayBase))return false;
+  const target = typeof rhythmCadenceGapDays === 'function'
+    ? rhythmCadenceGapDays(h,completionOffset)
+    : Math.max(1,Number(h && h.target) || 7);
   if(lastLogTs == null)return true; // never completed → due immediately
   const ageDays = Math.round((dayBase - dayStart(lastLogTs)) / 86400000);
+  if(typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h))return ageDays > 0;
   return ageDays >= target;
 }
 function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints){
@@ -3453,7 +3969,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(pinned && !state.isTodayDay)continue;
         if(rhythmPlacementCount > 0 && virtualLastLog != null
-          && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday)
+          && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount)
           && !(state.dayBase > dayStart(virtualLastLog)
             && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates)))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
@@ -3516,7 +4032,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         if(pinned && !state.isTodayDay)continue;
         if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null){
           const afterLast = state.dayBase > dayStart(virtualLastLog);
-          const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday);
+          const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount);
           const linkExtra = afterLast && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
           if(!spaced && !linkExtra)continue;
         }
@@ -3837,10 +4353,12 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
       && Number.isFinite(Number(c.h.target)));
     const breakableRhythm = !!(c.h.breakable && rhythmHabit);
     let lastPlaced = rhythmHabit ? c.h.lastLog : null;
+    let rhythmPlacementCount = 0;
     let alreadyOneShot = false;
     for(const state of dayStates){
       if(state.placed.has(c.i)){
         lastPlaced = state.dayBase;
+        if(rhythmHabit)rhythmPlacementCount += 1;
         if(!rhythmHabit)alreadyOneShot = true;
       }
     }
@@ -3853,7 +4371,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
         continue;
       }
       if(rhythmHabit && lastPlaced != null
-        && !rhythmEligibleOnDay(c.h,lastPlaced,state.dayBase,state.weekday))continue;
+        && !rhythmEligibleOnDay(c.h,lastPlaced,state.dayBase,state.weekday,rhythmPlacementCount))continue;
       // Same week-holistic rule as the ILP reserve: can-wait yields; packed
       // equal/lower priority must not steal a daily breakable chunk.
       if(typeof fastPathDefersMovable === 'function'
@@ -3881,6 +4399,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
         h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:fit.locId
       });
       lastPlaced = state.dayBase;
+      if(rhythmHabit)rhythmPlacementCount += 1;
       gained += 1;
       if(!rhythmHabit)break;
     }
@@ -4406,7 +4925,10 @@ function repairWeekPlacedHours(candidates,dayStates,settings){
             seenBreak.add(f.i);
             collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity});
           }else{
-            collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity,locationId:f.locationId});
+            // Re-run location choice from the habit constraints. Adding an
+            // `undefined` locationId property here used to mean "force none"
+            // and silently removed Grocery/Home travel during hours repair.
+            collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity});
           }
         }
 
