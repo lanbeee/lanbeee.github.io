@@ -1169,7 +1169,7 @@ function cardBreakableSlider(h){
         data-committed="${done}" data-total="${total}" data-calendar="${cappedCal}" data-manual="${cappedManual}">
         <canvas class="crown-canvas"></canvas>
       </div>
-      <span class="breakable-scrub-hint"><i class="ti ti-arrows-horizontal" aria-hidden="true"></i>${isComplete ? 'complete' : 'drag to adjust'}</span>
+      <span class="breakable-scrub-hint"><i class="ti ti-arrows-horizontal" aria-hidden="true"></i></span>
     </div>
   </div>`;
 }
@@ -4300,7 +4300,10 @@ function renderProgressive(){
 
 // WIRE: crown-dial gesture for breakable progress. Drag horizontally to adjust
 // minutes (3px ≈ 1 min, speed-adaptive). Updates the 3-color status bar and
-// pending target. A clean tap propagates to card (opens detail); vertical
+// pending target. The dial owns horizontal intent in both directions (forward
+// only — leftward clamps at the committed floor), so it never hands off to the
+// card swipe; swipe instead starts from the dedicated right-edge zone and other
+// non-crown surfaces. A clean tap propagates to card (opens detail); vertical
 // gestures pass through to page scroll.
 function setupBreakableCrown(row,_realIdx){
   const crown = row.querySelector('.breakable-crown');
@@ -4477,7 +4480,10 @@ function setupBreakableCrown(row,_realIdx){
     }
 
     if(!dragging){
-      if(Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6)return;
+      // 10px beats the card-tap tolerance (8px) so a genuine tap or tiny
+      // thumb tremor never arms a scrub and dirties the dial behind the
+      // user's back. Vertical still wins when it dominates (page scroll).
+      if(Math.abs(dxTotal) < 10 && Math.abs(dyTotal) < 10)return;
       if(Math.abs(dyTotal) > Math.abs(dxTotal)){
         // Vertical intent before reorder arms → drop long-press + crown claim.
         if(typeof agendaLongPressOwnsPointer === 'function' && agendaLongPressOwnsPointer(e.pointerId)
@@ -4493,14 +4499,12 @@ function setupBreakableCrown(row,_realIdx){
         delete row.dataset.crownGesture;
         return;
       }
-      // Leftward swipe on the dial hands off to the card swipe (reveals
-      // actions). Scrub is forward-only, so a left drag is useless here.
-      if(dxTotal <= -SWIPE_HANDOFF_DX){
-        delete row.dataset.crownGesture;
-        if(typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress();
-        pointerId = null;
-        return;
-      }
+      // The dial owns horizontal intent in BOTH directions. Scrub is
+      // forward-only, so a leftward drag simply holds still (clamped at the
+      // committed floor) instead of handing off to the card swipe — that
+      // handoff was what made the crown feel like it "slipped" into swipe
+      // while dialing. Swiping now starts from the dedicated right-edge zone
+      // (and every non-crown surface: title, status bar) via the row handler.
       // Horizontal scrub — cancel reorder long-press so dial wins.
       if(typeof claimCardGesture === 'function'){
         if(!claimCardGesture(row,'scrub',{force:true})){
@@ -4690,9 +4694,10 @@ function setupSwipe(row){
       dx = 0;
       return;
     }
-    // Touches on the breakable crown track too: the dial's own pointer
-    // handlers claim rightward drags (scrub) before the touch handlers run,
-    // while leftward drags back off and let this swipe reveal the actions.
+    // Touches that begin on the breakable crown are owned by the dial's own
+    // pointer handlers (scrub, both directions), so they never reach swipe.
+    // Touches that begin anywhere else — title, status bar, or the dedicated
+    // right-edge swipe zone — drive this card swipe as normal.
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     startedOpen = swipeOpenCard === card;
     if(swipeOpenCard && swipeOpenCard !== card){

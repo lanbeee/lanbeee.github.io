@@ -3985,24 +3985,34 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .breakable-progress-title i{font-size:12px;}
 .breakable-progress .breakable-progress-label{min-width:0;color:var(--text);font-size:11px;font-weight:760;text-align:right;font-variant-numeric:tabular-nums;}
 .breakable-progress .breakable-status-bar{width:100%;height:7px;flex:0 0 7px;border-radius:999px;background:color-mix(in srgb,var(--purple-icon) 9%,var(--bg3));}
-.breakable-scrub-row{display:grid;grid-template-columns:136px minmax(0,1fr);align-items:center;gap:10px;}
-.breakable-scrub-row .breakable-crown{
-  grid-column:1;grid-row:1;width:136px;min-width:136px;height:38px;
-  border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible;
-}
-.breakable-scrub-row .breakable-crown::before{
-  content:"";position:absolute;left:50%;top:4px;bottom:4px;width:1.5px;z-index:1;
-  transform:translateX(-50%);border-radius:999px;background:var(--purple-icon);opacity:0.5;pointer-events:none;
-}
-.breakable-progress .crown-canvas{
-  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14%,#000 86%,transparent 100%);
-  mask-image:linear-gradient(90deg,transparent 0,#000 14%,#000 86%,transparent 100%);
-  opacity:0.82;
-}
-.breakable-scrub-row .breakable-crown.active{background:transparent;}
-.breakable-scrub-hint{display:inline-flex;align-items:center;gap:5px;color:var(--text3);font-size:10px;font-weight:650;white-space:nowrap;}
-.breakable-scrub-hint i{font-size:13px;color:var(--purple-icon);}
-.breakable-progress.is-scrubbing{border-color:color-mix(in srgb,var(--purple-icon) 42%,var(--border));background:color-mix(in srgb,var(--purple-bg) 42%,var(--bg));}
+ .breakable-scrub-row{display:grid;grid-template-columns:minmax(0,1fr) 56px;align-items:center;gap:10px;}
+ .breakable-scrub-row .breakable-crown{
+   grid-column:1;grid-row:1;width:100%;min-width:0;height:38px;
+   border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible;
+ }
+ .breakable-scrub-row .breakable-crown::before{
+   content:"";position:absolute;left:50%;top:4px;bottom:4px;width:1.5px;z-index:1;
+   transform:translateX(-50%);border-radius:999px;background:var(--purple-icon);opacity:0.5;pointer-events:none;
+ }
+ /* Keep the invisible near-miss hit pad on the short vertical edges (the dial
+    is only 38px tall) but keep it off the left/right so the dedicated right-edge
+    swipe zone stays a clean swipe target. */
+ .breakable-scrub-row .breakable-crown::after{inset:-10px 0;}
+ .breakable-progress .crown-canvas{
+   -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14%,#000 86%,transparent 100%);
+   mask-image:linear-gradient(90deg,transparent 0,#000 14%,#000 86%,transparent 100%);
+   opacity:0.82;
+ }
+ .breakable-scrub-row .breakable-crown.active{background:transparent;}
+ .breakable-scrub-hint{
+   grid-column:2;grid-row:1;align-self:stretch;
+   display:inline-flex;align-items:center;justify-content:center;
+   width:56px;min-width:56px;color:var(--text3);white-space:nowrap;
+   border-left:0.5px solid color-mix(in srgb,var(--purple-icon) 14%,transparent);
+   cursor:grab;
+ }
+ .breakable-scrub-hint i{font-size:14px;color:var(--purple-icon);opacity:0.7;}
+ .breakable-progress.is-scrubbing{border-color:color-mix(in srgb,var(--purple-icon) 42%,var(--border));background:color-mix(in srgb,var(--purple-bg) 42%,var(--bg));}
 
 /* A running session should read as an active state, not a normal card with a
    thin extra line appended to it. */
@@ -4034,9 +4044,9 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   .ting-card{gap:9px;padding-right:9px;}
   .ting-card .pulse-btn{width:62px;min-width:62px;height:62px;}
   .ting-card .pulse-btn .emoji-mark,.ting-card .pulse-btn.emoji-pulse .emoji-mark{font-size:35px;}
-  .breakable-scrub-row{grid-template-columns:minmax(0,1fr);gap:0;}
+  .breakable-scrub-row{grid-template-columns:minmax(0,1fr) 44px;gap:8px;}
   .breakable-scrub-row .breakable-crown{width:100%;min-width:0;}
-  .breakable-scrub-hint{display:none;}
+  .breakable-scrub-hint{width:44px;min-width:44px;}
   .free-fit-fields{grid-template-columns:minmax(0,1fr) 12px minmax(0,1fr);}
   .free-fit-run{grid-column:1 / -1;width:100%;}
   .free-day-tick:nth-last-child(2){display:none;}
