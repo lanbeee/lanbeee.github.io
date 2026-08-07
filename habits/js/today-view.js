@@ -3561,7 +3561,7 @@ function isWeekCandidate(h,settings,dayBase,weekday){
 // Flex window for schedule-link pull. Keepup effectiveTarget is (raw+flex), so
 // isWeekCandidate only opens at the raw target — too late for "do early with
 // my linked habit". This mirrors canDoEarlyToday: raw target − flex.
-function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings){
+function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   if(!h || dayBase == null)return false;
   if(h.type === 'zero')return false;
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
@@ -3588,6 +3588,11 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings){
   const days = daysSince(h.lastLog);
   if(days !== null && days < 0)return false;
   if(days === null)return true;
+  // OR semantics (same-day link pull): when a partner is present on this day a
+  // build (keepup) habit is eligible regardless of its own cadence; reduce keeps
+  // its ceiling. opts.partnerPresent is set only by the link pull passes, where a
+  // partner is known to be eligible on dayBase.
+  if(opts && opts.partnerPresent && h.type === 'keepup')return true;
   const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
   const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
@@ -3614,23 +3619,34 @@ function sameDaySubjectsForAnchor(anchorHid,candidates){
   return out;
 }
 
-// Build (keepup) habits may run extra times for a same-day linked partner even
-// when the raw target gap has not elapsed — doing more is fine. Limit extras to
-// scarce partners (e.g. Friday-only Juma) or the partner's earliest eligible
-// day (e.g. Exercise's first due day), not every later day the partner remains
-// theoretically eligible.
-function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
-  if(!h || h.type !== 'keepup' || dayBase == null)return false;
+// Cadence OR semantics: a same-day-linked partner's presence satisfies the
+// cadence for build (keepup) habits — extra reps are fine, so the partner's
+// day is honoured regardless of the habit's own rhythm. Reduce habits keep
+// their ceiling (target is a max interval), so a partner cannot make them
+// fire more often than their target.
+function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
+  if(!h || !h.hid || dayBase == null || !Array.isArray(candidates))return false;
+  const byHid = new Map(candidates.filter(c=>c && c.h && c.h.hid).map(c=>[c.h.hid,c]));
+  // h as a same-day subject: any of its anchors eligible on dayBase.
+  const links = typeof sameDayScheduleLinks === 'function'
+    ? sameDayScheduleLinks(h)
+    : normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay);
+  for(const link of links){
+    const anchor = byHid.get(link.anchorHid);
+    if(anchor && anchor.eligible && anchor.eligible.has(dayBase))return true;
+  }
+  // h as a same-day anchor: any subject eligible on dayBase.
   for(const {candidate} of sameDaySubjectsForAnchor(h.hid,candidates)){
-    if(!candidate || !candidate.eligible || !candidate.eligible.has(dayBase))continue;
-    if(candidate.eligible.size > 0 && candidate.eligible.size <= 2)return true;
-    let earliest = null;
-    for(const d of candidate.eligible){
-      if(earliest == null || d < earliest)earliest = d;
-    }
-    if(earliest === dayBase)return true;
+    if(candidate && candidate.eligible && candidate.eligible.has(dayBase))return true;
   }
   return false;
+}
+
+// A keepup habit may place an extra rep on any day a same-day-linked partner is
+// eligible — the OR between rhythm and same-day links (more is fine for build).
+function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
+  if(!h || h.type !== 'keepup' || dayBase == null)return false;
+  return sameDayPartnerEligibleOnDay(h,dayBase,candidates);
 }
 
 // Mutates each candidate's derived eligible Set.
@@ -3688,7 +3704,7 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
         if(!anchor)continue;
         if(!anchor.eligible)anchor.eligible = new Set();
         if(anchor.eligible.has(dayBase))continue;
-        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg)){
+        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg,{partnerPresent:true})){
           anchor.eligible.add(dayBase);
         }
       }
@@ -3709,7 +3725,7 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
       const anyAnchor = sameDayLinks.some(link=>anchorPresent(link.anchorHid,dayBase));
       if(!anyAnchor)continue;
       if(candidate.eligible.has(dayBase))continue;
-      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg)){
+      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg,{partnerPresent:true})){
         candidate.eligible.add(dayBase);
       }
     }

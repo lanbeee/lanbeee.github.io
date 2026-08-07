@@ -120,6 +120,10 @@ function assert(value,message){
       if(variant === 'required-absent' || variant === 'optional-absent'){
         anchor.logs = [now - 86400000];
         anchor.target = 30;
+        // Reduce anchor: target is a ceiling, so a same-day link cannot pull it
+        // forward. The dependent is removed when a required reduce anchor is not
+        // due. (A keepup anchor would be pulled — OR semantics, covered in [E].)
+        anchor.type = 'reduce';
       }
       const noise = {
         hid:'p-noise',name:'Noise',type:'keepup',target:7,logs:[],
@@ -653,6 +657,106 @@ function assert(value,message){
       `${rightAfter.label}: Shower abuts Juma within travel slack (gap=${rightAfter.gapMin}`
         + `m, showerEnd=${rightAfter.showerEnd}, jumaStart=${rightAfter.jumaStart})`);
   }
+
+  console.log('\n[E] cadence OR — stiff-rhythm keepup honours a same-day partner');
+  const orCase = await page.evaluate(async ()=>{
+    // Monday Aug 3 2026. Shower is a keepup every 4 days, flex 0, last done Sun
+    // Aug 2 → next rhythm-due day is Thu Aug 6 (ageOnDay 4). Wed Aug 5 is only
+    // ageOnDay 3, so rhythm alone never makes Shower eligible Wednesday. Exercise
+    // (every 3 days) is due Wednesday and requires Shower same-day: the link must
+    // pull Shower onto Wednesday despite the stiff cadence (OR, not AND).
+    const monBase = dayStart(new Date(2026,7,3).getTime());
+    const wedBase = monBase + 2 * 86400000;
+    const now = monBase + 9 * 3600000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showWeekOnHome:true,
+      agendaOptimizer:true,
+      availabilityMinutes:Array(7).fill(300),
+      availabilityOverrides:{},
+      blockedTimes:[],locations:[],
+      travel:{},
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showScheduledTasksInAgenda:true,
+      showPlannedItemsInAgenda:true
+    };
+    for(let o = 0;o < 7;o += 1){
+      settings.availabilityOverrides[dateKey(monBase + o * 86400000)] = 300;
+    }
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+
+    const shower = {
+      hid:'shower',name:'Shower',type:'keepup',target:4,flexibilityDays:0,
+      logs:[monBase - 1 * 86400000],durationMinutes:5,priority:1
+    };
+    const exercise = {
+      hid:'exercise',name:'Exercise',type:'keepup',target:3,flexibilityDays:0,
+      logs:[monBase - 1 * 86400000],durationMinutes:40,priority:1,
+      scheduleLinks:[
+        {anchorHid:'shower',direction:'before',adjacency:'sometime',requireSameDay:true}
+      ]
+    };
+
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let showerElig = [];
+    let week;
+    try{
+      save([shower,exercise]);
+      const data = load();
+      const days = [];
+      for(let o = 0;o < 7;o += 1){
+        const dayBase = monBase + o * 86400000;
+        days.push({dayBase,weekday:new Date(dayBase).getDay(),isToday:o === 0,linkOmissions:[]});
+      }
+      const cands = data.map((h,i)=>{
+        const eligible = new Set();
+        days.forEach(d=>{
+          if(isWeekCandidate(h,settings,d.dayBase,d.weekday))eligible.add(d.dayBase);
+        });
+        return {h,i,eligible,priority:1,urgency:40};
+      });
+      applyPersistentLinkEligibility(cands,days,settings);
+      showerElig = [...(cands.find(c=>c.h.hid === 'shower').eligible || new Set())].map(dateKey);
+      week = typeof buildWeekAgendaAsync === 'function'
+        ? await buildWeekAgendaAsync(data,settings,7)
+        : buildWeekAgenda(data,settings,7);
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    const fillsOn = (dayBase)=>{
+      const day = week.days.find(d=>d.dayBase === dayBase);
+      return ((day && day.timeline) || []).filter(r=>r.kind === 'fill').map(r=>r.h && r.h.hid);
+    };
+    const wed = fillsOn(wedBase);
+    return {
+      showerElig,
+      wedHasShower:wed.includes('shower'),
+      wedHasExercise:wed.includes('exercise'),
+      exerciseBeforeShower:wed.indexOf('exercise') >= 0 && wed.indexOf('shower') >= 0
+        && wed.indexOf('exercise') < wed.indexOf('shower'),
+      wed
+    };
+  });
+  assert(orCase.showerElig.includes('2026-08-05'),
+    'OR: stiff-rhythm Shower is eligible Wednesday via the Exercise link (' + orCase.showerElig.join(',') + ')');
+  assert(orCase.showerElig.includes('2026-08-06'),
+    'OR: rhythm-due Thursday stays eligible (link does not replace cadence)');
+  assert(orCase.wedHasExercise && orCase.wedHasShower,
+    'GLPK co-places Exercise + Shower on Wednesday (' + orCase.wed.join(',') + ')');
+  assert(orCase.exerciseBeforeShower,'Exercise is ordered before Shower on Wednesday');
 
   assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();
