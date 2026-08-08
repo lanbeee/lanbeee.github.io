@@ -1086,6 +1086,74 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     }
   }
 
+  // ── Tier-3 travel: never send the user away from their current location and
+  // back. The route DP (optimalCommittedLocationRoute) finds the cheapest travel
+  // chain for FIXED times but cannot reorder, and every per-option objective
+  // term is symmetric in the sum — so GLPK is otherwise indifferent between
+  // [at-seed first → one commute out] and [away first → away-and-back], and the
+  // tie-break can paint two extra legs (the exact bug: "I was at FarA, it sent
+  // me Home then back to FarA then Home again").
+  //
+  // Model the sequencing cost directly: for each AWAY option (loc ≠ seed)
+  // scheduled BEFORE an AT-SEED option (loc = seed), pay a penalty proportional
+  // to the saved commute. Linearize the joint "both selected" condition with one
+  // auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
+  // penalty is soft and capped below the minimum placement weight (~100), so it
+  // only reorders — it can never drop a placeable task, and hard windows/pins
+  // (structural constraints) still win. Per the documented lex order this is
+  // MINIMUM TRAVEL outranking ASAP/PRIORITY, which is exactly "travel time IS
+  // time — extra trips are unacceptable."
+  const seedLoc = state.seedLocId || null;
+  // Only fire on a GENUINELY LIVE location (geolocation / manual pin), not a
+  // static last-known default. The "do the at-location task first, never
+  // away-and-back" override is only meaningful when we actually know where the
+  // user is right now; on static/future-day seeds the committed-route DP already
+  // minimizes travel, and firing here would perturb its carefully-routed layouts.
+  if(state.liveLocId && seedLoc && seedLoc === state.liveLocId
+    && typeof travelEdgeBetweenIds === 'function'){
+    const TRAVEL_PAIR_COEF = 0.01;   // 1s of saved commute ≈ 0.01 objective weight
+    const TRAVEL_PAIR_CAP = 80;      // < min baseWeight (~100): reorder only
+    const TRAVEL_PAIR_FLOOR = 12;    // still decisive over priority/ASAP deltas
+    let tpIdx = 0;
+    for(let ai = 0; ai < opts.length; ai += 1){
+      const A = opts[ai];
+      const aLoc = A && A.fit && A.fit.locId;
+      if(!aLoc || aLoc === seedLoc)continue;            // A must be AWAY from seed
+      const savedSec = Math.max(0,Number(travelEdgeBetweenIds(
+        seedLoc,aLoc,state.registry,state.mode,{allowNetwork:false}
+      ).seconds) || 0);
+      if(savedSec <= 0)continue;                         // co-located: no away-and-back risk
+      const pen = Math.max(TRAVEL_PAIR_FLOOR,
+        Math.min(TRAVEL_PAIR_CAP,savedSec * TRAVEL_PAIR_COEF));
+      for(let bi = 0; bi < opts.length;bi += 1){
+        if(bi === ai)continue;
+        const B = opts[bi];
+        const bLoc = B && B.fit && B.fit.locId;
+        if(!bLoc || bLoc !== seedLoc)continue;           // B must be AT-SEED
+        if(A.c.i === B.c.i)continue;                     // different candidates
+        if(!(A.fit.placeStart < B.fit.placeStart))continue; // A scheduled before B
+        const z = `tp_${tpIdx++}`;
+        binaries.push(z);
+        vars.push({name:z,coef:-pen});
+        subjectTo.push({
+          name:`${z}_ubA`,
+          vars:[{name:z,coef:1},{name:A.varName,coef:-1}],
+          bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+        });
+        subjectTo.push({
+          name:`${z}_ubB`,
+          vars:[{name:z,coef:1},{name:B.varName,coef:-1}],
+          bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+        });
+        subjectTo.push({
+          name:`${z}_lb`,
+          vars:[{name:z,coef:1},{name:A.varName,coef:-1},{name:B.varName,coef:-1}],
+          bnds:{type:GLPK.GLP_LO,ub:0,lb:-1}
+        });
+      }
+    }
+  }
+
   const problem = {
     name:'AgendaDayPack',
     objective:{

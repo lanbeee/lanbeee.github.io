@@ -317,16 +317,27 @@ function locationTiedBlockedIntervals(state){
  * started. Falls back to the day's seed (presence / morning block).
  */
 function locationPresenceAt(state,atTs,chron){
-  let loc = state && state.seedLocId || null;
+  const seedLoc = state && state.seedLocId || null;
+  const liveLoc = state && state.liveLocId || null;
   const marks = [];
   const at = Number(atTs) || 0;
+  const startClock = Number(state && state.startClock) || 0;
+  // A genuinely LIVE location (geolocation fix or a manual "I am at" pin)
+  // reflects where the user is right now. It supersedes events that already
+  // ended before the start clock — last night's sleep at Home must not strand
+  // you there at 10am when your GPS says FarA. A stale last-known default gets
+  // no such treatment, so scheduled appointments still drive presence in the
+  // static/preview path (and keeps leave-by tests honest).
+  const seedOverrides = liveLoc && Number.isFinite(startClock) && startClock <= at;
   for(const row of state && state.rows || []){
     if(row.kind !== 'scheduled' || !row.locationId)continue;
     if(!(row.start < at))continue;
+    if(seedOverrides && Number.isFinite(row.end) && row.end <= startClock)continue;
     marks.push({start:row.start,locationId:row.locationId});
   }
   for(const block of locationTiedBlockedIntervals(state)){
     if(!(block.start < at))continue;
+    if(seedOverrides && Number.isFinite(block.end) && block.end <= startClock)continue;
     marks.push({start:block.start,locationId:block.locationId});
   }
   for(const entry of chron || []){
@@ -334,7 +345,8 @@ function locationPresenceAt(state,atTs,chron){
     if(!fit || !fit.locId || !(fit.placeStart < at))continue;
     marks.push({start:fit.placeStart,locationId:fit.locId});
   }
-  if(!marks.length)return loc;
+  if(seedOverrides)marks.push({start:startClock,locationId:liveLoc});
+  if(!marks.length)return seedLoc;
   marks.sort((a,b)=>a.start - b.start);
   return marks[marks.length - 1].locationId;
 }
@@ -602,6 +614,10 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
   let anchor = (typeof currentLocationId === 'function' && currentLocationId())
     || settings.lastKnownLocationId
     || null;
+  // Genuine live presence only — never a stale lastKnown default. When live,
+  // travel (at-location-first) overrides priority within a scarcity tier.
+  const liveAnchor = typeof liveLocationId === 'function' ? liveLocationId() : null;
+  const travelOverridesPriority = !!(liveAnchor && anchor === liveAnchor);
   const bands = [];
   for(const item of items){
     const scarce = isScarceScore(item.scarcity)
@@ -609,8 +625,9 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
       || (typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(item.h));
     const scarcityKey = scarce ? 0 : 1;
     const p = item.priority ?? effectivePriority(item.h);
-    let band = bands.find(b=>b.scarcityKey === scarcityKey && b.priority === p);
-    if(!band){ band = {scarcityKey,priority:p,items:[]}; bands.push(band); }
+    const bandP = travelOverridesPriority ? 0 : p;
+    let band = bands.find(b=>b.scarcityKey === scarcityKey && b.priority === bandP);
+    if(!band){ band = {scarcityKey,priority:bandP,items:[]}; bands.push(band); }
     band.items.push(item);
   }
   bands.sort((a,b)=>a.scarcityKey - b.scarcityKey || a.priority - b.priority);
@@ -623,7 +640,9 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
       for(let i = 0;i < left.length;i += 1){
         const locId = pickHabitLocationId(left[i].h,anchor,registry,mode);
         const edge = travelEdgeBetweenIds(anchor,locId,registry,mode);
-        const score = edge.seconds;
+        const pri = left[i].priority ?? effectivePriority(left[i].h);
+        // Travel primary; priority is a tiebreak only (especially when live).
+        const score = edge.seconds + pri * 1e-6;
         if(score < bestScore){ bestScore = score; bestIdx = i; }
       }
       const picked = left.splice(bestIdx,1)[0];
@@ -1640,6 +1659,11 @@ function createDayPlacementState(day,settings,opts = {}){
     : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
       || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
       || null);
+  // Genuine live fix only (geolocation / manual pin), not the last-known
+  // default. Presence uses this to decide whether the seed supersedes ended
+  // blocks. Null on future days and whenever the user has no active fix.
+  const liveLocId = isTodayDay && typeof liveLocationId === 'function'
+    ? liveLocationId() : null;
   return {
     day,
     dayBase,
@@ -1656,6 +1680,7 @@ function createDayPlacementState(day,settings,opts = {}){
     usedMinutes:0,
     seedLocId:prevLocId,
     prevLocId,
+    liveLocId,
     rows,
     fills:[],
     placed:new Set()
@@ -3900,10 +3925,31 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
   const mode = dayStates[0] ? dayStates[0].mode : normalizeTravelMode(settings.defaultTravelMode);
   const weights = resolveAgendaScoreWeights(settings);
+  // Live presence only: within equal scarcity, place at-live-location work
+  // before away work so the week path does not away-and-back (priority alone
+  // would otherwise claim the early slot). Gated so static/preview seeds are
+  // unchanged.
+  const liveLocId = typeof liveLocationId === 'function' ? liveLocationId() : null;
   for(const c of candidates){
     if(c.scarcity == null)c.scarcity = scarcityScore(c,dayStates);
+    c.atLiveLocation = !!(liveLocId && c.h && Array.isArray(c.h.locationIds)
+      && c.h.locationIds.includes(liveLocId));
   }
-  candidates.sort(compareScarcityThenPriority);
+  const compareWeekPlacement = (a,b)=>{
+    const pinA = a.pinned === true;
+    const pinB = b.pinned === true;
+    if(pinA !== pinB)return pinA ? -1 : 1;
+    const sa = a.scarcity != null ? a.scarcity : SCARCITY_UNBOUNDED;
+    const sb = b.scarcity != null ? b.scarcity : SCARCITY_UNBOUNDED;
+    if(sa !== sb)return sa - sb;
+    if(liveLocId){
+      const la = a.atLiveLocation === true;
+      const lb = b.atLiveLocation === true;
+      if(la !== lb)return la ? -1 : 1;
+    }
+    return compareScarcityThenPriority(a,b);
+  };
+  candidates.sort(compareWeekPlacement);
   // Soft boost: place "before" sides of same-day order links earlier in the
   // assignment loop so their successors can sit after them.
   const doingRaw = typeof getDoingNow === 'function' ? getDoingNow() : null;
@@ -3925,7 +3971,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       const wa = beforeBoost.get(ah) || 0;
       const wb = beforeBoost.get(bh) || 0;
       if(wa !== wb)return wb - wa;
-      return compareScarcityThenPriority(a,b);
+      return compareWeekPlacement(a,b);
     });
   }
   let totalAssigned = 0;
