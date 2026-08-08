@@ -3661,10 +3661,9 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   const days = daysSince(h.lastLog);
   if(days !== null && days < 0)return false;
   if(days === null)return true;
-  // OR semantics (same-day link pull): when a partner is present on this day a
-  // build (keepup) habit is eligible regardless of its own cadence; reduce keeps
-  // its ceiling. opts.partnerPresent is set only by the link pull passes, where a
-  // partner is known to be eligible on dayBase.
+  // When a scarce must-do partner is present, a build (keepup) habit may join
+  // regardless of its own cadence. Open reduce partners (eligible every day
+  // until done) must not unlock this — they would flood daily extras.
   if(opts && opts.partnerPresent && h.type === 'keepup')return true;
   const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
   const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
@@ -3673,6 +3672,57 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   if(ageOnDay >= rawTarget)return true;
   if(flex > 0 && ageOnDay >= rawTarget - flex)return true;
   return false;
+}
+
+/**
+ * PURE: whether a must-do partner may unlock unlimited keepup extras on its days.
+ * Keepup and day-pinned habits are scarce; open reduce (eligible every day until
+ * done) is not — joining those days still uses the subject's own flex/rhythm.
+ */
+function scheduleLinkPartnerAllowsKeepupExtra(anchorH){
+  if(!anchorH)return false;
+  if(anchorH.type === 'keepup')return true;
+  if(typeof scheduledDays === 'function'){
+    const schedule = scheduledDays(anchorH);
+    const days = schedule && Array.isArray(schedule.weekdays) ? schedule.weekdays : [];
+    if(days.length >= 1 && days.length <= 6)return true;
+  }else if(Array.isArray(anchorH.allowedWeekdays)){
+    const n = anchorH.allowedWeekdays.length;
+    if(n >= 1 && n <= 6)return true;
+  }
+  return false;
+}
+
+/**
+ * PURE: scarce partner *occurrence* on dayBase — day-pinned weekday, or the
+ * keepup's first due day in the horizon (not every overdue day after).
+ */
+function scheduleLinkPartnerScarceOnDay(anchorH,dayBase,weekday){
+  if(!scheduleLinkPartnerAllowsKeepupExtra(anchorH) || dayBase == null)return false;
+  if(typeof scheduledDays === 'function'){
+    const schedule = scheduledDays(anchorH);
+    const days = schedule && Array.isArray(schedule.weekdays) ? schedule.weekdays : [];
+    if(days.length >= 1 && days.length <= 6){
+      return weekday == null || days.includes(weekday);
+    }
+  }else if(Array.isArray(anchorH.allowedWeekdays) && anchorH.allowedWeekdays.length){
+    const pinned = anchorH.allowedWeekdays;
+    if(pinned.length >= 1 && pinned.length <= 6){
+      return weekday == null || pinned.includes(weekday);
+    }
+  }
+  if(anchorH.type !== 'keepup')return false;
+  const days = daysSince(anchorH.lastLog);
+  if(days !== null && days < 0)return false;
+  if(days === null){
+    // Never logged: only the first horizon day, not the whole week.
+    return Math.round((dayBase - dayStart(Date.now())) / 86400000) === 0;
+  }
+  const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(anchorH.target) || 7);
+  const today = dayStart(Date.now());
+  const offsetDays = Math.round((dayBase - today) / 86400000);
+  const firstDueOffset = rawTarget - days;
+  return offsetDays === firstDueOffset;
 }
 
 /** Subjects that list `anchorHid` in a same-day schedule link. */
@@ -3692,41 +3742,40 @@ function sameDaySubjectsForAnchor(anchorHid,candidates){
   return out;
 }
 
-// Cadence OR semantics: a same-day-linked partner's presence satisfies the
-// cadence for build (keepup) habits — extra reps are fine, so the partner's
-// day is honoured regardless of the habit's own rhythm. Reduce habits keep
-// their ceiling (target is a max interval), so a partner cannot make them
-// fire more often than their target.
+// Cadence OR for keepup extras: a scarce must-do partner *occurrence* on this
+// day unlocks an extra build rep. Open reduce and overdue-every-day keepups do
+// not keep unlocking extras after their first due day.
 function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
   if(!h || !h.hid || dayBase == null || !Array.isArray(candidates))return false;
   const byHid = new Map(candidates.filter(c=>c && c.h && c.h.hid).map(c=>[c.h.hid,c]));
-  // h as a same-day subject: any of its anchors eligible on dayBase.
+  const weekday = new Date(dayBase).getDay();
+  // h as a must-do subject: any scarce-on-day anchor eligible on dayBase.
   const links = typeof sameDayScheduleLinks === 'function'
     ? sameDayScheduleLinks(h)
     : normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay);
   for(const link of links){
     const anchor = byHid.get(link.anchorHid);
-    if(anchor && anchor.eligible && anchor.eligible.has(dayBase))return true;
+    if(!anchor || !anchor.eligible || !anchor.eligible.has(dayBase))continue;
+    if(scheduleLinkPartnerScarceOnDay(anchor.h,dayBase,weekday))return true;
   }
-  // h as a same-day anchor: any subject eligible on dayBase.
-  for(const {candidate} of sameDaySubjectsForAnchor(h.hid,candidates)){
-    if(candidate && candidate.eligible && candidate.eligible.has(dayBase))return true;
-  }
+  // Do not grant extras to anchors just because a subject is present — that
+  // reverse-fed Exercise onto every Shower day.
   return false;
 }
 
-// A keepup habit may place an extra rep on any day a same-day-linked partner is
-// eligible — the OR between rhythm and same-day links (more is fine for build).
+// A keepup habit may place an extra rep on a day a scarce must-do partner is
+// eligible — the OR between rhythm and must-do links (more is fine for build).
 function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
   if(!h || h.type !== 'keepup' || dayBase == null)return false;
   return sameDayPartnerEligibleOnDay(h,dayBase,candidates);
 }
 
 // Mutates each candidate's derived eligible Set.
-// Must-do links are OR'd and bidirectional for flex pull:
-//  1) Pull flexible anchors onto days where a must-do subject is eligible
-//     (Juma Fri → Shower Fri when Shower's flex allows).
-//  2) Pull flexible subjects onto days where any must-do anchor is present.
+// Must-do links are OR'd; pull is forward-primary:
+//  1) Reverse pull: subject days may attract anchors only within the anchor's
+//     own flex/rhythm (never unlimited keepup bypass — that made Exercise daily).
+//  2) Forward pull: scarce partner *occurrences* attract subjects with keepup
+//     extras; open reduce / post-due keepup days only pull within subject flex.
 // Subjects may still appear alone on other days (must-do does not gate them off).
 function applyPersistentLinkEligibility(candidates,dayStates,settings){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates))return candidates;
@@ -3763,7 +3812,7 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
     return days;
   };
 
-  // Pass 1 — reverse pull: subject days attract flexible anchors.
+  // Pass 1 — reverse pull: subject days attract anchors within anchor cadence.
   for(const subject of candidates){
     if(!subject || !subject.h)continue;
     const links = typeof sameDayScheduleLinks === 'function'
@@ -3777,14 +3826,15 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
         if(!anchor)continue;
         if(!anchor.eligible)anchor.eligible = new Set();
         if(anchor.eligible.has(dayBase))continue;
-        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg,{partnerPresent:true})){
+        // No partnerPresent bypass: anchors keep their own rhythm/flex.
+        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg)){
           anchor.eligible.add(dayBase);
         }
       }
     }
   }
 
-  // Pass 2 — forward pull: anchor days attract flexible subjects.
+  // Pass 2 — forward pull: scarce anchor occurrences attract flexible subjects.
   for(const candidate of candidates){
     const subjectHid = candidate && candidate.h && candidate.h.hid;
     if(!subjectHid)continue;
@@ -3795,10 +3845,15 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
     if(!sameDayLinks.length)continue;
 
     for(const {dayBase,weekday} of dayHolders){
-      const anyAnchor = sameDayLinks.some(link=>anchorPresent(link.anchorHid,dayBase));
-      if(!anyAnchor)continue;
+      const present = sameDayLinks.filter(link=>anchorPresent(link.anchorHid,dayBase));
+      if(!present.length)continue;
       if(candidate.eligible.has(dayBase))continue;
-      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg,{partnerPresent:true})){
+      const scarcePartner = present.some(link=>{
+        const anchor = byHid.get(link.anchorHid);
+        return scheduleLinkPartnerScarceOnDay(anchor && anchor.h,dayBase,weekday);
+      });
+      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg,
+        scarcePartner ? {partnerPresent:true} : null)){
         candidate.eligible.add(dayBase);
       }
     }

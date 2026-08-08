@@ -445,29 +445,27 @@ function assert(value,message){
     if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
 
     // Shower: keepup every 3 days, flex 3. Last done Fri before this Monday → due Mon.
-    // Extra showers for Exercise / Juma are fine (build habit).
+    // Extra showers for Exercise / Juma are fine (build habit). Links live on
+    // Shower (subject): must-do with Exercise and Juma.
     const shower = {
       hid:'shower',name:'Shower',type:'keepup',target:3,flexibilityDays:3,
-      logs:[monBase - 3 * 86400000],durationMinutes:5,priority:1
-    };
-    // Exercise every 3 days, due Wednesday. Link on Exercise (like Juma): before
-    // Shower same-day → Shower always after Exercise.
-    const exercise = {
-      hid:'exercise',name:'Exercise',type:'keepup',target:3,flexibilityDays:0,
-      logs:[monBase - 1 * 86400000],durationMinutes:40,priority:1,
+      logs:[monBase - 3 * 86400000],durationMinutes:5,priority:1,
       scheduleLinks:[
-        {anchorHid:'shower',direction:'before',adjacency:'sometime',requireSameDay:true}
+        {anchorHid:'exercise',direction:'after',adjacency:'sometime',requireSameDay:true},
+        {anchorHid:'juma',direction:'before',adjacency:'sometime',requireSameDay:true}
       ]
     };
-    // Juma Friday-only after Shower same-day.
+    // Exercise every 3 days, due Wednesday.
+    const exercise = {
+      hid:'exercise',name:'Exercise',type:'keepup',target:3,flexibilityDays:0,
+      logs:[monBase - 1 * 86400000],durationMinutes:40,priority:1
+    };
+    // Juma Friday-only.
     const juma = {
       hid:'juma',name:'Juma Prayer',type:'keepup',target:7,flexibilityDays:0,
       logs:[monBase - 10 * 86400000],durationMinutes:25,priority:0,
       allowedWeekdays:[5],
-      allowedTimeStart:13 * 60 + 30,allowedTimeEnd:15 * 60 + 30,
-      scheduleLinks:[
-        {anchorHid:'shower',direction:'after',adjacency:'sometime',requireSameDay:true}
-      ]
+      allowedTimeStart:13 * 60 + 30,allowedTimeEnd:15 * 60 + 30
     };
 
     const RealDate = Date;
@@ -540,8 +538,8 @@ function assert(value,message){
     };
   });
   assert(jumaCase.showerElig.includes('2026-08-03'),'Mon due day stays eligible');
-  assert(jumaCase.showerElig.includes('2026-08-05'),'Exercise Wed reverse-pulls Shower');
-  assert(jumaCase.showerElig.includes('2026-08-07'),'Juma Fri reverse-pulls Shower');
+  assert(jumaCase.showerElig.includes('2026-08-05'),'Exercise Wed forward-pulls Shower');
+  assert(jumaCase.showerElig.includes('2026-08-07'),'Juma Fri forward-pulls Shower');
   assert(jumaCase.mon.includes('shower'),
     'Shower still places on its 3-day rhythm Monday (' + jumaCase.showerDays.join(',') + ')');
   assert(jumaCase.wed.includes('exercise') && jumaCase.wed.includes('shower'),
@@ -553,7 +551,7 @@ function assert(value,message){
   assert(jumaCase.showerDays.length >= 3,
     'keepup Shower may land extra times for partners (' + jumaCase.showerDays.join(',') + ')');
   assert(/before Juma|after Exercise/.test(jumaCase.reverseEarly || ''),
-    'reverse early reason names a partner (' + jumaCase.reverseEarly + ')');
+    'early reason names a partner (' + jumaCase.reverseEarly + ')');
 
   console.log('\n[D] right-after Shower → Juma (direct adjacency, morning competition)');
   async function runRightAfter(label, useExact){
@@ -695,8 +693,8 @@ function assert(value,message){
     // Monday Aug 3 2026. Shower is a keepup every 4 days, flex 0, last done Sun
     // Aug 2 → next rhythm-due day is Thu Aug 6 (ageOnDay 4). Wed Aug 5 is only
     // ageOnDay 3, so rhythm alone never makes Shower eligible Wednesday. Exercise
-    // (every 3 days) is due Wednesday and requires Shower same-day: the link must
-    // pull Shower onto Wednesday despite the stiff cadence (OR, not AND).
+    // (every 3 days) is due Wednesday; Shower must-do with Exercise must pull
+    // Shower onto Wednesday despite the stiff cadence (OR, not AND).
     const monBase = dayStart(new Date(2026,7,3).getTime());
     const wedBase = monBase + 2 * 86400000;
     const now = monBase + 9 * 3600000;
@@ -722,14 +720,14 @@ function assert(value,message){
 
     const shower = {
       hid:'shower',name:'Shower',type:'keepup',target:4,flexibilityDays:0,
-      logs:[monBase - 1 * 86400000],durationMinutes:5,priority:1
+      logs:[monBase - 1 * 86400000],durationMinutes:5,priority:1,
+      scheduleLinks:[
+        {anchorHid:'exercise',direction:'after',adjacency:'sometime',requireSameDay:true}
+      ]
     };
     const exercise = {
       hid:'exercise',name:'Exercise',type:'keepup',target:3,flexibilityDays:0,
-      logs:[monBase - 1 * 86400000],durationMinutes:40,priority:1,
-      scheduleLinks:[
-        {anchorHid:'shower',direction:'before',adjacency:'sometime',requireSameDay:true}
-      ]
+      logs:[monBase - 1 * 86400000],durationMinutes:40,priority:1
     };
 
     const RealDate = Date;
@@ -879,6 +877,144 @@ function assert(value,message){
     'with both parents present, shower still places (' + (multiParent.both && multiParent.both.order.join(',')) + ')');
   assert(multiParent.both && multiParent.both.allThree && multiParent.both.adjacentToOne,
     'OR adjacency: shower sits right after at least one parent when both land');
+
+  console.log('\n[G] must-do cadence — Exercise/Shower must not flood daily from overdue Haircut');
+  const cadenceCase = await page.evaluate(()=>{
+    // Monday Aug 3, 2026 — week Mon→Sun.
+    const monBase = dayStart(new Date(2026,7,3).getTime());
+    const wedBase = monBase + 2 * 86400000;
+    const friBase = monBase + 4 * 86400000;
+    const now = monBase + 9 * 3600000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showWeekOnHome:true,
+      agendaOptimizer:false,
+      availabilityMinutes:Array(7).fill(300),
+      availabilityOverrides:{},
+      blockedTimes:[],
+      locations:[],
+      travel:{},
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showScheduledTasksInAgenda:true,
+      showPlannedItemsInAgenda:true
+    };
+    for(let o = 0;o < 7;o += 1){
+      settings.availabilityOverrides[dateKey(monBase + o * 86400000)] = 300;
+    }
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+
+    // Exercise every 3 days, last done Sunday → due Wednesday (not daily).
+    const exercise = {
+      hid:'exercise',name:'Exercise',type:'keepup',target:3,flexibilityDays:0,
+      logs:[monBase - 1 * 86400000],durationMinutes:40,priority:0
+    };
+    // Haircut reduce overdue — eligible every day until done (open reduce).
+    const haircut = {
+      hid:'haircut',name:'Haircut',type:'reduce',target:40,flexibilityDays:0,
+      logs:[monBase - 50 * 86400000],durationMinutes:60,priority:2
+    };
+    // Juma Friday-only scarce keepup.
+    const juma = {
+      hid:'juma',name:'Juma Prayer',type:'keepup',target:7,flexibilityDays:0,
+      logs:[monBase - 10 * 86400000],durationMinutes:25,priority:0,
+      allowedWeekdays:[5],
+      allowedTimeStart:13 * 60 + 30,allowedTimeEnd:15 * 60 + 30
+    };
+    // Shower every 4 days, last done Fri before Monday → due Mon (age 3; flex 0 → due when age≥4 Tuesday).
+    // Links on Shower (user topology): must-do with Exercise, Juma, Haircut.
+    const shower = {
+      hid:'shower',name:'Shower',type:'keepup',target:4,flexibilityDays:0,
+      logs:[monBase - 3 * 86400000],durationMinutes:5,priority:1,
+      scheduleLinks:[
+        {anchorHid:'exercise',direction:'after',adjacency:'direct',requireSameDay:true},
+        {anchorHid:'juma',direction:'before',adjacency:'sometime',requireSameDay:true},
+        {anchorHid:'haircut',direction:'after',adjacency:'direct',requireSameDay:true}
+      ]
+    };
+
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let week;
+    let exerciseElig = [];
+    let showerElig = [];
+    try{
+      save([shower,exercise,haircut,juma]);
+      const data = load();
+      const days = [];
+      for(let o = 0;o < 7;o += 1){
+        const dayBase = monBase + o * 86400000;
+        days.push({dayBase,weekday:new Date(dayBase).getDay(),isToday:o === 0,linkOmissions:[]});
+      }
+      const cands = data.map((h,i)=>{
+        const eligible = new Set();
+        days.forEach(d=>{
+          if(isWeekCandidate(h,settings,d.dayBase,d.weekday))eligible.add(d.dayBase);
+        });
+        return {h,i,eligible,priority:1,urgency:40};
+      });
+      applyPersistentLinkEligibility(cands,days,settings);
+      exerciseElig = [...(cands.find(c=>c.h.hid === 'exercise').eligible || new Set())].map(dateKey);
+      showerElig = [...(cands.find(c=>c.h.hid === 'shower').eligible || new Set())].map(dateKey);
+      week = buildWeekAgenda(data,settings,7);
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    const fillsOn = (dayBase)=>{
+      const day = week.days.find(d=>d.dayBase === dayBase);
+      return ((day && day.timeline) || []).filter(r=>r.kind === 'fill').map(r=>r.h && r.h.hid);
+    };
+    const showerDays = week.days
+      .filter(d=>(d.timeline || []).some(r=>r.kind === 'fill' && r.h && r.h.hid === 'shower'))
+      .map(d=>dateKey(d.dayBase));
+    const exerciseDays = week.days
+      .filter(d=>(d.timeline || []).some(r=>r.kind === 'fill' && r.h && r.h.hid === 'exercise'))
+      .map(d=>dateKey(d.dayBase));
+    const wed = fillsOn(wedBase);
+    const fri = fillsOn(friBase);
+    const haircutDay = week.days.find(d=>
+      (d.timeline || []).some(r=>r.kind === 'fill' && r.h && r.h.hid === 'haircut')
+    );
+    const haircutWithShower = haircutDay
+      ? (haircutDay.timeline || []).some(r=>r.kind === 'fill' && r.h && r.h.hid === 'shower')
+      : true; // if haircut unplaced, no daily shower requirement from it
+    return {
+      exerciseElig,
+      showerElig,
+      exerciseDays,
+      showerDays,
+      wed,
+      fri,
+      haircutWithShower,
+      haircutPlaced:Boolean(haircutDay)
+    };
+  });
+  assert(cadenceCase.exerciseElig.filter(d=>d >= '2026-08-05').length >= 1,
+    'Exercise is eligible on/after its due Wednesday');
+  assert(!cadenceCase.exerciseElig.includes('2026-08-03'),
+    'Exercise is not reverse-pulled onto Monday solely because Shower/Haircut are open ('
+      + cadenceCase.exerciseElig.join(',') + ')');
+  assert(cadenceCase.exerciseDays.length <= 2,
+    'Exercise does not place daily (' + cadenceCase.exerciseDays.join(',') + ')');
+  assert(cadenceCase.showerDays.length <= 4,
+    'Shower does not place daily from overdue Haircut alone (' + cadenceCase.showerDays.join(',') + ')');
+  assert(cadenceCase.wed.includes('exercise') && cadenceCase.wed.includes('shower'),
+    'Exercise day still pulls Shower (' + cadenceCase.wed.join(',') + ')');
+  assert(cadenceCase.fri.includes('juma') && cadenceCase.fri.includes('shower'),
+    'Juma day still pulls Shower (' + cadenceCase.fri.join(',') + ')');
+  assert(cadenceCase.haircutWithShower,
+    'Haircut day still has Shower when Haircut lands (or Haircut unplaced)');
 
   assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();
