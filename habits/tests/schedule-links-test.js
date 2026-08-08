@@ -415,6 +415,87 @@ function assert(value,message){
   assert(earlyCase.cat === 2,'link-pull subject is upcoming for early path');
   assert(/after Tennis/.test(earlyCase.reason || ''),'early reason names after Tennis (' + earlyCase.reason + ')');
 
+  console.log('\n[B2] linked partner that cannot fit today must not leave subject alone');
+  const failedPartner = await page.evaluate(()=>{
+    const today = dayStart(Date.now());
+    // Late evening: a long haircut no longer fits; a short shower still would.
+    const now = today + 23 * 3600000 + 15 * 60000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,
+      availabilityMinutes:Array(7).fill(600),
+      availabilityOverrides:{[dateKey(today)]:600},
+      blockedTimes:[],locations:[],travel:{},
+      agendaOptimizer:false
+    };
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+    const haircut = {
+      hid:'haircut',name:'Haircut',type:'reduce',target:14,
+      logs:[today - 20 * 86400000],
+      durationMinutes:60,priority:1,flexibilityDays:0
+    };
+    const shower = {
+      hid:'shower',name:'Shower',type:'keepup',target:7,
+      logs:[today - 2 * 86400000],
+      durationMinutes:15,priority:1,flexibilityDays:5,
+      scheduleLinks:[
+        {anchorHid:'haircut',direction:'after',adjacency:'direct',requireSameDay:true}
+      ]
+    };
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let out = {};
+    try{
+      save([haircut,shower]);
+      const data = load();
+      const cfg = loadSortSettings();
+      const showerIdx = data.findIndex(h=>h.hid === 'shower');
+      const haircutDoable = windowStillDoableToday(data.find(h=>h.hid === 'haircut'),now);
+      const showerDoable = windowStillDoableToday(data.find(h=>h.hid === 'shower'),now);
+      const early = earlyReason(data,showerIdx,cfg);
+      const agenda = buildTodayAgenda(data,cfg);
+      const timeline = buildTodayTimeline(agenda,now);
+      const fills = timeline.filter(r=>r.kind === 'fill').map(r=>r.h && r.h.hid);
+      const week = buildWeekAgenda(data,cfg,7);
+      const todayDay = week.days.find(d=>d.isToday) || week.days[0];
+      const weekFills = ((todayDay && todayDay.timeline) || [])
+        .filter(r=>r.kind === 'fill').map(r=>r.h && r.h.hid);
+      out = {
+        haircutDoable,
+        showerDoable,
+        early:early || '',
+        todayFills:fills,
+        weekFills,
+        omissions:(todayDay && todayDay.linkOmissions) || (agenda.linkOmissions) || []
+      };
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    return out;
+  });
+  console.log(failedPartner);
+  assert(!failedPartner.haircutDoable,'haircut no longer fits remaining open time');
+  assert(failedPartner.showerDoable,'short shower would still fit alone');
+  assert(!/haircut/i.test(failedPartner.early || ''),
+    'early reason does not pull shower for an undoable haircut (' + failedPartner.early + ')');
+  assert(!failedPartner.todayFills.includes('shower'),
+    'today agenda does not place shower alone after failed haircut (' + failedPartner.todayFills.join(',') + ')');
+  assert(!failedPartner.weekFills.includes('shower') || failedPartner.weekFills.includes('haircut'),
+    'week today does not leave shower without haircut (' + failedPartner.weekFills.join(',') + ')');
+
   console.log('\n[C] Shower keepup + Exercise + Juma — extras OK for build habits');
   const jumaCase = await page.evaluate(()=>{
     // Freeze to Monday Aug 3, 2026 9am so the week includes Mon→Fri.

@@ -1521,9 +1521,15 @@ function earlyReason(data,i,settings){
       if(!anchor)continue;
       const committed = typeof scheduleAnchorCommitForDay === 'function'
         && scheduleAnchorCommitForDay(link.anchorHid,todayBase,data);
-      const anchorDue = includeInTodayAgenda(anchor,settings)
+      // Partner must still be doable today — a linked Haircut that no longer
+      // fits remaining open time must not pull Shower onto the agenda alone.
+      const anchorDoable = typeof windowStillDoableToday !== 'function'
+        || windowStillDoableToday(anchor);
+      const anchorDue = anchorDoable && (
+        includeInTodayAgenda(anchor,settings)
         || (typeof isWeekCandidate === 'function'
-          && isWeekCandidate(anchor,settings,todayBase,new Date(todayBase).getDay()));
+          && isWeekCandidate(anchor,settings,todayBase,new Date(todayBase).getDay()))
+      );
       if(!committed && !anchorDue)continue;
       const name = (anchor.name || 'linked habit').slice(0,40);
       if(link.direction === 'before')return `before ${name}`;
@@ -1541,9 +1547,13 @@ function earlyReason(data,i,settings){
         : []);
     const hit = links.find(l=>l && l.anchorHid === h.hid);
     if(!hit)continue;
-    const otherDue = includeInTodayAgenda(other,settings)
+    const otherDoable = typeof windowStillDoableToday !== 'function'
+      || windowStillDoableToday(other);
+    const otherDue = otherDoable && (
+      includeInTodayAgenda(other,settings)
       || (typeof isWeekCandidate === 'function'
-        && isWeekCandidate(other,settings,todayBase,new Date(todayBase).getDay()));
+        && isWeekCandidate(other,settings,todayBase,new Date(todayBase).getDay()))
+    );
     if(!otherDue && !(typeof scheduleAnchorCommitForDay === 'function'
       && scheduleAnchorCommitForDay(other.hid,todayBase,data)))continue;
     const name = (other.name || 'linked habit').slice(0,40);

@@ -336,22 +336,25 @@ function seedScript(){
     const iPlanned = data.findIndex(h => h.name === 'planned');
     // Actual log now.
     logTing(iActual);
-    // Plan log for 4 days from now.
-    const futureTs = dayStart(Date.now()) + 4*86400000 + 10*3600000;
-    logTingAt(iPlanned, futureTs);
+    // Day plan for 4 days from now (future days use plans, not logs).
+    const futureKey = dateKey(dayStart(Date.now()) + 4*86400000);
+    const plannedOk = planTingOnDay(iPlanned, futureKey, '10:00', { openAction:false });
     const after = load();
+    const plannedHabit = after.find(h => h.name === 'planned');
+    const futurePlans = plannedLogs(plannedHabit.logs).filter(ts => dateKey(ts) === futureKey);
     return {
       actualPlanBy:  after.find(h => h.name === 'actual').planByDate,
       actualLastLog: after.find(h => h.name === 'actual').lastLog,
-      plannedPlanBy: after.find(h => h.name === 'planned').planByDate,
-      plannedHasFuturePlan: plannedLogs(after.find(h => h.name === 'planned').logs).includes(futureTs),
+      plannedPlanBy: plannedHabit.planByDate,
+      plannedOk,
+      plannedHasFuturePlan: futurePlans.length > 0,
     };
   });
   console.log(logBehavior);
   assert(logBehavior.actualPlanBy === null, 'actual log clears planByDate');
   assert(logBehavior.actualLastLog !== null, 'actual log sets lastLog');
   assert(logBehavior.plannedPlanBy !== null, 'plan log does NOT clear planByDate');
-  assert(logBehavior.plannedHasFuturePlan, 'plan log adds a future planned entry');
+  assert(logBehavior.plannedOk && logBehavior.plannedHasFuturePlan, 'plan log adds a future planned entry');
 
   // ════════════════════════════════════════════════════════════════════════
   // H. reduce type behaves the same as keepup

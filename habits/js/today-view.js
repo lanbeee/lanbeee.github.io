@@ -5035,7 +5035,55 @@ function enforcePersistentLinkInvariants(dayStates,candidates,settings){
       if(!rebuilt)break;
       applyPlacementState(state,rebuilt);
     }
+
+    // Must-do subject alone while a same-day partner was attempted today but
+    // failed to place (e.g. Haircut no longer fits): drop the subject. Solo is
+    // only allowed when no linked partner was on this day's candidate set.
+    dropSubjectsWithFailedSameDayPartners(state,candidates,byHid,settings);
   }
+}
+
+/** PURE/HYBRID: drop must-do subjects left alone after a failed partner attempt. */
+function dropSubjectsWithFailedSameDayPartners(state,candidates,byHid,settings){
+  if(!state || !byHid || !byHid.size)return;
+  const placedHids = new Set();
+  for(const entry of state.fills || []){
+    const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
+    if(hid)placedHids.add(hid);
+  }
+  const partnerPlaced = (anchorHid)=>
+    placedHids.has(anchorHid)
+    || (typeof scheduleAnchorCommitForDay === 'function'
+      && Boolean(scheduleAnchorCommitForDay(anchorHid,state.dayBase)));
+  const partnerAttemptedToday = (anchorHid)=>{
+    if(partnerPlaced(anchorHid))return false;
+    const partner = byHid.get(anchorHid);
+    if(!partner)return false;
+    if(partner.eligible)return partner.eligible.has(state.dayBase);
+    // Single-day pass: candidates are today's attempted fills.
+    return true;
+  };
+  const drop = new Set();
+  for(const cand of candidates || []){
+    const h = cand && cand.h;
+    if(!h || !h.hid || !state.placed.has(cand.i))continue;
+    const links = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(h)
+      : (typeof normalizeScheduleLinks === 'function'
+        ? normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay)
+        : []);
+    if(!links.length)continue;
+    if(links.some(link=>partnerPlaced(link.anchorHid)))continue;
+    if(!links.some(link=>partnerAttemptedToday(link.anchorHid)))continue;
+    drop.add(h.hid);
+    addScheduleLinkOmission(state.day,h.hid,'linked partner could not fit today');
+  }
+  if(!drop.size)return;
+  const keep = (state.fills || [])
+    .filter(entry=>!drop.has(entry && entry.fill && entry.fill.h && entry.fill.h.hid))
+    .map(entry=>entry.fill);
+  const rebuilt = rebuildDayFromFills(state,keep,candidates,{settings,allowNetwork:false});
+  if(rebuilt)applyPlacementState(state,rebuilt);
 }
 
 // Week-holistic repair: when a daily breakable (e.g. Work) is short and a
