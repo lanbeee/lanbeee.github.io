@@ -2711,6 +2711,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('#day-logs-plan')){
+    if(!dayLogsCanPlan(dayLogsKey))return;
     setDayLogsStep('add');
     return;
   }
@@ -2747,7 +2748,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
   if(logDayBtn){
     const idx = parseInt(logDayBtn.dataset.logDayItem,10);
     const key = logDayBtn.dataset.logDay || dayLogsKey;
-    if(Number.isNaN(idx) || !key)return;
+    if(Number.isNaN(idx) || !key || !dayLogsCanLog(key))return;
     const ts = new Date(`${key}T12:00:00`).getTime();
     if(!logTingAt(idx,ts))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
@@ -2784,7 +2785,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     if(!dateInput)return;
     const fromKey = dateInput.dataset.moveFrom;
     const toKey = dateInput.value;
-    if(!toKey)return;
+    if(!toKey || !dayLogsCanPlan(toKey))return;
     movePlanTo(idx,fromKey,toKey);
     dayLogsMoving = false;
     dayLogsKey = toKey;
@@ -2794,7 +2795,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
   }
 
   if(e.target.closest('#day-log-add')){
-    if(!dayLogsKey)return;
+    if(!dayLogsKey || !dayLogsCanPlan(dayLogsKey))return;
     const idx = dayLogsScoped()
       ? dayLogsScopeIndex
       : parseInt($('day-log-ting')?.value,10);

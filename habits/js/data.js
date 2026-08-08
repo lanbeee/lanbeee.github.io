@@ -2913,6 +2913,18 @@ function timedPlanLogForDay(h,key){
   if(!h || !key)return null;
   return planLogEntries(h.logs || []).find(log=>planTimed(log) && dateKey(logTime(log)) === key) || null;
 }
+/** PURE: first plan log on a calendar day (prefer timed). */
+function planLogForDay(h,key){
+  if(!h || !key)return null;
+  const plans = planLogEntries(h.logs || []).filter(log=>dateKey(logTime(log)) === key);
+  if(!plans.length)return null;
+  return plans.find(planTimed) || plans[0];
+}
+/** PURE: one-day location override from a day plan (timed or untimed). */
+function dayPlanLocationId(h,key){
+  const plan = planLogForDay(h,key);
+  return plan ? planLocationId(plan) : null;
+}
 /** PURE: habit has a hard timed plan on the given day base. */
 function hasTimedPlanForDay(h,dayBase){
   return Boolean(timedPlanLogForDay(h,dateKey(dayBase)));

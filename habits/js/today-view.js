@@ -643,6 +643,7 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
   if(!Array.isArray(items) || !items.length)return [];
   const registry = normalizeLocationRegistry(settings.locations);
   const mode = normalizeTravelMode(settings.defaultTravelMode);
+  const dayKey = dateKey(now);
   let anchor = (typeof currentLocationId === 'function' && currentLocationId())
     || settings.lastKnownLocationId
     || null;
@@ -664,13 +665,23 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
   }
   bands.sort((a,b)=>a.scarcityKey - b.scarcityKey || a.priority - b.priority);
   const out = [];
+  const resolveItemLoc = (item,anchorId)=>{
+    if(item && Object.prototype.hasOwnProperty.call(item,'locationId')
+      && item.locationId !== undefined){
+      return item.locationId;
+    }
+    const planLoc = typeof dayPlanLocationId === 'function'
+      ? dayPlanLocationId(item.h,dayKey) : null;
+    if(planLoc)return planLoc;
+    return pickHabitLocationId(item.h,anchorId,registry,mode);
+  };
   for(const band of bands){
     const left = [...band.items];
     while(left.length){
       let bestIdx = 0;
       let bestScore = Infinity;
       for(let i = 0;i < left.length;i += 1){
-        const locId = pickHabitLocationId(left[i].h,anchor,registry,mode);
+        const locId = resolveItemLoc(left[i],anchor);
         const edge = travelEdgeBetweenIds(anchor,locId,registry,mode);
         const pri = left[i].priority ?? effectivePriority(left[i].h);
         // Travel primary; priority is a tiebreak only (especially when live).
@@ -678,7 +689,7 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
         if(score < bestScore){ bestScore = score; bestIdx = i; }
       }
       const picked = left.splice(bestIdx,1)[0];
-      const locationId = pickHabitLocationId(picked.h,anchor,registry,mode);
+      const locationId = resolveItemLoc(picked,anchor);
       out.push({...picked,locationId});
       if(locationId)anchor = locationId;
     }
@@ -2070,6 +2081,13 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
+  // Untimed day pins store locationId on the plan log. That override wins over
+  // reorder/pick defaults stamped onto the fill (preferred location, travel
+  // clustering), since the user explicitly chose the place for this day.
+  if(typeof dayPlanLocationId === 'function'){
+    const planLoc = dayPlanLocationId(fill.h,dateKey(dayBase));
+    if(planLoc)fill.locationId = planLoc;
+  }
   const registryLookup = id=>{
     if(!id)return null;
     if(state.registryById)return state.registryById.get(id) || null;

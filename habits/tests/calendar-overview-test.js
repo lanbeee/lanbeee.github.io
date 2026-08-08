@@ -314,9 +314,54 @@ function seedScript(){
   assert(scoped.planBtn, 'scoped sheet offers Plan this item');
 
   const logAction = await page.evaluate(() => {
+    // Future scoped day: plan yes, log no
     return !!document.querySelector('#day-logs-body [data-log-day-item]');
   });
-  assert(logAction, 'scoped sheet offers Log for this day');
+  assert(!logAction, 'scoped future day does not offer Log for this day');
+
+  const todayScoped = await page.evaluate(() => {
+    const idx = load().findIndex(h => h.name === 'Scope Alpha');
+    const key = todayIso();
+    dayLogsKey = key;
+    dayLogsScopeIndex = idx;
+    dayLogsStep = 'item';
+    dayLogsItemIndex = idx;
+    dayLogsMoving = false;
+    renderDayLogs(key);
+    return {
+      hasLog: !!document.querySelector('[data-log-day-item]'),
+      hasPlan: !!document.querySelector('#day-logs-plan')
+    };
+  });
+  assert(todayScoped.hasLog, 'scoped today offers Log for this day');
+  assert(todayScoped.hasPlan, 'scoped today offers Plan this item');
+
+  const pastScoped = await page.evaluate(() => {
+    const idx = load().findIndex(h => h.name === 'Scope Alpha');
+    const key = dateKey(dayStart(Date.now()) - 2 * 86400000);
+    dayLogsKey = key;
+    dayLogsScopeIndex = idx;
+    dayLogsStep = 'item';
+    dayLogsItemIndex = idx;
+    dayLogsMoving = false;
+    renderDayLogs(key);
+    const item = {
+      hasLog: !!document.querySelector('[data-log-day-item]'),
+      hasPlan: !!document.querySelector('#day-logs-plan')
+    };
+    dayLogsScopeIndex = null;
+    dayLogsStep = 'list';
+    dayLogsItemIndex = null;
+    dayLogsMoving = false;
+    renderDayLogs(key);
+    return {
+      ...item,
+      overviewPlan: !!document.querySelector('#day-logs-plan')
+    };
+  });
+  assert(pastScoped.hasLog, 'scoped past day offers Log for this day');
+  assert(!pastScoped.hasPlan, 'scoped past day does not offer Plan this item');
+  assert(!pastScoped.overviewPlan, 'overview past day does not offer Plan something');
 
   // Unmarked future day from detail opens sheet without auto-logging
   const unmarked = await page.evaluate(() => {
@@ -339,7 +384,7 @@ function seedScript(){
     };
   });
   assert(unmarked.after === unmarked.before, 'unmarked detail day does not auto-log');
-  assert(unmarked.hasLog && unmarked.hasPlan, 'unmarked scoped day offers Log and Plan');
+  assert(!unmarked.hasLog && unmarked.hasPlan, 'unmarked future scoped day offers Plan only');
 
   // Add-plan step stays locked to the same habit
   const addStep = await page.evaluate(() => {

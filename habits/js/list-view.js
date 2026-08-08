@@ -5080,6 +5080,8 @@ function logTing(i,opts = {}){
 function logTingAt(i,ts){
   const data = load();
   if(!data[i])return false;
+  // Calendar day logs are for today and past days only — future days use plans.
+  if(dateKey(ts) > todayIso())return false;
   const entryTs = dateKey(ts) <= dateKey(Date.now()) && ts > Date.now() ? Date.now() : ts;
   const log = makeLog(entryTs);
   const isPlan = isPlanLog(log);
@@ -5123,6 +5125,8 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
   // Stop habits ("quit" type) cannot be planned — there is no future session
   // to schedule, only lapses to log. Bail before creating any plan log.
   if(data[i].type === 'zero')return false;
+  // Plans are only for today and future days.
+  if(!key || key < todayIso())return false;
   const base = new Date(`${key}T12:00:00`);
   if(Number.isNaN(base.getTime()))return false;
   let hours = 12;
@@ -5246,6 +5250,8 @@ function movePlanTo(idx,fromKey,toKey){
   const data = load();
   const h = data[idx];
   if(!h || fromKey === toKey)return;
+  // Plans can only move onto today or a future day.
+  if(!toKey || toKey < todayIso())return;
   const logs = normalizeLogs(h.logs);
   const moved = [];
   const newDay = new Date(`${toKey}T00:00:00`);

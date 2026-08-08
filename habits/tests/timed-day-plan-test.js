@@ -193,7 +193,7 @@ function seedScript(){
   });
   assert(detailTap.sheetOpen, 'detail day sheet opens');
   assert(detailTap.after === detailTap.before, 'unmarked day tap does not auto-log');
-  assert(detailTap.hasLogAction, 'scoped sheet offers Log for this day');
+  assert(!detailTap.hasLogAction, 'scoped future sheet does not offer Log for this day');
   assert(detailTap.hasPlanAction, 'scoped sheet offers Plan this item');
 
   const addFields = await page.evaluate(() => {
@@ -207,6 +207,62 @@ function seedScript(){
   assert(addFields.hasTime, 'add step has time input');
   assert(addFields.hasLocation, 'add step has location select when habit has places');
   assert(addFields.locationOptions.includes('home'), 'location select lists habit places');
+
+  console.log('\n[E] untimed plan with location is honored on agenda');
+  const untimedLoc = await page.evaluate(() => {
+    const data = load();
+    // Use the multi-location habit; preferred is home, plan forces gym without a time.
+    const idx = data.findIndex(h => h.name === 'Timed Plan Habit');
+    const h = data[idx];
+    // Drop any leftover plans from earlier sections (moved to tomorrow, etc.).
+    h.logs = normalizeLogs(h.logs).filter(log => !isPlanLog(log));
+    save(data);
+    const key = todayIso();
+    planTingOnDay(idx, key, '', { openAction:false, locationId:'gym' });
+    const plan = planLogForDay(load()[idx], key);
+    const settings = loadSortSettings();
+    const today = buildTodayAgenda(load(), settings);
+    const timeline = buildTodayTimeline(today);
+    const fills = timeline.filter(r => r.kind === 'fill' && r.h && r.h.name === 'Timed Plan Habit');
+    const scheduled = timeline.filter(r => r.kind === 'scheduled' && r.h && r.h.name === 'Timed Plan Habit');
+    return {
+      helpers: typeof dayPlanLocationId === 'function' && typeof planLogForDay === 'function',
+      savedLoc: plan && plan.locationId,
+      timed: Boolean(plan && plan.timed),
+      preferred: load()[idx].preferredLocationId || null,
+      dayPlanLoc: dayPlanLocationId(load()[idx], key),
+      fillCount: fills.length,
+      fillLoc: fills[0] ? fills[0].locationId : null,
+      scheduledCount: scheduled.length,
+      meta: (()=>{
+        dayLogsScopeIndex = null;
+        const rows = collectDayLogRows(key);
+        const row = rows.find(r => r.h.name === 'Timed Plan Habit');
+        return row ? dayRowMeta(row) : '';
+      })()
+    };
+  });
+  console.log(untimedLoc);
+  assert(untimedLoc.helpers, 'day plan location helpers exist');
+  assert(untimedLoc.savedLoc === 'gym' && !untimedLoc.timed, 'untimed plan stores locationId');
+  assert(untimedLoc.preferred === 'home', 'habit preferred location is home (not gym)');
+  assert(untimedLoc.dayPlanLoc === 'gym', 'dayPlanLocationId reads untimed plan location');
+  assert(untimedLoc.scheduledCount === 0, 'untimed plan is not a hard scheduled row');
+  assert(untimedLoc.fillCount === 1, 'untimed plan appears as soft fill');
+  assert(untimedLoc.fillLoc === 'gym', 'soft fill uses plan location over preferred');
+  assert(/Gym/i.test(untimedLoc.meta), 'day meta shows untimed plan location');
+
+  console.log('\n[F] past day rejects new plans; future day rejects logs');
+  const dateGates = await page.evaluate(() => {
+    const idx = load().findIndex(h => h.name === 'Empty Day Habit');
+    const pastKey = dateKey(dayStart(Date.now()) - 3 * 86400000);
+    const futureKey = dateKey(dayStart(Date.now()) + 4 * 86400000);
+    const pastPlan = planTingOnDay(idx, pastKey, '', { openAction:false, locationId:'home' });
+    const futureLog = logTingAt(idx, new Date(`${futureKey}T12:00:00`).getTime());
+    return { pastPlan, futureLog, canPlanPast: dayLogsCanPlan(pastKey), canLogFuture: dayLogsCanLog(futureKey) };
+  });
+  assert(!dateGates.pastPlan && !dateGates.canPlanPast, 'past days cannot take plans');
+  assert(!dateGates.futureLog && !dateGates.canLogFuture, 'future days cannot take logs');
 
   if(pageErrors.length){
     console.error('page errors:', pageErrors.join('\n'));

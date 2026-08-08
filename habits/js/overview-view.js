@@ -767,15 +767,18 @@ function dayRowMeta(row){
   });
   if(plannedCount){
     const timed = planned.find(planTimed);
+    const locSource = timed || planned.find(log=>planLocationId(log));
+    const locId = locSource ? planLocationId(locSource) : null;
+    const loc = locId && typeof normalizeLocationRegistry === 'function'
+      ? normalizeLocationRegistry(sortSettings?.locations).find(l=>l.id === locId)
+      : null;
     if(timed){
       const clock = new Date(logTime(timed)).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
-      const locId = planLocationId(timed);
-      const loc = locId && typeof normalizeLocationRegistry === 'function'
-        ? normalizeLocationRegistry(sortSettings?.locations).find(l=>l.id === locId)
-        : null;
       parts.push(loc ? `planned ${clock} · ${loc.name}` : `planned ${clock}`);
+    }else if(plannedCount === 1){
+      parts.push(loc ? `planned · ${loc.name}` : 'planned');
     }else{
-      parts.push(`${plannedCount} planned`);
+      parts.push(loc ? `${plannedCount} planned · ${loc.name}` : `${plannedCount} planned`);
     }
   }
   if(actualCount)parts.push(`${actualCount} done`);
@@ -797,6 +800,16 @@ function dayLogsHabitPlannable(h){
   if(h.type === 'zero')return false;
   if(h.type === 'task' && h.lastLog !== null)return false;
   return true;
+}
+
+/** PURE: plans are for today and future days only. */
+function dayLogsCanPlan(key){
+  return Boolean(key && key >= todayIso());
+}
+
+/** PURE: logs are for today and past days only. */
+function dayLogsCanLog(key){
+  return Boolean(key && key <= todayIso());
 }
 
 // HYBRID: reset day-sheet step state
@@ -858,11 +871,11 @@ function renderDayLogsListStep(key){
   </div>`;
   body.innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
-      <button type="button" class="day-quick-action primary" id="day-logs-plan">
+      ${dayLogsCanPlan(key) ? `<button type="button" class="day-quick-action primary" id="day-logs-plan">
         <i class="ti ti-calendar-plus" aria-hidden="true"></i>
         <span><b>Plan something</b><small>Add an item, with an optional time</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
-      </button>
+      </button>` : ''}
       <button type="button" class="day-quick-action" id="day-logs-day">
         <i class="ti ti-clock-edit" aria-hidden="true"></i>
         <span><b>Adjust open time</b><small>Tell the planner how much room this day has</small></span>
@@ -912,7 +925,7 @@ function renderDayLogsItemStep(key){
 
   const moveBlock = dayLogsMoving ? `
     <label class="move-inline day-move-inline">
-      <input type="date" class="move-date" id="day-move-date" value="${key}" data-move-from="${key}" />
+      <input type="date" class="move-date" id="day-move-date" value="${key}" min="${todayIso()}" data-move-from="${key}" />
       <button class="mini-text-btn" type="button" data-move-go="${idx}">save</button>
       <button class="mini-text-btn" type="button" data-move-cancel>cancel</button>
     </label>` : '';
@@ -924,14 +937,14 @@ function renderDayLogsItemStep(key){
   if(!dayLogsScoped()){
     actions.push(actionMarkup(`data-open-day-item="${idx}"`,'ti-external-link','Open item','View details, history, and schedule','primary'));
   }
-  if(dayLogsScoped() && !dayLogsMoving){
+  if(dayLogsScoped() && !dayLogsMoving && dayLogsCanLog(key)){
     actions.push(actionMarkup(`data-log-day-item="${idx}" data-log-day="${key}"`,'ti-check','Log for this day','Mark it done on this day','primary'));
   }
   if(plannedCount && !dayLogsMoving){
     actions.push(actionMarkup(`data-move-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-forward','Move plan','Choose a different day'));
     actions.push(actionMarkup(`data-remove-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-x','Remove plan','Keep the item, remove it from this day','danger'));
   }
-  if(dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving){
+  if(dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving && dayLogsCanPlan(key)){
     actions.push(actionMarkup('id="day-logs-plan"','ti-calendar-plus','Plan this item','Add it to this day'));
   }
 
@@ -962,6 +975,11 @@ function renderDayLogsItemStep(key){
 
 // RENDER: add-plan step
 function renderDayLogsAddStep(key){
+  if(!dayLogsCanPlan(key)){
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    return;
+  }
   const data = load();
   const ts = new Date(`${key}T12:00:00`).getTime();
   const dateLabel = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
