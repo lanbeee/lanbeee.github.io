@@ -47,6 +47,22 @@ function assert(value,message){
     const cycleB = {...migrated,scheduleLinks:[
       {anchorHid:'link-anchor',direction:'before',adjacency:'sometime',requireSameDay:false}
     ]};
+    const exercise = {hid:'ex',name:'Exercise',type:'keepup',target:7};
+    const haircut = {hid:'hc',name:'Haircut',type:'keepup',target:14};
+    const showerMulti = {
+      hid:'shower',name:'Shower',type:'keepup',target:7,
+      scheduleLinks:[
+        {anchorHid:'ex',direction:'after',adjacency:'direct',requireSameDay:false},
+        {anchorHid:'hc',direction:'after',adjacency:'direct',requireSameDay:false}
+      ]
+    };
+    const twinAfter = {
+      ...exercise,
+      scheduleLinks:[
+        {anchorHid:'shower',direction:'before',adjacency:'direct',requireSameDay:false},
+        {anchorHid:'hc',direction:'before',adjacency:'direct',requireSameDay:false}
+      ]
+    };
     const afterLink = (migrated.scheduleLinks || []).find(l=>l.direction === 'after');
     return {
       migratedLink:afterLink,
@@ -55,7 +71,9 @@ function assert(value,message){
       legacyHasBefore:(legacyObject.scheduleLinks || []).some(l=>l.direction === 'before' && l.anchorHid === 'link-anchor'),
       migratedAnchor:migrated.allowedTimeStartAnchor,
       legacyAnchor:offsetLegacy.allowedTimeStartAnchor,
-      cycle:validateScheduleLinkGraph([cycleA,cycleB])
+      cycle:validateScheduleLinkGraph([cycleA,cycleB]),
+      multiPrev:validateScheduleLinkGraph([exercise,haircut,showerMulti]),
+      twinAfter:validateScheduleLinkGraph([exercise,haircut,showerMulti,twinAfter])
     };
   });
   assert(model.migratedIsArray,'scheduleLinks normalizes to an array');
@@ -64,6 +82,9 @@ function assert(value,message){
   assert(model.migratedAnchor === null,'migrated time anchor is cleared');
   assert(model.legacyAnchor === 'habit','offset completion-trigger timing remains legacy');
   assert(model.cycle && model.cycle.ok === false && /cycle/.test(model.cycle.message),'persistent cycles are rejected');
+  assert(model.multiPrev && model.multiPrev.ok === true,'shower may be right-after exercise and haircut');
+  assert(model.twinAfter && model.twinAfter.ok === false && /right-after/.test(model.twinAfter.message || ''),
+    'one habit may not have two right-after successors (' + (model.twinAfter && model.twinAfter.message) + ')');
 
   async function plannerScenario(useGlpk,variant){
     return page.evaluate(async ({useGlpk,variant})=>{
@@ -120,9 +141,9 @@ function assert(value,message){
       if(variant === 'required-absent' || variant === 'optional-absent'){
         anchor.logs = [now - 86400000];
         anchor.target = 30;
-        // Reduce anchor: target is a ceiling, so a same-day link cannot pull it
-        // forward. The dependent is removed when a required reduce anchor is not
-        // due. (A keepup anchor would be pulled — OR semantics, covered in [E].)
+        // Reduce anchor: target is a ceiling, so a must-do link cannot pull it
+        // forward. The dependent may still appear alone (must-do does not gate
+        // other days). (A keepup anchor would be pulled — OR semantics, covered in [E].)
         anchor.type = 'reduce';
       }
       const noise = {
@@ -177,8 +198,9 @@ function assert(value,message){
     assert(before.order.indexOf('p-subject') >= 0 && before.order.indexOf('p-anchor') >= 0,`${label}: before pair is placed`);
     assert(before.order.indexOf('p-subject') < before.order.indexOf('p-anchor'),`${label}: right-before order is honored`);
     const requiredAbsent = await plannerScenario(useGlpk,'required-absent');
-    assert(!requiredAbsent.order.includes('p-subject'),`${label}: same-day requirement removes dependent when anchor is not eligible`);
-    assert(requiredAbsent.omissions.some(item=>item.subjectHid === 'p-subject'),`${label}: absent anchor produces an explanation`);
+    assert(requiredAbsent.order.includes('p-subject'),`${label}: must-do does not remove dependent when anchor is absent`);
+    assert(!requiredAbsent.omissions.some(item=>/waiting for/.test(item.reason || '')),
+      `${label}: absent anchor does not gate subject with a waiting omission`);
     const optionalAbsent = await plannerScenario(useGlpk,'optional-absent');
     assert(optionalAbsent.order.includes('p-subject'),`${label}: optional anchor does not gate dependent eligibility`);
     const completedAfter = await plannerScenario(useGlpk,'completed-after');
@@ -257,6 +279,7 @@ function assert(value,message){
     let fridayHids = [];
     let orPartnered = false;
     let alone = false;
+    let partnerDaysCovered = true;
     let earlyStiff = '';
     try{
       // 1) Flex pull: only going-out link → must land Friday with going out.
@@ -279,7 +302,8 @@ function assert(value,message){
       fridayHids = fillsOn(fridayDay);
       earlyStiff = earlyReason(data,data.findIndex(h=>h.hid === 'shower-noflex'),loadSortSettings());
 
-      // 2) Multi OR: going-out (Fri) + exercise (Wed) → shower with either, never alone.
+      // 2) Multi OR: going-out (Fri) + exercise (Wed) → shower with either;
+      //    alone on other days is allowed (must-do does not gate other days).
       const showerOr = {
         ...shower,hid:'shower-or',name:'Shower OR',
         scheduleLinks:[
@@ -298,6 +322,12 @@ function assert(value,message){
         const hids = fillsOn(d);
         return hids.includes('shower-or') && (hids.includes('go-out') || hids.includes('exercise'));
       });
+      // Partner days must include shower (must-do when partner lands).
+      partnerDaysCovered = week.days.every(d=>{
+        const hids = fillsOn(d);
+        const hasPartner = hids.includes('go-out') || hids.includes('exercise');
+        return !hasPartner || hids.includes('shower-or');
+      });
     }finally{
       globalThis.Date = originalDate;
     }
@@ -309,6 +339,7 @@ function assert(value,message){
       fridayHids,
       orPartnered,
       alone,
+      partnerDaysCovered,
       earlyStiff,
       showerFlex,
       ageFriday,
@@ -317,9 +348,10 @@ function assert(value,message){
   });
   assert(flexPull.flexCoversFriday,'test flex window covers Friday (flex=' + flexPull.showerFlex + ', ageFri=' + flexPull.ageFriday + ', target=' + flexPull.showerTarget + ')');
   assert(flexPull.fridayHids.includes('go-out'),'going out appears Friday');
-  assert(flexPull.fridayHids.includes('shower'),'flex+same-day pulls shower onto Friday with going out (' + flexPull.fridayHids.join(',') + ')');
+  assert(flexPull.fridayHids.includes('shower'),'flex+must-do pulls shower onto Friday with going out (' + flexPull.fridayHids.join(',') + ')');
   assert(flexPull.orPartnered,'OR places shower with at least one linked partner');
-  assert(!flexPull.alone,'shower does not appear alone without an OR partner');
+  assert(flexPull.partnerDaysCovered,'must-do keeps shower on every partner day');
+  // Alone is allowed under must-do; do not require !alone.
   if(flexPull.fridayOffset === 0){
     assert(true,'Friday-is-today early path covered by dedicated case below');
   }else{
@@ -757,6 +789,96 @@ function assert(value,message){
   assert(orCase.wedHasExercise && orCase.wedHasShower,
     'GLPK co-places Exercise + Shower on Wednesday (' + orCase.wed.join(',') + ')');
   assert(orCase.exerciseBeforeShower,'Exercise is ordered before Shower on Wednesday');
+
+  console.log('\n[F] multi-parent right-after (exercise OR haircut → shower)');
+  const multiParent = await page.evaluate(async ()=>{
+    const today = dayStart(Date.now());
+    const now = today + 9 * 3600000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showWeekOnHome:true,
+      agendaOptimizer:false,
+      availabilityMinutes:Array(7).fill(180),
+      availabilityOverrides:{[dateKey(today)]:180},
+      blockedTimes:[],
+      locations:[],
+      travel:{},
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true
+    };
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+    const exercise = {
+      hid:'ex',name:'Exercise',type:'keepup',target:7,logs:[],
+      durationMinutes:30,priority:1
+    };
+    const haircut = {
+      hid:'hc',name:'Haircut',type:'keepup',target:7,logs:[today - 86400000],
+      durationMinutes:30,priority:1,
+      // Not due today — only exercise present for the single-parent path.
+      allowedWeekdays:[(new Date(today).getDay() + 1) % 7]
+    };
+    const shower = {
+      hid:'sh',name:'Shower',type:'keepup',target:7,logs:[],
+      durationMinutes:15,priority:1,
+      scheduleLinks:[
+        {anchorHid:'ex',direction:'after',adjacency:'direct',requireSameDay:false},
+        {anchorHid:'hc',direction:'after',adjacency:'direct',requireSameDay:false}
+      ]
+    };
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let single = null;
+    let both = null;
+    let graphOk = null;
+    try{
+      graphOk = validateScheduleLinkGraph([exercise,haircut,shower]);
+      save([exercise,haircut,shower]);
+      let week = buildWeekAgenda(load(),loadSortSettings(),1);
+      const fills = (week.days[0].timeline || []).filter(r=>r.kind === 'fill').map(r=>r.h && r.h.hid);
+      single = {
+        order:fills,
+        afterEx:fills.indexOf('ex') >= 0 && fills.indexOf('sh') >= 0
+          && fills.indexOf('ex') < fills.indexOf('sh'),
+        hasHc:fills.includes('hc')
+      };
+      // Both parents due today — plan must stay feasible (OR adjacency).
+      const haircutToday = {...haircut,logs:[],allowedWeekdays:null};
+      save([exercise,haircutToday,shower]);
+      week = buildWeekAgenda(load(),loadSortSettings(),1);
+      const fillsBoth = (week.days[0].timeline || []).filter(r=>r.kind === 'fill').map(r=>r.h && r.h.hid);
+      const shIdx = fillsBoth.indexOf('sh');
+      const nextToEx = fillsBoth.indexOf('ex') >= 0 && shIdx === fillsBoth.indexOf('ex') + 1;
+      const nextToHc = fillsBoth.indexOf('hc') >= 0 && shIdx === fillsBoth.indexOf('hc') + 1;
+      both = {
+        order:fillsBoth,
+        hasShower:fillsBoth.includes('sh'),
+        adjacentToOne:nextToEx || nextToHc,
+        allThree:fillsBoth.includes('ex') && fillsBoth.includes('hc') && fillsBoth.includes('sh')
+      };
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    return {graphOk,single,both};
+  });
+  assert(multiParent.graphOk && multiParent.graphOk.ok,'multi-parent right-after graph validates');
+  assert(multiParent.single && multiParent.single.afterEx && !multiParent.single.hasHc,
+    'with only exercise present, shower follows exercise (' + (multiParent.single && multiParent.single.order.join(',')) + ')');
+  assert(multiParent.both && multiParent.both.hasShower,
+    'with both parents present, shower still places (' + (multiParent.both && multiParent.both.order.join(',')) + ')');
+  assert(multiParent.both && multiParent.both.allThree && multiParent.both.adjacentToOne,
+    'OR adjacency: shower sits right after at least one parent when both land');
 
   assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();

@@ -123,6 +123,7 @@ function atDay(offset,hour = 12,minute = 0){
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
   const planned = stored.find(h => h.name === 'Normal upcoming').logs.find(log => log && log.plan);
   if (!planned) throw new Error('planned log was not created');
+  if (!planned.timed) throw new Error('planned log missing timed flag for explicit time');
   const plannedDate = new Date(planned.ts);
   if (plannedDate.getHours() !== 9 || plannedDate.getMinutes() !== 30) {
     throw new Error(`planned time was not preserved: ${plannedDate.toISOString()}`);

@@ -462,9 +462,19 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
       Number(entry.fit.placeEnd) || 0
     ));
   }
+  // Multi-parent right-after is OR'd: hard interloper AND across several
+  // direct predecessors of the same afterHid is unsatisfiable when more than
+  // one parent is selected. Soft gap weights + post-check OR still pull adjacency.
+  const directPredCount = new Map();
+  for(const e of edges){
+    if(!e || e.adjacency !== 'direct' || !e.afterHid || !e.beforeHid)continue;
+    directPredCount.set(e.afterHid,(directPredCount.get(e.afterHid) || 0) + 1);
+  }
   for(const e of edges){
     const beforeIdxs = byHid.get(e.beforeHid) || [];
     const afterIdxs = byHid.get(e.afterHid) || [];
+    const skipHardDirect = e.adjacency === 'direct'
+      && (directPredCount.get(e.afterHid) || 0) > 1;
     for(const ai of beforeIdxs){
       for(const bi of afterIdxs){
         const A = opts[ai];
@@ -478,6 +488,7 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
             bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
           });
         }
+        if(skipHardDirect)continue;
         if(e.adjacency === 'direct' && B.fit.placeStart >= A.fit.placeEnd){
           const between = [];
           for(let ci = 0;ci < opts.length;ci += 1){
@@ -504,6 +515,7 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
         }
       }
     }
+    if(skipHardDirect)continue;
     if(e.adjacency === 'direct' && !beforeIdxs.length && committedEnd.has(e.beforeHid)){
       const predEnd = committedEnd.get(e.beforeHid);
       for(const bi of afterIdxs){
@@ -937,33 +949,34 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     });
   }
   let schedulePairRow = 0;
-  // Same-day persistent links are OR'd per subject: selecting the subject
-  // requires at least one of its same-day anchors (unless one is committed).
-  const pairEdgesBySubject = new Map();
+  // Must-do persistent links: each present anchor forces its subject
+  // (anchor ⇒ subject). Subject alone remains allowed.
   for(const edge of dayOrderEdges){
     if(!edge.persistent || !edge.requiresPair || !edge.subjectHid || !edge.anchorHid)continue;
-    if(!pairEdgesBySubject.has(edge.subjectHid))pairEdgesBySubject.set(edge.subjectHid,[]);
-    pairEdgesBySubject.get(edge.subjectHid).push(edge);
-  }
-  for(const [subjectHid,subjectEdges] of pairEdgesBySubject){
-    const subjectNames = optionNamesByHid.get(subjectHid) || [];
+    const subjectNames = optionNamesByHid.get(edge.subjectHid) || [];
     if(!subjectNames.length)continue;
-    const anyCommitted = subjectEdges.some(edge=>
-      typeof scheduleAnchorCommitForDay === 'function'
-        && scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase)
-    );
-    if(anyCommitted)continue;
-    const anchorNameSet = new Set();
-    for(const edge of subjectEdges){
-      for(const name of (optionNamesByHid.get(edge.anchorHid) || []))anchorNameSet.add(name);
+    const subjectCommitted = typeof scheduleAnchorCommitForDay === 'function'
+      && scheduleAnchorCommitForDay(edge.subjectHid,state.dayBase);
+    if(subjectCommitted)continue;
+    const anchorCommitted = typeof scheduleAnchorCommitForDay === 'function'
+      && scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase);
+    if(anchorCommitted){
+      // Partner already done/placed today → subject must take one option.
+      subjectTo.push({
+        name:`schedule_must_${schedulePairRow++}`,
+        vars:subjectNames.map(name=>({name,coef:1})),
+        bnds:{type:GLPK.GLP_FX,ub:1,lb:1}
+      });
+      continue;
     }
-    const anchorNames = [...anchorNameSet];
-    // subject ⇒ ∨ anchors  →  sum(subject) - sum(anchors) ≤ 0
+    const anchorNames = optionNamesByHid.get(edge.anchorHid) || [];
+    if(!anchorNames.length)continue;
+    // anchor ⇒ subject  →  sum(anchor) - sum(subject) ≤ 0
     subjectTo.push({
-      name:`schedule_pair_${schedulePairRow++}`,
+      name:`schedule_must_${schedulePairRow++}`,
       vars:[
-        ...subjectNames.map(name=>({name,coef:1})),
-        ...anchorNames.map(name=>({name,coef:-1}))
+        ...anchorNames.map(name=>({name,coef:1})),
+        ...subjectNames.map(name=>({name,coef:-1}))
       ],
       bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
     });
@@ -1644,6 +1657,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     const eligible = new Set();
     for(const day of days){
       if(pinned && !day.isToday)continue;
+      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
       if(isWeekCandidate(h,settings,day.dayBase,day.weekday) || (pinned && day.isToday)){
         eligible.add(day.dayBase);
       }

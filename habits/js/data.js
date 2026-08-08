@@ -11,8 +11,9 @@
  * A single log entry. Either a bare timestamp (ms) for an actual occurrence,
  * a planned-future entry, or an enriched actual with optional numeric value
  * (e.g. weight), minutes (chunk progress on breakable items), and/or a
- * free-form text note.
- * @typedef {(number|{ts:number,plan:true}|{ts:number,value?:number,minutes?:number,note?:string})} LogEntry
+ * free-form text note. Day plans may carry `timed` (hard clock) and
+ * `locationId` (one-day place override); plan-by (`planByDate`) is separate.
+ * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string})} LogEntry
  */
 
 /**
@@ -127,7 +128,11 @@
 /**
  * A recurring planner relationship, stored from the subject habit's point of
  * view. Direct links allow required travel/fixed blocks, but no movable card.
- * Multiple links on one subject are OR'd for same-day pull/gating.
+ * Multiple links on one subject are OR'd: plan with whichever partner lands
+ * that day. A subject may be right-after several anchors; one anchor may have
+ * only one right-after successor.
+ * `requireSameDay` means must-do on days with the partner (pull + require when
+ * the partner is present); other days stay unconstrained.
  * @typedef {Object} ScheduleLink
  * @property {string} anchorHid
  * @property {'before'|'after'} direction
@@ -1266,21 +1271,18 @@ function validateScheduleLinkGraph(items){
 
   const next = new Map();
   const directNext = new Map();
-  const directPrev = new Map();
   for(const edge of edges){
     if(!next.has(edge.beforeHid))next.set(edge.beforeHid,new Set());
     next.get(edge.beforeHid).add(edge.afterHid);
     if(edge.adjacency !== 'direct')continue;
+    // One habit may have only one right-after successor (two movable cards
+    // cannot both sit immediately after the same parent). Multiple right-before
+    // parents are allowed and OR'd on the subject (shower after exercise OR haircut).
     if(directNext.has(edge.beforeHid) && directNext.get(edge.beforeHid) !== edge.afterHid){
       const name = byHid.get(edge.beforeHid)?.name || 'a habit';
       return {ok:false,message:`${name} already has a right-after habit`};
     }
-    if(directPrev.has(edge.afterHid) && directPrev.get(edge.afterHid) !== edge.beforeHid){
-      const name = byHid.get(edge.afterHid)?.name || 'a habit';
-      return {ok:false,message:`${name} already has a right-before habit`};
-    }
     directNext.set(edge.beforeHid,edge.afterHid);
-    directPrev.set(edge.afterHid,edge.beforeHid);
   }
 
   const visiting = new Set();
@@ -2874,7 +2876,8 @@ function pruneForStorage(items,targetKb){
 }
 // ─────────────────────────────────────────────────────────────────────────
 // LOG ENTRIES — PURE. Helpers that operate on a habit's logs array without
-// touching storage. LogEntry = number | {ts:number,plan:true} (see typedef).
+// touching storage. LogEntry = number | {ts,plan:true,timed?,locationId?} |
+// {ts,value?,minutes?,note?} (see typedef).
 // ─────────────────────────────────────────────────────────────────────────
 
 function logTime(log){
@@ -2882,6 +2885,37 @@ function logTime(log){
 }
 function isPlanLog(log){
   return Boolean(log && typeof log === 'object' && log.plan);
+}
+/** PURE: day plan locked to a clock (hard agenda appointment). */
+function planTimed(log){
+  return Boolean(isPlanLog(log) && log.timed);
+}
+/** PURE: optional one-day location override on a plan log. */
+function planLocationId(log){
+  if(!isPlanLog(log))return null;
+  const id = String(log.locationId || '').trim();
+  return id || null;
+}
+/** PURE: build a day plan log; timed/locationId only when explicitly set. */
+function makePlanLog(ts,opts = {}){
+  const entry = {ts,plan:true};
+  if(opts.timed)entry.timed = true;
+  const loc = opts.locationId != null ? String(opts.locationId).trim() : '';
+  if(loc)entry.locationId = loc;
+  return entry;
+}
+/** PURE: normalized plan log objects (preserves timed / locationId). */
+function planLogEntries(logs){
+  return normalizeLogs(logs).filter(isPlanLog);
+}
+/** PURE: first timed plan on a calendar day, or null. */
+function timedPlanLogForDay(h,key){
+  if(!h || !key)return null;
+  return planLogEntries(h.logs || []).find(log=>planTimed(log) && dateKey(logTime(log)) === key) || null;
+}
+/** PURE: habit has a hard timed plan on the given day base. */
+function hasTimedPlanForDay(h,dayBase){
+  return Boolean(timedPlanLogForDay(h,dateKey(dayBase)));
 }
 function logValue(log){
   if(!log || typeof log !== 'object' || isPlanLog(log))return null;
@@ -2908,7 +2942,13 @@ function normalizeLogs(logs){
     .map(log=>{
       const ts = logTime(log);
       if(!ts)return null;
-      if(isPlanLog(log) || (typeof log === 'number' && ts > Date.now()))return {ts,plan:true};
+      if(isPlanLog(log) || (typeof log === 'number' && ts > Date.now())){
+        const entry = {ts,plan:true};
+        if(isPlanLog(log) && log.timed)entry.timed = true;
+        const locId = isPlanLog(log) ? planLocationId(log) : null;
+        if(locId)entry.locationId = locId;
+        return entry;
+      }
       if(typeof log === 'object'){
         const entry = {ts};
         const value = logValue(log);
@@ -2971,7 +3011,7 @@ function makeActualLog(ts,opts = {}){
   return entry;
 }
 function makeLog(ts){
-  return dateKey(ts) > dateKey(Date.now()) ? {ts,plan:true} : ts;
+  return dateKey(ts) > dateKey(Date.now()) ? makePlanLog(ts) : ts;
 }
 function sameLog(log,ts,planOnly = false){
   return logTime(log) === ts && (!planOnly || isPlanLog(log));

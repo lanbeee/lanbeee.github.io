@@ -1322,21 +1322,14 @@ bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   const h = load()[detailIdx];
   if(!h)return;
   const key = day.dataset.entryDay;
-  if(hasPlannedEntryForDay(h,key) || hasScheduledMarkerForDay(h,key)){
-    dayLogsKey = key;
-    dayLogsScopeIndex = detailIdx;
-    dayLogsStep = 'item';
-    dayLogsItemIndex = detailIdx;
-    dayLogsMoving = false;
-    renderCalendar(h);
-    renderDayLogs(key);
-    openSheet('day-logs-sheet');
-    return;
-  }
-  const ts = new Date(`${key}T12:00:00`).getTime();
-  if(!logTingAt(detailIdx,ts))return;
   dayLogsKey = key;
-  refreshOpenViews();
+  dayLogsScopeIndex = detailIdx;
+  dayLogsStep = 'item';
+  dayLogsItemIndex = detailIdx;
+  dayLogsMoving = false;
+  renderCalendar(h);
+  renderDayLogs(key);
+  openSheet('day-logs-sheet');
 });
 $('detail-prev-month').addEventListener('click',()=>{
   if(detailIdx === null)return;
@@ -2750,6 +2743,18 @@ $('day-logs-sheet').addEventListener('click',e=>{
     openDetailFromDayLogs(idx);
     return;
   }
+  const logDayBtn = e.target.closest('[data-log-day-item]');
+  if(logDayBtn){
+    const idx = parseInt(logDayBtn.dataset.logDayItem,10);
+    const key = logDayBtn.dataset.logDay || dayLogsKey;
+    if(Number.isNaN(idx) || !key)return;
+    const ts = new Date(`${key}T12:00:00`).getTime();
+    if(!logTingAt(idx,ts))return;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    refreshOpenViews();
+    return;
+  }
   const removeBtn = e.target.closest('[data-remove-plan]');
   if(removeBtn){
     const idx = parseInt(removeBtn.dataset.removePlan,10);
@@ -2796,7 +2801,8 @@ $('day-logs-sheet').addEventListener('click',e=>{
     if(Number.isNaN(idx))return;
     const h = load()[idx];
     if(!h || !dayLogsHabitPlannable(h))return;
-    if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false}))return;
+    const locationId = $('day-log-location')?.value || '';
+    if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false,locationId}))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();

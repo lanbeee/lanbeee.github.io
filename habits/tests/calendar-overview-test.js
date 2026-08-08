@@ -311,6 +311,35 @@ function seedScript(){
   assert(scoped.footerHasDone, 'scoped footer uses done');
   assert(!scoped.footerHasHome && !scoped.footerHasCalendar, 'scoped footer omits overview home/calendar');
   assert(!scoped.openBtn, 'scoped sheet hides open (already on detail)');
+  assert(scoped.planBtn, 'scoped sheet offers Plan this item');
+
+  const logAction = await page.evaluate(() => {
+    return !!document.querySelector('#day-logs-body [data-log-day-item]');
+  });
+  assert(logAction, 'scoped sheet offers Log for this day');
+
+  // Unmarked future day from detail opens sheet without auto-logging
+  const unmarked = await page.evaluate(() => {
+    const idx = load().findIndex(h => h.name === 'Scope Alpha');
+    const before = normalizeLogs(load()[idx].logs).filter(log => !isPlanLog(log)).length;
+    const key = dateKey(dayStart(Date.now()) + 9 * 86400000);
+    dayLogsKey = key;
+    dayLogsScopeIndex = idx;
+    dayLogsStep = 'item';
+    dayLogsItemIndex = idx;
+    dayLogsMoving = false;
+    renderDayLogs(key);
+    const after = normalizeLogs(load()[idx].logs).filter(log => !isPlanLog(log)).length;
+    return {
+      before,
+      after,
+      hasLog: !!document.querySelector('[data-log-day-item]'),
+      hasPlan: !!document.querySelector('#day-logs-plan'),
+      emptyNote: (document.getElementById('day-logs-body')?.innerText || '').includes('Nothing on this day')
+    };
+  });
+  assert(unmarked.after === unmarked.before, 'unmarked detail day does not auto-log');
+  assert(unmarked.hasLog && unmarked.hasPlan, 'unmarked scoped day offers Log and Plan');
 
   // Add-plan step stays locked to the same habit
   const addStep = await page.evaluate(() => {
@@ -322,11 +351,15 @@ function seedScript(){
       isHidden: ting ? ting.type === 'hidden' || ting.tagName === 'INPUT' : false,
       scopedLabel,
       selectCount: document.querySelectorAll('#day-log-ting option').length,
+      hasTime: !!document.getElementById('day-log-time'),
+      hasLocation: !!document.getElementById('day-log-location'),
     };
   });
   console.log(addStep);
   assert(String(addStep.value) !== '', 'scoped add step targets an index');
   assert(/Scope Alpha/i.test(addStep.scopedLabel) || addStep.selectCount <= 1, 'add step does not offer a full habit picker');
+  assert(addStep.hasTime, 'add step includes optional time');
+  assert(addStep.hasLocation, 'add step includes optional location for habits with places');
 
   // Overview path clears scope
   const cleared = await page.evaluate(() => {

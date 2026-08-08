@@ -413,6 +413,9 @@ async function toastText(page){
   await afterEditor.locator('[data-tip^="detail-link-same-day-help"]').click();
   assert(await sameDayHelp.isVisible(), 'same-day explanation opens from info button');
   assert((await sameDayHelp.textContent()).indexOf('Gym with a deliberately long habit name') >= 0, 'same-day explanation names anchor habit');
+  assert((await sameDayHelp.textContent()).indexOf('Other days stay unconstrained') >= 0, 'must-do help says other days stay unconstrained');
+  const sameDayTitle = await afterEditor.locator('.schedule-link-same-day-row .setting-title').textContent();
+  assert((sameDayTitle || '').indexOf('Must do on days with') === 0, 'must-do label uses Must do on days with (' + sameDayTitle + ')');
   assert(await sameDayToggle.getAttribute('aria-pressed') === 'false', 'same-day toggle starts off');
   assert(await sameDayToggle.locator('.schedule-link-state').count() === 0, 'same-day toggle omits redundant state label');
   await sameDayToggle.click();

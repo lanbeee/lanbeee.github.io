@@ -757,14 +757,27 @@ function collectDayLogRows(key){
 
 // PURE: day-scoped meta line for a row
 function dayRowMeta(row){
-  const plannedCount = row.entries.filter(isPlanLog).length;
+  const planned = row.entries.filter(isPlanLog);
+  const plannedCount = planned.length;
   const actualCount = row.entries.length - plannedCount;
   const parts = [];
   row.scheduled.forEach(kind=>{
     const label = dayMarkerKindLabel(kind);
     if(label)parts.push(label);
   });
-  if(plannedCount)parts.push(`${plannedCount} planned`);
+  if(plannedCount){
+    const timed = planned.find(planTimed);
+    if(timed){
+      const clock = new Date(logTime(timed)).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+      const locId = planLocationId(timed);
+      const loc = locId && typeof normalizeLocationRegistry === 'function'
+        ? normalizeLocationRegistry(sortSettings?.locations).find(l=>l.id === locId)
+        : null;
+      parts.push(loc ? `planned ${clock} · ${loc.name}` : `planned ${clock}`);
+    }else{
+      parts.push(`${plannedCount} planned`);
+    }
+  }
   if(actualCount)parts.push(`${actualCount} done`);
   const cue = typeof cardCue === 'function' ? cardCue(row.h) : '';
   const type = habitTypeLabel(row.h.type);
@@ -911,12 +924,15 @@ function renderDayLogsItemStep(key){
   if(!dayLogsScoped()){
     actions.push(actionMarkup(`data-open-day-item="${idx}"`,'ti-external-link','Open item','View details, history, and schedule','primary'));
   }
+  if(dayLogsScoped() && !dayLogsMoving){
+    actions.push(actionMarkup(`data-log-day-item="${idx}" data-log-day="${key}"`,'ti-check','Log for this day','Mark it done on this day','primary'));
+  }
   if(plannedCount && !dayLogsMoving){
     actions.push(actionMarkup(`data-move-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-forward','Move plan','Choose a different day'));
     actions.push(actionMarkup(`data-remove-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-x','Remove plan','Keep the item, remove it from this day','danger'));
   }
   if(dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving){
-    actions.push(actionMarkup('id="day-logs-plan"','ti-calendar-plus','Plan this item','Add it to this day','primary'));
+    actions.push(actionMarkup('id="day-logs-plan"','ti-calendar-plus','Plan this item','Add it to this day'));
   }
 
   const emptyNote = !row.entries.length && !row.scheduled.length
@@ -973,17 +989,54 @@ function renderDayLogsAddStep(key){
          ? addOptions.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('')
          : '<option value="">No active items</option>'}</select>`;
 
+  const locationHabit = scopedHabit || (addOptions[0] ? addOptions[0].h : null);
+  const locationHtml = dayLogsLocationFieldHtml(locationHabit);
+
   $('day-logs-body').innerHTML = `
     <div class="day-add-step">
-      <div class="day-step-intro"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span><b>Add to this day</b><small>Pick an item. A time is optional—the planner can place it for you.</small></span></div>
+      <div class="day-step-intro"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span><b>Add to this day</b><small>A time locks the slot. Location is optional for this day only.</small></span></div>
       ${pickerHtml}
       <label class="field-label" for="day-log-time">time <span class="field-optional">optional</span></label>
       <input type="time" id="day-log-time" class="time-input" step="900" aria-label="optional plan time" />
+      ${locationHtml}
     </div>`;
 
   $('day-logs-footer').innerHTML = `
     <button class="btn" type="button" id="day-logs-back-list">back</button>
     <button class="btn primary" type="button" id="day-log-add" ${addOptions.length ? '' : 'disabled'}>add plan</button>`;
+
+  if(!dayLogsScoped()){
+    const ting = $('day-log-ting');
+    if(ting)ting.addEventListener('change',()=>{
+      const idx = parseInt(ting.value,10);
+      const field = $('day-log-location-field');
+      if(!field)return;
+      field.outerHTML = dayLogsLocationFieldHtml(data[idx] || null);
+    });
+  }
+}
+
+// PURE: optional location select for the add-plan step (habit places only).
+function dayLogsLocationFieldHtml(h){
+  const registry = typeof normalizeLocationRegistry === 'function'
+    ? normalizeLocationRegistry(sortSettings?.locations) : [];
+  const ids = h && typeof normalizeLocationIds === 'function'
+    ? normalizeLocationIds(h.locationIds,registry) : [];
+  if(!ids.length){
+    return `<div id="day-log-location-field" hidden></div>`;
+  }
+  const options = ids.map(id=>{
+    const loc = registry.find(l=>l.id === id);
+    const name = loc ? loc.name : id;
+    return `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`;
+  }).join('');
+  return `<div id="day-log-location-field">
+    <label class="field-label" for="day-log-location">location <span class="field-optional">optional</span></label>
+    <select id="day-log-location" aria-label="optional plan location">
+      <option value="">planner picks</option>
+      ${options}
+    </select>
+  </div>`;
 }
 
 // RENDER: availability step
