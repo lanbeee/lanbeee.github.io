@@ -847,6 +847,21 @@ function currentLocationId(){
   return null;
 }
 
+// The user's location ONLY when it is genuinely live — a manual "I am at" pin or
+// a geolocation fix that matches a registered place. Excludes the stale
+// last-known default so the planner can tell "I am actually here right now"
+// (which supersedes ended blocks like last night's sleep) apart from a static
+// fallback (which must yield to scheduled appointments).
+function liveLocationId(){
+  const pinned = cleanLocationId((sortSettings || {}).pinnedLocationId);
+  if(pinned)return pinned;
+  if(currentCoord){
+    const id = matchLocationId(currentCoord.lat,currentCoord.lng,(sortSettings || {}).locations);
+    if(id)return id;
+  }
+  return null;
+}
+
 // IMPURE: pin a manual "I am at" choice. The pin is sticky — it overrides
 // auto detection so a manual pick from the home presence picker isn't
 // immediately overwritten by the next GPS fix. Clear with clearPinnedLocation.

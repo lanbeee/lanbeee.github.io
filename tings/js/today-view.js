@@ -20,12 +20,49 @@
 // a narrow sunrise habit keeps its only gap even when a flexible P0 also wants
 // the morning. Home list ranking is unchanged; scarcity only arbitrates agenda
 // capacity and clock slots.
+
+/** PURE: start ms for a scheduled agenda event (task eventTime or timed plan). */
+function scheduledEventStart(ev){
+  if(!ev)return null;
+  if(ev.eventTime != null && Number.isFinite(Number(ev.eventTime)))return Number(ev.eventTime);
+  if(ev.h && ev.h.eventTime != null && Number.isFinite(Number(ev.h.eventTime)))return Number(ev.h.eventTime);
+  return null;
+}
+
+/**
+ * PURE: hard clock blocks for a day — timed tasks plus timed day-plan logs.
+ * Returns {h,i,eventTime,locationId?,fromTimedPlan?} sorted by start.
+ * Untimed day pins and plan-by (`planByDate`) are not included here.
+ */
+function collectScheduledAgendaEvents(data,dayKey,settings){
+  const out = [];
+  const showTasks = !settings || settings.showScheduledTasksInAgenda !== false;
+  const showPlanned = !settings || settings.showPlannedItemsInAgenda !== false;
+  (data || []).forEach((h,i)=>{
+    if(!h)return;
+    if(showTasks && h.type === 'task' && h.eventTime !== null
+      && (typeof isTaskDone !== 'function' || !isTaskDone(h))
+      && dateKey(h.eventTime) === dayKey){
+      out.push({h,i,eventTime:h.eventTime});
+    }
+    if(!showPlanned || typeof timedPlanLogForDay !== 'function')return;
+    const plan = timedPlanLogForDay(h,dayKey);
+    if(!plan)return;
+    out.push({
+      h,
+      i,
+      eventTime:logTime(plan),
+      locationId:typeof planLocationId === 'function' ? planLocationId(plan) : null,
+      fromTimedPlan:true
+    });
+  });
+  return out.sort((a,b)=>a.eventTime - b.eventTime);
+}
+
 function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
-  const scheduled = data
-    .map((h,i)=>({h,i}))
-    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && !isTaskDone(h) && dateKey(h.eventTime) === todayKey)
-    .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
+  const dayBase = dayStart(Date.now());
+  const scheduled = collectScheduledAgendaEvents(data,todayKey,settings);
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
   const slots = buildOpenAgendaSlots(todayKey,scheduled,settings);
   // The availability budget caps TASK minutes for the day, not open time.
@@ -41,30 +78,15 @@ function buildTodayAgenda(data,settings){
     const h = data[i];
     if(h.type === 'task' && isTaskDone(h))continue;
     if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
+    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
     const dueToday = includeInTodayAgenda(h,settings);
     const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
     if(!dueToday && !earlyOk)continue;
     candidates.push({h,i,priority:effectivePriority(h),rank:homeRank++});
   }
-  const dayBase = dayStart(Date.now());
-  const candidateHids = new Set(candidates.map(c=>c.h && c.h.hid).filter(Boolean));
   const linkOmissions = [];
-  for(let i = candidates.length - 1;i >= 0;i -= 1){
-    const candidate = candidates[i];
-    const sameDayLinks = typeof sameDayScheduleLinks === 'function'
-      ? sameDayScheduleLinks(candidate.h)
-      : normalizeScheduleLinks(candidate.h.scheduleLinks,candidate.h.hid).filter(l=>l && l.requireSameDay);
-    if(!sameDayLinks.length)continue;
-    // OR: keep when any same-day anchor is a candidate or already committed today.
-    const anyAnchor = sameDayLinks.some(link=>
-      candidateHids.has(link.anchorHid)
-      || scheduleAnchorCommitForDay(link.anchorHid,dayBase,data)
-    );
-    if(anyAnchor)continue;
-    const anchorName = data.find(h=>h && h.hid === sameDayLinks[0].anchorHid)?.name || 'anchor';
-    linkOmissions.push({subjectHid:candidate.h.hid,reason:`waiting for ${anchorName} to be eligible this day`});
-    candidates.splice(i,1);
-  }
+  // Must-do links pull via earlyReason / week eligibility; they do not remove
+  // a subject when its partner is absent (other days stay unconstrained).
   const scarcityState = createDayPlacementState(
     {scheduled,agendaItems:[],totalMinutes:totalCap,slots,dayBase,weekday:new Date(dayBase).getDay(),isToday:true},
     settings,
@@ -80,7 +102,11 @@ function buildTodayAgenda(data,settings){
 
 // PURE: applies user-facing Today agenda inclusion settings.
 function includeInTodayAgenda(h,settings){
-  if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false)return true;
+  if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false){
+    // Timed day plans are hard scheduled rows — do not also soft-fill today.
+    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
+    return true;
+  }
   if(h.type === 'task'){
     const when = taskWhen(h);
     const left = when !== null ? daysUntil(when) : null;
@@ -317,16 +343,27 @@ function locationTiedBlockedIntervals(state){
  * started. Falls back to the day's seed (presence / morning block).
  */
 function locationPresenceAt(state,atTs,chron){
-  let loc = state && state.seedLocId || null;
+  const seedLoc = state && state.seedLocId || null;
+  const liveLoc = state && state.liveLocId || null;
   const marks = [];
   const at = Number(atTs) || 0;
+  const startClock = Number(state && state.startClock) || 0;
+  // A genuinely LIVE location (geolocation fix or a manual "I am at" pin)
+  // reflects where the user is right now. It supersedes events that already
+  // ended before the start clock — last night's sleep at Home must not strand
+  // you there at 10am when your GPS says FarA. A stale last-known default gets
+  // no such treatment, so scheduled appointments still drive presence in the
+  // static/preview path (and keeps leave-by tests honest).
+  const seedOverrides = liveLoc && Number.isFinite(startClock) && startClock <= at;
   for(const row of state && state.rows || []){
     if(row.kind !== 'scheduled' || !row.locationId)continue;
     if(!(row.start < at))continue;
+    if(seedOverrides && Number.isFinite(row.end) && row.end <= startClock)continue;
     marks.push({start:row.start,locationId:row.locationId});
   }
   for(const block of locationTiedBlockedIntervals(state)){
     if(!(block.start < at))continue;
+    if(seedOverrides && Number.isFinite(block.end) && block.end <= startClock)continue;
     marks.push({start:block.start,locationId:block.locationId});
   }
   for(const entry of chron || []){
@@ -334,7 +371,8 @@ function locationPresenceAt(state,atTs,chron){
     if(!fit || !fit.locId || !(fit.placeStart < at))continue;
     marks.push({start:fit.placeStart,locationId:fit.locId});
   }
-  if(!marks.length)return loc;
+  if(seedOverrides)marks.push({start:startClock,locationId:liveLoc});
+  if(!marks.length)return seedLoc;
   marks.sort((a,b)=>a.start - b.start);
   return marks[marks.length - 1].locationId;
 }
@@ -519,6 +557,12 @@ function scheduleAnchorCommitForDay(hid,dayBase,data = null){
         result = {start,end,kind:'active'};
       }else if(h.type === 'task' && h.eventTime != null && dayStart(h.eventTime) === base){
         result = {start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
+      }else if(typeof timedPlanLogForDay === 'function'){
+        const plan = timedPlanLogForDay(h,dateKey(base));
+        if(plan){
+          const start = logTime(plan);
+          result = {start,end:start + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
+        }
       }
     }
   }
@@ -599,9 +643,14 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
   if(!Array.isArray(items) || !items.length)return [];
   const registry = normalizeLocationRegistry(settings.locations);
   const mode = normalizeTravelMode(settings.defaultTravelMode);
+  const dayKey = dateKey(now);
   let anchor = (typeof currentLocationId === 'function' && currentLocationId())
     || settings.lastKnownLocationId
     || null;
+  // Genuine live presence only — never a stale lastKnown default. When live,
+  // travel (at-location-first) overrides priority within a scarcity tier.
+  const liveAnchor = typeof liveLocationId === 'function' ? liveLocationId() : null;
+  const travelOverridesPriority = !!(liveAnchor && anchor === liveAnchor);
   const bands = [];
   for(const item of items){
     const scarce = isScarceScore(item.scarcity)
@@ -609,25 +658,38 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
       || (typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(item.h));
     const scarcityKey = scarce ? 0 : 1;
     const p = item.priority ?? effectivePriority(item.h);
-    let band = bands.find(b=>b.scarcityKey === scarcityKey && b.priority === p);
-    if(!band){ band = {scarcityKey,priority:p,items:[]}; bands.push(band); }
+    const bandP = travelOverridesPriority ? 0 : p;
+    let band = bands.find(b=>b.scarcityKey === scarcityKey && b.priority === bandP);
+    if(!band){ band = {scarcityKey,priority:bandP,items:[]}; bands.push(band); }
     band.items.push(item);
   }
   bands.sort((a,b)=>a.scarcityKey - b.scarcityKey || a.priority - b.priority);
   const out = [];
+  const resolveItemLoc = (item,anchorId)=>{
+    if(item && Object.prototype.hasOwnProperty.call(item,'locationId')
+      && item.locationId !== undefined){
+      return item.locationId;
+    }
+    const planLoc = typeof dayPlanLocationId === 'function'
+      ? dayPlanLocationId(item.h,dayKey) : null;
+    if(planLoc)return planLoc;
+    return pickHabitLocationId(item.h,anchorId,registry,mode);
+  };
   for(const band of bands){
     const left = [...band.items];
     while(left.length){
       let bestIdx = 0;
       let bestScore = Infinity;
       for(let i = 0;i < left.length;i += 1){
-        const locId = pickHabitLocationId(left[i].h,anchor,registry,mode);
+        const locId = resolveItemLoc(left[i],anchor);
         const edge = travelEdgeBetweenIds(anchor,locId,registry,mode);
-        const score = edge.seconds;
+        const pri = left[i].priority ?? effectivePriority(left[i].h);
+        // Travel primary; priority is a tiebreak only (especially when live).
+        const score = edge.seconds + pri * 1e-6;
         if(score < bestScore){ bestScore = score; bestIdx = i; }
       }
       const picked = left.splice(bestIdx,1)[0];
-      const locationId = pickHabitLocationId(picked.h,anchor,registry,mode);
+      const locationId = resolveItemLoc(picked,anchor);
       out.push({...picked,locationId});
       if(locationId)anchor = locationId;
     }
@@ -986,6 +1048,7 @@ function diagnosticsFromRenderedDay(data,settings,day){
   for(let i = 0;i < data.length;i += 1){
     const h = data[i];
     if(!h || (h.type === 'task' && h.eventTime !== null))continue;
+    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
     const pinned = isWeekPinnedToday(h,settings);
     if((pinned && day.isToday) || (!pinned && isWeekCandidate(h,settings,day.dayBase,day.weekday))){
       candidates.push({h,i,priority:effectivePriority(h)});
@@ -1425,8 +1488,10 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     diagnostics = agenda.placementDiagnostics || {items:[],placedMinutes:0,travelMinutes:0};
   }
   const scheduledMinutes = (agenda.scheduled || []).reduce((sum,event)=>{
-    const start = Math.max(rangeStart,event.h.eventTime);
-    const end = Math.min(dayEnd,event.h.eventTime + clampDuration(event.h.durationMinutes) * 60000);
+    const startTs = scheduledEventStart(event);
+    if(startTs == null)return sum;
+    const start = Math.max(rangeStart,startTs);
+    const end = Math.min(dayEnd,startTs + clampDuration(event.h.durationMinutes) * 60000);
     return sum + Math.max(0,Math.round((end - start) / 60000));
   },0);
   const diagByIndex = new Map(diagnostics.items.map(item=>[item.i,item]));
@@ -1438,6 +1503,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     const h = data[i];
     if(!h || h.type === 'zero')return false;
     if(h.type === 'task' && (isTaskDone(h) || h.eventTime !== null))return false;
+    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
     if(!isToday && opts.weekMode){
       return isWeekCandidate(h,settings,dayBase,new Date(dayBase).getDay());
     }
@@ -1630,16 +1696,28 @@ function createDayPlacementState(day,settings,opts = {}){
     : [{start:startClock,end:dayBase + 24 * 3600000}];
   const rows = [];
   (day.scheduled || []).forEach(ev=>{
-    const end = ev.h.eventTime + clampDuration(ev.h.durationMinutes) * 60000;
+    const start = scheduledEventStart(ev);
+    if(start == null)return;
+    const end = start + clampDuration(ev.h.durationMinutes) * 60000;
     const locIds = normalizeLocationIds(ev.h.locationIds,registry);
-    const locationId = pickHabitLocationId(ev.h,null,registry,mode) || locIds[0] || null;
-    rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start:ev.h.eventTime, end, hard:true, locationId });
+    let locationId = ev.locationId || null;
+    if(locationId){
+      const known = registry.some(l=>l.id === locationId);
+      if(!known)locationId = null;
+    }
+    if(!locationId)locationId = pickHabitLocationId(ev.h,null,registry,mode) || locIds[0] || null;
+    rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start, end, hard:true, locationId });
   });
   let prevLocId = isTodayDay
     ? ((typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null)
     : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
       || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
       || null);
+  // Genuine live fix only (geolocation / manual pin), not the last-known
+  // default. Presence uses this to decide whether the seed supersedes ended
+  // blocks. Null on future days and whenever the user has no active fix.
+  const liveLocId = isTodayDay && typeof liveLocationId === 'function'
+    ? liveLocationId() : null;
   return {
     day,
     dayBase,
@@ -1656,6 +1734,7 @@ function createDayPlacementState(day,settings,opts = {}){
     usedMinutes:0,
     seedLocId:prevLocId,
     prevLocId,
+    liveLocId,
     rows,
     fills:[],
     placed:new Set()
@@ -2002,6 +2081,13 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
+  // Untimed day pins store locationId on the plan log. That override wins over
+  // reorder/pick defaults stamped onto the fill (preferred location, travel
+  // clustering), since the user explicitly chose the place for this day.
+  if(typeof dayPlanLocationId === 'function'){
+    const planLoc = dayPlanLocationId(fill.h,dateKey(dayBase));
+    if(planLoc)fill.locationId = planLoc;
+  }
   const registryLookup = id=>{
     if(!id)return null;
     if(state.registryById)return state.registryById.get(id) || null;
@@ -3094,8 +3180,10 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
   const start = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
   const end = start + 24 * 3600000;
   const blocks = agendaBlockedIntervals(todayKey,settings,start,end);
-  scheduled.forEach(({h})=>{
-    blocks.push({start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,label:h.name});
+  scheduled.forEach(ev=>{
+    const start = scheduledEventStart(ev);
+    if(start == null)return;
+    blocks.push({start,end:start + clampDuration(ev.h.durationMinutes) * 60000,label:ev.h.name});
   });
   const merged = mergeIntervals(blocks
     .map(b=>({start:Math.max(start,b.start),end:Math.min(end,b.end),label:b.label}))
@@ -3394,10 +3482,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
   const dayKey = dateKey(dayBase);
   const weekday = new Date(dayBase).getDay();
   const isToday = dayStart(Date.now()) === dayBase;
-  const scheduled = data
-    .map((h,i)=>({h,i}))
-    .filter(({h})=>settings.showScheduledTasksInAgenda !== false && h.type === 'task' && h.eventTime !== null && !isTaskDone(h) && dateKey(h.eventTime) === dayKey)
-    .sort(({h:a},{h:b})=>a.eventTime - b.eventTime);
+  const scheduled = collectScheduledAgendaEvents(data,dayKey,settings);
   const totalMinutes = effectiveAvailabilityMinutes(dayKey,settings);
   const clipAfter = isToday ? ceilToMinutes(Date.now(),5) : dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday,dayBase) * 60000;
   const slots = buildOpenAgendaSlots(dayKey,scheduled,settings,{clipAfter});
@@ -3412,6 +3497,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
       const h = data[i];
       if(h.type === 'task' && isTaskDone(h))continue;
       if(h.type === 'task' && h.eventTime !== null)continue;
+      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
       const dueToday = includeInTodayAgenda(h,settings);
       const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
       if(!dueToday && !earlyOk)continue;
@@ -3435,6 +3521,7 @@ function isWeekPinnedToday(h,settings){
   if(!h || h.type === 'zero')return false;
   if(h.type === 'task' && isTaskDone(h))return false;
   if(h.type === 'task' && h.eventTime !== null)return false;
+  if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
   if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false)return true;
   if(h.type === 'task' && h.hardDue && h.dueDate !== null && settings.showDueTasksInAgenda !== false){
     const left = daysUntil(h.dueDate);
@@ -3512,6 +3599,8 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   }
   // Habit: both weekday and month-day gates must allow this calendar date.
   if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
+  // Timed day plans are hard scheduled rows for that day — not soft week fills.
+  if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
   if(hasPlannedForDay(h,dayBase))return settings.showPlannedItemsInAgenda !== false;
   if(settings.showDueHabitsInAgenda === false)return false;
   // One-off soft plan-by: eligible any day from today through the deadline
@@ -3536,15 +3625,11 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(days === null)return true;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
-  // When every allowed calendar date is needed to meet the requested rate, each
-  // later eligible day is a candidate regardless of the raw calendar gap.
-  // Do not offer another session on the same day it was completed.
-  if(typeof rhythmFillsEveryEligibleDay === 'function'
-    && rhythmFillsEveryEligibleDay(h))return ageOnDay > 0;
-  if(ageOnDay >= target)return true;               // due/overdue by this day
   // Breakable daily rhythm: after a partial log, today's budget is still open
   // even though lastLog reset the rhythm clock (days < target). Keep placing
-  // the leftover so one pulse cannot wipe every chunk off the timeline.
+  // the leftover so one pulse cannot wipe every chunk off the timeline. This
+  // must precede the rhythmFillsEveryEligibleDay early-return below, which
+  // would otherwise exclude today for a daily breakable that logged a chunk.
   if(typeof isBreakableRhythmHabit === 'function' && isBreakableRhythmHabit(h)
     && typeof breakableBudgetMinutes === 'function'
     && breakableBudgetMinutes(h,dayBase) > 0
@@ -3552,6 +3637,12 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     && loggedChunkMinutesOnDay(h,dayBase) > 0){
     return true;
   }
+  // When every allowed calendar date is needed to meet the requested rate, each
+  // later eligible day is a candidate regardless of the raw calendar gap.
+  // Do not offer another session on the same day it was completed.
+  if(typeof rhythmFillsEveryEligibleDay === 'function'
+    && rhythmFillsEveryEligibleDay(h))return ageOnDay > 0;
+  if(ageOnDay >= target)return true;               // due/overdue by this day
   // Pull forward within flexibility so the week can absorb upcoming work.
   const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
   if(flex > 0 && ageOnDay >= target - flex)return true;
@@ -3588,10 +3679,9 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   const days = daysSince(h.lastLog);
   if(days !== null && days < 0)return false;
   if(days === null)return true;
-  // OR semantics (same-day link pull): when a partner is present on this day a
-  // build (keepup) habit is eligible regardless of its own cadence; reduce keeps
-  // its ceiling. opts.partnerPresent is set only by the link pull passes, where a
-  // partner is known to be eligible on dayBase.
+  // When a scarce must-do partner is present, a build (keepup) habit may join
+  // regardless of its own cadence. Open reduce partners (eligible every day
+  // until done) must not unlock this — they would flood daily extras.
   if(opts && opts.partnerPresent && h.type === 'keepup')return true;
   const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
   const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
@@ -3600,6 +3690,57 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   if(ageOnDay >= rawTarget)return true;
   if(flex > 0 && ageOnDay >= rawTarget - flex)return true;
   return false;
+}
+
+/**
+ * PURE: whether a must-do partner may unlock unlimited keepup extras on its days.
+ * Keepup and day-pinned habits are scarce; open reduce (eligible every day until
+ * done) is not — joining those days still uses the subject's own flex/rhythm.
+ */
+function scheduleLinkPartnerAllowsKeepupExtra(anchorH){
+  if(!anchorH)return false;
+  if(anchorH.type === 'keepup')return true;
+  if(typeof scheduledDays === 'function'){
+    const schedule = scheduledDays(anchorH);
+    const days = schedule && Array.isArray(schedule.weekdays) ? schedule.weekdays : [];
+    if(days.length >= 1 && days.length <= 6)return true;
+  }else if(Array.isArray(anchorH.allowedWeekdays)){
+    const n = anchorH.allowedWeekdays.length;
+    if(n >= 1 && n <= 6)return true;
+  }
+  return false;
+}
+
+/**
+ * PURE: scarce partner *occurrence* on dayBase — day-pinned weekday, or the
+ * keepup's first due day in the horizon (not every overdue day after).
+ */
+function scheduleLinkPartnerScarceOnDay(anchorH,dayBase,weekday){
+  if(!scheduleLinkPartnerAllowsKeepupExtra(anchorH) || dayBase == null)return false;
+  if(typeof scheduledDays === 'function'){
+    const schedule = scheduledDays(anchorH);
+    const days = schedule && Array.isArray(schedule.weekdays) ? schedule.weekdays : [];
+    if(days.length >= 1 && days.length <= 6){
+      return weekday == null || days.includes(weekday);
+    }
+  }else if(Array.isArray(anchorH.allowedWeekdays) && anchorH.allowedWeekdays.length){
+    const pinned = anchorH.allowedWeekdays;
+    if(pinned.length >= 1 && pinned.length <= 6){
+      return weekday == null || pinned.includes(weekday);
+    }
+  }
+  if(anchorH.type !== 'keepup')return false;
+  const days = daysSince(anchorH.lastLog);
+  if(days !== null && days < 0)return false;
+  if(days === null){
+    // Never logged: only the first horizon day, not the whole week.
+    return Math.round((dayBase - dayStart(Date.now())) / 86400000) === 0;
+  }
+  const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(anchorH.target) || 7);
+  const today = dayStart(Date.now());
+  const offsetDays = Math.round((dayBase - today) / 86400000);
+  const firstDueOffset = rawTarget - days;
+  return offsetDays === firstDueOffset;
 }
 
 /** Subjects that list `anchorHid` in a same-day schedule link. */
@@ -3619,42 +3760,41 @@ function sameDaySubjectsForAnchor(anchorHid,candidates){
   return out;
 }
 
-// Cadence OR semantics: a same-day-linked partner's presence satisfies the
-// cadence for build (keepup) habits — extra reps are fine, so the partner's
-// day is honoured regardless of the habit's own rhythm. Reduce habits keep
-// their ceiling (target is a max interval), so a partner cannot make them
-// fire more often than their target.
+// Cadence OR for keepup extras: a scarce must-do partner *occurrence* on this
+// day unlocks an extra build rep. Open reduce and overdue-every-day keepups do
+// not keep unlocking extras after their first due day.
 function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
   if(!h || !h.hid || dayBase == null || !Array.isArray(candidates))return false;
   const byHid = new Map(candidates.filter(c=>c && c.h && c.h.hid).map(c=>[c.h.hid,c]));
-  // h as a same-day subject: any of its anchors eligible on dayBase.
+  const weekday = new Date(dayBase).getDay();
+  // h as a must-do subject: any scarce-on-day anchor eligible on dayBase.
   const links = typeof sameDayScheduleLinks === 'function'
     ? sameDayScheduleLinks(h)
     : normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay);
   for(const link of links){
     const anchor = byHid.get(link.anchorHid);
-    if(anchor && anchor.eligible && anchor.eligible.has(dayBase))return true;
+    if(!anchor || !anchor.eligible || !anchor.eligible.has(dayBase))continue;
+    if(scheduleLinkPartnerScarceOnDay(anchor.h,dayBase,weekday))return true;
   }
-  // h as a same-day anchor: any subject eligible on dayBase.
-  for(const {candidate} of sameDaySubjectsForAnchor(h.hid,candidates)){
-    if(candidate && candidate.eligible && candidate.eligible.has(dayBase))return true;
-  }
+  // Do not grant extras to anchors just because a subject is present — that
+  // reverse-fed Exercise onto every Shower day.
   return false;
 }
 
-// A keepup habit may place an extra rep on any day a same-day-linked partner is
-// eligible — the OR between rhythm and same-day links (more is fine for build).
+// A keepup habit may place an extra rep on a day a scarce must-do partner is
+// eligible — the OR between rhythm and must-do links (more is fine for build).
 function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
   if(!h || h.type !== 'keepup' || dayBase == null)return false;
   return sameDayPartnerEligibleOnDay(h,dayBase,candidates);
 }
 
 // Mutates each candidate's derived eligible Set.
-// Same-day links are OR'd and bidirectional for flex pull:
-//  1) Pull flexible anchors onto days where a same-day subject is eligible
-//     (Juma Fri → Shower Fri when Shower's flex allows).
-//  2) Pull flexible subjects onto days where any same-day anchor is present.
-//  3) Filter subjects off days where no same-day anchor is present.
+// Must-do links are OR'd; pull is forward-primary:
+//  1) Reverse pull: subject days may attract anchors only within the anchor's
+//     own flex/rhythm (never unlimited keepup bypass — that made Exercise daily).
+//  2) Forward pull: scarce partner *occurrences* attract subjects with keepup
+//     extras; open reduce / post-due keepup days only pull within subject flex.
+// Subjects may still appear alone on other days (must-do does not gate them off).
 function applyPersistentLinkEligibility(candidates,dayStates,settings){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates))return candidates;
   const cfg = settings || (typeof sortSettings !== 'undefined' ? sortSettings : {});
@@ -3690,7 +3830,7 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
     return days;
   };
 
-  // Pass 1 — reverse pull: subject days attract flexible anchors.
+  // Pass 1 — reverse pull: subject days attract anchors within anchor cadence.
   for(const subject of candidates){
     if(!subject || !subject.h)continue;
     const links = typeof sameDayScheduleLinks === 'function'
@@ -3704,14 +3844,15 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
         if(!anchor)continue;
         if(!anchor.eligible)anchor.eligible = new Set();
         if(anchor.eligible.has(dayBase))continue;
-        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg,{partnerPresent:true})){
+        // No partnerPresent bypass: anchors keep their own rhythm/flex.
+        if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg)){
           anchor.eligible.add(dayBase);
         }
       }
     }
   }
 
-  // Pass 2 — forward pull: anchor days attract flexible subjects.
+  // Pass 2 — forward pull: scarce anchor occurrences attract flexible subjects.
   for(const candidate of candidates){
     const subjectHid = candidate && candidate.h && candidate.h.hid;
     if(!subjectHid)continue;
@@ -3722,34 +3863,21 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
     if(!sameDayLinks.length)continue;
 
     for(const {dayBase,weekday} of dayHolders){
-      const anyAnchor = sameDayLinks.some(link=>anchorPresent(link.anchorHid,dayBase));
-      if(!anyAnchor)continue;
+      const present = sameDayLinks.filter(link=>anchorPresent(link.anchorHid,dayBase));
+      if(!present.length)continue;
       if(candidate.eligible.has(dayBase))continue;
-      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg,{partnerPresent:true})){
+      const scarcePartner = present.some(link=>{
+        const anchor = byHid.get(link.anchorHid);
+        return scheduleLinkPartnerScarceOnDay(anchor && anchor.h,dayBase,weekday);
+      });
+      if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg,
+        scarcePartner ? {partnerPresent:true} : null)){
         candidate.eligible.add(dayBase);
       }
     }
   }
 
-  // Pass 3 — filter: subjects with same-day links cannot appear alone.
-  for(const candidate of candidates){
-    const subjectHid = candidate && candidate.h && candidate.h.hid;
-    if(!subjectHid || !candidate.eligible)continue;
-    const sameDayLinks = typeof sameDayScheduleLinks === 'function'
-      ? sameDayScheduleLinks(candidate.h)
-      : normalizeScheduleLinks(candidate.h.scheduleLinks,subjectHid).filter(l=>l && l.requireSameDay);
-    if(!sameDayLinks.length)continue;
-    for(const dayBase of [...candidate.eligible]){
-      if(sameDayLinks.some(link=>anchorPresent(link.anchorHid,dayBase)))continue;
-      candidate.eligible.delete(dayBase);
-      const {day} = dayMeta(dayBase);
-      const anchorName = (typeof load === 'function' ? load() : []).find(item=>item && item.hid === sameDayLinks[0].anchorHid)?.name
-        || 'anchor';
-      addScheduleLinkOmission(day,subjectHid,`waiting for ${anchorName} to be eligible this day`);
-    }
-  }
-
-  // Pass 4 — non-build anchors must not burn a later same-day partner day.
+  // Pass 3 — non-build anchors must not burn a later must-do partner day.
   // Example: reduce every 3 days linked before a Friday-only partner — drop
   // Thursday (gap 1 < target) so solvers do not place Thu and leave Fri bare.
   // Keepup/build skips this: extra reps for partners are fine, so an earlier
@@ -3898,10 +4026,31 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
   const mode = dayStates[0] ? dayStates[0].mode : normalizeTravelMode(settings.defaultTravelMode);
   const weights = resolveAgendaScoreWeights(settings);
+  // Live presence only: within equal scarcity, place at-live-location work
+  // before away work so the week path does not away-and-back (priority alone
+  // would otherwise claim the early slot). Gated so static/preview seeds are
+  // unchanged.
+  const liveLocId = typeof liveLocationId === 'function' ? liveLocationId() : null;
   for(const c of candidates){
     if(c.scarcity == null)c.scarcity = scarcityScore(c,dayStates);
+    c.atLiveLocation = !!(liveLocId && c.h && Array.isArray(c.h.locationIds)
+      && c.h.locationIds.includes(liveLocId));
   }
-  candidates.sort(compareScarcityThenPriority);
+  const compareWeekPlacement = (a,b)=>{
+    const pinA = a.pinned === true;
+    const pinB = b.pinned === true;
+    if(pinA !== pinB)return pinA ? -1 : 1;
+    const sa = a.scarcity != null ? a.scarcity : SCARCITY_UNBOUNDED;
+    const sb = b.scarcity != null ? b.scarcity : SCARCITY_UNBOUNDED;
+    if(sa !== sb)return sa - sb;
+    if(liveLocId){
+      const la = a.atLiveLocation === true;
+      const lb = b.atLiveLocation === true;
+      if(la !== lb)return la ? -1 : 1;
+    }
+    return compareScarcityThenPriority(a,b);
+  };
+  candidates.sort(compareWeekPlacement);
   // Soft boost: place "before" sides of same-day order links earlier in the
   // assignment loop so their successors can sit after them.
   const doingRaw = typeof getDoingNow === 'function' ? getDoingNow() : null;
@@ -3923,7 +4072,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       const wa = beforeBoost.get(ah) || 0;
       const wb = beforeBoost.get(bh) || 0;
       if(wa !== wb)return wb - wa;
-      return compareScarcityThenPriority(a,b);
+      return compareWeekPlacement(a,b);
     });
   }
   let totalAssigned = 0;
@@ -4667,8 +4816,9 @@ function persistentLinkViolationsForState(state){
     return gapMin <= DIRECT_EMPTY_GAP_MAX_MIN;
   };
 
-  // Same-day (requiresPair) edges are OR'd per subject: placed alone is a
-  // violation only when none of the OR partners are present.
+  // Must-do (requiresPair) edges: when a partner is present the subject must
+  // also be placed and satisfy order (+ direct when required). OR'd across
+  // partners — subject alone on a day with no partner is fine.
   const sameDayBySubject = new Map();
   for(const edge of edges){
     if(!edge.requiresPair || !edge.subjectHid)continue;
@@ -4677,10 +4827,10 @@ function persistentLinkViolationsForState(state){
   }
   for(const [subjectHid,subjectEdges] of sameDayBySubject){
     const subject = bounds.get(subjectHid);
-    if(!subject)continue;
     const present = subjectEdges.filter(edge=>resolveAnchor(edge.anchorHid));
-    if(!present.length){
-      violations.set(subjectHid,'anchor is not planned or done this day');
+    if(!present.length)continue;
+    if(!subject){
+      violations.set(subjectHid,'must do on days with its linked habit');
       continue;
     }
     // OR: satisfied if any present partner meets order (+ direct when required).
@@ -4707,24 +4857,41 @@ function persistentLinkViolationsForState(state){
     if(!anyOk && bestReason)violations.set(subjectHid,bestReason);
   }
 
-  // Order-only (non-same-day) edges still enforce order when both are placed.
+  // Order-only edges are OR'd per subject when both sides are placed: satisfied
+  // if any present partner meets order (+ direct). AND would make multi-parent
+  // right-after (shower after exercise OR haircut) impossible on shared days.
+  const orderOnlyBySubject = new Map();
   for(const edge of edges){
-    if(edge.requiresPair)continue;
-    const subject = bounds.get(edge.subjectHid);
+    if(edge.requiresPair || !edge.subjectHid)continue;
+    if(!orderOnlyBySubject.has(edge.subjectHid))orderOnlyBySubject.set(edge.subjectHid,[]);
+    orderOnlyBySubject.get(edge.subjectHid).push(edge);
+  }
+  for(const [subjectHid,subjectEdges] of orderOnlyBySubject){
+    const subject = bounds.get(subjectHid);
     if(!subject)continue;
-    const anchor = resolveAnchor(edge.anchorHid);
-    if(!anchor)continue;
-    const beforeHid = edge.direction === 'before' ? edge.subjectHid : edge.anchorHid;
-    const afterHid = edge.direction === 'before' ? edge.anchorHid : edge.subjectHid;
-    const before = edge.direction === 'before' ? subject : anchor;
-    const after = edge.direction === 'before' ? anchor : subject;
-    if(before.end > after.start + 60000){
-      violations.set(edge.subjectHid,`cannot be ${edge.direction} its anchor`);
-      continue;
+    const present = subjectEdges.filter(edge=>resolveAnchor(edge.anchorHid));
+    if(!present.length)continue;
+    let anyOk = false;
+    let bestReason = null;
+    for(const edge of present){
+      const anchor = resolveAnchor(edge.anchorHid);
+      const beforeHid = edge.direction === 'before' ? edge.subjectHid : edge.anchorHid;
+      const afterHid = edge.direction === 'before' ? edge.anchorHid : edge.subjectHid;
+      const before = edge.direction === 'before' ? subject : anchor;
+      const after = edge.direction === 'before' ? anchor : subject;
+      if(before.end > after.start + 60000){
+        bestReason = bestReason || `cannot be ${edge.direction} its anchor`;
+        continue;
+      }
+      if(edge.adjacency === 'direct'){
+        if(directAdjacencyOk(beforeHid,afterHid,after.start)){ anyOk = true; break; }
+        bestReason = `no right-${edge.direction} slot is available`;
+        continue;
+      }
+      anyOk = true;
+      break;
     }
-    if(edge.adjacency === 'direct' && !directAdjacencyOk(beforeHid,afterHid,after.start)){
-      violations.set(edge.subjectHid,`no right-${edge.direction} slot is available`);
-    }
+    if(!anyOk && bestReason)violations.set(subjectHid,bestReason);
   }
   return violations;
 }
@@ -4803,6 +4970,7 @@ function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings){
 // violating position.
 function enforcePersistentLinkInvariants(dayStates,candidates,settings){
   if(!Array.isArray(dayStates))return;
+  const byHid = new Map((candidates || []).filter(c=>c && c.h && c.h.hid).map(c=>[c.h.hid,c]));
   for(const state of dayStates){
     let guard = 0;
     while(guard++ < 8){
@@ -4822,15 +4990,100 @@ function enforcePersistentLinkInvariants(dayStates,candidates,settings){
         }
       }
       if(relocated)continue;
-      for(const [hid,reason] of violations)addScheduleLinkOmission(state.day,hid,reason);
+
+      // Must-do: partner present but subject missing — try to place the subject
+      // once. If it cannot fit, record an omission and stop (do not loop).
+      let placedMissing = false;
+      for(const [hid,reason] of violations){
+        const alreadyPlaced = (state.fills || []).some(entry=>
+          entry && entry.fill && entry.fill.h && entry.fill.h.hid === hid
+        );
+        if(alreadyPlaced)continue;
+        if(!/must do on days/.test(reason || ''))continue;
+        addScheduleLinkOmission(state.day,hid,reason);
+        const cand = byHid.get(hid);
+        if(!cand || state.placed.has(cand.i))continue;
+        const fill = {
+          h:cand.h,i:cand.i,
+          priority:cand.priority,scarcity:cand.scarcity
+        };
+        const scoreOpts = {settings,allowNetwork:false,candidates};
+        const fit = typeof tryPlaceOnDay === 'function'
+          ? tryPlaceOnDay(state,fill,scoreOpts)
+          : null;
+        if(fit){
+          commitPlacement(state,fill,fit);
+          syncDayAgendaItemsFromFills(state);
+          placedMissing = true;
+        }
+      }
+      if(placedMissing)continue;
+
+      // Drop placed habits that still violate (bad order / adjacency).
+      const placedViolations = [...violations].filter(([hid])=>
+        (state.fills || []).some(entry=>
+          entry && entry.fill && entry.fill.h && entry.fill.h.hid === hid
+        )
+      );
+      if(!placedViolations.length)break;
+      for(const [hid,reason] of placedViolations)addScheduleLinkOmission(state.day,hid,reason);
+      const drop = new Set(placedViolations.map(([hid])=>hid));
       const keep = (state.fills || [])
-        .filter(entry=>!violations.has(entry && entry.fill && entry.fill.h && entry.fill.h.hid))
+        .filter(entry=>!drop.has(entry && entry.fill && entry.fill.h && entry.fill.h.hid))
         .map(entry=>entry.fill);
       const rebuilt = rebuildDayFromFills(state,keep,candidates,{settings,allowNetwork:false});
       if(!rebuilt)break;
       applyPlacementState(state,rebuilt);
     }
+
+    // Must-do subject alone while a same-day partner was attempted today but
+    // failed to place (e.g. Haircut no longer fits): drop the subject. Solo is
+    // only allowed when no linked partner was on this day's candidate set.
+    dropSubjectsWithFailedSameDayPartners(state,candidates,byHid,settings);
   }
+}
+
+/** PURE/HYBRID: drop must-do subjects left alone after a failed partner attempt. */
+function dropSubjectsWithFailedSameDayPartners(state,candidates,byHid,settings){
+  if(!state || !byHid || !byHid.size)return;
+  const placedHids = new Set();
+  for(const entry of state.fills || []){
+    const hid = entry && entry.fill && entry.fill.h && entry.fill.h.hid;
+    if(hid)placedHids.add(hid);
+  }
+  const partnerPlaced = (anchorHid)=>
+    placedHids.has(anchorHid)
+    || (typeof scheduleAnchorCommitForDay === 'function'
+      && Boolean(scheduleAnchorCommitForDay(anchorHid,state.dayBase)));
+  const partnerAttemptedToday = (anchorHid)=>{
+    if(partnerPlaced(anchorHid))return false;
+    const partner = byHid.get(anchorHid);
+    if(!partner)return false;
+    if(partner.eligible)return partner.eligible.has(state.dayBase);
+    // Single-day pass: candidates are today's attempted fills.
+    return true;
+  };
+  const drop = new Set();
+  for(const cand of candidates || []){
+    const h = cand && cand.h;
+    if(!h || !h.hid || !state.placed.has(cand.i))continue;
+    const links = typeof sameDayScheduleLinks === 'function'
+      ? sameDayScheduleLinks(h)
+      : (typeof normalizeScheduleLinks === 'function'
+        ? normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay)
+        : []);
+    if(!links.length)continue;
+    if(links.some(link=>partnerPlaced(link.anchorHid)))continue;
+    if(!links.some(link=>partnerAttemptedToday(link.anchorHid)))continue;
+    drop.add(h.hid);
+    addScheduleLinkOmission(state.day,h.hid,'linked partner could not fit today');
+  }
+  if(!drop.size)return;
+  const keep = (state.fills || [])
+    .filter(entry=>!drop.has(entry && entry.fill && entry.fill.h && entry.fill.h.hid))
+    .map(entry=>entry.fill);
+  const rebuilt = rebuildDayFromFills(state,keep,candidates,{settings,allowNetwork:false});
+  if(rebuilt)applyPlacementState(state,rebuilt);
 }
 
 // Week-holistic repair: when a daily breakable (e.g. Work) is short and a
@@ -5151,6 +5404,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     const eligible = new Set();
     for(const day of days){
       if(pinned && !day.isToday)continue;
+      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
       if(isWeekCandidate(h,settings,day.dayBase,day.weekday) || (pinned && day.isToday)){
         eligible.add(day.dayBase);
       }

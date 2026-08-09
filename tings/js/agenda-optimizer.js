@@ -462,9 +462,19 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
       Number(entry.fit.placeEnd) || 0
     ));
   }
+  // Multi-parent right-after is OR'd: hard interloper AND across several
+  // direct predecessors of the same afterHid is unsatisfiable when more than
+  // one parent is selected. Soft gap weights + post-check OR still pull adjacency.
+  const directPredCount = new Map();
+  for(const e of edges){
+    if(!e || e.adjacency !== 'direct' || !e.afterHid || !e.beforeHid)continue;
+    directPredCount.set(e.afterHid,(directPredCount.get(e.afterHid) || 0) + 1);
+  }
   for(const e of edges){
     const beforeIdxs = byHid.get(e.beforeHid) || [];
     const afterIdxs = byHid.get(e.afterHid) || [];
+    const skipHardDirect = e.adjacency === 'direct'
+      && (directPredCount.get(e.afterHid) || 0) > 1;
     for(const ai of beforeIdxs){
       for(const bi of afterIdxs){
         const A = opts[ai];
@@ -478,6 +488,7 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
             bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
           });
         }
+        if(skipHardDirect)continue;
         if(e.adjacency === 'direct' && B.fit.placeStart >= A.fit.placeEnd){
           const between = [];
           for(let ci = 0;ci < opts.length;ci += 1){
@@ -504,6 +515,7 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
         }
       }
     }
+    if(skipHardDirect)continue;
     if(e.adjacency === 'direct' && !beforeIdxs.length && committedEnd.has(e.beforeHid)){
       const predEnd = committedEnd.get(e.beforeHid);
       for(const bi of afterIdxs){
@@ -937,33 +949,34 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     });
   }
   let schedulePairRow = 0;
-  // Same-day persistent links are OR'd per subject: selecting the subject
-  // requires at least one of its same-day anchors (unless one is committed).
-  const pairEdgesBySubject = new Map();
+  // Must-do persistent links: each present anchor forces its subject
+  // (anchor ⇒ subject). Subject alone remains allowed.
   for(const edge of dayOrderEdges){
     if(!edge.persistent || !edge.requiresPair || !edge.subjectHid || !edge.anchorHid)continue;
-    if(!pairEdgesBySubject.has(edge.subjectHid))pairEdgesBySubject.set(edge.subjectHid,[]);
-    pairEdgesBySubject.get(edge.subjectHid).push(edge);
-  }
-  for(const [subjectHid,subjectEdges] of pairEdgesBySubject){
-    const subjectNames = optionNamesByHid.get(subjectHid) || [];
+    const subjectNames = optionNamesByHid.get(edge.subjectHid) || [];
     if(!subjectNames.length)continue;
-    const anyCommitted = subjectEdges.some(edge=>
-      typeof scheduleAnchorCommitForDay === 'function'
-        && scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase)
-    );
-    if(anyCommitted)continue;
-    const anchorNameSet = new Set();
-    for(const edge of subjectEdges){
-      for(const name of (optionNamesByHid.get(edge.anchorHid) || []))anchorNameSet.add(name);
+    const subjectCommitted = typeof scheduleAnchorCommitForDay === 'function'
+      && scheduleAnchorCommitForDay(edge.subjectHid,state.dayBase);
+    if(subjectCommitted)continue;
+    const anchorCommitted = typeof scheduleAnchorCommitForDay === 'function'
+      && scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase);
+    if(anchorCommitted){
+      // Partner already done/placed today → subject must take one option.
+      subjectTo.push({
+        name:`schedule_must_${schedulePairRow++}`,
+        vars:subjectNames.map(name=>({name,coef:1})),
+        bnds:{type:GLPK.GLP_FX,ub:1,lb:1}
+      });
+      continue;
     }
-    const anchorNames = [...anchorNameSet];
-    // subject ⇒ ∨ anchors  →  sum(subject) - sum(anchors) ≤ 0
+    const anchorNames = optionNamesByHid.get(edge.anchorHid) || [];
+    if(!anchorNames.length)continue;
+    // anchor ⇒ subject  →  sum(anchor) - sum(subject) ≤ 0
     subjectTo.push({
-      name:`schedule_pair_${schedulePairRow++}`,
+      name:`schedule_must_${schedulePairRow++}`,
       vars:[
-        ...subjectNames.map(name=>({name,coef:1})),
-        ...anchorNames.map(name=>({name,coef:-1}))
+        ...anchorNames.map(name=>({name,coef:1})),
+        ...subjectNames.map(name=>({name,coef:-1}))
       ],
       bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
     });
@@ -1082,6 +1095,74 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
             bnds:{type:GLPK.GLP_UP,ub:Math.round(cap),lb:0}
           });
         }
+      }
+    }
+  }
+
+  // ── Tier-3 travel: never send the user away from their current location and
+  // back. The route DP (optimalCommittedLocationRoute) finds the cheapest travel
+  // chain for FIXED times but cannot reorder, and every per-option objective
+  // term is symmetric in the sum — so GLPK is otherwise indifferent between
+  // [at-seed first → one commute out] and [away first → away-and-back], and the
+  // tie-break can paint two extra legs (the exact bug: "I was at FarA, it sent
+  // me Home then back to FarA then Home again").
+  //
+  // Model the sequencing cost directly: for each AWAY option (loc ≠ seed)
+  // scheduled BEFORE an AT-SEED option (loc = seed), pay a penalty proportional
+  // to the saved commute. Linearize the joint "both selected" condition with one
+  // auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
+  // penalty is soft and capped below the minimum placement weight (~100), so it
+  // only reorders — it can never drop a placeable task, and hard windows/pins
+  // (structural constraints) still win. Per the documented lex order this is
+  // MINIMUM TRAVEL outranking ASAP/PRIORITY, which is exactly "travel time IS
+  // time — extra trips are unacceptable."
+  const seedLoc = state.seedLocId || null;
+  // Only fire on a GENUINELY LIVE location (geolocation / manual pin), not a
+  // static last-known default. The "do the at-location task first, never
+  // away-and-back" override is only meaningful when we actually know where the
+  // user is right now; on static/future-day seeds the committed-route DP already
+  // minimizes travel, and firing here would perturb its carefully-routed layouts.
+  if(state.liveLocId && seedLoc && seedLoc === state.liveLocId
+    && typeof travelEdgeBetweenIds === 'function'){
+    const TRAVEL_PAIR_COEF = 0.01;   // 1s of saved commute ≈ 0.01 objective weight
+    const TRAVEL_PAIR_CAP = 80;      // < min baseWeight (~100): reorder only
+    const TRAVEL_PAIR_FLOOR = 12;    // still decisive over priority/ASAP deltas
+    let tpIdx = 0;
+    for(let ai = 0; ai < opts.length; ai += 1){
+      const A = opts[ai];
+      const aLoc = A && A.fit && A.fit.locId;
+      if(!aLoc || aLoc === seedLoc)continue;            // A must be AWAY from seed
+      const savedSec = Math.max(0,Number(travelEdgeBetweenIds(
+        seedLoc,aLoc,state.registry,state.mode,{allowNetwork:false}
+      ).seconds) || 0);
+      if(savedSec <= 0)continue;                         // co-located: no away-and-back risk
+      const pen = Math.max(TRAVEL_PAIR_FLOOR,
+        Math.min(TRAVEL_PAIR_CAP,savedSec * TRAVEL_PAIR_COEF));
+      for(let bi = 0; bi < opts.length;bi += 1){
+        if(bi === ai)continue;
+        const B = opts[bi];
+        const bLoc = B && B.fit && B.fit.locId;
+        if(!bLoc || bLoc !== seedLoc)continue;           // B must be AT-SEED
+        if(A.c.i === B.c.i)continue;                     // different candidates
+        if(!(A.fit.placeStart < B.fit.placeStart))continue; // A scheduled before B
+        const z = `tp_${tpIdx++}`;
+        binaries.push(z);
+        vars.push({name:z,coef:-pen});
+        subjectTo.push({
+          name:`${z}_ubA`,
+          vars:[{name:z,coef:1},{name:A.varName,coef:-1}],
+          bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+        });
+        subjectTo.push({
+          name:`${z}_ubB`,
+          vars:[{name:z,coef:1},{name:B.varName,coef:-1}],
+          bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+        });
+        subjectTo.push({
+          name:`${z}_lb`,
+          vars:[{name:z,coef:1},{name:A.varName,coef:-1},{name:B.varName,coef:-1}],
+          bnds:{type:GLPK.GLP_LO,ub:0,lb:-1}
+        });
       }
     }
   }
@@ -1576,6 +1657,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     const eligible = new Set();
     for(const day of days){
       if(pinned && !day.isToday)continue;
+      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
       if(isWeekCandidate(h,settings,day.dayBase,day.weekday) || (pinned && day.isToday)){
         eligible.add(day.dayBase);
       }

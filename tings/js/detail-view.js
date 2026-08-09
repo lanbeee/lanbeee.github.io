@@ -270,7 +270,7 @@ function renderDetailOrderPage(h = null){
     }) : '';
     return `<div class="detail-order-row">
       ${mark}
-        <span class="detail-order-meta">recurring · ${escapeHtml(label)}${link.requireSameDay ? ` · with ${escapeHtml(other && other.name || 'the other habit')} when flex allows` : ''}</span>
+        <span class="detail-order-meta">recurring · ${escapeHtml(label)}${link.requireSameDay ? ` · must do with ${escapeHtml(other && other.name || 'the other habit')} when flex allows` : ''}</span>
       <span class="detail-order-edit-note">Schedule</span>
     </div>`;
   }).join('');
@@ -397,11 +397,11 @@ function scheduleLinkEditorHtml(link,subjectHid,idx){
     </div>
     <div class="schedule-link-same-day-row${sameDay ? ' is-on' : ''}"${anchorHid ? '' : ' hidden'}>
       <span class="schedule-link-same-day-label">
-        <span class="setting-title">Only on days with ${escapeHtml(anchorName)}</span>
+        <span class="setting-title">Must do on days with ${escapeHtml(anchorName)}</span>
         <button type="button" class="info-btn" data-tip="${helpId}" aria-label="explain this same-day setting"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-        <span class="info-tooltip schedule-link-same-day-help" id="${helpId}" role="tooltip" hidden>When on, plan this habit with ${escapeHtml(anchorName)} when flexibility allows (shows as early). Don’t plan it alone on other days. Multiple same-day links are OR’d.</span>
+        <span class="info-tooltip schedule-link-same-day-help" id="${helpId}" role="tooltip" hidden>When on, plan this habit whenever ${escapeHtml(anchorName)} lands (shows as early when flex allows). Other days stay unconstrained. Multiple must-do links are OR’d.</span>
       </span>
-      <button type="button" class="setting-switch schedule-link-same-day" aria-pressed="${sameDay ? 'true' : 'false'}" aria-label="Only on days with ${escapeHtml(anchorName)}: ${sameDay ? 'on' : 'off'}">
+      <button type="button" class="setting-switch schedule-link-same-day" aria-pressed="${sameDay ? 'true' : 'false'}" aria-label="Must do on days with ${escapeHtml(anchorName)}: ${sameDay ? 'on' : 'off'}">
         <span class="switch-ui" aria-hidden="true"></span>
       </button>
     </div>
@@ -444,9 +444,9 @@ function refreshScheduleLinkEditorRow(editor,h){
     const title = sameDayRow.querySelector('.setting-title');
     const help = sameDayRow.querySelector('.schedule-link-same-day-help');
     const anchorName = anchor && anchor.name || 'the other habit';
-    if(title)title.textContent = `Only on days with ${anchorName}`;
-    if(help)help.textContent = `When on, plan this habit with ${anchorName} when flexibility allows (shows as early). Don’t plan it alone on other days. Multiple same-day links are OR’d.`;
-    sameDay.setAttribute('aria-label',`Only on days with ${anchorName}: ${isRequired ? 'on' : 'off'}`);
+    if(title)title.textContent = `Must do on days with ${anchorName}`;
+    if(help)help.textContent = `When on, plan this habit whenever ${anchorName} lands (shows as early when flex allows). Other days stay unconstrained. Multiple must-do links are OR’d.`;
+    sameDay.setAttribute('aria-label',`Must do on days with ${anchorName}: ${isRequired ? 'on' : 'off'}`);
   }
 }
 

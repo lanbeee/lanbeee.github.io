@@ -860,9 +860,15 @@ function shouldDismissSearchFromTap(target){
   return true;
 }
 
-// PURE: get next planned log entry
+// PURE: next planned log object (preserves timed / locationId)
+function nextPlannedLogEntry(h){
+  return (typeof planLogEntries === 'function' ? planLogEntries(h.logs) : normalizeLogs(h.logs).filter(isPlanLog))[0] || null;
+}
+
+// PURE: get next planned log timestamp
 function nextPlannedLog(h){
-  return plannedLogs(h.logs)[0] || null;
+  const entry = nextPlannedLogEntry(h);
+  return entry ? logTime(entry) : null;
 }
 
 // PURE: compute next-eligible label text
@@ -1109,8 +1115,17 @@ function cardMeta(h,options = {}){
     if(locIds.length > 2)parts.push(`<span class="context-pill quiet" title="more locations">+${locIds.length - 2}</span>`);
   }
   if(plan && h.type !== 'zero' && (options.forcePlans || sortSettings.showPlansOnCards)){
-    const label = compactPlanLabel(plan);
-    parts.push(`<span class="context-pill plan ${label ? '' : 'icon-only'}" title="${escapeHtml(`planned ${entryWhen(plan)}`)}"><i class="ti ti-calendar-event" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
+    const planEntry = nextPlannedLogEntry(h);
+    const label = planEntry && planTimed(planEntry)
+      ? compactScheduledLabel(plan)
+      : compactPlanLabel(plan);
+    const titleBits = [`planned ${entryWhen(plan)}`];
+    const locId = planEntry && planLocationId(planEntry);
+    if(locId){
+      const loc = locationById(locId);
+      if(loc)titleBits.push(loc.name);
+    }
+    parts.push(`<span class="context-pill plan ${label ? '' : 'icon-only'}" title="${escapeHtml(titleBits.join(' · '))}"><i class="ti ti-calendar-event" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
   }
   if(h.snoozedUntil && Date.now() < h.snoozedUntil && (options.forceSnoozedUntil || sortSettings.showSnoozedUntilOnCards)){
     parts.push(`<span class="context-pill quiet" title="${escapeHtml(`snoozed until ${entryWhen(h.snoozedUntil)}`)}"><i class="ti ti-moon" aria-hidden="true"></i>${escapeHtml(entryWhen(h.snoozedUntil))}</span>`);
@@ -1506,9 +1521,15 @@ function earlyReason(data,i,settings){
       if(!anchor)continue;
       const committed = typeof scheduleAnchorCommitForDay === 'function'
         && scheduleAnchorCommitForDay(link.anchorHid,todayBase,data);
-      const anchorDue = includeInTodayAgenda(anchor,settings)
+      // Partner must still be doable today — a linked Haircut that no longer
+      // fits remaining open time must not pull Shower onto the agenda alone.
+      const anchorDoable = typeof windowStillDoableToday !== 'function'
+        || windowStillDoableToday(anchor);
+      const anchorDue = anchorDoable && (
+        includeInTodayAgenda(anchor,settings)
         || (typeof isWeekCandidate === 'function'
-          && isWeekCandidate(anchor,settings,todayBase,new Date(todayBase).getDay()));
+          && isWeekCandidate(anchor,settings,todayBase,new Date(todayBase).getDay()))
+      );
       if(!committed && !anchorDue)continue;
       const name = (anchor.name || 'linked habit').slice(0,40);
       if(link.direction === 'before')return `before ${name}`;
@@ -1526,9 +1547,13 @@ function earlyReason(data,i,settings){
         : []);
     const hit = links.find(l=>l && l.anchorHid === h.hid);
     if(!hit)continue;
-    const otherDue = includeInTodayAgenda(other,settings)
+    const otherDoable = typeof windowStillDoableToday !== 'function'
+      || windowStillDoableToday(other);
+    const otherDue = otherDoable && (
+      includeInTodayAgenda(other,settings)
       || (typeof isWeekCandidate === 'function'
-        && isWeekCandidate(other,settings,todayBase,new Date(todayBase).getDay()));
+        && isWeekCandidate(other,settings,todayBase,new Date(todayBase).getDay()))
+    );
     if(!otherDue && !(typeof scheduleAnchorCommitForDay === 'function'
       && scheduleAnchorCommitForDay(other.hid,todayBase,data)))continue;
     const name = (other.name || 'linked habit').slice(0,40);
@@ -5065,6 +5090,8 @@ function logTing(i,opts = {}){
 function logTingAt(i,ts){
   const data = load();
   if(!data[i])return false;
+  // Calendar day logs are for today and past days only — future days use plans.
+  if(dateKey(ts) > todayIso())return false;
   const entryTs = dateKey(ts) <= dateKey(Date.now()) && ts > Date.now() ? Date.now() : ts;
   const log = makeLog(entryTs);
   const isPlan = isPlanLog(log);
@@ -5099,23 +5126,30 @@ function logTingAt(i,ts){
   return true;
 }
 
-// HYBRID: add a planned entry for a specific date, optionally preserving a time.
+// HYBRID: add a planned entry for a specific date, optionally with a hard
+// clock time and/or one-day location. Empty time → day pin only (noon ts,
+// no timed flag). Set time → hard agenda appointment at that clock.
 function planTingOnDay(i,key,timeValue = '',options = {}){
   const data = load();
   if(!data[i])return false;
   // Stop habits ("quit" type) cannot be planned — there is no future session
   // to schedule, only lapses to log. Bail before creating any plan log.
   if(data[i].type === 'zero')return false;
+  // Plans are only for today and future days.
+  if(!key || key < todayIso())return false;
   const base = new Date(`${key}T12:00:00`);
   if(Number.isNaN(base.getTime()))return false;
   let hours = 12;
   let minutes = 0;
   const time = timeInputToMinutes(timeValue);
-  if(time !== null){
+  const timed = time !== null;
+  if(timed){
     hours = Math.floor(time / 60);
     minutes = time % 60;
   }
   const ts = new Date(base.getFullYear(),base.getMonth(),base.getDate(),hours,minutes,0,0).getTime();
+  const locationId = options.locationId != null ? String(options.locationId).trim() : '';
+  const planEntry = makePlanLog(ts,{timed,locationId:locationId || null});
   const action = withEntryToastAction({
     type:'entry',
     idx:i,
@@ -5124,11 +5158,15 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
     snoozedUntil:data[i].snoozedUntil || null,
     openAction:options.openAction
   });
-  data[i].logs = normalizeLogs([...(data[i].logs || []),{ts,plan:true}]);
+  data[i].logs = normalizeLogs([...(data[i].logs || []),planEntry]);
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!save(data))return false;
-  const timeLabel = timeValue ? ` · ${new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}` : '';
-  showActionToast(`Planned ${toastItemName(data[i])}${timeLabel}`,action);
+  const timeLabel = timed ? ` · ${new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}` : '';
+  const locName = locationId && typeof normalizeLocationRegistry === 'function'
+    ? (normalizeLocationRegistry(sortSettings?.locations).find(l=>l.id === locationId)?.name || '')
+    : '';
+  const locLabel = locName ? ` · ${locName}` : '';
+  showActionToast(`Planned ${toastItemName(data[i])}${timeLabel}${locLabel}`,action);
   return true;
 }
 
@@ -5197,7 +5235,10 @@ function removePlansOnDay(idx,key){
   const removed = [];
   const remaining = logs.filter(log=>{
     if(isPlanLog(log) && dateKey(logTime(log)) === key){
-      removed.push(logTime(log));
+      removed.push(makePlanLog(logTime(log),{
+        timed:planTimed(log),
+        locationId:planLocationId(log)
+      }));
       return false;
     }
     return true;
@@ -5219,6 +5260,8 @@ function movePlanTo(idx,fromKey,toKey){
   const data = load();
   const h = data[idx];
   if(!h || fromKey === toKey)return;
+  // Plans can only move onto today or a future day.
+  if(!toKey || toKey < todayIso())return;
   const logs = normalizeLogs(h.logs);
   const moved = [];
   const newDay = new Date(`${toKey}T00:00:00`);
@@ -5226,13 +5269,18 @@ function movePlanTo(idx,fromKey,toKey){
     if(isPlanLog(log) && dateKey(logTime(log)) === fromKey){
       const old = new Date(logTime(log));
       const nt = new Date(newDay.getFullYear(),newDay.getMonth(),newDay.getDate(),old.getHours(),old.getMinutes(),0,0).getTime();
-      moved.push({oldTs:logTime(log),newTs:nt});
+      moved.push({
+        oldTs:logTime(log),
+        newTs:nt,
+        timed:planTimed(log),
+        locationId:planLocationId(log)
+      });
       return false;
     }
     return true;
   });
   if(!moved.length)return;
-  moved.forEach(m=>remaining.push({ts:m.newTs,plan:true}));
+  moved.forEach(m=>remaining.push(makePlanLog(m.newTs,{timed:m.timed,locationId:m.locationId})));
   data[idx].logs = normalizeLogs(remaining);
   data[idx].lastLog = latestActualLog(data[idx].logs);
   if(save(data)){
@@ -5273,7 +5321,10 @@ function executeUndo(){
       const logs = normalizeLogs(data[idx].logs);
       const newSet = new Set(moved.map(m=>m.newTs));
       const filtered = logs.filter(log=>!newSet.has(logTime(log)));
-      moved.forEach(m=>filtered.push({ts:m.oldTs,plan:true}));
+      moved.forEach(m=>filtered.push(makePlanLog(m.oldTs,{
+        timed:Boolean(m.timed),
+        locationId:m.locationId || null
+      })));
       data[idx].logs = normalizeLogs(filtered);
       data[idx].lastLog = latestActualLog(data[idx].logs);
     }
@@ -5282,7 +5333,10 @@ function executeUndo(){
     const {idx,removed} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
-      removed.forEach(ts=>logs.push({ts,plan:true}));
+      removed.forEach(entry=>{
+        if(entry && typeof entry === 'object' && entry.plan)logs.push(entry);
+        else logs.push(makePlanLog(entry));
+      });
       data[idx].logs = normalizeLogs(logs);
       data[idx].lastLog = latestActualLog(data[idx].logs);
     }
