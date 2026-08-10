@@ -1380,6 +1380,26 @@ function completedToday(h,now = Date.now()){
   return actualLogs(h.logs).some(ts=>ts >= start && ts < end);
 }
 
+/**
+ * PURE: day-scoped sibling of completedToday. The agenda asks this before it
+ * offers work, so a habit the logs already show as finished for `dayBase`
+ * stays off the plan even when a stale plan entry for that day survives (one
+ * tap only consumes a single plan, and a habit can be planned more than once
+ * a day by different order links).
+ */
+function completedOnDay(h,dayBase){
+  if(!h)return false;
+  if(h.type === 'task')return isTaskDone(h);
+  const start = dayStart(dayBase != null ? dayBase : Date.now());
+  if(h.breakable && typeof breakableProgressMinutes === 'function'
+    && typeof breakableTotalMinutes === 'function'){
+    const total = breakableTotalMinutes(h);
+    return total > 0 && breakableProgressMinutes(h,start) >= total;
+  }
+  const end = start + 86400000;
+  return actualLogs(h.logs).some(ts=>ts >= start && ts < end);
+}
+
 function autoChunkPlanScope(h,dayBase){
   if(!h || !h.hid)return null;
   return h.type === 'task' ? `task:${h.hid}` : `day:${h.hid}:${dateKey(dayBase)}`;

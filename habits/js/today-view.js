@@ -102,6 +102,9 @@ function buildTodayAgenda(data,settings){
 
 // PURE: applies user-facing Today agenda inclusion settings.
 function includeInTodayAgenda(h,settings){
+  // Logs win over plans: once the work is actually done for today it leaves
+  // the agenda, even if a plan entry for today is still on the habit.
+  if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
   if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false){
     // Timed day plans are hard scheduled rows — do not also soft-fill today.
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
@@ -578,6 +581,16 @@ function beginPlannerSolveCaches(data = null){
   _plannerOrderCache = new Map();
   _plannerAnchorCache = new Map();
   _plannerSolveData = Array.isArray(data) ? data : (typeof load === 'function' ? load() : null);
+}
+
+/**
+ * Every habit the current solve covers. Candidate lists drop work that is
+ * already done, so link math that must still see a finished partner reads the
+ * full set from here instead.
+ */
+function plannerSolveHabits(){
+  if(Array.isArray(_plannerSolveData))return _plannerSolveData;
+  return typeof load === 'function' ? load() : [];
 }
 
 function endPlannerSolveCaches(){
@@ -2133,7 +2146,14 @@ function tryPlaceOnDay(state,fill,opts = {}){
       }
       if(e.beforeHid === fill.h.hid){
         const committed = scheduleAnchorCommitForDay(e.afterHid,dayBase);
-        if(committed)orderCeiling = Math.min(orderCeiling,committed.start);
+        // A successor that is already DONE cannot cap a loose "sometime
+        // before" item: nothing can be scheduled into the past, so the
+        // ceiling would just delete it from the day even though its own
+        // rhythm still wants it. "Right before" keeps the ceiling — that
+        // pairing is over for today, and the link pass omits it explicitly.
+        if(committed && (committed.kind !== 'completed' || e.adjacency === 'direct')){
+          orderCeiling = Math.min(orderCeiling,committed.start);
+        }
         for(const entry of chron){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === e.afterHid && entry.fit){
@@ -2566,7 +2586,11 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       }
       if(e.beforeHid === fill.h.hid){
         const committed = scheduleAnchorCommitForDay(e.afterHid,dayBase);
-        if(committed)orderCeiling = Math.min(orderCeiling,committed.start);
+        // See tryPlaceOnDay: a finished successor is history, not a ceiling,
+        // unless the link demanded "right before" it.
+        if(committed && (committed.kind !== 'completed' || e.adjacency === 'direct')){
+          orderCeiling = Math.min(orderCeiling,committed.start);
+        }
         for(const entry of chron){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === e.afterHid && entry.fit){
@@ -3521,6 +3545,7 @@ function isWeekPinnedToday(h,settings){
   if(!h || h.type === 'zero')return false;
   if(h.type === 'task' && isTaskDone(h))return false;
   if(h.type === 'task' && h.eventTime !== null)return false;
+  if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
   if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false)return true;
   if(h.type === 'task' && h.hardDue && h.dueDate !== null && settings.showDueTasksInAgenda !== false){
@@ -3581,6 +3606,8 @@ function flexAwareDayPenalty(h,offset,urgency,pinned){
 function isWeekCandidate(h,settings,dayBase,weekday){
   if(h.type === 'zero')return false;
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
+  // Already logged on this day — a leftover plan entry must not re-offer it.
+  if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(h.type === 'task'){
     if(isTaskDone(h))return false;
     if(h.eventTime !== null)return false;         // timed → fixed to its day
@@ -3773,7 +3800,14 @@ function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
     : normalizeScheduleLinks(h.scheduleLinks,h.hid).filter(l=>l && l.requireSameDay);
   for(const link of links){
     const anchor = byHid.get(link.anchorHid);
-    if(!anchor || !anchor.eligible || !anchor.eligible.has(dayBase))continue;
+    if(!anchor){
+      // Anchor dropped out of the candidate set because it is already done
+      // on this day — it is still the partner this extra rep pairs with.
+      if(typeof scheduleAnchorCommitForDay === 'function'
+        && scheduleAnchorCommitForDay(link.anchorHid,dayBase))return true;
+      continue;
+    }
+    if(!anchor.eligible || !anchor.eligible.has(dayBase))continue;
     if(scheduleLinkPartnerScarceOnDay(anchor.h,dayBase,weekday))return true;
   }
   // Do not grant extras to anchors just because a subject is present — that
@@ -3817,27 +3851,39 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
     return Boolean(anchorCandidate && anchorCandidate.eligible && anchorCandidate.eligible.has(dayBase));
   };
 
-  const subjectDays = (candidate)=>{
-    if(candidate.eligible && candidate.eligible.size)return [...candidate.eligible];
-    // Day-pinned subjects may still be week-candidates on sparse days even
-    // when an earlier empty eligible set was seeded for reverse pull.
-    const days = [];
-    for(const {dayBase,weekday} of dayHolders){
-      if(typeof isWeekCandidate === 'function' && isWeekCandidate(candidate.h,cfg,dayBase,weekday)){
-        days.push(dayBase);
-      }
-    }
-    return days;
+  // Days this habit is already logged/committed on. Such a day is no longer
+  // in the habit's eligible set — it needs no planning — but it is still a day
+  // the habit occupies, so its links must keep pulling partners onto it.
+  const committedDays = (hid)=>{
+    if(!hid)return [];
+    return dayHolders
+      .filter(({dayBase})=>Boolean(scheduleAnchorCommitForDay(hid,dayBase)))
+      .map(({dayBase})=>dayBase);
   };
 
-  // Pass 1 — reverse pull: subject days attract anchors within anchor cadence.
-  for(const subject of candidates){
-    if(!subject || !subject.h)continue;
+  const subjectDays = (candidate)=>{
+    const days = new Set(committedDays(candidate.h && candidate.h.hid));
+    if(candidate.eligible && candidate.eligible.size){
+      for(const dayBase of candidate.eligible)days.add(dayBase);
+      return [...days];
+    }
+    // Day-pinned subjects may still be week-candidates on sparse days even
+    // when an earlier empty eligible set was seeded for reverse pull.
+    for(const {dayBase,weekday} of dayHolders){
+      if(typeof isWeekCandidate === 'function' && isWeekCandidate(candidate.h,cfg,dayBase,weekday)){
+        days.add(dayBase);
+      }
+    }
+    return [...days];
+  };
+
+  const pullAnchorsOntoSubjectDays = (subjectH,days)=>{
+    if(!subjectH || !days.length)return;
     const links = typeof sameDayScheduleLinks === 'function'
-      ? sameDayScheduleLinks(subject.h)
-      : normalizeScheduleLinks(subject.h.scheduleLinks,subject.h.hid).filter(l=>l && l.requireSameDay);
-    if(!links.length)continue;
-    for(const dayBase of subjectDays(subject)){
+      ? sameDayScheduleLinks(subjectH)
+      : normalizeScheduleLinks(subjectH.scheduleLinks,subjectH.hid).filter(l=>l && l.requireSameDay);
+    if(!links.length)return;
+    for(const dayBase of days){
       const {weekday} = dayMeta(dayBase);
       for(const link of links){
         const anchor = byHid.get(link.anchorHid);
@@ -3850,6 +3896,20 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
         }
       }
     }
+  };
+
+  // Pass 1 — reverse pull: subject days attract anchors within anchor cadence.
+  for(const subject of candidates){
+    if(!subject || !subject.h)continue;
+    pullAnchorsOntoSubjectDays(subject.h,subjectDays(subject));
+  }
+  // A subject with nothing left to plan drops out of `candidates` entirely,
+  // but the day it pulled its anchor onto has not changed. Without this the
+  // anchor loses that day the moment the subject is logged, so finishing the
+  // first half of a chain erased the second half from the plan.
+  for(const h of (typeof plannerSolveHabits === 'function' ? plannerSolveHabits() : [])){
+    if(!h || !h.hid || byHid.has(h.hid))continue;
+    pullAnchorsOntoSubjectDays(h,committedDays(h.hid));
   }
 
   // Pass 2 — forward pull: scarce anchor occurrences attract flexible subjects.
@@ -3868,7 +3928,10 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
       if(candidate.eligible.has(dayBase))continue;
       const scarcePartner = present.some(link=>{
         const anchor = byHid.get(link.anchorHid);
-        return scheduleLinkPartnerScarceOnDay(anchor && anchor.h,dayBase,weekday);
+        // No candidate but anchorPresent said yes → the anchor is already
+        // logged/committed on this day, which is as scarce as it gets.
+        if(!anchor)return true;
+        return scheduleLinkPartnerScarceOnDay(anchor.h,dayBase,weekday);
       });
       if(scheduleLinkFlexAllowsDay(candidate.h,dayBase,weekday,cfg,
         scarcePartner ? {partnerPresent:true} : null)){
@@ -4790,6 +4853,20 @@ function persistentLinkViolationsForState(state){
   const resolveAnchor = (anchorHid)=>
     bounds.get(anchorHid) || scheduleAnchorCommitForDay(anchorHid,state.dayBase);
 
+  // An anchor that is already logged for this day settles the link: the
+  // same-day requirement is met, and no ordering rule can be repaired by
+  // moving work into the past. Treating it as a live constraint dropped the
+  // rest of a chain the moment its first step was ticked off. The exception
+  // is "right before a finished anchor" — that pairing genuinely expired, so
+  // the subject is still reported as omitted.
+  const anchorAlreadyDone = (edge)=>{
+    if(!edge || !edge.anchorHid)return false;
+    if(edge.adjacency === 'direct' && edge.direction === 'before')return false;
+    if(bounds.has(edge.anchorHid))return false;
+    const commit = scheduleAnchorCommitForDay(edge.anchorHid,state.dayBase);
+    return Boolean(commit && commit.kind === 'completed');
+  };
+
   // Direct adjacency: use the latest before-chunk that ends at/before the
   // after start (so a morning keepup shower does not "span" through Work to
   // afternoon Juma). Empty multi-hour gaps also fail — right-after means the
@@ -4837,6 +4914,7 @@ function persistentLinkViolationsForState(state){
     let anyOk = false;
     let bestReason = null;
     for(const edge of present){
+      if(anchorAlreadyDone(edge)){ anyOk = true; break; }
       const anchor = resolveAnchor(edge.anchorHid);
       const beforeHid = edge.direction === 'before' ? edge.subjectHid : edge.anchorHid;
       const afterHid = edge.direction === 'before' ? edge.anchorHid : edge.subjectHid;
@@ -4874,6 +4952,7 @@ function persistentLinkViolationsForState(state){
     let anyOk = false;
     let bestReason = null;
     for(const edge of present){
+      if(anchorAlreadyDone(edge)){ anyOk = true; break; }
       const anchor = resolveAnchor(edge.anchorHid);
       const beforeHid = edge.direction === 'before' ? edge.subjectHid : edge.anchorHid;
       const afterHid = edge.direction === 'before' ? edge.anchorHid : edge.subjectHid;
@@ -5432,13 +5511,15 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
       eligible
     });
   }
+  // Opened before link eligibility: that pass reads committed anchors/subjects
+  // out of the solve snapshot, and should hit the same cache as placement.
+  if(typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
+  if(typeof plannerPerfResetTryPlace === 'function')plannerPerfResetTryPlace();
+
   applyPersistentLinkEligibility(candidates,days,settings);
   for(let i = candidates.length - 1;i >= 0;i -= 1){
     if(!candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
-
-  if(typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
-  if(typeof plannerPerfResetTryPlace === 'function')plannerPerfResetTryPlace();
 
   // Pass 1 — greedy discovery of each location's natural day.
   let dayStates = makeStates();
