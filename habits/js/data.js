@@ -123,6 +123,10 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
+ *
+ * — CallFields (optional; surfaced when the name mentions calling) —
+ * @property {string|null} callNumber          — dialable number, digits with optional leading '+'
+ * @property {'phone'|'whatsapp'|'ask'} callApp — which app the header dial button opens ('ask' shows both)
  */
 
 /**
@@ -515,6 +519,56 @@ function saveSortSettings(settings){
 // the canonical Habit / Settings shapes declared above.
 // ─────────────────────────────────────────────────────────────────────────
 
+// ── Call habits ──────────────────────────────────────────────────────────
+// A habit whose name mentions calling someone ("call mum", "call the clinic
+// back") gets a dial button in the detail header. The number and which app to
+// dial from live on the habit.
+
+// Word match, not substring: "call" and its inflections count, "recall" and
+// "calligraphy" do not.
+const CALL_WORD_RE = /(?:^|[^a-z])calls?(?:ed|ing|back)?(?:[^a-z]|$)/i;
+
+/** PURE: does this name ask you to call someone? */
+function nameMentionsCall(name){
+  return CALL_WORD_RE.test(String(name || ''));
+}
+
+/** PURE: 'phone' | 'whatsapp' | 'ask' (ask shows both buttons). */
+function normalizeCallApp(value){
+  return value === 'whatsapp' || value === 'ask' ? value : 'phone';
+}
+
+/**
+ * PURE: keep a dialable number — digits with an optional leading '+'.
+ * Spaces, dashes and brackets are stripped so tel: and wa.me both accept it.
+ * Returns null when there aren't enough digits to dial.
+ */
+function normalizeCallNumber(value){
+  if(typeof value !== 'string' && typeof value !== 'number')return null;
+  const raw = String(value).trim();
+  const plus = raw.startsWith('+');
+  const digits = raw.replace(/\D/g,'').slice(0,15);
+  if(digits.length < 4)return null;
+  return (plus ? '+' : '') + digits;
+}
+
+/** PURE: show call controls when the name asks for it, or a number is already set. */
+function habitIsCallable(h){
+  return Boolean(h) && (nameMentionsCall(h.name) || Boolean(normalizeCallNumber(h.callNumber)));
+}
+
+/**
+ * PURE: dial URL for a habit's number.
+ * WhatsApp has no public "place a call" link, so wa.me opens the chat with
+ * that contact — its call buttons are one tap away from there.
+ */
+function callUrlFor(number,app){
+  const n = normalizeCallNumber(number);
+  if(!n)return '';
+  if(app === 'whatsapp')return `https://wa.me/${n.replace(/\D/g,'')}`;
+  return `tel:${n}`;
+}
+
 function normalize(items){
   const normalized = items.map(raw => {
     // Tasks and legacy events are now a single one-off type. Legacy 'event' records
@@ -618,6 +672,8 @@ function normalize(items){
       anywhereAllowed,
       locationPrefs,
       preferredLocationId,
+      callNumber:normalizeCallNumber(raw.callNumber),
+      callApp:normalizeCallApp(raw.callApp),
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
       source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,
       importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null

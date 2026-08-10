@@ -538,6 +538,11 @@ function isIosDevice(){
   return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+function isAndroidDevice(){
+  const ua = navigator.userAgent || '';
+  return /Android/i.test(ua);
+}
+
 function isStandalonePwa(){
   return window.matchMedia('(display-mode: standalone)').matches
     || window.navigator.standalone === true;
@@ -938,22 +943,72 @@ function openTravelEditSheet(fromId,toId){
   const dest = $('travel-edit-dest');
   if(dest){
     const addr = to.address ? escapeHtml(to.address) : '';
-    const coords = `${Number(to.lat).toFixed(5)}, ${Number(to.lng).toFixed(5)}`;
+    const pinned = hasPinCoords(to);
+    const coords = pinned ? `${Number(to.lat).toFixed(5)}, ${Number(to.lng).toFixed(5)}` : 'no pin saved';
     dest.innerHTML = `<div class="travel-dest-name">${escapeHtml(to.name)}</div>${addr ? `<div class="travel-dest-addr">${addr}</div>` : ''}<div class="travel-dest-coords">${escapeHtml(coords)}</div>`;
+  }
+  const mapsBtn = $('travel-edit-maps');
+  if(mapsBtn){
+    mapsBtn.textContent = `open in ${mapsAppLabel().toLowerCase()}`;
+    mapsBtn.title = hasPinCoords(to)
+      ? 'Directions to this exact saved pin'
+      : 'Directions to this address — save a pin for an exact drop-off';
   }
   const input = $('travel-edit-minutes');
   if(input)input.value = String(mins);
   openSheet('travel-edit-sheet');
 }
 
+const APPLE_DIRFLG = {driving:'d',walking:'w',bicycling:'c',transit:'r'};
+
+/** PURE: true when this place has usable coordinates to aim at. */
+function hasPinCoords(loc){
+  if(!loc)return false;
+  // Number(null) and Number('') are both 0, which would read as a valid pin in
+  // the Gulf of Guinea. Reject empty values before the finite check.
+  const coord = v => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
+  return coord(loc.lat) && coord(loc.lng);
+}
+
+/**
+ * PURE: build a directions URL for a saved place.
+ *
+ * Always aims at the saved pin's exact coordinates rather than its street
+ * address: a place inside a large complex (an apartment block spanning several
+ * streets, a campus, a mall) geocodes to the complex's own search result, which
+ * can be a long walk from the door you actually pinned. Coordinates take you to
+ * the pin you dropped. Address is only a fallback for places saved without
+ * coordinates.
+ *
+ * Apple Maps on iOS, Google Maps everywhere else — on Android the
+ * google.com/maps link is an app link, so it hands off to the Maps app with the
+ * route already set instead of opening a web map.
+ */
+function mapsDirectionsUrl(loc,mode){
+  if(!loc)return '';
+  const travelMode = normalizeTravelMode(mode);
+  const pin = hasPinCoords(loc);
+  const coords = pin ? `${Number(loc.lat).toFixed(6)},${Number(loc.lng).toFixed(6)}` : '';
+  const dest = pin ? coords : String(loc.address || loc.name || '').trim();
+  if(!dest)return '';
+  if(isIosDevice()){
+    const dirflg = APPLE_DIRFLG[travelMode] || 'd';
+    return `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}&dirflg=${dirflg}`;
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=${travelMode}`;
+}
+
+/** PURE: which maps app a directions tap will land in on this device. */
+function mapsAppLabel(){
+  return isIosDevice() ? 'Apple Maps' : 'Google Maps';
+}
+
 /** HANDLER: open destination in system maps. */
 function openTravelDestinationInMaps(){
   const to = typeof locationById === 'function' ? locationById(travelEditToId) : null;
   if(!to)return;
-  const q = to.address
-    ? encodeURIComponent(to.address)
-    : `${to.lat},${to.lng}`;
-  const url = `https://maps.apple.com/?daddr=${q}`;
+  const url = mapsDirectionsUrl(to,(sortSettings || {}).defaultTravelMode);
+  if(!url){ showToast('this place has no pin yet'); return; }
   window.open(url,'_blank','noopener');
 }
 

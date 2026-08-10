@@ -187,6 +187,10 @@
           </div>
           <div class="ting-cue detail-cue" id="detail-sub"></div>
         </div>
+        <div class="detail-head-actions" id="detail-call-actions" hidden>
+          <button type="button" class="detail-head-btn call-phone" id="detail-call-phone" aria-label="call" hidden><i class="ti ti-phone" aria-hidden="true"></i></button>
+          <button type="button" class="detail-head-btn call-whatsapp" id="detail-call-whatsapp" aria-label="whatsapp" hidden><i class="ti ti-brand-whatsapp" aria-hidden="true"></i></button>
+        </div>
       </div>
       <div class="detail-pager" aria-label="habit details">
         <section class="detail-page month-card" data-detail-nav="calendar">
@@ -538,6 +542,16 @@
               <button class="seg-opt" data-priority="4">P4</button>
               <button class="seg-opt" data-priority="5">P5</button>
             </div>
+          </div>
+          <div class="call-field" id="detail-call-field" hidden>
+            <span class="settings-sublabel">call</span>
+            <div class="seg" id="detail-call-app-seg">
+              <button class="seg-opt" data-call-app="phone">phone</button>
+              <button class="seg-opt" data-call-app="whatsapp">whatsapp</button>
+              <button class="seg-opt" data-call-app="ask">both</button>
+            </div>
+            <input type="tel" id="detail-call-number" class="call-number-input" placeholder="+1 555 123 4567" aria-label="phone number" autocomplete="tel" inputmode="tel" enterkeyhint="done" />
+            <p class="field-hint" id="detail-call-hint"></p>
           </div>
           <span class="settings-sublabel detail-full-only" id="detail-topics-label">topics &amp; places</span>
           <div class="topic-chip-row detail-full-only" id="detail-tag-chips"></div>

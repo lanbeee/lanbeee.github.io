@@ -1416,6 +1416,25 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
 .detail-head .detail-mark .ti{font-size:34px;}
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:36px;}
 .detail-head::before{top:calc(10px + env(safe-area-inset-top));bottom:10px;}
+/* Call habits: dial buttons sit in the detail header, opposite the mark button. */
+.detail-head-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.detail-head-actions[hidden]{display:none;}
+.detail-head-btn{
+  width:38px;height:38px;min-width:38px;border-radius:50%;padding:0;
+  border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
+}
+.detail-head-btn[hidden]{display:none;}
+.detail-head-btn i{font-size:19px;}
+.detail-head-btn:active{transform:scale(0.92);background:var(--bg3);}
+.detail-head-btn.call-whatsapp{color:#1fab54;}
+.call-field{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+.call-field[hidden]{display:none;}
+.call-field .call-number-input{margin-bottom:0;}
+.call-field .field-hint{margin:0;}
 .mini-add{
   width:40px;height:40px;border-radius:50%;border:0.5px solid var(--border2);
   background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;

@@ -1009,7 +1009,23 @@ $('detail-schedule-view-seg').addEventListener('click',e=>{
   if(!opt)return;
   setScheduleView(opt.dataset.scheduleView);
 });
-$('detail-habit-message').addEventListener('input',()=>setDetailDirty());
+$('detail-habit-message').addEventListener('input',()=>{
+  setDetailDirty();
+  syncDetailCallUi();
+});
+$('detail-call-number')?.addEventListener('input',()=>{
+  setDetailDirty();
+  syncDetailCallUi();
+});
+$('detail-call-app-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-call-app]');
+  if(!opt)return;
+  setDetailCallAppUi(opt.dataset.callApp);
+  setDetailDirty();
+  syncDetailCallUi();
+});
+$('detail-call-phone')?.addEventListener('click',()=>placeDetailCall('phone'));
+$('detail-call-whatsapp')?.addEventListener('click',()=>placeDetailCall('whatsapp'));
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');
   if(!opt)return;
@@ -1149,6 +1165,8 @@ $('detail-save').addEventListener('click',()=>{
   h.emoji = current.emoji;
   h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
+  h.callNumber = normalizeCallNumber(current.callNumber);
+  h.callApp = normalizeCallApp(current.callApp);
   h.topics = normalizeTopics(current.topics);
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
   h.anywhereAllowed = Boolean(current.anywhereAllowed);

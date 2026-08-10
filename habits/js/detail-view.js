@@ -43,6 +43,9 @@ function openDetail(i){
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
+  if($('detail-call-number'))$('detail-call-number').value = h.callNumber || '';
+  setDetailCallAppUi(h.callApp);
+  syncDetailCallUi();
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
@@ -69,6 +72,8 @@ function openDetail(i){
     anywhereAllowed:Boolean(h.anywhereAllowed),
     locationPrefs:normalizeLocationPrefs(h.locationPrefs,h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
+    callNumber:normalizeCallNumber(h.callNumber),
+    callApp:normalizeCallApp(h.callApp),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
     preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
@@ -805,6 +810,8 @@ function currentDetailTune(){
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
+    callNumber:normalizeCallNumber($('detail-call-number')?.value || ''),
+    callApp:currentDetailCallApp(),
     topics:selectedTopicsFrom('detail-tag-chips'),
     locationIds,
     anywhereAllowed:selectedAnywhereFrom('detail-tag-chips'),
@@ -922,6 +929,8 @@ function setDetailDirty(force){
       current.emojiBgColor !== detailTuneOriginal.emojiBgColor ||
       String(current.target) !== String(detailTuneOriginal.target) ||
       current.pinned !== detailTuneOriginal.pinned ||
+      (current.callNumber || null) !== (detailTuneOriginal.callNumber || null) ||
+      current.callApp !== detailTuneOriginal.callApp ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
       current.priority !== detailTuneOriginal.priority ||
@@ -998,6 +1007,9 @@ function restoreDetailTune(){
   $('detail-emoji').value = detailTuneOriginal.emoji;
   renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
   $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
+  if($('detail-call-number'))$('detail-call-number').value = detailTuneOriginal.callNumber || '';
+  setDetailCallAppUi(detailTuneOriginal.callApp);
+  syncDetailCallUi();
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
@@ -1019,6 +1031,60 @@ function restoreDetailTune(){
   setDetailPriorityUi(detailTuneOriginal.priority);
   if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
   setDetailDirty(false);
+}
+
+// PURE-ish: which call app the detail form currently has selected.
+function currentDetailCallApp(){
+  return normalizeCallApp(document.querySelector('#detail-call-app-seg .seg-opt.on')?.dataset.callApp);
+}
+
+// RENDER: update the call-app segmented control.
+function setDetailCallAppUi(app){
+  const value = normalizeCallApp(app);
+  document.querySelectorAll('#detail-call-app-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.callApp === value);
+  });
+}
+
+// RENDER: show the call block and header dial buttons for call habits. Driven
+// by the live name field, so the block appears the moment you type "call ..."
+// into the name — before saving.
+function syncDetailCallUi(){
+  const field = $('detail-call-field');
+  const actions = $('detail-call-actions');
+  if(!field || !actions)return;
+  const number = normalizeCallNumber($('detail-call-number')?.value || '');
+  const app = currentDetailCallApp();
+  const callable = nameMentionsCall($('detail-habit-message')?.value || '') || Boolean(number);
+  field.hidden = !callable;
+  actions.hidden = !callable || !number;
+  const phoneBtn = $('detail-call-phone');
+  const waBtn = $('detail-call-whatsapp');
+  if(phoneBtn)phoneBtn.hidden = app === 'whatsapp';
+  if(waBtn)waBtn.hidden = app === 'phone';
+  const hint = $('detail-call-hint');
+  if(hint){
+    if(!number)hint.textContent = 'Add a number to get a call button in the header.';
+    else if(app === 'phone')hint.textContent = 'The header button dials this number.';
+    else if(app === 'whatsapp')hint.textContent = 'The header button opens this number’s WhatsApp chat — call from there.';
+    else hint.textContent = 'The header shows both: dial directly, or open the WhatsApp chat.';
+  }
+}
+
+// HANDLER: place the call from the detail header. Uses the number in the form
+// so a freshly typed one works without saving first.
+function placeDetailCall(app){
+  const number = normalizeCallNumber($('detail-call-number')?.value || '');
+  if(!number){
+    showToast('add a number first');
+    scrollDetailToNav('identity');
+    return;
+  }
+  const url = callUrlFor(number,app);
+  if(!url)return;
+  // tel: is a handler hand-off, not a page — window.open would leave a blank tab.
+  if(app === 'whatsapp')window.open(url,'_blank','noopener');
+  else window.location.href = url;
 }
 
 // RENDER: task due row hint — date-only vs fixed appointment
