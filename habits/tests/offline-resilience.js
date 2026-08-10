@@ -31,6 +31,18 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
   await page.reload({ waitUntil: 'networkidle' });
 
+  // The offline phase depends on the SW precache having finished, which is
+  // async and races the networkidle reloads above on slow machines. Wait for
+  // the SW to reach the active state (install — and thus the precache — runs
+  // inside the install waitUntil), then reload once through the now-controlling
+  // SW so every shell asset is re-verified in cache.
+  await page.evaluate(async () => {
+    if (!('serviceWorker' in navigator)) return;
+    const timeout = new Promise(resolve => setTimeout(resolve, 10000));
+    await Promise.race([navigator.serviceWorker.ready.catch(() => {}), timeout]);
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+
   // Phase 2 — go offline, verify the app remains functional
   await page.context().setOffline(true);
 
@@ -98,6 +110,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       './js/storage.js',
       './js/data.js',
       './js/list-view.js',
+      './js/shell-ui.js',
       './js/main.js',
       './styles.css'
     ];
