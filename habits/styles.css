@@ -1416,7 +1416,8 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
 .detail-head .detail-mark .ti{font-size:34px;}
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:36px;}
 .detail-head::before{top:calc(10px + env(safe-area-inset-top));bottom:10px;}
-/* Call habits: dial buttons sit in the detail header, opposite the mark button. */
+/* Habit links: call/meeting launch buttons sit in the detail header,
+   opposite the mark button. */
 .detail-head-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .detail-head-actions[hidden]{display:none;}
 .detail-head-btn{
@@ -1430,11 +1431,29 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
 .detail-head-btn[hidden]{display:none;}
 .detail-head-btn i{font-size:19px;}
 .detail-head-btn:active{transform:scale(0.92);background:var(--bg3);}
-.detail-head-btn.call-whatsapp{color:#1fab54;}
-.call-field{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
-.call-field[hidden]{display:none;}
-.call-field .call-number-input{margin-bottom:0;}
-.call-field .field-hint{margin:0;}
+.detail-head-btn.link-kind-whatsapp{color:#1fab54;}
+.link-field{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+.link-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.link-field-head .settings-sublabel{margin:0;}
+.link-list{display:flex;flex-direction:column;gap:6px;}
+.link-list:empty{display:none;}
+.link-row{
+  display:grid;grid-template-columns:94px minmax(0,1fr) 30px 30px;
+  gap:5px;align-items:center;
+}
+.link-row .link-kind{margin:0;min-width:0;font-size:12px;}
+.link-row .link-value{margin:0;min-width:0;font-size:12.5px;padding-left:9px;padding-right:9px;}
+.link-row-btn,.link-primary-badge{
+  width:30px;height:30px;border-radius:50%;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  border:0.5px solid var(--border2);background:transparent;color:var(--text3);
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.link-row-btn{cursor:pointer;transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.link-row-btn:active{transform:scale(0.9);background:var(--bg3);}
+.link-row-btn i,.link-primary-badge i{font-size:15px;}
+.link-primary-badge{border-color:transparent;color:var(--amber-icon);}
+.link-field .field-hint{margin:0;}
 .mini-add{
   width:40px;height:40px;border-radius:50%;border:0.5px solid var(--border2);
   background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;

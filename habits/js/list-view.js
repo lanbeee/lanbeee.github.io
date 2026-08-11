@@ -1666,7 +1666,10 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
     e.preventDefault();
     e.stopPropagation();
     if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
-    openTravelEditSheet(fromId,toId);
+    // Mirrors habit cards: tap to edit the leg, double tap to just go.
+    handleDoubleTapActivate(`travel:${fromId}|${toId}`,
+      ()=>openTravelEditSheet(fromId,toId),
+      ()=>openTravelLegInMaps(toId));
   });
 }
 
@@ -4929,18 +4932,38 @@ function setupCardTap(row,realIdx){
   });
 }
 
-// HANDLER: distinguish tap vs double-tap
-function handleCardActivate(realIdx,card,singleAction){
+// HANDLER: shared tap vs double-tap timing. key identifies the thing tapped
+// (a habit index, or a "from|to" pair for a travel leg) so a quick tap on one
+// card followed by a tap on another never reads as a double tap.
+function handleDoubleTapActivate(key,singleAction,doubleAction){
   const now = Date.now();
-  if(lastTap.idx === realIdx && now - lastTap.time < TAP_DELAY){
+  if(lastTap.idx === key && now - lastTap.time < TAP_DELAY){
     clearTimeout(tapTimer);
     lastTap = {idx:-1,time:0};
-    quickLog(realIdx,card);
-  }else{
-    lastTap = {idx:realIdx,time:now};
-    clearTimeout(tapTimer);
-    tapTimer = setTimeout(singleAction,TAP_DELAY);
+    doubleAction();
+    return;
   }
+  lastTap = {idx:key,time:now};
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(singleAction,TAP_DELAY);
+}
+
+// HANDLER: distinguish tap (open detail / log) from double-tap, which logs the
+// item and launches whatever it points at — the call, the meeting room, the link.
+function handleCardActivate(realIdx,card,singleAction){
+  handleDoubleTapActivate(realIdx,singleAction,()=>{
+    quickLog(realIdx,card);
+    launchPrimaryHabitLink(realIdx);
+  });
+}
+
+// HANDLER: open a habit's primary link. Runs inside the tap that logged it, so
+// the gesture is still live for the popup blocker.
+function launchPrimaryHabitLink(realIdx){
+  const h = load()[realIdx];
+  const link = typeof habitPrimaryLink === 'function' ? habitPrimaryLink(h) : null;
+  if(!link)return false;
+  return typeof openHabitLink === 'function' ? openHabitLink(link) : false;
 }
 
 // PURE: short item name for compact toast messages

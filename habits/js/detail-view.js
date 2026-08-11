@@ -43,9 +43,7 @@ function openDetail(i){
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
-  if($('detail-call-number'))$('detail-call-number').value = h.callNumber || '';
-  setDetailCallAppUi(h.callApp);
-  syncDetailCallUi();
+  renderDetailLinkRows(normalizeLinks(h.links));
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
@@ -72,8 +70,7 @@ function openDetail(i){
     anywhereAllowed:Boolean(h.anywhereAllowed),
     locationPrefs:normalizeLocationPrefs(h.locationPrefs,h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
-    callNumber:normalizeCallNumber(h.callNumber),
-    callApp:normalizeCallApp(h.callApp),
+    links:normalizeLinks(h.links),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
     preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
@@ -810,8 +807,7 @@ function currentDetailTune(){
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
-    callNumber:normalizeCallNumber($('detail-call-number')?.value || ''),
-    callApp:currentDetailCallApp(),
+    links:currentDetailLinks(),
     topics:selectedTopicsFrom('detail-tag-chips'),
     locationIds,
     anywhereAllowed:selectedAnywhereFrom('detail-tag-chips'),
@@ -929,8 +925,7 @@ function setDetailDirty(force){
       current.emojiBgColor !== detailTuneOriginal.emojiBgColor ||
       String(current.target) !== String(detailTuneOriginal.target) ||
       current.pinned !== detailTuneOriginal.pinned ||
-      (current.callNumber || null) !== (detailTuneOriginal.callNumber || null) ||
-      current.callApp !== detailTuneOriginal.callApp ||
+      JSON.stringify(current.links || []) !== JSON.stringify(detailTuneOriginal.links || []) ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
       current.priority !== detailTuneOriginal.priority ||
@@ -1007,9 +1002,7 @@ function restoreDetailTune(){
   $('detail-emoji').value = detailTuneOriginal.emoji;
   renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
   $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
-  if($('detail-call-number'))$('detail-call-number').value = detailTuneOriginal.callNumber || '';
-  setDetailCallAppUi(detailTuneOriginal.callApp);
-  syncDetailCallUi();
+  renderDetailLinkRows(normalizeLinks(detailTuneOriginal.links));
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
@@ -1033,58 +1026,125 @@ function restoreDetailTune(){
   setDetailDirty(false);
 }
 
-// PURE-ish: which call app the detail form currently has selected.
-function currentDetailCallApp(){
-  return normalizeCallApp(document.querySelector('#detail-call-app-seg .seg-opt.on')?.dataset.callApp);
+// Placeholder copy per link kind, so the input tells you what it wants.
+const LINK_PLACEHOLDERS = {
+  phone:'+1 555 123 4567',
+  whatsapp:'+1 555 123 4567',
+  facetime:'+1 555 123 4567',
+  link:'https://zoom.us/j/…'
+};
+
+// RENDER: one editable link row. The first row is primary — the star marks it
+// and the up arrow on the others promotes them.
+function detailLinkRowHtml(link,index){
+  const kind = normalizeLinkKind(link.kind);
+  const options = LINK_KINDS
+    .map(k => `<option value="${k}"${k === kind ? ' selected' : ''}>${k}</option>`)
+    .join('');
+  const lead = index === 0
+    ? `<span class="link-primary-badge" title="opens on double tap" aria-label="primary link"><i class="ti ti-star" aria-hidden="true"></i></span>`
+    : `<button type="button" class="link-row-btn" data-link-promote="${index}" title="make primary" aria-label="make primary"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>`;
+  return `<div class="link-row" data-link-index="${index}">
+    <select class="mini-select link-kind" aria-label="link type">${options}</select>
+    <input type="text" class="link-value" value="${escapeHtml(link.value || '')}" placeholder="${escapeHtml(LINK_PLACEHOLDERS[kind] || '')}" aria-label="${kind} value" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" />
+    ${lead}
+    <button type="button" class="link-row-btn" data-link-remove="${index}" title="remove" aria-label="remove link"><i class="ti ti-x" aria-hidden="true"></i></button>
+  </div>`;
 }
 
-// RENDER: update the call-app segmented control.
-function setDetailCallAppUi(app){
-  const value = normalizeCallApp(app);
-  document.querySelectorAll('#detail-call-app-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.callApp === value);
+// RENDER: rewrite the link editor rows from a list.
+function renderDetailLinkRows(links){
+  const list = $('detail-link-list');
+  if(!list)return;
+  list.innerHTML = (links || []).map(detailLinkRowHtml).join('');
+  syncDetailLinkUi();
+}
+
+// HYBRID: read the link rows back out, keeping half-typed rows so the editor
+// doesn't delete a row out from under you mid-edit.
+function currentDetailLinkRows(){
+  return Array.from(document.querySelectorAll('#detail-link-list .link-row')).map(row => ({
+    kind:normalizeLinkKind(row.querySelector('.link-kind')?.value),
+    value:(row.querySelector('.link-value')?.value || '').trim()
+  }));
+}
+
+// HYBRID: the saveable links — normalized, unusable rows dropped.
+function currentDetailLinks(){
+  return normalizeLinks(currentDetailLinkRows());
+}
+
+// RENDER: header launch buttons + hint, from whatever the rows currently hold.
+function syncDetailLinkUi(){
+  const actions = $('detail-link-actions');
+  const links = currentDetailLinks();
+  if(actions){
+    actions.hidden = links.length === 0;
+    actions.innerHTML = links.map((link,i) =>
+      `<button type="button" class="detail-head-btn link-kind-${link.kind}" data-link-open="${i}" title="${escapeHtml(linkLabel(link))}" aria-label="open ${escapeHtml(linkLabel(link))}"><i class="ti ${linkIconClass(link)}" aria-hidden="true"></i></button>`
+    ).join('');
+  }
+  document.querySelectorAll('#detail-link-list .link-row').forEach(row=>{
+    const kind = normalizeLinkKind(row.querySelector('.link-kind')?.value);
+    const input = row.querySelector('.link-value');
+    if(input)input.placeholder = LINK_PLACEHOLDERS[kind] || '';
   });
-}
-
-// RENDER: show the call block and header dial buttons for call habits. Driven
-// by the live name field, so the block appears the moment you type "call ..."
-// into the name — before saving.
-function syncDetailCallUi(){
-  const field = $('detail-call-field');
-  const actions = $('detail-call-actions');
-  if(!field || !actions)return;
-  const number = normalizeCallNumber($('detail-call-number')?.value || '');
-  const app = currentDetailCallApp();
-  const callable = nameMentionsCall($('detail-habit-message')?.value || '') || Boolean(number);
-  field.hidden = !callable;
-  actions.hidden = !callable || !number;
-  const phoneBtn = $('detail-call-phone');
-  const waBtn = $('detail-call-whatsapp');
-  if(phoneBtn)phoneBtn.hidden = app === 'whatsapp';
-  if(waBtn)waBtn.hidden = app === 'phone';
-  const hint = $('detail-call-hint');
+  const hint = $('detail-link-hint');
   if(hint){
-    if(!number)hint.textContent = 'Add a number to get a call button in the header.';
-    else if(app === 'phone')hint.textContent = 'The header button dials this number.';
-    else if(app === 'whatsapp')hint.textContent = 'The header button opens this number’s WhatsApp chat — call from there.';
-    else hint.textContent = 'The header shows both: dial directly, or open the WhatsApp chat.';
+    if(!links.length){
+      hint.textContent = 'Add a number to call or a meeting link to open. Double tapping this item’s card logs it and opens the starred one.';
+    }else{
+      const primary = linkLabel(links[0]);
+      const whatsapp = links.some(l => l.kind === 'whatsapp')
+        ? ' WhatsApp opens the chat — call from there.'
+        : '';
+      hint.textContent = `Double tapping this item’s card logs it and opens ${primary}.${whatsapp}`;
+    }
   }
 }
 
-// HANDLER: place the call from the detail header. Uses the number in the form
-// so a freshly typed one works without saving first.
-function placeDetailCall(app){
-  const number = normalizeCallNumber($('detail-call-number')?.value || '');
-  if(!number){
-    showToast('add a number first');
+// HANDLER: add an empty row to fill in.
+function addDetailLinkRow(){
+  const rows = currentDetailLinkRows();
+  if(rows.length >= MAX_HABIT_LINKS){
+    showToast(`up to ${MAX_HABIT_LINKS} links`);
+    return;
+  }
+  rows.push({kind:rows.length ? 'link' : 'phone',value:''});
+  renderDetailLinkRows(rows);
+  const inputs = document.querySelectorAll('#detail-link-list .link-value');
+  inputs[inputs.length - 1]?.focus();
+}
+
+// HANDLER: drop a row.
+function removeDetailLinkRow(index){
+  const rows = currentDetailLinkRows();
+  if(index < 0 || index >= rows.length)return;
+  rows.splice(index,1);
+  renderDetailLinkRows(rows);
+  setDetailDirty();
+}
+
+// HANDLER: move a row to the front, making it the one a double tap fires.
+function promoteDetailLinkRow(index){
+  const rows = currentDetailLinkRows();
+  if(index <= 0 || index >= rows.length)return;
+  rows.unshift(rows.splice(index,1)[0]);
+  renderDetailLinkRows(rows);
+  setDetailDirty();
+}
+
+// HANDLER: launch a link from the detail header. Reads the live rows, so a
+// freshly typed number works without saving first.
+function openDetailLink(index){
+  const links = currentDetailLinks();
+  const link = links[index];
+  if(!link){
+    showToast('add a number or link first');
     scrollDetailToNav('identity');
     return;
   }
-  const url = callUrlFor(number,app);
-  if(!url)return;
-  // tel: is a handler hand-off, not a page — window.open would leave a blank tab.
-  if(app === 'whatsapp')window.open(url,'_blank','noopener');
-  else window.location.href = url;
+  openHabitLink(link);
 }
 
 // RENDER: task due row hint — date-only vs fixed appointment

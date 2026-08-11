@@ -1003,13 +1003,19 @@ function mapsAppLabel(){
   return isIosDevice() ? 'Apple Maps' : 'Google Maps';
 }
 
-/** HANDLER: open destination in system maps. */
-function openTravelDestinationInMaps(){
-  const to = typeof locationById === 'function' ? locationById(travelEditToId) : null;
-  if(!to)return;
+/** HANDLER: open a travel leg's destination in system maps. */
+function openTravelLegInMaps(toId){
+  const to = typeof locationById === 'function' ? locationById(toId) : null;
+  if(!to)return false;
   const url = mapsDirectionsUrl(to,(sortSettings || {}).defaultTravelMode);
-  if(!url){ showToast('this place has no pin yet'); return; }
+  if(!url){ showToast('this place has no pin yet'); return false; }
   window.open(url,'_blank','noopener');
+  return true;
+}
+
+/** HANDLER: open destination in system maps, from the travel edit sheet. */
+function openTravelDestinationInMaps(){
+  openTravelLegInMaps(travelEditToId);
 }
 
 function closeTravelEditSheet(){

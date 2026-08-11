@@ -124,9 +124,8 @@
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
  *
- * — CallFields (optional; surfaced when the name mentions calling) —
- * @property {string|null} callNumber          — dialable number, digits with optional leading '+'
- * @property {'phone'|'whatsapp'|'ask'} callApp — which app the header dial button opens ('ask' shows both)
+ * — LinkFields (optional, on every type) —
+ * @property {{kind:'phone'|'whatsapp'|'facetime'|'link',value:string}[]} links — things to launch when doing this; links[0] is primary and fires on card double tap
  */
 
 /**
@@ -519,54 +518,180 @@ function saveSortSettings(settings){
 // the canonical Habit / Settings shapes declared above.
 // ─────────────────────────────────────────────────────────────────────────
 
-// ── Call habits ──────────────────────────────────────────────────────────
-// A habit whose name mentions calling someone ("call mum", "call the clinic
-// back") gets a dial button in the detail header. The number and which app to
-// dial from live on the habit.
+// ── Habit links ──────────────────────────────────────────────────────────
+// Whatever you launch when you actually do the habit: a phone or WhatsApp
+// number, a FaceTime call, or a meeting/web link (Zoom, Teams, Meet, Webex, or
+// anything else). Any habit can carry a few. The first one is primary — it is
+// what a double tap on the card opens, right after logging.
 
-// Word match, not substring: "call" and its inflections count, "recall" and
-// "calligraphy" do not.
-const CALL_WORD_RE = /(?:^|[^a-z])calls?(?:ed|ing|back)?(?:[^a-z]|$)/i;
+const LINK_KINDS = ['phone','whatsapp','facetime','link'];
+const MAX_HABIT_LINKS = 4;
 
-/** PURE: does this name ask you to call someone? */
-function nameMentionsCall(name){
-  return CALL_WORD_RE.test(String(name || ''));
+/** PURE: 'phone' | 'whatsapp' | 'facetime' | 'link'. */
+function normalizeLinkKind(value){
+  return LINK_KINDS.includes(value) ? value : 'link';
 }
 
-/** PURE: 'phone' | 'whatsapp' | 'ask' (ask shows both buttons). */
-function normalizeCallApp(value){
-  return value === 'whatsapp' || value === 'ask' ? value : 'phone';
+/** PURE: kinds whose value is a phone number rather than a URL. */
+function linkKindIsNumber(kind){
+  return kind === 'phone' || kind === 'whatsapp' || kind === 'facetime';
 }
 
 /**
  * PURE: keep a dialable number — digits with an optional leading '+'.
- * Spaces, dashes and brackets are stripped so tel: and wa.me both accept it.
- * Returns null when there aren't enough digits to dial.
+ * Spaces, dashes and brackets are stripped so tel:, wa.me and facetime: all
+ * accept it. Returns '' when there aren't enough digits to dial.
  */
-function normalizeCallNumber(value){
-  if(typeof value !== 'string' && typeof value !== 'number')return null;
+function normalizePhoneValue(value){
+  if(typeof value !== 'string' && typeof value !== 'number')return '';
   const raw = String(value).trim();
   const plus = raw.startsWith('+');
   const digits = raw.replace(/\D/g,'').slice(0,15);
-  if(digits.length < 4)return null;
+  if(digits.length < 4)return '';
   return (plus ? '+' : '') + digits;
 }
 
-/** PURE: show call controls when the name asks for it, or a number is already set. */
-function habitIsCallable(h){
-  return Boolean(h) && (nameMentionsCall(h.name) || Boolean(normalizeCallNumber(h.callNumber)));
+/**
+ * PURE: keep a launchable URL. A bare host ("meet.google.com/abc") gets https,
+ * app schemes (zoommtg://, msteams://) pass through, and script-ish schemes are
+ * dropped so a pasted link can never execute anything.
+ */
+function normalizeUrlValue(value){
+  const raw = String(value ?? '').trim();
+  if(!raw)return '';
+  if(/^(javascript|data|vbscript|file):/i.test(raw))return '';
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw);
+  const candidate = hasScheme ? raw : `https://${raw}`;
+  try{
+    const url = new URL(candidate);
+    // A web URL needs a host; app schemes (zoommtg:, msteams:) carry their
+    // payload in the opaque part instead.
+    const webish = /^https?:$/i.test(url.protocol);
+    if(webish && !url.hostname)return '';
+    return url.href.slice(0,600);
+  }catch{
+    return '';
+  }
+}
+
+/** PURE: normalize one link's value for its kind. '' means unusable. */
+function normalizeLinkValue(kind,value){
+  return linkKindIsNumber(normalizeLinkKind(kind))
+    ? normalizePhoneValue(value)
+    : normalizeUrlValue(value);
+}
+
+/** PURE: clean a habit's link list — drops unusable and duplicate entries. */
+function normalizeLinks(raw){
+  if(!Array.isArray(raw))return [];
+  const out = [];
+  for(const item of raw){
+    if(!item || typeof item !== 'object')continue;
+    const kind = normalizeLinkKind(item.kind);
+    const value = normalizeLinkValue(kind,item.value);
+    if(!value)continue;
+    if(out.some(l => l.kind === kind && l.value === value))continue;
+    out.push({kind,value});
+    if(out.length >= MAX_HABIT_LINKS)break;
+  }
+  return out;
+}
+
+// Hosts worth naming on the button. Anything unlisted falls back to its own
+// hostname, so a self-hosted room still reads as something recognisable.
+const LINK_PROVIDERS = [
+  {host:/(^|\.)zoom\.us$/i, label:'zoom'},
+  {host:/(^|\.)teams\.(microsoft|live)\.com$/i, label:'teams'},
+  {host:/^meet\.google\.com$/i, label:'meet'},
+  {host:/(^|\.)webex\.com$/i, label:'webex'},
+  {host:/(^|\.)whatsapp\.com$/i, label:'whatsapp'},
+  {host:/(^|\.)meet\.jit\.si$/i, label:'jitsi'},
+  {host:/(^|\.)discord\.(gg|com)$/i, label:'discord'},
+  {host:/(^|\.)slack\.com$/i, label:'slack'},
+  {host:/(^|\.)skype\.com$/i, label:'skype'}
+];
+
+/** PURE: short name for a URL — the meeting service, else its host. */
+function linkProviderLabel(url){
+  const clean = normalizeUrlValue(url);
+  if(!clean)return 'link';
+  let parsed;
+  try{ parsed = new URL(clean); }catch{ return 'link'; }
+  const host = (parsed.hostname || '').replace(/^www\./i,'');
+  if(!host){
+    // App scheme (zoommtg:, msteams:) — name it after the scheme.
+    const scheme = parsed.protocol.replace(':','').toLowerCase();
+    if(scheme.startsWith('zoom'))return 'zoom';
+    if(scheme.startsWith('msteams'))return 'teams';
+    return scheme || 'link';
+  }
+  const match = LINK_PROVIDERS.find(p => p.host.test(host));
+  return match ? match.label : host;
+}
+
+/** PURE: button/label text for a link. */
+function linkLabel(link){
+  if(!link)return 'link';
+  if(link.kind === 'phone')return 'call';
+  if(link.kind === 'whatsapp')return 'whatsapp';
+  if(link.kind === 'facetime')return 'facetime';
+  return linkProviderLabel(link.value);
+}
+
+// Meeting services share the video icon; everything else is a plain link.
+const VIDEO_PROVIDERS = ['zoom','teams','meet','webex','jitsi','discord','skype'];
+
+/** PURE: Tabler icon class for a link. */
+function linkIconClass(link){
+  if(!link)return 'ti-link';
+  if(link.kind === 'phone')return 'ti-phone';
+  if(link.kind === 'whatsapp')return 'ti-brand-whatsapp';
+  if(link.kind === 'facetime')return 'ti-video';
+  return VIDEO_PROVIDERS.includes(linkProviderLabel(link.value)) ? 'ti-video' : 'ti-link';
 }
 
 /**
- * PURE: dial URL for a habit's number.
+ * PURE: the URL a link opens.
  * WhatsApp has no public "place a call" link, so wa.me opens the chat with
  * that contact — its call buttons are one tap away from there.
  */
-function callUrlFor(number,app){
-  const n = normalizeCallNumber(number);
-  if(!n)return '';
-  if(app === 'whatsapp')return `https://wa.me/${n.replace(/\D/g,'')}`;
-  return `tel:${n}`;
+function linkLaunchUrl(link){
+  if(!link)return '';
+  const kind = normalizeLinkKind(link.kind);
+  const value = normalizeLinkValue(kind,link.value);
+  if(!value)return '';
+  if(kind === 'phone')return `tel:${value}`;
+  if(kind === 'whatsapp')return `https://wa.me/${value.replace(/\D/g,'')}`;
+  if(kind === 'facetime')return `facetime://${value}`;
+  return value;
+}
+
+/**
+ * PURE: true when the URL hands off to an OS handler rather than opening a
+ * page. Those must replace the location — window.open leaves a blank tab.
+ */
+function linkHandsOffToOs(url){
+  return /^(tel:|facetime:|facetime-audio:|sms:|mailto:)/i.test(String(url || ''))
+    || (/^[a-z][a-z0-9+.-]*:/i.test(String(url || '')) && !/^https?:/i.test(String(url || '')));
+}
+
+/** PURE: the link a double tap fires — the first one. */
+function habitPrimaryLink(h){
+  const links = normalizeLinks(h && h.links);
+  return links.length ? links[0] : null;
+}
+
+/**
+ * PURE: migrate the earlier call-only fields (callNumber + callApp) into links.
+ * 'ask' meant "show both buttons", so it becomes two links.
+ */
+function legacyCallLinks(raw){
+  const number = normalizePhoneValue(raw && raw.callNumber);
+  if(!number)return [];
+  const app = raw.callApp;
+  if(app === 'whatsapp')return [{kind:'whatsapp',value:number}];
+  if(app === 'ask')return [{kind:'phone',value:number},{kind:'whatsapp',value:number}];
+  return [{kind:'phone',value:number}];
 }
 
 function normalize(items){
@@ -672,8 +797,7 @@ function normalize(items){
       anywhereAllowed,
       locationPrefs,
       preferredLocationId,
-      callNumber:normalizeCallNumber(raw.callNumber),
-      callApp:normalizeCallApp(raw.callApp),
+      links:normalizeLinks(Array.isArray(raw.links) && raw.links.length ? raw.links : legacyCallLinks(raw)),
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
       source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,
       importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
