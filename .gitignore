@@ -4,6 +4,8 @@
 /package-lock.json
 /test-results/
 /playwright-report/
+**/test-results/
+**/test-results/**/*.log
 
 # Personal data — never commit backup exports (they contain home address, logs, etc.)
 habits/lib/sample_tings-backup*
