@@ -140,7 +140,8 @@ function openDetail(i){
       const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
       requestAnimationFrame(()=>{
         if(hasOrder)scrollDetailToNav('actions','auto');
-        else if(h.type === 'task')scrollDetailToNav(minimal ? 'schedule' : 'effort','auto');
+        else if(minimal)pager.scrollTo({top:0,behavior:'auto'});
+        else if(h.type === 'task')scrollDetailToNav('effort','auto');
         else{
           pager.scrollTo({left:0,behavior:'auto'});
           updateDetailPagerDots();
@@ -171,8 +172,7 @@ function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
     const h = load()[i];
-    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-    scrollDetailToNav(h && h.type === 'task' && !minimal ? 'effort' : 'schedule','auto');
+    scrollDetailToNav(h && h.type === 'task' && !detailIsSingleView() ? 'effort' : 'schedule','auto');
   });
 }
 
@@ -1605,8 +1605,11 @@ const DETAIL_PAGE_NAV = {
   actions:{label:'actions',icon:'ti-dots'}
 };
 
-// Visual-only: hide insight/effort tabs, fold duration + auto-mark into schedule,
-// and strip schedule/identity chrome. Does not change saved habit fields.
+// Visual-only: drop the calendar/insight/effort panes, fold duration + due into
+// schedule, and strip schedule/identity chrome. What is left is short enough to
+// read as one scrolling page, so the pager stacks vertically and the tab strip
+// goes away. Does not change saved habit fields.
+const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','insight','effort'];
 let _minimalEffortHomes = null;
 function applyDetailMinimalMode(){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
@@ -1614,11 +1617,12 @@ function applyDetailMinimalMode(){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if(sheet)sheet.classList.toggle('minimal-detail', minimal);
   if(pager){
-    const insight = pager.querySelector('.detail-page[data-detail-nav="insight"]');
-    const effort = pager.querySelector('.detail-page[data-detail-nav="effort"]');
-    if(insight)insight.hidden = minimal;
-    if(effort)effort.hidden = minimal;
-    if(minimal){
+    MINIMAL_HIDDEN_DETAIL_PAGES.forEach(nav=>{
+      const page = pager.querySelector(`.detail-page[data-detail-nav="${nav}"]`);
+      if(page)page.hidden = minimal;
+    });
+    if(minimal)pager.scrollTo({left:0,behavior:'auto'});
+    else{
       const pages = visibleDetailPages(pager);
       const width = Math.max(1,pager.clientWidth);
       const idx = Math.round(pager.scrollLeft / width);
@@ -1626,6 +1630,9 @@ function applyDetailMinimalMode(){
     }
   }
 
+  // Duration and the task due date still matter in minimal mode, so they move
+  // up into schedule. Auto mark done does not — it stays behind on the hidden
+  // effort pane, which keeps its saved value untouched.
   const slot = $('detail-minimal-effort');
   const durationField = $('detail-duration-field');
   const autoMarkField = $('detail-auto-mark-field');
@@ -1648,12 +1655,14 @@ function applyDetailMinimalMode(){
     if(next && next.parentElement === parent)parent.insertBefore(node,next);
     else parent.appendChild(node);
   };
-  if(minimal && slot && durationField && autoMarkField){
+  if(minimal && slot && durationField){
     slot.appendChild(durationField);
-    slot.appendChild(autoMarkField);
     if(dueRow)slot.appendChild(dueRow);
     if(dueHint)slot.appendChild(dueHint);
     slot.hidden = false;
+    if(_minimalEffortHomes){
+      restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
+    }
   }else if(_minimalEffortHomes){
     restoreNode(durationField,_minimalEffortHomes.durationParent,_minimalEffortHomes.durationNext);
     restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
@@ -1663,6 +1672,11 @@ function applyDetailMinimalMode(){
   }
 
   if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
+}
+
+// PURE: minimal mode stacks every remaining pane into one scrolling page.
+function detailIsSingleView(){
+  return typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
 }
 
 function visibleDetailPages(pager){
@@ -1681,6 +1695,11 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
   if(!pager)return;
   const index = detailPageIndexByNav(navKey);
   if(index < 0)return;
+  if(detailIsSingleView()){
+    const page = visibleDetailPages(pager)[index];
+    if(page)pager.scrollTo({top:page.offsetTop - pager.offsetTop,behavior});
+    return;
+  }
   pager.scrollTo({left:pager.clientWidth * index,behavior});
   updateDetailPagerDots();
 }
@@ -1691,6 +1710,15 @@ function updateDetailPagerDots(){
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
+  // One scrolling page has nothing to page between — the tab strip would just
+  // be three buttons that scroll a page the user can already see.
+  if(detailIsSingleView()){
+    dotsWrap.hidden = true;
+    dotsWrap.innerHTML = '';
+    delete dotsWrap.dataset.pageSig;
+    return;
+  }
+  dotsWrap.hidden = false;
   const pages = visibleDetailPages(pager);
   pages.forEach((panel,i)=>{
     panel.id = panel.id || `detail-page-${i}`;

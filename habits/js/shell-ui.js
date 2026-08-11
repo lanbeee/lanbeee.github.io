@@ -536,7 +536,9 @@ function showActionToast(text,action){
   }
   const snoozeUntilBtn = $('snooze-until-planned');
   if(snoozeUntilBtn){
-    const showSnooze = action && action.plan && action.ts > Date.now();
+    // Minimal mode has no snooze anywhere else, so it must not appear here.
+    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+    const showSnooze = !minimal && action && action.plan && action.ts > Date.now();
     snoozeUntilBtn.hidden = !showSnooze;
     snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));
   }

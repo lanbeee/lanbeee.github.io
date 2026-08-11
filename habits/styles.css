@@ -182,7 +182,22 @@ body.minimal-mode .ting-card.minimal-card .card-actions,
 body.minimal-mode .ting-card.minimal-card .ting-visual { display:none; }
 body.minimal-mode .ting-card.minimal-card::before { display:none; }
 body.minimal-mode #detail-sheet.minimal-detail .detail-full-only { display:none !important; }
+/* What survives minimal mode fits in one scroll, so the horizontal snap pager
+   becomes a plain vertical stack and the tab strip disappears. */
+body.minimal-mode .detail-sheet > .detail-pager{
+  flex-direction:column;scroll-snap-type:none;
+  overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+}
+body.minimal-mode .detail-sheet > .detail-pager > .detail-page{
+  flex:0 0 auto;scroll-snap-align:none;
+  height:auto;min-height:0;overflow:visible;
+}
+body.minimal-mode .detail-bottom-bar .detail-dots[hidden]{ display:none; }
+body.minimal-mode .detail-bottom-bar .detail-actions{ flex:1 1 auto;width:auto; }
 body.minimal-mode #add-sheet.minimal-add .add-full-only { display:none !important; }
+/* Settings minimal mode already decides — showing them would be a dead switch. */
+body.minimal-mode .settings-full-only { display:none !important; }
 body.minimal-mode #overview-list:empty { display:none; }
 body.minimal-mode #overview-insight,
 body.minimal-mode #overview-pane-filter { display:none !important; }

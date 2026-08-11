@@ -463,11 +463,13 @@ function drawCrownRidges(canvas, scroll){
   }
 }
 
-// WIRE: attach crown dial gesture + input listeners
+// WIRE: attach rhythm field listeners, plus crown dial gestures where a dial
+// is mounted (the breakable card is the only remaining one).
 function bindRhythm(prefix){
   const field = $(`${prefix}-days`);
   const crown = $(`${prefix}-days-slider`);
   const label = $(`${prefix}-days-label`);
+  if(!field)return;
 
   field.addEventListener('input',e=>{
     const typed = e.target.value.replace(/\D/g,'').slice(0,3);
@@ -475,6 +477,7 @@ function bindRhythm(prefix){
     if(!typed)return;
     const days = clampRhythm(typed);
     if(label)label.textContent = `${days}d`;
+    if(prefix === 'detail')setDetailDirty();
   });
   field.addEventListener('focus',e=>{
     e.target.dataset.orig = e.target.value;
@@ -484,6 +487,7 @@ function bindRhythm(prefix){
     const times = parseInt($(`${prefix}-times`)?.value,10) || 1;
     syncRhythm(prefix,{times,days:e.target.value || 7});
   });
+  if(!crown)return;
 
   let startVal,prevX,velX = 0,momentumId = null,smoothAnimId = null,scrubRaf = null;
   let pendingDx = 0, scrubbing = false;
@@ -662,10 +666,6 @@ bindRhythm('detail');
     if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(t,days));
     if(prefix === 'detail')setDetailDirty();
   });
-});
-requestAnimationFrame(()=>{
-  drawCrownRidges($('ting-days-slider')?.querySelector('.crown-canvas'),0);
-  drawCrownRidges($('detail-days-slider')?.querySelector('.crown-canvas'),0);
 });
 
 // WIRE: attach numeric input focus/blur validators
@@ -2724,7 +2724,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
 
   if(e.target.closest('#day-logs-back') || e.target.closest('#day-logs-back-list')){
     if(dayLogsScoped()){
-      if(dayLogsStep === 'add')setDayLogsStep('item',dayLogsScopeIndex);
+      if(dayLogsStep === 'add' || dayLogsStep === 'log')setDayLogsStep('item',dayLogsScopeIndex);
       else closeDayLogsSheet({refreshOverview:false});
       return;
     }
@@ -2734,6 +2734,11 @@ $('day-logs-sheet').addEventListener('click',e=>{
   if(e.target.closest('#day-logs-plan')){
     if(!dayLogsCanPlan(dayLogsKey))return;
     setDayLogsStep('add');
+    return;
+  }
+  if(e.target.closest('#day-logs-log')){
+    if(!dayLogsCanLog(dayLogsKey))return;
+    setDayLogsStep('log',dayLogsScoped() ? dayLogsScopeIndex : null);
     return;
   }
   if(e.target.closest('#day-logs-day')){
@@ -2772,6 +2777,28 @@ $('day-logs-sheet').addEventListener('click',e=>{
     if(Number.isNaN(idx) || !key || !dayLogsCanLog(key))return;
     const ts = new Date(`${key}T12:00:00`).getTime();
     if(!logTingAt(idx,ts))return;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    refreshOpenViews();
+    return;
+  }
+  const planDayBtn = e.target.closest('[data-plan-day-item]');
+  if(planDayBtn){
+    const idx = parseInt(planDayBtn.dataset.planDayItem,10);
+    if(Number.isNaN(idx) || !dayLogsCanPlan(dayLogsKey))return;
+    setDayLogsStep('add',idx);
+    return;
+  }
+  if(e.target.closest('#day-log-entry-save')){
+    if(!dayLogsKey || !dayLogsCanLog(dayLogsKey))return;
+    const idx = dayLogsScoped()
+      ? dayLogsScopeIndex
+      : parseInt($('day-log-entry-ting')?.value,10);
+    if(Number.isNaN(idx))return;
+    const h = load()[idx];
+    if(!h || !dayLogsHabitLoggable(h))return;
+    const ts = dayLogsEntryTimestamp(dayLogsKey,$('day-log-entry-time')?.value || '');
+    if(!Number.isFinite(ts) || !logTingAt(idx,ts))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();

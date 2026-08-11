@@ -45,6 +45,15 @@ async function assertAttr(page, selector, attr, expected, msg){
   page.on('console', msg => { if(msg.type() === 'error')errors.push(`console: ${msg.text()}`); });
   page.on('pageerror', err => errors.push(`pageerror: ${err.message}`));
 
+  // This suite drives the full detail surface (breakable, timer, priority,
+  // per-pane navigation), all of which minimal mode strips. Opt out before the
+  // app boots so a fresh profile does not start minimal.
+  await page.addInitScript(()=>{
+    localStorage.setItem('tings_app_settings_v2', JSON.stringify({
+      preset:'todayFirst', minimalMode:false
+    }));
+  });
+
   await page.goto(baseUrl, { waitUntil:'domcontentloaded' });
   await page.waitForSelector('#open-add');
   const runId = `DetailTest ${Date.now()}`;

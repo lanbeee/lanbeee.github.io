@@ -3052,6 +3052,13 @@ function summarizeTrailTone(tones){
   return '';
 }
 
+// PURE: whether home should lay out day by day. Minimal mode always falls back
+// to the today / overdue / coming up grouping, whatever the toggle says.
+function weekOnHomeEnabled(settings){
+  const s = settings || sortSettings || {};
+  return !s.minimalMode && Boolean(s.showWeekOnHome);
+}
+
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
@@ -3067,7 +3074,7 @@ function render(opts){
     && !o.__optimizedWeek
     && !o.__optimizerFallback
     && sortSettings.preset === 'todayFirst'
-    && Boolean(sortSettings.showWeekOnHome)
+    && weekOnHomeEnabled(sortSettings)
     && !searchQuery.trim()
     && typeof buildWeekAgendaOffMain === 'function';
   if(wantsPlannedWeek){
@@ -3142,7 +3149,7 @@ function render(opts){
   const searching = searchQuery.trim().length > 0;
   const deferAgenda = Boolean(o.deferAgenda);
   const weekMode = !deferAgenda && todayFirstActive
-    && sortSettings.showWeekOnHome
+    && weekOnHomeEnabled(sortSettings)
     && !searching
     && typeof buildWeekAgenda === 'function'
     && typeof homeDaySequence === 'function';
@@ -3239,6 +3246,7 @@ function render(opts){
         ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
+    const snoozeAction = minimal ? '' : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`;
     const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
@@ -3278,7 +3286,7 @@ function render(opts){
         ${timerAction}
       </div>
       <div class="swipe-actions swipe-actions-right">
-        <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
+        ${snoozeAction}
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
@@ -3732,7 +3740,7 @@ function homeListFingerprint(now = Date.now()){
     s.pinnedLocationId || '',
     s.lastKnownLocationId || '',
     s.preset || '',
-    s.showWeekOnHome ? 1 : 0,
+    weekOnHomeEnabled(s) ? 1 : 0,
     s.agendaOptimizer ? 1 : 0,
     s.showSnoozed ? 1 : 0,
     typeof searchQuery === 'string' ? searchQuery : '',
@@ -4271,7 +4279,7 @@ function renderHomeIfChanged(force){
     && Array.isArray(_homeRenderedWeek.days)
     && settings
     && settings.preset === 'todayFirst'
-    && settings.showWeekOnHome
+    && weekOnHomeEnabled(settings)
     && !(typeof searchQuery === 'string' && searchQuery.trim())
   );
 

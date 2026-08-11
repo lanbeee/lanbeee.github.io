@@ -802,6 +802,13 @@ function dayLogsHabitPlannable(h){
   return true;
 }
 
+// PURE: can this habit take an entry on a past day? Completed tasks are done.
+function dayLogsHabitLoggable(h){
+  if(!h)return false;
+  if(h.type === 'task' && h.lastLog !== null)return false;
+  return true;
+}
+
 /** PURE: plans are for today and future days only. */
 function dayLogsCanPlan(key){
   return Boolean(key && key >= todayIso());
@@ -838,6 +845,7 @@ function renderDayLogs(key){
   if(back)back.hidden = dayLogsScoped() ? true : dayLogsStep === 'list';
 
   if(dayLogsStep === 'add')renderDayLogsAddStep(key);
+  else if(dayLogsStep === 'log')renderDayLogsLogStep(key);
   else if(dayLogsStep === 'avail' && !dayLogsScoped())renderDayLogsAvailStep(key);
   else if(dayLogsStep === 'item' || dayLogsScoped())renderDayLogsItemStep(key);
   else renderDayLogsListStep(key);
@@ -867,13 +875,20 @@ function renderDayLogsListStep(key){
   }).join('')}</div>` : `<div class="day-empty-state">
     <span class="day-empty-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
     <b>This day is open</b>
-    <small>Add a plan, or adjust how much time the planner can use.</small>
+    <small>${dayLogsCanPlan(key)
+      ? 'Add a plan, log something you did, or adjust how much time the planner can use.'
+      : 'Log something you did on this day, or adjust how much time it had.'}</small>
   </div>`;
   body.innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
       ${dayLogsCanPlan(key) ? `<button type="button" class="day-quick-action primary" id="day-logs-plan">
         <i class="ti ti-calendar-plus" aria-hidden="true"></i>
         <span><b>Plan something</b><small>Add an item, with an optional time</small></span>
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>` : ''}
+      ${dayLogsCanLog(key) ? `<button type="button" class="day-quick-action${dayLogsCanPlan(key) ? '' : ' primary'}" id="day-logs-log">
+        <i class="ti ti-check" aria-hidden="true"></i>
+        <span><b>Log something</b><small>Mark an item done on this day</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>` : ''}
       <button type="button" class="day-quick-action" id="day-logs-day">
@@ -937,8 +952,8 @@ function renderDayLogsItemStep(key){
   if(!dayLogsScoped()){
     actions.push(actionMarkup(`data-open-day-item="${idx}"`,'ti-external-link','Open item','View details, history, and schedule','primary'));
   }
-  if(dayLogsScoped() && !dayLogsMoving && dayLogsCanLog(key)){
-    actions.push(actionMarkup(`data-log-day-item="${idx}" data-log-day="${key}"`,'ti-check','Log for this day','Mark it done on this day','primary'));
+  if(!dayLogsMoving && dayLogsCanLog(key) && dayLogsHabitLoggable(h)){
+    actions.push(actionMarkup(`data-log-day-item="${idx}" data-log-day="${key}"`,'ti-check','Log for this day','Mark it done on this day',dayLogsScoped() ? 'primary' : ''));
   }
   if(plannedCount && !dayLogsMoving){
     actions.push(actionMarkup(`data-move-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-forward','Move plan','Choose a different day'));
@@ -946,6 +961,9 @@ function renderDayLogsItemStep(key){
   }
   if(dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving && dayLogsCanPlan(key)){
     actions.push(actionMarkup('id="day-logs-plan"','ti-calendar-plus','Plan this item','Add it to this day'));
+  }
+  if(!dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving && dayLogsCanPlan(key) && !plannedCount){
+    actions.push(actionMarkup(`data-plan-day-item="${idx}"`,'ti-calendar-plus','Plan for this day','Add it to this day, with an optional time'));
   }
 
   const emptyNote = !row.entries.length && !row.scheduled.length
@@ -1025,6 +1043,12 @@ function renderDayLogsAddStep(key){
 
   if(!dayLogsScoped()){
     const ting = $('day-log-ting');
+    // Entering from an item row should keep that item selected.
+    if(ting && dayLogsItemIndex != null && addOptions.some(({i})=>i === dayLogsItemIndex)){
+      ting.value = String(dayLogsItemIndex);
+      const field = $('day-log-location-field');
+      if(field)field.outerHTML = dayLogsLocationFieldHtml(data[dayLogsItemIndex] || null);
+    }
     if(ting)ting.addEventListener('change',()=>{
       const idx = parseInt(ting.value,10);
       const field = $('day-log-location-field');
@@ -1032,6 +1056,60 @@ function renderDayLogsAddStep(key){
       field.outerHTML = dayLogsLocationFieldHtml(data[idx] || null);
     });
   }
+}
+
+// RENDER: log-on-a-past-day step. Mirrors the add-plan step, but writes a real
+// entry — this is how a day gets filled in after the fact now that the detail
+// calendar is gone in minimal mode.
+function renderDayLogsLogStep(key){
+  if(!dayLogsCanLog(key)){
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    return;
+  }
+  const data = load();
+  const ts = new Date(`${key}T12:00:00`).getTime();
+  const dateLabel = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  $('day-logs-title').textContent = 'Log something';
+  $('day-logs-sub').textContent = dateLabel;
+
+  const options = dayLogsScoped()
+    ? (dayLogsHabitLoggable(data[dayLogsScopeIndex]) ? [{h:data[dayLogsScopeIndex],i:dayLogsScopeIndex}] : [])
+    : data
+      .map((h,i)=>({h,i}))
+      .filter(({h})=>matchesOverviewFilters(h))
+      .filter(({h})=>dayLogsHabitLoggable(h))
+      .sort((a,b)=>(a.h.name || '').localeCompare(b.h.name || '',undefined,{sensitivity:'base'}));
+
+  const scopedHabit = dayLogsScoped() && options[0] ? options[0].h : null;
+  const pickerHtml = dayLogsScoped()
+    ? `<p class="day-scoped-habit">${scopedHabit ? `${iconHtml(scopedHabit,colors(daysSince(scopedHabit.lastLog),scopedHabit.target,scopedHabit.type))} ${escapeHtml(scopedHabit.name)}` : 'No active item'}</p>
+       <input type="hidden" id="day-log-entry-ting" value="${options[0] ? options[0].i : ''}" />`
+    : `<label class="field-label" for="day-log-entry-ting">item</label>
+       <select id="day-log-entry-ting" aria-label="habit">${options.length
+         ? options.map(({h,i})=>`<option value="${i}">${escapeHtml(h.name)}</option>`).join('')
+         : '<option value="">No active items</option>'}</select>`;
+
+  $('day-logs-body').innerHTML = `
+    <div class="day-add-step">
+      <div class="day-step-intro"><i class="ti ti-check" aria-hidden="true"></i><span><b>Mark it done on this day</b><small>Adds a real entry, exactly as if you had tapped it that day.</small></span></div>
+      ${pickerHtml}
+      <label class="field-label" for="day-log-entry-time">time <span class="field-optional">optional</span></label>
+      <input type="time" id="day-log-entry-time" class="time-input" step="900" aria-label="optional entry time" />
+    </div>`;
+
+  $('day-logs-footer').innerHTML = `
+    <button class="btn" type="button" id="day-logs-back-list">back</button>
+    <button class="btn primary" type="button" id="day-log-entry-save" ${options.length ? '' : 'disabled'}>log it</button>`;
+}
+
+// PURE: timestamp for an entry on `key`, honouring an optional HH:MM.
+function dayLogsEntryTimestamp(key,timeValue){
+  const base = new Date(`${key}T12:00:00`);
+  if(Number.isNaN(base.getTime()))return NaN;
+  const minutes = typeof timeInputToMinutes === 'function' ? timeInputToMinutes(timeValue) : null;
+  if(minutes === null)return base.getTime();
+  return new Date(base.getFullYear(),base.getMonth(),base.getDate(),Math.floor(minutes / 60),minutes % 60,0,0).getTime();
 }
 
 // PURE: optional location select for the add-plan step (habit places only).

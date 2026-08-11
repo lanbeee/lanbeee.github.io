@@ -16,6 +16,14 @@ function assert(cond, msg){
   page.on('console', msg => { if(msg.type() === 'error')errors.push(`console: ${msg.text()}`);});
   page.on('pageerror', err => errors.push(err.message));
 
+  // The "more options" disclosure is part of the full add sheet — minimal mode
+  // removes it outright — so opt out before the app boots.
+  await page.addInitScript(()=>{
+    localStorage.setItem('tings_app_settings_v2', JSON.stringify({
+      preset:'todayFirst', minimalMode:false
+    }));
+  });
+
   await page.goto(baseUrl, { waitUntil:'domcontentloaded' });
   await page.waitForSelector('#open-add');
 

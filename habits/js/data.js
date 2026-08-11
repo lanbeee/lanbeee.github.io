@@ -411,7 +411,13 @@ function loadSortSettings(){
     merged.showTrailOnCards = merged.showTrailOnCards !== false;
     merged.showCueOnCards = merged.showCueOnCards !== false;
     merged.showOrderPillsOnCards = merged.showOrderPillsOnCards !== false;
-    merged.minimalMode = Boolean(merged.minimalMode);
+    // Minimal mode defaults on, but only for a fresh install. An existing
+    // install that was saved before the default flipped has settings on disk
+    // without the key, and must keep the full surface it already had.
+    merged.minimalMode = saved && Object.keys(saved).length
+      && !Object.prototype.hasOwnProperty.call(saved,'minimalMode')
+      ? false
+      : Boolean(merged.minimalMode);
     merged.compactMode = Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
     merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';

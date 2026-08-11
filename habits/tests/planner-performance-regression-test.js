@@ -347,9 +347,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     displayOnly.elapsed < 250,
     JSON.stringify(displayOnly));
 
-  // New presentation toggles must follow the same contract. This specifically
-  // guards against adding a setting and accidentally routing it through the
-  // seven-day planner again.
+  // Minimal mode also drops the day-by-day week, so unlike homeExtraMode it
+  // does unmount the rendered week. It must still do that off the planner: no
+  // build call, and no change to the cached plan's identity key.
   const minimalOnly = await page.evaluate(()=>{
     const original = {
       offMain:buildWeekAgendaOffMain,
@@ -375,24 +375,35 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     return {
       calls,
       elapsed,
-      sameWeek:week === _homeRenderedWeek,
+      hadWeek:Boolean(week),
       samePlannerKey:beforeKey === afterKey,
       selected:target.getAttribute('aria-pressed') === 'true',
-      saved:Boolean(sortSettings.minimalMode)
+      saved:Boolean(sortSettings.minimalMode),
+      groupedSections:[...document.querySelectorAll('#list .section-header')]
+        .map(el=>el.dataset.label)
     };
   });
-  check('presentation toggle cannot invalidate or invoke the planner',
+  check('minimal mode cannot invalidate or invoke the planner',
     minimalOnly.calls.offMain === 0
       && minimalOnly.calls.fast === 0
       && minimalOnly.calls.exact === 0
-      && minimalOnly.sameWeek
       && minimalOnly.samePlannerKey
       && minimalOnly.selected
       && minimalOnly.saved,
     JSON.stringify(minimalOnly));
-  check('presentation toggle responds immediately',
+  check('minimal mode groups home by today / overdue / coming up',
+    minimalOnly.groupedSections.length > 0
+      && minimalOnly.groupedSections.every(label=>['today','overdue','coming up','the rest','pinned'].includes(label)),
+    JSON.stringify(minimalOnly));
+  check('minimal mode responds immediately',
     minimalOnly.elapsed < 250,
     JSON.stringify(minimalOnly));
+
+  // Back to the full surface — everything below assumes the week is mounted.
+  await page.evaluate(()=>{
+    document.querySelector('[data-setting-toggle="minimalMode"]').click();
+  });
+  await page.waitForFunction(()=>_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days),{timeout:5000});
 
   // A short minimize/restore is below the freshness threshold. The delayed
   // reopen callback may update light UI, but it must not request a new plan.

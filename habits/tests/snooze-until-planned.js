@@ -17,6 +17,11 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     localStorage.setItem('tings_v2', JSON.stringify([
       { name, type:'keepup', target:1, logs:[], emoji:'', pinned:false, snoozedUntil:null, createdAt:Date.now() }
     ]));
+    // Snooze is a full-mode affordance; minimal mode removes it everywhere,
+    // including this toast action.
+    localStorage.setItem('tings_app_settings_v2', JSON.stringify({
+      preset:'todayFirst', minimalMode:false
+    }));
   }, { name: habitName });
   await page.goto(baseUrl, { waitUntil:'domcontentloaded' });
   await page.waitForSelector('#open-add');
