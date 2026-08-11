@@ -1867,6 +1867,11 @@ function exportToCalendar(i){
 }
 
 document.addEventListener('tierchange',()=>{
+  // shell-ui.js (getSheetInner, openSheet) is loaded after this file, and the
+  // initial tierchange can arrive before it has executed (e.g. while the
+  // blocking leaflet <script> is still fetching). There is nothing to sync
+  // until those helpers exist; a later tierchange re-runs this listener.
+  if(typeof getSheetInner !== 'function')return;
   renderDetailTabs();
   // Re-open detail if it was open, so the layout applies
   if (detailIdx !== null) {

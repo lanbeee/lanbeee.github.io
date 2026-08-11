@@ -1364,6 +1364,11 @@ async function breakableFillRows(page, name){
   // so this long scenario remains focused on detail persistence and logging.
   await page.evaluate(()=>{
     window.scrollTo(0,0);
+    // This section drives the full detail pager (effort pane → #detail-breakable,
+    // min-chunk), which minimal mode folds into one scrolling page. The cleared
+    // store loads with the fresh-install default (minimal), so pin the advanced
+    // surface the rest of this case asserts on.
+    saveSortSettings(Object.assign({}, loadSortSettings(), { minimalMode:false }));
     const data = load();
     data.push({
       name:`BreakableDetail ${Date.now()}`,type:'task',target:null,

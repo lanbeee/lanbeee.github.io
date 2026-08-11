@@ -21,7 +21,9 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.getByRole('button', { name: 'how it works' }).click();
   await page.locator('#open-sample-habits').click();
   await page.evaluate(() => {
-    updateSortSetting({ homeCityName:'New York, United States', homeCityLat:40.7128, homeCityLng:-74.0060 }, { renderNow:true, sync:true });
+    // This suite validates the full (non-minimal) card surface — agenda-lead
+    // pills are stripped in minimal mode, which is now the fresh-install default.
+    updateSortSetting({ homeCityName:'New York, United States', homeCityLat:40.7128, homeCityLng:-74.0060, minimalMode:false }, { renderNow:true, sync:true });
   });
   await page.locator('#sample-habits-add').click();
   await page.waitForSelector('.ting-card .context-pill.agenda-lead');
