@@ -185,7 +185,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.locator('#open-search').click();
   await page.locator('#habit-search').fill('Needle');
   await page.waitForSelector('.ting-card:has-text("Needle planning task")');
-  await page.waitForTimeout(40);
+  await page.waitForFunction(()=>document.querySelectorAll('#list .ting-card').length === 1,{ timeout:2500 });
   const search = await page.evaluate(()=>({
     scrollTop:document.querySelector('.pane-list').scrollTop,
     cards:document.querySelectorAll('#list .ting-card').length,

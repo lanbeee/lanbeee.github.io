@@ -1,7 +1,7 @@
 {
   "status": "passed",
   "plannerMode": "default",
-  "timestamp": "2026-08-12T00:40:12Z",
+  "timestamp": "2026-08-12T01:23:29Z",
   "files": {
     "passed": 67,
     "failed": 0,
@@ -16,34 +16,28 @@
   "failedTests": [],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260811-203355.log",
+    "stamped": "test-results/run-20260811-211715.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
-    "status": "failed",
+    "status": "passed",
     "plannerMode": "default",
-    "timestamp": "2026-08-12T00:29:04Z",
+    "timestamp": "2026-08-12T00:40:12Z",
     "files": {
-      "passed": 62,
-      "failed": 5,
+      "passed": 67,
+      "failed": 0,
       "skipped": 0
     },
     "assertions": {
-      "ok": 2009,
+      "ok": 2143,
       "notOk": 0,
-      "total": 2009
+      "total": 2143
     },
     "pageErrors": 0,
-    "failedTests": [
-      "cancel-blocked-capacity-test.js",
-      "general-refinements-test.js",
-      "locations-agenda-test.js",
-      "planner-performance-regression-test.js",
-      "progressive-render-test.js"
-    ],
+    "failedTests": [],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260811-201949.log",
+      "stamped": "test-results/run-20260811-203355.log",
       "failedDir": "test-results/failed"
     }
   }

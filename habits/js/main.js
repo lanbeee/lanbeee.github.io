@@ -157,13 +157,20 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   openSheet('overview-sheet');
 });
 $('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
+let _searchRenderTimer = null;
+const SEARCH_RENDER_DEBOUNCE_MS = 500;
+const scheduleSearchRender = () => {
+  clearTimeout(_searchRenderTimer);
+  _searchRenderTimer = setTimeout(render, SEARCH_RENDER_DEBOUNCE_MS);
+};
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
-  render();
+  scheduleSearchRender();
 });
 $('habit-search').addEventListener('keydown',e=>{
   if(e.key !== 'Escape')return;
 if(searchQuery){
+    clearTimeout(_searchRenderTimer);
     searchQuery = '';
     render();
     e.preventDefault();
@@ -191,7 +198,7 @@ document.addEventListener('keydown',e=>{
   const start = searchQuery.length;
   const end = searchQuery.length;
   searchQuery = `${searchQuery.slice(0,start)}${e.key}${searchQuery.slice(end)}`;
-  render();
+  scheduleSearchRender();
   requestAnimationFrame(()=>{
     input.focus({preventScroll:true});
     input.setSelectionRange(start + e.key.length,start + e.key.length);
@@ -202,6 +209,7 @@ document.addEventListener('keydown',e=>{
 });
 $('clear-search').addEventListener('click',()=>{
   if(searchQuery.trim()){
+    clearTimeout(_searchRenderTimer);
     searchQuery = '';
     $('habit-search').value = '';
     updateSearchUi();
