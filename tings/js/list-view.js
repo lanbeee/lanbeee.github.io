@@ -1666,7 +1666,10 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
     e.preventDefault();
     e.stopPropagation();
     if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
-    openTravelEditSheet(fromId,toId);
+    // Mirrors habit cards: tap to edit the leg, double tap to just go.
+    handleDoubleTapActivate(`travel:${fromId}|${toId}`,
+      ()=>openTravelEditSheet(fromId,toId),
+      ()=>openTravelLegInMaps(toId));
   });
 }
 
@@ -3049,6 +3052,13 @@ function summarizeTrailTone(tones){
   return '';
 }
 
+// PURE: whether home should lay out day by day. Minimal mode always falls back
+// to the today / overdue / coming up grouping, whatever the toggle says.
+function weekOnHomeEnabled(settings){
+  const s = settings || sortSettings || {};
+  return !s.minimalMode && Boolean(s.showWeekOnHome);
+}
+
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
@@ -3064,7 +3074,7 @@ function render(opts){
     && !o.__optimizedWeek
     && !o.__optimizerFallback
     && sortSettings.preset === 'todayFirst'
-    && Boolean(sortSettings.showWeekOnHome)
+    && weekOnHomeEnabled(sortSettings)
     && !searchQuery.trim()
     && typeof buildWeekAgendaOffMain === 'function';
   if(wantsPlannedWeek){
@@ -3139,7 +3149,7 @@ function render(opts){
   const searching = searchQuery.trim().length > 0;
   const deferAgenda = Boolean(o.deferAgenda);
   const weekMode = !deferAgenda && todayFirstActive
-    && sortSettings.showWeekOnHome
+    && weekOnHomeEnabled(sortSettings)
     && !searching
     && typeof buildWeekAgenda === 'function'
     && typeof homeDaySequence === 'function';
@@ -3147,7 +3157,10 @@ function render(opts){
   // today agenda pipeline. Defer it on progressive renders — it is only used
   // to surface an "early" pill on cards that pulled forward, and that pill is
   // not part of the first paint.
-  const earlyMap = deferAgenda ? new Map() : homeEarlyMap(data,sortSettings);
+  // Search is pure habit lookup — it never needs the "early" pill or any
+  // agenda placement, so skip the planner pipeline entirely while searching
+  // (homeEarlyMap calls earlyReason per item, which drives the today agenda).
+  const earlyMap = (deferAgenda || searching) ? new Map() : homeEarlyMap(data,sortSettings);
   const visibleSet = new Set(indices);
   // Earliest today-timeline fill/scheduled row per breakable habit. The slider
   // belongs on that row only — not on later chunks, and not on a pinned/
@@ -3236,6 +3249,7 @@ function render(opts){
         ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
+    const snoozeAction = minimal ? '' : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`;
     const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
@@ -3275,7 +3289,7 @@ function render(opts){
         ${timerAction}
       </div>
       <div class="swipe-actions swipe-actions-right">
-        <button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>
+        ${snoozeAction}
         <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
@@ -3451,8 +3465,10 @@ function render(opts){
       appendHabitCard(realIdx,null,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
     });
   }else{
-    const agendaRows = homeAgendaRows(data);
-    if(typeof syncAutoMarkChunkPlans === 'function'){
+    // Search results don't place on the agenda — skip homeAgendaRows (planner)
+    // and auto-mark sync so each keystroke is just a cheap filter + rank.
+    const agendaRows = searching ? [] : homeAgendaRows(data);
+    if(!searching && typeof syncAutoMarkChunkPlans === 'function'){
       syncAutoMarkChunkPlans(data,{days:[{dayBase:dayStart(Date.now()),timeline:agendaRows}]});
     }
     const agendaMap = new Map();
@@ -3491,6 +3507,13 @@ function render(opts){
       return indices.indexOf(a) - indices.indexOf(b);
     }) : indices;
     let sectionCat = -1;
+    // True once a "today" section header has been appended in this loop. The
+    // fallback below (missed/free-time pill on an otherwise empty today) must
+    // only fire when NO today section rendered — checking `sectionCat !== 0`
+    // instead was wrong: if today items render and overdue items follow,
+    // sectionCat ends on the overdue key and the fallback prepended a SECOND
+    // "today" header above the pinned section.
+    let todaySectionRendered = false;
     let prevTodayLocId = null;
 
     // Precompute: should today's first location-bearing item be preceded by a
@@ -3568,6 +3591,7 @@ function render(opts){
             : null;
           if(label)appendSectionHeader(list,label,dayCtx,label === 'today' ? todayHids : null);
           sectionCat = sectionKey;
+          if(label === 'today')todaySectionRendered = true;
           if(sectionKey !== 0)prevTodayLocId = null;
         }
       }
@@ -3614,7 +3638,7 @@ function render(opts){
         inTodaySection ? dayStart(Date.now()) : null
       );
     });
-    if(!searching && todayFirstActive && sectionCat !== 0){
+    if(!searching && todayFirstActive && !todaySectionRendered){
       const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
       if(!minimal){
         const _snap = loadTodaySuggested();
@@ -3729,7 +3753,7 @@ function homeListFingerprint(now = Date.now()){
     s.pinnedLocationId || '',
     s.lastKnownLocationId || '',
     s.preset || '',
-    s.showWeekOnHome ? 1 : 0,
+    weekOnHomeEnabled(s) ? 1 : 0,
     s.agendaOptimizer ? 1 : 0,
     s.showSnoozed ? 1 : 0,
     typeof searchQuery === 'string' ? searchQuery : '',
@@ -4268,7 +4292,7 @@ function renderHomeIfChanged(force){
     && Array.isArray(_homeRenderedWeek.days)
     && settings
     && settings.preset === 'todayFirst'
-    && settings.showWeekOnHome
+    && weekOnHomeEnabled(settings)
     && !(typeof searchQuery === 'string' && searchQuery.trim())
   );
 
@@ -4929,18 +4953,38 @@ function setupCardTap(row,realIdx){
   });
 }
 
-// HANDLER: distinguish tap vs double-tap
-function handleCardActivate(realIdx,card,singleAction){
+// HANDLER: shared tap vs double-tap timing. key identifies the thing tapped
+// (a habit index, or a "from|to" pair for a travel leg) so a quick tap on one
+// card followed by a tap on another never reads as a double tap.
+function handleDoubleTapActivate(key,singleAction,doubleAction){
   const now = Date.now();
-  if(lastTap.idx === realIdx && now - lastTap.time < TAP_DELAY){
+  if(lastTap.idx === key && now - lastTap.time < TAP_DELAY){
     clearTimeout(tapTimer);
     lastTap = {idx:-1,time:0};
-    quickLog(realIdx,card);
-  }else{
-    lastTap = {idx:realIdx,time:now};
-    clearTimeout(tapTimer);
-    tapTimer = setTimeout(singleAction,TAP_DELAY);
+    doubleAction();
+    return;
   }
+  lastTap = {idx:key,time:now};
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(singleAction,TAP_DELAY);
+}
+
+// HANDLER: distinguish tap (open detail / log) from double-tap, which logs the
+// item and launches whatever it points at — the call, the meeting room, the link.
+function handleCardActivate(realIdx,card,singleAction){
+  handleDoubleTapActivate(realIdx,singleAction,()=>{
+    quickLog(realIdx,card);
+    launchPrimaryHabitLink(realIdx);
+  });
+}
+
+// HANDLER: open a habit's primary link. Runs inside the tap that logged it, so
+// the gesture is still live for the popup blocker.
+function launchPrimaryHabitLink(realIdx){
+  const h = load()[realIdx];
+  const link = typeof habitPrimaryLink === 'function' ? habitPrimaryLink(h) : null;
+  if(!link)return false;
+  return typeof openHabitLink === 'function' ? openHabitLink(link) : false;
 }
 
 // PURE: short item name for compact toast messages
@@ -5506,6 +5550,16 @@ function quickLog(i,card){
       setTimeout(()=>card.classList.remove('logged'),380);
     }
     setTimeout(refreshOpenViews, 260);
+    // In week-on mode, render() keeps the mounted DOM while the planner
+    // re-solves, so the just-logged card's done-state and the today "missed"
+    // pill lag behind the log. Once the tap animation has played, repaint home
+    // from the mounted plan so they update without waiting for the background
+    // solve. No-op outside week mode (render() is already synchronous there).
+    setTimeout(()=>{
+      if(weekOnHomeEnabled(sortSettings || {}) && typeof renderHomePresentationOnly === 'function'){
+        renderHomePresentationOnly();
+      }
+    }, 400);
   };
   const data = load();
   const h = data[i];

@@ -116,7 +116,6 @@
       </div>
       <p class="field-hint" id="target-help">How often — times in N days (e.g. 2× in 7d).</p>
       <div class="range-row" id="target-slider-row">
-        <div class="crown-dial" id="ting-days-slider" role="slider" tabindex="0" aria-label="Repetition period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
         <label class="range-value" aria-label="times in period">
           <input type="text" id="ting-times" inputmode="numeric" maxlength="2" value="1" />
           <span>×</span>
@@ -187,6 +186,7 @@
           </div>
           <div class="ting-cue detail-cue" id="detail-sub"></div>
         </div>
+        <div class="detail-head-actions" id="detail-link-actions" hidden></div>
       </div>
       <div class="detail-pager" aria-label="habit details">
         <section class="detail-page month-card" data-detail-nav="calendar">
@@ -229,7 +229,6 @@
           <span class="section-label">schedule</span>
           <p class="field-hint" id="detail-target-help">How often — times in N days.</p>
           <div class="range-row" id="detail-slider-row">
-            <div class="crown-dial" id="detail-days-slider" role="slider" tabindex="0" aria-label="Period in days" aria-valuemin="1" aria-valuemax="183"><canvas class="crown-canvas"></canvas></div>
             <label class="range-value" aria-label="times">
               <input type="text" id="detail-times" inputmode="numeric" maxlength="2" value="1" />
               <span>×</span>
@@ -539,6 +538,17 @@
               <button class="seg-opt" data-priority="5">P5</button>
             </div>
           </div>
+          <div class="link-field" id="detail-link-field">
+            <div class="link-field-head">
+              <span class="settings-sublabel">links &amp; calls
+                <button type="button" class="info-btn" data-tip="detail-link-help" aria-label="about links"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <span class="info-tooltip" id="detail-link-help" role="tooltip" hidden>Numbers to call and meeting or web links to open — Zoom, Teams, Meet, Webex, anything. Double tapping this item’s card logs it and opens the starred one.</span>
+              </span>
+              <button type="button" class="mini-text-btn" id="detail-link-add">add link</button>
+            </div>
+            <div class="link-list" id="detail-link-list"></div>
+            <p class="field-hint" id="detail-link-hint"></p>
+          </div>
           <span class="settings-sublabel detail-full-only" id="detail-topics-label">topics &amp; places</span>
           <div class="topic-chip-row detail-full-only" id="detail-tag-chips"></div>
         </section>
@@ -552,7 +562,7 @@
             <div id="detail-order-list" class="detail-order-list"></div>
           </div>
           <div class="habit-actions">
-            <label class="setting-toggle habit-toggle">
+            <label class="setting-toggle habit-toggle detail-full-only">
               <span><b>pinned</b><small>Stay above auto order</small></span>
               <button class="setting-switch" id="detail-pinned" type="button" aria-pressed="false">
                 <span class="switch-ui" aria-hidden="true"></span>
@@ -562,7 +572,7 @@
               <i class="ti ti-calendar-share" aria-hidden="true"></i>
               <span><b>export to calendar</b><small>Phone calendar alert</small></span>
             </button>
-            <button class="habit-action" id="detail-snooze" type="button">
+            <button class="habit-action detail-full-only" id="detail-snooze" type="button">
               <i class="ti ti-moon" aria-hidden="true"></i>
               <span><b>snooze</b><small>Hide for a few days</small></span>
             </button>
@@ -824,17 +834,17 @@
                 <span><b>habits ready today</b><small>Habits that belong today fill open time.</small></span>
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
-              <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showWeekOnHome" aria-pressed="false">
+              <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showWeekOnHome" aria-pressed="false">
                 <span><b>week by day</b><small>Show a day-by-day week instead of today / overdue / coming up.</small></span>
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
             </div>
-            <span class="settings-sublabel compact-label">busy blocks &amp; travel</span>
-            <div class="seg home-extra-seg" id="home-extra-seg" data-setting-seg="homeExtraMode" role="group" aria-label="how busy blocks and travel appear on home">
+            <span class="settings-sublabel compact-label settings-full-only">busy blocks &amp; travel</span>
+            <div class="seg home-extra-seg settings-full-only" id="home-extra-seg" data-setting-seg="homeExtraMode" role="group" aria-label="how busy blocks and travel appear on home">
               <button type="button" class="seg-opt" data-seg-value="cards">show for all days</button>
               <button type="button" class="seg-opt" data-seg-value="cards12h">next 12 hours</button>
             </div>
-            <p class="field-hint">How busy blocks and travel between places show on home.</p>
+            <p class="field-hint settings-full-only">How busy blocks and travel between places show on home.</p>
           </div>
         </section>
         <section class="settings-block">
@@ -992,70 +1002,70 @@
               <span><b>show hidden habits</b><small>Show habits you’ve hidden, faded on home.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSampleOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showSampleOnCards" aria-pressed="false">
               <span><b>show sample tag</b><small>Mark sample habits on the home list.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPinnedOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showPinnedOnCards" aria-pressed="false">
               <span><b>show pinned</b><small>Show a pin mark on pinned items.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTaskDateOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showTaskDateOnCards" aria-pressed="false">
               <span><b>show task dates</b><small>Show due / someday / fixed-time marks on tasks.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showPlansOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showPlansOnCards" aria-pressed="false">
               <span><b>show planned</b><small>Show when something is planned next.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDayScheduleOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showDayScheduleOnCards" aria-pressed="false">
               <span><b>show which days</b><small>Show which weekdays or month days it runs.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTimeWindowOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showTimeWindowOnCards" aria-pressed="false">
               <span><b>show time of day</b><small>Show the hours it’s allowed.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showSnoozedUntilOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showSnoozedUntilOnCards" aria-pressed="false">
               <span><b>show snooze label</b><small>Show when hidden items return.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showDurationOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showDurationOnCards" aria-pressed="false">
               <span><b>show duration</b><small>Keep duration visible on the home list.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showRepetitionOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showRepetitionOnCards" aria-pressed="false">
               <span><b>show how often</b><small>Show every N days or stop.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showFlexibilityOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showFlexibilityOnCards" aria-pressed="false">
               <span><b>show early window</b><small>Show how many days early it can be done.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTopicsOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showTopicsOnCards" aria-pressed="false">
               <span><b>show topics</b><small>Show topic labels on the home list.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showLocationOnCards" aria-pressed="false">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showLocationOnCards" aria-pressed="false">
               <span><b>show place</b><small>Show the place on each item.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showStatusOnCards" aria-pressed="true">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showStatusOnCards" aria-pressed="true">
               <span><b>show progress</b><small>Show done / almost / behind (or new).</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showEarlyOnCards" aria-pressed="true">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showEarlyOnCards" aria-pressed="true">
               <span><b>show early</b><small>Show early when it helps a packed day.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <span class="settings-sublabel">scheduled time on items</span>
-            <div class="seg" id="agenda-time-seg" role="group" aria-label="how scheduled times appear on items">
+            <span class="settings-sublabel settings-full-only">scheduled time on items</span>
+            <div class="seg settings-full-only" id="agenda-time-seg" role="group" aria-label="how scheduled times appear on items">
               <button type="button" class="seg-opt" data-seg-value="time">show time</button>
               <button type="button" class="seg-opt" data-seg-value="icon">symbol only</button>
               <button type="button" class="seg-opt" data-seg-value="hide">hide</button>
             </div>
-            <p class="field-hint">The scheduled time on the right of each item — with the clock, just the symbol, or nothing at all.</p>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showTrailOnCards" aria-pressed="true">
+            <p class="field-hint settings-full-only">The scheduled time on the right of each item — with the clock, just the symbol, or nothing at all.</p>
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showTrailOnCards" aria-pressed="true">
               <span><b>show activity dots</b><small>Show the two-week dot history on each item.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
@@ -1063,7 +1073,7 @@
               <span><b>show status line</b><small>Show the one-line status like due today or on track.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
-            <button class="setting-toggle setting-switch" type="button" data-setting-toggle="showOrderPillsOnCards" aria-pressed="true">
+            <button class="setting-toggle setting-switch settings-full-only" type="button" data-setting-toggle="showOrderPillsOnCards" aria-pressed="true">
               <span><b>show agenda order marks</b><small>Show before / after, doing-now, and linked marks.</small></span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>

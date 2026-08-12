@@ -43,6 +43,7 @@ function openDetail(i){
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
+  renderDetailLinkRows(normalizeLinks(h.links));
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
@@ -69,6 +70,7 @@ function openDetail(i){
     anywhereAllowed:Boolean(h.anywhereAllowed),
     locationPrefs:normalizeLocationPrefs(h.locationPrefs,h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
+    links:normalizeLinks(h.links),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
     preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
@@ -138,7 +140,8 @@ function openDetail(i){
       const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
       requestAnimationFrame(()=>{
         if(hasOrder)scrollDetailToNav('actions','auto');
-        else if(h.type === 'task')scrollDetailToNav(minimal ? 'schedule' : 'effort','auto');
+        else if(minimal)pager.scrollTo({top:0,behavior:'auto'});
+        else if(h.type === 'task')scrollDetailToNav('effort','auto');
         else{
           pager.scrollTo({left:0,behavior:'auto'});
           updateDetailPagerDots();
@@ -169,8 +172,7 @@ function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
     const h = load()[i];
-    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-    scrollDetailToNav(h && h.type === 'task' && !minimal ? 'effort' : 'schedule','auto');
+    scrollDetailToNav(h && h.type === 'task' && !detailIsSingleView() ? 'effort' : 'schedule','auto');
   });
 }
 
@@ -805,6 +807,7 @@ function currentDetailTune(){
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
+    links:currentDetailLinks(),
     topics:selectedTopicsFrom('detail-tag-chips'),
     locationIds,
     anywhereAllowed:selectedAnywhereFrom('detail-tag-chips'),
@@ -922,6 +925,7 @@ function setDetailDirty(force){
       current.emojiBgColor !== detailTuneOriginal.emojiBgColor ||
       String(current.target) !== String(detailTuneOriginal.target) ||
       current.pinned !== detailTuneOriginal.pinned ||
+      JSON.stringify(current.links || []) !== JSON.stringify(detailTuneOriginal.links || []) ||
       current.durationMinutes !== detailTuneOriginal.durationMinutes ||
       current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
       current.priority !== detailTuneOriginal.priority ||
@@ -998,6 +1002,7 @@ function restoreDetailTune(){
   $('detail-emoji').value = detailTuneOriginal.emoji;
   renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
   $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
+  renderDetailLinkRows(normalizeLinks(detailTuneOriginal.links));
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
@@ -1019,6 +1024,127 @@ function restoreDetailTune(){
   setDetailPriorityUi(detailTuneOriginal.priority);
   if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
   setDetailDirty(false);
+}
+
+// Placeholder copy per link kind, so the input tells you what it wants.
+const LINK_PLACEHOLDERS = {
+  phone:'+1 555 123 4567',
+  whatsapp:'+1 555 123 4567',
+  facetime:'+1 555 123 4567',
+  link:'https://zoom.us/j/…'
+};
+
+// RENDER: one editable link row. The first row is primary — the star marks it
+// and the up arrow on the others promotes them.
+function detailLinkRowHtml(link,index){
+  const kind = normalizeLinkKind(link.kind);
+  const options = LINK_KINDS
+    .map(k => `<option value="${k}"${k === kind ? ' selected' : ''}>${k}</option>`)
+    .join('');
+  const lead = index === 0
+    ? `<span class="link-primary-badge" title="opens on double tap" aria-label="primary link"><i class="ti ti-star" aria-hidden="true"></i></span>`
+    : `<button type="button" class="link-row-btn" data-link-promote="${index}" title="make primary" aria-label="make primary"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>`;
+  return `<div class="link-row" data-link-index="${index}">
+    <select class="mini-select link-kind" aria-label="link type">${options}</select>
+    <input type="text" class="link-value" value="${escapeHtml(link.value || '')}" placeholder="${escapeHtml(LINK_PLACEHOLDERS[kind] || '')}" aria-label="${kind} value" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" />
+    ${lead}
+    <button type="button" class="link-row-btn" data-link-remove="${index}" title="remove" aria-label="remove link"><i class="ti ti-x" aria-hidden="true"></i></button>
+  </div>`;
+}
+
+// RENDER: rewrite the link editor rows from a list.
+function renderDetailLinkRows(links){
+  const list = $('detail-link-list');
+  if(!list)return;
+  list.innerHTML = (links || []).map(detailLinkRowHtml).join('');
+  syncDetailLinkUi();
+}
+
+// HYBRID: read the link rows back out, keeping half-typed rows so the editor
+// doesn't delete a row out from under you mid-edit.
+function currentDetailLinkRows(){
+  return Array.from(document.querySelectorAll('#detail-link-list .link-row')).map(row => ({
+    kind:normalizeLinkKind(row.querySelector('.link-kind')?.value),
+    value:(row.querySelector('.link-value')?.value || '').trim()
+  }));
+}
+
+// HYBRID: the saveable links — normalized, unusable rows dropped.
+function currentDetailLinks(){
+  return normalizeLinks(currentDetailLinkRows());
+}
+
+// RENDER: header launch buttons + hint, from whatever the rows currently hold.
+function syncDetailLinkUi(){
+  const actions = $('detail-link-actions');
+  const links = currentDetailLinks();
+  if(actions){
+    actions.hidden = links.length === 0;
+    actions.innerHTML = links.map((link,i) =>
+      `<button type="button" class="detail-head-btn link-kind-${link.kind}" data-link-open="${i}" title="${escapeHtml(linkLabel(link))}" aria-label="open ${escapeHtml(linkLabel(link))}"><i class="ti ${linkIconClass(link)}" aria-hidden="true"></i></button>`
+    ).join('');
+  }
+  document.querySelectorAll('#detail-link-list .link-row').forEach(row=>{
+    const kind = normalizeLinkKind(row.querySelector('.link-kind')?.value);
+    const input = row.querySelector('.link-value');
+    if(input)input.placeholder = LINK_PLACEHOLDERS[kind] || '';
+  });
+  const hint = $('detail-link-hint');
+  if(hint){
+    if(!links.length){
+      hint.textContent = 'Add a number to call or a meeting link to open. Double tapping this item’s card logs it and opens the starred one.';
+    }else{
+      const primary = linkLabel(links[0]);
+      const whatsapp = links.some(l => l.kind === 'whatsapp')
+        ? ' WhatsApp opens the chat — call from there.'
+        : '';
+      hint.textContent = `Double tapping this item’s card logs it and opens ${primary}.${whatsapp}`;
+    }
+  }
+}
+
+// HANDLER: add an empty row to fill in.
+function addDetailLinkRow(){
+  const rows = currentDetailLinkRows();
+  if(rows.length >= MAX_HABIT_LINKS){
+    showToast(`up to ${MAX_HABIT_LINKS} links`);
+    return;
+  }
+  rows.push({kind:rows.length ? 'link' : 'phone',value:''});
+  renderDetailLinkRows(rows);
+  const inputs = document.querySelectorAll('#detail-link-list .link-value');
+  inputs[inputs.length - 1]?.focus();
+}
+
+// HANDLER: drop a row.
+function removeDetailLinkRow(index){
+  const rows = currentDetailLinkRows();
+  if(index < 0 || index >= rows.length)return;
+  rows.splice(index,1);
+  renderDetailLinkRows(rows);
+  setDetailDirty();
+}
+
+// HANDLER: move a row to the front, making it the one a double tap fires.
+function promoteDetailLinkRow(index){
+  const rows = currentDetailLinkRows();
+  if(index <= 0 || index >= rows.length)return;
+  rows.unshift(rows.splice(index,1)[0]);
+  renderDetailLinkRows(rows);
+  setDetailDirty();
+}
+
+// HANDLER: launch a link from the detail header. Reads the live rows, so a
+// freshly typed number works without saving first.
+function openDetailLink(index){
+  const links = currentDetailLinks();
+  const link = links[index];
+  if(!link){
+    showToast('add a number or link first');
+    scrollDetailToNav('identity');
+    return;
+  }
+  openHabitLink(link);
 }
 
 // RENDER: task due row hint — date-only vs fixed appointment
@@ -1479,8 +1605,11 @@ const DETAIL_PAGE_NAV = {
   actions:{label:'actions',icon:'ti-dots'}
 };
 
-// Visual-only: hide insight/effort tabs, fold duration + auto-mark into schedule,
-// and strip schedule/identity chrome. Does not change saved habit fields.
+// Visual-only: drop the calendar/insight/effort panes, fold duration + due into
+// schedule, and strip schedule/identity chrome. What is left is short enough to
+// read as one scrolling page, so the pager stacks vertically and the tab strip
+// goes away. Does not change saved habit fields.
+const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','insight','effort'];
 let _minimalEffortHomes = null;
 function applyDetailMinimalMode(){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
@@ -1488,11 +1617,12 @@ function applyDetailMinimalMode(){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if(sheet)sheet.classList.toggle('minimal-detail', minimal);
   if(pager){
-    const insight = pager.querySelector('.detail-page[data-detail-nav="insight"]');
-    const effort = pager.querySelector('.detail-page[data-detail-nav="effort"]');
-    if(insight)insight.hidden = minimal;
-    if(effort)effort.hidden = minimal;
-    if(minimal){
+    MINIMAL_HIDDEN_DETAIL_PAGES.forEach(nav=>{
+      const page = pager.querySelector(`.detail-page[data-detail-nav="${nav}"]`);
+      if(page)page.hidden = minimal;
+    });
+    if(minimal)pager.scrollTo({left:0,behavior:'auto'});
+    else{
       const pages = visibleDetailPages(pager);
       const width = Math.max(1,pager.clientWidth);
       const idx = Math.round(pager.scrollLeft / width);
@@ -1500,6 +1630,9 @@ function applyDetailMinimalMode(){
     }
   }
 
+  // Duration and the task due date still matter in minimal mode, so they move
+  // up into schedule. Auto mark done does not — it stays behind on the hidden
+  // effort pane, which keeps its saved value untouched.
   const slot = $('detail-minimal-effort');
   const durationField = $('detail-duration-field');
   const autoMarkField = $('detail-auto-mark-field');
@@ -1522,12 +1655,14 @@ function applyDetailMinimalMode(){
     if(next && next.parentElement === parent)parent.insertBefore(node,next);
     else parent.appendChild(node);
   };
-  if(minimal && slot && durationField && autoMarkField){
+  if(minimal && slot && durationField){
     slot.appendChild(durationField);
-    slot.appendChild(autoMarkField);
     if(dueRow)slot.appendChild(dueRow);
     if(dueHint)slot.appendChild(dueHint);
     slot.hidden = false;
+    if(_minimalEffortHomes){
+      restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
+    }
   }else if(_minimalEffortHomes){
     restoreNode(durationField,_minimalEffortHomes.durationParent,_minimalEffortHomes.durationNext);
     restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
@@ -1537,6 +1672,11 @@ function applyDetailMinimalMode(){
   }
 
   if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
+}
+
+// PURE: minimal mode stacks every remaining pane into one scrolling page.
+function detailIsSingleView(){
+  return typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
 }
 
 function visibleDetailPages(pager){
@@ -1555,6 +1695,11 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
   if(!pager)return;
   const index = detailPageIndexByNav(navKey);
   if(index < 0)return;
+  if(detailIsSingleView()){
+    const page = visibleDetailPages(pager)[index];
+    if(page)pager.scrollTo({top:page.offsetTop - pager.offsetTop,behavior});
+    return;
+  }
   pager.scrollTo({left:pager.clientWidth * index,behavior});
   updateDetailPagerDots();
 }
@@ -1565,6 +1710,15 @@ function updateDetailPagerDots(){
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
+  // One scrolling page has nothing to page between — the tab strip would just
+  // be three buttons that scroll a page the user can already see.
+  if(detailIsSingleView()){
+    dotsWrap.hidden = true;
+    dotsWrap.innerHTML = '';
+    delete dotsWrap.dataset.pageSig;
+    return;
+  }
+  dotsWrap.hidden = false;
   const pages = visibleDetailPages(pager);
   pages.forEach((panel,i)=>{
     panel.id = panel.id || `detail-page-${i}`;
@@ -1713,6 +1867,11 @@ function exportToCalendar(i){
 }
 
 document.addEventListener('tierchange',()=>{
+  // shell-ui.js (getSheetInner, openSheet) is loaded after this file, and the
+  // initial tierchange can arrive before it has executed (e.g. while the
+  // blocking leaflet <script> is still fetching). There is nothing to sync
+  // until those helpers exist; a later tierchange re-runs this listener.
+  if(typeof getSheetInner !== 'function')return;
   renderDetailTabs();
   // Re-open detail if it was open, so the layout applies
   if (detailIdx !== null) {

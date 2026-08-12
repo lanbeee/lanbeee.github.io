@@ -157,13 +157,20 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   openSheet('overview-sheet');
 });
 $('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
+let _searchRenderTimer = null;
+const SEARCH_RENDER_DEBOUNCE_MS = 500;
+const scheduleSearchRender = () => {
+  clearTimeout(_searchRenderTimer);
+  _searchRenderTimer = setTimeout(render, SEARCH_RENDER_DEBOUNCE_MS);
+};
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
-  render();
+  scheduleSearchRender();
 });
 $('habit-search').addEventListener('keydown',e=>{
   if(e.key !== 'Escape')return;
 if(searchQuery){
+    clearTimeout(_searchRenderTimer);
     searchQuery = '';
     render();
     e.preventDefault();
@@ -191,7 +198,7 @@ document.addEventListener('keydown',e=>{
   const start = searchQuery.length;
   const end = searchQuery.length;
   searchQuery = `${searchQuery.slice(0,start)}${e.key}${searchQuery.slice(end)}`;
-  render();
+  scheduleSearchRender();
   requestAnimationFrame(()=>{
     input.focus({preventScroll:true});
     input.setSelectionRange(start + e.key.length,start + e.key.length);
@@ -202,6 +209,7 @@ document.addEventListener('keydown',e=>{
 });
 $('clear-search').addEventListener('click',()=>{
   if(searchQuery.trim()){
+    clearTimeout(_searchRenderTimer);
     searchQuery = '';
     $('habit-search').value = '';
     updateSearchUi();
@@ -463,11 +471,13 @@ function drawCrownRidges(canvas, scroll){
   }
 }
 
-// WIRE: attach crown dial gesture + input listeners
+// WIRE: attach rhythm field listeners, plus crown dial gestures where a dial
+// is mounted (the breakable card is the only remaining one).
 function bindRhythm(prefix){
   const field = $(`${prefix}-days`);
   const crown = $(`${prefix}-days-slider`);
   const label = $(`${prefix}-days-label`);
+  if(!field)return;
 
   field.addEventListener('input',e=>{
     const typed = e.target.value.replace(/\D/g,'').slice(0,3);
@@ -475,6 +485,7 @@ function bindRhythm(prefix){
     if(!typed)return;
     const days = clampRhythm(typed);
     if(label)label.textContent = `${days}d`;
+    if(prefix === 'detail')setDetailDirty();
   });
   field.addEventListener('focus',e=>{
     e.target.dataset.orig = e.target.value;
@@ -484,6 +495,7 @@ function bindRhythm(prefix){
     const times = parseInt($(`${prefix}-times`)?.value,10) || 1;
     syncRhythm(prefix,{times,days:e.target.value || 7});
   });
+  if(!crown)return;
 
   let startVal,prevX,velX = 0,momentumId = null,smoothAnimId = null,scrubRaf = null;
   let pendingDx = 0, scrubbing = false;
@@ -662,10 +674,6 @@ bindRhythm('detail');
     if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(t,days));
     if(prefix === 'detail')setDetailDirty();
   });
-});
-requestAnimationFrame(()=>{
-  drawCrownRidges($('ting-days-slider')?.querySelector('.crown-canvas'),0);
-  drawCrownRidges($('detail-days-slider')?.querySelector('.crown-canvas'),0);
 });
 
 // WIRE: attach numeric input focus/blur validators
@@ -1010,6 +1018,26 @@ $('detail-schedule-view-seg').addEventListener('click',e=>{
   setScheduleView(opt.dataset.scheduleView);
 });
 $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
+$('detail-link-add')?.addEventListener('click',addDetailLinkRow);
+$('detail-link-list')?.addEventListener('input',()=>{
+  setDetailDirty();
+  syncDetailLinkUi();
+});
+$('detail-link-list')?.addEventListener('change',()=>{
+  setDetailDirty();
+  syncDetailLinkUi();
+});
+$('detail-link-list')?.addEventListener('click',e=>{
+  const remove = e.target.closest('[data-link-remove]');
+  if(remove){ removeDetailLinkRow(Number(remove.dataset.linkRemove)); return; }
+  const promote = e.target.closest('[data-link-promote]');
+  if(promote)promoteDetailLinkRow(Number(promote.dataset.linkPromote));
+});
+$('detail-link-actions')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-link-open]');
+  if(!btn)return;
+  openDetailLink(Number(btn.dataset.linkOpen));
+});
 $('detail-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-detail-type]');
   if(!opt)return;
@@ -1149,6 +1177,7 @@ $('detail-save').addEventListener('click',()=>{
   h.emoji = current.emoji;
   h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
+  h.links = normalizeLinks(current.links);
   h.topics = normalizeTopics(current.topics);
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
   h.anywhereAllowed = Boolean(current.anywhereAllowed);
@@ -2703,7 +2732,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
 
   if(e.target.closest('#day-logs-back') || e.target.closest('#day-logs-back-list')){
     if(dayLogsScoped()){
-      if(dayLogsStep === 'add')setDayLogsStep('item',dayLogsScopeIndex);
+      if(dayLogsStep === 'add' || dayLogsStep === 'log')setDayLogsStep('item',dayLogsScopeIndex);
       else closeDayLogsSheet({refreshOverview:false});
       return;
     }
@@ -2713,6 +2742,11 @@ $('day-logs-sheet').addEventListener('click',e=>{
   if(e.target.closest('#day-logs-plan')){
     if(!dayLogsCanPlan(dayLogsKey))return;
     setDayLogsStep('add');
+    return;
+  }
+  if(e.target.closest('#day-logs-log')){
+    if(!dayLogsCanLog(dayLogsKey))return;
+    setDayLogsStep('log',dayLogsScoped() ? dayLogsScopeIndex : null);
     return;
   }
   if(e.target.closest('#day-logs-day')){
@@ -2751,6 +2785,28 @@ $('day-logs-sheet').addEventListener('click',e=>{
     if(Number.isNaN(idx) || !key || !dayLogsCanLog(key))return;
     const ts = new Date(`${key}T12:00:00`).getTime();
     if(!logTingAt(idx,ts))return;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    refreshOpenViews();
+    return;
+  }
+  const planDayBtn = e.target.closest('[data-plan-day-item]');
+  if(planDayBtn){
+    const idx = parseInt(planDayBtn.dataset.planDayItem,10);
+    if(Number.isNaN(idx) || !dayLogsCanPlan(dayLogsKey))return;
+    setDayLogsStep('add',idx);
+    return;
+  }
+  if(e.target.closest('#day-log-entry-save')){
+    if(!dayLogsKey || !dayLogsCanLog(dayLogsKey))return;
+    const idx = dayLogsScoped()
+      ? dayLogsScopeIndex
+      : parseInt($('day-log-entry-ting')?.value,10);
+    if(Number.isNaN(idx))return;
+    const h = load()[idx];
+    if(!h || !dayLogsHabitLoggable(h))return;
+    const ts = dayLogsEntryTimestamp(dayLogsKey,$('day-log-entry-time')?.value || '');
+    if(!Number.isFinite(ts) || !logTingAt(idx,ts))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();

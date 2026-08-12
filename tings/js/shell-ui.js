@@ -484,6 +484,20 @@ function showToast(text,durationMs = 900){
   toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
 }
 
+/**
+ * HANDLER: launch a habit link (a call, a meeting room, any URL).
+ * Must be called straight from a tap — both the popup blocker and iOS's
+ * scheme handling depend on the user gesture still being active.
+ * Returns true when something was launched.
+ */
+function openHabitLink(link){
+  const url = typeof linkLaunchUrl === 'function' ? linkLaunchUrl(link) : '';
+  if(!url)return false;
+  if(linkHandsOffToOs(url))window.location.href = url;
+  else window.open(url,'_blank','noopener');
+  return true;
+}
+
 // HYBRID: shows action toast and stores pending action state
 function canOpenFromAction(action){
   if(!action || !Number.isInteger(action.idx))return false;
@@ -522,7 +536,9 @@ function showActionToast(text,action){
   }
   const snoozeUntilBtn = $('snooze-until-planned');
   if(snoozeUntilBtn){
-    const showSnooze = action && action.plan && action.ts > Date.now();
+    // Minimal mode has no snooze anywhere else, so it must not appear here.
+    const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+    const showSnooze = !minimal && action && action.plan && action.ts > Date.now();
     snoozeUntilBtn.hidden = !showSnooze;
     snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));
   }

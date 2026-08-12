@@ -182,7 +182,22 @@ body.minimal-mode .ting-card.minimal-card .card-actions,
 body.minimal-mode .ting-card.minimal-card .ting-visual { display:none; }
 body.minimal-mode .ting-card.minimal-card::before { display:none; }
 body.minimal-mode #detail-sheet.minimal-detail .detail-full-only { display:none !important; }
+/* What survives minimal mode fits in one scroll, so the horizontal snap pager
+   becomes a plain vertical stack and the tab strip disappears. */
+body.minimal-mode .detail-sheet > .detail-pager{
+  flex-direction:column;scroll-snap-type:none;
+  overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+}
+body.minimal-mode .detail-sheet > .detail-pager > .detail-page{
+  flex:0 0 auto;scroll-snap-align:none;
+  height:auto;min-height:0;overflow:visible;
+}
+body.minimal-mode .detail-bottom-bar .detail-dots[hidden]{ display:none; }
+body.minimal-mode .detail-bottom-bar .detail-actions{ flex:1 1 auto;width:auto; }
 body.minimal-mode #add-sheet.minimal-add .add-full-only { display:none !important; }
+/* Settings minimal mode already decides — showing them would be a dead switch. */
+body.minimal-mode .settings-full-only { display:none !important; }
 body.minimal-mode #overview-list:empty { display:none; }
 body.minimal-mode #overview-insight,
 body.minimal-mode #overview-pane-filter { display:none !important; }
@@ -424,6 +439,11 @@ body[data-pane-count="3"] .pane-detail .sheet{
 }
 
 .topbar{
+  /* Query container: the bar is a padded card whose content is far narrower
+     than the viewport, so compactness must be driven by the bar's own width
+     (not a viewport media query) or the place name clips on phones whose
+     screen is wider than the old breakpoint. */
+  container-type:inline-size;
   display:flex;flex-direction:row;gap:10px;align-items:center;
   padding:10px 12px;
   background:color-mix(in srgb,var(--bg) 84%,transparent);
@@ -1416,6 +1436,44 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
 .detail-head .detail-mark .ti{font-size:34px;}
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:36px;}
 .detail-head::before{top:calc(10px + env(safe-area-inset-top));bottom:10px;}
+/* Habit links: call/meeting launch buttons sit in the detail header,
+   opposite the mark button. */
+.detail-head-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.detail-head-actions[hidden]{display:none;}
+.detail-head-btn{
+  width:38px;height:38px;min-width:38px;border-radius:50%;padding:0;
+  border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
+}
+.detail-head-btn[hidden]{display:none;}
+.detail-head-btn i{font-size:19px;}
+.detail-head-btn:active{transform:scale(0.92);background:var(--bg3);}
+.detail-head-btn.link-kind-whatsapp{color:#1fab54;}
+.link-field{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+.link-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.link-field-head .settings-sublabel{margin:0;}
+.link-list{display:flex;flex-direction:column;gap:6px;}
+.link-list:empty{display:none;}
+.link-row{
+  display:grid;grid-template-columns:94px minmax(0,1fr) 30px 30px;
+  gap:5px;align-items:center;
+}
+.link-row .link-kind{margin:0;min-width:0;font-size:12px;}
+.link-row .link-value{margin:0;min-width:0;font-size:12.5px;padding-left:9px;padding-right:9px;}
+.link-row-btn,.link-primary-badge{
+  width:30px;height:30px;border-radius:50%;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  border:0.5px solid var(--border2);background:transparent;color:var(--text3);
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.link-row-btn{cursor:pointer;transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.link-row-btn:active{transform:scale(0.9);background:var(--bg3);}
+.link-row-btn i,.link-primary-badge i{font-size:15px;}
+.link-primary-badge{border-color:transparent;color:var(--amber-icon);}
+.link-field .field-hint{margin:0;}
 .mini-add{
   width:40px;height:40px;border-radius:50%;border:0.5px solid var(--border2);
   background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;
@@ -3812,11 +3870,24 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .presence-filter.gps-matched{box-shadow:none;border-color:color-mix(in srgb,var(--teal-icon) 52%,var(--border));}
 .presence-filter.away,.presence-filter.set,.presence-filter.near{background:color-mix(in srgb,var(--bg2) 70%,var(--bg));color:var(--text);}
 
-/* Narrow screens: collapse the header row to icons-only — drop the "Filters"
-   label and the presence text, keeping just the location + filter icons so the
-   wordmark and both controls fit a phone-portrait card. */
+/* Narrow header: collapse based on the bar's own width (container query), not
+   the viewport. Graduated so the place name stays visible as long as possible —
+   the Filters label and wordmark date drop first (level 1), and only at very
+   narrow widths does the place pill collapse to its icon (level 2). The @media
+   fallback covers browsers without container-query support. */
+@container (max-width:384px){
+  .home-filter-trigger > span{ display:none; }
+  .wordmark-date{ display:none; }
+}
+@container (max-width:340px){
+  .presence-filter{ grid-template-columns:31px; padding:5px !important; }
+  .presence-copy,.presence-chevron{ display:none; }
+}
 @media (max-width:380px){
   .home-filter-trigger > span{ display:none; }
+  .wordmark-date{ display:none; }
+}
+@media (max-width:340px){
   .presence-filter{ grid-template-columns:31px; padding:5px !important; }
   .presence-copy,.presence-chevron{ display:none; }
 }

@@ -185,9 +185,11 @@ const DEFAULT_SORT_SETTINGS = {
   // Before/after, doing-now, and linked marks between items.
   showOrderPillsOnCards:true,
 
-  // Visual-only: strip home cards, detail panes, and calendar overview chrome.
-  // Does not change scoring, agenda packing, or what is due.
-  minimalMode:false,
+  // Simplified surface for new users: strips home cards, detail panes, and
+  // calendar overview chrome, and groups home by today / overdue / coming up
+  // instead of day by day. Does not change scoring, packing, or what is due.
+  // Installs that predate this default keep it off (see loadSortSettings).
+  minimalMode:true,
 
   compactMode:true,
   fontScale:'medium',
