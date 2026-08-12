@@ -314,9 +314,10 @@ async function openSettings(page){
 
   // Edit a travel card → manual override persists.
   //
-  // The synthetic "from current location" leg (.is-from-current) is non-
-  // tappable by design — editing it would store an override that's stale on
-  // the next GPS tick. Pick the first SAVED-PLACE → SAVED-PLACE card.
+  // The synthetic "from current location" leg (.is-from-current) opens maps
+  // on tap but can't be edited — an override anchored to an ephemeral GPS
+  // coord would be stale on the next tick. Pick the first SAVED-PLACE →
+  // SAVED-PLACE card to exercise the editor.
   //
   // The agenda is time-of-day sensitive: late-day runs place fewer items and
   // the first saved-place pair can be any of Home↔Office / Home↔Park / etc.

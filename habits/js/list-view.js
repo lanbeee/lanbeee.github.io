@@ -1593,10 +1593,11 @@ function earlyCardPill(reason){
 
 // RENDER: thin travel card between home list items (same surface as today).
 // When fromId is CURRENT_COORD_ID the edge is computed from the live GPS coord
-// via travelFromCurrent() (movement-thresholded cache) and the card is a non-
-// interactive label — editing an edge anchored to an ephemeral coord would
-// store an override that's stale on the next GPS tick, so the synthetic leg
-// is informational only. Saved-place → saved-place legs remain tappable.
+// via travelFromCurrent() (movement-thresholded cache). A live-GPS leg can't
+// open the editor — an override anchored to an ephemeral coord would be stale
+// on the next GPS tick — but its destination is a real saved place, so a tap
+// opens directions from "here" in maps. Saved-place → saved-place legs keep
+// tap-to-edit / double-tap-to-go.
 function appendHomeTravelCard(list,fromId,toId,startTs){
   if(!list || !fromId || !toId || fromId === toId)return;
   const fromCurrent = fromId === CURRENT_COORD_ID;
@@ -1628,11 +1629,8 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   travelEl.dataset.travelTo = toId;
   if(Number.isFinite(startTs))travelEl.dataset.agendaStart = String(Math.round(startTs / 60000));
   travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
-  if(fromCurrent)travelEl.setAttribute('aria-disabled','true');
   travelEl.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-route" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${compactHomeDuration(mins)} travel</b><small>${depart}${escapeHtml(fromName)} → ${escapeHtml(toName)}</small></span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-label="custom time"></i>' : ''}${fromCurrent ? '' : '<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i>'}`;
   list.appendChild(travelEl);
-  // Synthetic current-coord legs are not editable — skip all gesture wiring.
-  if(fromCurrent)return;
   let travelPointer = null;
   travelEl.addEventListener('pointerdown',e=>{
     const scrollHost = travelEl.closest('.pane-list,.sheet,.detail-page');
@@ -1666,10 +1664,16 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
     e.preventDefault();
     e.stopPropagation();
     if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
-    // Mirrors habit cards: tap to edit the leg, double tap to just go.
+    const go = ()=>openTravelLegInMaps(toId);
+    // Saved-place leg: tap edits the time, double-tap just goes. A live-GPS
+    // leg has no editor (an override would be stale next tick), so either
+    // gesture opens directions from "here" to the destination pin.
+    if(fromCurrent){
+      handleDoubleTapActivate(`travel:${fromId}|${toId}`,go,go);
+      return;
+    }
     handleDoubleTapActivate(`travel:${fromId}|${toId}`,
-      ()=>openTravelEditSheet(fromId,toId),
-      ()=>openTravelLegInMaps(toId));
+      ()=>openTravelEditSheet(fromId,toId),go);
   });
 }
 

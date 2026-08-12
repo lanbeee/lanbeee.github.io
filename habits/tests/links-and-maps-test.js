@@ -226,6 +226,37 @@ function assert(cond, msg){
     'double tapping a travel card opens directions to the destination pin');
   assert(!travelDouble.sheet, 'double tapping a travel card skips the editor sheet');
 
+  // ── travel card from current (non-saved) location: tap opens directions ──
+  // A live-GPS leg has no editor (an override would go stale next tick), but
+  // the destination is a real saved place, so a tap should open maps rather
+  // than do nothing.
+  const travelFromCurrent = await page.evaluate(async () => {
+    window.__opened = [];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const fromId = (typeof CURRENT_COORD_ID !== 'undefined') ? CURRENT_COORD_ID : '__current__';
+    appendHomeTravelCard(host, fromId, 'office', Date.now() + 3600000);
+    const card = host.querySelector('.travel-card.is-from-current');
+    if(!card){ host.remove(); return { missing:true }; }
+    card.click();
+    await new Promise(r => setTimeout(r, 500));
+    const res = {
+      opened:window.__opened.slice(),
+      sheet:Boolean(document.querySelector('#travel-edit-sheet.open')),
+      disabled:card.getAttribute('aria-disabled')
+    };
+    host.remove();
+    closeSheet('travel-edit-sheet');
+    return res;
+  });
+  assert(!travelFromCurrent.missing, 'a from-current travel card renders');
+  assert(!travelFromCurrent.disabled, 'a from-current travel card is not aria-disabled');
+  assert(travelFromCurrent.opened.length === 1
+    && travelFromCurrent.opened[0].includes('destination=40.706192%2C-74.008770'),
+    'tapping a from-current travel card opens directions to the destination pin');
+  assert(!travelFromCurrent.sheet, 'a from-current travel card does not open the editor sheet');
+  await page.waitForTimeout(350);
+
   // ── maps directions ────────────────────────────────────────────────────
   const maps = await page.evaluate(() => {
     const pinned = { id:'home', name:'Home', address:'Grand Court Apartments, Springfield', lat:40.712776, lng:-74.005974 };
