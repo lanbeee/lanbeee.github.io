@@ -1545,7 +1545,6 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
       changed = true;
     }
   }
-  delete snap.prevProjection;
   if(changed)saveTodaySuggested(snap);
   return snap;
 }

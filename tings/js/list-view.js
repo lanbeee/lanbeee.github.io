@@ -2545,24 +2545,6 @@ function buildHidDayLabelMap(data,settings){
   return map;
 }
 
-function computeMissedYesterday(data,baseline,slippedHids,dayLabelMap){
-  if(!baseline || !Array.isArray(baseline.hids)) return [];
-  const now = Date.now();
-  const missed = [];
-  for(const hid of baseline.hids){
-    if(slippedHids.has(hid)) continue;
-    const idx = data.findIndex(h => h && h.hid === hid);
-    if(idx < 0) continue;
-    const h = data[idx];
-    if(completedToday(h, now)) continue;
-    if(todayCategory(h, sortSettings) === 0) continue;
-    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
-    const dayLabel = dayLabelMap.get(hid) || 'behind';
-    missed.push({hid, name:h.name, emoji:h.emoji, idx, snoozed, dayLabel});
-  }
-  return missed.sort((a,b) => Number(a.snoozed) - Number(b.snoozed));
-}
-
 function attachDroppedIndicator(header,list,todayHids){
   const data = load();
   const now = Date.now();
@@ -2581,27 +2563,41 @@ function attachDroppedIndicator(header,list,todayHids){
 
   const currentSet = new Set(todayHids);
   const droppedMap = new Map();
+  const addMissed = (hid,name,emoji,idx,first)=>{
+    if(droppedMap.has(hid))return;
+    const h = data[idx];
+    if(!h)return;
+    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+    droppedMap.set(hid,{hid,name,emoji:emoji || h.emoji,idx,snoozed,first});
+  };
 
   if(_droppedDayBaseline && Array.isArray(_droppedDayBaseline.hids)){
     for(const hid of _droppedDayBaseline.hids){
-      if(currentSet.has(hid) || droppedMap.has(hid))continue;
+      if(currentSet.has(hid))continue;
       const idx = data.findIndex(h=>h && h.hid === hid);
       if(idx < 0)continue;
       const h = data[idx];
       if(completedToday(h,now))continue;
-      const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
-      droppedMap.set(hid,{hid,name:h.name,emoji:h.emoji,idx,snoozed,first:now});
+      if(todayCategory(h,sortSettings) === 0)continue;
+      addMissed(hid,h.name,h.emoji,idx,now);
     }
   }
 
   for(const [hid,info] of Object.entries(snap.hids)){
-    if(currentSet.has(hid) || droppedMap.has(hid))continue;
+    if(currentSet.has(hid))continue;
     const idx = data.findIndex(h=>h && h.hid === hid);
     if(idx < 0)continue;
     const h = data[idx];
     if(completedToday(h,now))continue;
-    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
-    droppedMap.set(hid,{hid,name:info.name || h.name,emoji:h.emoji,idx,snoozed,first:info.first});
+    addMissed(hid,info.name || h.name,h.emoji,idx,info.first);
+  }
+
+  for(let i = 0; i < data.length; i++){
+    const h = data[i];
+    if(!h || !h.hid || currentSet.has(h.hid) || droppedMap.has(h.hid))continue;
+    if(completedToday(h,now))continue;
+    if(todayCategory(h,sortSettings) !== 1)continue;
+    addMissed(h.hid,h.name,h.emoji,i,now);
   }
 
   const dropped = [...droppedMap.values()]
@@ -2653,16 +2649,6 @@ function openSlippedSheet(items,dayLabel){
     head1.textContent = `missed · ${dayLabel}`;
     content.appendChild(head1);
     content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
-  }
-
-  const slippedHids = new Set(items.map(i=>i.hid));
-  const missed = computeMissedYesterday(data,_droppedDayBaseline,slippedHids,dayLabelMap);
-  if(missed.length){
-    const head2 = document.createElement('div');
-    head2.className = 'slipped-section-head';
-    head2.textContent = 'still open from yesterday';
-    content.appendChild(head2);
-    content.appendChild(renderDroppedPanel(missed,{showDayTag:true}));
   }
 
   openSheet('slipped-sheet');
@@ -3650,7 +3636,8 @@ function render(opts){
           _droppedDayBaseline = _snap.prevProjection;
           _droppedDayBaselineDay = todayIso();
         }
-        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline){
+        const _hasOverdue = data.some(h => h && h.hid && !completedToday(h) && todayCategory(h,sortSettings) === 1);
+        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline || _hasOverdue){
           const header = document.createElement('div');
           header.className = 'section-header';
           header.dataset.label = 'today';
