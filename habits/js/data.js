@@ -2104,10 +2104,10 @@ function breakableTotalMinutes(h){
   return clampDuration(h && h.durationMinutes);
 }
 /**
- * PURE: instant-tap amount for a breakable log. A real partial agenda piece is
- * meaningful, so use it when present. A continuous placement often equals the
- * entire remaining budget; in that case fall back to the minimum as a quick-log
- * step rather than treating the minimum as the preferred session length.
+ * PURE: instant-tap amount for a breakable log. A placed agenda piece is
+ * meaningful, so use it when present — even when it equals the whole remaining
+ * budget: the card advertises that piece, so the tap claims it. Only a bare
+ * tap (no placed piece) falls back to the minimum as a quick-log step.
  */
 function suggestedBreakableLogMinutes(h,chunkMinutes,dayBase){
   if(!h || !h.breakable)return 0;
@@ -2116,7 +2116,7 @@ function suggestedBreakableLogMinutes(h,chunkMinutes,dayBase){
   const min = clampMinChunk(h.minChunkMinutes);
   if(rem < min)return rem;
   let suggested = Math.round(Number(chunkMinutes));
-  if(!Number.isFinite(suggested) || suggested <= 0 || suggested >= rem){
+  if(!Number.isFinite(suggested) || suggested <= 0){
     suggested = min;
   }
   return Math.max(1,Math.min(suggested,rem));

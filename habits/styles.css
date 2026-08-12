@@ -439,6 +439,11 @@ body[data-pane-count="3"] .pane-detail .sheet{
 }
 
 .topbar{
+  /* Query container: the bar is a padded card whose content is far narrower
+     than the viewport, so compactness must be driven by the bar's own width
+     (not a viewport media query) or the place name clips on phones whose
+     screen is wider than the old breakpoint. */
+  container-type:inline-size;
   display:flex;flex-direction:row;gap:10px;align-items:center;
   padding:10px 12px;
   background:color-mix(in srgb,var(--bg) 84%,transparent);
@@ -3865,11 +3870,24 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .presence-filter.gps-matched{box-shadow:none;border-color:color-mix(in srgb,var(--teal-icon) 52%,var(--border));}
 .presence-filter.away,.presence-filter.set,.presence-filter.near{background:color-mix(in srgb,var(--bg2) 70%,var(--bg));color:var(--text);}
 
-/* Narrow screens: collapse the header row to icons-only — drop the "Filters"
-   label and the presence text, keeping just the location + filter icons so the
-   wordmark and both controls fit a phone-portrait card. */
+/* Narrow header: collapse based on the bar's own width (container query), not
+   the viewport. Graduated so the place name stays visible as long as possible —
+   the Filters label and wordmark date drop first (level 1), and only at very
+   narrow widths does the place pill collapse to its icon (level 2). The @media
+   fallback covers browsers without container-query support. */
+@container (max-width:384px){
+  .home-filter-trigger > span{ display:none; }
+  .wordmark-date{ display:none; }
+}
+@container (max-width:340px){
+  .presence-filter{ grid-template-columns:31px; padding:5px !important; }
+  .presence-copy,.presence-chevron{ display:none; }
+}
 @media (max-width:380px){
   .home-filter-trigger > span{ display:none; }
+  .wordmark-date{ display:none; }
+}
+@media (max-width:340px){
   .presence-filter{ grid-template-columns:31px; padding:5px !important; }
   .presence-copy,.presence-chevron{ display:none; }
 }

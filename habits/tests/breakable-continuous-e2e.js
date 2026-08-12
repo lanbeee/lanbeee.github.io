@@ -12,7 +12,8 @@
  *   H. Detail toggle persists breakable + minChunk; detail-mark uses suggestion
  *   I. Progress slider UX:
  *      - slider only on first today timeline instance; later chunks keep trail
- *      - pulse/double-tap stay instant; no-drag tap logs suggested chunk (never full day)
+ *      - pulse/double-tap stay instant; no-drag tap logs the placed chunk as-is
+ *        (bare tap without a placed piece logs the suggested min chunk)
  *      - slider tap/drag sets a pending target; pulse commits ahead or correction
  *      - secondary chunk cards still pulse suggested chunk; primary slider refreshes
  *      - after commit, remaining agenda budget shrinks — leftover chunks MUST remain
@@ -328,8 +329,8 @@ async function breakableFillRows(page, name){
     `11% minutes, got ${helpers.minsFrom11}`);
   assert(helpers.minsFrom50 === 210, `50% → 210, got ${helpers.minsFrom50}`);
   assert(helpers.sugNull === 60, `null chunk → min 60, got ${helpers.sugNull}`);
-  assert(helpers.sugFullRem === 60,
-    `large/full card chunk must still tap-suggest min, got ${helpers.sugFullRem}`);
+  assert(helpers.sugFullRem === 360,
+    `full-budget card chunk must be claimed as-is, got ${helpers.sugFullRem}`);
   assert(helpers.sugPartialChunk === 90,
     `true partial placed piece should be used, got ${helpers.sugPartialChunk}`);
   assert(helpers.sugFinish === 20, `finish-up suggestion 20, got ${helpers.sugFinish}`);
@@ -689,37 +690,60 @@ async function breakableFillRows(page, name){
     'non-breakable remains slider-free after pulse');
   console.log('  non-breakable pulse unchanged: OK');
 
-  // Pulse without drag → suggested min chunk (60), not full 420.
+  // Pulse without drag on an untouched card → claims the placed chunk as-is
+  // (420m = whole remaining), never the min step (60m). The habit completes,
+  // so assert against stored data (the card leaves the home list).
   await sliderCard.locator('.pulse-btn').click();
   await page.waitForFunction(() => {
-    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
-      (el.textContent || '').includes('Slider work'));
-    const label = card?.querySelector('.breakable-progress-label')?.textContent || '';
-    return label === '60/420m';
+    const h = load().find(x => x.name === 'Slider work');
+    return h && breakableProgressMinutes(h) === 420;
   }, null, { timeout:5000 });
-  const afterPulse2 = await page.evaluate(() => {
-    const data = load();
-    const h = data.find(x => x.name === 'Slider work');
-    const card = [...document.querySelectorAll('#list .ting-card')].find(el => el.textContent.includes('Slider work'));
-    const crownEl = card?.querySelector('.breakable-crown');
+  const afterFirstPulse = await page.evaluate(() => {
+    const h = load().find(x => x.name === 'Slider work');
+    const last = normalizeLogs(h.logs).filter(l => !isPlanLog(l)).pop();
     return {
       progress:breakableProgressMinutes(h),
       budget:breakableBudgetMinutes(h),
-      ariaNow:crownEl ? crownEl.getAttribute('aria-valuenow') : null,
-      label:card?.querySelector('.breakable-progress-label')?.textContent,
-      committed:crownEl ? crownEl.dataset.committed : null
+      logMinutes:logMinutes(last)
     };
   });
-  assert(afterPulse2.progress === 60, `pulse should log 60m suggestion, got ${afterPulse2.progress}`);
-  assert(afterPulse2.budget === 360, `remaining budget 360, got ${afterPulse2.budget}`);
-  assert(afterPulse2.label === '60/420m', `label should be 60/420m, got ${afterPulse2.label}`);
-  assert(afterPulse2.ariaNow === '60', `crown aria-valuenow=60, got ${afterPulse2.ariaNow}`);
-  assert(afterPulse2.committed === '60', `crown committed=60 after pulse, got ${afterPulse2.committed}`);
-  console.log('  pulse logs suggestion 60m: OK');
+  assert(afterFirstPulse.progress === 420,
+    `pulse should log the placed 420m chunk, got ${afterFirstPulse.progress}`);
+  assert(afterFirstPulse.budget === 0, `remaining budget 0, got ${afterFirstPulse.budget}`);
+  assert(afterFirstPulse.logMinutes === 420,
+    `stored minutes 420, got ${afterFirstPulse.logMinutes}`);
+  console.log('  pulse claims the placed chunk as-is: OK');
 
-  // Forward-only dial: cannot reduce below committed, can only add.
+  // Dial segment needs room to move: re-seed the habit with 60m already
+  // committed today so committed=60, remaining=360, placed chunk=360.
+  console.log('  forward-only dial...');
+  await seedAndReload(page, {
+    clockTs,
+    settings:defaultSettings({
+      blockedTimes:[{ label:'sleep', days:[], start:0, end:420 }]
+    }),
+    data:[
+      base({
+        name:'Slider work',
+        type:'keepup',
+        target:1,
+        durationMinutes:420,
+        breakable:true,
+        minChunkMinutes:60,
+        dueDate:null,
+        lastLog:at(0, 0) + 3600000,
+        logs:[at(0, 0) - 2 * 86400000, { ts:at(0, 0) + 3600000, minutes:60 }],
+        priority:0
+      })
+    ]
+  });
   const workCard = page.locator('.ting-card').filter({ hasText:'Slider work' });
   const crown2 = workCard.locator('.breakable-crown');
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
+      (el.textContent || '').includes('Slider work'));
+    return card?.querySelector('.breakable-crown')?.dataset.committed === '60';
+  }, null, { timeout:5000 });
   // Try to reduce via keyboard left — should clamp at committed (60).
   await crown2.evaluate(el => {
     for(let i = 0; i < 20; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key:'ArrowLeft', bubbles:true }));
@@ -756,15 +780,26 @@ async function breakableFillRows(page, name){
     const h = load().find(x => x.name === 'Slider work');
     return h && breakableProgressMinutes(h) === 90;
   }, null, { timeout:5000 });
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
+      (el.textContent || '').includes('Slider work'));
+    return card?.querySelector('.breakable-crown')?.dataset.committed === '90'
+      && card?.querySelector('.breakable-progress-label')?.textContent === '90/420m';
+  }, null, { timeout:5000 });
   const afterForward = await page.evaluate(() => {
     const h = load().find(x => x.name === 'Slider work');
+    const card = [...document.querySelectorAll('#list .ting-card')].find(el => el.textContent.includes('Slider work'));
     return {
       progress:breakableProgressMinutes(h),
-      budget:breakableBudgetMinutes(h)
+      budget:breakableBudgetMinutes(h),
+      label:card?.querySelector('.breakable-progress-label')?.textContent,
+      committed:card?.querySelector('.breakable-crown')?.dataset.committed
     };
   });
   assert(afterForward.progress === 90, `forward commit should set 90m, got ${afterForward.progress}`);
   assert(afterForward.budget === 330, `forward commit should leave 330m, got ${afterForward.budget}`);
+  assert(afterForward.label === '90/420m', `label should be 90/420m, got ${afterForward.label}`);
+  assert(afterForward.committed === '90', `crown committed=90 after forward commit, got ${afterForward.committed}`);
   console.log('  forward-only dial: OK');
 
   // Wait for UI to re-render with committed=90 before interacting with crown.
@@ -817,31 +852,42 @@ async function breakableFillRows(page, name){
     `agenda placed ${agendaSum}m but budget is ${afterDrag.budget}: ${JSON.stringify(agendaAfterDrag)}`);
   console.log('  drag then pulse commits target: OK');
 
-  // Undragged second pulse on primary → another suggested chunk (60 → 270).
-  await workCard.locator('.pulse-btn').click();
-  await page.waitForFunction(() => {
-    const data = typeof load === 'function' ? load() : [];
-    const h = data.find(x => x.name === 'Slider work');
-    if(!h || breakableProgressMinutes(h) !== 270)return false;
-    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
-      (el.textContent || '').includes('Slider work') && el.querySelector('.breakable-crown'));
-    return card?.querySelector('.breakable-progress-label')?.textContent === '270/420m';
-  }, null, { timeout:5000 });
-  const afterSecondPulse = await page.evaluate(() => {
+  // Undragged pulse when the remaining budget is one placed chunk → claims it
+  // (210 → 420 done), completing the day.
+  const preClaim = await page.evaluate(() => {
     const data = load();
     const h = data.find(x => x.name === 'Slider work');
-    const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
-      el.textContent.includes('Slider work') && el.querySelector('.breakable-crown'));
+    const ag = buildTodayAgenda(data, sortSettings || loadSortSettings());
+    const rows = buildTodayTimeline(ag)
+      .filter(r => r.kind === 'fill' && r.h && r.h.name === 'Slider work')
+      .map(r => ({ durMin:Math.round((r.end - r.start) / 60000), chunkMinutes:r.chunkMinutes }));
+    const dom = [...document.querySelectorAll('#list .swipe-row')]
+      .filter(r => (r.querySelector('.ting-card')?.textContent || '').includes('Slider work'))
+      .map(r => ({ chunkMinutes:r.dataset.chunkMinutes, progressTarget:r.dataset.progressTarget, dirty:r.dataset.progressDirty }));
     return {
-      progress:breakableProgressMinutes(h),
-      label:card?.querySelector('.breakable-progress-label')?.textContent,
-      committed:card?.querySelector('.breakable-crown')?.dataset.committed
+      rows, dom, budget:breakableBudgetMinutes(h),
+      sum:normalizeLogs(h.logs).reduce((s,l) => s + (isPlanLog(l) ? 0 : (Number(logMinutes(l)) || 0)), 0)
     };
   });
-  assert(afterSecondPulse.progress === 270, `second pulse → 270, got ${afterSecondPulse.progress}`);
-  assert(afterSecondPulse.label === '270/420m', `label 270/420m, got ${afterSecondPulse.label}`);
-  assert(afterSecondPulse.committed === '270', `crown committed tracks progress, got ${afterSecondPulse.committed}`);
-  console.log('  undragged second pulse advances suggestion: OK');
+  await workCard.locator('.pulse-btn').click();
+  await page.waitForFunction(() => {
+    const h = load().find(x => x.name === 'Slider work');
+    return h && breakableProgressMinutes(h) === 420;
+  }, null, { timeout:5000 });
+  const afterSecondPulse = await page.evaluate(() => {
+    const h = load().find(x => x.name === 'Slider work');
+    return {
+      progress:breakableProgressMinutes(h),
+      budget:breakableBudgetMinutes(h),
+      sum:normalizeLogs(h.logs).reduce((s,l) => s + (isPlanLog(l) ? 0 : (Number(logMinutes(l)) || 0)), 0)
+    };
+  });
+  assert(afterSecondPulse.progress === 420,
+    `second pulse should claim the 210m chunk, got ${afterSecondPulse.progress}`);
+  assert(afterSecondPulse.budget === 0, `budget should be 0, got ${afterSecondPulse.budget}`);
+  assert(afterSecondPulse.sum - preClaim.sum === 210,
+    `pulse should add the placed 210m chunk, added ${afterSecondPulse.sum - preClaim.sum}`);
+  console.log('  undragged pulse claims the whole remaining chunk: OK');
 
   // Helpers unit checks
   const helperCheck = await page.evaluate(() => {
@@ -862,7 +908,8 @@ async function breakableFillRows(page, name){
   assert(helperCheck.notFull, 'suggestion must not be full remaining day');
   console.log('  suggestedBreakableLogMinutes partial-or-fallback: OK');
 
-  // An untouched continuous/full placement must never log the full budget.
+  // A placed chunk is claimed as-is even when it covers the whole budget —
+  // the card advertises that piece and the tap logs it.
   console.log('  large chunkMinutes card pulse...');
   await freezeClock(page, clockTs);
   await seedAndReload(page, {
@@ -906,7 +953,7 @@ async function breakableFillRows(page, name){
     };
   });
   const expectedHugePulse = Number.isFinite(hugeMeta.chunkMinutes)
-    && hugeMeta.chunkMinutes > 0 && hugeMeta.chunkMinutes < 420
+    && hugeMeta.chunkMinutes > 0
     ? hugeMeta.chunkMinutes
     : 60;
   await page.locator('#list .ting-card').filter({ hasText:'Huge chunk work' }).first()
@@ -930,8 +977,8 @@ async function breakableFillRows(page, name){
     `stored minutes ${expectedHugePulse}, got ${afterHugePulse.logMinutes}`);
   assert(afterHugePulse.budget === 420 - expectedHugePulse,
     `budget ${420 - expectedHugePulse}, got ${afterHugePulse.budget}`);
-  assert(afterHugePulse.progress < 420, 'untouched pulse must never log the full remaining budget');
-  console.log('  continuous/full card pulse is bounded: OK');
+  assert(afterHugePulse.progress === 420, 'pulse claims the whole placed chunk');
+  console.log('  full-budget card chunk is claimed as-is: OK');
 
   // Multi-instance: only first today card has slider; later cards keep trail
   // and still log via suggested chunk on pulse.
@@ -1066,7 +1113,7 @@ async function breakableFillRows(page, name){
         name:'Week work',
         type:'keepup',
         target:1,
-        durationMinutes:420,
+        durationMinutes:840,
         breakable:true,
         minChunkMinutes:60,
         dueDate:null,
@@ -1107,10 +1154,24 @@ async function breakableFillRows(page, name){
   }
   console.log('  week lunch-then-work first breakable has slider: OK');
 
-  // ── Pulse must NOT wipe remaining chunks (eligibility + suggested minutes) ──
-  console.log('  pulse must leave leftover budget on timeline...');
+  // ── Pulse claims the placed chunk; leftover budget stays on the timeline ──
+  // (840 clamps to a 720m budget; remaining 720 exceeds every gap and is split
+  // into a 60m morning piece + a 660m afternoon piece. The primary card carries
+  // the morning 60m chunk; after claiming it the 660m piece stays on the day.)
+  console.log('  pulse claims chunk, leaves leftover budget on timeline...');
+  const weekMeta = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('#list .swipe-row')].find(r =>
+      (r.querySelector('.ting-card')?.textContent || '').includes('Week work')
+      && r.querySelector('.breakable-crown'));
+    return { chunkMinutes: row ? Number(row.dataset.chunkMinutes) : null };
+  });
+  const weekChunk = Number.isFinite(weekMeta.chunkMinutes) && weekMeta.chunkMinutes > 0
+    ? weekMeta.chunkMinutes : null;
+assert(weekChunk === 60,
+    `Week work primary (morning) card should carry the 60m partial chunk, got ${weekMeta.chunkMinutes}`);
   const beforePulseCards = weekUi.cardCount;
-  const pulseTarget = page.locator('#list .ting-card').filter({ hasText:'Week work' }).first();
+  const pulseTarget = page.locator('#list .ting-card').filter({ hasText:'Week work' })
+    .filter({ has:page.locator('.breakable-crown') }).first();
   await pulseTarget.locator('.pulse-btn').click();
   await page.waitForFunction(() => {
     const data = typeof load === 'function' ? load() : [];
@@ -1121,13 +1182,13 @@ async function breakableFillRows(page, name){
     const data = typeof load === 'function' ? load() : [];
     const h = data.find(x => x.name === 'Week work');
     if(!h || breakableProgressMinutes(h) !== 60)return false;
-    if(breakableBudgetMinutes(h) !== 360)return false;
+    if(breakableBudgetMinutes(h) !== 660)return false;
     const cards = [...document.querySelectorAll('#list .ting-card')]
       .filter(el => (el.textContent || '').includes('Week work'));
     if(cards.length < 1)return false;
     const label = cards.map(c => c.querySelector('.breakable-progress-label')?.textContent)
       .find(Boolean);
-    return label === '60/420m';
+    return label === '60/720m';
   }, null, { timeout:8000 });
   const afterPulseWeek = await page.evaluate(() => {
     const data = load();
@@ -1171,9 +1232,9 @@ async function breakableFillRows(page, name){
       weekFills
     };
   });
-  assert(afterPulseWeek.progress === 60, `pulse logs 60m not full day, got ${afterPulseWeek.progress}`);
+  assert(afterPulseWeek.progress === 60, `pulse claims the placed 60m chunk, got ${afterPulseWeek.progress}`);
   assert(afterPulseWeek.logMinutes === 60, `stored log minutes must be 60, got ${afterPulseWeek.logMinutes}`);
-  assert(afterPulseWeek.budget === 360, `remaining budget 360, got ${afterPulseWeek.budget}`);
+  assert(afterPulseWeek.budget === 660, `remaining budget 660, got ${afterPulseWeek.budget}`);
   assert(afterPulseWeek.includeToday === true,
     `includeInTodayAgenda must stay true after partial log, got ${afterPulseWeek.includeToday}`);
   assert(afterPulseWeek.weekCandidate === true,
@@ -1183,35 +1244,29 @@ async function breakableFillRows(page, name){
   assert(afterPulseWeek.cardCount >= 1,
     `Week work cards must remain after pulse (not wipe all chunks), got ${afterPulseWeek.cardCount} (was ${beforePulseCards})`);
   assert(afterPulseWeek.hasSlider === true, 'leftover Work must still show progress slider');
-  assert(afterPulseWeek.label === '60/420m', `slider label 60/420m, got ${afterPulseWeek.label}`);
+  assert(afterPulseWeek.label === '60/720m', `slider label 60/720m, got ${afterPulseWeek.label}`);
   const leftoverPlaced = Math.max(afterPulseWeek.fillSum, afterPulseWeek.weekFillSum);
-  assert(leftoverPlaced > 0 && leftoverPlaced <= 360,
-    `leftover timeline must place remaining work (≤360), got fills=${JSON.stringify(afterPulseWeek.fills)} week=${JSON.stringify(afterPulseWeek.weekFills)}`);
-  assert(leftoverPlaced < 420,
-    `must not re-place full 420 after logging 60, got ${leftoverPlaced}`);
-  console.log('  pulse leaves leftover budget + cards: OK');
+  assert(leftoverPlaced > 0 && leftoverPlaced < 720,
+    `leftover timeline must place remaining work (never the full 720), got fills=${JSON.stringify(afterPulseWeek.fills)} week=${JSON.stringify(afterPulseWeek.weekFills)}`);
+  console.log('  pulse claims chunk, leaves leftover budget + cards: OK');
 
-  // Second pulse advances another suggestion; still not complete.
+  // Second pulse claims the now-primary 660m piece (remaining == chunk) — done.
   await page.locator('#list .ting-card').filter({ hasText:'Week work' }).first()
     .locator('.pulse-btn').click();
   await page.waitForFunction(() => {
     const h = load().find(x => x.name === 'Week work');
-    return h && breakableProgressMinutes(h) === 120;
+    return h && breakableProgressMinutes(h) === 720;
   }, null, { timeout:5000 });
   const afterSecond = await page.evaluate(() => {
     const h = load().find(x => x.name === 'Week work');
-    const cards = [...document.querySelectorAll('#list .ting-card')]
-      .filter(el => (el.textContent || '').includes('Week work'));
     return {
       progress:breakableProgressMinutes(h),
-      budget:breakableBudgetMinutes(h),
-      cardCount:cards.length
+      budget:breakableBudgetMinutes(h)
     };
   });
-  assert(afterSecond.progress === 120, `second pulse → 120, got ${afterSecond.progress}`);
-  assert(afterSecond.budget === 300, `budget 300 after 2×60, got ${afterSecond.budget}`);
-  assert(afterSecond.cardCount >= 1, `cards remain after second pulse, got ${afterSecond.cardCount}`);
-  console.log('  second pulse still leaves remainder: OK');
+  assert(afterSecond.progress === 720, `second pulse claims the leftover 660m, got ${afterSecond.progress}`);
+  assert(afterSecond.budget === 0, `budget 0 after leftover claim, got ${afterSecond.budget}`);
+  console.log('  second pulse claims the leftover chunk: OK');
 
   // Default GLPK path: a partial slider commit must keep today's remaining
   // budget even when another agenda card appears before the breakable row.

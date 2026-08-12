@@ -3157,7 +3157,10 @@ function render(opts){
   // today agenda pipeline. Defer it on progressive renders — it is only used
   // to surface an "early" pill on cards that pulled forward, and that pill is
   // not part of the first paint.
-  const earlyMap = deferAgenda ? new Map() : homeEarlyMap(data,sortSettings);
+  // Search is pure habit lookup — it never needs the "early" pill or any
+  // agenda placement, so skip the planner pipeline entirely while searching
+  // (homeEarlyMap calls earlyReason per item, which drives the today agenda).
+  const earlyMap = (deferAgenda || searching) ? new Map() : homeEarlyMap(data,sortSettings);
   const visibleSet = new Set(indices);
   // Earliest today-timeline fill/scheduled row per breakable habit. The slider
   // belongs on that row only — not on later chunks, and not on a pinned/
@@ -3462,8 +3465,10 @@ function render(opts){
       appendHabitCard(realIdx,null,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
     });
   }else{
-    const agendaRows = homeAgendaRows(data);
-    if(typeof syncAutoMarkChunkPlans === 'function'){
+    // Search results don't place on the agenda — skip homeAgendaRows (planner)
+    // and auto-mark sync so each keystroke is just a cheap filter + rank.
+    const agendaRows = searching ? [] : homeAgendaRows(data);
+    if(!searching && typeof syncAutoMarkChunkPlans === 'function'){
       syncAutoMarkChunkPlans(data,{days:[{dayBase:dayStart(Date.now()),timeline:agendaRows}]});
     }
     const agendaMap = new Map();
@@ -3502,6 +3507,13 @@ function render(opts){
       return indices.indexOf(a) - indices.indexOf(b);
     }) : indices;
     let sectionCat = -1;
+    // True once a "today" section header has been appended in this loop. The
+    // fallback below (missed/free-time pill on an otherwise empty today) must
+    // only fire when NO today section rendered — checking `sectionCat !== 0`
+    // instead was wrong: if today items render and overdue items follow,
+    // sectionCat ends on the overdue key and the fallback prepended a SECOND
+    // "today" header above the pinned section.
+    let todaySectionRendered = false;
     let prevTodayLocId = null;
 
     // Precompute: should today's first location-bearing item be preceded by a
@@ -3579,6 +3591,7 @@ function render(opts){
             : null;
           if(label)appendSectionHeader(list,label,dayCtx,label === 'today' ? todayHids : null);
           sectionCat = sectionKey;
+          if(label === 'today')todaySectionRendered = true;
           if(sectionKey !== 0)prevTodayLocId = null;
         }
       }
@@ -3625,7 +3638,7 @@ function render(opts){
         inTodaySection ? dayStart(Date.now()) : null
       );
     });
-    if(!searching && todayFirstActive && sectionCat !== 0){
+    if(!searching && todayFirstActive && !todaySectionRendered){
       const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
       if(!minimal){
         const _snap = loadTodaySuggested();
@@ -5537,6 +5550,16 @@ function quickLog(i,card){
       setTimeout(()=>card.classList.remove('logged'),380);
     }
     setTimeout(refreshOpenViews, 260);
+    // In week-on mode, render() keeps the mounted DOM while the planner
+    // re-solves, so the just-logged card's done-state and the today "missed"
+    // pill lag behind the log. Once the tap animation has played, repaint home
+    // from the mounted plan so they update without waiting for the background
+    // solve. No-op outside week mode (render() is already synchronous there).
+    setTimeout(()=>{
+      if(weekOnHomeEnabled(sortSettings || {}) && typeof renderHomePresentationOnly === 'function'){
+        renderHomePresentationOnly();
+      }
+    }, 400);
   };
   const data = load();
   const h = data[i];
