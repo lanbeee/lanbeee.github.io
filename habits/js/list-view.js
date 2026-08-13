@@ -3364,7 +3364,25 @@ function render(opts){
           scheduleOmissionByHid.set(omission.subjectHid,omission.reason || 'linked placement could not be honored');
         }
       }
-      const seq = homeDaySequence(day,sortSettings,{visibleSet});
+      // A just-logged habit must leave today's timeline at once, even when we
+      // repaint from a stale/cached week still mounted while the planner
+      // re-solves asynchronously. Drop any fill/scheduled row whose habit is
+      // already done for this day BEFORE sequence building, so travel legs only
+      // chain around still-due habits. A partially-logged breakable is NOT
+      // completedOnDay (progress < total), so it correctly stays due.
+      const rawTimeline = Array.isArray(day.timeline) ? day.timeline : [];
+      const displayTimeline = (typeof completedOnDay === 'function')
+        ? rawTimeline.filter(r=>{
+            if(r.kind !== 'fill' && r.kind !== 'scheduled')return true;
+            if(r.i == null)return true;
+            const h = data[r.i];
+            return !(h && completedOnDay(h,day.dayBase));
+          })
+        : rawTimeline;
+      const seq = homeDaySequence(
+        displayTimeline === rawTimeline ? day : { ...day, timeline: displayTimeline },
+        sortSettings, { visibleSet }
+      );
       // Preserve the exact rows shown on Home for audit/export. Placement maps
       // below still consume only indexed fills/scheduled rows, while travel
       // remains visible in HOME AGENDA OUTPUT.
