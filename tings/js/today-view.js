@@ -3670,9 +3670,10 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(typeof rhythmFillsEveryEligibleDay === 'function'
     && rhythmFillsEveryEligibleDay(h))return ageOnDay > 0;
   if(ageOnDay >= target)return true;               // due/overdue by this day
-  // Pull forward within flexibility so the week can absorb upcoming work.
-  const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
-  if(flex > 0 && ageOnDay >= target - flex)return true;
+  // Flex never pulls a habit earlier on its own ("on its own it continues with
+  // the N days"). Only interaction-aware paths (schedule links / optimizer
+  // clustering) may spend flex as a pull-earlier allowance — see
+  // scheduleLinkFlexAllowsDay and the GLPK day packer.
   return false;
 }
 
@@ -3820,6 +3821,111 @@ function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
 function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
   if(!h || h.type !== 'keepup' || dayBase == null)return false;
   return sameDayPartnerEligibleOnDay(h,dayBase,candidates);
+}
+
+// ─── Flexibility pull-earlier for location clustering ──────────────────────
+// Flex never pulls a habit earlier on its own. It MAY be spent (up to `flex`
+// days before the raw rhythm due day) to join a day where a NATIVE-due partner
+// shares a nearby location — saving a separate trip / merging an errand. Only
+// keepup (build) habits opt in; reduce is never pulled earlier. Pull never
+// cascades: only partners that are due by their own raw rhythm/schedule/plan
+// unlock it (not partners that only exist via another flex pull).
+const CLUSTER_FLEX_NEAR_SECONDS = 15 * 60;
+function locationsShareCluster(aIds,bIds,registry,mode){
+  if(!Array.isArray(aIds) || !Array.isArray(bIds) || !aIds.length || !bIds.length)return false;
+  for(const a of aIds){
+    if(!a)continue;
+    for(const b of bIds){
+      if(!b)continue;
+      if(a === b)return true;
+      if(typeof travelEdgeBetweenIds === 'function'){
+        let sec = 0;
+        try{ sec = Number(travelEdgeBetweenIds(a,b,registry,mode,{allowNetwork:false}).seconds) || 0; }catch(_){ sec = 0; }
+        if(sec > 0 && sec <= CLUSTER_FLEX_NEAR_SECONDS)return true;
+      }
+    }
+  }
+  return false;
+}
+// Native (non-flex) eligibility of candidate p on a day — by raw rhythm,
+// schedule, plan, or task due-date. Reads the habit directly (not p.eligible)
+// so cluster pull-early cannot cascade from another pulled habit.
+function clusterNativeDueOnDay(p,dayBase,weekday,cfg){
+  const h = p && p.h;
+  if(!h || h.type === 'zero')return false;
+  if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
+  if(typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase))return true;
+  if(h.type === 'task'){
+    if(typeof isTaskDone === 'function' && isTaskDone(h))return false;
+    if(h.eventTime !== null || h.dueDate === null)return false;
+    const dueBase = dayStart(h.dueDate);
+    const todayBase = dayStart(Date.now());
+    if(dayBase < todayBase || dayBase > dueBase)return false;
+    const ready = typeof taskReadyDate === 'function' ? taskReadyDate(h) : dueBase;
+    if(ready !== null && dayBase < dayStart(ready))return false;
+    return true;
+  }
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof isDateEligibleForHabit === 'function'
+    && !isDateEligibleForHabit(h,dayBase))return false;
+  const days = daysSince(h.lastLog);
+  if(days !== null && days < 0)return false;
+  const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
+  const ageOnDay = days === null ? offsetDays : days + offsetDays;
+  const target = typeof effectiveRhythmCadenceGapDays === 'function'
+    ? effectiveRhythmCadenceGapDays(h) : (h.target || 7);
+  return ageOnDay >= target;
+}
+// Mutates candidate eligible Sets. A keepup habit inside its flex window may
+// add a day where a native-due partner shares a nearby location. The GLPK /
+// placement scorer (travel-based clusterBonus + colocateHintBonus) then decides
+// whether clustering actually wins — this only opens the door.
+function applyClusterFlexEligibility(candidates,dayStates,settings){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return candidates;
+  const cfg = settings || {};
+  const registry = typeof normalizeLocationRegistry === 'function'
+    ? normalizeLocationRegistry(cfg.locations)
+    : (Array.isArray(cfg.locations) ? cfg.locations : []);
+  const mode = cfg && cfg.travel && cfg.travel.mode ? cfg.travel.mode : undefined;
+  const todayBase = dayStart(Date.now());
+  const dayMeta = dayStates.map(item=>{
+    const dayBase = item && (item.dayBase != null ? item.dayBase : (item.day && item.day.dayBase));
+    const day = item && item.day ? item.day : item;
+    const weekday = day && day.weekday != null ? day.weekday
+      : (dayBase != null ? new Date(dayBase).getDay() : null);
+    return {dayBase,weekday};
+  }).filter(d=>d.dayBase != null);
+  for(const c of candidates){
+    const h = c && c.h;
+    if(!h || h.type !== 'keepup' || !c.eligible)continue;
+    const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
+    if(flex <= 0)continue;
+    const days = daysSince(h.lastLog);
+    if(days === null || days < 0)continue;
+    const rawTarget = typeof rhythmCadenceGapDays === 'function'
+      ? rhythmCadenceGapDays(h,0) : (h.target || 7);
+    const myLocs = typeof normalizeLocationIds === 'function'
+      ? normalizeLocationIds(h.locationIds,registry)
+      : (Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : []);
+    if(!myLocs.length)continue; // anywhere-allowed: no fixed cluster anchor
+    for(const {dayBase,weekday} of dayMeta){
+      if(c.eligible.has(dayBase))continue;
+      const ageOnDay = days + Math.round((dayBase - todayBase) / 86400000);
+      if(ageOnDay >= rawTarget)continue;        // already natively due → already eligible
+      if(ageOnDay < rawTarget - flex)continue;  // outside flex pull window
+      let partner = false;
+      for(const p of candidates){
+        if(p === c || !p.h)continue;
+        if(!clusterNativeDueOnDay(p,dayBase,weekday,cfg))continue;
+        const pLocs = typeof normalizeLocationIds === 'function'
+          ? normalizeLocationIds(p.h.locationIds,registry)
+          : (Array.isArray(p.h.locationIds) ? p.h.locationIds.filter(Boolean) : []);
+        if(pLocs.length && locationsShareCluster(myLocs,pLocs,registry,mode)){ partner = true; break; }
+      }
+      if(partner)c.eligible.add(dayBase);
+    }
+  }
+  return candidates;
 }
 
 // Mutates each candidate's derived eligible Set.
@@ -5517,6 +5623,9 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   if(typeof plannerPerfResetTryPlace === 'function')plannerPerfResetTryPlace();
 
   applyPersistentLinkEligibility(candidates,days,settings);
+  if(typeof applyClusterFlexEligibility === 'function'){
+    applyClusterFlexEligibility(candidates,days,settings);
+  }
   for(let i = candidates.length - 1;i >= 0;i -= 1){
     if(!candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }

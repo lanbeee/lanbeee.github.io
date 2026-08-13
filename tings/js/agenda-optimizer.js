@@ -297,11 +297,18 @@ function optimizerWeight(c){
   const pri = c.priority != null ? c.priority : 2;
   const pinnedBonus = c && c.pinned === true ? 200 : 0;
   const urgencyBonus = Math.min(50,Math.max(0,Number(c && c.urgency) || 0) / 4);
+  // Flexibility tie-break (caps at 5, well under the priority/urgency/scarcity
+  // bands): among otherwise-equal candidates the lower-flex habit wins, since a
+  // stricter rhythm leaves less slack. Pure tie-break — never overrides a real
+  // priority, scarcity, or urgency gap.
+  const flex = Math.max(0,Math.min(60,parseInt(c && c.h && c.h.flexibilityDays,10) || 0));
+  const flexTiebreak = Math.min(5,flex * 0.5);
   // Hard-window tightness outranks ordinary priority; pinned and urgent items
   // still receive explicit value rather than depending on source array order.
   return 100 + pinnedBonus + scarceBonus
     + (5 - Math.min(5,Math.max(0,pri))) * 5
-    + urgencyBonus;
+    + urgencyBonus
+    - flexTiebreak;
 }
 
 // Soft boost so temporary day-order / doing-now still matter in the ILP objective.
@@ -1687,6 +1694,9 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   }
   if(typeof applyPersistentLinkEligibility === 'function'){
     applyPersistentLinkEligibility(candidates,dayStates,settings);
+  }
+  if(typeof applyClusterFlexEligibility === 'function'){
+    applyClusterFlexEligibility(candidates,dayStates,settings);
   }
   for(let i = candidates.length - 1;i >= 0;i -= 1){
     if(!candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);

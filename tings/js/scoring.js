@@ -200,18 +200,16 @@ function buildUrgency(days,target,settings){
 }
 
 /**
- * Effective rhythm in days, accounting for flexibility.
- * For build habits flexibility extends the target; for limit habits it shortens it;
- * for stop habits flexibility is ignored.
+ * Raw rhythm boundary in days. Flexibility no longer moves the due/overdue
+ * boundary for any type — a keepup/reduce/build habit is due exactly on its
+ * raw rhythm day. Flex is consulted only as an urgency tie-breaker (lower flex
+ * = more urgent) and as a pull-earlier allowance for interactions (schedule
+ * links / clustering via the optimizer), never standalone.
  * @param {Habit} h
  * @returns {number}
  */
 function effectiveTarget(h){
-  const target = h.target || 7;
-  const flex = clampFlexibility(h.flexibilityDays);
-  if(h.type === 'keepup')return target + flex;
-  if(h.type === 'reduce')return Math.max(1,target - flex);
-  return target;
+  return h.target || 7;
 }
 
 function buildDueScore(urgency,riseAt){

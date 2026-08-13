@@ -1959,13 +1959,11 @@ function rhythmCadenceGapDays(h,completionOffset = 0){
   const end = Math.round(((phase + 1) * days) / times);
   return Math.max(1,end - start);
 }
-/** PURE: initial due gap with keepup/reduce flexibility applied. */
+/** PURE: cadence gap for the current completion. Flexibility does not move the
+ * boundary — this returns the raw rhythmCadenceGapDays. Pull-earlier via flex
+ * is handled only by interaction-aware paths (schedule links / optimizer). */
 function effectiveRhythmCadenceGapDays(h){
-  const gap = rhythmCadenceGapDays(h,0);
-  const flex = clampFlexibility(h && h.flexibilityDays);
-  if(h && h.type === 'keepup')return gap + flex;
-  if(h && h.type === 'reduce')return Math.max(1,gap - flex);
-  return gap;
+  return rhythmCadenceGapDays(h,0);
 }
 /** PURE: card/meta label for a rhythm target. */
 function formatRhythmLabel(target){

@@ -2616,14 +2616,56 @@ function renderDroppedPanel(items,opts = {}){
   const showDayTag = Boolean(opts.showDayTag);
   const panel = document.createElement('div');
   panel.className = 'dropped-panel';
+  const data = load();
   items.forEach(item=>{
-    const row = document.createElement('button');
+    const h = data[item.idx];
+    // The row is a div (not a button) so the log affordance below can be its
+    // own button. Tapping anywhere on the row except the icon still reviews.
+    const row = document.createElement('div');
     row.className = 'dropped-item' + (item.snoozed ? ' snoozed' : '');
+    row.setAttribute('role','button');
+    row.setAttribute('tabindex','0');
+    row.dataset.hid = item.hid || '';
     const tagHtml = item.snoozed
       ? '<span class="dropped-tag">snoozed</span>'
       : (showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '');
-    row.innerHTML = `<span class="dropped-mark">${item.emoji ? `<span class="dropped-emoji">${escapeHtml(item.emoji)}</span>` : '<i class="ti ti-circle-dashed" aria-hidden="true"></i>'}</span><span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>Tap to review</small></span>${tagHtml}<i class="ti ti-chevron-right dropped-chevron" aria-hidden="true"></i>`;
-    row.addEventListener('click',()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); });
+
+    // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
+    // a missed habit can be cleared with one tap straight from this list.
+    const c = (h && typeof colors === 'function')
+      ? colors(daysSince(h.lastLog),h.target,h.type)
+      : { bg:'var(--bg)', icon:'var(--amber-icon)' };
+    const hasEmojiBg = h && typeof normalizeEmojiBgColor === 'function' && normalizeEmojiBgColor(h.emojiBgColor);
+    const logStyle = (h && typeof emojiBgInlineStyle === 'function' && (h.emoji || hasEmojiBg))
+      ? emojiBgInlineStyle(h,c.bg,c.icon)
+      : `background:${c.bg};color:${c.icon};`;
+    const logInner = h ? iconHtml(h,c) : '<i class="ti ti-circle-dashed" aria-hidden="true"></i>';
+    row.innerHTML =
+      `<button type="button" class="dropped-mark dropped-log${h && h.emoji ? ' emoji-pulse' : ''}" aria-label="${h && h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(item.name)}" style="${logStyle}">${logInner}</button>`
+      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>Tap to review</small></span>`
+      + `${tagHtml}<i class="ti ti-chevron-right dropped-chevron" aria-hidden="true"></i>`;
+
+    const review = ()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); };
+    row.addEventListener('click',e=>{ if(e.target.closest('.dropped-log'))return; review(); });
+    row.addEventListener('keydown',e=>{
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); review(); }
+    });
+
+    const finishLog = ()=>{
+      // The habit is now completedToday, so it no longer belongs here. Drop the
+      // row at once; if the sheet is empty, dismiss it. Then refresh home so the
+      // "missed" pill recount follows the log without a cold restart.
+      row.remove();
+      if(!document.querySelector('#slipped-content .dropped-item'))closeSheet('slipped-sheet');
+      if(typeof refreshOpenViews === 'function')refreshOpenViews();
+      if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    };
+    row.querySelector('.dropped-log').addEventListener('click',e=>{
+      e.stopPropagation();
+      if(!load()[item.idx])return;
+      if(typeof logTing === 'function' && logTing(item.idx))finishLog();
+    });
+
     panel.appendChild(row);
   });
   return panel;
@@ -3364,7 +3406,25 @@ function render(opts){
           scheduleOmissionByHid.set(omission.subjectHid,omission.reason || 'linked placement could not be honored');
         }
       }
-      const seq = homeDaySequence(day,sortSettings,{visibleSet});
+      // A just-logged habit must leave today's timeline at once, even when we
+      // repaint from a stale/cached week still mounted while the planner
+      // re-solves asynchronously. Drop any fill/scheduled row whose habit is
+      // already done for this day BEFORE sequence building, so travel legs only
+      // chain around still-due habits. A partially-logged breakable is NOT
+      // completedOnDay (progress < total), so it correctly stays due.
+      const rawTimeline = Array.isArray(day.timeline) ? day.timeline : [];
+      const displayTimeline = (typeof completedOnDay === 'function')
+        ? rawTimeline.filter(r=>{
+            if(r.kind !== 'fill' && r.kind !== 'scheduled')return true;
+            if(r.i == null)return true;
+            const h = data[r.i];
+            return !(h && completedOnDay(h,day.dayBase));
+          })
+        : rawTimeline;
+      const seq = homeDaySequence(
+        displayTimeline === rawTimeline ? day : { ...day, timeline: displayTimeline },
+        sortSettings, { visibleSet }
+      );
       // Preserve the exact rows shown on Home for audit/export. Placement maps
       // below still consume only indexed fills/scheduled rows, while travel
       // remains visible in HOME AGENDA OUTPUT.
