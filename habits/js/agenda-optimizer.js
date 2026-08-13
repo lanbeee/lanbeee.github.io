@@ -828,6 +828,23 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   // window). Other candidates can then start immediately after a short item:
   // Fajr 5:35–5:37 creates a 5:37 option for Call Amma even when Fajr itself
   // remains allowed until sunrise at 5:58.
+  // Daily-breakable reservation windows for this day. Breakables are fitted
+  // AFTER this fixed solve, so they are absent from `dayCandidates`; without
+  // help, a movable only gets in-window options (all capped by the reserve) and
+  // is wrongly deferred even when it fits in a free gap touching no reservation.
+  // The option loop below injects outside-reservation fits for movables.
+  const reservationWindows = (typeof dailyBreakableReservations === 'function'
+    && typeof breakableReservationWindows === 'function'
+    && Array.isArray(allCandidates))
+    ? dailyBreakableReservations(state,allCandidates).flatMap(r=>breakableReservationWindows(r))
+    : [];
+  // Habits tied by a same-day order constraint (schedule links / drag reorder)
+  // must stay adjacent to a partner, so they are exempt from the outside-
+  // reservation fit injection below (relocating them would break the link).
+  const orderLinkedHids = (typeof plannerOrderConstraintsForDay === 'function')
+    ? new Set(plannerOrderConstraintsForDay(state.dayBase)
+        .flatMap(e=>[e.beforeHid,e.afterHid].filter(Boolean)))
+    : new Set();
   const candidateBoundaryEdges = [];
   for(const c of dayCandidates){
     if(!c || !c.h || c.h.breakable)continue;
@@ -843,9 +860,26 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     // windows, then split only when a continuous placement is impossible.
     if(c.h && c.h.breakable)continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const fits = optimizerFitsForFill(
+    let fits = optimizerFitsForFill(
       state,fill,dayCandidates,candidateBoundaryEdges
     );
+    // Inject fits in free gaps touching no reservation (movables only). Breakables
+    // are fitted after this solve so the normal enumerator never anchors after
+    // their windows; this gives GLPK the outside option the reserve already
+    // exempts, so a movable that fits in the evening places today instead of
+    // being deferred. Several fits are injected so multiple movables can chain.
+    if(reservationWindows.length && typeof isMovableWeekCandidate === 'function'
+      && isMovableWeekCandidate(c) && !(c.h && c.h.hid && orderLinkedHids.has(c.h.hid))
+      && typeof placementFitsOutsideReservations === 'function'){
+      const outside = placementFitsOutsideReservations(state,fill,reservationWindows);
+      if(outside.length){
+        const seen = new Set(fits.map(f=>f.placeStart+':'+f.placeEnd));
+        for(const f of outside){
+          const key = f.placeStart+':'+f.placeEnd;
+          if(!seen.has(key)){ seen.add(key); fits.push(f); }
+        }
+      }
+    }
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
     const earliestStart = fits.reduce(
       (min,fit)=>Math.min(min,fit.placeStart),Infinity);
@@ -1231,12 +1265,16 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
   const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
   const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
   const chosen = [];
+  const reservationWindows = (typeof dailyBreakableReservations === 'function'
+    && typeof breakableReservationWindows === 'function')
+    ? dailyBreakableReservations(state,pool).flatMap(r=>breakableReservationWindows(r))
+    : [];
   for(const c of ordered){
     if(state.placed.has(c.i))continue;
     if(typeof fastPathDefersMovable === 'function'
       && fastPathDefersMovable(c,state,pool,states))continue;
     let fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const placeOpts = {allowNetwork:true};
+    const placeOpts = {allowNetwork:true,reservationWindows};
     if(doing && fill.h && fill.h.hid === doing.hid){
       placeOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
       const sessionMin = Math.max(1,Number(doing.sessionMinutes)
