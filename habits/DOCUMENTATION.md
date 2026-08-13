@@ -6,43 +6,36 @@
 
 ## TABLE OF CONTENTS
 
-### User Documentation (👤)
-- [I. Introduction](#i-introduction)
-- [II. The Dashboard](#ii-the-dashboard-home-screen)
-- [III. Habit Types](#iii-habit-types--how-they-work)
-- [IV. Detailed Field Reference](#iv-detailed-field-reference)
-- [V. Visual Symbols](#v-visual-symbols--indicators)
-- [VI. Home Day Headers & Pills](#vi-home-page-day-headers--pills)
-- [VII. Search & Filtering](#vii-search--filtering)
-- [VIII. Add Habit Sheet](#viii-the-add-habit-sheet)
-- [IX. Detail Sheet](#ix-the-detail-sheet)
-- [X. Contextual Sheets](#x-contextual-sheets-right-swipe--drag-actions)
-- [XI. Toasts & Action Toasts](#xi-toasts--action-toasts)
-- [XII. Settings Overview](#xii-settings-overview)
-- [XIII. Detailed Field Explanations](#xiii-detailed-field-explanations)
-- [XIV. Agenda & Planning Algorithms](#xiv-agenda--planning-algorithms)
-- [XV. Minimal Mode](#xv-minimal-mode-vs-regular-mode)
+> **Audience markers:** 👤 user · 👨‍💻 developer · 👤👨‍💻 both. Each section heading carries its own marker.
+
+- [I. Introduction](#i-introduction) 👤👨‍💻
+- [II. The Dashboard (Home Screen)](#ii-the-dashboard-home-screen) 👤
+- [III. Habit Types & How They Work](#iii-habit-types--how-they-work) 👤
+- [IV. Detailed Field Reference](#iv-detailed-field-reference) 👤👨‍💻
+- [V. Visual Symbols & Indicators](#v-visual-symbols--indicators) 👤
+- [VI. Home Page Day Headers & Pills](#vi-home-page-day-headers--pills) 👤
+- [VII. Search & Filtering](#vii-search--filtering) 👤
+- [VIII. The Add Habit Sheet](#viii-the-add-habit-sheet) 👤
+- [IX. The Detail Sheet](#ix-the-detail-sheet) 👤👨‍💻
+- [X. Contextual Sheets (Right-Swipe / Drag Actions)](#x-contextual-sheets-right-swipe--drag-actions) 👤
+- [XI. Toasts & Action Toasts](#xi-toasts--action-toasts) 👤
+- [XII. Settings Overview](#xii-settings-overview) 👤👨‍💻
+- [XIII. Detailed Field Explanations](#xiii-detailed-field-explanations) 👤
+- [XIV. Agenda & Planning Algorithms](#xiv-agenda--planning-algorithms) 👨‍💻
+- [XV. Minimal Mode vs Regular Mode](#xv-minimal-mode-vs-regular-mode) 👤
 - [XVI. Glossary](#xvi-glossary)
-- [XVII. Complete Default Settings](#xvii-complete-default-settings)
-- [XVIII. Gestures & Interactions](#xviii-gestures--interactions)
-- [XIX. File Structure](#xix-file-structure--modules)
-- [XX. Minimal Mode Behavior](#xx-minimal-mode-detailed-behavior)
-- [XXI. Complete Settings Reference](#xxi-complete-settings-field-reference)
-- [XXII. Sort Presets](#xxii-sort-presets-detailed)
-- [XXIII. Focus Modes](#xxiii-focus-modes-detailed)
-- [XXIV. Calendar Import](#xxiv-calendar-import-providers)
-- [XXV. Location Features](#xxv-location-features-detailed)
-- [XXVI. Error Handling](#xxvi-error-handling--limits)
-- [XXVII. External Services](#xxvii-external-services)
-- [XXVIII. How to Context](#xxviii-how-to-context)
-### Developer Documentation (👨‍💻)
-- [XVII. Complete Default Settings](#xvii-complete-default-settings)
-- [XVIII. Gestures & Interactions](#xviii-gestures--interactions)
-- [XVIII.2 JSON Schema Examples](#xvii2-json-schema-examples)
-- [XIX. File Structure](#xix-file-structure--modules)
-- [XX. Minimal Mode Behavior](#xx-minimal-mode-detailed-behavior)
-- [XXI. Complete Settings Reference](#xxi-complete-settings-field-reference)
-- [XXVIII. How to Context](#xxviii-how-to-context)
+- [XVII. Complete Default Settings](#xvii-complete-default-settings) 👨‍💻
+- [XVIII. Gestures & Interactions](#xviii-gestures--interactions) 👤👨‍💻
+- [XIX. File Structure & Modules](#xix-file-structure--modules) 👨‍💻
+- [XX. Minimal Mode Detailed Behavior](#xx-minimal-mode-detailed-behavior) 👤👨‍💻
+- [XXI. Complete Settings Field Reference](#xxi-complete-settings-field-reference) 👤👨‍💻
+- [XXII. Sort Presets Detailed](#xxii-sort-presets-detailed) 👤
+- [XXIII. Focus Modes Detailed](#xxiii-focus-modes-detailed) 👤
+- [XXIV. Calendar Import Providers](#xxiv-calendar-import-providers) 👤
+- [XXV. Location Features Detailed](#xxv-location-features-detailed) 👤👨‍💻
+- [XXVI. Error Handling & Limits](#xxvi-error-handling--limits) 👤👨‍💻
+- [XXVII. External Services](#xxvii-external-services) 👨‍💻
+- [XXVIII. How to Context](#xxviii-how-to-context) 👤👨‍💻
 
 ---
 
@@ -70,7 +63,7 @@ Everything below is covered in this skeleton:
 ### ✅ All Settings Fields (40+ fields)
 - Display/UI: preset, minimalMode, themeMode, fontScale, compactMode, etc.
 - Card Display: All 17+ show...OnCards fields with defaults
-- Sort Weights: All 11 weight fields + algorithm settings
+- Sort Weights: All 10 weight fields + algorithm settings
 - Agenda: optimizer, show...InAgenda settings, score weights
 - Availability, Blocked Times, Topics, Locations
 - Prayer Times, Calendar Import, Reminders/Push
@@ -138,7 +131,7 @@ Everything below is covered in this skeleton:
 
 ### 1.2 Philosophy & Core Concepts 👤
 - **Rhythm-based planning:** Target + flexibilityDays instead of rigid deadlines
-- **Adjustable rigidness:** Completely Rigid calendar like events , to completely flexible and everything in b/w available  
+- **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
 - **Capacity-based scheduling:** availabilityMinutes - durationMinutes
 - **Progressive urgency:** No hard deadlines by default, with the ability to add.
 - **Privacy-first:** All data stored locally, never transmitted
@@ -415,8 +408,7 @@ else:
   // ─── LINKS & ACTIONS ─────────────────────────────────────
   links: {kind, value}[],    // 👤 Phone, WhatsApp, FaceTime, URL
   
-  // ─── CALCULATED FIELDS ───────────────────────────────────
-  lastLog: number|null,      // Derived from logs
+  // ─── TASK & IMPORT FIELDS ───────────────────────────────
   dueDate: number|null,      // 👤 Task only: deadline
   eventTime: number|null,    // 👤 Task only: fixed time
   hardDue: boolean,          // 👤 Task only: hard deadline
@@ -585,7 +577,7 @@ defaultBreakable:false,             // Default breakable setting
 defaultMinChunkMinutes:30,          // Default minimum chunk for breakables
 ```
 
-#### 4.3.10 Retention & Cleanup 👤
+#### 4.3.11 Retention & Cleanup 👤
 ```js
 completedTaskRetentionDays: 2|3|7,  // Auto-delete completed tasks
 habitLogKeepCount: 0|12|30|60,      // Keep N logs per habit
@@ -646,16 +638,21 @@ lastRetentionCleanupAt: number,     // Timestamp of last cleanup
 | ⚪ Gray border | Quiet/New | Never logged or pinned |
 
 ### 5.2 Status Text (Cue) 👤
-Text displayed below habit name:
+The one-line cue under each item name comes from `currentRun()` in `scoring.js`. It returns a label (and usually a count) describing where the item stands right now:
 
-| Status | Text | Condition |
-|--------|------|-----------|
-| `run` | "1 run" | Just completed today |
-| `overdue` | "X days ago" | Days since > target |
-| `on track` | "great" | Within target window |
-| `warning` | "getting due" | Approaching target |
-| `quiet` | "run" | Never logged |
-| `someday` | "when" | Task with no due date |
+| Cue label | Example shown | When it appears |
+|-----------|---------------|-----------------|
+| `run` | "3 run" / "run" | Keepup habit — current on-track streak count; or just "run" when never logged or overdue |
+| `clear` | "5 clear" | Reduce/Zero habit — days since you last logged it |
+| `since done` | "2 since done" | Task that has already been completed |
+| `someday` | "someday" | Task with no due date set |
+| `when` | "when" | Task whose due date can't be resolved |
+| `days ago` | "3 days ago" | Task past its due date (count = days overdue) |
+| `today` | "today" | Timed task due today |
+| `due` | "due" | Untimed task due today |
+| `days away` | "5 days away" | Task due in the future (count = days until) |
+
+> The card **border color** is separate from this cue — see §5.1 for the `tone()` color mapping (teal / amber / red / purple / quiet).
 
 ### 5.3 Progress Circle (●) 👤
 Shows completion percentage:
@@ -733,7 +730,7 @@ When `showLocationOnCards: true`:
 
 ---
 
-## Complete Card Settings Field List (19 total) 👤
+### 5.16 Complete Card Settings Field List (19 total) 👤
 
 These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 
@@ -785,7 +782,7 @@ Each day section header can have two dynamic **pills**:
 
 ### 6.2 Missed Pills (🔴 "N missed")
 - Appears on "Today" header when habits didn't make it into today's agenda
-- Tap to open the **Slipped Sheet** (see §IX.1)
+- Tap to open the **Slipped Sheet** (see §X.1)
 - Shows items in reverse snooze order
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
@@ -793,7 +790,7 @@ Each day section header can have two dynamic **pills**:
 
 ### 6.3 Open Time Pills (🕒 "N open")
 - Appears on day headers when there are free time stretches ≥ 10 minutes
-- Tap to open the **Free Time Sheet** (see §IX.2)
+- Tap to open the **Free Time Sheet** (see §X.2)
 - Shows a visual strip of free/busy time blocks
 - Free blocks are tappable to select a time for scheduling
 - Includes tick marks at clean hour intervals
@@ -801,7 +798,7 @@ Each day section header can have two dynamic **pills**:
 
 ### 6.4 Day Agenda Audit (Triple-Tap) 👨‍💻
 - Triple-tap any day section header (regular mode only)
-- Opens the **Day Agenda Audit** sheet (see §VIII.B)
+- Opens the **Day Agenda Audit** sheet (see §IX.B)
 - Shows detailed capacity planning: clock/blocked/net minutes, eligible work, work placed, missed gaps, scheduler time
 - Copy or export week placement data
 - For developer/debugging use
@@ -811,7 +808,7 @@ Each day section header can have two dynamic **pills**:
 - Two filter types: **Topic chips** and **Location chips**
 - `__none__` sentinel for "no topic" / "anywhere" habits
 - Presence indicator (👤 "today's place") — shows current location with GPS signal
-- Tap presence to open **Presence Picker** (§IX.7)
+- Tap presence to open **Presence Picker** (§X.7)
 
 ---
 
@@ -1725,7 +1722,6 @@ Settings > Display > Minimal Mode (toggle off)
 | **Hard Due** | Firm deadline (no slack after) |
 | **Event Time** | Fixed appointment time |
 | **ILP Solver** | Integer Linear Programming for optimal packing |
-| **Plan Signal** | Future logs marked planned |
 | **Scarce Window** | Tight allowed time window |
 | **ASAP** | Clock delay penalty |
 
@@ -1900,6 +1896,53 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | 4 | P4 | Lower |
 | 5 | P5 | Someday - dropped first |
 
+### 17.2 JSON Schema Examples 👨‍💻
+
+**Sample Habit:**
+```json
+{
+  "hid": "a1b2c3d4-e5f6-7890",
+  "name": "Morning Yoga",
+  "type": "keepup",
+  "target": 7,
+  "logs": [1609459200000, 1609545600000],
+  "emoji": "🧘",
+  "pinned": false,
+  "snoozedUntil": null,
+  "topics": ["health", "wellness"],
+  "allowedWeekdays": [0, 1, 2, 3, 4],
+  "allowedTimeStart": 360,
+  "allowedTimeEnd": 420,
+  "durationMinutes": 30,
+  "breakable": true,
+  "preferredTimeStart": 360,
+  "preferredTimeEnd": 390,
+  "priority": 2,
+  "lastLog": 1609545600000,
+  "createdAt": 1609372800000
+}
+```
+
+**Sample Settings (Minimal):**
+```json
+{
+  "preset": "todayFirst",
+  "minimalMode": true,
+  "showTopicsOnCards": false,
+  "showLocationOnCards": false,
+  "showDurationOnCards": false,
+  "availabilityMinutes": [400,200,200,200,200,200,400],
+  "blockedTimes": [{"label":"sleep","days":[0,1,2,3,4,5,6],"start":1380,"end":300}],
+  "topics": ["health","wellness"],
+  "locations": [],
+  "agendaOptimizer": true,
+  "agendaScoreWeights": {"travel":1,"cluster":1,"day":1,"asap":0.12,"scarce":0.05,"preference":1.5},
+  "defaultType": "keepup",
+  "defaultTarget": 7,
+  "defaultDurationMinutes": 30
+}
+```
+
 ---
 
 ## XVIII. GESTURES & INTERACTIONS
@@ -1981,62 +2024,13 @@ When you swipe a card left or right, the following action buttons appear:
 
 ---
 
-## XVII.2 JSON Schema Examples 👨‍💻
-
-**Sample Habit:**
-```json
-{
-  "hid": "a1b2c3d4-e5f6-7890",
-  "name": "Morning Yoga",
-  "type": "keepup",
-  "target": 7,
-  "logs": [1609459200000, 1609545600000],
-  "emoji": "🧘",
-  "pinned": false,
-  "snoozedUntil": null,
-  "topics": ["health", "wellness"],
-  "allowedWeekdays": [0, 1, 2, 3, 4],
-  "allowedTimeStart": 360,
-  "allowedTimeEnd": 420,
-  "durationMinutes": 30,
-  "breakable": true,
-  "preferredTimeStart": 360,
-  "preferredTimeEnd": 390,
-  "priority": 2,
-  "lastLog": 1609545600000,
-  "createdAt": 1609372800000
-}
-```
-
-**Sample Settings (Minimal):**
-```json
-{
-  "preset": "todayFirst",
-  "minimalMode": true,
-  "showTopicsOnCards": false,
-  "showLocationOnCards": false,
-  "showDurationOnCards": false,
-  "availabilityMinutes": [400,200,200,200,200,200,400],
-  "blockedTimes": [{"label":"sleep","days":[0,1,2,3,4,5,6],"start":1380,"end":300}],
-  "topics": ["health","wellness"],
-  "locations": [],
-  "agendaOptimizer": true,
-  "agendaScoreWeights": {"travel":1,"cluster":1,"day":1,"asap":0.12,"scarce":0.05,"preference":1.5},
-  "defaultType": "keepup",
-  "defaultTarget": 7,
-  "defaultDurationMinutes": 30
-}
-```
-
----
-
 ## XIX. FILE STRUCTURE & MODULES
 
 ### 19.1 JavaScript Modules (js/)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| **config.js** | 175 | Constants, sort presets, default settings |
+| **config.js** | 324 | Constants, sort presets, default settings |
 | **data.js** | 3554 | Data models (JSDoc typedefs), storage, normalization |
 | **scoring.js** | 908 | Attention score, urgency, tone/color mapping |
 | **main.js** | 3100 | App initialization, state management, event handling |
