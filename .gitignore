@@ -12,6 +12,9 @@ habits/lib/sample_tings-backup*
 habits/lib/*tings-backup*
 habits/lib/*.backup.json
 habits/lib/*.pdf
+# Personal data — never commit Tings backup exports
+tings/lib/*tings-backup*
+tings/lib/*.backup.json
 habits/.qoder/
 .poolside/settings.local.yaml
 _scratch_event_check.js

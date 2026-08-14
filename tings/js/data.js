@@ -443,6 +443,10 @@ function loadSortSettings(){
       ? false
       : Boolean(merged.agendaOptimizer);
     merged.agendaScoreWeights = normalizeAgendaScoreWeights(merged.agendaScoreWeights);
+    // Worker-only location hints are request-scoped. Older builds could leave
+    // them in saved settings, making a stale GPS coordinate look live forever.
+    delete merged._plannerCurrentCoord;
+    delete merged._plannerLiveLocationId;
     // Prefer worker-side GLPK warm. Main-thread preload only when workers cannot run.
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
       && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
@@ -515,6 +519,8 @@ function saveSortSettings(settings){
     ? false
     : Boolean(next.agendaOptimizer);
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
+  delete next._plannerCurrentCoord;
+  delete next._plannerLiveLocationId;
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }

@@ -3944,7 +3944,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 3;
+const HOME_PLANNER_ALGORITHM_VERSION = 8;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -4037,8 +4037,23 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v1';
+const HOME_AGENDA_CACHE_VERSION = 3;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v3';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
+const HOME_COLD_BOOT_SKELETON_MAX_MS = 60 * 1000;
+
+// Older keys may contain a week solved by a previous Worker even when the page
+// scripts have updated. They are derived data only, so remove them eagerly.
+try{
+  localStorage.removeItem('tings_home_agenda_cache_v1');
+  localStorage.removeItem('tings_home_agenda_cache_v2');
+}catch(_){}
+
+function showHomeAgendaLoading(){
+  const list = $('list');
+  if(!list || list.querySelector('.home-loading'))return;
+  list.innerHTML = '<div class="home-loading" role="status" aria-label="loading agenda"><span></span><span></span><span></span></div>';
+}
 
 function homeAgendaCacheStateKey(data){
   return homePlannerStateKey(data,dayStart(Date.now()));
@@ -4047,7 +4062,7 @@ function homeAgendaCacheStateKey(data){
 function readHomeAgendaCacheRecord(data){
   try{
     const cached = Storage.read(HOME_AGENDA_CACHE_KEY);
-    if(!cached || cached.version !== 1 || !cached.week)return null;
+    if(!cached || cached.version !== HOME_AGENDA_CACHE_VERSION || !cached.week)return null;
     if(cached.key !== homeAgendaCacheStateKey(data))return null;
     if(dateKey(cached.savedAt) !== dateKey(Date.now()))return null;
     return cached;
@@ -4112,7 +4127,7 @@ function saveHomeAgendaCache(data,week){
     const leanWeek = week.__lean ? week : leanAgendaWeekForCache(week);
     if(leanWeek && leanWeek.__lean)delete leanWeek.__lean;
     Storage.write(HOME_AGENDA_CACHE_KEY,{
-      version:1,
+      version:HOME_AGENDA_CACHE_VERSION,
       savedAt:Date.now(),
       key:homeAgendaCacheStateKey(data),
       week:leanWeek
@@ -4206,7 +4221,7 @@ function queueOptimizedHomeRender(data,opts){
   // queue the user's new plan behind obsolete work: terminate it and let this
   // foreground request start a fresh solve.
   if(_optimizerHomeRequestKey && _optimizerHomeRequestKey !== key
-    && !(opts && opts.__backgroundRefresh)){
+    && (!(opts && opts.__backgroundRefresh) || (opts && opts.__locationChanged))){
     ++_optimizerHomeRequestToken;
     _optimizerHomeRequestKey = '';
     if(typeof cancelAgendaPlannerWorkerRequests === 'function'){
@@ -4228,9 +4243,10 @@ function queueOptimizedHomeRender(data,opts){
       // already been persisted; replace the agenda only when its new solve is
       // ready instead of flashing an unplanned intermediate list.
     }else if(!$('list')?.querySelector('.home-loading')){
-      // No cache and no skeleton (warm edit path): paint a basic list now;
-      // the optimized week replaces it when the worker resolves.
-      render({...opts,deferAgenda:true});
+      // No compatible agenda exists to keep mounted. Stay in the intentional
+      // boot animation until planning resolves instead of flashing an unordered
+      // due-list between two planned states.
+      showHomeAgendaLoading();
     }
     // Cold open with no cache keeps the HTML skeleton until the worker result.
     _homeListFingerprint = homeListFingerprint();
@@ -4247,6 +4263,17 @@ function queueOptimizedHomeRender(data,opts){
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
   const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
+  // The planner runs in a Worker, where the page's ephemeral GPS coordinate is
+  // intentionally unavailable. Carry only its matched saved-place id across
+  // the boundary so a plan requested after "I'm at Walmart" starts there
+  // immediately, even before lastKnownLocationId has been persisted.
+  const livePlannerLocationId = typeof liveLocationId === 'function' ? liveLocationId() : null;
+  if(livePlannerLocationId)settings._plannerLiveLocationId = livePlannerLocationId;
+  const livePlannerCoord = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+  if(livePlannerCoord && typeof isCurrentCoordAwayFromSaved === 'function'
+    && isCurrentCoordAwayFromSaved(settings.locations)){
+    settings._plannerCurrentCoord = {lat:livePlannerCoord.lat,lng:livePlannerCoord.lng};
+  }
   const day0Only = Boolean(
     opts && opts.__forceReplan
     && _optimizerHomeReadyDirtyKey === dirtyKey
@@ -4256,7 +4283,17 @@ function queueOptimizedHomeRender(data,opts){
   const optimizerBuild = typeof buildWeekAgendaOffMain === 'function'
     ? buildWeekAgendaOffMain(data,settings,7,exactMode ? 'exact' : 'fast',buildOpts)
     : buildWeekAgendaAsync(data,settings,7,buildOpts);
+  // Keep the intentional cold-open animation, but never indefinitely. If a
+  // phone's Worker/WASM bring-up stalls, reveal the usable grouped list after
+  // a bounded wait; the exact result still replaces it when it arrives.
+  const coldBootTimer = $('list')?.querySelector('.home-loading')
+    ? setTimeout(()=>{
+        if(token !== _optimizerHomeRequestToken)return;
+        if($('list')?.querySelector('.home-loading'))render({...opts,deferAgenda:true});
+      },HOME_COLD_BOOT_SKELETON_MAX_MS)
+    : null;
   void optimizerBuild.then(week=>{
+    if(coldBootTimer != null)clearTimeout(coldBootTimer);
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
     const live = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
@@ -4275,30 +4312,39 @@ function queueOptimizedHomeRender(data,opts){
     // rather than leaving the user on the unplanned basic list.
     if(exactMode && !week.optimized){
       if(!_homeRenderedWeek){
-        saveHomeAgendaCache(liveData,week);
         render({...opts,__fromOptimizer:true,__optimizedWeek:week});
+        // Rendering may persist automatic chunk plans and bump the planner
+        // revision. Cache only after those writes so the record is not stale
+        // the instant it is created.
+        saveHomeAgendaCache(load(),week);
         _homeListFingerprint = homeListFingerprint();
       }
       return;
     }
-    _optimizerHomeReadyKey = key;
     _optimizerHomeReadyWeek = week;
-    // Capture dirty key from live state after the solve. Travel/location can
-    // change while the worker runs; stamping the request-start key would make
-    // the next background tick look dirty and replan for no reason.
-    _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(liveData);
-    saveHomeAgendaCache(liveData,week);
     if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
       _homeRenderedWeek = week;
       if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
+      const stableData = load();
+      _optimizerHomeReadyKey = optimizerHomeStateKey(stableData);
+      _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(stableData);
+      saveHomeAgendaCache(stableData,week);
       _homeListFingerprint = homeListFingerprint();
       if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
       return;
     }
     render({...opts,__fromOptimizer:true,__optimizedWeek:week});
+    const stableData = load();
+    // Rendering can persist automatic chunk plans. Claim/cache the state after
+    // that revision bump so a background tick or location refresh does not
+    // immediately launch the same solve again.
+    _optimizerHomeReadyKey = optimizerHomeStateKey(stableData);
+    _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(stableData);
+    saveHomeAgendaCache(stableData,week);
     _homeListFingerprint = homeListFingerprint();
     if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
   }).catch(()=>{
+    if(coldBootTimer != null)clearTimeout(coldBootTimer);
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
     // Keep the fast planner already on screen. A cold open still sitting on
@@ -4333,7 +4379,7 @@ function markHomeTravelEdgeEdited(fromId,toId,minutes){
 // RENDER: sync home list only when the freshness key moved. Background paths
 // (travel refresh, while-open loop, quiet location updates) should call this
 // instead of render() so an unchanged agenda never rebuilds the DOM.
-function renderHomeIfChanged(force){
+function renderHomeIfChanged(force,opts = {}){
   const fp = homeListFingerprint();
   if(!force && fp === _homeListFingerprint)return false;
   const data = load();
@@ -4352,7 +4398,11 @@ function renderHomeIfChanged(force){
     // event cannot enqueue the same recalculation repeatedly.
     _homeListFingerprint = fp;
     if(settings.agendaOptimizer && typeof buildWeekAgendaAsync === 'function'){
-      queueOptimizedHomeRender(data,{__backgroundRefresh:true,__forceReplan:Boolean(force)});
+      queueOptimizedHomeRender(data,{
+        __backgroundRefresh:true,
+        __forceReplan:Boolean(force),
+        __locationChanged:Boolean(opts.locationChanged)
+      });
       return true;
     }
     if(!settings.agendaOptimizer && typeof buildWeekAgendaOffMain === 'function'){

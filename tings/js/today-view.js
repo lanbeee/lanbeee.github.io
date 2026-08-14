@@ -295,6 +295,13 @@ function windowStillDoableToday(h,now = Date.now()){
 // opts.allowNetwork === false skips OSRM refresh (used by scarcity dry-runs).
 function travelEdgeBetweenIds(fromId,toId,registry,mode,opts = {}){
   if(!fromId || !toId || fromId === toId)return {seconds:0,metres:0,provider:'none'};
+  // A live coordinate outside every saved radius is a real route origin, not
+  // the nearest saved location. `travelFromCurrent` uses an in-memory cache
+  // and never persists the coordinate.
+  if(typeof CURRENT_COORD_ID !== 'undefined' && fromId === CURRENT_COORD_ID){
+    const to = registry.find(l=>l.id === toId);
+    if(to && typeof travelFromCurrent === 'function')return travelFromCurrent(to,mode);
+  }
   const a = registry.find(l=>l.id === fromId);
   const b = registry.find(l=>l.id === toId);
   if(!a || !b || typeof travelBetween !== 'function')return {seconds:0,metres:0,provider:'haversine'};
@@ -1535,6 +1542,13 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     }
   }
   const assignmentLabel = (i)=>{
+    const h = data[i];
+    const pinned = typeof isWeekPinnedToday === 'function'
+      ? isWeekPinnedToday(h,settings) : Boolean(h && h.pinned);
+    // A later day satisfies a one-shot/movable candidate, but it never
+    // satisfies today's separate daily occurrence.
+    if(typeof isMovableWeekCandidate === 'function'
+      && !isMovableWeekCandidate({h,i,pinned}))return '';
     const elsewhere = [...(assignedDayByIndex.get(i) || [])].find(base=>base !== dayBase);
     if(elsewhere == null)return '';
     return homeWeekDayLabel({
@@ -1565,6 +1579,11 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       window:typeof timeWindowSummary === 'function' && hasTimeWindow(h) ? timeWindowSummary(h) : ''
     };
   }).filter(item=>item.remainingMinutes > 0);
+  const placedLoadMinutes = eligible.reduce((sum,i)=>{
+    const loadMinutes = todayCandidateLoadMinutes(data[i],dayBase);
+    const diag = diagByIndex.get(i) || {};
+    return sum + Math.min(loadMinutes,Math.max(0,Number(diag.placedMinutes) || 0));
+  },0);
 
   const eligibleSet = new Set(eligible);
   const gapAudit = diagnostics.gapAudit || {openSlotMinutes:0,openGapMinutes:0,largestGapMinutes:0,gaps:[]};
@@ -1666,10 +1685,10 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     scheduledMinutes,
     agendaBudgetMinutes:Math.max(0,Math.round(agenda.totalMinutes || 0)),
     agendaUsedMinutes:Math.max(0,Math.round(agenda.usedMinutes || 0)),
-    placedLoadMinutes:Math.max(0,Math.round(diagnostics.placedMinutes || 0)),
+    placedLoadMinutes:Math.max(0,Math.round(placedLoadMinutes)),
     travelMinutes:Math.max(0,Math.round(diagnostics.travelMinutes || 0)),
     eligibleCount:eligible.length,
-    eligibleCoverage:outstandingLoad > 0 ? Math.min(1,(diagnostics.placedMinutes || 0) / outstandingLoad) : 1,
+    eligibleCoverage:outstandingLoad > 0 ? Math.min(1,placedLoadMinutes / outstandingLoad) : 1,
     budgetUtilization:(agenda.totalMinutes || 0) > 0 ? Math.min(1,(agenda.usedMinutes || 0) / agenda.totalMinutes) : 0,
     placementBudgetRemaining:Math.max(0,Math.round(diagnostics.remainingMinutes || 0)),
     schedulerOpenMinutes:Math.max(0,Math.round(gapAudit.openSlotMinutes || 0)),
@@ -1721,16 +1740,32 @@ function createDayPlacementState(day,settings,opts = {}){
     if(!locationId)locationId = pickHabitLocationId(ev.h,null,registry,mode) || locIds[0] || null;
     rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start, end, hard:true, locationId });
   });
+  // `_plannerLiveLocationId` is an ephemeral matched place supplied when the
+  // main page delegates planning to its Worker. A Worker cannot read the
+  // page's GPS coordinate, so prefer this one-request anchor over persisted
+  // last-known presence. It is never saved to user settings.
+  const workerLiveLocId = isTodayDay
+    && settings && settings._plannerLiveLocationId
+    && registry.some(loc=>loc.id === settings._plannerLiveLocationId)
+    ? settings._plannerLiveLocationId : null;
+  const coordAwayFromSaved = isTodayDay
+    && typeof currentCoordLocation === 'function'
+    && typeof isCurrentCoordAwayFromSaved === 'function'
+    && typeof CURRENT_COORD_ID !== 'undefined'
+    && !!currentCoordLocation()
+    && isCurrentCoordAwayFromSaved(registry);
   let prevLocId = isTodayDay
-    ? ((typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null)
+    ? (coordAwayFromSaved ? CURRENT_COORD_ID
+      : (workerLiveLocId || (typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null))
     : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
       || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
       || null);
   // Genuine live fix only (geolocation / manual pin), not the last-known
   // default. Presence uses this to decide whether the seed supersedes ended
   // blocks. Null on future days and whenever the user has no active fix.
-  const liveLocId = isTodayDay && typeof liveLocationId === 'function'
-    ? liveLocationId() : null;
+  const liveLocId = isTodayDay
+    ? (coordAwayFromSaved ? CURRENT_COORD_ID
+      : (workerLiveLocId || (typeof liveLocationId === 'function' ? liveLocationId() : null))) : null;
   return {
     day,
     dayBase,
@@ -2290,7 +2325,32 @@ function tryPlaceOnDay(state,fill,opts = {}){
     }
   }
   if(!fits.length)return null;
-  return pickBestScoredFit(fits,fill,state,opts);
+  const bestFit = pickBestScoredFit(fits,fill,state,opts);
+  // Steering for movables (fast / heuristic-fallback / rescue paths). Fixed
+  // movables place BEFORE daily breakables commit (mirroring GLPK's fixed-first
+  // order), so a movable would otherwise grab the ASAP slot inside a breakable's
+  // future window and then be evicted by repair. When the caller passes
+  // reservationWindows and the chosen fit overlaps one, move the movable into the
+  // nearest free gap touching no reservation (if such a gap exists). This keeps
+  // the daily breakable whole while still placing the movable TODAY. Skip direct
+  // order links because they must stay adjacent to a partner. Loose sometime
+  // links may move within their valid side of the partner.
+  const directOrderConstrained = !!(fill && fill.h && fill.h.hid
+    && typeof plannerOrderConstraintsForDay === 'function'
+    && plannerOrderConstraintsForDay(state.dayBase).some(e=>
+      e && e.adjacency === 'direct'
+        && (e.beforeHid === fill.h.hid || e.afterHid === fill.h.hid)));
+  if(bestFit && !directOrderConstrained
+    && Array.isArray(opts.reservationWindows) && opts.reservationWindows.length
+    && fill && fill.h && !fill.h.breakable && fill.pinned !== true
+    && (fill.h.type === 'task'
+      || (Number.isFinite(Number(fill.h.target)) && Number(fill.h.target) > 1))
+    && opts.reservationWindows.some(w=>bestFit.placeEnd > w.start && bestFit.placeStart < w.end)){
+    const outsideFit = typeof placementFitOutsideReservations === 'function'
+      ? placementFitOutsideReservations(state,fill,opts.reservationWindows) : null;
+    if(outsideFit)return outsideFit;
+  }
+  return bestFit;
 }
 
 /** PURE: minutes already committed for habit index i on this day state. */
@@ -2322,6 +2382,25 @@ function isMovableWeekCandidate(c){
   const target = Number(c.h && c.h.target);
   if(Number.isFinite(target) && target <= 1)return false; // daily rhythm, must place today
   return true;                              // sparse rhythm (target > 1) / plan-by
+}
+
+// PURE: P0 occurrences that cannot safely move to another horizon day. Daily
+// P0 rhythms are independent obligations on every eligible day; a sparse P0
+// with one eligible day (Friday-only Juma) loses the whole occurrence if that
+// day is consumed by flexible work.
+function mustPlaceCriticalOccurrence(c){
+  if(!c || !c.h || Number(c.priority) !== 0)return false;
+  // Daily breakables already have a protected reservation and intentionally
+  // run last; promoting Work ahead of fixed prayers starves their narrow gaps.
+  // One-shot tasks remain governed by pin/due rules and explicit one-day drag
+  // promises. This hard tier is for recurring P0 occurrences such as prayers.
+  if(c.h.breakable || c.h.type === 'task')return false;
+  const eligibleDayCount = c.eligible && typeof c.eligible.size === 'number'
+    ? c.eligible.size : Infinity;
+  const target = Number(c.h.target);
+  const dailyOccurrence = c.h.type !== 'task'
+    && Number.isFinite(target) && target <= 1;
+  return eligibleDayCount <= 1 || dailyOccurrence;
 }
 
 // PURE: daily-recurring breakable candidates eligible on state.dayBase, each
@@ -2511,6 +2590,78 @@ function movablePriorityBeatsReservations(c,reservations,fit){
   return cp < best;
 }
 
+// PURE: feasible fits for `fill` on `state` lying entirely in free time touching
+// NO window in `reservationWindows` (the daily-breakable windows). Walks the
+// day's free gaps, subtracts each reservation window (interval math), then runs
+// the REAL placer (auditFillFitInGap) at duration-spaced starts inside each
+// remaining outside sub-segment. Returning several fits lets several movables
+// chain in the same outside gap (Trash at 19:30, Water Plants at 20:00).
+// auditFillFitInGap calls tryPlaceOnDay WITHOUT reservationWindows, so this does
+// not recurse into the steering branch.
+function placementFitsOutsideReservations(state,fill,reservationWindows){
+  if(!state || !fill || !fill.h || !Array.isArray(reservationWindows) || !reservationWindows.length)return [];
+  if(typeof freeSegmentsInWindow !== 'function' || typeof auditFillFitInGap !== 'function')return [];
+  const dayEnd = state.dayBase + 86400000;
+  const gaps = freeSegmentsInWindow(state,state.dayBase,dayEnd);
+  if(!gaps || !gaps.length)return [];
+  const durMs = clampDuration(fill.h.durationMinutes) * 60000;
+  const out = [];
+  for(const gap of gaps){
+    // Subtract every reservation window from this free gap so the remaining
+    // sub-segments are free AND touch no reservation.
+    let segs = [gap];
+    for(const w of reservationWindows){
+      const next = [];
+      for(const s of segs){
+        if(w.end <= s.start || w.start >= s.end){ next.push(s); continue; }
+        if(s.start < w.start)next.push({start:s.start,end:w.start});
+        if(w.end < s.end)next.push({start:w.end,end:s.end});
+      }
+      segs = next;
+    }
+    for(const seg of segs){
+      if(seg.end - seg.start < durMs)continue;     // necessary-condition prune
+      // Probe at duration-spaced starts so multiple movables can chain here.
+      for(let t = seg.start; t + durMs <= seg.end + 1 && out.length < 8; t += durMs){
+        const sub = {start:t, end:Math.min(seg.end, t + durMs)};
+        const fit = auditFillFitInGap(state,fill,sub,state.remaining,false);
+        if(fit && fit.placeEnd > fit.placeStart
+          && !reservationWindows.some(w=>fit.placeEnd > w.start && fit.placeStart < w.end)){
+          if(!out.some(f=>f.placeStart === fit.placeStart && f.placeEnd === fit.placeEnd))out.push(fit);
+        }
+      }
+      if(out.length >= 8)break;
+    }
+  }
+  return out;
+}
+
+// PURE: earliest feasible fit for `fill` on `state` touching no reservation
+// window, or null. Convenience wrapper over the multi-fit helper.
+function placementFitOutsideReservations(state,fill,reservationWindows){
+  const all = placementFitsOutsideReservations(state,fill,reservationWindows);
+  return all.length ? all[0] : null;
+}
+
+// PURE: does this movable have a feasible fit on `state` that overlaps NO daily-
+// breakable reservation window? Such a fit cannot breach any daily breakable's
+// target, so the candidate should place here today instead of deferring. This
+// mirrors the per-option exemption the ILP reserve already grants
+// (agenda-optimizer.js `movable_breakable_reserve`) and brings the fast,
+// heuristic-fallback and rescue paths onto the same rule.
+function movableFitsOutsideReservations(c,state,candidates){
+  if(!c || !c.h || !state)return false;
+  if(typeof dailyBreakableReservations !== 'function'
+    || typeof breakableReservationWindows !== 'function'
+    || typeof placementFitOutsideReservations !== 'function')return false;
+  const reservations = dailyBreakableReservations(state,candidates);
+  if(!reservations.length)return false;            // no daily breakable → nothing to exempt
+  const resWindows = reservations.flatMap(r=>breakableReservationWindows(r));
+  if(!resWindows.length)return false;
+  const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+  return !!placementFitOutsideReservations(state,fill,resWindows);
+}
+
 // PURE: should the fast scarcity planner DEFER candidate `c` away from `state`
 // for this pass?
 //   - Fits in spare → place (ASAP).
@@ -2526,6 +2677,11 @@ function fastPathDefersMovable(c,state,candidates,dayStates){
   if(!Number.isFinite(cap))return false;                 // no daily breakable here
   const dur = clampDuration(c.h && c.h.durationMinutes);
   if(dur <= cap)return false;                             // fits without breaching
+  // Aggregate breakable-spare is below the duration, yet the movable may still
+  // land in a clock gap that touches NO reservation window — it then cannot
+  // breach any daily breakable, so place it here today instead of deferring.
+  if(typeof movableFitsOutsideReservations === 'function'
+    && movableFitsOutsideReservations(c,state,candidates))return false;
   if(movableHasCleanAlternativeDay(c,state,candidates,dayStates))return true;
   const reservations = typeof dailyBreakableReservations === 'function'
     ? dailyBreakableReservations(state,candidates) : [];
@@ -4238,6 +4394,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       const bh = b && b.h && b.h.hid;
       if(doing && ah === doing.hid && bh !== doing.hid)return -1;
       if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+      const criticalA = mustPlaceCriticalOccurrence(a);
+      const criticalB = mustPlaceCriticalOccurrence(b);
+      if(criticalA !== criticalB)return criticalA ? -1 : 1;
       const wa = beforeBoost.get(ah) || 0;
       const wb = beforeBoost.get(bh) || 0;
       if(wa !== wb)return wb - wa;
@@ -4263,6 +4422,21 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   for(const state of dayStates){
     ordered = reorderAgendaItemsByOrderConstraints(ordered,state.dayBase);
   }
+  // Topological order normally puts predecessors first. A critical successor
+  // such as Friday-only Juma must claim its one window first; tryPlaceOnDay can
+  // then backfill Shower/Exercise before the committed successor via the order
+  // ceiling. Otherwise a flexible predecessor chain can greedily consume the
+  // only Juma window before Juma is attempted.
+  ordered.sort((a,b)=>{
+    const ah = a && a.h && a.h.hid;
+    const bh = b && b.h && b.h.hid;
+    if(doing && ah === doing.hid && bh !== doing.hid)return -1;
+    if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+    const criticalA = mustPlaceCriticalOccurrence(a);
+    const criticalB = mustPlaceCriticalOccurrence(b);
+    if(criticalA !== criticalB)return criticalA ? -1 : 1;
+    return 0;
+  });
   for(const c of ordered){
     const pinned = c.pinned === true;
     // Breakable tasks: one-shot continuous-first pool across the week.
@@ -4361,11 +4535,16 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           && fastPathDefersMovable(c,state,candidates,dayStates))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
+        const resWindows = (typeof dailyBreakableReservations === 'function'
+          && typeof breakableReservationWindows === 'function')
+          ? dailyBreakableReservations(state,candidates).flatMap(r=>breakableReservationWindows(r))
+          : [];
         const dayOpts = {
           settings,
           weights,
           urgency:c.urgency,
-          dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned)
+          dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned),
+          reservationWindows:resWindows
         };
         if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
           dayOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
@@ -4509,6 +4688,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     totalAssigned += repairWeekPlacedHours(candidates,dayStates,settings);
   }
   compactFastTravelRoutes(dayStates,candidates,settings);
+  enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  // Rebuild/link cleanup can uncover a gap after the normal rescue already
+  // ran. Give fixed daily obligations one final exact-gap chance.
+  totalAssigned += rescueDailyGapFits(candidates,dayStates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
   return totalAssigned;
 }
@@ -4670,22 +4853,37 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
     const rhythmHabit = !!(c.h.type !== 'task'
       && Number.isFinite(Number(c.h.target)));
     const breakableRhythm = !!(c.h.breakable && rhythmHabit);
+    const fillsEveryEligibleDay = rhythmHabit && (
+      (typeof rhythmFillsEveryEligibleDay === 'function' && rhythmFillsEveryEligibleDay(c.h))
+      || Number(c.h.target) <= 1
+    );
+    // Some reconstructed/optimized states use a custom placeKey. The fills are
+    // the source of truth for whether this occurrence already exists; relying
+    // only on state.placed can rescue the same item into the same day twice.
+    const hasOccurrence = state=>Boolean(state
+      && (state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i));
     let lastPlaced = rhythmHabit ? c.h.lastLog : null;
     let rhythmPlacementCount = 0;
     let alreadyOneShot = false;
-    for(const state of dayStates){
-      if(state.placed.has(c.i)){
-        lastPlaced = state.dayBase;
-        if(rhythmHabit)rhythmPlacementCount += 1;
-        if(!rhythmHabit)alreadyOneShot = true;
+    // A daily/every-eligible-day rhythm is a separate obligation on each day.
+    // Walk it chronologically below. Preloading a later placement as lastPlaced
+    // makes the earlier missed occurrence look ineligible ("assigned tomorrow").
+    if(!fillsEveryEligibleDay){
+      for(const state of dayStates){
+        if(hasOccurrence(state)){
+          lastPlaced = state.dayBase;
+          if(rhythmHabit)rhythmPlacementCount += 1;
+          if(!rhythmHabit)alreadyOneShot = true;
+        }
       }
     }
     if(alreadyOneShot)continue;
     for(const state of dayStates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(c.pinned && !state.isTodayDay)continue;
-      if(state.placed.has(c.i)){
+      if(hasOccurrence(state)){
         lastPlaced = state.dayBase;
+        if(fillsEveryEligibleDay)rhythmPlacementCount += 1;
         continue;
       }
       if(rhythmHabit && lastPlaced != null
@@ -4710,7 +4908,11 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
         lastPlaced = state.dayBase;
         continue;
       }
-      const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
+      const resWindows = (typeof dailyBreakableReservations === 'function'
+        && typeof breakableReservationWindows === 'function')
+        ? dailyBreakableReservations(state,deferPool).flatMap(r=>breakableReservationWindows(r))
+        : [];
+      const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true,reservationWindows:resWindows});
       if(!fit)continue;
       commitPlacement(state,fill,fit);
       state.day.agendaItems.push({
@@ -4720,6 +4922,43 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
       if(rhythmHabit)rhythmPlacementCount += 1;
       gained += 1;
       if(!rhythmHabit)break;
+    }
+  }
+  return gained;
+}
+
+// MUTATE: final hard-gap rescue for fixed daily/every-eligible-day rhythms.
+// Uses the same exact-gap probe as the audit, with a private probe placeKey, so
+// a stale/custom placement key cannot hide an otherwise feasible occurrence.
+function rescueDailyGapFits(candidates,dayStates,settings){
+  let gained = 0;
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return gained;
+  const daily = candidates.filter(c=>{
+    if(!c || !c.h || c.h.breakable || c.h.type === 'task')return false;
+    const target = Number(c.h.target);
+    return (Number.isFinite(target) && target <= 1)
+      || (typeof rhythmFillsEveryEligibleDay === 'function'
+        && rhythmFillsEveryEligibleDay(c.h));
+  });
+  for(const state of dayStates){
+    if(!state)continue;
+    for(const c of daily){
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(c.pinned && !state.isTodayDay)continue;
+      if((state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i))continue;
+      const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+      const needed = todayCandidateLoadMinutes(c.h,state.dayBase);
+      for(const gap of remainingPlacementGaps(state)){
+        const fit = auditFillFitInGap(state,fill,gap,needed,false);
+        if(!fit)continue;
+        fit.placeKey = c.i;
+        commitPlacement(state,fill,fit);
+        state.day.agendaItems.push({
+          h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:fit.locId
+        });
+        gained += 1;
+        break;
+      }
     }
   }
   return gained;

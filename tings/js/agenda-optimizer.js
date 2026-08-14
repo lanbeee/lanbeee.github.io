@@ -25,6 +25,8 @@ const AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS = 12000;
 const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
+const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v94';
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -82,7 +84,9 @@ function ensureAgendaPlannerWorker(){
   plannerPerfMark('planner-worker-spawn-start');
   let worker;
   try{
-    worker = new Worker('./js/agenda-planner-worker.js');
+    // A versioned URL prevents an installed PWA from reusing the previous
+    // deployment's long-lived Worker script after the page shell updates.
+    worker = new Worker(`./js/agenda-planner-worker.js?${AGENDA_PLANNER_WORKER_ASSET_VERSION}`);
   }catch(err){
     console.warn('[agenda-optimizer] planner worker unavailable',err && err.message || err);
     return null;
@@ -214,23 +218,42 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
   const id = ++_plannerWorkerSeq;
   plannerPerfMark('planner-request-post');
   return new Promise((resolve,reject)=>{
+    const timeoutId = setTimeout(()=>{
+      if(!_plannerWorkerRequests.has(id))return;
+      if(_plannerWorker === worker){
+        cancelAgendaPlannerWorkerRequests('planner worker timed out');
+      }else{
+        _plannerWorkerRequests.delete(id);
+        reject(new Error('planner worker timed out'));
+      }
+    },AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS);
     _plannerWorkerRequests.set(id,{
       resolve:week=>{
+        clearTimeout(timeoutId);
         plannerPerfMark('planner-response');
         resolve(week);
       },
-      reject
+      reject:error=>{
+        clearTimeout(timeoutId);
+        reject(error);
+      }
     });
-    worker.postMessage({
-      id,
-      data,
-      settings,
-      numDays,
-      mode,
-      dirtyKey:opts.dirtyKey || (typeof homePlannerDirtyKey === 'function' ? homePlannerDirtyKey(data) : ''),
-      day0Only:Boolean(opts.day0Only),
-      storage:plannerWorkerStorageSnapshot()
-    });
+    try{
+      worker.postMessage({
+        id,
+        data,
+        settings,
+        numDays,
+        mode,
+        dirtyKey:opts.dirtyKey || (typeof homePlannerDirtyKey === 'function' ? homePlannerDirtyKey(data) : ''),
+        day0Only:Boolean(opts.day0Only),
+        storage:plannerWorkerStorageSnapshot()
+      });
+    }catch(error){
+      clearTimeout(timeoutId);
+      _plannerWorkerRequests.delete(id);
+      reject(error);
+    }
   });
 }
 
@@ -297,6 +320,14 @@ function optimizerWeight(c){
   const pri = c.priority != null ? c.priority : 2;
   const pinnedBonus = c && c.pinned === true ? 200 : 0;
   const urgencyBonus = Math.min(50,Math.max(0,Number(c && c.urgency) || 0) / 4);
+  // P0 is the user's critical lane. Protect an occurrence that either exists
+  // on only one horizon day (Friday-only Juma) or is independently due every
+  // day (prayers) from being traded for several flexible lower-priority fills.
+  // The bonus is selection-only; hard feasibility, travel and ordering still
+  // decide where it can go.
+  const criticalOccurrenceBonus = typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(c)
+    ? 1200 : 0;
   // Flexibility tie-break (caps at 5, well under the priority/urgency/scarcity
   // bands): among otherwise-equal candidates the lower-flex habit wins, since a
   // stricter rhythm leaves less slack. Pure tie-break — never overrides a real
@@ -305,7 +336,7 @@ function optimizerWeight(c){
   const flexTiebreak = Math.min(5,flex * 0.5);
   // Hard-window tightness outranks ordinary priority; pinned and urgent items
   // still receive explicit value rather than depending on source array order.
-  return 100 + pinnedBonus + scarceBonus
+  return 100 + pinnedBonus + criticalOccurrenceBonus + scarceBonus
     + (5 - Math.min(5,Math.max(0,pri))) * 5
     + urgencyBonus
     - flexTiebreak;
@@ -567,6 +598,11 @@ function orderAwareOptimizerSort(dayBase){
       if(ah === doing.hid && bh !== doing.hid)return -1;
       if(bh === doing.hid && ah !== doing.hid)return 1;
     }
+    const criticalA = typeof mustPlaceCriticalOccurrence === 'function'
+      && mustPlaceCriticalOccurrence(a);
+    const criticalB = typeof mustPlaceCriticalOccurrence === 'function'
+      && mustPlaceCriticalOccurrence(b);
+    if(criticalA !== criticalB)return criticalA ? -1 : 1;
     // Prefer placing a predecessor before its successor.
     if(ah && bh){
       if(preds.get(bh) && preds.get(bh).has(ah))return -1;
@@ -653,11 +689,18 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         windowEdges.push(win.start - durationMs,win.start,win.end - durationMs,win.end);
       }
     }
-    // Temporary order links need staggered starts — otherwise every fill only
-    // gets the same ASAP option and pairwise order rows forbid co-selection.
+    // Linked fills need staggered starts — otherwise each partner only gets
+    // the same ASAP option and pairwise order rows forbid co-selection. Do not
+    // put every unrelated fill on this grid merely because the day contains
+    // one link: that multiplied option generation and made ordinary seven-day
+    // replans consume the entire solve budget.
     const orderEdges = typeof plannerOrderConstraintsForDay === 'function'
       ? plannerOrderConstraintsForDay(state.dayBase) : [];
-    if(orderEdges.length || doing){
+    const placeHid = placeFill && placeFill.h && placeFill.h.hid;
+    const linkedFill = placeHid && orderEdges.some(edge=>
+      edge && (edge.beforeHid === placeHid || edge.afterHid === placeHid));
+    const doingFill = doing && placeHid === doing.hid;
+    if(linkedFill || doingFill){
       const step = 30 * 60000;
       // Cap the stepped grid by THIS fill's latest relevant window end — not
       // Math.min across every candidate (that erased late-window options).
@@ -828,6 +871,26 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   // window). Other candidates can then start immediately after a short item:
   // Fajr 5:35–5:37 creates a 5:37 option for Call Amma even when Fajr itself
   // remains allowed until sunrise at 5:58.
+  // Daily-breakable reservation windows for this day. Breakables are fitted
+  // AFTER this fixed solve, so they are absent from `dayCandidates`; without
+  // help, a movable only gets in-window options (all capped by the reserve) and
+  // is wrongly deferred even when it fits in a free gap touching no reservation.
+  // The option loop below injects outside-reservation fits for movables.
+  const reservationWindows = (typeof dailyBreakableReservations === 'function'
+    && typeof breakableReservationWindows === 'function'
+    && Array.isArray(allCandidates))
+    ? dailyBreakableReservations(state,allCandidates).flatMap(r=>breakableReservationWindows(r))
+    : [];
+  // Direct/right-next links must stay adjacent to their partner, so they are
+  // exempt from outside-reservation steering. A loose "sometime before/after"
+  // link may still move later within its valid side of the partner; blocking
+  // that case made Cooking overlap the end of Work, then hours repair moved it
+  // to tomorrow even though a clean evening slot existed before Dinner.
+  const directOrderLinkedHids = (typeof plannerOrderConstraintsForDay === 'function')
+    ? new Set(plannerOrderConstraintsForDay(state.dayBase)
+        .filter(e=>e && e.adjacency === 'direct')
+        .flatMap(e=>[e.beforeHid,e.afterHid].filter(Boolean)))
+    : new Set();
   const candidateBoundaryEdges = [];
   for(const c of dayCandidates){
     if(!c || !c.h || c.h.breakable)continue;
@@ -843,9 +906,34 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     // windows, then split only when a continuous placement is impossible.
     if(c.h && c.h.breakable)continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const fits = optimizerFitsForFill(
+    let fits = optimizerFitsForFill(
       state,fill,dayCandidates,candidateBoundaryEdges
     );
+    // Inject fits in free gaps touching no reservation (movables only). Breakables
+    // are fitted after this solve so the normal enumerator never anchors after
+    // their windows; this gives GLPK the outside option the reserve already
+    // exempts, so a movable that fits in the evening places today instead of
+    // being deferred. Several fits are injected so multiple movables can chain.
+    if(reservationWindows.length && typeof isMovableWeekCandidate === 'function'
+      && isMovableWeekCandidate(c)
+      && !(c.h && c.h.hid && directOrderLinkedHids.has(c.h.hid))
+      && typeof placementFitsOutsideReservations === 'function'){
+      const outside = placementFitsOutsideReservations(state,fill,reservationWindows);
+      if(outside.length){
+        // Match Fast steering for a can-wait movable: when a clean today slot
+        // exists, do not let the earlier aggregate-spare option fragment Work
+        // and trigger the later hours-repair deferral.
+        if(deferrable && deferrable.has(c.i)){
+          fits = fits.filter(f=>!reservationWindows.some(w=>
+            f.placeEnd > w.start && f.placeStart < w.end));
+        }
+        const seen = new Set(fits.map(f=>f.placeStart+':'+f.placeEnd));
+        for(const f of outside){
+          const key = f.placeStart+':'+f.placeEnd;
+          if(!seen.has(key)){ seen.add(key); fits.push(f); }
+        }
+      }
+    }
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
     const earliestStart = fits.reduce(
       (min,fit)=>Math.min(min,fit.placeStart),Infinity);
@@ -879,9 +967,24 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   // could otherwise erase every option for a lower-priority habit.
   const MAX_OPTS = 180;
   let opts = options;
-  if(options.length > MAX_OPTS){
+  // "Doing Now" is an explicit user command, not an objective preference.
+  // Keep only its earliest feasible start so a time-limited MIP solution
+  // cannot return a merely-feasible plan that puts ordinary peers ahead of
+  // the active session. Location variants at that same start remain available
+  // for the complete-day route reconciliation.
+  if(doing && doing.hid){
+    const doingOptions = opts.filter(o=>o && o.fill && o.fill.h
+      && o.fill.h.hid === doing.hid && o.fit);
+    const earliestDoingStart = doingOptions.reduce(
+      (min,o)=>Math.min(min,o.fit.placeStart),Infinity);
+    if(Number.isFinite(earliestDoingStart)){
+      opts = opts.filter(o=>!(o && o.fill && o.fill.h && o.fill.h.hid === doing.hid)
+        || (o.fit && o.fit.placeStart === earliestDoingStart));
+    }
+  }
+  if(opts.length > MAX_OPTS){
     const groups = new Map();
-    for(const option of options){
+    for(const option of opts){
       if(!groups.has(option.c.i))groups.set(option.c.i,[]);
       groups.get(option.c.i).push(option);
     }
@@ -946,7 +1049,12 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   }
   for(const [i,names] of byCand){
     const candidate = dayCandidates.find(c=>c && c.i === i);
-    const required = candidate && candidate.h && requiredHids.has(candidate.h.hid);
+    const required = candidate && candidate.h && (
+      requiredHids.has(candidate.h.hid)
+      || (doing && candidate.h.hid === doing.hid)
+      || (typeof mustPlaceCriticalOccurrence === 'function'
+        && mustPlaceCriticalOccurrence(candidate))
+    );
     subjectTo.push({
       name:`cand_${i}`,
       vars:names.map(n=>({name:n,coef:1})),
@@ -1186,7 +1294,15 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     generals
   };
 
-  const result = GLPK.solve(problem,{msglev:GLPK.GLP_MSG_OFF,presol:true});
+  // Keep each day bounded inside GLPK itself. An outer Promise timeout cannot
+  // cancel glpk.js's nested Worker; without the native limit a timed-out solve
+  // kept running and every later day queued behind it, routinely consuming the
+  // full 45-second week budget.
+  const result = GLPK.solve(problem,{
+    msglev:GLPK.GLP_MSG_OFF,
+    presol:true,
+    tmlim:4
+  });
   // glpk.js may return a Promise or a sync result depending on build.
   return {result,opts};
 }
@@ -1203,7 +1319,10 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
   const {result:raw,opts} = packed;
   const result = await resolveSolve(raw);
   const status = result && result.result && result.result.status;
-  // GLP_OPT=5, GLP_FEAS=2
+  // GLP_OPT=5, GLP_FEAS=2. A time-limited incumbent is safe to publish because
+  // critical one-day/daily P0 occurrences are hard rows above. Retaining it is
+  // preferable to replacing the whole day with a greedy chain; the latter can
+  // consume Juma's only weekly window while arranging flexible predecessors.
   if(status !== 5 && status !== 2)return null;
   const vars = (result.result && result.result.vars) || {};
   const chosen = [];
@@ -1231,12 +1350,16 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
   const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
   const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
   const chosen = [];
+  const reservationWindows = (typeof dailyBreakableReservations === 'function'
+    && typeof breakableReservationWindows === 'function')
+    ? dailyBreakableReservations(state,pool).flatMap(r=>breakableReservationWindows(r))
+    : [];
   for(const c of ordered){
     if(state.placed.has(c.i))continue;
     if(typeof fastPathDefersMovable === 'function'
       && fastPathDefersMovable(c,state,pool,states))continue;
     let fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const placeOpts = {allowNetwork:true};
+    const placeOpts = {allowNetwork:true,reservationWindows};
     if(doing && fill.h && fill.h.hid === doing.hid){
       placeOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
       const sessionMin = Math.max(1,Number(doing.sessionMinutes)
@@ -1602,6 +1725,13 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   // Week-holistic hours repair: move can-wait items off short daily breakables.
   if(typeof repairWeekPlacedHours === 'function'){
     total += repairWeekPlacedHours(candidates,dayStates,settings);
+  }
+  if(typeof enforcePersistentLinkInvariants === 'function'){
+    enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  }
+  // Route/hours/link repair can expose a usable gap after the first rescue.
+  if(typeof rescueDailyGapFits === 'function'){
+    total += rescueDailyGapFits(candidates,dayStates,settings);
   }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);

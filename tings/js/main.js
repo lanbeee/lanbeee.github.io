@@ -43,16 +43,25 @@ if(typeof scheduleMonthlyRetentionCleanup === 'function')scheduleMonthlyRetentio
 // pick up the refined value).
 let _travelRefreshTimer = null;
 let _travelRefreshPending = false;
-onTravelRefresh = ()=>{
+let _travelRefreshLocationChanged = false;
+onTravelRefresh = reason=>{
   _travelRefreshPending = true;
+  // A changed presence is not merely a refreshed travel estimate. The current
+  // agenda may have been solved from the place the user just left, so its
+  // worker result must not be allowed to linger behind a passive refresh.
+  if(reason && Object.prototype.hasOwnProperty.call(reason,'manual')){
+    _travelRefreshLocationChanged = true;
+  }
   if(_travelRefreshTimer)return;
   _travelRefreshTimer = setTimeout(() => {
     _travelRefreshTimer = null;
     if(!_travelRefreshPending)return;
     _travelRefreshPending = false;
+    const locationChanged = _travelRefreshLocationChanged;
+    _travelRefreshLocationChanged = false;
     // Background travel refresh — skip the DOM wipe when travel/place/clock
     // fingerprint is unchanged (avoids jitter from no-op rebuilds).
-    if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged();
+    if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(false,{locationChanged});
     else if(typeof render === 'function')render();
   },120);
 };
