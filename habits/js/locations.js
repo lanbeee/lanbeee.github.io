@@ -264,6 +264,14 @@ function currentCoordLocation(){
 // still needs to begin from "near Walmart" rather than a stale saved place.
 // This deliberately never writes coordinates to settings or localStorage.
 function setPlannerCurrentCoord(coord){
+  // Number(null) is 0. Without this explicit shape guard a Worker request
+  // carrying no live fix installs (0, 0), making today's route begin in the
+  // Gulf of Guinea and falsely consuming early hard-window gaps with travel.
+  if(!coord || typeof coord !== 'object'){
+    currentCoord = null;
+    clearCurrentCoordEdgeCache();
+    return null;
+  }
   const lat = Number(coord && coord.lat);
   const lng = Number(coord && coord.lng);
   if(!Number.isFinite(lat) || lat < -90 || lat > 90

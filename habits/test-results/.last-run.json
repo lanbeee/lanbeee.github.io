@@ -1,47 +1,43 @@
 {
-  "status": "failed",
+  "status": "passed",
   "plannerMode": "default",
-  "timestamp": "2026-08-14T03:55:05Z",
+  "timestamp": "2026-08-14T06:07:11Z",
   "files": {
-    "passed": 71,
-    "failed": 1,
+    "passed": 73,
+    "failed": 0,
     "skipped": 0
   },
   "assertions": {
-    "ok": 2221,
+    "ok": 2232,
     "notOk": 0,
-    "total": 2221
+    "total": 2232
   },
   "pageErrors": 0,
-  "failedTests": [
-    "timed-day-plan-test.js"
-  ],
+  "failedTests": [],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260813-234807.log",
+    "stamped": "test-results/run-20260814-020030.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
-    "status": "failed",
-    "plannerMode": "fast",
-    "timestamp": "2026-08-14T03:44:04Z",
+    "status": "passed",
+    "plannerMode": "default",
+    "timestamp": "2026-08-14T06:00:31Z",
     "files": {
-      "passed": 69,
-      "failed": 1,
-      "skipped": 2
+      "passed": 73,
+      "failed": 0,
+      "skipped": 0
     },
     "assertions": {
-      "ok": 1985,
+      "ok": 2232,
       "notOk": 0,
-      "total": 1985
+      "total": 2232
     },
     "pageErrors": 0,
-    "failedTests": [
-      "timed-day-plan-test.js"
-    ],
+    "failedTests": [],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260813-233827.log",
+      "stamped": "test-results/run-20260814-015353.log",
       "failedDir": "test-results/failed"
     }
   }

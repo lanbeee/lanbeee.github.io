@@ -1644,6 +1644,13 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
   }
+  // Route/hours/link repair can expose a usable gap after the first rescue.
+  if(typeof rescueDailyGapFits === 'function'){
+    total += rescueDailyGapFits(candidates,dayStates,settings);
+  }
+  if(typeof enforcePersistentLinkInvariants === 'function'){
+    enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  }
   return total >= 0;
 }
 

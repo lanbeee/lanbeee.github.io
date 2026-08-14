@@ -179,13 +179,21 @@ async function runPlannerMessage(message){
       plannerStore.set(String(key),String(value));
     }
     Storage.write(KEY,Array.isArray(message.data) ? message.data : []);
-    Storage.write(SORT_SETTINGS_KEY,message.settings || {});
+    const requestSettings = message.settings && typeof message.settings === 'object'
+      ? message.settings : {};
+    const requestCurrentCoord = requestSettings._plannerCurrentCoord || null;
+    const requestLiveLocationId = requestSettings._plannerLiveLocationId || null;
+    const persistedSettings = {...requestSettings};
+    delete persistedSettings._plannerCurrentCoord;
+    delete persistedSettings._plannerLiveLocationId;
+    Storage.write(SORT_SETTINGS_KEY,persistedSettings);
     sortSettings = loadSortSettings();
+    if(requestLiveLocationId)sortSettings._plannerLiveLocationId = requestLiveLocationId;
     // Raw GPS coordinates are normally page-local. Receive an ephemeral copy
     // for this one solve so a user near (but outside the geofence of) a saved
     // place begins from "here" instead of lastKnownLocationId. Never persist it.
     if(typeof setPlannerCurrentCoord === 'function'){
-      setPlannerCurrentCoord(sortSettings._plannerCurrentCoord || null);
+      setPlannerCurrentCoord(requestCurrentCoord);
     }
 
     const count = Math.max(1,Math.min(14,Math.round(message.numDays) || 7));

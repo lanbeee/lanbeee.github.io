@@ -1542,6 +1542,13 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     }
   }
   const assignmentLabel = (i)=>{
+    const h = data[i];
+    const pinned = typeof isWeekPinnedToday === 'function'
+      ? isWeekPinnedToday(h,settings) : Boolean(h && h.pinned);
+    // A later day satisfies a one-shot/movable candidate, but it never
+    // satisfies today's separate daily occurrence.
+    if(typeof isMovableWeekCandidate === 'function'
+      && !isMovableWeekCandidate({h,i,pinned}))return '';
     const elsewhere = [...(assignedDayByIndex.get(i) || [])].find(base=>base !== dayBase);
     if(elsewhere == null)return '';
     return homeWeekDayLabel({
@@ -1572,6 +1579,11 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       window:typeof timeWindowSummary === 'function' && hasTimeWindow(h) ? timeWindowSummary(h) : ''
     };
   }).filter(item=>item.remainingMinutes > 0);
+  const placedLoadMinutes = eligible.reduce((sum,i)=>{
+    const loadMinutes = todayCandidateLoadMinutes(data[i],dayBase);
+    const diag = diagByIndex.get(i) || {};
+    return sum + Math.min(loadMinutes,Math.max(0,Number(diag.placedMinutes) || 0));
+  },0);
 
   const eligibleSet = new Set(eligible);
   const gapAudit = diagnostics.gapAudit || {openSlotMinutes:0,openGapMinutes:0,largestGapMinutes:0,gaps:[]};
@@ -1673,10 +1685,10 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     scheduledMinutes,
     agendaBudgetMinutes:Math.max(0,Math.round(agenda.totalMinutes || 0)),
     agendaUsedMinutes:Math.max(0,Math.round(agenda.usedMinutes || 0)),
-    placedLoadMinutes:Math.max(0,Math.round(diagnostics.placedMinutes || 0)),
+    placedLoadMinutes:Math.max(0,Math.round(placedLoadMinutes)),
     travelMinutes:Math.max(0,Math.round(diagnostics.travelMinutes || 0)),
     eligibleCount:eligible.length,
-    eligibleCoverage:outstandingLoad > 0 ? Math.min(1,(diagnostics.placedMinutes || 0) / outstandingLoad) : 1,
+    eligibleCoverage:outstandingLoad > 0 ? Math.min(1,placedLoadMinutes / outstandingLoad) : 1,
     budgetUtilization:(agenda.totalMinutes || 0) > 0 ? Math.min(1,(agenda.usedMinutes || 0) / agenda.totalMinutes) : 0,
     placementBudgetRemaining:Math.max(0,Math.round(diagnostics.remainingMinutes || 0)),
     schedulerOpenMinutes:Math.max(0,Math.round(gapAudit.openSlotMinutes || 0)),
@@ -4639,6 +4651,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   }
   compactFastTravelRoutes(dayStates,candidates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  // Rebuild/link cleanup can uncover a gap after the normal rescue already
+  // ran. Give fixed daily obligations one final exact-gap chance.
+  totalAssigned += rescueDailyGapFits(candidates,dayStates,settings);
+  enforcePersistentLinkInvariants(dayStates,candidates,settings);
   return totalAssigned;
 }
 
@@ -4799,22 +4815,37 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
     const rhythmHabit = !!(c.h.type !== 'task'
       && Number.isFinite(Number(c.h.target)));
     const breakableRhythm = !!(c.h.breakable && rhythmHabit);
+    const fillsEveryEligibleDay = rhythmHabit && (
+      (typeof rhythmFillsEveryEligibleDay === 'function' && rhythmFillsEveryEligibleDay(c.h))
+      || Number(c.h.target) <= 1
+    );
+    // Some reconstructed/optimized states use a custom placeKey. The fills are
+    // the source of truth for whether this occurrence already exists; relying
+    // only on state.placed can rescue the same item into the same day twice.
+    const hasOccurrence = state=>Boolean(state
+      && (state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i));
     let lastPlaced = rhythmHabit ? c.h.lastLog : null;
     let rhythmPlacementCount = 0;
     let alreadyOneShot = false;
-    for(const state of dayStates){
-      if(state.placed.has(c.i)){
-        lastPlaced = state.dayBase;
-        if(rhythmHabit)rhythmPlacementCount += 1;
-        if(!rhythmHabit)alreadyOneShot = true;
+    // A daily/every-eligible-day rhythm is a separate obligation on each day.
+    // Walk it chronologically below. Preloading a later placement as lastPlaced
+    // makes the earlier missed occurrence look ineligible ("assigned tomorrow").
+    if(!fillsEveryEligibleDay){
+      for(const state of dayStates){
+        if(hasOccurrence(state)){
+          lastPlaced = state.dayBase;
+          if(rhythmHabit)rhythmPlacementCount += 1;
+          if(!rhythmHabit)alreadyOneShot = true;
+        }
       }
     }
     if(alreadyOneShot)continue;
     for(const state of dayStates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(c.pinned && !state.isTodayDay)continue;
-      if(state.placed.has(c.i)){
+      if(hasOccurrence(state)){
         lastPlaced = state.dayBase;
+        if(fillsEveryEligibleDay)rhythmPlacementCount += 1;
         continue;
       }
       if(rhythmHabit && lastPlaced != null
@@ -4853,6 +4884,43 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
       if(rhythmHabit)rhythmPlacementCount += 1;
       gained += 1;
       if(!rhythmHabit)break;
+    }
+  }
+  return gained;
+}
+
+// MUTATE: final hard-gap rescue for fixed daily/every-eligible-day rhythms.
+// Uses the same exact-gap probe as the audit, with a private probe placeKey, so
+// a stale/custom placement key cannot hide an otherwise feasible occurrence.
+function rescueDailyGapFits(candidates,dayStates,settings){
+  let gained = 0;
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return gained;
+  const daily = candidates.filter(c=>{
+    if(!c || !c.h || c.h.breakable || c.h.type === 'task')return false;
+    const target = Number(c.h.target);
+    return (Number.isFinite(target) && target <= 1)
+      || (typeof rhythmFillsEveryEligibleDay === 'function'
+        && rhythmFillsEveryEligibleDay(c.h));
+  });
+  for(const state of dayStates){
+    if(!state)continue;
+    for(const c of daily){
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(c.pinned && !state.isTodayDay)continue;
+      if((state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i))continue;
+      const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+      const needed = todayCandidateLoadMinutes(c.h,state.dayBase);
+      for(const gap of remainingPlacementGaps(state)){
+        const fit = auditFillFitInGap(state,fill,gap,needed,false);
+        if(!fit)continue;
+        fit.placeKey = c.i;
+        commitPlacement(state,fill,fit);
+        state.day.agendaItems.push({
+          h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:fit.locId
+        });
+        gained += 1;
+        break;
+      }
     }
   }
   return gained;
