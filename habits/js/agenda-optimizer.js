@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v91';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v94';
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -320,16 +320,13 @@ function optimizerWeight(c){
   const pri = c.priority != null ? c.priority : 2;
   const pinnedBonus = c && c.pinned === true ? 200 : 0;
   const urgencyBonus = Math.min(50,Math.max(0,Number(c && c.urgency) || 0) / 4);
-  const eligibleDayCount = c && c.eligible && typeof c.eligible.size === 'number'
-    ? c.eligible.size : Infinity;
-  const dailyOccurrence = Boolean(c && c.h && c.h.type !== 'task'
-    && Number.isFinite(Number(c.h.target)) && Number(c.h.target) <= 1);
   // P0 is the user's critical lane. Protect an occurrence that either exists
   // on only one horizon day (Friday-only Juma) or is independently due every
   // day (prayers) from being traded for several flexible lower-priority fills.
   // The bonus is selection-only; hard feasibility, travel and ordering still
   // decide where it can go.
-  const criticalOccurrenceBonus = pri === 0 && (eligibleDayCount <= 1 || dailyOccurrence)
+  const criticalOccurrenceBonus = typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(c)
     ? 1200 : 0;
   // Flexibility tie-break (caps at 5, well under the priority/urgency/scarcity
   // bands): among otherwise-equal candidates the lower-flex habit wins, since a
@@ -601,6 +598,11 @@ function orderAwareOptimizerSort(dayBase){
       if(ah === doing.hid && bh !== doing.hid)return -1;
       if(bh === doing.hid && ah !== doing.hid)return 1;
     }
+    const criticalA = typeof mustPlaceCriticalOccurrence === 'function'
+      && mustPlaceCriticalOccurrence(a);
+    const criticalB = typeof mustPlaceCriticalOccurrence === 'function'
+      && mustPlaceCriticalOccurrence(b);
+    if(criticalA !== criticalB)return criticalA ? -1 : 1;
     // Prefer placing a predecessor before its successor.
     if(ah && bh){
       if(preds.get(bh) && preds.get(bh).has(ah))return -1;
@@ -1050,6 +1052,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     const required = candidate && candidate.h && (
       requiredHids.has(candidate.h.hid)
       || (doing && candidate.h.hid === doing.hid)
+      || (typeof mustPlaceCriticalOccurrence === 'function'
+        && mustPlaceCriticalOccurrence(candidate))
     );
     subjectTo.push({
       name:`cand_${i}`,
@@ -1315,11 +1319,11 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
   const {result:raw,opts} = packed;
   const result = await resolveSolve(raw);
   const status = result && result.result && result.result.status;
-  // GLP_OPT=5. GLP_FEAS=2 is only the incumbent available when the native
-  // time limit expires; publishing it as "optimized" caused visibly
-  // fragmented days (for example five hours open while Cooking moved to
-  // tomorrow). Let the deterministic heuristic pack this day instead.
-  if(status !== 5)return null;
+  // GLP_OPT=5, GLP_FEAS=2. A time-limited incumbent is safe to publish because
+  // critical one-day/daily P0 occurrences are hard rows above. Retaining it is
+  // preferable to replacing the whole day with a greedy chain; the latter can
+  // consume Juma's only weekly window while arranging flexible predecessors.
+  if(status !== 5 && status !== 2)return null;
   const vars = (result.result && result.result.vars) || {};
   const chosen = [];
   opts.forEach(o=>{

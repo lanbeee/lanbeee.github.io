@@ -526,6 +526,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
   const sourceContracts = (()=>{
     const dataSrc = fs.readFileSync(path.join(__dirname,'..','js','data.js'),'utf8');
     const optSrc = fs.readFileSync(path.join(__dirname,'..','js','agenda-optimizer.js'),'utf8');
+    const todaySrc = fs.readFileSync(path.join(__dirname,'..','js','today-view.js'),'utf8');
     const workerSrc = fs.readFileSync(path.join(__dirname,'..','js','agenda-planner-worker.js'),'utf8');
     const listSrc = fs.readFileSync(path.join(__dirname,'..','js','list-view.js'),'utf8');
     return {
@@ -553,7 +554,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       workerTimeout:optSrc.includes('AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS'),
       boundedSkeleton:listSrc.includes('HOME_COLD_BOOT_SKELETON_MAX_MS'),
       nativeSolveLimit:optSrc.includes('tmlim:4'),
-      optimalOnly:optSrc.includes('if(status !== 5)return null'),
+      criticalMustPlace:optSrc.includes('mustPlaceCriticalOccurrence(candidate)')
+        && todaySrc.includes('function mustPlaceCriticalOccurrence'),
       noInterimUnordered:listSrc.includes('function showHomeAgendaLoading')
         && listSrc.includes('showHomeAgendaLoading();')
     };
@@ -572,7 +574,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.workerTimeout
       && sourceContracts.boundedSkeleton
       && sourceContracts.nativeSolveLimit
-      && sourceContracts.optimalOnly
+      && sourceContracts.criticalMustPlace
       && sourceContracts.noInterimUnordered,
     JSON.stringify(sourceContracts));
 

@@ -2384,6 +2384,25 @@ function isMovableWeekCandidate(c){
   return true;                              // sparse rhythm (target > 1) / plan-by
 }
 
+// PURE: P0 occurrences that cannot safely move to another horizon day. Daily
+// P0 rhythms are independent obligations on every eligible day; a sparse P0
+// with one eligible day (Friday-only Juma) loses the whole occurrence if that
+// day is consumed by flexible work.
+function mustPlaceCriticalOccurrence(c){
+  if(!c || !c.h || Number(c.priority) !== 0)return false;
+  // Daily breakables already have a protected reservation and intentionally
+  // run last; promoting Work ahead of fixed prayers starves their narrow gaps.
+  // One-shot tasks remain governed by pin/due rules and explicit one-day drag
+  // promises. This hard tier is for recurring P0 occurrences such as prayers.
+  if(c.h.breakable || c.h.type === 'task')return false;
+  const eligibleDayCount = c.eligible && typeof c.eligible.size === 'number'
+    ? c.eligible.size : Infinity;
+  const target = Number(c.h.target);
+  const dailyOccurrence = c.h.type !== 'task'
+    && Number.isFinite(target) && target <= 1;
+  return eligibleDayCount <= 1 || dailyOccurrence;
+}
+
 // PURE: daily-recurring breakable candidates eligible on state.dayBase, each
 // with its time window (full day when none) and the minutes still needed to
 // reach today's target. An empty list means "no daily breakable to protect".
@@ -4375,6 +4394,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       const bh = b && b.h && b.h.hid;
       if(doing && ah === doing.hid && bh !== doing.hid)return -1;
       if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+      const criticalA = mustPlaceCriticalOccurrence(a);
+      const criticalB = mustPlaceCriticalOccurrence(b);
+      if(criticalA !== criticalB)return criticalA ? -1 : 1;
       const wa = beforeBoost.get(ah) || 0;
       const wb = beforeBoost.get(bh) || 0;
       if(wa !== wb)return wb - wa;
@@ -4400,6 +4422,21 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   for(const state of dayStates){
     ordered = reorderAgendaItemsByOrderConstraints(ordered,state.dayBase);
   }
+  // Topological order normally puts predecessors first. A critical successor
+  // such as Friday-only Juma must claim its one window first; tryPlaceOnDay can
+  // then backfill Shower/Exercise before the committed successor via the order
+  // ceiling. Otherwise a flexible predecessor chain can greedily consume the
+  // only Juma window before Juma is attempted.
+  ordered.sort((a,b)=>{
+    const ah = a && a.h && a.h.hid;
+    const bh = b && b.h && b.h.hid;
+    if(doing && ah === doing.hid && bh !== doing.hid)return -1;
+    if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+    const criticalA = mustPlaceCriticalOccurrence(a);
+    const criticalB = mustPlaceCriticalOccurrence(b);
+    if(criticalA !== criticalB)return criticalA ? -1 : 1;
+    return 0;
+  });
   for(const c of ordered){
     const pinned = c.pinned === true;
     // Breakable tasks: one-shot continuous-first pool across the week.

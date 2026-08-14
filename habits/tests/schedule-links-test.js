@@ -84,7 +84,11 @@ function assert(value,message){
       multiPrev:validateScheduleLinkGraph([exercise,haircut,showerMulti]),
       twinAfter:validateScheduleLinkGraph([exercise,haircut,showerMulti,twinAfter]),
       criticalOccurrenceWeight,
-      flexibleLowerPriorityWeight
+      flexibleLowerPriorityWeight,
+      criticalOccurrenceRequired:mustPlaceCriticalOccurrence({
+        h:{type:'keepup',target:7},priority:0,
+        eligible:new Set([dayStart(Date.now())])
+      })
     };
   });
   assert(model.migratedIsArray,'scheduleLinks normalizes to an array');
@@ -98,6 +102,8 @@ function assert(value,message){
     'one habit may not have two right-after successors (' + (model.twinAfter && model.twinAfter.message) + ')');
   assert(model.criticalOccurrenceWeight > model.flexibleLowerPriorityWeight + 1000,
     'one-day P0 occurrence outranks flexible lower-priority work');
+  assert(model.criticalOccurrenceRequired === true,
+    'one-day P0 occurrence is a hard must-place candidate');
 
   async function plannerScenario(useGlpk,variant){
     return page.evaluate(async ({useGlpk,variant})=>{
