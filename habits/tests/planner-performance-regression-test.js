@@ -105,9 +105,13 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       locationOptIn:false
     }));
     // A deployment may inherit a solved week created by the previous Worker.
-    // The new build must discard this derived v1 cache before first paint.
+    // The new build must discard derived caches from earlier planner builds
+    // before first paint.
     localStorage.setItem('tings_home_agenda_cache_v1',JSON.stringify({
       version:1,savedAt:Date.now(),key:'old-build',week:{days:[]}
+    }));
+    localStorage.setItem('tings_home_agenda_cache_v2',JSON.stringify({
+      version:2,savedAt:Date.now(),key:'old-build',week:{days:[]}
     }));
 
     // Capture startup long tasks before deferred app scripts execute.
@@ -174,7 +178,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       frameDelay:performance.now() - frameStarted,
       longestTask:Math.max(0,...(window.__plannerPerfLongTasks || [])),
       fastMode:Boolean(sortSettings && !sortSettings.agendaOptimizer),
-      oldAgendaCacheRemoved:localStorage.getItem('tings_home_agenda_cache_v1') === null,
+      oldAgendaCachesRemoved:localStorage.getItem('tings_home_agenda_cache_v1') === null
+        && localStorage.getItem('tings_home_agenda_cache_v2') === null,
       cacheVersion:typeof HOME_AGENDA_CACHE_VERSION === 'number' ? HOME_AGENDA_CACHE_VERSION : null,
       cacheKey:typeof HOME_AGENDA_CACHE_KEY === 'string' ? HOME_AGENDA_CACHE_KEY : ''
     };
@@ -186,7 +191,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     cold.loading && cold.cards === 0 && !cold.plannerMounted,
     JSON.stringify(cold));
   check('cold load invalidates the previous deployment agenda cache',
-    cold.oldAgendaCacheRemoved && cold.cacheVersion === 2 && cold.cacheKey === 'tings_home_agenda_cache_v2',
+    cold.oldAgendaCachesRemoved && cold.cacheVersion === 3 && cold.cacheKey === 'tings_home_agenda_cache_v3',
     JSON.stringify(cold));
   check('cold first paint leaves the event loop responsive',
     cold.frameDelay < 250 && cold.longestTask < 750,
@@ -546,7 +551,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       versionedWorker:optSrc.includes('AGENDA_PLANNER_WORKER_ASSET_VERSION')
         && optSrc.includes('agenda-planner-worker.js?'),
       workerTimeout:optSrc.includes('AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS'),
-      boundedSkeleton:listSrc.includes('HOME_COLD_BOOT_SKELETON_MAX_MS')
+      boundedSkeleton:listSrc.includes('HOME_COLD_BOOT_SKELETON_MAX_MS'),
+      nativeSolveLimit:optSrc.includes('tmlim:2'),
+      noInterimUnordered:listSrc.includes('function showHomeAgendaLoading')
+        && listSrc.includes('showHomeAgendaLoading();')
     };
   })();
   check('source contracts: persisted revision, memo date, warm timeout, settingsSig, rehydrate',
@@ -561,7 +569,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.preloadGated
       && sourceContracts.versionedWorker
       && sourceContracts.workerTimeout
-      && sourceContracts.boundedSkeleton,
+      && sourceContracts.boundedSkeleton
+      && sourceContracts.nativeSolveLimit
+      && sourceContracts.noInterimUnordered,
     JSON.stringify(sourceContracts));
 
   const revisionPersist = await page.evaluate(()=>{

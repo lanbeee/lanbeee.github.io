@@ -64,6 +64,15 @@ function assert(value,message){
       ]
     };
     const afterLink = (migrated.scheduleLinks || []).find(l=>l.direction === 'after');
+    const criticalOccurrenceWeight = optimizerWeight({
+      h:{type:'keepup',target:7,flexibilityDays:0},
+      priority:0,urgency:100,scarcity:10100,eligible:new Set([dayStart(Date.now())])
+    });
+    const flexibleLowerPriorityWeight = optimizerWeight({
+      h:{type:'keepup',target:3,flexibilityDays:3},
+      priority:1,urgency:130,scarcity:10100,
+      eligible:new Set([0,1,2,3,4,5,6])
+    });
     return {
       migratedLink:afterLink,
       migratedIsArray:Array.isArray(migrated.scheduleLinks),
@@ -73,7 +82,9 @@ function assert(value,message){
       legacyAnchor:offsetLegacy.allowedTimeStartAnchor,
       cycle:validateScheduleLinkGraph([cycleA,cycleB]),
       multiPrev:validateScheduleLinkGraph([exercise,haircut,showerMulti]),
-      twinAfter:validateScheduleLinkGraph([exercise,haircut,showerMulti,twinAfter])
+      twinAfter:validateScheduleLinkGraph([exercise,haircut,showerMulti,twinAfter]),
+      criticalOccurrenceWeight,
+      flexibleLowerPriorityWeight
     };
   });
   assert(model.migratedIsArray,'scheduleLinks normalizes to an array');
@@ -85,6 +96,8 @@ function assert(value,message){
   assert(model.multiPrev && model.multiPrev.ok === true,'shower may be right-after exercise and haircut');
   assert(model.twinAfter && model.twinAfter.ok === false && /right-after/.test(model.twinAfter.message || ''),
     'one habit may not have two right-after successors (' + (model.twinAfter && model.twinAfter.message) + ')');
+  assert(model.criticalOccurrenceWeight > model.flexibleLowerPriorityWeight + 1000,
+    'one-day P0 occurrence outranks flexible lower-priority work');
 
   async function plannerScenario(useGlpk,variant){
     return page.evaluate(async ({useGlpk,variant})=>{

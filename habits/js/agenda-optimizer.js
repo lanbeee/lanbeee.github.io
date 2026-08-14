@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v86';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v88';
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -320,6 +320,17 @@ function optimizerWeight(c){
   const pri = c.priority != null ? c.priority : 2;
   const pinnedBonus = c && c.pinned === true ? 200 : 0;
   const urgencyBonus = Math.min(50,Math.max(0,Number(c && c.urgency) || 0) / 4);
+  const eligibleDayCount = c && c.eligible && typeof c.eligible.size === 'number'
+    ? c.eligible.size : Infinity;
+  const dailyOccurrence = Boolean(c && c.h && c.h.type !== 'task'
+    && Number.isFinite(Number(c.h.target)) && Number(c.h.target) <= 1);
+  // P0 is the user's critical lane. Protect an occurrence that either exists
+  // on only one horizon day (Friday-only Juma) or is independently due every
+  // day (prayers) from being traded for several flexible lower-priority fills.
+  // The bonus is selection-only; hard feasibility, travel and ordering still
+  // decide where it can go.
+  const criticalOccurrenceBonus = pri === 0 && (eligibleDayCount <= 1 || dailyOccurrence)
+    ? 1200 : 0;
   // Flexibility tie-break (caps at 5, well under the priority/urgency/scarcity
   // bands): among otherwise-equal candidates the lower-flex habit wins, since a
   // stricter rhythm leaves less slack. Pure tie-break — never overrides a real
@@ -328,7 +339,7 @@ function optimizerWeight(c){
   const flexTiebreak = Math.min(5,flex * 0.5);
   // Hard-window tightness outranks ordinary priority; pinned and urgent items
   // still receive explicit value rather than depending on source array order.
-  return 100 + pinnedBonus + scarceBonus
+  return 100 + pinnedBonus + criticalOccurrenceBonus + scarceBonus
     + (5 - Math.min(5,Math.max(0,pri))) * 5
     + urgencyBonus
     - flexTiebreak;
@@ -676,11 +687,18 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         windowEdges.push(win.start - durationMs,win.start,win.end - durationMs,win.end);
       }
     }
-    // Temporary order links need staggered starts — otherwise every fill only
-    // gets the same ASAP option and pairwise order rows forbid co-selection.
+    // Linked fills need staggered starts — otherwise each partner only gets
+    // the same ASAP option and pairwise order rows forbid co-selection. Do not
+    // put every unrelated fill on this grid merely because the day contains
+    // one link: that multiplied option generation and made ordinary seven-day
+    // replans consume the entire solve budget.
     const orderEdges = typeof plannerOrderConstraintsForDay === 'function'
       ? plannerOrderConstraintsForDay(state.dayBase) : [];
-    if(orderEdges.length || doing){
+    const placeHid = placeFill && placeFill.h && placeFill.h.hid;
+    const linkedFill = placeHid && orderEdges.some(edge=>
+      edge && (edge.beforeHid === placeHid || edge.afterHid === placeHid));
+    const doingFill = doing && placeHid === doing.hid;
+    if(linkedFill || doingFill){
       const step = 30 * 60000;
       // Cap the stepped grid by THIS fill's latest relevant window end — not
       // Math.min across every candidate (that erased late-window options).
@@ -936,9 +954,24 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   // could otherwise erase every option for a lower-priority habit.
   const MAX_OPTS = 180;
   let opts = options;
-  if(options.length > MAX_OPTS){
+  // "Doing Now" is an explicit user command, not an objective preference.
+  // Keep only its earliest feasible start so a time-limited MIP solution
+  // cannot return a merely-feasible plan that puts ordinary peers ahead of
+  // the active session. Location variants at that same start remain available
+  // for the complete-day route reconciliation.
+  if(doing && doing.hid){
+    const doingOptions = opts.filter(o=>o && o.fill && o.fill.h
+      && o.fill.h.hid === doing.hid && o.fit);
+    const earliestDoingStart = doingOptions.reduce(
+      (min,o)=>Math.min(min,o.fit.placeStart),Infinity);
+    if(Number.isFinite(earliestDoingStart)){
+      opts = opts.filter(o=>!(o && o.fill && o.fill.h && o.fill.h.hid === doing.hid)
+        || (o.fit && o.fit.placeStart === earliestDoingStart));
+    }
+  }
+  if(opts.length > MAX_OPTS){
     const groups = new Map();
-    for(const option of options){
+    for(const option of opts){
       if(!groups.has(option.c.i))groups.set(option.c.i,[]);
       groups.get(option.c.i).push(option);
     }
@@ -1003,7 +1036,10 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   }
   for(const [i,names] of byCand){
     const candidate = dayCandidates.find(c=>c && c.i === i);
-    const required = candidate && candidate.h && requiredHids.has(candidate.h.hid);
+    const required = candidate && candidate.h && (
+      requiredHids.has(candidate.h.hid)
+      || (doing && candidate.h.hid === doing.hid)
+    );
     subjectTo.push({
       name:`cand_${i}`,
       vars:names.map(n=>({name:n,coef:1})),
@@ -1243,7 +1279,15 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     generals
   };
 
-  const result = GLPK.solve(problem,{msglev:GLPK.GLP_MSG_OFF,presol:true});
+  // Keep each day bounded inside GLPK itself. An outer Promise timeout cannot
+  // cancel glpk.js's nested Worker; without the native limit a timed-out solve
+  // kept running and every later day queued behind it, routinely consuming the
+  // full 45-second week budget.
+  const result = GLPK.solve(problem,{
+    msglev:GLPK.GLP_MSG_OFF,
+    presol:true,
+    tmlim:2
+  });
   // glpk.js may return a Promise or a sync result depending on build.
   return {result,opts};
 }

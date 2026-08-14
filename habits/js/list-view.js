@@ -3944,7 +3944,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 4;
+const HOME_PLANNER_ALGORITHM_VERSION = 5;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -4037,14 +4037,23 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-const HOME_AGENDA_CACHE_VERSION = 2;
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v2';
+const HOME_AGENDA_CACHE_VERSION = 3;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v3';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
-const HOME_COLD_BOOT_SKELETON_MAX_MS = 15 * 1000;
+const HOME_COLD_BOOT_SKELETON_MAX_MS = 60 * 1000;
 
-// v1 may contain a week solved by an older Worker even when the page scripts
-// have updated. It is derived data only, so remove it eagerly on this build.
-try{ localStorage.removeItem('tings_home_agenda_cache_v1'); }catch(_){}
+// Older keys may contain a week solved by a previous Worker even when the page
+// scripts have updated. They are derived data only, so remove them eagerly.
+try{
+  localStorage.removeItem('tings_home_agenda_cache_v1');
+  localStorage.removeItem('tings_home_agenda_cache_v2');
+}catch(_){}
+
+function showHomeAgendaLoading(){
+  const list = $('list');
+  if(!list || list.querySelector('.home-loading'))return;
+  list.innerHTML = '<div class="home-loading" role="status" aria-label="loading agenda"><span></span><span></span><span></span></div>';
+}
 
 function homeAgendaCacheStateKey(data){
   return homePlannerStateKey(data,dayStart(Date.now()));
@@ -4234,9 +4243,10 @@ function queueOptimizedHomeRender(data,opts){
       // already been persisted; replace the agenda only when its new solve is
       // ready instead of flashing an unplanned intermediate list.
     }else if(!$('list')?.querySelector('.home-loading')){
-      // No cache and no skeleton (warm edit path): paint a basic list now;
-      // the optimized week replaces it when the worker resolves.
-      render({...opts,deferAgenda:true});
+      // No compatible agenda exists to keep mounted. Stay in the intentional
+      // boot animation until planning resolves instead of flashing an unordered
+      // due-list between two planned states.
+      showHomeAgendaLoading();
     }
     // Cold open with no cache keeps the HTML skeleton until the worker result.
     _homeListFingerprint = homeListFingerprint();
