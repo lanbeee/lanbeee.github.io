@@ -20,6 +20,7 @@
 //   [4]  sparse weekly rhythm movable (overdue) fits evening → places TODAY
 //   [5]  CONTROL no-evening (windowedSettings) → movable still DEFERS (legit)
 //   [6]  two movables both fit evening → both place TODAY (chain in the gap)
+//   [7]  loose before-Dinner link still uses the clean evening gap
 //
 const { chromium } = require('playwright');
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
@@ -148,6 +149,44 @@ function windowedSettings(extra){
     return base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
       breakable:true, minChunkMinutes:60, priority:0,
       allowedTimeStart:540, allowedTimeEnd:1170 });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // [7] Loose order link — an overdue 90m Cooking may move later as long as it
+  // remains before Dinner. GLPK used to exempt every linked item from clean-
+  // gap steering, chose an earlier fit overlapping Work's final hour, and the
+  // hours repair consequently deferred Cooking. Only direct links need that
+  // exemption; a sometime link should keep both Cooking and Work today.
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[7] loose before-Dinner link uses clean evening gap today');
+  {
+    const now = atTime(14);
+    const dinner = base({
+      hid:'dinner', name:'Dinner', type:'keepup', target:1,
+      durationMinutes:15, priority:1,
+      allowedTimeStart:1275, allowedTimeEnd:1320
+    });
+    const cooking = base({
+      hid:'cooking', name:'Cooking', type:'keepup', target:7,
+      durationMinutes:90, priority:4,
+      lastLog:now - 13*86400000,
+      allowedTimeStart:840, allowedTimeEnd:1305,
+      scheduleLinks:[{
+        anchorHid:'dinner', direction:'before',
+        adjacency:'sometime', requireSameDay:false
+      }]
+    });
+    const res = await runBoth([work(),cooking,dinner],openEveningSettings(),now);
+    for(const [label, r] of [['glpk', res.glpk], ['fast', res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error, `${label}: linked week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,0,'Cooking') >= 90,
+        `${label}: overdue Cooking stays TODAY (got ${minutesOnDay(r,0,'Cooking')})`);
+      assert(minutesOnDay(r,0,'Dinner') >= 15,
+        `${label}: Dinner stays TODAY (got ${minutesOnDay(r,0,'Dinner')})`);
+      assert(minutesOnDay(r,0,'Work') >= 300,
+        `${label}: Work remains protected (got ${minutesOnDay(r,0,'Work')})`);
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════

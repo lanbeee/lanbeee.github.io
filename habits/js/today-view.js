@@ -2332,14 +2332,15 @@ function tryPlaceOnDay(state,fill,opts = {}){
   // future window and then be evicted by repair. When the caller passes
   // reservationWindows and the chosen fit overlaps one, move the movable into the
   // nearest free gap touching no reservation (if such a gap exists). This keeps
-  // the daily breakable whole while still placing the movable TODAY. Skip order-
-  // constrained movables (schedule links / drag reorder): they must stay adjacent
-  // to a partner, so relocating them into an outside gap would break the link.
-  const orderConstrained = !!(fill && fill.h && fill.h.hid
+  // the daily breakable whole while still placing the movable TODAY. Skip direct
+  // order links because they must stay adjacent to a partner. Loose sometime
+  // links may move within their valid side of the partner.
+  const directOrderConstrained = !!(fill && fill.h && fill.h.hid
     && typeof plannerOrderConstraintsForDay === 'function'
     && plannerOrderConstraintsForDay(state.dayBase).some(e=>
-      e.beforeHid === fill.h.hid || e.afterHid === fill.h.hid));
-  if(bestFit && !orderConstrained
+      e && e.adjacency === 'direct'
+        && (e.beforeHid === fill.h.hid || e.afterHid === fill.h.hid)));
+  if(bestFit && !directOrderConstrained
     && Array.isArray(opts.reservationWindows) && opts.reservationWindows.length
     && fill && fill.h && !fill.h.breakable && fill.pinned !== true
     && (fill.h.type === 'task'

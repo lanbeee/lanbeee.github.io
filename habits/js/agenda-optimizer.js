@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v88';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v90';
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -879,11 +879,14 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     && Array.isArray(allCandidates))
     ? dailyBreakableReservations(state,allCandidates).flatMap(r=>breakableReservationWindows(r))
     : [];
-  // Habits tied by a same-day order constraint (schedule links / drag reorder)
-  // must stay adjacent to a partner, so they are exempt from the outside-
-  // reservation fit injection below (relocating them would break the link).
-  const orderLinkedHids = (typeof plannerOrderConstraintsForDay === 'function')
+  // Direct/right-next links must stay adjacent to their partner, so they are
+  // exempt from outside-reservation steering. A loose "sometime before/after"
+  // link may still move later within its valid side of the partner; blocking
+  // that case made Cooking overlap the end of Work, then hours repair moved it
+  // to tomorrow even though a clean evening slot existed before Dinner.
+  const directOrderLinkedHids = (typeof plannerOrderConstraintsForDay === 'function')
     ? new Set(plannerOrderConstraintsForDay(state.dayBase)
+        .filter(e=>e && e.adjacency === 'direct')
         .flatMap(e=>[e.beforeHid,e.afterHid].filter(Boolean)))
     : new Set();
   const candidateBoundaryEdges = [];
@@ -910,10 +913,18 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
     // exempts, so a movable that fits in the evening places today instead of
     // being deferred. Several fits are injected so multiple movables can chain.
     if(reservationWindows.length && typeof isMovableWeekCandidate === 'function'
-      && isMovableWeekCandidate(c) && !(c.h && c.h.hid && orderLinkedHids.has(c.h.hid))
+      && isMovableWeekCandidate(c)
+      && !(c.h && c.h.hid && directOrderLinkedHids.has(c.h.hid))
       && typeof placementFitsOutsideReservations === 'function'){
       const outside = placementFitsOutsideReservations(state,fill,reservationWindows);
       if(outside.length){
+        // Match Fast steering for a can-wait movable: when a clean today slot
+        // exists, do not let the earlier aggregate-spare option fragment Work
+        // and trigger the later hours-repair deferral.
+        if(deferrable && deferrable.has(c.i)){
+          fits = fits.filter(f=>!reservationWindows.some(w=>
+            f.placeEnd > w.start && f.placeStart < w.end));
+        }
         const seen = new Set(fits.map(f=>f.placeStart+':'+f.placeEnd));
         for(const f of outside){
           const key = f.placeStart+':'+f.placeEnd;
