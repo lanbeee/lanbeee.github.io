@@ -25,6 +25,8 @@ const AGENDA_OPTIMIZER_LOAD_TIMEOUT_MS = 12000;
 const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
+const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v86';
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -82,7 +84,9 @@ function ensureAgendaPlannerWorker(){
   plannerPerfMark('planner-worker-spawn-start');
   let worker;
   try{
-    worker = new Worker('./js/agenda-planner-worker.js');
+    // A versioned URL prevents an installed PWA from reusing the previous
+    // deployment's long-lived Worker script after the page shell updates.
+    worker = new Worker(`./js/agenda-planner-worker.js?${AGENDA_PLANNER_WORKER_ASSET_VERSION}`);
   }catch(err){
     console.warn('[agenda-optimizer] planner worker unavailable',err && err.message || err);
     return null;
@@ -214,23 +218,42 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
   const id = ++_plannerWorkerSeq;
   plannerPerfMark('planner-request-post');
   return new Promise((resolve,reject)=>{
+    const timeoutId = setTimeout(()=>{
+      if(!_plannerWorkerRequests.has(id))return;
+      if(_plannerWorker === worker){
+        cancelAgendaPlannerWorkerRequests('planner worker timed out');
+      }else{
+        _plannerWorkerRequests.delete(id);
+        reject(new Error('planner worker timed out'));
+      }
+    },AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS);
     _plannerWorkerRequests.set(id,{
       resolve:week=>{
+        clearTimeout(timeoutId);
         plannerPerfMark('planner-response');
         resolve(week);
       },
-      reject
+      reject:error=>{
+        clearTimeout(timeoutId);
+        reject(error);
+      }
     });
-    worker.postMessage({
-      id,
-      data,
-      settings,
-      numDays,
-      mode,
-      dirtyKey:opts.dirtyKey || (typeof homePlannerDirtyKey === 'function' ? homePlannerDirtyKey(data) : ''),
-      day0Only:Boolean(opts.day0Only),
-      storage:plannerWorkerStorageSnapshot()
-    });
+    try{
+      worker.postMessage({
+        id,
+        data,
+        settings,
+        numDays,
+        mode,
+        dirtyKey:opts.dirtyKey || (typeof homePlannerDirtyKey === 'function' ? homePlannerDirtyKey(data) : ''),
+        day0Only:Boolean(opts.day0Only),
+        storage:plannerWorkerStorageSnapshot()
+      });
+    }catch(error){
+      clearTimeout(timeoutId);
+      _plannerWorkerRequests.delete(id);
+      reject(error);
+    }
   });
 }
 

@@ -104,6 +104,11 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       lastKnownLocationId:'home',
       locationOptIn:false
     }));
+    // A deployment may inherit a solved week created by the previous Worker.
+    // The new build must discard this derived v1 cache before first paint.
+    localStorage.setItem('tings_home_agenda_cache_v1',JSON.stringify({
+      version:1,savedAt:Date.now(),key:'old-build',week:{days:[]}
+    }));
 
     // Capture startup long tasks before deferred app scripts execute.
     window.__plannerPerfLongTasks = [];
@@ -168,7 +173,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       plannerMounted:Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.days),
       frameDelay:performance.now() - frameStarted,
       longestTask:Math.max(0,...(window.__plannerPerfLongTasks || [])),
-      fastMode:Boolean(sortSettings && !sortSettings.agendaOptimizer)
+      fastMode:Boolean(sortSettings && !sortSettings.agendaOptimizer),
+      oldAgendaCacheRemoved:localStorage.getItem('tings_home_agenda_cache_v1') === null,
+      cacheVersion:typeof HOME_AGENDA_CACHE_VERSION === 'number' ? HOME_AGENDA_CACHE_VERSION : null,
+      cacheKey:typeof HOME_AGENDA_CACHE_KEY === 'string' ? HOME_AGENDA_CACHE_KEY : ''
     };
   });
   check('cold load delegates planning to the dedicated worker',
@@ -176,6 +184,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     JSON.stringify(cold));
   check('cold load keeps skeleton until planning completes (no interim basic list)',
     cold.loading && cold.cards === 0 && !cold.plannerMounted,
+    JSON.stringify(cold));
+  check('cold load invalidates the previous deployment agenda cache',
+    cold.oldAgendaCacheRemoved && cold.cacheVersion === 2 && cold.cacheKey === 'tings_home_agenda_cache_v2',
     JSON.stringify(cold));
   check('cold first paint leaves the event loop responsive',
     cold.frameDelay < 250 && cold.longestTask < 750,
@@ -245,12 +256,16 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     cards:document.querySelectorAll('#list .ting-card').length,
     loading:Boolean(document.querySelector('#list .home-loading')),
     optimized:Boolean(_homeRenderedWeek?.optimized),
-    plannerMounted:Boolean(_homeRenderedWeek?.days?.length)
+    plannerMounted:Boolean(_homeRenderedWeek?.days?.length),
+    cacheAccepted:Boolean(readHomeAgendaCacheRecord(load())),
+    readyKeyStable:_optimizerHomeReadyKey === optimizerHomeStateKey(load())
   }));
   check('completed solve replaces the stable shell with one agenda',
     afterPlan.cards >= 10
       && !afterPlan.loading
       && afterPlan.plannerMounted
+      && afterPlan.cacheAccepted
+      && afterPlan.readyKeyStable
       && (EXPECTED_MODE === 'fast' || afterPlan.optimized),
     JSON.stringify(afterPlan));
 
@@ -261,7 +276,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     // Minute bucket must not be part of the dirty key — only the revision/live sig.
     const hasWarm = typeof warmAgendaPlannerWorker === 'function';
     const hasCompactSnapshot = typeof plannerWorkerStorageSnapshot === 'function'
-      && !JSON.stringify(plannerWorkerStorageSnapshot()).includes('tings_home_agenda_cache_v1');
+      && !JSON.stringify(plannerWorkerStorageSnapshot()).includes('tings_home_agenda_cache_');
     const workerGatedPreload = typeof agendaPlannerWorkerAvailable === 'function'
       && agendaPlannerWorkerAvailable() === true;
     return {
@@ -527,7 +542,11 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
         && listSrc.includes('planWeight')
         && listSrc.includes('plansFirst'),
       rehydrateHelper:optSrc.includes('function rehydrateAgendaWeekHabits'),
-      preloadGated:dataSrc.includes('!agendaPlannerWorkerAvailable()')
+      preloadGated:dataSrc.includes('!agendaPlannerWorkerAvailable()'),
+      versionedWorker:optSrc.includes('AGENDA_PLANNER_WORKER_ASSET_VERSION')
+        && optSrc.includes('agenda-planner-worker.js?'),
+      workerTimeout:optSrc.includes('AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS'),
+      boundedSkeleton:listSrc.includes('HOME_COLD_BOOT_SKELETON_MAX_MS')
     };
   })();
   check('source contracts: persisted revision, memo date, warm timeout, settingsSig, rehydrate',
@@ -539,7 +558,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.responsiveForeground
       && sourceContracts.settingsSigGates
       && sourceContracts.rehydrateHelper
-      && sourceContracts.preloadGated,
+      && sourceContracts.preloadGated
+      && sourceContracts.versionedWorker
+      && sourceContracts.workerTimeout
+      && sourceContracts.boundedSkeleton,
     JSON.stringify(sourceContracts));
 
   const revisionPersist = await page.evaluate(()=>{
@@ -627,7 +649,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       'tings_today_suggested_v1'
     ]);
     const onlyAllowed = keys.every(k=>allowed.has(k));
-    const hasAgendaCache = keys.includes('tings_home_agenda_cache_v1');
+    const hasAgendaCache = keys.some(key=>key.startsWith('tings_home_agenda_cache_'));
     const hasHabits = keys.includes('tings_v2');
     return {keys,onlyAllowed,hasAgendaCache,hasHabits};
   });
