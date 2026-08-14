@@ -553,7 +553,12 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
         && optSrc.includes('agenda-planner-worker.js?'),
       workerTimeout:optSrc.includes('AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS'),
       boundedSkeleton:listSrc.includes('HOME_COLD_BOOT_SKELETON_MAX_MS'),
-      nativeSolveLimit:optSrc.includes('tmlim:4'),
+      nativeSolveLimit:optSrc.includes('nativeLimitSeconds')
+        && optSrc.includes('tmlim:nativeLimitSeconds'),
+      backgroundRefinement:listSrc.includes('scheduleHomeAgendaRefinement')
+        && listSrc.includes('homeAgendaRefinementIsBetter')
+        && workerSrc.includes('refineBudgetMs')
+        && listSrc.includes('background refinement paused while hidden'),
       criticalMustPlace:optSrc.includes('mustPlaceCriticalOccurrence(candidate)')
         && todaySrc.includes('function mustPlaceCriticalOccurrence'),
       noInterimUnordered:listSrc.includes('function showHomeAgendaLoading')
@@ -574,9 +579,41 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.workerTimeout
       && sourceContracts.boundedSkeleton
       && sourceContracts.nativeSolveLimit
+      && sourceContracts.backgroundRefinement
       && sourceContracts.criticalMustPlace
       && sourceContracts.noInterimUnordered,
     JSON.stringify(sourceContracts));
+
+  const refinementPolicy = await page.evaluate(()=>{
+    const now = Date.now();
+    const base = dayStart(now);
+    const data = [
+      {name:'Work',type:'keepup',target:1,priority:0,breakable:true,durationMinutes:120},
+      {name:'Juma',type:'keepup',target:7,priority:0,breakable:false,durationMinutes:25},
+      {name:'Throw trash',type:'reduce',target:7,priority:2,breakable:false,durationMinutes:30}
+    ];
+    const row = (i,start,minutes)=>({
+      kind:'fill',i,start:base + start * 60000,end:base + (start + minutes) * 60000
+    });
+    const week = rows=>({
+      optimized:true,plannerSolveStatus:'feasible',days:[{dayBase:base,timeline:rows}]
+    });
+    const incumbent = week([row(0,900,60),row(1,840,25)]);
+    const better = week([row(0,900,120),row(1,840,25),row(2,1100,30)]);
+    const losesCritical = week([row(0,900,120),row(2,1100,30)]);
+    return {
+      acceptsMoreP0Work:homeAgendaRefinementIsBetter(incumbent,better,data,{}),
+      rejectsLostCritical:!homeAgendaRefinementIsBetter(incumbent,losesCritical,data,{}),
+      rejectsEqual:!homeAgendaRefinementIsBetter(incumbent,incumbent,data,{}),
+      feasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(incumbent,data,{})
+    };
+  });
+  check('background refinement accepts more P0 breakable work without losing critical rows',
+    refinementPolicy.acceptsMoreP0Work
+      && refinementPolicy.rejectsLostCritical
+      && refinementPolicy.rejectsEqual
+      && refinementPolicy.feasibleNeedsRefine,
+    JSON.stringify(refinementPolicy));
 
   const revisionPersist = await page.evaluate(()=>{
     const before = plannerDataRevision();

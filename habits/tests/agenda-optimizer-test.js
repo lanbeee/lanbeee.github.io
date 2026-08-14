@@ -983,6 +983,102 @@ function base(props) {
     routeOptimum.locations[0] === 'a' && routeOptimum.locations[1] === 'b',
     JSON.stringify(routeOptimum));
 
+  console.log('\n[Optimizer] deep refinement crosses a two-blocker contiguity valley');
+  const contiguityRepair = await page.evaluate(({ now })=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      const dayBase = dayStart(now);
+      const nextBase = dayBase + 86400000;
+      const at = (base,minute)=>base + minute * 60000;
+      const settings = {
+        preset:'todayFirst',agendaOptimizer:true,focus:'balanced',
+        availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440],
+        availabilityOverrides:{},blockedTimes:[],locations:[],travel:{},
+        defaultTravelMode:'walking'
+      };
+      const work = {
+        name:'Focus Work',type:'keepup',target:1,durationMinutes:120,
+        breakable:true,minChunkMinutes:45,priority:0,locationIds:[],
+        allowedTimeStart:9 * 60,allowedTimeEnd:13 * 60,
+        lastLog:dayBase - 86400000,logs:[dayBase - 86400000]
+      };
+      const task = name=>({
+        name,type:'task',durationMinutes:30,breakable:false,priority:2,
+        locationIds:[],eventTime:null,dueDate:nextBase,createdAt:dayBase - 86400000,
+        logs:[],lastLog:null,pinned:false
+      });
+      const blockerA = task('Blocker A');
+      const blockerB = task('Blocker B');
+      const fixed = (name,start,duration)=>({
+        h:{name,type:'task',durationMinutes:duration,eventTime:at(dayBase,start),locationIds:[]},
+        i:name === 'Fixed A' ? 3 : 4
+      });
+      const sourceDay = {
+        dayBase,weekday:new Date(dayBase).getDay(),isToday:true,totalMinutes:240,
+        slots:[{start:at(dayBase,9 * 60),end:at(dayBase,13 * 60)}],
+        scheduled:[fixed('Fixed A',10 * 60,60),fixed('Fixed B',12 * 60,30)],
+        agendaItems:[]
+      };
+      const targetDay = {
+        dayBase:nextBase,weekday:new Date(nextBase).getDay(),isToday:false,totalMinutes:480,
+        slots:[{start:at(nextBase,9 * 60),end:at(nextBase,17 * 60)}],
+        scheduled:[],agendaItems:[]
+      };
+      const source = createDayPlacementState(sourceDay,settings,{
+        dayBase,weekday:sourceDay.weekday,weekMode:true,startClock:at(dayBase,9 * 60)
+      });
+      const target = createDayPlacementState(targetDay,settings,{
+        dayBase:nextBase,weekday:targetDay.weekday,weekMode:true,startClock:at(nextBase,9 * 60)
+      });
+      const candidates = [
+        {h:work,i:0,priority:0,scarcity:0,pinned:false,eligible:new Set([dayBase,nextBase])},
+        {h:blockerA,i:1,priority:2,scarcity:1e9,pinned:false,eligible:new Set([dayBase,nextBase])},
+        {h:blockerB,i:2,priority:2,scarcity:1e9,pinned:false,eligible:new Set([dayBase,nextBase])}
+      ];
+      const commit = (state,c,start,duration,chunkMinutes=null)=>{
+        const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+        if(chunkMinutes != null)fill.chunkMinutes = chunkMinutes;
+        commitPlacement(state,fill,{
+          placeStart:at(state.dayBase,start),placeEnd:at(state.dayBase,start + duration),
+          durMin:duration,travelMin:0,locId:null,prevLocId:null,edge:null,
+          placeKey:c.i,slotStart:at(state.dayBase,9 * 60),score:0
+        });
+      };
+      commit(source,candidates[0],9 * 60,60,60);
+      commit(source,candidates[1],11 * 60,30);
+      commit(source,candidates[2],11 * 60 + 30,30);
+      syncDayAgendaItemsFromFills(source);
+      const before = placedBreakableMinutes(source,0);
+      const moved = repairWeekPlacedHours(candidates,[source,target],settings,{
+        deep:true,maxContiguityTrials:12,maxContiguityVictims:3
+      });
+      const taskMinutes = [source,target].reduce((sum,state)=>sum
+        + state.fills.filter(entry=>entry.fill.i === 1 || entry.fill.i === 2)
+          .reduce((s,entry)=>s + entry.fit.durMin,0),0);
+      return {
+        before,
+        after:placedBreakableMinutes(source,0),
+        taskMinutes,
+        moved,
+        sourceRows:source.fills.map(entry=>({i:entry.fill.i,start:entry.fit.placeStart,end:entry.fit.placeEnd})),
+        targetRows:target.fills.map(entry=>({i:entry.fill.i,start:entry.fit.placeStart,end:entry.fit.placeEnd}))
+      };
+    }finally{
+      globalThis.Date = orig;
+    }
+  },{now:atTime(9)});
+  check('single-item state begins short because both 30m blockers isolate sub-minimum gaps',
+    contiguityRepair.before === 60,JSON.stringify(contiguityRepair));
+  check('deep refinement moves the blocker pair and restores all P0 Work minutes',
+    contiguityRepair.after === 120 && contiguityRepair.moved >= 2,
+    JSON.stringify(contiguityRepair));
+  check('deep refinement preserves both movable blockers somewhere in the week',
+    contiguityRepair.taskMinutes === 60,JSON.stringify(contiguityRepair));
+
   // Fallback path: force timeout / broken glpk should not throw — heuristic still works.
   console.log('\n[Optimizer] heuristic fallback still works with optimizer flag');
   const fallback = await page.evaluate(async ({ now }) => {

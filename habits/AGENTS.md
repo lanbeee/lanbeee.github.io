@@ -196,6 +196,21 @@ duration-spaced starts; overflow defers gracefully (verified for up to 8).
   occurrence. If the UI is allowed to publish `GLP_FEAS`, non-negotiable policy
   must be an ILP constraint (`sum(candidate options) = 1` when at least one fit
   exists), with matching Fast-path ordering for real fallback/preview behavior.
+- **`GLP_OPT` covers the fixed-item ILP, not the entire final agenda.** Daily
+  breakables are inserted afterward, so an optimal fixed pack can still leave
+  Work short when aggregate reserved minutes are split below `minChunkMinutes`.
+  Treat complete-agenda quality (P0 breakable minutes, total week minutes,
+  overdue work, travel) separately from the solver's fixed-pack status.
+- **Contiguity repair sometimes requires a neutral intermediate move.** Moving
+  one 30-minute blocker may not create a valid 45-minute chunk, while moving two
+  adjacent blockers together creates 60 minutes. The deep background pass uses
+  a bounded 2/3-item neighborhood; do not regress it to one-victim greedy repair
+  or an unbounded power-set search.
+- **Background refinement is revision-guarded and improvement-only.** Publish
+  the quick incumbent first, then refine off-main within the bounded budget.
+  Cancel on a data/location revision or hidden page. A replacement must preserve
+  active rows and every placed critical/pinned occurrence, must not reduce total
+  week work, and must strictly improve the lexicographic agenda-quality tuple.
 - **Order links are coupled placement policy.** A critical successor must claim
   its narrow window before a flexible predecessor is backfilled under the order
   ceiling; otherwise placing the predecessor independently can invalidate the

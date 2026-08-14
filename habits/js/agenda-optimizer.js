@@ -26,7 +26,8 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v94';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v95';
+const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -191,6 +192,8 @@ function leanAgendaWeek(week){
     totalTravelSeconds:week.totalTravelSeconds,
     candidateCount:week.candidateCount,
     optimized:week.optimized,
+    plannerSolveStatus:week.plannerSolveStatus,
+    refined:Boolean(week.refined),
     __lean:true
   };
 }
@@ -247,6 +250,8 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
         mode,
         dirtyKey:opts.dirtyKey || (typeof homePlannerDirtyKey === 'function' ? homePlannerDirtyKey(data) : ''),
         day0Only:Boolean(opts.day0Only),
+        refine:Boolean(opts.refine),
+        refineBudgetMs:Math.max(0,Math.round(Number(opts.refineBudgetMs) || 0)),
         storage:plannerWorkerStorageSnapshot()
       });
     }catch(error){
@@ -863,7 +868,7 @@ function fitsExclusiveClash(a,b,state){
 }
 
 // Solve set-packing ILP for one day. Returns array of {fill, fit} or null on failure.
-function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
+function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions = {}){
   const options = [];
   const doing = doingNowForDay(state);
   // One cheap probe per candidate exposes actual earliest completion
@@ -1298,10 +1303,15 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   // cancel glpk.js's nested Worker; without the native limit a timed-out solve
   // kept running and every later day queued behind it, routinely consuming the
   // full 45-second week budget.
+  const nativeLimitSeconds = solveOptions.refine
+    ? Math.max(4,Math.min(30,Math.floor(((Number(solveOptions.solveBudgetMs)
+      || Number(solveOptions.refineBudgetMs)
+      || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS) - 750) / 1000)))
+    : 4;
   const result = GLPK.solve(problem,{
     msglev:GLPK.GLP_MSG_OFF,
     presol:true,
-    tmlim:4
+    tmlim:nativeLimitSeconds
   });
   // glpk.js may return a Promise or a sync result depending on build.
   return {result,opts};
@@ -1312,9 +1322,11 @@ async function resolveSolve(maybe){
   return maybe;
 }
 
-async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable){
+async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable,solveOptions = {}){
   const GLPK = await ensureGlpk();
-  const packed = solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable);
+  const packed = solveDayPackingIlp(
+    GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions
+  );
   if(Array.isArray(packed) && packed.length === 0)return [];
   const {result:raw,opts} = packed;
   const result = await resolveSolve(raw);
@@ -1337,6 +1349,7 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
     }
   });
   chosen.sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+  chosen.solveStatus = status === 5 ? 'optimal' : 'feasible';
   return chosen;
 }
 
@@ -1382,9 +1395,10 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
   return chosen;
 }
 
-// Assign candidates onto dayStates using per-day ILP packing. Falls back by
-// returning false so the caller can run the scarcity heuristic instead.
-async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
+// Assign candidates onto dayStates using per-day ILP packing. Individual days
+// can fall back to the scarcity heuristic; the returned summary records that
+// provenance so the UI can decide whether to request a deeper refinement.
+async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solveOptions = {}){
   for(const c of candidates){
     if(c.scarcity == null && typeof scarcityScore === 'function'){
       c.scarcity = scarcityScore(c,dayStates);
@@ -1395,7 +1409,13 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   const virtualCompletionCounts = new Map();
   const oneShotPlaced = new Set();
   let total = 0;
-  let budgetLeft = AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS;
+  let budgetLeft = solveOptions.refine
+    ? Math.max(5000,Math.min(
+        AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
+        Number(solveOptions.refineBudgetMs) || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS
+      ))
+    : AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS;
+  let plannerSolveStatus = 'optimal';
   const dayWeights = dayStates.map((_,offset)=>daySolveWeight(offset));
 
   const recordFixedChoices = (state,chosen)=>{
@@ -1523,7 +1543,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         );
         try{
           earlyChosen = await withTimeout(
-            packDayWithOptimizer(state,stagedFixed,candidates,new Set()),
+            packDayWithOptimizer(state,stagedFixed,candidates,new Set(),{
+              ...solveOptions,solveBudgetMs:earlyMs
+            }),
             earlyMs
           );
         }catch{ earlyChosen = null; }
@@ -1532,6 +1554,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         ? performance.now() : Date.now()) - earlyStarted);
       budgetLeft = Math.max(0,budgetLeft - earlySpent);
       if(!earlyChosen){
+        plannerSolveStatus = 'fallback';
         earlyChosen = packDayWithHeuristic(state,stagedFixed,candidates,dayStates);
         // The heuristic commits its choices itself.
         for(const {fill} of earlyChosen){
@@ -1543,6 +1566,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
           }
         }
       }else{
+        if(earlyChosen.solveStatus === 'feasible' && plannerSolveStatus === 'optimal'){
+          plannerSolveStatus = 'feasible';
+        }
         recordFixedChoices(state,earlyChosen);
       }
       const stagedIdxs = new Set(
@@ -1602,7 +1628,13 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         }
       }
     }
-    const solveMs = daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
+    const solveMs = solveOptions.refine
+      ? Math.max(5000,Math.min(
+          AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
+          Number(solveOptions.refineBudgetMs) || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
+          budgetLeft
+        ))
+      : daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
     let chosen = null;
     let usedHeuristic = false;
     // Far days still enter GLPK while budget remains; structural dayOffset>=3
@@ -1613,7 +1645,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       const solveStarted = (typeof performance !== 'undefined' && performance.now)
         ? performance.now() : Date.now();
       try{
-        chosen = await withTimeout(packDayWithOptimizer(state,fixedCands,candidates,deferrable),solveMs);
+        chosen = await withTimeout(
+          packDayWithOptimizer(state,fixedCands,candidates,deferrable,{
+            ...solveOptions,solveBudgetMs:solveMs
+          }),
+          solveMs
+        );
       }catch(err){
         console.warn('[agenda-optimizer] day solve timed out — using fast pack for this day:',err && err.message || err);
         chosen = null;
@@ -1624,6 +1661,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
       budgetLeft = Math.max(0,budgetLeft - spent);
     }
     if(!chosen){
+      plannerSolveStatus = 'fallback';
       if(!usedHeuristic){
         console.warn('[agenda-optimizer] day solve infeasible — using fast pack for this day');
       }
@@ -1638,6 +1676,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
         }
       }
       continue;
+    }
+    if(chosen.solveStatus === 'feasible' && plannerSolveStatus === 'optimal'){
+      plannerSolveStatus = 'feasible';
     }
     recordFixedChoices(state,chosen);
   }
@@ -1724,7 +1765,11 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   }
   // Week-holistic hours repair: move can-wait items off short daily breakables.
   if(typeof repairWeekPlacedHours === 'function'){
-    total += repairWeekPlacedHours(candidates,dayStates,settings);
+    total += repairWeekPlacedHours(candidates,dayStates,settings,{
+      deep:Boolean(solveOptions.refine),
+      maxContiguityTrials:solveOptions.refine ? 28 : 0,
+      maxContiguityVictims:3
+    });
   }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
@@ -1736,7 +1781,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings){
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
   }
-  return total >= 0;
+  return {ok:total >= 0,plannerSolveStatus};
 }
 
 let _plannerWeekDayMemo = {dirtyKey:'',todayBase:0,days:null};
@@ -1835,9 +1880,11 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
 
   const solveStates = reuseFarDays ? dayStates.slice(0,1) : dayStates;
   plannerPerfMark('planner-exact-solve-start');
-  const ok = await assignWeekCandidatesOptimized(candidates,solveStates,settings);
+  const solveSummary = await assignWeekCandidatesOptimized(
+    candidates,solveStates,settings,opts
+  );
   plannerPerfMark('planner-exact-solve-end');
-  if(!ok){
+  if(!solveSummary || !solveSummary.ok){
     // Packing timed out or a day was infeasible — use the fast planner quietly.
     // The "unavailable" toast is reserved for GLPK failing to load.
     return buildWeekAgenda(data,settings,numDays,opts);
@@ -1864,7 +1911,11 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
-  const week = {days,totalTravelSeconds,candidateCount:candidates.length,optimized:true};
+  const week = {
+    days,totalTravelSeconds,candidateCount:candidates.length,optimized:true,
+    plannerSolveStatus:solveSummary.plannerSolveStatus || 'feasible',
+    refined:Boolean(opts.refine)
+  };
   if(dirtyKey){
     _plannerWeekDayMemo = {
       dirtyKey,
