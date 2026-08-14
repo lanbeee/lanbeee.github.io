@@ -1,43 +1,43 @@
 {
   "status": "passed",
-  "plannerMode": "default",
-  "timestamp": "2026-08-13T18:59:58Z",
+  "plannerMode": "fast",
+  "timestamp": "2026-08-13T19:29:29Z",
   "files": {
-    "passed": 71,
+    "passed": 69,
     "failed": 0,
-    "skipped": 0
+    "skipped": 2
   },
   "assertions": {
-    "ok": 2206,
+    "ok": 1977,
     "notOk": 0,
-    "total": 2206
+    "total": 1977
   },
   "pageErrors": 0,
   "failedTests": [],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260813-145317.log",
+    "stamped": "test-results/run-20260813-152402.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
     "status": "passed",
-    "plannerMode": "fast",
-    "timestamp": "2026-08-13T18:53:16Z",
+    "plannerMode": "default",
+    "timestamp": "2026-08-13T19:23:57Z",
     "files": {
-      "passed": 69,
+      "passed": 71,
       "failed": 0,
-      "skipped": 2
+      "skipped": 0
     },
     "assertions": {
-      "ok": 1977,
+      "ok": 2206,
       "notOk": 0,
-      "total": 1977
+      "total": 2206
     },
     "pageErrors": 0,
     "failedTests": [],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260813-144747.log",
+      "stamped": "test-results/run-20260813-151711.log",
       "failedDir": "test-results/failed"
     }
   }
