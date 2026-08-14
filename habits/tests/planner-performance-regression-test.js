@@ -552,7 +552,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
         && optSrc.includes('agenda-planner-worker.js?'),
       workerTimeout:optSrc.includes('AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS'),
       boundedSkeleton:listSrc.includes('HOME_COLD_BOOT_SKELETON_MAX_MS'),
-      nativeSolveLimit:optSrc.includes('tmlim:2'),
+      nativeSolveLimit:optSrc.includes('tmlim:4'),
+      optimalOnly:optSrc.includes('if(status !== 5)return null'),
       noInterimUnordered:listSrc.includes('function showHomeAgendaLoading')
         && listSrc.includes('showHomeAgendaLoading();')
     };
@@ -571,6 +572,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.workerTimeout
       && sourceContracts.boundedSkeleton
       && sourceContracts.nativeSolveLimit
+      && sourceContracts.optimalOnly
       && sourceContracts.noInterimUnordered,
     JSON.stringify(sourceContracts));
 

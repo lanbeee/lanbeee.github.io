@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v90';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v91';
 let _glpkPromise = null;
 let _glpkInstance = null;
 
@@ -1297,7 +1297,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable){
   const result = GLPK.solve(problem,{
     msglev:GLPK.GLP_MSG_OFF,
     presol:true,
-    tmlim:2
+    tmlim:4
   });
   // glpk.js may return a Promise or a sync result depending on build.
   return {result,opts};
@@ -1315,8 +1315,11 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
   const {result:raw,opts} = packed;
   const result = await resolveSolve(raw);
   const status = result && result.result && result.result.status;
-  // GLP_OPT=5, GLP_FEAS=2
-  if(status !== 5 && status !== 2)return null;
+  // GLP_OPT=5. GLP_FEAS=2 is only the incumbent available when the native
+  // time limit expires; publishing it as "optimized" caused visibly
+  // fragmented days (for example five hours open while Cooking moved to
+  // tomorrow). Let the deterministic heuristic pack this day instead.
+  if(status !== 5)return null;
   const vars = (result.result && result.result.vars) || {};
   const chosen = [];
   opts.forEach(o=>{
