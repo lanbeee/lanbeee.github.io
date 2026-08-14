@@ -259,6 +259,24 @@ function currentCoordLocation(){
   };
 }
 
+// IMPURE: install an ephemeral coordinate supplied to the planner Worker by
+// the page. The worker has no geolocation permission of its own, but planning
+// still needs to begin from "near Walmart" rather than a stale saved place.
+// This deliberately never writes coordinates to settings or localStorage.
+function setPlannerCurrentCoord(coord){
+  const lat = Number(coord && coord.lat);
+  const lng = Number(coord && coord.lng);
+  if(!Number.isFinite(lat) || lat < -90 || lat > 90
+    || !Number.isFinite(lng) || lng < -180 || lng > 180){
+    currentCoord = null;
+    clearCurrentCoordEdgeCache();
+    return null;
+  }
+  currentCoord = {lat,lng};
+  clearCurrentCoordEdgeCache();
+  return currentCoord;
+}
+
 // PURE: true when the user has a live GPS coord that doesn't fall inside any
 // saved location's radius. This is the case where the existing travel chain
 // (seeded from currentLocationId → nearest saved) would mis-anchor the first

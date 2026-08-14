@@ -20,6 +20,20 @@ function assert(cond, msg){
 
 function seedScript(){
   return `(function(){
+    // This suite creates an untimed 30-minute plan for *today*. Keep the
+    // fixture in daytime: near midnight there may genuinely be less than
+    // 30 minutes left, turning the intended location test into a wall-clock
+    // flake (the planner is then correct to leave it unplaced).
+    const RealDate = Date;
+    const frozen = new RealDate();
+    frozen.setHours(10,0,0,0);
+    function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(frozen); }
+    FrozenDate.now = () => frozen.getTime();
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    FrozenDate.prototype = RealDate.prototype;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    window.Date = FrozenDate;
     const now = Date.now();
     const day = (n, hour = 12, minute = 0) => {
       const d = new Date();

@@ -295,6 +295,13 @@ function windowStillDoableToday(h,now = Date.now()){
 // opts.allowNetwork === false skips OSRM refresh (used by scarcity dry-runs).
 function travelEdgeBetweenIds(fromId,toId,registry,mode,opts = {}){
   if(!fromId || !toId || fromId === toId)return {seconds:0,metres:0,provider:'none'};
+  // A live coordinate outside every saved radius is a real route origin, not
+  // the nearest saved location. `travelFromCurrent` uses an in-memory cache
+  // and never persists the coordinate.
+  if(typeof CURRENT_COORD_ID !== 'undefined' && fromId === CURRENT_COORD_ID){
+    const to = registry.find(l=>l.id === toId);
+    if(to && typeof travelFromCurrent === 'function')return travelFromCurrent(to,mode);
+  }
   const a = registry.find(l=>l.id === fromId);
   const b = registry.find(l=>l.id === toId);
   if(!a || !b || typeof travelBetween !== 'function')return {seconds:0,metres:0,provider:'haversine'};
@@ -1721,16 +1728,32 @@ function createDayPlacementState(day,settings,opts = {}){
     if(!locationId)locationId = pickHabitLocationId(ev.h,null,registry,mode) || locIds[0] || null;
     rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start, end, hard:true, locationId });
   });
+  // `_plannerLiveLocationId` is an ephemeral matched place supplied when the
+  // main page delegates planning to its Worker. A Worker cannot read the
+  // page's GPS coordinate, so prefer this one-request anchor over persisted
+  // last-known presence. It is never saved to user settings.
+  const workerLiveLocId = isTodayDay
+    && settings && settings._plannerLiveLocationId
+    && registry.some(loc=>loc.id === settings._plannerLiveLocationId)
+    ? settings._plannerLiveLocationId : null;
+  const coordAwayFromSaved = isTodayDay
+    && typeof currentCoordLocation === 'function'
+    && typeof isCurrentCoordAwayFromSaved === 'function'
+    && typeof CURRENT_COORD_ID !== 'undefined'
+    && !!currentCoordLocation()
+    && isCurrentCoordAwayFromSaved(registry);
   let prevLocId = isTodayDay
-    ? ((typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null)
+    ? (coordAwayFromSaved ? CURRENT_COORD_ID
+      : (workerLiveLocId || (typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null))
     : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
       || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
       || null);
   // Genuine live fix only (geolocation / manual pin), not the last-known
   // default. Presence uses this to decide whether the seed supersedes ended
   // blocks. Null on future days and whenever the user has no active fix.
-  const liveLocId = isTodayDay && typeof liveLocationId === 'function'
-    ? liveLocationId() : null;
+  const liveLocId = isTodayDay
+    ? (coordAwayFromSaved ? CURRENT_COORD_ID
+      : (workerLiveLocId || (typeof liveLocationId === 'function' ? liveLocationId() : null))) : null;
   return {
     day,
     dayBase,

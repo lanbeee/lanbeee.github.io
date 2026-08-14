@@ -4206,7 +4206,7 @@ function queueOptimizedHomeRender(data,opts){
   // queue the user's new plan behind obsolete work: terminate it and let this
   // foreground request start a fresh solve.
   if(_optimizerHomeRequestKey && _optimizerHomeRequestKey !== key
-    && !(opts && opts.__backgroundRefresh)){
+    && (!(opts && opts.__backgroundRefresh) || (opts && opts.__locationChanged))){
     ++_optimizerHomeRequestToken;
     _optimizerHomeRequestKey = '';
     if(typeof cancelAgendaPlannerWorkerRequests === 'function'){
@@ -4247,6 +4247,17 @@ function queueOptimizedHomeRender(data,opts){
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
   const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
+  // The planner runs in a Worker, where the page's ephemeral GPS coordinate is
+  // intentionally unavailable. Carry only its matched saved-place id across
+  // the boundary so a plan requested after "I'm at Walmart" starts there
+  // immediately, even before lastKnownLocationId has been persisted.
+  const livePlannerLocationId = typeof liveLocationId === 'function' ? liveLocationId() : null;
+  if(livePlannerLocationId)settings._plannerLiveLocationId = livePlannerLocationId;
+  const livePlannerCoord = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+  if(livePlannerCoord && typeof isCurrentCoordAwayFromSaved === 'function'
+    && isCurrentCoordAwayFromSaved(settings.locations)){
+    settings._plannerCurrentCoord = {lat:livePlannerCoord.lat,lng:livePlannerCoord.lng};
+  }
   const day0Only = Boolean(
     opts && opts.__forceReplan
     && _optimizerHomeReadyDirtyKey === dirtyKey
@@ -4333,7 +4344,7 @@ function markHomeTravelEdgeEdited(fromId,toId,minutes){
 // RENDER: sync home list only when the freshness key moved. Background paths
 // (travel refresh, while-open loop, quiet location updates) should call this
 // instead of render() so an unchanged agenda never rebuilds the DOM.
-function renderHomeIfChanged(force){
+function renderHomeIfChanged(force,opts = {}){
   const fp = homeListFingerprint();
   if(!force && fp === _homeListFingerprint)return false;
   const data = load();
@@ -4352,7 +4363,11 @@ function renderHomeIfChanged(force){
     // event cannot enqueue the same recalculation repeatedly.
     _homeListFingerprint = fp;
     if(settings.agendaOptimizer && typeof buildWeekAgendaAsync === 'function'){
-      queueOptimizedHomeRender(data,{__backgroundRefresh:true,__forceReplan:Boolean(force)});
+      queueOptimizedHomeRender(data,{
+        __backgroundRefresh:true,
+        __forceReplan:Boolean(force),
+        __locationChanged:Boolean(opts.locationChanged)
+      });
       return true;
     }
     if(!settings.agendaOptimizer && typeof buildWeekAgendaOffMain === 'function'){

@@ -140,6 +140,28 @@ const PLACES = [
       `[${path}] at most one commute today (got ${JSON.stringify(t.commutes)})`);
   });
 
+  // Near FarA but outside its saved radius: start from the ephemeral GPS
+  // coordinate, not Home and not falsely claim that the user is already at
+  // FarA. This is the state the production worker reconstructs from its
+  // one-solve coordinate hand-off.
+  console.log('\n[1b. nearby, unsaved GPS coordinate uses a truthful anchor]');
+  const nearbyAnchor = await page.evaluate(() => {
+    const base = dayStart(Date.now());
+    const settings = {...loadSortSettings(), lastKnownLocationId:'home'};
+    setPlannerCurrentCoord({lat:40.947,lng:-74.000}); // ~330m from FarA, outside 75m radius
+    const state = createDayPlacementState({
+      scheduled:[], totalMinutes:600, slots:[{start:base,end:base + 86400000}],
+      dayBase:base, weekday:new Date(base).getDay(), isToday:true
+    },settings,{dayBase:base,startClock:Date.now()});
+    const edge = travelEdgeBetweenIds(state.seedLocId,'farA',state.registry,state.mode,{allowNetwork:false});
+    setPlannerCurrentCoord(null);
+    return {seed:state.seedLocId,live:state.liveLocId,seconds:edge.seconds};
+  });
+  assert(nearbyAnchor.seed === '__current__' && nearbyAnchor.live === '__current__',
+    `nearby GPS replaces stale Home with the current-coordinate anchor (got ${JSON.stringify(nearbyAnchor)})`);
+  assert(nearbyAnchor.seconds > 0,
+    `nearby GPS keeps a truthful current-coordinate → FarA travel leg (got ${nearbyAnchor.seconds}s)`);
+
   // ── 2. Same as 1 but the HOME task is HIGHER priority ──
   // Travel (tier 3) outranks priority (tier 4) per the documented order, so
   // even a higher-priority home task must NOT create an away-and-back when the

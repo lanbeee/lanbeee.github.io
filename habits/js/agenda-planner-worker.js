@@ -181,6 +181,12 @@ async function runPlannerMessage(message){
     Storage.write(KEY,Array.isArray(message.data) ? message.data : []);
     Storage.write(SORT_SETTINGS_KEY,message.settings || {});
     sortSettings = loadSortSettings();
+    // Raw GPS coordinates are normally page-local. Receive an ephemeral copy
+    // for this one solve so a user near (but outside the geofence of) a saved
+    // place begins from "here" instead of lastKnownLocationId. Never persist it.
+    if(typeof setPlannerCurrentCoord === 'function'){
+      setPlannerCurrentCoord(sortSettings._plannerCurrentCoord || null);
+    }
 
     const count = Math.max(1,Math.min(14,Math.round(message.numDays) || 7));
     const buildOpts = {
