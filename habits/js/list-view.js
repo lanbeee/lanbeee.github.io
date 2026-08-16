@@ -1665,15 +1665,15 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
     e.stopPropagation();
     if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
     const go = ()=>openTravelLegInMaps(toId);
-    // Saved-place leg: tap edits the time, double-tap just goes. A live-GPS
-    // leg has no editor (an override would be stale next tick), so either
-    // gesture opens directions from "here" to the destination pin.
+    // Saved-place legs keep the fast double-tap shortcut to directions; a
+    // single tap opens the editor with the tapped leg's live timing. A live-GPS
+    // leg cannot be edited (its origin is ephemeral), so it opens directions.
     if(fromCurrent){
       handleDoubleTapActivate(`travel:${fromId}|${toId}`,go,go);
       return;
     }
     handleDoubleTapActivate(`travel:${fromId}|${toId}`,
-      ()=>openTravelEditSheet(fromId,toId),go);
+      ()=>openTravelEditSheet(fromId,toId,startTs),go);
   });
 }
 

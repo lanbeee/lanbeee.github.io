@@ -2168,7 +2168,8 @@ $('block-edit-sheet')?.addEventListener('click',e=>{if(e.target===e.currentTarge
 $('today-content')?.addEventListener('click',e=>{
   const row = e.target.closest('.today-travel-row[data-travel-from]');
   if(!row)return;
-  openTravelEditSheet(row.dataset.travelFrom,row.dataset.travelTo);
+  const leaveByTs = Number(row.dataset.agendaStart) * 60000;
+  openTravelEditSheet(row.dataset.travelFrom,row.dataset.travelTo,leaveByTs);
 });
 $('travel-edit-minus')?.addEventListener('click',()=>{
   const input = $('travel-edit-minutes');

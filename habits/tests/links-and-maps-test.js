@@ -183,7 +183,7 @@ function assert(cond, msg){
   assert(dialRouting.url === 'tel:+15551234567' && dialRouting.handsOff && !dialRouting.webHandsOff,
     'a migrated call habit dials via tel:, which replaces the location instead of opening a tab');
 
-  // ── travel card: tap edits the leg, double tap just goes ───────────────
+  // ── travel card: tap edits the leg, double tap opens directions ─────────
   const travelPlaces = await page.evaluate(() => ({
     home:Boolean(locationById('home')), office:Boolean(locationById('office'))
   }));
@@ -198,12 +198,15 @@ function assert(cond, msg){
     card.click();
     await new Promise(r => setTimeout(r, 500));
     const open = Boolean(document.querySelector('#travel-edit-sheet.open'));
+    const timing = document.querySelector('#travel-edit-timing')?.textContent || '';
     host.remove();
     closeSheet('travel-edit-sheet');
-    return { open };
+    return { open,timing };
   });
   assert(!travelSingle.missing, 'a travel card renders for the seeded leg');
-  assert(travelSingle.open, 'a single tap still opens the travel time editor');
+  assert(travelSingle.open, 'a single tap opens the travel time editor');
+  assert(travelSingle.timing.includes('leave by') && travelSingle.timing.includes('arrive about'),
+    'the travel editor carries the tapped leg’s leave-by and arrival context');
   await page.waitForTimeout(350);
 
   const travelDouble = await page.evaluate(async () => {
