@@ -2085,6 +2085,43 @@ $('presence-picker-sheet')?.addEventListener('click',e=>{
 });
 
 let blockEditContext = null;
+// PURE: readable recurring expression for a dynamic busy-time endpoint.
+function blockedEndpointExpression(block,field){
+  const anchor = cleanPrayerAnchor(block && block[field + 'Anchor']);
+  if(!anchor)return '';
+  const primary = prayerAnchorLabel(anchor,block[field + 'OffsetMin'],null,block[field + 'DayOffset']);
+  const combine = cleanTimeCombine(block[field + 'Combine']);
+  const anchor2 = typeof cleanBlockedAnchor2 === 'function'
+    ? cleanBlockedAnchor2(block[field + 'Anchor2'])
+    : cleanPrayerAnchor(block[field + 'Anchor2']);
+  if(!combine || !anchor2)return primary;
+  const secondary = anchor2 === 'fixed'
+    ? fixedClockLabel(block[field + 'FixedMin2'])
+    : prayerAnchorLabel(anchor2,block[field + 'OffsetMin2'],null,block[field + 'DayOffset2']);
+  return `${combine === 'earlier' ? 'earlier of' : 'later of'} ${primary} · ${secondary}`;
+}
+
+// PURE: shortest clock adjustment that changes a resolved endpoint to target.
+function blockClockDelta(from,to){
+  let delta = Number(to) - Number(from);
+  while(delta > 720)delta -= 1440;
+  while(delta < -720)delta += 1440;
+  return delta;
+}
+
+// PURE: retain a dynamic rule while shifting its resolved time. Combined
+// expressions move together, preserving their relationship on future dates.
+function shiftBlockedEndpoint(block,field,delta){
+  const anchor = cleanPrayerAnchor(block && block[field + 'Anchor']);
+  if(!anchor){ block[field] = ((Number(block[field]) || 0) + delta + 1440) % 1440; return; }
+  block[field + 'OffsetMin'] = normalizePrayerOffset((Number(block[field + 'OffsetMin']) || 0) + delta);
+  const anchor2 = typeof cleanBlockedAnchor2 === 'function'
+    ? cleanBlockedAnchor2(block[field + 'Anchor2'])
+    : cleanPrayerAnchor(block[field + 'Anchor2']);
+  if(anchor2 === 'fixed')block[field + 'FixedMin2'] = ((Number(block[field + 'FixedMin2']) || 0) + delta + 1440) % 1440;
+  else if(anchor2)block[field + 'OffsetMin2'] = normalizePrayerOffset((Number(block[field + 'OffsetMin2']) || 0) + delta);
+}
+
 function openBlockEditSheet(row){
   if(!row)return;
   const dayKey = dateKey(row.start);
@@ -2092,11 +2129,19 @@ function openBlockEditSheet(row){
   const originalEnd = Number(row.blockEndMin);
   const signature = row.blockSignature || blockedInstanceKey(row.label,originalStart,originalEnd);
   const settings = loadSortSettings();
+  const block = normalizeBlockedTimes(settings.blockedTimes)[Number(row.blockIndex)] || null;
   const overrides = normalizeBlockedTimeOverrides(settings.blockedTimeOverrides);
   const current = overrides[dayKey]?.[signature] || {start:originalStart,end:originalEnd};
   blockEditContext = {row,dayKey,signature,originalStart,originalEnd,blockIndex:Number(row.blockIndex),current};
   $('block-edit-title').textContent = row.label || 'busy time';
-  $('block-edit-copy').textContent = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
+  const date = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
+  const startExpr = blockedEndpointExpression(block,'start');
+  const endExpr = blockedEndpointExpression(block,'end');
+  const resolvedStart = formatTimeShort(((originalStart % 1440) + 1440) % 1440);
+  const resolvedEnd = formatTimeShort(((originalEnd % 1440) + 1440) % 1440);
+  $('block-edit-copy').textContent = startExpr || endExpr
+    ? `${date} · dynamic: ${startExpr || resolvedStart} → ${endExpr || resolvedEnd} · today ${resolvedStart}–${resolvedEnd}`
+    : date;
   $('block-edit-start').value = minutesToTimeInput(current.start);
   $('block-edit-end').value = minutesToTimeInput(current.end);
   // Blur the home card before the sheet mounts so closing cannot restore focus
@@ -2150,9 +2195,18 @@ function saveBlockEditSeries(){
   const blocks = normalizeBlockedTimes(settings.blockedTimes);
   const index = blockEditContext.blockIndex;
   if(!Number.isInteger(index) || !blocks[index])return;
-  blocks[index] = {...blocks[index],start:next.start,end:next.end,
-    startAnchor:null,startOffsetMin:0,startCombine:null,startAnchor2:null,startOffsetMin2:0,startDayOffset:0,startDayOffset2:0,
-    endAnchor:null,endOffsetMin:0,endCombine:null,endAnchor2:null,endOffsetMin2:0,endDayOffset:0,endDayOffset2:0};
+  const updated = {...blocks[index]};
+  // For sun/prayer-based blocks, "update recurring" shifts the dynamic rule
+  // by the chosen clock difference rather than destroying it into static time.
+  // Fixed blocks retain the established direct replacement behaviour.
+  if(cleanPrayerAnchor(updated.startAnchor) || cleanPrayerAnchor(updated.endAnchor)){
+    shiftBlockedEndpoint(updated,'start',blockClockDelta(blockEditContext.originalStart,next.start));
+    shiftBlockedEndpoint(updated,'end',blockClockDelta(blockEditContext.originalEnd,next.end));
+  }else{
+    updated.start = next.start;
+    updated.end = next.end;
+  }
+  blocks[index] = updated;
   saveSortSettings({...settings,blockedTimes:blocks});
   closeSheet('block-edit-sheet');
   blockEditContext = null;
