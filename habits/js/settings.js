@@ -689,9 +689,16 @@ function renderLocationControls(){
   const wrap = $('location-list');
   if(!wrap)return;
   const locations = normalizeLocationRegistry(sortSettings.locations);
+  const displayLocations = locations
+    .map((loc,index)=>({loc,index}))
+    .sort((a,b)=>compareLocationNames(a.loc,b.loc));
   const empty = $('location-empty-hint');
   if(empty)empty.hidden = locations.length > 0;
-  wrap.innerHTML = locations.map((loc,i)=>locationRowMarkup(loc,i)).join('');
+  const summary = $('location-list-summary');
+  if(summary)summary.textContent = locations.length
+    ? `${locations.length} saved ${locations.length === 1 ? 'place' : 'places'}`
+    : 'No saved places';
+  wrap.innerHTML = displayLocations.map(({loc,index})=>locationRowMarkup(loc,index)).join('');
   // Restore "more" expansion across re-renders.
   expandedLocationMores.forEach(i=>{
     const body = wrap.querySelector(`[data-location-more="${i}"]`);
@@ -738,13 +745,14 @@ function locationRowMarkup(loc,i){
   ].filter(Boolean).join(' · ');
   return `<div class="location-row" data-location-row="${i}">
     <div class="location-row-head">
+      <span class="location-row-icon" aria-hidden="true"><i class="ti ti-map-pin"></i></span>
       <input type="text" class="location-name" data-loc-name="${i}" aria-label="place name" maxlength="48" value="${escapeHtml(loc.name)}" />
-      <button class="mini-text-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}">remove</button>
+      <button class="mini-text-btn location-remove-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}"><i class="ti ti-trash" aria-hidden="true"></i><span>remove</span></button>
     </div>
     <div class="location-meta">
       <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)" />
       <button class="mini-text-btn location-pin-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map">
-        <i class="ti ti-map-pin" aria-hidden="true"></i> pin
+        <i class="ti ti-map-pin" aria-hidden="true"></i> edit map
       </button>
     </div>
     <div class="location-hours">
@@ -804,7 +812,10 @@ function saveLocationPatch(index,patch){
   if(!locations[index])return;
   locations[index] = {...locations[index],...patch};
   updateSortSetting({locations},{renderNow:false});
-  rerenderLocationRow(index);
+  // A renamed row may move alphabetically. `change` fires after editing is
+  // complete, so a full list rebuild is safe and makes the order immediate.
+  if(Object.prototype.hasOwnProperty.call(patch,'name'))renderLocationControls();
+  else rerenderLocationRow(index);
   render();
 }
 
@@ -950,6 +961,7 @@ let pickerSuppressReverse = false;
 let pickerDragging = false;
 let pendingPickerResults = [];
 let pickerMapGen = 0;
+let pickerSearchGen = 0;
 
 function destroyLocationPickerMap(){
   pickerMapGen += 1;
@@ -1041,13 +1053,10 @@ function ensureLocationPickerMap(lat,lng){
       maxZoom:19,
       attribution:'&copy; OpenStreetMap'
     }).addTo(pickerMap);
-    pickerMarker = L.marker([startLat,startLng],{ draggable:true }).addTo(pickerMap);
-    pickerMarker.on('dragstart',()=>{ pickerDragging = true; });
-    pickerMarker.on('dragend',()=>{
-      pickerDragging = false;
-      const p = pickerMarker.getLatLng();
-      pickerSetCoords(p.lat,p.lng,{reverse:true});
-    });
+    // The fixed center target is the one pin the user positions. Keep an
+    // invisible marker only as a lightweight coordinate holder for existing
+    // map-sync code; showing both produced two competing pins on small maps.
+    pickerMarker = L.marker([startLat,startLng],{ opacity:0,interactive:false }).addTo(pickerMap);
     pickerMap.on('click',e=>{
       pickerSetCoords(e.latlng.lat,e.latlng.lng,{reverse:true});
     });
@@ -1067,16 +1076,21 @@ function ensureLocationPickerMap(lat,lng){
 // "+ new place" pill) can auto-select it on the habit they came from.
 let pickerOnCreated = null;
 function openLocationPicker(opts = {}){
+  pickerSearchGen += 1;
   pickerEditIndex = Number.isInteger(opts.index) ? opts.index : null;
   pickerOnCreated = typeof opts.onCreated === 'function' ? opts.onCreated : null;
   const title = $('location-picker-title');
-  if(title)title.textContent = pickerEditIndex != null ? 'edit pin' : 'add place';
+  if(title)title.textContent = pickerEditIndex != null ? 'edit place' : 'add place';
+  const saveBtn = $('picker-save');
+  if(saveBtn)saveBtn.textContent = pickerEditIndex != null ? 'save changes' : 'add place';
   const nameEl = $('picker-name');
   const searchEl = $('picker-search');
+  const searchBtn = $('picker-search-btn');
   const results = $('picker-results');
   const hint = $('picker-address-hint');
   if(nameEl)nameEl.value = opts.name || '';
-  if(searchEl)searchEl.value = '';
+  if(searchEl)searchEl.value = opts.address || '';
+  if(searchBtn){ searchBtn.disabled = false; searchBtn.textContent = 'search'; }
   if(results){ results.hidden = true; results.innerHTML = ''; }
   if(hint)hint.textContent = opts.address || '';
   pendingPickerResults = [];
@@ -1090,6 +1104,7 @@ function openLocationPicker(opts = {}){
 }
 
 function closeLocationPicker(){
+  pickerSearchGen += 1;
   closeSheet('location-picker-sheet');
   destroyLocationPickerMap();
   pickerEditIndex = null;
@@ -1102,23 +1117,29 @@ async function searchPickerLocations(){
   const btn = $('picker-search-btn');
   if(!searchEl || !resultsWrap)return;
   const q = searchEl.value.trim();
-  if(!q){ showToast('enter an address to search'); searchEl.focus(); return; }
+  if(!q){ showToast('enter a place or address'); searchEl.focus(); return; }
+  const searchGen = ++pickerSearchGen;
   resultsWrap.hidden = false;
-  resultsWrap.innerHTML = '<p class="field-hint">searching…</p>';
-  if(btn)btn.disabled = true;
+  resultsWrap.setAttribute('aria-busy','true');
+  resultsWrap.innerHTML = '<p class="field-hint location-search-status"><i class="ti ti-loader-2" aria-hidden="true"></i> Searching…</p>';
+  if(btn){ btn.disabled = true; btn.textContent = 'searching…'; }
   try{
-    pendingPickerResults = await geocodeSearch(q);
+    const found = await geocodeSearch(q,{limit:6});
+    if(searchGen !== pickerSearchGen)return;
+    pendingPickerResults = found;
   }catch{
     pendingPickerResults = [];
   }
-  if(btn)btn.disabled = false;
+  if(searchGen !== pickerSearchGen)return;
+  resultsWrap.removeAttribute('aria-busy');
+  if(btn){ btn.disabled = false; btn.textContent = 'search'; }
   if(!pendingPickerResults.length){
-    resultsWrap.innerHTML = '<p class="field-hint">no matches — try another address, or move the pin on the map.</p>';
+    resultsWrap.innerHTML = '<p class="field-hint location-search-status"><b>No matches.</b> Try a nearby landmark, a fuller address, coordinates, or move the map.</p>';
     showToast('no address matches');
     return;
   }
-  resultsWrap.innerHTML = pendingPickerResults.map((r,idx)=>`<button type="button" class="location-result" data-picker-result="${idx}">
-    <b>${escapeHtml(r.name)}</b><span class="dim">${escapeHtml(r.address)}</span>
+  resultsWrap.innerHTML = `<p class="location-results-label">choose a result</p>` + pendingPickerResults.map((r,idx)=>`<button type="button" class="location-result" data-picker-result="${idx}">
+    <span class="location-result-mark"><i class="ti ti-map-pin" aria-hidden="true"></i></span><span><b>${escapeHtml(r.name)}</b><small>${escapeHtml(r.address)}</small></span><i class="ti ti-chevron-right location-result-arrow" aria-hidden="true"></i>
   </button>`).join('');
   resultsWrap.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
@@ -1132,7 +1153,7 @@ function pickPickerResult(idx){
   pickerPanTo(r.lat,r.lng,Math.max((pickerMap && pickerMap.getZoom()) || 15,16));
   const resultsWrap = $('picker-results');
   if(resultsWrap){ resultsWrap.hidden = true; resultsWrap.innerHTML = ''; }
-  showToast(`pin moved to ${r.name}`);
+  showToast(`${r.name} selected — adjust the map if needed`);
 }
 
 function applyPickerCoordsInputs(){
@@ -1157,13 +1178,6 @@ function centerPickerOnGps(){
   });
 }
 
-// Snap pin to map center (crosshair). Stops inertia first so getCenter is stable.
-function dropPinAtMapCenter(){
-  if(!pickerMap)return;
-  try{ pickerMap.stop(); }catch{ /* ignore */ }
-  syncPickerPinToMapCenter({reverse:true});
-}
-
 function saveLocationPicker(){
   const name = (($('picker-name') && $('picker-name').value) || '').trim();
   const lat = Number(($('picker-lat') && $('picker-lat').value) || NaN);
@@ -1179,12 +1193,10 @@ function saveLocationPicker(){
   }
   const id = addLocation({name,address,lat,lng});
   if(id){
+    // Capture before closeLocationPicker clears the one-shot callback.
+    const cb = pickerOnCreated;
     closeLocationPicker();
-    if(typeof pickerOnCreated === 'function'){
-      const cb = pickerOnCreated;
-      pickerOnCreated = null;
-      cb(id);
-    }
+    if(typeof cb === 'function')cb(id);
   }
 }
 

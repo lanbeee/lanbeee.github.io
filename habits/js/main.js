@@ -750,7 +750,18 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-location-add]')){
-    if(typeof openLocationPicker === 'function')openLocationPicker();
+    // Return to the in-progress habit with the new place already selected.
+    // Preserve every other chip choice made before opening the map picker.
+    if(typeof openLocationPicker === 'function'){
+      openLocationPicker({
+        onCreated:id=>{
+          const wrap = 'ting-tag-chips';
+          const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
+          const prefs = selectedLocationPrefsFrom(wrap);
+          renderTagChips(wrap,selectedTopicsFrom(wrap),selected,null,prefs,false);
+        }
+      });
+    }
     return;
   }
   if(e.target.closest('[data-anywhere]')){
@@ -1822,7 +1833,6 @@ $('picker-results')?.addEventListener('click',e=>{
   if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
 });
 $('picker-gps')?.addEventListener('click',centerPickerOnGps);
-$('picker-drop-pin')?.addEventListener('click',dropPinAtMapCenter);
 $('picker-apply-coords')?.addEventListener('click',applyPickerCoordsInputs);
 $('picker-save')?.addEventListener('click',saveLocationPicker);
 $('picker-cancel')?.addEventListener('click',closeLocationPicker);

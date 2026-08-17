@@ -210,6 +210,23 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.evaluate(()=>closeSheet('add-sheet'));
   check('closing the last sheet restores page scrolling',await page.evaluate(()=>!document.body.classList.contains('modal-open')));
 
+  await page.evaluate(()=>openSheet('settings-sheet'));
+  const settingsScroll = await page.evaluate(()=>{
+    const stack = document.querySelector('#settings-sheet .settings-stack');
+    const children = [...stack.children];
+    return {
+      scrolls:stack.scrollHeight > stack.clientHeight,
+      nonShrinking:children.every(el=>getComputedStyle(el).flexShrink === '0'),
+      clippedCards:children.filter(el=>el.classList.contains('settings-block') && el.scrollHeight > el.clientHeight + 1).length
+    };
+  });
+  check(
+    'settings cards keep natural height inside their scroll region',
+    settingsScroll.scrolls && settingsScroll.nonShrinking && settingsScroll.clippedCards === 0,
+    JSON.stringify(settingsScroll)
+  );
+  await page.evaluate(()=>closeSheet('settings-sheet'));
+
   const travelButtons = await page.evaluate(()=>{
     const buttons = [...document.querySelectorAll('.travel-edit-row .icon-btn')];
     return buttons.map(button=>{

@@ -33,7 +33,7 @@ function selectedAddTopics(){
 
 // PURE: registry locations from settings
 function locationOptions(){
-  return normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  return locationsForDisplay((sortSettings || loadSortSettings()).locations);
 }
 
 // PURE: look up a location by id

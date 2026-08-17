@@ -132,6 +132,12 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(reg.hoursCarried.allowedTimeStart === 360, 'hours fields carried through');
   assert(reg.hoursCarried.closedDays[0] === 0, 'closedDays carried through');
   assert(reg.cap === 32, 'caps at MAX_LOCATIONS (32)');
+  const sorted = await page.evaluate(() => locationsForDisplay([
+    {id:'z',name:'zoo 10',lat:0,lng:0},
+    {id:'a',name:'Alpha',lat:0,lng:0},
+    {id:'b',name:'zoo 2',lat:0,lng:0}
+  ]).map(loc=>loc.name));
+  assert(eq(sorted,['Alpha','zoo 2','zoo 10']), 'display helper sorts names alphabetically and numerically');
 
   // ── E. normalizeTravelCache ──
   console.log('\n[E] normalizeTravelCache');

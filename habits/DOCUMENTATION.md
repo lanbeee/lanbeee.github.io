@@ -1357,7 +1357,7 @@ Tracks the currently active habit session:
 │ [search address _______] [search]   │
 │                                     │
 │           [🗺️ MAP WITH PIN]        │
-│           [My location] [Use this] │
+│              [My location]          │
 │                                     │
 │           [enter coordinates ▼]    │
 │           [save place] [cancel]   │
@@ -1366,6 +1366,9 @@ Tracks the currently active habit session:
 
 - **Access:** Settings → Locations → "add place", or from detail → places
 - Search by address via Nominatim/Photon
+- Search combines Photon and Nominatim results, removes duplicate pins, and accepts `latitude, longitude`
+- Saved places are shown in alphabetical/natural order across settings, habit forms, presence, and filters
+- A place created from a new/edit habit returns to that form already selected
 - Drag map to position pin (stays centered)
 - GPS button: "My location"
 - Coordinate input (lat/lng) via details disclosure

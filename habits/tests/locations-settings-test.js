@@ -274,6 +274,8 @@ async function openSettings(page){
   assert(gps && Math.abs(gps.lat - 40.7589) < 0.001, 'GPS location added with mocked coords');
   assert(gps.optIn === true, 'locationOptIn persisted after grant');
   assert(await page.locator('#location-list .location-row').count() === 2, 'two locations now in registry');
+  const displayedNames = await page.locator('#location-list .location-name').evaluateAll(inputs=>inputs.map(input=>input.value));
+  assert(JSON.stringify(displayedNames) === JSON.stringify(['Gym','Office']), 'settings places are alphabetical');
 
   // ── H1. Pan map → pin follows center; Pin button snaps ──
   console.log('\n[H1] drop pin at map center after pan');
@@ -298,20 +300,19 @@ async function openSettings(page){
   console.log({ beforeDrop, afterPan });
   assert(Math.abs(afterPan.lat - 41.8781) < 0.002, 'pan moveend snaps pin lat');
   assert(Math.abs(afterPan.lng - (-87.6298)) < 0.002, 'pan moveend snaps pin lng');
-  assert(await page.locator('#picker-drop-pin').textContent().then(t => /use this spot/i.test(t.trim())), 'drop-pin button uses plain label');
-  // Explicit pin after another pan (with stop) still works.
+  // A second pan also commits automatically; no redundant confirmation
+  // button is required between positioning the map and saving the place.
   await page.evaluate(() => {
     pickerMap.setView([34.0522,-118.2437],14,{animate:false});
   });
-  await page.waitForTimeout(100);
-  await page.locator('#picker-drop-pin').click();
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(200);
   const afterDrop = await page.evaluate(() => ({
     lat:Number(document.querySelector('#picker-lat')?.value),
     lng:Number(document.querySelector('#picker-lng')?.value)
   }));
-  assert(Math.abs(afterDrop.lat - 34.0522) < 0.002, 'Pin button uses map center lat');
-  assert(Math.abs(afterDrop.lng - (-118.2437)) < 0.002, 'Pin button uses map center lng');
+  assert(Math.abs(afterDrop.lat - 34.0522) < 0.002, 'second pan commits map center lat');
+  assert(Math.abs(afterDrop.lng - (-118.2437)) < 0.002, 'second pan commits map center lng');
+  assert(await page.locator('#picker-drop-pin').count() === 0, 'no redundant use-this-spot confirmation');
   await page.locator('#picker-cancel').click();
   await page.waitForTimeout(100);
 
@@ -412,6 +413,34 @@ async function openSettings(page){
   console.log(edited);
   assert(edited.name === 'Gym Pro', 'name edit persisted');
   assert(edited.address === '123 Fitness Ave', 'address edit persisted');
+
+  // ── K2. Add-from-habit returns with the place selected ──
+  console.log('\n[K2] add place from new habit → immediately selected');
+  await page.locator('#settings-close').click();
+  await page.evaluate(() => updateSortSetting({minimalMode:false},{renderNow:true}));
+  await page.locator('#open-add').click();
+  await page.waitForSelector('#add-sheet.open');
+  if(await page.locator('#add-more-options').isHidden())await page.locator('#add-more-toggle').click();
+  await page.locator('#ting-tag-chips [data-location-add]').click();
+  await page.waitForSelector('#location-picker-sheet.open');
+  await page.locator('#picker-name').fill('Alpha Library');
+  await page.locator('#picker-save').click();
+  await page.waitForTimeout(250);
+  const addFlow = await page.evaluate(() => ({
+    pickerOpen:document.querySelector('#location-picker-sheet')?.classList.contains('open'),
+    addOpen:document.querySelector('#add-sheet')?.classList.contains('open'),
+    selected:[...document.querySelectorAll('#ting-tag-chips .location-chip.on[data-location-id]')]
+      .map(el=>el.textContent.trim()),
+    order:[...document.querySelectorAll('#ting-tag-chips .location-chip[data-location-id]')]
+      .map(el=>el.textContent.trim())
+  }));
+  console.log(addFlow);
+  assert(!addFlow.pickerOpen && addFlow.addOpen, 'returns to the in-progress new habit');
+  assert(addFlow.selected.some(name=>name.includes('Alpha Library')), 'new place is selected immediately');
+  const realOrder = addFlow.order.map(name=>name.replace(/[★☆–]\s*$/,'').trim());
+  assert(realOrder.join('|') === realOrder.slice().sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base',numeric:true})).join('|'),
+    'habit place chips are alphabetical');
+  await page.locator('#do-cancel').click();
 
   // ── L. Boot cleanliness ──
   console.log('\n[L] boot cleanliness');

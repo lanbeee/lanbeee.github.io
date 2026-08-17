@@ -44,7 +44,7 @@ function matchesOverviewTopic(h,topic){
 
 // PURE: builds location filter choice list for overview
 function overviewLocationChoices(data){
-  const registry = normalizeLocationRegistry(sortSettings?.locations);
+  const registry = locationsForDisplay(sortSettings?.locations);
   const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
   const locs = registry.filter(loc=>used.has(loc.id));
   const hasNone = data.some(h=>!normalizeLocationIds(h.locationIds,registry).length);

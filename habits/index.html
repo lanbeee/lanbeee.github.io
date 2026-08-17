@@ -949,7 +949,14 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-locations-body" hidden>
-            <p class="field-hint">Places for habits. Set hours and how close means you’re there.</p>
+            <p class="field-hint">Save the places where habits happen. New places appear immediately in habit forms.</p>
+            <div class="location-add-actions">
+              <button class="btn primary" id="loc-open-picker" type="button"><i class="ti ti-map-pin-plus" aria-hidden="true"></i> add place</button>
+              <span class="field-hint" id="location-list-summary" aria-live="polite"></span>
+            </div>
+            <div class="location-list" id="location-list"></div>
+            <p class="field-hint location-empty-hint" id="location-empty-hint" hidden>No places yet. Habits without a place can be done anywhere.</p>
+            <div class="location-support-settings">
             <div class="location-access-row" id="location-access-row">
               <div>
                 <span class="settings-sublabel">live location</span>
@@ -965,11 +972,7 @@
               <button class="btn" id="home-city-clear" type="button">clear</button>
             </div>
             <p class="field-hint" id="home-city-status"></p>
-            <div class="location-add-actions">
-              <button class="btn primary" id="loc-open-picker" type="button"><i class="ti ti-map-pin" aria-hidden="true"></i> add place</button>
             </div>
-            <div class="location-list" id="location-list"></div>
-            <p class="field-hint location-empty-hint" id="location-empty-hint" hidden>No places yet. A habit with no place works anywhere.</p>
             <div class="location-travel-mode">
               <span class="settings-sublabel">default travel mode</span>
               <div class="seg travel-mode-seg" id="travel-mode-seg" role="group" aria-label="default travel mode">
@@ -1382,20 +1385,22 @@
 
   <!-- location map picker -->
   <div class="sheet-wrap" id="location-picker-sheet">
-    <div class="sheet location-picker-sheet">
+    <div class="sheet location-picker-sheet" role="dialog" aria-modal="true" aria-labelledby="location-picker-title">
       <div class="page-head">
         <div>
           <p class="sheet-title" id="location-picker-title">add place</p>
-          <p class="about-copy">Search or drag the map. The pin stays in the center.</p>
+          <p class="about-copy">Find an address, then fine-tune the center pin if needed.</p>
         </div>
       </div>
-      <label class="field-label" for="picker-name">name</label>
-      <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />
+      <label class="field-label" for="picker-search">find a place or address</label>
       <div class="picker-search-row">
-        <input type="text" id="picker-search" maxlength="120" placeholder="search address" autocomplete="off" enterkeyhint="search" />
+        <input type="search" id="picker-search" maxlength="120" placeholder="e.g. Central Library" autocomplete="street-address" enterkeyhint="search" />
         <button class="btn primary" type="button" id="picker-search-btn">search</button>
       </div>
-      <div class="location-results" id="picker-results" hidden></div>
+      <div class="location-results" id="picker-results" role="region" aria-label="location search results" aria-live="polite" hidden></div>
+      <label class="field-label" for="picker-name">place name</label>
+      <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />
+      <p class="picker-selected-address" id="picker-address-hint" aria-live="polite"></p>
       <div class="picker-map-wrap">
         <div id="picker-map" class="picker-map" role="application" aria-label="map pin"></div>
         <div class="picker-map-crosshair" aria-hidden="true">
@@ -1408,7 +1413,6 @@
           <i class="ti ti-current-location" aria-hidden="true"></i>
           My location
         </button>
-        <button type="button" class="btn primary" id="picker-drop-pin">Use this spot</button>
       </div>
       <details class="picker-coords-details">
         <summary>enter coordinates</summary>
@@ -1418,9 +1422,8 @@
           <button class="btn" type="button" id="picker-apply-coords">apply</button>
         </div>
       </details>
-      <p class="field-hint" id="picker-address-hint"></p>
-      <div class="btn-row">
-        <button class="btn primary" type="button" id="picker-save">save place</button>
+      <div class="btn-row location-picker-actions">
+        <button class="btn primary" type="button" id="picker-save">add place</button>
         <button class="btn" type="button" id="picker-cancel">cancel</button>
       </div>
     </div>
