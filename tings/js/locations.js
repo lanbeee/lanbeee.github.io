@@ -374,9 +374,31 @@ function clearCurrentCoordEdgeCache(){
 async function geocodeSearch(query,{ limit = 5 } = {}){
   const q = String(query || '').trim();
   if(!q)return [];
-  const photon = await geocodeSearchPhoton(q,limit);
-  if(photon.length)return photon;
-  return geocodeSearchNominatim(q,limit);
+  // Coordinates are a useful escape hatch when an address is new, rural, or
+  // simply missing from both providers.
+  const coordinateMatch = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if(coordinateMatch){
+    const direct = normalizeGeocodeHit('Pinned location','Entered coordinates',coordinateMatch[1],coordinateMatch[2]);
+    return direct ? [direct] : [];
+  }
+  // Photon and Nominatim have complementary coverage. Previously any Photon
+  // hit suppressed Nominatim entirely, even when it was a much poorer match.
+  const [photon,nominatim] = await Promise.all([
+    geocodeSearchPhoton(q,limit),
+    geocodeSearchNominatim(q,limit)
+  ]);
+  const combined = [];
+  for(const hit of [...photon,...nominatim]){
+    const addressKey = String(hit.address || '').toLocaleLowerCase().replace(/\s+/g,' ').trim();
+    const duplicate = combined.some(existing=>{
+      const existingKey = String(existing.address || '').toLocaleLowerCase().replace(/\s+/g,' ').trim();
+      return (addressKey && addressKey === existingKey)
+        || haversineMetres(existing.lat,existing.lng,hit.lat,hit.lng) < 25;
+    });
+    if(!duplicate)combined.push(hit);
+    if(combined.length >= limit)break;
+  }
+  return combined;
 }
 
 async function fetchJsonWithTimeout(url,timeoutMs = GEOCODE_FETCH_TIMEOUT_MS){
@@ -410,7 +432,7 @@ async function geocodeSearchPhoton(query,limit){
       const lng = coords && coords[0];
       const lat = coords && coords[1];
       const parts = [props.name, props.street, props.housenumber, props.city || props.town || props.village, props.state, props.country]
-        .filter(Boolean);
+        .filter((part,index,all)=>part && all.findIndex(x=>String(x).toLocaleLowerCase() === String(part).toLocaleLowerCase()) === index);
       const address = parts.join(', ') || props.name || '';
       const name = props.name || props.street || (address.split(',')[0] || 'Place');
       return normalizeGeocodeHit(name,address,lat,lng);
@@ -932,7 +954,7 @@ function setAutoLocationId(id){
 function renderPresencePickerBody(){
   const wrap = $('presence-picker-chips');
   if(!wrap)return;
-  const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  const registry = locationsForDisplay((sortSettings || loadSortSettings()).locations);
   const current = currentLocationId();
   const presence = locationPresence(registry);
   if(!registry.length){

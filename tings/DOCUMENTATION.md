@@ -1357,7 +1357,7 @@ Tracks the currently active habit session:
 │ [search address _______] [search]   │
 │                                     │
 │           [🗺️ MAP WITH PIN]        │
-│           [My location] [Use this] │
+│              [My location]          │
 │                                     │
 │           [enter coordinates ▼]    │
 │           [save place] [cancel]   │
@@ -1366,6 +1366,9 @@ Tracks the currently active habit session:
 
 - **Access:** Settings → Locations → "add place", or from detail → places
 - Search by address via Nominatim/Photon
+- Search combines Photon and Nominatim results, removes duplicate pins, and accepts `latitude, longitude`
+- Saved places are shown in alphabetical/natural order across settings, habit forms, presence, and filters
+- A place created from a new/edit habit returns to that form already selected
 - Drag map to position pin (stays centered)
 - GPS button: "My location"
 - Coordinate input (lat/lng) via details disclosure
@@ -1507,6 +1510,58 @@ Toasts appear after:
 - Completing a task
 - Planning a future item
 - Timer auto-completion
+
+### Guided Coaches
+- A fresh, empty install offers the **install guide** first when it runs in a
+  browser: numbered, iconified per-platform steps (iOS Share → Add to Home
+  Screen; Android menu → Install app; desktop address-bar install) connected by
+  arrows, or a native **Install** button on Chrome-based browsers where a
+  `beforeinstallprompt` gesture was captured (declined prompts fall back to the
+  manual steps). The guide ends by handing over to the guided start; a user
+  already running the installed (standalone) app is offered the guided start
+  directly. About → **install app** replays the guide on demand, and About's
+  install button tells already-installed users where the guided start lives.
+- A fresh, empty install offers the **guided start** after first paint. It follows
+  the real add, detail, home, and calendar surfaces instead of using a simulator.
+- The guided start branches between a repeating habit and a one-off task. It
+  teaches times-in-days rhythms or optional task dates/times, then covers
+  duration, auto-mark, card logging, Home groups, and the minimal calendar.
+  After the card intro it makes the user **log (or complete) the Ting they just
+  created** with the real pulse button — with an “I’ll log later” escape — so the
+  daily loop is practiced, not just described; the replay refresher never logs.
+- **Every step gates the whole experience.** Locked (required-action) steps
+  intercept taps outside the highlighted control with an amber warning; guided
+  (read-and-continue) steps block outside taps silently while the bubble’s
+  Next/Back advance the tour. Wheel scrolling outside the spotlight is blocked
+  too. When a step has no visible target (e.g. the welcome), the guards cover
+  the full screen so only the coach bubble is usable — there is no open window
+  between stages.
+- The coach decides which page is on screen: each stage declares the sheets it
+  may keep open (add/detail/settings/overview plus their pickers and
+  inspectors), and any other sheet that appears — stray tap, system navigation,
+  async open — is closed automatically. If an expected sheet is dismissed, the
+  coach returns to the matching safe step.
+- Skipping is a two-tap action (the button arms for 2.5 s) so a stray tap
+  cannot discard a tour; Escape still ends it immediately.
+- The name step uses the visual viewport while the keyboard is open. Enter moves
+  to the habit/task choice rather than saving early, and the keyboard is closed
+  before teaching controls farther down the add sheet.
+- About → **guided start** replays a non-destructive refresher for an existing
+  user.
+- Guided start finishes with the **install guide**: iOS learns
+  Share → Add to Home Screen, Android/desktop learns the menu or address-bar
+  install, and Chrome-based browsers with a captured `beforeinstallprompt`
+  gesture get a native Install button (with a Not-now escape and a manual-steps
+  fallback if the prompt is declined). The step is skipped when Tings already
+  runs standalone, and About → **install app** replays the same guide as a
+  one-step tour on demand.
+- About → **advanced coach** teaches the full, non-minimal surface: rich cards,
+  swipe/card actions, agenda ordering and audit, every major detail area,
+  calendar analysis and filters, home display, backup, calendar import, topics,
+  locations/travel, busy times, defaults, appearance, and smarter packing. When
+  minimal mode is on, the user turns it off from the real Settings control.
+- Coach assets live in `onboarding/` and are loaded on demand. Completion is
+  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v2`.
 
 ---
 

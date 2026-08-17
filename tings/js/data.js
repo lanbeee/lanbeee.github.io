@@ -2728,6 +2728,17 @@ function normalizeLocationRegistry(value){
   }
   return out.slice(0,MAX_LOCATIONS);
 }
+// PURE: predictable, human-facing order for every location picker/list.
+// Keep the stored registry order untouched: planner fallbacks and references
+// are keyed by id, while editing UIs still need their original array index.
+function compareLocationNames(a,b){
+  return String(a?.name || '').localeCompare(String(b?.name || ''),undefined,{
+    sensitivity:'base',numeric:true
+  }) || String(a?.id || '').localeCompare(String(b?.id || ''));
+}
+function locationsForDisplay(value){
+  return normalizeLocationRegistry(value).slice().sort(compareLocationNames);
+}
 // PURE: coerce the cached travel map. Drops edges with bad numbers, stale
 // fetchedAt (older than 2× TTL), or malformed keys; re-keys each edge with the
 // lexically-ordered pair so A→B and B→A collide. Caps at MAX_TRAVEL_EDGES.

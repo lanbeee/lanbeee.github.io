@@ -163,11 +163,8 @@
 :root { --font-scale:1; }
 :root[data-font-scale="small"] { --font-scale:0.875; }
 :root[data-font-scale="large"] { --font-scale:1.125; }
-.ting-name { font-size:calc(15px * var(--font-scale)); }
-.ting-cue { font-size:calc(11.5px * var(--font-scale)); }
-.context-pill { font-size:calc(11px * var(--font-scale)); }
-.sheet-title { font-size:calc(22px * var(--font-scale)); }
-.settings-label { font-size:calc(15px * var(--font-scale)); }
+/* Component rules consume this variable at their final cascade positions so
+   the in-app size and browser/OS text zoom can compound predictably. */
 
 /* Compact mode */
 body.compact-mode .ting-card { padding:6px 8px; }
@@ -750,7 +747,7 @@ body[data-pane-count="1"].search-active .section-header{top:0;}
   appearance:none;-webkit-appearance:none;border:0.5px solid color-mix(in srgb,var(--amber-icon) 32%,transparent);
   font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
   color:var(--amber-text);background:var(--amber-bg);
-  border-radius:999px;padding:6px 9px;cursor:pointer;margin:0;
+  border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
   /* none: keep finger drift from being claimed as a page pan (sticky headers). */
   -webkit-tap-highlight-color:transparent;touch-action:none;
@@ -799,13 +796,13 @@ body[data-pane-count="1"].search-active .section-header{top:0;}
   border:0.5px solid color-mix(in srgb,var(--teal-icon) 40%,transparent);
   font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
   color:var(--teal-text);background:var(--teal-bg);
-  border-radius:999px;padding:6px 9px;cursor:pointer;margin:0;
+  border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
   /* none: keep finger drift from being claimed as a page pan (sticky headers). */
   -webkit-tap-highlight-color:transparent;touch-action:none;
 }
 .free-pill::before{
-  content:"";position:absolute;inset:-12px -4px -12px -14px;
+  content:"";position:absolute;inset:-6px -4px -6px -14px;
 }
 .free-pill:active{transform:scale(0.97);}
 .free-panel{
@@ -1004,12 +1001,15 @@ body.reach-pad #list{padding-top:220px;}
 }
 .ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;grid-column:1 / -1;}
 .ting-name{
-  font-size:15px;font-weight:650;color:var(--text);letter-spacing:-0.012em;
-  flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:calc(15px * var(--font-scale));font-weight:650;color:var(--text);letter-spacing:-0.012em;
+  flex:1 1 auto;min-width:0;
+  /* Wrap to two lines on narrow cards instead of truncating mid-word —
+     matches the cue's clamp so long names stay readable at 320px. */
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 }
 .ting-cue{
   grid-column:1;grid-row:2;
-  color:var(--text2);font-size:12px;font-weight:480;line-height:1.35;
+  color:var(--text2);font-size:calc(12px * var(--font-scale));font-weight:480;line-height:1.35;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   overflow:hidden;max-width:100%;word-break:break-word;
 }
@@ -1017,7 +1017,10 @@ body.reach-pad #list{padding-top:220px;}
   grid-column:2;grid-row:2 / span 2;align-self:start;
   font-size:11.5px;color:var(--text2);display:flex;align-items:center;
   justify-content:flex-end;flex-wrap:wrap;gap:4px 5px;min-width:0;
-  max-width:min(50vw,160px);max-height:50px;overflow:hidden;
+  /* Pill column is narrow (~115px at 320px), so pills routinely wrap to a
+     third row; the old 50px cap chopped that row in half. 96px fits three
+     rows at large text scale while still bounding pathological pill counts. */
+  max-width:min(50vw,160px);max-height:96px;overflow:hidden;
 }
 /* Activity dots hidden: drop the empty third grid row so the card doesn't
    keep a fixed 20px track under cue/meta. */
@@ -1129,7 +1132,7 @@ body.reach-pad #list{padding-top:220px;}
 }
 .context-pill{
   display:inline-flex;align-items:center;gap:3px;
-  color:var(--text2);font-size:9.5px;font-weight:650;
+  color:var(--text2);font-size:calc(9.5px * var(--font-scale));font-weight:650;
   background:var(--bg2);border:0.5px solid var(--border);
   border-radius:999px;padding:2px 4px;line-height:1;
   white-space:nowrap;min-width:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;
@@ -1296,6 +1299,33 @@ body[data-pane-count="3"] #sample-habits-sheet{
   padding-bottom:calc(88px + var(--keyboard-lift) + env(safe-area-inset-bottom));
   position:relative;
 }
+.about-sheet,.overview-sheet,.sample-habits-sheet{
+  /* These pages all provide their own top close control or an end-of-page
+     action. Their footer belongs in the document flow so it never covers a
+     calendar cell, sample row, or expanded help block on a short screen. */
+  padding-bottom:calc(18px + env(safe-area-inset-bottom));
+}
+.settings-sheet{
+  /* Give Settings one dedicated scrolling region and a real footer. The old
+     fixed Done button floated over whichever toggle happened to be beneath
+     it at 320x568 or under browser zoom. */
+  display:flex;flex-direction:column;overflow:hidden;
+  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+}
+.settings-sheet > .sheet-title,
+.settings-sheet > .about-copy{flex:0 0 auto;}
+.settings-sheet > .settings-stack{
+  flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;
+  overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;padding:1px 2px 6px;margin-bottom:0;
+}
+.settings-sheet > .settings-stack > *{
+  /* A scroll container must overflow; its flex children must not shrink to
+     collectively fit the viewport. At high browser zoom, the default
+     flex-shrink:1 compressed every settings card and clipped its contents. */
+  flex:0 0 auto;
+}
+.settings-sheet > .settings-stack::-webkit-scrollbar{display:none;}
 .detail-sheet{
   padding-top:0;
   padding-bottom:calc(var(--nav-bottom) + 58px + env(safe-area-inset-bottom));
@@ -1405,10 +1435,21 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
   border:0;border-radius:0;box-shadow:none;
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
+/* Long, scrollable page sheets must not share the floating mobile action
+   treatment used by the compact detail/add flows. */
+.about-sheet .about-actions,
+.overview-sheet .overview-actions,
+.sample-habits-sheet .sample-habits-actions,
+.settings-sheet .settings-actions{
+  position:static;left:auto;bottom:auto;transform:none;
+  width:auto;flex:0 0 auto;margin-top:10px;padding:0;
+  background:transparent;border:0;border-radius:0;box-shadow:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
 .detail-sheet .tune-actions{display:none;}
 .detail-sheet.tune-dirty #detail-cool-row{display:none;}
 .detail-sheet.tune-dirty .tune-actions{display:flex;}
-.sheet-title{font-size:15px;font-weight:500;margin-bottom:16px;color:var(--text);}
+.sheet-title{font-size:calc(15px * var(--font-scale));font-weight:500;margin-bottom:16px;color:var(--text);}
 .sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
 .sheet-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
 
@@ -1427,8 +1468,13 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
   align-items:stretch;justify-content:center;gap:3px;
 }
 .detail-head .ting-main{margin-bottom:1px;}
-.detail-head .ting-name{font-size:14.5px;font-weight:600;}
-.detail-cue{display:block;white-space:nowrap;text-overflow:ellipsis;}
+.detail-head .ting-name{font-size:calc(14.5px * var(--font-scale));font-weight:600;}
+/* Wrap to two lines instead of ellipsizing — the cue carries the time
+   window ("sunrise +10m–sunrise +40m") and nowrap cut its end at 320px. */
+.detail-cue{
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;white-space:normal;word-break:break-word;
+}
 .detail-head .detail-cue{font-size:11px;line-height:1.2;}
 .detail-head .detail-mark{
   cursor:pointer;width:46px;min-width:46px;height:46px;
@@ -1937,7 +1983,10 @@ body[data-pane-count="3"] .detail-sheet{
 .name-icon-row{display:grid;grid-template-columns:minmax(0,1fr) 46px;gap:8px;align-items:end;}
 .name-icon-row input{margin-bottom:12px;}
 .name-icon-row .emoji-field input{margin-bottom:0;}
-.ting-emoji-preview{width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:20px;line-height:1;background:var(--bg2);color:var(--text3);border:0.5px solid var(--border);margin:0 0 12px;padding:0;font:inherit;cursor:pointer;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;transition:transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;}
+/* `font:inherit` must come BEFORE the explicit longhands — as a shorthand it
+   resets font-size/line-height, so the emoji used to render at the inherited
+   sheet size (clipped by the fixed 44px circle at large text scale). */
+.ting-emoji-preview{width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:inherit;font-size:20px;line-height:1;background:var(--bg2);color:var(--text3);border:0.5px solid var(--border);margin:0 0 12px;padding:0;cursor:pointer;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;transition:transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;}
 .ting-emoji-preview i{font-size:20px;}
 .ting-emoji-preview:active{transform:scale(0.94);}
 .ting-emoji-preview:focus-visible{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 45%,transparent);}
@@ -2068,7 +2117,7 @@ body[data-pane-count="3"] .detail-sheet{
 .schedule-link-same-day-label .setting-title{
   flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.schedule-link-same-day-label .info-btn{flex:0 0 18px;margin-left:3px;}
+.schedule-link-same-day-label .info-btn{flex:0 0 24px;margin-left:2px;}
 .schedule-link-same-day{
   display:block;flex:0 0 46px;width:46px;height:28px;padding:0;border:0;background:none;color:inherit;cursor:pointer;
   border-radius:999px;
@@ -2119,8 +2168,10 @@ body[data-pane-count="3"] .detail-sheet{
 .time-endpoint .time-fixed2[hidden]{display:none;}
 .time-endpoint .time-day-next,
 .time-endpoint .time-day-next2{
-  padding:3px 6px;font-size:11px;line-height:1;border-radius:999px;opacity:0.55;
+  position:relative;min-width:44px;padding:6px 8px;font-size:11px;line-height:1;border-radius:999px;opacity:0.55;
 }
+.time-endpoint .time-day-next::after,
+.time-endpoint .time-day-next2::after{content:"";position:absolute;inset:-6px 0;}
 .time-endpoint .time-day-next[aria-pressed="true"],
 .time-endpoint .time-day-next2[aria-pressed="true"]{
   opacity:1;background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
@@ -2162,12 +2213,29 @@ body[data-pane-count="3"] .detail-sheet{
   border-radius:var(--radius-sm);padding:5px 6px;font:inherit;font-size:12px;
   width:44px;text-align:right;font-variant-numeric:tabular-nums;-moz-appearance:textfield;
 }
+/* The base input[type=number] rule later in this file (padding 11px 14px,
+   font-size 15px, margin-bottom 12px) has attribute-level specificity and is
+   declared after the plain class above — it was winning, so these compact
+   offset inputs rendered at full form height (42px) next to their 27–32px
+   row neighbors. Attribute+class outranks it regardless of order. */
+input[type=number].mini-time-input,
+input[type=text].mini-time-input{
+  padding:5px 6px;font-size:12px;height:32px;margin:0;
+}
 .mini-time-input::-webkit-outer-spin-button,
 .mini-time-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+/* One shared row height for every control in a dynamic time expression —
+   anchor select, offset input, sign button, +1d pill. */
+.time-expr .mini-select,
+.time-expr .time-offset-sign-btn,
+.time-expr .time-day-next,
+.time-expr .time-day-next2{
+  height:32px;min-height:32px;padding-top:0;padding-bottom:0;
+}
 .time-offset-sign-btn{
   background:none;border:0.5px solid var(--border);border-radius:var(--radius-sm);
-  color:var(--text);font:inherit;font-size:11px;padding:0 3px;cursor:pointer;
-  line-height:1.6;min-width:18px;text-align:center;
+  color:var(--text);font:inherit;font-size:11px;padding:6px 5px;cursor:pointer;
+  line-height:1.6;min-width:32px;min-height:32px;text-align:center;align-self:center;
 }
 .time-offset-sign-btn:hover{background:var(--hover);}
 .time-offset-unit{color:var(--text3);font-size:11px;}
@@ -2327,6 +2395,14 @@ body[data-pane-count="3"] .detail-sheet{
 .plan-field-row .plan-date-label{
   color:var(--text2);font-size:12px;font-weight:700;flex-shrink:0;
 }
+/* Date inputs and their sibling text buttons ("this week", "clear") share one
+   row height — the base input rule used to make inputs ~44px vs 29px buttons. */
+.plan-field-row .plan-date-input,
+.plan-field-row .plan-time-input,
+.plan-field-row .mini-text-btn{
+  height:40px;padding-top:0;padding-bottom:0;
+}
+.plan-field-row .mini-text-btn{display:inline-flex;align-items:center;}
 .plan-date-input{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text);
   border-radius:var(--radius-sm);padding:8px 10px;font:inherit;font-size:14px;
@@ -2453,18 +2529,42 @@ body[data-pane-count="3"] .detail-sheet{
 .location-access-row .settings-sublabel{display:block;margin-bottom:2px;}
 .location-access-row .field-hint{margin:0;}
 .location-access-row .btn{flex:0 0 auto;width:auto;padding:9px 12px;font-size:13px;white-space:nowrap;}
-.location-add-actions{display:flex;gap:8px;margin-bottom:10px;}
-.location-add-actions .btn{width:auto;padding:9px 14px;font-size:13px;}
+.location-add-actions{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:10px 0 12px;
+}
+.location-add-actions .btn{
+  width:auto;min-height:44px;padding:9px 14px;font-size:13px;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+}
+.location-add-actions .field-hint{margin:0;text-align:right;}
+.location-support-settings{
+  margin-top:16px;padding-top:14px;border-top:0.5px solid var(--border);
+}
 .location-results{
   display:flex;flex-direction:column;gap:6px;margin-bottom:12px;
   padding:8px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg2);
 }
+.location-results-label{
+  margin:1px 3px 3px;color:var(--text3);font-size:10px;font-weight:750;
+  letter-spacing:0.06em;text-transform:uppercase;
+}
 .location-result{
-  display:flex;flex-direction:column;gap:2px;text-align:left;padding:9px 10px;
-  border-radius:7px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
+  display:grid;grid-template-columns:30px minmax(0,1fr) 18px;align-items:center;gap:9px;
+  min-height:52px;text-align:left;padding:8px 9px;
+  border-radius:9px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
 }
 .location-result:hover{border-color:var(--text3);}
-.location-result .dim{color:var(--text3);font-size:12px;}
+.location-result > span:nth-child(2){display:flex;flex-direction:column;min-width:0;gap:2px;}
+.location-result b{font-size:13px;line-height:1.25;}
+.location-result small{color:var(--text3);font-size:11.5px;line-height:1.3;overflow-wrap:anywhere;}
+.location-result-mark{
+  width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;
+  color:var(--teal-text);background:var(--teal-bg);
+}
+.location-result-arrow{color:var(--text3);font-size:14px;justify-self:end;}
+.location-search-status{margin:3px;line-height:1.45;}
+.location-search-status i{display:inline-block;margin-right:4px;}
 .location-travel-mode{margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);}
 .location-travel-mode .settings-sublabel{display:block;margin-bottom:8px;}
 .travel-mode-seg{display:flex;flex-wrap:wrap;gap:6px;}
@@ -2559,11 +2659,12 @@ body[data-pane-count="3"] .detail-sheet{
   display:inline-flex;align-items:center;gap:4px;max-width:min(220px,55vw);
 }
 .location-coords-btn .location-coords{overflow:hidden;text-overflow:ellipsis;}
-.picker-search-row{display:flex;gap:8px;margin:8px 0;}
-.picker-search-row input{flex:1;min-width:0;}
+.picker-search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:0 0 10px;}
+.picker-search-row input{min-width:0;margin:0;}
+.picker-search-row .btn{min-width:88px;min-height:40px;padding:8px 12px;}
 .picker-map-wrap{position:relative;margin:0 0 8px;}
 .picker-map{
-  height:min(42vh,280px);width:100%;border-radius:12px;overflow:hidden;
+  height:min(36dvh,240px);min-height:170px;width:100%;border-radius:12px;overflow:hidden;
   border:0.5px solid var(--border);background:var(--bg3);z-index:0;
 }
 .picker-map-crosshair{
@@ -2586,26 +2687,39 @@ body[data-pane-count="3"] .detail-sheet{
 }
 .picker-map-actions .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  flex:1;padding:10px 12px;font-size:13px;font-weight:650;
+  flex:1;min-height:44px;padding:10px 12px;font-size:13px;font-weight:650;
   transform:none;
 }
 .picker-map-actions .btn:active{transform:none;opacity:0.85;}
 .picker-map-actions .btn i{font-size:15px;}
 #picker-results{
-  max-height:160px;overflow-y:auto;margin-bottom:10px;
+  max-height:min(32dvh,220px);overflow-y:auto;margin-bottom:12px;
   position:relative;z-index:2;
 }
 .picker-coords-details{margin:8px 0 4px;}
-.picker-coords-details summary{cursor:pointer;color:var(--text2);font-size:13px;}
+.picker-coords-details summary{
+  min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--text2);font-size:13px;
+}
 .picker-coords-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
 .picker-coords-row input{flex:1 1 100px;min-width:0;}
-.location-picker-sheet .field-label{display:block;margin:4px 0 6px;font-size:12px;color:var(--text2);font-weight:650;}
+.picker-coords-row .btn{min-width:64px;min-height:44px;}
+.location-picker-sheet .field-label{display:block;margin:6px 0 6px;font-size:12px;color:var(--text2);font-weight:700;}
 .location-picker-sheet input[type=text],
+.location-picker-sheet input[type=search],
 .location-picker-sheet input[type=number],
 .travel-edit-sheet input[type=number]{
   width:100%;height:40px;padding:0 12px;border-radius:10px;
   border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font:inherit;
 }
+.picker-selected-address{
+  min-height:17px;margin:5px 2px 8px;color:var(--text3);font-size:11.5px;
+  line-height:1.35;overflow-wrap:anywhere;
+}
+.picker-selected-address:empty::before{content:'Choose a result or position the map.';}
+.location-picker-actions{
+  position:static;margin:10px 0 0;padding:0;background:transparent;
+}
+.location-picker-actions .btn{min-height:46px;}
 .presence-picker-chips{flex-wrap:wrap;max-height:none;margin-bottom:16px;}
 .travel-edit-row{
   display:flex;align-items:center;justify-content:center;gap:10px;margin:18px 0 8px;
@@ -2670,6 +2784,9 @@ body[data-pane-count="3"] .detail-sheet{
 .timer-start-btn{flex:0 0 auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
 .timer-start-btn:disabled{opacity:0.45;cursor:default;}
 .timer-auto-stop-field{margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:4px;width:auto;padding:0 10px;height:38px;border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);}
+/* Match the start-session button's height instead of a fixed 38px — the row
+   read as two mismatched controls (45px vs 38px). */
+.timer-row .timer-auto-stop-field{height:auto;align-self:stretch;}
 .timer-auto-stop-label{font-size:12px;color:var(--text2);font-weight:600;white-space:nowrap;}
 .timer-display{font-variant-numeric:tabular-nums;font-weight:700;color:var(--text);}
 .value-log-field{display:flex;width:100%;margin:8px 0 14px;}
@@ -2688,6 +2805,12 @@ body[data-pane-count="3"] .detail-sheet{
   min-width:0;overflow:hidden;
 }
 .location-row-head{display:flex;align-items:center;gap:8px;}
+.location-row-icon{
+  flex:0 0 34px;width:34px;height:34px;border-radius:10px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--teal-bg);color:var(--teal-text);
+}
+.location-row-icon i{font-size:16px;}
 .location-name{
   min-width:0;flex:1 1 auto;height:38px;padding:0 11px;border-radius:9px;
   border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-weight:650;
@@ -2699,9 +2822,14 @@ body[data-pane-count="3"] .detail-sheet{
 }
 .location-pin-btn{
   flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;
-  height:34px;padding:0 10px;
+  min-height:40px;padding:0 10px;
 }
 .location-pin-btn i{font-size:14px;}
+.location-remove-btn{
+  flex:0 0 auto;min-width:40px;min-height:40px;padding:0 8px;
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;color:var(--red-text);
+}
+.location-remove-btn i{font-size:15px;}
 .location-hours,.location-radius,.location-days,.loc-pref,.loc-perday{
   display:flex;flex-wrap:wrap;align-items:center;gap:8px;
 }
@@ -2766,7 +2894,10 @@ body[data-pane-count="3"] .detail-sheet{
 .priority-seg{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;}
 .priority-seg .seg-opt{padding:7px 0;font-size:11.5px;font-weight:700;}
 .flexibility-label{position:relative;display:inline-block;}
-.info-btn{background:none;border:none;padding:0;margin-left:2px;font-size:12px;color:var(--text3);vertical-align:-1px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;}
+.info-btn{background:none;border:none;padding:0;margin-left:1px;font-size:13px;color:var(--text3);vertical-align:-2px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;position:relative;}
+/* The visible circle is compact inline chrome; the pseudo-element takes its
+   total hit area to 44px without disturbing surrounding copy. */
+.info-btn::after{content:"";position:absolute;inset:-10px;}
 .info-btn:active{background:var(--border);}
 .info-tooltip{position:absolute;top:calc(100% + 6px);left:0;z-index:20;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;font-size:11.5px;font-weight:500;color:var(--text2);line-height:1.35;width:max(180px,40vw);max-width:240px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
 /* Any inline wrapper span that hosts an info-tooltip needs to be its
@@ -2954,14 +3085,18 @@ span:has(> .info-btn){position:relative;display:inline-block;}
   min-width:0;overflow:hidden;
 }
 .settings-label{
-  display:block;color:var(--text);font-size:13px;font-weight:650;margin-bottom:7px;
+  display:block;color:var(--text);font-size:calc(13px * var(--font-scale));font-weight:650;margin-bottom:7px;
 }
 .settings-collapse-head{
   display:flex;align-items:center;justify-content:space-between;gap:8px;
-  width:100%;background:transparent;border:0;padding:0;margin:0;
+  width:100%;min-height:32px;background:transparent;border:0;padding:0;margin:0;
   cursor:pointer;font:inherit;text-align:left;color:inherit;
+  position:relative;
   -webkit-tap-highlight-color:transparent;
 }
+/* The visible row is now 32px; a small invisible pad completes the touch area
+   without letting adjacent collapsed sections overlap one another. */
+.settings-collapse-head::after{content:"";position:absolute;inset:-6px 0;}
 .settings-collapse-head .settings-label{margin-bottom:0;}
 .settings-collapse-head i{font-size:14px;color:var(--text3);flex-shrink:0;transition:transform var(--dur-fast) ease;}
 .settings-collapse-head:hover{opacity:0.75;}
@@ -3170,6 +3305,10 @@ select{
   cursor:pointer;background:transparent;border:none;color:var(--text2);
   min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   -webkit-tap-highlight-color:transparent;
+  /* Flex-centering plus a shared floor gives every segmented control the same
+     chip height regardless of its font-size/padding overrides (type, priority,
+     schedule, adjacency segs used to render 36px vs 27px vs 29px). */
+  display:flex;align-items:center;justify-content:center;min-height:36px;
   transition:background var(--dur-fast) ease,color var(--dur-fast) ease;
 }
 .seg-opt.on{background:var(--bg3);color:var(--text);font-weight:500;}
@@ -3254,7 +3393,7 @@ select{
 }
 .home-filter-sheet-head .sheet-title{font-size:22px;font-weight:740;letter-spacing:-0.025em;margin-bottom:5px;}
 .home-filter-sheet-head .about-copy{margin:0;max-width:320px;}
-.home-filter-close{width:38px;height:38px;flex:0 0 38px;background:var(--bg2);border-color:var(--border);}
+.home-filter-close{width:44px;height:44px;flex:0 0 44px;background:var(--bg2);border-color:var(--border);}
 .home-filter-groups{
   display:flex;flex-direction:column;gap:22px;flex:1 1 auto;min-height:0;
   overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
@@ -3616,7 +3755,7 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 }
 .overview-page-sub{margin:7px 0 0;color:var(--text2);font-size:12.5px;line-height:1.4;}
 .overview-page-close{
-  width:38px;height:38px;flex:0 0 38px;border-color:var(--border);background:color-mix(in srgb,var(--bg2) 80%,transparent);
+  width:44px;height:44px;flex:0 0 44px;border-color:var(--border);background:color-mix(in srgb,var(--bg2) 80%,transparent);
 }
 .overview-toolbar{display:flex;flex-direction:column;gap:9px;margin:0 0 12px;}
 .overview-range-seg{
@@ -3844,6 +3983,8 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .blocked-card .timeline-card-icon{color:var(--amber-icon);}
 .travel-card .timeline-card-icon i,.blocked-card .timeline-card-icon i{font-size:17px;}
 .timeline-card-copy{min-width:0;display:flex;flex-direction:column;gap:2px;}
+/* Fixed single-line rows: travel/blocked chips stay the same height no matter
+   how long the route or label is (ellipsis absorbs the overflow). */
 .timeline-card-copy b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:12.5px;font-weight:730;letter-spacing:-0.005em;}
 .timeline-card-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:10.5px;font-weight:580;}
 .timeline-card-chevron,.blocked-card-chevron{color:var(--text3);font-size:15px;}
@@ -3895,7 +4036,7 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 18px;padding:16px;border-radius:20px;background:linear-gradient(145deg,color-mix(in srgb,var(--teal-bg) 70%,var(--bg)),color-mix(in srgb,var(--bg2) 78%,var(--bg)));border:0.5px solid color-mix(in srgb,var(--teal-icon) 16%,var(--border));}
 .about-hero img{width:64px;height:64px;border-radius:18px;box-shadow:0 8px 20px color-mix(in srgb,var(--teal-icon) 18%,transparent);}
 .about-hero > div{padding-right:24px;}
-.about-hero-close{position:absolute;right:9px;top:9px;width:32px;height:32px;background:color-mix(in srgb,var(--bg) 76%,transparent);border-color:color-mix(in srgb,var(--teal-icon) 20%,var(--border));}
+.about-hero-close{position:absolute;right:7px;top:7px;width:40px;height:40px;background:color-mix(in srgb,var(--bg) 76%,transparent);border-color:color-mix(in srgb,var(--teal-icon) 20%,var(--border));}
 .sheet-eyebrow{display:block;margin-bottom:3px;color:var(--teal-text);font-size:9px;font-weight:790;letter-spacing:0.095em;text-transform:uppercase;}
 .about-hero .sheet-title{margin:0 0 5px;font-size:25px;font-weight:760;letter-spacing:-0.035em;}
 .about-hero .about-copy{margin:0;font-size:12px;line-height:1.4;}
@@ -3907,16 +4048,16 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .about-collapse-body p:first-child{padding-top:11px;}
 .about-label{font-size:13px;font-weight:730;}
 .about-summary{font-size:11.5px;line-height:1.38;}
-.about-sheet{padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + env(safe-area-inset-bottom));}
+.about-sheet{padding-bottom:calc(18px + env(safe-area-inset-bottom));}
 .about-sheet .about-actions{
   position:static;left:auto;bottom:auto;transform:none;width:auto;margin-top:12px;
   display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:8px;
   background:var(--bg);border:0.5px solid var(--border);border-radius:18px;
   box-shadow:none;
 }
-.about-sheet .about-actions .btn{min-width:0;min-height:40px;padding:7px 5px;display:flex;align-items:center;justify-content:center;gap:4px;font-size:10.5px;white-space:nowrap;}
+.about-sheet .about-actions .btn{min-width:0;min-height:44px;padding:7px 5px;display:flex;align-items:center;justify-content:center;gap:4px;font-size:10.5px;white-space:nowrap;}
 .about-sheet .about-actions .btn i{font-size:14px;}
-.about-sheet .about-actions #about-close{grid-column:1 / -1;min-height:42px;font-size:12px;}
+.about-sheet .about-actions #about-close{grid-column:1 / -1;min-height:48px;font-size:12px;}
 
 .utility-sheet-head{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:12px;margin-bottom:16px;}
 .utility-sheet-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;font-size:21px;}
@@ -4138,10 +4279,21 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   .free-fit-run{grid-column:1 / -1;width:100%;}
   .free-day-tick:nth-last-child(2){display:none;}
   .ting-main{gap:7px;}
-  .ting-name{font-size:14.5px;}
-  .ting-cue{font-size:11.5px;}
-  .ting-meta{flex-wrap:wrap;gap:4px;max-width:115px;}
-  .context-pill{font-size:9px;padding:2px 3px;}
+  .ting-name{font-size:calc(14.5px * var(--font-scale));-webkit-line-clamp:3;line-height:1.18;}
+  /* Below 341px the right-hand pill column makes both the status copy and
+     cue too narrow. Put metadata on its own full-width row instead of
+     clipping a third pill line or cutting place names against the edge. */
+  .ting-info{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;}
+  .ting-cue{grid-column:1;grid-row:2;font-size:calc(11.5px * var(--font-scale));}
+  .ting-meta{
+    grid-column:1;grid-row:3;align-self:start;justify-content:flex-start;
+    flex-wrap:wrap;gap:4px;max-width:100%;max-height:none;overflow:visible;
+  }
+  .context-pill{font-size:calc(9px * var(--font-scale));padding:2px 4px;max-width:100%;}
+  /* Chips can wrap at phone-zoom widths; a partially sliced chip is a poor
+     scroll affordance once the effective viewport is this narrow. */
+  .tag-row{flex-wrap:wrap;overflow-x:visible;scroll-snap-type:none;padding-right:0;}
+  .plan-field-main{flex-wrap:wrap;}
   .ting-visual{margin-top:0;}
   .trail-week{margin-right:4px;}
   .sheet{padding-left:16px;padding-right:16px;}
@@ -4159,6 +4311,20 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   .about-summary,.about-collapse-body p{font-size:12px;line-height:1.32;}
   .day-availability{grid-template-columns:1fr 72px;align-items:end;}
   .day-availability .mini-text-btn{padding:7px 8px;}
+  .location-add-actions{align-items:stretch;flex-direction:column;}
+  .location-add-actions .btn{width:100%;}
+  .location-add-actions .field-hint{text-align:left;}
+  .location-row{padding:11px;}
+  .location-row-head{gap:6px;}
+  .location-row-icon{flex-basis:32px;width:32px;height:32px;}
+  .location-remove-btn span{display:none;}
+  .location-meta{align-items:stretch;flex-direction:column;}
+  .location-pin-btn{width:100%;justify-content:center;}
+  .picker-search-row{grid-template-columns:minmax(0,1fr) 78px;gap:6px;}
+  .picker-search-row .btn{min-width:0;padding-left:8px;padding-right:8px;}
+  .picker-map{height:min(32dvh,190px);min-height:150px;}
+  .picker-map-actions{gap:6px;}
+  .picker-map-actions .btn{padding-left:7px;padding-right:7px;font-size:12px;}
 }
 
 @media (max-height:680px){
@@ -4180,6 +4346,8 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   .detail-actions-page .habit-action,
   .detail-actions-page .habit-toggle{min-height:42px;padding-top:7px;padding-bottom:7px;}
   .detail-actions-page{padding:10px;}
+  .picker-map{height:min(30dvh,190px);min-height:150px;}
+  .location-picker-sheet .about-copy{margin-bottom:8px;}
 }
 
 @keyframes ring{

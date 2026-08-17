@@ -750,7 +750,18 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-location-add]')){
-    if(typeof openLocationPicker === 'function')openLocationPicker();
+    // Return to the in-progress habit with the new place already selected.
+    // Preserve every other chip choice made before opening the map picker.
+    if(typeof openLocationPicker === 'function'){
+      openLocationPicker({
+        onCreated:id=>{
+          const wrap = 'ting-tag-chips';
+          const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
+          const prefs = selectedLocationPrefsFrom(wrap);
+          renderTagChips(wrap,selectedTopicsFrom(wrap),selected,null,prefs,false);
+        }
+      });
+    }
     return;
   }
   if(e.target.closest('[data-anywhere]')){
@@ -1417,6 +1428,111 @@ document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
     head.setAttribute('aria-expanded',String(opening));
   });
 });
+
+// PWA install support. beforeinstallprompt can fire long before any coach
+// loads, so the app captures the browser's gesture at boot and replays it on
+// demand; Chrome/Edge/Android then show the native install sheet from the
+// coach's Install button instead of the noisy mini-infobar. iOS Safari has no
+// such event — there the coach teaches Share → Add to Home Screen.
+let _tingsDeferredInstall = null;
+window.addEventListener('beforeinstallprompt',event=>{
+  event.preventDefault();
+  _tingsDeferredInstall = event;
+});
+window.addEventListener('appinstalled',()=>{_tingsDeferredInstall = null;});
+function tingsInstallPromptAvailable(){return _tingsDeferredInstall !== null;}
+async function tingsPromptInstall(){
+  if(!_tingsDeferredInstall)return false;
+  const deferred = _tingsDeferredInstall;
+  _tingsDeferredInstall = null;
+  try{
+    await deferred.prompt();
+    const choice = await deferred.userChoice;
+    return choice?.outcome === 'accepted';
+  }catch(_){return false;}
+}
+function tingsInstallPlatform(){
+  const ua = navigator.userAgent || '';
+  if(/iPad|iPhone|iPod/.test(ua))return 'ios';
+  // iPadOS Safari masquerades as desktop macOS; touch points separate them.
+  if(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)return 'ios';
+  if(/Android/i.test(ua))return 'android';
+  return 'desktop';
+}
+
+// Lazy-load both guided coaches. Existing users never download these assets
+// unless they explicitly start a tour from About; a fresh empty install gets
+// only the small eligibility check below on the normal app path.
+const TINGS_ESSENTIALS_COACH_KEY = 'tings_coach_essentials_v2';
+const TINGS_INSTALL_COACH_KEY = 'tings_coach_install_v2';
+let _tingsCoachLoadPromise = null;
+function coachStorageValue(key){
+  try{return localStorage.getItem(key) || '';}
+  catch(_){return '';}
+}
+function loadTingsCoach(){
+  if(window.TingsCoach)return Promise.resolve(window.TingsCoach);
+  if(_tingsCoachLoadPromise)return _tingsCoachLoadPromise;
+  _tingsCoachLoadPromise = new Promise((resolve,reject)=>{
+    let stylesheet = document.querySelector('link[data-tings-coach]');
+    let stylesReady;
+    if(!stylesheet){
+      stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = './onboarding/coach.css?v=6';
+      stylesheet.dataset.tingsCoach = '1';
+      document.head.appendChild(stylesheet);
+      stylesReady = new Promise(done=>{
+        stylesheet.addEventListener('load',done,{once:true});
+        stylesheet.addEventListener('error',done,{once:true});
+      });
+    }else{
+      stylesReady = Promise.resolve();
+    }
+    let script = document.querySelector('script[data-tings-coach]');
+    if(script){
+      script.addEventListener('load',()=>stylesReady.then(()=>resolve(window.TingsCoach)),{once:true});
+      script.addEventListener('error',reject,{once:true});
+      return;
+    }
+    script = document.createElement('script');
+    script.src = './onboarding/coach.js?v=6';
+    script.defer = true;
+    script.dataset.tingsCoach = '1';
+    script.addEventListener('load',()=>{
+      if(window.TingsCoach)stylesReady.then(()=>resolve(window.TingsCoach));
+      else reject(new Error('coach unavailable'));
+    },{once:true});
+    script.addEventListener('error',reject,{once:true});
+    document.body.appendChild(script);
+  }).catch(err=>{
+    _tingsCoachLoadPromise = null;
+    throw err;
+  });
+  return _tingsCoachLoadPromise;
+}
+function startTingsCoach(kind = 'essentials',options = {}){
+  return loadTingsCoach()
+    .then(coach=>coach.start({kind,force:Boolean(options.force)}))
+    .catch(()=>{ if(typeof showToast === 'function')showToast('coach could not load'); });
+}
+window.startTingsCoach = startTingsCoach;
+$('start-essentials-coach')?.addEventListener('click',()=>{
+  closeSheet('about-sheet');
+  void startTingsCoach('essentials',{force:true});
+});
+$('start-advanced-coach')?.addEventListener('click',()=>{
+  closeSheet('about-sheet');
+  void startTingsCoach('advanced',{force:true});
+});
+$('open-install-guide')?.addEventListener('click',()=>{
+  if(typeof isStandalonePwa === 'function' && isStandalonePwa()){
+    if(typeof showToast === 'function')showToast('already installed — the guided start button is right below');
+    return;
+  }
+  closeSheet('about-sheet');
+  void startTingsCoach('install',{force:true});
+});
 $('open-sample-habits')?.addEventListener('click',()=>{
   if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
 });
@@ -1717,7 +1833,6 @@ $('picker-results')?.addEventListener('click',e=>{
   if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
 });
 $('picker-gps')?.addEventListener('click',centerPickerOnGps);
-$('picker-drop-pin')?.addEventListener('click',dropPinAtMapCenter);
 $('picker-apply-coords')?.addEventListener('click',applyPickerCoordsInputs);
 $('picker-save')?.addEventListener('click',saveLocationPicker);
 $('picker-cancel')?.addEventListener('click',closeLocationPicker);
@@ -3150,6 +3265,26 @@ restoreHabitTimer();
 plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');
+// First-run coach: defer until the real home UI has painted. A dismissal is
+// versioned, so it stays quiet until a future coach intentionally opts in.
+if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){
+  let coachBootInteracted = false;
+  const noteCoachBootInteraction = ()=>{coachBootInteracted = true;};
+  document.addEventListener('pointerdown',noteCoachBootInteraction,{once:true,passive:true});
+  document.addEventListener('keydown',noteCoachBootInteraction,{once:true});
+  const offerCoach = ()=>{
+    if(coachBootInteracted || document.hidden || document.querySelector('.sheet-wrap.open')
+      || load().length || coachStorageValue(TINGS_ESSENTIALS_COACH_KEY))return;
+    // A first-run browser user is taught to install first; the install tour
+    // then hands over to the guided start. Someone already running the
+    // installed app (or who finished the install guide before) goes straight
+    // to the guided start.
+    const standalone = typeof isStandalonePwa === 'function' && isStandalonePwa();
+    const seenInstallGuide = Boolean(coachStorageValue(TINGS_INSTALL_COACH_KEY));
+    void startTingsCoach(standalone || seenInstallGuide ? 'essentials' : 'install');
+  };
+  setTimeout(offerCoach,900);
+}
 // After first paint: warm the planner worker (script parse + GLPK) off the
 // critical path so the next real request is not a cold bring-up. Exact mode only.
 if(typeof warmAgendaPlannerWorker === 'function'
