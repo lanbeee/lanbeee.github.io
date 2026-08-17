@@ -2085,6 +2085,7 @@ $('presence-picker-sheet')?.addEventListener('click',e=>{
 });
 
 let blockEditContext = null;
+let blockEditDynamicOpen = false;
 // PURE: readable recurring expression for a dynamic busy-time endpoint.
 function blockedEndpointExpression(block,field){
   const anchor = cleanPrayerAnchor(block && block[field + 'Anchor']);
@@ -2122,6 +2123,28 @@ function shiftBlockedEndpoint(block,field,delta){
   else if(anchor2)block[field + 'OffsetMin2'] = normalizePrayerOffset((Number(block[field + 'OffsetMin2']) || 0) + delta);
 }
 
+// RENDER: the same complete prayer/sun rule controls used in Settings, placed
+// directly in the busy-card editor so a card can own its recurring rule.
+function renderBlockEditDynamicControls(){
+  const host = $('block-edit-dynamic-controls');
+  if(!host || !blockEditContext)return;
+  const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)[blockEditContext.blockIndex];
+  if(!block){host.hidden = true;return;}
+  host.hidden = !blockEditDynamicOpen;
+  host.innerHTML = `<span class="field-label utility-field-label">recurring rule</span><div class="blocked-time-hours time-endpoints">${blockedEndpointHtml(block,blockEditContext.blockIndex,'start')}<span class="time-sep">to</span>${blockedEndpointHtml(block,blockEditContext.blockIndex,'end')}</div>`;
+}
+
+function saveBlockEditorRulePatch(patch){
+  if(!blockEditContext)return;
+  saveBlockedTimePatch(blockEditContext.blockIndex,patch);
+  renderBlockEditDynamicControls();
+}
+
+function blockEditorField(target){
+  const endpoint = target.closest('.blocked-endpoint');
+  return endpoint ? endpoint.dataset.blockedField : '';
+}
+
 function openBlockEditSheet(row){
   if(!row)return;
   const dayKey = dateKey(row.start);
@@ -2133,6 +2156,7 @@ function openBlockEditSheet(row){
   const overrides = normalizeBlockedTimeOverrides(settings.blockedTimeOverrides);
   const current = overrides[dayKey]?.[signature] || {start:originalStart,end:originalEnd};
   blockEditContext = {row,dayKey,signature,originalStart,originalEnd,blockIndex:Number(row.blockIndex),current};
+  blockEditDynamicOpen = false;
   $('block-edit-title').textContent = row.label || 'busy time';
   const date = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
   const startExpr = blockedEndpointExpression(block,'start');
@@ -2144,12 +2168,81 @@ function openBlockEditSheet(row){
     : date;
   $('block-edit-start').value = minutesToTimeInput(current.start);
   $('block-edit-end').value = minutesToTimeInput(current.end);
+  const dynamicToggle = $('block-edit-dynamic-toggle');
+  if(dynamicToggle){
+    dynamicToggle.setAttribute('aria-expanded','false');
+    dynamicToggle.textContent = 'edit dynamic rule';
+  }
+  renderBlockEditDynamicControls();
   // Blur the home card before the sheet mounts so closing cannot restore focus
   // there and scroll the list underneath.
   const focusedCard = document.activeElement?.closest?.('.blocked-card');
   if(focusedCard && typeof document.activeElement.blur === 'function')document.activeElement.blur();
   openSheet('block-edit-sheet');
 }
+
+$('block-edit-dynamic-toggle')?.addEventListener('click',()=>{
+  if(!blockEditContext)return;
+  blockEditDynamicOpen = !blockEditDynamicOpen;
+  const toggle = $('block-edit-dynamic-toggle');
+  if(toggle){
+    toggle.setAttribute('aria-expanded',String(blockEditDynamicOpen));
+    toggle.textContent = blockEditDynamicOpen ? 'hide dynamic rule' : 'edit dynamic rule';
+  }
+  renderBlockEditDynamicControls();
+});
+
+$('block-edit-dynamic-controls')?.addEventListener('change',e=>{
+  const target = e.target;
+  const field = blockEditorField(target);
+  if(!field)return;
+  const exact = `data-blocked-${field}`;
+  const suffix = target.hasAttribute(exact) ? 'fixed' : [...target.getAttributeNames()].find(name=>name.startsWith(`${exact}-`))
+    ?.slice(`${exact}-`.length);
+  if(!suffix)return;
+  const secondary = v => typeof cleanBlockedAnchor2 === 'function' ? cleanBlockedAnchor2(v) : cleanPrayerAnchor(v);
+  if(suffix === 'anchor')saveBlockEditorRulePatch({[field + 'Anchor']:cleanPrayerAnchor(target.value)});
+  if(suffix === 'offset')saveBlockEditorRulePatch({[field + 'OffsetMin']:readSignedOffset(target)});
+  if(suffix === 'combine'){
+    const combine = cleanTimeCombine(target.value);
+    const anchor2 = secondary(target.closest('.time-dynamic')?.querySelector('.time-anchor2')?.value) || 'sunrise';
+    saveBlockEditorRulePatch({[field + 'Combine']:combine,[field + 'Anchor2']:combine ? anchor2 : null});
+  }
+  if(suffix === 'anchor2')saveBlockEditorRulePatch({[field + 'Anchor2']:secondary(target.value)});
+  if(suffix === 'offset2')saveBlockEditorRulePatch({[field + 'OffsetMin2']:readSignedOffset(target)});
+  if(suffix === 'fixed2')saveBlockEditorRulePatch({[field + 'FixedMin2']:timeInputToMinutes(target.value) ?? 1200});
+  if(suffix === 'fixed')saveBlockEditorRulePatch({[field]:timeInputToMinutes(target.value)});
+});
+
+$('block-edit-dynamic-controls')?.addEventListener('click',e=>{
+  const target = e.target.closest('button');
+  if(!target)return;
+  const field = blockEditorField(target);
+  if(!field)return;
+  const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)[blockEditContext?.blockIndex];
+  if(!block)return;
+  if(target.classList.contains('time-offset-sign-btn')){
+    const second = Boolean(target.closest('.time-expr2'));
+    const input = target.parentElement?.querySelector(second ? '.time-offset2' : '.time-offset');
+    if(input)saveBlockEditorRulePatch({[field + (second ? 'OffsetMin2' : 'OffsetMin')]:-readSignedOffset(input)});
+    return;
+  }
+  if(target.matches('.time-day-next,.time-day-next2')){
+    const second = target.classList.contains('time-day-next2');
+    const key = field + (second ? 'DayOffset2' : 'DayOffset');
+    saveBlockEditorRulePatch({[key]:target.getAttribute('aria-pressed') === 'true' ? 0 : 1});
+    return;
+  }
+  if(!target.classList.contains('time-mode-toggle'))return;
+  const anchorKey = field + 'Anchor';
+  if(block[anchorKey]){
+    saveBlockEditorRulePatch({[anchorKey]:null,[field + 'OffsetMin']:0,[field + 'Combine']:null,[field + 'Anchor2']:null,[field + 'OffsetMin2']:0,[field + 'FixedMin2']:null,[field + 'DayOffset']:0,[field + 'DayOffset2']:0});
+  }else{
+    const settings = loadSortSettings();
+    if(!block.locationId && !(Number.isFinite(settings.homeCityLat) && Number.isFinite(settings.homeCityLng))){showToast('pick a location or set your city first');return;}
+    saveBlockEditorRulePatch({[anchorKey]:'fajr',[field + 'OffsetMin']:0});
+  }
+});
 
 function readBlockEditTimes(){
   const start = timeInputToMinutes($('block-edit-start')?.value || '');
