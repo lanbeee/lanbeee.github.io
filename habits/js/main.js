@@ -1453,6 +1453,7 @@ function tingsInstallPlatform(){
 // unless they explicitly start a tour from About; a fresh empty install gets
 // only the small eligibility check below on the normal app path.
 const TINGS_ESSENTIALS_COACH_KEY = 'tings_coach_essentials_v2';
+const TINGS_INSTALL_COACH_KEY = 'tings_coach_install_v2';
 let _tingsCoachLoadPromise = null;
 function coachStorageValue(key){
   try{return localStorage.getItem(key) || '';}
@@ -1467,7 +1468,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=4';
+      stylesheet.href = './onboarding/coach.css?v=5';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -1484,7 +1485,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=4';
+    script.src = './onboarding/coach.js?v=5';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -1515,7 +1516,7 @@ $('start-advanced-coach')?.addEventListener('click',()=>{
 });
 $('open-install-guide')?.addEventListener('click',()=>{
   if(typeof isStandalonePwa === 'function' && isStandalonePwa()){
-    if(typeof showToast === 'function')showToast('Tings is already installed');
+    if(typeof showToast === 'function')showToast('already installed — the guided start button is right below');
     return;
   }
   closeSheet('about-sheet');
@@ -3264,7 +3265,13 @@ if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){
   const offerCoach = ()=>{
     if(coachBootInteracted || document.hidden || document.querySelector('.sheet-wrap.open')
       || load().length || coachStorageValue(TINGS_ESSENTIALS_COACH_KEY))return;
-    void startTingsCoach('essentials');
+    // A first-run browser user is taught to install first; the install tour
+    // then hands over to the guided start. Someone already running the
+    // installed app (or who finished the install guide before) goes straight
+    // to the guided start.
+    const standalone = typeof isStandalonePwa === 'function' && isStandalonePwa();
+    const seenInstallGuide = Boolean(coachStorageValue(TINGS_INSTALL_COACH_KEY));
+    void startTingsCoach(standalone || seenInstallGuide ? 'essentials' : 'install');
   };
   setTimeout(offerCoach,900);
 }

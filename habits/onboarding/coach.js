@@ -112,13 +112,9 @@
     const on = document.querySelector('#type-seg .seg-opt.on');
     return on?.dataset.v === 'task' ? 'task' : 'habit';
   }
-  // The install guide exists to move the user out of the browser tab, so it
-  // is skipped entirely when Tings already runs as a standalone app.
-  function runningStandalone(){
-    try{return typeof isStandalonePwa === 'function' && isStandalonePwa();}
-    catch(_){return false;}
-  }
-  function installStageEligible(){return !runningStandalone();}
+  // The install guide runs before the guided start for a first-run user in a
+  // browser, and on demand from About; it never mixes into the essentials
+  // order itself.
   function installPlatform(){
     try{
       if(typeof tingsInstallPlatform === 'function')return tingsInstallPlatform();
@@ -131,15 +127,14 @@
     }catch(_){return false;}
   }
   function essentialsOrder(){
-    const install = installStageEligible() ? ['eInstall'] : [];
-    if(!interactive)return ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview',...install,'eFinish'];
+    if(!interactive)return ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eFinish'];
     return [
       'eIntro','eAdd','eName','eKind',addKind() === 'task' ? 'eTask' : 'eRhythm','eSave',
-      'eDetailBasics','eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview',...install,'eFinish'
+      'eDetailBasics','eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview','eFinish'
     ];
   }
   function order(){
-    if(mode === 'install')return ['eInstall'];
+    if(mode === 'install')return ['iSteps','iNext'];
     if(mode !== 'advanced')return essentialsOrder();
     return isMinimal() ? ADVANCED_ORDER : ADVANCED_ORDER.filter(item=>item !== 'aFullMode');
   }
@@ -233,9 +228,8 @@
     if(stage === 'eOverview')return {
       progress:p,title:'The calendar is your second view',
       copy:'Use it when you need context beyond Home. Tap a day or an item to inspect plans and activity without changing the rhythm.',
-      target:['#overview-sheet .overview-sheet','#pane-overview .overview-sheet'],action:'Finish',next:installStageEligible() ? 'eInstall' : 'eFinish',back:'eCalendar'
+      target:['#overview-sheet .overview-sheet','#pane-overview .overview-sheet'],action:'Finish',next:'eFinish',back:'eCalendar'
     };
-    if(stage === 'eInstall')return installModel(p,'eOverview');
     return {
       progress:p,title:'You are ready to use Tings',
       copy:'Tap the Tings logo for samples, settings, help, the install guide, or either coach. The advanced coach is there when you want the full planning surface.',
@@ -243,55 +237,55 @@
     };
   }
 
-  // Install guide step, shared by the essentials tour and the one-step About
-  // tour. It never locks to an in-page control: the real action lives in the
-  // browser chrome (Share button, menu, or the native install sheet), so the
-  // guards simply keep the app itself untouchable while the steps are shown.
-  function installModel(p,back){
-    const platform = installPlatform();
-    // In the one-step About tour there is no eFinish to hop to: Done and
-    // Not now simply end the tour instead of advancing inside it.
-    const solo = mode === 'install';
-    if(platform !== 'ios' && installPromptReady())return {
+  // Install guide tour: the first thing a first-run browser user sees, and a
+  // two-step tour from About on demand. The steps never lock to an in-page
+  // control — the real action lives in browser chrome (Share button, menu, or
+  // the native install sheet) — so the guards keep the app untouchable while
+  // the numbered, iconified steps play out. iNext then hands the user to the
+  // guided start, which is also where an already-installed (standalone) user
+  // enters onboarding directly.
+  function installModel(p){
+    if(stage === 'iNext')return {
+      progress:p,title:'Open Tings like a native app',
+      copy:'From now on, launch Tings from its home-screen icon (or its own window) instead of the browser tab — full screen, own icon, no browser bar. Ready for a quick tour of the daily loop?',
+      action:'Start guided start',command:'startEssentials',later:'skip for now',back:'iSteps'
+    };
+    if(installPlatform() !== 'ios' && installPromptReady())return {
       progress:p,title:'Put Tings on your home screen',
-      copy:'Install it like a real app: its own icon, full screen, no browser bar. Everything you log stays on this device.',
-      action:'Install',command:'installNow',later:'Not now',next:solo ? '' : 'eFinish',back
+      copy:'Your browser can install Tings like a real app: its own icon, full screen, no browser bar. Everything you log stays on this device.',
+      action:'Install',command:'installNow',later:'Not now',next:'iNext'
     };
     const manual = {
       ios:{
         title:'Add Tings to your home screen',
-        copy:'You are viewing Tings in Safari right now. Give it a permanent place — three taps:',
+        copy:'You are viewing Tings in Safari right now. Give it a permanent place in three taps:',
         steps:[
-          'Tap the <strong>Share</strong> button in Safari’s toolbar: the square with an arrow pointing up.',
-          'Scroll down and tap <strong>Add to Home Screen</strong>.',
-          'Tap <strong>Add</strong>. Tings gets its own icon and opens full screen, without Safari.'
+          {icon:'ti ti-share',text:'Tap the <strong>Share</strong> button in Safari’s toolbar: the square with an arrow pointing up.'},
+          {icon:'ti ti-square-rounded-plus',text:'Scroll down and tap <strong>Add to Home Screen</strong>.'},
+          {icon:'ti ti-check',text:'Tap <strong>Add</strong>. Tings gets its own icon and opens full screen, without Safari.'}
         ]
       },
       android:{
         title:'Add Tings to your home screen',
         copy:'You are viewing Tings in the browser right now. Give it a permanent place:',
         steps:[
-          'Tap the browser <strong>menu</strong> (⋮ in Chrome, top right).',
-          'Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.',
-          'Tings gets its own icon and opens full screen, without the browser bar.'
+          {icon:'ti ti-dots-vertical',text:'Tap the browser <strong>menu</strong> — ⋮ in Chrome, at the top right.'},
+          {icon:'ti ti-download',text:'Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.'},
+          {icon:'ti ti-check',text:'Confirm, and Tings gets its own icon — full screen, no browser bar.'}
         ]
       },
       desktop:{
         title:'Install Tings as an app',
         copy:'The browser can install Tings like a desktop app with its own window:',
         steps:[
-          'Click the <strong>install icon</strong> at the right end of the address bar (a monitor with a downward arrow),',
-          'or open the browser menu and choose <strong>Install page as app…</strong>',
-          'Tings then opens in its own window, separate from your tabs.'
+          {icon:'ti ti-device-desktop-down',text:'Click the <strong>install icon</strong> at the right end of the address bar.'},
+          {icon:'ti ti-menu-2',text:'…or open the browser <strong>menu</strong> and choose <strong>Install page as app…</strong>'},
+          {icon:'ti ti-window',text:'Tings opens in its own window, separate from your tabs.'}
         ]
       }
     };
-    const m = manual[platform] || manual.desktop;
-    return {
-      progress:p,title:m.title,copy:m.copy,steps:m.steps,action:'Done',
-      ...(solo ? {command:'finish'} : {next:'eFinish'}),
-      back
-    };
+    const m = manual[installPlatform()] || manual.desktop;
+    return {progress:p,title:m.title,copy:m.copy,steps:m.steps,action:'Next',next:'iNext'};
   }
 
   function advancedModel(){
@@ -392,7 +386,11 @@
       </div>
       <h2 class="tings-coach-title" id="tings-coach-title">${m.title}</h2>
       <p class="tings-coach-copy" id="tings-coach-copy">${m.copy}</p>
-      ${m.steps?.length ? `<ol class="tings-coach-steps">${m.steps.map(step=>`<li>${step}</li>`).join('')}</ol>` : ''}
+      ${m.steps?.length ? `<ol class="tings-coach-steps">${m.steps.map((step,index)=>`
+        <li>
+          <span class="tings-step-glyph"><span class="tings-step-num">${index + 1}</span>${step.icon ? `<i class="${step.icon}" aria-hidden="true"></i>` : ''}</span>
+          <span class="tings-step-text">${step.text}</span>
+        </li>`).join('')}</ol>` : ''}
       ${m.hint ? `<p class="tings-coach-hint">${m.hint}</p>` : ''}
       ${(m.back || m.action || m.later) ? `<div class="tings-coach-actions">
         ${m.back ? '<button type="button" class="tings-coach-action secondary" data-coach-back>Back</button>' : ''}
@@ -435,7 +433,7 @@
       overviewActivated = false;
       closeGuidedSheet('overview-sheet');
     }
-    if(next === 'eInstall')closeGuidedSheet('overview-sheet');
+    if(next === 'iSteps')closeGuidedSheet('overview-sheet');
     if(next === 'aDetailRead')showDetailPage('calendar');
     if(next === 'aSchedule')showDetailPage('schedule');
     if(next === 'aEffort')showDetailPage('effort');
@@ -561,8 +559,7 @@
         .then(()=>typeof tingsPromptInstall === 'function' ? tingsPromptInstall() : false)
         .then(accepted=>{
           if(!active)return;
-          if(mode === 'install'){if(accepted)finish();else{installDismissed = true;render();}return;}
-          if(accepted)setStage('eFinish');
+          if(accepted)setStage('iNext');
           else{installDismissed = true;render();}
         })
         .catch(()=>{
@@ -836,7 +833,7 @@
     trackedHid = habits()[0]?.hid || '';
     overviewActivated = false;
     installDismissed = false;
-    stage = mode === 'advanced' ? 'aIntro' : mode === 'install' ? 'eInstall' : 'eIntro';
+    stage = mode === 'advanced' ? 'aIntro' : mode === 'install' ? 'iSteps' : 'eIntro';
     active = true;
     closeGuidedSheet('about-sheet');
     mount();

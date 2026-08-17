@@ -1509,6 +1509,15 @@ Toasts appear after:
 - Timer auto-completion
 
 ### Guided Coaches
+- A fresh, empty install offers the **install guide** first when it runs in a
+  browser: numbered, iconified per-platform steps (iOS Share → Add to Home
+  Screen; Android menu → Install app; desktop address-bar install) connected by
+  arrows, or a native **Install** button on Chrome-based browsers where a
+  `beforeinstallprompt` gesture was captured (declined prompts fall back to the
+  manual steps). The guide ends by handing over to the guided start; a user
+  already running the installed (standalone) app is offered the guided start
+  directly. About → **install app** replays the guide on demand, and About's
+  install button tells already-installed users where the guided start lives.
 - A fresh, empty install offers the **guided start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
 - The guided start branches between a repeating habit and a one-off task. It

@@ -31,9 +31,28 @@
 .tings-coach-skip.is-armed{color:var(--amber-text);font-weight:700;}
 .tings-coach-title{font-size:20px;line-height:1.18;margin:0 0 7px;font-weight:760;letter-spacing:-.018em;}
 .tings-coach-copy{font-size:14px;line-height:1.48;color:var(--text2);margin:0;}
-.tings-coach-steps{margin:11px 0 0;padding-left:18px;display:grid;gap:7px;font-size:13px;line-height:1.45;color:var(--text2);}
-.tings-coach-steps strong{color:var(--text);font-weight:760;}
-.tings-coach-steps li::marker{color:var(--teal-text);font-weight:800;}
+.tings-coach-steps{list-style:none;margin:13px 0 0;padding:0;}
+.tings-coach-steps li{display:grid;grid-template-columns:46px 1fr;gap:12px;position:relative;padding-bottom:14px;}
+.tings-coach-steps li:last-child{padding-bottom:2px;}
+.tings-coach-steps li:not(:last-child)::before{
+  content:"";position:absolute;left:22px;top:50px;bottom:2px;width:2px;background:var(--border2);
+}
+.tings-coach-steps li:not(:last-child)::after{
+  content:"";position:absolute;left:18.5px;bottom:-1px;width:8px;height:8px;
+  border-right:2px solid var(--border2);border-bottom:2px solid var(--border2);
+  transform:rotate(45deg);background:var(--bg);
+}
+.tings-step-glyph{
+  position:relative;width:46px;height:46px;border-radius:13px;box-sizing:border-box;
+  border:1px solid var(--border);background:var(--bg2);
+  display:flex;align-items:center;justify-content:center;font-size:23px;color:var(--teal-icon);
+}
+.tings-step-num{
+  position:absolute;top:-7px;right:-7px;width:19px;height:19px;border-radius:50%;
+  background:var(--teal-icon);color:#fff;font-size:11px;font-weight:800;line-height:19px;text-align:center;
+}
+.tings-step-text{font-size:13.5px;line-height:1.45;color:var(--text2);align-self:center;padding-top:2px;}
+.tings-step-text strong{color:var(--text);font-weight:760;}
 .tings-coach-hint{display:flex;align-items:center;gap:7px;margin:11px 0 0;color:var(--teal-text);font-size:12px;font-weight:700;}
 .tings-coach-hint::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--teal-icon);box-shadow:0 0 0 4px var(--teal-bg);}
 .tings-coach-hint.is-warning{color:var(--amber-text);}
