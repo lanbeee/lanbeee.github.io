@@ -260,7 +260,7 @@
         title:'Add Tings to your home screen',
         copy:'You are viewing Tings in Safari right now. Give it a permanent place in three taps:',
         steps:[
-          {icon:'ti ti-share',text:'Tap the <strong>Share</strong> button in Safari’s toolbar: the square with an arrow pointing up.'},
+          {icon:'ti ti-share-2',text:'Tap the <strong>Share</strong> button in Safari’s toolbar: the square with an arrow pointing up.'},
           {icon:'ti ti-square-rounded-plus',text:'Scroll down and tap <strong>Add to Home Screen</strong>.'},
           {icon:'ti ti-check',text:'Tap <strong>Add</strong>. Tings gets its own icon and opens full screen, without Safari.'}
         ]
@@ -270,7 +270,7 @@
         copy:'You are viewing Tings in the browser right now. Give it a permanent place:',
         steps:[
           {icon:'ti ti-dots-vertical',text:'Tap the browser <strong>menu</strong> — ⋮ in Chrome, at the top right.'},
-          {icon:'ti ti-download',text:'Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.'},
+          {icon:'ti ti-device-mobile-down',text:'Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.'},
           {icon:'ti ti-check',text:'Confirm, and Tings gets its own icon — full screen, no browser bar.'}
         ]
       },
@@ -279,7 +279,7 @@
         copy:'The browser can install Tings like a desktop app with its own window:',
         steps:[
           {icon:'ti ti-device-desktop-down',text:'Click the <strong>install icon</strong> at the right end of the address bar.'},
-          {icon:'ti ti-menu-2',text:'…or open the browser <strong>menu</strong> and choose <strong>Install page as app…</strong>'},
+          {icon:'ti ti-dots-vertical',text:'…or open the browser <strong>menu</strong> (⋮) and choose <strong>Install page as app…</strong>'},
           {icon:'ti ti-window',text:'Tings opens in its own window, separate from your tabs.'}
         ]
       }

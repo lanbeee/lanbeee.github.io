@@ -167,6 +167,8 @@ async function primary(page,current,next){
   await stage(page,'iSteps');
   assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 2 · install app','About runs the install guide as its own tour');
   assert(await page.locator('.tings-step-glyph i').count() === 3,'install guidance lists three iconified steps');
+  const desktopIcons = await page.locator('.tings-step-glyph i').evaluateAll(els=>els.map(el=>el.className));
+  assert(JSON.stringify(desktopIcons) === JSON.stringify(['ti ti-device-desktop-down','ti ti-dots-vertical','ti ti-window']),'desktop install guidance shows the monitor, menu-dots, and window glyphs');
   assert(await page.locator('[data-coach-back]').count() === 0,'the install tour opens on its first step');
   assert(await page.locator('#tings-coach').getAttribute('data-gated') === 'true','install guidance keeps the rest of the app locked');
   const coverGuard = await page.evaluate(()=>{
@@ -220,6 +222,31 @@ async function primary(page,current,next){
   await page.waitForTimeout(250);
   assert(await page.locator('#tings-coach').count() === 0,'already-installed users get no install tour from About');
   await page.evaluate(()=>closeSheet('about-sheet'));
+
+  // Per-platform glyphs: iOS must show Safari's share button (square with an
+  // arrow out of the top, ti-share-2) — not the Android node-graph share
+  // icon (ti-share). Android shows Chrome's ⋮ menu and install-to-phone.
+  const uaCases = [
+    {
+      name:'ios',
+      ua:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      icons:['ti ti-share-2','ti ti-square-rounded-plus','ti ti-check']
+    },
+    {
+      name:'android',
+      ua:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+      icons:['ti ti-dots-vertical','ti ti-device-mobile-down','ti ti-check']
+    }
+  ];
+  for(const {name,ua,icons} of uaCases){
+    const ctx = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:ua});
+    const uaPage = await ctx.newPage();
+    await uaPage.goto(coachUrl,{waitUntil:'load'});
+    await uaPage.waitForSelector('#tings-coach[data-coach-stage="iSteps"]',{timeout:5000});
+    const shown = await uaPage.locator('.tings-step-glyph i').evaluateAll(els=>els.map(el=>el.className));
+    assert(JSON.stringify(shown) === JSON.stringify(icons),`${name} install guidance shows the correct platform glyphs`);
+    await ctx.close();
+  }
   await page.evaluate(()=>{
     localStorage.removeItem('tings_coach_essentials_v2');
     localStorage.removeItem('tings_coach_advanced_v2');
