@@ -16,8 +16,10 @@ Open `index.html` via any static server. All state lives in `localStorage`.
 npx serve -l 4181 -s .          # serve locally (tests expect port 4181)
 # then open http://127.0.0.1:4181/
 
-./run-tests.sh                  # full suite, DEFAULT planner (GLPK)
-PLANNER_MODE=fast ./run-tests.sh   # full suite, FAST planner (heuristic)
+./run-tests.sh                  # smart full matrix; both planners where relevant
+./run-tests.sh planner          # planner/optimizer suite only
+./run-tests.sh ui               # general rendering and interaction suite
+./run-tests.sh --changed        # infer suites from current git changes
 ```
 
 Tests are **Playwright** (`{ chromium }`) driving the live page via
@@ -28,8 +30,10 @@ HABITS_URL=http://127.0.0.1:4181/ node tests/<name>.js
 ```
 
 Results land in `test-results/` (`last-run.log`, `.last-run.json`, per-failure
-dumps in `failed/`). The suite is ~72 files / ~2200 assertions and must stay
-green in **both** modes.
+dumps in `failed/`). Normal runner output is intentionally compact; pass
+`--verbose` to stream every assertion. Tests are classified in
+`tests/test-suites.tsv`; exploratory `zz-*` scripts belong to the opt-in
+`diagnostics` suite. See `TESTING.md` for the complete runner reference.
 
 ---
 
@@ -242,8 +246,13 @@ duration-spaced starts; overflow defers gracefully (verified for up to 8).
   GLPK when WASM can't load.
 - Fixture helpers worth copying: `base(props)` (full habit object with sane
   defaults), `openEveningSettings()` / `windowedSettings()` (blocked-time sets).
-- Run both modes before declaring done:
-  `./run-tests.sh && PLANNER_MODE=fast ./run-tests.sh`.
+- Run `./run-tests.sh planner` after planner changes. The smart matrix runs
+  Fast/GLPK parity tests once (they call both engines internally) and repeats
+  only page-mode-sensitive tests. Use `--mode fast` only to isolate Fast.
+- Put shared fixtures and pair-running helpers in
+  `tests/helpers/planner-test-helpers.js` rather than copying them into a new
+  file. Classify each new top-level test in `tests/test-suites.tsv`; the runner
+  rejects unclassified tests.
 
 ---
 

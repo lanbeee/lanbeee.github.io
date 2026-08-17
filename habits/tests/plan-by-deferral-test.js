@@ -35,9 +35,10 @@
 //   [11] one-shot task can-wait defers for Work
 //   [12] packed lower-pri that fits in spare still places (spare-only OK)
 //
-const { chromium } = require('playwright');
-const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
-const FAST_ONLY = process.env.HABITS_PLANNER_MODE === 'fast';
+const {
+  chromium, BASE, atTime, baseHabit:base, windowedSettings,
+  glpkAvailable, runPlannerPair, minutesOnDay, placedAnywhere
+} = require('./helpers/planner-test-helpers');
 
 let pass = 0, fail = 0;
 function assert(cond, msg){
@@ -45,42 +46,10 @@ function assert(cond, msg){
   else { fail += 1; console.error('  FAIL: ' + msg); }
 }
 
-function atTime(hour, minute = 0){
-  const d = new Date();
-  d.setHours(hour, minute, 0, 0);
-  return d.getTime();
-}
-function base(props){
-  return Object.assign({
-    name:'item', type:'keepup', target:7, flexibilityDays:0, durationMinutes:30,
-    allowedTimeStart:null, allowedTimeEnd:null, preferredTimeStart:null, preferredTimeEnd:null,
-    allowedTimeStartAnchor:null, allowedTimeEndAnchor:null,
-    lastLog:null, logs:[], emoji:'', pinned:false, sample:false, snoozedUntil:null,
-    topics:[], allowedWeekdays:[], allowedMonthDays:[], preferredWeekdays:[], preferredMonthDays:[],
-    dueDate:null, eventTime:null, hardDue:false, createdAt:Date.now(),
-    breakable:false, minChunkMinutes:30, planByDate:null
-  }, props);
-}
-
 // Day is carved to the Work window 9:00 (540) .. 18:45 (1125) via sleep/evening
 // blocks, with a daily lunch block, so every candidate must compete inside that
 // window. availabilityMinutes is set high so the window — not the budget — is
 // the binding constraint.
-function windowedSettings(extra){
-  return Object.assign({
-    preset:'todayFirst', showWeekOnHome:true, agendaOptimizer:true, focus:'balanced',
-    availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440], availabilityOverrides:{},
-    showScheduledTasksInAgenda:true, showDueTasksInAgenda:true,
-    showPlannedItemsInAgenda:true, showDueHabitsInAgenda:true,
-    locations:[], travel:{}, defaultTravelMode:'walking',
-    blockedTimes:[
-      {label:'sleep',days:[],start:0,end:540},
-      {label:'evening',days:[],start:1125,end:1440},
-      {label:'lunch',days:[],start:720,end:750}
-    ]
-  }, extra || {});
-}
-
 (async () => {
   const browser = await chromium.launch({ headless:true });
   const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
@@ -89,56 +58,16 @@ function windowedSettings(extra){
   await page.goto(BASE, { waitUntil:'networkidle' });
 
   // Confirm GLPK availability up front; soft-pass the GLPK column if missing.
-  const glpkOk = !FAST_ONLY && await page.evaluate(async () => {
-    if(typeof ensureGlpk !== 'function')return false;
-    try { const G = await ensureGlpk(); return !!G && typeof G.solve === 'function'; }
-    catch(_){ return false; }
-  });
+  const glpkOk = await glpkAvailable(page);
 
   // Run a scenario through both paths. `now` freezes the clock so "today" is
   // closed (19:00, past the 18:45 window) and errands can't escape forward.
   async function runBoth(data, settings, now){
-    return await page.evaluate(async ({ data, settings, now, fastOnly }) => {
-      const RealDate = Date;
-      function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
-      FD.now = () => now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
-      Object.setPrototypeOf(FD, RealDate); FD.prototype = RealDate.prototype;
-      const orig = globalThis.Date; globalThis.Date = FD;
-      const summarize = (week) => (week.days || []).map(day => {
-        const fills = (day.timeline || []).filter(r => r.kind === 'fill');
-        const byName = {};
-        for(const f of fills){
-          const m = Math.round((f.end - f.start) / 60000);
-          byName[f.h.name] = (byName[f.h.name] || 0) + m;
-        }
-        return byName;
-      });
-      let glpk = null, fast = null;
-      if(!fastOnly){
-        try{
-          const w = await buildWeekAgendaAsync(data, Object.assign({}, settings, { agendaOptimizer:true }), 7);
-          glpk = { optimized: !!w.optimized, days: summarize(w) };
-        }catch(e){ glpk = { error: String(e && e.message || e) }; }
-      }
-      try{
-        const w = buildWeekAgenda(data, Object.assign({}, settings, { agendaOptimizer:false }), 7);
-        fast = { days: summarize(w) };
-      }catch(e){ fast = { error: String(e && e.message || e) }; }
-      globalThis.Date = orig;
-      return { glpk, fast };
-    }, { data, settings, now, fastOnly:FAST_ONLY });
-  }
-
-  function minutesOnDay(res, offset, name){
-    const d = (res && res.days && res.days[offset]) || {};
-    return d[name] || 0;
+    return runPlannerPair(page, data, settings, now);
   }
   function errandCountOnDay(res, offset, names){
     const d = (res && res.days && res.days[offset]) || {};
     return names.reduce((n,nm) => n + (d[nm] > 0 ? 1 : 0), 0);
-  }
-  function placedAnywhere(res, name){
-    return ((res && res.days) || []).reduce((s,d) => s + (d[name] || 0), 0);
   }
   function weekTotal(res, name){
     return ((res && res.days) || []).reduce((s,d) => s + (d[name] || 0), 0);
