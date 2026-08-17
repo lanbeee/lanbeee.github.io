@@ -1536,6 +1536,13 @@ Toasts appear after:
   before teaching controls farther down the add sheet.
 - About → **guided start** replays a non-destructive refresher for an existing
   user.
+- Guided start finishes with the **install guide**: iOS learns
+  Share → Add to Home Screen, Android/desktop learns the menu or address-bar
+  install, and Chrome-based browsers with a captured `beforeinstallprompt`
+  gesture get a native Install button (with a Not-now escape and a manual-steps
+  fallback if the prompt is declined). The step is skipped when Tings already
+  runs standalone, and About → **install app** replays the same guide as a
+  one-step tour on demand.
 - About → **advanced coach** teaches the full, non-minimal surface: rich cards,
   swipe/card actions, agenda ordering and audit, every major detail area,
   calendar analysis and filters, home display, backup, calendar import, topics,

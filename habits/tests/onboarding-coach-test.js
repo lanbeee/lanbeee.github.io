@@ -35,6 +35,7 @@ async function primary(page,current,next){
   assert(await page.locator('script[data-tings-coach]').count() === 0,'coach assets stay lazy before the first-run offer');
   await stage(page,'eIntro',3500);
   assert(await page.locator('link[data-tings-coach]').count() === 1,'first-run coach loads its stylesheet on demand');
+  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 15 · guided start','install guidance is counted in the essentials tour');
 
   await primary(page,'eIntro','eAdd');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','required action steps lock interaction to the highlighted target');
@@ -103,7 +104,21 @@ async function primary(page,current,next){
   await primary(page,'eHomeGroups','eCalendar');
   await page.locator('#open-overview').click();
   await stage(page,'eOverview');
-  await primary(page,'eOverview','eFinish');
+  await primary(page,'eOverview','eInstall');
+  assert(await page.locator('#tings-coach').getAttribute('data-gated') === 'true','install guidance keeps the rest of the app locked');
+  const coverGuard = await page.evaluate(()=>{
+    const top = document.querySelector('[data-coach-guard="top"]').getBoundingClientRect();
+    return {w:top.width,h:top.height,vw:window.innerWidth,vh:window.innerHeight};
+  });
+  assert(coverGuard.h >= coverGuard.vh - 1 && coverGuard.w >= coverGuard.vw - 1,'the install step has no in-page target so guards cover the whole surface');
+  const installPrimary = await page.locator('[data-coach-primary]').textContent();
+  if(installPrimary === 'Install'){
+    await page.locator('[data-coach-later]').click();
+  }else{
+    assert(await page.locator('.tings-coach-steps li').count() === 3,'desktop install guidance lists browser steps');
+    await page.locator('[data-coach-primary]').click();
+  }
+  await stage(page,'eFinish');
   await page.locator('[data-coach-primary]').click();
   assert(await page.locator('#tings-coach').count() === 0,'finishing guided start removes the coach');
   const essentialState = await page.evaluate(name=>{
@@ -151,6 +166,51 @@ async function primary(page,current,next){
   await page.locator('[data-coach-skip]').click();
   assert(await page.locator('#tings-coach').count() === 0,'second skip tap ends the tour');
   assert(await page.evaluate(()=>localStorage.getItem('tings_coach_essentials_v2')) === 'skipped','skipping is recorded only after confirmation');
+
+  // One-step install guide from About: a desktop browser gets manual steps.
+  await page.locator('#open-about').click();
+  await page.locator('#open-install-guide').click();
+  await stage(page,'eInstall');
+  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 1 · install app','About runs the install guide as a one-step tour');
+  assert(await page.locator('.tings-coach-steps li').count() === 3,'install guidance lists numbered browser steps');
+  assert(await page.locator('[data-coach-back]').count() === 0,'the one-step tour has no back target');
+  await page.locator('[data-coach-skip]').click();
+  await page.locator('[data-coach-skip]').click();
+  assert(await page.locator('#tings-coach').count() === 0,'install guide ends via the two-tap skip');
+
+  // Native-prompt variant: a captured install gesture swaps in an Install
+  // button; a declined or broken prompt falls back to the manual steps.
+  await page.evaluate(()=>window.dispatchEvent(new Event('beforeinstallprompt')));
+  await page.evaluate(()=>window.startTingsCoach('install',{force:true}));
+  await stage(page,'eInstall');
+  assert((await page.locator('[data-coach-primary]').textContent()) === 'Install','a captured install gesture offers the native prompt');
+  assert((await page.locator('[data-coach-later]').textContent()) === 'Not now','the native install step keeps a soft escape');
+  await page.locator('[data-coach-primary]').click();
+  await page.waitForTimeout(200);
+  assert(await page.locator('.tings-coach-steps li').count() === 3,'a declined native prompt falls back to manual install steps');
+  await page.locator('[data-coach-primary]').click();
+  assert(await page.locator('#tings-coach').count() === 0,'install guide finishes cleanly');
+
+  // Already installed (standalone display mode): tours skip the install step
+  // and About refuses to start the guide again.
+  await page.evaluate(()=>{
+    window.__tingsMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = query => /standalone|minimal-ui|fullscreen/.test(query)
+      ? {matches:true,media:query,onchange:null,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){},dispatchEvent(){return false;}}
+      : window.__tingsMatchMedia(query);
+  });
+  await page.evaluate(()=>window.startTingsCoach('essentials',{force:true}));
+  await stage(page,'eIntro');
+  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 7 · guided start','standalone users skip the install step entirely');
+  await page.evaluate(()=>window.TingsCoach.stop());
+  await page.locator('#open-about').click();
+  await page.locator('#open-install-guide').click();
+  await page.waitForTimeout(250);
+  assert(await page.locator('#tings-coach').count() === 0,'already-installed users get no install tour from About');
+  await page.evaluate(()=>{
+    window.matchMedia = window.__tingsMatchMedia;
+    closeSheet('about-sheet');
+  });
   await page.evaluate(()=>{
     localStorage.removeItem('tings_coach_essentials_v2');
     localStorage.removeItem('tings_coach_advanced_v2');

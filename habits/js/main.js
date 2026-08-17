@@ -1418,6 +1418,37 @@ document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
   });
 });
 
+// PWA install support. beforeinstallprompt can fire long before any coach
+// loads, so the app captures the browser's gesture at boot and replays it on
+// demand; Chrome/Edge/Android then show the native install sheet from the
+// coach's Install button instead of the noisy mini-infobar. iOS Safari has no
+// such event — there the coach teaches Share → Add to Home Screen.
+let _tingsDeferredInstall = null;
+window.addEventListener('beforeinstallprompt',event=>{
+  event.preventDefault();
+  _tingsDeferredInstall = event;
+});
+window.addEventListener('appinstalled',()=>{_tingsDeferredInstall = null;});
+function tingsInstallPromptAvailable(){return _tingsDeferredInstall !== null;}
+async function tingsPromptInstall(){
+  if(!_tingsDeferredInstall)return false;
+  const deferred = _tingsDeferredInstall;
+  _tingsDeferredInstall = null;
+  try{
+    await deferred.prompt();
+    const choice = await deferred.userChoice;
+    return choice?.outcome === 'accepted';
+  }catch(_){return false;}
+}
+function tingsInstallPlatform(){
+  const ua = navigator.userAgent || '';
+  if(/iPad|iPhone|iPod/.test(ua))return 'ios';
+  // iPadOS Safari masquerades as desktop macOS; touch points separate them.
+  if(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)return 'ios';
+  if(/Android/i.test(ua))return 'android';
+  return 'desktop';
+}
+
 // Lazy-load both guided coaches. Existing users never download these assets
 // unless they explicitly start a tour from About; a fresh empty install gets
 // only the small eligibility check below on the normal app path.
@@ -1436,7 +1467,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=3';
+      stylesheet.href = './onboarding/coach.css?v=4';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -1453,7 +1484,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=3';
+    script.src = './onboarding/coach.js?v=4';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -1481,6 +1512,14 @@ $('start-essentials-coach')?.addEventListener('click',()=>{
 $('start-advanced-coach')?.addEventListener('click',()=>{
   closeSheet('about-sheet');
   void startTingsCoach('advanced',{force:true});
+});
+$('open-install-guide')?.addEventListener('click',()=>{
+  if(typeof isStandalonePwa === 'function' && isStandalonePwa()){
+    if(typeof showToast === 'function')showToast('Tings is already installed');
+    return;
+  }
+  closeSheet('about-sheet');
+  void startTingsCoach('install',{force:true});
 });
 $('open-sample-habits')?.addEventListener('click',()=>{
   if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
