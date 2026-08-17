@@ -100,14 +100,16 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       leadSize:parseFloat(style.fontSize),
       titleSize:parseFloat(getComputedStyle(name).fontSize),
       leadFits:lead.scrollWidth <= lead.clientWidth,
-      titleEllipses:name.scrollWidth > name.clientWidth
+      titleEllipses:name.scrollWidth > name.clientWidth,
+      titleClamp:getComputedStyle(name).webkitLineClamp,
+      titleYields:name.scrollHeight > name.clientHeight || name.scrollWidth > name.clientWidth
     };
     host.remove();
     return result;
   });
   check('agenda suggestion is an inline first-row cue',hierarchy.inFirstRow && hierarchy.transparent,JSON.stringify(hierarchy));
   check('agenda suggestion is no larger than the title',hierarchy.leadSize <= hierarchy.titleSize,JSON.stringify(hierarchy));
-  check('long titles ellipsize before agenda time is cut',hierarchy.titleEllipses && hierarchy.leadFits,JSON.stringify(hierarchy));
+  check('long titles wrap and clamp before agenda time is cut',hierarchy.titleClamp === '2' && hierarchy.titleYields && hierarchy.leadFits,JSON.stringify(hierarchy));
   check('agenda cue and status use compact copy in their intended rows',hierarchy.text === '9AM · 2h' && hierarchy.statusInMeta,JSON.stringify(hierarchy));
 
   const tones = await page.evaluate(()=>{
