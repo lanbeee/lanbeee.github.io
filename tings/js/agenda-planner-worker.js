@@ -199,7 +199,9 @@ async function runPlannerMessage(message){
     const count = Math.max(1,Math.min(14,Math.round(message.numDays) || 7));
     const buildOpts = {
       dirtyKey:message.dirtyKey || '',
-      day0Only:Boolean(message.day0Only)
+      day0Only:Boolean(message.day0Only),
+      refine:Boolean(message.refine),
+      refineBudgetMs:Math.max(0,Math.round(Number(message.refineBudgetMs) || 0))
     };
     const data = load();
     const week = message.mode === 'exact' && typeof buildWeekAgendaAsync === 'function'

@@ -1651,8 +1651,16 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   }
   const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
   const plannerIsPreview = Boolean(week && !week.optimized && settings && settings.agendaOptimizer);
+  const solveStatus = week && week.plannerSolveStatus ? week.plannerSolveStatus : '';
   const plannerEngine = week
-    ? (week.optimized ? 'GLPK option optimizer + complete-day route'
+    ? (week.optimized
+      ? (week.refined
+        ? `GLPK background refinement (fixed-pack ${solveStatus || 'feasible'}) + complete-day route`
+        : (solveStatus === 'feasible'
+          ? 'GLPK feasible fixed-item incumbent + complete-day route; refinement pending'
+          : (solveStatus === 'fallback'
+            ? 'GLPK requested; heuristic day fallback + complete-day route'
+            : 'GLPK optimal fixed-item pack + complete-day route')))
       : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner'))
     : 'fast day planner';
   const traceCandidateMeta = new Map();
@@ -1699,6 +1707,8 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     placementGaps,
     agendaRows,
     plannerEngine,
+    plannerSolveStatus:solveStatus,
+    plannerWasRefined:Boolean(week && week.refined),
     plannerIsPreview,
     plannerTraceGeneratedOnDemand:true,
     plannerTrace,
@@ -5515,7 +5525,7 @@ function dropSubjectsWithFailedSameDayPartners(state,candidates,byHid,settings){
 // day and refill Work. Accept only if week placed minutes do not drop (hours
 // first); soft travel is a tiebreak. Bounded attempts — mirrors
 // rebalanceScarcePlacements.
-function repairWeekPlacedHours(candidates,dayStates,settings){
+function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates) || !dayStates.length)return 0;
   const MAX_ATTEMPTS = 16;
   let attempts = 0;
@@ -5670,6 +5680,189 @@ function repairWeekPlacedHours(candidates,dayStates,settings){
         break;
       }
       if(improved)break;
+    }
+    if(!improved)break;
+  }
+  // A one-at-a-time repair cannot cross a contiguity valley: removing one
+  // 30-minute blocker may still leave every opening below Work's 45-minute
+  // minimum chunk, so that individually neutral move is rejected even though
+  // moving a second blocker would recover the whole deficit. The background
+  // exact refinement enables a bounded 2/3-item neighborhood search for that
+  // case. Keep it out of the first-paint pass so heavy users still get a quick
+  // feasible incumbent.
+  if(options && options.deep){
+    moves += repairBreakableContiguityNeighborhood(candidates,dayStates,settings,options);
+  }
+  return moves;
+}
+
+// HYBRID: jointly relocate a small set of flexible blockers so a daily
+// breakable can reclaim contiguous chunks. This is deliberately a bounded
+// neighborhood repair rather than an item-name rule or an unbounded power set.
+// Persistent order-link participants are never victims: their coupled timing
+// must be handled by the link invariant machinery.
+function repairBreakableContiguityNeighborhood(candidates,dayStates,settings,options = {}){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates) || !dayStates.length)return 0;
+  const byIndex = new Map(candidates.map(c=>[c.i,c]));
+  const maxTrials = Math.max(1,Math.min(64,Number(options.maxContiguityTrials) || 28));
+  const maxVictims = Math.max(2,Math.min(3,Number(options.maxContiguityVictims) || 3));
+  let trials = 0;
+  let moves = 0;
+
+  const deficitFor = (state,idx)=>{
+    const hit = dailyBreakableReservations(state,candidates).find(r=>r.i === idx);
+    return hit ? hit.deficit : 0;
+  };
+  const linkedHidsFor = state=>{
+    const out = new Set();
+    const edges = typeof plannerOrderConstraintsForDay === 'function'
+      ? plannerOrderConstraintsForDay(state.dayBase) : [];
+    for(const edge of edges || []){
+      if(edge && edge.beforeHid)out.add(edge.beforeHid);
+      if(edge && edge.afterHid)out.add(edge.afterHid);
+    }
+    return out;
+  };
+  const collapsedKeepFills = (state,removed)=>{
+    const out = [];
+    const seenBreak = new Set();
+    for(const entry of state.fills || []){
+      const fill = entry && entry.fill;
+      if(!fill || !fill.h || removed.has(fill.i))continue;
+      if(fill.h.breakable){
+        if(seenBreak.has(fill.i))continue;
+        seenBreak.add(fill.i);
+        out.push({h:fill.h,i:fill.i,priority:fill.priority,scarcity:fill.scarcity});
+      }else{
+        out.push({h:fill.h,i:fill.i,priority:fill.priority,scarcity:fill.scarcity});
+      }
+    }
+    return out;
+  };
+  const combinations = (items,size)=>{
+    const out = [];
+    const walk = (at,pick)=>{
+      if(out.length >= maxTrials)return;
+      if(pick.length === size){ out.push(pick.slice()); return; }
+      for(let i = at;i < items.length;i += 1){
+        pick.push(items[i]);
+        walk(i + 1,pick);
+        pick.pop();
+        if(out.length >= maxTrials)return;
+      }
+    };
+    walk(0,[]);
+    return out;
+  };
+  const placeVictims = (victims,sourceIndex,sourceClean)=>{
+    const working = new Map([[sourceIndex,sourceClean]]);
+    const scoreOpts = state=>({
+      settings:state.settings || settings,
+      weights:typeof resolveAgendaScoreWeights === 'function'
+        ? resolveAgendaScoreWeights(state.settings || settings) : null,
+      allowNetwork:true,
+      candidates
+    });
+    const walk = pos=>{
+      if(pos >= victims.length)return working;
+      const victim = victims[pos];
+      const c = victim.c;
+      // Prefer retaining the item today outside the now-protected Work chunks;
+      // otherwise use its earliest eligible future day.
+      const targetIndexes = [sourceIndex];
+      for(let i = 0;i < dayStates.length;i += 1){
+        if(i !== sourceIndex)targetIndexes.push(i);
+      }
+      for(const targetIndex of targetIndexes){
+        const targetBase = working.get(targetIndex) || dayStates[targetIndex];
+        if(!targetBase)continue;
+        if(c.eligible && !c.eligible.has(targetBase.dayBase))continue;
+        if(c.pinned && !targetBase.isTodayDay)continue;
+        if(targetBase.placed && targetBase.placed.has(c.i))continue;
+        const trial = clonePlacementState(targetBase);
+        trial.day = targetBase.day;
+        const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+        const fit = tryPlaceOnDay(trial,fill,scoreOpts(trial));
+        if(!fit)continue;
+        commitPlacement(trial,fill,fit);
+        syncDayAgendaItemsFromFills(trial);
+        working.set(targetIndex,trial);
+        const solved = walk(pos + 1);
+        if(solved)return solved;
+        if(targetBase === dayStates[targetIndex])working.delete(targetIndex);
+        else working.set(targetIndex,targetBase);
+      }
+      return null;
+    };
+    return walk(0);
+  };
+
+  while(trials < maxTrials){
+    let improved = false;
+    for(let sourceIndex = 0;sourceIndex < dayStates.length && !improved;sourceIndex += 1){
+      const state = dayStates[sourceIndex];
+      const reservations = dailyBreakableReservations(state,candidates)
+        .filter(r=>r.deficit > 0 && byIndex.has(r.i));
+      for(const reservation of reservations){
+        const short = byIndex.get(reservation.i);
+        if(!short)continue;
+        const linked = linkedHidsFor(state);
+        const windows = breakableReservationWindows(reservation);
+        const victims = (state.fills || []).map(entry=>{
+          const c = entry && entry.fill ? byIndex.get(entry.fill.i) : null;
+          return {entry,c};
+        }).filter(({entry,c})=>{
+          if(!entry || !entry.fit || !c || !c.h || c.i === short.i)return false;
+          if(!isMovableWeekCandidate(c) || c.pinned)return false;
+          if(c.h.hid && linked.has(c.h.hid))return false;
+          if(typeof mustPlaceCriticalOccurrence === 'function'
+            && mustPlaceCriticalOccurrence(c))return false;
+          return windows.some(win=>entry.fit.placeEnd > win.start && entry.fit.placeStart < win.end);
+        }).sort((a,b)=>{
+          const pri = (Number(b.c.priority) || 0) - (Number(a.c.priority) || 0);
+          if(pri)return pri;
+          return (Number(b.entry.fit.durMin) || 0) - (Number(a.entry.fit.durMin) || 0);
+        }).slice(0,8);
+        if(victims.length < 2)continue;
+
+        const beforeMinutes = weekPlacedMinutes(dayStates);
+        const beforeTravel = weekTravelSecondsFromStates(dayStates);
+        const beforeDeficit = reservation.deficit;
+        for(let size = 2;size <= Math.min(maxVictims,victims.length) && !improved;size += 1){
+          for(const combo of combinations(victims,size)){
+            if(trials++ >= maxTrials)break;
+            const removed = new Set(combo.map(v=>v.c.i));
+            const sourceClean = rebuildDayFromFills(
+              state,
+              collapsedKeepFills(state,removed),
+              candidates,
+              {settings,allowNetwork:true}
+            );
+            if(!sourceClean)continue;
+            const reclaimedDeficit = deficitFor(sourceClean,short.i);
+            if(reclaimedDeficit >= beforeDeficit)continue;
+            const placed = placeVictims(combo,sourceIndex,sourceClean);
+            if(!placed)continue;
+            const hypothetical = dayStates.map((original,index)=>placed.get(index) || original);
+            const afterMinutes = weekPlacedMinutes(hypothetical);
+            const afterTravel = weekTravelSecondsFromStates(hypothetical);
+            const finalSource = placed.get(sourceIndex) || sourceClean;
+            const afterDeficit = deficitFor(finalSource,short.i);
+            if(afterDeficit >= beforeDeficit)continue;
+            if(afterMinutes < beforeMinutes)continue;
+            if(afterMinutes === beforeMinutes && afterDeficit === beforeDeficit
+              && afterTravel > beforeTravel)continue;
+            for(const [index,replacement] of placed){
+              applyPlacementState(dayStates[index],replacement);
+              syncDayAgendaItemsFromFills(dayStates[index]);
+            }
+            moves += combo.length;
+            improved = true;
+            break;
+          }
+        }
+        if(improved)break;
+      }
     }
     if(!improved)break;
   }

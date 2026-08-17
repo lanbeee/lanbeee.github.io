@@ -950,7 +950,7 @@ function renderPresencePickerBody(){
 let travelEditFromId = null;
 let travelEditToId = null;
 
-function openTravelEditSheet(fromId,toId){
+function openTravelEditSheet(fromId,toId,leaveByTs){
   const from = typeof locationById === 'function' ? locationById(fromId) : null;
   const to = typeof locationById === 'function' ? locationById(toId) : null;
   if(!from || !to || from.id === to.id)return;
@@ -965,6 +965,19 @@ function openTravelEditSheet(fromId,toId){
   if(modeEl){
     const label = edge.provider === 'manual' ? 'edited time' : `${mode} estimate`;
     modeEl.textContent = label;
+  }
+  const timing = $('travel-edit-timing');
+  if(timing){
+    const leaveBy = Number(leaveByTs);
+    if(Number.isFinite(leaveBy) && leaveBy > 0){
+      const arrival = leaveBy + Math.max(0,Number(edge.seconds) || 0) * 1000;
+      timing.hidden = false;
+      const clock = ts => formatTimeShort(new Date(ts).getHours() * 60 + new Date(ts).getMinutes());
+      timing.textContent = `leave by ${clock(leaveBy)} · arrive about ${clock(arrival)}`;
+    }else{
+      timing.hidden = true;
+      timing.textContent = '';
+    }
   }
   const dest = $('travel-edit-dest');
   if(dest){
