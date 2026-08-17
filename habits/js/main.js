@@ -1417,6 +1417,71 @@ document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
     head.setAttribute('aria-expanded',String(opening));
   });
 });
+
+// Lazy-load both guided coaches. Existing users never download these assets
+// unless they explicitly start a tour from About; a fresh empty install gets
+// only the small eligibility check below on the normal app path.
+const TINGS_ESSENTIALS_COACH_KEY = 'tings_coach_essentials_v1';
+let _tingsCoachLoadPromise = null;
+function coachStorageValue(key){
+  try{return localStorage.getItem(key) || '';}
+  catch(_){return '';}
+}
+function loadTingsCoach(){
+  if(window.TingsCoach)return Promise.resolve(window.TingsCoach);
+  if(_tingsCoachLoadPromise)return _tingsCoachLoadPromise;
+  _tingsCoachLoadPromise = new Promise((resolve,reject)=>{
+    let stylesheet = document.querySelector('link[data-tings-coach]');
+    let stylesReady;
+    if(!stylesheet){
+      stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = './onboarding/coach.css?v=1';
+      stylesheet.dataset.tingsCoach = '1';
+      document.head.appendChild(stylesheet);
+      stylesReady = new Promise(done=>{
+        stylesheet.addEventListener('load',done,{once:true});
+        stylesheet.addEventListener('error',done,{once:true});
+      });
+    }else{
+      stylesReady = Promise.resolve();
+    }
+    let script = document.querySelector('script[data-tings-coach]');
+    if(script){
+      script.addEventListener('load',()=>stylesReady.then(()=>resolve(window.TingsCoach)),{once:true});
+      script.addEventListener('error',reject,{once:true});
+      return;
+    }
+    script = document.createElement('script');
+    script.src = './onboarding/coach.js?v=1';
+    script.defer = true;
+    script.dataset.tingsCoach = '1';
+    script.addEventListener('load',()=>{
+      if(window.TingsCoach)stylesReady.then(()=>resolve(window.TingsCoach));
+      else reject(new Error('coach unavailable'));
+    },{once:true});
+    script.addEventListener('error',reject,{once:true});
+    document.body.appendChild(script);
+  }).catch(err=>{
+    _tingsCoachLoadPromise = null;
+    throw err;
+  });
+  return _tingsCoachLoadPromise;
+}
+function startTingsCoach(kind = 'essentials',options = {}){
+  return loadTingsCoach()
+    .then(coach=>coach.start({kind,force:Boolean(options.force)}))
+    .catch(()=>{ if(typeof showToast === 'function')showToast('coach could not load'); });
+}
+window.startTingsCoach = startTingsCoach;
+$('start-essentials-coach')?.addEventListener('click',()=>{
+  closeSheet('about-sheet');
+  void startTingsCoach('essentials',{force:true});
+});
+$('start-advanced-coach')?.addEventListener('click',()=>{
+  closeSheet('about-sheet');
+  void startTingsCoach('advanced',{force:true});
+});
 $('open-sample-habits')?.addEventListener('click',()=>{
   if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
 });
@@ -3150,6 +3215,20 @@ restoreHabitTimer();
 plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');
+// First-run coach: defer until the real home UI has painted. A dismissal is
+// versioned, so it stays quiet until a future coach intentionally opts in.
+if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){
+  let coachBootInteracted = false;
+  const noteCoachBootInteraction = ()=>{coachBootInteracted = true;};
+  document.addEventListener('pointerdown',noteCoachBootInteraction,{once:true,passive:true});
+  document.addEventListener('keydown',noteCoachBootInteraction,{once:true});
+  const offerCoach = ()=>{
+    if(coachBootInteracted || document.hidden || document.querySelector('.sheet-wrap.open')
+      || load().length || coachStorageValue(TINGS_ESSENTIALS_COACH_KEY))return;
+    void startTingsCoach('essentials');
+  };
+  setTimeout(offerCoach,900);
+}
 // After first paint: warm the planner worker (script parse + GLPK) off the
 // critical path so the next real request is not a cold bring-up. Exact mode only.
 if(typeof warmAgendaPlannerWorker === 'function'

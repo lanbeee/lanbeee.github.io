@@ -45,6 +45,7 @@ log-live-removal-e2e.js	planner	once
 missed-sheet-log-e2e.js	planner	once
 movable-non-overlap-deferral-test.js	planner	once
 offline-resilience.js	integrations	once
+onboarding-coach-test.js	ui	once
 plan-by-date-test.js	planner	once
 plan-by-deferral-test.js	planner	once
 planner-parity-test.js	planner	once

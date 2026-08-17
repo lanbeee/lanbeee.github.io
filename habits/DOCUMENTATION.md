@@ -1508,6 +1508,18 @@ Toasts appear after:
 - Planning a future item
 - Timer auto-completion
 
+### Guided Coaches
+- A fresh, empty install offers the **guided start** after first paint. It follows
+  the real add, detail, log, and calendar actions instead of using a simulator.
+- About → **guided start** replays a non-destructive refresher for an existing
+  user.
+- About → **advanced coach** teaches the full, non-minimal surface: rich cards,
+  detail planning, the calendar, backup, locations, and busy times. When minimal
+  mode is on, the user turns it off from the real Settings control during the
+  tour.
+- Coach assets live in `onboarding/` and are loaded on demand. Completion is
+  versioned in `tings_coach_essentials_v1` / `tings_coach_advanced_v1`.
+
 ---
 
 ## XII. SETTINGS OVERVIEW 👤👨‍💻
