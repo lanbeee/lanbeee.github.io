@@ -1421,7 +1421,7 @@ document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
 // Lazy-load both guided coaches. Existing users never download these assets
 // unless they explicitly start a tour from About; a fresh empty install gets
 // only the small eligibility check below on the normal app path.
-const TINGS_ESSENTIALS_COACH_KEY = 'tings_coach_essentials_v1';
+const TINGS_ESSENTIALS_COACH_KEY = 'tings_coach_essentials_v2';
 let _tingsCoachLoadPromise = null;
 function coachStorageValue(key){
   try{return localStorage.getItem(key) || '';}
@@ -1436,7 +1436,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=1';
+      stylesheet.href = './onboarding/coach.css?v=2';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -1453,7 +1453,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=1';
+    script.src = './onboarding/coach.js?v=2';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{

@@ -1510,15 +1510,26 @@ Toasts appear after:
 
 ### Guided Coaches
 - A fresh, empty install offers the **guided start** after first paint. It follows
-  the real add, detail, log, and calendar actions instead of using a simulator.
+  the real add, detail, home, and calendar surfaces instead of using a simulator.
+- The guided start branches between a repeating habit and a one-off task. It
+  teaches times-in-days rhythms or optional task dates/times, then covers
+  duration, auto-mark, card logging, Home groups, and the minimal calendar.
+- Required actions are guarded: taps outside the highlighted control are
+  intercepted, while the real highlighted control remains usable. If a sheet is
+  dismissed through browser or system navigation, the coach returns to the
+  matching safe step.
+- The name step uses the visual viewport while the keyboard is open. Enter moves
+  to the habit/task choice rather than saving early, and the keyboard is closed
+  before teaching controls farther down the add sheet.
 - About → **guided start** replays a non-destructive refresher for an existing
   user.
 - About → **advanced coach** teaches the full, non-minimal surface: rich cards,
-  detail planning, the calendar, backup, locations, and busy times. When minimal
-  mode is on, the user turns it off from the real Settings control during the
-  tour.
+  swipe/card actions, agenda ordering and audit, every major detail area,
+  calendar analysis and filters, home display, backup, calendar import, topics,
+  locations/travel, busy times, defaults, appearance, and smarter packing. When
+  minimal mode is on, the user turns it off from the real Settings control.
 - Coach assets live in `onboarding/` and are loaded on demand. Completion is
-  versioned in `tings_coach_essentials_v1` / `tings_coach_advanced_v1`.
+  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v2`.
 
 ---
 
