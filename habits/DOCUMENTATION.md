@@ -1514,10 +1514,23 @@ Toasts appear after:
 - The guided start branches between a repeating habit and a one-off task. It
   teaches times-in-days rhythms or optional task dates/times, then covers
   duration, auto-mark, card logging, Home groups, and the minimal calendar.
-- Required actions are guarded: taps outside the highlighted control are
-  intercepted, while the real highlighted control remains usable. If a sheet is
-  dismissed through browser or system navigation, the coach returns to the
-  matching safe step.
+  After the card intro it makes the user **log (or complete) the Ting they just
+  created** with the real pulse button — with an “I’ll log later” escape — so the
+  daily loop is practiced, not just described; the replay refresher never logs.
+- **Every step gates the whole experience.** Locked (required-action) steps
+  intercept taps outside the highlighted control with an amber warning; guided
+  (read-and-continue) steps block outside taps silently while the bubble’s
+  Next/Back advance the tour. Wheel scrolling outside the spotlight is blocked
+  too. When a step has no visible target (e.g. the welcome), the guards cover
+  the full screen so only the coach bubble is usable — there is no open window
+  between stages.
+- The coach decides which page is on screen: each stage declares the sheets it
+  may keep open (add/detail/settings/overview plus their pickers and
+  inspectors), and any other sheet that appears — stray tap, system navigation,
+  async open — is closed automatically. If an expected sheet is dismissed, the
+  coach returns to the matching safe step.
+- Skipping is a two-tap action (the button arms for 2.5 s) so a stray tap
+  cannot discard a tour; Escape still ends it immediately.
 - The name step uses the visual viewport while the keyboard is open. Enter moves
   to the habit/task choice rather than saving early, and the keyboard is closed
   before teaching controls farther down the add sheet.

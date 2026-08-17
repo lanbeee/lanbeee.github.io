@@ -80,7 +80,26 @@ async function primary(page,current,next){
 
   await primary(page,'eDetailBasics','eDetailEffort');
   await primary(page,'eDetailEffort','eHomeCard');
-  await primary(page,'eHomeCard','eHomeGroups');
+  await primary(page,'eHomeCard','eLog');
+  assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','logging practice is a required action');
+  await page.locator('[data-coach-later]').click();
+  await stage(page,'eHomeGroups');
+  await page.locator('[data-coach-back]').click();
+  await stage(page,'eLog');
+  await page.locator('.ting-card [data-pulse]').first().click();
+  await stage(page,'eHomeGroups');
+  assert(true,'logging practice advances via the real pulse button');
+
+  const guardedNav = await page.evaluate(()=>{
+    const btn = document.getElementById('open-add').getBoundingClientRect();
+    const hit = document.elementFromPoint(btn.left + btn.width / 2,btn.top + btn.height / 2);
+    return Boolean(hit?.closest('[data-coach-guard]'));
+  });
+  assert(guardedNav,'guided steps shield navigation controls outside the spotlight');
+  await page.evaluate(()=>document.getElementById('open-add').click());
+  await page.waitForTimeout(300);
+  assert(await page.locator('#add-sheet.open').count() === 0,'the coach closes any sheet the current step did not ask for');
+
   await primary(page,'eHomeGroups','eCalendar');
   await page.locator('#open-overview').click();
   await stage(page,'eOverview');
@@ -89,9 +108,10 @@ async function primary(page,current,next){
   assert(await page.locator('#tings-coach').count() === 0,'finishing guided start removes the coach');
   const essentialState = await page.evaluate(name=>{
     const item = JSON.parse(localStorage.getItem('tings_v2') || '[]').find(h=>h.name === name);
-    return {marker:localStorage.getItem('tings_coach_essentials_v2'),target:item?.target,type:item?.type};
+    return {marker:localStorage.getItem('tings_coach_essentials_v2'),target:item?.target,type:item?.type,logs:item?.logs?.length || 0};
   },habitName);
   assert(essentialState.marker === 'done' && essentialState.target === 7 / 3 && essentialState.type === 'keepup','guided start preserves the chosen habit rhythm and remembers completion');
+  assert(essentialState.logs >= 1,'logging practice recorded a real log entry');
 
   await page.evaluate(()=>window.startTingsCoach('advanced',{force:true}));
   await primary(page,'aIntro','aFullMode');
@@ -124,6 +144,13 @@ async function primary(page,current,next){
 
   await page.locator('#open-about').click();
   assert(await page.locator('#start-essentials-coach').count() === 1 && await page.locator('#start-advanced-coach').count() === 1,'About exposes both coaches for replay');
+  await page.evaluate(()=>window.startTingsCoach('essentials',{force:true}));
+  await stage(page,'eIntro');
+  await page.locator('[data-coach-skip]').click();
+  assert(await page.locator('[data-coach-skip]').getAttribute('data-armed') === '1','first skip tap arms instead of ending the tour');
+  await page.locator('[data-coach-skip]').click();
+  assert(await page.locator('#tings-coach').count() === 0,'second skip tap ends the tour');
+  assert(await page.evaluate(()=>localStorage.getItem('tings_coach_essentials_v2')) === 'skipped','skipping is recorded only after confirmation');
   await page.evaluate(()=>{
     localStorage.removeItem('tings_coach_essentials_v2');
     localStorage.removeItem('tings_coach_advanced_v2');

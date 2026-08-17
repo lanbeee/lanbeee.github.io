@@ -1,5 +1,6 @@
-// State-aware onboarding for the real Tings UI. Required steps constrain taps
-// to the highlighted control; informational steps leave the app interactive.
+// State-aware onboarding for the real Tings UI. Every step gates taps: locked
+// steps require the highlighted control (outside taps warn), guided steps block
+// outside taps silently while Next/Back/skip advance the tour.
 (function(){
   'use strict';
 
@@ -17,6 +18,23 @@
   ]);
   const DETAIL_STAGES = new Set(['eDetailBasics','eDetailEffort','aDetailRead','aSchedule','aEffort','aIdentity','aLifecycle']);
   const ADD_STAGES = new Set(['eName','eKind','eRhythm','eTask','eSave']);
+  const OVERVIEW_STAGES = new Set(['eOverview','aOverview','aOverviewTools']);
+  // Sheets each stage group may keep open. Anything else that appears is closed
+  // by reconcile(): the coach decides what page is on screen, wander included.
+  const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet'];
+  const SHEET_ALLOWANCES = new Map([
+    [ADD_STAGES,['add-sheet',...PICKER_SHEETS]],
+    // Gate stages wait for the user to open their destination sheet themselves.
+    [new Set(['eAdd']),['add-sheet',...PICKER_SHEETS]],
+    [DETAIL_STAGES,['detail-sheet','order-link-sheet','doing-now-sheet','snooze-sheet','activity-sheet','value-log-sheet','day-logs-sheet',...PICKER_SHEETS]],
+    [SETTINGS_STAGES,['settings-sheet',...PICKER_SHEETS]],
+    [OVERVIEW_STAGES,['overview-sheet','day-logs-sheet','activity-sheet','calendar-filter-sheet','value-log-sheet','free-time-sheet','slipped-sheet','day-capacity-sheet']],
+    [new Set(['eCalendar','aCalendar']),['overview-sheet']]
+  ]);
+  function allowedSheets(){
+    for(const [stages,allowed] of SHEET_ALLOWANCES){if(stages.has(stage))return allowed;}
+    return [];
+  }
   const $ = id=>document.getElementById(id);
   let active = false;
   let mode = 'essentials';
@@ -33,6 +51,7 @@
   let initialHids = new Set();
   let trackedHid = '';
   let overviewActivated = false;
+  let skipArmTimer = 0;
 
   function habits(){
     try{return typeof load === 'function' ? load() : [];}
@@ -95,7 +114,7 @@
     if(!interactive)return ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eFinish'];
     return [
       'eIntro','eAdd','eName','eKind',addKind() === 'task' ? 'eTask' : 'eRhythm','eSave',
-      'eDetailBasics','eDetailEffort','eHomeCard','eHomeGroups','eCalendar','eOverview','eFinish'
+      'eDetailBasics','eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview','eFinish'
     ];
   }
   function order(){
@@ -164,12 +183,26 @@
     if(stage === 'eHomeCard')return {
       progress:p,title:'The card is the daily loop',
       copy:'Tap the colored icon to log or complete. Tap the card body to reopen details. The status line and rhythm update from your real entries.',
-      target:['.ting-card','#list','#empty'],action:'Next',next:'eHomeGroups'
+      target:[`.ting-card[data-real="${trackedIndex()}"]`,'.ting-card','#list','#empty'],action:'Next',next:interactive ? 'eLog' : 'eHomeGroups'
     };
+    if(stage === 'eLog'){
+      const idx = trackedIndex();
+      const item = habits()[idx];
+      const task = item?.type === 'task';
+      const label = task ? 'complete' : 'log';
+      return {
+        progress:p,title:task ? 'Complete it with one tap' : 'Log it with one tap',
+        copy:task
+          ? 'This is the loop: tap the icon to complete the task you just made. A toast appears afterwards and can undo the tap if it was a mistake.'
+          : 'This is the loop: tap the icon to log the Ting you just made. A toast appears afterwards and can undo the log if it was a mistake.',
+        target:[`[data-pulse="${idx}"]`,'.ting-card [data-pulse]'],hint:`Tap to ${label}`,locked:true,
+        later:'I’ll log later',next:'eHomeGroups',back:'eHomeCard'
+      };
+    }
     if(stage === 'eHomeGroups')return {
       progress:p,title:'Home answers “what now?”',
       copy:'Minimal mode keeps today, overdue, coming up, and the rest easy to scan. Logging may move a card as its rhythm changes.',
-      target:['.section-header','#list'],action:'Show calendar',next:'eCalendar',back:'eHomeCard'
+      target:['.section-header','#list'],action:'Show calendar',next:'eCalendar',back:interactive ? 'eLog' : 'eHomeCard'
     };
     if(stage === 'eCalendar')return {
       progress:p,title:'See beyond today',copy:'Tap Calendar to inspect dates, upcoming work, recent activity, and items needing attention.',
@@ -236,6 +269,7 @@
     guards = [...root.querySelectorAll('.tings-coach-guard')];
     root.addEventListener('click',onCoachClick);
     root.addEventListener('pointerdown',onGuardPointer,true);
+    root.addEventListener('wheel',onGuardWheel,{passive:false});
     document.addEventListener('click',onDocumentClick,true);
     document.addEventListener('keydown',onKeydown,true);
     document.addEventListener('input',onInput,true);
@@ -253,6 +287,7 @@
     observer = null;
     cancelAnimationFrame(positionFrame);
     clearTimeout(blockedTimer);
+    clearTimeout(skipArmTimer);
     document.removeEventListener('click',onDocumentClick,true);
     document.removeEventListener('keydown',onKeydown,true);
     document.removeEventListener('input',onInput,true);
@@ -270,6 +305,7 @@
     const m = model();
     root.dataset.mode = mode;
     root.dataset.coachStage = stage;
+    root.dataset.gated = String(m.roam !== true);
     root.dataset.locked = String(Boolean(m.locked));
     root.dataset.keyboard = String(Boolean(m.keyboard));
     bubble.innerHTML = `
@@ -280,8 +316,9 @@
       <h2 class="tings-coach-title" id="tings-coach-title">${m.title}</h2>
       <p class="tings-coach-copy" id="tings-coach-copy">${m.copy}</p>
       ${m.hint ? `<p class="tings-coach-hint">${m.hint}</p>` : ''}
-      ${(m.back || m.action) ? `<div class="tings-coach-actions">
+      ${(m.back || m.action || m.later) ? `<div class="tings-coach-actions">
         ${m.back ? '<button type="button" class="tings-coach-action secondary" data-coach-back>Back</button>' : ''}
+        ${m.later ? `<button type="button" class="tings-coach-action secondary" data-coach-later>${m.later}</button>` : ''}
         ${m.action ? `<button type="button" class="tings-coach-action" data-coach-primary${m.disabled ? ' disabled' : ''}>${m.action}</button>` : ''}
       </div>` : ''}`;
     queuePosition();
@@ -292,6 +329,7 @@
     stage = next;
     prepareStage(next);
     render();
+    revealTarget();
   }
 
   function prepareStage(next){
@@ -356,6 +394,23 @@
     setTimeout(queuePosition,80);
   }
 
+  // A gated step is only legible when its target is on screen; keyboard steps
+  // let the focused input drive the layout instead.
+  function revealTarget(){
+    const m = model();
+    if(m.keyboard || m.roam === true || !m.target)return;
+    const el = firstTarget(m.target);
+    if(!el)return;
+    const rect = el.getBoundingClientRect();
+    const view = window.visualViewport;
+    const top = view ? view.offsetTop : 0;
+    const bottom = top + (view ? view.height : window.innerHeight);
+    if(rect.bottom <= top || rect.top >= bottom){
+      el.scrollIntoView({block:'center',behavior:'auto'});
+      setTimeout(queuePosition,80);
+    }
+  }
+
   function finish(value = 'done'){
     remember(value);
     if(mode === 'advanced')closeGuidedSheet('settings-sheet');
@@ -375,10 +430,36 @@
     setStage(back);
   }
 
+  function disarmSkip(){
+    clearTimeout(skipArmTimer);
+    skipArmTimer = 0;
+    const btn = bubble?.querySelector('[data-coach-skip]');
+    if(btn){
+      btn.classList.remove('is-armed');
+      delete btn.dataset.armed;
+      btn.textContent = 'skip';
+    }
+  }
+
   function onCoachClick(event){
     if(event.target.closest('[data-coach-guard]')){blockTap();return;}
-    if(event.target.closest('[data-coach-skip]')){finish('skipped');return;}
+    const skip = event.target.closest('[data-coach-skip]');
+    if(skip){
+      // Ending a tour is a two-tap action so a stray tap cannot discard it.
+      if(skip.dataset.armed){disarmSkip();finish('skipped');return;}
+      skip.dataset.armed = '1';
+      skip.classList.add('is-armed');
+      skip.textContent = 'tap again to end';
+      clearTimeout(skipArmTimer);
+      skipArmTimer = setTimeout(disarmSkip,2500);
+      return;
+    }
     if(event.target.closest('[data-coach-back]')){goBack();return;}
+    if(event.target.closest('[data-coach-later]')){
+      const later = model().next;
+      if(later)setStage(later);
+      return;
+    }
     const primary = event.target.closest('[data-coach-primary]');
     if(!primary || primary.disabled)return;
     const m = model();
@@ -407,9 +488,12 @@
       return;
     }
     if(m.command === 'openAdvancedDetail'){
+      // Stage first, then open: reconcile() keys sheet allowances off the
+      // current stage, so the sheet must never appear while a home stage
+      // (empty allowlist) is still active.
+      setStage('aDetailRead');
       const idx = trackedIndex();
       if(idx >= 0 && typeof openDetail === 'function')openDetail(idx);
-      setTimeout(()=>setStage('aDetailRead'),80);
       return;
     }
     if(m.command === 'advancedHome'){
@@ -431,8 +515,15 @@
     blockTap();
   }
 
+  function onGuardWheel(event){
+    if(!event.target.closest('[data-coach-guard]'))return;
+    event.preventDefault();
+  }
+
+  // Locked (required-action) steps warn on outside taps; guided steps block
+  // silently — Next on the bubble is the way forward there.
   function blockTap(){
-    if(!bubble)return;
+    if(!bubble || !model().locked)return;
     const hint = bubble.querySelector('.tings-coach-hint');
     if(hint){
       hint.classList.add('is-warning');
@@ -456,6 +547,7 @@
       setTimeout(reconcile,90);
       setTimeout(reconcile,350);
     }
+    if(stage === 'eLog' && event.target.closest('[data-pulse]'))setTimeout(()=>setStage('eHomeGroups'),80);
     if((stage === 'eCalendar' || stage === 'aCalendar') && event.target.closest('#open-overview,#bar-open-overview')){
       overviewActivated = true;
       setTimeout(()=>setStage(stage === 'eCalendar' ? 'eOverview' : 'aOverview'),80);
@@ -523,6 +615,20 @@
     if((stage === 'eOverview' || stage === 'aOverview' || stage === 'aOverviewTools') && !overviewShown()){
       setStage(stage === 'eOverview' ? 'eCalendar' : 'aCalendar');
     }
+    closeUnexpectedSheets();
+  }
+
+  // The coach decides which page is on screen. Any sheet the current stage did
+  // not ask for (stray tap during a guard gap, system navigation, async open)
+  // is closed so the tour never explains a surface the user has left.
+  function closeUnexpectedSheets(){
+    if(typeof closeSheet !== 'function')return;
+    const allowed = new Set(allowedSheets());
+    document.querySelectorAll('.sheet-wrap.open').forEach(wrap=>{
+      if(wrap.id && !allowed.has(wrap.id)){
+        try{closeSheet(wrap.id);}catch(_){}
+      }
+    });
   }
 
   function queuePosition(){
@@ -571,6 +677,15 @@
     root.dataset.locked = String(Boolean(m.locked && intersects));
     if(!intersects){
       clearTargetGeometry();
+      // No visible target: a gated step still blocks the whole surface (only
+      // the bubble stays usable), so there is no open window between stages.
+      if(m.roam !== true){
+        const cover = Object.fromEntries(guards.map(guard=>[guard.dataset.coachGuard,guard]));
+        setRect(cover.top,view.left,view.top,view.width,view.height);
+        setRect(cover.right,view.right,view.top,0,0);
+        setRect(cover.bottom,view.left,view.bottom,0,0);
+        setRect(cover.left,view.left,view.top,0,0);
+      }
       const br = bubble.getBoundingClientRect();
       bubble.style.left = `${Math.max(margin,view.left + (view.width - br.width) / 2)}px`;
       bubble.style.top = `${Math.max(view.top + margin,view.top + (view.height - br.height) / 2)}px`;

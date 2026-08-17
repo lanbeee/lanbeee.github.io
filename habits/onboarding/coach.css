@@ -15,7 +15,7 @@
 }
 .tings-coach-root[data-has-target="true"] .tings-coach-spotlight{display:block;}
 .tings-coach-guard{position:fixed;z-index:0;display:none;pointer-events:none;background:transparent;}
-.tings-coach-root[data-locked="true"][data-has-target="true"] .tings-coach-guard{display:block;pointer-events:auto;touch-action:none;}
+.tings-coach-root[data-gated="true"] .tings-coach-guard{display:block;pointer-events:auto;touch-action:none;}
 .tings-coach-bubble{
   position:fixed;z-index:2;width:min(370px,calc(100vw - 24px));box-sizing:border-box;
   padding:16px;border:1px solid var(--border2);border-radius:18px;
@@ -28,6 +28,7 @@
 .tings-coach-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px;}
 .tings-coach-progress{font-size:11px;line-height:1;text-transform:uppercase;letter-spacing:.09em;font-weight:800;color:var(--teal-text);}
 .tings-coach-skip{border:0;background:transparent;color:var(--text2);font:inherit;font-size:12px;padding:5px 2px;cursor:pointer;}
+.tings-coach-skip.is-armed{color:var(--amber-text);font-weight:700;}
 .tings-coach-title{font-size:20px;line-height:1.18;margin:0 0 7px;font-weight:760;letter-spacing:-.018em;}
 .tings-coach-copy{font-size:14px;line-height:1.48;color:var(--text2);margin:0;}
 .tings-coach-hint{display:flex;align-items:center;gap:7px;margin:11px 0 0;color:var(--teal-text);font-size:12px;font-weight:700;}
