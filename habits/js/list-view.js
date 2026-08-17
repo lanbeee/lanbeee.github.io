@@ -1855,9 +1855,24 @@ function appendHomeBlockedCard(list,row){
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
   el.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${escapeHtml(row.label || 'blocked')}</b><small>${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</small></span><i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
   const xBtn = el.querySelector('.blocked-cancel-mark');
+  let cancelPointer = null;
+  if(xBtn)xBtn.addEventListener('pointerdown',e=>{
+    cancelPointer = {id:e.pointerId,x:e.clientX,y:e.clientY};
+    e.stopPropagation();
+  },{passive:true});
+  if(xBtn)xBtn.addEventListener('pointerup',e=>{
+    if(!cancelPointer || cancelPointer.id !== e.pointerId)return;
+    const tap = cancelPointer;cancelPointer = null;
+    if(Math.hypot(e.clientX-tap.x,e.clientY-tap.y) > 8)return;
+    e.preventDefault();
+    e.stopPropagation();
+    cancelHomeBlockedRow(row);
+  });
+  if(xBtn)xBtn.addEventListener('pointercancel',()=>{cancelPointer = null;},{passive:true});
   if(xBtn)xBtn.addEventListener('click',e=>{
     e.preventDefault();
     e.stopPropagation();
+    if(!xBtn.isConnected)return;
     cancelHomeBlockedRow(row);
   });
   bindScrollSafeTap(el,()=>{

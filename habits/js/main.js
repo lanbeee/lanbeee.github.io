@@ -2128,15 +2128,15 @@ function shiftBlockedEndpoint(block,field,delta){
 function renderBlockEditDynamicControls(){
   const host = $('block-edit-dynamic-controls');
   if(!host || !blockEditContext)return;
-  const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)[blockEditContext.blockIndex];
+  const block = blockEditContext.draftBlock;
   if(!block){host.hidden = true;return;}
   host.hidden = !blockEditDynamicOpen;
-  host.innerHTML = `<span class="field-label utility-field-label">recurring rule</span><div class="blocked-time-hours time-endpoints">${blockedEndpointHtml(block,blockEditContext.blockIndex,'start')}<span class="time-sep">to</span>${blockedEndpointHtml(block,blockEditContext.blockIndex,'end')}</div>`;
+  host.innerHTML = `<span class="field-label utility-field-label">recurring rule</span><div class="blocked-time-hours time-endpoints">${blockedEndpointHtml(block,blockEditContext.blockIndex,'start')}<span class="time-sep">to</span>${blockedEndpointHtml(block,blockEditContext.blockIndex,'end')}</div><p class="field-hint">Saved only when you choose update recurring. “Save this date” keeps this rule and changes just this occurrence.</p>`;
 }
 
 function saveBlockEditorRulePatch(patch){
   if(!blockEditContext)return;
-  saveBlockedTimePatch(blockEditContext.blockIndex,patch);
+  blockEditContext.draftBlock = {...blockEditContext.draftBlock,...patch};
   renderBlockEditDynamicControls();
 }
 
@@ -2155,7 +2155,8 @@ function openBlockEditSheet(row){
   const block = normalizeBlockedTimes(settings.blockedTimes)[Number(row.blockIndex)] || null;
   const overrides = normalizeBlockedTimeOverrides(settings.blockedTimeOverrides);
   const current = overrides[dayKey]?.[signature] || {start:originalStart,end:originalEnd};
-  blockEditContext = {row,dayKey,signature,originalStart,originalEnd,blockIndex:Number(row.blockIndex),current};
+  blockEditContext = {row,dayKey,signature,originalStart,originalEnd,blockIndex:Number(row.blockIndex),current,
+    draftBlock:block ? {...block} : null};
   blockEditDynamicOpen = false;
   $('block-edit-title').textContent = row.label || 'busy time';
   const date = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
@@ -2219,7 +2220,7 @@ $('block-edit-dynamic-controls')?.addEventListener('click',e=>{
   if(!target)return;
   const field = blockEditorField(target);
   if(!field)return;
-  const block = normalizeBlockedTimes(loadSortSettings().blockedTimes)[blockEditContext?.blockIndex];
+  const block = blockEditContext?.draftBlock;
   if(!block)return;
   if(target.classList.contains('time-offset-sign-btn')){
     const second = Boolean(target.closest('.time-expr2'));
@@ -2288,7 +2289,7 @@ function saveBlockEditSeries(){
   const blocks = normalizeBlockedTimes(settings.blockedTimes);
   const index = blockEditContext.blockIndex;
   if(!Number.isInteger(index) || !blocks[index])return;
-  const updated = {...blocks[index]};
+  const updated = {...(blockEditContext.draftBlock || blocks[index])};
   // For sun/prayer-based blocks, "update recurring" shifts the dynamic rule
   // by the chosen clock difference rather than destroying it into static time.
   // Fixed blocks retain the established direct replacement behaviour.

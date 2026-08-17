@@ -801,6 +801,35 @@ async function toastText(page){
   assert(uiFixed.dayHidden === true, '+1d hidden when B is fixed');
   assert(uiFixed.fixedValue === '20:00', 'clock defaults/shows 20:00');
 
+  // The home blocked-card editor stages dynamic-rule edits until the user
+  // explicitly chooses the recurring save. A date-only save only affects that
+  // occurrence's resolved clock span.
+  console.log('\n[M] blocked-card dynamic rule save scope');
+  const blockDraft = await page.evaluate(() => {
+    const settings = loadSortSettings();
+    settings.homeCityLat = 40.7128;
+    settings.homeCityLng = -74.0060;
+    settings.blockedTimes = [{label:'sun block',days:[],start:360,end:420,startAnchor:'fajr',endAnchor:'sunrise'}];
+    saveSortSettings(settings);
+    Object.assign(sortSettings,loadSortSettings());
+    const day = dayStart(Date.now());
+    const row = agendaBlockedIntervals(dateKey(day),loadSortSettings(),day,day+86400000)[0];
+    if(!row)return {ok:false};
+    openBlockEditSheet(row);
+    $('block-edit-dynamic-toggle').click();
+    const anchor = document.querySelector('#block-edit-dynamic-controls [data-blocked-start-anchor]');
+    if(!anchor)return {ok:false};
+    anchor.value = 'maghrib';
+    anchor.dispatchEvent(new Event('change',{bubbles:true}));
+    const staged = loadSortSettings().blockedTimes[0].startAnchor;
+    $('block-edit-series').click();
+    const recurring = loadSortSettings().blockedTimes[0].startAnchor;
+    return {ok:true,staged,recurring};
+  });
+  assert(blockDraft.ok === true, 'a dynamic blocked card opens its staged rule editor');
+  assert(blockDraft.staged === 'fajr', 'editing the rule does not save before a scope is chosen');
+  assert(blockDraft.recurring === 'maghrib', 'update recurring commits the drafted dynamic rule');
+
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
