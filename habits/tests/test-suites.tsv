@@ -60,6 +60,7 @@ sample-habits-sheet-test.js	ui	once
 schedule-links-test.js	planner	once
 sign-toggle-test.js	ui	once
 sleep-block-dynamic-test.js	data	once
+swipe-crown-handoff-test.js	ui	once
 slipped-indicator-test.js	planner	once
 snap-and-sleep-test.js	data	once
 snooze-until-planned.js	ui	once

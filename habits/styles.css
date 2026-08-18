@@ -876,9 +876,14 @@ body.reach-pad #list{padding-top:220px;}
   left:0;border-radius:var(--card-radius) 0 0 var(--card-radius);
   background:color-mix(in srgb,var(--teal-bg) 48%,var(--bg3));
 }
+/* Buttons hug the OUTER edge on both panels so the corner-pad extension
+   (SWIPE_CORNER_PAD, tucked under the card's rounded corner) is always empty
+   backing — never a partially hidden button. Mirrors .swipe-actions-left's
+   default flex-start anchoring. */
 .swipe-actions-right{
   right:0;border-radius:0 var(--card-radius) var(--card-radius) 0;
   background:color-mix(in srgb,var(--red-bg) 38%,var(--bg3));
+  justify-content:flex-end;
 }
 .swipe-action{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
