@@ -3902,8 +3902,9 @@ function homeAgendaPlanSignature(week,data = (typeof load === 'function' ? load(
 
 // PURE: quality tuple for accepting a background refinement. Hard recurring
 // P0/pinned rows already visible anywhere in the week may never vanish, and
-// total week work may not shrink. Today's P0 breakable minutes then outrank
-// today's raw minutes; travel is only a final tiebreak.
+// total week work may not shrink. An in-progress row may only be extended,
+// never moved, truncated, or dropped. Today's P0 breakable minutes then
+// outrank today's raw minutes; travel is only a final tiebreak.
 function homeAgendaRefinementQuality(week,data,settings){
   const days = week && Array.isArray(week.days) ? week.days : [];
   const required = new Map();
@@ -3941,12 +3942,12 @@ function homeAgendaRefinementQuality(week,data,settings){
       const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
       if(dayOffset === 0 && urgency >= 100)overdueMinutes += minutes;
       if(dayOffset === 0 && Number(row.start) <= now + 1000 && Number(row.end) > now){
-        activeRows.push([
-          row.i,
-          Math.round(Number(row.start) / 60000),
-          Math.round(Number(row.end) / 60000),
-          row.locationId || ''
-        ].join(':'));
+        activeRows.push({
+          i:row.i,
+          start:Math.round(Number(row.start) / 60000),
+          end:Math.round(Number(row.end) / 60000),
+          loc:row.locationId || ''
+        });
       }
     }
   }
@@ -3956,12 +3957,24 @@ function homeAgendaRefinementQuality(week,data,settings){
   };
 }
 
+// PURE: a baseline in-progress row survives into a candidate when the same
+// habit keeps running from the same start at the same location. Extending the
+// end is allowed (more of the ongoing session); moving, truncating, or
+// dropping it is not.
+function homeAgendaActiveRowPreserved(before,candidate){
+  return candidate.i === before.i
+    && candidate.start === before.start
+    && candidate.loc === before.loc
+    && candidate.end >= before.end;
+}
+
 function homeAgendaRefinementIsBetter(baseline,candidate,data,settings){
   if(!baseline || !candidate)return false;
   const before = homeAgendaRefinementQuality(baseline,data,settings);
   const after = homeAgendaRefinementQuality(candidate,data,settings);
-  const afterActive = new Set(after.activeRows);
-  if(before.activeRows.some(row=>!afterActive.has(row)))return false;
+  if(before.activeRows.some(row=>
+    !after.activeRows.some(candidateRow=>homeAgendaActiveRowPreserved(row,candidateRow))
+  ))return false;
   for(const [idx,minutes] of before.required){
     if((after.required.get(idx) || 0) + 0.01 < minutes)return false;
   }
