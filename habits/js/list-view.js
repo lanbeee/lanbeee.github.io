@@ -2506,6 +2506,24 @@ function setupDayCapacityHeader(header,dayBase,weekMode){
 let _droppedDayBaseline = null;
 let _droppedDayBaselineDay = null;
 
+// STICKY TONE: darken a section header a touch while it is pinned at the
+// viewport top (`.section-header.stuck` in styles.css) so the stuck label
+// reads as attached to the viewport, not the page. Scroll events don't
+// bubble but they do capture, so one document-level capture listener covers
+// window and pane scrolling alike; rAF keeps the rect reads cheap.
+let _stuckHeadersRaf = false;
+function updateStuckSectionHeaders(){
+  _stuckHeadersRaf = false;
+  document.querySelectorAll('.section-header').forEach(el=>{
+    el.classList.toggle('stuck', el.getBoundingClientRect().top <= 1);
+  });
+}
+document.addEventListener('scroll',()=>{
+  if(_stuckHeadersRaf)return;
+  _stuckHeadersRaf = true;
+  requestAnimationFrame(updateStuckSectionHeaders);
+},{passive:true,capture:true});
+
 function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   if(!list || !label)return;
   const header = document.createElement('div');
@@ -3726,6 +3744,10 @@ function render(opts){
     }
   }
   } // end of the `else` (non-deferred) branch
+
+  // Fresh headers may already sit stuck at the viewport top (background
+  // refresh mid-scroll) — set their tone before the next scroll tick.
+  updateStuckSectionHeaders();
 
   list.querySelectorAll('[data-pulse]').forEach(btn=>{
     btn.addEventListener('click',e=>{

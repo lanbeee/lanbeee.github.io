@@ -716,35 +716,34 @@ body.fullpage-open .bottom-nav{
 .home-loading span:nth-child(3){opacity:0.58;animation-delay:180ms;}
 @keyframes home-loading-shift{to{background-position:-120% 0;}}
 @media (prefers-reduced-motion:reduce){.home-loading span{animation:none;}}
+/* Day headers are plain text labels that stick at the top while scrolling.
+   The background matches the page tone exactly, so it never reads as a bar —
+   it only exists so cards sliding under a stuck label stay hidden behind it.
+   Days are separated by whitespace + the label itself. Nothing else. */
 .section-header{
   display:block;color:var(--text);font-size:13px;font-weight:720;
   letter-spacing:-0.01em;text-transform:capitalize;
-  padding:20px 12px 10px;line-height:1.2;margin-top:8px;
+  padding:18px 18px 7px;line-height:1.2;
+  margin:2px -14px 0; /* bleed over the pane's 14px side padding */
   border-top:0;
   position:sticky;top:0;z-index:5;
-  /* A restrained vertical tone shift marks the start of a day without making
-     the header a card. It fades back to the page quickly so short days do not
-     leave behind a conspicuous band. */
-  background:
-    linear-gradient(to bottom,
-      color-mix(in srgb,var(--bg) 32%,var(--bg2)) 0%,
-      color-mix(in srgb,var(--bg) 12%,var(--bg2)) 52%,
-      var(--bg2) 100%),
-    var(--bg2);
-  border-radius:0;
+  background:var(--bg2);
+  transition:background-color .18s ease;
 }
-/* The home header (wordmark + filter) is a non-sticky card at the top of the
-   feed, so it scrolls away naturally and is only visible at the scroll top.
-   Day headers stick flush at the viewport top (top:0, z-index:5) once the
-   header has scrolled out of the way. The offset is constant in every state,
-   so headers never jump on scroll. */
-body[data-pane-count="1"] .section-header{top:0;}
-body[data-pane-count="1"].header-hidden .section-header,
-body[data-pane-count="1"].search-active .section-header{top:0;}
-/* All sticky headers (Pinned · Today · Tomorrow · …) share one uniform
-   treatment: identical type and spacing, plus a background that fades in at
-   the top so no header shows a hard "bar" against the feed above it. */
-.section-header:not(:first-child){margin-top:18px;}
+/* Subtle half-step darker while pinned at the viewport top (`.stuck` toggled
+   on scroll by updateStuckSectionHeaders in js/list-view.js). */
+.section-header.stuck{background:color-mix(in srgb,var(--bg3) 50%,var(--bg2));}
+/* Pills ride the header; their pale tints can wash out against the stuck
+   strip, so while stuck they render as surface chips (bg + own border/text)
+   — the same look pills have on cards. */
+.section-header.stuck .dropped-pill,
+.section-header.stuck .free-pill{background:var(--bg);}
+/* Wider panes pad 20px; the bleed tracks it. Compensating padding keeps the
+   label and pills at the same +4px offset in every layout. */
+body[data-pane-count="2"] .section-header,
+body[data-pane-count="3"] .section-header{
+  margin-left:-20px;margin-right:-20px;padding-left:24px;padding-right:24px;
+}
 .section-header:not(:first-child)::before{display:none;}
 .section-header.day-section-header{
   touch-action:manipulation;user-select:none;-webkit-user-select:none;
@@ -759,6 +758,7 @@ body[data-pane-count="1"].search-active .section-header{top:0;}
   color:var(--amber-text);background:var(--amber-bg);
   border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
+  transition:background-color .18s ease; /* follows the header's stuck tone */
   /* none: keep finger drift from being claimed as a page pan (sticky headers). */
   -webkit-tap-highlight-color:transparent;touch-action:none;
 }
@@ -808,6 +808,7 @@ body[data-pane-count="1"].search-active .section-header{top:0;}
   color:var(--teal-text);background:var(--teal-bg);
   border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
+  transition:background-color .18s ease; /* follows the header's stuck tone */
   /* none: keep finger drift from being claimed as a page pan (sticky headers). */
   -webkit-tap-highlight-color:transparent;touch-action:none;
 }
@@ -3934,24 +3935,6 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 .calendar-filter-sheet .home-filter-option.on{border-color:color-mix(in srgb,var(--purple-icon) 45%,var(--border));}
 body[data-pane-count="2"] .pane-overview .overview-page-close,
 body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
-
-/* Home-linked surfaces — keep primary actions obvious and carry the same
-   grounded visual language into contextual editors. */
-.section-header{
-  margin-left:-14px;margin-right:-14px;padding-left:18px;padding-right:18px;
-  background:
-    linear-gradient(to bottom,
-      color-mix(in srgb,var(--bg) 32%,var(--bg2)) 0%,
-      color-mix(in srgb,var(--bg) 12%,var(--bg2)) 52%,
-      var(--bg2) 100%),
-    var(--bg2);
-  border-bottom:0;border-radius:0;
-  box-shadow:none;
-  backdrop-filter:none;-webkit-backdrop-filter:none;
-}
-.section-header:not(:first-child)::before{display:none;}
-body[data-pane-count="2"] .section-header,
-body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;padding-left:24px;padding-right:24px;}
 
 .ting-card .pulse-btn{
   position:relative;align-self:stretch;width:68px;min-width:68px;height:auto;
