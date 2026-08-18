@@ -692,12 +692,10 @@ function manualLog(minutes, tsOffset = 0){
     }, { timeout:3500 }).catch(() => {});
     await new Promise(r => setTimeout(r, 150));
 
-    // Q1 — a leftward drag on the crown at the committed floor has no unwind
-    // work, so the dial yields it to the card swipe: the red actions reveal
-    // from the dial like from every other surface (parity with the right
-    // swipe). While the dial HAS pending minutes above the floor, a leftward
-    // drag still scrubs (unwind) — that split is the fix for the crown
-    // "slipping" into swipe while dialing.
+    // Q1 — a leftward drag on the crown is owned by the dial (forward-only
+    // scrub), NOT the card swipe. Swiping is reserved for the right-edge zone
+    // and other non-crown surfaces (tested in Q3b/Q3). This is the fix for the
+    // crown "slipping" into swipe while dialing.
     const leftInfo = await page.evaluate(async () => {
       const row = [...document.querySelectorAll('.swipe-row')]
         .find(r => r.querySelector('.breakable-crown'));
@@ -708,33 +706,28 @@ function manualLog(minutes, tsOffset = 0){
       const x0 = r.left + r.width * 0.6, y0 = r.top + r.height / 2;
       const x1 = x0 - 100;
       const mkTouch = (id, x, y) => new Touch({ identifier:id, target:crown, clientX:x, clientY:y });
-      const steps = 5;
       crown.dispatchEvent(new PointerEvent('pointerdown',{ bubbles:true, cancelable:true, pointerId:22, pointerType:'touch', clientX:x0, clientY:y0, buttons:1 }));
       crown.dispatchEvent(new TouchEvent('touchstart',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(22,x0,y0)], touches:[mkTouch(22,x0,y0)] }));
-      let during = null;
-      for(let i = 1; i <= steps; i++){
-        const xi = x0 + ((x1 - x0) * i) / steps;
-        crown.dispatchEvent(new PointerEvent('pointermove',{ bubbles:true, cancelable:true, pointerId:22, pointerType:'touch', clientX:xi, clientY:y0, buttons:1 }));
-        crown.dispatchEvent(new TouchEvent('touchmove',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(22,xi,y0)], touches:[mkTouch(22,xi,y0)] }));
-        await new Promise(res => setTimeout(res, 20));
-        if(i === 3)during = {
-          owner:typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null,
-          transform:card.style.transform
-        };
-      }
+      crown.dispatchEvent(new PointerEvent('pointermove',{ bubbles:true, cancelable:true, pointerId:22, pointerType:'touch', clientX:x1, clientY:y0, buttons:1 }));
+      crown.dispatchEvent(new TouchEvent('touchmove',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(22,x1,y0)], touches:[mkTouch(22,x1,y0)] }));
+      await new Promise(res => setTimeout(res, 20));
+      const during = {
+        owner:typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null,
+        transform:card.style.transform
+      };
       crown.dispatchEvent(new TouchEvent('touchend',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(22,x1,y0)], touches:[] }));
       crown.dispatchEvent(new PointerEvent('pointerup',{ bubbles:true, cancelable:true, pointerId:22, pointerType:'touch', clientX:x1, clientY:y0 }));
       return { found:true, during, swipeOpen:row.dataset.swipeOpen || null, transform:card.style.transform };
     });
     assert(leftInfo.found, 'Q: breakable row exists for gesture split');
-    assert(leftInfo.during.owner === 'swipe', `Q: leftward crown drag at floor hands off to the swipe, got ${leftInfo.during.owner}`);
-    assert(/translateX\(-\d/.test(leftInfo.during.transform), 'Q: crown-left drag at floor translates the card (red reveal)');
-    assert(leftInfo.swipeOpen === '-1', `Q: leftward crown drag at floor opens the red panel, got ${leftInfo.swipeOpen}`);
-    console.log('  ok Q1 — leftward drag on the crown at floor swipes the card');
+    assert(leftInfo.during.owner === 'scrub', `Q: leftward crown drag stays with the dial (scrub), got ${leftInfo.during.owner}`);
+    assert(!/translateX\(-\d/.test(leftInfo.during.transform), 'Q: crown-left drag does NOT translate the card');
+    assert(leftInfo.swipeOpen === null, `Q: leftward crown drag opens no swipe, got ${leftInfo.swipeOpen}`);
+    console.log('  ok Q1 — leftward drag on the crown stays a dial gesture (no swipe)');
 
     // Q1b — leftward drag while the dial has pending minutes above the floor
-    // stays with the scrub (unwind): the crown must not "slip" into a swipe
-    // while the user is dialing.
+    // unwinds it and stays a scrub even after the floor is reached — the dial
+    // must never hand off to the swipe in either state.
     const unwindInfo = await page.evaluate(async () => {
       const row = [...document.querySelectorAll('.swipe-row')]
         .find(r => r.querySelector('.breakable-crown'));
@@ -747,9 +740,11 @@ function manualLog(minutes, tsOffset = 0){
       row.dataset.progressTarget = String(committed + 40);   // raised pending target
       const r = crown.getBoundingClientRect();
       const x0 = r.left + r.width * 0.6, y0 = r.top + r.height / 2;
-      const x1 = x0 - 60;
+      // Drag far enough left to unwind the 40 pending minutes AND continue
+      // well past the committed floor in the same gesture.
+      const x1 = x0 - 300;
       const mkTouch = (id, x, y) => new Touch({ identifier:id, target:crown, clientX:x, clientY:y });
-      const steps = 4;
+      const steps = 8;
       crown.dispatchEvent(new PointerEvent('pointerdown',{ bubbles:true, cancelable:true, pointerId:25, pointerType:'touch', clientX:x0, clientY:y0, buttons:1 }));
       crown.dispatchEvent(new TouchEvent('touchstart',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(25,x0,y0)], touches:[mkTouch(25,x0,y0)] }));
       let during = null;
@@ -758,7 +753,7 @@ function manualLog(minutes, tsOffset = 0){
         crown.dispatchEvent(new PointerEvent('pointermove',{ bubbles:true, cancelable:true, pointerId:25, pointerType:'touch', clientX:xi, clientY:y0, buttons:1 }));
         crown.dispatchEvent(new TouchEvent('touchmove',{ bubbles:true, cancelable:true, changedTouches:[mkTouch(25,xi,y0)], touches:[mkTouch(25,xi,y0)] }));
         await new Promise(res => setTimeout(res, 20));
-        if(i === 2)during = {
+        if(i === 5)during = {
           owner:typeof cardGestureOwner === 'function' ? cardGestureOwner(row) : null,
           transform:card.style.transform
         };
@@ -772,10 +767,10 @@ function manualLog(minutes, tsOffset = 0){
     assert(unwindInfo.found, 'Q: unwind row exists');
     assert(unwindInfo.during.owner === 'scrub', `Q: leftward drag above floor stays with the dial (scrub), got ${unwindInfo.during.owner}`);
     assert(!/translateX/.test(unwindInfo.during.transform || ''), 'Q: leftward drag above floor does not translate the card');
-    assert(unwindInfo.swipeOpen === null, `Q: leftward drag above floor opens no swipe, got ${unwindInfo.swipeOpen}`);
-    assert(unwindInfo.targetDuring < unwindInfo.committed + 40,
-      `Q: unwind lowered the pending target (${unwindInfo.targetDuring} < ${unwindInfo.committed + 40})`);
-    console.log('  ok Q1b — leftward drag above floor unwinds the dial (no swipe)');
+    assert(unwindInfo.swipeOpen === null, `Q: leftward drag past the floor opens no swipe, got ${unwindInfo.swipeOpen}`);
+    assert(unwindInfo.targetDuring <= unwindInfo.committed,
+      `Q: unwind clamped at the committed floor (${unwindInfo.targetDuring} <= ${unwindInfo.committed})`);
+    console.log('  ok Q1b — leftward drag unwinds to the floor and stays a dial gesture');
 
     // Q2 — swipe-right on the crown still scrubs progress
     const rightInfo = await page.evaluate(async () => {

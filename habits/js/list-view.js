@@ -4718,12 +4718,11 @@ function renderProgressive(){
 
 // WIRE: crown-dial gesture for breakable progress. Drag horizontally to adjust
 // minutes (3px ≈ 1 min, speed-adaptive). Updates the 3-color status bar and
-// pending target. The dial owns horizontal intent while it has work: rightward
-// drags scrub forward, leftward drags unwind toward the committed floor. A
-// leftward drag already at the floor is yielded to the card swipe (so swiping
-// left works from the dial itself, mirroring the right swipe from off-dial
-// surfaces and the dedicated right-edge zone). A clean tap propagates to card
-// (opens detail); vertical gestures pass through to page scroll.
+// pending target. The dial owns horizontal intent in both directions (forward
+// only — leftward clamps at the committed floor), so it never hands off to the
+// card swipe; swipe instead starts from the dedicated right-edge zone and other
+// non-crown surfaces. A clean tap propagates to card (opens detail); vertical
+// gestures pass through to page scroll.
 function setupBreakableCrown(row,_realIdx){
   const crown = row.querySelector('.breakable-crown');
   if(!crown)return;
@@ -4795,36 +4794,6 @@ function setupBreakableCrown(row,_realIdx){
   const cancelScrub = () => {
     if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;}
     pendingDx = 0;
-  };
-
-  // PURE: the dial's pending target sits at the committed floor — a leftward
-  // drag has no unwind work left (setTarget keeps dataset.progressTarget
-  // current on every scrub flush).
-  const pendingAtFloor = () => Math.round(Number(row.dataset.progressTarget) || committed) <= committed;
-
-  // HYBRID: give a leftward drag back to the row swipe. Called only when the
-  // forward-only dial has nothing to scrub (target at the committed floor);
-  // rightward drags and unwind corrections still claim the scrub below, so the
-  // dial can never "slip" into a swipe while it has work of its own.
-  const yieldToSwipe = e => {
-    if(scrubRaf){cancelAnimationFrame(scrubRaf);scrubRaf=null;}
-    cancelMomentum();
-    pendingDx = 0;
-    pendingTarget = null;
-    hideTooltip();
-    const wasDragging = dragging;
-    dragging = false;
-    pointerId = null;
-    velX = 0;
-    delete row.dataset.crownGesture;
-    crown.classList.remove('active');
-    if(progressRoot)progressRoot.classList.remove('is-scrubbing');
-    if(wasDragging && typeof releaseCardGesture === 'function')releaseCardGesture(row,'scrub');
-    // Drop any soft 'hold' prelude too; the row swipe re-claims with force.
-    if(typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress({silent:true});
-    if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'hold');
-    row.classList.remove('agenda-drag-ready','agenda-longpress-armed');
-    if(typeof row._rebaseSwipe === 'function')row._rebaseSwipe(e.clientX,e.clientY);
   };
 
   const applyScrubDx = dx => {
@@ -4948,17 +4917,12 @@ function setupBreakableCrown(row,_realIdx){
         delete row.dataset.crownGesture;
         return;
       }
-      // The dial owns horizontal intent while it has work: rightward drags
-      // scrub forward, and leftward drags unwind a raised target back toward
-      // the committed floor. A leftward drag already AT the floor has nothing
-      // to do — yield it to the row swipe so the card reveals its actions from
-      // the dial like from every other surface (the yield never fires for a
-      // drag the dial can still act on, so it can't "slip" into a swipe while
-      // dialing).
-      if(dxTotal < 0 && pendingAtFloor()){
-        yieldToSwipe(e);
-        return;
-      }
+      // The dial owns horizontal intent in BOTH directions. Scrub is
+      // forward-only, so a leftward drag simply holds still (clamped at the
+      // committed floor) instead of handing off to the card swipe — that
+      // handoff was what made the crown feel like it "slipped" into swipe
+      // while dialing. Swiping now starts from the dedicated right-edge zone
+      // (and every non-crown surface: title, status bar) via the row handler.
       // Horizontal scrub — cancel reorder long-press so dial wins.
       if(typeof claimCardGesture === 'function'){
         if(!claimCardGesture(row,'scrub',{force:true})){
@@ -4981,13 +4945,6 @@ function setupBreakableCrown(row,_realIdx){
     const dx = e.clientX - prevX;
     prevX = e.clientX;
     velX = velX * 0.55 + dx * 0.45;
-    // Unwind exhausted mid-drag (the flush brought the target down to the
-    // committed floor) and the pointer keeps moving left → continue as a
-    // swipe instead of dead-ending at the floor.
-    if(dragging && dx < 0 && pendingAtFloor()){
-      yieldToSwipe(e);
-      return;
-    }
     pendingDx += dx;
     if(!scrubRaf)scrubRaf = requestAnimationFrame(flushScrub);
   });
@@ -5078,8 +5035,7 @@ function setupBreakableCrown(row,_realIdx){
 
   // Isolate the dial's pointer and mouse gestures from the row's tap
   // tracking. Touch events must bubble: the row swipe takes over leftward
-  // drags on the dial once the dial hits its committed floor (yieldToSwipe),
-  // while rightward drags stay with the crown scrub.
+  // drags on the dial, while rightward drags stay with the crown scrub.
   const stop = e=>{ e.stopPropagation(); };
   ['pointerdown','pointermove','pointerup','pointercancel','mousedown','mouseup'].forEach(ev=>{
     crown.addEventListener(ev,stop,{ passive:true });
@@ -5100,7 +5056,6 @@ function setupSwipe(row){
   const rightActions = row.querySelector('.swipe-actions-right');
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
   let startedOpen = false;
-  let beganOnDial = false;
   // Match CSS collapsed default so first paint never shows action chrome.
   if(leftActions){
     leftActions.style.width = '0';
@@ -5115,17 +5070,6 @@ function setupSwipe(row){
   function revealWidth(actions){
     if(!actions)return 0;
     return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
-  }
-
-  // PURE: the breakable dial has no pending minutes above its committed floor —
-  // a leftward drag has no unwind work left, so the crown can yield it to this
-  // swipe. Non-breakable rows trivially qualify (no dial to unwind).
-  function dialAtCommittedFloor(){
-    const crown = row.querySelector('.breakable-crown');
-    if(!crown)return true;
-    const committed = Math.round(Number(crown.dataset.committed) || 0);
-    const target = Math.round(Number(row.dataset.progressTarget) || committed);
-    return target <= committed;
   }
 
   // HYBRID: reset swipe DOM and clear state
@@ -5147,16 +5091,8 @@ function setupSwipe(row){
     if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
     startedOpen = false;
     moved = false;
-    beganOnDial = false;
     dx = 0;
   }
-
-  // Crown→swipe handoff: the dial yields a leftward drag only after touchstart
-  // already captured a base here, so rebase that base to the yield point and
-  // the reveal grows smoothly from there (used by setupBreakableCrown).
-  row._rebaseSwipe = (x,y)=>{
-    startX = x;startY = y;dx = 0;
-  };
 
   row.addEventListener('touchstart',e=>{
     const t = e.changedTouches[0];
@@ -5177,16 +5113,19 @@ function setupSwipe(row){
       return;
     }
     // The breakable-progress block is dial territory — the crown, its status
-    // bar, and the progress header all sit in the card's center. Rightward
-    // and unwind drags there belong to the crown scrub, which claims them at
-    // pointer level before this handler engages (the owner check below then
-    // keeps touchmove out). A LEFTWARD drag with no pending minutes above the
-    // committed floor is dead weight for the forward-only dial, so the crown
-    // yields it back (see setupBreakableCrown) — arming here lets that handoff
-    // land, and swiping a breakable card left reveals the red actions from the
-    // dial exactly like from every other card surface.
-    beganOnDial = Boolean(t.target.closest && t.target.closest('.breakable-progress'))
+    // bar, and the progress header all sit in the card's center. Swipes on a
+    // breakable card start only from an edge area: the left edge (pulse button
+    // / name, handled here as normal) or the right edge (the dedicated
+    // .breakable-scrub-hint zone). Touches that begin anywhere inside the
+    // progress block — except that right-edge hint — never arm a card swipe.
+    const onDial = t.target.closest && t.target.closest('.breakable-progress')
       && !(t.target.closest && t.target.closest('.breakable-scrub-hint'));
+    if(onDial){
+      touchId = null;
+      moved = false;
+      dx = 0;
+      return;
+    }
     touchId = t.identifier;startX = t.clientX;startY = t.clientY;dx = 0;moved = false;
     startedOpen = swipeOpenCard === card;
     if(swipeOpenCard && swipeOpenCard !== card){
@@ -5205,10 +5144,6 @@ function setupSwipe(row){
     const ddx = t.clientX - startX;
     const ddy = t.clientY - startY;
     if(!moved && Math.abs(ddy) > Math.abs(ddx))return;
-    // Dial-origin touches engage this swipe only for a leftward drag at the
-    // committed floor (the crown yields exactly those); every other horizontal
-    // drag on the dial stays with the scrub, whose pointer-level claim wins.
-    if(!moved && beganOnDial && !(ddx < 0 && dialAtCommittedFloor()))return;
     e.preventDefault();
     if(startedOpen){
       if(Math.abs(ddx) > 12){

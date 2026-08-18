@@ -1,13 +1,11 @@
-// swipe-crown-handoff — breakable dial vs card-swipe gesture arbitration:
+// swipe-crown-arbitration — breakable dial vs card-swipe gesture split:
 //
-//   A. Left drag from the dial at the committed floor hands off to the card
-//      swipe and reveals the red (snooze/remove) panel — same reveal a left
-//      swipe produces from every non-dial surface.
-//   B. Right drag on the dial still claims the scrub (target rises, no swipe).
-//   C. Left drag on the dial with a raised target unwinds it — no handoff
-//      while the dial still has take-back work.
+//   A. Left drag on the dial at the committed floor stays with the dial
+//      (dead-stops at the floor) — never a card swipe.
+//   B. Right drag on the dial scrubs (target rises, no swipe).
+//   C. Left drag on the dial with a raised target unwinds it — still no swipe.
 //   D. One gesture: scrub right, keep dragging left past the floor → the dial
-//      yields mid-gesture and the red panel opens.
+//      keeps the gesture the whole way; target clamps at the floor, no swipe.
 //   E. Right swipe (green panel) from an off-dial surface still works.
 //   F. Left drag from the dedicated right-edge scrub hint still swipes.
 //   G. Normal (non-breakable) cards swipe both directions unchanged, and at
@@ -16,7 +14,7 @@
 //      rounded corner stays empty backing).
 //   H. No page errors.
 //
-//   HABITS_URL=http://127.0.0.1:4181/ node tests/swipe-crown-handoff-test.js
+//   HABITS_URL=http://127.0.0.1:4181/ node tests/swipe-crown-arbitration-test.js
 //
 const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
@@ -150,6 +148,7 @@ function defaultSettings(overrides = {}){
     return {
       swipeOpen: row.dataset.swipeOpen || null,
       gesture: row.dataset.cardGesture || null,
+      transform: row.querySelector('.ting-card').style.transform || null,
       rightW: row.querySelector('.swipe-actions-right').style.width,
       leftW: row.querySelector('.swipe-actions-left').style.width,
       target: Number(row.dataset.progressTarget || 0)
@@ -183,16 +182,20 @@ function defaultSettings(overrides = {}){
   }
 
   const closeSwipes = () => page.evaluate(() => closeAllSwipes()).then(() => sleep(250));
+  const resetTarget = () => page.evaluate(() => {
+    const row = [...document.querySelectorAll('.swipe-row')].find(r => r.querySelector('.breakable-crown'));
+    if(row)row.dataset.progressTarget = row.querySelector('.breakable-crown').dataset.committed;
+  }).then(() => sleep(100));
 
-  // ─── A. Left drag on the dial at floor → red panel via handoff ─────────
+  // ─── A. Left drag on the dial at floor → stays with the dial ───────────
   {
     console.log('\n[A] left drag from dial at committed floor');
     const p = await points();
     await drag(p.dial, [[-140, 10]]);
     const s = await crownState();
-    assert(s.swipeOpen === '-1', `A: red panel opens (swipeOpen=${s.swipeOpen})`);
-    assert(parseFloat(s.rightW) > 100, `A: right actions revealed (width=${s.rightW})`);
-    assert(s.target === 0, `A: progress untouched (target=${s.target})`);
+    assert(s.swipeOpen === null, `A: no swipe from the dial (swipeOpen=${s.swipeOpen})`);
+    assert(!s.transform, `A: card not translated (transform=${s.transform})`);
+    assert(s.target === 0, `A: target stays at the floor (target=${s.target})`);
     await closeSwipes();
   }
 
@@ -204,14 +207,10 @@ function defaultSettings(overrides = {}){
     const s = await crownState();
     assert(s.swipeOpen === null, `B: no swipe (swipeOpen=${s.swipeOpen})`);
     assert(s.target > 30, `B: scrub raised target (target=${s.target})`);
-    await page.evaluate(() => {
-      const row = [...document.querySelectorAll('.swipe-row')].find(r => r.querySelector('.breakable-crown'));
-      if(row)row.dataset.progressTarget = row.querySelector('.breakable-crown').dataset.committed;
-    });
-    await sleep(100);
+    await resetTarget();
   }
 
-  // ─── C. Left drag with raised target → unwind, no handoff yet ──────────
+  // ─── C. Left drag with raised target → unwind, no handoff ──────────────
   {
     console.log('\n[C] left drag from dial unwinds a raised target');
     const p = await points();
@@ -220,24 +219,23 @@ function defaultSettings(overrides = {}){
     assert(s.target > 30, `C: setup raised target (target=${s.target})`);
     await drag(p.dial, [[-30, 4]]);   // ~10min of unwind — still above floor
     s = await crownState();
-    assert(s.swipeOpen === null, `C: no handoff while unwinding (swipeOpen=${s.swipeOpen})`);
+    assert(s.swipeOpen === null, `C: no swipe while unwinding (swipeOpen=${s.swipeOpen})`);
     assert(s.target > 0, `C: target still above floor (target=${s.target})`);
-    await page.evaluate(() => {
-      const row = [...document.querySelectorAll('.swipe-row')].find(r => r.querySelector('.breakable-crown'));
-      if(row)row.dataset.progressTarget = row.querySelector('.breakable-crown').dataset.committed;
-    });
-    await sleep(100);
+    await resetTarget();
   }
 
-  // ─── D. Scrub right then keep dragging left past the floor → handoff ───
+  // ─── D. Scrub right then drag left past the floor in ONE gesture ───────
+  // The dial must keep the gesture the whole way: the unwind runs down to the
+  // committed floor and clamps there — it must never hand off to a swipe.
   {
     console.log('\n[D] scrub right, continue left past floor in one gesture');
     const p = await points();
     await drag(p.dial, [[+120, 8], [-420, 22]]);
     const s = await crownState();
-    assert(s.swipeOpen === '-1', `D: mid-gesture handoff opened red panel (swipeOpen=${s.swipeOpen})`);
-    assert(parseFloat(s.rightW) > 100, `D: right actions revealed (width=${s.rightW})`);
-    await closeSwipes();
+    assert(s.swipeOpen === null, `D: dial keeps the gesture — no swipe (swipeOpen=${s.swipeOpen})`);
+    assert(!s.transform, `D: card not translated (transform=${s.transform})`);
+    assert(s.target === 0, `D: unwound and clamped at the floor (target=${s.target})`);
+    await resetTarget();
   }
 
   // ─── E. Right swipe from off-dial surface → green panel ────────────────
@@ -274,7 +272,7 @@ function defaultSettings(overrides = {}){
     assert(s.swipeOpen === '-1', `G: normal left swipe opens red panel (swipeOpen=${s.swipeOpen})`);
     // Reveal geometry: buttons hug the OUTER edge and stay fully clear of the
     // card — the corner-pad extension under the card's rounded corner must be
-    // empty backing, never a partially hidden button (and no blank outer strip).
+    // empty backing, never a partially hidden button.
     let geo = await page.evaluate(() => {
       const row = [...document.querySelectorAll('.swipe-row')].find(r => !r.querySelector('.breakable-crown'));
       const card = row.querySelector('.ting-card').getBoundingClientRect();
