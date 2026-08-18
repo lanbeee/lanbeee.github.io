@@ -497,14 +497,14 @@ function renderPreviewTile(previewId,emojiId,bgId,type){
       preview.style.background = `var(--${color}-bg)`;
       preview.style.color = `var(--${color}-icon)`;
     }else{
-      preview.style.background = 'var(--bg2)';
+      preview.style.background = 'var(--field-bg)';
       preview.style.color = 'var(--text)';
     }
     return;
   }
   const icon = typeof defaultIcon === 'function' ? defaultIcon(type) : 'ti-heart';
   preview.innerHTML = `<i class="ti ${icon}" aria-hidden="true"></i>`;
-  preview.style.background = 'var(--bg2)';
+  preview.style.background = 'var(--field-bg)';
   preview.style.color = 'var(--text3)';
 }
 

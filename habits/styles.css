@@ -40,6 +40,19 @@
   --home-card-shadow:none;
   --home-card-shadow-hover:none;
   --floating-shadow:0 10px 30px rgba(20,30,26,0.10),0 2px 8px rgba(20,30,26,0.05);
+  /* Subtle glass/glow layer: floating chrome gets a translucent blurred
+     surface; primary accents (+ buttons) get a soft teal glow; the active
+     seg pill gets a faint raise so it reads raised, not cut out. Keep these
+     very restrained — they accent the flat tone language, not replace it. */
+  --glass-bg:color-mix(in srgb,var(--bg) 78%,transparent);
+  --glass-blur:saturate(1.5) blur(16px);
+  --accent-glow:0 6px 16px color-mix(in srgb,var(--teal-icon) 26%,transparent);
+  --accent-glow-strong:0 8px 22px color-mix(in srgb,var(--teal-icon) 38%,transparent);
+  /* Recessed control fill (inputs, seg wells, emoji circles). On a white
+     sheet --bg3 is only ~9% off-white and reads as merged with the surface;
+     --field-bg steps one tone darker so a borderless field still has an edge. */
+  --field-bg:#e0dfd9;
+  --raised-shadow:0 1px 2px rgba(20,30,26,0.16),0 3px 8px rgba(20,30,26,0.10);
 }
 @media (prefers-color-scheme:dark) {
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -66,6 +79,13 @@
 
    ── Radii ─────────────────────────────────────────────────────────────────
    --radius:16px   --radius-sm:10px
+
+   ── Glass/glow accents (subtle) ───────────────────────────────────────────
+   Floating chrome (topbar, bottom-nav): --glass-bg over --bg + --glass-blur,
+   with a solid-bg fallback when backdrop-filter is unsupported or the user
+   prefers reduced transparency. Primary accents (+ buttons): --accent-glow /
+   --accent-glow-strong (soft teal halo, stronger on hover/press). The active
+   seg pill uses --raised-shadow so it reads raised, not cut out.
 
    ── Semantic colors (light / dark) ────────────────────────────────────────
    Teal    bg #E1F5EE / #085041   icon #0F6E56 / #5DCAA5   text #085041 / #9FE1CB
@@ -112,6 +132,8 @@
     --cyan-bg:#0A565D; --cyan-icon:#7CD4DC; --cyan-text:#A8E2E7;
     --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
     --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
+    --field-bg:#34343a;
+    --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
   }
   .topbar,.bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
   .cal-day{background:#242426;}
@@ -434,7 +456,9 @@ body[data-pane-count="3"] .pane-detail .sheet{
   container-type:inline-size;
   display:flex;flex-direction:row;gap:10px;align-items:center;
   padding:10px 12px;
-  background:var(--bg);
+  background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);
+  backdrop-filter:var(--glass-blur);
   z-index:10;border-radius:18px;
   box-shadow:var(--floating-shadow);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,max-height var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy);
@@ -495,7 +519,7 @@ body[data-pane-count="1"].search-active{--nav-bottom:6px;}
 }
 .wordmark img{
   width:36px;height:36px;display:block;border-radius:11px;
-  box-shadow:0 5px 14px color-mix(in srgb,var(--teal-icon) 18%,transparent);
+  box-shadow:0 5px 14px color-mix(in srgb,var(--teal-icon) 10%,transparent);
 }
 .wordmark-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;line-height:1;}
 .wordmark-copy > span{font-size:18px;font-weight:720;letter-spacing:-0.025em;}
@@ -550,8 +574,11 @@ body[data-pane-count="3"] .app-bar{
 }
 .app-bar-add{
   background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);
+  box-shadow:var(--accent-glow);
+  transition:box-shadow var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
 }
-.app-bar-add:hover{filter:brightness(0.92);}
+.app-bar-add:active{transform:scale(0.94);box-shadow:var(--accent-glow-strong);}
+.app-bar-add:hover{filter:brightness(0.92);box-shadow:var(--accent-glow-strong);}
 
 .app-bar-search{
   flex:1 1 auto;
@@ -594,7 +621,9 @@ body[data-pane-count="3"] .app-bar{
   transform:translateX(-50%);z-index:50;
   display:flex;align-items:center;gap:6px;
   width:max-content;max-width:calc(100vw - 24px);
-  padding:7px;background:var(--bg);
+  padding:7px;background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);
+  backdrop-filter:var(--glass-blur);
   border-radius:22px;
   box-shadow:var(--floating-shadow);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,bottom var(--dur-slow) var(--ease-snappy);
@@ -623,7 +652,11 @@ body.fullpage-open .bottom-nav{
 }
 .bottom-nav .nav-add{
   background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);
+  box-shadow:var(--accent-glow);
+  transition:box-shadow var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
 }
+.bottom-nav .nav-add:active{transform:scale(0.94);box-shadow:var(--accent-glow-strong);}
+@media (hover:hover){.bottom-nav .nav-add:hover{box-shadow:var(--accent-glow-strong);}}
 .nav-search{
   flex:1 1 auto;
   display:none;grid-template-columns:minmax(0,1fr) auto;
@@ -1046,9 +1079,9 @@ body.reach-pad #list{padding-top:220px;}
 }
 .breakable-status-bar span{display:block;height:100%;transition:width 0.15s ease;}
 .breakable-progress.is-scrubbing .breakable-status-bar span{transition:none;}
-.bar-manual{background:#12A66B;}
-.bar-calendar{background:#7C5CFC;}
-.bar-adding{background:#F5871F;}
+.bar-manual{background:color-mix(in srgb,var(--green-icon) 80%,var(--bg2));}
+.bar-calendar{background:color-mix(in srgb,var(--purple-icon) 80%,var(--bg2));}
+.bar-adding{background:color-mix(in srgb,var(--orange-icon) 80%,var(--bg2));}
 .breakable-crown{
   grid-column:1;grid-row:2;
   min-width:60px;height:34px;
@@ -1446,6 +1479,8 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
   position:sticky;
   top:0;
   z-index:45;
+  /* Align the card's bounding box with the section cards below (sheet padding
+     18px + their 14px inset), like a home habit card aligns with its column. */
   margin:0 0 6px;
   padding:calc(5px + env(safe-area-inset-top)) 9px 6px 8px;
   gap:8px;
@@ -2381,11 +2416,13 @@ input[type=text].mini-time-input{
   color:var(--text2);font-size:12px;font-weight:700;flex-shrink:0;
 }
 /* Date inputs and their sibling text buttons ("this week", "clear") share one
-   row height — the base input rule used to make inputs ~44px vs 29px buttons. */
+   row height — the base input rule used to make inputs ~44px vs 29px buttons.
+   margin:0 cancels the global input[type=date] bottom margin, which otherwise
+   lifts the date box 6px above the time box in this center-aligned row. */
 .plan-field-row .plan-date-input,
 .plan-field-row .plan-time-input,
 .plan-field-row .mini-text-btn{
-  height:40px;padding-top:0;padding-bottom:0;
+  height:40px;padding-top:0;padding-bottom:0;margin:0;
 }
 .plan-field-row .mini-text-btn{display:inline-flex;align-items:center;}
 .plan-date-input{
@@ -3297,7 +3334,7 @@ select{
   transition:background var(--dur-fast) ease,color var(--dur-fast) ease;
 }
 .seg-opt.on{background:var(--bg3);color:var(--text);font-weight:500;}
-.priority-seg .seg-opt.on{box-shadow:inset 3px 0 0 var(--prio-accent,var(--text3));}
+.priority-seg .seg-opt.on{box-shadow:inset 3px 0 0 var(--prio-accent,var(--bg));}
 .priority-seg .seg-opt[data-priority="0"].on{--prio-accent:var(--red-icon);}
 .priority-seg .seg-opt[data-priority="1"].on{--prio-accent:var(--amber-icon);}
 .priority-seg .seg-opt[data-priority="2"].on{--prio-accent:var(--teal-icon);}
@@ -4577,7 +4614,7 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 input:not([type="range"]),select,textarea,
 .time-input,.mini-time-input,.settings-text-input,.mini-select,
 .block-edit-hours input,.free-fit-fields input{
-  border:0;background:var(--bg3);
+  border:0;background:var(--field-bg);
 }
 .app-bar-search input:focus-visible,.nav-search input:focus-visible,
 input:focus-visible,select:focus-visible,textarea:focus-visible{
@@ -4647,9 +4684,12 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .overview-open-chip.mid{border-color:transparent;background:var(--bg3);}
 .overview-open-chip.tight{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--amber-bg) 62%,var(--bg3));}
 .overview-open-chip.closed{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--red-bg) 62%,var(--bg3));}
-.seg{border:0;background:var(--bg3);}
+.seg{border:0;background:var(--field-bg);}
 .seg-opt,.preset-seg .seg-opt{border:0;}
-.seg-opt.on{background:var(--bg);box-shadow:none;}
+/* Active option inverts (text-on-bg) like the active nav icon — a white pill
+   on a white sheet reads as a hole even with a shadow; inversion is unambiguous
+   in both themes. Priority segs keep their accent edge bar. */
+.seg-opt.on{background:var(--text);color:var(--bg);font-weight:600;box-shadow:none;}
 .preset-seg .seg-opt{border-right:0;}
 .picker-map-crosshair-ring{border:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 85%,#fff),0 0 0 3px color-mix(in srgb,#000 25%,transparent);}
 .free-day-seg:is(button)::after{border:0;box-shadow:inset 0 0 0 1.5px transparent;}
@@ -4679,3 +4719,145 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 #toast{box-shadow:var(--floating-shadow);}
 #action-toast{box-shadow:var(--floating-shadow);}
 .doing-now-link-row:empty{display:none;}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODERN POLISH PASS — subtle glass/glow accents + home quieting.
+   Builds on the flat surface sweep above; nothing here reintroduces borders
+   on component chrome. Two goals:
+   1. Quiet the home feed: meta pills lose their accent fills (semantic color
+      survives only in the small status/icon dot), trail dots and the priority
+      dot step down in chroma/size, heavy font weights relax by one notch.
+      Hard-due keeps a faint red tint — it is a genuine alert, not decoration.
+   2. Finish border removal on the components the first sweep missed, with
+      focus-visible teal rings preserved for keyboard users.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Home quieting ────────────────────────────────────────────────────────── */
+/* Ghost pills: neutral fill + neutral text; the leading icon keeps its
+   semantic color as the single chromatic signal. agenda-lead (time next to
+   the name) already renders transparent and keeps its colored text. */
+.ting-meta .context-pill{
+  background:var(--bg2);color:var(--text2);border:0;font-weight:580;
+}
+.ting-meta .context-pill:is(.plan,.agenda-suggested,.agenda-later,.agenda-closing,
+.due,.scheduled,.schedule,.pin){color:var(--text2);}
+.ting-meta .context-pill.due.hard{
+  color:var(--red-text);
+  background:color-mix(in srgb,var(--red-bg) 55%,var(--bg2));
+}
+.agenda-lead{font-weight:600;}
+.section-header{font-weight:650;}
+.dropped-pill,.free-pill{font-weight:700;letter-spacing:0.035em;}
+/* Trail: same hit/warn/miss vocabulary, mixed toward the page tone so a full
+   week of dots no longer out-shouts the card content. */
+.trail-dot.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
+.trail-dot.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
+.trail-dot.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
+.trail-dot.today{box-shadow:0 0 0 0.5px var(--border2);}
+.trail-week.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
+.trail-week.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
+.trail-week.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
+/* Priority dot: smaller, softer — a whisper, not a third color signal. */
+.ting-card::before{width:4.5px;height:4.5px;opacity:0.62;}
+/* Order-link chips inside cards: one more step toward neutral. */
+.ting-meta .order-mark{opacity:0.78;}
+
+/* ── Add-sheet field legibility ─────────────────────────────────────────────
+   Number-stepper boxes (.range-value) and the emoji circle kept their old
+   border + --bg/--bg2 fills, which vanish on a white sheet. Give them the
+   same recessed --field-bg fill as every other borderless field, and make
+   the name input match the 44px emoji circle so the row aligns. */
+.range-value{border:0;background:var(--field-bg);}
+.ting-emoji-preview{background:var(--field-bg);}
+#ting-message{min-height:44px;}
+
+/* ── Glass fallbacks ──────────────────────────────────────────────────────── */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .topbar,.bottom-nav{background:var(--bg);}
+}
+@media (prefers-reduced-transparency:reduce){
+  .topbar,.bottom-nav{background:var(--bg);}
+}
+
+/* ── Border sweep, round two (components the first pass missed) ──────────── */
+.travel-edit-row .icon-btn,
+.day-availability-preset,
+.time-offset-sign-btn,
+.mini-text-btn,
+.day-quick-action,
+.day-item-action,
+.ting-emoji-preview,
+.generic-emoji-chip,
+.stat,
+.scheduled-row,
+.monthday-disclosure-head,
+.plan-field-row,
+.blocked-time-row,
+.location-access-row,
+.add-option-group,
+.day-scoped-habit,
+.crown-dial,
+.about-block,
+.setting-toggle,
+.calendar-pdf-preview,
+.reset-confirm,
+.day-empty-state,
+.day-move-inline,
+.day-availability-hero,
+.timer-auto-stop-field,
+.order-mark,
+.home-active-filter,
+.switch-ui{border:0;}
+/* Rows that relied on their border for separation get a tone step instead. */
+.scheduled-row,.plan-field-row,.blocked-time-row,.location-access-row,
+.day-scoped-habit,.about-block,.setting-toggle,.calendar-pdf-preview,
+.timer-auto-stop-field{background:var(--bg2);}
+/* Focus rings stay functional (teal halo), never decorative. */
+.time-offset-sign-btn:focus-visible,
+.mini-text-btn:focus-visible,
+.day-quick-action:focus-visible,
+.day-item-action:focus-visible,
+.day-availability-preset:focus-visible,
+.home-active-filter:focus-visible,
+.travel-edit-row .icon-btn:focus-visible{
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 28%,transparent);
+}
+
+/* ── Minimal-mode detail sheet ──────────────────────────────────────────────
+   #detail-minimal-effort is a 2-column planning GRID, but minimal mode moves
+   three differently-shaped children into it (duration field, the task due row,
+   the due hint). As grid columns the due row overflows the sheet and the hint
+   wraps into a ~50px skyscraper. Stack them vertically instead, like the other
+   single-column rows (planning-grid-single). */
+body.minimal-mode #detail-minimal-effort{
+  display:flex;flex-direction:column;gap:10px;margin:0 0 10px;
+}
+body.minimal-mode #detail-minimal-effort > *{margin:0;}
+/* Stacked pages read as separate sections — a small gap between the cards. */
+body.minimal-mode .detail-sheet > .detail-pager{gap:12px;}
+body.minimal-mode .detail-sheet > .detail-pager > .detail-page{margin-bottom:0;}
+/* Header gets a touch more separation from the now-stacked content. */
+body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
+
+/* ── Detail-header emoji tile ───────────────────────────────────────────────
+   The detail head is a .ting-card, so the home-card pulse-tile pass (68px,
+   radius card-radius − inset, 39px emoji) wins the cascade over the old
+   .detail-mark circle rules and the tile renders as a squashed 68×39 blob.
+   Scope a proper tile here: home-card geometry scaled to the header row,
+   tone-inverted (--bg tile on the --bg2 head card, or the habit's emoji bg). */
+.detail-head .detail-mark{
+  align-self:center;width:56px;min-width:56px;height:56px;
+  border-radius:14px;
+}
+.detail-head .detail-mark.emoji-pulse{
+  border-radius:14px;
+  background:var(--emoji-bg,var(--bg)) !important;
+}
+.detail-head .detail-mark .emoji-mark,
+.detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:30px;line-height:1;}
+.detail-head .detail-mark .ti{font-size:28px;}
+/* Keep the corner tick badge — it signals that tapping the tile logs the
+   habit/task. Same look as the home card; the header padding gives it room. */
+.detail-head .detail-mark{overflow:visible;}
+.detail-head .detail-mark::before,
+.detail-head .detail-mark::after{right:-4px;bottom:-4px;width:19px;height:19px;}
