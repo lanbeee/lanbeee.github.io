@@ -593,20 +593,19 @@ body[data-pane-count="3"] .app-bar{
   display:none;
 }
 .app-bar-search input{
-  flex:1 1 auto;min-width:0;height:38px;border-radius:999px;
-  border:0.5px solid var(--border2);
-  background:var(--bg2);color:var(--text);
+  flex:1 1 auto;min-width:0;height:38px;border-radius:12px;
+  border:0;
+  background:var(--field-bg);color:var(--text);
   font:inherit;font-size:14px;font-weight:500;
   padding:0 14px;outline:none;margin:0;
 }
 .app-bar-search input:focus-visible{
-  border-color:var(--teal-icon);
-  box-shadow:0 0 0 3px rgba(15,110,86,0.15);
+  box-shadow:none;
 }
 .app-bar-search .search-clear{
   display:none;
   width:36px;height:36px;flex:0 0 36px;
-  background:var(--bg2);border-color:var(--border);
+  background:transparent;border:0;
   box-shadow:none;
 }
 .app-bar-search.is-open .search-clear{display:flex;}
@@ -680,18 +679,19 @@ body.fullpage-open .bottom-nav{
   order:2;
 }
 .nav-search input{
-  width:100%;min-width:0;height:44px;border-radius:999px;
-  border:0.5px solid var(--border2);
-  background:var(--bg);color:var(--text);
+  width:100%;min-width:0;height:44px;border-radius:12px;
+  border:0;
+  background:var(--field-bg);color:var(--text);
   font:inherit;font-size:15px;font-weight:500;
   padding:0 14px;outline:none;
 }
-.nav-search input:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 28%,transparent);}
+.nav-search input:focus-visible{box-shadow:none;}
 .nav-search .search-clear{
   display:none;
   flex:0 0 36px;
   width:36px;height:36px;align-self:center;
-  background:var(--bg);box-shadow:none;
+  background:transparent;border:0;
+  box-shadow:none;
 }
 .bottom-nav.search-open .search-clear{display:flex;}
 .nav-search .search-clear i{font-size:18px;}
@@ -2006,7 +2006,7 @@ body[data-pane-count="3"] .detail-sheet{
 .ting-emoji-preview{width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:inherit;font-size:20px;line-height:1;background:var(--bg2);color:var(--text3);border:0.5px solid var(--border);margin:0 0 12px;padding:0;cursor:pointer;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;transition:transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;}
 .ting-emoji-preview i{font-size:20px;}
 .ting-emoji-preview:active{transform:scale(0.94);}
-.ting-emoji-preview:focus-visible{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 45%,transparent);}
+.ting-emoji-preview:focus-visible{outline:none;box-shadow:none;}
 .ting-emoji-edit{margin:0 0 14px;}
 .field-hint{
   color:var(--text3);font-size:12px;line-height:1.35;margin:-2px 0 10px;
@@ -3185,7 +3185,7 @@ button.setting-toggle{
   outline:none;
 }
 .settings-sheet .setting-switch:focus-visible .switch-ui{
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 18%,transparent);
+  box-shadow:none;
 }
 .habit-toggle{
   margin:0 0 12px;
@@ -3288,7 +3288,7 @@ input[type=text],input[type=number],input[type=date]{
   font-family:inherit;
 }
 input[type=text]:focus,input[type=number]:focus,input[type=date]:focus{
-  border-color:var(--teal-icon);box-shadow:0 0 0 3px rgba(15,110,86,0.15);
+  border-color:transparent;box-shadow:none;
 }
 input[type=number]{width:72px;text-align:center;margin-bottom:0;}
 input[type=date]{color-scheme:light dark;}
@@ -3396,7 +3396,7 @@ select{
 .home-filter-trigger.has-active{border-color:color-mix(in srgb,var(--teal-icon) 42%,var(--border));}
 .home-filter-trigger:active,.home-active-filter:active{transform:scale(0.97);}
 .home-filter-trigger:focus-visible,.home-active-filter:focus-visible,.home-filter-option:focus-visible{
-  outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 30%,transparent);
+  outline:none;box-shadow:none;
 }
 
 .home-filter-sheet{
@@ -3964,7 +3964,7 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .ting-card .pulse-btn .emoji-mark,
 .ting-card .pulse-btn.emoji-pulse .emoji-mark{font-size:39px;line-height:1;}
 .ting-card .pulse-btn:active{transform:scale(0.94);box-shadow:none;filter:brightness(.94);}
-.ting-card:has(.pulse-btn:focus-visible){box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 22%,transparent),var(--home-card-shadow);}
+.ting-card:has(.pulse-btn:focus-visible){box-shadow:var(--home-card-shadow);}
 .ting-card .pulse-btn:focus-visible{outline:none;}
 
 .travel-card,.blocked-card{
@@ -4538,7 +4538,7 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
   transition:transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;
 }
 .generic-emoji-chip:active{transform:scale(0.92);}
-.generic-emoji-chip:focus-visible{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 45%,transparent);}
+.generic-emoji-chip:focus-visible{outline:none;box-shadow:none;}
 .generic-emoji-chip.on{
   box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 50%,transparent);
   border-color:color-mix(in srgb,var(--teal-icon) 40%,transparent);
@@ -4597,7 +4597,7 @@ input:not([type="range"]),select,textarea,
 }
 .app-bar-search input:focus-visible,.nav-search input:focus-visible,
 input:focus-visible,select:focus-visible,textarea:focus-visible{
-  border-color:transparent;box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 28%,transparent);
+  border-color:transparent;box-shadow:none;
 }
 .btn{border:0;background:var(--bg3);transition:background var(--dur-fast) ease,color var(--dur-fast) ease,opacity var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
 .btn:active,.btn:hover{background:color-mix(in srgb,var(--bg3) 72%,var(--text) 7%);}
@@ -4685,7 +4685,6 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .presence-signal{border:0;box-shadow:none;}
 .calendar-filter-sheet .home-filter-option.on{border:0;}
 .app-bar-search input,.nav-search input{border:0;background:var(--bg3);box-shadow:none;}
-.nav-search input{border-radius:15px;}
 .swipe-actions .swipe-action{background:transparent;}
 .breakable-progress,.session-progress{border-radius:10px;}
 .about-hero{border:0;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));}
@@ -4791,7 +4790,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .scheduled-row,.plan-field-row,.blocked-time-row,.location-access-row,
 .day-scoped-habit,.about-block,.setting-toggle,.calendar-pdf-preview,
 .timer-auto-stop-field{background:var(--bg2);}
-/* Focus rings stay functional (teal halo), never decorative. */
+/* Focus rings are keyboard-only and neutral — the old teal halo painted on
+   tap and read as an asymmetric green glow (clipped by overflow containers).
+   See the keyboard-only indicator at the end of this file. */
 .time-offset-sign-btn:focus-visible,
 .mini-text-btn:focus-visible,
 .day-quick-action:focus-visible,
@@ -4799,7 +4800,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .day-availability-preset:focus-visible,
 .home-active-filter:focus-visible,
 .travel-edit-row .icon-btn:focus-visible{
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 28%,transparent);
+  box-shadow:none;
 }
 
 /* ── Minimal-mode detail sheet ──────────────────────────────────────────────
@@ -4840,3 +4841,20 @@ body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
 .detail-head .detail-mark{overflow:visible;}
 .detail-head .detail-mark::before,
 .detail-head .detail-mark::after{right:-4px;bottom:-4px;width:19px;height:19px;}
+
+/* ── Keyboard-only focus indicator ──────────────────────────────────────────
+   Touch taps no longer paint a ring (the old teal halo was clipped by
+   overflow containers and read as an asymmetric green glow). Keyboard users
+   still get a symmetric neutral outline so focus stays visible. */
+@media (hover:hover) and (pointer:fine){
+   input:focus-visible,select:focus-visible,textarea:focus-visible,
+   .home-filter-trigger:focus-visible,.home-active-filter:focus-visible,
+   .home-filter-option:focus-visible,.generic-emoji-chip:focus-visible,
+   .ting-emoji-preview:focus-visible,.time-offset-sign-btn:focus-visible,
+    .mini-text-btn:focus-visible,.day-quick-action:focus-visible,
+    .day-item-action:focus-visible,.day-availability-preset:focus-visible,
+    .travel-edit-row .icon-btn:focus-visible,
+    .settings-sheet .setting-switch:focus-visible .switch-ui{
+     outline:2px solid var(--text);outline-offset:2px;
+    }
+}
