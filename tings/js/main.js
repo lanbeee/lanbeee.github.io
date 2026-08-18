@@ -1479,7 +1479,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=6';
+      stylesheet.href = './onboarding/coach.css?v=7';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{

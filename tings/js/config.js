@@ -85,9 +85,8 @@ const WEEKDAY_LABELS = ['sun','mon','tue','wed','thu','fri','sat'];
 const SWIPE_THRESHOLD = 60;
 const SWIPE_ACTION_WIDTH = 68;
 // The revealed action panel is anchored at the row edge, so it must extend this
-// far under the card's rounded corner (matches the card corner radius) or the
-// card's round corner leaves a blank gap with a sharp panel corner showing
-// through.
+// far under the card's rounded corner (matches --card-radius:20px) or the card's
+// round corner leaves a blank gap with a sharp panel corner showing through.
 const SWIPE_CORNER_PAD = 20;
 const TAP_DELAY = 310;
 const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';

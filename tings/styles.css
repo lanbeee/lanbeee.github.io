@@ -33,9 +33,26 @@
   --card-pulse:62px;
   --gutter:0px;
   --app-pad:0;
-  --home-card-shadow:0 1px 2px rgba(18,28,24,0.035),0 8px 24px rgba(18,28,24,0.045);
-  --home-card-shadow-hover:0 2px 4px rgba(18,28,24,0.045),0 12px 30px rgba(18,28,24,0.08);
+  /* Flat design language: inline surfaces carry NO shadow — edges are
+     communicated by surface tone alone (--bg2 page → --bg card → --bg3
+     recessed control). Only floating chrome (topbar, bottom-nav, sheets,
+     toasts) gets --floating-shadow. Token names are kept for the RN port. */
+  --home-card-shadow:none;
+  --home-card-shadow-hover:none;
   --floating-shadow:0 10px 30px rgba(20,30,26,0.10),0 2px 8px rgba(20,30,26,0.05);
+  /* Subtle glass/glow layer: floating chrome gets a translucent blurred
+     surface; primary accents (+ buttons) get a soft teal glow; the active
+     seg pill gets a faint raise so it reads raised, not cut out. Keep these
+     very restrained — they accent the flat tone language, not replace it. */
+  --glass-bg:color-mix(in srgb,var(--bg) 78%,transparent);
+  --glass-blur:saturate(1.5) blur(16px);
+  --accent-glow:0 6px 16px color-mix(in srgb,var(--teal-icon) 26%,transparent);
+  --accent-glow-strong:0 8px 22px color-mix(in srgb,var(--teal-icon) 38%,transparent);
+  /* Recessed control fill (inputs, seg wells, emoji circles). On a white
+     sheet --bg3 is only ~9% off-white and reads as merged with the surface;
+     --field-bg steps one tone darker so a borderless field still has an edge. */
+  --field-bg:#e0dfd9;
+  --raised-shadow:0 1px 2px rgba(20,30,26,0.16),0 3px 8px rgba(20,30,26,0.10);
 }
 @media (prefers-color-scheme:dark) {
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -52,11 +69,23 @@
    Dark:   --text:#f2f2f7  --text2:#aeaeb2  --text3:#6e6e73
 
    ── Borders ───────────────────────────────────────────────────────────────
+   FLAT DESIGN: borders are not used for component chrome. Edges communicate
+   through surface tone (--bg2 page → --bg card → --bg3 recessed control).
+   --border/--border2 survive ONLY as functional colors: focus rings and
+   chart gridlines. Shadows: none on inline surfaces; --floating-shadow is
+   reserved for floating chrome (topbar, bottom-nav, sheets, toasts).
    Light:  --border:rgba(0,0,0,0.11)      --border2:rgba(0,0,0,0.2)
    Dark:   --border:rgba(255,255,255,0.09) --border2:rgba(255,255,255,0.18)
 
    ── Radii ─────────────────────────────────────────────────────────────────
    --radius:16px   --radius-sm:10px
+
+   ── Glass/glow accents (subtle) ───────────────────────────────────────────
+   Floating chrome (topbar, bottom-nav): --glass-bg over --bg + --glass-blur,
+   with a solid-bg fallback when backdrop-filter is unsupported or the user
+   prefers reduced transparency. Primary accents (+ buttons): --accent-glow /
+   --accent-glow-strong (soft teal halo, stronger on hover/press). The active
+   seg pill uses --raised-shadow so it reads raised, not cut out.
 
    ── Semantic colors (light / dark) ────────────────────────────────────────
    Teal    bg #E1F5EE / #085041   icon #0F6E56 / #5DCAA5   text #085041 / #9FE1CB
@@ -103,11 +132,10 @@
     --cyan-bg:#0A565D; --cyan-icon:#7CD4DC; --cyan-text:#A8E2E7;
     --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
     --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
+    --field-bg:#34343a;
+    --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
   }
-  .topbar,.bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
-  .month-card,.detail-card,.stat,.overview-item,.about-block,.settings-block,.tune-section,.graph,.cal-day,.mini-nav{
-    border-color:rgba(255,255,255,0.06);
-  }
+  .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
   .cal-day{background:#242426;}
   .graph{
     background:
@@ -137,18 +165,7 @@
   --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
   --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
 }
-:root[data-theme="dark"] .topbar,
 :root[data-theme="dark"] .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
-:root[data-theme="dark"] .month-card,
-:root[data-theme="dark"] .detail-card,
-:root[data-theme="dark"] .stat,
-:root[data-theme="dark"] .overview-item,
-:root[data-theme="dark"] .about-block,
-:root[data-theme="dark"] .settings-block,
-:root[data-theme="dark"] .tune-section,
-:root[data-theme="dark"] .graph,
-:root[data-theme="dark"] .cal-day,
-:root[data-theme="dark"] .mini-nav{border-color:rgba(255,255,255,0.06);}
 :root[data-theme="dark"] .cal-day{background:#242426;}
 :root[data-theme="dark"] .graph{
   background:
@@ -167,8 +184,10 @@
    the in-app size and browser/OS text zoom can compound predictably. */
 
 /* Compact mode */
-body.compact-mode .ting-card { padding:6px 8px; }
+body.compact-mode .swipe-row,
+body.compact-mode .ting-card { --card-inset:8px; }
 body.compact-mode .swipe-row { margin-bottom:2px; }
+body.compact-mode .ting-card { padding:var(--card-inset); }
 body.compact-mode .ting-meta { gap:3px; }
 body.compact-mode .context-pill { padding:1px 5px; font-size:calc(10px * var(--font-scale)); }
 body.compact-mode .ting-name { font-size:calc(13.5px * var(--font-scale)); }
@@ -233,9 +252,7 @@ html{font-size:16px;-webkit-text-size-adjust:100%;}
 html{scroll-behavior:smooth;color-scheme:light dark;}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  background:
-    radial-gradient(circle at 50% -12%,color-mix(in srgb,var(--teal-bg) 34%,transparent) 0,transparent 34rem),
-    var(--bg2);
+  background:var(--bg2);
   color:var(--text);
   min-height:100dvh;padding:0 0 132px;
   overscroll-behavior-y:contain;
@@ -254,8 +271,7 @@ body[data-pane-count="1"] .app{
   width:100%;
   max-width:var(--pane-width);
   margin:0 auto;
-  background:
-    linear-gradient(180deg,color-mix(in srgb,var(--teal-bg) 13%,var(--bg)) 0,var(--bg) 180px);
+  background:var(--bg2);
   min-height:100dvh;
   padding:var(--app-pad);
 }
@@ -294,13 +310,13 @@ body[data-pane-count="3"] .app{
   align-items:stretch;
 }
 
-/* All panes are phone-shaped: 480px wide, light background, identical look
-   to the mobile-portrait list pane. */
+/* All panes are phone-shaped: 480px wide, identical look to the
+   mobile-portrait list pane. The list pane keeps the tonal page color
+   (--bg2) so white cards read without borders; the overview/detail panes
+   are white surfaces, so the tone step itself separates the panes. */
 .pane-list{
   grid-area:list;
-  background:
-    linear-gradient(180deg,color-mix(in srgb,var(--teal-bg) 13%,var(--bg)) 0,var(--bg) 180px);
-  border-right:0.5px solid var(--border);
+  background:var(--bg2);
   overflow-y:auto;
   overflow-x:hidden;
   padding:0 14px;
@@ -318,7 +334,6 @@ body[data-pane-count="3"] .pane-list{padding:0 20px;}
   display:none;
   grid-area:middle;
   background:var(--bg);
-  border-right:0.5px solid var(--border);
   overflow-y:auto;
   padding:0 20px 32px;
   min-width:0;
@@ -327,9 +342,6 @@ body[data-pane-count="3"] .pane-list{padding:0 20px;}
 body[data-pane-count="2"] .pane-overview,
 body[data-pane-count="3"] .pane-overview{
   display:block;
-}
-body[data-pane-count="3"] .pane-overview{
-  border-right:0.5px solid var(--border);
 }
 
 .pane-detail{
@@ -443,19 +455,17 @@ body[data-pane-count="3"] .pane-detail .sheet{
   container-type:inline-size;
   display:flex;flex-direction:row;gap:10px;align-items:center;
   padding:10px 12px;
-  background:color-mix(in srgb,var(--bg) 84%,transparent);
-  z-index:10;border:0.5px solid color-mix(in srgb,var(--border2) 58%,transparent);border-radius:18px;
-  box-shadow:var(--floating-shadow);
-  backdrop-filter:blur(20px) saturate(1.2);-webkit-backdrop-filter:blur(20px) saturate(1.2);
+  background:var(--bg);
+  z-index:10;border-radius:var(--card-radius,20px);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,max-height var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy);
-  width:calc(100% - 4px);margin:8px 2px 0;
+  margin:8px 0 0;
   max-height:88px;
   will-change:transform,opacity;
 }
 /* The header's three controls (wordmark · place · filters) share one surface:
    strip the inner pills' own chrome so the outer card reads as a single bar
    instead of three crammed boxes. The wordmark sits left; place + filters are
-   pushed right (grouped together) with a hairline divider between them. */
+   pushed right (grouped together), separated by spacing only. */
 .topbar .presence-filter{
   border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
 }
@@ -470,9 +480,6 @@ body[data-pane-count="3"] .pane-detail .sheet{
 .topbar .home-filter-trigger.has-active{ border:0;background:transparent;box-shadow:none; }
 .topbar .home-filter-active{ padding:0 2px;justify-content:flex-end; }
 .topbar .home-filter-trigger{ position:relative; }
-.topbar .home-filter-trigger::before{
-  content:"";position:absolute;left:-4px;top:9px;bottom:9px;width:0.5px;background:var(--border);
-}
 body[data-pane-count="2"] .topbar,
 body[data-pane-count="3"] .topbar{
   display:none;
@@ -508,7 +515,7 @@ body[data-pane-count="1"].search-active{--nav-bottom:6px;}
 }
 .wordmark img{
   width:36px;height:36px;display:block;border-radius:11px;
-  box-shadow:0 5px 14px color-mix(in srgb,var(--teal-icon) 18%,transparent);
+  box-shadow:0 5px 14px color-mix(in srgb,var(--teal-icon) 10%,transparent);
 }
 .wordmark-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;line-height:1;}
 .wordmark-copy > span{font-size:18px;font-weight:720;letter-spacing:-0.025em;}
@@ -519,16 +526,16 @@ body[data-pane-count="1"].search-active{--nav-bottom:6px;}
 .top-actions{display:flex;align-items:center;gap:8px;}
 .icon-btn{
   width:44px;height:44px;border-radius:50%;
-  border:0.5px solid var(--border2);background:transparent;
+  border:0;background:transparent;
   display:flex;align-items:center;justify-content:center;
   cursor:pointer;color:var(--text);
   -webkit-tap-highlight-color:transparent;touch-action:manipulation;
-  transition:background var(--dur-fast) ease,border-color var(--dur-fast) ease,color var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
+  transition:background var(--dur-fast) ease,color var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
 }
 .icon-btn:active{transform:scale(0.93);}
 .icon-btn.is-hidden{display:none;}
 .icon-btn i{font-size:20px;}
-.icon-btn.is-on{background:var(--bg3);border-color:var(--border);}
+.icon-btn.is-on{background:var(--bg3);}
 
 .app-bar{
   display:none;
@@ -537,7 +544,6 @@ body[data-pane-count="1"].search-active{--nav-bottom:6px;}
   gap:12px;
   padding:0 18px;
   background:var(--bg);
-  border-bottom:0.5px solid var(--border);
   position:sticky;top:0;z-index:30;
   min-height:var(--bar-height);
 }
@@ -564,8 +570,11 @@ body[data-pane-count="3"] .app-bar{
 }
 .app-bar-add{
   background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);
+  box-shadow:var(--accent-glow);
+  transition:box-shadow var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
 }
-.app-bar-add:hover{filter:brightness(0.92);}
+.app-bar-add:active{transform:scale(0.94);box-shadow:var(--accent-glow-strong);}
+.app-bar-add:hover{filter:brightness(0.92);box-shadow:var(--accent-glow-strong);}
 
 .app-bar-search{
   flex:1 1 auto;
@@ -584,20 +593,19 @@ body[data-pane-count="3"] .app-bar{
   display:none;
 }
 .app-bar-search input{
-  flex:1 1 auto;min-width:0;height:38px;border-radius:999px;
-  border:0.5px solid var(--border2);
-  background:var(--bg2);color:var(--text);
+  flex:1 1 auto;min-width:0;height:38px;border-radius:12px;
+  border:0;
+  background:var(--field-bg);color:var(--text);
   font:inherit;font-size:14px;font-weight:500;
   padding:0 14px;outline:none;margin:0;
 }
-.app-bar-search input:focus{
-  border-color:var(--teal-icon);
-  box-shadow:0 0 0 3px rgba(15,110,86,0.15);
+.app-bar-search input:focus-visible{
+  box-shadow:none;
 }
 .app-bar-search .search-clear{
   display:none;
   width:36px;height:36px;flex:0 0 36px;
-  background:var(--bg2);border-color:var(--border);
+  background:transparent;border:0;
   box-shadow:none;
 }
 .app-bar-search.is-open .search-clear{display:flex;}
@@ -608,10 +616,11 @@ body[data-pane-count="3"] .app-bar{
   transform:translateX(-50%);z-index:50;
   display:flex;align-items:center;gap:6px;
   width:max-content;max-width:calc(100vw - 24px);
-  padding:7px;background:color-mix(in srgb,var(--bg) 86%,transparent);
-  border:0.5px solid color-mix(in srgb,var(--border2) 72%,transparent);border-radius:22px;
-  box-shadow:0 18px 42px rgba(16,26,22,0.17),0 3px 10px rgba(16,26,22,0.07);
-  backdrop-filter:blur(22px) saturate(1.25);-webkit-backdrop-filter:blur(22px) saturate(1.25);
+  padding:7px;background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);
+  backdrop-filter:var(--glass-blur);
+  border-radius:22px;
+  box-shadow:var(--floating-shadow);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,bottom var(--dur-slow) var(--ease-snappy);
   will-change:transform;
 }
@@ -638,8 +647,11 @@ body.fullpage-open .bottom-nav{
 }
 .bottom-nav .nav-add{
   background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);
-  box-shadow:0 7px 18px color-mix(in srgb,var(--teal-icon) 28%,transparent);
+  box-shadow:var(--accent-glow);
+  transition:box-shadow var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
 }
+.bottom-nav .nav-add:active{transform:scale(0.94);box-shadow:var(--accent-glow-strong);}
+@media (hover:hover){.bottom-nav .nav-add:hover{box-shadow:var(--accent-glow-strong);}}
 .nav-search{
   flex:1 1 auto;
   display:none;grid-template-columns:minmax(0,1fr) auto;
@@ -667,18 +679,19 @@ body.fullpage-open .bottom-nav{
   order:2;
 }
 .nav-search input{
-  width:100%;min-width:0;height:44px;border-radius:999px;
-  border:0.5px solid var(--border2);
-  background:var(--bg);color:var(--text);
+  width:100%;min-width:0;height:44px;border-radius:12px;
+  border:0;
+  background:var(--field-bg);color:var(--text);
   font:inherit;font-size:15px;font-weight:500;
   padding:0 14px;outline:none;
 }
-.nav-search input:focus{box-shadow:inset 0 0 0 1.5px var(--border2);}
+.nav-search input:focus-visible{box-shadow:none;}
 .nav-search .search-clear{
   display:none;
   flex:0 0 36px;
   width:36px;height:36px;align-self:center;
-  background:var(--bg);box-shadow:none;
+  background:transparent;border:0;
+  box-shadow:none;
 }
 .bottom-nav.search-open .search-clear{display:flex;}
 .nav-search .search-clear i{font-size:18px;}
@@ -699,43 +712,35 @@ body.fullpage-open .bottom-nav{
 .home-loading span:nth-child(3){opacity:0.58;animation-delay:180ms;}
 @keyframes home-loading-shift{to{background-position:-120% 0;}}
 @media (prefers-reduced-motion:reduce){.home-loading span{animation:none;}}
+/* Day headers are plain text labels that stick at the top while scrolling.
+   The background matches the page tone exactly, so it never reads as a bar —
+   it only exists so cards sliding under a stuck label stay hidden behind it.
+   Days are separated by whitespace + the label itself. Nothing else. */
 .section-header{
   display:block;color:var(--text);font-size:13px;font-weight:720;
   letter-spacing:-0.01em;text-transform:capitalize;
-  padding:18px 4px 7px;line-height:1.2;margin-top:2px;
+  padding:18px 18px 7px;line-height:1.2;
+  margin:2px -14px 0; /* bleed over the pane's 14px side padding */
   border-top:0;
   position:sticky;top:0;z-index:5;
-  background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--bg) 96%,transparent) 14px,color-mix(in srgb,var(--bg) 96%,transparent) 78%,transparent);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  background:var(--bg2);
+  transition:background-color .18s ease;
 }
-/* Fade the FIRST header's top edge — background AND the backdrop-blur rectangle
-   — into the feed so Pinned/Today doesn't show a hard band against the page.
-   Mask clips the blur box itself; text sits at 18px, safely below the 12px
-   fade, so it stays fully opaque. */
-.section-header:first-child{
-  -webkit-mask-image:linear-gradient(180deg,transparent,#000 12px);
-  mask-image:linear-gradient(180deg,transparent,#000 12px);
+/* Subtle half-step darker while pinned at the viewport top (`.stuck` toggled
+   on scroll by updateStuckSectionHeaders in js/list-view.js). */
+.section-header.stuck{background:color-mix(in srgb,var(--bg3) 50%,var(--bg2));}
+/* Pills ride the header; their pale tints can wash out against the stuck
+   strip, so while stuck they render as surface chips (bg + own border/text)
+   — the same look pills have on cards. */
+.section-header.stuck .dropped-pill,
+.section-header.stuck .free-pill{background:var(--bg);}
+/* Wider panes pad 20px; the bleed tracks it. Compensating padding keeps the
+   label and pills at the same +4px offset in every layout. */
+body[data-pane-count="2"] .section-header,
+body[data-pane-count="3"] .section-header{
+  margin-left:-20px;margin-right:-20px;padding-left:24px;padding-right:24px;
 }
-/* Solid once it actually sticks: drop the mask so scrolling content can't show
-   through the faded top edge. */
-.section-header:first-child.is-stuck{
-  -webkit-mask-image:none;
-  mask-image:none;
-}
-/* The home header (wordmark + filter) is a non-sticky card at the top of the
-   feed, so it scrolls away naturally and is only visible at the scroll top.
-   Day headers stick flush at the viewport top (top:0, z-index:5) once the
-   header has scrolled out of the way. The offset is constant in every state,
-   so headers never jump on scroll. */
-body[data-pane-count="1"] .section-header{top:0;}
-body[data-pane-count="1"].header-hidden .section-header,
-body[data-pane-count="1"].search-active .section-header{top:0;}
-/* All sticky headers (Pinned · Today · Tomorrow · …) share one uniform
-   treatment: identical type and spacing, plus a background that fades in at
-   the top so no header shows a hard "bar" against the feed above it. */
-.section-header:not(:first-child)::before{
-  content:"";position:absolute;left:4px;right:4px;top:8px;height:0.5px;background:var(--border);
-}
+.section-header:not(:first-child)::before{display:none;}
 .section-header.day-section-header{
   touch-action:manipulation;user-select:none;-webkit-user-select:none;
   -webkit-tap-highlight-color:transparent;
@@ -749,6 +754,7 @@ body[data-pane-count="1"].search-active .section-header{top:0;}
   color:var(--amber-text);background:var(--amber-bg);
   border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
+  transition:background-color .18s ease; /* follows the header's stuck tone */
   /* none: keep finger drift from being claimed as a page pan (sticky headers). */
   -webkit-tap-highlight-color:transparent;touch-action:none;
 }
@@ -798,6 +804,7 @@ body[data-pane-count="1"].search-active .section-header{top:0;}
   color:var(--teal-text);background:var(--teal-bg);
   border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
+  transition:background-color .18s ease; /* follows the header's stuck tone */
   /* none: keep finger drift from being claimed as a page pan (sticky headers). */
   -webkit-tap-highlight-color:transparent;touch-action:none;
 }
@@ -849,7 +856,9 @@ body[data-pane-count="1"].search-active .section-header{top:0;}
 body.reach-pad #list{padding-top:220px;}
 
 .swipe-row{
-  position:relative;overflow:hidden;border-radius:20px;
+  --card-radius:20px;
+  --card-inset:10px;
+  position:relative;overflow:hidden;border-radius:var(--card-radius);
   touch-action:pan-y;
 }
 /* Collapsed at rest (width:0). Inline width during swipe still reveals actions;
@@ -864,14 +873,16 @@ body.reach-pad #list{padding-top:220px;}
   will-change:width;
 }
 .swipe-actions-left{
-  left:0;border-radius:var(--radius) 0 0 var(--radius);
+  left:0;border-radius:var(--card-radius) 0 0 var(--card-radius);
+  background:color-mix(in srgb,var(--teal-bg) 48%,var(--bg3));
 }
 /* Buttons hug the OUTER edge on both panels so the corner-pad extension
    (SWIPE_CORNER_PAD, tucked under the card's rounded corner) is always empty
    backing — never a partially hidden button. Mirrors .swipe-actions-left's
    default flex-start anchoring. */
 .swipe-actions-right{
-  right:0;border-radius:0 var(--radius) var(--radius) 0;
+  right:0;border-radius:0 var(--card-radius) var(--card-radius) 0;
+  background:color-mix(in srgb,var(--red-bg) 38%,var(--bg3));
   justify-content:flex-end;
 }
 .swipe-action{
@@ -884,28 +895,30 @@ body.reach-pad #list{padding-top:220px;}
 }
 .swipe-action i{font-size:20px;}
 .swipe-action small{font-size:10px;font-weight:600;line-height:1;opacity:0.9;}
-.sa-plan,.sa-activity{background:var(--teal-icon);color:var(--teal-bg);}
-.sa-pin{background:var(--purple-icon);color:var(--purple-bg);}
-.sa-keep{background:color-mix(in srgb,var(--teal-bg) 75%,var(--bg2));color:var(--teal-text);}
-.sa-snooze{background:#5b5b6a;color:#e8e8f0;}
-.sa-nuke{background:#A32D2D;color:#FCEBEB;}
+.sa-plan,.sa-activity,.sa-keep{background:transparent;color:var(--teal-text);}
+.sa-pin{background:transparent;color:var(--purple-text);}
+.sa-snooze{background:transparent;color:var(--text2);}
+.sa-nuke{background:transparent;color:var(--red-text);}
 
 .ting-card{
-  background:color-mix(in srgb,var(--bg) 97%,var(--teal-bg) 3%);
-  border:0.5px solid color-mix(in srgb,var(--border) 78%,transparent);
-  border-radius:20px;
-  padding:11px 12px 11px 10px;
+  background:var(--bg);
+  border-radius:var(--card-radius,20px);
+  padding:var(--card-inset,10px) 12px var(--card-inset,10px) var(--card-inset,10px);
   display:flex;align-items:center;gap:12px;
   position:relative;z-index:1;
-  transition:transform var(--dur-med) var(--ease-tight),border-color var(--dur-fast) ease,box-shadow var(--dur-fast) ease,opacity var(--dur-fast) ease,background var(--dur-fast) ease,padding var(--dur-fast) var(--ease-tight),gap var(--dur-fast) var(--ease-tight);
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-fast) ease,background var(--dur-fast) ease,padding var(--dur-fast) var(--ease-tight),gap var(--dur-fast) var(--ease-tight);
   will-change:transform;
-  box-shadow:var(--home-card-shadow);
   user-select:none;-webkit-user-select:none;
 }
+/* Inside white surfaces (sheets, detail/overview panes) the card flips to the
+   recessed page tone so the tonal step still separates it without a border. */
+.sheet .ting-card,
+.pane-detail .ting-card,
+.pane-overview .ting-card{background:var(--bg2);}
 .ting-card::before{
-  content:"";position:absolute;left:0;top:18px;bottom:18px;width:3px;
-  border-radius:0 999px 999px 0;background:var(--card-priority,var(--card-accent,var(--text3)));
-  opacity:0.58;pointer-events:none;
+  content:"";position:absolute;left:16px;top:16px;width:7px;height:7px;z-index:2;
+  border-radius:50%;background:var(--card-priority,var(--card-accent,var(--text3)));
+  opacity:0.9;pointer-events:none;
 }
 .ting-card::after{
   content:"";position:absolute;inset:0;border-radius:inherit;
@@ -933,12 +946,18 @@ body.reach-pad #list{padding-top:220px;}
 /* Snooze/delete buttons stay hidden everywhere; swipe-on-the-card is the
    only way to access them (matches mobile-portrait behavior on every pane). */
 
-.ting-card.hit{border-color:color-mix(in srgb,var(--teal-icon) 28%,var(--border));}
-.ting-card.warn{border-color:color-mix(in srgb,var(--amber-icon) 30%,var(--border));}
-.ting-card.miss{border-color:color-mix(in srgb,var(--red-icon) 26%,var(--border));}
-.ting-card.plan{border-color:color-mix(in srgb,var(--purple-icon) 30%,var(--border));}
+/* Habit cards stay calm and neutral. State/custom color belongs to the emoji
+   or icon surface (plus the small priority dot), rather than washing the
+   entire row with a second competing signal. */
+.ting-card.hit,.ting-card.warn,.ting-card.miss,.ting-card.plan{background:var(--bg);}
+.sheet .ting-card.hit,.sheet .ting-card.warn,.sheet .ting-card.miss,.sheet .ting-card.plan,
+.pane-detail .ting-card.hit,.pane-detail .ting-card.warn,.pane-detail .ting-card.miss,.pane-detail .ting-card.plan,
+.pane-overview .ting-card.hit,.pane-overview .ting-card.warn,.pane-overview .ting-card.miss,.pane-overview .ting-card.plan{background:var(--bg2);}
 @media (hover:hover){
-  .ting-card:hover{border-color:var(--border2);box-shadow:var(--home-card-shadow-hover);transform:translateY(-1px);}
+  .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover{background:color-mix(in srgb,var(--bg3) 32%,var(--bg));}
+  .sheet .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover,
+  .pane-detail .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover,
+  .pane-overview .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover{background:color-mix(in srgb,var(--bg3) 45%,var(--bg2));}
   .ting-card:hover .mini-score-ring{transform:scale(1.08);}
   .mini-score-ring{transition:transform var(--dur-fast) var(--ease-tight);}
   .pulse-btn{transition:transform var(--dur-fast) var(--ease-tight),filter var(--dur-fast) ease,background var(--dur-fast) ease;}
@@ -954,7 +973,10 @@ body.reach-pad #list{padding-top:220px;}
   .schedule-chip:hover,.monthday-chip:hover,.topic-chip:hover{background:var(--bg2);}
   .topic-chip.on:hover,.schedule-chip.on:hover,.monthday-chip.on:hover{opacity:0.92;}
 }
-.ting-card.snoozed{background:var(--bg2);}
+.ting-card.snoozed{background:color-mix(in srgb,var(--bg3) 42%,var(--bg));}
+.sheet .ting-card.snoozed,
+.pane-detail .ting-card.snoozed,
+.pane-overview .ting-card.snoozed{background:color-mix(in srgb,var(--bg3) 55%,var(--bg2));}
 .ting-card.snoozed::before{opacity:0.24;}
 .ting-card.snoozed .pulse-btn,.ting-card.snoozed .ting-info{opacity:0.48;}
 .ting-card.logged::after{animation:ring 0.36s var(--ease-snappy);}
@@ -1059,9 +1081,9 @@ body.reach-pad #list{padding-top:220px;}
 }
 .breakable-status-bar span{display:block;height:100%;transition:width 0.15s ease;}
 .breakable-progress.is-scrubbing .breakable-status-bar span{transition:none;}
-.bar-manual{background:#12A66B;}
-.bar-calendar{background:#7C5CFC;}
-.bar-adding{background:#F5871F;}
+.bar-manual{background:color-mix(in srgb,var(--green-icon) 80%,var(--bg2));}
+.bar-calendar{background:color-mix(in srgb,var(--purple-icon) 80%,var(--bg2));}
+.bar-adding{background:color-mix(in srgb,var(--orange-icon) 80%,var(--bg2));}
 .breakable-crown{
   grid-column:1;grid-row:2;
   min-width:60px;height:34px;
@@ -1392,12 +1414,9 @@ body[data-pane-count="3"] .add-sheet{
   transform:translateX(-50%);
   margin:0;
   padding:8px;
-  background:color-mix(in srgb,var(--bg) 94%,transparent);
-  border:0.5px solid var(--border);
+  background:var(--bg);
   border-radius:calc(var(--radius-sm) + 4px);
-  box-shadow:0 8px 28px rgba(0,0,0,0.13);
-  backdrop-filter:blur(18px);
-  -webkit-backdrop-filter:blur(18px);
+  box-shadow:var(--floating-shadow);
   z-index:160;
 }
 body[data-pane-count="2"] .add-sheet .add-actions,
@@ -1462,11 +1481,11 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
   position:sticky;
   top:0;
   z-index:45;
+  /* Align the card's bounding box with the section cards below (sheet padding
+     18px + their 14px inset), like a home habit card aligns with its column. */
   margin:0 0 6px;
   padding:calc(5px + env(safe-area-inset-top)) 9px 6px 8px;
   gap:8px;
-  backdrop-filter:blur(18px);
-  -webkit-backdrop-filter:blur(18px);
 }
 .detail-title-wrap{
   min-width:0;flex:1;display:flex;flex-direction:column;
@@ -1568,10 +1587,9 @@ body[data-pane-count="3"] .detail-sheet{height:calc(100dvh - 48px);}
   position:fixed;left:50%;bottom:calc(var(--nav-bottom) + env(safe-area-inset-bottom));
   z-index:160;width:min(calc(100% - 36px),444px);height:48px;
   transform:translateX(-50%);display:flex;align-items:stretch;gap:6px;
-  padding:3px;background:color-mix(in srgb,var(--bg) 94%,transparent);
-  border:0.5px solid var(--border);border-radius:calc(var(--radius-sm) + 4px);
-  box-shadow:0 8px 28px rgba(0,0,0,0.13);
-  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  padding:3px;background:var(--bg);
+  border-radius:calc(var(--radius-sm) + 4px);
+  box-shadow:var(--floating-shadow);
 }
 .detail-dots{
   flex:1 1 auto;min-width:0;
@@ -1586,7 +1604,7 @@ body[data-pane-count="3"] .detail-sheet{height:calc(100dvh - 48px);}
 }
 .detail-page-tab i{font-size:17px;line-height:1;}
 .detail-page-tab span{display:none;}
-.detail-page-tab.on{background:var(--bg);color:var(--text);box-shadow:0 1px 3px color-mix(in srgb,var(--text) 10%,transparent);}
+.detail-page-tab.on{background:var(--bg3);color:var(--text);}
 .detail-page-tab:active{transform:scale(0.96);}
 .detail-bottom-bar .detail-actions{
   position:static;left:auto;bottom:auto;transform:none;
@@ -1792,8 +1810,8 @@ body[data-pane-count="3"] .detail-sheet{
 .cal-day.pickable{cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
 .cal-day.pickable:active{transform:scale(0.94);}
 .cal-day.blank{background:transparent;}
-.cal-day.today{box-shadow:inset 0 0 0 1px var(--border2);color:var(--text);}
-.cal-day.selected{box-shadow:inset 0 0 0 1.5px var(--text);color:var(--text);}
+.cal-day.today{background:var(--purple-bg);color:var(--purple-text);box-shadow:none;}
+.cal-day.selected{background:var(--text);color:var(--bg);box-shadow:none;}
 .cal-day.density-1{background:color-mix(in srgb,var(--teal-bg) 36%,var(--bg));}
 .cal-day.density-2{background:color-mix(in srgb,var(--amber-bg) 42%,var(--bg));}
 .cal-day.density-3{background:color-mix(in srgb,var(--red-bg) 38%,var(--bg));}
@@ -1844,8 +1862,7 @@ body[data-pane-count="3"] .detail-sheet{
 .overview-filter-row{margin:2px 0 0;}
 .overview-insight{
   margin:4px 0 10px;padding:12px 12px 10px;
-  border:0.5px solid var(--border);border-radius:var(--radius-sm);
-  background:linear-gradient(180deg,color-mix(in srgb,var(--bg2) 70%,var(--bg)),var(--bg2));
+  border:0;border-radius:var(--radius-sm);background:var(--bg2);
 }
 .overview-insight-head{
   display:flex;flex-direction:column;gap:3px;margin-bottom:10px;
@@ -1994,7 +2011,7 @@ body[data-pane-count="3"] .detail-sheet{
 .ting-emoji-preview{width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:inherit;font-size:20px;line-height:1;background:var(--bg2);color:var(--text3);border:0.5px solid var(--border);margin:0 0 12px;padding:0;cursor:pointer;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;transition:transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;}
 .ting-emoji-preview i{font-size:20px;}
 .ting-emoji-preview:active{transform:scale(0.94);}
-.ting-emoji-preview:focus-visible{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 45%,transparent);}
+.ting-emoji-preview:focus-visible{outline:none;box-shadow:none;}
 .ting-emoji-edit{margin:0 0 14px;}
 .field-hint{
   color:var(--text3);font-size:12px;line-height:1.35;margin:-2px 0 10px;
@@ -2401,11 +2418,13 @@ input[type=text].mini-time-input{
   color:var(--text2);font-size:12px;font-weight:700;flex-shrink:0;
 }
 /* Date inputs and their sibling text buttons ("this week", "clear") share one
-   row height — the base input rule used to make inputs ~44px vs 29px buttons. */
+   row height — the base input rule used to make inputs ~44px vs 29px buttons.
+   margin:0 cancels the global input[type=date] bottom margin, which otherwise
+   lifts the date box 6px above the time box in this center-aligned row. */
 .plan-field-row .plan-date-input,
 .plan-field-row .plan-time-input,
 .plan-field-row .mini-text-btn{
-  height:40px;padding-top:0;padding-bottom:0;
+  height:40px;padding-top:0;padding-bottom:0;margin:0;
 }
 .plan-field-row .mini-text-btn{display:inline-flex;align-items:center;}
 .plan-date-input{
@@ -2548,7 +2567,7 @@ input[type=text].mini-time-input{
 }
 .location-results{
   display:flex;flex-direction:column;gap:6px;margin-bottom:12px;
-  padding:8px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg2);
+  padding:6px;border:0;border-radius:14px;background:var(--bg2);
 }
 .location-results-label{
   margin:1px 3px 3px;color:var(--text3);font-size:10px;font-weight:750;
@@ -2557,7 +2576,7 @@ input[type=text].mini-time-input{
 .location-result{
   display:grid;grid-template-columns:30px minmax(0,1fr) 18px;align-items:center;gap:9px;
   min-height:52px;text-align:left;padding:8px 9px;
-  border-radius:9px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
+  border-radius:8px;border:0;background:var(--bg);color:var(--text);
 }
 .location-result:hover{border-color:var(--text3);}
 .location-result > span:nth-child(2){display:flex;flex-direction:column;min-width:0;gap:2px;}
@@ -2587,7 +2606,7 @@ input[type=text].mini-time-input{
 .travel-card > span{
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.travel-card.is-edited{border-style:solid;border-color:var(--teal-icon);}
+.travel-card.is-edited{border:0;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg));}
 .travel-edit-mark{opacity:0.75;font-size:12px !important;}
 .blocked-card{
   display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
@@ -2656,7 +2675,7 @@ input[type=text].mini-time-input{
   box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 35%,transparent);
 }
 .location-chip.gps-matched,.topic-chip.gps-matched{
-  box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 40%,transparent);
+  box-shadow:none;
 }
 .iam-at-status{font-weight:700;}
 .iam-at-status.near{color:var(--amber-text);}
@@ -2670,7 +2689,7 @@ input[type=text].mini-time-input{
 .picker-map-wrap{position:relative;margin:0 0 8px;}
 .picker-map{
   height:min(36dvh,240px);min-height:170px;width:100%;border-radius:12px;overflow:hidden;
-  border:0.5px solid var(--border);background:var(--bg3);z-index:0;
+  border:0;background:var(--bg3);z-index:0;
 }
 .picker-map-crosshair{
   position:absolute;left:50%;top:50%;width:28px;height:28px;
@@ -2755,10 +2774,10 @@ input[type=text].mini-time-input{
 }
 .location-chip.on.preferred,
 .location-chip.on.pref-high{
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--teal-text) 55%,transparent);
+  box-shadow:none;
 }
 .location-chip.on.pref-little{
-  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--teal-text) 35%,transparent);
+  background:color-mix(in srgb,var(--teal-icon) 72%,var(--bg3));box-shadow:none;
 }
 .location-chip.on.pref-avoid{
   opacity:0.72;
@@ -3171,7 +3190,7 @@ button.setting-toggle{
   outline:none;
 }
 .settings-sheet .setting-switch:focus-visible .switch-ui{
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 18%,transparent);
+  box-shadow:none;
 }
 .habit-toggle{
   margin:0 0 12px;
@@ -3274,7 +3293,7 @@ input[type=text],input[type=number],input[type=date]{
   font-family:inherit;
 }
 input[type=text]:focus,input[type=number]:focus,input[type=date]:focus{
-  border-color:var(--teal-icon);box-shadow:0 0 0 3px rgba(15,110,86,0.15);
+  border-color:transparent;box-shadow:none;
 }
 input[type=number]{width:72px;text-align:center;margin-bottom:0;}
 input[type=date]{color-scheme:light dark;}
@@ -3317,7 +3336,7 @@ select{
   transition:background var(--dur-fast) ease,color var(--dur-fast) ease;
 }
 .seg-opt.on{background:var(--bg3);color:var(--text);font-weight:500;}
-.priority-seg .seg-opt.on{box-shadow:inset 3px 0 0 var(--prio-accent,var(--text3));}
+.priority-seg .seg-opt.on{box-shadow:inset 3px 0 0 var(--prio-accent,var(--bg));}
 .priority-seg .seg-opt[data-priority="0"].on{--prio-accent:var(--red-icon);}
 .priority-seg .seg-opt[data-priority="1"].on{--prio-accent:var(--amber-icon);}
 .priority-seg .seg-opt[data-priority="2"].on{--prio-accent:var(--teal-icon);}
@@ -3382,7 +3401,7 @@ select{
 .home-filter-trigger.has-active{border-color:color-mix(in srgb,var(--teal-icon) 42%,var(--border));}
 .home-filter-trigger:active,.home-active-filter:active{transform:scale(0.97);}
 .home-filter-trigger:focus-visible,.home-active-filter:focus-visible,.home-filter-option:focus-visible{
-  outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 30%,transparent);
+  outline:none;box-shadow:none;
 }
 
 .home-filter-sheet{
@@ -3741,11 +3760,7 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 
 /* Calendar overview — compact view controls, useful day signals, and one clear
    drill-down path. These rules intentionally stay scoped to calendar surfaces. */
-.overview-sheet{
-  background:
-    radial-gradient(circle at 88% 2%,color-mix(in srgb,var(--purple-bg) 58%,transparent),transparent 25%),
-    var(--bg);
-}
+.overview-sheet{background:var(--bg);}
 .overview-page-head{
   display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
   margin:0 0 16px;
@@ -3765,7 +3780,7 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 .overview-toolbar{display:flex;flex-direction:column;gap:9px;margin:0 0 12px;}
 .overview-range-seg{
   display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;
-  padding:3px;border:0.5px solid var(--border);border-radius:14px;
+  padding:3px;border:0;border-radius:14px;
   background:color-mix(in srgb,var(--bg2) 82%,var(--bg));
 }
 .overview-range-option{
@@ -3774,7 +3789,7 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
   transition:background var(--dur-fast) ease,color var(--dur-fast) ease,box-shadow var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
 }
 .overview-range-option.on{
-  background:var(--bg);color:var(--text);box-shadow:0 2px 10px color-mix(in srgb,var(--text) 9%,transparent);
+  background:var(--bg);color:var(--text);box-shadow:none;
 }
 .overview-range-option:active{transform:scale(0.98);}
 .overview-filter-summary-row{display:flex;align-items:center;gap:9px;min-width:0;}
@@ -3785,12 +3800,7 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 .overview-active-filters > span{padding-left:3px;color:var(--text3);font-size:11.5px;font-weight:650;white-space:nowrap;}
 .overview-active-filters .home-active-filter{height:36px;}
 .overview-filter-summary-row .home-filter-trigger{height:38px;}
-.overview-insight{
-  margin:0 0 12px;padding:14px;border-color:color-mix(in srgb,var(--teal-icon) 20%,var(--border));
-  border-radius:18px;background:
-    linear-gradient(145deg,color-mix(in srgb,var(--teal-bg) 55%,var(--bg)),color-mix(in srgb,var(--bg2) 88%,var(--bg)));
-  box-shadow:0 8px 22px color-mix(in srgb,var(--teal-icon) 7%,transparent);
-}
+.overview-insight{margin:0 0 12px;padding:14px;border:0;border-radius:18px;background:var(--bg2);box-shadow:none;}
 .overview-insight-head{gap:4px;margin-bottom:12px;}
 .overview-insight-stat{font-size:15px;letter-spacing:-0.01em;}
 .overview-insight-cue{font-size:11.5px;}
@@ -3802,7 +3812,7 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 .overview-open-chip b{font-size:11px;}
 .overview-card{
   margin:0 0 14px;padding:14px;border-radius:18px;background:color-mix(in srgb,var(--bg2) 90%,var(--bg));
-  box-shadow:0 10px 28px color-mix(in srgb,var(--text) 6%,transparent);
+  box-shadow:none;
 }
 .overview-card .section-top{align-items:flex-start;gap:12px;margin-bottom:12px;}
 .overview-calendar-copy{display:flex;flex-direction:column;gap:3px;min-width:0;}
@@ -3814,8 +3824,8 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 .overview-card .mini-nav{background:var(--bg);}
 .overview-card .month-grid{gap:6px;}
 .overview-card .cal-day{border-radius:10px;}
-.overview-card .cal-day.today{box-shadow:inset 0 0 0 1.5px var(--purple-icon);}
-.overview-card .cal-day.selected{box-shadow:inset 0 0 0 2px var(--text);}
+.overview-card .cal-day.today{background:var(--purple-bg);color:var(--purple-text);box-shadow:none;}
+.overview-card .cal-day.selected{background:var(--text);color:var(--bg);box-shadow:none;}
 .overview-card .cal-day:focus-visible,
 .overview-range-option:focus-visible,
 .overview-today-btn:focus-visible,
@@ -3826,8 +3836,7 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
   outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--purple-icon) 28%,transparent);
 }
 .overview-detail-block{
-  padding:13px;border:0.5px solid var(--border);border-radius:18px;
-  background:color-mix(in srgb,var(--bg2) 68%,transparent);
+  padding:10px;border:0;border-radius:18px;background:var(--bg3);
 }
 .overview-pane-row{
   display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;overflow:visible;
@@ -3928,29 +3937,19 @@ body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
 body[data-pane-count="2"] .pane-overview .overview-page-close,
 body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 
-/* Home-linked surfaces — keep primary actions obvious and carry the same
-   grounded visual language into contextual editors. */
-.section-header{
-  margin-left:-14px;margin-right:-14px;padding-left:18px;padding-right:18px;
-  background:var(--bg);border-bottom:0.5px solid var(--border);
-  box-shadow:0 5px 12px color-mix(in srgb,var(--text) 4%,transparent);
-  backdrop-filter:none;-webkit-backdrop-filter:none;
-}
-.section-header:not(:first-child)::before{display:none;}
-body[data-pane-count="2"] .section-header,
-body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;padding-left:24px;padding-right:24px;}
-
 .ting-card .pulse-btn{
-  position:relative;align-self:center;width:68px;min-width:68px;height:66px;
-  border-radius:17px;border:1px solid color-mix(in srgb,currentColor 20%,var(--border));
+  position:relative;align-self:stretch;width:68px;min-width:68px;height:auto;
+  /* One shared geometry contract keeps the inner and outer corner centers
+     aligned: inner radius = outer radius - the exact card inset. */
+  border-radius:calc(var(--card-radius,20px) - var(--card-inset,10px));border:0;
   background:var(--emoji-bg,var(--bg2)) !important;
-  box-shadow:inset 0 1px 0 color-mix(in srgb,var(--bg) 74%,transparent),0 5px 13px color-mix(in srgb,currentColor 13%,transparent);
+  box-shadow:none;
   overflow:visible;
 }
 .ting-card .pulse-btn::after{
   content:"";position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;
-  border:2px solid var(--bg);border-radius:999px;background:var(--text);
-  box-shadow:0 2px 7px color-mix(in srgb,var(--text) 20%,transparent);
+  border:0;border-radius:999px;background:var(--text);
+  box-shadow:none;
 }
 .ting-card .pulse-btn::before{
   content:"";position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;
@@ -3961,16 +3960,16 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .ting-card.is-done .pulse-btn::before{display:none;}
 .ting-card.is-done .pulse-btn::after{
   content:"✓";display:grid;place-items:center;
-  border:2px solid var(--bg);border-radius:999px;
+  border:0;border-radius:999px;
   background:var(--teal-icon);color:var(--teal-bg);
   font-size:13px;font-weight:760;line-height:1;
-  box-shadow:0 2px 7px color-mix(in srgb,var(--teal-icon) 20%,transparent);
+  box-shadow:none;
 }
 .ting-card .pulse-btn .ti{font-size:35px;}
 .ting-card .pulse-btn .emoji-mark,
 .ting-card .pulse-btn.emoji-pulse .emoji-mark{font-size:39px;line-height:1;}
-.ting-card .pulse-btn:active{transform:scale(0.94);box-shadow:inset 0 1px 4px color-mix(in srgb,var(--text) 15%,transparent);}
-.ting-card:has(.pulse-btn:focus-visible){box-shadow:0 0 0 3px color-mix(in srgb,var(--teal-icon) 22%,transparent),var(--home-card-shadow);}
+.ting-card .pulse-btn:active{transform:scale(0.94);box-shadow:none;filter:brightness(.94);}
+.ting-card:has(.pulse-btn:focus-visible){box-shadow:var(--home-card-shadow);}
 .ting-card .pulse-btn:focus-visible{outline:none;}
 
 .travel-card,.blocked-card{
@@ -3979,13 +3978,13 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   border-radius:16px;text-align:left;flex-wrap:nowrap;
   transition:transform var(--dur-fast) var(--ease-tight),border-color var(--dur-fast) ease,background var(--dur-fast) ease;
 }
-.travel-card{border-style:solid;background:color-mix(in srgb,var(--teal-bg) 42%,var(--bg));color:var(--text);}
-.blocked-card{border-style:solid;background:color-mix(in srgb,var(--amber-bg) 23%,var(--bg));color:var(--text);}
+.travel-card{border-style:none;background:color-mix(in srgb,var(--teal-bg) 28%,var(--bg));color:var(--text);}
+.blocked-card{border-style:none;background:color-mix(in srgb,var(--amber-bg) 18%,var(--bg));color:var(--text);}
 .blocked-card:not(.blocked-card-merge){padding-right:48px;cursor:pointer;}
 .travel-card:active,.blocked-card:active{transform:scale(0.985);}
-.timeline-card-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:var(--bg);border:0.5px solid var(--border);color:var(--text2);}
-.travel-card .timeline-card-icon{color:var(--teal-icon);}
-.blocked-card .timeline-card-icon{color:var(--amber-icon);}
+.timeline-card-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:8px;background:var(--bg3);border:0;color:var(--text2);}
+.travel-card .timeline-card-icon{background:var(--teal-bg);color:var(--teal-icon);}
+.blocked-card .timeline-card-icon{background:var(--amber-bg);color:var(--amber-icon);}
 .travel-card .timeline-card-icon i,.blocked-card .timeline-card-icon i{font-size:17px;}
 .timeline-card-copy{min-width:0;display:flex;flex-direction:column;gap:2px;}
 /* Fixed single-line rows: travel/blocked chips stay the same height no matter
@@ -4038,8 +4037,8 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   .presence-copy,.presence-chevron{ display:none; }
 }
 
-.about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 18px;padding:16px;border-radius:20px;background:linear-gradient(145deg,color-mix(in srgb,var(--teal-bg) 70%,var(--bg)),color-mix(in srgb,var(--bg2) 78%,var(--bg)));border:0.5px solid color-mix(in srgb,var(--teal-icon) 16%,var(--border));}
-.about-hero img{width:64px;height:64px;border-radius:18px;box-shadow:0 8px 20px color-mix(in srgb,var(--teal-icon) 18%,transparent);}
+.about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 18px;padding:16px;border-radius:20px;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));border:0;}
+.about-hero img{width:64px;height:64px;border-radius:18px;box-shadow:none;}
 .about-hero > div{padding-right:24px;}
 .about-hero-close{position:absolute;right:7px;top:7px;width:40px;height:40px;background:color-mix(in srgb,var(--bg) 76%,transparent);border-color:color-mix(in srgb,var(--teal-icon) 20%,var(--border));}
 .sheet-eyebrow{display:block;margin-bottom:3px;color:var(--teal-text);font-size:9px;font-weight:790;letter-spacing:0.095em;text-transform:uppercase;}
@@ -4275,7 +4274,7 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   #action-undo,#action-open,#action-plan,#snooze-until-planned{padding:8px 10px;}
   .app{padding:0 12px;}
   .ting-card{gap:9px;padding-right:9px;}
-  .ting-card .pulse-btn{width:62px;min-width:62px;height:62px;}
+  .ting-card .pulse-btn{width:62px;min-width:62px;height:auto;}
   .ting-card .pulse-btn .emoji-mark,.ting-card .pulse-btn.emoji-pulse .emoji-mark{font-size:35px;}
   .breakable-scrub-row{grid-template-columns:minmax(0,1fr) 44px;gap:8px;}
   .breakable-scrub-row .breakable-crown{width:100%;min-width:0;}
@@ -4544,7 +4543,7 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
   transition:transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;
 }
 .generic-emoji-chip:active{transform:scale(0.92);}
-.generic-emoji-chip:focus-visible{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 45%,transparent);}
+.generic-emoji-chip:focus-visible{outline:none;box-shadow:none;}
 .generic-emoji-chip.on{
   box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 50%,transparent);
   border-color:color-mix(in srgb,var(--teal-icon) 40%,transparent);
@@ -4590,4 +4589,277 @@ body[data-pane-count="3"] .section-header{margin-left:-20px;margin-right:-20px;p
 .doing-now-link-row .seg{display:grid;grid-template-columns:repeat(3,1fr);}
 .order-link-sheet .seg-opt,
 .doing-now-link-row .seg-opt{padding:8px 4px;font-size:12px;}
+
+/* ── Flat Material surface sweep ───────────────────────────────────────────
+   The rules above retain their component-specific geometry.  This final pass
+   makes their shared chrome follow the surface contract: page → card →
+   recessed control, with no inline outlines or elevation. */
+.app-bar-search input,.nav-search input,
+input:not([type="range"]),select,textarea,
+.time-input,.mini-time-input,.settings-text-input,.mini-select,
+.block-edit-hours input,.free-fit-fields input{
+  border:0;background:var(--field-bg);
+}
+.app-bar-search input:focus-visible,.nav-search input:focus-visible,
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  border-color:transparent;box-shadow:none;
+}
+.btn{border:0;background:var(--bg3);transition:background var(--dur-fast) ease,color var(--dur-fast) ease,opacity var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.btn:active,.btn:hover{background:color-mix(in srgb,var(--bg3) 72%,var(--text) 7%);}
+.btn.primary{background:var(--text);color:var(--bg);}
+.detail-actions .btn,.about-actions .btn,.overview-actions .btn,.settings-actions .btn,.sample-habits-actions .btn{background:var(--bg3);box-shadow:none;}
+.detail-actions .btn.primary,.about-actions .btn.primary,.overview-actions .btn.primary,.settings-actions .btn.primary,.sample-habits-actions .btn.primary{background:var(--text);}
+.detail-head-btn,.link-row-btn,.mini-add,.mini-nav,.detail-head .icon-btn,
+.home-filter-close,.activity-calendar-btn{border:0;background:var(--bg3);}
+.detail-card,.score-card,.pace-card,.month-card,.overview-plan-tip,.overview-item,
+.tune-section,.habit-action,.detail-actions-page .habit-toggle,.schedule-order-block,
+.schedule-link-same-day-row,.sample-habit-row,.settings-block,.settings-group,
+.settings-row,.settings-card,.location-row,.location-result,.travel-card,.timeline-card,
+.blocked-card,.day-availability,.utility-sheet-panel,.travel-minute-field,
+.free-panel-metric,.free-day-strip,.free-gap-row,.free-fit-result,.dropped-item,
+.agenda-row,.week-day,.detail-order-block,.order-link-row,.activity-item,
+.capacity-metric,.free-fit-checker,.breakable-progress,.session-progress{
+  border:0;box-shadow:none;
+}
+.detail-card,.score-card,.pace-card,.month-card,.overview-plan-tip,.overview-item,
+.tune-section,.schedule-order-block,.settings-block,.settings-group,.settings-card,
+.location-row,.utility-sheet-panel,
+.free-panel-metric,.free-day-strip,.free-gap-row,.dropped-item,.agenda-row,.week-day,
+.detail-order-block,.order-link-row,.activity-item,.capacity-metric{background:var(--bg2);}
+.sheet .detail-card,.sheet .score-card,.sheet .pace-card,.sheet .month-card,
+.sheet .overview-item,.sheet .tune-section,.sheet .settings-block,.sheet .settings-group,
+.sheet .settings-card,.sheet .location-row,.sheet .agenda-row,.sheet .week-day{background:var(--bg2);}
+.travel-card,.sheet .travel-card{background:color-mix(in srgb,var(--teal-bg) 28%,var(--bg));}
+.blocked-card,.sheet .blocked-card{background:color-mix(in srgb,var(--amber-bg) 18%,var(--bg));}
+.timeline-card-icon{border:0;background:var(--bg3);box-shadow:none;}
+.travel-card .timeline-card-icon{background:var(--teal-bg);}
+.blocked-card .timeline-card-icon{background:var(--amber-bg);}
+.score-card.hit,.stat.hit{background:var(--teal-bg);}
+.score-card.warn,.stat.warn{background:var(--amber-bg);}
+.score-card.miss,.stat.miss{background:var(--red-bg);}
+.score-card.hit,.score-card.warn,.score-card.miss,.stat.hit,.stat.warn,.stat.miss{border-color:transparent;}
+.score-facts span,.overview-stat,.activity-metric,.context-pill,.topic-chip,.schedule-chip,
+.monthday-chip,.home-active-filter,.topic-filter,.emoji-suggestion,.dropped-pill,.free-pill,
+.agenda-tag.soft{border:0;background:var(--bg3);}
+.topic-chip.on,.schedule-chip.on,.monthday-chip.on,.topic-filter.on{background:var(--text);color:var(--bg);}
+.topic-chip-add{border:0;background:var(--bg3);}
+.home-active-filter.location-filter,.topic-filter.location-filter{background:var(--teal-bg);}
+.home-active-filter.topic-active{background:var(--purple-bg);}
+.home-filter-trigger{border:0;background:var(--bg3);box-shadow:none;}
+.home-filter-option{border:0;background:var(--bg3);transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.home-filter-option.on{border-color:transparent;background:color-mix(in srgb,var(--teal-bg) 60%,var(--bg3));}
+.home-filter-option.topic.on{border-color:transparent;background:color-mix(in srgb,var(--purple-bg) 60%,var(--bg3));}
+.home-filter-sheet-actions,.capacity-section,.slipped-section-head:not(:first-child),
+.schedule-link-editor,.detail-time-endpoints,.detail-time-endpoints > .time-endpoint + .time-endpoint,
+.travel-edit-context,.utility-panel-hint,.about-collapse-body{border:0;}
+.capacity-section{margin-top:22px;padding-top:0;}
+.capacity-agenda-row,.capacity-trace-item,.capacity-gap,.capacity-unplaced-item{border:0;padding-top:10px;padding-bottom:10px;background:var(--bg2);border-radius:var(--radius-sm);}
+.capacity-agenda,.capacity-gaps,.capacity-trace,.capacity-unplaced{display:flex;flex-direction:column;gap:6px;}
+.overview-insight,.overview-sheet .overview-insight{border:0;background:var(--bg2);}
+.overview-card{box-shadow:none;}
+.overview-range-seg,.overview-detail-block{border:0;box-shadow:none;background:var(--bg3);}
+.overview-detail-block{padding:10px;border-radius:18px;}
+.overview-detail-block .overview-item{border-radius:8px;}
+.overview-range-option.on{background:var(--bg);box-shadow:none;}
+.overview-card .cal-day.today{background:var(--purple-bg);color:var(--purple-text);box-shadow:none;}
+.overview-card .cal-day.selected{background:var(--text);color:var(--bg);box-shadow:none;}
+.overview-open-chip{border:0;background:var(--bg3);transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.overview-open-chip.open{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--teal-bg) 62%,var(--bg3));}
+.overview-open-chip.mid{border-color:transparent;background:var(--bg3);}
+.overview-open-chip.tight{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--amber-bg) 62%,var(--bg3));}
+.overview-open-chip.closed{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--red-bg) 62%,var(--bg3));}
+.seg{border:0;background:var(--field-bg);}
+.seg-opt,.preset-seg .seg-opt{border:0;}
+/* Active option inverts (text-on-bg) like the active nav icon — a white pill
+   on a white sheet reads as a hole even with a shadow; inversion is unambiguous
+   in both themes. Priority segs keep their accent edge bar. */
+.seg-opt.on{background:var(--text);color:var(--bg);font-weight:600;box-shadow:none;}
+.preset-seg .seg-opt{border-right:0;}
+.picker-map-crosshair-ring{border:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 85%,#fff),0 0 0 3px color-mix(in srgb,#000 25%,transparent);}
+.free-day-seg:is(button)::after{border:0;box-shadow:inset 0 0 0 1.5px transparent;}
+.free-day-seg:is(button):focus-visible::after{box-shadow:inset 0 0 0 1.5px var(--teal-icon);}
+.free-day-track,.free-day-legend i.busy,.free-day-legend i.open{border:0;}
+.location-chip,.presence-filter{border:0;box-shadow:none;}
+.location-chip.gps-matched,.topic-chip.gps-matched,
+.location-chip.on.preferred,.location-chip.on.pref-high,.location-chip.on.pref-little{box-shadow:none;}
+.location-chip.on.pref-little{background:color-mix(in srgb,var(--teal-icon) 72%,var(--bg3));}
+.location-results{padding:6px;border:0;border-radius:14px;background:var(--bg2);}
+.location-result{border:0;border-radius:8px;background:var(--bg);}
+.home-filter-option-icon{border-radius:6px;}
+.picker-map{border:0;}
+.presence-signal{border:0;box-shadow:none;}
+.calendar-filter-sheet .home-filter-option.on{border:0;}
+.app-bar-search input,.nav-search input{border:0;background:var(--bg3);box-shadow:none;}
+.swipe-actions .swipe-action{background:transparent;}
+.breakable-progress,.session-progress{border-radius:10px;}
+.about-hero{border:0;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));}
+.about-hero img{box-shadow:none;}
+.about-sheet .about-actions{border:0;background:var(--bg2);}
+.info-tooltip{border:0;background:var(--bg);box-shadow:var(--floating-shadow);}
+.ting-card.timer-running{border-color:transparent;box-shadow:inset 3px 0 0 var(--teal-icon);}
+.breakable-scrub-hint{border-left:0;}
+.session-progress.is-auto,.breakable-progress.is-scrubbing{border-color:transparent;}
+#toast{box-shadow:var(--floating-shadow);}
+#action-toast{box-shadow:var(--floating-shadow);}
 .doing-now-link-row:empty{display:none;}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODERN POLISH PASS — subtle glass/glow accents + home quieting.
+   Builds on the flat surface sweep above; nothing here reintroduces borders
+   on component chrome. Two goals:
+   1. Quiet the home feed: meta pills lose their accent fills (semantic color
+      survives only in the small status/icon dot), trail dots and the priority
+      dot step down in chroma/size, heavy font weights relax by one notch.
+      Hard-due keeps a faint red tint — it is a genuine alert, not decoration.
+   2. Finish border removal on the components the first sweep missed, with
+      focus-visible teal rings preserved for keyboard users.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Home quieting ────────────────────────────────────────────────────────── */
+/* Ghost pills: neutral fill + neutral text; the leading icon keeps its
+   semantic color as the single chromatic signal. agenda-lead (time next to
+   the name) already renders transparent and keeps its colored text. */
+.ting-meta .context-pill{
+  background:var(--bg2);color:var(--text2);border:0;font-weight:580;
+}
+.ting-meta .context-pill:is(.plan,.agenda-suggested,.agenda-later,.agenda-closing,
+.due,.scheduled,.schedule,.pin){color:var(--text2);}
+.ting-meta .context-pill.due.hard{
+  color:var(--red-text);
+  background:color-mix(in srgb,var(--red-bg) 55%,var(--bg2));
+}
+.agenda-lead{font-weight:600;}
+.section-header{font-weight:650;}
+.dropped-pill,.free-pill{font-weight:700;letter-spacing:0.035em;}
+/* Trail: same hit/warn/miss vocabulary, mixed toward the page tone so a full
+   week of dots no longer out-shouts the card content. */
+.trail-dot.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
+.trail-dot.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
+.trail-dot.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
+.trail-dot.today{box-shadow:0 0 0 0.5px var(--border2);}
+.trail-week.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
+.trail-week.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
+.trail-week.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
+/* Priority dot: smaller, softer — a whisper, not a third color signal. */
+.ting-card::before{width:4.5px;height:4.5px;opacity:0.62;}
+/* Order-link chips inside cards: one more step toward neutral. */
+.ting-meta .order-mark{opacity:0.78;}
+
+/* ── Add-sheet field legibility ─────────────────────────────────────────────
+   Number-stepper boxes (.range-value) and the emoji circle kept their old
+   border + --bg/--bg2 fills, which vanish on a white sheet. Give them the
+   same recessed --field-bg fill as every other borderless field, and make
+   the name input match the 44px emoji circle so the row aligns. */
+.range-value{border:0;background:var(--field-bg);}
+.ting-emoji-preview{background:var(--field-bg);}
+#ting-message{min-height:44px;}
+
+/* ── Glass fallbacks ──────────────────────────────────────────────────────── */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .bottom-nav{background:var(--bg);}
+}
+@media (prefers-reduced-transparency:reduce){
+  .bottom-nav{background:var(--bg);}
+}
+
+/* ── Border sweep, round two (components the first pass missed) ──────────── */
+.travel-edit-row .icon-btn,
+.day-availability-preset,
+.time-offset-sign-btn,
+.mini-text-btn,
+.day-quick-action,
+.day-item-action,
+.ting-emoji-preview,
+.generic-emoji-chip,
+.stat,
+.scheduled-row,
+.monthday-disclosure-head,
+.plan-field-row,
+.blocked-time-row,
+.location-access-row,
+.add-option-group,
+.day-scoped-habit,
+.crown-dial,
+.about-block,
+.setting-toggle,
+.calendar-pdf-preview,
+.reset-confirm,
+.day-empty-state,
+.day-move-inline,
+.day-availability-hero,
+.timer-auto-stop-field,
+.order-mark,
+.home-active-filter,
+.switch-ui{border:0;}
+/* Rows that relied on their border for separation get a tone step instead. */
+.scheduled-row,.plan-field-row,.blocked-time-row,.location-access-row,
+.day-scoped-habit,.about-block,.setting-toggle,.calendar-pdf-preview,
+.timer-auto-stop-field{background:var(--bg2);}
+/* Focus rings are keyboard-only and neutral — the old teal halo painted on
+   tap and read as an asymmetric green glow (clipped by overflow containers).
+   See the keyboard-only indicator at the end of this file. */
+.time-offset-sign-btn:focus-visible,
+.mini-text-btn:focus-visible,
+.day-quick-action:focus-visible,
+.day-item-action:focus-visible,
+.day-availability-preset:focus-visible,
+.home-active-filter:focus-visible,
+.travel-edit-row .icon-btn:focus-visible{
+  box-shadow:none;
+}
+
+/* ── Minimal-mode detail sheet ──────────────────────────────────────────────
+   #detail-minimal-effort is a 2-column planning GRID, but minimal mode moves
+   three differently-shaped children into it (duration field, the task due row,
+   the due hint). As grid columns the due row overflows the sheet and the hint
+   wraps into a ~50px skyscraper. Stack them vertically instead, like the other
+   single-column rows (planning-grid-single). */
+body.minimal-mode #detail-minimal-effort{
+  display:flex;flex-direction:column;gap:10px;margin:0 0 10px;
+}
+body.minimal-mode #detail-minimal-effort > *{margin:0;}
+/* Stacked pages read as separate sections — a small gap between the cards. */
+body.minimal-mode .detail-sheet > .detail-pager{gap:12px;}
+body.minimal-mode .detail-sheet > .detail-pager > .detail-page{margin-bottom:0;}
+/* Header gets a touch more separation from the now-stacked content. */
+body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
+
+/* ── Detail-header emoji tile ───────────────────────────────────────────────
+   The detail head is a .ting-card, so the home-card pulse-tile pass (68px,
+   radius card-radius − inset, 39px emoji) wins the cascade over the old
+   .detail-mark circle rules and the tile renders as a squashed 68×39 blob.
+   Scope a proper tile here: home-card geometry scaled to the header row,
+   tone-inverted (--bg tile on the --bg2 head card, or the habit's emoji bg). */
+.detail-head .detail-mark{
+  align-self:center;width:56px;min-width:56px;height:56px;
+  border-radius:14px;
+}
+.detail-head .detail-mark.emoji-pulse{
+  border-radius:14px;
+  background:var(--emoji-bg,var(--bg)) !important;
+}
+.detail-head .detail-mark .emoji-mark,
+.detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:30px;line-height:1;}
+.detail-head .detail-mark .ti{font-size:28px;}
+/* Keep the corner tick badge — it signals that tapping the tile logs the
+   habit/task. Same look as the home card; the header padding gives it room. */
+.detail-head .detail-mark{overflow:visible;}
+.detail-head .detail-mark::before,
+.detail-head .detail-mark::after{right:-4px;bottom:-4px;width:19px;height:19px;}
+
+/* ── Keyboard-only focus indicator ──────────────────────────────────────────
+   Touch taps no longer paint a ring (the old teal halo was clipped by
+   overflow containers and read as an asymmetric green glow). Keyboard users
+   still get a symmetric neutral outline so focus stays visible. */
+@media (hover:hover) and (pointer:fine){
+   input:focus-visible,select:focus-visible,textarea:focus-visible,
+   .home-filter-trigger:focus-visible,.home-active-filter:focus-visible,
+   .home-filter-option:focus-visible,.generic-emoji-chip:focus-visible,
+   .ting-emoji-preview:focus-visible,.time-offset-sign-btn:focus-visible,
+    .mini-text-btn:focus-visible,.day-quick-action:focus-visible,
+    .day-item-action:focus-visible,.day-availability-preset:focus-visible,
+    .travel-edit-row .icon-btn:focus-visible,
+    .settings-sheet .setting-switch:focus-visible .switch-ui{
+     outline:2px solid var(--text);outline-offset:2px;
+    }
+}

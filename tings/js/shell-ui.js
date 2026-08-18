@@ -608,16 +608,12 @@ function cancelReachHold(){
 // HYBRID: tracks "at top" state for the home feed. The header itself is
 // non-sticky and scrolls away with content, so it only reappears at the scroll
 // top — no reveal-on-scroll-up. The body class is kept for other consumers.
-// Also flips the first day header to a solid state once it actually sticks at
-// the viewport top, so scrolling content can't show through its faded top edge.
 function updateHeaderOnScroll(){
   const y = window.scrollY;
   headerHidden = y > 12;
   headerRevealPull = 0;
   document.body.classList.toggle('header-hidden',headerHidden);
   lastScrollY = y;
-  const firstHeader = document.querySelector('#list > .section-header');
-  if(firstHeader) firstHeader.classList.toggle('is-stuck', firstHeader.getBoundingClientRect().top <= 1);
 }
 
 // PURE: resolves forgiving button target from an event target.
