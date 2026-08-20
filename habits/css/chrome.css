@@ -74,7 +74,6 @@ body[data-pane-count="1"].search-active{--nav-bottom:6px;}
   color:var(--text2);font-size:9px;font-weight:580;letter-spacing:0;line-height:1.2;white-space:nowrap;
 }
 
-.top-actions{display:flex;align-items:center;gap:8px;}
 .icon-btn{
   width:44px;height:44px;border-radius:50%;
   border:0;background:transparent;

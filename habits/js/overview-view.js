@@ -27,40 +27,20 @@ function habitTypeLabel(type){
   return type || '';
 }
 
-// PURE: builds topic filter choice list
 function overviewTopicChoices(data){
-  const topics = normalizeTopics([...(sortSettings?.topics || []),...data.flatMap(h=>normalizeTopics(h.topics))]);
-  const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
-  return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
+  return topicFilterChoices(data);
 }
 
-// PURE: tests habit against topic filter
 function matchesOverviewTopic(h,topic){
-  if(!topic || topic === 'all')return true;
-  const topics = normalizeTopics(h.topics);
-  if(topic === '__none__')return !topics.length;
-  return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
+  return matchesTopicFilter(h,topic);
 }
 
-// PURE: builds location filter choice list for overview
 function overviewLocationChoices(data){
-  const registry = locationsForDisplay(sortSettings?.locations);
-  const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
-  const locs = registry.filter(loc=>used.has(loc.id));
-  const hasNone = data.some(h=>!normalizeLocationIds(h.locationIds,registry).length);
-  return [
-    {key:'all',label:'all places'},
-    ...locs.map(loc=>({key:loc.id,label:loc.name})),
-    ...(hasNone ? [{key:'__none__',label:'anywhere'}] : [])
-  ];
+  return locationFilterChoices(data);
 }
 
-// PURE: tests habit against overview location filter
 function matchesOverviewLocation(h,id){
-  if(!id || id === 'all')return true;
-  const ids = normalizeLocationIds(h.locationIds);
-  if(id === '__none__')return !ids.length;
-  return ids.includes(id);
+  return matchesLocationFilter(h,id);
 }
 
 // PURE: habit passes both overview filters

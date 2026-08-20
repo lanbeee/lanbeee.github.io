@@ -87,18 +87,18 @@ function renderSampleHabitRow(row, onHome){
   `;
 }
 
-// RENDER: fill sample-habits sheet feature list
-function renderSampleHabitsPreview(){
-  const host = $('sample-habits-preview');
+function renderSamplePreviewList(hostId, rows, onHome){
+  const host = $(hostId);
   if(!host)return;
-  host.innerHTML = featureSamplePreviews().map(row => renderSampleHabitRow(row)).join('');
+  host.innerHTML = rows.map(row => renderSampleHabitRow(row, typeof onHome === 'function' ? onHome(row) : onHome)).join('');
 }
 
-// RENDER: fill daily prayers list on sample sheet
+function renderSampleHabitsPreview(){
+  renderSamplePreviewList('sample-habits-preview', featureSamplePreviews());
+}
+
 function renderPrayerSamplesPreview(){
-  const host = $('sample-prayers-preview');
-  if(!host)return;
-  host.innerHTML = prayerSamplePreviews().map(row => renderSampleHabitRow(row)).join('');
+  renderSamplePreviewList('sample-prayers-preview', prayerSamplePreviews());
 }
 
 // ── Sample busy times ─────────────────────────────────────────────────────
@@ -148,9 +148,7 @@ function sampleSleepBlockAdded(){
 
 // RENDER: fill sample busy-time list on sample sheet
 function renderBlockSamplesPreview(){
-  const host = $('sample-blocks-preview');
-  if(!host)return;
-  host.innerHTML = blockSamplePreviews().map(row => renderSampleHabitRow(row, sampleSleepBlockAdded())).join('');
+  renderSamplePreviewList('sample-blocks-preview', blockSamplePreviews(), ()=>sampleSleepBlockAdded());
 }
 
 // HANDLER: install the sun-based sleep busy time (home city required first).

@@ -202,12 +202,26 @@ function cardLocationId(h,agendaRow){
   return pickHabitLocationId(h,null,registry,normalizeTravelMode((sortSettings || {}).defaultTravelMode)) || ids[0];
 }
 
-// PURE: compute home location filter choices
-function homeLocationChoices(data){
+// PURE: shared topic/place filter choice lists used by home and calendar.
+
+function topicFilterChoices(data){
+  const topics = normalizeTopics([...topicOptions(),...data.flatMap(h=>normalizeTopics(h.topics))]);
+  const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
+  return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
+}
+
+function matchesTopicFilter(h,topic){
+  if(!topic || topic === 'all')return true;
+  const topics = normalizeTopics(h.topics);
+  if(topic === '__none__')return !topics.length;
+  return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
+}
+
+function locationFilterChoices(data,{treatAnywhere = false} = {}){
   const registry = locationOptions();
   const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
   const locs = registry.filter(loc=>used.has(loc.id));
-  const hasNone = data.some(h=>h.anywhereAllowed || !normalizeLocationIds(h.locationIds,registry).length);
+  const hasNone = data.some(h=>(treatAnywhere && h.anywhereAllowed) || !normalizeLocationIds(h.locationIds,registry).length);
   return [
     {key:'all',label:'all places'},
     ...locs.map(loc=>({key:loc.id,label:loc.name})),
@@ -215,12 +229,19 @@ function homeLocationChoices(data){
   ];
 }
 
-// PURE: test habit matches home location filter
-function matchesHomeLocation(h,id){
+function matchesLocationFilter(h,id,{treatAnywhere = false} = {}){
   if(!id || id === 'all')return true;
   const ids = normalizeLocationIds(h.locationIds);
-  if(id === '__none__')return Boolean(h.anywhereAllowed) || !ids.length;
+  if(id === '__none__')return (treatAnywhere && Boolean(h.anywhereAllowed)) || !ids.length;
   return ids.includes(id);
+}
+
+function homeLocationChoices(data){
+  return locationFilterChoices(data,{treatAnywhere:true});
+}
+
+function matchesHomeLocation(h,id){
+  return matchesLocationFilter(h,id,{treatAnywhere:true});
 }
 
 // HYBRID: compact home context bar + the full on-demand filter sheet. The bar
@@ -649,17 +670,11 @@ function removeTopic(topic){
 
 // PURE: compute home topic filter choices
 function homeTopicChoices(data){
-  const topics = normalizeTopics([...topicOptions(),...data.flatMap(h=>normalizeTopics(h.topics))]);
-  const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
-  return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
+  return topicFilterChoices(data);
 }
 
-// PURE: test habit matches home topic
 function matchesHomeTopic(h,topic){
-  if(!topic || topic === 'all')return true;
-  const topics = normalizeTopics(h.topics);
-  if(topic === '__none__')return !topics.length;
-  return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
+  return matchesTopicFilter(h,topic);
 }
 
 // RENDER: toggle sort and search buttons

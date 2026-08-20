@@ -1,3 +1,16 @@
+function combineFieldsFromEndpoint(inputId, prefix){
+  const c = readCombineFromEndpoint(inputId);
+  return {
+    [`${prefix}Combine`]:c.combine,
+    [`${prefix}Anchor2`]:c.anchor2,
+    [`${prefix}OffsetMin2`]:c.offset2,
+    [`${prefix}AnchorHabitId2`]:c.habitId2,
+    [`${prefix}FixedMin2`]:c.fixedMin2,
+    [`${prefix}DayOffset`]:c.dayOffset,
+    [`${prefix}DayOffset2`]:c.dayOffset2
+  };
+}
+
 function currentDetailTune(){
   const mainType = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
   let type;
@@ -44,42 +57,10 @@ function currentDetailTune(){
     preferredTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-start'),
     preferredTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-end'),
     scheduleLinks:readScheduleLinksFromDetail(subjectHid),
-    ...(() => {
-      const c = readCombineFromEndpoint('detail-time-start');
-      return {
-        allowedTimeStartCombine:c.combine, allowedTimeStartAnchor2:c.anchor2,
-        allowedTimeStartOffsetMin2:c.offset2, allowedTimeStartAnchorHabitId2:c.habitId2,
-        allowedTimeStartFixedMin2:c.fixedMin2,
-        allowedTimeStartDayOffset:c.dayOffset, allowedTimeStartDayOffset2:c.dayOffset2
-      };
-    })(),
-    ...(() => {
-      const c = readCombineFromEndpoint('detail-time-end');
-      return {
-        allowedTimeEndCombine:c.combine, allowedTimeEndAnchor2:c.anchor2,
-        allowedTimeEndOffsetMin2:c.offset2, allowedTimeEndAnchorHabitId2:c.habitId2,
-        allowedTimeEndFixedMin2:c.fixedMin2,
-        allowedTimeEndDayOffset:c.dayOffset, allowedTimeEndDayOffset2:c.dayOffset2
-      };
-    })(),
-    ...(() => {
-      const c = readCombineFromEndpoint('detail-preferred-time-start');
-      return {
-        preferredTimeStartCombine:c.combine, preferredTimeStartAnchor2:c.anchor2,
-        preferredTimeStartOffsetMin2:c.offset2, preferredTimeStartAnchorHabitId2:c.habitId2,
-        preferredTimeStartFixedMin2:c.fixedMin2,
-        preferredTimeStartDayOffset:c.dayOffset, preferredTimeStartDayOffset2:c.dayOffset2
-      };
-    })(),
-    ...(() => {
-      const c = readCombineFromEndpoint('detail-preferred-time-end');
-      return {
-        preferredTimeEndCombine:c.combine, preferredTimeEndAnchor2:c.anchor2,
-        preferredTimeEndOffsetMin2:c.offset2, preferredTimeEndAnchorHabitId2:c.habitId2,
-        preferredTimeEndFixedMin2:c.fixedMin2,
-        preferredTimeEndDayOffset:c.dayOffset, preferredTimeEndDayOffset2:c.dayOffset2
-      };
-    })(),
+    ...combineFieldsFromEndpoint('detail-time-start','allowedTimeStart'),
+    ...combineFieldsFromEndpoint('detail-time-end','allowedTimeEnd'),
+    ...combineFieldsFromEndpoint('detail-preferred-time-start','preferredTimeStart'),
+    ...combineFieldsFromEndpoint('detail-preferred-time-end','preferredTimeEnd'),
     durationMinutes:clampDuration($('detail-duration').value),
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
@@ -124,84 +105,23 @@ function syncBreakableUi(){
 }
 
 // HYBRID: compares form to original, toggles dirty class
+function detailTuneValue(v){
+  if(Array.isArray(v)){
+    if(v.some(item => item && typeof item === 'object'))return JSON.stringify(v);
+    return v.join('|');
+  }
+  if(v && typeof v === 'object')return JSON.stringify(v);
+  return v ?? null;
+}
+
+function detailTuneChanged(current, original){
+  if(!original)return false;
+  return Object.keys(current).some(key => detailTuneValue(current[key]) !== detailTuneValue(original[key]));
+}
+
 function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
-  const current = currentDetailTune();
-  const dirty = force ?? (
-    detailTuneOriginal &&
-    (current.name !== detailTuneOriginal.name ||
-      current.type !== detailTuneOriginal.type ||
-      current.emoji !== detailTuneOriginal.emoji ||
-      current.emojiBgColor !== detailTuneOriginal.emojiBgColor ||
-      String(current.target) !== String(detailTuneOriginal.target) ||
-      current.pinned !== detailTuneOriginal.pinned ||
-      JSON.stringify(current.links || []) !== JSON.stringify(detailTuneOriginal.links || []) ||
-      current.durationMinutes !== detailTuneOriginal.durationMinutes ||
-      current.flexibilityDays !== detailTuneOriginal.flexibilityDays ||
-      current.priority !== detailTuneOriginal.priority ||
-      current.dueDate !== detailTuneOriginal.dueDate ||
-      current.eventTime !== detailTuneOriginal.eventTime ||
-      current.planByDate !== detailTuneOriginal.planByDate ||
-      current.autoMarkMinutes !== detailTuneOriginal.autoMarkMinutes ||
-      current.topics.join('|') !== detailTuneOriginal.topics.join('|') ||
-      current.locationIds.join('|') !== (detailTuneOriginal.locationIds || []).join('|') ||
-      current.anywhereAllowed !== Boolean(detailTuneOriginal.anywhereAllowed) ||
-      JSON.stringify(current.locationPrefs || {}) !== JSON.stringify(detailTuneOriginal.locationPrefs || {}) ||
-      (current.preferredLocationId || null) !== (detailTuneOriginal.preferredLocationId || null) ||
-      current.breakable !== detailTuneOriginal.breakable ||
-      current.minChunkMinutes !== detailTuneOriginal.minChunkMinutes ||
-      current.timerAutoStopMinutes !== detailTuneOriginal.timerAutoStopMinutes ||
-      current.trackValue !== detailTuneOriginal.trackValue ||
-      current.allowedWeekdays.join('|') !== detailTuneOriginal.allowedWeekdays.join('|') ||
-      current.allowedMonthDays.join('|') !== detailTuneOriginal.allowedMonthDays.join('|') ||
-      current.preferredWeekdays.join('|') !== detailTuneOriginal.preferredWeekdays.join('|') ||
-      current.preferredMonthDays.join('|') !== detailTuneOriginal.preferredMonthDays.join('|') ||
-      current.allowedTimeStart !== detailTuneOriginal.allowedTimeStart ||
-      current.allowedTimeEnd !== detailTuneOriginal.allowedTimeEnd ||
-      current.preferredTimeStart !== detailTuneOriginal.preferredTimeStart ||
-      current.preferredTimeEnd !== detailTuneOriginal.preferredTimeEnd ||
-      current.allowedTimeStartAnchor !== detailTuneOriginal.allowedTimeStartAnchor ||
-      current.allowedTimeStartOffsetMin !== detailTuneOriginal.allowedTimeStartOffsetMin ||
-      current.allowedTimeEndAnchor !== detailTuneOriginal.allowedTimeEndAnchor ||
-      current.allowedTimeEndOffsetMin !== detailTuneOriginal.allowedTimeEndOffsetMin ||
-      current.preferredTimeStartAnchor !== detailTuneOriginal.preferredTimeStartAnchor ||
-      current.preferredTimeStartOffsetMin !== detailTuneOriginal.preferredTimeStartOffsetMin ||
-      current.preferredTimeEndAnchor !== detailTuneOriginal.preferredTimeEndAnchor ||
-      current.preferredTimeEndOffsetMin !== detailTuneOriginal.preferredTimeEndOffsetMin ||
-      (current.allowedTimeStartAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId || null) ||
-      (current.allowedTimeEndAnchorHabitId || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId || null) ||
-      (current.preferredTimeStartAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId || null) ||
-      (current.preferredTimeEndAnchorHabitId || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId || null) ||
-      JSON.stringify(current.scheduleLinks || []) !== JSON.stringify(detailTuneOriginal.scheduleLinks || []) ||
-      (current.allowedTimeStartCombine || null) !== (detailTuneOriginal.allowedTimeStartCombine || null) ||
-      (current.allowedTimeStartAnchor2 || null) !== (detailTuneOriginal.allowedTimeStartAnchor2 || null) ||
-      current.allowedTimeStartOffsetMin2 !== detailTuneOriginal.allowedTimeStartOffsetMin2 ||
-      (current.allowedTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeStartAnchorHabitId2 || null) ||
-      (current.allowedTimeStartFixedMin2 ?? null) !== (detailTuneOriginal.allowedTimeStartFixedMin2 ?? null) ||
-      current.allowedTimeStartDayOffset !== detailTuneOriginal.allowedTimeStartDayOffset ||
-      current.allowedTimeStartDayOffset2 !== detailTuneOriginal.allowedTimeStartDayOffset2 ||
-      (current.allowedTimeEndCombine || null) !== (detailTuneOriginal.allowedTimeEndCombine || null) ||
-      (current.allowedTimeEndAnchor2 || null) !== (detailTuneOriginal.allowedTimeEndAnchor2 || null) ||
-      current.allowedTimeEndOffsetMin2 !== detailTuneOriginal.allowedTimeEndOffsetMin2 ||
-      (current.allowedTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.allowedTimeEndAnchorHabitId2 || null) ||
-      (current.allowedTimeEndFixedMin2 ?? null) !== (detailTuneOriginal.allowedTimeEndFixedMin2 ?? null) ||
-      current.allowedTimeEndDayOffset !== detailTuneOriginal.allowedTimeEndDayOffset ||
-      current.allowedTimeEndDayOffset2 !== detailTuneOriginal.allowedTimeEndDayOffset2 ||
-      (current.preferredTimeStartCombine || null) !== (detailTuneOriginal.preferredTimeStartCombine || null) ||
-      (current.preferredTimeStartAnchor2 || null) !== (detailTuneOriginal.preferredTimeStartAnchor2 || null) ||
-      current.preferredTimeStartOffsetMin2 !== detailTuneOriginal.preferredTimeStartOffsetMin2 ||
-      (current.preferredTimeStartAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeStartAnchorHabitId2 || null) ||
-      (current.preferredTimeStartFixedMin2 ?? null) !== (detailTuneOriginal.preferredTimeStartFixedMin2 ?? null) ||
-      current.preferredTimeStartDayOffset !== detailTuneOriginal.preferredTimeStartDayOffset ||
-      current.preferredTimeStartDayOffset2 !== detailTuneOriginal.preferredTimeStartDayOffset2 ||
-      (current.preferredTimeEndCombine || null) !== (detailTuneOriginal.preferredTimeEndCombine || null) ||
-      (current.preferredTimeEndAnchor2 || null) !== (detailTuneOriginal.preferredTimeEndAnchor2 || null) ||
-      current.preferredTimeEndOffsetMin2 !== detailTuneOriginal.preferredTimeEndOffsetMin2 ||
-      (current.preferredTimeEndAnchorHabitId2 || null) !== (detailTuneOriginal.preferredTimeEndAnchorHabitId2 || null) ||
-      (current.preferredTimeEndFixedMin2 ?? null) !== (detailTuneOriginal.preferredTimeEndFixedMin2 ?? null) ||
-      current.preferredTimeEndDayOffset !== detailTuneOriginal.preferredTimeEndDayOffset ||
-      current.preferredTimeEndDayOffset2 !== detailTuneOriginal.preferredTimeEndDayOffset2)
-  );
+  const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
 }
 

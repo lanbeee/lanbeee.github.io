@@ -25,18 +25,18 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .settings-row,.settings-card,.location-row,.location-result,.travel-card,.timeline-card,
 .blocked-card,.day-availability,.utility-sheet-panel,.travel-minute-field,
 .free-panel-metric,.free-day-strip,.free-gap-row,.free-fit-result,.dropped-item,
-.agenda-row,.week-day,.detail-order-block,.order-link-row,.activity-item,
+.detail-order-block,.order-link-row,.activity-item,
 .capacity-metric,.free-fit-checker,.breakable-progress,.session-progress{
   border:0;box-shadow:none;
 }
 .detail-card,.score-card,.pace-card,.month-card,.overview-plan-tip,.overview-item,
 .tune-section,.schedule-order-block,.settings-block,.settings-group,.settings-card,
 .location-row,.utility-sheet-panel,
-.free-panel-metric,.free-day-strip,.free-gap-row,.dropped-item,.agenda-row,.week-day,
+.free-panel-metric,.free-day-strip,.free-gap-row,.dropped-item,
 .detail-order-block,.order-link-row,.activity-item,.capacity-metric{background:var(--bg2);}
 .sheet .detail-card,.sheet .score-card,.sheet .pace-card,.sheet .month-card,
 .sheet .overview-item,.sheet .tune-section,.sheet .settings-block,.sheet .settings-group,
-.sheet .settings-card,.sheet .location-row,.sheet .agenda-row,.sheet .week-day{background:var(--bg2);}
+.sheet .settings-card,.sheet .location-row{background:var(--bg2);}
 .travel-card,.sheet .travel-card{background:color-mix(in srgb,var(--teal-bg) 28%,var(--bg));}
 .blocked-card,.sheet .blocked-card{background:color-mix(in srgb,var(--amber-bg) 18%,var(--bg));}
 .timeline-card-icon{border:0;background:var(--bg3);box-shadow:none;}
@@ -47,8 +47,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .score-card.miss,.stat.miss{background:var(--red-bg);}
 .score-card.hit,.score-card.warn,.score-card.miss,.stat.hit,.stat.warn,.stat.miss{border-color:transparent;}
 .score-facts span,.overview-stat,.activity-metric,.context-pill,.topic-chip,.schedule-chip,
-.monthday-chip,.home-active-filter,.topic-filter,.emoji-suggestion,.dropped-pill,.free-pill,
-.agenda-tag.soft{border:0;background:var(--bg3);}
+.monthday-chip,.home-active-filter,.topic-filter,.dropped-pill,.free-pill{border:0;background:var(--bg3);}
 .topic-chip.on,.schedule-chip.on,.monthday-chip.on,.topic-filter.on{background:var(--text);color:var(--bg);}
 .topic-chip-add{border:0;background:var(--bg3);}
 .home-active-filter.location-filter,.topic-filter.location-filter{background:var(--teal-bg);}
@@ -184,12 +183,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .ting-emoji-preview,
 .generic-emoji-chip,
 .stat,
-.scheduled-row,
 .monthday-disclosure-head,
 .plan-field-row,
 .blocked-time-row,
 .location-access-row,
-.add-option-group,
 .day-scoped-habit,
 .crown-dial,
 .about-block,
@@ -204,7 +201,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .home-active-filter,
 .switch-ui{border:0;}
 /* Rows that relied on their border for separation get a tone step instead. */
-.scheduled-row,.plan-field-row,.blocked-time-row,.location-access-row,
+.plan-field-row,.blocked-time-row,.location-access-row,
 .day-scoped-habit,.about-block,.setting-toggle,.calendar-pdf-preview,
 .timer-auto-stop-field{background:var(--bg2);}
 /* Focus rings are keyboard-only and neutral — the old teal halo painted on

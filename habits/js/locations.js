@@ -591,17 +591,6 @@ function isStandalonePwa(){
     || window.navigator.standalone === true;
 }
 
-// PURE: optional Permissions API probe (often "unknown" on iOS).
-async function queryLocationPermission(){
-  try{
-    if(!navigator.permissions || !navigator.permissions.query)return 'unknown';
-    const result = await navigator.permissions.query({name:'geolocation'});
-    return result && result.state ? result.state : 'unknown';
-  }catch{
-    return 'unknown';
-  }
-}
-
 // PURE: human help when the OS blocks location.
 function locationDeniedHelpMessage(){
   if(isIosDevice()){

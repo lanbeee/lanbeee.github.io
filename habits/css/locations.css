@@ -100,17 +100,6 @@
   font-weight:600;
   background:color-mix(in srgb,var(--text3) 5%,var(--bg));
 }
-.today-blocked-row{
-  display:flex;align-items:center;gap:8px;padding:8px 12px;margin:4px 0;
-  border-left:2px dashed var(--border2);color:var(--text3);font-size:13px;
-}
-.today-travel-row{
-  display:flex;align-items:center;gap:8px;padding:8px 12px;margin:4px 0;
-  border-left:2px dashed var(--border2);color:var(--text3);font-size:13px;
-  width:100%;text-align:left;background:transparent;border-top:none;border-right:none;border-bottom:none;
-  font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
-}
-.today-travel-row.is-edited{color:var(--teal-text);border-left-color:var(--teal-icon);}
 .extra-text-line{
   display:flex;align-items:center;justify-content:center;text-align:center;gap:6px;flex-wrap:wrap;
   padding:5px 12px;margin:1px 0;width:100%;
@@ -224,8 +213,6 @@
 .block-edit-hours label{display:flex;flex-direction:column;gap:5px;color:var(--text2);font-size:12px;font-weight:650;}
 .block-edit-hours input{height:42px;padding:0 10px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font:inherit;}
 .block-edit-actions .btn{flex:1 1 130px;}
-.add-locations-section{margin-top:10px;}
-.add-locations-section .settings-sublabel{display:block;margin-bottom:6px;}
 .location-chip{
   display:inline-flex;align-items:center;gap:4px;
   color:var(--teal-text);background:var(--teal-bg);

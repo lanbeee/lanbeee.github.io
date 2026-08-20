@@ -182,14 +182,6 @@ function onCalendarPdfSelectNone(){
   refreshCalendarPdfSelectionUI();
 }
 
-function escapeHtml(value){
-  return String(value == null ? '' : value)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
-}
-
 function renderCalendarImportControls(){
   const select = $('calendar-credit-habit');
   if(!select)return;

@@ -1064,12 +1064,6 @@ $('block-edit-instance')?.addEventListener('click',saveBlockEditInstance);
 $('block-edit-series')?.addEventListener('click',saveBlockEditSeries);
 $('block-edit-cancel')?.addEventListener('click',()=>{blockEditContext=null;closeSheet('block-edit-sheet');});
 $('block-edit-sheet')?.addEventListener('click',e=>{if(e.target===e.currentTarget){blockEditContext=null;closeSheet('block-edit-sheet');}});
-$('today-content')?.addEventListener('click',e=>{
-  const row = e.target.closest('.today-travel-row[data-travel-from]');
-  if(!row)return;
-  const leaveByTs = Number(row.dataset.agendaStart) * 60000;
-  openTravelEditSheet(row.dataset.travelFrom,row.dataset.travelTo,leaveByTs);
-});
 $('travel-edit-minus')?.addEventListener('click',()=>{
   const input = $('travel-edit-minutes');
   if(!input)return;

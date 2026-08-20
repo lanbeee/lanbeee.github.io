@@ -582,31 +582,38 @@ function renderGenericEmojiRow(containerId, inputId){
 // has manually edited the field) and assign a disambiguating color. No match
 // just leaves the field blank — the user can open the emoji editor for the
 // generic quick-pick chips at any time via the preview tile.
-function applyAutoEmoji(){
-  if(_emojiUserEdited)return;
-  const nameInput = document.getElementById('ting-message');
-  const emojiInput = document.getElementById('ting-emoji');
+function applyAutoEmojiFor({nameId, emojiId, userEdited, skipIfHadEmoji, after}){
+  if(userEdited)return;
+  if(skipIfHadEmoji)return;
+  const nameInput = document.getElementById(nameId);
+  const emojiInput = document.getElementById(emojiId);
   if(!nameInput || !emojiInput)return;
   const emoji = findEmojiMatch(nameInput.value);
-  emojiInput.value = emoji || '';
-  selectAddEmojiColor(emoji ? pickUniqueColor(emoji) : '');
-}
-
-// HANDLER: as the detail name changes, auto-fill the emoji field. A habit's
-// own emoji (present when the sheet opened) is never touched, and manual
-// edits stop the tracking — but an auto-suggested value follows the name,
-// exactly like the add sheet.
-function applyDetailAutoEmoji(){
-  if(_detailEmojiUserEdited)return;
-  if(_detailEmojiAtOpen)return;
-  const nameInput = document.getElementById('detail-habit-message');
-  const emojiInput = document.getElementById('detail-emoji');
-  if(!nameInput || !emojiInput)return;
-  const emoji = findEmojiMatch(nameInput.value);
+  if(nameId === 'ting-message'){
+    emojiInput.value = emoji || '';
+    selectAddEmojiColor(emoji ? pickUniqueColor(emoji) : '');
+    return;
+  }
   if(!emoji)return;
   emojiInput.value = emoji;
-  syncGenericEmojiRows();
-  if(typeof setDetailDirty === 'function')setDetailDirty();
+  if(typeof after === 'function')after();
+}
+
+function applyAutoEmoji(){
+  applyAutoEmojiFor({nameId:'ting-message', emojiId:'ting-emoji', userEdited:_emojiUserEdited});
+}
+
+function applyDetailAutoEmoji(){
+  applyAutoEmojiFor({
+    nameId:'detail-habit-message',
+    emojiId:'detail-emoji',
+    userEdited:_detailEmojiUserEdited,
+    skipIfHadEmoji:_detailEmojiAtOpen,
+    after(){
+      syncGenericEmojiRows();
+      if(typeof setDetailDirty === 'function')setDetailDirty();
+    }
+  });
 }
 
 function setupEmojiSuggestion(){

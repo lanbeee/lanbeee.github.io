@@ -513,8 +513,9 @@ function defaultSettings(overrides = {}) {
     );
     const critStyle = await page.locator('.ting-card:has-text("Crit")').first().getAttribute('style');
     const lowStyle = await page.locator('.ting-card:has-text("Low")').first().getAttribute('style');
-    check('3d P0 card left bar shows --card-priority:var(--red-icon)', Boolean(critStyle && critStyle.includes('--card-priority:var(--red-icon)')), 'style=' + critStyle);
-    check('3d P5 card left bar shows --card-priority:color-mix(...,35%...)', Boolean(lowStyle && lowStyle.includes('--card-priority:color-mix(in srgb, var(--text3) 35%, transparent)')), 'style=' + lowStyle);
+    const compactStyle = (s = '') => s.replace(/\s+/g, '');
+    check('3d P0 card left bar shows --card-priority:var(--red-icon)', compactStyle(critStyle).includes(compactStyle('--card-priority:var(--red-icon)')), 'style=' + critStyle);
+    check('3d P5 card left bar shows --card-priority:color-mix(...,35%...)', compactStyle(lowStyle).includes(compactStyle('--card-priority:color-mix(in srgb, var(--text3) 35%, transparent)')), 'style=' + lowStyle);
   }
 
   // ==========================================================================
