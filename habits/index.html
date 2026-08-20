@@ -15,14 +15,35 @@
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <style>
   html{background:#f5f4f0;color-scheme:light dark;}
-  @media (prefers-color-scheme:dark){html{background:#2c2c2e;}}
+  @media (prefers-color-scheme:dark){html{background:#121214;}}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" />
 <script>
 (function(l){l.media='not all';l.onload=function(){l.media='all'};l.onerror=function(){l.remove()}})(document.querySelector('link[href*="tabler-icons"]'));
 </script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-<link rel="stylesheet" href="./styles.css" />
+<!-- Formerly the single styles.css, split into byte-exact sequential slices.
+     LOAD ORDER MATTERS: later files (esp. sweeps.css) deliberately override
+     earlier rules by source order. Keep this list in this exact order. -->
+<link rel="stylesheet" href="./css/tokens.css" />
+<link rel="stylesheet" href="./css/base.css" />
+<link rel="stylesheet" href="./css/chrome.css" />
+<link rel="stylesheet" href="./css/home.css" />
+<link rel="stylesheet" href="./css/sheets.css" />
+<link rel="stylesheet" href="./css/detail.css" />
+<link rel="stylesheet" href="./css/stats-calendar.css" />
+<link rel="stylesheet" href="./css/forms.css" />
+<link rel="stylesheet" href="./css/planning.css" />
+<link rel="stylesheet" href="./css/locations.css" />
+<link rel="stylesheet" href="./css/controls.css" />
+<link rel="stylesheet" href="./css/settings.css" />
+<link rel="stylesheet" href="./css/filters.css" />
+<link rel="stylesheet" href="./css/actions.css" />
+<link rel="stylesheet" href="./css/overlays.css" />
+<link rel="stylesheet" href="./css/context.css" />
+<link rel="stylesheet" href="./css/progress.css" />
+<link rel="stylesheet" href="./css/agenda.css" />
+<link rel="stylesheet" href="./css/sweeps.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
@@ -1586,23 +1607,53 @@
 <script src="./js/storage.js" defer></script>
 <script src="./js/viewport.js" defer></script>
 <script src="./lib/js/adhan.umd.min.js" defer></script>
-<script src="./js/data.js" defer></script>
+<script src="./js/data-schemas.js" defer></script>
+<script src="./js/data-storage.js" defer></script>
+<script src="./js/data-normalize.js" defer></script>
+<script src="./js/data-backup.js" defer></script>
+<script src="./js/data-planner-state.js" defer></script>
+<script src="./js/data-primitives.js" defer></script>
+<script src="./js/data-locations.js" defer></script>
+<script src="./js/data-retention.js" defer></script>
+<script src="./js/data-logs.js" defer></script>
+<script src="./js/data-schedules.js" defer></script>
+<script src="./js/data-format.js" defer></script>
 <script src="./js/calendar-import.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
 <script src="./js/scoring.js" defer></script>
-<script src="./js/list-view.js" defer></script>
-<script src="./js/detail-view.js" defer></script>
+<!-- Large global scripts are sequential byte-exact slices; preserve this order. -->
+<script src="./js/list-view-home.js" defer></script>
+<script src="./js/list-view-sections.js" defer></script>
+<script src="./js/list-view-planner.js" defer></script>
+<script src="./js/list-view-actions.js" defer></script>
+<script src="./js/detail-view-sheet.js" defer></script>
+<script src="./js/detail-view-links.js" defer></script>
+<script src="./js/detail-view-tune.js" defer></script>
+<script src="./js/detail-view-stats.js" defer></script>
+<script src="./js/detail-view-pages.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
-<script src="./js/today-view.js" defer></script>
+<script src="./js/today-view-fits.js" defer></script>
+<script src="./js/today-view-reservations.js" defer></script>
+<script src="./js/today-view-week.js" defer></script>
+<script src="./js/today-view-today.js" defer></script>
 <script src="./js/agenda-optimizer.js" defer></script>
+<script src="./js/agenda-optimizer-ilp.js" defer></script>
 <script src="./js/push-client.js" defer></script>
 <script src="./js/reminders.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
-<script src="./js/settings.js" defer></script>
+<script src="./js/settings-core.js" defer></script>
+<script src="./js/settings-backup.js" defer></script>
+<script src="./js/settings-blocked.js" defer></script>
+<script src="./js/settings-locations.js" defer></script>
+<script src="./js/settings-state.js" defer></script>
+<script src="./js/settings-samples.js" defer></script>
+<script src="./js/settings-appearance.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
-<script src="./js/main.js" defer></script>
+<script src="./js/main-boot.js" defer></script>
+<script src="./js/main-input.js" defer></script>
+<script src="./js/main-runtime.js" defer></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {

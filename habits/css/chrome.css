@@ -1,0 +1,253 @@
+.topbar{
+  /* Query container: the bar is a padded card whose content is far narrower
+     than the viewport, so compactness must be driven by the bar's own width
+     (not a viewport media query) or the place name clips on phones whose
+     screen is wider than the old breakpoint. */
+  container-type:inline-size;
+  display:flex;flex-direction:row;gap:10px;align-items:center;
+  padding:10px 12px;
+  background:var(--bg);
+  z-index:10;border-radius:var(--card-radius,20px);
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,max-height var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy);
+  margin:8px 0 0;
+  max-height:88px;
+  will-change:transform,opacity;
+}
+/* The header's three controls (wordmark · place · filters) share one surface:
+   strip the inner pills' own chrome so the outer card reads as a single bar
+   instead of three crammed boxes. The wordmark sits left; place + filters are
+   pushed right (grouped together), separated by spacing only. */
+.topbar .presence-filter{
+  border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
+}
+.topbar .presence-filter.at,
+.topbar .presence-filter.near,
+.topbar .presence-filter.away,
+.topbar .presence-filter.set,
+.topbar .presence-filter.gps-matched{ background:transparent;border:0;box-shadow:none; }
+.topbar .home-filter-trigger{
+  border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
+}
+.topbar .home-filter-trigger.has-active{ border:0;background:transparent;box-shadow:none; }
+.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end; }
+.topbar .home-filter-trigger{ position:relative; }
+body[data-pane-count="2"] .topbar,
+body[data-pane-count="3"] .topbar{
+  display:none;
+}
+body.header-hidden .topbar{
+  /* Non-sticky: the header scrolls away with the feed, so there is nothing to
+     hide here. The class is still toggled for other state consumers. */
+}
+body.search-active .topbar,
+body.search-active #home-tag-filter{
+  opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
+}
+body[data-pane-count="1"].search-active .topbar{
+  max-height:0;
+  padding-top:0;padding-bottom:0;
+  margin-top:0;
+  border-color:transparent;
+  box-shadow:none;
+  overflow:hidden;
+}
+body[data-pane-count="1"].search-active #home-tag-filter{
+  max-height:0;
+  margin-top:0;margin-bottom:0;
+  padding-top:0;padding-bottom:0;
+  overflow:hidden;
+}
+body[data-pane-count="1"].search-active{--nav-bottom:6px;}
+.wordmark{
+  border:none;background:transparent;padding:0;margin:0;
+  font:inherit;
+  color:var(--text);cursor:pointer;-webkit-tap-highlight-color:transparent;
+  display:flex;align-items:center;gap:10px;flex:0 0 auto;
+}
+.wordmark img{
+  width:36px;height:36px;display:block;border-radius:11px;
+  box-shadow:0 5px 14px color-mix(in srgb,var(--teal-icon) 10%,transparent);
+}
+.wordmark-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;line-height:1;}
+.wordmark-copy > span{font-size:18px;font-weight:720;letter-spacing:-0.025em;}
+.wordmark-date{
+  color:var(--text2);font-size:9px;font-weight:580;letter-spacing:0;line-height:1.2;white-space:nowrap;
+}
+
+.top-actions{display:flex;align-items:center;gap:8px;}
+.icon-btn{
+  width:44px;height:44px;border-radius:50%;
+  border:0;background:transparent;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--text);
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  transition:background var(--dur-fast) ease,color var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
+}
+.icon-btn:active{transform:scale(0.93);}
+.icon-btn.is-hidden{display:none;}
+.icon-btn i{font-size:20px;}
+.icon-btn.is-on{background:var(--bg3);}
+
+.app-bar{
+  display:none;
+  grid-area:bar;
+  align-items:center;
+  gap:12px;
+  padding:0 18px;
+  background:var(--bg);
+  position:sticky;top:0;z-index:30;
+  min-height:var(--bar-height);
+}
+body[data-pane-count="2"] .app-bar,
+body[data-pane-count="3"] .app-bar{
+  display:flex;
+}
+.app-bar[hidden]{display:none !important;}
+
+.app-bar-logo{
+  border:none;background:transparent;padding:6px 8px;margin:0;
+  font:inherit;color:var(--text);cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  display:flex;align-items:center;gap:8px;
+  border-radius:10px;
+}
+.app-bar-logo:hover{background:var(--bg2);}
+.app-bar-logo img{width:24px;height:24px;border-radius:6px;}
+.app-bar-title{font-size:17px;font-weight:650;letter-spacing:0;}
+
+.app-bar-actions{
+  display:flex;align-items:center;gap:8px;
+  margin-left:auto;
+}
+.app-bar-add{
+  background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);
+  box-shadow:var(--accent-glow);
+  transition:box-shadow var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
+}
+.app-bar-add:active{transform:scale(0.94);box-shadow:var(--accent-glow-strong);}
+.app-bar-add:hover{filter:brightness(0.92);box-shadow:var(--accent-glow-strong);}
+
+.app-bar-search{
+  flex:1 1 auto;
+  display:none;
+  align-items:center;gap:6px;
+  min-width:0;max-width:520px;
+  margin-left:8px;
+}
+.app-bar-search.is-open{
+  display:flex;
+  max-width:none;
+}
+/* Search mode: field takes the bar; calendar/+ step aside. */
+.app-bar-search.is-open ~ .app-bar-actions #bar-open-overview,
+.app-bar-search.is-open ~ .app-bar-actions #bar-open-add{
+  display:none;
+}
+.app-bar-search input{
+  flex:1 1 auto;min-width:0;height:38px;border-radius:12px;
+  border:0;
+  background:var(--field-bg);color:var(--text);
+  font:inherit;font-size:14px;font-weight:500;
+  padding:0 14px;outline:none;margin:0;
+}
+.app-bar-search input:focus-visible{
+  box-shadow:none;
+}
+.app-bar-search .search-clear{
+  display:none;
+  width:36px;height:36px;flex:0 0 36px;
+  background:transparent;border:0;
+  box-shadow:none;
+}
+.app-bar-search.is-open .search-clear{display:flex;}
+.app-bar-search .search-clear i{font-size:18px;}
+
+.bottom-nav{
+  position:fixed;left:50%;bottom:calc(var(--nav-bottom) + var(--keyboard-lift) + env(safe-area-inset-bottom));
+  transform:translateX(-50%);z-index:50;
+  display:flex;align-items:center;gap:6px;
+  width:max-content;max-width:calc(100vw - 24px);
+  padding:7px;background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);
+  backdrop-filter:var(--glass-blur);
+  border-radius:22px;
+  box-shadow:var(--floating-shadow);
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,bottom var(--dur-slow) var(--ease-snappy);
+  will-change:transform;
+}
+body[data-pane-count="2"] .bottom-nav,
+body[data-pane-count="3"] .bottom-nav{
+  display:none;
+}
+body.nav-suppressed .bottom-nav{
+  pointer-events:none;opacity:0.48;
+}
+body.fullpage-open .bottom-nav{
+  pointer-events:none;opacity:0;
+  transform:translateX(-50%) translateY(12px) scale(0.96);
+}
+.bottom-nav .icon-btn{
+  flex:0 0 44px;
+  background:transparent;
+  border-color:transparent;
+  box-shadow:none;
+  border-radius:16px;
+}
+.bottom-nav .icon-btn.is-on{
+  background:var(--text);color:var(--bg);border-color:var(--text);
+}
+.bottom-nav .nav-add{
+  background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);
+  box-shadow:var(--accent-glow);
+  transition:box-shadow var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
+}
+.bottom-nav .nav-add:active{transform:scale(0.94);box-shadow:var(--accent-glow-strong);}
+@media (hover:hover){.bottom-nav .nav-add:hover{box-shadow:var(--accent-glow-strong);}}
+.nav-search{
+  flex:1 1 auto;
+  display:none;grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;gap:6px;
+  min-width:0;overflow:hidden;
+  opacity:0;pointer-events:none;
+  transition:opacity var(--dur-fast) ease;
+}
+.bottom-nav.search-open .nav-search{
+  display:grid;
+  order:1;
+  width:auto;
+  gap:6px;opacity:1;pointer-events:auto;
+}
+.bottom-nav.search-open{
+  width:calc(100vw - 24px);
+  max-width:456px;
+}
+/* Search mode: just the field + close — calendar/+ aren't useful mid-lookup. */
+.bottom-nav.search-open #open-overview,
+.bottom-nav.search-open #open-add{
+  display:none;
+}
+.bottom-nav.search-open #open-search{
+  order:2;
+}
+.nav-search input{
+  width:100%;min-width:0;height:44px;border-radius:12px;
+  border:0;
+  background:var(--field-bg);color:var(--text);
+  font:inherit;font-size:15px;font-weight:500;
+  padding:0 14px;outline:none;
+}
+.nav-search input:focus-visible{box-shadow:none;}
+.nav-search .search-clear{
+  display:none;
+  flex:0 0 36px;
+  width:36px;height:36px;align-self:center;
+  background:transparent;border:0;
+  box-shadow:none;
+}
+.bottom-nav.search-open .search-clear{display:flex;}
+.nav-search .search-clear i{font-size:18px;}
+.bottom-nav button,
+.detail-actions button,
+.about-actions button,
+.sample-habits-actions button,
+.overview-actions button{touch-action:manipulation;}

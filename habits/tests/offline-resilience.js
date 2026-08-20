@@ -108,11 +108,16 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const paths = [
       './js/config.js',
       './js/storage.js',
-      './js/data.js',
-      './js/list-view.js',
+      './js/data-normalize.js',
+      './js/data-planner-state.js',
+      './js/list-view-home.js',
+      './js/list-view-planner.js',
       './js/shell-ui.js',
-      './js/main.js',
-      './styles.css'
+      './js/main-boot.js',
+      './js/main-runtime.js',
+      './css/tokens.css',
+      './css/home.css',
+      './css/sweeps.css'
     ];
     const results = await Promise.all(paths.map(async (path) => {
       try {

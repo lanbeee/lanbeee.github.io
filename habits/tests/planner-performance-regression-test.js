@@ -524,11 +524,24 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
   // ── Contracts for the cold-open / dirty-key / lean-week improvements ──
 
   const sourceContracts = (()=>{
-    const dataSrc = fs.readFileSync(path.join(__dirname,'..','js','data.js'),'utf8');
-    const optSrc = fs.readFileSync(path.join(__dirname,'..','js','agenda-optimizer.js'),'utf8');
-    const todaySrc = fs.readFileSync(path.join(__dirname,'..','js','today-view.js'),'utf8');
+    const moduleSource = (...files)=>files.map(file=>
+      fs.readFileSync(path.join(__dirname,'..','js',file),'utf8')
+    ).join('');
+    const dataSrc = moduleSource(
+      'data-schemas.js','data-storage.js','data-normalize.js','data-backup.js',
+      'data-planner-state.js','data-primitives.js','data-locations.js',
+      'data-retention.js','data-logs.js','data-schedules.js','data-format.js'
+    );
+    const optSrc = moduleSource('agenda-optimizer.js','agenda-optimizer-ilp.js');
+    const todaySrc = moduleSource(
+      'today-view-fits.js','today-view-reservations.js',
+      'today-view-week.js','today-view-today.js'
+    );
     const workerSrc = fs.readFileSync(path.join(__dirname,'..','js','agenda-planner-worker.js'),'utf8');
-    const listSrc = fs.readFileSync(path.join(__dirname,'..','js','list-view.js'),'utf8');
+    const listSrc = moduleSource(
+      'list-view-home.js','list-view-sections.js',
+      'list-view-planner.js','list-view-actions.js'
+    );
     return {
       persistedRevision:dataSrc.includes("tings_planner_revision_v1")
         && dataSrc.includes('localStorage.setItem(PLANNER_REVISION_KEY'),

@@ -129,7 +129,7 @@ infer_changed_suites(){
       js/agenda-*)
         add_requested_suite planner
         ;;
-      js/today-view.js|js/scoring.js)
+      js/today-view.js|js/today-view-*.js|js/scoring.js)
         add_requested_suite planner
         add_requested_suite ui
         ;;
@@ -144,16 +144,16 @@ infer_changed_suites(){
       js/reminders.js|js/push-client.js)
         add_requested_suite integrations
         ;;
-      js/data.js|js/config.js|js/storage.js)
+      js/data.js|js/data-*.js|js/config.js|js/storage.js)
         add_requested_suite data
         add_requested_suite planner
         ;;
-      js/settings.js)
+      js/settings.js|js/settings-*.js)
         add_requested_suite data
         add_requested_suite ui
         add_requested_suite integrations
         ;;
-      js/list-view.js|js/detail-view.js)
+      js/list-view.js|js/list-view-*.js|js/detail-view.js|js/detail-view-*.js)
         add_requested_suite planner
         add_requested_suite ui
         ;;
@@ -161,7 +161,7 @@ infer_changed_suites(){
         add_requested_suite ui
         add_requested_suite integrations
         ;;
-      js/main.js)
+      js/main.js|js/main-*.js)
         add_requested_suite data
         add_requested_suite ui
         ;;

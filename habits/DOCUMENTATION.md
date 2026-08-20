@@ -2086,26 +2086,31 @@ When you swipe a card left or right, the following action buttons appear:
 | File | Lines | Purpose |
 |------|-------|---------|
 | **config.js** | 324 | Constants, sort presets, default settings |
-| **data.js** | 3554 | Data models (JSDoc typedefs), storage, normalization |
+| **data-*.js** | 50–939 each | Data models, storage, normalization, schedules, logs, backups |
 | **scoring.js** | 908 | Attention score, urgency, tone/color mapping |
-| **main.js** | 3100 | App initialization, state management, event handling |
-| **list-view.js** | 5680 | Home screen rendering, habit card list |
-| **detail-view.js** | 1881 | Detail sheet with tabs (about, insight, schedule, etc.) |
-| **today-view.js** | 5685 | Today agenda rendering & timeline |
+| **main-{boot,input,runtime}.js** | 909–1364 each | Initialization, input wiring, timers and refresh loop |
+| **list-view-{home,sections,planner,actions}.js** | 908–2513 each | Home rendering, sections, planner/cache, card actions |
+| **detail-view-*.js** | 236–554 each | Detail sheet tabs, links, tuning, stats |
+| **today-view-{fits,reservations,week,today}.js** | 118–2329 each | Fast agenda fitting, reservations, week planning, rendering |
 | **overview-view.js** | 1213 | Calendar heatmap and week views |
-| **settings.js** | 2312 | Settings sheet, form rendering, preferences |
+| **settings-*.js** | 122–746 each | Settings sheet, preferences, backup, locations, samples |
 | **locations.js** | 1059 | Location registry, geolocation, travel time |
 | **reminders.js** | 256 | Local reminder scheduling |
 | **push-client.js** | 139 | Web Push subscription management |
 | **calendar-import.js** | 548 | Microsoft Graph & Google Calendar import |
 | **prayer-times.js** | 549 | Islamic prayer time calculation |
-| **agenda-optimizer.js** | 1756 | ILP optimizer (lazy-loads GLPK) |
+| **agenda-optimizer.js** + **agenda-optimizer-ilp.js** | 313 + 1624 | GLPK loader/worker entry and ILP optimizer |
 | **agenda-order.js** | 774 | Agenda packing algorithm |
 | **agenda-planner-worker.js** | 209 | Web Worker for planning |
 | **emoji-suggest.js** | 702 | Emoji suggestions from habit names |
 | **shell-ui.js** | 1163 | Sheet/tab navigation, UI shell |
 | **storage.js** | 48 | localStorage wrapper |
 | **viewport.js** | 110 | Responsive layout breakpoints |
+
+Large modules are loaded as sequential, byte-exact source slices because the
+app has no bundler and uses global-scope deferred scripts. Keep each fragment
+list in `index.html`, the planner worker's `importScripts`, and `sw.js`
+`PRECACHE` in the same order when making a change.
 
 ### 19.2 HTML Structure (index.html)
 Main sheet containers:

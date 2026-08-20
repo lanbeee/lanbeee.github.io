@@ -1,0 +1,565 @@
+
+#list{display:flex;flex-direction:column;gap:10px;padding:16px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
+.home-loading{display:flex;flex-direction:column;gap:10px;padding-top:38px;pointer-events:none;}
+.home-loading span{
+  display:block;height:82px;border-radius:var(--radius);border:0.5px solid var(--border);
+  background:linear-gradient(90deg,var(--bg2) 20%,var(--bg3) 45%,var(--bg2) 70%);
+  background-size:220% 100%;animation:home-loading-shift 1.1s ease-in-out infinite;
+}
+.home-loading span:nth-child(2){opacity:0.78;animation-delay:90ms;}
+.home-loading span:nth-child(3){opacity:0.58;animation-delay:180ms;}
+@keyframes home-loading-shift{to{background-position:-120% 0;}}
+@media (prefers-reduced-motion:reduce){.home-loading span{animation:none;}}
+/* Day headers are plain text labels that stick at the top while scrolling.
+   The background matches the page tone exactly, so it never reads as a bar —
+   it only exists so cards sliding under a stuck label stay hidden behind it.
+   Days are separated by whitespace + the label itself. Nothing else. */
+.section-header{
+  display:block;color:var(--teal-text);font-size:13px;font-weight:720;
+  letter-spacing:0.09em;text-transform:uppercase;
+  padding:18px 18px 7px;line-height:1.2;
+  margin:2px -14px 0; /* bleed over the pane's 14px side padding */
+  border-top:0;
+  position:sticky;top:0;z-index:5;
+  background:var(--bg2);
+  transition:background-color .18s ease;
+}
+/* Subtle half-step darker while pinned at the viewport top (`.stuck` toggled
+   on scroll by updateStuckSectionHeaders in js/list-view.js). */
+.section-header.stuck{background:color-mix(in srgb,var(--bg3) 50%,var(--bg2));}
+/* Pills ride the header; their pale tints can wash out against the stuck
+   strip, so while stuck they render as surface chips (bg + own border/text)
+   — the same look pills have on cards. */
+.section-header.stuck .dropped-pill,
+.section-header.stuck .free-pill{background:var(--bg);}
+/* Wider panes pad 20px; the bleed tracks it. Compensating padding keeps the
+   label and pills at the same +4px offset in every layout. */
+body[data-pane-count="2"] .section-header,
+body[data-pane-count="3"] .section-header{
+  margin-left:-20px;margin-right:-20px;padding-left:24px;padding-right:24px;
+}
+.section-header:not(:first-child)::before{display:none;}
+.section-header.day-section-header{
+  touch-action:manipulation;user-select:none;-webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.section-header.has-dropped{
+  display:flex;align-items:center;justify-content:space-between;
+}
+.dropped-pill{
+  appearance:none;-webkit-appearance:none;border:0.5px solid color-mix(in srgb,var(--amber-icon) 32%,transparent);
+  font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
+  color:var(--amber-text);background:var(--amber-bg);
+  border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
+  position:relative;
+  transition:background-color .18s ease; /* follows the header's stuck tone */
+  /* none: keep finger drift from being claimed as a page pan (sticky headers). */
+  -webkit-tap-highlight-color:transparent;touch-action:none;
+}
+/* Invisible hit pad so near-misses on sticky day headers still land on the pill. */
+.dropped-pill::before{
+  content:"";position:absolute;inset:-12px -14px -12px -4px;
+}
+.dropped-pill:active{transform:scale(0.97);}
+.dropped-panel{
+  padding:2px 3px 8px;display:flex;flex-direction:column;gap:2px;
+}
+.dropped-item{
+  display:flex;align-items:center;gap:7px;
+  background:none;border:none;padding:6px 8px;border-radius:8px;
+  font-size:13px;color:var(--text);text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.dropped-item:active{background:var(--bg2);}
+.dropped-item.snoozed{opacity:0.55;}
+.dropped-emoji{font-size:14px;flex:0 0 auto;}
+.dropped-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dropped-tag{
+  font-size:9px;font-weight:650;color:var(--text3);
+  background:var(--bg2);border-radius:10px;padding:1px 5px;flex:0 0 auto;
+}
+.slipped-section-head{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;
+  color:var(--text3);padding:10px 8px 4px;
+}
+.slipped-section-head:not(:first-child){
+  margin-top:8px;border-top:0.5px solid var(--border);padding-top:12px;
+}
+.section-header.has-pill{
+  display:flex;align-items:center;
+}
+.section-header.has-pill.has-dropped{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:6px;
+}
+.section-header.has-pill.has-dropped .free-pill{margin-left:0;}
+.section-header .free-pill{margin-left:auto;}
+.free-pill{
+  appearance:none;-webkit-appearance:none;
+  border:0.5px solid color-mix(in srgb,var(--teal-icon) 40%,transparent);
+  font:inherit;font-size:10px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1;
+  color:var(--teal-text);background:var(--teal-bg);
+  border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
+  position:relative;
+  transition:background-color .18s ease; /* follows the header's stuck tone */
+  /* none: keep finger drift from being claimed as a page pan (sticky headers). */
+  -webkit-tap-highlight-color:transparent;touch-action:none;
+}
+.free-pill::before{
+  content:"";position:absolute;inset:-6px -4px -6px -14px;
+}
+.free-pill:active{transform:scale(0.97);}
+.free-panel{
+  padding:4px 3px 8px;display:flex;flex-direction:column;gap:3px;
+  font-size:12px;color:var(--text2);
+}
+.free-day-strip{padding:4px 8px 8px;}
+.free-day-track{
+  display:flex;height:26px;border-radius:7px;overflow:hidden;
+  background:var(--bg2);border:0.5px solid var(--border);
+}
+.free-day-seg{min-width:0;height:100%;padding:0;border:0;border-radius:0;appearance:none;-webkit-appearance:none;}
+.free-day-seg:is(button){cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent;}
+.free-day-seg:is(button)::after{content:"";position:absolute;inset:0;border:1.5px solid transparent;}
+.free-day-seg:is(button):focus-visible::after{border-color:var(--teal-icon);}
+.free-day-seg:is(button):active{filter:brightness(.94);}
+.free-day-seg.busy{background:color-mix(in srgb,var(--text) 18%,var(--bg2));}
+.free-day-seg.free{background:var(--teal-bg);}
+.free-day-ticks{
+  position:relative;height:15px;margin-top:5px;
+}
+.free-day-tick{
+  position:absolute;top:0;transform:translateX(-50%);
+  font-size:9px;font-weight:650;letter-spacing:0.01em;color:var(--text3);
+  white-space:nowrap;pointer-events:none;
+}
+.free-day-tick.edge-start{transform:translateX(0);}
+.free-day-tick.edge-end{transform:translateX(-100%);}
+.free-day-legend{
+  display:flex;align-items:center;gap:12px;
+  margin-top:6px;font-size:10px;font-weight:650;color:var(--text3);
+}
+.free-day-legend span{display:inline-flex;align-items:center;gap:5px;}
+.free-day-legend i{
+  display:block;width:10px;height:10px;border-radius:3px;flex:0 0 auto;
+}
+.free-day-legend i.busy{background:color-mix(in srgb,var(--text) 18%,var(--bg2));border:0.5px solid var(--border);}
+.free-day-legend i.open{background:var(--teal-bg);border:0.5px solid color-mix(in srgb,var(--teal-icon) 35%,transparent);}
+.free-panel-row{
+  display:flex;justify-content:space-between;padding:2px 8px;
+}
+.free-panel-value{font-weight:600;color:var(--text);}
+.free-panel-note{font-size:11px;color:var(--text3);padding:1px 8px;}
+body.reach-pad #list{padding-top:220px;}
+
+.swipe-row{
+  --card-radius:20px;
+  --card-inset:10px;
+  position:relative;overflow:hidden;border-radius:var(--card-radius);
+  touch-action:pan-y;
+}
+/* Collapsed at rest (width:0). Inline width during swipe still reveals actions;
+   without this, content-sized actions sit under the card and peek on fast scroll. */
+.swipe-actions{
+  position:absolute;top:0;bottom:0;
+  width:0;min-width:0;
+  display:flex;align-items:stretch;
+  overflow:hidden;
+  pointer-events:none;
+  transition:width var(--dur-med) var(--ease-tight),opacity var(--dur-fast) ease;
+  will-change:width;
+}
+.swipe-actions-left{
+  left:0;border-radius:var(--card-radius) 0 0 var(--card-radius);
+  background:color-mix(in srgb,var(--teal-bg) 48%,var(--bg3));
+}
+/* Buttons hug the OUTER edge on both panels so the corner-pad extension
+   (SWIPE_CORNER_PAD, tucked under the card's rounded corner) is always empty
+   backing — never a partially hidden button. Mirrors .swipe-actions-left's
+   default flex-start anchoring. */
+.swipe-actions-right{
+  right:0;border-radius:0 var(--card-radius) var(--card-radius) 0;
+  background:color-mix(in srgb,var(--red-bg) 38%,var(--bg3));
+  justify-content:flex-end;
+}
+.swipe-action{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;padding:0 14px;cursor:pointer;
+  font-size:11px;font-weight:500;border:none;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  white-space:nowrap;
+  min-width:64px;
+}
+.swipe-action i{font-size:20px;}
+.swipe-action small{font-size:10px;font-weight:600;line-height:1;opacity:0.9;}
+.sa-plan,.sa-activity,.sa-keep{background:transparent;color:var(--teal-text);}
+.sa-pin{background:transparent;color:var(--purple-text);}
+.sa-snooze{background:transparent;color:var(--text2);}
+.sa-nuke{background:transparent;color:var(--red-text);}
+
+.ting-card{
+  background:var(--bg);
+  border-radius:var(--card-radius,20px);
+  padding:var(--card-inset,10px) 12px var(--card-inset,10px) var(--card-inset,10px);
+  display:flex;align-items:center;gap:12px;
+  position:relative;z-index:1;
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-fast) ease,background var(--dur-fast) ease,padding var(--dur-fast) var(--ease-tight),gap var(--dur-fast) var(--ease-tight);
+  will-change:transform;
+  user-select:none;-webkit-user-select:none;
+}
+/* Inside white surfaces (sheets, detail/overview panes) the card flips to the
+   recessed page tone so the tonal step still separates it without a border. */
+.sheet .ting-card,
+.pane-detail .ting-card,
+.pane-overview .ting-card{background:var(--bg2);}
+.ting-card::before{
+  content:"";position:absolute;left:16px;top:16px;width:7px;height:7px;z-index:2;
+  border-radius:50%;background:var(--card-priority,var(--card-accent,var(--text3)));
+  opacity:0.9;pointer-events:none;
+}
+.ting-card::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  box-shadow:0 0 0 0 rgba(15,110,86,0);
+  pointer-events:none;
+}
+.card-actions{
+  display:none;
+  align-items:center;gap:2px;
+  margin-left:auto;
+  flex-shrink:0;
+}
+.card-action-btn{
+  width:32px;height:32px;border-radius:8px;
+  border:0;background:transparent;color:var(--text3);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:background var(--dur-fast) ease,color var(--dur-fast) ease;
+}
+.card-action-btn i{font-size:18px;}
+@media (hover:hover){
+  .card-action-btn:hover{background:var(--bg2);color:var(--text);}
+}
+.card-action-btn[data-action="nuke"]:hover{color:var(--red-icon);background:var(--red-bg);}
+/* Snooze/delete buttons stay hidden everywhere; swipe-on-the-card is the
+   only way to access them (matches mobile-portrait behavior on every pane). */
+
+/* Habit cards stay calm and neutral. State/custom color belongs to the emoji
+   or icon surface (plus the small priority dot), rather than washing the
+   entire row with a second competing signal. */
+.ting-card.hit,.ting-card.warn,.ting-card.miss,.ting-card.plan{background:var(--bg);}
+.sheet .ting-card.hit,.sheet .ting-card.warn,.sheet .ting-card.miss,.sheet .ting-card.plan,
+.pane-detail .ting-card.hit,.pane-detail .ting-card.warn,.pane-detail .ting-card.miss,.pane-detail .ting-card.plan,
+.pane-overview .ting-card.hit,.pane-overview .ting-card.warn,.pane-overview .ting-card.miss,.pane-overview .ting-card.plan{background:var(--bg2);}
+@media (hover:hover){
+  .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover{background:color-mix(in srgb,var(--bg3) 32%,var(--bg));}
+  .sheet .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover,
+  .pane-detail .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover,
+  .pane-overview .ting-card:not(.hit):not(.warn):not(.miss):not(.plan):hover{background:color-mix(in srgb,var(--bg3) 45%,var(--bg2));}
+  .ting-card:hover .mini-score-ring{transform:scale(1.08);}
+  .mini-score-ring{transition:transform var(--dur-fast) var(--ease-tight);}
+  .pulse-btn{transition:transform var(--dur-fast) var(--ease-tight),filter var(--dur-fast) ease,background var(--dur-fast) ease;}
+  .pulse-btn:hover{filter:brightness(0.96);}
+  .icon-btn{transition:background var(--dur-fast) ease,border-color var(--dur-fast) ease,color var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;}
+  .icon-btn:hover{background:var(--bg2);}
+  .bottom-nav .icon-btn:hover{background:color-mix(in srgb,var(--bg) 70%,var(--text) 12%);}
+  .app-bar-add:hover{filter:brightness(0.92);}
+  .btn:hover{background:var(--bg2);}
+  .btn.primary:hover{opacity:0.9;}
+  .seg-opt:hover{background:var(--bg2);}
+  .cal-day.pickable:hover{transform:scale(1.04);background:var(--bg2);}
+  .schedule-chip:hover,.monthday-chip:hover,.topic-chip:hover{background:var(--bg2);}
+  .topic-chip.on:hover,.schedule-chip.on:hover,.monthday-chip.on:hover{opacity:0.92;}
+}
+.ting-card.snoozed{background:color-mix(in srgb,var(--bg3) 42%,var(--bg));}
+.sheet .ting-card.snoozed,
+.pane-detail .ting-card.snoozed,
+.pane-overview .ting-card.snoozed{background:color-mix(in srgb,var(--bg3) 55%,var(--bg2));}
+.ting-card.snoozed::before{opacity:0.24;}
+.ting-card.snoozed .pulse-btn,.ting-card.snoozed .ting-info{opacity:0.48;}
+.ting-card.logged::after{animation:ring 0.36s var(--ease-snappy);}
+
+.pulse-btn{
+  width:62px;height:62px;min-width:62px;border-radius:50%;
+  border:none;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:27px;flex-shrink:0;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  transition:transform var(--dur-fast) var(--ease-tight),filter var(--dur-fast) ease;
+}
+.pulse-btn:active{transform:scale(0.9);filter:saturate(1.05);}
+.emoji-mark{font-size:28px;line-height:1;color:var(--text);}
+.ting-card .pulse-btn{
+  align-self:stretch;width:74px;min-width:74px;height:auto;border-radius:16px;
+  background:transparent !important;
+}
+.ting-card .pulse-btn.has-emoji-bg,
+.ting-card .pulse-btn.emoji-pulse.has-emoji-bg{
+  background:var(--emoji-bg,var(--bg2)) !important;
+}
+.ting-card .pulse-btn .ti{font-size:44px;}
+.ting-card .pulse-btn .emoji-mark{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:100%;height:100%;
+  font-size:44px;line-height:1;
+}
+.ting-card .pulse-btn.emoji-pulse .emoji-mark{
+  font-size:66px;line-height:0.86;
+}
+.detail-mark{
+  align-self:center;width:62px;min-width:62px;height:62px;border-radius:50%;
+}
+.detail-mark.emoji-pulse{
+  border-radius:12px;background:transparent !important;
+}
+.detail-mark.emoji-pulse.has-emoji-bg{
+  background:var(--emoji-bg,var(--bg2)) !important;
+}
+.detail-mark.emoji-pulse .emoji-mark{font-size:46px;line-height:0.95;}
+.detail-mark .ti{font-size:46px;}
+.ting-info{
+  flex:1;min-width:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:auto minmax(20px,auto) minmax(20px,auto);
+  align-items:center;
+  column-gap:8px;row-gap:3px;
+}
+.ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;grid-column:1 / -1;}
+.ting-name{
+  font-size:calc(15px * var(--font-scale));font-weight:650;color:var(--text);letter-spacing:-0.012em;
+  flex:1 1 auto;min-width:0;
+  /* Wrap to two lines on narrow cards instead of truncating mid-word —
+     matches the cue's clamp so long names stay readable at 320px. */
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.ting-cue{
+  grid-column:1;grid-row:2;
+  color:var(--text2);font-size:calc(12px * var(--font-scale));font-weight:480;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;max-width:100%;word-break:break-word;
+}
+.ting-meta{
+  grid-column:2;grid-row:2 / span 2;align-self:start;
+  font-size:11.5px;color:var(--text2);display:flex;align-items:center;
+  justify-content:flex-end;flex-wrap:wrap;gap:4px 5px;min-width:0;
+  /* Pill column is narrow (~115px at 320px), so pills routinely wrap to a
+     third row; the old 50px cap chopped that row in half. 96px fits three
+     rows at large text scale while still bounding pathological pill counts. */
+  max-width:min(50vw,160px);max-height:96px;overflow:hidden;
+}
+/* Activity dots hidden: drop the empty third grid row so the card doesn't
+   keep a fixed 20px track under cue/meta. */
+.ting-info.no-trail{grid-template-rows:auto minmax(20px,auto);}
+.ting-info.has-breakable-progress{
+  grid-template-rows:auto minmax(20px,auto);
+}
+.ting-info.has-breakable-progress .ting-visual{grid-column:1 / -1;grid-row:2;}
+/* Session bar keeps cue/meta on row 2; full-width bar on its own row 3. */
+.ting-info.has-session-progress{
+  grid-template-rows:auto minmax(20px,auto) auto;
+}
+.ting-info.has-session-progress .ting-meta{
+  grid-row:2;
+  max-height:none;
+}
+.ting-info.has-session-progress .ting-visual{
+  grid-column:1 / -1;grid-row:3;
+  margin-top:2px;min-width:0;
+}
+.breakable-card .ting-info{row-gap:5px;}
+.session-card .ting-info{row-gap:3px;}
+.breakable-progress{
+  display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;
+  gap:4px 8px;min-width:0;width:100%;flex:1;align-items:center;
+}
+.breakable-status-bar{
+  grid-column:1 / -1;grid-row:1;
+  display:flex;width:100%;height:5px;border-radius:2.5px;overflow:hidden;
+  background:var(--bg3);
+}
+.breakable-status-bar span{display:block;height:100%;transition:width 0.15s ease;}
+.breakable-progress.is-scrubbing .breakable-status-bar span{transition:none;}
+.bar-manual{background:color-mix(in srgb,var(--green-icon) 80%,var(--bg2));}
+.bar-calendar{background:color-mix(in srgb,var(--purple-icon) 80%,var(--bg2));}
+.bar-adding{background:color-mix(in srgb,var(--orange-icon) 80%,var(--bg2));}
+.breakable-crown{
+  grid-column:1;grid-row:2;
+  min-width:60px;height:34px;
+  border-radius:var(--radius-sm);
+}
+/* Invisible hit pad so near-misses scrub the dial instead of arming card swipe.
+   Absolute inset keeps layout/height unchanged. */
+.breakable-crown::after{
+  content:"";position:absolute;inset:-10px;z-index:1;
+}
+.breakable-crown.complete{
+  background:color-mix(in srgb,var(--teal-icon) 10%,var(--bg2));
+  border-color:color-mix(in srgb,var(--teal-icon) 30%,var(--border));
+  cursor:default;
+}
+.breakable-progress-label{
+  grid-column:2;grid-row:2;
+  font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums;
+  min-width:4.5em;text-align:right;
+}
+.session-progress{
+  display:grid;grid-template-columns:1fr auto;gap:4px 8px;
+  min-width:0;width:100%;align-items:center;
+}
+.session-progress .session-status-bar{
+  grid-column:1 / -1;height:5px;border-radius:2.5px;overflow:hidden;background:var(--bg3);
+  display:flex;width:100%;
+}
+.session-progress-label{
+  grid-column:1 / -1;
+  font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums;
+  text-align:left;line-height:1.2;
+}
+.bar-session{display:block;height:100%;background:var(--teal-icon);transition:width 0.15s ease;}
+.session-progress.is-auto .bar-session{background:var(--amber-icon);}
+.ting-card.timer-running{box-shadow:inset 3px 0 0 var(--teal-icon);}
+.swipe-action.sa-timer{background:color-mix(in srgb,var(--teal-bg) 70%,var(--bg2));color:var(--teal-text);}
+.sample-habits-stack{display:flex;flex-direction:column;gap:14px;margin-bottom:12px;}
+.sample-habits-list{display:flex;flex-direction:column;gap:8px;}
+.sample-habit-row{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;border-radius:var(--radius-sm);
+  background:var(--bg2);border:0.5px solid var(--border);
+}
+.sample-habit-row.is-on-home{opacity:0.72;}
+.sample-habit-emoji{font-size:22px;line-height:1.2;flex:0 0 auto;}
+.sample-habit-emoji.tinted{
+  width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:9px;background:var(--sample-tint-bg);color:var(--sample-tint-icon);
+}
+.sample-habit-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px;}
+.sample-habit-copy b{font-size:14px;font-weight:600;color:var(--text);}
+.sample-habit-copy small{font-size:12px;color:var(--text3);line-height:1.35;}
+.sample-habit-add{
+  flex:0 0 auto;
+  min-width:52px;
+  padding:6px 10px;
+  font-size:12px;
+  line-height:1.2;
+}
+.sample-habit-add[disabled]{opacity:0.7;cursor:default;}
+.sample-habits-add-row{margin-top:2px;}
+.sample-prayers-block{margin-top:4px;}
+.sample-prayers-block .sample-habits-list{margin:8px 0 4px;}
+.sample-habits-sheet.scrolling .sample-habit-add,
+.sample-habits-sheet.scrolling .sample-habits-add-row .btn{
+  pointer-events:none;
+}
+@media (pointer:coarse){
+  .breakable-crown{height:38px;}
+  .breakable-progress-label{font-size:13px;}
+  .session-progress-label{font-size:12px;}
+}
+.context-pill{
+  display:inline-flex;align-items:center;gap:3px;
+  color:var(--text2);font-size:calc(9.5px * var(--font-scale));font-weight:650;
+  background:var(--bg2);border:0.5px solid var(--border);
+  border-radius:999px;padding:2px 4px;line-height:1;
+  white-space:nowrap;min-width:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;
+  flex:0 1 auto;
+}
+.context-pill i{flex:0 0 auto;}
+.context-pill i{font-size:10.5px;color:var(--text3);}
+.context-pill.plan{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
+.context-pill.plan i{color:var(--purple-icon);}
+.context-pill.agenda-suggested{color:var(--teal-text);background:var(--teal-bg);border-color:transparent;}
+.context-pill.agenda-suggested i{color:var(--teal-icon);}
+.context-pill.agenda-anytime{color:var(--text2);background:transparent;border-color:transparent;}
+.context-pill.agenda-anytime i{color:var(--text3);}
+.context-pill.agenda-later{color:var(--blue-text);background:var(--blue-bg);border-color:transparent;}
+.context-pill.agenda-later i{color:var(--blue-icon);}
+.context-pill.agenda-closing{color:var(--amber-text);background:var(--amber-bg);border-color:transparent;}
+.context-pill.agenda-closing i{color:var(--amber-icon);}
+.context-pill.due{color:var(--amber-text);background:var(--amber-bg);border-color:transparent;}
+.context-pill.due i{color:var(--amber-icon);}
+.context-pill.due.hard{color:var(--red-text);background:var(--red-bg);}
+.context-pill.due.hard i{color:var(--red-icon);}
+.context-pill.scheduled{color:var(--purple-text);background:var(--purple-bg);border-color:transparent;}
+.context-pill.scheduled i{color:var(--purple-icon);}
+.context-pill.schedule{color:var(--blue-text);background:var(--blue-bg);border-color:transparent;}
+.context-pill.schedule i{color:var(--blue-icon);}
+.context-pill.pin{
+  width:24px;justify-content:center;color:var(--purple-text);
+  background:var(--purple-bg);border-color:transparent;padding-left:0;padding-right:0;
+}
+.context-pill.pin i{color:var(--purple-icon);}
+.context-pill.icon-only{
+  width:24px;justify-content:center;padding-left:0;padding-right:0;
+}
+.context-pill.quiet{opacity:0.82;}
+.context-pill.status-pill{color:var(--text2);background:var(--bg2);}
+.context-pill.status-pill i{color:var(--status-color,var(--text3));font-size:9px;}
+.agenda-lead{
+  flex:0 0 auto;max-width:none;padding:0;font-size:13px;font-weight:700;
+  font-variant-numeric:tabular-nums;background:transparent;border:0;border-radius:0;
+  overflow:visible;
+}
+.agenda-lead span{white-space:nowrap;}
+.agenda-lead i{font-size:12px;}
+.context-pill.agenda-lead.agenda-suggested,
+.context-pill.agenda-lead.agenda-anytime,
+.context-pill.agenda-lead.agenda-later,
+.context-pill.agenda-lead.agenda-closing,
+.context-pill.agenda-lead.scheduled{background:transparent;border-color:transparent;}
+.context-pill.agenda-lead.agenda-anytime{color:var(--text2);}
+.context-pill.agenda-lead.agenda-anytime i{color:var(--text3);}
+.context-pill.agenda-lead.agenda-later{color:var(--blue-text);}
+.context-pill.agenda-lead.agenda-later i{color:var(--blue-icon);}
+.context-pill.agenda-lead.agenda-closing{color:var(--amber-text);}
+.context-pill.agenda-lead.agenda-closing i{color:var(--amber-icon);}
+.context-pill.agenda-lead.agenda-suggested{color:var(--teal-text);}
+.context-pill.agenda-lead.agenda-suggested i{color:var(--teal-icon);}
+.context-pill.agenda-lead.scheduled{color:var(--purple-text);}
+.context-pill.agenda-lead.scheduled i{color:var(--purple-icon);}
+.ting-visual{grid-column:1;grid-row:3;display:flex;align-items:center;gap:8px;}
+.breakable-card .ting-visual{
+  flex-direction:column;align-items:stretch;gap:6px;
+}
+.ting-trail{display:flex;align-items:center;gap:3px;min-width:0;flex:1;}
+.trail-dot{
+  width:8px;height:4px;border-radius:999px;background:var(--bg3);
+  opacity:0.88;flex:0 0 auto;
+}
+.trail-dot.empty{background:var(--bg3);opacity:0.68;}
+.trail-dot.today{box-shadow:0 0 0 1px var(--border2);opacity:1;}
+.trail-week{
+  width:22px;height:4px;border-radius:999px;background:var(--bg3);
+  opacity:0.62;flex:0 0 auto;margin-right:7px;
+}
+.trail-dot.hit{background:var(--teal-icon);}
+.trail-dot.warn{background:var(--amber-icon);}
+.trail-dot.miss{background:var(--red-icon);}
+.trail-dot.plan{background:transparent;box-shadow:inset 0 0 0 1.5px var(--purple-icon);}
+.trail-dot.hit,.trail-dot.warn,.trail-dot.miss{height:6px;opacity:1;}
+.trail-week.hit{background:var(--teal-icon);}
+.trail-week.warn{background:var(--amber-icon);}
+.trail-week.miss{background:var(--red-icon);}
+.trail-week.plan{background:transparent;box-shadow:inset 0 0 0 1.5px var(--purple-icon);}
+.trail-week.hit,.trail-week.warn,.trail-week.miss{height:6px;opacity:0.78;}
+.mini-score-ring{
+  --score:0;width:24px;height:24px;border-radius:50%;flex:0 0 auto;
+  background:conic-gradient(var(--score-color,var(--teal-icon)) calc(var(--score) * 1%),var(--bg3) 0);
+  position:relative;
+}
+.mini-score-ring::after{
+  content:"";position:absolute;inset:5px;border-radius:50%;background:var(--bg);
+}
+.mini-score-ring.empty{background:var(--bg3);}
+.mini-score-ring.plan{
+  background:var(--purple-bg);
+  box-shadow:inset 0 0 0 2px var(--purple-icon);
+}
+.mini-score-ring.quiet{background:var(--bg3);opacity:0.72;}
+.dot{margin:0 5px;color:var(--text3);}
+#empty{
+  text-align:center;color:var(--text3);font-size:14px;
+  padding:60px 20px 20px;line-height:1.7;max-width:360px;margin:0 auto;
+}
+.empty-sub{color:var(--text3);font-size:13px;display:inline-block;max-width:320px;}
+#empty.is-action{cursor:pointer;}
+

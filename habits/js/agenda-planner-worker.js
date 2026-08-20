@@ -27,7 +27,17 @@ importScripts(
   './config.js',
   './storage.js',
   '../lib/js/adhan.umd.min.js',
-  './data.js',
+  './data-schemas.js',
+  './data-storage.js',
+  './data-normalize.js',
+  './data-backup.js',
+  './data-planner-state.js',
+  './data-primitives.js',
+  './data-locations.js',
+  './data-retention.js',
+  './data-logs.js',
+  './data-schedules.js',
+  './data-format.js',
   './locations.js',
   './prayer-times.js',
   './scoring.js'
@@ -129,8 +139,12 @@ function intervalToneSummary(h){
 
 importScripts(
   './agenda-order.js',
-  './today-view.js',
-  './agenda-optimizer.js'
+  './today-view-fits.js',
+  './today-view-reservations.js',
+  './today-view-week.js',
+  './today-view-today.js',
+  './agenda-optimizer.js',
+  './agenda-optimizer-ilp.js'
 );
 
 let plannerQueue = Promise.resolve();

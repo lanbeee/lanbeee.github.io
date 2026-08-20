@@ -1,0 +1,222 @@
+:root {
+  --bg:#ffffff; --bg2:#f5f4f0; --bg3:#e8e7e2;
+  --text:#1a1a1a; --text2:#6b6a65; --text3:#9e9d98;
+  --border:rgba(0,0,0,0.11); --border2:rgba(0,0,0,0.2);
+  --radius:16px; --radius-sm:10px;
+  --teal-bg:#E1F5EE; --teal-icon:#0F6E56; --teal-text:#085041;
+  --amber-bg:#FAEEDA; --amber-icon:#BA7517; --amber-text:#633806;
+  --red-bg:#FCEBEB; --red-icon:#A32D2D; --red-text:#791F1F;
+  --purple-bg:#EEEDFE; --purple-icon:#534AB7; --purple-text:#3C3489;
+  --blue-bg:#E6F2FA; --blue-icon:#176B91; --blue-text:#0B4E6E;
+  --green-bg:#E8F5E9; --green-icon:#2E7D32; --green-text:#1B5E20;
+  --pink-bg:#FCE7F0; --pink-icon:#B2347A; --pink-text:#7A1E54;
+  --orange-bg:#FDE9D9; --orange-icon:#C75A1A; --orange-text:#82380F;
+  --indigo-bg:#E8EAF6; --indigo-icon:#3949AB; --indigo-text:#26307A;
+  --cyan-bg:#E0F4F4; --cyan-icon:#0E7C86; --cyan-text:#0A565D;
+  --lime-bg:#EEF6D8; --lime-icon:#5E8B1A; --lime-text:#3F5E10;
+  --slate-bg:#ECEFF1; --slate-icon:#546E7A; --slate-text:#37474F;
+  --keyboard-lift:0px;
+  --nav-bottom:42px;
+  --nav-height:60px;
+  --sheet-action-gap:10px;
+  --ease-snappy:cubic-bezier(.2,.8,.2,1);
+  --ease-tight:cubic-bezier(.3,.7,.2,1);
+  --dur-fast:120ms;
+  --dur-med:190ms;
+  --dur-slow:260ms;
+  --pane-width:480px;
+  --sheet-max-width:480px;
+  --sheet-radius:20px 20px 0 0;
+  --detail-mode:pager;
+  --bar-height:56px;
+  --cal-cell-h:36px;
+  --card-pulse:62px;
+  --gutter:0px;
+  --app-pad:0;
+  /* Flat design language: inline surfaces carry NO shadow — edges are
+     communicated by surface tone alone (--bg2 page → --bg card → --bg3
+     recessed control). Only floating chrome (topbar, bottom-nav, sheets,
+     toasts) gets --floating-shadow. Token names are kept for the RN port. */
+  --home-card-shadow:none;
+  --home-card-shadow-hover:none;
+  --floating-shadow:0 10px 30px rgba(20,30,26,0.10),0 2px 8px rgba(20,30,26,0.05);
+  /* Subtle glass/glow layer: floating chrome gets a translucent blurred
+     surface; primary accents (+ buttons) get a soft teal glow; the active
+     seg pill gets a faint raise so it reads raised, not cut out. Keep these
+     very restrained — they accent the flat tone language, not replace it. */
+  --glass-bg:color-mix(in srgb,var(--bg) 78%,transparent);
+  --glass-blur:saturate(1.5) blur(16px);
+  --accent-glow:0 6px 16px color-mix(in srgb,var(--teal-icon) 26%,transparent);
+  --accent-glow-strong:0 8px 22px color-mix(in srgb,var(--teal-icon) 38%,transparent);
+  /* Recessed control fill (inputs, seg wells, emoji circles). On a white
+     sheet --bg3 is only ~9% off-white and reads as merged with the surface;
+     --field-bg steps one tone darker so a borderless field still has an edge. */
+  --field-bg:#e0dfd9;
+  --raised-shadow:0 1px 2px rgba(20,30,26,0.16),0 3px 8px rgba(20,30,26,0.10);
+}
+@media (prefers-color-scheme:dark) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — single source of truth for the visual language.
+   Keep in sync with src/theme/tokens.ts in the React Native port.
+   The RN ThemeProvider reads these to build lightTokens / darkTokens objects.
+
+   ── Surface ───────────────────────────────────────────────────────────────
+   Light:  --bg:#ffffff  --bg2:#f5f4f0  --bg3:#e8e7e2
+   Dark:   --bg:#1c1c1e  --bg2:#121214  --bg3:#3a3a3c
+   (Both modes keep the same hierarchy: --bg2 page sits one soft tone
+   below the --bg card surface; --bg3 is the recessed control on cards.)
+
+   ── Text ──────────────────────────────────────────────────────────────────
+   Light:  --text:#1a1a1a  --text2:#6b6a65  --text3:#9e9d98
+   Dark:   --text:#f2f2f7  --text2:#aeaeb2  --text3:#6e6e73
+
+   ── Borders ───────────────────────────────────────────────────────────────
+   FLAT DESIGN: borders are not used for component chrome. Edges communicate
+   through surface tone (--bg2 page → --bg card → --bg3 recessed control).
+   --border/--border2 survive ONLY as functional colors: focus rings and
+   chart gridlines. Shadows: none on inline surfaces; --floating-shadow is
+   reserved for floating chrome (topbar, bottom-nav, sheets, toasts).
+   Light:  --border:rgba(0,0,0,0.11)      --border2:rgba(0,0,0,0.2)
+   Dark:   --border:rgba(255,255,255,0.09) --border2:rgba(255,255,255,0.18)
+
+   ── Radii ─────────────────────────────────────────────────────────────────
+   --radius:16px   --radius-sm:10px
+
+   ── Glass/glow accents (subtle) ───────────────────────────────────────────
+   Floating chrome (topbar, bottom-nav): --glass-bg over --bg + --glass-blur,
+   with a solid-bg fallback when backdrop-filter is unsupported or the user
+   prefers reduced transparency. Primary accents (+ buttons): --accent-glow /
+   --accent-glow-strong (soft teal halo, stronger on hover/press). The active
+   seg pill uses --raised-shadow so it reads raised, not cut out.
+
+   ── Semantic colors (light / dark) ────────────────────────────────────────
+   Teal    bg #E1F5EE / #085041   icon #0F6E56 / #5DCAA5   text #085041 / #9FE1CB
+   Amber   bg #FAEEDA / #633806   icon #BA7517 / #EF9F27   text #633806 / #FAC775
+   Red     bg #FCEBEB / #791F1F   icon #A32D2D / #F09595   text #791F1F / #F7C1C1
+   Purple  bg #EEEDFE / #3C3489   icon #534AB7 / #AFA9EC   text #3C3489 / #CECBF6
+   Blue    bg #E6F2FA / #0B4E6E   icon #176B91 / #84CDEE   text #0B4E6E / #BFE8F7
+   Green   bg #E8F5E9 / #1B5E20   icon #2E7D32 / #81C784   text #1B5E20 / #A5D6A7
+
+   ── Layout ────────────────────────────────────────────────────────────────
+   --keyboard-lift:0px   --nav-bottom:42px   --nav-height:60px
+   --sheet-action-gap:10px   --pane-width:480px
+   --card-pulse:62px   --gutter:0px   --app-pad:0
+
+   ── Per-tier overrides (body[data-tier=...]) ──────────────────────────────
+                  sheet-max-width  sheet-radius  detail-mode  bar-height  cal-cell-h
+   mobile-portrait  480px           20px …        pager        56px        36px
+   mobile-landscape 520px           18px           tabs         52px        36px
+   tablet-portrait  600px           18px           tabs         56px        42px
+   tablet-landscape 640px           18px           tabs         56px        46px
+   desktop          760px           20px           tabs         60px        48px
+
+   ── Motion ───────────────────────────────────────────────────────────────
+   --ease-snappy:cubic-bezier(.2,.8,.2,1)   --ease-tight:cubic-bezier(.3,.7,.2,1)
+   --dur-fast:120ms   --dur-med:190ms   --dur-slow:260ms
+
+   ── Detail mode (component switch, not a color) ───────────────────────────
+   --detail-mode:pager | tabs   (pager on mobile-portrait, tabs elsewhere)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root:not([data-theme="light"]) {
+    --bg:#1c1c1e; --bg2:#121214; --bg3:#3a3a3c;
+    --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
+    --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
+    --teal-bg:#085041; --teal-icon:#5DCAA5; --teal-text:#9FE1CB;
+    --amber-bg:#633806; --amber-icon:#EF9F27; --amber-text:#FAC775;
+    --red-bg:#791F1F; --red-icon:#F09595; --red-text:#F7C1C1;
+    --purple-bg:#3C3489; --purple-icon:#AFA9EC; --purple-text:#CECBF6;
+    --blue-bg:#0B4E6E; --blue-icon:#84CDEE; --blue-text:#BFE8F7;
+    --green-bg:#1B5E20; --green-icon:#81C784; --green-text:#A5D6A7;
+    --pink-bg:#5C1A40; --pink-icon:#F4A6C8; --pink-text:#F7C2D8;
+    --orange-bg:#5A2A0E; --orange-icon:#F2A463; --orange-text:#F6C094;
+    --indigo-bg:#26307A; --indigo-icon:#AFA9EC; --indigo-text:#CECBF6;
+    --cyan-bg:#0A565D; --cyan-icon:#7CD4DC; --cyan-text:#A8E2E7;
+    --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
+    --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
+    --field-bg:#34343a;
+    --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
+  }
+  .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
+  .cal-day{background:#242426;}
+  .graph{
+    background:
+      linear-gradient(to top,rgba(255,255,255,0.045) 1px,transparent 1px) 0 25%/100% 25%,
+      #242426;
+  }
+  .bar-manual{background:#34D399;}
+  .bar-calendar{background:#A78BFA;}
+  .bar-adding{background:#FB923C;}
+}
+
+/* Forced dark theme (user preference overrides system light) */
+:root[data-theme="dark"] {
+  --bg:#1c1c1e; --bg2:#121214; --bg3:#3a3a3c;
+  --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
+  --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
+  --teal-bg:#085041; --teal-icon:#5DCAA5; --teal-text:#9FE1CB;
+  --amber-bg:#633806; --amber-icon:#EF9F27; --amber-text:#FAC775;
+  --red-bg:#791F1F; --red-icon:#F09595; --red-text:#F7C1C1;
+  --purple-bg:#3C3489; --purple-icon:#AFA9EC; --purple-text:#CECBF6;
+  --blue-bg:#0B4E6E; --blue-icon:#84CDEE; --blue-text:#BFE8F7;
+  --green-bg:#1B5E20; --green-icon:#81C784; --green-text:#A5D6A7;
+  --pink-bg:#5C1A40; --pink-icon:#F4A6C8; --pink-text:#F7C2D8;
+  --orange-bg:#5A2A0E; --orange-icon:#F2A463; --orange-text:#F6C094;
+  --indigo-bg:#26307A; --indigo-icon:#AFA9EC; --indigo-text:#CECBF6;
+  --cyan-bg:#0A565D; --cyan-icon:#7CD4DC; --cyan-text:#A8E2E7;
+  --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
+  --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
+}
+:root[data-theme="dark"] .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
+:root[data-theme="dark"] .cal-day{background:#242426;}
+:root[data-theme="dark"] .graph{
+  background:
+    linear-gradient(to top,rgba(255,255,255,0.045) 1px,transparent 1px) 0 25%/100% 25%,
+    #242426;
+}
+:root[data-theme="dark"] .bar-manual{background:#34D399;}
+:root[data-theme="dark"] .bar-calendar{background:#A78BFA;}
+:root[data-theme="dark"] .bar-adding{background:#FB923C;}
+
+/* Font scale */
+:root { --font-scale:1; }
+:root[data-font-scale="small"] { --font-scale:0.875; }
+:root[data-font-scale="large"] { --font-scale:1.125; }
+/* Component rules consume this variable at their final cascade positions so
+   the in-app size and browser/OS text zoom can compound predictably. */
+
+/* Compact mode */
+body.compact-mode .swipe-row,
+body.compact-mode .ting-card { --card-inset:8px; }
+body.compact-mode .swipe-row { margin-bottom:2px; }
+body.compact-mode .ting-card { padding:var(--card-inset); }
+body.compact-mode .ting-meta { gap:3px; }
+body.compact-mode .context-pill { padding:1px 5px; font-size:calc(10px * var(--font-scale)); }
+body.compact-mode .ting-name { font-size:calc(13.5px * var(--font-scale)); }
+body.compact-mode .ting-cue { font-size:calc(10.5px * var(--font-scale)); }
+
+/* Minimal mode — visual-only; planner/scoring unchanged */
+body.minimal-mode .ting-card.minimal-card .card-actions,
+body.minimal-mode .ting-card.minimal-card .ting-visual { display:none; }
+body.minimal-mode .ting-card.minimal-card::before { display:none; }
+body.minimal-mode #detail-sheet.minimal-detail .detail-full-only { display:none !important; }
+/* What survives minimal mode fits in one scroll, so the horizontal snap pager
+   becomes a plain vertical stack and the tab strip disappears. */
+body.minimal-mode .detail-sheet > .detail-pager{
+  flex-direction:column;scroll-snap-type:none;
+  overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+}
+body.minimal-mode .detail-sheet > .detail-pager > .detail-page{
+  flex:0 0 auto;scroll-snap-align:none;
+  height:auto;min-height:0;overflow:visible;
+}
+body.minimal-mode .detail-bottom-bar .detail-dots[hidden]{ display:none; }
+body.minimal-mode .detail-bottom-bar .detail-actions{ flex:1 1 auto;width:auto; }
+body.minimal-mode #add-sheet.minimal-add .add-full-only { display:none !important; }
+/* Settings minimal mode already decides — showing them would be a dead switch. */
+body.minimal-mode .settings-full-only { display:none !important; }
+body.minimal-mode #overview-list:empty { display:none; }
+body.minimal-mode #overview-insight,
+body.minimal-mode #overview-pane-filter { display:none !important; }
+

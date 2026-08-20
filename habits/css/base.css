@@ -1,0 +1,229 @@
+body[data-tier="mobile-landscape"]{
+  --sheet-max-width:520px;
+  --sheet-radius:18px;
+  --detail-mode:tabs;
+  --bar-height:52px;
+  --cal-cell-h:36px;
+}
+body[data-tier="tablet-portrait"]{
+  --sheet-max-width:600px;
+  --sheet-radius:18px;
+  --detail-mode:tabs;
+  --bar-height:56px;
+  --cal-cell-h:42px;
+}
+body[data-tier="tablet-landscape"]{
+  --sheet-max-width:640px;
+  --sheet-radius:18px;
+  --detail-mode:tabs;
+  --bar-height:56px;
+  --cal-cell-h:46px;
+}
+body[data-tier="desktop"]{
+  --sheet-max-width:760px;
+  --sheet-radius:20px;
+  --detail-mode:tabs;
+  --bar-height:60px;
+  --cal-cell-h:48px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+[hidden]{display:none !important;}
+html{font-size:16px;-webkit-text-size-adjust:100%;}
+html{scroll-behavior:smooth;color-scheme:light dark;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:var(--bg2);
+  color:var(--text);
+  min-height:100dvh;padding:0 0 132px;
+  overscroll-behavior-y:contain;
+}
+/* 2+ panes: the .app is a multi-column grid centred in the viewport. */
+body[data-pane-count="2"],
+body[data-pane-count="3"]{
+  padding:0;
+  display:flex;
+  justify-content:center;
+  align-items:stretch;
+}
+
+/* 1-pane: behave exactly like mobile-portrait — single 480px column, no bar. */
+body[data-pane-count="1"] .app{
+  width:100%;
+  max-width:var(--pane-width);
+  margin:0 auto;
+  background:var(--bg2);
+  min-height:100dvh;
+  padding:var(--app-pad);
+}
+/* 2-pane: two 480px columns with a single shared top bar. */
+body[data-pane-count="2"] .app{
+  width:100%;
+  max-width:calc(var(--pane-width) * 2);
+  min-height:100dvh;
+  height:100dvh;
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, var(--pane-width)));
+  grid-template-rows:var(--bar-height) 1fr;
+  grid-template-areas:
+    "bar bar"
+    "list middle";
+  background:var(--bg2);
+  padding:0;
+  gap:0;
+  align-items:stretch;
+}
+/* 3-pane: three 480px columns with a single shared top bar. */
+body[data-pane-count="3"] .app{
+  width:100%;
+  max-width:calc(var(--pane-width) * 3);
+  min-height:100dvh;
+  height:100dvh;
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, var(--pane-width)));
+  grid-template-rows:var(--bar-height) 1fr;
+  grid-template-areas:
+    "bar bar bar"
+    "list middle right";
+  background:var(--bg2);
+  padding:0;
+  gap:0;
+  align-items:stretch;
+}
+
+/* All panes are phone-shaped: 480px wide, identical look to the
+   mobile-portrait list pane. The list pane keeps the tonal page color
+   (--bg2) so white cards read without borders; the overview/detail panes
+   are white surfaces, so the tone step itself separates the panes. */
+.pane-list{
+  grid-area:list;
+  background:var(--bg2);
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:0 14px;
+  position:relative;
+  min-width:0;
+}
+body[data-pane-count="1"] .pane-list{
+  overflow-y:visible;
+  overflow-x:visible;
+}
+body[data-pane-count="2"] .pane-list,
+body[data-pane-count="3"] .pane-list{padding:0 20px;}
+
+.pane-overview{
+  display:none;
+  grid-area:middle;
+  background:var(--bg);
+  overflow-y:auto;
+  padding:0 20px 32px;
+  min-width:0;
+  position:relative;
+}
+body[data-pane-count="2"] .pane-overview,
+body[data-pane-count="3"] .pane-overview{
+  display:block;
+}
+
+.pane-detail{
+  display:none;
+  grid-area:middle;
+  background:var(--bg);
+  overflow-y:auto;
+  padding:0 20px 32px;
+  min-width:0;
+  position:relative;
+}
+body[data-pane-count="2"].pane-active .pane-detail,
+body[data-pane-count="3"] .pane-detail{
+  display:block;
+}
+body[data-pane-count="3"] .pane-detail{
+  grid-area:right;
+}
+
+/* 2-pane: when detail is open, hide the overview slot. */
+body[data-pane-count="2"].pane-active .pane-overview{
+  display:none !important;
+}
+
+.pane-detail:empty{padding:0;}
+.pane-detail:empty::before{
+  content:"Pick a habit to see its detail";
+  display:flex;align-items:center;justify-content:center;
+  height:100%;
+  color:var(--text3);
+  font-size:14px;
+  text-align:center;
+  padding:24px;
+}
+/* On 2+ panes the overview is already a permanent pane, so the calendar
+   button in the app-bar is redundant — the user is already looking at it. */
+body[data-pane-count="2"] #bar-open-overview,
+body[data-pane-count="3"] #bar-open-overview{
+  display:none;
+}
+/* In 2+ panes the overview lives in a fixed-width (480px) pane. Allow the
+   stats row to wrap onto a second line so nothing gets clipped. */
+/* body[data-pane-count="2"] .overview-stats,
+body[data-pane-count="3"] .overview-stats{
+  flex-wrap:wrap;
+  overflow-x:visible;
+} */
+
+/* On 2+ panes the overview lives inside .pane-overview instead of as a modal. */
+body[data-pane-count="2"] #overview-sheet,
+body[data-pane-count="3"] #overview-sheet{
+  display:none !important;
+}
+/* The "done" button is only meaningful when the overview is a modal. On 2+
+   panes the overview is a permanent pane, so hide it. */
+body[data-pane-count="2"] .pane-overview .overview-actions,
+body[data-pane-count="3"] .pane-overview .overview-actions{
+  display:none;
+}
+
+/* When a sheet is mounted inside a pane, strip sheet chrome */
+.pane-detail .detail-sheet,
+.pane-detail .overview-sheet,
+.pane-detail .settings-sheet,
+.pane-detail .about-sheet,
+.pane-overview .overview-sheet,
+.pane-overview .detail-sheet{
+  position:static;inset:auto;
+  width:100%;max-width:none;
+  min-height:0;max-height:none;
+  background:transparent;box-shadow:none;border-radius:0;
+  padding:0 0 24px;
+  transform:none;opacity:1;
+  margin:0;
+  border:0;
+}
+/* Detail inside a pane looks and behaves exactly like the mobile-portrait
+   detail sheet: horizontal scroll-snap pager, dots indicator, sticky head,
+   done button at the bottom. The base .detail-pager / .detail-page /
+   .detail-head / .detail-dots rules apply unchanged. */
+.pane-detail .detail-actions,
+.pane-detail .tune-actions,
+.pane-detail .overview-actions,
+.pane-detail .settings-actions,
+.pane-detail .about-actions,
+.pane-overview .overview-actions{
+  position:static;left:auto;bottom:auto;transform:none;
+  width:auto;margin-top:14px;padding:0;
+  background:transparent;border:0;border-radius:0;
+  box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+
+/* Sheets that live permanently in a pane should fill the pane width and not
+   take the modal max-width (which would overflow the 480px pane). */
+body[data-pane-count="2"] .pane-overview .sheet,
+body[data-pane-count="3"] .pane-overview .sheet,
+body[data-pane-count="2"] .pane-detail .sheet,
+body[data-pane-count="3"] .pane-detail .sheet{
+  width:100%;
+  max-width:none;
+  border-radius:0;
+  padding:0 0 24px;
+  max-height:none;
+}
+

@@ -40,8 +40,8 @@ dumps in `failed/`). Normal runner output is intentionally compact; pass
 ## 2. ⚠️ Gotchas (read before changing anything)
 
 1. **There are TWO planner engines that must stay in sync.** Any scheduling-logic
-   change usually needs to land in *both* `js/today-view.js` (fast) **and**
-   `js/agenda-optimizer.js` (GLPK) — then pass the suite in both `PLANNER_MODE`s.
+   change usually needs to land in *both* `js/today-view-*.js` (fast) **and**
+   `js/agenda-optimizer*.js` (GLPK) — then pass the suite in both `PLANNER_MODE`s.
    This is the #1 source of "works for me, broken for the user" bugs. See §5.
 
 2. **Bump `sw.js` → `const CACHE = 'tings-vNN'` on EVERY JS change.** The
@@ -80,13 +80,13 @@ own a clear area; jump to these first.
 
 | File | LOC | Owns |
 |---|---|--:|---|
-| `js/data.js` | 3554 | Persistence (`tings_v2` key), `normalize`/`save`/`load`, backup export/import, eligibility, time windows, blocked times, budget |
-| `js/today-view.js` | 5795 | **FAST planner engine** (`buildWeekAgenda`, `buildTodayAgenda`, `buildTodayTimeline`), `tryPlaceOnDay`, scarcity/deferral helpers, reservation model |
-| `js/agenda-optimizer.js` | 1794 | **GLPK ILP planner engine** (`buildWeekAgendaAsync`, `solveDayPackingIlp`, `packDayWithHeuristic`), fit enumeration, ILP constraints |
-| `js/list-view.js` | 5680 | Home/dashboard + week rendering, drag-to-reorder, capacity scorecard |
-| `js/main.js` | 3100 | Wiring, event handlers, add/edit flows |
-| `js/settings.js` | 2312 | Settings UI, `exportBackupFile`/`parseBackup` |
-| `js/detail-view.js` | 1881 | Habit detail sheet + schedule view |
+| `js/data-*.js` | 50–939 each | Persistence (`tings_v2` key), normalization, eligibility, schedules, logs, backups, and planner state |
+| `js/today-view-{fits,reservations,week,today}.js` | 118–2329 each | **FAST planner engine**: fitting, reservations, week packing, and today rendering |
+| `js/agenda-optimizer.js` + `agenda-optimizer-ilp.js` | 313 + 1624 | **GLPK ILP planner engine**: loader/worker entry, fits, constraints, and optimized week orchestration |
+| `js/list-view-{home,sections,planner,actions}.js` | 908–2513 each | Home/dashboard, day sections, background planning/cache, and card actions |
+| `js/main-{boot,input,runtime}.js` | 909–1364 each | Initialization/bindings, input sheets, timers/visibility/refresh loop |
+| `js/settings-*.js` | 122–746 each | Settings UI, backup import/export, blocked times, locations, samples, and appearance |
+| `js/detail-view-*.js` | 236–554 each | Detail sheet, links, tuning, stats, and pages |
 | `js/overview-view.js` | 1213 | Overview screen |
 | `js/locations.js` | 1059 | Locations, travel edges, routing |
 | `js/scoring.js` | 908 | **Scarcity scoring** (`scarcity` numbers encode feasible-slots × slack) |
@@ -95,6 +95,10 @@ own a clear area; jump to these first.
 | `js/prayer-times.js` | 549 | Adhan-based prayer windows |
 | `sw.js` | — | Service worker (precache + stale-while-revalidate) — bump `CACHE` on JS edits |
 
+Large modules are sequential, byte-exact source slices. Their `<script>` and
+`importScripts` lists are load-bearing, as are the CSS fragment links; preserve
+their order and update the service-worker precache list whenever a slice moves.
+
 ---
 
 ## 4. Key entry points (what tests call)
@@ -102,12 +106,12 @@ own a clear area; jump to these first.
 ```
 load() / save(data)                    data.js      — localStorage I/O (key 'tings_v2')
 loadSortSettings()                     data.js      — settings object
-buildTodayAgenda(data, settings)       today-view   — today's plan (fast)
-buildTodayTimeline(agenda, now)        today-view   — render rows
-buildWeekAgenda(data, settings, 7)     today-view   — FAST week plan
-buildWeekAgendaAsync(data, settings, 7) agenda-opt  — GLPK week plan (await-able)
-ensureGlpk()                           agenda-opt   — loads glpk.mjs WASM
-windowStillDoableToday(habit, now)     today-view   — can it still fit today?
+buildTodayAgenda(data, settings)       today-view-* — today's plan (fast)
+buildTodayTimeline(agenda, now)        today-view-* — render rows
+buildWeekAgenda(data, settings, 7)     today-view-* — FAST week plan
+buildWeekAgendaAsync(data, settings, 7) agenda-opt* — GLPK week plan (await-able)
+ensureGlpk()                           agenda-opt*  — loads glpk.mjs WASM
+windowStillDoableToday(habit, now)     today-view-* — can it still fit today?
 ```
 
 ---
@@ -118,8 +122,8 @@ windowStillDoableToday(habit, now)     today-view   — can it still fit today?
 
 | Engine | File | Entry | When used | Placement order |
 |---|---|---|---|---|
-| **GLPK ILP optimizer** (default) | `agenda-optimizer.js` | `buildWeekAgendaAsync` | `?planner=` not `fast`; tests `PLANNER_MODE=default` | fixed items first (ILP), daily breakables after, rescue pass, breakable gap-fill |
-| **Fast scarcity heuristic** | `today-view.js` | `buildWeekAgenda` | `?planner=fast`; initial home "preview" | **movables first**, daily breakables last |
+| **GLPK ILP optimizer** (default) | `agenda-optimizer*.js` | `buildWeekAgendaAsync` | `?planner=` not `fast`; tests `PLANNER_MODE=default` | fixed items first (ILP), daily breakables after, rescue pass, breakable gap-fill |
+| **Fast scarcity heuristic** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`; initial home "preview" | **movables first**, daily breakables last |
 
 Both call the same primitives: `tryPlaceOnDay`, `auditFillFitInGap`,
 `freeSegmentsInWindow`, `commitPlacement`, `dailyBreakableReservations`,
@@ -129,7 +133,7 @@ shared primitive OR landing it in both engines.**
 
 ### 5.2 Vocabulary (precise — misuse here causes bugs)
 
-- **Movable** (`isMovableWeekCandidate`, today-view.js ~2341): a one-shot `task`
+- **Movable** (`isMovableWeekCandidate`, `today-view-reservations.js`): a one-shot `task`
   **or** a sparse rhythm (`target > 1`). NOT a daily rhythm (`target ≤ 1`), not
   breakable, not pinned. Movables *choose a day* and can defer.
 - **Daily breakable** (`dailyBreakableReservations`): a daily recurring
@@ -172,7 +176,7 @@ Movables may use a breakable's window only up to the **aggregate spare** (window
 time minus the breakable's deficit). If a movable fits in a clock gap **touching
 no reservation window**, it places there today instead of deferring — see
 `placementFitsOutsideReservations` / `placementFitOutsideReservations` /
-`movableFitsOutsideReservations` (today-view.js ~2546–2608) and the matching ILP
+`movableFitsOutsideReservations` (`today-view-reservations.js`) and the matching ILP
 injection in `solveDayPackingIlp` (~845). Multiple movables **chain** at
 duration-spaced starts; overflow defers gracefully (verified for up to 8).
 
@@ -283,8 +287,8 @@ JS** — bump `sw.js` `CACHE` and have them reload.
 - Habit/settings **field reference**: `DOCUMENTATION.md` §IV.
 - Scarcity score format & symbols: `DOCUMENTATION.md` §V, `js/scoring.js`.
 - GLPK constraint shapes (clash, order, reserve, travel pairs):
-  `js/agenda-optimizer.js` `solveDayPackingIlp` (~823–1226).
-- Fast-path deferral rules: `js/today-view.js` `fastPathDefersMovable` (~2618),
-  `tryPlaceOnDay` (~2292).
+  `js/agenda-optimizer-ilp.js` `solveDayPackingIlp`.
+- Fast-path deferral rules: `js/today-view-reservations.js` `fastPathDefersMovable`,
+  `js/today-view-fits.js` `tryPlaceOnDay`.
 - Recent worked example (movable non-overlap deferral fix, incl. regressions
   hit): `HANDOFF-movable-deferral-fix.md` (gitignored; ask if absent).
