@@ -157,12 +157,6 @@ function renderOverviewFilters(data){
     </section>` : ''}`;
 }
 
-// Compat aliases (filters now share one row)
-function renderOverviewTagFilter(data){renderOverviewFilters(data);}
-function renderOverviewLocationFilter(data){renderOverviewFilters(data);}
-function renderOverviewTopicFilter(data){renderOverviewFilters(data);}
-function renderOverviewRangeFilter(){renderOverviewFilters(load());}
-
 // PURE: scheduled / due / plan-by markers for a habit (not yet in logs)
 function habitPlanMarkers(h){
   const markers = [];

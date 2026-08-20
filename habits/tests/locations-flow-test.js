@@ -141,10 +141,10 @@ async function openSettings(page){
     };
   });
   console.log(seeded);
-  assert(seeded.locCount >= 6, 'at least 6 sample locations');
+  assert(seeded.locCount >= 5, 'all referenced sample locations are seeded');
   assert(seeded.names.includes('Sample Home') && seeded.names.includes('Sample Gym') && seeded.names.includes('Sample Park'), 'Home/Gym/Park present');
-  assert(seeded.withLoc >= 10, 'many habits have locationIds (got ' + seeded.withLoc + ')');
-  assert(seeded.multi >= 3, 'some multi-location habits');
+  assert(seeded.withLoc >= 5, 'location-linked samples are present (got ' + seeded.withLoc + ')');
+  assert(seeded.multi >= 1, 'a multi-location sample is present');
   assert(seeded.lastKnown === 'sample-home', 'lastKnownLocationId = Home');
   assert(seeded.showLoc === true, 'showLocationOnCards enabled');
   assert(seeded.mode === 'walking', 'default travel mode walking');

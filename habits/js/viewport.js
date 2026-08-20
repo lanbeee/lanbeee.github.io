@@ -92,19 +92,3 @@ window.addEventListener('orientationchange', onResize);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', onResize);
 }
-
-function isWide() {
-  return currentTier !== 'mobile-portrait';
-}
-
-function isPaneTier() {
-  return currentPaneCount >= 2;
-}
-
-function getTier() {
-  return currentTier;
-}
-
-function getPaneCount() {
-  return currentPaneCount;
-}

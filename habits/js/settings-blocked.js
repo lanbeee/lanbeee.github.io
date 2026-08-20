@@ -1,25 +1,3 @@
-// HYBRID: remove old sort-lab sample habits now that the lab is no longer part
-// of the day-to-day app surface.
-function cleanupLegacySortSamples(){
-  const current = load();
-  if(!current.some(h=>h.sample))return false;
-  return save(current.filter(h=>!h.sample));
-}
-
-// RENDER: weekday availability inputs (removed from Settings; kept no-op for
-// any leftover callers / backup-compat paths that still invoke it).
-function renderAvailabilityControls(){
-  const wrap = $('availability-grid');
-  if(!wrap)return;
-  wrap.innerHTML = '';
-}
-
-// HANDLER: save edited availability day value (no-op — weekly capacity removed)
-function saveAvailabilityDay(index,value){
-  // Weekly availabilityMinutes is unused; per-day overrides live on the
-  // calendar day sheet. Keep this stub so old callers don't throw.
-}
-
 // PURE: <option> list for a blocked-time prayer-anchor picker.
 // When `allowFixed` is true (secondary B row), include a clock-time option.
 function blockedAnchorOptions(selected, allowFixed = false){
@@ -158,4 +136,3 @@ function removeBlockedTime(index){
   renderBlockedTimeControls();
   render();
 }
-

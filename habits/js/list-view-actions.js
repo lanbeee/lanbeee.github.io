@@ -913,19 +913,6 @@ function runPendingAction(){
   }
 }
 
-// HANDLER: splice entry from habit logs
-function removeEntryAt(i,ts,planOnly = false){
-  const data = load();
-  if(!data[i])return false;
-  const logs = normalizeLogs(data[i].logs);
-  const pos = logs.findIndex(log=>sameLog(log,ts,planOnly));
-  if(pos < 0)return false;
-  logs.splice(pos,1);
-  data[i].logs = logs;
-  data[i].lastLog = latestActualLog(logs);
-  return save(data);
-}
-
 // HYBRID: remove all planned entries for one item/day with a single undo.
 function removePlansOnDay(idx,key){
   const data = load();
@@ -1244,33 +1231,6 @@ function quickLog(i,card){
   }
   if(!logTing(i))return;
   go();
-}
-
-// PURE: compute next plan timestamp
-function nextPlanTime(h){
-  const base = h.lastLog || Date.now();
-  const target = h.target || 7;
-  let d = new Date(base + target * 86400000);
-  d = new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0,0);
-  if(d.getTime() <= Date.now()){
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    d = new Date(tomorrow.getFullYear(),tomorrow.getMonth(),tomorrow.getDate(),12,0,0,0);
-  }
-  return d.getTime();
-}
-
-// PURE: format next plan date label
-function nextPlanLabel(h){
-  return new Date(nextPlanTime(h)).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-}
-
-// HYBRID: schedule next plan entry
-function planNext(i){
-  const h = load()[i];
-  if(!h || h.type === 'zero')return;
-  const ts = nextPlanTime(h);
-  if(logTingAt(i,ts))refreshOpenViews();
 }
 
 // HYBRID: toggle pin and re-render

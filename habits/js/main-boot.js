@@ -111,13 +111,6 @@ function syncAddTypeUi(type){
   if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
 }
 
-// PURE: next clean hour, used to make scheduled tasks one tap lighter.
-function defaultEventTime(){
-  const d = new Date(Date.now() + 60 * 60000);
-  d.setMinutes(0,0,0);
-  return d.getTime();
-}
-
 $('open-add').addEventListener('click',()=>{
   closeSearch();
   applyAddDefaults();
@@ -286,13 +279,6 @@ function parseDateInput(value){
   const ts = new Date(`${value}T12:00:00`).getTime();
   return Number.isFinite(ts) ? ts : null;
 }
-// PURE: datetime-local "YYYY-MM-DDTHH:mm" -> ms timestamp, or null when blank
-function parseDateTimeInput(value){
-  if(!value)return null;
-  const ts = new Date(value).getTime();
-  return Number.isFinite(ts) ? ts : null;
-}
-
 $('ting-message').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
 
 // WIRE: task due-date hint

@@ -2,14 +2,6 @@ function sortSampleCount(){
   return load().filter(h=>h.sample).length;
 }
 
-// PURE: prayer demo samples use stable hids
-function isPrayerSample(h){
-  return Boolean(h && h.sample && String(h.hid || '').startsWith('sample-prayer-'));
-}
-function isFeatureSample(h){
-  return Boolean(h && h.sample && !String(h.hid || '').startsWith('sample-prayer-'));
-}
-
 // RENDER: update sample count label + remove button on sample sheet
 function updateSortSampleCount(){
   const n = sortSampleCount();
@@ -42,20 +34,13 @@ function sampleAlreadyOnHome(hid, displayName){
 function featureSamplePreviews(){
   return [
     {hid:'sample-feature-stretch', emoji:'🌅', title:'stretch after sunrise', blurb:'Window from sunrise +10m', place:''},
-    {hid:'sample-feature-night-work', emoji:'🌙', title:'night deep work', blurb:'Evening window after Isha', place:'Home'},
     {hid:'sample-feature-report', emoji:'📝', title:'write report in chunks', blurb:'Breakable — split across sessions', place:'Home'},
     {hid:'sample-feature-timed-run', emoji:'🏃', title:'timed run', blurb:'Timer + session progress bar', place:'Park'},
     {hid:'sample-feature-dentist', emoji:'🦷', title:'dentist (auto)', blurb:'Timed task that auto-completes', place:''},
-    {hid:'sample-feature-weigh-in', emoji:'⚖️', title:'weigh-in', blurb:'Log a number with each entry', place:'Home'},
-    {hid:'sample-feature-park-walk', emoji:'🌳', title:'walk to the park', blurb:'Place + travel on today’s list', place:'Park'},
     {hid:'sample-feature-do-early', emoji:'🧺', title:'do early because Tuesday is packed', blurb:'Do it early while the week is open', place:'Home'},
     {hid:'sample-feature-gym', emoji:'💪', title:'gym session', blurb:'Place-gated workout', place:'Gym'},
-    {hid:'sample-feature-stretch-gym', emoji:'🤸', title:'stretch at gym or home', blurb:'Multi-place habit', place:'Gym · Home'},
-    {hid:'sample-feature-family', emoji:'☎️', title:'call family', blurb:'Home or Mom’s', place:'Home · Mom’s'},
     {hid:'sample-feature-coffee', emoji:'☕', title:'coffee on office days', blurb:'Limit · Office or Cafe', place:'Office · Cafe'},
-    {hid:'sample-feature-water', emoji:'💧', title:'drink water', blurb:'Simple daily habit', place:''},
-    {hid:'sample-feature-snacks', emoji:'🍪', title:'less late snacks', blurb:'Limit how often', place:'Home'},
-    {hid:'sample-feature-soda', emoji:'🥤', title:'quit soda', blurb:'Stop habit', place:''}
+    {hid:'sample-feature-water', emoji:'💧', title:'drink water', blurb:'Simple daily habit', place:''}
   ];
 }
 
@@ -304,12 +289,6 @@ function buildSampleLocations(){
       hoursByDay:{6:{start:540,end:900}} // Sat 9a–3p
     },
     {
-      id:'sample-moms', name:"Sample Mom's house", address:'Park Slope, Brooklyn',
-      lat:40.6701, lng:-73.9778, radiusM:90,
-      emoji:'🏡',
-      allowedTimeStart:660, allowedTimeEnd:1020 // 11a–5p
-    },
-    {
       // 24h second anchor so travel between places is visible even late at night.
       id:'sample-park', name:'Sample Park', address:'Washington Square Park, NYC',
       lat:40.7308, lng:-73.9973, radiusM:120,
@@ -324,7 +303,6 @@ function buildSortSamples(){
   const O = 'sample-office';
   const G = 'sample-gym';
   const C = 'sample-cafe';
-  const M = 'sample-moms';
   const P = 'sample-park';
   return [
     sortSampleHabit('stretch after sunrise','keepup',1,[],{
@@ -332,13 +310,6 @@ function buildSortSamples(){
       hid:'sample-feature-stretch',
       allowedTimeStartAnchor:'sunrise', allowedTimeStartOffsetMin:10,
       allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:40
-    }),
-    sortSampleHabit('night deep work','keepup',1,[],{
-      emoji:'🌙', topics:['focus'], durationMinutes:45, priority:2,
-      hid:'sample-feature-night-work',
-      allowedTimeStartAnchor:'isha', allowedTimeStartOffsetMin:15,
-      allowedTimeEndAnchor:'isha', allowedTimeEndOffsetMin:150,
-      locationIds:[H]
     }),
     sortSampleHabit('write report in chunks','task',null,[],{
       emoji:'📝', topics:['work'], durationMinutes:90, minChunkMinutes:20,
@@ -356,15 +327,6 @@ function buildSortSamples(){
       eventTime:Date.now() + 3 * 3600000, dueDate:dayStart(Date.now()),
       autoMarkMinutes:45, priority:0
     }),
-    sortSampleHabit('weigh-in','keepup',7,sampleLogs([14,7]),{
-      emoji:'⚖️', topics:['health'], durationMinutes:5, trackValue:true,
-      hid:'sample-feature-weigh-in', locationIds:[H]
-    }),
-    sortSampleHabit('walk to the park','task',null,[],{
-      emoji:'🌳', topics:['health','rest'], durationMinutes:20,
-      hid:'sample-feature-park-walk',
-      dueDate:sampleActual(0), locationIds:[H,P], preferredLocationId:P, priority:0, pinned:true
-    }),
     sortSampleHabit('do early because Tuesday is packed','keepup',2,sampleLogs([0]),{
       emoji:'🧺', topics:['home'], durationMinutes:50, flexibilityDays:2,
       hid:'sample-feature-do-early', locationIds:[H], priority:2
@@ -372,16 +334,6 @@ function buildSortSamples(){
     sortSampleHabit('gym session','keepup',2,sampleLogs([5,3]),{
       emoji:'💪', topics:['health'], durationMinutes:35,
       hid:'sample-feature-gym', locationIds:[G], priority:1
-    }),
-    sortSampleHabit('stretch at gym or home','keepup',7,sampleLogs([32,20,11,5,1]),{
-      emoji:'🤸', topics:['health'], durationMinutes:15,
-      hid:'sample-feature-stretch-gym',
-      locationIds:[G,H], preferredLocationId:G
-    }),
-    sortSampleHabit('call family','keepup',7,sampleLogs([34,21,14,6]),{
-      emoji:'☎️', topics:['relationships'], durationMinutes:20,
-      hid:'sample-feature-family',
-      locationIds:[H,M], preferredLocationId:M, priority:1
     }),
     sortSampleHabit('coffee on office days','reduce',2,sampleLogs([6,4,2]),{
       emoji:'☕', topics:['health'], durationMinutes:5,
@@ -391,12 +343,6 @@ function buildSortSamples(){
     sortSampleHabit('drink water','keepup',1,sampleLogs([2,1]),{
       emoji:'💧', topics:['health'], durationMinutes:2, pinned:true,
       hid:'sample-feature-water'
-    }),
-    sortSampleHabit('less late snacks','reduce',5,sampleLogs([9,6,3]),{
-      emoji:'🍪', topics:['food'], hid:'sample-feature-snacks', locationIds:[H]
-    }),
-    sortSampleHabit('quit soda','zero',null,sampleLogs([35,18]),{
-      emoji:'🥤', topics:['health'], hid:'sample-feature-soda'
     })
   ];
 }
@@ -743,4 +689,3 @@ function bindSettingRange(name,key,suffix,options = {}){
     render();
   });
 }
-

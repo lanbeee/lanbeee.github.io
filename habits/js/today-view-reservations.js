@@ -381,14 +381,6 @@ function movableSpareFromSegmentLengths(segMinutes,deficit,minChunkMinutes){
   return leftover.reduce((sum,m)=>sum + m,0);
 }
 
-// PURE: free ms inside [ws,we] ∩ state.slots, minus committed fills. Mirrors
-// the gap math in tryPlaceOnDay so the reservation sees the same open time the
-// placer would actually find.
-function freeMsInWindow(state,ws,we){
-  return freeSegmentsInWindow(state,ws,we)
-    .reduce((sum,seg)=>sum + (seg.end - seg.start),0);
-}
-
 // PURE: minutes a movable item is still allowed to consume on this day without
 // starving a daily breakable of its target. Returns Infinity when no daily
 // breakable needs protection. Must-place (non-movable) candidates are virtually

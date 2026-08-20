@@ -117,14 +117,6 @@ function taskReadyDate(h){
   const window = Math.max(0,clampFlexibility(h.flexibilityDays));
   return when - window * 86400000;
 }
-function isTaskReady(h,ts = Date.now()){
-  if(h.type !== 'task')return false;
-  if(h.lastLog !== null)return false; // completed tasks are never "ready"
-  if(taskWhen(h) === null)return true; // someday tasks are always "ready" (scored separately)
-  const ready = taskReadyDate(h);
-  if(ready !== null && dayStart(ts) < ready)return false;
-  return !hasDaySchedule(h) || isDateEligibleForHabit(h,ts);
-}
 function formatTimeShort(minutes){
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;

@@ -156,16 +156,6 @@ function updateDetailPagerDots(){
   });
 }
 
-// RENDER: syncs active pager dot indicator
-function setDetailActivePage(key){
-  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-  if (!pager) return;
-  // Every tier uses the mobile-portrait layout: horizontal scroll-snap pager.
-  // The caller has already scrolled to the right page; this also updates the
-  // dot indicator so the user sees where they are.
-  updateDetailPagerDots();
-}
-
 // RENDER: clears legacy tab chrome in pager
 function renderDetailTabs(){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
@@ -174,29 +164,6 @@ function renderDetailTabs(){
   const existingTabs = pager.querySelector('.detail-tabs');
   if (existingTabs) existingTabs.remove();
   [...pager.querySelectorAll('.detail-page')].forEach(p=>p.classList.remove('is-active'));
-}
-
-// PURE: checks planned log for a day key
-function hasPlannedEntryForDay(h,key){
-  return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
-}
-
-// PURE: checks whether a habit has a due/scheduled/plan-by marker on a day.
-function hasScheduledMarkerForDay(h,key){
-  if(typeof habitPlanMarkers === 'function'){
-    return habitPlanMarkers(h).some(marker=>dateKey(marker.ts) === key);
-  }
-  return (
-    (isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key) ||
-    (h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null && dateKey(h.dueDate) === key) ||
-    ((h.type === 'keepup' || h.type === 'reduce') && h.planByDate && dateKey(h.planByDate) === key)
-  );
-}
-
-// PURE: checks a planned entry exists today
-function hasPlannedToday(h){
-  const today = dateKey(Date.now());
-  return hasPlannedEntryForDay(h,today) || hasScheduledMarkerForDay(h,today);
 }
 
 // PURE: computes month boundary dates and label

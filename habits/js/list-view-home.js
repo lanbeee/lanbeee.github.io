@@ -66,17 +66,6 @@ function selectedAnywhere(){
   return selectedAnywhereFrom('ting-tag-chips');
 }
 
-// PURE: preferred location id from a unified chip row (highest preference), or null
-function selectedPreferredLocationIdFrom(containerId){
-  const prefs = selectedLocationPrefsFrom(containerId);
-  const ids = selectedLocationIdsFrom(containerId);
-  return primaryPreferredLocationId(prefs,ids);
-}
-
-function selectedPreferredLocationId(){
-  return selectedPreferredLocationIdFrom('ting-tag-chips');
-}
-
 /** PURE: read locationPrefs map from chip data-pref attributes. */
 function selectedLocationPrefsFrom(containerId){
   const wrap = $(containerId);
@@ -175,31 +164,6 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // which would swallow the next click within 500ms. Disarm on the next tick
   // (the scroll event is queued before this timeout so it fires first).
   setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
-}
-
-// RENDER: draw selectable topic chips (legacy name — now renders the unified row)
-function renderTopicChips(containerId,selected = []){
-  // Map old container ids to the unified tag row.
-  const unified = containerId === 'ting-topic-chips' || containerId === 'ting-location-chips'
-    ? 'ting-tag-chips'
-    : containerId === 'detail-topic-chips' || containerId === 'detail-location-chips'
-      ? 'detail-tag-chips'
-      : containerId;
-  const locContainer = unified;
-  const locs = selectedLocationIdsFrom(locContainer);
-  const prefs = selectedLocationPrefsFrom(locContainer);
-  renderTagChips(unified,selected,locs,null,prefs);
-}
-
-// RENDER: location side of the unified row (keeps topics intact)
-function renderLocationChips(containerId,selectedIds = [],opts = {}){
-  const unified = containerId === 'ting-location-chips' || containerId === 'ting-topic-chips'
-    ? 'ting-tag-chips'
-    : containerId === 'detail-location-chips' || containerId === 'detail-topic-chips'
-      ? 'detail-tag-chips'
-      : containerId;
-  const topics = selectedTopicsFrom(unified);
-  renderTagChips(unified,topics,selectedIds,opts.preferred || null,opts.prefs || null);
 }
 
 // HANDLER: toggle a location chip — off → on → little → high → avoid → off
@@ -371,16 +335,6 @@ function renderHomeTagFilter(data){
     </section>` : ''}`;
 }
 
-// HYBRID: draw home location filter (compat — routes to unified row)
-function renderHomeLocationFilter(data){
-  renderHomeTagFilter(data);
-}
-
-// HYBRID: draw home topic filter (compat — routes to unified row)
-function renderHomeTopicFilter(data){
-  renderHomeTagFilter(data);
-}
-
 // PURE: build weekday and month-day chips
 function selectedWeekdaysFrom(containerId){
   return [...$(containerId).querySelectorAll('.schedule-chip.on')].map(btn=>parseInt(btn.dataset.weekday,10));
@@ -519,18 +473,6 @@ function parseTaskWhen(dateValue,timeValue){
   const ts = new Date(`${dateValue}T${timeValue}`).getTime();
   return Number.isFinite(ts) ? ts : null;
 }
-// PURE: ms timestamp -> "YYYY-MM-DDTHH:mm" for <input type="datetime-local">
-function datetimeInputValue(ts){
-  if(!ts)return '';
-  const d = new Date(ts);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  const hh = String(d.getHours()).padStart(2,'0');
-  const mm = String(d.getMinutes()).padStart(2,'0');
-  return `${y}-${m}-${day}T${hh}:${mm}`;
-}
-
 // HANDLER: toggle schedule chip on tap
 function toggleScheduleChip(e){
   const btn = e.target.closest('.schedule-chip[data-weekday],.monthday-chip[data-monthday]');
@@ -1008,13 +950,6 @@ function taskCue(h){
   return `Due ${new Date(h.dueDate).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
 }
 
-// PURE: scheduled-task status cue
-function scheduledCue(h){
-  if(!h.eventTime)return 'Scheduled';
-  if(typeof scheduledWhenLabel === 'function')return capitalizeFirst(scheduledWhenLabel(h.eventTime));
-  return 'Scheduled';
-}
-
 // PURE: capitalize the first letter of a string
 function capitalizeFirst(s){
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
@@ -1327,29 +1262,6 @@ function homeAgendaRows(data){
   if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
   return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()))
     .filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
-}
-
-// PURE: full timeline including travel rows (for thin home travel cards).
-function homeAgendaTimeline(data){
-  if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
-  return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()));
-}
-
-// PURE: map today's agenda rows onto existing home cards.
-function homeAgendaMap(data){
-  return homeAgendaRows(data).reduce((map,row)=>{
-    if(!map.has(row.i))map.set(row.i,row);
-    return map;
-  },new Map());
-}
-
-// PURE: chronological position of each today-agenda row, used to order the
-// home "today" section the way the agenda timeline reads. Indices not in
-// today's agenda are absent from the map.
-function homeAgendaOrder(data){
-  const map = new Map();
-  homeAgendaRows(data).forEach((row,pos)=>{ if(!map.has(row.i))map.set(row.i,pos); });
-  return map;
 }
 
 // PURE: color for the card's left accent bar by priority. P0 burns red, P1
@@ -1741,12 +1653,6 @@ function appendHomeBlockedText(list,row){
   el.className = 'extra-text-line blocked-text';
   el.textContent = `${row.label || 'blocked'} · ${start}–${end}${place}`;
   list.appendChild(el);
-}
-
-// RENDER: dispatch a blocked row to a card or a muted line per homeExtraMode.
-function appendHomeExtraBlocked(list,row){
-  if(homeExtraMode() === 'text12h')appendHomeBlockedText(list,row);
-  else appendHomeBlockedCard(list,row);
 }
 
 // RENDER: dispatch a travel leg to a card or a muted line per homeExtraMode.
@@ -2188,13 +2094,6 @@ async function copyTextToClipboard(text){
   }
 }
 
-function dayCapacityExportFilename(report){
-  const key = report && report.dayKey
-    ? report.dayKey
-    : new Date().toISOString().slice(0,10);
-  return `tings-agenda-audit-${key}.txt`;
-}
-
 function weekPlacementsExportFilename(week,now = Date.now()){
   const days = week && Array.isArray(week.days) ? week.days : [];
   const start = days[0] && days[0].dayBase != null ? dateKey(days[0].dayBase) : dateKey(now);
@@ -2302,23 +2201,6 @@ async function copyDayCapacityScorecard(){
   const text = formatDayCapacityScorecardText(_dayCapacityReport,_dayCapacityTitle,_dayCapacitySub);
   const ok = await copyTextToClipboard(text);
   if(typeof showToast === 'function')showToast(ok ? 'day audit copied' : 'copy failed');
-}
-
-function exportDayCapacityScorecard(){
-  if(!_dayCapacityReport){
-    if(typeof showToast === 'function')showToast('open an audit first');
-    return;
-  }
-  const text = formatDayCapacityScorecardText(_dayCapacityReport,_dayCapacityTitle,_dayCapacitySub);
-  const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = dayCapacityExportFilename(_dayCapacityReport);
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ if(a.isConnected)document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
-  if(typeof showToast === 'function')showToast('day audit exported');
 }
 
 function renderDayCapacityScorecard(report){

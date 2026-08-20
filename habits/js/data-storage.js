@@ -77,22 +77,11 @@ function plannerPerfMark(name){
   // Bound growth in long ?perf=1 sessions.
   if(_plannerPerfMarks.length > 200)_plannerPerfMarks.splice(0,_plannerPerfMarks.length - 100);
 }
-function plannerPerfMeasure(name,startMark,endMark){
-  if(!plannerPerfEnabled())return;
-  try{
-    if(typeof performance !== 'undefined' && performance.measure){
-      performance.measure(name,startMark,endMark);
-    }
-  }catch(_){}
-}
 function plannerPerfCountTryPlace(){
   _plannerPerfTryPlace += 1;
 }
 function plannerPerfResetTryPlace(){
   _plannerPerfTryPlace = 0;
-}
-function plannerPerfTryPlaceCount(){
-  return _plannerPerfTryPlace;
 }
 function plannerPerfDump(label = 'planner'){
   if(!plannerPerfEnabled())return;
@@ -264,4 +253,3 @@ function saveSortSettings(settings){
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }
-

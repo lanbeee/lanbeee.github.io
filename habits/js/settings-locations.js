@@ -12,13 +12,6 @@ const expandedLocationMores = new Set();
 // another) doesn't silently flip the checkbox back on and hide the inputs
 // out from under the user mid-edit.
 const pendingLocationHoursEdit = new Set();
-// Stash of the last geocode results so the tap handler can resolve a pick.
-let pendingLocationResults = [];
-
-// HANDLER: mark/unmark a location row as mid-edit on its open-hours window.
-function markLocationHoursEditing(index){
-  pendingLocationHoursEdit.add(index);
-}
 function clearLocationHoursEditing(index){
   pendingLocationHoursEdit.delete(index);
 }
@@ -31,22 +24,6 @@ function reindexSetAfterRemoval(set,removedIndex){
   const shifted = [...set].filter(i=>i !== removedIndex).map(i=>i > removedIndex ? i - 1 : i);
   set.clear();
   shifted.forEach(i=>set.add(i));
-}
-
-// PURE: 4-decimal coordinate for compact display.
-function formatCoord(v){ return Number(v).toFixed(4); }
-
-// PURE: compact one-line hours summary ("11a–5p · closed sun" / "24h").
-function locationHoursSummary(loc){
-  if(!loc || !hasLocationHours(loc))return '24h';
-  const parts = [];
-  if(Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd)){
-    parts.push(`${formatTimeShort(loc.allowedTimeStart)}–${formatTimeShort(loc.allowedTimeEnd)}`);
-  }
-  if(Array.isArray(loc.closedDays) && loc.closedDays.length){
-    parts.push('closed ' + loc.closedDays.map(weekdayShort).join('/'));
-  }
-  return parts.join(' · ') || '24h';
 }
 
 // RENDER: the full location registry list.
@@ -564,12 +541,6 @@ function saveLocationPicker(){
     if(typeof cb === 'function')cb(id);
   }
 }
-
-// Legacy stubs kept so old wiring does not throw if referenced.
-function searchLocations(){ openLocationPicker(); }
-function pickLocationResult(){}
-function useMyLocationForAdd(){ openLocationPicker(); centerPickerOnGps(); }
-function clearLocationAddForm(){}
 
 // HYBRID: commit the default open-window pair. Both present → set both; both
 // empty → 24h; exactly one present → hold (leave the DOM as-is so the user can

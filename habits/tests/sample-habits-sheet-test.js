@@ -220,10 +220,10 @@ async function launchBrowser(){
   });
   console.log(afterTour);
   assert(afterTour.sheetClosed, 'sample sheet closes after add all');
-  assert(afterTour.sampleCount >= 8 && afterTour.prayerCount === 0, 'feature samples filled without prayers');
+  assert(afterTour.sampleCount >= 6 && afterTour.prayerCount === 0, 'feature samples filled without prayers');
   assert(afterTour.hasSunrise && afterTour.hasBreakable, 'showcase fields present');
   assert(afterTour.noSleepHabit, 'add-all does not create a sleep habit');
-  assert(afterTour.placeCount >= 6, 'add-all demos seeds all referenced sample places');
+  assert(afterTour.placeCount >= 5, 'add-all demos seeds all referenced sample places');
 
   console.log('\n[E] Sleep busy time requires home city, then replaces default sleep block');
   await page.locator('#open-about').click();
@@ -334,7 +334,7 @@ async function launchBrowser(){
   });
   console.log(afterOnePrayer);
   assert(afterOnePrayer.fajrExists && afterOnePrayer.fajrIsSample === false && afterOnePrayer.sheetOpen && afterOnePrayer.fajrAdded, 'single prayer add keeps sheet open, not marked sample');
-  assert(afterOnePrayer.placeCount >= 6, 'prayer add does not seed extra sample places');
+  assert(afterOnePrayer.placeCount >= 5, 'prayer add does not seed extra sample places');
 
   await page.locator('#sample-prayers-add').click();
   await page.waitForTimeout(500);
@@ -356,14 +356,14 @@ async function launchBrowser(){
   console.log(afterPrayers);
   assert(afterPrayers.totalPrayers === 5, 'five prayer habits total after add all');
   assert(afterPrayers.samplePrayerCount === 4, 'four prayers marked sample (Fajr added individually)');
-  assert(afterPrayers.featureCount >= 8, 'feature samples still present');
+  assert(afterPrayers.featureCount >= 6, 'feature samples still present');
   assert(afterPrayers.fajrWindow && afterPrayers.fajrWindow.allowedTimeStartAnchor === 'fajr', 'Fajr has prayer window');
   assert(afterPrayers.fajrName === 'Fajr', 'individually added Fajr has no Sample: prefix');
   assert(
     afterPrayers.sampleNames.every(n => /^Sample: (Dhuhr|Asr|Maghrib|Isha)$/.test(n)),
     'bulk-added prayer samples use Islamic names with Sample: prefix'
   );
-  assert(afterPrayers.placeCount >= 6, 'add-all prayers still seeds no extra places');
+  assert(afterPrayers.placeCount >= 5, 'add-all prayers still seeds no extra places');
 
   console.log('\n[G] Keep one prayer — survives remove samples; city clear blocked');
   const keepResult = await page.evaluate(() => {

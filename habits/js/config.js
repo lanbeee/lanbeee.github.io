@@ -54,11 +54,6 @@ const PRAYER_METHODS = [
   {key:'Other',         label:'Other'}
 ];
 const DEFAULT_PRAYER_METHOD = 'NorthAmerica';
-// Madhab affects only Asr time. Shafi = standard; Hanafi = later Asr.
-const PRAYER_MADHABS = [
-  {key:'shafi',  label:'Shafi (standard)'},
-  {key:'hanafi', label:'Hanafi (later Asr)'}
-];
 const DEFAULT_PRAYER_MADHAB = 'shafi';
 // Cap on the offset (signed minutes) a user can attach to an anchor. ±12 h is
 // well past any sane "sunrise + a few hours" / "isha - 30 min" use case but
@@ -275,10 +270,6 @@ function isThreePaneTier() {
   return document.body && document.body.dataset && document.body.dataset.paneCount === '3';
 }
 
-function isTwoPaneTier() {
-  return document.body && document.body.dataset && document.body.dataset.paneCount === '2';
-}
-
 let detailIdx = null;
 let snoozeIdx = null;
 let snoozeFromDetail = false;
@@ -324,5 +315,4 @@ let detailTuneOriginal = null;
 let detailScheduleView = 'allowed';
 let calendarPointer = null;
 let cardPointer = null;
-let suppressCardClick = null;
 let searchDismissPointer = null;

@@ -139,26 +139,6 @@ function logToneMap(h){
   return map;
 }
 
-function metaLine(h){
-  const days = daysSince(h.lastLog);
-  const parts = [];
-  if(hasPlannedToday(h))parts.push('planned today');
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil){
-    parts.push(`hidden ${Math.ceil((h.snoozedUntil - Date.now()) / 86400000)}d`);
-  }else{
-    parts.push(entryWhen(h.lastLog));
-    if(h.type !== 'zero' && h.target)parts.push(`every ${formatRhythmLabel(h.target)}`);
-  }
-  if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
-  if(hasDaySchedule(h)){
-    const distance = nextEligibleDistance(h);
-    if(distance === 0)parts.push('available today');
-    else if(distance === 1)parts.push('available tomorrow');
-    else if(distance !== null)parts.push(`available in ${distance}d`);
-  }
-  return parts;
-}
-
 // ─── Numeric primitives ───
 
 function settingScale(value){
@@ -219,15 +199,44 @@ function buildDueScore(urgency,riseAt){
   return Math.pow(early,2.2) * 26;
 }
 
-function plannedWithinWindow(h,windowDays){
-  const plan = nextPlannedLog(h);
-  if(!plan || h.type === 'zero')return false;
-  const dist = dayDistance(plan);
-  return dist !== null && dist <= 0 && Math.abs(dist) <= windowDays;
-}
-
 function clamp01(value){
   return Math.max(0,Math.min(1,value));
+}
+
+function progressScore(h){
+  if(h.type === 'task'){
+    if(h.breakable && h.lastLog !== null){
+      const total = clampDuration(h.durationMinutes);
+      const done = loggedChunkMinutes(h);
+      if(total <= 0)return 100;
+      return Math.max(0,Math.min(100,Math.round((done / total) * 100)));
+    }
+    if(h.lastLog !== null)return 100;
+    const when = taskWhen(h);
+    if(when === null)return null;
+    const left = daysUntil(when);
+    if(left === null)return null;
+    const windowDays = Math.max(1,h.flexibilityDays || 3);
+    if(left <= 0)return Math.max(0,Math.round(30 - Math.min(30,Math.abs(left) * 6)));
+    return Math.round(Math.min(100,100 - (left / windowDays) * 50));
+  }
+  const days = daysSince(h.lastLog);
+  if(days === null || days < 0)return null;
+  const target = effectiveTarget(h);
+  if(h.type === 'keepup'){
+    if(days <= target * 0.75)return 100;
+    if(days <= target)return Math.round(100 - ((days / target - 0.75) / 0.25) * 25);
+    if(days <= target * 1.35)return Math.round(74 - ((days / target - 1) / 0.35) * 29);
+    return Math.max(0,Math.round(44 - Math.min(1,(days / target - 1.35) / 0.65) * 44));
+  }
+  if(h.type === 'reduce'){
+    if(days >= target)return Math.min(100,Math.round(75 + Math.min(1,(days / target - 1) / 0.75) * 25));
+    if(days >= target * 0.65)return Math.round(45 + ((days / target - 0.65) / 0.35) * 29);
+    return Math.max(0,Math.round((days / (target * 0.65)) * 44));
+  }
+  if(days >= 14)return Math.min(100,Math.round(75 + Math.min(1,(days - 14) / 16) * 25));
+  if(days >= 4)return Math.round(45 + ((days - 4) / 10) * 29);
+  return Math.max(0,Math.round((days / 4) * 44));
 }
 
 function calendarDayDiff(ts){

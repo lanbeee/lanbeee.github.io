@@ -149,12 +149,64 @@ function makeActualLog(ts,opts = {}){
 function makeLog(ts){
   return dateKey(ts) > dateKey(Date.now()) ? makePlanLog(ts) : ts;
 }
-function sameLog(log,ts,planOnly = false){
-  return logTime(log) === ts && (!planOnly || isPlanLog(log));
-}
 function latestActualLog(logs){
   const actual = actualLogs(logs);
   return actual.length ? actual[actual.length - 1] : null;
+}
+
+function hasPlannedEntryForDay(h,key){
+  return plannedLogs(h.logs).some(ts=>dateKey(ts) === key);
+}
+
+function hasScheduledMarkerForDay(h,key){
+  if(typeof habitPlanMarkers === 'function'){
+    return habitPlanMarkers(h).some(marker=>dateKey(marker.ts) === key);
+  }
+  return (
+    (isTimedTask(h) && h.lastLog === null && dateKey(h.eventTime) === key)
+    || (h.type === 'task' && h.eventTime === null && h.dueDate !== null
+      && h.lastLog === null && dateKey(h.dueDate) === key)
+    || ((h.type === 'keepup' || h.type === 'reduce') && h.planByDate
+      && dateKey(h.planByDate) === key)
+  );
+}
+
+function hasPlannedToday(h){
+  const today = dateKey(Date.now());
+  return hasPlannedEntryForDay(h,today) || hasScheduledMarkerForDay(h,today);
+}
+
+function nextPlannedLog(h){
+  return plannedLogs(h.logs)[0] || null;
+}
+
+function intervalValues(h,limit = null){
+  const logs = actualLogs(h.logs);
+  if(!logs.length)return [];
+  const intervals = [];
+  for(let i = 1;i < logs.length;i += 1){
+    intervals.push(Math.max(1,Math.round((logs[i] - logs[i - 1]) / 86400000)));
+  }
+  intervals.push(Math.max(1,daysSince(logs[logs.length - 1]) || 1));
+  return limit ? intervals.slice(-limit) : intervals;
+}
+
+function intervalToneSummary(h){
+  const intervals = intervalValues(h,14);
+  if(!intervals.length)return {hit:0,warn:0,miss:0,label:'no gap history'};
+  const counts = intervals.reduce((acc,days)=>{
+    const cls = intervalTone(h,days) || 'miss';
+    acc[cls] = (acc[cls] || 0) + 1;
+    return acc;
+  },{hit:0,warn:0,miss:0});
+  const total = intervals.length || 1;
+  const hit = Math.round(counts.hit / total * 100);
+  const warn = Math.round(counts.warn / total * 100);
+  const miss = Math.max(0,100 - hit - warn);
+  const label = counts.hit >= counts.warn + counts.miss
+    ? 'mostly good'
+    : counts.miss > counts.hit ? 'needs care' : 'mixed';
+  return {hit,warn,miss,label};
 }
 function actualLogs(logs){
   return normalizeLogs(logs).filter(log=>!isPlanLog(log) && logTime(log) <= Date.now()).map(logTime).sort((a,b)=>a-b);

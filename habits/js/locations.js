@@ -586,11 +586,6 @@ function isIosDevice(){
   return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-function isAndroidDevice(){
-  const ua = navigator.userAgent || '';
-  return /Android/i.test(ua);
-}
-
 function isStandalonePwa(){
   return window.matchMedia('(display-mode: standalone)').matches
     || window.navigator.standalone === true;
@@ -736,19 +731,6 @@ function resumeLocationWatchIfOptedIn(opts = {}){
     maximumAge:opts.fresh ? 0 : 120000,
     timeout:15000
   });
-}
-
-// HYBRID: first-time rationale sheet, then request on the Allow tap (keeps
-// the user-gesture chain intact for iOS). If already opted in, requests now.
-function ensureLocationAccess(opts = {}){
-  const s = sortSettings || loadSortSettings();
-  if(s.locationOptIn || currentCoord){
-    return requestLocationAccess({...opts,quiet:opts.quiet});
-  }
-  // Show rationale; Allow button calls requestLocationAccess in its click.
-  locationAllowCallback = typeof opts.onGranted === 'function' ? opts.onGranted : null;
-  openLocationPermissionSheet();
-  return Promise.resolve('prompt');
 }
 
 function openLocationPermissionSheet(){

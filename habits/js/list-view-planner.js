@@ -544,29 +544,6 @@ function homeAgendaCacheIsFresh(data){
   return (Date.now() - Number(cached.savedAt || 0)) <= HOME_AGENDA_CACHE_FRESH_MS;
 }
 
-function leanAgendaWeekForCache(week){
-  if(typeof leanAgendaWeek === 'function')return leanAgendaWeek(week);
-  if(!week || !Array.isArray(week.days))return week;
-  const strip = row=>{
-    if(!row || typeof row !== 'object')return row;
-    const out = {...row};
-    delete out.h;
-    return out;
-  };
-  return {
-    days:week.days.map(day=>({
-      ...day,
-      timeline:Array.isArray(day.timeline) ? day.timeline.map(strip) : day.timeline,
-      agendaItems:Array.isArray(day.agendaItems) ? day.agendaItems.map(strip) : day.agendaItems
-    })),
-    totalTravelSeconds:week.totalTravelSeconds,
-    candidateCount:week.candidateCount,
-    optimized:week.optimized,
-    plannerSolveStatus:week.plannerSolveStatus,
-    refined:Boolean(week.refined)
-  };
-}
-
 function saveHomeAgendaCache(data,week){
   if(!week || !Array.isArray(week.days))return;
   try{
@@ -574,7 +551,7 @@ function saveHomeAgendaCache(data,week){
     // Habit records are already persisted once and every planner row carries
     // its stable data index. Omitting repeated `h` objects keeps this cache
     // small even for histories with hundreds of logs.
-    const leanWeek = week.__lean ? week : leanAgendaWeekForCache(week);
+    const leanWeek = week.__lean ? week : leanAgendaWeek(week);
     if(leanWeek && leanWeek.__lean)delete leanWeek.__lean;
     Storage.write(HOME_AGENDA_CACHE_KEY,{
       version:HOME_AGENDA_CACHE_VERSION,
