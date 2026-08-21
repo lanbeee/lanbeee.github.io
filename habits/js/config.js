@@ -8,6 +8,14 @@ const QUOTA_WARN_KB = 4096;
 const QUOTA_HARD_KB = 4800;
 const PUSH_WORKER_URL = 'https://habits-push.YOUR-ACCOUNT.workers.dev';
 const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+const SHARE_WORKER_PRODUCTION_URL = 'https://habits-share.contactnabilkhan.workers.dev';
+const SHARE_WORKER_STAGING_URL = 'https://habits-share-staging.contactnabilkhan.workers.dev';
+const SHARE_WORKER_URL = typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname)
+  ? SHARE_WORKER_STAGING_URL
+  : SHARE_WORKER_PRODUCTION_URL;
+const SHARE_STATE_KEY = 'tings_share_v1';
+const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v1';
+const AGENDA_SHARE_DAYS = 2;
 
 // ── Locations / travel-time ──
 const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())

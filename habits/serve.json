@@ -1,0 +1,7 @@
+{
+  "cleanUrls": false,
+  "redirects": [
+    { "source": "/agenda-display", "destination": "/agenda-display.html" },
+    { "source": "/agenda-display/", "destination": "/agenda-display.html" }
+  ]
+}

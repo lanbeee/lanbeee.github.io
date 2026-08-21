@@ -1281,6 +1281,9 @@ function render(opts){
     });
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+  if(typeof scheduleHouseholdAgendaPublish === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+    scheduleHouseholdAgendaPublish(_homeRenderedWeek);
+  }
   _homeListFingerprint = homeListFingerprint();
   restoreHomeReadingPosition(readingPosition,list);
   return true;

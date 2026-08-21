@@ -438,6 +438,10 @@
               <i class="ti ti-calendar-share" aria-hidden="true"></i>
               <span><b>export to calendar</b><small>Phone calendar alert</small></span>
             </button>
+            <button class="habit-action detail-full-only" id="detail-share-item" type="button">
+              <i class="ti ti-share" aria-hidden="true"></i>
+              <span><b>share item</b><small>Someone else tracks their own progress</small></span>
+            </button>
             <button class="habit-action detail-full-only" id="detail-snooze" type="button">
               <i class="ti ti-moon" aria-hidden="true"></i>
               <span><b>snooze</b><small>Hide for a few days</small></span>
@@ -837,6 +841,31 @@
         </section>
         <div class="settings-group-head">more</div>
         <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-agenda-head" data-collapse-target="settings-agenda-body" aria-expanded="false" aria-controls="settings-agenda-body">
+            <span class="settings-label">household agenda display</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-agenda-body" hidden>
+            <p class="field-hint">Publish today’s and tomorrow’s plan to a fridge or tablet. Names stay encrypted; this device is still the planner.</p>
+            <div id="settings-agenda-empty">
+              <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
+            </div>
+            <div id="settings-agenda-active" hidden>
+              <span class="settings-sublabel">feed title</span>
+              <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Household agenda" autocomplete="off" />
+              <p class="field-hint" id="settings-agenda-status"></p>
+              <div class="btn-row" style="flex-wrap:wrap">
+                <button type="button" class="btn" id="settings-agenda-share">share invitation</button>
+                <button type="button" class="btn" id="settings-agenda-copy">copy link</button>
+                <button type="button" class="btn" id="settings-agenda-publish">publish now</button>
+                <button type="button" class="btn" id="settings-agenda-pause">pause</button>
+                <button type="button" class="btn" id="settings-agenda-rotate">rotate access</button>
+                <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
             <span class="settings-label">prayer times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1204,6 +1233,10 @@
 
 <script src="./js/config.js" defer></script>
 <script src="./js/storage.js" defer></script>
+<script src="./js/share-crypto.js" defer></script>
+<script src="./js/share-state.js" defer></script>
+<script src="./js/share-client.js" defer></script>
+<script src="./js/share-items.js" defer></script>
 <script src="./js/viewport.js" defer></script>
 <script src="./lib/js/adhan.umd.min.js" defer></script>
 <script src="./js/data-schemas.js" defer></script>
@@ -1227,6 +1260,7 @@
 <script src="./js/list-view-sections.js" defer></script>
 <script src="./js/list-view-planner.js" defer></script>
 <script src="./js/list-view-actions.js" defer></script>
+<script src="./js/agenda-share.js" defer></script>
 <script src="./js/detail-view-sheet.js" defer></script>
 <script src="./js/detail-view-links.js" defer></script>
 <script src="./js/detail-view-tune.js" defer></script>
@@ -1250,6 +1284,7 @@
 <script src="./js/settings-state.js" defer></script>
 <script src="./js/settings-samples.js" defer></script>
 <script src="./js/settings-appearance.js" defer></script>
+<script src="./js/settings-share.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/main-input.js" defer></script>

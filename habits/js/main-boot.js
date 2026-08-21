@@ -28,6 +28,18 @@
 
 sortSettings = loadSortSettings();
 applyAppearanceSettings();
+try{
+  const params = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  if(params.get('feed') && params.get('key') && params.get('viewer')
+    && typeof isAgendaDisplayPage === 'function' && !isAgendaDisplayPage()){
+    location.replace(typeof agendaDisplayHref === 'function'
+      ? agendaDisplayHref(location.hash)
+      : ('agenda-display/' + location.hash));
+  }
+}catch(_){}
+if(typeof maybeClaimItemShareFromHash === 'function'){
+  void maybeClaimItemShareFromHash().catch(()=>{});
+}
 {
   const reconciled = reconcileLocations(load(),sortSettings);
   if(reconciled.changed)save(reconciled.data);

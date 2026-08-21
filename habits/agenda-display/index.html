@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev; base-uri 'none'; form-action 'none'" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Household agenda</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="../css/agenda-display.css" />
+</head>
+<body>
+  <header class="agenda-chrome">
+    <h1 id="agenda-title">Household agenda</h1>
+    <p id="agenda-updated">Connecting…</p>
+  </header>
+  <p id="agenda-banner" hidden></p>
+  <main id="agenda-root"></main>
+  <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
+  <script src="../js/config.js"></script>
+  <script src="../js/share-crypto.js"></script>
+  <script src="../js/share-client.js"></script>
+  <script src="../js/agenda-display.js"></script>
+</body>
+</html>

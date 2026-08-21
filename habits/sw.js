@@ -1,4 +1,4 @@
-const CACHE = 'tings-v139';
+const CACHE = 'tings-v146';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -26,6 +26,9 @@ const GEOCODE_ORIGINS = [
 const PRECACHE = [
   './',
   './index.html',
+  './agenda-display.html',
+  './agenda-display/',
+  './agenda-display/index.html',
   './css/tokens.css',
   './css/base.css',
   './css/chrome.css',
@@ -45,9 +48,14 @@ const PRECACHE = [
   './css/progress.css',
   './css/agenda.css',
   './css/sweeps.css',
+  './css/agenda-display.css',
   './favicon.svg',
   './js/config.js',
   './js/storage.js',
+  './js/share-crypto.js',
+  './js/share-state.js',
+  './js/share-client.js',
+  './js/share-items.js',
   './js/viewport.js',
   './lib/js/adhan.umd.min.js',
   './js/data-schemas.js',
@@ -70,6 +78,7 @@ const PRECACHE = [
   './js/list-view-sections.js',
   './js/list-view-planner.js',
   './js/list-view-actions.js',
+  './js/agenda-share.js',
   './js/detail-view-sheet.js',
   './js/detail-view-links.js',
   './js/detail-view-tune.js',
@@ -96,6 +105,8 @@ const PRECACHE = [
   './js/settings-state.js',
   './js/settings-samples.js',
   './js/settings-appearance.js',
+  './js/settings-share.js',
+  './js/agenda-display.js',
   './js/main-boot.js',
   './js/main-input.js',
   './js/main-runtime.js',
