@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta http-equiv="Permissions-Policy" content="geolocation=(self)" />
+<meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
@@ -870,8 +870,9 @@
               </div>
               <p class="field-hint" id="settings-agenda-scope-hint">Maximum 50 upcoming rows, never beyond tomorrow.</p>
               <span class="settings-sublabel">pair a display</span>
-              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. Scan its QR with this phone’s camera, then return to Tings and type the code visible on the display. Requests work once and expire after 2 minutes.</p>
+              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Requests work once and expire after 30 seconds.</p>
               <div class="btn-row" style="flex-wrap:wrap">
+                <button type="button" class="btn primary" id="settings-agenda-scan-qr"><i class="ti ti-scan" aria-hidden="true"></i> scan display QR</button>
                 <button type="button" class="btn" id="settings-agenda-publish">publish now</button>
                 <button type="button" class="btn" id="settings-agenda-pause">pause</button>
                 <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke</button>
@@ -1237,6 +1238,22 @@
 
 </div>
 
+<div class="agenda-pair-approval agenda-pair-scanner" id="agenda-pair-scanner" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-scanner-title" hidden>
+  <div class="agenda-pair-approval-card">
+    <h2 id="agenda-pair-scanner-title">Scan the display QR</h2>
+    <p>Point this phone at the QR on the household display. Tings reads it locally; the camera is turned off as soon as it is read or you cancel.</p>
+    <div class="agenda-pair-camera-frame">
+      <video id="agenda-pair-scanner-video" autoplay muted playsinline aria-label="Camera preview for scanning the display QR"></video>
+      <span aria-hidden="true"></span>
+    </div>
+    <canvas id="agenda-pair-scanner-canvas" hidden></canvas>
+    <p id="agenda-pair-scanner-status" role="status" aria-live="polite">Waiting for camera permission…</p>
+    <div class="btn-row">
+      <button type="button" class="btn" id="agenda-pair-scanner-cancel">cancel and turn off camera</button>
+    </div>
+  </div>
+</div>
+
 <div class="agenda-pair-approval" id="agenda-pair-approval" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-approval-title" hidden>
   <div class="agenda-pair-approval-card">
     <h2 id="agenda-pair-approval-title">Authorize household display</h2>
@@ -1267,6 +1284,7 @@
 <script src="./js/share-items.js" defer></script>
 <script src="./js/viewport.js" defer></script>
 <script src="./lib/js/adhan.umd.min.js" defer></script>
+<script src="./lib/js/jsQR.js" defer></script>
 <script src="./js/data-schemas.js" defer></script>
 <script src="./js/data-storage.js" defer></script>
 <script src="./js/data-normalize.js" defer></script>

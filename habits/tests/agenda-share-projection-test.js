@@ -138,7 +138,7 @@ function assert(cond,msg){
   await displayPage.route(`${workerUrl}/v1/agenda-pairings`,async route=>{
     pairingRequest = route.request().postDataJSON();
     route.fulfill({ status:201,contentType:'application/json',body:JSON.stringify({
-      pairingId:pairingRequest.pairingId,expiresAt:Date.now() + 2 * 60000
+      pairingId:pairingRequest.pairingId,expiresAt:Date.now() + 30 * 1000
     }) });
   });
   await displayPage.route(`${workerUrl}/v1/agenda-pairings/*/status`,route=>{
@@ -204,10 +204,62 @@ function assert(cond,msg){
   ownerPairUrl.hash = new URLSearchParams({
     agendaPair:pairingRequest.pairingId,x:pairingRequest.displayPublicKey.x,y:pairingRequest.displayPublicKey.y
   }).toString();
-  await page.goto(ownerPairUrl.href,{ waitUntil:'load' });
+  const scannerChecks = await page.evaluate(validUrl=>{
+    const crossOrigin = new URL(validUrl);
+    crossOrigin.hostname = 'attacker.example';
+    const queryBearing = new URL(validUrl);
+    queryBearing.search = '?redirect=1';
+    const wrongPath = new URL(validUrl);
+    wrongPath.pathname += 'agenda-display.html';
+    return {
+      button:Boolean(document.getElementById('settings-agenda-scan-qr')),
+      modal:Boolean(document.getElementById('agenda-pair-scanner')),
+      decoder:typeof jsQR === 'function',
+      valid:Boolean(parseHouseholdAgendaPairingUrl(validUrl)),
+      rejectsCrossOrigin:parseHouseholdAgendaPairingUrl(crossOrigin.href) === null,
+      rejectsQuery:parseHouseholdAgendaPairingUrl(queryBearing.href) === null,
+      rejectsWrongPath:parseHouseholdAgendaPairingUrl(wrongPath.href) === null,
+      before:location.href
+    };
+  },ownerPairUrl.href);
+  assert(scannerChecks.button && scannerChecks.modal && scannerChecks.decoder,'installed Tings includes an offline in-app QR scanner');
+  assert(scannerChecks.valid && scannerChecks.rejectsCrossOrigin && scannerChecks.rejectsQuery && scannerChecks.rejectsWrongPath,'scanner accepts only an exact same-origin Tings pairing URL');
+  const scannerLifecycle = await page.evaluate(async ()=>{
+    const original = navigator.mediaDevices.getUserMedia;
+    const canvas = document.createElement('canvas');
+    const stream = canvas.captureStream(1);
+    const video = document.getElementById('agenda-pair-scanner-video');
+    const originalPlay = video.play;
+    video.play = async ()=>{};
+    let requested = null;
+    navigator.mediaDevices.getUserMedia = async constraints=>{
+      requested = constraints;
+      return stream;
+    };
+    try{
+      const started = await startHouseholdAgendaQrScanner();
+      const visibleWhileActive = !document.getElementById('agenda-pair-scanner').hidden;
+      stopHouseholdAgendaQrScanner();
+      return {
+        started,visibleWhileActive,
+        noAudio:requested && requested.audio === false,
+        rearCamera:requested && requested.video && requested.video.facingMode.ideal === 'environment',
+        stopped:stream.getTracks().every(track=>track.readyState === 'ended'),
+        hiddenAfterStop:document.getElementById('agenda-pair-scanner').hidden
+      };
+    }finally{
+      navigator.mediaDevices.getUserMedia = original;
+      video.play = originalPlay;
+    }
+  });
+  assert(scannerLifecycle.started && scannerLifecycle.visibleWhileActive && scannerLifecycle.noAudio && scannerLifecycle.rearCamera,'scanner requests only the rear-facing camera and never requests microphone access');
+  assert(scannerLifecycle.stopped && scannerLifecycle.hiddenAfterStop,'closing the scanner stops its camera track immediately');
+  const handledInApp = await page.evaluate(url=>handleHouseholdAgendaScannedValue(url),ownerPairUrl.href);
   await page.waitForSelector('#agenda-pair-approval:not([hidden])');
   await page.waitForFunction(()=>!document.getElementById('agenda-pair-approval-code')?.disabled
     || /expired|failed|does not own/i.test(document.getElementById('agenda-pair-approval-status')?.textContent || ''));
+  const afterScanLocation = await page.evaluate(()=>location.href);
+  assert(handledInApp && afterScanLocation === scannerChecks.before,'in-app scanning opens approval without navigating out of the installed PWA');
   await page.evaluate(() => {
     const now = Date.now();
     const base = dayStart(now);
@@ -218,7 +270,7 @@ function assert(cond,msg){
       }}]
     }] });
   });
-  assert(approvalRequest === null,'scanning the QR still requires explicit owner approval');
+  assert(approvalRequest === null,'in-app scanning still requires explicit owner approval');
   await page.fill('#agenda-pair-approval-code','0000-0000');
   await page.click('#agenda-pair-approval-confirm');
   await page.waitForFunction(()=>document.getElementById('agenda-pair-approval-status')?.textContent.includes('did not match'));

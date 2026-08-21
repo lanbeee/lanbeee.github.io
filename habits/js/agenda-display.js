@@ -71,10 +71,10 @@ function renderDisplay(projection,meta){
   if(!root) return;
   if(meta && meta.error === 'revoked'){
     banner.hidden = false;
-    banner.textContent = 'This display was revoked. Scan the fresh QR below from the owner phone to authorize it again.';
+    banner.textContent = 'This display was revoked. Scan the fresh QR below from inside Tings on the owner phone to authorize it again.';
   }else if(meta && meta.error === 'reauth'){
     banner.hidden = false;
-    banner.textContent = 'Authorization expired or was rotated. Scan the fresh QR below from the owner phone.';
+    banner.textContent = 'Authorization expired or was rotated. Scan the fresh QR below from inside Tings on the owner phone.';
   }else if(meta && meta.error === 'waiting'){
     banner.hidden = false;
     banner.textContent = 'This display is authorized. Waiting for the owner’s app to publish today’s plan.';
@@ -186,7 +186,7 @@ async function beginDisplayPairing(reason = 'new'){
   const status = $('agenda-enroll-status');
   const button = $('agenda-pair-new');
   if(button) button.hidden = true;
-  if(status) status.textContent = 'Creating a two-minute, single-use request…';
+  if(status) status.textContent = 'Creating a 30-second, single-use request…';
   const code = $('agenda-pair-code');
   if(code) code.textContent = '';
   const qr = $('agenda-pair-qr');
@@ -203,11 +203,11 @@ async function beginDisplayPairing(reason = 'new'){
         displayPublicKey:pairing.displayPublicKey
       }
     });
-    pairing.expiresAt = Number(result.body && result.body.expiresAt) || (Date.now() + 2 * 60000);
+    pairing.expiresAt = Number(result.body && result.body.expiresAt) || (Date.now() + 30 * 1000);
     _displayPairing = pairing;
     renderDisplayPairingQr(pairing);
     if(code) code.textContent = shareFormatAgendaPairCode(pairing.confirmationCode);
-    if(status) status.textContent = 'After scanning, type this code into Tings on the owner phone and approve.';
+    if(status) status.textContent = 'Open Tings on the owner phone and use its “scan display QR” button. Then type this code and approve before 30 seconds pass.';
     updateDisplayPairingExpiry();
     _displayPairExpiryTimer = setInterval(updateDisplayPairingExpiry,1000);
     _displayPairPollTimer = setInterval(()=>void pollDisplayPairing(),AGENDA_PAIR_POLL_MS);

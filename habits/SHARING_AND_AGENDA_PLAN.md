@@ -36,7 +36,7 @@ The Worker stores only:
 - Creation/access/expiry timestamps.
 - Payload sizes and lifecycle status.
 
-Collaborative-item encryption keys remain in invitation URL fragments. Agenda displays do not use enrollment links: a two-minute QR binds the display’s ephemeral public key, while a separate 8-digit code is visible only on the display. The owner phone encrypts the rotated content key directly to that display key.
+Collaborative-item encryption keys remain in invitation URL fragments. Agenda displays do not use enrollment links: a 30-second QR binds the display’s ephemeral public key, while a separate 8-digit code is visible only on the display. The owner phone encrypts the rotated content key directly to that display key.
 
 Configure:
 
@@ -221,7 +221,7 @@ The QR opens Tings on the owner phone and contains only the pairing ID and displ
 
 On approval, the owner phone rotates the agenda content key and encrypts it directly to the QR-bound display public key using ECDH-derived AES-GCM. The Worker relays only that ciphertext. It cannot decrypt the content key. Successful approval revokes the previous display session; merely creating a QR does not, preventing unauthenticated denial of service.
 
-Pairing requests work once, expire after 2 minutes, and are destroyed after five wrong codes. The display consumes and destroys the delivered transfer after decrypting it. A fresh QR scan is mandatory after the selected 7- or 30-day session expires.
+Pairing requests work once, expire after 30 seconds, and are destroyed after five wrong codes. The display consumes and destroys the delivered transfer after decrypting it. A fresh QR scan is mandatory after the selected 7- or 30-day session expires.
 
 ### Standalone display page
 
@@ -302,7 +302,7 @@ If offline, retain only the newest pending agenda snapshot; older unsent snapsho
 
 ### Agenda pairings
 
-- `POST /v1/agenda-pairings` — display creates a two-minute request.
+- `POST /v1/agenda-pairings` — display creates a 30-second request.
 - `GET /v1/agenda-pairings/:id` — owner phone verifies the QR-bound public key.
 - `POST /v1/agenda-pairings/:id/approve` — owner-only approval using the display-visible code.
 - `GET /v1/agenda-pairings/:id/status` — display-only polling for the encrypted key transfer.
@@ -318,7 +318,7 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Wrong-key and modified-AAD rejection.
 - Confirmation that no plaintext content reaches Worker handlers or logs.
 - Role enforcement for owner, recipient, and viewer credentials.
-- One-time claim and QR-pairing consumption, two-minute pairing expiry/burning, and display-session expiry.
+- One-time claim and QR-pairing consumption, 30-second pairing expiry/burning, and display-session expiry.
 - Conditional revision conflicts, retry idempotency, CORS, payload limits, rate limits, expiry, and purge behavior.
 - Agenda viewers cannot call any mutation endpoint.
 

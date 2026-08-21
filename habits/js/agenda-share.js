@@ -3,6 +3,10 @@ let _agendaPublishInFlight = false;
 let _lastAgendaProjectionSig = '';
 let _pendingAgendaSnapshot = null;
 let _agendaPairApproval = null;
+let _agendaPairScannerStream = null;
+let _agendaPairScannerFrame = null;
+let _agendaPairScannerGeneration = 0;
+let _agendaPairScannerBusy = false;
 
 const HOUSEHOLD_AGENDA_MAX_DAYS = 2;
 const HOUSEHOLD_AGENDA_MAX_ROWS = 50;
@@ -232,6 +236,128 @@ function parseHouseholdAgendaPairingHash(hash){
   return { pairingId,displayPublicKey };
 }
 
+function parseHouseholdAgendaPairingUrl(value){
+  let scanned;
+  try{ scanned = new URL(String(value || '').trim()); }
+  catch(_){ return null; }
+  const app = shareAppDirectoryUrl();
+  if(scanned.origin !== app.origin
+    || scanned.pathname !== app.pathname
+    || scanned.search
+    || scanned.username
+    || scanned.password){
+    return null;
+  }
+  return parseHouseholdAgendaPairingHash(scanned.hash);
+}
+
+function stopHouseholdAgendaQrScanner(){
+  _agendaPairScannerGeneration += 1;
+  _agendaPairScannerBusy = false;
+  if(_agendaPairScannerFrame != null){
+    cancelAnimationFrame(_agendaPairScannerFrame);
+    _agendaPairScannerFrame = null;
+  }
+  if(_agendaPairScannerStream){
+    for(const track of _agendaPairScannerStream.getTracks()) track.stop();
+    _agendaPairScannerStream = null;
+  }
+  const video = $('agenda-pair-scanner-video');
+  if(video){
+    video.pause();
+    video.srcObject = null;
+  }
+  const modal = $('agenda-pair-scanner');
+  if(modal) modal.hidden = true;
+}
+
+async function handleHouseholdAgendaScannedValue(value){
+  const pairing = parseHouseholdAgendaPairingUrl(value);
+  if(!pairing) return false;
+  stopHouseholdAgendaQrScanner();
+  await openHouseholdAgendaPairingApproval(pairing);
+  return true;
+}
+
+function scanHouseholdAgendaQrFrame(generation){
+  if(generation !== _agendaPairScannerGeneration || !_agendaPairScannerStream) return;
+  const video = $('agenda-pair-scanner-video');
+  const canvas = $('agenda-pair-scanner-canvas');
+  const status = $('agenda-pair-scanner-status');
+  if(video && canvas && !_agendaPairScannerBusy && video.readyState >= 2 && video.videoWidth && video.videoHeight){
+    const scale = Math.min(1,960 / video.videoWidth);
+    canvas.width = Math.max(1,Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1,Math.round(video.videoHeight * scale));
+    const context = canvas.getContext('2d',{ willReadFrequently:true });
+    if(context){
+      let decoded = null;
+      try{
+        context.drawImage(video,0,0,canvas.width,canvas.height);
+        const pixels = context.getImageData(0,0,canvas.width,canvas.height);
+        decoded = jsQR(pixels.data,pixels.width,pixels.height,{ inversionAttempts:'dontInvert' });
+      }catch(_){ decoded = null; }
+      if(decoded && decoded.data){
+        const pairing = parseHouseholdAgendaPairingUrl(decoded.data);
+        if(pairing){
+          _agendaPairScannerBusy = true;
+          if(status) status.textContent = 'Display QR verified. Checking the pairing request…';
+          void handleHouseholdAgendaScannedValue(decoded.data);
+          return;
+        }
+        if(status) status.textContent = 'That is not a valid Tings display QR. Keep the display QR inside the frame.';
+      }
+    }
+  }
+  _agendaPairScannerFrame = requestAnimationFrame(()=>scanHouseholdAgendaQrFrame(generation));
+}
+
+async function startHouseholdAgendaQrScanner(){
+  const modal = $('agenda-pair-scanner');
+  const status = $('agenda-pair-scanner-status');
+  const video = $('agenda-pair-scanner-video');
+  if(!modal || !status || !video) return false;
+  stopHouseholdAgendaQrScanner();
+  if(!agendaFeedRecord()){
+    status.textContent = 'This phone does not own a household agenda feed.';
+    modal.hidden = false;
+    return false;
+  }
+  const generation = _agendaPairScannerGeneration;
+  modal.hidden = false;
+  status.textContent = 'Waiting for camera permission…';
+  if(typeof jsQR !== 'function' || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function'){
+    status.textContent = 'This installed browser cannot use the camera scanner. Update the browser or operating system, then try again.';
+    return false;
+  }
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{ facingMode:{ ideal:'environment' } }
+    });
+    if(generation !== _agendaPairScannerGeneration){
+      for(const track of stream.getTracks()) track.stop();
+      return false;
+    }
+    _agendaPairScannerStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    status.textContent = 'Camera is on. Hold the display QR inside the square.';
+    _agendaPairScannerFrame = requestAnimationFrame(()=>scanHouseholdAgendaQrFrame(generation));
+    return true;
+  }catch(error){
+    if(generation !== _agendaPairScannerGeneration) return false;
+    if(_agendaPairScannerStream){
+      for(const track of _agendaPairScannerStream.getTracks()) track.stop();
+      _agendaPairScannerStream = null;
+    }
+    video.srcObject = null;
+    status.textContent = error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')
+      ? 'Camera access was not allowed. Enable camera permission for Tings in your phone settings, then try again.'
+      : 'Tings could not start the camera. Close other camera apps and try again.';
+    return false;
+  }
+}
+
 function clearHouseholdAgendaPairingHash(){
   try{ history.replaceState(null,'',location.pathname + location.search); }
   catch(_){}
@@ -251,10 +377,11 @@ async function openHouseholdAgendaPairingApproval(pairing){
   const approve = $('agenda-pair-approval-confirm');
   if(!modal || !status || !input || !approve) return;
   modal.hidden = false;
+  approve.hidden = false;
   approve.disabled = true;
   input.disabled = true;
   input.value = '';
-  status.textContent = feed ? 'Checking this two-minute pairing request…' : 'This phone does not own a household agenda feed.';
+  status.textContent = feed ? 'Checking this 30-second pairing request…' : 'This phone does not own a household agenda feed.';
   if(!feed) return;
   try{
     const result = await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}`);
@@ -452,6 +579,10 @@ function maybeOpenHouseholdAgendaPairingFromHash(){
 window.addEventListener('hashchange',maybeOpenHouseholdAgendaPairingFromHash);
 document.addEventListener('DOMContentLoaded',()=>{
   maybeOpenHouseholdAgendaPairingFromHash();
+  $('settings-agenda-scan-qr')?.addEventListener('click',()=>{
+    void startHouseholdAgendaQrScanner();
+  });
+  $('agenda-pair-scanner-cancel')?.addEventListener('click',stopHouseholdAgendaQrScanner);
   $('agenda-pair-approval-code')?.addEventListener('input',event=>{
     event.target.value = shareFormatAgendaPairCode(event.target.value);
   });
@@ -459,4 +590,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     void approveHouseholdAgendaPairing();
   });
   $('agenda-pair-approval-cancel')?.addEventListener('click',closeHouseholdAgendaPairingApproval);
+});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden && _agendaPairScannerStream) stopHouseholdAgendaQrScanner();
+});
+window.addEventListener('pagehide',stopHouseholdAgendaQrScanner);
+window.addEventListener('keydown',event=>{
+  if(event.key === 'Escape' && !$('agenda-pair-scanner')?.hidden) stopHouseholdAgendaQrScanner();
 });
