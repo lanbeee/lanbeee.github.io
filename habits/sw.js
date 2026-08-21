@@ -1,4 +1,4 @@
-const CACHE = 'tings-v146';
+const CACHE = 'tings-v147';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -244,8 +244,28 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Stale-while-revalidate for app shell + CDN assets. Must always resolve to a
-  // Response — returning a Promise that settles to undefined breaks offline.
+  // Keep same-origin app files version-consistent. Navigations are network-first,
+  // so their scripts and config must be network-first too; mixing a fresh page
+  // with stale cached modules can break startup during a deployment.
+  if (new URL(req.url).origin === self.location.origin) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const res = await fetch(req, { cache: 'no-cache' });
+        await cachePutResponse(cache, req, res);
+        return res;
+      } catch (_) {
+        return (await cache.match(req)) || new Response('Offline', {
+          status: 503,
+          statusText: 'Offline'
+        });
+      }
+    })());
+    return;
+  }
+
+  // Stale-while-revalidate for CDN assets. Must always resolve to a Response —
+  // returning a Promise that settles to undefined breaks offline.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req);

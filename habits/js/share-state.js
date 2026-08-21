@@ -1,5 +1,11 @@
+function shareStateStorageKey(){
+  return typeof SHARE_STATE_KEY !== 'undefined' && SHARE_STATE_KEY
+    ? SHARE_STATE_KEY
+    : 'tings_share_v1';
+}
+
 function loadShareState(){
-  const raw = typeof Storage !== 'undefined' ? Storage.read(SHARE_STATE_KEY) : null;
+  const raw = typeof Storage !== 'undefined' ? Storage.read(shareStateStorageKey()) : null;
   const state = raw && typeof raw === 'object' ? raw : {};
   if(!state.shares || typeof state.shares !== 'object') state.shares = {};
   if(!state.feeds || typeof state.feeds !== 'object') state.feeds = {};
@@ -9,7 +15,7 @@ function loadShareState(){
 
 function saveShareState(state){
   if(typeof Storage === 'undefined') return;
-  Storage.write(SHARE_STATE_KEY, {
+  Storage.write(shareStateStorageKey(), {
     shares:state.shares || {},
     feeds:state.feeds || {},
     outbox:Array.isArray(state.outbox) ? state.outbox : []

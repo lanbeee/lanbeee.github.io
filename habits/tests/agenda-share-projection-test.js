@@ -2,6 +2,8 @@
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/agenda-share-projection-test.js
 const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
 let pass = 0, fail = 0;
@@ -149,6 +151,25 @@ function assert(cond, msg){
   assert(/^9:00\s*AM/i.test(displayState.firstTime || ''), 'renders clock times in the owner timezone, not the viewer timezone');
   assert(displayState.appLoaded === false, 'standalone display does not load the main Tings app');
   await displayContext.close();
+
+  const legacyConfig = fs.readFileSync(path.join(__dirname, '../js/config.js'), 'utf8')
+    .replace(/\nconst SHARE_WORKER_PRODUCTION_URL[\s\S]*?const AGENDA_SHARE_DAYS = 2;\n/, '\n');
+  const skewContext = await browser.newContext();
+  const skewPage = await skewContext.newPage();
+  const skewErrors = [];
+  skewPage.on('pageerror', error=>skewErrors.push(String(error)));
+  await skewPage.route('**/js/config.js', route=>route.fulfill({
+    status:200,
+    contentType:'application/javascript',
+    body:legacyConfig
+  }));
+  await skewPage.goto(baseUrl, { waitUntil:'load' });
+  await skewPage.waitForFunction(() => typeof shareWorkerBaseUrl === 'function' && typeof agendaFeedRecord === 'function');
+  await skewPage.waitForTimeout(100);
+  const skewWorkerUrl = await skewPage.evaluate(() => shareWorkerBaseUrl());
+  assert(skewErrors.every(message=>!/SHARE_STATE_KEY|SHARE_WORKER_URL|AGENDA_SHARE_DAYS/.test(message)), 'survives one-version cached config skew');
+  assert(skewWorkerUrl.includes('habits-share-staging'), 'cached-config fallback keeps localhost on staging');
+  await skewContext.close();
 
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

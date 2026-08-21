@@ -71,7 +71,8 @@ function buildHouseholdAgendaProjection(week, opts = {}){
   const feed = opts.feed || agendaFeedRecord();
   const now = opts.now || Date.now();
   const data = opts.data || (typeof load === 'function' ? load() : []);
-  const dayCount = Number.isFinite(opts.dayCount) ? opts.dayCount : AGENDA_SHARE_DAYS;
+  const configuredDays = typeof AGENDA_SHARE_DAYS !== 'undefined' ? AGENDA_SHARE_DAYS : 2;
+  const dayCount = Number.isFinite(opts.dayCount) ? opts.dayCount : configuredDays;
   const days = ((week && week.days) || []).slice(0, dayCount);
   const projection = {
     schemaVersion:SHARE_SCHEMA_VERSION,

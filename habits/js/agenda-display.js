@@ -1,18 +1,21 @@
 const AGENDA_STALE_MS = 24 * 60 * 60 * 1000;
 const AGENDA_POLL_MS = 3 * 60 * 1000;
+const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
+  ? AGENDA_DISPLAY_KEY
+  : 'tings_agenda_display_v1';
 
 let _displayPollTimer = null;
 let _displayFeed = null;
 
 function displayReadEnrollment(){
-  try{ return JSON.parse(localStorage.getItem(AGENDA_DISPLAY_KEY) || 'null'); }
+  try{ return JSON.parse(localStorage.getItem(AGENDA_DISPLAY_STORAGE_KEY) || 'null'); }
   catch(_){ return null; }
 }
 
 function displayWriteEnrollment(value){
   try{
-    if(value) localStorage.setItem(AGENDA_DISPLAY_KEY, JSON.stringify(value));
-    else localStorage.removeItem(AGENDA_DISPLAY_KEY);
+    if(value) localStorage.setItem(AGENDA_DISPLAY_STORAGE_KEY, JSON.stringify(value));
+    else localStorage.removeItem(AGENDA_DISPLAY_STORAGE_KEY);
   }catch(_){}
 }
 

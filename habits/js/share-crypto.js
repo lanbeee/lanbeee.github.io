@@ -4,7 +4,10 @@ const SHARE_KEY_BYTES = 32;
 const SHARE_NONCE_BYTES = 12;
 
 function shareConfigured(){
-  return Boolean(SHARE_WORKER_URL) && !String(SHARE_WORKER_URL).includes('YOUR-ACCOUNT');
+  const url = typeof shareWorkerBaseUrl === 'function'
+    ? shareWorkerBaseUrl()
+    : (typeof SHARE_WORKER_URL !== 'undefined' ? SHARE_WORKER_URL : '');
+  return Boolean(url) && !String(url).includes('YOUR-ACCOUNT');
 }
 
 function shareRandomHex(byteLength){

@@ -1,3 +1,11 @@
+function shareWorkerBaseUrl(){
+  if(typeof SHARE_WORKER_URL !== 'undefined' && SHARE_WORKER_URL) return SHARE_WORKER_URL;
+  const local = typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname);
+  return local
+    ? 'https://habits-share-staging.contactnabilkhan.workers.dev'
+    : 'https://habits-share.contactnabilkhan.workers.dev';
+}
+
 function shareAppDirectoryUrl(){
   const url = new URL(location.href);
   url.hash = '';
@@ -32,7 +40,7 @@ async function shareFetch(path, opts = {}){
   const headers = { 'Content-Type':'application/json' };
   if(opts.credential) headers.Authorization = `Bearer ${opts.credential}`;
   if(opts.ifMatch != null) headers['If-Match'] = `"${opts.ifMatch}"`;
-  const res = await fetch(`${SHARE_WORKER_URL}${path}`, {
+  const res = await fetch(`${shareWorkerBaseUrl()}${path}`, {
     method:opts.method || 'GET',
     headers,
     body:opts.body != null ? JSON.stringify(opts.body) : undefined,
