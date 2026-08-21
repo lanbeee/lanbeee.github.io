@@ -13,23 +13,42 @@
 <link rel="stylesheet" href="../css/agenda-display.css" />
 </head>
 <body>
-  <header class="agenda-chrome">
-    <h1 id="agenda-title">Household agenda</h1>
-    <p id="agenda-updated">Connecting…</p>
-  </header>
-  <p id="agenda-banner" hidden></p>
-  <section class="agenda-enroll" id="agenda-enroll" hidden>
-    <h2>Pair this display</h2>
-    <p>On the owner phone, open the installed Tings app, then go to settings → household agenda display → scan display QR. Do not use the phone’s Camera app. Tings will ask for the separate code shown below.</p>
-    <div class="agenda-pair-qr" id="agenda-pair-qr" aria-label="QR code for the owner phone"></div>
-    <span class="agenda-pair-label">code visible only on this display</span>
-    <strong class="agenda-pair-code" id="agenda-pair-code"></strong>
-    <p id="agenda-pair-expiry"></p>
-    <p id="agenda-enroll-status" role="status"></p>
-    <button type="button" id="agenda-pair-new" hidden>generate a fresh QR</button>
+  <div class="agenda-page" id="agenda-page">
+    <header class="agenda-chrome">
+      <div class="agenda-heading">
+        <div>
+          <span class="agenda-eyebrow">Tings · shared display</span>
+          <h1 id="agenda-title">Household agenda</h1>
+        </div>
+        <button type="button" class="agenda-hide" id="agenda-hide" aria-label="Hide the agenda behind a wallpaper">
+          <span aria-hidden="true">◐</span>
+          hide agenda
+        </button>
+      </div>
+      <p id="agenda-updated">Connecting…</p>
+    </header>
+    <p id="agenda-banner" hidden></p>
+    <section class="agenda-enroll" id="agenda-enroll" hidden>
+      <h2>Pair this display</h2>
+      <p>On the owner phone, open the installed Tings app, then go to settings → household agenda display → scan display QR. Do not use the phone’s Camera app. Tings will ask for the separate code shown below.</p>
+      <div class="agenda-pair-qr" id="agenda-pair-qr" aria-label="QR code for the owner phone"></div>
+      <span class="agenda-pair-label">code visible only on this display</span>
+      <strong class="agenda-pair-code" id="agenda-pair-code"></strong>
+      <p id="agenda-pair-expiry"></p>
+      <p id="agenda-enroll-status" role="status"></p>
+      <button type="button" id="agenda-pair-new" hidden>generate a fresh QR</button>
+    </section>
+    <main id="agenda-root"></main>
+    <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
+  </div>
+  <section class="agenda-wallpaper" id="agenda-wallpaper" aria-label="Agenda hidden. Triple-tap anywhere to return." hidden tabindex="0">
+    <div class="agenda-wallpaper-glow" aria-hidden="true"></div>
+    <div class="agenda-wallpaper-clock">
+      <time id="agenda-wallpaper-time"></time>
+      <p id="agenda-wallpaper-date"></p>
+    </div>
+    <div class="agenda-wallpaper-dots" aria-hidden="true"><i></i><i></i><i></i></div>
   </section>
-  <main id="agenda-root"></main>
-  <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
   <script src="../js/config.js"></script>
   <script src="../js/share-crypto.js"></script>
   <script src="../js/share-client.js"></script>

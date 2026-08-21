@@ -4,12 +4,63 @@ const AGENDA_PAIR_POLL_MS = 4 * 1000;
 const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
   ? AGENDA_DISPLAY_KEY
   : 'tings_agenda_display_v3';
+const AGENDA_WALLPAPER_STORAGE_KEY = 'tings_agenda_wallpaper_v1';
 
 let _displayPollTimer = null;
 let _displayPairPollTimer = null;
 let _displayPairExpiryTimer = null;
 let _displayFeed = null;
 let _displayPairing = null;
+let _displayWallpaperClockTimer = null;
+let _displayWallpaperTaps = [];
+
+function displayWallpaperStored(){
+  try{ return localStorage.getItem(AGENDA_WALLPAPER_STORAGE_KEY) === 'hidden'; }
+  catch(_){ return false; }
+}
+
+function displayWriteWallpaper(active){
+  try{
+    if(active) localStorage.setItem(AGENDA_WALLPAPER_STORAGE_KEY,'hidden');
+    else localStorage.removeItem(AGENDA_WALLPAPER_STORAGE_KEY);
+  }catch(_){}
+}
+
+function updateDisplayWallpaperClock(){
+  const now = new Date();
+  const time = $('agenda-wallpaper-time');
+  const date = $('agenda-wallpaper-date');
+  if(time) time.textContent = now.toLocaleTimeString(undefined,{ hour:'numeric',minute:'2-digit' });
+  if(date) date.textContent = now.toLocaleDateString(undefined,{ weekday:'long',month:'long',day:'numeric' });
+}
+
+function setDisplayWallpaper(active,opts = {}){
+  const page = $('agenda-page');
+  const wallpaper = $('agenda-wallpaper');
+  if(!page || !wallpaper) return;
+  page.hidden = active;
+  wallpaper.hidden = !active;
+  document.body.classList.toggle('agenda-wallpaper-active',active);
+  displayWriteWallpaper(active);
+  _displayWallpaperTaps = [];
+  if(_displayWallpaperClockTimer) clearInterval(_displayWallpaperClockTimer);
+  _displayWallpaperClockTimer = null;
+  if(active){
+    updateDisplayWallpaperClock();
+    _displayWallpaperClockTimer = setInterval(updateDisplayWallpaperClock,15 * 1000);
+    if(opts.focus !== false) wallpaper.focus({ preventScroll:true });
+  }else{
+    if(opts.focus !== false) $('agenda-hide')?.focus({ preventScroll:true });
+    if(document.visibilityState === 'visible') void refreshDisplay();
+  }
+}
+
+function registerDisplayWallpaperTap(){
+  const now = performance.now();
+  _displayWallpaperTaps = _displayWallpaperTaps.filter(ts=>now - ts <= 900);
+  _displayWallpaperTaps.push(now);
+  if(_displayWallpaperTaps.length >= 3) setDisplayWallpaper(false);
+}
 
 function displayReadEnrollment(){
   try{ return JSON.parse(localStorage.getItem(AGENDA_DISPLAY_STORAGE_KEY) || 'null'); }
@@ -360,6 +411,14 @@ document.addEventListener('DOMContentLoaded',()=>{
       try{ localStorage.removeItem(legacyKey); }catch(_){}
     }
   }
+  $('agenda-hide')?.addEventListener('click',()=>setDisplayWallpaper(true));
+  $('agenda-wallpaper')?.addEventListener('pointerup',registerDisplayWallpaperTap);
+  $('agenda-wallpaper')?.addEventListener('keydown',event=>{
+    if(event.key === 'Enter' || event.key === ' '){
+      event.preventDefault();
+      registerDisplayWallpaperTap();
+    }
+  });
   $('agenda-pair-new')?.addEventListener('click',()=>void beginDisplayPairing('new'));
   $('agenda-clear')?.addEventListener('click',()=>{
     stopDisplayPairing();
@@ -368,5 +427,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     clearAgendaFragment();
     location.reload();
   });
+  if(displayWallpaperStored()) setDisplayWallpaper(true,{ focus:false });
   void bootAgendaDisplay();
 });

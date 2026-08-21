@@ -304,6 +304,27 @@ function assert(cond,msg){
   assert(!displayState.enrollment.includes(displayCode.replace('-','')) && !displayState.enrollment.includes(pairingRequest.pairingId),'display retains neither visible code nor pairing id');
   assert(displayState.title === 'Secure family agenda' && !displayState.appLoaded,'standalone display decrypts the feed without loading the main app');
 
+  const displayPresentation = await displayPage.evaluate(() => {
+    const rowTime = document.querySelector('.agenda-row time');
+    const hide = document.getElementById('agenda-hide');
+    hide.click();
+    const wallpaper = document.getElementById('agenda-wallpaper');
+    const hiddenAfterTap = !wallpaper.hidden && document.getElementById('agenda-page').hidden;
+    registerDisplayWallpaperTap();
+    registerDisplayWallpaperTap();
+    const stillHiddenAfterTwo = !wallpaper.hidden;
+    registerDisplayWallpaperTap();
+    return {
+      timeWhiteSpace:rowTime ? getComputedStyle(rowTime).whiteSpace : '',
+      hiddenAfterTap,stillHiddenAfterTwo,
+      restoredAfterThree:wallpaper.hidden && !document.getElementById('agenda-page').hidden,
+      wallpaperPreferenceCleared:localStorage.getItem('tings_agenda_wallpaper_v1') === null
+    };
+  });
+  assert(displayPresentation.timeWhiteSpace === 'nowrap','agenda time ranges stay together on one line');
+  assert(displayPresentation.hiddenAfterTap && displayPresentation.stillHiddenAfterTwo,'one tap hides the agenda and fewer than three wallpaper taps keep it hidden');
+  assert(displayPresentation.restoredAfterThree && displayPresentation.wallpaperPreferenceCleared,'the third wallpaper tap restores the agenda and clears the persisted privacy screen');
+
   displayAuthorized = false;
   await displayPage.evaluate(()=>refreshDisplay());
   const clearedState = await displayPage.evaluate(() => ({
