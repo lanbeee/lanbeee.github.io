@@ -213,7 +213,7 @@ async function refreshDisplay(opts = {}){
   const enrolled = _displayFeed || displayReadEnrollment();
   if(!enrolled || !enrolled.deviceCredential) return;
   if(enrolled.sessionExpiresAt && Number(enrolled.sessionExpiresAt) <= Date.now()){
-    await renderCachedDisplay(enrolled,'reauth');
+    clearDisplayAuthorization('reauth');
     return;
   }
   try{
@@ -242,8 +242,18 @@ async function refreshDisplay(opts = {}){
     const code = error && error.payload && error.payload.error;
     const revoked = error && error.status === 410;
     const reauth = error && error.status === 401;
-    await renderCachedDisplay(enrolled,revoked ? 'revoked' : (reauth || code === 'reauth_required' ? 'reauth' : (opts.offline ? 'offline' : 'error')));
+    if(revoked || reauth || code === 'reauth_required'){
+      clearDisplayAuthorization(revoked ? 'revoked' : 'reauth');
+    }else{
+      await renderCachedDisplay(enrolled,opts.offline ? 'offline' : 'error');
+    }
   }
+}
+
+function clearDisplayAuthorization(error){
+  _displayFeed = null;
+  displayWriteEnrollment(null);
+  renderDisplay(null,{ error });
 }
 
 async function renderCachedDisplay(enrolled,error){

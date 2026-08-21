@@ -142,7 +142,7 @@ function bindHouseholdAgendaSettings(){
     }catch(_){ toastShare(false,'','update failed'); }
   });
   $('settings-agenda-revoke')?.addEventListener('click',async ()=>{
-    if(!window.confirm('Revoke this feed and every enrolled display? Cached plans remain on those devices until cleared.')) return;
+    if(!window.confirm('Revoke this feed and every enrolled display? Offline displays erase their cache when they reconnect.')) return;
     try{
       await revokeHouseholdAgendaFeed();
       toastShare(true,'display feed revoked','revoke failed');

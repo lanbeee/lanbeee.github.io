@@ -166,6 +166,7 @@ function assert(cond,msg){
   const displayPage = await displayContext.newPage();
   let enrollRequests = 0;
   let agendaReads = 0;
+  let displayAuthorized = true;
   await displayPage.route(`${displayFixture.workerUrl}/v1/agendas/${displayFixture.feedId}/enroll`,async route=>{
     enrollRequests += 1;
     route.fulfill({
@@ -175,6 +176,10 @@ function assert(cond,msg){
   });
   await displayPage.route(`${displayFixture.workerUrl}/v1/agendas/${displayFixture.feedId}`,route=>{
     agendaReads += 1;
+    if(!displayAuthorized){
+      route.fulfill({ status:401,contentType:'application/json',body:JSON.stringify({ error:'reauth_required' }) });
+      return;
+    }
     route.fulfill({
       status:200,contentType:'application/json',headers:{ ETag:'"1"' },
       body:JSON.stringify({
@@ -212,6 +217,15 @@ function assert(cond,msg){
   assert(displayState.title === 'Timezone check','standalone display decrypts and renders the feed');
   assert(/^9:00\s*AM/i.test(displayState.firstTime || ''),'renders clock times in the owner timezone');
   assert(displayState.appLoaded === false,'standalone display does not load the main Tings app');
+  displayAuthorized = false;
+  await displayPage.evaluate(()=>refreshDisplay());
+  const clearedState = await displayPage.evaluate(() => ({
+    text:document.getElementById('agenda-root')?.textContent || '',
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v2'),
+    banner:document.getElementById('agenda-banner')?.textContent || ''
+  }));
+  assert(clearedState.enrollment === null && !clearedState.text.includes('Breakfast'),'reauthorization failure erases the cached credential, key, and agenda');
+  assert(clearedState.banner.includes('Authorization expired'),'expired display explains how to reauthorize');
   await displayContext.close();
 
   const legacyConfig = fs.readFileSync(path.join(__dirname,'../js/config.js'),'utf8')

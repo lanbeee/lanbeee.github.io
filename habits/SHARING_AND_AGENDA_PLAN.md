@@ -254,7 +254,7 @@ Display behavior:
 - Allow day navigation but no logging, editing, dragging, snoozing, or detail access.
 - Show `Updated … ago` at all times.
 - Show a prominent stale warning after 24 hours without a newer owner publication.
-- Show a revoked/expired screen without deleting the last cached agenda until the viewer explicitly clears it.
+- Erase the cached credential, key, and agenda as soon as expiry is known or the Worker returns `401`/`410`; an offline display cannot be remotely erased until it reconnects.
 - Support fullscreen/kiosk-friendly layout, large text, dark/light system theme, screen-safe spacing, and automatic current-day return at midnight.
 
 ### Owner controls
