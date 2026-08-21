@@ -24,7 +24,12 @@ function saveShareState(state){
 
 function agendaFeedRecord(){
   const state = loadShareState();
-  return state.feeds && state.feeds.agenda ? state.feeds.agenda : null;
+  const feed = state.feeds && state.feeds.agenda ? state.feeds.agenda : null;
+  if(feed && Object.prototype.hasOwnProperty.call(feed,'viewerCredential')){
+    delete feed.viewerCredential;
+    saveShareState(state);
+  }
+  return feed;
 }
 
 function saveAgendaFeedRecord(feed){

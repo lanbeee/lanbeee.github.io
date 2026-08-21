@@ -18,6 +18,16 @@
     <p id="agenda-updated">Connecting…</p>
   </header>
   <p id="agenda-banner" hidden></p>
+  <section class="agenda-enroll" id="agenda-enroll" hidden>
+    <h2>Authorize this display</h2>
+    <p>Enter the separate 10-character code. For safety, get it through a different message service or in person.</p>
+    <form id="agenda-enroll-form">
+      <label for="agenda-enroll-code">Enrollment code</label>
+      <input id="agenda-enroll-code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" maxlength="11" placeholder="ABCDE-FGHIJ" required />
+      <button type="submit">authorize display</button>
+    </form>
+    <p id="agenda-enroll-status" role="status"></p>
+  </section>
   <main id="agenda-root"></main>
   <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
   <script src="./js/config.js"></script>

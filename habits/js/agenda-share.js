@@ -3,6 +3,13 @@ let _agendaPublishInFlight = false;
 let _lastAgendaProjectionSig = '';
 let _pendingAgendaSnapshot = null;
 
+const HOUSEHOLD_AGENDA_MAX_DAYS = 2;
+const HOUSEHOLD_AGENDA_MAX_ROWS = 50;
+const HOUSEHOLD_AGENDA_DEFAULT_ROWS = 20;
+const HOUSEHOLD_AGENDA_DEFAULT_HOURS = 24;
+const HOUSEHOLD_AGENDA_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const HOUSEHOLD_AGENDA_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
 function householdAgendaTimezone(){
   try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
   catch(_){ return 'UTC'; }
@@ -27,8 +34,28 @@ function householdRowStatus(row, habit){
   return 'planned';
 }
 
-function householdProjectionRow(row, data){
-  const habit = row.h || (row.i != null && data && data[row.i]) || null;
+function householdProjectionHabit(row,data){
+  const items = Array.isArray(data) ? data : [];
+  const hid = row && row.h && row.h.hid;
+  if(hid){
+    const matched = items.find(item=>item && item.hid === hid);
+    if(matched) return matched;
+  }
+  return row && row.i != null && items[row.i] ? items[row.i] : (row && row.h) || null;
+}
+
+function householdProjectionHabitActive(habit,dayBase){
+  if(!habit) return false;
+  if(habit.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(habit)) return false;
+  if(habit.breakable && typeof breakableBudgetMinutes === 'function'){
+    return breakableBudgetMinutes(habit,dayBase) > 0;
+  }
+  if(typeof completedOnDay === 'function' && completedOnDay(habit,dayBase)) return false;
+  return true;
+}
+
+function householdProjectionRow(row, data, dayBase){
+  const habit = householdProjectionHabit(row,data);
   const durationMinutes = Math.max(0, Math.round(((row.end || 0) - (row.start || 0)) / 60000));
   const base = {
     rowId:shareRandomHex(8),
@@ -55,13 +82,14 @@ function householdProjectionRow(row, data){
     };
   }
   if(row.kind === 'fill' || row.kind === 'scheduled'){
+    if(!householdProjectionHabitActive(habit,dayBase)) return null;
     return {
       ...base,
       kind:'item',
-      title:habit && habit.name ? String(habit.name) : 'Scheduled item',
-      emoji:habit && habit.emoji ? String(habit.emoji) : '',
+      title:habit && habit.name ? String(habit.name).slice(0,80) : 'Scheduled item',
+      emoji:habit && habit.emoji ? String(habit.emoji).slice(0,8) : '',
       status:householdRowStatus(row, habit),
-      locationLabel:householdLocationLabel(row.locationId || (habit && habit.locationIds && habit.locationIds[0]))
+      locationLabel:householdLocationLabel(row.locationId || (habit && habit.locationIds && habit.locationIds[0])).slice(0,80)
     };
   }
   return null;
@@ -71,27 +99,46 @@ function buildHouseholdAgendaProjection(week, opts = {}){
   const feed = opts.feed || agendaFeedRecord();
   const now = opts.now || Date.now();
   const data = opts.data || (typeof load === 'function' ? load() : []);
-  const configuredDays = typeof AGENDA_SHARE_DAYS !== 'undefined' ? AGENDA_SHARE_DAYS : 2;
-  const dayCount = Number.isFinite(opts.dayCount) ? opts.dayCount : configuredDays;
-  const days = ((week && week.days) || []).slice(0, dayCount);
+  const configuredDays = typeof AGENDA_SHARE_DAYS !== 'undefined' ? AGENDA_SHARE_DAYS : HOUSEHOLD_AGENDA_MAX_DAYS;
+  const requestedDays = Number.isFinite(opts.dayCount) ? opts.dayCount : configuredDays;
+  const dayCount = Math.max(1,Math.min(HOUSEHOLD_AGENDA_MAX_DAYS,Math.round(requestedDays)));
+  const days = ((week && week.days) || []).slice(0,dayCount);
+  const scopeMode = opts.scopeMode || (feed && feed.scopeMode) || 'count';
+  const rawScope = Number(opts.scopeValue != null ? opts.scopeValue : (feed && feed.scopeValue));
+  const scopeValue = scopeMode === 'hours'
+    ? Math.max(1,Math.min(48,Number.isFinite(rawScope) ? Math.round(rawScope) : HOUSEHOLD_AGENDA_DEFAULT_HOURS))
+    : Math.max(1,Math.min(HOUSEHOLD_AGENDA_MAX_ROWS,Number.isFinite(rawScope) ? Math.round(rawScope) : HOUSEHOLD_AGENDA_DEFAULT_ROWS));
+  const hardEnd = typeof dayStart === 'function'
+    ? dayStart(now) + HOUSEHOLD_AGENDA_MAX_DAYS * 86400000
+    : now + HOUSEHOLD_AGENDA_MAX_DAYS * 86400000;
+  const horizon = scopeMode === 'hours' ? Math.min(hardEnd,now + scopeValue * 3600000) : hardEnd;
+  let rowsLeft = scopeMode === 'count' ? scopeValue : HOUSEHOLD_AGENDA_MAX_ROWS;
+  let totalRows = 0;
   const projection = {
     schemaVersion:SHARE_SCHEMA_VERSION,
     feedId:feed && feed.feedId,
-    title:(feed && feed.title) || 'Household agenda',
+    title:String((feed && feed.title) || 'Household agenda').slice(0,80),
     revision:(feed && Number(feed.lastRevision) || 0) + 1,
     generatedAt:now,
     timezone:householdAgendaTimezone(),
     rangeStart:days[0] ? days[0].dayBase : null,
     plannerProvenance:householdPlannerProvenance(week),
+    scope:{ mode:scopeMode === 'hours' ? 'hours' : 'count', value:scopeValue },
     days:days.map(day=>{
       const timeline = Array.isArray(day.timeline) ? day.timeline : [];
       const rows = [];
       for(const row of timeline){
-        const projected = householdProjectionRow(row, data);
-        if(projected) rows.push(projected);
+        if(rowsLeft <= 0) break;
+        const projected = householdProjectionRow(row,data,day.dayBase);
+        if(!projected) continue;
+        if(projected.end && projected.end <= now) continue;
+        if(projected.start && projected.start >= horizon) continue;
+        rows.push(projected);
+        rowsLeft -= 1;
+        totalRows += 1;
       }
       const remaining = Math.max(0, Math.round(Number(day.remainingMinutes) || 0));
-      if(remaining > 0){
+      if(scopeMode === 'count' && remaining > 0 && totalRows < HOUSEHOLD_AGENDA_MAX_ROWS){
         rows.push({
           rowId:shareRandomHex(8),
           kind:'open',
@@ -105,6 +152,7 @@ function buildHouseholdAgendaProjection(week, opts = {}){
           travelFromLabel:'',
           travelToLabel:''
         });
+        totalRows += 1;
       }
       return {
         dateKey:day.dayKey || (typeof dateKey === 'function' ? dateKey(day.dayBase) : ''),
@@ -146,11 +194,12 @@ function householdAgendaSignature(projection){
 }
 
 function householdAgendaLink(feed){
-  return agendaDisplayHref(`feed=${feed.feedId}&key=${feed.contentKey}&viewer=${feed.viewerCredential}`);
+  const invite = feed && feed.currentInvite;
+  return invite && invite.url ? invite.url : '';
 }
 
 function householdAgendaInviteText(){
-  return 'Open this on a household display to see today’s plan.';
+  return 'Open this within 15 minutes. Get the separate enrollment code from me through a different channel.';
 }
 
 async function createHouseholdAgendaFeed(title = 'Household agenda'){
@@ -160,24 +209,67 @@ async function createHouseholdAgendaFeed(title = 'Household agenda'){
     method:'POST',
     body:{
       id:secrets.id,
-      ownerCredential:secrets.ownerCredential,
-      viewerCredential:secrets.viewerCredential
+      ownerCredential:secrets.ownerCredential
     }
   });
   const feed = {
     feedId:secrets.id,
     contentKey:secrets.contentKey,
     ownerCredential:secrets.ownerCredential,
-    viewerCredential:secrets.viewerCredential,
     title:title || 'Household agenda',
     lastRevision:0,
     lastPublishedAt:null,
     plannerProvenance:null,
     paused:false,
-    status:'active'
+    status:'active',
+    reauthDays:30,
+    scopeMode:'count',
+    scopeValue:HOUSEHOLD_AGENDA_DEFAULT_ROWS,
+    currentInvite:null
   };
   saveAgendaFeedRecord(feed);
-  return feed;
+  return issueHouseholdAgendaInvite({ rotateKey:true, publish:false });
+}
+
+async function issueHouseholdAgendaInvite(opts = {}){
+  const existing = agendaFeedRecord();
+  if(!existing) return null;
+  const feed = opts.rotateKey === false ? { ...existing } : { ...existing, contentKey:shareRandomHex(SHARE_KEY_BYTES) };
+  const inviteId = shareRandomHex(SHARE_ID_BYTES);
+  const code = shareNewAgendaCode();
+  const enrollmentProof = await shareAgendaEnrollmentProof(feed.feedId,inviteId,code);
+  const wrapped = await shareAgendaWrapKey(feed.contentKey,feed.feedId,inviteId,code);
+  const reauthDays = Number(feed.reauthDays) === 7 ? 7 : 30;
+  const result = await shareFetch(`/v1/agendas/${feed.feedId}/invite`, {
+    method:'POST',
+    credential:feed.ownerCredential,
+    body:{
+      inviteId,
+      enrollmentProof,
+      sessionTtlMs:reauthDays === 7 ? HOUSEHOLD_AGENDA_WEEK_MS : HOUSEHOLD_AGENDA_MONTH_MS
+    }
+  });
+  const params = new URLSearchParams({
+    feed:feed.feedId,
+    invite:inviteId,
+    salt:wrapped.salt,
+    nonce:wrapped.nonce,
+    wrap:wrapped.wrappedKey
+  });
+  const next = {
+    ...feed,
+    reauthDays,
+    currentInvite:{
+      inviteId,
+      url:agendaDisplayHref(params.toString()),
+      code,
+      expiresAt:Number(result.body && result.body.expiresAt) || (Date.now() + 15 * 60000)
+    }
+  };
+  saveAgendaFeedRecord(next);
+  if(opts.publish !== false) await publishHouseholdAgendaNow(null,{ manual:true });
+  if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
+  return agendaFeedRecord();
 }
 
 async function publishHouseholdAgendaNow(week, opts = {}){
@@ -259,35 +351,8 @@ async function pauseHouseholdAgendaFeed(paused){
 }
 
 async function rotateHouseholdAgendaAccess(week){
-  const feed = agendaFeedRecord();
-  if(!feed) return null;
-  const contentKey = shareRandomHex(SHARE_KEY_BYTES);
-  const viewerCredential = shareRandomHex(SHARE_KEY_BYTES);
-  const source = week || (typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null);
-  const working = { ...feed, contentKey, viewerCredential };
-  const projection = buildHouseholdAgendaProjection(source, { feed:working });
-  const envelope = await shareEncrypt(contentKey, projection, {
-    schemaVersion:SHARE_SCHEMA_VERSION,
-    recordKind:'agenda_snapshot',
-    objectId:feed.feedId,
-    revision:projection.revision
-  });
-  const result = await shareFetch(`/v1/agendas/${feed.feedId}/rotate`, {
-    method:'POST',
-    credential:feed.ownerCredential,
-    body:{ viewerCredential, snapshot:envelope, expectedRevision:feed.lastRevision }
-  });
-  const next = {
-    ...working,
-    lastRevision:result.body.revision,
-    lastPublishedAt:projection.generatedAt,
-    plannerProvenance:projection.plannerProvenance,
-    status:result.body.status
-  };
-  saveAgendaFeedRecord(next);
-  _lastAgendaProjectionSig = householdAgendaSignature(projection);
-  if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
-  return next;
+  void week;
+  return issueHouseholdAgendaInvite({ rotateKey:true, publish:true });
 }
 
 async function revokeHouseholdAgendaFeed(){
@@ -310,9 +375,21 @@ async function copyHouseholdAgendaLink(){
   const feed = agendaFeedRecord();
   if(!feed) return false;
   const url = householdAgendaLink(feed);
+  if(!url || !feed.currentInvite || Number(feed.currentInvite.expiresAt) <= Date.now()) return false;
   if(typeof copyTextToClipboard === 'function') return copyTextToClipboard(url);
   try{
     await navigator.clipboard.writeText(url);
+    return true;
+  }catch(_){ return false; }
+}
+
+async function copyHouseholdAgendaCode(){
+  const feed = agendaFeedRecord();
+  const invite = feed && feed.currentInvite;
+  if(!invite || !invite.code || Number(invite.expiresAt) <= Date.now()) return false;
+  if(typeof copyTextToClipboard === 'function') return copyTextToClipboard(invite.code);
+  try{
+    await navigator.clipboard.writeText(invite.code);
     return true;
   }catch(_){ return false; }
 }
@@ -321,6 +398,7 @@ async function shareHouseholdAgendaLink(){
   const feed = agendaFeedRecord();
   if(!feed) return false;
   const url = householdAgendaLink(feed);
+  if(!url || !feed.currentInvite || Number(feed.currentInvite.expiresAt) <= Date.now()) return false;
   if(navigator.share){
     try{
       await navigator.share({ title:'Household agenda', text:householdAgendaInviteText(), url });

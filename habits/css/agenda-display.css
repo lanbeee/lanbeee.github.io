@@ -36,6 +36,20 @@ header.agenda-chrome{
   color:var(--text);font-weight:650;
 }
 #agenda-root{display:flex;flex-direction:column;gap:28px;}
+.agenda-enroll{
+  max-width:680px;margin:0 0 24px;padding:20px;border-radius:18px;background:var(--card);
+}
+.agenda-enroll h2{margin:0 0 8px;}
+.agenda-enroll p{color:var(--muted);font-size:16px;}
+.agenda-enroll form{display:grid;gap:10px;}
+.agenda-enroll label{font-size:16px;font-weight:700;}
+.agenda-enroll input,.agenda-enroll button{
+  width:100%;min-height:52px;border-radius:12px;border:1px solid color-mix(in srgb,var(--muted) 35%,transparent);
+  padding:10px 12px;background:var(--bg);color:var(--text);font:inherit;
+}
+.agenda-enroll input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;}
+.agenda-enroll button{border:0;background:var(--now);color:var(--bg);font-weight:750;cursor:pointer;}
+.agenda-enroll button:disabled{opacity:.55;cursor:wait;}
 .agenda-day header h2{margin:0;font-size:28px;text-transform:lowercase;}
 .agenda-day header p{margin:4px 0 12px;color:var(--muted);font-size:16px;}
 .agenda-day.is-today header h2{color:var(--now);}

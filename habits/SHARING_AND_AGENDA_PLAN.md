@@ -5,7 +5,7 @@
 Add one dedicated Cloudflare sharing service with two distinct modes:
 
 1. **Collaborative item sharing** — two people independently track the same owner-managed habit or task.
-2. **Household agenda display** — several read-only tablets, fridge screens, or family devices display the owner’s rolling seven-day agenda.
+2. **Household agenda display** — one authorized read-only tablet, fridge screen, or family device displays a capped view of today and tomorrow.
 
 Tailscale is not required. The owner’s browser remains the planner of record. It publishes an encrypted agenda projection whenever Tings opens or its plan changes; Cloudflare stores and serves ciphertext but cannot inspect item names, notes, addresses, or agenda content.
 
@@ -22,7 +22,7 @@ Use client-generated random secrets:
 
 - 128-bit opaque share/feed ID.
 - 256-bit AES-GCM content key.
-- Independent 256-bit owner, recipient, and viewer credentials.
+- Independent 256-bit owner, recipient, and per-device credentials.
 - One-time claim secret for collaborative-item invitations.
 
 Encrypt each definition, location bundle, log operation, and agenda snapshot separately with AES-256-GCM and a unique 96-bit nonce. Authenticate the schema version, object ID, record kind, revision, and operation ID as additional data.
@@ -36,19 +36,21 @@ The Worker stores only:
 - Creation/access/expiry timestamps.
 - Payload sizes and lifecycle status.
 
-The encryption key remains in invitation URL fragments and is never sent to Cloudflare. Clear fragments from browser history immediately after processing.
+Collaborative-item encryption keys remain in invitation URL fragments. Agenda links contain only a PBKDF2-wrapped content key; a separate 10-character code is required to unwrap it. Clear agenda invitation fragments immediately after successful enrollment.
 
 Configure:
 
 - Production and explicit localhost CORS origins.
 - A 256 KiB item-definition limit.
 - A 64 KiB individual activity-operation limit.
-- A 512 KiB agenda-snapshot limit.
+- A 128 KiB encrypted agenda-snapshot limit plus a client-side 50-row cap.
 - A 5 MiB total limit per share/feed.
 - Creation rate limiting by source IP and authenticated limits by credential/feed.
 - Seven-day expiry for unclaimed item invitations.
 - Thirty-day retention after revocation.
 - Twelve-month expiry after the last authenticated request for abandoned active objects.
+- Fifteen-minute, single-use agenda invitations; burn after five invalid proofs.
+- Seven- or thirty-day agenda device credentials with no silent refresh.
 - Logs and traces that never record credentials, fragments, ciphertext bodies, decrypted data, titles, notes, or locations.
 
 Cloudflare’s Worker rate-limit binding can enforce these controls, with limits treated as abuse protection rather than exact accounting. See [Worker rate limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
@@ -146,7 +148,7 @@ Publish a derived, read-only agenda projection rather than the complete habit da
 
 The owner PWA:
 
-1. Builds the normal rolling seven-day plan using Fast or GLPK.
+1. Builds the normal rolling plan using Fast or GLPK.
 2. Waits until the plan currently shown to the owner is available.
 3. Removes raw habit objects, private settings, history, addresses, coordinates, scores, solver diagnostics, and internal indices.
 4. Encrypts the resulting display projection.
@@ -193,7 +195,9 @@ Use a versioned shape similar to:
 
 Projection rules:
 
-- Include today plus the next six days.
+- Include only today and tomorrow.
+- Include either the next 1–50 activity rows or 1–48 hours ahead, as selected by the owner, with an unconditional 50-row ceiling.
+- Resolve stale planner rows against fresh local data and omit completed/logged work before encryption.
 - Preserve the owner’s timezone; do not reinterpret times using the viewer device’s timezone.
 - Include the full visible timeline: habits, tasks, planned items, travel, busy time, and open-time summaries.
 - Replace custom blocked-time labels with the generic title `Busy`.
@@ -206,28 +210,28 @@ Publish the agenda currently shown to the owner. If an initial Fast plan is late
 
 ### Viewer enrollment
 
-Create one reusable, revocable viewer link per agenda feed:
+Create a short-lived, single-use invitation link that does not contain the content key or a device credential in plaintext:
 
 ```text
-https://tings.example/agenda-display.html#feed=<id>&key=<content-key>&viewer=<credential>
+https://tings.example/agenda-display.html#feed=<id>&invite=<id>&salt=<salt>&nonce=<nonce>&wrap=<wrapped-key>
 ```
 
 Provide:
 
-- Web Share support for messages/WhatsApp.
-- Copy-link fallback.
-- A locally generated QR code for fridge and wall-mounted displays.
+- Copy/share support for the non-authorizing link.
+- A separately displayed 10-character enrollment code.
+- A clear instruction to communicate the code in person or through a different service.
 - A neutral message that does not contain agenda titles or locations.
 
-The same link may enroll multiple read-only household screens. Because they share one viewer credential, v1 revocation applies to all viewers together.
+The Worker consumes the invitation exactly once. The display generates a random device credential, and the Worker stores only its hash. Creating a replacement invitation immediately revokes the prior display session and invitation. Five invalid server proofs burn the invitation; a normal mistyped code fails local AES-GCM verification without consuming an attempt.
 
 Rotating access:
 
-1. Generate a new content key and viewer credential.
-2. Publish the current agenda under the new key.
-3. Invalidate the previous viewer credential.
-4. Generate a replacement link/QR code.
-5. Require desired screens to enroll again.
+1. Generate a new content key, code, and one-time invitation ID.
+2. Wrap the content key locally using PBKDF2-SHA-256 and AES-GCM.
+3. Invalidate the previous device credential and pending invitation.
+4. Publish the current agenda under the new content key.
+5. Require the display to enroll within 15 minutes and again after 7 or 30 days.
 
 ### Standalone display page
 
@@ -241,7 +245,7 @@ It must not load the planner, GLPK, habit editor, settings UI, or the owner’s 
 
 Display behavior:
 
-- Store feed credentials and the latest encrypted snapshot locally after enrollment.
+- Store the expiring device credential, content key, and latest encrypted snapshot locally after enrollment; never retain the code or invitation ID.
 - Decrypt only in memory for rendering.
 - Poll every three minutes while visible.
 - Refresh on startup, focus, `pageshow`, and reconnect.
@@ -259,17 +263,17 @@ Add a Settings section named “household agenda display” with:
 
 - Create display feed.
 - Feed title.
-- Share link.
-- Show QR code.
-- Copy/share invitation.
+- Create a one-time invitation (revoking previous display access).
+- Copy the invitation link and separate code independently.
+- Choose weekly or monthly display reauthorization.
+- Choose next-activity count or hours-ahead publication scope.
 - Last published time and revision.
 - Current planner provenance.
 - Publish now.
 - Pause automatic publishing.
-- Rotate viewer access.
 - Revoke and delete feed.
 
-Only one household agenda feed is supported per owner installation in v1. Individual viewer-device management is deferred because the selected reusable-link model intentionally uses one shared viewer credential.
+Only one household agenda feed and one enrolled display session are supported per owner installation in v1.
 
 ### Publication triggers
 
@@ -301,10 +305,11 @@ If offline, retain only the newest pending agenda snapshot; older unsent snapsho
 
 ### Agenda feeds
 
-- `POST /v1/agendas` — create feed and register owner/viewer credential hashes.
-- `GET /v1/agendas/:id` — viewer-authorized latest encrypted snapshot.
+- `POST /v1/agendas` — create feed and register the owner credential hash.
+- `POST /v1/agendas/:id/invite` — owner-only one-time invitation and access rotation.
+- `POST /v1/agendas/:id/enroll` — consume the invitation and register an expiring device credential hash.
+- `GET /v1/agendas/:id` — owner/device-authorized latest encrypted snapshot.
 - `PUT /v1/agendas/:id` — owner-only conditional snapshot publication.
-- `POST /v1/agendas/:id/rotate` — owner-only credential/key-generation transition.
 - `POST /v1/agendas/:id/pause` — owner-only pause/resume state.
 - `DELETE /v1/agendas/:id` — revoke viewers and begin retention window.
 
@@ -318,7 +323,7 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Wrong-key and modified-AAD rejection.
 - Confirmation that no plaintext content reaches Worker handlers or logs.
 - Role enforcement for owner, recipient, and viewer credentials.
-- One-time claim consumption and reusable agenda-view enrollment.
+- One-time claim and agenda-invitation consumption, invitation expiry/burning, and display-session expiry.
 - Conditional revision conflicts, retry idempotency, CORS, payload limits, rate limits, expiry, and purge behavior.
 - Agenda viewers cannot call any mutation endpoint.
 
@@ -336,11 +341,11 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 ### Agenda display
 
 - Projection contains only approved display fields and never raw habits, addresses, coordinates, history, settings, or internal habit IDs.
-- Rolling seven-day dates remain correct across midnight and daylight-saving transitions.
+- Today/tomorrow dates remain correct across midnight and daylight-saving transitions.
 - Owner timezone is preserved on viewers in a different device timezone.
 - Fast, feasible GLPK, optimal GLPK, and later refinement publications replace one another by revision.
 - Busy labels are generalized while travel and open-time rows render correctly.
-- Multiple browser contexts can enroll from the same viewer link.
+- A copied link alone cannot enroll, and an invitation cannot enroll a second browser context.
 - Viewer polling, offline cache, reconnect, 24-hour stale warning, rotation, pause, revocation, and expiry.
 - QR/link fragments never appear in Worker request URLs, referrers, history, or diagnostic logs.
 - Standalone display page works without loading GLPK or the owner application state.

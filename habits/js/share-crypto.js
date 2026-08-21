@@ -107,7 +107,112 @@ function shareNewAgendaSecrets(){
   return {
     id:shareRandomHex(SHARE_ID_BYTES),
     contentKey:shareRandomHex(SHARE_KEY_BYTES),
-    ownerCredential:shareRandomHex(SHARE_KEY_BYTES),
-    viewerCredential:shareRandomHex(SHARE_KEY_BYTES)
+    ownerCredential:shareRandomHex(SHARE_KEY_BYTES)
   };
+}
+
+const AGENDA_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const AGENDA_CODE_CHARS = 10;
+const AGENDA_WRAP_ITERATIONS = 210000;
+
+function shareNewAgendaCode(){
+  const bytes = crypto.getRandomValues(new Uint8Array(AGENDA_CODE_CHARS));
+  let raw = '';
+  for(const byte of bytes) raw += AGENDA_CODE_ALPHABET[byte % AGENDA_CODE_ALPHABET.length];
+  return `${raw.slice(0,5)}-${raw.slice(5)}`;
+}
+
+function shareNormalizeAgendaCode(value){
+  return String(value || '').toUpperCase().replace(/[^2-9A-Z]/g,'').replace(/[IO01]/g,'');
+}
+
+async function shareAgendaEnrollmentProof(feedId,inviteId,code){
+  const normalized = shareNormalizeAgendaCode(code);
+  const material = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(normalized),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const proof = await crypto.subtle.deriveBits(
+    {
+      name:'PBKDF2',
+      salt:new TextEncoder().encode(`tings-agenda-enroll-v1|${feedId}|${inviteId}`),
+      iterations:AGENDA_WRAP_ITERATIONS,
+      hash:'SHA-256'
+    },
+    material,
+    256
+  );
+  return shareBytesToHex(proof);
+}
+
+async function shareAgendaWrapKey(contentKeyHex,feedId,inviteId,code){
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const nonce = crypto.getRandomValues(new Uint8Array(SHARE_NONCE_BYTES));
+  const material = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(shareNormalizeAgendaCode(code)),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations:AGENDA_WRAP_ITERATIONS, hash:'SHA-256' },
+    material,
+    { name:'AES-GCM', length:256 },
+    false,
+    ['encrypt']
+  );
+  const wrapped = await crypto.subtle.encrypt(
+    {
+      name:'AES-GCM',
+      iv:nonce,
+      additionalData:new TextEncoder().encode(`tings-agenda-wrap-v1|${feedId}|${inviteId}`)
+    },
+    key,
+    shareHexToBytes(contentKeyHex)
+  );
+  return {
+    salt:shareBytesToHex(salt),
+    nonce:shareBytesToHex(nonce),
+    wrappedKey:shareBytesToB64(new Uint8Array(wrapped))
+  };
+}
+
+async function shareAgendaUnwrapKey(wrapped,feedId,inviteId,code){
+  const normalized = shareNormalizeAgendaCode(code);
+  if(normalized.length !== AGENDA_CODE_CHARS) throw new Error('invalid_code');
+  const material = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(normalized),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    {
+      name:'PBKDF2',
+      salt:shareHexToBytes(wrapped.salt),
+      iterations:AGENDA_WRAP_ITERATIONS,
+      hash:'SHA-256'
+    },
+    material,
+    { name:'AES-GCM', length:256 },
+    false,
+    ['decrypt']
+  );
+  const contentKey = await crypto.subtle.decrypt(
+    {
+      name:'AES-GCM',
+      iv:shareHexToBytes(wrapped.nonce),
+      additionalData:new TextEncoder().encode(`tings-agenda-wrap-v1|${feedId}|${inviteId}`)
+    },
+    key,
+    shareB64ToBytes(wrapped.wrappedKey)
+  );
+  const bytes = new Uint8Array(contentKey);
+  if(bytes.length !== SHARE_KEY_BYTES) throw new Error('invalid_code');
+  return shareBytesToHex(bytes);
 }

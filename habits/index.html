@@ -846,7 +846,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Publish today’s and tomorrow’s plan to a fridge or tablet. Names stay encrypted; this device is still the planner.</p>
+            <p class="field-hint">Publish a limited view of today and tomorrow to a fridge or tablet. Names stay end-to-end encrypted; display access expires and requires a one-time link plus a separate code.</p>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
@@ -854,12 +854,33 @@
               <span class="settings-sublabel">feed title</span>
               <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Household agenda" autocomplete="off" />
               <p class="field-hint" id="settings-agenda-status"></p>
+              <span class="settings-sublabel">display reauthorization</span>
+              <select id="settings-agenda-reauth" class="mini-select">
+                <option value="30">every 30 days</option>
+                <option value="7">every 7 days</option>
+              </select>
+              <p class="field-hint">No silent refresh: the display must use a new one-time invitation when access expires.</p>
+              <span class="settings-sublabel">publish scope</span>
+              <div class="btn-row">
+                <select id="settings-agenda-scope-mode" class="mini-select">
+                  <option value="count">next activities</option>
+                  <option value="hours">hours ahead</option>
+                </select>
+                <input id="settings-agenda-scope-value" class="settings-text-input" type="number" min="1" max="50" step="1" value="20" aria-label="agenda publish scope value" />
+              </div>
+              <p class="field-hint" id="settings-agenda-scope-hint">Maximum 50 upcoming rows, never beyond tomorrow.</p>
+              <div id="settings-agenda-invite" hidden>
+                <span class="settings-sublabel">separate enrollment code</span>
+                <p><code id="settings-agenda-code"></code></p>
+                <p class="field-hint" id="settings-agenda-invite-status"></p>
+                <p class="field-hint">Send the link and code through different services, or give the code in person. The invitation works once and expires after 15 minutes.</p>
+              </div>
               <div class="btn-row" style="flex-wrap:wrap">
-                <button type="button" class="btn" id="settings-agenda-share">share invitation</button>
-                <button type="button" class="btn" id="settings-agenda-copy">copy link</button>
+                <button type="button" class="btn" id="settings-agenda-share">new one-time invitation</button>
+                <button type="button" class="btn" id="settings-agenda-copy">copy invitation link</button>
+                <button type="button" class="btn" id="settings-agenda-copy-code">copy separate code</button>
                 <button type="button" class="btn" id="settings-agenda-publish">publish now</button>
                 <button type="button" class="btn" id="settings-agenda-pause">pause</button>
-                <button type="button" class="btn" id="settings-agenda-rotate">rotate access</button>
                 <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke</button>
               </div>
             </div>

@@ -14,7 +14,7 @@ const SHARE_WORKER_URL = typeof location !== 'undefined' && ['localhost','127.0.
   ? SHARE_WORKER_STAGING_URL
   : SHARE_WORKER_PRODUCTION_URL;
 const SHARE_STATE_KEY = 'tings_share_v1';
-const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v1';
+const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v2';
 const AGENDA_SHARE_DAYS = 2;
 
 // ── Locations / travel-time ──
