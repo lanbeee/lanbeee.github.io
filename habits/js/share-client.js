@@ -31,6 +31,17 @@ function agendaDisplayHref(hash){
   return url.href;
 }
 
+function agendaPairingOwnerHref(pairing){
+  const url = shareAppDirectoryUrl();
+  const params = new URLSearchParams({
+    agendaPair:pairing.pairingId,
+    x:pairing.displayPublicKey.x,
+    y:pairing.displayPublicKey.y
+  });
+  url.hash = params.toString();
+  return url.href;
+}
+
 function isAgendaDisplayPage(){
   return /\/agenda-display(\/index)?\.html$/.test(location.pathname);
 }

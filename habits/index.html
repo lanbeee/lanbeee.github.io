@@ -846,7 +846,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Publish a limited view of today and tomorrow to a fridge or tablet. Names stay end-to-end encrypted; display access expires and requires a one-time link plus a separate code.</p>
+            <p class="field-hint">Publish a limited view of today and tomorrow to a fridge or tablet. Pairing is QR-only: the owner phone must scan the display, type its separate 8-digit code, and explicitly approve it.</p>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
@@ -859,7 +859,7 @@
                 <option value="30">every 30 days</option>
                 <option value="7">every 7 days</option>
               </select>
-              <p class="field-hint">No silent refresh: the display must use a new one-time invitation when access expires.</p>
+              <p class="field-hint">No silent refresh or fallback link: the display must show a new QR and be scanned again when access expires.</p>
               <span class="settings-sublabel">publish scope</span>
               <div class="btn-row">
                 <select id="settings-agenda-scope-mode" class="mini-select">
@@ -869,16 +869,9 @@
                 <input id="settings-agenda-scope-value" class="settings-text-input" type="number" min="1" max="50" step="1" value="20" aria-label="agenda publish scope value" />
               </div>
               <p class="field-hint" id="settings-agenda-scope-hint">Maximum 50 upcoming rows, never beyond tomorrow.</p>
-              <div id="settings-agenda-invite" hidden>
-                <span class="settings-sublabel">separate enrollment code</span>
-                <p><code id="settings-agenda-code"></code></p>
-                <p class="field-hint" id="settings-agenda-invite-status"></p>
-                <p class="field-hint">Send the link and code through different services, or give the code in person. The invitation works once and expires after 15 minutes.</p>
-              </div>
+              <span class="settings-sublabel">pair a display</span>
+              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. Scan its QR with this phone’s camera, then return to Tings and type the code visible on the display. Requests work once and expire after 2 minutes.</p>
               <div class="btn-row" style="flex-wrap:wrap">
-                <button type="button" class="btn" id="settings-agenda-share">new one-time invitation</button>
-                <button type="button" class="btn" id="settings-agenda-copy">copy invitation link</button>
-                <button type="button" class="btn" id="settings-agenda-copy-code">copy separate code</button>
                 <button type="button" class="btn" id="settings-agenda-publish">publish now</button>
                 <button type="button" class="btn" id="settings-agenda-pause">pause</button>
                 <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke</button>
@@ -1242,6 +1235,20 @@
     </div>
   </div>
 
+</div>
+
+<div class="agenda-pair-approval" id="agenda-pair-approval" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-approval-title" hidden>
+  <div class="agenda-pair-approval-card">
+    <h2 id="agenda-pair-approval-title">Authorize household display</h2>
+    <p>This permanently replaces any currently paired display. Only continue while you can see the display you just scanned.</p>
+    <label for="agenda-pair-approval-code">8-digit code shown on display</label>
+    <input id="agenda-pair-approval-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="1234-5678" />
+    <p id="agenda-pair-approval-status" role="status"></p>
+    <div class="btn-row">
+      <button type="button" class="btn primary" id="agenda-pair-approval-confirm">code matches — authorize</button>
+      <button type="button" class="btn" id="agenda-pair-approval-cancel">cancel</button>
+    </div>
+  </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="action-toast" role="status" aria-live="polite">

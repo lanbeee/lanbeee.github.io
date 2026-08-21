@@ -11,14 +11,6 @@ function householdAgendaAgeLabel(ts,now = Date.now()){
   return days === 1 ? '1 day ago' : `${days} days ago`;
 }
 
-function householdAgendaInviteLabel(invite,now = Date.now()){
-  if(!invite || !invite.expiresAt) return 'No active invitation. Create one when the display is ready.';
-  const seconds = Math.max(0,Math.ceil((Number(invite.expiresAt) - now) / 1000));
-  if(seconds <= 0) return 'Invitation expired. Create a new one.';
-  const minutes = Math.ceil(seconds / 60);
-  return `One-time invitation expires in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
-}
-
 function syncHouseholdAgendaSettings(){
   const empty = $('settings-agenda-empty');
   const active = $('settings-agenda-active');
@@ -49,20 +41,6 @@ function syncHouseholdAgendaSettings(){
   if(hint) hint.textContent = scopeMode === 'hours'
     ? '1–48 hours ahead, always cut off at the end of tomorrow; maximum 50 rows.'
     : '1–50 upcoming rows, never beyond tomorrow.';
-  if(feed.currentInvite && Number(feed.currentInvite.expiresAt) <= Date.now()){
-    feed.currentInvite = null;
-    saveAgendaFeedRecord(feed);
-  }
-  const invite = feed.currentInvite;
-  const inviteBox = $('settings-agenda-invite');
-  if(inviteBox) inviteBox.hidden = !invite;
-  const code = $('settings-agenda-code');
-  if(code) code.textContent = invite && invite.code ? invite.code : '';
-  const inviteStatus = $('settings-agenda-invite-status');
-  if(inviteStatus) inviteStatus.textContent = householdAgendaInviteLabel(invite);
-  const liveInvite = Boolean(invite && invite.url && Number(invite.expiresAt) > Date.now());
-  if($('settings-agenda-copy')) $('settings-agenda-copy').disabled = !liveInvite;
-  if($('settings-agenda-copy-code')) $('settings-agenda-copy-code').disabled = !liveInvite;
   const pause = $('settings-agenda-pause');
   if(pause) pause.textContent = feed.paused ? 'resume publishing' : 'pause automatic publishing';
 }
@@ -90,7 +68,7 @@ function bindHouseholdAgendaSettings(){
     try{
       await createHouseholdAgendaFeed(($('settings-agenda-title')?.value || '').trim() || 'Household agenda');
       await publishHouseholdAgendaNow(null,{ manual:true });
-      toastShare(true,'secure display created; send link and code separately','could not create display');
+      toastShare(true,'secure feed created; open the display page and scan its QR','could not create display');
     }catch(_){
       toastShare(false,'',shareConfigured() ? 'could not create display' : 'sharing worker is not configured');
     }
@@ -108,24 +86,11 @@ function bindHouseholdAgendaSettings(){
     if(!feed) return;
     feed.reauthDays = Number($('settings-agenda-reauth').value) === 7 ? 7 : 30;
     saveAgendaFeedRecord(feed);
-    toastShare(true,'reauthorization period saved for the next invitation','update failed');
+    toastShare(true,'reauthorization period saved for the next QR approval','update failed');
     syncHouseholdAgendaSettings();
   });
   $('settings-agenda-scope-mode')?.addEventListener('change',updateHouseholdScope);
   $('settings-agenda-scope-value')?.addEventListener('change',updateHouseholdScope);
-  $('settings-agenda-share')?.addEventListener('click',async ()=>{
-    try{
-      await issueHouseholdAgendaInvite({ rotateKey:true,publish:true });
-      toastShare(true,'new link and separate code ready; prior display access revoked','invitation failed');
-    }catch(_){ toastShare(false,'','invitation failed'); }
-    syncHouseholdAgendaSettings();
-  });
-  $('settings-agenda-copy')?.addEventListener('click',async ()=>{
-    toastShare(await copyHouseholdAgendaLink(),'invitation link copied; send the code another way','create a fresh invitation first');
-  });
-  $('settings-agenda-copy-code')?.addEventListener('click',async ()=>{
-    toastShare(await copyHouseholdAgendaCode(),'code copied; do not send it with the link','create a fresh invitation first');
-  });
   $('settings-agenda-publish')?.addEventListener('click',async ()=>{
     try{
       await publishHouseholdAgendaNow(null,{ manual:true });

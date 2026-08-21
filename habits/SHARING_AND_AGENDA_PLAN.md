@@ -36,7 +36,7 @@ The Worker stores only:
 - Creation/access/expiry timestamps.
 - Payload sizes and lifecycle status.
 
-Collaborative-item encryption keys remain in invitation URL fragments. Agenda links contain only a PBKDF2-wrapped content key; a separate 10-character code is required to unwrap it. Clear agenda invitation fragments immediately after successful enrollment.
+Collaborative-item encryption keys remain in invitation URL fragments. Agenda displays do not use enrollment links: a two-minute QR binds the display’s ephemeral public key, while a separate 8-digit code is visible only on the display. The owner phone encrypts the rotated content key directly to that display key.
 
 Configure:
 
@@ -49,7 +49,7 @@ Configure:
 - Seven-day expiry for unclaimed item invitations.
 - Thirty-day retention after revocation.
 - Twelve-month expiry after the last authenticated request for abandoned active objects.
-- Fifteen-minute, single-use agenda invitations; burn after five invalid proofs.
+- Two-minute, single-use agenda QR pairings; burn after five invalid display codes.
 - Seven- or thirty-day agenda device credentials with no silent refresh.
 - Logs and traces that never record credentials, fragments, ciphertext bodies, decrypted data, titles, notes, or locations.
 
@@ -208,30 +208,20 @@ Projection rules:
 
 Publish the agenda currently shown to the owner. If an initial Fast plan is later replaced or refined by GLPK, publish a new revision. This keeps the household display aligned with the owner’s actual screen rather than claiming every projection is solver-optimal.
 
-### Viewer enrollment
+### QR-only viewer pairing
 
-Create a short-lived, single-use invitation link that does not contain the content key or a device credential in plaintext:
+There is no enrollment-link or copied-code fallback. An unpaired display creates:
 
-```text
-https://tings.example/agenda-display.html#feed=<id>&invite=<id>&salt=<salt>&nonce=<nonce>&wrap=<wrapped-key>
-```
+- A random 128-bit pairing ID.
+- An ephemeral P-256 ECDH key pair whose private key remains in display memory.
+- A random 256-bit polling credential and 256-bit display credential; the Worker stores only their hashes.
+- A separately generated 8-digit code shown on the display but omitted from the QR.
 
-Provide:
+The QR opens Tings on the owner phone and contains only the pairing ID and display public key. The owner phone must already hold the feed owner credential, must retrieve and exactly match the Worker-held public key to the QR, must manually receive the 8-digit code from the visible display, and must explicitly approve.
 
-- Copy/share support for the non-authorizing link.
-- A separately displayed 10-character enrollment code.
-- A clear instruction to communicate the code in person or through a different service.
-- A neutral message that does not contain agenda titles or locations.
+On approval, the owner phone rotates the agenda content key and encrypts it directly to the QR-bound display public key using ECDH-derived AES-GCM. The Worker relays only that ciphertext. It cannot decrypt the content key. Successful approval revokes the previous display session; merely creating a QR does not, preventing unauthenticated denial of service.
 
-The Worker consumes the invitation exactly once. The display generates a random device credential, and the Worker stores only its hash. Creating a replacement invitation immediately revokes the prior display session and invitation. Five invalid server proofs burn the invitation; a normal mistyped code fails local AES-GCM verification without consuming an attempt.
-
-Rotating access:
-
-1. Generate a new content key, code, and one-time invitation ID.
-2. Wrap the content key locally using PBKDF2-SHA-256 and AES-GCM.
-3. Invalidate the previous device credential and pending invitation.
-4. Publish the current agenda under the new content key.
-5. Require the display to enroll within 15 minutes and again after 7 or 30 days.
+Pairing requests work once, expire after 2 minutes, and are destroyed after five wrong codes. The display consumes and destroys the delivered transfer after decrypting it. A fresh QR scan is mandatory after the selected 7- or 30-day session expires.
 
 ### Standalone display page
 
@@ -245,7 +235,7 @@ It must not load the planner, GLPK, habit editor, settings UI, or the owner’s 
 
 Display behavior:
 
-- Store the expiring device credential, content key, and latest encrypted snapshot locally after enrollment; never retain the code or invitation ID.
+- Store the expiring device credential, content key, and latest encrypted snapshot locally after pairing; never retain the pairing code, pairing ID, polling credential, or ephemeral private key.
 - Decrypt only in memory for rendering.
 - Poll every three minutes while visible.
 - Refresh on startup, focus, `pageshow`, and reconnect.
@@ -263,8 +253,7 @@ Add a Settings section named “household agenda display” with:
 
 - Create display feed.
 - Feed title.
-- Create a one-time invitation (revoking previous display access).
-- Copy the invitation link and separate code independently.
+- Explain the stable, non-authorizing display-page address and QR-only pairing steps.
 - Choose weekly or monthly display reauthorization.
 - Choose next-activity count or hours-ahead publication scope.
 - Last published time and revision.
@@ -306,12 +295,18 @@ If offline, retain only the newest pending agenda snapshot; older unsent snapsho
 ### Agenda feeds
 
 - `POST /v1/agendas` — create feed and register the owner credential hash.
-- `POST /v1/agendas/:id/invite` — owner-only one-time invitation and access rotation.
-- `POST /v1/agendas/:id/enroll` — consume the invitation and register an expiring device credential hash.
 - `GET /v1/agendas/:id` — owner/device-authorized latest encrypted snapshot.
 - `PUT /v1/agendas/:id` — owner-only conditional snapshot publication.
 - `POST /v1/agendas/:id/pause` — owner-only pause/resume state.
 - `DELETE /v1/agendas/:id` — revoke viewers and begin retention window.
+
+### Agenda pairings
+
+- `POST /v1/agenda-pairings` — display creates a two-minute request.
+- `GET /v1/agenda-pairings/:id` — owner phone verifies the QR-bound public key.
+- `POST /v1/agenda-pairings/:id/approve` — owner-only approval using the display-visible code.
+- `GET /v1/agenda-pairings/:id/status` — display-only polling for the encrypted key transfer.
+- `POST /v1/agenda-pairings/:id/consume` — destroy the delivered transfer.
 
 Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409`; the client should discard the stale projection, rebuild from current local state, and retry once.
 
@@ -323,7 +318,7 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Wrong-key and modified-AAD rejection.
 - Confirmation that no plaintext content reaches Worker handlers or logs.
 - Role enforcement for owner, recipient, and viewer credentials.
-- One-time claim and agenda-invitation consumption, invitation expiry/burning, and display-session expiry.
+- One-time claim and QR-pairing consumption, two-minute pairing expiry/burning, and display-session expiry.
 - Conditional revision conflicts, retry idempotency, CORS, payload limits, rate limits, expiry, and purge behavior.
 - Agenda viewers cannot call any mutation endpoint.
 
@@ -345,9 +340,9 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Owner timezone is preserved on viewers in a different device timezone.
 - Fast, feasible GLPK, optimal GLPK, and later refinement publications replace one another by revision.
 - Busy labels are generalized while travel and open-time rows render correctly.
-- A copied link alone cannot enroll, and an invitation cannot enroll a second browser context.
+- A QR alone cannot enroll without the owner credential, separately visible code, and explicit approval; a pairing cannot enroll a second browser context.
 - Viewer polling, offline cache, reconnect, 24-hour stale warning, rotation, pause, revocation, and expiry.
-- QR/link fragments never appear in Worker request URLs, referrers, history, or diagnostic logs.
+- Pairing secrets and the display-visible code never appear in the QR, Worker request URLs, referrers, history, or diagnostic logs.
 - Standalone display page works without loading GLPK or the owner application state.
 
 ### Repository verification and rollout

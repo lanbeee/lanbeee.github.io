@@ -111,108 +111,151 @@ function shareNewAgendaSecrets(){
   };
 }
 
-const AGENDA_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-const AGENDA_CODE_CHARS = 10;
-const AGENDA_WRAP_ITERATIONS = 210000;
+const AGENDA_PAIR_CODE_DIGITS = 8;
 
-function shareNewAgendaCode(){
-  const bytes = crypto.getRandomValues(new Uint8Array(AGENDA_CODE_CHARS));
-  let raw = '';
-  for(const byte of bytes) raw += AGENDA_CODE_ALPHABET[byte % AGENDA_CODE_ALPHABET.length];
-  return `${raw.slice(0,5)}-${raw.slice(5)}`;
+async function shareSha256Hex(value){
+  const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value)));
+  return shareBytesToHex(digest);
 }
 
-function shareNormalizeAgendaCode(value){
-  return String(value || '').toUpperCase().replace(/[^2-9A-Z]/g,'').replace(/[IO01]/g,'');
+function shareNewAgendaPairCode(){
+  let code = '';
+  while(code.length < AGENDA_PAIR_CODE_DIGITS){
+    const bytes = crypto.getRandomValues(new Uint8Array(AGENDA_PAIR_CODE_DIGITS));
+    for(const byte of bytes){
+      if(byte >= 250) continue;
+      code += String(byte % 10);
+      if(code.length === AGENDA_PAIR_CODE_DIGITS) break;
+    }
+  }
+  return code;
 }
 
-async function shareAgendaEnrollmentProof(feedId,inviteId,code){
-  const normalized = shareNormalizeAgendaCode(code);
-  const material = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(normalized),
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-  const proof = await crypto.subtle.deriveBits(
-    {
-      name:'PBKDF2',
-      salt:new TextEncoder().encode(`tings-agenda-enroll-v1|${feedId}|${inviteId}`),
-      iterations:AGENDA_WRAP_ITERATIONS,
-      hash:'SHA-256'
-    },
-    material,
-    256
-  );
-  return shareBytesToHex(proof);
+function shareNormalizeAgendaPairCode(value){
+  return String(value || '').replace(/[^0-9]/g,'').slice(0,AGENDA_PAIR_CODE_DIGITS);
 }
 
-async function shareAgendaWrapKey(contentKeyHex,feedId,inviteId,code){
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const nonce = crypto.getRandomValues(new Uint8Array(SHARE_NONCE_BYTES));
-  const material = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(shareNormalizeAgendaCode(code)),
-    'PBKDF2',
-    false,
-    ['deriveKey']
-  );
-  const key = await crypto.subtle.deriveKey(
-    { name:'PBKDF2', salt, iterations:AGENDA_WRAP_ITERATIONS, hash:'SHA-256' },
-    material,
-    { name:'AES-GCM', length:256 },
-    false,
-    ['encrypt']
-  );
-  const wrapped = await crypto.subtle.encrypt(
-    {
-      name:'AES-GCM',
-      iv:nonce,
-      additionalData:new TextEncoder().encode(`tings-agenda-wrap-v1|${feedId}|${inviteId}`)
-    },
-    key,
-    shareHexToBytes(contentKeyHex)
-  );
+function shareFormatAgendaPairCode(value){
+  const code = shareNormalizeAgendaPairCode(value);
+  return code.length > 4 ? `${code.slice(0,4)}-${code.slice(4)}` : code;
+}
+
+async function shareAgendaPairConfirmationProof(pairingId,code){
+  return shareSha256Hex(`tings-agenda-pair-code-v1|${pairingId}|${shareNormalizeAgendaPairCode(code)}`);
+}
+
+function shareAgendaPairPublicKey(key){
   return {
-    salt:shareBytesToHex(salt),
-    nonce:shareBytesToHex(nonce),
-    wrappedKey:shareBytesToB64(new Uint8Array(wrapped))
+    kty:'EC',
+    crv:'P-256',
+    x:String(key && key.x || ''),
+    y:String(key && key.y || ''),
+    ext:true
   };
 }
 
-async function shareAgendaUnwrapKey(wrapped,feedId,inviteId,code){
-  const normalized = shareNormalizeAgendaCode(code);
-  if(normalized.length !== AGENDA_CODE_CHARS) throw new Error('invalid_code');
-  const material = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(normalized),
-    'PBKDF2',
-    false,
+function shareAgendaPairPublicKeyValid(key){
+  return Boolean(key)
+    && key.kty === 'EC'
+    && key.crv === 'P-256'
+    && key.ext === true
+    && /^[A-Za-z0-9_-]{43}$/.test(key.x || '')
+    && /^[A-Za-z0-9_-]{43}$/.test(key.y || '');
+}
+
+async function shareNewAgendaPairingRequest(){
+  const pairingId = shareRandomHex(SHARE_ID_BYTES);
+  const pollCredential = shareRandomHex(SHARE_KEY_BYTES);
+  const deviceCredential = shareRandomHex(SHARE_KEY_BYTES);
+  const confirmationCode = shareNewAgendaPairCode();
+  const keyPair = await crypto.subtle.generateKey(
+    { name:'ECDH',namedCurve:'P-256' },
+    true,
     ['deriveKey']
   );
-  const key = await crypto.subtle.deriveKey(
-    {
-      name:'PBKDF2',
-      salt:shareHexToBytes(wrapped.salt),
-      iterations:AGENDA_WRAP_ITERATIONS,
-      hash:'SHA-256'
-    },
-    material,
-    { name:'AES-GCM', length:256 },
+  const displayPublicKey = shareAgendaPairPublicKey(await crypto.subtle.exportKey('jwk',keyPair.publicKey));
+  return {
+    pairingId,
+    pollCredential,
+    deviceCredential,
+    deviceCredentialHash:await shareSha256Hex(deviceCredential),
+    confirmationCode,
+    confirmationProof:await shareAgendaPairConfirmationProof(pairingId,confirmationCode),
+    displayPublicKey,
+    privateKey:keyPair.privateKey
+  };
+}
+
+function shareAgendaPairAad(pairingId,feedId){
+  return new TextEncoder().encode(`tings-agenda-pair-transfer-v1|${pairingId}|${feedId}`);
+}
+
+async function shareImportAgendaPairPublicKey(publicKey){
+  if(!shareAgendaPairPublicKeyValid(publicKey)) throw new Error('invalid_pairing_key');
+  return crypto.subtle.importKey(
+    'jwk',
+    shareAgendaPairPublicKey(publicKey),
+    { name:'ECDH',namedCurve:'P-256' },
+    false,
+    []
+  );
+}
+
+async function shareAgendaPairEncrypt(contentKey,feedId,pairingId,displayPublicKey){
+  const displayKey = await shareImportAgendaPairPublicKey(displayPublicKey);
+  const ownerKeys = await crypto.subtle.generateKey(
+    { name:'ECDH',namedCurve:'P-256' },
+    true,
+    ['deriveKey']
+  );
+  const wrappingKey = await crypto.subtle.deriveKey(
+    { name:'ECDH',public:displayKey },
+    ownerKeys.privateKey,
+    { name:'AES-GCM',length:256 },
+    false,
+    ['encrypt']
+  );
+  const nonce = crypto.getRandomValues(new Uint8Array(SHARE_NONCE_BYTES));
+  const plaintext = new TextEncoder().encode(JSON.stringify({
+    schemaVersion:1,
+    pairingId,
+    feedId,
+    contentKey
+  }));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name:'AES-GCM',iv:nonce,additionalData:shareAgendaPairAad(pairingId,feedId) },
+    wrappingKey,
+    plaintext
+  );
+  return {
+    ownerPublicKey:shareAgendaPairPublicKey(await crypto.subtle.exportKey('jwk',ownerKeys.publicKey)),
+    nonce:shareBytesToHex(nonce),
+    ciphertext:shareBytesToB64(new Uint8Array(ciphertext))
+  };
+}
+
+async function shareAgendaPairDecrypt(transfer,privateKey,feedId,pairingId){
+  const ownerKey = await shareImportAgendaPairPublicKey(transfer && transfer.ownerPublicKey);
+  const wrappingKey = await crypto.subtle.deriveKey(
+    { name:'ECDH',public:ownerKey },
+    privateKey,
+    { name:'AES-GCM',length:256 },
     false,
     ['decrypt']
   );
-  const contentKey = await crypto.subtle.decrypt(
+  const plaintext = await crypto.subtle.decrypt(
     {
       name:'AES-GCM',
-      iv:shareHexToBytes(wrapped.nonce),
-      additionalData:new TextEncoder().encode(`tings-agenda-wrap-v1|${feedId}|${inviteId}`)
+      iv:shareHexToBytes(transfer.nonce),
+      additionalData:shareAgendaPairAad(pairingId,feedId)
     },
-    key,
-    shareB64ToBytes(wrapped.wrappedKey)
+    wrappingKey,
+    shareB64ToBytes(transfer.ciphertext)
   );
-  const bytes = new Uint8Array(contentKey);
-  if(bytes.length !== SHARE_KEY_BYTES) throw new Error('invalid_code');
-  return shareBytesToHex(bytes);
+  const payload = JSON.parse(new TextDecoder().decode(plaintext));
+  if(payload.schemaVersion !== 1
+    || payload.pairingId !== pairingId
+    || payload.feedId !== feedId
+    || !/^[0-9a-f]{64}$/.test(payload.contentKey || '')) throw new Error('invalid_pairing_transfer');
+  return payload.contentKey;
 }

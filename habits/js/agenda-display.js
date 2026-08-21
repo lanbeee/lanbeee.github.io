@@ -1,12 +1,15 @@
 const AGENDA_STALE_MS = 24 * 60 * 60 * 1000;
 const AGENDA_POLL_MS = 3 * 60 * 1000;
+const AGENDA_PAIR_POLL_MS = 4 * 1000;
 const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
   ? AGENDA_DISPLAY_KEY
-  : 'tings_agenda_display_v2';
+  : 'tings_agenda_display_v3';
 
 let _displayPollTimer = null;
+let _displayPairPollTimer = null;
+let _displayPairExpiryTimer = null;
 let _displayFeed = null;
-let _displayInvite = null;
+let _displayPairing = null;
 
 function displayReadEnrollment(){
   try{ return JSON.parse(localStorage.getItem(AGENDA_DISPLAY_STORAGE_KEY) || 'null'); }
@@ -18,21 +21,6 @@ function displayWriteEnrollment(value){
     if(value) localStorage.setItem(AGENDA_DISPLAY_STORAGE_KEY,JSON.stringify(value));
     else localStorage.removeItem(AGENDA_DISPLAY_STORAGE_KEY);
   }catch(_){}
-}
-
-function parseAgendaFragment(hash){
-  const params = new URLSearchParams(String(hash || '').replace(/^#/,''));
-  const feedId = params.get('feed') || '';
-  const inviteId = params.get('invite') || '';
-  const salt = params.get('salt') || '';
-  const nonce = params.get('nonce') || '';
-  const wrappedKey = params.get('wrap') || '';
-  if(!/^[0-9a-f]{32}$/.test(feedId)
-    || !/^[0-9a-f]{32}$/.test(inviteId)
-    || !/^[0-9a-f]{32}$/.test(salt)
-    || !/^[0-9a-f]{24}$/.test(nonce)
-    || !/^[A-Za-z0-9+/]{40,128}={0,2}$/.test(wrappedKey)) return null;
-  return { feedId, inviteId, salt, nonce, wrappedKey };
 }
 
 function clearAgendaFragment(){
@@ -83,10 +71,10 @@ function renderDisplay(projection,meta){
   if(!root) return;
   if(meta && meta.error === 'revoked'){
     banner.hidden = false;
-    banner.textContent = 'This display was revoked. Clear it after you no longer need the cached plan.';
+    banner.textContent = 'This display was revoked. Scan the fresh QR below from the owner phone to authorize it again.';
   }else if(meta && meta.error === 'reauth'){
     banner.hidden = false;
-    banner.textContent = 'Authorization expired or was rotated. Ask the owner for a new one-time link and separate code.';
+    banner.textContent = 'Authorization expired or was rotated. Scan the fresh QR below from the owner phone.';
   }else if(meta && meta.error === 'waiting'){
     banner.hidden = false;
     banner.textContent = 'This display is authorized. Waiting for the owner’s app to publish today’s plan.';
@@ -143,69 +131,135 @@ function escapeDisplay(value){
   return String(value || '').replace(/[&<>"']/g,ch=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
 }
 
-function showEnrollment(invite){
-  _displayInvite = invite;
+function stopDisplayPairing(){
+  if(_displayPairPollTimer) clearInterval(_displayPairPollTimer);
+  if(_displayPairExpiryTimer) clearInterval(_displayPairExpiryTimer);
+  _displayPairPollTimer = null;
+  _displayPairExpiryTimer = null;
+  _displayPairing = null;
+}
+
+function expireDisplayPairing(message = 'This QR expired. Generate a fresh one when the owner phone is ready.'){
+  stopDisplayPairing();
+  const qr = $('agenda-pair-qr');
+  if(qr) qr.innerHTML = '';
+  const code = $('agenda-pair-code');
+  if(code) code.textContent = 'expired';
+  const expiry = $('agenda-pair-expiry');
+  if(expiry) expiry.textContent = '';
+  const status = $('agenda-enroll-status');
+  if(status) status.textContent = message;
+  const button = $('agenda-pair-new');
+  if(button) button.hidden = false;
+}
+
+function renderDisplayPairingQr(pairing){
+  if(typeof qrcode !== 'function') throw new Error('qr_unavailable');
+  const qr = qrcode(0,'M');
+  qr.addData(agendaPairingOwnerHref(pairing),'Byte');
+  qr.make();
+  $('agenda-pair-qr').innerHTML = qr.createSvgTag({
+    cellSize:6,
+    margin:4,
+    scalable:true,
+    title:'Authorize this household agenda display',
+    alt:'Scan with the owner phone to open Tings'
+  });
+}
+
+function updateDisplayPairingExpiry(){
+  if(!_displayPairing) return;
+  const seconds = Math.max(0,Math.ceil((_displayPairing.expiresAt - Date.now()) / 1000));
+  const expiry = $('agenda-pair-expiry');
+  if(expiry) expiry.textContent = seconds > 0 ? `Expires in ${seconds} seconds` : '';
+  if(seconds <= 0) expireDisplayPairing();
+}
+
+async function beginDisplayPairing(reason = 'new'){
+  stopDisplayPairing();
   const section = $('agenda-enroll');
   if(section) section.hidden = false;
-  const banner = $('agenda-banner');
-  if(banner) banner.hidden = true;
   const root = $('agenda-root');
   if(root) root.innerHTML = '';
   const updated = $('agenda-updated');
-  if(updated) updated.textContent = 'One-time invitation · expires in 15 minutes';
-  setTimeout(()=>$('agenda-enroll-code')?.focus(),0);
+  if(updated) updated.textContent = reason === 'new' ? 'Not paired' : 'Reauthorization required';
+  const status = $('agenda-enroll-status');
+  const button = $('agenda-pair-new');
+  if(button) button.hidden = true;
+  if(status) status.textContent = 'Creating a two-minute, single-use request…';
+  const code = $('agenda-pair-code');
+  if(code) code.textContent = '';
+  const qr = $('agenda-pair-qr');
+  if(qr) qr.innerHTML = '';
+  try{
+    const pairing = await shareNewAgendaPairingRequest();
+    const result = await shareFetch('/v1/agenda-pairings',{
+      method:'POST',
+      body:{
+        pairingId:pairing.pairingId,
+        pollCredential:pairing.pollCredential,
+        deviceCredentialHash:pairing.deviceCredentialHash,
+        confirmationProof:pairing.confirmationProof,
+        displayPublicKey:pairing.displayPublicKey
+      }
+    });
+    pairing.expiresAt = Number(result.body && result.body.expiresAt) || (Date.now() + 2 * 60000);
+    _displayPairing = pairing;
+    renderDisplayPairingQr(pairing);
+    if(code) code.textContent = shareFormatAgendaPairCode(pairing.confirmationCode);
+    if(status) status.textContent = 'After scanning, type this code into Tings on the owner phone and approve.';
+    updateDisplayPairingExpiry();
+    _displayPairExpiryTimer = setInterval(updateDisplayPairingExpiry,1000);
+    _displayPairPollTimer = setInterval(()=>void pollDisplayPairing(),AGENDA_PAIR_POLL_MS);
+  }catch(error){
+    expireDisplayPairing(error && error.status === 429
+      ? 'Too many pairing requests. Wait one minute, then generate a fresh QR.'
+      : 'Could not create a pairing request. Check the connection and try again.');
+  }
 }
 
-async function enrollAgendaDisplay(code){
-  if(!_displayInvite) throw new Error('invite_missing');
-  const status = $('agenda-enroll-status');
-  const button = $('agenda-enroll-form')?.querySelector('button');
-  if(button) button.disabled = true;
-  if(status) status.textContent = 'Checking code…';
+async function pollDisplayPairing(){
+  const pairing = _displayPairing;
+  if(!pairing || pairing.expiresAt <= Date.now()) return;
   try{
-    // A wrong code fails locally at AES-GCM authentication, before the Worker is
-    // contacted. This prevents accidental typos from consuming server attempts.
-    const contentKey = await shareAgendaUnwrapKey(
-      _displayInvite,
-      _displayInvite.feedId,
-      _displayInvite.inviteId,
-      code
-    );
-    const enrollmentProof = await shareAgendaEnrollmentProof(
-      _displayInvite.feedId,
-      _displayInvite.inviteId,
-      code
-    );
-    const deviceCredential = shareRandomHex(SHARE_KEY_BYTES);
-    const result = await shareFetch(`/v1/agendas/${_displayInvite.feedId}/enroll`,{
-      method:'POST',
-      body:{ inviteId:_displayInvite.inviteId,enrollmentProof,deviceCredential }
+    const result = await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}/status`,{
+      credential:pairing.pollCredential
     });
-    _displayFeed = {
-      feedId:_displayInvite.feedId,
+    if(!result.body || result.body.state !== 'approved') return;
+    const feedId = result.body.feedId;
+    const contentKey = await shareAgendaPairDecrypt(
+      result.body.transfer,
+      pairing.privateKey,
+      feedId,
+      pairing.pairingId
+    );
+    const enrolled = {
+      feedId,
       contentKey,
-      deviceCredential,
-      sessionExpiresAt:Number(result.body && result.body.expiresAt) || null
+      deviceCredential:pairing.deviceCredential,
+      sessionExpiresAt:Number(result.body.sessionExpiresAt) || null
     };
-    displayWriteEnrollment(_displayFeed);
-    _displayInvite = null;
-    clearAgendaFragment();
+    _displayFeed = enrolled;
+    displayWriteEnrollment(enrolled);
+    try{
+      await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}/consume`,{
+        method:'POST',credential:pairing.pollCredential
+      });
+    }catch(_){}
+    stopDisplayPairing();
     $('agenda-enroll').hidden = true;
-    if(status) status.textContent = '';
+    $('agenda-enroll-status').textContent = '';
     await refreshDisplay();
     startDisplayPolling();
   }catch(error){
-    if(status){
-      if(error && (error.message === 'invite_unavailable' || error.status === 410)){
-        status.textContent = 'This invitation expired or was already used. Ask for a new one.';
-      }else if(error && error.message === 'invalid_enrollment'){
-        status.textContent = 'The code was rejected. Ask the owner to create a new invitation.';
-      }else{
-        status.textContent = 'That code does not match this link. Check it and try again.';
-      }
+    if(error && (error.status === 410 || error.message === 'pairing_unavailable')){
+      expireDisplayPairing();
+    }else if(error && (error.status === 401 || error.message === 'invalid_pairing_transfer' || error.message === 'invalid_pairing_key')){
+      expireDisplayPairing('Security verification failed. Generate a fresh QR and scan it again.');
+    }else if(error && error.status !== 429){
+      const status = $('agenda-enroll-status');
+      if(status) status.textContent = 'Waiting for the owner phone. The connection will retry until this QR expires.';
     }
-  }finally{
-    if(button) button.disabled = false;
   }
 }
 
@@ -254,6 +308,7 @@ function clearDisplayAuthorization(error){
   _displayFeed = null;
   displayWriteEnrollment(null);
   renderDisplay(null,{ error });
+  if(navigator.onLine !== false) void beginDisplayPairing(error);
 }
 
 async function renderCachedDisplay(enrolled,error){
@@ -273,11 +328,7 @@ function startDisplayPolling(){
 }
 
 async function bootAgendaDisplay(){
-  const fromHash = parseAgendaFragment(location.hash);
-  if(fromHash){
-    showEnrollment(fromHash);
-    return;
-  }
+  clearAgendaFragment();
   const stored = displayReadEnrollment();
   if(stored && stored.deviceCredential){
     _displayFeed = stored;
@@ -292,8 +343,7 @@ async function bootAgendaDisplay(){
     return;
   }
   renderDisplay(null,{});
-  $('agenda-banner').hidden = false;
-  $('agenda-banner').textContent = 'Ask the owner for a one-time display link and a separate enrollment code.';
+  await beginDisplayPairing();
 }
 
 document.addEventListener('visibilitychange',()=>{
@@ -303,22 +353,17 @@ window.addEventListener('pageshow',()=>void refreshDisplay());
 window.addEventListener('online',()=>void refreshDisplay());
 window.addEventListener('focus',()=>void refreshDisplay());
 document.addEventListener('DOMContentLoaded',()=>{
-  // v1 stored the permanent viewer credential and raw content key from the old
-  // all-in-one URL. It is intentionally not migrated into the secure protocol.
-  if(AGENDA_DISPLAY_STORAGE_KEY !== 'tings_agenda_display_v1'){
-    try{ localStorage.removeItem('tings_agenda_display_v1'); }catch(_){}
+  // Earlier versions accepted reusable or link-based enrollment material.
+  // Never migrate those credentials into QR-bound v3 sessions.
+  for(const legacyKey of ['tings_agenda_display_v1','tings_agenda_display_v2']){
+    if(legacyKey !== AGENDA_DISPLAY_STORAGE_KEY){
+      try{ localStorage.removeItem(legacyKey); }catch(_){}
+    }
   }
-  $('agenda-enroll-code')?.addEventListener('input',event=>{
-    const raw = shareNormalizeAgendaCode(event.target.value).slice(0,AGENDA_CODE_CHARS);
-    event.target.value = raw.length > 5 ? `${raw.slice(0,5)}-${raw.slice(5)}` : raw;
-  });
-  $('agenda-enroll-form')?.addEventListener('submit',event=>{
-    event.preventDefault();
-    void enrollAgendaDisplay($('agenda-enroll-code')?.value || '');
-  });
+  $('agenda-pair-new')?.addEventListener('click',()=>void beginDisplayPairing('new'));
   $('agenda-clear')?.addEventListener('click',()=>{
+    stopDisplayPairing();
     _displayFeed = null;
-    _displayInvite = null;
     displayWriteEnrollment(null);
     clearAgendaFragment();
     location.reload();

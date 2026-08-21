@@ -279,3 +279,21 @@ select{
 .priority-seg .seg-opt[data-priority="5"].on{--prio-accent:transparent;}
 .snooze-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
 .snooze-options .btn{padding:12px 0;}
+.agenda-pair-approval{
+  position:fixed;inset:0;z-index:10000;display:grid;place-items:center;
+  padding:20px;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);
+}
+.agenda-pair-approval[hidden]{display:none;}
+.agenda-pair-approval-card{
+  width:min(520px,100%);padding:24px;border-radius:20px;
+  background:var(--surface,#fff);color:var(--text,#171717);
+  box-shadow:0 24px 80px rgba(0,0,0,.35);
+}
+.agenda-pair-approval-card h2{margin:0 0 10px;}
+.agenda-pair-approval-card p{color:var(--muted,#666);}
+.agenda-pair-approval-card label{display:block;margin:18px 0 8px;font-weight:700;}
+.agenda-pair-approval-card input{
+  width:100%;min-height:56px;padding:10px 14px;border:1px solid currentColor;border-radius:12px;
+  background:transparent;color:inherit;font:700 24px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.12em;text-align:center;
+}

@@ -1,4 +1,4 @@
-// Secure household agenda projection + one-time display enrollment.
+// Secure household agenda projection + QR-only display pairing.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/agenda-share-projection-test.js
 const { chromium } = require('playwright');
@@ -14,7 +14,10 @@ function assert(cond,msg){
 
 (async () => {
   const browser = await chromium.launch({ headless:true });
-  const page = await browser.newPage({ viewport:{ width:390,height:844 },isMobile:true,hasTouch:true });
+  const ownerContext = await browser.newContext({
+    viewport:{ width:390,height:844 },isMobile:true,hasTouch:true,serviceWorkers:'block'
+  });
+  const page = await ownerContext.newPage();
   await page.goto(baseUrl,{ waitUntil:'load' });
 
   const result = await page.evaluate(async () => {
@@ -35,7 +38,6 @@ function assert(cond,msg){
     const data = [active,completed,...extras];
     const timeline = [
       { kind:'scheduled',start:now + 60 * 60000,end:now + 90 * 60000,h:{ ...active,notes:'stale private row' },i:0,locationId:'home' },
-      // The stale planner row says incomplete, while fresh storage says logged.
       { kind:'scheduled',start:now + 90 * 60000,end:now + 120 * 60000,h:{ ...completed,logs:[],lastLog:null },i:1 },
       ...extras.map((habit,index)=>({
         kind:'fill',start:now + (130 + index * 11) * 60000,end:now + (140 + index * 11) * 60000,
@@ -45,9 +47,7 @@ function assert(cond,msg){
       { kind:'travel',start:now + 21 * 3600000,end:now + 21.25 * 3600000,fromName:'Home',toName:'Clinic' }
     ];
     const week = {
-      optimized:true,
-      plannerSolveStatus:'optimal',
-      days:[
+      optimized:true,plannerSolveStatus:'optimal',days:[
         { dayBase,dayKey:dateKey(dayBase),weekday:new Date(dayBase).getDay(),isToday:true,usedMinutes:45,remainingMinutes:30,timeline },
         { dayBase:dayBase + 86400000,dayKey:dateKey(dayBase + 86400000),weekday:new Date(dayBase + 86400000).getDay(),isToday:false,usedMinutes:0,remainingMinutes:120,timeline:[] },
         { dayBase:dayBase + 2 * 86400000,dayKey:dateKey(dayBase + 2 * 86400000),timeline:[] }
@@ -55,43 +55,45 @@ function assert(cond,msg){
     };
     const feed = { feedId:'abcd'.repeat(8),title:'Family',lastRevision:3,scopeMode:'count',scopeValue:10 };
     const projection = buildHouseholdAgendaProjection(week,{ feed,data,now,dayCount:7 });
-    const maxProjection = buildHouseholdAgendaProjection(week,{
-      feed:{ ...feed,scopeValue:50 },data,now,dayCount:2
-    });
-    const hourProjection = buildHouseholdAgendaProjection(week,{
-      feed:{ ...feed,scopeMode:'hours',scopeValue:2 },data,now,dayCount:2
-    });
+    const maxProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeValue:50 },data,now,dayCount:2 });
+    const hourProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeMode:'hours',scopeValue:2 },data,now,dayCount:2 });
     const json = JSON.stringify(projection);
-    const cryptoBundle = await (async () => {
-      const key = shareRandomHex(32);
-      const envelope = await shareEncrypt(key,projection,{
-        schemaVersion:1,recordKind:'agenda_snapshot',objectId:projection.feedId,revision:projection.revision
-      });
-      const back = await shareDecrypt(key,envelope);
-      let tamper = false;
-      try{ await shareDecrypt(key,{ ...envelope,ciphertext:btoa('tampered') }); tamper = true; }
-      catch(_){ tamper = false; }
-      const inviteId = shareRandomHex(16);
-      const code = shareNewAgendaCode();
-      const wrapped = await shareAgendaWrapKey(key,projection.feedId,inviteId,code);
-      const unwrapped = await shareAgendaUnwrapKey(wrapped,projection.feedId,inviteId,code);
-      let wrongCodeRejected = false;
-      try{ await shareAgendaUnwrapKey(wrapped,projection.feedId,inviteId,'ZZZZZ-ZZZZZ'); }
-      catch(_){ wrongCodeRejected = true; }
-      return {
-        title:back.title,revision:back.revision,tamper,codeLength:shareNormalizeAgendaCode(code).length,
-        unwrapMatches:unwrapped === key,wrongCodeRejected
-      };
-    })();
+
+    const key = shareRandomHex(32);
+    const envelope = await shareEncrypt(key,projection,{
+      schemaVersion:1,recordKind:'agenda_snapshot',objectId:projection.feedId,revision:projection.revision
+    });
+    const back = await shareDecrypt(key,envelope);
+    let tamperRejected = false;
+    try{ await shareDecrypt(key,{ ...envelope,ciphertext:btoa('tampered') }); }
+    catch(_){ tamperRejected = true; }
+
+    const pairing = await shareNewAgendaPairingRequest();
+    const transfer = await shareAgendaPairEncrypt(key,projection.feedId,pairing.pairingId,pairing.displayPublicKey);
+    const transferredKey = await shareAgendaPairDecrypt(
+      transfer,pairing.privateKey,projection.feedId,pairing.pairingId
+    );
+    let wrongDisplayRejected = false;
+    try{
+      const other = await shareNewAgendaPairingRequest();
+      await shareAgendaPairDecrypt(transfer,other.privateKey,projection.feedId,pairing.pairingId);
+    }catch(_){ wrongDisplayRejected = true; }
+
     return {
       dayCount:projection.days.length,
       titles:projection.days.flatMap(day=>day.rows.map(row=>row.title)),
       itemCount:projection.days.flatMap(day=>day.rows).filter(row=>row.kind === 'item').length,
       maxRows:maxProjection.days.reduce((sum,day)=>sum + day.rows.length,0),
       hourTitles:hourProjection.days.flatMap(day=>day.rows.map(row=>row.title)),
-      json,
-      provenance:projection.plannerProvenance,
-      crypto:cryptoBundle
+      json,provenance:projection.plannerProvenance,
+      crypto:{
+        title:back.title,tamperRejected,
+        codeLength:shareNormalizeAgendaPairCode(pairing.confirmationCode).length,
+        proofLooksHashed:/^[0-9a-f]{64}$/.test(pairing.confirmationProof),
+        transferMatches:transferredKey === key,
+        wrongDisplayRejected,
+        rawCredentialHidden:pairing.deviceCredentialHash !== pairing.deviceCredential
+      }
     };
   });
 
@@ -105,127 +107,151 @@ function assert(cond,msg){
   assert(!result.json.includes('active-hid') && !result.json.includes('completed-hid'),'omits local habit ids');
   assert(!result.json.includes('stale private row'),'omits private local row fields');
   assert(result.crypto.title === 'Family','AES-GCM round-trip restores the projection');
-  assert(result.crypto.tamper === false,'tampered agenda ciphertext is rejected');
-  assert(result.crypto.codeLength === 10,'generates a 10-character human enrollment code');
-  assert(result.crypto.unwrapMatches,'separate code unwraps the content key');
-  assert(result.crypto.wrongCodeRejected,'wrong code cannot unwrap the content key');
+  assert(result.crypto.tamperRejected,'tampered agenda ciphertext is rejected');
+  assert(result.crypto.codeLength === 8 && result.crypto.proofLooksHashed,'uses a separate 8-digit display code and stores only its proof');
+  assert(result.crypto.transferMatches,'ECDH transfers the content key to the exact display key');
+  assert(result.crypto.wrongDisplayRejected,'a different display private key cannot decrypt the transfer');
+  assert(result.crypto.rawCredentialHidden,'display device credential is represented to the Worker only by its hash');
 
   let createRequestBody = null;
-  let inviteRequestBody = null;
   await page.route('**/v1/agendas',async route=>{
     createRequestBody = route.request().postDataJSON();
     route.fulfill({ status:201,contentType:'application/json',body:JSON.stringify({ id:createRequestBody.id,status:'active',revision:0 }) });
   });
-  await page.route('**/v1/agendas/*/invite',async route=>{
-    inviteRequestBody = route.request().postDataJSON();
-    route.fulfill({
-      status:200,contentType:'application/json',
-      body:JSON.stringify({ inviteId:inviteRequestBody.inviteId,expiresAt:Date.now() + 15 * 60000,sessionTtlMs:inviteRequestBody.sessionTtlMs })
-    });
-  });
-  const ownerInvite = await page.evaluate(async () => {
+  const ownerFeed = await page.evaluate(async () => {
     saveAgendaFeedRecord(null);
-    const feed = await createHouseholdAgendaFeed('Secure family agenda');
-    return {
-      url:feed.currentInvite.url,
-      code:feed.currentInvite.code,
-      contentKey:feed.contentKey,
-      ownerCredential:feed.ownerCredential,
-      viewerCredential:feed.viewerCredential,
-      reauthDays:feed.reauthDays
-    };
+    return createHouseholdAgendaFeed('Secure family agenda');
   });
-  const ownerInviteUrl = new URL(ownerInvite.url);
   assert(createRequestBody && !('viewerCredential' in createRequestBody),'feed creation never registers a permanent viewer credential');
-  assert(inviteRequestBody && /^[0-9a-f]{64}$/.test(inviteRequestBody.enrollmentProof),'Worker receives only a derived enrollment proof');
-  assert(ownerInviteUrl.hash.includes('invite=') && ownerInviteUrl.hash.includes('wrap='),'owner creates a wrapped one-time invitation URL');
-  assert(!ownerInvite.url.includes(ownerInvite.contentKey) && !ownerInvite.url.includes(ownerInvite.ownerCredential),'invitation URL contains neither raw content key nor owner credential');
-  assert(ownerInvite.viewerCredential === undefined,'owner state has no permanent viewer credential');
-  assert(ownerInvite.reauthDays === 30,'display reauthorization defaults to 30 days');
+  assert(ownerFeed.currentInvite === undefined,'owner creates no enrollment link or fallback code');
+  assert(ownerFeed.reauthDays === 30,'display reauthorization defaults to 30 days');
 
-  const displayFixture = await page.evaluate(async () => {
-    const feedId = shareRandomHex(16);
-    const inviteId = shareRandomHex(16);
-    const contentKey = shareRandomHex(32);
-    const code = shareNewAgendaCode();
-    const wrapped = await shareAgendaWrapKey(contentKey,feedId,inviteId,code);
-    const start = Date.UTC(2026,0,15,14,0,0);
-    const projection = {
-      schemaVersion:1,feedId,title:'Timezone check',revision:1,generatedAt:Date.now(),timezone:'America/New_York',
-      days:[{ dateKey:'2026-01-15',weekdayLabel:'today',dateLabel:'Thursday, Jan 15',rows:[
-        { kind:'item',start,end:start + 30 * 60000,title:'Breakfast',emoji:'',durationMinutes:30 }
-      ] }]
-    };
-    const envelope = await shareEncrypt(contentKey,projection,{
-      schemaVersion:1,recordKind:'agenda_snapshot',objectId:feedId,revision:1
-    });
-    const params = new URLSearchParams({ feed:feedId,invite:inviteId,salt:wrapped.salt,nonce:wrapped.nonce,wrap:wrapped.wrappedKey });
-    return { feedId,inviteId,code,envelope,hash:params.toString(),workerUrl:shareWorkerBaseUrl() };
-  });
-  const displayContext = await browser.newContext({ timezoneId:'Asia/Tokyo' });
+  const displayContext = await browser.newContext({ timezoneId:'Asia/Tokyo',serviceWorkers:'block' });
   const displayPage = await displayContext.newPage();
-  let enrollRequests = 0;
+  let pairingRequest = null;
+  let approvalRequest = null;
+  let publishedSnapshot = null;
   let agendaReads = 0;
   let displayAuthorized = true;
-  await displayPage.route(`${displayFixture.workerUrl}/v1/agendas/${displayFixture.feedId}/enroll`,async route=>{
-    enrollRequests += 1;
-    route.fulfill({
-      status:200,contentType:'application/json',
-      body:JSON.stringify({ id:displayFixture.feedId,expiresAt:Date.now() + 7 * 86400000 })
-    });
+  const workerUrl = await page.evaluate(()=>shareWorkerBaseUrl());
+
+  await displayPage.route(`${workerUrl}/v1/agenda-pairings`,async route=>{
+    pairingRequest = route.request().postDataJSON();
+    route.fulfill({ status:201,contentType:'application/json',body:JSON.stringify({
+      pairingId:pairingRequest.pairingId,expiresAt:Date.now() + 2 * 60000
+    }) });
   });
-  await displayPage.route(`${displayFixture.workerUrl}/v1/agendas/${displayFixture.feedId}`,route=>{
+  await displayPage.route(`${workerUrl}/v1/agenda-pairings/*/status`,route=>{
+    if(!approvalRequest){
+      route.fulfill({ status:202,contentType:'application/json',body:JSON.stringify({ state:'pending',expiresAt:Date.now() + 60000 }) });
+      return;
+    }
+    route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
+      state:'approved',feedId:ownerFeed.feedId,sessionExpiresAt:Date.now() + 30 * 86400000,
+      transfer:approvalRequest.transfer,expiresAt:Date.now() + 60000
+    }) });
+  });
+  await displayPage.route(`${workerUrl}/v1/agenda-pairings/*/consume`,route=>{
+    route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({ consumed:true }) });
+  });
+  await displayPage.route(`${workerUrl}/v1/agendas/${ownerFeed.feedId}`,route=>{
     agendaReads += 1;
     if(!displayAuthorized){
       route.fulfill({ status:401,contentType:'application/json',body:JSON.stringify({ error:'reauth_required' }) });
       return;
     }
-    route.fulfill({
-      status:200,contentType:'application/json',headers:{ ETag:'"1"' },
-      body:JSON.stringify({
-        id:displayFixture.feedId,status:'active',paused:false,revision:1,
-        sessionExpiresAt:Date.now() + 7 * 86400000,snapshot:displayFixture.envelope
-      })
-    });
+    route.fulfill({ status:200,contentType:'application/json',headers:{ ETag:'"1"' },body:JSON.stringify({
+      id:ownerFeed.feedId,status:'active',paused:false,revision:1,
+      sessionExpiresAt:Date.now() + 30 * 86400000,snapshot:publishedSnapshot
+    }) });
   });
-  const displayUrl = new URL('agenda-display',baseUrl);
-  displayUrl.hash = displayFixture.hash;
-  await displayPage.goto(displayUrl.href,{ waitUntil:'load' });
-  await displayPage.waitForSelector('#agenda-enroll:not([hidden])');
-  assert(enrollRequests === 0 && agendaReads === 0,'link alone cannot enroll or read the feed');
+  await displayPage.goto(new URL('agenda-display',baseUrl).href,{ waitUntil:'load' });
+  await displayPage.waitForFunction(()=>document.getElementById('agenda-pair-code')?.textContent.length === 9);
+  const displayCode = await displayPage.textContent('#agenda-pair-code');
+  assert(pairingRequest && !JSON.stringify(pairingRequest).includes(displayCode.replace('-','')),'QR request does not send or encode the visible confirmation code');
+  assert(agendaReads === 0,'an unapproved QR request cannot read the agenda');
 
-  await displayPage.fill('#agenda-enroll-code','ZZZZZ-ZZZZZ');
-  await displayPage.click('#agenda-enroll-form button');
-  await displayPage.waitForFunction(()=>document.getElementById('agenda-enroll-status')?.textContent.includes('does not match'));
-  assert(enrollRequests === 0,'wrong code fails locally without consuming a server attempt');
+  await page.route('**/v1/agenda-pairings/**',route=>{
+    if(route.request().url().endsWith('/approve')){
+      approvalRequest = route.request().postDataJSON();
+      if(approvalRequest.confirmationCode !== displayCode.replace('-','')){
+        route.fulfill({ status:401,contentType:'application/json',body:JSON.stringify({ error:'invalid_confirmation' }) });
+        return;
+      }
+      route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
+        state:'approved',sessionExpiresAt:Date.now() + 30 * 86400000
+      }) });
+      return;
+    }
+    route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
+      pairingId:pairingRequest.pairingId,displayPublicKey:pairingRequest.displayPublicKey,expiresAt:Date.now() + 60000
+    }) });
+  });
+  await page.route(`${workerUrl}/v1/agendas/${ownerFeed.feedId}`,route=>{
+    if(route.request().method() === 'PUT'){
+      publishedSnapshot = route.request().postDataJSON().snapshot;
+      route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
+        id:ownerFeed.feedId,status:'active',paused:false,revision:publishedSnapshot.revision
+      }) });
+      return;
+    }
+    route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
+      id:ownerFeed.feedId,status:'active',paused:false,revision:0,snapshot:null,sessionExpiresAt:null
+    }) });
+  });
 
-  await displayPage.fill('#agenda-enroll-code',displayFixture.code);
-  await displayPage.click('#agenda-enroll-form button');
-  await displayPage.waitForFunction(()=>document.getElementById('agenda-title')?.textContent === 'Timezone check');
+  const ownerPairUrl = new URL(baseUrl);
+  ownerPairUrl.hash = new URLSearchParams({
+    agendaPair:pairingRequest.pairingId,x:pairingRequest.displayPublicKey.x,y:pairingRequest.displayPublicKey.y
+  }).toString();
+  await page.goto(ownerPairUrl.href,{ waitUntil:'load' });
+  await page.waitForSelector('#agenda-pair-approval:not([hidden])');
+  await page.waitForFunction(()=>!document.getElementById('agenda-pair-approval-code')?.disabled
+    || /expired|failed|does not own/i.test(document.getElementById('agenda-pair-approval-status')?.textContent || ''));
+  await page.evaluate(() => {
+    const now = Date.now();
+    const base = dayStart(now);
+    weekSnapshotForExport = () => ({ optimized:false,days:[{
+      dayBase:base,dayKey:dateKey(base),isToday:true,usedMinutes:30,remainingMinutes:0,
+      timeline:[{ kind:'scheduled',start:now + 3600000,end:now + 5400000,h:{
+        name:'Medication',emoji:'💊',hid:'med',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
+      }}]
+    }] });
+  });
+  assert(approvalRequest === null,'scanning the QR still requires explicit owner approval');
+  await page.fill('#agenda-pair-approval-code','0000-0000');
+  await page.click('#agenda-pair-approval-confirm');
+  await page.waitForFunction(()=>document.getElementById('agenda-pair-approval-status')?.textContent.includes('did not match'));
+  assert(approvalRequest && approvalRequest.confirmationCode === '00000000','owner submits the manually entered display code for exact server verification');
+
+  approvalRequest = null;
+  await page.fill('#agenda-pair-approval-code',displayCode);
+  await page.click('#agenda-pair-approval-confirm');
+  await page.waitForFunction(()=>document.getElementById('agenda-pair-approval-status')?.textContent.includes('Display authorized'));
+  assert(approvalRequest && !JSON.stringify(approvalRequest).includes(ownerFeed.contentKey),'owner rotates the content key and sends it only inside the ECDH ciphertext');
+  assert(publishedSnapshot && publishedSnapshot.recordKind === 'agenda_snapshot','owner publishes a fresh snapshot under the rotated key');
+
+  await displayPage.evaluate(()=>pollDisplayPairing());
+  await displayPage.waitForFunction(()=>document.getElementById('agenda-title')?.textContent === 'Secure family agenda');
   const displayState = await displayPage.evaluate(() => ({
-    path:location.pathname,
-    hash:location.hash,
-    title:document.getElementById('agenda-title')?.textContent,
-    firstTime:document.querySelector('.agenda-row time')?.textContent,
+    path:location.pathname,hash:location.hash,title:document.getElementById('agenda-title')?.textContent,
     appLoaded:Boolean(document.getElementById('app')),
-    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v2') || ''
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || ''
   }));
-  assert(enrollRequests === 1 && agendaReads >= 1,'correct code enrolls once and then reads with a device credential');
   assert(displayState.path.endsWith('/agenda-display.html'),'extensionless route resolves to the standalone display');
-  assert(displayState.hash === '','clears invitation material from the address bar after enrollment');
-  assert(!displayState.enrollment.includes(displayFixture.code) && !displayState.enrollment.includes(displayFixture.inviteId),'does not retain the code or one-time invitation id');
-  assert(displayState.title === 'Timezone check','standalone display decrypts and renders the feed');
-  assert(/^9:00\s*AM/i.test(displayState.firstTime || ''),'renders clock times in the owner timezone');
-  assert(displayState.appLoaded === false,'standalone display does not load the main Tings app');
+  assert(displayState.hash === '','display address contains no enrollment secret');
+  assert(!displayState.enrollment.includes(displayCode.replace('-','')) && !displayState.enrollment.includes(pairingRequest.pairingId),'display retains neither visible code nor pairing id');
+  assert(displayState.title === 'Secure family agenda' && !displayState.appLoaded,'standalone display decrypts the feed without loading the main app');
+
   displayAuthorized = false;
   await displayPage.evaluate(()=>refreshDisplay());
   const clearedState = await displayPage.evaluate(() => ({
     text:document.getElementById('agenda-root')?.textContent || '',
-    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v2'),
-    banner:document.getElementById('agenda-banner')?.textContent || ''
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3'),
+    pairingVisible:!document.getElementById('agenda-enroll')?.hidden
   }));
-  assert(clearedState.enrollment === null && !clearedState.text.includes('Breakfast'),'reauthorization failure erases the cached credential, key, and agenda');
-  assert(clearedState.banner.includes('Authorization expired'),'expired display explains how to reauthorize');
+  assert(clearedState.enrollment === null && !clearedState.text.includes('Medication'),'reauthorization failure erases the cached credential, key, and agenda');
+  assert(clearedState.pairingVisible,'expired access immediately returns to QR reauthorization');
   await displayContext.close();
 
   const legacyConfig = fs.readFileSync(path.join(__dirname,'../js/config.js'),'utf8')

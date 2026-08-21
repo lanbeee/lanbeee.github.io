@@ -41,15 +41,22 @@ header.agenda-chrome{
 }
 .agenda-enroll h2{margin:0 0 8px;}
 .agenda-enroll p{color:var(--muted);font-size:16px;}
-.agenda-enroll form{display:grid;gap:10px;}
-.agenda-enroll label{font-size:16px;font-weight:700;}
-.agenda-enroll input,.agenda-enroll button{
+.agenda-enroll button{
   width:100%;min-height:52px;border-radius:12px;border:1px solid color-mix(in srgb,var(--muted) 35%,transparent);
   padding:10px 12px;background:var(--bg);color:var(--text);font:inherit;
 }
-.agenda-enroll input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;}
 .agenda-enroll button{border:0;background:var(--now);color:var(--bg);font-weight:750;cursor:pointer;}
 .agenda-enroll button:disabled{opacity:.55;cursor:wait;}
+.agenda-pair-qr{
+  width:min(420px,100%);margin:18px auto;padding:12px;border-radius:12px;background:#fff;
+}
+.agenda-pair-qr svg{display:block;width:100%;height:auto;}
+.agenda-pair-label{display:block;margin-top:20px;color:var(--muted);font-size:14px;text-align:center;text-transform:uppercase;letter-spacing:.08em;}
+.agenda-pair-code{
+  display:block;margin:6px 0 10px;font:800 clamp(36px,8vw,64px)/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums;
+}
+#agenda-pair-expiry,#agenda-enroll-status{text-align:center;}
 .agenda-day header h2{margin:0;font-size:28px;text-transform:lowercase;}
 .agenda-day header p{margin:4px 0 12px;color:var(--muted);font-size:16px;}
 .agenda-day.is-today header h2{color:var(--now);}

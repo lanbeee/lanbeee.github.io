@@ -2,6 +2,7 @@ let _agendaPublishTimer = null;
 let _agendaPublishInFlight = false;
 let _lastAgendaProjectionSig = '';
 let _pendingAgendaSnapshot = null;
+let _agendaPairApproval = null;
 
 const HOUSEHOLD_AGENDA_MAX_DAYS = 2;
 const HOUSEHOLD_AGENDA_MAX_ROWS = 50;
@@ -193,15 +194,6 @@ function householdAgendaSignature(projection){
   return JSON.stringify(slim);
 }
 
-function householdAgendaLink(feed){
-  const invite = feed && feed.currentInvite;
-  return invite && invite.url ? invite.url : '';
-}
-
-function householdAgendaInviteText(){
-  return 'Open this within 15 minutes. Get the separate enrollment code from me through a different channel.';
-}
-
 async function createHouseholdAgendaFeed(title = 'Household agenda'){
   if(!shareConfigured()) throw new Error('share_unconfigured');
   const secrets = shareNewAgendaSecrets();
@@ -224,52 +216,135 @@ async function createHouseholdAgendaFeed(title = 'Household agenda'){
     status:'active',
     reauthDays:30,
     scopeMode:'count',
-    scopeValue:HOUSEHOLD_AGENDA_DEFAULT_ROWS,
-    currentInvite:null
+    scopeValue:HOUSEHOLD_AGENDA_DEFAULT_ROWS
   };
   saveAgendaFeedRecord(feed);
-  return issueHouseholdAgendaInvite({ rotateKey:true, publish:false });
+  return feed;
 }
 
-async function issueHouseholdAgendaInvite(opts = {}){
-  const existing = agendaFeedRecord();
-  if(!existing) return null;
-  const feed = opts.rotateKey === false ? { ...existing } : { ...existing, contentKey:shareRandomHex(SHARE_KEY_BYTES) };
-  const inviteId = shareRandomHex(SHARE_ID_BYTES);
-  const code = shareNewAgendaCode();
-  const enrollmentProof = await shareAgendaEnrollmentProof(feed.feedId,inviteId,code);
-  const wrapped = await shareAgendaWrapKey(feed.contentKey,feed.feedId,inviteId,code);
-  const reauthDays = Number(feed.reauthDays) === 7 ? 7 : 30;
-  const result = await shareFetch(`/v1/agendas/${feed.feedId}/invite`, {
-    method:'POST',
-    credential:feed.ownerCredential,
-    body:{
-      inviteId,
-      enrollmentProof,
-      sessionTtlMs:reauthDays === 7 ? HOUSEHOLD_AGENDA_WEEK_MS : HOUSEHOLD_AGENDA_MONTH_MS
+function parseHouseholdAgendaPairingHash(hash){
+  const params = new URLSearchParams(String(hash || '').replace(/^#/,''));
+  const pairingId = params.get('agendaPair') || '';
+  const x = params.get('x') || '';
+  const y = params.get('y') || '';
+  const displayPublicKey = { kty:'EC',crv:'P-256',x,y,ext:true };
+  if(!/^[0-9a-f]{32}$/.test(pairingId) || !shareAgendaPairPublicKeyValid(displayPublicKey)) return null;
+  return { pairingId,displayPublicKey };
+}
+
+function clearHouseholdAgendaPairingHash(){
+  try{ history.replaceState(null,'',location.pathname + location.search); }
+  catch(_){}
+}
+
+function closeHouseholdAgendaPairingApproval(){
+  const modal = $('agenda-pair-approval');
+  if(modal) modal.hidden = true;
+  _agendaPairApproval = null;
+}
+
+async function openHouseholdAgendaPairingApproval(pairing){
+  const feed = agendaFeedRecord();
+  const modal = $('agenda-pair-approval');
+  const status = $('agenda-pair-approval-status');
+  const input = $('agenda-pair-approval-code');
+  const approve = $('agenda-pair-approval-confirm');
+  if(!modal || !status || !input || !approve) return;
+  modal.hidden = false;
+  approve.disabled = true;
+  input.disabled = true;
+  input.value = '';
+  status.textContent = feed ? 'Checking this two-minute pairing request…' : 'This phone does not own a household agenda feed.';
+  if(!feed) return;
+  try{
+    const result = await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}`);
+    const remoteKey = result.body && result.body.displayPublicKey;
+    if(!shareAgendaPairPublicKeyValid(remoteKey)
+      || remoteKey.x !== pairing.displayPublicKey.x
+      || remoteKey.y !== pairing.displayPublicKey.y){
+      throw new Error('pairing_key_mismatch');
     }
-  });
-  const params = new URLSearchParams({
-    feed:feed.feedId,
-    invite:inviteId,
-    salt:wrapped.salt,
-    nonce:wrapped.nonce,
-    wrap:wrapped.wrappedKey
-  });
-  const next = {
-    ...feed,
-    reauthDays,
-    currentInvite:{
-      inviteId,
-      url:agendaDisplayHref(params.toString()),
-      code,
-      expiresAt:Number(result.body && result.body.expiresAt) || (Date.now() + 15 * 60000)
+    const expiresAt = Number(result.body && result.body.expiresAt);
+    if(!expiresAt || expiresAt <= Date.now()) throw new Error('pairing_unavailable');
+    _agendaPairApproval = { ...pairing,expiresAt };
+    input.disabled = false;
+    approve.disabled = false;
+    status.textContent = 'Type the 8-digit code shown on the display. Approving revokes any previously paired display.';
+    input.focus();
+  }catch(error){
+    status.textContent = error && error.message === 'pairing_key_mismatch'
+      ? 'Security check failed: the QR key does not match the Worker request. Do not approve it.'
+      : 'This pairing request expired or is no longer available. Generate a fresh QR on the display.';
+  }
+}
+
+async function approveHouseholdAgendaPairing(){
+  const pairing = _agendaPairApproval;
+  const feed = agendaFeedRecord();
+  const status = $('agenda-pair-approval-status');
+  const input = $('agenda-pair-approval-code');
+  const approve = $('agenda-pair-approval-confirm');
+  if(!pairing || !feed || !status || !input || !approve) return false;
+  const confirmationCode = shareNormalizeAgendaPairCode(input.value);
+  if(confirmationCode.length !== AGENDA_PAIR_CODE_DIGITS){
+    status.textContent = 'Enter all 8 digits from the display.';
+    return false;
+  }
+  if(pairing.expiresAt <= Date.now()){
+    status.textContent = 'This pairing request expired. Generate a fresh QR on the display.';
+    return false;
+  }
+  approve.disabled = true;
+  input.disabled = true;
+  status.textContent = 'Authorizing this exact display…';
+  const nextContentKey = shareRandomHex(SHARE_KEY_BYTES);
+  try{
+    const transfer = await shareAgendaPairEncrypt(
+      nextContentKey,
+      feed.feedId,
+      pairing.pairingId,
+      pairing.displayPublicKey
+    );
+    const reauthDays = Number(feed.reauthDays) === 7 ? 7 : 30;
+    await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}/approve`,{
+      method:'POST',
+      credential:feed.ownerCredential,
+      body:{
+        feedId:feed.feedId,
+        confirmationCode,
+        sessionTtlMs:reauthDays === 7 ? HOUSEHOLD_AGENDA_WEEK_MS : HOUSEHOLD_AGENDA_MONTH_MS,
+        transfer
+      }
+    });
+    const next = { ...feed,contentKey:nextContentKey,reauthDays };
+    delete next.currentInvite;
+    saveAgendaFeedRecord(next);
+    _lastAgendaProjectionSig = '';
+    status.textContent = 'Display authorized. Publishing a fresh encrypted agenda…';
+    try{
+      await publishHouseholdAgendaNow(null,{ manual:true });
+      status.textContent = `Display authorized for ${reauthDays} days. You can return to the display.`;
+    }catch(_){
+      scheduleHouseholdAgendaPublish();
+      status.textContent = 'Display authorized. The agenda will publish when this phone is online.';
     }
-  };
-  saveAgendaFeedRecord(next);
-  if(opts.publish !== false) await publishHouseholdAgendaNow(null,{ manual:true });
-  if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
-  return agendaFeedRecord();
+    approve.hidden = true;
+    return true;
+  }catch(error){
+    if(error && error.message === 'invalid_confirmation'){
+      status.textContent = 'That code did not match. Check the display carefully; five wrong attempts destroy the request.';
+    }else if(error && (error.status === 410 || error.message === 'pairing_unavailable')){
+      status.textContent = 'This pairing request expired or was destroyed. Generate a fresh QR on the display.';
+    }else if(error && error.status === 409){
+      status.textContent = 'Another approval is in progress. Wait a moment and scan a fresh QR if it does not finish.';
+    }else{
+      status.textContent = 'Could not authorize the display. Check the connection and try again before the request expires.';
+    }
+    input.disabled = false;
+    approve.disabled = false;
+    input.focus();
+    return false;
+  }
 }
 
 async function publishHouseholdAgendaNow(week, opts = {}){
@@ -350,11 +425,6 @@ async function pauseHouseholdAgendaFeed(paused){
   return next;
 }
 
-async function rotateHouseholdAgendaAccess(week){
-  void week;
-  return issueHouseholdAgendaInvite({ rotateKey:true, publish:true });
-}
-
 async function revokeHouseholdAgendaFeed(){
   const feed = agendaFeedRecord();
   if(!feed) return;
@@ -371,41 +441,22 @@ async function revokeHouseholdAgendaFeed(){
   if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
 }
 
-async function copyHouseholdAgendaLink(){
-  const feed = agendaFeedRecord();
-  if(!feed) return false;
-  const url = householdAgendaLink(feed);
-  if(!url || !feed.currentInvite || Number(feed.currentInvite.expiresAt) <= Date.now()) return false;
-  if(typeof copyTextToClipboard === 'function') return copyTextToClipboard(url);
-  try{
-    await navigator.clipboard.writeText(url);
-    return true;
-  }catch(_){ return false; }
-}
-
-async function copyHouseholdAgendaCode(){
-  const feed = agendaFeedRecord();
-  const invite = feed && feed.currentInvite;
-  if(!invite || !invite.code || Number(invite.expiresAt) <= Date.now()) return false;
-  if(typeof copyTextToClipboard === 'function') return copyTextToClipboard(invite.code);
-  try{
-    await navigator.clipboard.writeText(invite.code);
-    return true;
-  }catch(_){ return false; }
-}
-
-async function shareHouseholdAgendaLink(){
-  const feed = agendaFeedRecord();
-  if(!feed) return false;
-  const url = householdAgendaLink(feed);
-  if(!url || !feed.currentInvite || Number(feed.currentInvite.expiresAt) <= Date.now()) return false;
-  if(navigator.share){
-    try{
-      await navigator.share({ title:'Household agenda', text:householdAgendaInviteText(), url });
-      return true;
-    }catch(error){
-      if(error && error.name === 'AbortError') return false;
-    }
+function maybeOpenHouseholdAgendaPairingFromHash(){
+  const pairing = parseHouseholdAgendaPairingHash(location.hash);
+  if(pairing){
+    clearHouseholdAgendaPairingHash();
+    void openHouseholdAgendaPairingApproval(pairing);
   }
-  return copyHouseholdAgendaLink();
 }
+
+window.addEventListener('hashchange',maybeOpenHouseholdAgendaPairingFromHash);
+document.addEventListener('DOMContentLoaded',()=>{
+  maybeOpenHouseholdAgendaPairingFromHash();
+  $('agenda-pair-approval-code')?.addEventListener('input',event=>{
+    event.target.value = shareFormatAgendaPairCode(event.target.value);
+  });
+  $('agenda-pair-approval-confirm')?.addEventListener('click',()=>{
+    void approveHouseholdAgendaPairing();
+  });
+  $('agenda-pair-approval-cancel')?.addEventListener('click',closeHouseholdAgendaPairingApproval);
+});

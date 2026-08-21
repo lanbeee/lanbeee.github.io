@@ -29,6 +29,10 @@ function agendaFeedRecord(){
     delete feed.viewerCredential;
     saveShareState(state);
   }
+  if(feed && Object.prototype.hasOwnProperty.call(feed,'currentInvite')){
+    delete feed.currentInvite;
+    saveShareState(state);
+  }
   return feed;
 }
 

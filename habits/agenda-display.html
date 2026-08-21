@@ -19,20 +19,21 @@
   </header>
   <p id="agenda-banner" hidden></p>
   <section class="agenda-enroll" id="agenda-enroll" hidden>
-    <h2>Authorize this display</h2>
-    <p>Enter the separate 10-character code. For safety, get it through a different message service or in person.</p>
-    <form id="agenda-enroll-form">
-      <label for="agenda-enroll-code">Enrollment code</label>
-      <input id="agenda-enroll-code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" maxlength="11" placeholder="ABCDE-FGHIJ" required />
-      <button type="submit">authorize display</button>
-    </form>
+    <h2>Pair this display</h2>
+    <p>Scan this QR with the owner phone’s camera. Tings will open on that phone and ask for the separate code shown below.</p>
+    <div class="agenda-pair-qr" id="agenda-pair-qr" aria-label="QR code for the owner phone"></div>
+    <span class="agenda-pair-label">code visible only on this display</span>
+    <strong class="agenda-pair-code" id="agenda-pair-code"></strong>
+    <p id="agenda-pair-expiry"></p>
     <p id="agenda-enroll-status" role="status"></p>
+    <button type="button" id="agenda-pair-new" hidden>generate a fresh QR</button>
   </section>
   <main id="agenda-root"></main>
   <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
   <script src="./js/config.js"></script>
   <script src="./js/share-crypto.js"></script>
   <script src="./js/share-client.js"></script>
+  <script src="./lib/js/qrcode-generator.js"></script>
   <script src="./js/agenda-display.js"></script>
 </body>
 </html>
