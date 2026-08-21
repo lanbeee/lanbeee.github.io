@@ -254,6 +254,15 @@ function assert(cond,msg){
   });
   assert(scannerLifecycle.started && scannerLifecycle.visibleWhileActive && scannerLifecycle.noAudio && scannerLifecycle.rearCamera,'scanner requests only the rear-facing camera and never requests microphone access');
   assert(scannerLifecycle.stopped && scannerLifecycle.hiddenAfterStop,'closing the scanner stops its camera track immediately');
+  const externalCameraRejected = await page.evaluate(url=>{
+    history.replaceState(null,'',url);
+    rejectExternalHouseholdAgendaPairingHash();
+    const status = document.getElementById('agenda-pair-scanner-status').textContent;
+    const approvalHidden = document.getElementById('agenda-pair-approval').hidden;
+    stopHouseholdAgendaQrScanner();
+    return location.hash === '' && approvalHidden && /cannot authorize/i.test(status);
+  },ownerPairUrl.href);
+  assert(externalCameraRejected,'a system-Camera link is rejected instead of becoming a browser approval fallback');
   const handledInApp = await page.evaluate(url=>handleHouseholdAgendaScannedValue(url),ownerPairUrl.href);
   await page.waitForSelector('#agenda-pair-approval:not([hidden])');
   await page.waitForFunction(()=>!document.getElementById('agenda-pair-approval-code')?.disabled

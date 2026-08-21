@@ -221,7 +221,7 @@ The QR opens Tings on the owner phone and contains only the pairing ID and displ
 
 On approval, the owner phone rotates the agenda content key and encrypts it directly to the QR-bound display public key using ECDH-derived AES-GCM. The Worker relays only that ciphertext. It cannot decrypt the content key. Successful approval revokes the previous display session; merely creating a QR does not, preventing unauthenticated denial of service.
 
-Pairing requests work once, expire after 30 seconds, and are destroyed after five wrong codes. The display consumes and destroys the delivered transfer after decrypting it. A fresh QR scan is mandatory after the selected 7- or 30-day session expires.
+Pairing requests work once, expire after 30 seconds, and are destroyed after five wrong codes. QR links opened by a phone Camera app are rejected; only Tings' in-app scanner can begin approval. The display consumes and destroys the delivered transfer after decrypting it. A fresh QR scan is mandatory after the selected 7- or 30-day session expires.
 
 ### Standalone display page
 

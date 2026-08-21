@@ -568,17 +568,20 @@ async function revokeHouseholdAgendaFeed(){
   if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
 }
 
-function maybeOpenHouseholdAgendaPairingFromHash(){
+function rejectExternalHouseholdAgendaPairingHash(){
   const pairing = parseHouseholdAgendaPairingHash(location.hash);
   if(pairing){
     clearHouseholdAgendaPairingHash();
-    void openHouseholdAgendaPairingApproval(pairing);
+    const modal = $('agenda-pair-scanner');
+    const status = $('agenda-pair-scanner-status');
+    if(modal) modal.hidden = false;
+    if(status) status.textContent = 'For security, a QR link opened by the phone’s Camera app cannot authorize a display. Return to the installed Tings app and use settings → household agenda display → scan display QR.';
   }
 }
 
-window.addEventListener('hashchange',maybeOpenHouseholdAgendaPairingFromHash);
+window.addEventListener('hashchange',rejectExternalHouseholdAgendaPairingHash);
 document.addEventListener('DOMContentLoaded',()=>{
-  maybeOpenHouseholdAgendaPairingFromHash();
+  rejectExternalHouseholdAgendaPairingHash();
   $('settings-agenda-scan-qr')?.addEventListener('click',()=>{
     void startHouseholdAgendaQrScanner();
   });
