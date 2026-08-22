@@ -1116,6 +1116,95 @@ function assert(value,message){
   assert(cadenceCase.haircutWithShower,
     'Haircut day still has Shower when Haircut lands (or Haircut unplaced)');
 
+  // ══════════════════════════════════════════════════════════════════════
+  // J. The per-fill option cap must retain a late successor that can follow
+  // a preferred-evening direct predecessor. A dense set of earlier fixed
+  // boundaries used to consume Shower's 16-option slice, leaving GLPK with
+  // evening Exercise options but no compatible Exercise → Shower pair.
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n[J] late preferred predecessor keeps a paired successor option');
+  const latePair = await page.evaluate(async ()=>{
+    const satBase = new Date(2026,7,22).setHours(0,0,0,0);
+    const now = satBase + (14 * 60 + 18) * 60000;
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',
+      showWeekOnHome:true,
+      agendaOptimizer:true,
+      availabilityMinutes:Array(7).fill(1000),
+      availabilityOverrides:{},
+      blockedTimes:[
+        {label:'sleep',days:[],start:0,end:14 * 60},
+        {label:'night',days:[],start:22 * 60 + 30,end:1440}
+      ],
+      locations:[],travel:{},
+      showDueHabitsInAgenda:true,
+      showDueTasksInAgenda:true,
+      showScheduledTasksInAgenda:true,
+      showPlannedItemsInAgenda:true
+    };
+    const exercise = {
+      hid:'late-pred',name:'Late predecessor',type:'keepup',target:3,
+      flexibilityDays:1,logs:[satBase - 10 * 86400000],
+      durationMinutes:45,priority:1,
+      preferredTimeStart:17 * 60,preferredTimeEnd:22 * 60
+    };
+    const shower = {
+      hid:'late-succ',name:'Paired successor',type:'keepup',target:3,
+      flexibilityDays:3,logs:[satBase - 2 * 86400000],
+      durationMinutes:5,priority:1,
+      scheduleLinks:[{
+        anchorHid:'late-pred',direction:'after',adjacency:'direct',requireSameDay:true
+      }]
+    };
+    const fixed = Array.from({length:12},(_,i)=>({
+      hid:`late-fixed-${i}`,name:`Fixed ${i}`,type:'keepup',target:1,
+      flexibilityDays:0,logs:[satBase - 86400000],durationMinutes:5,priority:0,
+      allowedTimeStart:14 * 60 + 20 + i * 13,
+      allowedTimeEnd:14 * 60 + 25 + i * 13
+    }));
+
+    const RealDate = Date;
+    function FrozenDate(...args){
+      return args.length ? new RealDate(...args) : new RealDate(now);
+    }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    let result;
+    try{
+      saveSortSettings(settings);
+      if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+      save([exercise,shower,...fixed]);
+      const week = await buildWeekAgendaAsync(load(),settings,2);
+      const fills = (week.days[0].timeline || []).filter(row=>row.kind === 'fill');
+      const pred = fills.find(row=>row.h && row.h.hid === 'late-pred');
+      const succ = fills.find(row=>row.h && row.h.hid === 'late-succ');
+      const interloper = pred && succ && fills.some(row=>{
+        const hid = row.h && row.h.hid;
+        if(!hid || hid === 'late-pred' || hid === 'late-succ')return false;
+        return row.start + 60000 >= pred.end && row.end <= succ.start + 60000;
+      });
+      result = {
+        pred:Boolean(pred),succ:Boolean(succ),
+        ordered:Boolean(pred && succ && pred.end <= succ.start + 60000),
+        noInterloper:!interloper,
+        gap:pred && succ ? Math.round((succ.start - pred.end) / 60000) : null
+      };
+    }finally{
+      globalThis.Date = originalDate;
+    }
+    return result;
+  });
+  assert(latePair.pred && latePair.succ,
+    'GLPK places both members of the late direct pair today (' + JSON.stringify(latePair) + ')');
+  assert(latePair.ordered && latePair.noInterloper && latePair.gap <= 90,
+    'late successor remains directly after its predecessor (' + JSON.stringify(latePair) + ')');
+
   assert(errors.length === 0,'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -392,6 +392,40 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
     const placeHid = placeFill && placeFill.h && placeFill.h.hid;
     const linkedFill = placeHid && orderEdges.some(edge=>
       edge && (edge.beforeHid === placeHid || edge.afterHid === placeHid));
+    // Preserve successor starts that can actually follow a direct predecessor.
+    // Without these paired anchors, the per-fill ASAP slice can keep only early
+    // successor options while a preferred-time predecessor keeps only late
+    // options. The ILP then sees no valid pair even though the day has hours of
+    // room (for example Exercise 5:10–5:55 → Shower 5:55–6:00).
+    const predecessorEnds = [];
+    if(placeHid && orderEdges.length){
+      for(const edge of orderEdges){
+        if(!edge || edge.adjacency !== 'direct' || edge.afterHid !== placeHid)continue;
+        for(const candidate of dayCandidates){
+          if(!candidate || !candidate.h || candidate.h.hid !== edge.beforeHid)continue;
+          const predFill = {
+            h:candidate.h,
+            i:candidate.i,
+            priority:candidate.priority,
+            scarcity:candidate.scarcity
+          };
+          const probe = tryPlaceOnDay(state,predFill,{allowNetwork:false});
+          if(probe && Number.isFinite(probe.placeEnd))predecessorEnds.push(probe.placeEnd);
+          const predDurationMs = clampDuration(candidate.h.durationMinutes) * 60000;
+          for(const win of optimizerWindowsForCandidate(candidate,state)){
+            if(Number.isFinite(win.start))predecessorEnds.push(win.start + predDurationMs);
+          }
+        }
+        for(const entry of state.fills || []){
+          const ph = entry && entry.fill && entry.fill.h;
+          if(ph && ph.hid === edge.beforeHid && entry.fit
+            && Number.isFinite(entry.fit.placeEnd)){
+            predecessorEnds.push(entry.fit.placeEnd);
+          }
+        }
+      }
+      windowEdges.push(...predecessorEnds);
+    }
     const doingFill = doing && placeHid === doing.hid;
     if(linkedFill || doingFill){
       const step = 30 * 60000;
@@ -487,10 +521,16 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
       }
     }
     const isPinnedAbut = (fit)=>{
-      if(!fit || !successorStarts.length)return false;
-      return successorStarts.some(start=>{
+      if(!fit)return false;
+      const beforeSuccessor = successorStarts.some(start=>{
         if(fit.placeEnd > start + 60000)return false;
         const gapMin = Math.max(0,(start - fit.placeEnd) / 60000);
+        return gapMin <= 90;
+      });
+      if(beforeSuccessor)return true;
+      return predecessorEnds.some(end=>{
+        if(fit.placeStart + 60000 < end)return false;
+        const gapMin = Math.max(0,(fit.placeStart - end) / 60000);
         return gapMin <= 90;
       });
     };
