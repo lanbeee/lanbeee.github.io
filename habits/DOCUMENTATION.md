@@ -134,7 +134,7 @@ Everything below is covered in this skeleton:
 - **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
 - **Capacity-based scheduling:** availabilityMinutes - durationMinutes
 - **Progressive urgency:** No hard deadlines by default, with the ability to add.
-- **Privacy-first:** All data stored locally, never transmitted
+- **Privacy-first:** All data is stored in this browser. There is no Tings account. A few opt-in features can send something outward (shared display, share item, address search); those controls carry a cloud-up mark. See About → privacy.
 
 ### 1.3 Who is Tings For? 👤
 - People managing recurring routines
@@ -716,13 +716,23 @@ When `showPinnedOnCards: true`:
 - Pin icon
 - Stays at top of lists
 
-### 5.14 Status Display 👤
+### 5.14 Leaves-device mark ☁️↑ 👤
+A teal cloud-up icon (`ti-cloud-up`, class `.leave-btn`) sits next to any control that can send data off this device. Tap it for a one-line note (same pattern as the info “i”). About → **privacy** is the full explainer.
+
+Placed on:
+- Settings → household agenda display (encrypted Cloudflare relay)
+- Detail → share item (encrypted Cloudflare relay)
+- Locations / city / address search (Photon + Nominatim)
+- Travel time estimate (OSRM)
+- Location map picker (OpenStreetMap tiles)
+
+### 5.15 Status Display 👤
 When `showStatusOnCards: true`:
 - Shows status word ("run", "overdue", "on track", etc.)
 - Default: ON for all new users
 - Toggle in Settings > Display > Card Customization
 
-### 5.15 Location Display 📍 👤
+### 5.16 Location Display 📍 👤
 When `showLocationOnCards: true`:
 - Shows location pin and name
 - Color-coded by location emoji
@@ -730,7 +740,7 @@ When `showLocationOnCards: true`:
 
 ---
 
-### 5.16 Complete Card Settings Field List (19 total) 👤
+### 5.17 Complete Card Settings Field List (19 total) 👤
 
 These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 
@@ -1563,6 +1573,17 @@ Toasts appear after:
 - Coach assets live in `onboarding/` and are loaded on demand. Completion is
   versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v2`.
 
+### About and privacy 👤
+- Tapping the Tings wordmark opens **About**: a short Learn / Private pair, plus
+  install, guided start, advanced coach, help, samples, settings, and **privacy**.
+- **Privacy** explains that Tings is open source, with no account; habits live
+  in this browser’s `localStorage`; the site owner cannot see them. It lists
+  third-party services (Photon, Nominatim, OSRM, OpenStreetMap tiles, jsDelivr /
+  unpkg CDNs) and the encrypted Cloudflare relay used by shared display and
+  share item. Map lookups are described as a narrower request than embedding
+  Google Maps or Apple Maps.
+- Settings → backup also links to Privacy.
+
 ---
 
 ## XII. SETTINGS OVERVIEW 👤👨‍💻
@@ -2116,6 +2137,8 @@ list in `index.html`, the planner worker's `importScripts`, and `sw.js`
 Main sheet containers:
 - `#add-sheet` - New habit creation
 - `#detail-sheet` - Habit editing
+- `#about-sheet` - About / how it works
+- `#privacy-sheet` - Privacy explainer
 - Today sheet (added dynamically)
 - Settings sections
 
@@ -2502,6 +2525,11 @@ Same agenda logic, but simplified display:
 - Uses `adhan` package for calculations
 - Methods: `adhan.CalculationMethod` factory names
 - Supports all major Islamic prayer time conventions
+
+### 27.5 Sharing relay 👤👨‍💻
+| Service | URL | What leaves the device |
+|---------|-----|------------------------|
+| Cloudflare share Worker | `habits-share.contactnabilkhan.workers.dev` | Encrypted item shares and household agenda snapshots. Ciphertext only; keys stay on devices. |
 
 ---
 

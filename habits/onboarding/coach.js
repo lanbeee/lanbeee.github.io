@@ -97,6 +97,7 @@
   }
   function openSettings(){
     closeGuidedSheet('about-sheet');
+    closeGuidedSheet('privacy-sheet');
     closeGuidedSheet('overview-sheet');
     closeGuidedSheet('detail-sheet');
     if(typeof resetSettingsSheetState === 'function')resetSettingsSheetState();
@@ -836,6 +837,7 @@
     stage = mode === 'advanced' ? 'aIntro' : mode === 'install' ? 'iSteps' : 'eIntro';
     active = true;
     closeGuidedSheet('about-sheet');
+    closeGuidedSheet('privacy-sheet');
     mount();
     render();
     return true;

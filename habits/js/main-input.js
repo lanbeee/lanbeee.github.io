@@ -30,13 +30,39 @@ getSheetInner('detail-sheet')?.querySelector('.detail-pager')?.addEventListener(
   requestAnimationFrame(updateDetailPagerDots);
 },{passive:true});
 
-function resetAboutSheetState(){
-  document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
-    const body = $(head.dataset.collapseTarget);
-    if(body)body.hidden = true;
-    head.setAttribute('aria-expanded','false');
+function bindCollapseAccordion(rootSelector, exclusive){
+  const root = document.querySelector(rootSelector);
+  if(!root)return ()=>{};
+  const heads = ()=>root.querySelectorAll('.about-collapse-head');
+  function reset(){
+    heads().forEach(head=>{
+      const body = $(head.dataset.collapseTarget);
+      if(body)body.hidden = true;
+      head.setAttribute('aria-expanded','false');
+    });
+  }
+  heads().forEach(head=>{
+    head.addEventListener('click',()=>{
+      const body = $(head.dataset.collapseTarget);
+      if(!body)return;
+      const opening = body.hidden;
+      if(exclusive && opening){
+        heads().forEach(other=>{
+          if(other === head)return;
+          const otherBody = $(other.dataset.collapseTarget);
+          if(otherBody)otherBody.hidden = true;
+          other.setAttribute('aria-expanded','false');
+        });
+      }
+      body.hidden = !opening;
+      head.setAttribute('aria-expanded',String(opening));
+    });
   });
+  return reset;
 }
+
+const resetAboutSheetState = bindCollapseAccordion('#about-sheet', true);
+const resetPrivacySheetState = bindCollapseAccordion('#privacy-sheet', true);
 
 $('open-about').addEventListener('click',()=>{
   resetAboutSheetState();
@@ -47,23 +73,22 @@ $('about-head-close')?.addEventListener('click',()=>closeSheet('about-sheet'));
 $('about-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('about-sheet');});
 $('about-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('about-head-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
-document.querySelectorAll('#about-sheet .about-collapse-head').forEach(head=>{
-  head.addEventListener('click',()=>{
-    const body = $(head.dataset.collapseTarget);
-    if(!body)return;
-    const opening = body.hidden;
-    if(opening){
-      document.querySelectorAll('#about-sheet .about-collapse-head').forEach(other=>{
-        if(other === head)return;
-        const otherBody = $(other.dataset.collapseTarget);
-        if(otherBody)otherBody.hidden = true;
-        other.setAttribute('aria-expanded','false');
-      });
-    }
-    body.hidden = !opening;
-    head.setAttribute('aria-expanded',String(opening));
-  });
+
+function openPrivacySheet(){
+  resetPrivacySheetState();
+  openSheet('privacy-sheet');
+}
+$('open-privacy')?.addEventListener('click',()=>{
+  openPrivacySheet();
 });
+$('open-privacy-from-settings')?.addEventListener('click',()=>{
+  openPrivacySheet();
+});
+$('privacy-close')?.addEventListener('click',()=>closeSheet('privacy-sheet'));
+$('privacy-head-close')?.addEventListener('click',()=>closeSheet('privacy-sheet'));
+$('privacy-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('privacy-sheet');});
+$('privacy-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
+$('privacy-head-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 
 // PWA install support. beforeinstallprompt can fire long before any coach
 // loads, so the app captures the browser's gesture at boot and replays it on
@@ -132,7 +157,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=6';
+    script.src = './onboarding/coach.js?v=7';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{

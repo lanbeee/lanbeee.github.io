@@ -275,6 +275,27 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
   .presence-copy,.presence-chevron{ display:none; }
 }
 
+.privacy-hero-icon{
+  width:64px;height:64px;border-radius:18px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--teal-bg) 70%,var(--bg));color:var(--teal-icon);font-size:28px;
+}
+.privacy-legend{
+  display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;padding:10px 12px;
+  border-radius:14px;background:var(--bg2);color:var(--text2);font-size:12.5px;line-height:1.4;
+}
+.privacy-legend-icon{flex:0 0 auto;margin-top:1px;font-size:16px;color:var(--teal-icon);}
+.leave-btn{color:var(--teal-icon);}
+.leave-btn i{font-size:15px;}
+.settings-collapse-row{
+  display:flex;align-items:center;gap:2px;
+}
+.settings-collapse-row .settings-collapse-head{flex:1;min-width:0;}
+.settings-collapse-row .leave-btn{flex-shrink:0;z-index:1;}
+.settings-collapse-row .leave-tooltip{left:auto;right:0;}
+.habit-action-with-leave{display:flex;align-items:stretch;gap:2px;}
+.habit-action-with-leave .habit-action{flex:1;min-width:0;}
+.habit-action-with-leave .leave-btn{align-self:center;flex-shrink:0;z-index:1;}
+.habit-action-with-leave .leave-tooltip{left:auto;right:0;}
 .about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 18px;padding:16px;border-radius:20px;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));border:0;}
 .about-hero img{width:64px;height:64px;border-radius:18px;box-shadow:none;}
 .about-hero > div{padding-right:24px;}
@@ -299,7 +320,9 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 }
 .about-sheet .about-actions .btn{min-width:0;min-height:44px;padding:7px 5px;display:flex;align-items:center;justify-content:center;gap:4px;font-size:10.5px;white-space:nowrap;}
 .about-sheet .about-actions .btn i{font-size:14px;}
-.about-sheet .about-actions #about-close{grid-column:1 / -1;min-height:48px;font-size:12px;}
+.about-sheet .about-actions #open-privacy,
+.about-sheet .about-actions #about-close,
+.privacy-sheet .about-actions #privacy-close{grid-column:1 / -1;min-height:48px;font-size:12px;}
 
 .utility-sheet-head{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:12px;margin-bottom:16px;}
 .utility-sheet-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;font-size:21px;}

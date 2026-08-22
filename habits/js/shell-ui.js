@@ -442,7 +442,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -457,7 +457,7 @@ function shouldMountInPane(id) {
 // Use overflow locking only — never position:fixed. Fixing the body forces
 // scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
-  const fullPageOpen = ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.body.classList.toggle('fullpage-open',fullPageOpen);
   if(modalOpen && !document.body.classList.contains('modal-open')){
@@ -1086,7 +1086,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
@@ -1121,7 +1121,7 @@ document.addEventListener('click',e=>{
 // not close the entire stack in a single keypress.
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape') return;
-  const modalIds = ['add-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -1138,6 +1138,7 @@ document.addEventListener('keydown',e=>{
     else if (id === 'overview-sheet') closeSheet('overview-sheet');
     else if (id === 'settings-sheet') closeSheet('settings-sheet');
     else if (id === 'about-sheet') closeSheet('about-sheet');
+    else if (id === 'privacy-sheet') closeSheet('privacy-sheet');
     else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');
     else if (id === 'home-filter-sheet') closeSheet('home-filter-sheet');
     else if (id === 'calendar-filter-sheet') closeSheet('calendar-filter-sheet');

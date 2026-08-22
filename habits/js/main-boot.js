@@ -1095,6 +1095,8 @@ document.addEventListener('click',e=>{
 document.addEventListener('click',e=>{
   const btn = e.target.closest('[data-tip]');
   if(!btn)return;
+  e.preventDefault();
+  e.stopPropagation();
   const tip = $(btn.dataset.tip);
   if(tip)tip.toggleAttribute('hidden');
 });

@@ -12,6 +12,7 @@
    sheet it was opened from (overview/today), while transient modals that can
    open from detail (snooze/activity) and the day drill-down stay on top. */
 #detail-sheet{z-index:110;}
+#privacy-sheet{z-index:105;}
 #value-log-sheet{z-index:115;}
 #snooze-sheet,#activity-sheet,#day-capacity-sheet,#day-logs-sheet{z-index:120;}
 .sheet{
@@ -27,13 +28,15 @@
   will-change:transform,opacity;
 }
 .sheet-wrap.open .sheet{transform:translateY(0) scale(1);opacity:1;}
-#add-sheet,#about-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet{
+#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet{
   align-items:stretch;background:rgba(0,0,0,0.18);padding-top:0;
 }
 body[data-pane-count="2"] #add-sheet,
 body[data-pane-count="3"] #add-sheet,
 body[data-pane-count="2"] #about-sheet,
 body[data-pane-count="3"] #about-sheet,
+body[data-pane-count="2"] #privacy-sheet,
+body[data-pane-count="3"] #privacy-sheet,
 body[data-pane-count="2"] #detail-sheet,
 body[data-pane-count="3"] #detail-sheet,
 body[data-pane-count="2"] #overview-sheet,
@@ -47,7 +50,7 @@ body[data-pane-count="3"] #sample-habits-sheet{
   background:rgba(0,0,0,0.36);
   padding:24px;
 }
-.add-sheet,.about-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet{
+.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet{
   border-radius:0;min-height:100dvh;max-height:100dvh;
   padding-top:calc(22px + env(safe-area-inset-top));
   padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + env(safe-area-inset-bottom));
@@ -59,7 +62,7 @@ body[data-pane-count="3"] #sample-habits-sheet{
   padding-bottom:calc(88px + var(--keyboard-lift) + env(safe-area-inset-bottom));
   position:relative;
 }
-.about-sheet,.overview-sheet,.sample-habits-sheet{
+.about-sheet,.privacy-sheet,.overview-sheet,.sample-habits-sheet{
   /* These pages all provide their own top close control or an end-of-page
      action. Their footer belongs in the document flow so it never covers a
      calendar cell, sample row, or expanded help block on a short screen. */

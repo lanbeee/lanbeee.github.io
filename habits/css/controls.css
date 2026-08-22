@@ -125,7 +125,9 @@ span:has(> .info-btn){position:relative;display:inline-block;}
 .flexibility-label .info-tooltip{left:auto;right:0;}
 .add-sheet .info-tooltip{left:auto;right:0;}
 .priority-label .info-tooltip{left:0;right:auto;}
-.info-tooltip[hidden]{display:none;}
+.leave-btn{color:var(--teal-icon);}
+.leave-btn i{font-size:15px;}
+.leave-tooltip{max-width:260px;}
 .planning-grid .range-value{
   width:100%;height:38px;background:var(--bg);
   grid-template-columns:minmax(0,40px) auto;

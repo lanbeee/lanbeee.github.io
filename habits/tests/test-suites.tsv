@@ -54,6 +54,7 @@ planner-performance-regression-test.js	planner	page-both
 planner-worker-daily-audit-regression-test.js	planner	once
 prayer-times-test.js	integrations	once
 preferred-window-deferral-test.js	planner	once
+privacy-sheet-test.js	ui	once
 progressive-render-test.js	planner	default-only
 recent-nav.js	ui	once
 retention-cleanup-test.js	data	once

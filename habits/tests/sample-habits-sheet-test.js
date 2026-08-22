@@ -58,36 +58,34 @@ async function launchBrowser(){
     return {
       sample: !!document.getElementById('open-sample-habits'),
       settings: !!document.getElementById('open-settings'),
+      privacy: !!document.getElementById('open-privacy'),
       done: !!document.getElementById('about-close'),
       blocks: blocks.length,
       labels,
       collapsed,
-      planSummary: document.querySelector('[data-collapse-target="about-plan-body"] .about-summary')?.textContent || ''
+      learnSummary: document.querySelector('[data-collapse-target="about-learn-body"] .about-summary')?.textContent || ''
     };
   });
   console.log(aboutBtns);
-  assert(aboutBtns.sample && aboutBtns.settings && aboutBtns.done, 'About shows sample habits, settings, done');
-  assert(aboutBtns.blocks >= 6, 'About has six how-to cards');
-  assert(aboutBtns.labels.includes('Plan') && /agenda|busy|open hours/i.test(aboutBtns.planSummary), 'Plan card covers week agenda');
+  assert(aboutBtns.sample && aboutBtns.settings && aboutBtns.privacy && aboutBtns.done, 'About shows samples, settings, privacy, done');
+  assert(aboutBtns.blocks === 2, 'About keeps two short cards now that coaches exist');
+  assert(aboutBtns.labels.includes('Learn Tings') && /guided start|advanced coach/i.test(aboutBtns.learnSummary), 'Learn card points at the coaches');
+  assert(aboutBtns.labels.includes('Private by default'), 'Private card remains on About');
   assert(aboutBtns.collapsed, 'About cards collapsed by default');
 
-  await page.locator('[data-collapse-target="about-start-body"]').click();
-  const afterStart = await page.evaluate(() => ({
-    startOpen: !document.getElementById('about-start-body')?.hidden,
-    startExpanded: document.querySelector('[data-collapse-target="about-start-body"]')?.getAttribute('aria-expanded') === 'true'
+  await page.locator('[data-collapse-target="about-learn-body"]').click();
+  const afterLearn = await page.evaluate(() => ({
+    learnOpen: !document.getElementById('about-learn-body')?.hidden,
+    learnExpanded: document.querySelector('[data-collapse-target="about-learn-body"]')?.getAttribute('aria-expanded') === 'true'
   }));
-  assert(afterStart.startOpen && afterStart.startExpanded, 'Start expands on tap');
+  assert(afterLearn.learnOpen && afterLearn.learnExpanded, 'Learn expands on tap');
 
-  await page.locator('[data-collapse-target="about-log-body"]').click();
-  const afterLog = await page.evaluate(() => ({
-    startClosed: document.getElementById('about-start-body')?.hidden === true,
-    logOpen: !document.getElementById('about-log-body')?.hidden
+  await page.locator('[data-collapse-target="about-private-body"]').click();
+  const afterPrivate = await page.evaluate(() => ({
+    learnClosed: document.getElementById('about-learn-body')?.hidden === true,
+    privateOpen: !document.getElementById('about-private-body')?.hidden
   }));
-  assert(afterLog.startClosed && afterLog.logOpen, 'accordion: Log open closes Start');
-
-  await page.locator('[data-collapse-target="about-plan-body"]').click();
-  const planDetail = await page.evaluate(() => document.getElementById('about-plan-body')?.textContent || '');
-  assert(/busy times|open hours|packs/i.test(planDetail), 'Plan detail mentions blocking and packing');
+  assert(afterPrivate.learnClosed && afterPrivate.privateOpen, 'accordion: Private open closes Learn');
 
   console.log('\n[B] Sample habits sheet layout');
   await page.locator('#open-sample-habits').click();

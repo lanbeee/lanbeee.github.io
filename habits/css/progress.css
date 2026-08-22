@@ -95,7 +95,7 @@
   .monthday-chip{height:30px;font-size:11px;}
   .schedule-chip{padding-left:8px;padding-right:8px;}
   .about-hero{grid-template-columns:52px minmax(0,1fr);padding:13px;}
-  .about-hero img{width:52px;height:52px;border-radius:15px;}
+  .about-hero img,.privacy-hero-icon{width:52px;height:52px;border-radius:15px;}
   .about-block{padding:0;}
   .about-collapse-head{padding:10px;}
   .about-collapse-body{padding-left:10px;padding-right:10px;}

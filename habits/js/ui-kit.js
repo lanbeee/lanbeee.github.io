@@ -21,6 +21,10 @@ function uiAboutBlockHtml({id, label, summary, body}){
   return `<section class="about-block about-collapsible calm-block"><button type="button" class="about-collapse-head" data-collapse-target="${id}" aria-expanded="false" aria-controls="${id}"><span class="about-head-text"><span class="about-label">${label}</span><span class="about-summary">${summary}</span></span><i class="ti ti-chevron-down" aria-hidden="true"></i></button><div class="about-collapse-body" id="${id}" hidden>${body.map(p=>`<p>${p}</p>`).join('')}</div></section>`;
 }
 
+function uiLeaveBtnHtml({id, aria, body}){
+  return `<button type="button" class="info-btn leave-btn" data-tip="${id}" aria-label="${aria}"><i class="ti ti-cloud-up" aria-hidden="true"></i></button><div class="info-tooltip leave-tooltip" id="${id}" role="tooltip" hidden>${body}</div>`;
+}
+
 function uiFilterSheetHtml({wrapId, extraClass, titleId, title, summaryId, closeId, closeAria, groupsId, resetId, doneId}){
   const sheetCls = extraClass ? ` ${extraClass}` : '';
   return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Choose a place or topic.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div></div></div>`;
@@ -107,31 +111,68 @@ const UI_SETTING_TOGGLES = {
 };
 
 const UI_ABOUT_BLOCKS = [
-  {id:'about-start-body', label:'Start', summary:'Sample habits to try a demo, or + to make a build, limit, stop, or task.', body:[
-    'Blank home: tap the empty message to open sample habits. Add one demo or a few; tagged bulk adds can be removed from the same sheet.',
-    '<b>+</b> creates a build (keep up), limit, stop, or task.'
+  {id:'about-learn-body', label:'Learn Tings', summary:'Guided start covers the daily loop. Advanced coach covers the full planning surface.', body:[
+    'The buttons below replay those tours anytime. Help &amp; docs is the written reference. Samples let you try a feature without building it from scratch.'
   ]},
-  {id:'about-log-body', label:'Log', summary:'Pulse the icon to log; tap the card for detail. Toasts offer quick next steps.', body:[
-    'Pulse the icon (or double-tap the card) to log. Tap the card body to open detail: edit, history, and schedule.',
-    'Toasts handle quick follow-ups without another screen.'
-  ]},
-  {id:'about-home-body', label:'Home', summary:'Today’s agenda: pinned and due float up. Swipe to pin, snooze, timer, or remove.', body:[
-    'Home is today’s slice of the week plan, not a dump. Cards show when you’re on agenda.',
-    'Swipe: pin, keep (samples), activity, timer. The other way: snooze or remove. Search and topic/place filters narrow the list.'
-  ]},
-  {id:'about-plan-body', label:'Plan', summary:'End-to-end week planning: busy blocks, open hours, places, then the agenda packs your list.', body:[
-    'In Settings, set <b>busy times</b> (sleep, work, meals) and <b>open hours</b> so the week has real free gaps. Add places and travel so moves between Home / Gym / etc. cost time.',
-    'Give habits windows, duration, and places in detail. Tings packs eligible items into the week; home and the week strip show that agenda. Optional smarter packing lives in Settings → advanced.'
-  ]},
-  {id:'about-calendar-body', label:'Calendar', summary:'Inspect the week: open hours, lightest days, coming up, and needs attention.', body:[
-    'Companion view for the plan: open hours and lightest days, plus panes for coming up, needs attention, and recent.',
-    'Tap a day or chip to dig in. Use it to see what the agenda already placed and where the week is tight.'
-  ]},
-  {id:'about-tune-body', label:'Tune', summary:'Detail sets windows, places, chunks, auto-log, timers. Settings for places, city, and backup.', body:[
-    'Detail: time windows (including prayer anchors), places, breakable chunks, auto-log, and timer length.',
-    'Settings: places/travel, city, busy times, open hours, card chrome, and backup/export.'
+  {id:'about-private-body', label:'Private by default', summary:'Your list stays on this device. The cloud-up mark flags the few features that contact a service.', body:[
+    'Tings is open source, and it is not an account. Habits, logs, and places are saved in this browser. The site owner cannot see them.',
+    'A few features contact a service for a stated job — shared display, share item, address search, travel estimates. Each of those controls has a cloud-up mark; tap it for a short note, or open <b>privacy</b> for the full picture.'
   ]}
 ];
+
+const UI_PRIVACY_BLOCKS = [
+  {id:'privacy-here-body', label:'On this device', summary:'Habits, logs, places, and settings live in this browser. There is no Tings account.', body:[
+    'Tings is a set of files in your browser. Your list is saved in this browser’s own storage (localStorage) on this phone or computer — not in a Tings inbox.',
+    'The person who put this site online cannot see your habits, notes, addresses, or logs. Clearing this site’s data, switching browsers, or getting a new phone wipes the list unless you exported a backup (Settings → backup).',
+    'Live location is used only to match a saved place. Coordinates are not stored and are not uploaded.'
+  ]},
+  {id:'privacy-why-body', label:'Why a website can still be private', summary:'Tings is open source. The hosted files are the app; planning runs here.', body:[
+    'The site you open is the program. There is no Tings account and no hidden backend for your list. Anyone can read how it works.',
+    'A few features below contact an outside service, each for a stated job. Nothing else is uploaded.'
+  ]},
+  {id:'privacy-display-body', label:'Shared display', summary:'Opt-in fridge or tablet view. Encrypted on this phone, then relayed by Cloudflare.', body:[
+    'Household agenda display publishes a capped view of today and tomorrow. This phone encrypts that snapshot first, then a Cloudflare relay stores the encrypted copy so a display can fetch it.',
+    'Cloudflare can see that a blob exists, its size, and when it was updated. It cannot read item names, notes, or places. The encryption key stays with your devices. Pairing is QR-only from inside Tings.',
+    'Look for the cloud-up mark on that setting. Pause or revoke anytime in Settings.'
+  ]},
+  {id:'privacy-share-body', label:'Share item', summary:'Opt-in. Encrypted on this phone; the key rides in the invitation link.', body:[
+    'Share item uses the same Cloudflare relay. The item is encrypted on this phone before it leaves. The key lives in the link itself, not on the server.',
+    'Their progress stays separate from yours. Revoke from the item when you are done.'
+  ]},
+  {id:'privacy-maps-body', label:'Maps and places', summary:'Lookups use open mapping services, and only for that lookup.', body:[
+    '<b>Address or city search</b> sends the text you type to Photon (Komoot) and Nominatim (OpenStreetMap).',
+    '<b>Travel estimates</b> send the pins of two saved places to OSRM. You can type minutes yourself instead.',
+    '<b>Map picture</b> loads OpenStreetMap tiles for the area on screen.',
+    'These are open mapping services. They receive the search or pin needed for that job — not your habit list, and not an ongoing location history. That is a narrower request than embedding Google Maps or Apple Maps.'
+  ]},
+  {id:'privacy-others-body', label:'Other services', summary:'Icons and map/PDF libraries load from public CDNs. They do not receive your list.', body:[
+    'Tabler icons (jsDelivr) and Leaflet (unpkg) draw buttons and the map. PDF import uses pdf.js in this browser; the file you pick is not uploaded.',
+    'Prayer times are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
+  ]}
+];
+
+const UI_LEAVE_HINTS = {
+  agenda:{
+    aria:'this sends an encrypted agenda off this device',
+    body:'Publishing encrypts a limited today/tomorrow list on this phone, then stores that encrypted copy on a Cloudflare relay so a display can fetch it. Cloudflare cannot read item names. Full story: About → privacy.'
+  },
+  share:{
+    aria:'this sends an encrypted item off this device',
+    body:'Sharing encrypts this item on this phone, then stores that encrypted copy on a Cloudflare relay. The key is in the invitation link, not on the server. Full story: About → privacy.'
+  },
+  geocode:{
+    aria:'this sends a search off this device',
+    body:'Address search uses open mapping services (Photon and OpenStreetMap Nominatim). They receive the text you type for this lookup only — not your habit list. Full story: About → privacy.'
+  },
+  travel:{
+    aria:'this sends place coordinates off this device',
+    body:'Travel estimates use OSRM, an open routing service. It receives the two place pins for this estimate only. You can type minutes yourself instead. Full story: About → privacy.'
+  },
+  map:{
+    aria:'this loads map tiles from the web',
+    body:'Map tiles come from OpenStreetMap. The request is the area on screen, not your habits, and not a location history. Full story: About → privacy.'
+  }
+};
 
 function mountUiKit(){
   document.querySelectorAll('[data-ui-toggles]').forEach(host=>{
@@ -143,6 +184,13 @@ function mountUiKit(){
   });
   const about = document.querySelector('[data-ui-about-stack]');
   if(about)about.innerHTML = UI_ABOUT_BLOCKS.map(uiAboutBlockHtml).join('');
+  const privacy = document.querySelector('[data-ui-privacy-stack]');
+  if(privacy)privacy.innerHTML = UI_PRIVACY_BLOCKS.map(uiAboutBlockHtml).join('');
+  document.querySelectorAll('[data-ui-leave]').forEach((host,i)=>{
+    const hint = UI_LEAVE_HINTS[host.dataset.uiLeave];
+    if(!hint)return;
+    host.innerHTML = uiLeaveBtnHtml({id:`leave-${host.dataset.uiLeave}-${i}-help`, aria:hint.aria, body:hint.body});
+  });
   const allowed = $('detail-allowed-time-row');
   if(allowed && !allowed.querySelector('.time-endpoint'))allowed.innerHTML = uiTimePairHtml('allowed');
   const preferred = $('detail-preferred-time-row');
