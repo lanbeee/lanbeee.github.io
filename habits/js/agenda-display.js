@@ -62,6 +62,16 @@ function registerDisplayWallpaperTap(){
   if(_displayWallpaperTaps.length >= 3) setDisplayWallpaper(false);
 }
 
+function purgeLegacyDisplayEnrollments(){
+  // v2 was shared by the retired link/code enrollment and the first QR build.
+  // Those records have the same fields, so no client-side test can safely tell
+  // them apart. Fail closed and require one fresh QR pairing for the v3 key.
+  for(const legacyKey of ['tings_agenda_display_v1','tings_agenda_display_v2']){
+    if(legacyKey === AGENDA_DISPLAY_STORAGE_KEY) continue;
+    try{ localStorage.removeItem(legacyKey); }catch(_){}
+  }
+}
+
 function displayReadEnrollment(){
   try{ return JSON.parse(localStorage.getItem(AGENDA_DISPLAY_STORAGE_KEY) || 'null'); }
   catch(_){ return null; }
@@ -404,13 +414,7 @@ window.addEventListener('pageshow',()=>void refreshDisplay());
 window.addEventListener('online',()=>void refreshDisplay());
 window.addEventListener('focus',()=>void refreshDisplay());
 document.addEventListener('DOMContentLoaded',()=>{
-  // Earlier versions accepted reusable or link-based enrollment material.
-  // Never migrate those credentials into QR-bound v3 sessions.
-  for(const legacyKey of ['tings_agenda_display_v1','tings_agenda_display_v2']){
-    if(legacyKey !== AGENDA_DISPLAY_STORAGE_KEY){
-      try{ localStorage.removeItem(legacyKey); }catch(_){}
-    }
-  }
+  purgeLegacyDisplayEnrollments();
   $('agenda-hide')?.addEventListener('click',()=>setDisplayWallpaper(true));
   $('agenda-wallpaper')?.addEventListener('pointerup',registerDisplayWallpaperTap);
   $('agenda-wallpaper')?.addEventListener('keydown',event=>{

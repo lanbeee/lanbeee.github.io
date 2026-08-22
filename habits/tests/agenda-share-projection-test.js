@@ -18,6 +18,11 @@ function assert(cond,msg){
     viewport:{ width:390,height:844 },isMobile:true,hasTouch:true,serviceWorkers:'block'
   });
   const page = await ownerContext.newPage();
+  const cspViolations = [];
+  page.on('console', msg => {
+    const text = msg.text();
+    if(/Content Security Policy/i.test(text))cspViolations.push(text);
+  });
   await page.goto(baseUrl,{ waitUntil:'load' });
 
   const result = await page.evaluate(async () => {
@@ -350,6 +355,116 @@ function assert(cond,msg){
   assert(skewErrors.every(message=>!/SHARE_STATE_KEY|SHARE_WORKER_URL|AGENDA_SHARE_DAYS|AGENDA_DISPLAY_KEY/.test(message)),'survives one-version cached config skew');
   assert(skewWorkerUrl.includes('habits-share-staging'),'cached-config fallback keeps localhost on staging');
   await skewContext.close();
+
+  const swSource = fs.readFileSync(path.join(__dirname,'../sw.js'),'utf8');
+  assert(/if \(isShareWorkerRequest\(req\)\) return;/.test(swSource),'share Worker GETs bypass Cache Storage');
+  assert(swSource.includes('isAgendaDisplayPath'),'display navigations do not fall back to the owner app shell');
+  assert(swSource.includes('./js/sw-register.js'),'service worker precaches the external SW boot script');
+  const displayHtml = fs.readFileSync(path.join(__dirname,'../agenda-display.html'),'utf8');
+  const nestedDisplayHtml = fs.readFileSync(path.join(__dirname,'../agenda-display/index.html'),'utf8');
+  assert(displayHtml.includes("frame-ancestors 'none'") && nestedDisplayHtml.includes("frame-ancestors 'none'"),'display CSP forbids framing');
+  assert(displayHtml.includes('agenda-display-boot.js') && nestedDisplayHtml.includes('agenda-display-boot.js'),'display loads the frame-bust first');
+  assert(await page.evaluate(()=>AGENDA_DISPLAY_KEY === 'tings_agenda_display_v3'),'active display storage key is v3');
+
+  const ownerHtml = fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  const ownerCsp = (ownerHtml.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
+  const ownerScriptSrc = (ownerCsp.split(';').map(part=>part.trim()).find(part=>part.startsWith('script-src')) || '');
+  assert(ownerScriptSrc.length > 0,'owner CSP includes script-src');
+  assert(!/\bunsafe-inline\b/.test(ownerScriptSrc),'owner CSP script-src does not allow unsafe-inline');
+  assert(cspViolations.length === 0,`owner page has no CSP console violations${cspViolations.length ? ` (${cspViolations.join(' | ')})` : ''}`);
+  const ownerInlineScripts = (ownerHtml.match(/<script\b[\s\S]*?<\/script>/gi) || [])
+    .filter(block => !/\bsrc\s*=/.test(block.slice(0, block.indexOf('>'))));
+  assert(ownerInlineScripts.length === 0,'owner index has no inline boot scripts');
+  assert(ownerHtml.includes('<script src="./js/agenda-display-boot.js"></script>'),'owner page loads the frame-bust from the head');
+  assert(!ownerScriptSrc.includes('https://unpkg.com ') && !ownerScriptSrc.includes('https://cdn.jsdelivr.net '),'owner CSP does not trust entire CDN script hosts');
+  assert(/tabler-icons\.min\.css" integrity="sha256-[A-Za-z0-9+/=]+" crossorigin=/.test(ownerHtml),'Tabler CSS is SRI-pinned');
+  assert(/leaflet\.js" integrity="sha256-/.test(ownerHtml),'Leaflet JS remains SRI-pinned');
+  const calendarImport = fs.readFileSync(path.join(__dirname,'../js/calendar-import.js'),'utf8');
+  assert(/CALENDAR_PDF_JS_SRI = 'sha256-/.test(calendarImport),'pdf.js script is SRI-pinned');
+  assert(/CALENDAR_PDF_WORKER_SRI = 'sha256-/.test(calendarImport),'pdf.js worker is SRI-pinned');
+  assert(/script\.integrity = integrity/.test(calendarImport),'pdf.js loader applies the integrity hash');
+  assert(/sriMatches\(buf, integrity\)/.test(calendarImport),'pdf.js worker bytes are integrity-checked before the blob URL');
+  assert(/isEvalSupported\s*:\s*false/.test(calendarImport),'pdf.js parsing disables its vulnerable dynamic-code path');
+
+  const guardContext = await browser.newContext({ serviceWorkers:'block' });
+  const displayUrl = new URL('agenda-display.html',baseUrl).href;
+  const migratePage = await guardContext.newPage();
+  await migratePage.route(/habits-share/,route=>{
+    const url = route.request().url();
+    if(url.includes('/v1/agenda-pairings') && route.request().method() === 'POST'){
+      route.fulfill({
+        status:201,contentType:'application/json',
+        body:JSON.stringify({ pairingId:'00'.repeat(16),expiresAt:Date.now() + 30000 })
+      });
+      return;
+    }
+    route.fulfill({
+      status:200,contentType:'application/json',
+      body:JSON.stringify({ snapshot:null,revision:0,paused:false,status:'active',sessionExpiresAt:Date.now() + 86400000 })
+    });
+  });
+  await migratePage.goto(displayUrl,{ waitUntil:'load' });
+  await migratePage.evaluate(()=>{
+    localStorage.setItem('tings_agenda_display_v1',JSON.stringify({
+      feedId:'a'.repeat(32),contentKey:'b'.repeat(64),viewerCredential:'legacy-link'
+    }));
+    localStorage.setItem('tings_agenda_display_v2',JSON.stringify({
+      feedId:'c'.repeat(32),contentKey:'d'.repeat(64),deviceCredential:'e'.repeat(64)
+    }));
+    localStorage.removeItem('tings_agenda_display_v3');
+  });
+  await migratePage.reload({ waitUntil:'load' });
+  const migrated = await migratePage.evaluate(()=>({
+    v1:localStorage.getItem('tings_agenda_display_v1'),
+    v2:localStorage.getItem('tings_agenda_display_v2'),
+    v3:JSON.parse(localStorage.getItem('tings_agenda_display_v3') || 'null')
+  }));
+  assert(!migrated.v1 && !migrated.v2,'legacy display keys are deleted on boot');
+  assert(!migrated.v3,'ambiguous v2 sessions fail closed instead of migrating retired link credentials');
+
+  await migratePage.evaluate(()=>{
+    localStorage.setItem('tings_agenda_display_v2',JSON.stringify({
+      feedId:'f'.repeat(32),contentKey:'g'.repeat(64),deviceCredential:'h'.repeat(64),viewerCredential:'link'
+    }));
+    localStorage.removeItem('tings_agenda_display_v3');
+  });
+  await migratePage.reload({ waitUntil:'load' });
+  const rejectedLegacy = await migratePage.evaluate(()=>({
+    v2:localStorage.getItem('tings_agenda_display_v2'),
+    v3:localStorage.getItem('tings_agenda_display_v3')
+  }));
+  assert(!rejectedLegacy.v2 && !rejectedLegacy.v3,'link-based v2 enrollments are not migrated');
+
+  const framePage = await guardContext.newPage();
+  await framePage.goto('about:blank');
+  const framed = await framePage.evaluate(async url=>{
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    await new Promise(resolve=>{
+      iframe.onload = resolve;
+      setTimeout(resolve,2500);
+    });
+    const doc = iframe.contentDocument;
+    return {
+      html:doc ? doc.documentElement.innerHTML : '',
+      pairing:Boolean(doc && doc.getElementById('agenda-pair-code'))
+    };
+  },displayUrl);
+  assert(!framed.pairing && !/agenda-pair-qr|agenda-pair-code/.test(framed.html),'a framed display is blanked before pairing UI appears');
+  const framedOwner = await framePage.evaluate(async url=>{
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    await new Promise(resolve=>{
+      iframe.onload = resolve;
+      setTimeout(resolve,2500);
+    });
+    const doc = iframe.contentDocument;
+    return doc ? doc.documentElement.innerHTML : '';
+  },baseUrl);
+  assert(!/settings-agenda-scan-qr|agenda-pair-approval/.test(framedOwner),'a framed owner app is blanked before sensitive controls appear');
+  await guardContext.close();
 
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

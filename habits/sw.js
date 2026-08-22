@@ -1,4 +1,4 @@
-const CACHE = 'tings-v160';
+const CACHE = 'tings-v164';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -22,6 +22,18 @@ const GEOCODE_ORIGINS = [
   'https://nominatim.openstreetmap.org',
   'https://photon.komoot.io'
 ];
+const SHARE_WORKER_ORIGINS = [
+  'https://habits-share.contactnabilkhan.workers.dev',
+  'https://habits-share-staging.contactnabilkhan.workers.dev'
+];
+
+function isShareWorkerRequest(req){
+  return SHARE_WORKER_ORIGINS.some(origin => req.url === origin || req.url.startsWith(origin + '/'));
+}
+
+function isAgendaDisplayPath(pathname){
+  return /\/agenda-display(\/index)?\.html$|\/agenda-display\/?$/.test(pathname || '');
+}
 
 const PRECACHE = [
   './',
@@ -109,9 +121,11 @@ const PRECACHE = [
   './js/settings-appearance.js',
   './js/settings-share.js',
   './js/agenda-display.js',
+  './js/agenda-display-boot.js',
   './js/main-boot.js',
   './js/main-input.js',
   './js/main-runtime.js',
+  './js/sw-register.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
@@ -171,6 +185,10 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
+  // Pairing status and encrypted agenda reads must hit the network. Cache Storage
+  // ignores Cache-Control: no-store when cache.put() is used, and a cached 200
+  // would hide later 401/410 revoke responses.
+  if (isShareWorkerRequest(req)) return;
 
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
@@ -182,8 +200,17 @@ self.addEventListener('fetch', event => {
         }
         return res;
       } catch {
-        return (await caches.match(req))
-          || (await caches.match('./index.html'))
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        let path = '';
+        try { path = new URL(req.url).pathname; } catch (_) {}
+        if (isAgendaDisplayPath(path)) {
+          return (await caches.match('./agenda-display.html'))
+            || (await caches.match('./agenda-display/index.html'))
+            || (await caches.match('./agenda-display/'))
+            || new Response('Offline', { status: 503, statusText: 'Offline' });
+        }
+        return (await caches.match('./index.html'))
           || (await caches.match('./'))
           || new Response('Offline', { status: 503, statusText: 'Offline' });
       }

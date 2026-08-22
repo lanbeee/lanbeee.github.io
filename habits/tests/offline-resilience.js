@@ -115,6 +115,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       './js/shell-ui.js',
       './js/main-boot.js',
       './js/main-runtime.js',
+      './js/sw-register.js',
       './css/tokens.css',
       './css/home.css',
       './css/sweeps.css'
@@ -142,7 +143,13 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   // Verify the tabler CSS loaded successfully
   const tablerLoaded = await page.evaluate(() => {
     const link = document.querySelector('link[href*="tabler-icons"]');
-    return link && link.media === 'all';
+    if (!link) return false;
+    try {
+      return Boolean(link.sheet);
+    } catch (_) {
+      // Cross-origin sheet access can throw; the link still applied.
+      return true;
+    }
   });
   if (!tablerLoaded) throw new Error('tabler icons CSS not loaded after coming back online');
 
