@@ -180,17 +180,23 @@ const DEFAULT_SORT_SETTINGS = {
   defaultTopics:[],
   defaultAutoMarkMinutes:null,
 
-  showStatusOnCards:true,
-  showEarlyOnCards:true,
+  // Calm-card defaults: the insight decorations (progress pill, early pill,
+  // trail dots, order marks) are OFF so switching out of minimal mode reveals
+  // the fuller surface gradually instead of all extras at once. Each remains
+  // one toggle away in Settings. Pre-flip installs keep what they had (see
+  // loadSortSettings).
+  showStatusOnCards:false,
+  showEarlyOnCards:false,
   // Right-side scheduled time on each item: 'time' = clock + time,
   // 'icon' = symbol only, 'hide' = nothing.
   showAgendaTimesOnCards:'time',
   // Two-week dot history under each item.
-  showTrailOnCards:true,
-  // One-line status ("due today", "on track", ...).
+  showTrailOnCards:false,
+  // One-line status ("due today", "on track", ...) — also part of minimal
+  // mode's core card, so it stays on.
   showCueOnCards:true,
   // Before/after, doing-now, and linked marks between items.
-  showOrderPillsOnCards:true,
+  showOrderPillsOnCards:false,
 
   // Simplified surface for new users: strips home cards, detail panes, and
   // calendar overview chrome, and groups home by today / overdue / coming up
@@ -198,7 +204,7 @@ const DEFAULT_SORT_SETTINGS = {
   // Installs that predate this default keep it off (see loadSortSettings).
   minimalMode:true,
 
-  compactMode:true,
+  compactMode:false,
   fontScale:'medium',
   themeMode:'system',
 

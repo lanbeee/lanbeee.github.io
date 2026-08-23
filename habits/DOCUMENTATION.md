@@ -508,7 +508,7 @@ minimalMode: boolean,  // 👤 Simplified UI for new users
 
 #### 4.3.5 Mode & Theme 👤
 ```js
-compactMode: boolean,      // 👤 Square cards
+compactMode: boolean,      // 👤 Square cards (default OFF; pre-flip installs keep ON)
 fontScale: 'small'|'medium'|'large',
 themeMode: 'light'|'dark'|'system',
 ```
@@ -729,7 +729,7 @@ Placed on:
 ### 5.15 Status Display 👤
 When `showStatusOnCards: true`:
 - Shows status word ("run", "overdue", "on track", etc.)
-- Default: ON for all new users
+- Default: OFF for new users (calm-card default); ON for installs saved before the flip
 - Toggle in Settings > Display > Card Customization
 
 ### 5.16 Location Display 📍 👤
@@ -759,12 +759,16 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showFlexibilityOnCards | **false** | Flexibility days |
 | showTopicsOnCards | **false** | 💡 topic chips |
 | showLocationOnCards | **false** | 📍 location pin |
-| showStatusOnCards | **true** | Status word ("run", etc.) |
+| showStatusOnCards | **false** | Status word ("run", etc.) — calm-card default |
 | showAgendaTimesOnCards | **'time'** | Time display in agenda |
-| showTrailOnCards | **true** | Activity dots (recent logs) |
+| showTrailOnCards | **false** | Activity dots (recent logs) — calm-card default |
 | showCueOnCards | **true** | Status text below name |
-| showOrderPillsOnCards | **true** | ↗️↘️ schedule link markers |
-| showEarlyOnCards | **true** | 🌅 ready early indicator |
+| showOrderPillsOnCards | **false** | ↗️↘️ schedule link markers — calm-card default |
+| showEarlyOnCards | **false** | 🌅 ready early indicator — calm-card default |
+
+> **Calm-card defaults:** the four insight decorations above default OFF so
+> switching out of minimal mode doesn't unleash every extra at once. Installs
+> saved before the flip keep the look they had (see `loadSortSettings`).
 
 ---
 

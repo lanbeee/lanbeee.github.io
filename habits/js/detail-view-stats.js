@@ -23,7 +23,7 @@ function renderStats(h){
   const timed = h.type === 'task' && h.eventTime !== null;
   const targetLine = h.type === 'zero' ? 'avoid'
     : h.type === 'task' ? (timed ? 'appointment' : (h.dueDate ? 'due task' : 'someday'))
-    : `${target}d rhythm`;
+    : `${formatRhythmLabel(target)} rhythm`;
   const rhythmIcon = h.type === 'zero' ? 'ti-ban'
     : h.type === 'task' ? (timed ? 'ti-calendar-time' : 'ti-checkbox')
     : 'ti-repeat';
@@ -166,24 +166,29 @@ function aboutText(h){
     if(days === null)return `${planLabel}. Aim for about every ${rhythm} days.`;
     if(days < 0)return `${planLabel}. Next entry is ${entryWhen(h.lastLog)}.`;
     const when = entryWhen(h.lastLog);
+    // Whole-day boundary (see cueDayBoundary): fractional rhythms must not
+    // print floats like "0.666666666 days left in this rhythm".
+    const due = typeof cueDayBoundary === 'function' ? cueDayBoundary(target) : Math.ceil(target);
     if(h.type === 'keepup'){
-      if(days < target)return `${planLabel}. Last entry was ${when}.`;
-      if(days === target)return `${planLabel}. Last entry was ${when}. Rhythm is also due today.`;
-      return `${planLabel}. Last entry was ${when}. Rhythm is ${days - target} days overdue.`;
+      if(days < due)return `${planLabel}. Last entry was ${when}.`;
+      if(days === due)return `${planLabel}. Last entry was ${when}. Rhythm is also due today.`;
+      return `${planLabel}. Last entry was ${when}. Rhythm is ${days - due} days overdue.`;
     }
-    return days >= target
+    return days >= due
       ? `${planLabel}. ${days} days since the last entry.`
       : `${planLabel}. Entry was ${when}.`;
   }
   if(days === null)return `Aim for about every ${rhythm} days.`;
   if(days < 0)return `Next entry is ${entryWhen(h.lastLog)}.`;
   const when = entryWhen(h.lastLog);
+  // Same whole-day boundary as above — no float day counts in copy.
+  const due = typeof cueDayBoundary === 'function' ? cueDayBoundary(target) : Math.ceil(target);
   if(h.type === 'keepup'){
-    if(days < target)return `Last entry was ${when}. ${target - days} days left in this rhythm.`;
-    if(days === target)return `Last entry was ${when}. This is due today.`;
-    return `Last entry was ${when}. This is ${days - target} days overdue.`;
+    if(days < due)return `Last entry was ${when}. ${due - days} days left in this rhythm.`;
+    if(days === due)return `Last entry was ${when}. This is due today.`;
+    return `Last entry was ${when}. This is ${days - due} days overdue.`;
   }
-  return days >= target ? `${days} days since the last entry. Good gap.` : `Entry was ${when}. Try to increase the gap.`;
+  return days >= due ? `${days} days since the last entry. Good gap.` : `Entry was ${when}. Try to increase the gap.`;
 }
 
 // PURE: builds the short trend label
@@ -218,12 +223,14 @@ function trendText(h){
   }
   const target = effectiveTarget(h);
   const pace = avg || days;
+  // Whole-day boundary keeps the overdue count an integer for fractional rhythms.
+  const due = typeof cueDayBoundary === 'function' ? cueDayBoundary(target) : Math.ceil(target);
   if(h.type === 'keepup'){
-    if(days > target)return `${days - target}d overdue`;
-    if(days === target)return 'due today';
+    if(days > due)return `${days - due}d overdue`;
+    if(days === due)return 'due today';
     return pace <= target ? 'on pace' : 'behind';
   }
-  if(days < target)return 'too recent';
+  if(days < due)return 'too recent';
   return pace >= target ? 'on track' : 'watch';
 }
 
@@ -252,7 +259,7 @@ function renderGraph(h){
   graph.innerHTML = `
     <div class="graph-top"><span>gap history</span><span>${graphRule(h)}</span></div>
     <div class="graph-bars">
-      ${targetPct ? `<div class="target-line" style="bottom:${targetPct}%"><span>${target}d</span></div>` : ''}
+      ${targetPct ? `<div class="target-line" style="bottom:${targetPct}%"><span>${formatRhythmLabel(target)}</span></div>` : ''}
       ${bars}
     </div>
     <div class="graph-caption">${graphCaption(h,intervals)}</div>`;

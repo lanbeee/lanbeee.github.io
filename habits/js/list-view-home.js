@@ -887,11 +887,19 @@ function compactPillText(value,max = 10){
   return `${text.slice(0,Math.max(1,max - 1))}…`;
 }
 
+// PURE: whole-calendar-day rhythm boundary for cue copy. Fractional rhythms
+// (3×/2d → 0.67d) would otherwise print floats ("Due in 0.666666666 days").
+// Ceil matches the planner's `days >= target` day eligibility: the first due
+// calendar day is ceil(target), so cues never disagree with the agenda.
+function cueDayBoundary(target){
+  return Math.max(1,Math.ceil(Number(target) || 7));
+}
+
 // PURE: compute keep-up cue text
 function buildCue(h,days,target){
   if(days === null)return 'Ready for first entry';
   if(days < 0)return 'Coming up';
-  const remaining = target - days;
+  const remaining = cueDayBoundary(target) - days;
   if(remaining < 0){
     const overdue = Math.abs(remaining);
     if(overdue === 1)return '1 day overdue';
@@ -909,7 +917,7 @@ function buildCue(h,days,target){
 function limitCue(h,days,target){
   if(days === null)return 'No entries yet';
   if(days < 0)return 'Coming up';
-  const remaining = target - days;
+  const remaining = cueDayBoundary(target) - days;
   if(remaining > 1)return `Wait ${remaining} days`;
   if(remaining === 1)return 'Wait 1 more day';
   if(remaining === 0)return 'Okay today';
@@ -944,7 +952,6 @@ function cardCue(h){
   if(h.type === 'reduce')return limitCue(h,days,target);
   if(days === 0)return 'Clean today';
   if(days === 1)return '1 day clean';
-  if(days < 4)return `${days} days clean`;
   return `${days} days clean`;
 }
 

@@ -134,12 +134,18 @@ function loadSortSettings(){
     merged.defaultMinChunkMinutes = clampMinChunk(merged.defaultMinChunkMinutes);
     merged.defaultTopics = normalizeTopics(merged.defaultTopics);
     merged.defaultAutoMarkMinutes = Number.isFinite(merged.defaultAutoMarkMinutes) && merged.defaultAutoMarkMinutes > 0 ? Math.round(merged.defaultAutoMarkMinutes) : null;
-    merged.showStatusOnCards = merged.showStatusOnCards !== false;
-    merged.showEarlyOnCards = merged.showEarlyOnCards !== false;
+    // Calm-card defaults: fresh installs get the quieter card (no insight
+    // decorations, no compact rows). An install saved before the default
+    // flipped has settings on disk without these keys — keep the fuller look
+    // it already had. Saved explicit values always win.
+    const legacyCalmDefault = key => Boolean(saved && Object.keys(saved).length
+      && !Object.prototype.hasOwnProperty.call(saved,key));
+    merged.showStatusOnCards = legacyCalmDefault('showStatusOnCards') || Boolean(merged.showStatusOnCards);
+    merged.showEarlyOnCards = legacyCalmDefault('showEarlyOnCards') || Boolean(merged.showEarlyOnCards);
     merged.showAgendaTimesOnCards = normalizeAgendaTimeMode(merged.showAgendaTimesOnCards);
-    merged.showTrailOnCards = merged.showTrailOnCards !== false;
+    merged.showTrailOnCards = legacyCalmDefault('showTrailOnCards') || Boolean(merged.showTrailOnCards);
     merged.showCueOnCards = merged.showCueOnCards !== false;
-    merged.showOrderPillsOnCards = merged.showOrderPillsOnCards !== false;
+    merged.showOrderPillsOnCards = legacyCalmDefault('showOrderPillsOnCards') || Boolean(merged.showOrderPillsOnCards);
     // Minimal mode defaults on, but only for a fresh install. An existing
     // install that was saved before the default flipped has settings on disk
     // without the key, and must keep the full surface it already had.
@@ -147,7 +153,7 @@ function loadSortSettings(){
       && !Object.prototype.hasOwnProperty.call(saved,'minimalMode')
       ? false
       : Boolean(merged.minimalMode);
-    merged.compactMode = Boolean(merged.compactMode);
+    merged.compactMode = legacyCalmDefault('compactMode') || Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
     merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';
     merged.homeCityName = typeof merged.homeCityName === 'string' ? merged.homeCityName.trim() : '';
