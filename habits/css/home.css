@@ -53,8 +53,10 @@ body[data-pane-count="3"] .section-header{
   border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
   transition:background-color .18s ease; /* follows the header's stuck tone */
-  /* none: keep finger drift from being claimed as a page pan (sticky headers). */
-  -webkit-tap-highlight-color:transparent;touch-action:none;
+  /* pan-y: a finger starting on the pill (or its ::before hit pad) must still
+     pan the page vertically — touch-action:none dead-zoned scrolling on touch
+     devices. Sideways drift can't claim a pan, so sloppy taps keep clicking. */
+  -webkit-tap-highlight-color:transparent;touch-action:pan-y;
 }
 /* Invisible hit pad so near-misses on sticky day headers still land on the pill. */
 .dropped-pill::before{
@@ -103,8 +105,10 @@ body[data-pane-count="3"] .section-header{
   border-radius:999px;padding:6px 9px;min-height:32px;cursor:pointer;margin:0;
   position:relative;
   transition:background-color .18s ease; /* follows the header's stuck tone */
-  /* none: keep finger drift from being claimed as a page pan (sticky headers). */
-  -webkit-tap-highlight-color:transparent;touch-action:none;
+  /* pan-y: a finger starting on the pill (or its ::before hit pad) must still
+     pan the page vertically — touch-action:none dead-zoned scrolling on touch
+     devices. Sideways drift can't claim a pan, so sloppy taps keep clicking. */
+  -webkit-tap-highlight-color:transparent;touch-action:pan-y;
 }
 .free-pill::before{
   content:"";position:absolute;inset:-6px -4px -6px -14px;

@@ -920,9 +920,8 @@ document.addEventListener('pointerup',e=>{
   if(btn.classList.contains('timer-start-btn'))return;
   // Movement cap for the forgiving click. A sloppy tap drifts a few tens of
   // pixels at most (pointercancel recovery already caps at 32); anything
-  // larger is a scroll or swipe gesture (e.g. one that starts on a
-  // touch-action:none pill, which never moves the page and so can't be caught
-  // by the scroll checks below).
+  // larger is a scroll or swipe gesture — including pans the scroll checks
+  // below can't observe (e.g. a cancelled flick whose scroller never moved).
   if(Date.now() - time >= 1200 || moved > 32)return;
 
   const headerPill = btn.matches('.free-pill,.dropped-pill');

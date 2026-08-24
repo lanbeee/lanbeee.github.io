@@ -378,6 +378,49 @@ async function stickyState(page, headerSel){
     assert(false, 'sticky + drift candidate available');
   }
 
+  // ── S. Vertical drag starting ON the pill must pan the page ──
+  // touch-action:none on the pills dead-zoned scrolling on touch devices: a
+  // finger that landed on the pill (or its ::before hit pad) could not scroll
+  // at all. pan-y keeps vertical panning alive while sideways drift stays a tap.
+  console.log('\n[S] Vertical drag from pill scrolls the page');
+  await closeFreeSheet(page);
+  await page.evaluate(() => window.scrollTo({ top:0, left:0, behavior:'instant' }));
+  await sleep(200);
+  const scrollPill = page.locator('.free-pill').nth(Math.min(1, freeCount - 1));
+  await scrollPill.scrollIntoViewIfNeeded();
+  await sleep(200);
+  const sBox = await scrollPill.boundingBox();
+  const beforeY = await page.evaluate(() => window.scrollY);
+  const sx = sBox.x + sBox.width / 2;
+  const sy = sBox.y + sBox.height / 2;
+  await client.send('Input.dispatchTouchEvent', {
+    type:'touchStart',
+    touchPoints:[{x:sx, y:sy, radiusX:10, radiusY:10, force:1, id:0}],
+    modifiers:0
+  });
+  const dragSteps = 8, dragTotal = 80;
+  for(let i = 1; i <= dragSteps; i++){
+    await client.send('Input.dispatchTouchEvent', {
+      type:'touchMove',
+      touchPoints:[{x:sx, y:sy - (dragTotal * i) / dragSteps, radiusX:10, radiusY:10, force:1, id:0}],
+      modifiers:0
+    });
+    await sleep(14);
+  }
+  await client.send('Input.dispatchTouchEvent', {
+    type:'touchEnd',
+    touchPoints:[{x:sx, y:sy - dragTotal, id:0}],
+    modifiers:0
+  });
+  await sleep(300);
+  const afterY = await page.evaluate(() => window.scrollY);
+  assert(afterY > beforeY + 5, `vertical drag from pill pans the page (scrollY ${beforeY} → ${afterY})`);
+  assert(
+    (await page.locator('#free-time-sheet.open').count()) === 0,
+    'scroll gesture from pill does not open the sheet'
+  );
+  await closeFreeSheet(page);
+
   // ── E. Already covered stay-open above; also verify dismiss still works ──
   console.log('\n[E] Dismiss still works after reliable open');
   await page.locator('.free-pill').first().click();

@@ -191,7 +191,7 @@ const DEFAULT_SORT_SETTINGS = {
   // 'icon' = symbol only, 'hide' = nothing.
   showAgendaTimesOnCards:'time',
   // Two-week dot history under each item.
-  showTrailOnCards:false,
+  showTrailOnCards:true,
   // One-line status ("due today", "on track", ...) — also part of minimal
   // mode's core card, so it stays on.
   showCueOnCards:true,
