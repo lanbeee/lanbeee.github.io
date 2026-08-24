@@ -1527,14 +1527,24 @@ Toasts appear after:
 
 ### Guided Coaches
 - A fresh, empty install offers the **install guide** first when it runs in a
-  browser: numbered, iconified per-platform steps (iOS Share → Add to Home
-  Screen; Android menu → Install app; desktop address-bar install) connected by
+  browser: numbered, iconified per-platform steps (iOS compact Safari
+  ••• → Share → Add to Home Screen; Android menu → Install app; desktop
+  address-bar install) connected by
   arrows, or a native **Install** button on Chrome-based browsers where a
   `beforeinstallprompt` gesture was captured (declined prompts fall back to the
   manual steps). The guide ends by handing over to the guided start; a user
   already running the installed (standalone) app is offered the guided start
   directly. About → **install app** replays the guide on demand, and About's
   install button tells already-installed users where the guided start lives.
+  iOS compact Safari hides Share behind the address-bar **•••** menu, and that
+  native sheet covers the page, so the iOS card docks to the uncovered edge
+  (top on iPhone portrait, bottom on iPad/landscape) and collapses to a short
+  reminder if the page blurs while the menu is open. After **Add to Home
+  Screen**, leave **Open as Web App** on. The second step is a large
+  close-this-tab / open-Tings visual: the browser page is not the app, so the
+  user should close this tab and launch the Home Screen icon (or dock window).
+  **Got it** ends the guide; **Stay in this tab** is the escape into the
+  guided start without leaving the browser.
 - A fresh, empty install offers the **guided start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
 - The guided start branches between a repeating habit and a one-off task. It
@@ -1562,13 +1572,16 @@ Toasts appear after:
   before teaching controls farther down the add sheet.
 - About → **guided start** replays a non-destructive refresher for an existing
   user.
-- Guided start finishes with the **install guide**: iOS learns
-  Share → Add to Home Screen, Android/desktop learns the menu or address-bar
-  install, and Chrome-based browsers with a captured `beforeinstallprompt`
-  gesture get a native Install button (with a Not-now escape and a manual-steps
-  fallback if the prompt is declined). The step is skipped when Tings already
-  runs standalone, and About → **install app** replays the same guide as a
-  one-step tour on demand.
+- The **install guide** (first-run in a browser, or About → **install app**)
+  teaches iOS compact Safari as **••• → Share → Add to Home Screen** (tap
+  **View More** if the action is hidden), then **Add** with **Open as Web App**
+  left on. Android/desktop learns the menu or address-bar install, and
+  Chrome-based browsers with a captured `beforeinstallprompt` gesture get a
+  native Install button (with a Not-now escape and a manual-steps fallback if
+  the prompt is declined). The second step is a large close-this-tab visual:
+  this browser page is not the app, so the user should close the tab and open
+  Tings from the Home Screen (or dock). The guide is skipped when Tings already
+  runs standalone.
 - About → **advanced coach** teaches the full, non-minimal surface: rich cards,
   swipe/card actions, agenda ordering and audit, every major detail area,
   calendar analysis and filters, home display, backup, calendar import, topics,

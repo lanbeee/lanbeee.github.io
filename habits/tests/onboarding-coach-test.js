@@ -40,10 +40,15 @@ async function primary(page,current,next){
   const stepNums = await page.locator('.tings-step-num').allTextContents();
   assert(stepNums.length === 3 && stepNums[0] === '1' && stepNums[2] === '3','install steps are numbered in order');
   await primary(page,'iSteps','iNext');
-  assert((await page.locator('[data-coach-primary]').textContent()) === 'Start guided start','the install tour ends by handing over to the guided start');
-  await page.locator('[data-coach-primary]').click();
+  assert((await page.locator('.tings-coach-title').textContent()) === 'Close this tab','after install, the guide tells the user to leave the browser tab');
+  assert(await page.locator('.tings-coach-handoff').count() === 1,'the leave-the-browser step shows a close-tab vs open-app visual');
+  assert((await page.locator('.tings-handoff-pane.is-leave figcaption strong').textContent()) === 'Close this tab','the leave pane is labeled Close this tab');
+  assert((await page.locator('.tings-handoff-pane.is-open figcaption strong').textContent()) === 'Open Tings','the open pane is labeled Open Tings');
+  assert((await page.locator('[data-coach-primary]').textContent()) === 'Got it','the main action confirms leaving the browser tab');
+  assert((await page.locator('[data-coach-later]').textContent()) === 'Stay in this tab','staying in the browser is the secondary path');
+  await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 14 · guided start','the handover chains into the full essentials tour');
+  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 14 · guided start','staying in the tab chains into the full essentials tour');
 
   await primary(page,'eIntro','eAdd');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','required action steps lock interaction to the highlighted target');
@@ -177,9 +182,10 @@ async function primary(page,current,next){
   });
   assert(coverGuard.h >= coverGuard.vh - 1 && coverGuard.w >= coverGuard.vw - 1,'the install step has no in-page target so guards cover the whole surface');
   await primary(page,'iSteps','iNext');
-  assert((await page.locator('[data-coach-later]').textContent()) === 'skip for now','the guided-start handover keeps a soft escape');
-  await page.locator('[data-coach-later]').click();
-  assert(await page.locator('#tings-coach').count() === 0,'skipping the handover ends the install tour quietly');
+  assert((await page.locator('.tings-coach-title').textContent()) === 'Close this tab','About’s install tour still ends by telling the user to leave the tab');
+  assert((await page.locator('[data-coach-later]').textContent()) === 'Stay in this tab','the leave-the-tab step keeps a stay-in-browser escape');
+  await page.locator('[data-coach-primary]').click();
+  assert(await page.locator('#tings-coach').count() === 0,'confirming the leave-the-tab step ends the install tour');
 
   // Native-prompt variant: a captured install gesture swaps in an Install
   // button; a declined or broken prompt falls back to the manual steps.
@@ -192,9 +198,9 @@ async function primary(page,current,next){
   await page.waitForTimeout(200);
   assert(await page.locator('.tings-step-glyph i').count() === 3,'a declined native prompt falls back to manual install steps');
   await primary(page,'iSteps','iNext');
-  await page.locator('[data-coach-primary]').click();
+  await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 7 · guided start','the handover chains into the guided start replay');
+  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 7 · guided start','staying in the tab chains into the guided start replay');
   await page.evaluate(()=>window.TingsCoach.stop());
 
   // Already installed (standalone display mode): the first-run offer goes
@@ -223,14 +229,15 @@ async function primary(page,current,next){
   assert(await page.locator('#tings-coach').count() === 0,'already-installed users get no install tour from About');
   await page.evaluate(()=>closeSheet('about-sheet'));
 
-  // Per-platform glyphs: iOS must show Safari's share button (square with an
-  // arrow out of the top, ti-share-2) — not the Android node-graph share
-  // icon (ti-share). Android shows Chrome's ⋮ menu and install-to-phone.
+  // Per-platform glyphs: iOS compact Safari starts with the address-bar •••
+  // menu (ti-dots), then Share (ti-share-2 — not the Android node-graph
+  // ti-share), Add to Home Screen, and Add. Android shows Chrome's ⋮ menu
+  // and install-to-phone.
   const uaCases = [
     {
       name:'ios',
-      ua:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-      icons:['ti ti-share-2','ti ti-square-rounded-plus','ti ti-check']
+      ua:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1',
+      icons:['ti ti-dots','ti ti-share-2','ti ti-square-rounded-plus','ti ti-check']
     },
     {
       name:'android',
@@ -245,6 +252,40 @@ async function primary(page,current,next){
     await uaPage.waitForSelector('#tings-coach[data-coach-stage="iSteps"]',{timeout:5000});
     const shown = await uaPage.locator('.tings-step-glyph i').evaluateAll(els=>els.map(el=>el.className));
     assert(JSON.stringify(shown) === JSON.stringify(icons),`${name} install guidance shows the correct platform glyphs`);
+    if(name === 'ios'){
+      const docked = await uaPage.evaluate(()=>{
+        const root = document.getElementById('tings-coach');
+        const bubble = document.querySelector('.tings-coach-bubble').getBoundingClientRect();
+        return {
+          dock:root.getAttribute('data-install-dock'),
+          compact:Boolean(document.querySelector('.tings-coach-steps.is-compact')),
+          top:bubble.top,
+          height:bubble.height,
+          overlay:root.getAttribute('data-chrome-overlay')
+        };
+      });
+      assert(docked.dock === 'top' && docked.compact,'iOS install guidance docks at the top as a compact step rail');
+      assert(docked.top <= 24,'iOS install card sits at the top so Safari’s bottom menus do not cover it');
+      assert(docked.overlay === 'false','iOS install card starts expanded before Safari’s menu opens');
+      await uaPage.evaluate(()=>window.dispatchEvent(new Event('blur')));
+      const overlay = await uaPage.evaluate(()=>{
+        const root = document.getElementById('tings-coach');
+        const bubble = document.querySelector('.tings-coach-bubble').getBoundingClientRect();
+        const hint = document.querySelector('.tings-coach-overlay-hint');
+        const title = document.querySelector('.tings-coach-title');
+        return {
+          flag:root.getAttribute('data-chrome-overlay'),
+          hintShown:Boolean(hint) && getComputedStyle(hint).display !== 'none',
+          titleShown:Boolean(title) && getComputedStyle(title).display !== 'none',
+          height:bubble.height,
+          top:bubble.top
+        };
+      });
+      assert(overlay.flag === 'true' && overlay.hintShown && overlay.titleShown === false,'opening Safari’s menu collapses the card to a top reminder');
+      assert(overlay.height < docked.height && overlay.top <= 24,'the overlay reminder is shorter and stays at the top');
+      await uaPage.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      assert(await uaPage.locator('#tings-coach').getAttribute('data-chrome-overlay') === 'false','closing Safari’s menu restores the full iOS install card');
+    }
     await ctx.close();
   }
   await page.evaluate(()=>{

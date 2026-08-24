@@ -54,6 +54,7 @@
   let overviewActivated = false;
   let skipArmTimer = 0;
   let installDismissed = false;
+  let chromeOverlay = false;
 
   function habits(){
     try{return typeof load === 'function' ? load() : [];}
@@ -126,6 +127,24 @@
     try{
       return !installDismissed && typeof tingsInstallPromptAvailable === 'function' && tingsInstallPromptAvailable();
     }catch(_){return false;}
+  }
+  // iPhone compact Safari (the iOS 18+/26 default) keeps Share behind the
+  // address-bar ••• menu at the bottom; iPad and landscape put chrome at the
+  // top. Native menus paint above the web view, so the card has to live on
+  // the uncovered edge — z-index cannot float it over Safari’s sheet.
+  function iosInstallDock(){
+    if(installPlatform() !== 'ios')return '';
+    const ua = navigator.userAgent || '';
+    const landscape = window.innerWidth > window.innerHeight;
+    if(/iPhone|iPod/.test(ua))return landscape ? 'bottom' : 'top';
+    const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if(ipad || landscape)return 'bottom';
+    return 'top';
+  }
+  function coachSafe(side){
+    if(!root)return 0;
+    const n = parseFloat(getComputedStyle(root).getPropertyValue(`--coach-safe-${side}`));
+    return Number.isFinite(n) ? n : 0;
   }
   function essentialsOrder(){
     if(!interactive)return ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eFinish'];
@@ -242,28 +261,47 @@
   // two-step tour from About on demand. The steps never lock to an in-page
   // control — the real action lives in browser chrome (Share button, menu, or
   // the native install sheet) — so the guards keep the app untouchable while
-  // the numbered, iconified steps play out. iNext then hands the user to the
-  // guided start, which is also where an already-installed (standalone) user
-  // enters onboarding directly.
+  // the numbered, iconified steps play out. iNext then shows a large
+  // close-this-tab / open-the-app visual so the user leaves the browser;
+  // staying in the tab is the escape into the guided start. An already-
+  // installed (standalone) user skips this tour and enters onboarding
+  // directly.
   function installModel(p){
-    if(stage === 'iNext')return {
-      progress:p,title:'Open Tings like a native app',
-      copy:'From now on, launch Tings from its home-screen icon (or its own window) instead of the browser tab — full screen, own icon, no browser bar. Ready for a quick tour of the daily loop?',
-      action:'Start guided start',command:'startEssentials',later:'skip for now',back:'iSteps'
-    };
+    if(stage === 'iNext'){
+      const phone = installPlatform() !== 'desktop';
+      return {
+        progress:p,title:'Close this tab',
+        copy:phone
+          ? 'This browser page is not the app. Close this tab, then tap <strong>Tings</strong> on your Home Screen.'
+          : 'This browser tab is not the app. Close it, then open <strong>Tings</strong> from the dock or its own window.',
+        handoff:{
+          leave:'Close this tab',
+          open:'Open Tings',
+          openWhere:phone ? 'Home Screen' : 'Dock / app window'
+        },
+        action:'Got it',command:'finish',later:'Stay in this tab',laterCommand:'startEssentials',back:'iSteps'
+      };
+    }
     if(installPlatform() !== 'ios' && installPromptReady())return {
       progress:p,title:'Put Tings on your home screen',
       copy:'Your browser can install Tings like a real app: its own icon, full screen, no browser bar. Everything you log stays on this device.',
       action:'Install',command:'installNow',later:'Not now',next:'iNext'
     };
+    const iosDock = iosInstallDock();
     const manual = {
       ios:{
         title:'Add Tings to your home screen',
-        copy:'You are viewing Tings in Safari right now. Give it a permanent place in three taps:',
+        copy:iosDock === 'bottom'
+          ? 'Tap the <strong>•••</strong> button at the right of Safari’s address bar, then Share, then Add to Home Screen. Those menus cover this page, so these steps stay at the bottom.'
+          : 'Tap the <strong>•••</strong> button at the right of Safari’s address bar — usually bottom right — then Share, then Add to Home Screen. Those menus cover this page, so these steps stay at the top.',
+        compact:true,
+        dock:iosDock,
+        overlayHint:'Menu is open — tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Use <strong>View More</strong> if you don’t see it.',
         steps:[
-          {icon:'ti ti-share-2',text:'Tap the <strong>Share</strong> button in Safari’s toolbar: the square with an arrow pointing up.'},
-          {icon:'ti ti-square-rounded-plus',text:'Scroll down and tap <strong>Add to Home Screen</strong>.'},
-          {icon:'ti ti-check',text:'Tap <strong>Add</strong>. Tings gets its own icon and opens full screen, without Safari.'}
+          {icon:'ti ti-dots',label:'More •••',text:'Tap the <strong>•••</strong> button at the right of Safari’s address bar — usually bottom right. If Share is already in the toolbar, tap that instead.'},
+          {icon:'ti ti-share-2',label:'Share',text:'Tap <strong>Share</strong> in the menu that opens.'},
+          {icon:'ti ti-square-rounded-plus',label:'Home Screen',text:'Scroll and tap <strong>Add to Home Screen</strong>. If you only see a few actions, tap <strong>View More</strong> first.'},
+          {icon:'ti ti-check',label:'Add',text:'Leave <strong>Open as Web App</strong> on, then tap <strong>Add</strong>. Tings gets its own icon and opens full screen, without Safari.'}
         ]
       },
       android:{
@@ -286,7 +324,10 @@
       }
     };
     const m = manual[installPlatform()] || manual.desktop;
-    return {progress:p,title:m.title,copy:m.copy,steps:m.steps,action:'Next',next:'iNext'};
+    return {
+      progress:p,title:m.title,copy:m.copy,steps:m.steps,action:'Next',next:'iNext',
+      compact:Boolean(m.compact),dock:m.dock || '',overlayHint:m.overlayHint || ''
+    };
   }
 
   function advancedModel(){
@@ -349,6 +390,9 @@
     window.addEventListener('scroll',queuePosition,true);
     window.visualViewport?.addEventListener('resize',queuePosition);
     window.visualViewport?.addEventListener('scroll',queuePosition);
+    window.addEventListener('blur',onChromeConceal);
+    window.addEventListener('focus',onChromeReveal);
+    document.addEventListener('visibilitychange',onChromeVisibility);
     observer = new MutationObserver(()=>{reconcile();queuePosition();});
     observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden','aria-pressed']});
   }
@@ -367,6 +411,10 @@
     window.removeEventListener('scroll',queuePosition,true);
     window.visualViewport?.removeEventListener('resize',queuePosition);
     window.visualViewport?.removeEventListener('scroll',queuePosition);
+    window.removeEventListener('blur',onChromeConceal);
+    window.removeEventListener('focus',onChromeReveal);
+    document.removeEventListener('visibilitychange',onChromeVisibility);
+    chromeOverlay = false;
     root?.remove();
     root = bubble = spotlight = null;
     guards = [];
@@ -380,17 +428,36 @@
     root.dataset.gated = String(m.roam !== true);
     root.dataset.locked = String(Boolean(m.locked));
     root.dataset.keyboard = String(Boolean(m.keyboard));
+    root.dataset.installDock = m.dock || '';
+    root.dataset.chromeOverlay = String(Boolean(chromeOverlay && m.dock));
+    root.dataset.handoff = String(Boolean(m.handoff));
+    const compact = Boolean(m.compact);
     bubble.innerHTML = `
       <div class="tings-coach-head">
         <span class="tings-coach-progress">${m.progress}</span>
         <button type="button" class="tings-coach-skip" data-coach-skip>skip</button>
       </div>
       <h2 class="tings-coach-title" id="tings-coach-title">${m.title}</h2>
+      ${m.handoff ? `<div class="tings-coach-handoff" aria-hidden="true">
+        <figure class="tings-handoff-pane is-leave">
+          <div class="tings-handoff-browser" aria-hidden="true">
+            <span class="tings-handoff-chrome"><i></i><i></i><i></i></span>
+            <span class="tings-handoff-x"><i class="ti ti-x"></i></span>
+          </div>
+          <figcaption><strong>${m.handoff.leave}</strong></figcaption>
+        </figure>
+        <span class="tings-handoff-arrow" aria-hidden="true"><i class="ti ti-arrow-big-right"></i></span>
+        <figure class="tings-handoff-pane is-open">
+          <div class="tings-handoff-app" aria-hidden="true"><img src="./favicon.svg" alt=""></div>
+          <figcaption><strong>${m.handoff.open}</strong><span>${m.handoff.openWhere}</span></figcaption>
+        </figure>
+      </div>` : ''}
       <p class="tings-coach-copy" id="tings-coach-copy">${m.copy}</p>
-      ${m.steps?.length ? `<ol class="tings-coach-steps">${m.steps.map((step,index)=>`
+      ${m.overlayHint ? `<p class="tings-coach-overlay-hint" role="status">${m.overlayHint}</p>` : ''}
+      ${m.steps?.length ? `<ol class="tings-coach-steps${compact ? ' is-compact' : ''}">${m.steps.map((step,index)=>`
         <li>
           <span class="tings-step-glyph"><span class="tings-step-num">${index + 1}</span>${step.icon ? `<i class="${step.icon}" aria-hidden="true"></i>` : ''}</span>
-          <span class="tings-step-text">${step.text}</span>
+          <span class="tings-step-text">${compact && step.label ? step.label : step.text}</span>
         </li>`).join('')}</ol>` : ''}
       ${m.hint ? `<p class="tings-coach-hint">${m.hint}</p>` : ''}
       ${(m.back || m.action || m.later) ? `<div class="tings-coach-actions">
@@ -404,6 +471,7 @@
   function setStage(next){
     if(!active || !next || next === stage)return;
     stage = next;
+    if(next !== 'iSteps')setChromeOverlay(false);
     prepareStage(next);
     render();
     revealTarget();
@@ -534,7 +602,14 @@
     }
     if(event.target.closest('[data-coach-back]')){goBack();return;}
     if(event.target.closest('[data-coach-later]')){
-      const later = model().next;
+      const laterModel = model();
+      if(laterModel.laterCommand === 'startEssentials'){
+        if(mode === 'install')remember('done');
+        unmount();
+        window.TingsCoach.start({kind:'essentials',force:true});
+        return;
+      }
+      const later = laterModel.next;
       if(later)setStage(later);
       else finish('skipped');
       return;
@@ -574,6 +649,7 @@
       return;
     }
     if(m.command === 'startEssentials'){
+      if(mode === 'install')remember('done');
       unmount();
       window.TingsCoach.start({kind:'essentials',force:true});
       return;
@@ -736,6 +812,27 @@
     });
   }
 
+  function setChromeOverlay(on){
+    const m = active ? model() : {};
+    const next = Boolean(on && m.dock && stage === 'iSteps');
+    if(chromeOverlay === next)return;
+    chromeOverlay = next;
+    if(!root)return;
+    root.dataset.chromeOverlay = String(next);
+    queuePosition();
+  }
+  function onChromeConceal(){
+    if(!active || document.visibilityState === 'hidden')return;
+    setChromeOverlay(true);
+  }
+  function onChromeReveal(){
+    setChromeOverlay(false);
+  }
+  function onChromeVisibility(){
+    if(document.visibilityState === 'hidden')setChromeOverlay(false);
+    else onChromeReveal();
+  }
+
   function setRect(el,left,top,width,height){
     el.style.left = `${Math.max(0,left)}px`;
     el.style.top = `${Math.max(0,top)}px`;
@@ -784,8 +881,15 @@
         setRect(cover.left,view.left,view.top,0,0);
       }
       const br = bubble.getBoundingClientRect();
-      bubble.style.left = `${Math.max(margin,view.left + (view.width - br.width) / 2)}px`;
-      bubble.style.top = `${Math.max(view.top + margin,view.top + (view.height - br.height) / 2)}px`;
+      const left = Math.max(margin,view.left + (view.width - br.width) / 2);
+      let top = Math.max(view.top + margin,view.top + (view.height - br.height) / 2);
+      if(m.dock === 'top')top = view.top + margin + coachSafe('top');
+      else if(m.dock === 'bottom'){
+        top = Math.max(view.top + margin,view.bottom - br.height - margin - coachSafe('bottom'));
+      }
+      root.dataset.installDock = m.dock || '';
+      bubble.style.left = `${left}px`;
+      bubble.style.top = `${top}px`;
       return;
     }
     const pad = Math.min(8,Math.max(4,raw.width * .04));
@@ -834,6 +938,7 @@
     trackedHid = habits()[0]?.hid || '';
     overviewActivated = false;
     installDismissed = false;
+    chromeOverlay = false;
     stage = mode === 'advanced' ? 'aIntro' : mode === 'install' ? 'iSteps' : 'eIntro';
     active = true;
     closeGuidedSheet('about-sheet');
