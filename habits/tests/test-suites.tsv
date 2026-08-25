@@ -67,6 +67,7 @@ slipped-indicator-test.js	planner	once
 snap-and-sleep-test.js	data	once
 snooze-until-planned.js	ui	once
 tag-chip-scroll-test.js	ui	once
+theme-mode-test.js	ui	once
 tight-rhythm-capacity-test.js	planner	once
 timed-day-plan-test.js	planner	once
 timer-session-test.js	ui	once

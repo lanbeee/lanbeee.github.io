@@ -9,8 +9,17 @@ function applyAppearanceSettings(){
   document.body.classList.toggle('minimal-mode', !!s.minimalMode);
   document.documentElement.dataset.fontScale = s.fontScale || 'medium';
   const mode = s.themeMode || 'system';
-  if(mode === 'system')document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.dataset.theme = mode;
+  const root = document.documentElement;
+  if(mode === 'system'){
+    root.removeAttribute('data-theme');
+    root.style.removeProperty('color-scheme');
+  }else{
+    root.dataset.theme = mode;
+    root.style.colorScheme = mode;
+  }
+  const meta = document.querySelector('meta[name="color-scheme"]');
+  if(meta)meta.content = mode === 'system' ? 'light dark' : mode;
+  if(typeof invalidateCrownRidgeCache === 'function')invalidateCrownRidgeCache();
   if(typeof applyDetailMinimalMode === 'function')applyDetailMinimalMode();
   applyAddMinimalMode();
 }

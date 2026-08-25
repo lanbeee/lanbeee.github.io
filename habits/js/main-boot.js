@@ -414,7 +414,8 @@ function currentRhythmTarget(prefix){
 }
 
 // Cached ridge ink — avoid getComputedStyle + color-mix on every frame (mobile jank).
-let _crownRidgeRgb = null;
+var _crownRidgeRgb = null;
+function invalidateCrownRidgeCache(){ _crownRidgeRgb = null; }
 function crownRidgeRgb(){
   if(_crownRidgeRgb)return _crownRidgeRgb;
   const raw = (getComputedStyle(document.documentElement).getPropertyValue('--text2') || '').trim() || '#6b6a65';

@@ -54,10 +54,14 @@
   --field-bg:#e0dfd9;
   --raised-shadow:0 1px 2px rgba(20,30,26,0.16),0 3px 8px rgba(20,30,26,0.10);
 }
+/* Native controls (date/time/select/scrollbars) follow `color-scheme`, not
+   custom properties. System mode stays `light dark`; a manual pick pins it. */
+:root[data-theme="light"] { color-scheme:light; }
 @media (prefers-color-scheme:dark) {
 /* Dark tokens. Forced dark uses :root[data-theme="dark"] below. */
 
 :root:not([data-theme="light"]) {
+    color-scheme:dark;
     --bg:#1c1c1e; --bg2:#121214; --bg3:#3a3a3c;
     --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
     --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
@@ -76,20 +80,21 @@
     --field-bg:#34343a;
     --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
   }
-  .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
-  .cal-day{background:#242426;}
-  .graph{
+  :root:not([data-theme="light"]) .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
+  :root:not([data-theme="light"]) .cal-day{background:#242426;}
+  :root:not([data-theme="light"]) .graph{
     background:
       linear-gradient(to top,rgba(255,255,255,0.045) 1px,transparent 1px) 0 25%/100% 25%,
       #242426;
   }
-  .bar-manual{background:#34D399;}
-  .bar-calendar{background:#A78BFA;}
-  .bar-adding{background:#FB923C;}
+  :root:not([data-theme="light"]) .bar-manual{background:#34D399;}
+  :root:not([data-theme="light"]) .bar-calendar{background:#A78BFA;}
+  :root:not([data-theme="light"]) .bar-adding{background:#FB923C;}
 }
 
 /* Forced dark theme (user preference overrides system light) */
 :root[data-theme="dark"] {
+  color-scheme:dark;
   --bg:#1c1c1e; --bg2:#121214; --bg3:#3a3a3c;
   --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
   --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
@@ -105,6 +110,8 @@
   --cyan-bg:#0A565D; --cyan-icon:#7CD4DC; --cyan-text:#A8E2E7;
   --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
   --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
+  --field-bg:#34343a;
+  --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
 }
 :root[data-theme="dark"] .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
 :root[data-theme="dark"] .cal-day{background:#242426;}
