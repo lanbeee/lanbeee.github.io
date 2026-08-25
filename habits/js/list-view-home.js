@@ -2127,15 +2127,17 @@ function weekPlacementsExportFilename(week,now = Date.now()){
     : `tings-week-placements-${start}_to_${end}.txt`;
 }
 
-// PURE: resolve the week snapshot used for placement export (rendered home
-// week first, otherwise a fresh 7-day build).
+// PURE: resolve the week snapshot used for placement export. Cache only —
+// never rebuild a week on the UI thread.
 function weekSnapshotForExport(now = Date.now()){
   if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) && _homeRenderedWeek.days.length){
     return _homeRenderedWeek;
   }
-  if(typeof buildWeekAgenda === 'function' && typeof load === 'function' && typeof sortSettings !== 'undefined'){
-    try{ return buildWeekAgenda(load(),sortSettings,7); }
-    catch(_){ /* fall through */ }
+  if(typeof cachedOverviewWeek === 'function'){
+    try{
+      const week = cachedOverviewWeek(typeof load === 'function' ? load() : []);
+      if(week && Array.isArray(week.days) && week.days.length)return week;
+    }catch(_){ /* fall through */ }
   }
   return null;
 }

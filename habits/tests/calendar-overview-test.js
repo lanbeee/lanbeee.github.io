@@ -417,6 +417,110 @@ function seedScript(){
   });
   assert(cleared, 'resetDayLogsStep clears habit scope');
 
+  // ── D. Calendar open stays off the UI thread; day sheet splits agenda ──
+  console.log('\n[D] off-main calendar + day agenda sections');
+  const dayAgenda = await page.evaluate(() => {
+    const orig = buildWeekAgenda;
+    let syncCalls = 0;
+    buildWeekAgenda = function(){
+      syncCalls += 1;
+      return orig.apply(this, arguments);
+    };
+    try{
+      const settings = loadSortSettings();
+      saveSortSettings({...settings, minimalMode:true});
+      sortSettings = loadSortSettings();
+      if(typeof applyAppearanceSettings === 'function')applyAppearanceSettings();
+      _homeRenderedWeek = null;
+      _overviewWeekSnapshot = null;
+      _overviewWeekSnapshotKey = '';
+      overviewMonthOffset = 0;
+      overviewRecentOffset = 0;
+      overviewRangeFilter = 'recent';
+      renderOverview();
+      const cellCount = document.querySelectorAll('#overview-calendar .cal-day.pickable').length;
+      const afterOpenCalls = syncCalls;
+
+      resetDayLogsStep();
+      const today = todayIso();
+      renderDayLogs(today);
+      const todayAgenda = !!document.querySelector('#day-logs-body [data-day-section="agenda"]');
+      const todayPlanned = !!document.querySelector('#day-logs-body [data-day-section="planned"]');
+      const todayActivity = !!document.querySelector('#day-logs-body [data-day-section="activity"]');
+      const afterTodayCalls = syncCalls;
+
+      const past = dateKey(dayStart(Date.now()) - 2 * 86400000);
+      resetDayLogsStep();
+      renderDayLogs(past);
+      const pastAgenda = !!document.querySelector('#day-logs-body [data-day-section="agenda"]');
+      const pastActivity = (document.querySelector('#day-logs-body [data-day-section="activity"]')?.innerText || '');
+      const afterPastCalls = syncCalls;
+
+      const future = dateKey(dayStart(Date.now()) + 2 * 86400000);
+      resetDayLogsStep();
+      renderDayLogs(future);
+      const futureAgenda = !!document.querySelector('#day-logs-body [data-day-section="agenda"]');
+      const futurePlanned = (document.querySelector('#day-logs-body [data-day-section="planned"]')?.innerText || '');
+      const afterFutureCalls = syncCalls;
+
+      saveSortSettings({...loadSortSettings(), minimalMode:false});
+      sortSettings = loadSortSettings();
+      if(typeof applyAppearanceSettings === 'function')applyAppearanceSettings();
+      const data = load();
+      const base = dayStart(Date.now());
+      _homeRenderedWeek = {
+        days:[{
+          dayBase:base,
+          dayKey:today,
+          isToday:true,
+          timeline:[{
+            kind:'fill',
+            i:0,
+            start:base + 10 * 3600000,
+            end:base + 10.5 * 3600000,
+            h:data[0]
+          }]
+        }]
+      };
+      resetDayLogsStep();
+      renderDayLogs(today);
+      const fullAgendaText = document.querySelector('#day-logs-body [data-day-section="agenda"]')?.innerText || '';
+      const afterFullCalls = syncCalls;
+
+      return {
+        cellCount,
+        afterOpenCalls,
+        todayAgenda,
+        todayPlanned,
+        todayActivity,
+        afterTodayCalls,
+        pastAgenda,
+        pastActivity,
+        afterPastCalls,
+        futureAgenda,
+        futurePlanned,
+        afterFutureCalls,
+        fullAgendaText,
+        afterFullCalls,
+        firstName:data[0] && data[0].name
+      };
+    }finally{
+      buildWeekAgenda = orig;
+    }
+  });
+  console.log(dayAgenda);
+  assert(dayAgenda.cellCount === 14, 'minimal calendar still paints the 14-day strip');
+  assert(dayAgenda.afterOpenCalls === 0, 'opening calendar does not call buildWeekAgenda on the UI thread');
+  assert(dayAgenda.todayAgenda, 'today unscoped day sheet shows Agenda');
+  assert(dayAgenda.afterTodayCalls === 0, 'opening today does not sync-plan a week');
+  assert(!dayAgenda.pastAgenda, 'past day sheet hides Agenda');
+  assert(/Scope Alpha/i.test(dayAgenda.pastActivity), 'past day Activity lists the logged habit');
+  assert(dayAgenda.futureAgenda, 'future day sheet shows Agenda');
+  assert(/Scope Beta|Scope Alpha/i.test(dayAgenda.futurePlanned), 'future Planned lists due / plan-by items');
+  assert(dayAgenda.afterFutureCalls === 0, 'future day does not sync-plan a week');
+  assert(dayAgenda.fullAgendaText.includes(dayAgenda.firstName), 'full mode Agenda reuses the home week timeline');
+  assert(dayAgenda.afterFullCalls === 0, 'full mode Agenda does not sync-plan a week');
+
   if(pageErrors.length){
     console.error('page errors:', pageErrors.join('\n'));
     assert(false, 'no page errors');

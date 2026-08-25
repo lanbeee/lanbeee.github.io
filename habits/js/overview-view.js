@@ -245,18 +245,94 @@ function dayStripMarkup(data,startTs,days,{agendaByDay = null} = {}){
   return {tally,html};
 }
 
-// PURE: week-agenda placements keyed by day (today → +6). Reuses home's
-// cached week when available so opening calendar stays cheap.
+// PURE: dirty key for the calendar's own week snapshot.
+function overviewWeekCacheKey(data){
+  if(typeof homePlannerDirtyKey === 'function')return homePlannerDirtyKey(data);
+  return String((data || []).length);
+}
+
+function overviewWeekCoversKey(week,key){
+  if(!week || !Array.isArray(week.days) || !key)return false;
+  return week.days.some(day=>dateKey(day.dayBase) === key);
+}
+
+// PURE: home's mounted week, else a calendar snapshot from an off-main fill.
+function cachedOverviewWeek(data){
+  if(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) && _homeRenderedWeek.days.length){
+    return _homeRenderedWeek;
+  }
+  const key = overviewWeekCacheKey(data);
+  if(_overviewWeekSnapshot && _overviewWeekSnapshotKey === key && Array.isArray(_overviewWeekSnapshot.days) && _overviewWeekSnapshot.days.length){
+    return _overviewWeekSnapshot;
+  }
+  return null;
+}
+
+// PURE: week that actually contains `dayKey` (home week may only cover today+6).
+function weekForOverviewDay(data,dayKey){
+  if(typeof _homeRenderedWeek !== 'undefined' && overviewWeekCoversKey(_homeRenderedWeek,dayKey)){
+    return _homeRenderedWeek;
+  }
+  const dirty = overviewWeekCacheKey(data);
+  if(_overviewWeekSnapshot && _overviewWeekSnapshotKey === dirty && overviewWeekCoversKey(_overviewWeekSnapshot,dayKey)){
+    return _overviewWeekSnapshot;
+  }
+  return null;
+}
+
+function storeOverviewWeekSnapshot(week,data){
+  if(!week || !Array.isArray(week.days) || !week.days.length)return;
+  if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(week,data);
+  _overviewWeekSnapshot = week;
+  _overviewWeekSnapshotKey = overviewWeekCacheKey(data);
+}
+
+// ASYNC: pack a week that covers `dayKey` off the UI thread. Used by the day
+// sheet Agenda section — never by calendar-open.
+function ensureOverviewWeekForDay(dayKey){
+  if(!dayLogsCanPlan(dayKey))return;
+  if(typeof buildWeekAgendaOffMain !== 'function' || !sortSettings)return;
+  const data = typeof load === 'function' ? load() : [];
+  if(weekForOverviewDay(data,dayKey))return;
+  const dirty = overviewWeekCacheKey(data);
+  const dayBase = dayStart(new Date(`${dayKey}T12:00:00`).getTime());
+  const today = dayStart(Date.now());
+  const offset = Number.isFinite(dayBase) ? Math.max(0,Math.round((dayBase - today) / 86400000)) : 0;
+  const numDays = Math.max(7,offset + 1);
+  if(_overviewWeekFillInflightKey === dirty && _overviewWeekFillCoverDays >= numDays)return;
+  const token = ++_overviewWeekFillToken;
+  _overviewWeekFillInflightKey = dirty;
+  _overviewWeekFillCoverDays = numDays;
+  buildWeekAgendaOffMain(data,sortSettings,numDays,'fast').then(week=>{
+    if(token !== _overviewWeekFillToken)return;
+    const live = typeof load === 'function' ? load() : data;
+    storeOverviewWeekSnapshot(week,live);
+    if(dayLogsKey !== dayKey || dayLogsStep !== 'list')return;
+    if(typeof dayLogsScoped === 'function' && dayLogsScoped())return;
+    renderDayLogsListStep(dayKey);
+  }).catch(()=>{}).then(()=>{
+    if(_overviewWeekFillInflightKey === dirty){
+      _overviewWeekFillInflightKey = '';
+      _overviewWeekFillCoverDays = 0;
+    }
+  });
+}
+
+function overviewDayAgendaPending(dayKey){
+  if(!dayLogsCanPlan(dayKey))return false;
+  const data = typeof load === 'function' ? load() : [];
+  if(weekForOverviewDay(data,dayKey))return false;
+  const dirty = overviewWeekCacheKey(data);
+  return _overviewWeekFillInflightKey === dirty && _overviewWeekFillCoverDays > 0;
+}
+
+// PURE: week-agenda placements keyed by day (today → +6). Reuses a cached week
+// when available so opening calendar stays cheap. Missing cache is filled
+// off-main from the day sheet — never with a synchronous 7-day rebuild.
 function overviewAgendaByDay(data){
   const byDay = new Map();
   if(overviewRecentOffset !== 0)return byDay;
-  let week = (typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days))
-    ? _homeRenderedWeek
-    : null;
-  if(!week && typeof buildWeekAgenda === 'function' && sortSettings){
-    try{ week = buildWeekAgenda(data,sortSettings,7); }
-    catch(_err){ week = null; }
-  }
+  const week = cachedOverviewWeek(data);
   if(!week || !Array.isArray(week.days))return byDay;
   week.days.forEach(day=>{
     const key = dateKey(day.dayBase);
@@ -338,13 +414,7 @@ function overviewDayChipLabel(key){
 
 // PURE: week capacity summary for today → +6 (planning cue)
 function overviewWeekCapacity(data){
-  let week = (typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days))
-    ? _homeRenderedWeek
-    : null;
-  if(!week && typeof buildWeekAgenda === 'function' && sortSettings){
-    try{ week = buildWeekAgenda(data,sortSettings,7); }
-    catch(_err){ week = null; }
-  }
+  const week = cachedOverviewWeek(data);
   if(!week || !Array.isArray(week.days) || !week.days.length){
     // Fallback: availability only (no placements)
     const days = [];
@@ -729,6 +799,161 @@ function collectDayLogRows(key){
   return rows;
 }
 
+// PURE: split journal rows into planned vs done so the day sheet can show
+// them as sibling sections (same pattern as the overview panes).
+function splitDayLogJournal(rows){
+  const planned = [];
+  const activity = [];
+  (rows || []).forEach(row=>{
+    const planLogs = (row.entries || []).filter(isPlanLog);
+    const actualLogs = (row.entries || []).filter(log=>!isPlanLog(log));
+    const scheduled = row.scheduled || [];
+    if(scheduled.length || planLogs.length){
+      planned.push({h:row.h,index:row.index,c:row.c,entries:planLogs,scheduled});
+    }
+    if(actualLogs.length){
+      activity.push({h:row.h,index:row.index,c:row.c,entries:actualLogs,scheduled:[]});
+    }
+  });
+  return {planned,activity};
+}
+
+function dayLogItemRowHtml(row){
+  const meta = dayRowMeta(row);
+  return `<button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
+      <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
+      <span class="overview-meta">${escapeHtml(meta)}</span>
+      <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
+    </button>`;
+}
+
+function dayLogSectionHtml(title,sectionKey,inner){
+  return `<section class="day-logs-section" data-day-section="${escapeHtml(sectionKey)}">
+    <p class="overview-section-title">${escapeHtml(title)}</p>
+    <div class="overview-list day-logs-list">${inner}</div>
+  </section>`;
+}
+
+function dayLogEmptyRowHtml(name,meta){
+  return `<div class="overview-item">
+      <span class="overview-name">${escapeHtml(name)}</span>
+      ${meta ? `<span class="overview-meta">${escapeHtml(meta)}</span>` : ''}
+    </div>`;
+}
+
+function overviewDayAgendaClock(ts){
+  if(typeof compactHomeTime === 'function')return compactHomeTime(ts);
+  if(!Number.isFinite(Number(ts)))return '';
+  return new Date(Number(ts)).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+
+function overviewDayAgendaDuration(row){
+  const mins = Number.isFinite(Number(row && row.chunkMinutes))
+    ? Number(row.chunkMinutes)
+    : Math.max(0,Math.round((Number(row && row.end) - Number(row && row.start)) / 60000));
+  if(typeof compactHomeDuration === 'function')return compactHomeDuration(mins);
+  return mins ? `${Math.round(mins)}m` : '';
+}
+
+function overviewDayAgendaTravelHtml(row){
+  const start = overviewDayAgendaClock(row.start);
+  const mins = Math.max(1,Math.round((Number(row.seconds) || Math.max(0,(Number(row.end) - Number(row.start)) / 1000)) / 60));
+  const dur = typeof compactHomeDuration === 'function' ? compactHomeDuration(mins) : `${mins}m`;
+  const from = row.fromName || 'here';
+  const to = row.toName || 'next';
+  const label = start ? `${start} · ${dur} · ${from} → ${to}` : `${dur} · ${from} → ${to}`;
+  return `<div class="extra-text-line travel-text day-agenda-travel">${escapeHtml(label)}</div>`;
+}
+
+function overviewDayAgendaHabitHtml(row,data){
+  const h = row.h || (row.i != null ? data[row.i] : null);
+  if(!h)return '';
+  const idx = row.i != null ? row.i : data.findIndex(item=>item === h || (item && h.hid && item.hid === h.hid));
+  const c = colors(daysSince(h.lastLog),h.target,h.type);
+  const clock = overviewDayAgendaClock(row.start);
+  const dur = overviewDayAgendaDuration(row);
+  const meta = [clock,dur].filter(Boolean).join(' · ');
+  const openAttr = Number.isInteger(idx) && idx >= 0 ? ` data-day-item="${idx}"` : '';
+  const tag = openAttr ? 'button' : 'div';
+  const type = openAttr ? ' type="button"' : '';
+  const chevron = openAttr ? '<i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>' : '';
+  return `<${tag} class="overview-item plan-item day-log-row"${type}${openAttr}>
+      <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
+      <span class="overview-meta">${escapeHtml(meta)}</span>
+      ${chevron}
+    </${tag}>`;
+}
+
+function overviewDayTimedAgendaHtml(week,key,data){
+  const day = (week && week.days || []).find(d=>dateKey(d.dayBase) === key);
+  if(!day)return '';
+  const rows = (day.homeDisplayedTimeline && day.homeDisplayedTimeline.length)
+    ? day.homeDisplayedTimeline
+    : (day.timeline || []);
+  const html = rows.map(row=>{
+    if(row.kind === 'travel')return overviewDayAgendaTravelHtml(row);
+    if(row.kind === 'fill' || row.kind === 'scheduled')return overviewDayAgendaHabitHtml(row,data);
+    return '';
+  }).filter(Boolean).join('');
+  return html;
+}
+
+function overviewDayAgendaIndexSet(week,key,data){
+  const ids = new Set();
+  const day = (week && week.days || []).find(d=>dateKey(d.dayBase) === key);
+  if(!day)return ids;
+  const rows = (day.homeDisplayedTimeline && day.homeDisplayedTimeline.length)
+    ? day.homeDisplayedTimeline
+    : (day.timeline || []);
+  rows.forEach(row=>{
+    if(row.kind !== 'fill' && row.kind !== 'scheduled')return;
+    if(row.i != null)ids.add(row.i);
+    const h = row.h || (row.i != null ? data[row.i] : null);
+    if(h && h.hid)ids.add(h.hid);
+  });
+  return ids;
+}
+
+function overviewDayRhythmPreview(key,data){
+  const dayBase = dayStart(new Date(`${key}T12:00:00`).getTime());
+  const weekday = new Date(dayBase).getDay();
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const items = [];
+  (data || []).forEach((h,i)=>{
+    if(!h)return;
+    if(!matchesOverviewFilters(h))return;
+    if(typeof isWeekCandidate !== 'function' || !isWeekCandidate(h,settings,dayBase,weekday))return;
+    items.push({h,index:i,c:colors(daysSince(h.lastLog),h.target,h.type)});
+  });
+  return items;
+}
+
+function overviewDayRhythmHtml(items){
+  return items.map(row=>`<button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
+      <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
+      <span class="overview-meta">fits this day</span>
+      <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
+    </button>`).join('');
+}
+
+function overviewDayAgendaSectionHtml(key,data){
+  if(!dayLogsCanPlan(key))return '';
+  const week = weekForOverviewDay(data,key);
+  if(week){
+    const timed = overviewDayTimedAgendaHtml(week,key,data);
+    return dayLogSectionHtml('Agenda','agenda',timed || dayLogEmptyRowHtml('nothing placed',''));
+  }
+  const preview = overviewDayRhythmPreview(key,data);
+  const pending = overviewDayAgendaPending(key);
+  let inner = overviewDayRhythmHtml(preview);
+  if(!inner){
+    inner = pending
+      ? dayLogEmptyRowHtml('fitting this day…','')
+      : dayLogEmptyRowHtml('nothing placed','');
+  }
+  return dayLogSectionHtml('Agenda','agenda',inner);
+}
+
 // PURE: day-scoped meta line for a row
 function dayRowMeta(row){
   const planned = row.entries.filter(isPlanLog);
@@ -827,27 +1052,34 @@ function renderDayLogs(key){
   if(dlSheet)setTimeout(()=>{ dlSheet._sg = 0; dlSheet.classList.remove('scrolling'); },0);
 }
 
-// RENDER: list step — items for the day (overview only)
+// RENDER: list step — agenda / planned / activity (overview only)
 function renderDayLogsListStep(key){
+  const data = typeof load === 'function' ? load() : [];
   const rows = collectDayLogRows(key);
+  const journal = splitDayLogJournal(rows);
   const ts = new Date(`${key}T12:00:00`).getTime();
-  const itemCount = rows.reduce((sum,row)=>sum + row.entries.length + row.scheduled.length,0);
-  $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   const pastDay = key < todayIso();
-  $('day-logs-sub').textContent = rows.length
-    ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'} · tap an item for actions`
+  const showAgenda = dayLogsCanPlan(key);
+  if(showAgenda)ensureOverviewWeekForDay(key);
+  const agendaHtml = showAgenda ? overviewDayAgendaSectionHtml(key,data) : '';
+  const week = showAgenda ? weekForOverviewDay(data,key) : null;
+  const onAgenda = week ? overviewDayAgendaIndexSet(week,key,data) : new Set();
+  const plannedRows = onAgenda.size
+    ? journal.planned.filter(row=>!onAgenda.has(row.index) && !(row.h && row.h.hid && onAgenda.has(row.h.hid)))
+    : journal.planned;
+  const plannedInner = plannedRows.map(dayLogItemRowHtml).join('');
+  const activityInner = journal.activity.map(dayLogItemRowHtml).join('');
+  const plannedHtml = plannedInner ? dayLogSectionHtml('Planned','planned',plannedInner) : '';
+  const activityHtml = activityInner ? dayLogSectionHtml('Activity','activity',activityInner) : '';
+  const hasJournal = Boolean(plannedInner || activityInner);
+  const hasAgendaRows = Boolean(showAgenda && !/nothing placed|fitting this day/.test(agendaHtml || ''));
+  $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  $('day-logs-sub').textContent = (hasJournal || hasAgendaRows)
+    ? 'tap an item for actions'
     : (pastDay ? 'Nothing logged yet' : 'Nothing planned or completed yet');
 
-  const body = $('day-logs-body');
-  const listHtml = rows.length ? `<div class="overview-list day-logs-list">${rows.map(row=>{
-    const meta = dayRowMeta(row);
-    return `
-    <button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
-      <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
-      <span class="overview-meta">${escapeHtml(meta)}</span>
-      <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
-    </button>`;
-  }).join('')}</div>` : `<div class="day-empty-state">
+  const sections = `${agendaHtml}${plannedHtml}${activityHtml}`;
+  const listHtml = sections || `<div class="day-empty-state">
     <span class="day-empty-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
     <b>This day is open</b>
     <small>${dayLogsCanPlan(key)
@@ -856,7 +1088,7 @@ function renderDayLogsListStep(key){
         : 'Add a plan for this day. You can pick a time if you want.')
       : 'Log a missed day, or change how much time this day had.'}</small>
   </div>`;
-  body.innerHTML = `${listHtml}
+  $('day-logs-body').innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
       ${dayLogsCanPlan(key) ? `<button type="button" class="day-quick-action primary" id="day-logs-plan">
         <i class="ti ti-calendar-plus" aria-hidden="true"></i>

@@ -302,6 +302,14 @@ let dayLogsItemIndex = null;
 let dayLogsMoving = false;
 let overviewListPane = 'plan'; // plan | care | past (around-today only)
 let _overviewStretchCache = null;
+// Week snapshot for calendar overlay when home skipped week mode (minimal).
+// Independent of `_homeRenderedWeek` so a category-grouped home render cannot
+// wipe it and force a synchronous rebuild on the next calendar tap.
+let _overviewWeekSnapshot = null;
+let _overviewWeekSnapshotKey = '';
+let _overviewWeekFillToken = 0;
+let _overviewWeekFillInflightKey = '';
+let _overviewWeekFillCoverDays = 0;
 let selectedType = 'keepup';
 let sortSettings = null;
 let searchQuery = '';
