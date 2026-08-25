@@ -904,6 +904,14 @@
     };
     view.right = view.left + view.width;
     view.bottom = view.top + view.height;
+    // The chrome nudge points at the real browser control (••• / ⋮), which
+    // lives in the toolbar on the far side of the viewport from the docked
+    // card — pin it beside that corner, not to the card itself.
+    const nudge = bubble.querySelector('.tings-coach-chrome-nudge');
+    if(nudge){
+      nudge.style.left = `${view.right - 40}px`;
+      nudge.style.top = `${m.dock === 'top' ? view.bottom - 38 : view.top + 12}px`;
+    }
     const margin = 10;
     const gap = 14;
     bubble.style.maxHeight = `${Math.max(150,view.height - margin * 2)}px`;

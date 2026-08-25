@@ -93,18 +93,16 @@
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-steps.is-compact li{gap:0;padding:0 2px;}
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-steps.is-compact li:first-child{opacity:.38;}
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-chrome-nudge{display:none;}
-.tings-coach-root[data-install-dock="top"] .tings-coach-bubble,
-.tings-coach-root[data-install-dock="bottom"] .tings-coach-bubble{overflow:visible;}
+/* The chrome nudge is pinned by position() to the viewport corner that holds
+   the real browser control (bottom-right ••• on iPhone, top-right ⋮ elsewhere)
+   rather than to the card: the card docks on the opposite edge, so a
+   card-relative arrow would float mid-screen. Off-screen until positioned. */
 .tings-coach-chrome-nudge{
-  position:absolute;z-index:3;color:var(--teal-icon);font-size:26px;line-height:1;
+  position:fixed;z-index:3;left:-999px;top:-999px;color:var(--teal-icon);font-size:26px;line-height:1;
   pointer-events:none;filter:drop-shadow(0 1px 2px rgba(10,18,16,.28));
 }
-.tings-coach-root[data-install-dock="top"] .tings-coach-chrome-nudge{
-  right:14px;bottom:-22px;animation:tings-coach-point-br 900ms ease-in-out infinite;
-}
-.tings-coach-root[data-install-dock="bottom"] .tings-coach-chrome-nudge{
-  right:14px;top:-22px;animation:tings-coach-point-tr 900ms ease-in-out infinite;
-}
+.tings-coach-root[data-install-dock="top"] .tings-coach-chrome-nudge{animation:tings-coach-point-br 900ms ease-in-out infinite;}
+.tings-coach-root[data-install-dock="bottom"] .tings-coach-chrome-nudge{animation:tings-coach-point-tr 900ms ease-in-out infinite;}
 @keyframes tings-coach-point-br{
   0%,100%{transform:translate(0,0)}
   50%{transform:translate(3px,4px)}
