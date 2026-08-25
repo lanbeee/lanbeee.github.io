@@ -1527,24 +1527,16 @@ Toasts appear after:
 
 ### Guided Coaches
 - A fresh, empty install offers the **install guide** first when it runs in a
-  browser: numbered, iconified per-platform steps (iOS compact Safari
-  ••• → Share → Add to Home Screen; Android menu → Install app; desktop
-  address-bar install) connected by
-  arrows, or a native **Install** button on Chrome-based browsers where a
+  browser: numbered, iconified per-platform steps (details in the install-guide
+  bullet below) or a native **Install** button on Chrome-based browsers where a
   `beforeinstallprompt` gesture was captured (declined prompts fall back to the
-  manual steps). The guide ends by handing over to the guided start; a user
-  already running the installed (standalone) app is offered the guided start
-  directly. About → **install app** replays the guide on demand, and About's
-  install button tells already-installed users where the guided start lives.
-  iOS compact Safari hides Share behind the address-bar **•••** menu, and that
-  native sheet covers the page, so the iOS card docks to the uncovered edge
-  (top on iPhone portrait, bottom on iPad/landscape) and collapses to a short
-  reminder if the page blurs while the menu is open. After **Add to Home
-  Screen**, leave **Open as Web App** on. The second step is a large
-  close-this-tab / open-Tings visual: the browser page is not the app, so the
-  user should close this tab and launch the Home Screen icon (or dock window).
-  **Got it** ends the guide; **Stay in this tab** is the escape into the
-  guided start without leaving the browser.
+  manual steps). The guide ends with a large close-this-tab / open-Tings
+  visual — the browser page is not the app — where **Got it** ends the guide
+  and **Stay in this tab** escapes into the guided start without leaving the
+  browser. A user already running the installed (standalone) app is offered
+  the guided start directly. About → **install app** replays the guide on
+  demand, and About's install button tells already-installed users where the
+  guided start lives.
 - A fresh, empty install offers the **guided start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
 - The guided start branches between a repeating habit and a one-off task. It
@@ -1573,15 +1565,27 @@ Toasts appear after:
 - About → **guided start** replays a non-destructive refresher for an existing
   user.
 - The **install guide** (first-run in a browser, or About → **install app**)
-  teaches iOS compact Safari as **••• → Share → Add to Home Screen** (tap
-  **View More** if the action is hidden), then **Add** with **Open as Web App**
-  left on. Android/desktop learns the menu or address-bar install, and
+  quotes each platform's real controls, exactly as the browser labels them.
+  Mobile cards render as a compact label rail docked to the edge the browser's
+  own UI leaves uncovered (top on iPhone, whose address bar and sheets rise
+  from the bottom; bottom on iPad and Android, whose menus drop from the top)
+  and collapse to a short reminder when the page blurs while a native menu is
+  open. iOS 26 compact Safari teaches **••• → Share → Add to Home Screen →
+  Add**, with **View More** for the collapsed share-sheet actions and **Open
+  as Web App** left on; iOS 18 and older (detected from the UA) skip straight
+  to the toolbar **Share** button and never mention the iOS 26-only toggle;
+  Mac-UA iPads (version unknowable) get the current flow plus a "no •••? tap
+  Share" hedge. Android teaches **⋮ menu → Install app → Confirm** (Chrome's
+  "Add to Home screen" wording and Samsung Internet's bottom-right ≡ noted in
+  the copy). Desktop teaches the address-bar install icon plus the current
+  Chrome menu path (⋮ → **Cast, save, and share** → **Install page as
+  app…**, with Edge's ⋯ → Apps → **Install this site as an app** variant).
   Chrome-based browsers with a captured `beforeinstallprompt` gesture get a
-  native Install button (with a Not-now escape and a manual-steps fallback if
-  the prompt is declined). The second step is a large close-this-tab visual:
-  this browser page is not the app, so the user should close the tab and open
-  Tings from the Home Screen (or dock). The guide is skipped when Tings already
-  runs standalone.
+  native Install button instead (with a Not-now escape and a manual-steps
+  fallback if the prompt is declined). The second step is a large
+  close-this-tab visual: this browser page is not the app, so the user should
+  close the tab and open Tings from the Home Screen (phone) or its own window
+  (desktop). The guide is skipped when Tings already runs standalone.
 - About → **advanced coach** teaches the full, non-minimal surface: rich cards,
   swipe/card actions, agenda ordering and audit, every major detail area,
   calendar analysis and filters, home display, backup, calendar import, topics,

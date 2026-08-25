@@ -172,6 +172,8 @@ async function primary(page,current,next){
   await stage(page,'iSteps');
   assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 2 · install app','About runs the install guide as its own tour');
   assert(await page.locator('.tings-step-glyph i').count() === 3,'install guidance lists three iconified steps');
+  const desktopSteps = await page.locator('.tings-step-text').allTextContents();
+  assert(desktopSteps.some(text=>text.includes('Cast, save, and share')),'desktop install guidance teaches the current Chrome menu path');
   const desktopIcons = await page.locator('.tings-step-glyph i').evaluateAll(els=>els.map(el=>el.className));
   assert(JSON.stringify(desktopIcons) === JSON.stringify(['ti ti-device-desktop-down','ti ti-dots-vertical','ti ti-window']),'desktop install guidance shows the monitor, menu-dots, and window glyphs');
   assert(await page.locator('[data-coach-back]').count() === 0,'the install tour opens on its first step');
@@ -229,44 +231,60 @@ async function primary(page,current,next){
   assert(await page.locator('#tings-coach').count() === 0,'already-installed users get no install tour from About');
   await page.evaluate(()=>closeSheet('about-sheet'));
 
-  // Per-platform glyphs: iOS compact Safari starts with the address-bar •••
-  // menu (ti-dots), then Share (ti-share-2 — not the Android node-graph
-  // ti-share), Add to Home Screen, and Add. Android shows Chrome's ⋮ menu
-  // and install-to-phone.
+  // Per-platform glyphs and labels: the compact rails quote each control
+  // exactly as the browser labels it. iOS 26 compact Safari starts with the
+  // address-bar ••• menu (ti-dots), then Share (ti-share-2 — not the Android
+  // node-graph ti-share), Add to Home Screen, and Add; iOS 17 and older have
+  // no ••• menu, so they start at the toolbar Share button. Android shows
+  // Chrome's ⋮ menu, Install app, and Confirm on a bottom-docked rail.
   const uaCases = [
     {
       name:'ios',
       ua:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1',
-      icons:['ti ti-dots','ti ti-share-2','ti ti-square-rounded-plus','ti ti-check']
+      icons:['ti ti-dots','ti ti-share-2','ti ti-square-rounded-plus','ti ti-check'],
+      labels:['•••','Share','Add to Home Screen','Add'],
+      dock:'top'
+    },
+    {
+      name:'ios-legacy',
+      ua:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      icons:['ti ti-share-2','ti ti-square-rounded-plus','ti ti-check'],
+      labels:['Share','Add to Home Screen','Add'],
+      dock:'top'
     },
     {
       name:'android',
       ua:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
-      icons:['ti ti-dots-vertical','ti ti-device-mobile-down','ti ti-check']
+      icons:['ti ti-dots-vertical','ti ti-device-mobile-down','ti ti-check'],
+      labels:['⋮ menu','Install app','Confirm'],
+      dock:'bottom',
+      copyNeedle:'Install app'
     }
   ];
-  for(const {name,ua,icons} of uaCases){
+  for(const {name,ua,icons,labels,dock,copyNeedle = 'Add to Home Screen'} of uaCases){
     const ctx = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:ua});
     const uaPage = await ctx.newPage();
     await uaPage.goto(coachUrl,{waitUntil:'load'});
     await uaPage.waitForSelector('#tings-coach[data-coach-stage="iSteps"]',{timeout:5000});
     const shown = await uaPage.locator('.tings-step-glyph i').evaluateAll(els=>els.map(el=>el.className));
     assert(JSON.stringify(shown) === JSON.stringify(icons),`${name} install guidance shows the correct platform glyphs`);
+    const shownLabels = await uaPage.locator('.tings-step-text').allTextContents();
+    assert(JSON.stringify(shownLabels) === JSON.stringify(labels),`${name} install rail quotes the browser's own control labels`);
+    const rail = await uaPage.evaluate(()=>({
+      dock:document.getElementById('tings-coach').getAttribute('data-install-dock'),
+      compact:Boolean(document.querySelector('.tings-coach-steps.is-compact')),
+      bubbleTop:document.querySelector('.tings-coach-bubble').getBoundingClientRect().top,
+      bubbleBottom:document.querySelector('.tings-coach-bubble').getBoundingClientRect().bottom,
+      viewport:window.innerHeight,
+      copy:(document.getElementById('tings-coach-copy') || {}).textContent || '',
+      hintShown:Boolean(document.querySelector('.tings-coach-overlay-hint'))
+    }));
+    assert(rail.dock === dock && rail.compact,`${name} install guidance is a compact rail docked at the ${dock}`);
+    if(dock === 'top')assert(rail.bubbleTop <= 24,`${name} install card sits at the top so Safari’s bottom menus do not cover it`);
+    else assert(rail.bubbleBottom >= rail.viewport - 24,`${name} install card sits at the bottom so the browser menu does not cover it`);
+    assert(rail.copy.includes(copyNeedle) && rail.hintShown,`${name} install card keeps the full tap path in visible copy`);
     if(name === 'ios'){
-      const docked = await uaPage.evaluate(()=>{
-        const root = document.getElementById('tings-coach');
-        const bubble = document.querySelector('.tings-coach-bubble').getBoundingClientRect();
-        return {
-          dock:root.getAttribute('data-install-dock'),
-          compact:Boolean(document.querySelector('.tings-coach-steps.is-compact')),
-          top:bubble.top,
-          height:bubble.height,
-          overlay:root.getAttribute('data-chrome-overlay')
-        };
-      });
-      assert(docked.dock === 'top' && docked.compact,'iOS install guidance docks at the top as a compact step rail');
-      assert(docked.top <= 24,'iOS install card sits at the top so Safari’s bottom menus do not cover it');
-      assert(docked.overlay === 'false','iOS install card starts expanded before Safari’s menu opens');
+      assert(await uaPage.locator('#tings-coach').getAttribute('data-chrome-overlay') === 'false','iOS install card starts expanded before Safari’s menu opens');
       await uaPage.evaluate(()=>window.dispatchEvent(new Event('blur')));
       const overlay = await uaPage.evaluate(()=>{
         const root = document.getElementById('tings-coach');
@@ -282,9 +300,13 @@ async function primary(page,current,next){
         };
       });
       assert(overlay.flag === 'true' && overlay.hintShown && overlay.titleShown === false,'opening Safari’s menu collapses the card to a top reminder');
-      assert(overlay.height < docked.height && overlay.top <= 24,'the overlay reminder is shorter and stays at the top');
+      assert(overlay.height < rail.bubbleBottom - rail.bubbleTop && overlay.top <= 24,'the overlay reminder is shorter and stays at the top');
       await uaPage.evaluate(()=>window.dispatchEvent(new Event('focus')));
       assert(await uaPage.locator('#tings-coach').getAttribute('data-chrome-overlay') === 'false','closing Safari’s menu restores the full iOS install card');
+    }
+    if(name === 'ios-legacy'){
+      const legacyCopy = await uaPage.locator('#tings-coach-copy').textContent();
+      assert(legacyCopy.includes('Share') && !legacyCopy.includes('Open as Web App'),'pre-iOS-26 guidance teaches the toolbar Share button without the iOS 26-only toggle');
     }
     await ctx.close();
   }

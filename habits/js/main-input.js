@@ -94,7 +94,8 @@ $('privacy-head-close')?.addEventListener('pointerdown',()=>suppressBottomNav(),
 // loads, so the app captures the browser's gesture at boot and replays it on
 // demand; Chrome/Edge/Android then show the native install sheet from the
 // coach's Install button instead of the noisy mini-infobar. iOS Safari has no
-// such event — there the coach teaches ••• → Share → Add to Home Screen.
+// such event — there the coach teaches the manual flow (••• menu → Share on
+// iOS 26+, the toolbar Share button on older iOS).
 let _tingsDeferredInstall = null;
 window.addEventListener('beforeinstallprompt',event=>{
   event.preventDefault();
@@ -140,7 +141,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=9';
+      stylesheet.href = './onboarding/coach.css?v=10';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -157,7 +158,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=9';
+    script.src = './onboarding/coach.js?v=10';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{

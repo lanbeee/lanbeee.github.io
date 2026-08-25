@@ -128,18 +128,28 @@
       return !installDismissed && typeof tingsInstallPromptAvailable === 'function' && tingsInstallPromptAvailable();
     }catch(_){return false;}
   }
-  // iPhone compact Safari (the iOS 18+/26 default) keeps Share behind the
-  // address-bar ••• menu at the bottom; iPad and landscape put chrome at the
-  // top. Native menus paint above the web view, so the card has to live on
-  // the uncovered edge — z-index cannot float it over Safari’s sheet.
+  // iPhone Safari keeps its address bar at the bottom, so the ••• menu, the
+  // share sheet, and the Add-to-Home-Screen sheet all rise over the lower
+  // half — the card docks at the top to stay visible (native UI paints above
+  // the web view; z-index cannot float over Safari’s sheet). iPad Safari hangs
+  // its toolbar and popovers from the top, so there the card docks at the
+  // bottom. Device-fixed, so rotation never strands the card on the wrong
+  // edge.
   function iosInstallDock(){
     if(installPlatform() !== 'ios')return '';
-    const ua = navigator.userAgent || '';
-    const landscape = window.innerWidth > window.innerHeight;
-    if(/iPhone|iPod/.test(ua))return landscape ? 'bottom' : 'top';
-    const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    if(ipad || landscape)return 'bottom';
-    return 'top';
+    return /iPhone|iPod/.test(navigator.userAgent || '') ? 'top' : 'bottom';
+  }
+  // iOS 26 compact Safari hides Share behind the address-bar ••• menu; iOS 18
+  // and earlier put the Share button directly in the toolbar (and their
+  // Add-to-Home-Screen sheet has no “Open as Web App” switch). Old iPads that
+  // report the desktop Mac UA hide their version, so they get the current
+  // flow plus a toolbar hedge in the copy.
+  function iosVersionKnown(){
+    return /(?:iPhone|iPad|CPU) OS \d+/.test(navigator.userAgent || '');
+  }
+  function iosMajor(){
+    const match = (navigator.userAgent || '').match(/(?:iPhone|iPad|CPU) OS (\d+)/);
+    return match ? parseInt(match[1],10) : 26;
   }
   function coachSafe(side){
     if(!root)return 0;
@@ -259,13 +269,16 @@
 
   // Install guide tour: the first thing a first-run browser user sees, and a
   // two-step tour from About on demand. The steps never lock to an in-page
-  // control — the real action lives in browser chrome (Share button, menu, or
-  // the native install sheet) — so the guards keep the app untouchable while
-  // the numbered, iconified steps play out. iNext then shows a large
-  // close-this-tab / open-the-app visual so the user leaves the browser;
-  // staying in the tab is the escape into the guided start. An already-
-  // installed (standalone) user skips this tour and enters onboarding
-  // directly.
+  // control — the real action lives in browser chrome (••• menu, share sheet,
+  // or the native install sheet) — so the guards keep the app untouchable
+  // while the steps play out. Mobile rails quote each control exactly as the
+  // browser labels it (••• / Share / Add to Home Screen / Add), because the
+  // compact card shows only those labels plus one copy sentence — anything
+  // the user must know lives in that visible copy, never in a hidden step
+  // text. iNext then shows a large close-this-tab / open-the-app visual so
+  // the user leaves the browser; staying in the tab is the escape into the
+  // guided start. An already-installed (standalone) user skips this tour and
+  // enters onboarding directly.
   function installModel(p){
     if(stage === 'iNext'){
       const phone = installPlatform() !== 'desktop';
@@ -273,53 +286,75 @@
         progress:p,title:'Close this tab',
         copy:phone
           ? 'This browser page is not the app. Close this tab, then tap <strong>Tings</strong> on your Home Screen.'
-          : 'This browser tab is not the app. Close it, then open <strong>Tings</strong> from the dock or its own window.',
+          : 'This browser tab is not the app. Close it, then open <strong>Tings</strong> from its own window — or pin its icon to the dock or Start menu.',
         handoff:{
           leave:'Close this tab',
           open:'Open Tings',
-          openWhere:phone ? 'Home Screen' : 'Dock / app window'
+          openWhere:phone ? 'Home Screen' : 'own window'
         },
         action:'Got it',command:'finish',later:'Stay in this tab',laterCommand:'startEssentials',back:'iSteps'
       };
     }
-    if(installPlatform() !== 'ios' && installPromptReady())return {
-      progress:p,title:'Put Tings on your home screen',
-      copy:'Your browser can install Tings like a real app: its own icon, full screen, no browser bar. Everything you log stays on this device.',
-      action:'Install',command:'installNow',later:'Not now',next:'iNext'
-    };
+    if(installPlatform() !== 'ios' && installPromptReady()){
+      const phone = installPlatform() === 'android';
+      return {
+        progress:p,
+        title:phone ? 'Put Tings on your home screen' : 'Install Tings as an app',
+        copy:phone
+          ? 'Your browser can install Tings like a real app: its own icon, full screen, no browser bar. Everything you log stays on this device.'
+          : 'Your browser can install Tings as a desktop app with its own window and taskbar icon. Everything you log stays on this device.',
+        action:'Install',command:'installNow',later:'Not now',next:'iNext'
+      };
+    }
     const iosDock = iosInstallDock();
+    const iosModern = iosMajor() >= 26;
+    // Why the card is parked on its edge: Safari's own UI covers the rest.
+    const iosCardWhy = iosDock === 'bottom'
+      ? 'Safari’s menus and popovers drop from the top, so this card stays at the bottom.'
+      : 'Safari’s menus and sheets rise from the bottom, so this card stays at the top.';
     const manual = {
       ios:{
         title:'Add Tings to your home screen',
-        copy:iosDock === 'bottom'
-          ? 'Tap the <strong>•••</strong> button at the right of Safari’s address bar, then Share, then Add to Home Screen. Those menus cover this page, so these steps stay at the bottom.'
-          : 'Tap the <strong>•••</strong> button at the right of Safari’s address bar — usually bottom right — then Share, then Add to Home Screen. Those menus cover this page, so these steps stay at the top.',
+        copy:iosModern
+          ? `Tap <strong>•••</strong> at the right end of Safari’s address bar, then <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong>. Leave <strong>Open as Web App</strong> on and tap <strong>Add</strong>. ${iosCardWhy}${iosDock === 'bottom' && !iosVersionKnown() ? ' No ••• button? Tap the toolbar’s <strong>Share</strong> button instead and skip the first step.' : ''}`
+          : `Tap the <strong>Share</strong> button — the square with an arrow — at the right end of Safari’s address bar, then scroll down and tap <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>. ${iosCardWhy}`,
         compact:true,
         dock:iosDock,
-        overlayHint:'Menu is open — tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Use <strong>View More</strong> if you don’t see it.',
-        steps:[
-          {icon:'ti ti-dots',label:'More •••',text:'Tap the <strong>•••</strong> button at the right of Safari’s address bar — usually bottom right. If Share is already in the toolbar, tap that instead.'},
-          {icon:'ti ti-share-2',label:'Share',text:'Tap <strong>Share</strong> in the menu that opens.'},
-          {icon:'ti ti-square-rounded-plus',label:'Home Screen',text:'Scroll and tap <strong>Add to Home Screen</strong>. If you only see a few actions, tap <strong>View More</strong> first.'},
-          {icon:'ti ti-check',label:'Add',text:'Leave <strong>Open as Web App</strong> on, then tap <strong>Add</strong>. Tings gets its own icon and opens full screen, without Safari.'}
-        ]
+        overlayHint:iosModern
+          ? 'Menu open — tap <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong> (tap <strong>View More</strong> if you don’t see it), then tap <strong>Add</strong> with <strong>Open as Web App</strong> left on.'
+          : 'Share sheet open — scroll down and tap <strong>Add to Home Screen</strong> (tap <strong>View More</strong> if you don’t see it), then tap <strong>Add</strong>.',
+        steps:iosModern
+          ? [
+            {icon:'ti ti-dots',label:'•••'},
+            {icon:'ti ti-share-2',label:'Share'},
+            {icon:'ti ti-square-rounded-plus',label:'Add to Home Screen'},
+            {icon:'ti ti-check',label:'Add'}
+          ]
+          : [
+            {icon:'ti ti-share-2',label:'Share'},
+            {icon:'ti ti-square-rounded-plus',label:'Add to Home Screen'},
+            {icon:'ti ti-check',label:'Add'}
+          ]
       },
       android:{
         title:'Add Tings to your home screen',
-        copy:'You are viewing Tings in the browser right now. Give it a permanent place:',
+        copy:'Tap your browser’s <strong>menu</strong> — <strong>⋮</strong> at the top right in Chrome, ≡ at the bottom right in Samsung Internet — then tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>) and confirm. The card sits at the bottom, out of Chrome’s menu way.',
+        compact:true,
+        dock:'bottom',
+        overlayHint:'Menu open — tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>), then confirm.',
         steps:[
-          {icon:'ti ti-dots-vertical',text:'Tap the browser <strong>menu</strong> — ⋮ in Chrome, at the top right.'},
-          {icon:'ti ti-device-mobile-down',text:'Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.'},
-          {icon:'ti ti-check',text:'Confirm, and Tings gets its own icon — full screen, no browser bar.'}
+          {icon:'ti ti-dots-vertical',label:'⋮ menu'},
+          {icon:'ti ti-device-mobile-down',label:'Install app'},
+          {icon:'ti ti-check',label:'Confirm'}
         ]
       },
       desktop:{
         title:'Install Tings as an app',
         copy:'The browser can install Tings like a desktop app with its own window:',
         steps:[
-          {icon:'ti ti-device-desktop-down',text:'Click the <strong>install icon</strong> at the right end of the address bar.'},
-          {icon:'ti ti-dots-vertical',text:'…or open the browser <strong>menu</strong> (⋮) and choose <strong>Install page as app…</strong>'},
-          {icon:'ti ti-window',text:'Tings opens in its own window, separate from your tabs.'}
+          {icon:'ti ti-device-desktop-down',text:'Click the <strong>install icon</strong> — a little screen with a down arrow — at the right end of the address bar.'},
+          {icon:'ti ti-dots-vertical',text:'No icon? Open the <strong>menu</strong> (⋮) → <strong>Cast, save, and share</strong> → <strong>Install page as app…</strong> In Edge: ⋯ → <strong>Apps</strong> → <strong>Install this site as an app</strong>.'},
+          {icon:'ti ti-window',text:'Tings then opens in its own window with its own taskbar entry, separate from your tabs.'}
         ]
       }
     };
