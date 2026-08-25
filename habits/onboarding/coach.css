@@ -69,7 +69,9 @@
 .tings-coach-steps.is-compact li:not(:last-child)::before,
 .tings-coach-steps.is-compact li:not(:last-child)::after{display:none;}
 .tings-step-arrow{
-  position:absolute;top:11px;right:-9px;z-index:1;
+  /* 40px glyph, 16px icon: top 12px / right -8px centers the arrow on the
+     glyph row and on the midpoint between neighbouring glyphs. */
+  position:absolute;top:12px;right:-8px;z-index:1;
   font-size:16px;line-height:1;color:var(--teal-icon);opacity:.85;pointer-events:none;
 }
 .tings-coach-steps.is-compact .tings-step-glyph{width:40px;height:40px;font-size:20px;border-radius:12px;}
@@ -89,7 +91,6 @@
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-steps.is-compact{margin-top:0;}
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-steps.is-compact .tings-step-text{display:none;}
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-steps.is-compact li{gap:0;padding:0 2px;}
-.tings-coach-root[data-chrome-overlay="true"] .tings-step-arrow{top:12px;}
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-steps.is-compact li:first-child{opacity:.38;}
 .tings-coach-root[data-chrome-overlay="true"] .tings-coach-chrome-nudge{display:none;}
 .tings-coach-root[data-install-dock="top"] .tings-coach-bubble,
