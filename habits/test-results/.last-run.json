@@ -1,47 +1,49 @@
 {
-  "status": "passed",
+  "status": "failed",
   "plannerMode": "smart",
-  "suites": "ui",
-  "timestamp": "2026-08-24T21:45:17Z",
-  "durationSeconds": 113,
+  "suites": "planner,ui,data,integrations",
+  "timestamp": "2026-08-25T20:14:25Z",
+  "durationSeconds": 341,
   "files": {
-    "passed": 19,
-    "failed": 0,
-    "executions": 19
+    "passed": 70,
+    "failed": 1,
+    "executions": 71
   },
   "assertions": {
-    "ok": 364,
+    "ok": 2512,
     "notOk": 0,
-    "total": 364
+    "total": 2512
   },
   "pageErrors": 0,
-  "failedTests": [],
+  "failedTests": [
+    "agenda-share-projection-test.js.default"
+  ],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260824-174324-91558.log",
+    "stamped": "test-results/run-20260825-160844-84174.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
     "status": "passed",
     "plannerMode": "smart",
-    "suites": "planner,ui,data,integrations",
-    "timestamp": "2026-08-23T16:53:47Z",
-    "durationSeconds": 331,
+    "suites": "ui",
+    "timestamp": "2026-08-24T21:45:17Z",
+    "durationSeconds": 113,
     "files": {
-      "passed": 70,
+      "passed": 19,
       "failed": 0,
-      "executions": 70
+      "executions": 19
     },
     "assertions": {
-      "ok": 2436,
+      "ok": 364,
       "notOk": 0,
-      "total": 2436
+      "total": 364
     },
     "pageErrors": 0,
     "failedTests": [],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260823-124816-9424.log",
+      "stamped": "test-results/run-20260824-174324-91558.log",
       "failedDir": "test-results/failed"
     }
   }

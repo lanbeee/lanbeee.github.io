@@ -818,11 +818,15 @@ function splitDayLogJournal(rows){
   return {planned,activity};
 }
 
+function overviewIsMinimal(){
+  return typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+}
+
 function dayLogItemRowHtml(row){
   const meta = dayRowMeta(row);
   return `<button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
       <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
-      <span class="overview-meta">${escapeHtml(meta)}</span>
+      ${meta ? `<span class="overview-meta">${escapeHtml(meta)}</span>` : ''}
       <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
     </button>`;
 }
@@ -856,6 +860,7 @@ function overviewDayAgendaDuration(row){
 }
 
 function overviewDayAgendaTravelHtml(row){
+  if(overviewIsMinimal())return '';
   const start = overviewDayAgendaClock(row.start);
   const mins = Math.max(1,Math.round((Number(row.seconds) || Math.max(0,(Number(row.end) - Number(row.start)) / 1000)) / 60));
   const dur = typeof compactHomeDuration === 'function' ? compactHomeDuration(mins) : `${mins}m`;
@@ -870,16 +875,14 @@ function overviewDayAgendaHabitHtml(row,data){
   if(!h)return '';
   const idx = row.i != null ? row.i : data.findIndex(item=>item === h || (item && h.hid && item.hid === h.hid));
   const c = colors(daysSince(h.lastLog),h.target,h.type);
-  const clock = overviewDayAgendaClock(row.start);
-  const dur = overviewDayAgendaDuration(row);
-  const meta = [clock,dur].filter(Boolean).join(' · ');
+  const meta = overviewIsMinimal() ? '' : [overviewDayAgendaClock(row.start),overviewDayAgendaDuration(row)].filter(Boolean).join(' · ');
   const openAttr = Number.isInteger(idx) && idx >= 0 ? ` data-day-item="${idx}"` : '';
   const tag = openAttr ? 'button' : 'div';
   const type = openAttr ? ' type="button"' : '';
   const chevron = openAttr ? '<i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>' : '';
   return `<${tag} class="overview-item plan-item day-log-row"${type}${openAttr}>
       <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
-      <span class="overview-meta">${escapeHtml(meta)}</span>
+      ${meta ? `<span class="overview-meta">${escapeHtml(meta)}</span>` : ''}
       ${chevron}
     </${tag}>`;
 }
@@ -929,9 +932,10 @@ function overviewDayRhythmPreview(key,data){
 }
 
 function overviewDayRhythmHtml(items){
+  const minimal = overviewIsMinimal();
   return items.map(row=>`<button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
       <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
-      <span class="overview-meta">fits this day</span>
+      ${minimal ? '' : '<span class="overview-meta">fits this day</span>'}
       <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
     </button>`).join('');
 }
@@ -1034,7 +1038,9 @@ function renderDayLogs(key){
     dayLogsItemIndex = dayLogsScopeIndex;
     if(dayLogsStep === 'list' || dayLogsStep === 'avail')dayLogsStep = 'item';
   }else if(dayLogsStep === 'item'){
-    if(dayLogsItemIndex == null || !collectDayLogRows(key).some(row=>row.index === dayLogsItemIndex)){
+    const data = typeof load === 'function' ? load() : [];
+    const valid = Number.isInteger(dayLogsItemIndex) && data[dayLogsItemIndex];
+    if(!valid){
       dayLogsStep = 'list';
       dayLogsItemIndex = null;
       dayLogsMoving = false;

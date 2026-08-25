@@ -463,11 +463,35 @@ function seedScript(){
       const futurePlanned = (document.querySelector('#day-logs-body [data-day-section="planned"]')?.innerText || '');
       const afterFutureCalls = syncCalls;
 
+      const data = load();
+      const base = dayStart(Date.now());
+      const timedDay = {
+        dayBase:base,
+        dayKey:today,
+        isToday:true,
+        timeline:[{
+          kind:'fill',
+          i:0,
+          start:base + 10 * 3600000,
+          end:base + 10.5 * 3600000,
+          h:data[0]
+        }]
+      };
+      _homeRenderedWeek = {days:[timedDay]};
+      resetDayLogsStep();
+      renderDayLogs(today);
+      const minimalAgendaText = document.querySelector('#day-logs-body [data-day-section="agenda"]')?.innerText || '';
+
       saveSortSettings({...loadSortSettings(), minimalMode:false});
       sortSettings = loadSortSettings();
       if(typeof applyAppearanceSettings === 'function')applyAppearanceSettings();
-      const data = load();
-      const base = dayStart(Date.now());
+      _homeRenderedWeek = {days:[timedDay]};
+      resetDayLogsStep();
+      renderDayLogs(today);
+      const fullAgendaText = document.querySelector('#day-logs-body [data-day-section="agenda"]')?.innerText || '';
+      const afterFullCalls = syncCalls;
+
+      const betaIdx = data.findIndex(h=>h.name === 'Scope Beta');
       _homeRenderedWeek = {
         days:[{
           dayBase:base,
@@ -475,17 +499,20 @@ function seedScript(){
           isToday:true,
           timeline:[{
             kind:'fill',
-            i:0,
-            start:base + 10 * 3600000,
-            end:base + 10.5 * 3600000,
-            h:data[0]
+            i:betaIdx,
+            start:base + 11 * 3600000,
+            end:base + 11.4 * 3600000,
+            h:data[betaIdx]
           }]
         }]
       };
       resetDayLogsStep();
       renderDayLogs(today);
-      const fullAgendaText = document.querySelector('#day-logs-body [data-day-section="agenda"]')?.innerText || '';
-      const afterFullCalls = syncCalls;
+      setDayLogsStep('item',betaIdx);
+      const itemOpen = !!document.querySelector('#day-logs-body [data-open-day-item]');
+      const itemTitle = document.getElementById('day-logs-title')?.textContent || '';
+      const itemStep = dayLogsStep;
+      const afterTapCalls = syncCalls;
 
       return {
         cellCount,
@@ -500,8 +527,13 @@ function seedScript(){
         futureAgenda,
         futurePlanned,
         afterFutureCalls,
+        minimalAgendaText,
         fullAgendaText,
         afterFullCalls,
+        itemOpen,
+        itemTitle,
+        itemStep,
+        afterTapCalls,
         firstName:data[0] && data[0].name
       };
     }finally{
@@ -519,7 +551,13 @@ function seedScript(){
   assert(/Scope Beta|Scope Alpha/i.test(dayAgenda.futurePlanned), 'future Planned lists due / plan-by items');
   assert(dayAgenda.afterFutureCalls === 0, 'future day does not sync-plan a week');
   assert(dayAgenda.fullAgendaText.includes(dayAgenda.firstName), 'full mode Agenda reuses the home week timeline');
+  assert(/10AM|10:00/i.test(dayAgenda.fullAgendaText) && /30m/.test(dayAgenda.fullAgendaText), 'full mode Agenda shows time and duration');
   assert(dayAgenda.afterFullCalls === 0, 'full mode Agenda does not sync-plan a week');
+  assert(dayAgenda.minimalAgendaText.includes(dayAgenda.firstName), 'minimal Agenda still names the placed habit');
+  assert(!/10AM|10:00/i.test(dayAgenda.minimalAgendaText) && !/\b30m\b/.test(dayAgenda.minimalAgendaText), 'minimal Agenda hides time and duration');
+  assert(dayAgenda.itemStep === 'item' && dayAgenda.itemOpen, 'tapping an agenda habit opens item options including Open item');
+  assert(/Scope Beta/i.test(dayAgenda.itemTitle), 'item options are for the tapped habit');
+  assert(dayAgenda.afterTapCalls === 0, 'opening item options does not sync-plan a week');
 
   if(pageErrors.length){
     console.error('page errors:', pageErrors.join('\n'));
