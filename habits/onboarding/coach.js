@@ -17,20 +17,24 @@
   const SETTINGS_STAGES = new Set([
     'aFullMode','aSettingsDisplay','aBackup','aCalendarImport','aOrganization','aBusy','aDefaults','aOptimizer'
   ]);
-  const DETAIL_STAGES = new Set(['eDetailBasics','eDetailEffort','aDetailRead','aSchedule','aEffort','aIdentity','aLifecycle']);
-  const ADD_STAGES = new Set(['eName','eKind','eRhythm','eTask','eSave']);
-  const OVERVIEW_STAGES = new Set(['eOverview','aOverview','aOverviewTools']);
+  const DETAIL_STAGES = new Set(['eDetailBasics','eDetailEffort','eTaskDetail','aDetailRead','aSchedule','aEffort','aIdentity','aLifecycle']);
+  const ADD_STAGES = new Set(['eName','eKind','eRhythm','eTask','eSave','eTaskName','eSaveTask']);
+  const OVERVIEW_STAGES = new Set(['eOverview','eOverviewPast','eOverviewLog','eOverviewMissed','eOverviewFuture','eOverviewPlan','aOverview','aOverviewTools']);
+  const OVERVIEW_DAY_STAGES = new Set(['eOverviewLog','eOverviewMissed','eOverviewPlan']);
   // Sheets each stage group may keep open. Anything else that appears is closed
   // by reconcile(): the coach decides what page is on screen, wander included.
   const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet'];
   const SHEET_ALLOWANCES = new Map([
     [ADD_STAGES,['add-sheet',...PICKER_SHEETS]],
     // Gate stages wait for the user to open their destination sheet themselves.
-    [new Set(['eAdd']),['add-sheet',...PICKER_SHEETS]],
+    [new Set(['eAdd','eAddTask']),['add-sheet',...PICKER_SHEETS]],
     [DETAIL_STAGES,['detail-sheet','order-link-sheet','doing-now-sheet','snooze-sheet','activity-sheet','value-log-sheet','day-logs-sheet',...PICKER_SHEETS]],
     [SETTINGS_STAGES,['settings-sheet',...PICKER_SHEETS]],
     [OVERVIEW_STAGES,['overview-sheet','day-logs-sheet','activity-sheet','calendar-filter-sheet','value-log-sheet','free-time-sheet','slipped-sheet','day-capacity-sheet']],
-    [new Set(['eCalendar','aCalendar']),['overview-sheet']]
+    [new Set(['eCalendar','aCalendar']),['overview-sheet']],
+    [new Set(['eSampleIntro','eSampleAdd']),['sample-habits-sheet','about-sheet']],
+    [new Set(['eAbout']),['about-sheet']],
+    [new Set(['eAboutMenu']),['about-sheet','settings-sheet','privacy-sheet','sample-habits-sheet']]
   ]);
   function allowedSheets(){
     for(const [stages,allowed] of SHEET_ALLOWANCES){if(stages.has(stage))return allowed;}
@@ -51,6 +55,7 @@
   let initialCount = 0;
   let initialHids = new Set();
   let trackedHid = '';
+  let trackedTaskHid = '';
   let overviewActivated = false;
   let skipArmTimer = 0;
   let installDismissed = false;
@@ -107,12 +112,77 @@
   }
   function trackedIndex(){
     const data = habits();
-    const byId = trackedHid ? data.findIndex(h=>h && h.hid === trackedHid) : -1;
+    const hid = (stage === 'eTaskDetail' && trackedTaskHid) ? trackedTaskHid : trackedHid;
+    const byId = hid ? data.findIndex(h=>h && h.hid === hid) : -1;
     return byId >= 0 ? byId : (data.length ? 0 : -1);
   }
   function addKind(){
     const on = document.querySelector('#type-seg .seg-opt.on');
     return on?.dataset.v === 'task' ? 'task' : 'habit';
+  }
+  function trackedItem(){
+    return habits().find(h=>h && h.hid === trackedHid) || null;
+  }
+  function shouldTeachTask(){
+    if(!interactive)return false;
+    const item = trackedItem();
+    if(item)return item.type !== 'task';
+    return addKind() !== 'task';
+  }
+  function inTaskFollowup(){
+    return ['eAddTask','eTaskName','eTask','eSaveTask'].includes(stage) && Boolean(trackedHid);
+  }
+  function newestUntracked(){
+    const known = new Set([trackedHid,trackedTaskHid].filter(Boolean));
+    return habits().find(h=>h?.hid && !initialHids.has(h.hid) && !known.has(h.hid)) || null;
+  }
+  function chooseAddType(type){
+    const opt = document.querySelector(`#type-seg [data-v="${type}"]`);
+    if(opt && !opt.classList.contains('on'))opt.click();
+  }
+  function closeGuidedDayLogs(){
+    if(typeof closeDayLogsSheet === 'function'){
+      try{closeDayLogsSheet({refreshOverview:true});}catch(_){}
+      return;
+    }
+    closeGuidedSheet('day-logs-sheet');
+  }
+  function calDayFromEvent(event){
+    const day = event.target.closest?.('.cal-day.pickable');
+    if(!day || !day.closest('#overview-calendar'))return null;
+    return day;
+  }
+  function afterCalendarNext(){
+    if(shouldTeachTask())return 'eAddTaskIntro';
+    return interactive ? 'eSampleIntro' : 'eAbout';
+  }
+  function openGuidedAbout(){
+    closeGuidedSheet('sample-habits-sheet');
+    closeGuidedSheet('overview-sheet');
+    closeGuidedDayLogs();
+    closeGuidedSheet('detail-sheet');
+    closeGuidedSheet('add-sheet');
+    closeGuidedSheet('settings-sheet');
+    closeGuidedSheet('privacy-sheet');
+    if(typeof resetAboutSheetState === 'function'){
+      try{resetAboutSheetState();}catch(_){}
+    }
+    if(typeof syncInstallGuideVisibility === 'function'){
+      try{syncInstallGuideVisibility();}catch(_){}
+    }
+    if(typeof openSheet === 'function'){
+      try{openSheet('about-sheet');}catch(_){}
+    }
+  }
+  function openGuidedSamples(){
+    closeGuidedSheet('about-sheet');
+    closeGuidedSheet('overview-sheet');
+    closeGuidedDayLogs();
+    closeGuidedSheet('detail-sheet');
+    closeGuidedSheet('add-sheet');
+    if(typeof openSampleHabitsSheet === 'function'){
+      try{openSampleHabitsSheet();}catch(_){}
+    }
   }
   // The install guide runs before the guided start for a first-run user in a
   // browser, and on demand from About; it never mixes into the essentials
@@ -148,10 +218,13 @@
     return Number.isFinite(n) ? n : 0;
   }
   function essentialsOrder(){
-    if(!interactive)return ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eFinish'];
+    if(!interactive)return ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eAbout','eAboutMenu'];
     return [
       'eIntro','eAdd','eName','eKind',addKind() === 'task' ? 'eTask' : 'eRhythm','eSave',
-      'eDetailBasics','eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview','eFinish'
+      'eDetailBasics','eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview',
+      'eOverviewPast','eOverviewLog','eOverviewMissed','eOverviewFuture','eOverviewPlan',
+      ...(shouldTeachTask() ? ['eAddTaskIntro','eAddTask','eTaskName','eTask','eSaveTask','eTaskDetail'] : []),
+      'eSampleIntro','eSampleAdd','eAbout','eAboutMenu'
     ];
   }
   function order(){
@@ -170,57 +243,58 @@
     if(stage === 'eIntro')return {
       progress:p,title:'Welcome to Tings',
       copy:interactive
-        ? 'Start with one honest habit or one-off task. Tings keeps the plan and every log private on this device.'
-        : 'A quick refresher on habits, tasks, rhythms, cards, and the minimal calendar. This replay will not change your data.',
+        ? 'Add one habit you want to keep doing, or one task you need to finish. Everything stays on this device.'
+        : 'A short look at habits, tasks, cards, and the calendar. This will not change your data.',
       action:interactive ? 'Add my first Ting' : 'Start refresher',next:interactive ? 'eAdd' : 'eAddInfo'
     };
     if(stage === 'eAdd')return {
-      progress:p,title:'Create from +',copy:'Tap the highlighted +. The coach will stay with the add screen and keep the next action clear.',
+      progress:p,title:'Start with +',copy:'Tap +. We will add one thing together, then look at it.',
       target:['#open-add','#bar-open-add'],hint:'Tap +',locked:true
     };
     if(stage === 'eName')return {
-      progress:p,title:'Name one real thing',copy:'Use a short action name, such as “Walk” or “Pay electricity bill.” Enter finishes this step without saving early.',
+      progress:p,title:'Give it a name',copy:'Use a short name, like “Walk” or “Pay the bill.”',
       target:['#ting-message'],hint:'Type a name',locked:true,keyboard:true,
       action:'Continue',command:'nameDone',disabled:!String($('ting-message')?.value || '').trim(),back:'eAdd'
     };
     if(stage === 'eKind')return {
-      progress:p,title:'Habit or one-off task?',
-      copy:'A habit repeats on a rhythm. A task is completed once and may have a due date or fixed time. Tap either choice.',
+      progress:p,title:'Habit or task?',
+      copy:'A habit happens again and again. A task happens once. Tap the one you want.',
       target:['#type-seg'],hint:'Choose habit or task',locked:true,
       action:`Continue with ${addKind()}`,command:'kindDone',back:'eName'
     };
     if(stage === 'eRhythm')return {
-      progress:p,title:'Set the rhythm',
-      copy:'“3× in 7d” means three completions in any seven-day window. Use 1× in 1d for daily, or a wider window for flexibility.',
+      progress:p,title:'How often?',
+      copy:'3 times in 7 days means about three times a week. You can change these numbers.',
       target:['#target-slider-row'],action:'Continue',next:'eSave',back:'eKind',locked:true
     };
     if(stage === 'eTask')return {
-      progress:p,title:'Date it only when useful',
-      copy:'A blank date keeps this as a someday task. A date makes it due; adding a time makes it a fixed appointment.',
-      target:['#task-due-row'],action:'Continue',next:'eSave',back:'eKind',locked:true
+      progress:p,title:'Add a date only if you need one',
+      copy:'Leave the date blank if this can wait. Pick a day to make it due. Add a time only if it must happen then.',
+      target:['#task-due-row'],action:'Continue',next:inTaskFollowup() ? 'eSaveTask' : 'eSave',
+      back:inTaskFollowup() ? 'eTaskName' : 'eKind',locked:true
     };
     if(stage === 'eSave')return {
-      progress:p,title:'Add it',copy:'That is enough to start. Tap add; Tings will save it on this device and open its details.',
+      progress:p,title:'Add it',copy:'That is enough. Tap add. Tings will save it here and open its page.',
       target:['#do-save'],hint:'Tap add',locked:true,back:addKind() === 'task' ? 'eTask' : 'eRhythm'
     };
     if(stage === 'eDetailBasics')return {
-      progress:p,title:'Details keep the rhythm editable',
-      copy:'You can change the rhythm, due date, or task time here later. Minimal mode keeps only the controls needed for everyday use.',
+      progress:p,title:'This page is for later changes',
+      copy:'You can change how often it happens, or the due date, any time. You do not need every control today.',
       target:['#detail-slider-row','#detail-due-row','[data-detail-nav="schedule"]'],action:'Next',next:'eDetailEffort'
     };
     if(stage === 'eDetailEffort')return {
-      progress:p,title:'Tell Tings how long it takes',
-      copy:'Duration helps the planner find room. Auto mark is optional; leave it blank when you prefer to log manually.',
+      progress:p,title:'How long does it take?',
+      copy:'A time estimate helps Tings find a spot in the day. You can leave auto mark blank.',
       target:['#detail-minimal-effort','#detail-duration-field','#detail-auto-mark-field'],action:'Back to home',command:'essentialsHome',back:'eDetailBasics'
     };
     if(stage === 'eAddInfo')return {
-      progress:p,title:'Habits repeat; tasks finish once',
-      copy:'Use + for either. Habits use a times-in-days rhythm; tasks can stay someday, become due on a date, or become fixed with a time.',
+      progress:p,title:'Habits repeat. Tasks finish once.',
+      copy:'Use + for both. Habits happen on a rhythm. Tasks can wait, be due on a day, or have a set time.',
       target:['#open-add','#bar-open-add'],action:'Next',next:'eHomeCard'
     };
     if(stage === 'eHomeCard')return {
-      progress:p,title:'The card is the daily loop',
-      copy:'Tap the colored icon to log or complete. Tap the card body to reopen details. The status line and rhythm update from your real entries.',
+      progress:p,title:'The card is the everyday loop',
+      copy:'Tap the color icon to log it or mark it done. Tap the rest of the card to open its page.',
       target:[`.ting-card[data-real="${trackedIndex()}"]`,'.ting-card','#list','#empty'],action:'Next',next:interactive ? 'eLog' : 'eHomeGroups'
     };
     if(stage === 'eLog'){
@@ -229,32 +303,106 @@
       const task = item?.type === 'task';
       const label = task ? 'complete' : 'log';
       return {
-        progress:p,title:task ? 'Complete it with one tap' : 'Log it with one tap',
+        progress:p,title:task ? 'Mark it done with one tap' : 'Log it with one tap',
         copy:task
-          ? 'This is the loop: tap the icon to complete the task you just made. A toast appears afterwards and can undo the tap if it was a mistake.'
-          : 'This is the loop: tap the icon to log the Ting you just made. A toast appears afterwards and can undo the log if it was a mistake.',
+          ? 'Tap the icon to finish this task. If that was a mistake, you can undo.'
+          : 'Tap the icon to log this habit. If that was a mistake, you can undo.',
         target:[`[data-pulse="${idx}"]`,'.ting-card [data-pulse]'],hint:`Tap to ${label}`,locked:true,
         later:'I’ll log later',next:'eHomeGroups',back:'eHomeCard'
       };
     }
     if(stage === 'eHomeGroups')return {
-      progress:p,title:'Home answers “what now?”',
-      copy:'Minimal mode keeps today, overdue, coming up, and the rest easy to scan. Logging may move a card as its rhythm changes.',
+      progress:p,title:'Home shows what to do now',
+      copy:'Look here for today, things that are late, and what is coming next.',
       target:['.section-header','#list'],action:'Show calendar',next:'eCalendar',back:interactive ? 'eLog' : 'eHomeCard'
     };
     if(stage === 'eCalendar')return {
-      progress:p,title:'See beyond today',copy:'Tap Calendar to inspect dates, upcoming work, recent activity, and items needing attention.',
+      progress:p,title:'See other days too',copy:'Tap Calendar to look at past days, today, and days coming up.',
       target:['#open-overview','#bar-open-overview'],hint:'Tap calendar',locked:true,back:'eHomeGroups'
     };
     if(stage === 'eOverview')return {
-      progress:p,title:'The calendar is your second view',
-      copy:'Use it when you need context beyond Home. Tap a day or an item to inspect plans and activity without changing the rhythm.',
-      target:['#overview-sheet .overview-sheet','#pane-overview .overview-sheet'],action:'Finish',next:'eFinish',back:'eCalendar'
+      progress:p,title:'The calendar is the bigger picture',
+      copy:interactive
+        ? 'Tap a day to look closer. Past days show what you did. Future days let you plan.'
+        : 'Tap a day to see what happened, log a missed day, or plan something coming up.',
+      target:['#overview-sheet .overview-sheet','#pane-overview .overview-sheet'],
+      action:'Next',next:interactive ? 'eOverviewPast' : 'eAbout',back:'eCalendar'
+    };
+    if(stage === 'eOverviewPast')return {
+      progress:p,title:'Look at a past day',
+      copy:'Tap a day before today. You will see what was done, and you can add a missed log.',
+      target:['#overview-calendar'],hint:'Tap a past day',locked:true,later:'Skip',next:'eOverviewFuture',back:'eOverview',pinBottom:true
+    };
+    if(stage === 'eOverviewLog')return {
+      progress:p,title:'Catch up a missed day',
+      copy:'Forgot to log something? Tap Log a missed day. Empty days are fine — you can still add one.',
+      target:['#day-logs-log'],hint:'Tap Log a missed day',locked:true,later:'Skip',next:'eOverviewFuture',back:'eOverviewPast'
+    };
+    if(stage === 'eOverviewMissed')return {
+      progress:p,title:'Save the missed log',
+      copy:'Tap log it to add this missed day. Or tap Next if you want to skip.',
+      target:['#day-log-entry-save'],hint:'Tap log it',action:'Next',next:'eOverviewFuture',back:'eOverviewLog'
+    };
+    if(stage === 'eOverviewFuture')return {
+      progress:p,title:'Look at a coming day',
+      copy:'Tap a day after today. Future days are for plans, not for logging the past.',
+      target:['#overview-calendar'],hint:'Tap a coming day',locked:true,later:'Skip',next:afterCalendarNext(),back:'eOverview',pinBottom:true
+    };
+    if(stage === 'eOverviewPlan')return {
+      progress:p,title:'Plan something ahead',
+      copy:'Tap Plan something. You can put an item on this day, and add a time if you want.',
+      target:['#day-logs-plan'],hint:'Tap Plan something',locked:true,later:'Skip',next:afterCalendarNext(),back:'eOverviewFuture'
+    };
+    if(stage === 'eAddTaskIntro')return {
+      progress:p,title:'Now add a task',
+      copy:'A habit happens again and again. A task happens once — like a bill or a call. Let’s add one.',
+      action:'Add a task',next:'eAddTask',back:'eOverview'
+    };
+    if(stage === 'eAddTask')return {
+      progress:p,title:'Create from + again',copy:'Tap +. This time we will make a one-time task.',
+      target:['#open-add','#bar-open-add'],hint:'Tap +',locked:true,back:'eAddTaskIntro'
+    };
+    if(stage === 'eTaskName')return {
+      progress:p,title:'Name the task',copy:'Use a short name, like “Call the dentist” or “Pay rent.”',
+      target:['#ting-message'],hint:'Type a name',locked:true,keyboard:true,
+      action:'Continue',command:'nameDone',disabled:!String($('ting-message')?.value || '').trim(),back:'eAddTask'
+    };
+    if(stage === 'eSaveTask')return {
+      progress:p,title:'Add the task',copy:'Tap add. Next you will see the task page, just like the habit page.',
+      target:['#do-save'],hint:'Tap add',locked:true,back:'eTask'
+    };
+    if(stage === 'eTaskDetail')return {
+      progress:p,title:'This is the task page',
+      copy:'You can add a due date or a time later. When you finish the task, it is done.',
+      target:['#detail-due-row','#detail-slider-row','[data-detail-nav="schedule"]'],action:'Next',next:'eSampleIntro',back:'eAddTaskIntro'
+    };
+    if(stage === 'eSampleIntro')return {
+      progress:p,title:'Try a ready-made habit',
+      copy:'Samples are starter habits. Add one to see how a real day looks. You can keep it or remove it later.',
+      action:'See samples',command:'openSamples',later:'Not now',next:'eAbout',back:shouldTeachTask() ? 'eAddTaskIntro' : 'eOverview'
+    };
+    if(stage === 'eSampleAdd')return {
+      progress:p,title:'Add drink water',
+      copy:'Tap add on drink water. It is a simple daily habit. You can remove it later from samples.',
+      target:['#sample-habits-preview [data-add-sample="sample-feature-water"]','#sample-habits-preview [data-add-sample]:not([disabled])'],
+      hint:'Tap add',locked:true,later:'Not now',next:'eAbout',back:'eSampleIntro'
+    };
+    if(stage === 'eAbout')return {
+      progress:p,title:'Find settings here',
+      copy:'Tap the Tings name at the top. Settings, help, samples, and privacy all live there.',
+      target:['#open-about','#bar-open-about'],hint:'Tap Tings',locked:true,later:'Skip',next:'eAboutMenu',
+      back:interactive ? 'eSampleIntro' : 'eOverview'
+    };
+    if(stage === 'eAboutMenu')return {
+      progress:p,title:'Settings, help, and more',
+      copy:'Settings is this button — backup, busy times, and how the app looks. Help, samples, and privacy are on this same page. Tap the Tings name any time to come back.',
+      target:['#open-settings','.about-actions'],action:'Done',command:'finish',back:'eAbout'
     };
     return {
-      progress:p,title:'You are ready to use Tings',
-      copy:'Tap the Tings logo for samples, settings, help, the install guide, or either coach. The advanced coach is there when you want the full planning surface.',
-      target:['#open-about','#bar-open-about'],action:'Done',command:'finish',back:'eOverview'
+      progress:p,title:'You are ready',
+      copy:'Tap the Tings name anytime for settings, help, samples, and privacy.',
+      target:['#open-about','#bar-open-about'],action:'Done',command:'finish',
+      back:interactive ? 'eSampleIntro' : 'eOverview'
     };
   }
 
@@ -508,7 +656,7 @@
       closeGuidedSheet('overview-sheet');
       return;
     }
-    if(next === 'eAdd'){
+    if(next === 'eAdd' || next === 'eAddTask'){
       closeGuidedSheet('add-sheet');
       return;
     }
@@ -516,16 +664,43 @@
       setTimeout(()=>$('ting-message')?.focus({preventScroll:true}),70);
       return;
     }
-    if(next === 'eDetailBasics')showDetailPage('schedule');
+    if(next === 'eTaskName'){
+      chooseAddType('task');
+      setTimeout(()=>$('ting-message')?.focus({preventScroll:true}),70);
+      return;
+    }
+    if(next === 'eTask' && inTaskFollowup())chooseAddType('task');
+    if(next === 'eDetailBasics' || next === 'eTaskDetail')showDetailPage('schedule');
     if(next === 'eDetailEffort')showDetailPage('effort');
-    if(next === 'eHomeCard' || next === 'eHomeGroups' || next === 'aHome' || next === 'aActions' || next === 'aSearch'){
+    if(next === 'eHomeCard' || next === 'eHomeGroups' || next === 'eAddTaskIntro' || next === 'eSampleIntro' || next === 'eAbout' || next === 'eFinish'
+      || next === 'aHome' || next === 'aActions' || next === 'aSearch'){
       closeGuidedSheet('detail-sheet');
       closeGuidedSheet('overview-sheet');
+      closeGuidedDayLogs();
       closeGuidedSheet('settings-sheet');
+      closeGuidedSheet('add-sheet');
+      closeGuidedSheet('about-sheet');
+      if(next !== 'eSampleAdd')closeGuidedSheet('sample-habits-sheet');
+    }
+    if(next === 'eOverviewPast' || next === 'eOverviewFuture')closeGuidedDayLogs();
+    if(next === 'eSampleAdd'){
+      if(!sheetOpen('sample-habits-sheet'))openGuidedSamples();
+      setTimeout(()=>{
+        firstTarget(['#sample-habits-preview [data-add-sample="sample-feature-water"]'])?.scrollIntoView({block:'center',behavior:'auto'});
+        queuePosition();
+      },80);
+    }
+    if(next === 'eAboutMenu'){
+      if(!sheetOpen('about-sheet'))openGuidedAbout();
+      setTimeout(()=>{
+        firstTarget(['#open-settings','.about-actions'])?.scrollIntoView({block:'center',behavior:'auto'});
+        queuePosition();
+      },80);
     }
     if(next === 'eCalendar' || next === 'aCalendar'){
       overviewActivated = false;
       closeGuidedSheet('overview-sheet');
+      closeGuidedDayLogs();
     }
     if(next === 'iSteps')closeGuidedSheet('overview-sheet');
     if(next === 'aDetailRead')showDetailPage('calendar');
@@ -585,18 +760,28 @@
   function finish(value = 'done'){
     remember(value);
     if(mode === 'advanced')closeGuidedSheet('settings-sheet');
+    closeGuidedSheet('sample-habits-sheet');
+    closeGuidedSheet('about-sheet');
+    closeGuidedSheet('settings-sheet');
+    closeGuidedDayLogs();
     unmount();
   }
 
   function goBack(){
     const back = model().back;
     if(!back)return;
-    if(back === 'eAdd'){
+    if(back === 'eAdd' || back === 'eAddTask'){
       if(typeof cancelAdd === 'function')cancelAdd();
       else closeGuidedSheet('add-sheet');
     }
-    if((back === 'eCalendar' || back === 'aCalendar') && (sheetOpen('overview-sheet') || overviewActivated)){
-      closeGuidedSheet('overview-sheet');
+    if(back === 'eSampleIntro')closeGuidedSheet('sample-habits-sheet');
+    if(back === 'eAbout')closeGuidedSheet('settings-sheet');
+    if((back === 'eCalendar' || back === 'aCalendar' || back === 'eOverview' || back === 'eOverviewPast' || back === 'eOverviewFuture')
+      && (sheetOpen('overview-sheet') || overviewActivated || sheetOpen('day-logs-sheet'))){
+      if(back === 'eCalendar' || back === 'aCalendar' || back === 'eOverview'){
+        closeGuidedDayLogs();
+        if(back === 'eCalendar' || back === 'aCalendar')closeGuidedSheet('overview-sheet');
+      }else closeGuidedDayLogs();
     }
     setStage(back);
   }
@@ -634,6 +819,8 @@
         window.TingsCoach.start({kind:'essentials',force:true});
         return;
       }
+      if(stage === 'eSampleIntro' || stage === 'eSampleAdd')closeGuidedSheet('sample-habits-sheet');
+      if(OVERVIEW_DAY_STAGES.has(stage) || stage === 'eOverviewPast')closeGuidedDayLogs();
       const later = laterModel.next;
       if(later)setStage(later);
       else finish('skipped');
@@ -649,10 +836,14 @@
       const input = $('ting-message');
       if(!String(input?.value || '').trim()){input?.focus();return;}
       input.blur();
-      setTimeout(()=>setStage('eKind'),60);
+      setTimeout(()=>setStage(stage === 'eTaskName' ? 'eTask' : 'eKind'),60);
       return;
     }
     if(m.command === 'kindDone'){setStage(addKind() === 'task' ? 'eTask' : 'eRhythm');return;}
+    if(m.command === 'openSamples'){
+      setStage('eSampleAdd');
+      return;
+    }
     if(m.command === 'installNow'){
       // Show the browser's native install sheet; a declined or failed prompt
       // falls back to the manual per-platform steps on the same stage.
@@ -737,11 +928,14 @@
   function onDocumentClick(event){
     if(!active || event.target.closest('#tings-coach'))return;
     if(stage === 'eAdd' && event.target.closest('#open-add,#bar-open-add'))setTimeout(()=>setStage('eName'),50);
+    if(stage === 'eAddTask' && event.target.closest('#open-add,#bar-open-add')){
+      setTimeout(()=>{chooseAddType('task');setStage('eTaskName');},50);
+    }
     if(stage === 'eKind'){
       const choice = event.target.closest('#type-seg [data-v]');
       if(choice)setTimeout(()=>setStage(choice.dataset.v === 'task' ? 'eTask' : 'eRhythm'),60);
     }
-    if(stage === 'eSave' && event.target.closest('#do-save')){
+    if((stage === 'eSave' || stage === 'eSaveTask') && event.target.closest('#do-save')){
       setTimeout(reconcile,90);
       setTimeout(reconcile,350);
     }
@@ -750,22 +944,49 @@
       overviewActivated = true;
       setTimeout(()=>setStage(stage === 'eCalendar' ? 'eOverview' : 'aOverview'),80);
     }
+    if(stage === 'eOverviewPast'){
+      const day = calDayFromEvent(event);
+      if(day && !day.classList.contains('today') && !day.classList.contains('future')){
+        setTimeout(()=>setStage('eOverviewLog'),120);
+      }
+    }
+    if(stage === 'eOverviewLog' && event.target.closest('#day-logs-log')){
+      setTimeout(()=>setStage('eOverviewMissed'),80);
+    }
+    if(stage === 'eOverviewMissed' && event.target.closest('#day-log-entry-save')){
+      setTimeout(()=>setStage('eOverviewFuture'),80);
+    }
+    if(stage === 'eOverviewFuture'){
+      const day = calDayFromEvent(event);
+      if(day && day.classList.contains('future')){
+        setTimeout(()=>setStage('eOverviewPlan'),120);
+      }
+    }
+    if(stage === 'eOverviewPlan' && event.target.closest('#day-logs-plan')){
+      setTimeout(()=>setStage(afterCalendarNext()),80);
+    }
+    if(stage === 'eSampleAdd' && event.target.closest('#sample-habits-preview [data-add-sample]')){
+      setTimeout(()=>setStage('eAbout'),120);
+    }
+    if(stage === 'eAbout' && event.target.closest('#open-about,#bar-open-about')){
+      setTimeout(()=>setStage('eAboutMenu'),50);
+    }
     if(stage === 'aFullMode' && event.target.closest('[data-setting-toggle="minimalMode"]'))setTimeout(reconcile,120);
   }
 
   function onInput(event){
-    if(!active || stage !== 'eName' || event.target !== $('ting-message'))return;
+    if(!active || (stage !== 'eName' && stage !== 'eTaskName') || event.target !== $('ting-message'))return;
     render();
   }
 
   function onKeydown(event){
     if(!active)return;
-    if(stage === 'eName' && event.target === $('ting-message') && event.key === 'Enter'){
+    if((stage === 'eName' || stage === 'eTaskName') && event.target === $('ting-message') && event.key === 'Enter'){
       event.preventDefault();
       event.stopImmediatePropagation();
       if(String(event.target.value || '').trim()){
         event.target.blur();
-        setTimeout(()=>setStage('eKind'),60);
+        setTimeout(()=>setStage(stage === 'eTaskName' ? 'eTask' : 'eKind'),60);
       }
       return;
     }
@@ -782,23 +1003,35 @@
   function reconcile(){
     if(!active)return;
     if(ADD_STAGES.has(stage) && !sheetOpen('add-sheet')){
-      const data = habits();
-      if(data.length > initialCount){
-        const created = data.find(h=>h?.hid && !initialHids.has(h.hid)) || data[data.length - 1];
-        trackedHid = created?.hid || '';
-        if(sheetOpen('detail-sheet'))setStage('eDetailBasics');
-      }else setStage('eAdd');
+      const created = newestUntracked();
+      if(created){
+        if(inTaskFollowup() || stage === 'eSaveTask' || stage === 'eTaskName'){
+          trackedTaskHid = created.hid;
+          if(sheetOpen('detail-sheet'))setStage('eTaskDetail');
+        }else{
+          trackedHid = created.hid;
+          if(sheetOpen('detail-sheet'))setStage('eDetailBasics');
+        }
+      }else if(stage === 'eSaveTask' && trackedTaskHid && sheetOpen('detail-sheet')){
+        setStage('eTaskDetail');
+      }else if(stage === 'eSave' && trackedHid && sheetOpen('detail-sheet')){
+        setStage('eDetailBasics');
+      }else setStage(inTaskFollowup() || stage === 'eTaskName' || stage === 'eSaveTask' ? 'eAddTask' : 'eAdd');
       return;
     }
-    if(stage === 'eSave' && habits().length > initialCount && sheetOpen('detail-sheet')){
-      const data = habits();
-      const created = data.find(h=>h?.hid && !initialHids.has(h.hid)) || data[data.length - 1];
-      trackedHid = created?.hid || '';
+    if(stage === 'eSave' && newestUntracked() && sheetOpen('detail-sheet')){
+      trackedHid = newestUntracked().hid;
       setStage('eDetailBasics');
       return;
     }
+    if(stage === 'eSaveTask' && newestUntracked() && sheetOpen('detail-sheet')){
+      trackedTaskHid = newestUntracked().hid;
+      setStage('eTaskDetail');
+      return;
+    }
     if(DETAIL_STAGES.has(stage) && !sheetOpen('detail-sheet')){
-      setStage(mode === 'essentials' ? 'eHomeCard' : 'aSearch');
+      if(stage === 'eTaskDetail')setStage('eSampleIntro');
+      else setStage(mode === 'essentials' ? 'eHomeCard' : 'aSearch');
       return;
     }
     if(stage === 'aFullMode' && !isMinimal()){
@@ -810,8 +1043,26 @@
       setStage('aSearch');
       return;
     }
-    if((stage === 'eOverview' || stage === 'aOverview' || stage === 'aOverviewTools') && !overviewShown()){
-      setStage(stage === 'eOverview' ? 'eCalendar' : 'aCalendar');
+    if(['eOverview','eOverviewPast','eOverviewLog','eOverviewMissed','eOverviewFuture','eOverviewPlan'].includes(stage)){
+      if(!overviewShown())setStage('eCalendar');
+      else if((stage === 'eOverviewMissed' || stage === 'eOverviewPlan') && !sheetOpen('day-logs-sheet')){
+        setStage(stage === 'eOverviewPlan' ? 'eOverviewFuture' : 'eOverviewPast');
+      }else if(stage === 'eOverviewPast' && sheetOpen('day-logs-sheet')){
+        setStage('eOverviewLog');
+      }else if(stage === 'eOverviewFuture' && sheetOpen('day-logs-sheet')){
+        setStage('eOverviewPlan');
+      }
+    }
+    if((stage === 'aOverview' || stage === 'aOverviewTools') && !overviewShown()){
+      setStage('aCalendar');
+    }
+    if(stage === 'eSampleAdd' && !sheetOpen('sample-habits-sheet')){
+      setStage('eSampleIntro');
+      return;
+    }
+    if(stage === 'eAboutMenu' && !sheetOpen('about-sheet') && !sheetOpen('settings-sheet')){
+      setStage('eAbout');
+      return;
     }
     closeUnexpectedSheets();
   }
@@ -964,7 +1215,7 @@
       {left:clampLeft(view.left + (view.width - br.width) / 2),top:view.bottom - br.height - margin},
       {left:clampLeft(view.left + (view.width - br.width) / 2),top:view.top + margin}
     ];
-    if(m.keyboard)candidates.unshift(candidates.splice(2,1)[0]);
+    if(m.keyboard || m.pinBottom)candidates.unshift(candidates.splice(2,1)[0]);
     let chosen = candidates.find(candidate=>{
       const rect = {left:candidate.left,top:candidate.top,right:candidate.left + br.width,bottom:candidate.top + br.height};
       return rect.left >= view.left + margin && rect.right <= view.right - margin
@@ -986,6 +1237,7 @@
     initialCount = habits().length;
     initialHids = new Set(habits().map(h=>h?.hid).filter(Boolean));
     trackedHid = habits()[0]?.hid || '';
+    trackedTaskHid = '';
     overviewActivated = false;
     installDismissed = false;
     chromeOverlay = false;

@@ -6,6 +6,7 @@ const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 const coachUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'planner=fast';
 const habitName = `Coach reading ${Date.now()}`;
+const taskName = `Coach call ${Date.now()}`;
 
 function assert(condition,message){
   if(!condition)throw new Error(message);
@@ -14,6 +15,30 @@ function assert(condition,message){
 
 async function stage(page,name,timeout = 4000){
   await page.waitForSelector(`#tings-coach[data-coach-stage="${name}"]`,{timeout});
+}
+
+async function tapCalDay(page,kind){
+  await page.evaluate(which=>{
+    const selector = which === 'future'
+      ? '#overview-calendar .cal-day.pickable.future'
+      : '#overview-calendar .cal-day.pickable:not(.today):not(.future)';
+    const day = document.querySelector(selector);
+    if(!day)return;
+    const box = day.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const opts = {bubbles:true,cancelable:true,clientX:x,clientY:y,pointerId:1,pointerType:'touch'};
+    day.dispatchEvent(new PointerEvent('pointerdown',opts));
+    day.dispatchEvent(new PointerEvent('pointerup',opts));
+    day.click();
+  },kind);
+}
+
+async function tapInPage(page,selector){
+  await page.evaluate(sel=>{
+    const el = document.querySelector(sel);
+    if(el)el.click();
+  },selector);
 }
 
 async function primary(page,current,next){
@@ -48,7 +73,7 @@ async function primary(page,current,next){
   assert((await page.locator('[data-coach-later]').textContent()) === 'Stay in this tab','staying in the browser is the secondary path');
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 14 · guided start','staying in the tab chains into the full essentials tour');
+  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 28 · guided start','staying in the tab chains into the full essentials tour');
 
   await primary(page,'eIntro','eAdd');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','required action steps lock interaction to the highlighted target');
@@ -117,15 +142,59 @@ async function primary(page,current,next){
   await primary(page,'eHomeGroups','eCalendar');
   await page.locator('#open-overview').click();
   await stage(page,'eOverview');
-  await primary(page,'eOverview','eFinish');
+  await primary(page,'eOverview','eOverviewPast');
+  await tapCalDay(page,'past');
+  await stage(page,'eOverviewLog',5000);
+  await page.waitForSelector('#day-logs-log',{timeout:4000});
+  await tapInPage(page,'#day-logs-log');
+  await stage(page,'eOverviewMissed');
+  assert(/missed/i.test(await page.locator('#tings-coach-copy').textContent()),'past-day step teaches logging a missed day');
+  await tapInPage(page,'#day-log-entry-save');
+  await stage(page,'eOverviewFuture',5000);
+  await tapCalDay(page,'future');
+  await stage(page,'eOverviewPlan',5000);
+  await page.waitForSelector('#day-logs-plan',{timeout:4000});
+  await tapInPage(page,'#day-logs-plan');
+  await stage(page,'eAddTaskIntro');
+  await primary(page,'eAddTaskIntro','eAddTask');
+  await page.locator('#open-add').click();
+  await stage(page,'eTaskName');
+  assert(await page.evaluate(()=>document.querySelector('#type-seg [data-v="task"]')?.classList.contains('on')),'task follow-up selects task');
+  await page.locator('#ting-message').fill(taskName);
+  await primary(page,'eTaskName','eTask');
+  await primary(page,'eTask','eSaveTask');
+  await page.locator('#do-save').click();
+  await stage(page,'eTaskDetail',5000);
+  assert(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),'coach follows the new task into its detail screen');
+  await primary(page,'eTaskDetail','eSampleIntro');
+  await primary(page,'eSampleIntro','eSampleAdd');
+  await page.waitForSelector('#sample-habits-sheet.open');
+  const waterAdd = page.locator('#sample-habits-preview [data-add-sample="sample-feature-water"]');
+  await waterAdd.scrollIntoViewIfNeeded();
+  await waterAdd.evaluate(el=>el.click());
+  await stage(page,'eAbout',5000);
+  await tapInPage(page,'#open-about');
+  await stage(page,'eAboutMenu');
+  assert(await page.locator('#about-sheet.open').count() === 1,'About opens so the tour can show settings');
+  assert(/settings/i.test(await page.locator('#tings-coach-copy').textContent()),'the last teaching step names settings');
+  assert(await page.locator('#open-settings').isVisible(),'settings is visible on About');
   await page.locator('[data-coach-primary]').click();
   assert(await page.locator('#tings-coach').count() === 0,'finishing guided start removes the coach');
-  const essentialState = await page.evaluate(name=>{
-    const item = JSON.parse(localStorage.getItem('tings_v2') || '[]').find(h=>h.name === name);
-    return {marker:localStorage.getItem('tings_coach_essentials_v2'),target:item?.target,type:item?.type,logs:item?.logs?.length || 0};
-  },habitName);
+  const essentialState = await page.evaluate((names)=>{
+    const data = JSON.parse(localStorage.getItem('tings_v2') || '[]');
+    const item = data.find(h=>h.name === names.habit);
+    const task = data.find(h=>h.name === names.task);
+    const water = data.find(h=>h.hid === 'sample-feature-water' || h.name === 'drink water');
+    return {
+      marker:localStorage.getItem('tings_coach_essentials_v2'),
+      target:item?.target,type:item?.type,logs:item?.logs?.length || 0,
+      taskType:task?.type,hasWater:Boolean(water)
+    };
+  },{habit:habitName,task:taskName});
   assert(essentialState.marker === 'done' && essentialState.target === 7 / 3 && essentialState.type === 'keepup','guided start preserves the chosen habit rhythm and remembers completion');
   assert(essentialState.logs >= 1,'logging practice recorded a real log entry');
+  assert(essentialState.taskType === 'task','guided start then walks through adding a real task');
+  assert(essentialState.hasWater,'guided start almost finishes by adding the drink water sample');
 
   await page.evaluate(()=>window.startTingsCoach('advanced',{force:true}));
   await primary(page,'aIntro','aFullMode');
@@ -168,6 +237,7 @@ async function primary(page,current,next){
 
   // Install guide from About: iconified steps, then the guided-start handover.
   await page.locator('#open-about').click();
+  assert(await page.locator('#open-install-guide').isVisible(),'browser About still offers install app');
   await page.locator('#open-install-guide').click();
   await stage(page,'iSteps');
   assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 2 · install app','About runs the install guide as its own tour');
@@ -202,7 +272,7 @@ async function primary(page,current,next){
   await primary(page,'iSteps','iNext');
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 7 · guided start','staying in the tab chains into the guided start replay');
+  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 8 · guided start','staying in the tab chains into the guided start replay');
   await page.evaluate(()=>window.TingsCoach.stop());
 
   // Live gesture upgrade: Chrome often fires beforeinstallprompt a beat
@@ -243,9 +313,7 @@ async function primary(page,current,next){
   await page.evaluate(()=>window.TingsCoach.stop());
   await page.evaluate(data=>{localStorage.setItem('tings_v2',data);},savedStore);
   await page.locator('#open-about').click();
-  await page.locator('#open-install-guide').click();
-  await page.waitForTimeout(250);
-  assert(await page.locator('#tings-coach').count() === 0,'already-installed users get no install tour from About');
+  assert(await page.locator('#open-install-guide').isHidden(),'already-installed users do not see install app on About');
   await page.evaluate(()=>closeSheet('about-sheet'));
 
   // Per-platform glyphs and labels: the compact rails quote each control

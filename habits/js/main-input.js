@@ -101,8 +101,23 @@ window.addEventListener('beforeinstallprompt',event=>{
   event.preventDefault();
   _tingsDeferredInstall = event;
 });
-window.addEventListener('appinstalled',()=>{_tingsDeferredInstall = null;});
+window.addEventListener('appinstalled',()=>{
+  _tingsDeferredInstall = null;
+  syncInstallGuideVisibility();
+});
 function tingsInstallPromptAvailable(){return _tingsDeferredInstall !== null;}
+function syncInstallGuideVisibility(){
+  const btn = $('open-install-guide');
+  if(!btn)return;
+  const installed = typeof isStandalonePwa === 'function' && isStandalonePwa();
+  btn.hidden = installed;
+  btn.setAttribute('aria-hidden', installed ? 'true' : 'false');
+}
+window.syncInstallGuideVisibility = syncInstallGuideVisibility;
+syncInstallGuideVisibility();
+try{
+  window.matchMedia('(display-mode: standalone)')?.addEventListener?.('change', syncInstallGuideVisibility);
+}catch(_){}
 async function tingsPromptInstall(){
   if(!_tingsDeferredInstall)return false;
   const deferred = _tingsDeferredInstall;
@@ -141,7 +156,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=16';
+      stylesheet.href = './onboarding/coach.css?v=18';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -158,7 +173,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=16';
+    script.src = './onboarding/coach.js?v=18';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{

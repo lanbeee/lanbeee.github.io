@@ -1536,16 +1536,24 @@ Toasts appear after:
   and **Stay in this tab** escapes into the guided start without leaving the
   browser. A user already running the installed (standalone) app is offered
   the guided start directly. About → **install app** replays the guide on
-  demand, and About's install button tells already-installed users where the
-  guided start lives.
+  demand. When Tings is already installed (standalone) and the app can detect
+  that, About hides the install button.
 - A fresh, empty install offers the **guided start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
 - The guided start branches between a repeating habit and a one-off task. It
-  teaches times-in-days rhythms or optional task dates/times, then covers
-  duration, auto-mark, card logging, Home groups, and the minimal calendar.
-  After the card intro it makes the user **log (or complete) the Ting they just
-  created** with the real pulse button — with an “I’ll log later” escape — so the
-  daily loop is practiced, not just described; the replay refresher never logs.
+  teaches how often a habit happens, or an optional task date, then covers
+  how long it takes, card logging, Home, and the calendar. After the card intro
+  it makes the user **log (or complete) the Ting they just created** with the
+  real pulse button — with an “I’ll log later” escape. If they added a habit,
+  the tour later also walks through **adding a task** and that task’s page.
+  Near the end it opens **samples** and almost makes them add **drink water**
+  (with a Not now escape). Then it has them tap the **Tings name** and points
+  at **settings**, plus help, samples, and privacy on that same page. The
+  replay refresher never changes data.
+- On the calendar, the tour has them tap a **past day** (see what was done,
+  log a missed day) and a **coming day** (plan something). Day sheets use the
+  same words: past days offer **Log a missed day**, future days offer **Plan
+  something**.
 - **Every step gates the whole experience.** Locked (required-action) steps
   intercept taps outside the highlighted control with an amber warning; guided
   (read-and-continue) steps block outside taps silently while the bubble’s
@@ -1601,7 +1609,8 @@ Toasts appear after:
 
 ### About and privacy 👤
 - Tapping the Tings wordmark opens **About**: a short Learn / Private pair, plus
-  install, guided start, advanced coach, help, samples, settings, and **privacy**.
+  install (hidden when the app is already installed), guided start, advanced
+  coach, help, samples, settings, and **privacy**.
 - **Privacy** explains that Tings is open source, with no account; habits live
   in this browser’s `localStorage`; the site owner cannot see them. It lists
   third-party services (Photon, Nominatim, OSRM, OpenStreetMap tiles, jsDelivr /

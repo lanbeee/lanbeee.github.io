@@ -374,6 +374,9 @@ function reparentSearch() {
 
 // RENDER: opens a sheet or mounts it in the pane
 function openSheet(id){
+  if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
+    syncInstallGuideVisibility();
+  }
   if (paneTierActive() && isFullPageSheet(id) && shouldMountInPane(id)) {
     mountInPane(id);
     return;

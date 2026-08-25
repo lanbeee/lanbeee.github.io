@@ -354,14 +354,18 @@ function seedScript(){
     dayLogsItemIndex = null;
     dayLogsMoving = false;
     renderDayLogs(key);
+    const pastQuick = [...document.querySelectorAll('#day-logs-body .day-quick-action')].map(btn => btn.textContent.replace(/\s+/g,' ').trim());
     return {
       ...item,
-      overviewPlan: !!document.querySelector('#day-logs-plan')
+      overviewPlan: !!document.querySelector('#day-logs-plan'),
+      pastLog: pastQuick.some(text => /log a missed day/i.test(text)),
+      pastPlan: pastQuick.some(text => /plan something/i.test(text))
     };
   });
   assert(pastScoped.hasLog, 'scoped past day offers Log for this day');
   assert(!pastScoped.hasPlan, 'scoped past day does not offer Plan this item');
   assert(!pastScoped.overviewPlan, 'overview past day does not offer Plan something');
+  assert(pastScoped.pastLog && !pastScoped.pastPlan, 'overview past day offers Log a missed day, not Plan something');
 
   // Unmarked future day from detail opens sheet without auto-logging
   const unmarked = await page.evaluate(() => {

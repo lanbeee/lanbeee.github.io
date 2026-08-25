@@ -833,9 +833,10 @@ function renderDayLogsListStep(key){
   const ts = new Date(`${key}T12:00:00`).getTime();
   const itemCount = rows.reduce((sum,row)=>sum + row.entries.length + row.scheduled.length,0);
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  const pastDay = key < todayIso();
   $('day-logs-sub').textContent = rows.length
     ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'} · tap an item for actions`
-    : 'Nothing planned or completed yet';
+    : (pastDay ? 'Nothing logged yet' : 'Nothing planned or completed yet');
 
   const body = $('day-logs-body');
   const listHtml = rows.length ? `<div class="overview-list day-logs-list">${rows.map(row=>{
@@ -850,19 +851,21 @@ function renderDayLogsListStep(key){
     <span class="day-empty-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
     <b>This day is open</b>
     <small>${dayLogsCanPlan(key)
-      ? 'Add a plan, log something you did, or adjust how much time the planner can use.'
-      : 'Log something you did on this day, or adjust how much time it had.'}</small>
+      ? (dayLogsCanLog(key)
+        ? 'Add a plan, log something you did, or change how much time this day has.'
+        : 'Add a plan for this day. You can pick a time if you want.')
+      : 'Log a missed day, or change how much time this day had.'}</small>
   </div>`;
   body.innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
       ${dayLogsCanPlan(key) ? `<button type="button" class="day-quick-action primary" id="day-logs-plan">
         <i class="ti ti-calendar-plus" aria-hidden="true"></i>
-        <span><b>Plan something</b><small>Add an item, with an optional time</small></span>
+        <span><b>Plan something</b><small>Put an item on this day. You can add a time.</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>` : ''}
       ${dayLogsCanLog(key) ? `<button type="button" class="day-quick-action${dayLogsCanPlan(key) ? '' : ' primary'}" id="day-logs-log">
         <i class="ti ti-check" aria-hidden="true"></i>
-        <span><b>Log something</b><small>Mark an item done on this day</small></span>
+        <span><b>${pastDay ? 'Log a missed day' : 'Log something'}</b><small>${pastDay ? 'Add something you forgot to log' : 'Mark an item done on this day'}</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>` : ''}
       <button type="button" class="day-quick-action" id="day-logs-day">
@@ -1044,7 +1047,7 @@ function renderDayLogsLogStep(key){
   const data = load();
   const ts = new Date(`${key}T12:00:00`).getTime();
   const dateLabel = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
-  $('day-logs-title').textContent = 'Log something';
+  $('day-logs-title').textContent = key < todayIso() ? 'Log a missed day' : 'Log something';
   $('day-logs-sub').textContent = dateLabel;
 
   const options = dayLogsScoped()
@@ -1066,7 +1069,7 @@ function renderDayLogsLogStep(key){
 
   $('day-logs-body').innerHTML = `
     <div class="day-add-step">
-      <div class="day-step-intro"><i class="ti ti-check" aria-hidden="true"></i><span><b>Mark it done on this day</b><small>Adds a real entry, exactly as if you had tapped it that day.</small></span></div>
+      <div class="day-step-intro"><i class="ti ti-check" aria-hidden="true"></i><span><b>${key < todayIso() ? 'Add a missed log' : 'Mark it done on this day'}</b><small>${key < todayIso() ? 'This counts as if you had done it that day.' : 'Adds a real entry, just like tapping it that day.'}</small></span></div>
       ${pickerHtml}
       <label class="field-label" for="day-log-entry-time">time <span class="field-optional">optional</span></label>
       <input type="time" id="day-log-entry-time" class="time-input" step="900" aria-label="optional entry time" />
