@@ -267,13 +267,13 @@
   // control — the real action lives in browser chrome (••• menu, share sheet,
   // or the native install sheet) — so the guards keep the app untouchable
   // while the steps play out. Mobile rails quote each control exactly as the
-  // browser labels it (••• / Share / Add to Home Screen / Add), because the
-  // compact card shows only those labels plus one copy sentence — anything
-  // the user must know lives in that visible copy, never in a hidden step
-  // text. iNext then shows a large close-this-tab / open-the-app visual so
-  // the user leaves the browser; staying in the tab is the escape into the
-  // guided start. An already-installed (standalone) user skips this tour and
-  // enters onboarding directly.
+  // browser labels it (••• / Share / Add to Home Screen / Add). Copy stays
+  // one short locator sentence so the rail sits in the uncovered strip —
+  // Safari’s sheet covers a tall paragraph, which is why a long card looks
+  // like the instructions vanished. iNext then shows a large close-this-tab /
+  // open-the-app visual so the user leaves the browser; staying in the tab is
+  // the escape into the guided start. An already-installed (standalone) user
+  // skips this tour and enters onboarding directly.
   function installModel(p){
     if(stage === 'iNext'){
       const phone = installPlatform() !== 'desktop';
@@ -302,17 +302,13 @@
       };
     }
     const iosDock = iosInstallDock();
-    // Why the card is parked on its edge: Safari's own UI covers the rest.
-    const iosCardWhy = iosDock === 'bottom'
-      ? 'Safari’s menus and popovers drop from the top, so this card stays at the bottom.'
-      : 'Safari’s menus and sheets rise from the bottom, so this card stays at the top.';
     const manual = {
       ios:{
         title:'Add Tings to your home screen',
-        copy:`Tap <strong>•••</strong> at the right end of Safari’s address bar, then <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong>. Tap <strong>Add</strong> — leave <strong>Open as Web App</strong> on if it appears. ${iosCardWhy} No <strong>•••</strong> button? Tap the toolbar’s <strong>Share</strong> button instead and skip the first step.`,
+        copy:'Tap <strong>•••</strong> at the right of Safari’s address bar. No •••? Tap <strong>Share</strong> in the toolbar instead.',
         compact:true,
         dock:iosDock,
-        overlayHint:'Menu open — tap <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong> (tap <strong>View More</strong> if you don’t see it), then tap <strong>Add</strong> — leave <strong>Open as Web App</strong> on if it appears.',
+        overlayHint:'Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Leave <strong>Open as Web App</strong> on.',
         steps:[
           {icon:'ti ti-dots',label:'•••'},
           {icon:'ti ti-share-2',label:'Share'},
@@ -322,10 +318,10 @@
       },
       android:{
         title:'Add Tings to your home screen',
-        copy:'Tap your browser’s <strong>menu</strong> — <strong>⋮</strong> at the top right in Chrome, ≡ at the bottom right in Samsung Internet — then tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>) and confirm. The card sits at the bottom, out of Chrome’s menu way.',
+        copy:'Tap <strong>⋮</strong> at the top right, then <strong>Install app</strong>. Samsung Internet: ≡ at the bottom right.',
         compact:true,
         dock:'bottom',
-        overlayHint:'Menu open — tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>), then confirm.',
+        overlayHint:'Tap <strong>Install app</strong>, then confirm.',
         steps:[
           {icon:'ti ti-dots-vertical',label:'⋮ menu'},
           {icon:'ti ti-device-mobile-down',label:'Install app'},
@@ -455,6 +451,12 @@
     root.dataset.chromeOverlay = String(Boolean(chromeOverlay && m.dock));
     root.dataset.handoff = String(Boolean(m.handoff));
     const compact = Boolean(m.compact);
+    const stepsHtml = m.steps?.length ? `<ol class="tings-coach-steps${compact ? ' is-compact' : ''}">${m.steps.map((step,index)=>`
+        <li>
+          <span class="tings-step-glyph"><span class="tings-step-num">${index + 1}</span>${step.icon ? `<i class="${step.icon}" aria-hidden="true"></i>` : ''}</span>
+          <span class="tings-step-text">${compact && step.label ? step.label : step.text}</span>
+        </li>`).join('')}</ol>` : '';
+    const copyHtml = `<p class="tings-coach-copy" id="tings-coach-copy">${m.copy}</p>`;
     bubble.innerHTML = `
       <div class="tings-coach-head">
         <span class="tings-coach-progress">${m.progress}</span>
@@ -475,13 +477,8 @@
           <figcaption><strong>${m.handoff.open}</strong><span>${m.handoff.openWhere}</span></figcaption>
         </figure>
       </div>` : ''}
-      <p class="tings-coach-copy" id="tings-coach-copy">${m.copy}</p>
       ${m.overlayHint ? `<p class="tings-coach-overlay-hint" role="status">${m.overlayHint}</p>` : ''}
-      ${m.steps?.length ? `<ol class="tings-coach-steps${compact ? ' is-compact' : ''}">${m.steps.map((step,index)=>`
-        <li>
-          <span class="tings-step-glyph"><span class="tings-step-num">${index + 1}</span>${step.icon ? `<i class="${step.icon}" aria-hidden="true"></i>` : ''}</span>
-          <span class="tings-step-text">${compact && step.label ? step.label : step.text}</span>
-        </li>`).join('')}</ol>` : ''}
+      ${compact ? `${stepsHtml}${copyHtml}` : `${copyHtml}${stepsHtml}`}
       ${m.hint ? `<p class="tings-coach-hint">${m.hint}</p>` : ''}
       ${(m.back || m.action || m.later) ? `<div class="tings-coach-actions">
         ${m.back ? '<button type="button" class="tings-coach-action secondary" data-coach-back>Back</button>' : ''}

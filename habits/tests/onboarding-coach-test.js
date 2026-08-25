@@ -279,7 +279,7 @@ async function primary(page,current,next){
       copyNeedle:'Install app'
     }
   ];
-  for(const {name,ua,icons,labels,dock,copyNeedle = 'Add to Home Screen'} of uaCases){
+  for(const {name,ua,icons,labels,dock,copyNeedle = '•••'} of uaCases){
     const ctx = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:ua});
     const uaPage = await ctx.newPage();
     await uaPage.goto(coachUrl,{waitUntil:'load'});
@@ -300,7 +300,8 @@ async function primary(page,current,next){
     assert(rail.dock === dock && rail.compact,`${name} install guidance is a compact rail docked at the ${dock}`);
     if(dock === 'top')assert(rail.bubbleTop <= 24,`${name} install card sits at the top so Safari’s bottom menus do not cover it`);
     else assert(rail.bubbleBottom >= rail.viewport - 24,`${name} install card sits at the bottom so the browser menu does not cover it`);
-    assert(rail.copy.includes(copyNeedle) && rail.hintShown,`${name} install card keeps the full tap path in visible copy`);
+    assert(rail.copy.includes(copyNeedle) && rail.hintShown,`${name} install card keeps a short locator in visible copy`);
+    assert((rail.bubbleBottom - rail.bubbleTop) <= 340,`${name} install card stays short enough that a native menu cannot cover the rail`);
     if(name === 'ios'){
       assert(await uaPage.locator('#tings-coach').getAttribute('data-chrome-overlay') === 'false','iOS install card starts expanded before Safari’s menu opens');
       await uaPage.evaluate(()=>window.dispatchEvent(new Event('blur')));
@@ -309,22 +310,25 @@ async function primary(page,current,next){
         const bubble = document.querySelector('.tings-coach-bubble').getBoundingClientRect();
         const hint = document.querySelector('.tings-coach-overlay-hint');
         const title = document.querySelector('.tings-coach-title');
+        const copy = document.getElementById('tings-coach-copy');
         return {
           flag:root.getAttribute('data-chrome-overlay'),
           hintShown:Boolean(hint) && getComputedStyle(hint).display !== 'none',
           titleShown:Boolean(title) && getComputedStyle(title).display !== 'none',
+          copyShown:Boolean(copy) && getComputedStyle(copy).display !== 'none',
           height:bubble.height,
           top:bubble.top
         };
       });
       assert(overlay.flag === 'true' && overlay.hintShown && overlay.titleShown === false,'opening Safari’s menu collapses the card to a top reminder');
-      assert(overlay.height < rail.bubbleBottom - rail.bubbleTop && overlay.top <= 24,'the overlay reminder is shorter and stays at the top');
+      assert(overlay.copyShown === false,'the long locator copy hides while Safari’s menu is open');
+      assert(overlay.height < rail.bubbleBottom - rail.bubbleTop && overlay.top <= 24 && overlay.height <= 140,'the overlay reminder is shorter and stays at the top');
       await uaPage.evaluate(()=>window.dispatchEvent(new Event('focus')));
       assert(await uaPage.locator('#tings-coach').getAttribute('data-chrome-overlay') === 'false','closing Safari’s menu restores the full iOS install card');
     }
     if(name === 'ios-legacy'){
       const legacyCopy = await uaPage.locator('#tings-coach-copy').textContent();
-      assert(legacyCopy.includes('No ••• button?'),'older iOS keeps the •••-first rail and hedges with the toolbar Share button');
+      assert(legacyCopy.includes('No •••'),'older iOS keeps the •••-first rail and hedges with the toolbar Share button');
     }
     await ctx.close();
   }
