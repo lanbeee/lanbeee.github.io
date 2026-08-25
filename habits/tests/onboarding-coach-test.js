@@ -205,6 +205,23 @@ async function primary(page,current,next){
   assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 7 · guided start','staying in the tab chains into the guided start replay');
   await page.evaluate(()=>window.TingsCoach.stop());
 
+  // Live gesture upgrade: Chrome often fires beforeinstallprompt a beat
+  // after the card rendered with the manual steps — the card must swap
+  // itself to the one-tap Install button instead of teaching the long way,
+  // and an install finished from browser chrome jumps straight to the
+  // close-this-tab handoff.
+  await page.evaluate(()=>window.startTingsCoach('install',{force:true}));
+  await stage(page,'iSteps');
+  assert((await page.locator('[data-coach-primary]').textContent()) === 'Next','the manual install card renders while no native gesture is captured yet');
+  await page.evaluate(()=>window.dispatchEvent(new Event('beforeinstallprompt')));
+  await page.waitForTimeout(150);
+  assert((await page.locator('[data-coach-primary]').textContent()) === 'Install','a late beforeinstallprompt swaps the manual card for the one-tap Install button');
+  assert(await page.locator('.tings-step-glyph i').count() === 0,'the swapped card drops the manual steps entirely');
+  await page.evaluate(()=>window.dispatchEvent(new Event('appinstalled')));
+  await stage(page,'iNext');
+  assert((await page.locator('.tings-coach-title').textContent()) === 'Close this tab','installing through browser chrome jumps to the leave-the-tab handoff');
+  await page.evaluate(()=>window.TingsCoach.stop());
+
   // Already installed (standalone display mode): the first-run offer goes
   // straight to the guided start, and About refuses a second install tour.
   const savedStore = await page.evaluate(()=>localStorage.getItem('tings_v2'));
@@ -232,11 +249,12 @@ async function primary(page,current,next){
   await page.evaluate(()=>closeSheet('about-sheet'));
 
   // Per-platform glyphs and labels: the compact rails quote each control
-  // exactly as the browser labels it. iOS 26 compact Safari starts with the
-  // address-bar ••• menu (ti-dots), then Share (ti-share-2 — not the Android
-  // node-graph ti-share), Add to Home Screen, and Add; iOS 17 and older have
-  // no ••• menu, so they start at the toolbar Share button. Android shows
-  // Chrome's ⋮ menu, Install app, and Confirm on a bottom-docked rail.
+  // exactly as the browser labels it. iOS teaches ••• → Share → Add to Home
+  // Screen → Add on every version (ti-dots, then ti-share-2 — not the
+  // Android node-graph ti-share), with a toolbar-Share hedge for layouts
+  // without a ••• button; both current and older iOS UAs get the same rail.
+  // Android shows Chrome's ⋮ menu, Install app, and Confirm on a
+  // bottom-docked rail.
   const uaCases = [
     {
       name:'ios',
@@ -248,8 +266,8 @@ async function primary(page,current,next){
     {
       name:'ios-legacy',
       ua:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-      icons:['ti ti-share-2','ti ti-square-rounded-plus','ti ti-check'],
-      labels:['Share','Add to Home Screen','Add'],
+      icons:['ti ti-dots','ti ti-share-2','ti ti-square-rounded-plus','ti ti-check'],
+      labels:['•••','Share','Add to Home Screen','Add'],
       dock:'top'
     },
     {
@@ -306,7 +324,7 @@ async function primary(page,current,next){
     }
     if(name === 'ios-legacy'){
       const legacyCopy = await uaPage.locator('#tings-coach-copy').textContent();
-      assert(legacyCopy.includes('Share') && !legacyCopy.includes('Open as Web App'),'pre-iOS-26 guidance teaches the toolbar Share button without the iOS 26-only toggle');
+      assert(legacyCopy.includes('No ••• button?'),'older iOS keeps the •••-first rail and hedges with the toolbar Share button');
     }
     await ctx.close();
   }

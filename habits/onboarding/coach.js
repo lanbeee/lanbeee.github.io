@@ -128,28 +128,19 @@
       return !installDismissed && typeof tingsInstallPromptAvailable === 'function' && tingsInstallPromptAvailable();
     }catch(_){return false;}
   }
-  // iPhone Safari keeps its address bar at the bottom, so the ••• menu, the
-  // share sheet, and the Add-to-Home-Screen sheet all rise over the lower
-  // half — the card docks at the top to stay visible (native UI paints above
-  // the web view; z-index cannot float over Safari’s sheet). iPad Safari hangs
-  // its toolbar and popovers from the top, so there the card docks at the
-  // bottom. Device-fixed, so rotation never strands the card on the wrong
-  // edge.
+  // iOS Safari's compact toolbar keeps Share behind the address-bar ••• menu,
+  // so the install guide always teaches ••• → Share → Add to Home Screen →
+  // Add. Older iOS layouts without a ••• button (and any Safari toolbar
+  // variant that shows Share directly) are covered by a one-sentence hedge in
+  // the card copy rather than by branching the flow.
+  // Docking: native UI paints above the web view (z-index cannot float over
+  // Safari’s sheet), so the card lives on the uncovered edge — iPhone keeps
+  // its address bar, ••• menu, and sheets at the bottom, so the card docks at
+  // the top; iPad hangs its toolbar and popovers from the top, so the card
+  // docks at the bottom. Device-fixed, so rotation never strands the card.
   function iosInstallDock(){
     if(installPlatform() !== 'ios')return '';
     return /iPhone|iPod/.test(navigator.userAgent || '') ? 'top' : 'bottom';
-  }
-  // iOS 26 compact Safari hides Share behind the address-bar ••• menu; iOS 18
-  // and earlier put the Share button directly in the toolbar (and their
-  // Add-to-Home-Screen sheet has no “Open as Web App” switch). Old iPads that
-  // report the desktop Mac UA hide their version, so they get the current
-  // flow plus a toolbar hedge in the copy.
-  function iosVersionKnown(){
-    return /(?:iPhone|iPad|CPU) OS \d+/.test(navigator.userAgent || '');
-  }
-  function iosMajor(){
-    const match = (navigator.userAgent || '').match(/(?:iPhone|iPad|CPU) OS (\d+)/);
-    return match ? parseInt(match[1],10) : 26;
   }
   function coachSafe(side){
     if(!root)return 0;
@@ -268,7 +259,11 @@
   }
 
   // Install guide tour: the first thing a first-run browser user sees, and a
-  // two-step tour from About on demand. The steps never lock to an in-page
+  // two-step tour from About on demand. The shortest path always wins: a
+  // captured beforeinstallprompt gesture renders a one-tap native Install
+  // button (swapped in live if the gesture arrives mid-tour), and the
+  // per-platform manual steps are only the fallback for browsers without a
+  // gesture. The steps never lock to an in-page
   // control — the real action lives in browser chrome (••• menu, share sheet,
   // or the native install sheet) — so the guards keep the app untouchable
   // while the steps play out. Mobile rails quote each control exactly as the
@@ -307,7 +302,6 @@
       };
     }
     const iosDock = iosInstallDock();
-    const iosModern = iosMajor() >= 26;
     // Why the card is parked on its edge: Safari's own UI covers the rest.
     const iosCardWhy = iosDock === 'bottom'
       ? 'Safari’s menus and popovers drop from the top, so this card stays at the bottom.'
@@ -315,26 +309,16 @@
     const manual = {
       ios:{
         title:'Add Tings to your home screen',
-        copy:iosModern
-          ? `Tap <strong>•••</strong> at the right end of Safari’s address bar, then <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong>. Leave <strong>Open as Web App</strong> on and tap <strong>Add</strong>. ${iosCardWhy}${iosDock === 'bottom' && !iosVersionKnown() ? ' No ••• button? Tap the toolbar’s <strong>Share</strong> button instead and skip the first step.' : ''}`
-          : `Tap the <strong>Share</strong> button — the square with an arrow — at the right end of Safari’s address bar, then scroll down and tap <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>. ${iosCardWhy}`,
+        copy:`Tap <strong>•••</strong> at the right end of Safari’s address bar, then <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong>. Tap <strong>Add</strong> — leave <strong>Open as Web App</strong> on if it appears. ${iosCardWhy} No <strong>•••</strong> button? Tap the toolbar’s <strong>Share</strong> button instead and skip the first step.`,
         compact:true,
         dock:iosDock,
-        overlayHint:iosModern
-          ? 'Menu open — tap <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong> (tap <strong>View More</strong> if you don’t see it), then tap <strong>Add</strong> with <strong>Open as Web App</strong> left on.'
-          : 'Share sheet open — scroll down and tap <strong>Add to Home Screen</strong> (tap <strong>View More</strong> if you don’t see it), then tap <strong>Add</strong>.',
-        steps:iosModern
-          ? [
-            {icon:'ti ti-dots',label:'•••'},
-            {icon:'ti ti-share-2',label:'Share'},
-            {icon:'ti ti-square-rounded-plus',label:'Add to Home Screen'},
-            {icon:'ti ti-check',label:'Add'}
-          ]
-          : [
-            {icon:'ti ti-share-2',label:'Share'},
-            {icon:'ti ti-square-rounded-plus',label:'Add to Home Screen'},
-            {icon:'ti ti-check',label:'Add'}
-          ]
+        overlayHint:'Menu open — tap <strong>Share</strong>, then scroll down and tap <strong>Add to Home Screen</strong> (tap <strong>View More</strong> if you don’t see it), then tap <strong>Add</strong> — leave <strong>Open as Web App</strong> on if it appears.',
+        steps:[
+          {icon:'ti ti-dots',label:'•••'},
+          {icon:'ti ti-share-2',label:'Share'},
+          {icon:'ti ti-square-rounded-plus',label:'Add to Home Screen'},
+          {icon:'ti ti-check',label:'Add'}
+        ]
       },
       android:{
         title:'Add Tings to your home screen',
@@ -428,6 +412,8 @@
     window.addEventListener('blur',onChromeConceal);
     window.addEventListener('focus',onChromeReveal);
     document.addEventListener('visibilitychange',onChromeVisibility);
+    window.addEventListener('beforeinstallprompt',onInstallGesture);
+    window.addEventListener('appinstalled',onAppInstalled);
     observer = new MutationObserver(()=>{reconcile();queuePosition();});
     observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden','aria-pressed']});
   }
@@ -449,6 +435,8 @@
     window.removeEventListener('blur',onChromeConceal);
     window.removeEventListener('focus',onChromeReveal);
     document.removeEventListener('visibilitychange',onChromeVisibility);
+    window.removeEventListener('beforeinstallprompt',onInstallGesture);
+    window.removeEventListener('appinstalled',onAppInstalled);
     chromeOverlay = false;
     root?.remove();
     root = bubble = spotlight = null;
@@ -866,6 +854,23 @@
   function onChromeVisibility(){
     if(document.visibilityState === 'hidden')setChromeOverlay(false);
     else onChromeReveal();
+  }
+  // Chrome fires beforeinstallprompt whenever it (re)qualifies the PWA —
+  // often a beat after the first-run card rendered with the manual steps
+  // (main-input's boot listener captured the gesture first; it registered
+  // before this one, so the deferred prompt is already set when this runs).
+  // The one-tap native Install always wins over teaching the long way, so
+  // the card swaps itself the moment the gesture exists.
+  function onInstallGesture(){
+    if(!active || mode !== 'install' || stage !== 'iSteps')return;
+    installDismissed = false;
+    render();
+  }
+  // The user may also install straight from browser chrome (address-bar
+  // icon, ⋮/⋯ menu) while the manual card is up — meet them at the handoff.
+  function onAppInstalled(){
+    if(!active || mode !== 'install' || stage !== 'iSteps')return;
+    setStage('iNext');
   }
 
   function setRect(el,left,top,width,height){

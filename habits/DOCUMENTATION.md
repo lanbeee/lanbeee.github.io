@@ -1529,7 +1529,8 @@ Toasts appear after:
 - A fresh, empty install offers the **install guide** first when it runs in a
   browser: numbered, iconified per-platform steps (details in the install-guide
   bullet below) or a native **Install** button on Chrome-based browsers where a
-  `beforeinstallprompt` gesture was captured (declined prompts fall back to the
+  `beforeinstallprompt` gesture was captured — at boot or mid-tour, whichever
+  comes first (declined prompts fall back to the
   manual steps). The guide ends with a large close-this-tab / open-Tings
   visual — the browser page is not the app — where **Got it** ends the guide
   and **Stay in this tab** escapes into the guided start without leaving the
@@ -1570,19 +1571,23 @@ Toasts appear after:
   own UI leaves uncovered (top on iPhone, whose address bar and sheets rise
   from the bottom; bottom on iPad and Android, whose menus drop from the top)
   and collapse to a short reminder when the page blurs while a native menu is
-  open. iOS 26 compact Safari teaches **••• → Share → Add to Home Screen →
-  Add**, with **View More** for the collapsed share-sheet actions and **Open
-  as Web App** left on; iOS 18 and older (detected from the UA) skip straight
-  to the toolbar **Share** button and never mention the iOS 26-only toggle;
-  Mac-UA iPads (version unknowable) get the current flow plus a "no •••? tap
-  Share" hedge. Android teaches **⋮ menu → Install app → Confirm** (Chrome's
+  open. iOS teaches **••• → Share → Add to Home Screen → Add** on every
+  version, with **View More** for the collapsed share-sheet actions, **Open
+  as Web App** left on when shown, and a one-sentence "no •••? tap the
+  toolbar Share button" hedge for older iOS layouts with no ••• menu — one
+  flow instead of UA-guessed branches. Android teaches **⋮ menu → Install
+  app → Confirm** (Chrome's
   "Add to Home screen" wording and Samsung Internet's bottom-right ≡ noted in
   the copy). Desktop teaches the address-bar install icon plus the current
   Chrome menu path (⋮ → **Cast, save, and share** → **Install page as
   app…**, with Edge's ⋯ → Apps → **Install this site as an app** variant).
   Chrome-based browsers with a captured `beforeinstallprompt` gesture get a
   native Install button instead (with a Not-now escape and a manual-steps
-  fallback if the prompt is declined). The second step is a large
+  fallback if the prompt is declined). The swap is live: a gesture arriving
+  after the manual card rendered replaces it instantly, and an install
+  finished straight from browser chrome (address-bar icon, menu) jumps the
+  tour to the handoff step — the one-tap path always wins over teaching the
+  long way. The second step is a large
   close-this-tab visual: this browser page is not the app, so the user should
   close the tab and open Tings from the Home Screen (phone) or its own window
   (desktop). The guide is skipped when Tings already runs standalone.
