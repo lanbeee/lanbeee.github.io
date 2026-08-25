@@ -288,6 +288,8 @@ async function primary(page,current,next){
     assert(JSON.stringify(shown) === JSON.stringify(icons),`${name} install guidance shows the correct platform glyphs`);
     const shownLabels = await uaPage.locator('.tings-step-text').allTextContents();
     assert(JSON.stringify(shownLabels) === JSON.stringify(labels),`${name} install rail quotes the browser's own control labels`);
+    assert(await uaPage.locator('.tings-step-arrow').count() === labels.length - 1,`${name} install rail uses arrows between steps`);
+    assert(await uaPage.locator('.tings-coach-chrome-nudge').count() === 1,`${name} install card points at the browser chrome`);
     const rail = await uaPage.evaluate(()=>({
       dock:document.getElementById('tings-coach').getAttribute('data-install-dock'),
       compact:Boolean(document.querySelector('.tings-coach-steps.is-compact')),

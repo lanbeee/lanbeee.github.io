@@ -308,7 +308,7 @@
         copy:'Tap <strong>•••</strong> at the right of Safari’s address bar. No •••? Tap <strong>Share</strong> in the toolbar instead.',
         compact:true,
         dock:iosDock,
-        overlayHint:'Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Leave <strong>Open as Web App</strong> on.',
+        overlayHint:'<strong>Share</strong> → <strong>Add to Home Screen</strong> → <strong>Add</strong>. Leave <strong>Open as Web App</strong> on.',
         steps:[
           {icon:'ti ti-dots',label:'•••'},
           {icon:'ti ti-share-2',label:'Share'},
@@ -321,7 +321,7 @@
         copy:'Tap <strong>⋮</strong> at the top right, then <strong>Install app</strong>. Samsung Internet: ≡ at the bottom right.',
         compact:true,
         dock:'bottom',
-        overlayHint:'Tap <strong>Install app</strong>, then confirm.',
+        overlayHint:'<strong>Install app</strong> → confirm.',
         steps:[
           {icon:'ti ti-dots-vertical',label:'⋮ menu'},
           {icon:'ti ti-device-mobile-down',label:'Install app'},
@@ -455,8 +455,12 @@
         <li>
           <span class="tings-step-glyph"><span class="tings-step-num">${index + 1}</span>${step.icon ? `<i class="${step.icon}" aria-hidden="true"></i>` : ''}</span>
           <span class="tings-step-text">${compact && step.label ? step.label : step.text}</span>
+          ${compact && index < m.steps.length - 1 ? '<i class="tings-step-arrow ti ti-arrow-narrow-right" aria-hidden="true"></i>' : ''}
         </li>`).join('')}</ol>` : '';
     const copyHtml = `<p class="tings-coach-copy" id="tings-coach-copy">${m.copy}</p>`;
+    const chromeNudge = m.dock
+      ? `<span class="tings-coach-chrome-nudge" aria-hidden="true"><i class="ti ${m.dock === 'bottom' ? 'ti-arrow-up-right' : 'ti-arrow-down-right'}"></i></span>`
+      : '';
     bubble.innerHTML = `
       <div class="tings-coach-head">
         <span class="tings-coach-progress">${m.progress}</span>
@@ -484,7 +488,8 @@
         ${m.back ? '<button type="button" class="tings-coach-action secondary" data-coach-back>Back</button>' : ''}
         ${m.later ? `<button type="button" class="tings-coach-action secondary" data-coach-later>${m.later}</button>` : ''}
         ${m.action ? `<button type="button" class="tings-coach-action" data-coach-primary${m.disabled ? ' disabled' : ''}>${m.action}</button>` : ''}
-      </div>` : ''}`;
+      </div>` : ''}
+      ${chromeNudge}`;
     queuePosition();
   }
 
