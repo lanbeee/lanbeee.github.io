@@ -519,6 +519,15 @@ function placementFitsOutsideReservations(state,fill,reservationWindows){
         const fit = auditFillFitInGap(state,fill,sub,state.remaining,false);
         if(fit && fit.placeEnd > fit.placeStart
           && !reservationWindows.some(w=>fit.placeEnd > w.start && fit.placeStart < w.end)){
+          // Re-key the probe fit. auditFillFitInGap stamps a private `audit:${i}`
+          // key so the placed-set check inside its probe clone cannot reject the
+          // audit. Consumers here use the fit as a REAL placement — tryPlaceOnDay
+          // steering returns it for commit and GLPK injects it as an ILP option —
+          // so it must carry the occurrence's actual key. A committed `audit:N`
+          // key never matches the `state.placed.has(fill.i)` gates of later
+          // passes (rebalanceScarcePlacements, rescues), which then place the
+          // same occurrence twice (duplicate rows in the published timeline).
+          fit.placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
           if(!out.some(f=>f.placeStart === fit.placeStart && f.placeEnd === fit.placeEnd))out.push(fit);
         }
       }
