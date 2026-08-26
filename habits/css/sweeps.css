@@ -46,7 +46,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .score-card.warn,.stat.warn{background:var(--amber-bg);}
 .score-card.miss,.stat.miss{background:var(--red-bg);}
 .score-card.hit,.score-card.warn,.score-card.miss,.stat.hit,.stat.warn,.stat.miss{border-color:transparent;}
-.score-facts span,.overview-stat,.activity-metric,.context-pill,.topic-chip,.schedule-chip,
+.score-facts span,.overview-stat,.detail-stat-chip,.activity-metric,.context-pill,.topic-chip,.schedule-chip,
 .monthday-chip,.home-active-filter,.topic-filter,.dropped-pill,.free-pill{border:0;background:var(--bg3);}
 .topic-chip.on,.schedule-chip.on,.monthday-chip.on,.topic-filter.on{background:var(--text);color:var(--bg);}
 .topic-chip-add{border:0;background:var(--bg3);}

@@ -357,10 +357,6 @@ function setDetailTypeUi(type){
   $('detail-target-help').textContent = rhythmHelp(type);
   $('detail-due-row').hidden = type !== 'task';
   $('detail-due-hint').hidden = type !== 'task';
-  const planByRow = $('detail-plan-by-row');
-  const planByHint = $('detail-plan-by-hint');
-  if(planByRow)planByRow.hidden = !isHabit;
-  if(planByHint)planByHint.hidden = !isHabit;
   const flexHelp = $('detail-flexibility-help');
   if(flexHelp){
     flexHelp.textContent = type === 'task'
@@ -370,7 +366,6 @@ function setDetailTypeUi(type){
   const exportBtn = $('detail-export');
   if(exportBtn)exportBtn.hidden = type !== 'task';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
-  if(typeof syncDetailPlanByUi === 'function')syncDetailPlanByUi();
 }
 
 // RENDER: update detail priority segmented control
@@ -1019,18 +1014,6 @@ $('detail-due-date').addEventListener('input',()=>{
   setDetailDirty();
 });
 $('detail-due-time')?.addEventListener('input',()=>{syncDetailDueUi();setDetailDirty();});
-$('detail-plan-by-date')?.addEventListener('input',()=>{syncDetailPlanByUi();setDetailDirty();});
-$('detail-plan-by-clear')?.addEventListener('click',()=>{
-  $('detail-plan-by-date').value = '';
-  syncDetailPlanByUi();
-  setDetailDirty();
-});
-$('detail-plan-by-week')?.addEventListener('click',()=>{
-  const end = typeof endOfWeekDate === 'function' ? endOfWeekDate() : dayStart(Date.now()) + 6 * 86400000;
-  $('detail-plan-by-date').value = dateInputValue(end);
-  syncDetailPlanByUi();
-  setDetailDirty();
-});
 $('detail-schedule-view-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-schedule-view]');
   if(!opt)return;

@@ -1,17 +1,16 @@
 const DETAIL_PAGE_NAV = {
-  calendar:{label:'calendar',icon:'ti-calendar-month'},
-  insight:{label:'insight',icon:'ti-chart-line'},
+  calendar:{label:'calendar',icon:'ti-calendar-week'},
   schedule:{label:'schedule',icon:'ti-calendar-time'},
   effort:{label:'effort',icon:'ti-progress-check'},
   identity:{label:'identity',icon:'ti-id'},
   actions:{label:'actions',icon:'ti-dots'}
 };
 
-// Visual-only: drop the calendar/insight/effort panes, fold duration + due into
-// schedule, and strip schedule/identity chrome. What is left is short enough to
-// read as one scrolling page, so the pager stacks vertically and the tab strip
-// goes away. Does not change saved habit fields.
-const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','insight','effort'];
+// Visual-only: drop the merged calendar+stats pane and the effort pane, fold
+// duration + due into schedule, and strip schedule/identity chrome. What is
+// left is short enough to read as one scrolling page, so the pager stacks
+// vertically and the tab strip goes away. Does not change saved habit fields.
+const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','effort'];
 let _minimalEffortHomes = null;
 function applyDetailMinimalMode(){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);

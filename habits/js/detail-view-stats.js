@@ -1,3 +1,7 @@
+// RENDER: compact stats block for the merged calendar pane — the score card
+// plus a single chip row and a slim pace strip. Every number from the old
+// insight page is kept; only the presentation is denser so the 14-day strip
+// and the stats share one pane without scrolling forever.
 function renderStats(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
@@ -33,49 +37,44 @@ function renderStats(h){
   const planFact = h.type === 'zero' ? `${completed} entries`
     : h.type === 'task' ? (h.lastLog !== null ? 'completed' : (timed ? 'scheduled' : (h.dueDate ? 'has due date' : 'no due date')))
     : `${planned} planned`;
-  if(h.type === 'task'){
-    $('detail-stats').innerHTML = `
-      <div class="score-card ${scoreCls}">
-        <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
-        <div class="score-copy">
-          <div class="score-title">${escapeHtml(scoreName)}</div>
-          <div class="score-sub">${escapeHtml(progressCopy(h,score))}</div>
-          <div class="score-facts">
-            <span><i class="ti ${rhythmIcon}" aria-hidden="true"></i>${escapeHtml(targetLine)}</span>
-            <span><i class="ti ${planIcon}" aria-hidden="true"></i>${escapeHtml(planFact)}</span>
-          </div>
-        </div>
-      </div>`;
-    return;
-  }
-  const gapValue = gapNum === '-' ? '-' : `${gapNum}<small>d</small>`;
-  const avgValue = avg === null ? '-' : `${avg}<small>d</small>`;
-  $('detail-stats').innerHTML = `
+  const scoreCard = `
     <div class="score-card ${scoreCls}">
       <div class="score-ring ${scoreCls}" style="--score:${score ?? 0};--score-color:${visualClassColor(scoreCls)};"><span>${scoreLabel}</span></div>
       <div class="score-copy">
-        <div class="score-title">${scoreName}</div>
-        <div class="score-sub">${progressCopy(h,score)}</div>
+        <div class="score-title">${escapeHtml(scoreName)}</div>
+        <div class="score-sub">${escapeHtml(progressCopy(h,score))}</div>
         <div class="score-facts">
-          <span><i class="ti ${rhythmIcon}" aria-hidden="true"></i>${targetLine}</span>
-          <span><i class="ti ${planIcon}" aria-hidden="true"></i>${planFact}</span>
+          <span><i class="ti ${rhythmIcon}" aria-hidden="true"></i>${escapeHtml(targetLine)}</span>
+          <span><i class="ti ${planIcon}" aria-hidden="true"></i>${escapeHtml(planFact)}</span>
         </div>
       </div>
-    </div>
-    <div class="stat ${gapTone}"><div class="stat-num">${gapValue}</div><div class="stat-label">${gapLabel}</div></div>
-    <div class="stat ${avgTone}"><div class="stat-num">${avgValue}</div><div class="stat-label">usual gap</div></div>
-    <div class="stat"><div class="stat-num">${monthValue}</div><div class="stat-label">${monthLabel}</div></div>
-    <div class="stat"><div class="stat-num">${run.num}</div><div class="stat-label">${runLabel}</div></div>
+    </div>`;
+  if(h.type === 'task'){
+    $('detail-stats').innerHTML = scoreCard;
+    return;
+  }
+  const chips = [
+    `<span class="detail-stat-chip ${gapTone}"><b>${gapNum === '-' ? '-' : `${gapNum}d`}</b>${escapeHtml(gapLabel)}</span>`,
+    `<span class="detail-stat-chip ${avgTone}"><b>${avg === null ? '-' : `${avg}d`}</b>usual gap</span>`,
+    `<span class="detail-stat-chip"><b>${monthValue}</b>${escapeHtml(monthLabel)}</span>`,
+    `<span class="detail-stat-chip"><b>${run.num}</b>${escapeHtml(runLabel)}</span>`,
+    `<span class="detail-stat-chip"><b>${completed}</b>total entries</span>`
+  ].join('');
+  $('detail-stats').innerHTML = `
+    ${scoreCard}
+    <div class="detail-stat-chips">${chips}</div>
     <div class="pace-card">
-      <div class="pace-head"><span>recent gaps</span><span>${intervalSummary.label}</span></div>
+      <div class="pace-head">
+        <span>recent gaps</span>
+        <span class="pace-legend"><span><b class="hit"></b>good</span><span><b class="warn"></b>close</span><span><b class="miss"></b>care</span></span>
+        <span>${escapeHtml(intervalSummary.label)}</span>
+      </div>
       <div class="pace-strip" aria-hidden="true">
         <span class="hit" style="width:${intervalSummary.hit}%"></span>
         <span class="warn" style="width:${intervalSummary.warn}%"></span>
         <span class="miss" style="width:${intervalSummary.miss}%"></span>
       </div>
-      <div class="pace-legend"><span><b class="hit"></b>good</span><span><b class="warn"></b>close</span><span><b class="miss"></b>care</span></div>
-    </div>
-    <div class="stat compact"><div class="stat-num">${completed}</div><div class="stat-label">total entries</div></div>`;
+    </div>`;
 }
 
 // PURE: summarizes logs inside a day window
@@ -285,53 +284,80 @@ function graphCaption(h,intervals){
   return `Last clear stretch was ${last}d: ${label}. Longer is better.${avgPart}`;
 }
 
-// RENDER: renders month calendar grid (shared markers with overview tally)
-function renderCalendar(h){
-  const frame = monthFrame(detailMonthOffset);
-  const {year,month,first,last,label,today} = frame;
-  const tally = typeof buildDayTally === 'function'
-    ? buildDayTally([h],ts=>{
-      const d = new Date(ts);
-      return d.getFullYear() === year && d.getMonth() === month;
-    })
-    : {map:new Map(),actual:0,planned:0};
-  const toneByDay = logToneMap(h);
-  const monthEntries = tally.actual + tally.planned;
-  const activeDays = tally.map.size;
-  $('detail-calendar-label').textContent = `${label} · ${monthEntries}`;
-  $('detail-calendar-summary').innerHTML = `
-    <span class="overview-stat"><i class="ti ti-calendar-check" aria-hidden="true"></i>${activeDays} days</span>
-    <span class="overview-stat"><i class="ti ti-list-check" aria-hidden="true"></i>${tally.actual} entries</span>
-    <span class="overview-stat"><i class="ti ti-calendar-event" aria-hidden="true"></i>${tally.planned} planned</span>`;
+// PURE: the detail strip's 14-day window (past 7 · next 6 at offset 0),
+// mirroring the overview calendar's default recent view.
+function detailStripWindow(){
+  const days = typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14;
+  const past = typeof OVERVIEW_RECENT_PAST === 'number' ? OVERVIEW_RECENT_PAST : 7;
+  const today = dayStart(Date.now());
+  const start = today - past * 86400000 + detailStripOffset * days * 86400000;
+  return {start,days,end:start + days * 86400000};
+}
 
-  const hasSched = typeof hasDaySchedule === 'function' && hasDaySchedule(h);
-  const densityFn = typeof calDensityClass === 'function' ? calDensityClass : (count=>count >= 3 ? 'density-3' : count >= 2 ? 'density-2' : count ? 'density-1' : '');
-
-  const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
-  const blanks = Array.from({length:first.getDay()},()=>'<div class="cal-day blank"></div>');
-  const days = Array.from({length:last.getDate()},(_,i)=>{
-    const date = new Date(year,month,i + 1);
-    const key = dateKey(date.getTime());
-    const entries = tally.map.get(key) || [];
-    const count = entries.length;
-    const toneClass = entries.find(e=>e.tone && e.tone !== 'plan')?.tone
-      || (entries.some(e=>e.tone === 'plan') ? 'plan' : '')
-      || toneByDay.get(key)
-      || '';
-    const density = densityFn(count);
-    const eligible = !count && hasSched && typeof isDateEligibleForHabit === 'function' && isDateEligibleForHabit(h,date.getTime());
-    const dots = count
-      ? `<span class="cal-dots"><span class="cal-dot ${toneClass}"></span>${count > 1 ? `<span class="cal-more">${count}</span>` : ''}</span>`
-      : '<span class="cal-dots"></span>';
-    const cls = [
-      count ? 'has-entry' : '',
-      density,
-      eligible ? 'eligible' : '',
-      key === today ? 'today' : '',
-      key === dayLogsKey ? 'selected' : '',
-      'pickable'
-    ].filter(Boolean).join(' ');
-    return `<button class="cal-day ${cls}" data-entry-day="${key}"><span>${i + 1}</span>${dots}</button>`;
+// PURE: this habit's agenda placements by day from the cached week (today →
+// +6), so the strip can dot days the planner placed this habit on. Shifted
+// windows fall outside the week cache and simply get no agenda dots.
+function detailAgendaByDay(h){
+  if(typeof weekAgendaByDay !== 'function' || typeof cachedOverviewWeek !== 'function')return new Map();
+  const data = typeof load === 'function' ? load() : [];
+  const all = weekAgendaByDay(cachedOverviewWeek(data),data);
+  const mine = new Map();
+  all.forEach((items,key)=>{
+    const matches = items.filter(item=>item.name === h.name);
+    if(matches.length)mine.set(key,matches);
   });
-  $('detail-calendar').innerHTML = [...heads,...blanks,...days].join('');
+  return mine;
+}
+
+// RENDER: the 14-day strip and the gap-history graph share one slot behind a
+// two-option segment; the calendar is the default view.
+function syncDetailVizMode(){
+  const showCalendar = detailVizMode !== 'gaps';
+  const cal = $('detail-viz-calendar');
+  const gaps = $('detail-viz-gaps');
+  const page = document.querySelector('.detail-calendar-page');
+  const nav = $('detail-calendar-nav');
+  if(cal)cal.hidden = !showCalendar;
+  if(gaps)gaps.hidden = showCalendar;
+  if(page)page.classList.toggle('is-gaps', !showCalendar);
+  if(nav)nav.hidden = !showCalendar;
+  const seg = $('detail-viz-seg');
+  if(seg)seg.querySelectorAll('[data-detail-viz]').forEach(btn=>{
+    const on = (btn.dataset.detailViz === 'gaps') !== showCalendar;
+    btn.classList.toggle('on',on);
+    btn.setAttribute('aria-selected',on ? 'true' : 'false');
+  });
+}
+
+// RENDER: per-habit 14-day strip (same cells, dots, and agenda markers as the
+// overview calendar). Tapping a day keeps opening the scoped day-logs sheet.
+function renderCalendar(h){
+  const {start,days,end} = detailStripWindow();
+  const agendaByDay = detailAgendaByDay(h);
+  const eligibleKeys = new Set();
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof isDateEligibleForHabit === 'function'){
+    for(let i = 0;i < days;i++){
+      const ts = start + i * 86400000;
+      if(isDateEligibleForHabit(h,ts))eligibleKeys.add(dateKey(ts));
+    }
+  }
+  const {tally,html} = dayStripMarkup([h],start,days,{agendaByDay,entryDay:true,eligible:eligibleKeys});
+  const grid = $('detail-calendar');
+  grid.className = 'month-grid rich-month-grid strip-grid';
+  grid.innerHTML = html;
+
+  const label = $('detail-calendar-label');
+  if(label)label.textContent = recentRangeLabel(start,end,detailStripOffset === 0);
+
+  // Window chips: agenda dots are the planner's view of the week, not new
+  // entries, so they are excluded from the planned count.
+  let planned = 0;
+  tally.map.forEach(entries=>{
+    planned += entries.filter(e=>e.planned && e.tone !== 'agenda').length;
+  });
+  $('detail-calendar-summary').innerHTML = `
+    <span class="overview-stat"><i class="ti ti-calendar-check" aria-hidden="true"></i>${tally.map.size} days</span>
+    <span class="overview-stat"><i class="ti ti-list-check" aria-hidden="true"></i>${tally.actual} entries</span>
+    <span class="overview-stat"><i class="ti ti-calendar-event" aria-hidden="true"></i>${planned} planned</span>`;
 }

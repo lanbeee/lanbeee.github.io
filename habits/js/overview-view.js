@@ -193,8 +193,10 @@ function calDensityClass(count){
   return '';
 }
 
-// PURE: builds calendar day cell HTML (overview grid / strip)
-function cellMarkup(key,date,entries,extraSpans = ''){
+// PURE: builds calendar day cell HTML (overview grid / strip). `opts.entryDay`
+// marks per-habit cells (detail sheet) with data-entry-day instead of the
+// overview's data-log-day so each surface keeps its own tap binding.
+function cellMarkup(key,date,entries,extraSpans = '',opts = {}){
   const tones = ['hit','warn','miss','plan','agenda']
     .filter(tone=>entries.some(item=>item.tone === tone))
     .slice(0,4);
@@ -210,13 +212,15 @@ function cellMarkup(key,date,entries,extraSpans = ''){
     key === dayLogsKey ? 'selected' : '',
     'pickable'
   ].filter(Boolean).join(' ');
+  const dayAttr = opts.entryDay ? 'data-entry-day' : 'data-log-day';
+  const eligible = opts.eligible instanceof Set && !entries.length && opts.eligible.has(key) ? 'eligible' : '';
   const dateLabel = date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   const itemLabel = entries.length ? `, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}` : ', no items';
-  return `<button type="button" class="cal-day ${cls}" data-log-day="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
+  return `<button type="button" class="cal-day ${cls}${eligible ? ` ${eligible}` : ''}" ${dayAttr}="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
 }
 
 // PURE: build an N-day strip's tally + cell HTML starting at startTs.
-function dayStripMarkup(data,startTs,days,{agendaByDay = null} = {}){
+function dayStripMarkup(data,startTs,days,{agendaByDay = null,entryDay = false,eligible = null} = {}){
   const end = startTs + days * 86400000;
   const tally = buildDayTally(data,ts=>ts >= startTs && ts < end);
   if(agendaByDay instanceof Map){
@@ -240,7 +244,7 @@ function dayStripMarkup(data,startTs,days,{agendaByDay = null} = {}){
     const key = dateKey(ts);
     const entries = tally.map.get(key) || [];
     const labelSpans = `<span class="strip-wd">${weekdayShort(date.getDay())}</span><span class="strip-num">${date.getDate()}</span>`;
-    return cellMarkup(key,date,entries,labelSpans);
+    return cellMarkup(key,date,entries,labelSpans,{entryDay,eligible});
   }).join('');
   return {tally,html};
 }
@@ -326,13 +330,10 @@ function overviewDayAgendaPending(dayKey){
   return _overviewWeekFillInflightKey === dirty && _overviewWeekFillCoverDays > 0;
 }
 
-// PURE: week-agenda placements keyed by day (today → +6). Reuses a cached week
-// when available so opening calendar stays cheap. Missing cache is filled
-// off-main from the day sheet — never with a synchronous 7-day rebuild.
-function overviewAgendaByDay(data){
+// PURE: week-agenda placements keyed by day, read from a packed week. Shared
+// by the overview strip and the detail sheet's per-habit strip.
+function weekAgendaByDay(week,data){
   const byDay = new Map();
-  if(overviewRecentOffset !== 0)return byDay;
-  const week = cachedOverviewWeek(data);
   if(!week || !Array.isArray(week.days))return byDay;
   week.days.forEach(day=>{
     const key = dateKey(day.dayBase);
@@ -354,6 +355,14 @@ function overviewAgendaByDay(data){
     if(items.length)byDay.set(key,items);
   });
   return byDay;
+}
+
+// PURE: week-agenda placements keyed by day (today → +6). Reuses a cached week
+// when available so opening calendar stays cheap. Missing cache is filled
+// off-main from the day sheet — never with a synchronous 7-day rebuild.
+function overviewAgendaByDay(data){
+  if(overviewRecentOffset !== 0)return new Map();
+  return weekAgendaByDay(cachedOverviewWeek(data),data);
 }
 
 // RENDER: most-active habits (month / all-time)
@@ -707,9 +716,10 @@ function renderOverviewRecent(data){
   renderOverviewStretchLists(data,tally,start,end);
 }
 
-// PURE: label for the around-today window
-function recentRangeLabel(start,end){
-  if(overviewRecentOffset === 0)return 'around today';
+// PURE: label for the around-today window. `aroundToday` defaults to the
+// overview's own offset; the detail strip passes its own flag.
+function recentRangeLabel(start,end,aroundToday = overviewRecentOffset === 0){
+  if(aroundToday)return 'around today';
   const first = new Date(start);
   const last = new Date(end - 86400000);
   const fmt = d => d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
@@ -1176,6 +1186,15 @@ function renderDayLogsItemStep(key){
   }
   if(dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving && dayLogsCanPlan(key)){
     actions.push(actionMarkup('id="day-logs-plan"','ti-calendar-plus','Plan this item','Add it to this day'));
+    // Rhythm habits: pin or clear a soft plan-by deadline on a future day.
+    if((h.type === 'keepup' || h.type === 'reduce') && key > todayIso()){
+      const isThisPlanBy = h.planByDate && dateKey(h.planByDate) === key;
+      if(isThisPlanBy){
+        actions.push(actionMarkup(`data-clear-plan-by-day="${idx}"`,'ti-calendar-off','Clear plan-by','Remove the plan-by date for this item'));
+      }else{
+        actions.push(actionMarkup(`data-plan-by-day="${idx}" data-plan-day="${key}"`,'ti-calendar-due','Plan by this day','Set the plan-by date to this day'));
+      }
+    }
   }
   if(!dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving && dayLogsCanPlan(key) && !plannedCount){
     actions.push(actionMarkup(`data-plan-day-item="${idx}"`,'ti-calendar-plus','Plan for this day','Add it to this day, with an optional time'));

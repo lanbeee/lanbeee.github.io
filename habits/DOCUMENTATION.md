@@ -91,7 +91,7 @@ Everything below is covered in this skeleton:
 - Home sections (Today, Overdue, Coming Up)
 - Home day headers with pills (missed, open time)
 - Add habit sheet (all fields)
-- Detail sheet (6 tabs: identity, schedule, effort, insight, calendar, actions)
+- Detail sheet (5 tabs: identity, schedule, effort, calendar+stats merged, actions)
 - Activity sheet (log history)
 - Settings sections (16 sections)
 - Calendar overview (heatmap, week strip, 3 panes)
@@ -937,26 +937,25 @@ Visible when type = task:
 │ ✕ habit name                       │
 ├─────────────────────────────────────┤
 │ Tab: identity  schedule  effort     │
-│        insight  calendar  actions  │
-│ (minimal hides: calendar, insight,  │
-│  effort - folded into schedule)   │
+│        calendar  actions           │
+│ (minimal hides: calendar, effort - │
+│  folded into schedule)             │
 │                                     │
 │ [Tab content area]                  │
 └─────────────────────────────────────┘
 ```
 
-### 9.2 Detail Page Tabs (6 total) 👤👨‍💻
+### 9.2 Detail Page Tabs (5 total) 👤👨‍💻
 
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
 | `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, pinned |
 | `schedule` | 📅 | Time windows, rhythm, days |
 | `effort` | 📊 | Duration, breakable, min chunk |
-| `insight` | 📈 | Stats, streaks, progress graph |
-| `calendar` | 🗓️ | Activity heatmap, month view |
+| `calendar` | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
 | `actions` | ⋮ | Links (phone, web, etc.) |
 
-**Minimal Mode Hidden Tabs:** `calendar`, `insight`, `effort` (folded into `schedule`)
+**Minimal Mode Hidden Tabs:** `calendar` (the merged calendar+stats pane), `effort` (folded into `schedule`)
 
 ### 9.3 Identity Tab 👤
 
@@ -1057,33 +1056,40 @@ time: | 9am | — | 9am | — | 9am | — |
 - **Due time:** Time picker (`detail-due-time`, makes it a fixed appointment)
 - Hint: "add a time to make this a fixed appointment"
 
-### 9.6 Insight Tab 👤
+### 9.6 Calendar Tab (merged calendar + stats) 👤
 
-#### Progress Graph
-- Shows last 30 days of logging
-- Each bar represents a day
-- Height = number of logs that day
-- Color = success status (teal/amber/red)
+The old `insight` and `calendar` panes are one page. A two-option segment
+switches the middle slot between the **14-day strip** (default) and **gap
+history**; compact full-history stats sit below either view. Every stat number
+is computed over the **full log history** (a last entry 20+ days ago still
+shows), never windowed to the strip. The 14-day chips above the strip are the
+only window-scoped readout.
 
-#### Statistics
-- **Record Streak:** Longest consecutive success streak
-- **Current Streak:** Active streak count
-- **Total Logs:** Lifetime log count
-- **Success Rate:** Percentage of on-track days
-- **Average Interval:** Days between logs
+#### 14-Day Strip
+- Window: past 7 days · today · next 6 (same default as the overview calendar)
+- Arrows shift by 14 days; "today" snaps back to the around-today window
+- Dots per day (max 4): `hit/warn/miss` (activity), `plan` (planned log, due /
+  scheduled / plan-by marker, purple ring), `agenda` (placed by the week
+  planner, blue ring)
+- Chips above the strip summarize the visible window: N days · N entries ·
+  N planned (agenda dots excluded from "planned")
+- Days the habit is schedule-eligible on (and free of entries) get a soft blue tint
+- Tap any day → scoped day sheet: **Log for this day** (today/past),
+  **Plan this item** (today/future), **Plan by this day** (future, keepup/reduce
+  only — sets `planByDate` to that day; **Clear plan-by** when that day already
+  is the plan-by date), **Move plan** / **Remove plan** for existing plans,
+  per-date open-time override
 
-### 9.7 Calendar Tab 👤
+#### Compact Stats
+- Score card (ring + status) — unchanged data, smaller; rhythm/plan facts live
+  in the chip row
+- One chip row: since last / usual gap / last 30d / streak / total entries
+  (tone-colored; computed over all logs, not the 14-day window)
+- Slim "recent gaps" pace strip (good/close/care split)
+- Gap-history bar graph (last 14 intervals vs rhythm target) — behind the
+  **gaps** segment, not shown at the same time as the strip
 
-#### Month View
-- Heatmap of activity across the month
-- Dots show days with logs
-- Tap any date to plan a log
-
-#### Activity Heatmap
-- Color intensity = log frequency
-- Darker = more activity
-
-### 9.8 Actions Tab 👤
+### 9.7 Actions Tab 👤
 
 #### Links Section
 Each link row has:
@@ -1104,7 +1110,7 @@ Each link row has:
 - Visible in detail view
 - Not used in scoring
 
-### 9.9 Value Logging 👤
+### 9.8 Value Logging 👤
 When `trackValue: true`:
 - Log entry shows value input
 - Value can be:
@@ -1114,20 +1120,20 @@ When `trackValue: true`:
   - Any numeric metric
 - Value stored in log entry as `value` field
 
-### 9.10 Planned Logs 👤
+### 9.9 Planned Logs 👤
 - Planned entries (marked with `plan: true`)
 - Show as future commitments
 - Can be cancelled or rescheduled
 - Appear on calendar heatmap
 
-### 9.11 Session Timer 👤
+### 9.10 Session Timer 👤
 - Starts/stops timer for current session
 - Shows elapsed time (0:00 format)
 - Auto-stops at `timerAutoStopMinutes` if set
 - When stopped, prompts to log the session
 - Uses `habitTimer` global state object
 
-### 9.12 Doing Now Feature 👤👨‍💻
+### 9.11 Doing Now Feature 👤👨‍💻
 Tracks the currently active habit session:
 - `DoingNowState` object: `hid`, `startedAt`, `dayBase`, `sessionMinutes`, `targetAt`, `endsAt`, `completionMode`
 - Only one habit can be "in progress" at a time
@@ -2216,7 +2222,7 @@ Same agenda logic, but simplified display:
 - Week strip only
 
 ### 20.4 Detail Sheet Changes
-- Fewer tabs visible
+- Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
 - Simplified scheduling UI
 - Basic info only
 

@@ -8,9 +8,8 @@
 //   - card presentation: cardCue countdown + cardMeta plan-by pill
 //   - side effects: actual log clears it, plan log does NOT
 //   - overview: buildDayTally marks the deadline day
-//   - UI: the plan-by field lives on the calendar (month) page of the detail
-//     sheet, not the schedule page; set/save/reopen round-trip; "this week"
-//     and "clear" buttons; hidden for task/zero types
+//   - UI: tap a future day on the detail strip to set Plan by this day /
+//     Clear plan-by; no date picker on the calendar pane; keepup/reduce only
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/plan-by-date-test.js
 //
@@ -403,17 +402,14 @@ function seedScript(){
   assert(tally.entryScheduled, 'plan-by entry is tagged planned+scheduled');
 
   // ════════════════════════════════════════════════════════════════════════
-  // J. UI flow — plan-by field on the calendar page, round-trip, buttons
+  // J. UI flow — plan-by is set by tapping a future strip day
   // ════════════════════════════════════════════════════════════════════════
-  console.log('\n[J] UI — plan-by lives on calendar page; set/save/reopen; this-week + clear');
-  // Seed a clean keepup habit and open its detail sheet.
+  console.log('\n[J] UI — tap a future day to set/clear plan-by (no date picker)');
   await page.evaluate(() => {
     save([{ name:'uihabit', type:'keepup', target:7, logs:[Date.now()-3*86400000], durationMinutes:15, priority:2, planByDate:null }]);
   });
   await page.evaluate(() => { if(typeof render === 'function')render(); });
   await page.waitForTimeout(150);
-  // Open detail for 'uihabit' directly via the global helper (reliable across
-  // layouts — DOM card clicks are flaky when the sheet is already open).
   await page.evaluate(() => {
     const idx = load().findIndex(h => h.name === 'uihabit');
     openDetail(idx);
@@ -421,79 +417,56 @@ function seedScript(){
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
   await page.waitForTimeout(150);
 
-  const uiSetup = await page.evaluate(() => {
-    const row = document.getElementById('detail-plan-by-row');
-    return {
-      rowVisible: row && !row.hidden,
-      rowInMonthPage: row ? !!row.closest('.month-card') : false,
-      rowNotInSchedulePage: row ? !row.closest('.tune-section') : false,
-      inputExists: !!document.getElementById('detail-plan-by-date'),
-      weekBtnExists: !!document.getElementById('detail-plan-by-week'),
-      clearBtnExists: !!document.getElementById('detail-plan-by-clear'),
-      hintInMonthPage: document.getElementById('detail-plan-by-hint') ? !!document.getElementById('detail-plan-by-hint').closest('.month-card') : false,
-    };
-  });
+  const uiSetup = await page.evaluate(() => ({
+    pickerGone: !document.getElementById('detail-plan-by-row')
+      && !document.getElementById('detail-plan-by-date')
+      && !document.getElementById('detail-plan-by-week')
+      && !document.getElementById('detail-plan-by-clear')
+      && !document.getElementById('detail-plan-by-hint')
+  }));
   console.log(uiSetup);
-  assert(uiSetup.rowVisible, 'plan-by row visible for keepup habit');
-  assert(uiSetup.rowInMonthPage, 'plan-by row lives on the calendar (month) page');
-  assert(uiSetup.rowNotInSchedulePage, 'plan-by row NOT on the schedule page');
-  assert(uiSetup.inputExists, 'plan-by date input present');
-  assert(uiSetup.weekBtnExists, '"this week" button present');
-  assert(uiSetup.clearBtnExists, '"clear" button present');
-  assert(uiSetup.hintInMonthPage, 'plan-by hint on the month page');
+  assert(uiSetup.pickerGone, 'plan-by date picker is gone from the calendar pane');
 
-  // Click "this week" → input gets end-of-week value → save → reopen → persisted.
-  const targetEow = await page.evaluate(() => endOfWeekDate());
-  await page.locator('#detail-plan-by-week').click();
-  await page.waitForTimeout(80);
-  const eowValue = await page.locator('#detail-plan-by-date').inputValue();
-  await page.locator('#detail-save').click();
+  const futureKey = await page.evaluate(() => dateKey(dayStart(Date.now()) + 2*86400000));
+  await page.locator(`#detail-calendar [data-entry-day="${futureKey}"]`).click();
+  await page.waitForSelector('#day-logs-sheet.open', { timeout:3000 });
   await page.waitForTimeout(150);
-  // Re-open and confirm persistence.
-  await page.evaluate(() => {
-    const idx = load().findIndex(h => h.name === 'uihabit');
-    openDetail(idx);
-  });
-  await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
-  await page.waitForTimeout(120);
-  const persisted = await page.evaluate(() => {
+  const futureSheet = await page.evaluate(() => document.querySelector('#day-logs-body')?.textContent || '');
+  assert(futureSheet.includes('Plan this item'), 'future day offers Plan this item');
+  assert(futureSheet.includes('Plan by this day'), 'future day offers Plan by this day');
+  await page.locator('[data-plan-by-day]').click();
+  await page.waitForTimeout(200);
+  const persisted = await page.evaluate((key) => {
+    const h = load().find(x => x.name === 'uihabit');
+    return {
+      storedKey: h && h.planByDate ? dateKey(h.planByDate) : null,
+      clear: (document.querySelector('#day-logs-body')?.textContent || '').includes('Clear plan-by')
+    };
+  }, futureKey);
+  console.log({ futureKey, persisted });
+  assert(persisted.storedKey === futureKey, `Plan by this day persists planByDate (${futureKey})`);
+  assert(persisted.clear, 'the same day then offers Clear plan-by');
+
+  await page.locator('[data-clear-plan-by-day]').click();
+  await page.waitForTimeout(200);
+  const cleared = await page.evaluate(() => {
     const h = load().find(x => x.name === 'uihabit');
     return {
       storedPlanBy: h ? h.planByDate : 'missing',
-      inputValue: document.getElementById('detail-plan-by-date').value,
-      clearBtnVisible: !document.getElementById('detail-plan-by-clear').hidden,
-      weekBtnHidden: document.getElementById('detail-plan-by-week').hidden,
+      planByAgain: (document.querySelector('#day-logs-body')?.textContent || '').includes('Plan by this day')
     };
   });
-  console.log({ targetEow, eowValue, persisted });
-  assert(persisted.storedPlanBy === targetEow, `"this week" persists planByDate as end-of-week (${targetEow})`);
-  assert(persisted.clearBtnVisible && persisted.weekBtnHidden, 'clear button shown + this-week button hidden once a date is set');
-
-  // Now click "clear" → save → reopen → null.
-  await page.locator('#detail-plan-by-clear').click();
-  await page.waitForTimeout(80);
-  await page.locator('#detail-save').click();
-  await page.waitForTimeout(150);
-  await page.evaluate(() => {
-    const idx = load().findIndex(h => h.name === 'uihabit');
-    openDetail(idx);
-  });
-  await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
-  await page.waitForTimeout(120);
-  const cleared = await page.evaluate(() => {
-    const h = load().find(x => x.name === 'uihabit');
-    return { storedPlanBy: h ? h.planByDate : 'missing', inputValue: document.getElementById('detail-plan-by-date').value };
-  });
   console.log(cleared);
-  assert(cleared.storedPlanBy === null, '"clear" persists planByDate as null');
-  assert(cleared.inputValue === '', 'input cleared after clear-and-save');
+  assert(cleared.storedPlanBy === null, 'Clear plan-by persists planByDate as null');
+  assert(cleared.planByAgain, 'clearing restores Plan by this day');
+  await page.locator('#day-logs-done').click();
   await page.evaluate(() => closeDetail());
   await page.waitForTimeout(120);
 
   // ════════════════════════════════════════════════════════════════════════
-  // K. UI — plan-by row hidden for task and zero types
+  // K. UI — plan-by day action is keepup/reduce only
   // ════════════════════════════════════════════════════════════════════════
-  console.log('\n[K] UI — plan-by row hidden for task and zero types');
+  console.log('\n[K] UI — Plan by this day is absent for task and zero types');
   for(const [typeName, seed] of [
     ['task', { name:'uitask', type:'task', dueDate:dayStartOf(2), durationMinutes:15, priority:2 }],
     ['zero', { name:'uistop', type:'zero', logs:[Date.now()-3*86400000], durationMinutes:15, priority:2 }],
@@ -507,28 +480,29 @@ function seedScript(){
     await page.waitForTimeout(150);
     const result = await page.evaluate((nm) => {
       const idx = load().findIndex(h => h.name === nm);
-      openDetail(idx);
-      return {
-        type: load()[idx].type,
-        rowHidden: document.getElementById('detail-plan-by-row').hidden,
-        rowStillInMonthPage: !!document.getElementById('detail-plan-by-row').closest('.month-card'),
-      };
+      openDetailCalendar(idx);
+      return { type: load()[idx].type, pickerGone: !document.getElementById('detail-plan-by-row') };
     }, seed.name);
     await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(150);
+    await page.locator(`#detail-calendar [data-entry-day="${futureKey}"]`).click();
+    await page.waitForSelector('#day-logs-sheet.open', { timeout:3000 });
+    await page.waitForTimeout(150);
+    const body = await page.locator('#day-logs-body').textContent();
     console.log(`  ${typeName}: ${JSON.stringify(result)}`);
-    assert(result.rowHidden === true, `plan-by row hidden for ${typeName} type`);
-    assert(result.rowStillInMonthPage === true, `${typeName} plan-by row still in month-card page (just hidden)`);
+    assert(result.pickerGone, `${typeName} has no plan-by date picker`);
+    assert(!body.includes('Plan by this day'), `Plan by this day hidden for ${typeName}`);
+    await page.locator('#day-logs-done').click();
     await page.evaluate(() => closeDetail());
     await page.waitForTimeout(120);
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // L. Calendar marker — plan-by day shows as a planned dot in the detail month
+  // L. Calendar marker — plan-by day shows as a planned dot in the detail strip
   // ════════════════════════════════════════════════════════════════════════
   console.log('\n[L] detail calendar — plan-by day rendered as a planned marker');
   const marker = await page.evaluate(() => {
-    // Plan-by ~10 days out so it falls inside the visible month.
+    // Plan-by ~10 days out so it lands inside the next 14-day strip window.
     const planBy = dayStart(Date.now() + 10*86400000);
     const data = load().filter(h => h.name !== 'markerhabit');
     data.push({ name:'markerhabit', type:'keepup', target:60, logs:[], durationMinutes:10, priority:2, planByDate:planBy });
@@ -539,14 +513,14 @@ function seedScript(){
   });
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
   await page.waitForTimeout(150);
-  // If the marker fell outside the current month frame, navigate forward.
+  // If the marker fell outside the current 14-day strip window, navigate forward.
   await page.evaluate((target) => {
-    // Walk detailMonthOffset forward until the plan-by month is in frame.
-    for(let guard = 0; guard < 13; guard += 1){
-      const cur = new Date();
-      const offset = typeof detailMonthOffset === 'number' ? detailMonthOffset : 0;
-      const framed = new Date(cur.getFullYear(), cur.getMonth() + offset, 1);
-      if(framed.getFullYear() === target.year && framed.getMonth() === target.month)return;
+    const targetTs = dayStart(new Date(`${target.key}T12:00:00`).getTime());
+    for(let guard = 0; guard < 27; guard += 1){
+      const {start,days} = typeof detailStripWindow === 'function'
+        ? detailStripWindow()
+        : {start: dayStart(Date.now()) - 7 * 86400000, days: 14};
+      if(targetTs >= start && targetTs < start + days * 86400000)return;
       const btn = document.getElementById('detail-next-month');
       if(btn)btn.click();
     }

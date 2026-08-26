@@ -17,7 +17,10 @@ function openDetail(i){
   if(!h)return;
   closeSearch();
   const changedHabit = detailIdx !== i;
-  if(changedHabit)detailMonthOffset = 0;
+  if(changedHabit){
+    detailStripOffset = 0;
+    detailVizMode = 'calendar';
+  }
   detailIdx = i;
   const days = daysSince(h.lastLog);
   const c = colors(days,h.target,h.type);
@@ -50,9 +53,7 @@ function openDetail(i){
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
-  if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(h.planByDate);
   syncDetailDueUi();
-  syncDetailPlanByUi();
   setScheduleView('allowed');
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
@@ -123,6 +124,7 @@ function openDetail(i){
   renderStats(h);
   renderGraph(h);
   renderCalendar(h);
+  syncDetailVizMode();
   renderDetailOrderPage(h);
   setDetailDirty(false);
   applyDetailMinimalMode();

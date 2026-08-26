@@ -71,7 +71,12 @@ function currentDetailTune(){
     priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
     eventTime:parseTaskWhen($('detail-due-date').value,$('detail-due-time')?.value || ''),
-    planByDate:parseDateInput($('detail-plan-by-date')?.value || '')
+    // Plan-by is set from the day sheet (tap a future day), not a date picker.
+    planByDate:(()=>{
+      const live = detailIdx != null ? load()[detailIdx] : null;
+      if(!live)return detailTuneOriginal?.planByDate ?? null;
+      return typeof habitPlanByDate === 'function' ? habitPlanByDate(live) : (live.planByDate ?? null);
+    })()
   };
 }
 
@@ -137,9 +142,7 @@ function restoreDetailTune(){
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = detailTuneOriginal.eventTime !== null ? timeInputValue(detailTuneOriginal.eventTime) : '';
-  if($('detail-plan-by-date'))$('detail-plan-by-date').value = dateInputValue(detailTuneOriginal.planByDate);
   syncDetailDueUi();
-  syncDetailPlanByUi();
   renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
@@ -290,21 +293,6 @@ function syncDetailDueUi(){
     else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
     else hint.textContent = 'Due on this date — set flexibility to 0 for a firm deadline.';
   }
-}
-
-// RENDER: toggle habit one-off plan-by controls + hint
-function syncDetailPlanByUi(){
-  const input = $('detail-plan-by-date');
-  const clearBtn = $('detail-plan-by-clear');
-  const weekBtn = $('detail-plan-by-week');
-  if(!input)return;
-  const hasDate = Boolean(input.value);
-  if(clearBtn)clearBtn.hidden = !hasDate;
-  if(weekBtn)weekBtn.hidden = hasDate;
-  const hint = $('detail-plan-by-hint');
-  if(hint)hint.textContent = hasDate
-    ? 'Soft one-off target — the week planner will place this habit on a free day on or before this date. Cleared when you log it.'
-    : 'Optional. Set a one-off “plan by” date to pull this habit into the week planner without picking a specific day.';
 }
 
 // HYBRID: switches allowed/preferred schedule section

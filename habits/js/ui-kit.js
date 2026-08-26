@@ -196,7 +196,7 @@ function mountUiKit(){
   const preferred = $('detail-preferred-time-row');
   if(preferred && !preferred.querySelector('.time-endpoint'))preferred.innerHTML = uiTimePairHtml('preferred');
   const detailLegend = document.querySelector('[data-ui-legend="detail"]');
-  if(detailLegend)detailLegend.outerHTML = uiCalendarLegendHtml([['hit','done'],['warn','almost'],['miss','behind'],['plan','planned']]);
+  if(detailLegend)detailLegend.outerHTML = uiCalendarLegendHtml([['hit','done'],['warn','almost'],['miss','behind'],['plan','planned'],['agenda','on agenda']]);
   const overviewLegend = document.querySelector('[data-ui-legend="overview"]');
   if(overviewLegend)overviewLegend.outerHTML = uiCalendarLegendHtml([['hit','done'],['plan','planned'],['agenda','on agenda']],'overview-legend-compact','overview-legend');
   const filterHost = document.querySelector('[data-ui-filter-sheets]');

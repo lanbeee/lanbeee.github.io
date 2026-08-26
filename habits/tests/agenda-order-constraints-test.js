@@ -1266,7 +1266,7 @@ function seedScript(){
   assert(marks.hasBg, 'marks use neighbor emoji background color tokens');
   assert(marks.noFullName, 'marks do not show full neighbor names');
   assert(marks.orderVisible && marks.unlinkCount >= 1, 'actions page shows order links when present');
-  assert(!marks.orderTab && marks.tabCount === 6, 'no separate order tab; six detail pages');
+  assert(!marks.orderTab && marks.tabCount === 5, 'no separate order tab; five detail pages');
   assert(marks.actionsOnAfter, 'detail opens on actions when reorder links exist');
   assert(marks.afterOne === 1, 'unlink removes one edge');
   assert(marks.afterClear === 0 && marks.blockHiddenAfter, 'clear all removes links and hides order block');

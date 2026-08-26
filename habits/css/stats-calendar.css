@@ -322,12 +322,12 @@
 .overview-meta{flex:0 0 auto;font-size:12px;color:var(--text2);white-space:nowrap;}
 .tune-section{
   background:var(--bg2);border:0.5px solid var(--border);
-  border-radius:var(--radius);padding:14px;
+  border-radius:var(--radius);padding:var(--detail-pane-pad,12px);
 }
-.tune-section .section-label{margin-bottom:12px;}
-.tune-section[data-detail-nav="schedule"] > .section-label{margin-bottom:6px;}
+.tune-section .section-label{margin-bottom:var(--detail-pane-gap,8px);}
+.tune-section[data-detail-nav="schedule"] > .section-label{margin-bottom:var(--detail-pane-gap,8px);}
 .tune-section[data-detail-nav="schedule"] > .field-hint{margin:-2px 0 8px;}
-.tune-section .range-row{margin:-2px 0 12px;}
+.tune-section .range-row{margin:-2px 0 10px;}
 .tune-section[data-detail-nav="schedule"] .settings-sublabel{margin-top:8px;}
 .tune-section[data-detail-nav="schedule"] .schedule-time-row{margin-bottom:6px;}
 .detail-actions-page{
@@ -344,10 +344,10 @@
   min-height:44px;padding:8px 10px;gap:10px;
 }
 .detail-actions-page .habit-action i{font-size:18px;}
-.detail-actions-page .habit-action b{font-size:13px;margin-bottom:0;}
-.detail-actions-page .habit-action small{font-size:11px;line-height:1.2;}
-.detail-actions-page .habit-toggle b{font-size:13px;}
-.detail-actions-page .habit-toggle small{font-size:11px;}
+.detail-actions-page .habit-action b{font-size:var(--detail-value-size,13px);margin-bottom:0;}
+.detail-actions-page .habit-action small{font-size:var(--detail-label-size,11.5px);line-height:1.2;}
+.detail-actions-page .habit-toggle b{font-size:var(--detail-value-size,13px);}
+.detail-actions-page .habit-toggle small{font-size:var(--detail-label-size,11.5px);}
 .detail-actions-page .reset-confirm{margin-top:2px;padding:8px 10px;}
 .habit-actions{
   display:flex;flex-direction:column;gap:8px;
@@ -366,3 +366,75 @@
 .habit-action small{display:block;color:var(--text2);font-size:12px;line-height:1.3;}
 .habit-action.danger i,.habit-action.danger b{color:var(--red-text);}
 .habit-action:active{background:var(--bg3);transform:scale(0.99);}
+
+/* ── Merged detail calendar pane ───────────────────────────────────────────
+   Same stats as the old insight page in a denser layout, and the 14-day strip
+   / gap graph share one slot behind a two-option segment. Chrome is collapsed
+   into one toolbar so the pane fits a small phone without scrolling. */
+.detail-calendar-page{padding:var(--detail-pane-pad,12px);}
+.detail-calendar-page > .section-label{margin-bottom:6px;}
+.detail-calendar-page .detail-about{
+  font-size:var(--detail-copy-size,12px);line-height:1.3;margin-bottom:7px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.detail-viz-toolbar{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin-bottom:6px;
+}
+.detail-viz-seg{flex:0 1 148px;margin:0;min-width:0;}
+.detail-viz-seg .seg-opt{min-height:34px;padding:6px 0;font-size:var(--detail-copy-size,12px);}
+.detail-viz-toolbar .month-nav{flex:1 1 auto;justify-content:flex-end;gap:5px;min-width:0;}
+.detail-viz-toolbar .trend-copy{font-size:var(--detail-label-size,11.5px);}
+.detail-calendar-page .month-nav[hidden]{display:none;}
+.detail-calendar-page.is-gaps .detail-viz-seg{flex:1 1 auto;}
+.detail-calendar-page .overview-stats.compact-stats{margin:0 0 5px;}
+.detail-calendar-page .overview-stat{padding:3px 7px;font-size:11px;}
+.detail-calendar-page .strip-grid{--cal-cell-h:36px;gap:3px;}
+.detail-calendar-page .strip-grid .cal-day{height:var(--cal-cell-h,36px);}
+.detail-calendar-page .strip-grid .strip-wd{font-size:10px;}
+.detail-calendar-page .strip-grid .strip-num{font-size:11.5px;}
+.detail-calendar-page .calendar-legend{margin-top:4px;gap:6px;font-size:10.5px;}
+#detail-viz-gaps{margin-bottom:6px;}
+.detail-calendar-page .detail-stats-top{
+  display:flex;align-items:center;justify-content:flex-end;
+  margin:6px 0 4px;
+}
+.detail-calendar-page .detail-stats-top .trend-copy{font-size:var(--detail-label-size,11.5px);}
+.detail-calendar-page #detail-stats{display:flex;flex-direction:column;gap:5px;margin-bottom:6px;}
+.detail-calendar-page .score-card{padding:6px 8px;gap:8px;}
+.detail-calendar-page .score-ring{width:34px;height:34px;}
+.detail-calendar-page .score-ring::after{inset:3px;}
+.detail-calendar-page .score-ring span{font-size:10.5px;}
+.detail-calendar-page .score-title{font-size:var(--detail-value-size,13px);margin-bottom:0;}
+.detail-calendar-page .score-sub,
+.detail-calendar-page .score-facts{display:none;}
+.detail-stat-chips{display:flex;flex-wrap:wrap;gap:4px;}
+.detail-stat-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  color:var(--text2);background:var(--bg2);border:0.5px solid var(--border);
+  border-radius:999px;padding:2px 6px;font-size:10.5px;font-weight:650;
+  white-space:nowrap;
+}
+.detail-stat-chip b{color:var(--text);font-size:11.5px;font-weight:700;}
+.detail-stat-chip.hit b{color:var(--teal-text);}
+.detail-stat-chip.warn b{color:var(--amber-text);}
+.detail-stat-chip.miss b{color:var(--red-text);}
+.detail-calendar-page .pace-card{padding:4px 8px;}
+.detail-calendar-page .pace-head{font-size:11px;margin-bottom:3px;}
+.detail-calendar-page .pace-head .pace-legend{margin:0;font-size:10.5px;gap:4px;}
+.detail-calendar-page .pace-strip{height:4px;}
+.detail-calendar-page .graph{min-height:96px;padding:6px 6px 4px;}
+.detail-calendar-page .graph-bars{height:64px;}
+.detail-calendar-page .bar span,
+.detail-calendar-page .target-line span{font-size:10.5px;}
+.detail-calendar-page .graph-caption,
+.detail-calendar-page .graph-empty{font-size:var(--detail-label-size,11.5px);}
+@media (max-height:700px){
+  .detail-calendar-page .detail-about{display:none;}
+  .detail-calendar-page .pace-head{display:none;}
+}
+@media (max-width:360px){
+  .detail-viz-toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;}
+  .detail-viz-seg{width:100%;max-width:none;}
+  .detail-viz-toolbar .month-nav{width:100%;justify-content:space-between;}
+}

@@ -43,6 +43,56 @@
 .detail-head-btn i{font-size:19px;}
 .detail-head-btn:active{transform:scale(0.92);background:var(--bg3);}
 .detail-head-btn.link-kind-whatsapp{color:#1fab54;}
+
+/* One compact visual system for every detail pane. Keep the type scale narrow
+   enough to scan comfortably without making the five pages vertically tall. */
+.detail-sheet{
+  --detail-pane-pad:12px;
+  --detail-pane-gap:8px;
+  --detail-title-size:11px;
+  --detail-label-size:11.5px;
+  --detail-copy-size:12px;
+  --detail-value-size:13px;
+}
+.detail-sheet .detail-page{
+  box-sizing:border-box;color:var(--text);
+  font-size:var(--detail-copy-size);line-height:1.35;
+}
+.detail-sheet .detail-page.detail-actions-page{padding:var(--detail-pane-pad);}
+.detail-sheet .detail-page > .section-label{
+  margin:0 0 var(--detail-pane-gap);font-size:var(--detail-title-size);
+  line-height:1.2;font-weight:700;letter-spacing:0.045em;
+}
+.detail-sheet .detail-page :where(.settings-sublabel,.planning-field,.priority-label){
+  font-size:var(--detail-label-size);
+}
+.detail-sheet .detail-page :where(.field-hint,.planning-field small,.habit-action small,.habit-toggle small){
+  font-size:var(--detail-label-size);line-height:1.3;
+}
+.detail-sheet .detail-page .seg-opt{
+  min-height:34px;padding:6px 8px;font-size:var(--detail-copy-size);
+}
+.detail-sheet .detail-page .mini-text-btn{
+  min-height:32px;font-size:var(--detail-label-size);
+}
+.detail-sheet .detail-page.tune-section > .planning-grid{margin-bottom:8px;}
+.detail-sheet .detail-page.tune-section > .compact-toggle{
+  min-height:46px;margin:2px 0 8px;padding:7px 10px;
+}
+.detail-sheet .detail-page .link-field{margin-top:10px;gap:7px;}
+.detail-sheet .detail-page .timer-row{
+  display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+  align-items:stretch;gap:8px;margin:8px 0 4px;
+}
+.detail-sheet .detail-page .timer-row .timer-start-btn{min-height:42px;}
+.detail-sheet .detail-page .timer-row .timer-auto-stop-field{
+  width:100%;min-width:0;height:42px;margin:0;box-sizing:border-box;
+  background:var(--field-bg);
+}
+.detail-sheet .detail-page .timer-auto-stop-label{font-size:var(--detail-label-size);}
+@media (max-width:360px){
+  .detail-sheet .detail-page .timer-row{grid-template-columns:1fr;}
+}
 .link-field{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
 .link-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .link-field-head .settings-sublabel{margin:0;}
@@ -75,7 +125,7 @@
 .mini-add:active{background:var(--bg2);transform:scale(0.93);}
 .detail-card{
   background:var(--bg2);border:0.5px solid var(--border);
-  border-radius:var(--radius);padding:14px;margin-bottom:12px;
+  border-radius:var(--radius);padding:var(--detail-pane-pad,12px);margin-bottom:12px;
 }
 .detail-pager{
   display:flex;gap:0;overflow-x:auto;scroll-snap-type:x mandatory;

@@ -24,6 +24,7 @@ constrained-weekly-agenda-test.js	planner	once
 day-capacity-scorecard-e2e.js	planner	page-both
 day-header-pill-tap-test.js	ui	once
 detail-auto-chunk-test.js	planner	once
+detail-calendar-strip-test.js	ui	once
 detail-schedule-test.js	ui	once
 dynamic-times-test.js	planner	once
 emoji-suggest-test.js	ui	once

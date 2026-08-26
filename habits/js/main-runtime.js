@@ -615,6 +615,41 @@ $('day-logs-sheet').addEventListener('click',e=>{
     setDayLogsStep('add',idx);
     return;
   }
+  const planByBtn = e.target.closest('[data-plan-by-day]');
+  if(planByBtn){
+    const idx = parseInt(planByBtn.dataset.planByDay,10);
+    const key = planByBtn.dataset.planDay || dayLogsKey;
+    if(Number.isNaN(idx) || !key || !dayLogsCanPlan(key) || key <= todayIso())return;
+    const data = load();
+    const h = data[idx];
+    if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return;
+    h.planByDate = dayStart(new Date(`${key}T12:00:00`).getTime());
+    save(data);
+    if(typeof showToast === 'function'){
+      showToast(`plan by ${new Date(h.planByDate).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`);
+    }
+    dayLogsMoving = false;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    refreshOpenViews();
+    return;
+  }
+  const clearPlanByBtn = e.target.closest('[data-clear-plan-by-day]');
+  if(clearPlanByBtn){
+    const idx = parseInt(clearPlanByBtn.dataset.clearPlanByDay,10);
+    if(Number.isNaN(idx))return;
+    const data = load();
+    const h = data[idx];
+    if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return;
+    h.planByDate = null;
+    save(data);
+    if(typeof showToast === 'function')showToast('plan-by cleared');
+    dayLogsMoving = false;
+    if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
+    else setDayLogsStep('list');
+    refreshOpenViews();
+    return;
+  }
   if(e.target.closest('#day-log-entry-save')){
     if(!dayLogsKey || !dayLogsCanLog(dayLogsKey))return;
     const idx = dayLogsScoped()

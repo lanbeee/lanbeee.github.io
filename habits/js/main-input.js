@@ -16,15 +16,29 @@ bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   renderDayLogs(key);
   openSheet('day-logs-sheet');
 });
+// Detail strip nav: each arrow shifts the 14-day window (past 7 · next 6 at
+// offset 0); "today" snaps back to the around-today window.
 $('detail-prev-month').addEventListener('click',()=>{
   if(detailIdx === null)return;
-  detailMonthOffset -= 1;
+  detailStripOffset -= 1;
   renderCalendar(load()[detailIdx]);
 });
 $('detail-next-month').addEventListener('click',()=>{
   if(detailIdx === null)return;
-  detailMonthOffset += 1;
+  detailStripOffset += 1;
   renderCalendar(load()[detailIdx]);
+});
+$('detail-today')?.addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  detailStripOffset = 0;
+  renderCalendar(load()[detailIdx]);
+});
+// Strip ↔ gap-history slot toggle (calendar by default).
+$('detail-viz-seg')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-detail-viz]');
+  if(!btn)return;
+  detailVizMode = btn.dataset.detailViz === 'gaps' ? 'gaps' : 'calendar';
+  syncDetailVizMode();
 });
 getSheetInner('detail-sheet')?.querySelector('.detail-pager')?.addEventListener('scroll',()=>{
   requestAnimationFrame(updateDetailPagerDots);

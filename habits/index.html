@@ -204,36 +204,33 @@
         <div class="detail-head-actions" id="detail-link-actions" hidden></div>
       </div>
       <div class="detail-pager" aria-label="habit details">
-        <section class="detail-page month-card" data-detail-nav="calendar">
-          <div class="section-top">
-            <span class="section-label">month</span>
-            <div class="month-nav">
-              <button class="mini-nav" id="detail-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
-              <span class="trend-copy" id="detail-calendar-label"></span>
-              <button class="mini-nav" id="detail-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-            </div>
-          </div>
-          <div class="overview-stats compact-stats" id="detail-calendar-summary"></div>
-          <div class="month-grid rich-month-grid" id="detail-calendar"></div>
-          <div data-ui-legend="detail"></div>
-          <div class="plan-field-row" id="detail-plan-by-row" hidden>
-            <div class="plan-field-main">
-              <label class="plan-date-label" for="detail-plan-by-date">plan by</label>
-              <input type="date" id="detail-plan-by-date" class="plan-date-input" />
-              <button type="button" class="mini-text-btn" id="detail-plan-by-week" hidden>this week</button>
-              <button type="button" class="mini-text-btn" id="detail-plan-by-clear" hidden>clear</button>
-            </div>
-          </div>
-          <p class="field-hint" id="detail-plan-by-hint" hidden></p>
-        </section>
-        <section class="detail-page detail-card" data-detail-nav="insight">
+        <section class="detail-page month-card detail-calendar-page" data-detail-nav="calendar">
+          <span class="section-label">history</span>
           <p class="detail-about" id="detail-about"></p>
-          <div class="section-top">
-            <span class="section-label">insight</span>
+          <div class="detail-viz-toolbar">
+            <div class="seg detail-viz-seg" id="detail-viz-seg" role="tablist" aria-label="calendar or gap history">
+              <button type="button" class="seg-opt on" data-detail-viz="calendar" role="tab" aria-selected="true">calendar</button>
+              <button type="button" class="seg-opt" data-detail-viz="gaps" role="tab" aria-label="gap history" aria-selected="false">gaps</button>
+            </div>
+            <div class="month-nav" id="detail-calendar-nav">
+              <button class="mini-nav" id="detail-prev-month" aria-label="previous 2 weeks"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+              <span class="trend-copy" id="detail-calendar-label"></span>
+              <button class="mini-text-btn overview-today-btn" id="detail-today" type="button">today</button>
+              <button class="mini-nav" id="detail-next-month" aria-label="next 2 weeks"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </div>
+          <div id="detail-viz-calendar">
+            <div class="overview-stats compact-stats" id="detail-calendar-summary"></div>
+            <div class="month-grid rich-month-grid strip-grid" id="detail-calendar"></div>
+            <div data-ui-legend="detail"></div>
+          </div>
+          <div id="detail-viz-gaps" hidden>
+            <div class="graph" id="detail-graph"></div>
+          </div>
+          <div class="detail-stats-top">
             <span class="trend-copy" id="detail-trend"></span>
           </div>
           <div class="stats-row" id="detail-stats"></div>
-          <div class="graph" id="detail-graph"></div>
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="schedule">
           <span class="section-label">schedule</span>
