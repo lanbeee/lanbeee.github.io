@@ -62,7 +62,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   if(!structure.insightGone) throw new Error('insight page should be merged away');
   if(!structure.statsInside || !structure.graphInside || !structure.aboutInside) throw new Error('stats/graph/about must live in the merged calendar page');
   if(!structure.pickerGone) throw new Error('plan-by date picker should be gone from the calendar pane');
-  if(structure.tabs !== 'calendar|schedule|effort|identity|actions') throw new Error(`unexpected tab strip: ${structure.tabs}`);
+  if(structure.tabs !== 'history|schedule|effort|identity|actions') throw new Error(`unexpected tab strip: ${structure.tabs}`);
 
   // ── Strip geometry + dots ────────────────────────────────────────────────
   const strip = await page.evaluate(({ threeDaysAgo, inTwoDays, tenDaysAgo }) => {

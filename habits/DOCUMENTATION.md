@@ -936,8 +936,8 @@ Visible when type = task:
 ┌─────────────────────────────────────┐
 │ ✕ habit name                       │
 ├─────────────────────────────────────┤
-│ Tab: identity  schedule  effort     │
-│        calendar  actions           │
+│ Tab: history   schedule  effort     │
+│        identity  actions           │
 │ (minimal hides: calendar, effort - │
 │  folded into schedule)             │
 │                                     │
@@ -949,13 +949,14 @@ Visible when type = task:
 
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
-| `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, pinned |
-| `schedule` | 📅 | Time windows, rhythm, days |
-| `effort` | 📊 | Duration, breakable, min chunk |
-| `calendar` | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
-| `actions` | ⋮ | Links (phone, web, etc.) |
+| `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics and places |
+| `schedule` | 📅 | Rhythm or task deadline, flexibility, time windows, days, item order |
+| `effort` | 📊 | Duration, breakable, min chunk, logging and session controls |
+| `history` (`calendar` key) | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
+| `actions` | ⋮ | Links/calls, pin, export, share, snooze and remove |
 
-**Minimal Mode Hidden Tabs:** `calendar` (the merged calendar+stats pane), `effort` (folded into `schedule`)
+**Minimal Mode Hidden Tabs:** `history` (internal key: `calendar`; the merged
+calendar+stats pane), `effort` (folded into `schedule`)
 
 ### 9.3 Identity Tab 👤
 
@@ -969,9 +970,7 @@ Fields shown (always visible, even in minimal mode):
     - `stop` = zero (completely stop doing)
   - When `task`: No kind sub-segment
 - **Priority** (P0-P5 segmented control, with info tooltip)
-- **Links** (links & calls section with star for primary)
 - **Topics & Places** (topic chips + location chips)
-- **Delete** button (🗑️ with confirmation)
 
 ### 9.4 Schedule Tab Details 👤
 
@@ -979,6 +978,19 @@ Fields shown (always visible, even in minimal mode):
 - **Target times:** How many times per cycle (default 1, range 1-183)
 - **Cycle days:** Days per cycle (default 7, range 0.5-183)
 - For `habit` type only — visible as `[N] × in [N] d`
+
+#### Task Timing Section
+- For `task` type only
+- **Due date:** Date picker (`detail-due-date`)
+- **Due time:** Time picker (`detail-due-time`, makes it a fixed appointment)
+- Tasks open on Schedule by default so deadline and placement controls are the
+  first editable fields.
+
+#### Flexibility Section (full mode only) 👤
+- **Flexibility (days):** Scheduling buffer
+  - For tasks, how many days before the due date the task starts surfacing
+  - For habits, extra planning buffer beyond the rhythm target
+  - Input range: 0-60; default: 0
 
 #### Days Section
 - **Allowed Weekdays:** Mon Tue Wed Thu Fri Sat Sun (0-6)
@@ -1004,8 +1016,8 @@ time: | 9am | — | 9am | — | 9am | — |
 - **Offset:** ±720 minutes (±12 hours)
 - **Combine:** `later` / `earlier` of two expressions
 
-#### Schedule Links Section
-- Before/After relationships with other habits
+#### Item Order Section
+- Before/After relationships with other habits or tasks
 - `requireSameDay` option
 - Visual timeline showing order
 
@@ -1016,12 +1028,6 @@ time: | 9am | — | 9am | — | 9am | — |
   - Input range: 1-720 minutes
   - Default: 30 min
   - HTML input: `detail-duration`
-
-#### Flexibility Section (full mode only) 👤
-- **Flexibility (days):** Buffer added to target for planning
-  - Input range: 0-60
-  - Default: 0
-  - Tooltip: "Adds a buffer to your target for planning purposes."
 
 #### Breakable Section 👤
 - **Breakable into chunks:** Toggle switch
@@ -1051,12 +1057,7 @@ time: | 9am | — | 9am | — | 9am | — |
 - **Timer display:** Shows elapsed time (0:00 format)
 - **Session target:** Optional target minutes (uses duration if blank)
 
-#### Task Due Section (visible for tasks only) 👤
-- **Due date:** Date picker (`detail-due-date`)
-- **Due time:** Time picker (`detail-due-time`, makes it a fixed appointment)
-- Hint: "add a time to make this a fixed appointment"
-
-### 9.6 Calendar Tab (merged calendar + stats) 👤
+### 9.6 History Tab (merged calendar + stats) 👤
 
 The old `insight` and `calendar` panes are one page. A two-option segment
 switches the middle slot between the **14-day strip** (default) and **gap
@@ -1104,11 +1105,12 @@ Each link row has:
 | WhatsApp | 💬 | Phone number | `+1234567890` |
 | FaceTime | 🎥 | Email or phone | `user@example.com` |
 
-#### Notes Section
-- Free-form text field
-- Max 200 characters (`MAX_NOTE_CHARS`)
-- Visible in detail view
-- Not used in scoring
+#### Item Actions
+- **Pinned:** Keeps the item above automatic ordering
+- **Export to calendar:** Tasks with a due date or fixed time
+- **Share item:** Sends an encrypted invitation for another person to track it
+- **Snooze:** Temporarily hides the item
+- **Remove:** Deletes with an undo path
 
 ### 9.8 Value Logging 👤
 When `trackValue: true`:

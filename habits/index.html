@@ -246,12 +246,30 @@
               <span>d</span>
             </label>
           </div>
+          <div class="plan-field-row" id="detail-due-row" hidden>
+            <div class="plan-field-main">
+              <label class="plan-date-label" for="detail-due-date">due</label>
+              <input type="date" id="detail-due-date" class="plan-date-input" />
+              <input type="time" id="detail-due-time" class="plan-time-input" title="add a time to make this a fixed appointment" />
+            </div>
+          </div>
+          <p class="field-hint" id="detail-due-hint" hidden></p>
+          <div class="planning-grid planning-grid-single detail-full-only detail-schedule-flexibility">
+            <div class="planning-field">
+              <span class="flexibility-label">flexibility <button type="button" class="info-btn" data-tip="detail-flexibility-help" aria-label="about flexibility"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-flexibility-help" role="tooltip" hidden>Adds a buffer to your target for planning purposes.</div></span>
+              <label class="range-value" aria-label="flexibility in days">
+                <input type="text" id="detail-flexibility" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
+          </div>
           <div class="planning-grid detail-minimal-effort" id="detail-minimal-effort" hidden></div>
           <div class="schedule-order-block detail-full-only" id="detail-schedule-order">
             <div class="schedule-order-heading">
-              <span class="settings-sublabel schedule-order-label">habit order
-                <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about habit order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>Link this habit before or after any number of others. Links are OR’d: plan with whichever partner lands that day. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. “Must do on days with” pulls this habit onto a partner’s day when flexibility allows (shown with the early indicator); other days stay unconstrained.</span>
+              <span class="settings-sublabel schedule-order-label">item order
+                <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about item order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>Link this item before or after any number of others. Links are OR’d: plan with whichever partner lands that day. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. “Must do on days with” pulls this item onto a partner’s day when flexibility allows (shown with the early indicator); other days stay unconstrained.</span>
               </span>
               <button type="button" class="mini-text-btn schedule-link-add" id="detail-schedule-link-add">add link</button>
             </div>
@@ -298,20 +316,12 @@
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="effort">
           <span class="section-label">effort</span>
-          <div class="planning-grid" id="detail-effort-duration-grid">
+          <div class="planning-grid planning-grid-single" id="detail-effort-duration-grid">
             <div class="planning-field" id="detail-duration-field">
               <span>duration</span>
               <label class="range-value" aria-label="duration in minutes">
                 <input type="text" id="detail-duration" inputmode="numeric" maxlength="3" value="30" />
                 <span>min</span>
-              </label>
-            </div>
-            <div class="planning-field detail-full-only">
-              <span class="flexibility-label">flexibility <button type="button" class="info-btn" data-tip="detail-flexibility-help" aria-label="about flexibility"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <div class="info-tooltip" id="detail-flexibility-help" role="tooltip" hidden>Adds a buffer to your target for planning purposes.</div></span>
-              <label class="range-value" aria-label="flexibility in days">
-                <input type="text" id="detail-flexibility" inputmode="numeric" maxlength="2" value="0" />
-                <span>d</span>
               </label>
             </div>
           </div>
@@ -357,14 +367,6 @@
               <span>min</span>
             </label>
           </div>
-          <div class="plan-field-row" id="detail-due-row" hidden>
-            <div class="plan-field-main">
-              <label class="plan-date-label" for="detail-due-date">due</label>
-              <input type="date" id="detail-due-date" class="plan-date-input" />
-              <input type="time" id="detail-due-time" class="plan-time-input" title="add a time to make this a fixed appointment" />
-            </div>
-          </div>
-          <p class="field-hint" id="detail-due-hint" hidden></p>
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="identity">
           <span class="section-label">identity</span>
@@ -402,17 +404,6 @@
               <div class="info-tooltip" id="detail-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
             <div class="seg priority-seg" id="detail-priority-seg" data-ui-priority="detail"></div>
           </div>
-          <div class="link-field" id="detail-link-field">
-            <div class="link-field-head">
-              <span class="settings-sublabel">links &amp; calls
-                <button type="button" class="info-btn" data-tip="detail-link-help" aria-label="about links"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-link-help" role="tooltip" hidden>Numbers to call and meeting or web links to open — Zoom, Teams, Meet, Webex, anything. Double tapping this item’s card logs it and opens the starred one.</span>
-              </span>
-              <button type="button" class="mini-text-btn" id="detail-link-add">add link</button>
-            </div>
-            <div class="link-list" id="detail-link-list"></div>
-            <p class="field-hint" id="detail-link-hint"></p>
-          </div>
           <span class="settings-sublabel detail-full-only" id="detail-topics-label">topics &amp; places</span>
           <div class="topic-chip-row detail-full-only" id="detail-tag-chips"></div>
         </section>
@@ -424,6 +415,17 @@
               <button type="button" class="mini-text-btn" id="detail-order-clear-all" data-order-clear-hid="" hidden>clear</button>
             </div>
             <div id="detail-order-list" class="detail-order-list"></div>
+          </div>
+          <div class="link-field" id="detail-link-field">
+            <div class="link-field-head">
+              <span class="settings-sublabel">links &amp; calls
+                <button type="button" class="info-btn" data-tip="detail-link-help" aria-label="about links"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <span class="info-tooltip" id="detail-link-help" role="tooltip" hidden>Numbers to call and meeting or web links to open — Zoom, Teams, Meet, Webex, anything. Double tapping this item’s card logs it and opens the starred one.</span>
+              </span>
+              <button type="button" class="mini-text-btn" id="detail-link-add">add link</button>
+            </div>
+            <div class="link-list" id="detail-link-list"></div>
+            <p class="field-hint" id="detail-link-hint"></p>
           </div>
           <div class="habit-actions">
             <label class="setting-toggle habit-toggle detail-full-only">

@@ -1,5 +1,5 @@
 const DETAIL_PAGE_NAV = {
-  calendar:{label:'calendar',icon:'ti-calendar-week'},
+  calendar:{label:'history',icon:'ti-calendar-week'},
   schedule:{label:'schedule',icon:'ti-calendar-time'},
   effort:{label:'effort',icon:'ti-progress-check'},
   identity:{label:'identity',icon:'ti-id'},
@@ -31,24 +31,18 @@ function applyDetailMinimalMode(){
     }
   }
 
-  // Duration and the task due date still matter in minimal mode, so they move
-  // up into schedule. Auto mark done does not — it stays behind on the hidden
-  // effort pane, which keeps its saved value untouched.
+  // Duration still matters in minimal mode, so it moves up into Schedule.
+  // Task due date and flexibility already live there. Auto mark done stays
+  // behind on the hidden Effort pane, keeping its saved value untouched.
   const slot = $('detail-minimal-effort');
   const durationField = $('detail-duration-field');
   const autoMarkField = $('detail-auto-mark-field');
-  const dueRow = $('detail-due-row');
-  const dueHint = $('detail-due-hint');
   if(!_minimalEffortHomes && durationField && autoMarkField){
     _minimalEffortHomes = {
       durationParent:durationField.parentElement,
       durationNext:durationField.nextElementSibling,
       autoParent:autoMarkField.parentElement,
-      autoNext:autoMarkField.nextElementSibling,
-      dueParent:dueRow ? dueRow.parentElement : null,
-      dueNext:dueRow ? dueRow.nextElementSibling : null,
-      hintParent:dueHint ? dueHint.parentElement : null,
-      hintNext:dueHint ? dueHint.nextElementSibling : null
+      autoNext:autoMarkField.nextElementSibling
     };
   }
   const restoreNode = (node,parent,next)=>{
@@ -58,8 +52,6 @@ function applyDetailMinimalMode(){
   };
   if(minimal && slot && durationField){
     slot.appendChild(durationField);
-    if(dueRow)slot.appendChild(dueRow);
-    if(dueHint)slot.appendChild(dueHint);
     slot.hidden = false;
     if(_minimalEffortHomes){
       restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
@@ -67,8 +59,6 @@ function applyDetailMinimalMode(){
   }else if(_minimalEffortHomes){
     restoreNode(durationField,_minimalEffortHomes.durationParent,_minimalEffortHomes.durationNext);
     restoreNode(autoMarkField,_minimalEffortHomes.autoParent,_minimalEffortHomes.autoNext);
-    restoreNode(dueRow,_minimalEffortHomes.dueParent,_minimalEffortHomes.dueNext);
-    restoreNode(dueHint,_minimalEffortHomes.hintParent,_minimalEffortHomes.hintNext);
     if(slot)slot.hidden = true;
   }
 

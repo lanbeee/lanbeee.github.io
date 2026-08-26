@@ -136,14 +136,15 @@ function openDetail(i){
     if(pager){
       pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
       // Order links → actions first so unlink is immediate.
-      // Tasks otherwise land on Effort (or Schedule in minimal); habits on Calendar.
+      // Tasks land on Schedule, where their due date and placement controls live;
+      // recurring habits land on Calendar so their history is visible first.
       const hasOrder = typeof habitHasOrderConstraints === 'function'
         && habitHasOrderConstraints(h.hid);
       const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
       requestAnimationFrame(()=>{
         if(hasOrder)scrollDetailToNav('actions','auto');
         else if(minimal)pager.scrollTo({top:0,behavior:'auto'});
-        else if(h.type === 'task')scrollDetailToNav('effort','auto');
+        else if(h.type === 'task')scrollDetailToNav('schedule','auto');
         else{
           pager.scrollTo({left:0,behavior:'auto'});
           updateDetailPagerDots();
@@ -168,13 +169,11 @@ function openDetailCalendar(i){
   });
 }
 
-// HYBRID: opens detail then scrolls to schedule. For tasks the relevant
-// controls (due / scheduled) live in the Effort pane, so route by type.
+// HYBRID: opens detail then scrolls to Schedule for either item type.
 function openDetailSchedule(i){
   openDetail(i);
   requestAnimationFrame(()=>{
-    const h = load()[i];
-    scrollDetailToNav(h && h.type === 'task' && !detailIsSingleView() ? 'effort' : 'schedule','auto');
+    scrollDetailToNav('schedule','auto');
   });
 }
 
@@ -235,4 +234,3 @@ function renderEmojiBgSwatches(containerId,selected = ''){
     });
   }
 }
-

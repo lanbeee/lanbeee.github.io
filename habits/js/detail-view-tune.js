@@ -274,7 +274,7 @@ function openDetailLink(index){
   const link = links[index];
   if(!link){
     showToast('add a number or link first');
-    scrollDetailToNav('identity');
+    scrollDetailToNav('actions');
     return;
   }
   openHabitLink(link);

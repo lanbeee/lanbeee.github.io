@@ -47,7 +47,7 @@ function ok(value,message){
   await page.evaluate(()=>openDetail(0));
   await page.waitForSelector('#detail-sheet.open');
   ok(await page.locator('.detail-page-tab').count() === 5,'detail exposes five labeled page tabs');
-  ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'calendar|schedule|effort|identity|actions','page tabs name every pane');
+  ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'history|schedule|effort|identity|actions','page tabs name every pane');
   const compactShell = await page.evaluate(()=>{
     const head = document.querySelector('.detail-head').getBoundingClientRect();
     const pager = document.querySelector('.detail-pager').getBoundingClientRect();

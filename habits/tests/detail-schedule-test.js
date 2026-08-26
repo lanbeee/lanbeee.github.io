@@ -18,7 +18,7 @@ async function addTestHabit(page, name, type, opts = {}){
   await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
 }
 
-async function scrollDetailToSchedule(page, paneIndex = 2){
+async function scrollDetailToSchedule(page, paneIndex = 1){
   await page.evaluate((idx) => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
     if(pager) pager.scrollTo({ left: pager.clientWidth * idx, behavior: 'instant' });
@@ -65,9 +65,25 @@ async function assertAttr(page, selector, attr, expected, msg){
   await addTestHabit(page, runId, 'keepup');
   await page.waitForTimeout(300);
 
-  // Navigate to effort pane (pager index 3) — duration/breakable/timer/etc.
-  // moved here after the schedule/effort pane split.
-  await scrollDetailToSchedule(page, 3);
+  // Navigate to Effort (calendar 0, schedule 1, effort 2).
+  await scrollDetailToSchedule(page, 2);
+
+  const paneMap = await page.evaluate(() => Object.fromEntries([
+    ['due','#detail-due-row'],
+    ['flexibility','#detail-flexibility'],
+    ['duration','#detail-duration'],
+    ['links','#detail-link-field'],
+    ['identity','#detail-type-seg'],
+    ['pinned','#detail-pinned']
+  ].map(([key,selector]) => [key,document.querySelector(selector)?.closest('.detail-page')?.dataset.detailNav])));
+  const expectedPaneMap = {
+    due:'schedule',flexibility:'schedule',duration:'effort',
+    links:'actions',identity:'identity',pinned:'actions'
+  };
+  if(JSON.stringify(paneMap) !== JSON.stringify(expectedPaneMap)){
+    throw new Error(`detail controls are on the wrong panes: ${JSON.stringify(paneMap)}`);
+  }
+  console.log('  Control-to-pane organization: OK');
 
   // Test breakable toggle
   console.log('Testing breakable toggle...');
@@ -105,6 +121,7 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Test flexibility field
   console.log('Testing flexibility field...');
+  await scrollDetailToSchedule(page, 1);
   const flexField = page.locator('#detail-flexibility');
   const flexVal = await flexField.inputValue();
   if(flexVal !== '1') throw new Error(`flexibility default should be 1, got ${flexVal}`);
@@ -117,6 +134,7 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Session target on same row as start button
   console.log('Testing timer row layout...');
+  await scrollDetailToSchedule(page, 2);
   const timerRow = page.locator('#detail-timer-row');
   if(!(await timerRow.locator('#detail-timer-auto-stop').isVisible())) throw new Error('session target should be on timer row');
   console.log('  Timer row layout: OK');
@@ -166,7 +184,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // SECTION 3: Persistence after save
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 3: Persistence ---');
-  await scrollDetailToSchedule(page, 3);
+  await scrollDetailToSchedule(page, 2);
   // Re-enable breakable and track-value (we toggled them off with the timer)
   if((await breakableBtn.getAttribute('aria-pressed')) !== 'true') {
     await breakableBtn.click();
@@ -182,7 +200,7 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Reopen detail (rhythm habits may render under multiple day sections)
   await openCardDetail(page,runId);
-  await scrollDetailToSchedule(page, 3);
+  await scrollDetailToSchedule(page, 2);
   await page.waitForTimeout(200);
 
   await assertAttr(page, '#detail-breakable', 'aria-pressed', 'true', 'breakable persisted');
@@ -230,13 +248,16 @@ async function assertAttr(page, selector, attr, expected, msg){
   const taskName = `${runId} task`;
   const tomorrow = new Date(Date.now() + 86400000);
   await addTestHabit(page, taskName, 'task', { dueDate: dateInput(tomorrow) });
-  // Tasks land on the Effort pane (index 3) — that's where due/scheduled
-  // controls live after the schedule/effort pane split.
-  await scrollDetailToSchedule(page, 3);
+  // Tasks land on Schedule, where due/scheduled controls now live.
+  await page.waitForTimeout(250);
+  const taskDefaultPane = (await page.locator('.detail-page-tab.on').textContent()).trim();
+  if(taskDefaultPane !== 'schedule')throw new Error(`tasks should open on Schedule, got ${taskDefaultPane}`);
+  await scrollDetailToSchedule(page, 1);
   await page.waitForTimeout(200);
 
   // Due row should be visible for tasks
   if(!(await page.locator('#detail-due-row').isVisible())) throw new Error('due row should show for tasks');
+  await scrollDetailToSchedule(page, 2);
   const autoMarkField = page.locator('#detail-auto-mark');
   await autoMarkField.waitFor({ state:'visible' });
   await autoMarkField.fill('30');
@@ -246,6 +267,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   console.log('  Auto mark done field: OK');
 
   // Due date + time → eventTime; date-only → dueDate without eventTime
+  await scrollDetailToSchedule(page, 1);
   await page.locator('#detail-due-time').fill('14:30');
   await page.waitForTimeout(100);
   await page.locator('#detail-save').click();
@@ -254,7 +276,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   let taskItem = stored.find(h => h.name === taskName);
   if(!taskItem?.eventTime) throw new Error('task with due time should have eventTime');
   await openCardDetail(page,taskName);
-  await scrollDetailToSchedule(page, 3);
+  await scrollDetailToSchedule(page, 1);
   await page.locator('#detail-due-time').fill('');
   await page.locator('#detail-flexibility').fill('0');
   await page.locator('#detail-flexibility').blur();
@@ -273,7 +295,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // SECTION 5: Schedule view seg + chips
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 5: Schedule seg + chips ---');
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 1);
   await page.waitForTimeout(200);
   const prefSeg = page.locator('#detail-schedule-view-seg [data-schedule-view="preferred"]');
   if(await prefSeg.isVisible()){
@@ -310,7 +332,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   console.log('\n--- SECTION 6: Reopen build habit ---');
   // Reopen the build habit (task detail may have been saved and closed)
   await openCardDetail(page,runId);
-  await scrollDetailToSchedule(page, 3);
+  await scrollDetailToSchedule(page, 2);
   await page.waitForTimeout(200);
 
   // ═══════════════════════════════════════════════
@@ -398,7 +420,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // SECTION 9: Time input fields
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 9: Time window inputs ---');
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 1);
   const timeStart = page.locator('#detail-time-start');
   const timeEnd = page.locator('#detail-time-end');
   await timeStart.fill('09:00');
@@ -425,13 +447,13 @@ async function assertAttr(page, selector, attr, expected, msg){
     const sheet = document.querySelector('#detail-sheet .detail-sheet');
     const pager = sheet?.querySelector('.detail-pager');
     const pages = pager ? [...pager.querySelectorAll('.detail-page')] : [];
-    const schedule = pages[2];
-    const effort = pages[3];
+    const schedule = pages[1];
+    const effort = pages[2];
     if(!sheet || !pager || !schedule || !effort)return null;
     effort.scrollTop = 0;
     schedule.scrollTop = schedule.scrollHeight;
     const scheduleTop = schedule.scrollTop;
-    pager.scrollTo({ left:pager.clientWidth * 3, behavior:'auto' });
+    pager.scrollTo({ left:pager.clientWidth * 2, behavior:'auto' });
     return { scheduleTop };
   });
   await page.waitForTimeout(250);
@@ -439,8 +461,8 @@ async function assertAttr(page, selector, attr, expected, msg){
     const sheet = document.querySelector('#detail-sheet .detail-sheet');
     const pager = sheet?.querySelector('.detail-pager');
     const pages = pager ? [...pager.querySelectorAll('.detail-page')] : [];
-    const schedule = pages[2];
-    const effort = pages[3];
+    const schedule = pages[1];
+    const effort = pages[2];
     if(!sheet || !pager || !schedule || !effort)return null;
     const pagerBox = pager.getBoundingClientRect();
     const effortBox = effort.getBoundingClientRect();
@@ -467,7 +489,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   }
   console.log('  Schedule and Effort scroll independently: OK');
 
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 1);
   await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
     const schedule = pager?.querySelectorAll('.detail-page')[2];
