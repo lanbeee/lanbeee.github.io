@@ -108,25 +108,32 @@ async function visibleFreePill(page, preferLower = false){
   await sleep(800);
 
   // ── 1. Home: vertical scroll attempts on/around the open pill ──
-  console.log('\n[1] Home scroll attempt starting on the open pill (touch-action:none)');
+  console.log('\n[1] Home scroll attempt starting on the open pill (touch-action:pan-y)');
   const pillPt = await visibleFreePill(page);
   await sleep(200);
   assert(Boolean(pillPt), 'found day header pill');
-  // 60px drag starting ON the pill — a scroll attempt the pill swallows
+  // 60px downward drag starting ON the pill. Near the top of the list this
+  // often cannot move scrollY; the pill must still not treat it as a tap.
   await drag(client, pillPt.x, pillPt.y, 0, 60);
   assert(await sheetCount(page, '#free-time-sheet') === 0, 'free-time sheet NOT opened after scroll attempt on pill');
   assert(await sheetCount(page, '#slipped-sheet') === 0, 'slipped sheet NOT opened after scroll attempt on pill');
+  if(await sheetCount(page, '#free-time-sheet')){
+    await page.locator('#free-time-close').click({ force:true });
+    await sleep(150);
+  }
 
   // Header text near the pill (scrollable). Prefer a lower day so scrollY has
   // headroom — finger-down drag cannot move the page when already at top.
   const hdr = await visibleFreePill(page, true);
   await sleep(150);
   assert(Boolean(hdr), 'header pill still visible for scroll drag');
-  assert(hdr.scrollY >= 80, 'header drag starts with scroll headroom (' + hdr.scrollY + ')');
-  await drag(client, hdr.headerX, hdr.headerY, 0, 150);
-  const scrollY = await page.evaluate(() => window.scrollY);
-  assert(scrollY !== hdr.scrollY, `page scrolled during header drag (${hdr.scrollY} -> ${scrollY})`);
-  assert(await sheetCount(page, '#free-time-sheet') === 0, 'free-time sheet NOT opened after header scroll');
+  if(hdr){
+    assert(hdr.scrollY >= 80, 'header drag starts with scroll headroom (' + hdr.scrollY + ')');
+    await drag(client, hdr.headerX, hdr.headerY, 0, 150);
+    const scrollY = await page.evaluate(() => window.scrollY);
+    assert(scrollY !== hdr.scrollY, `page scrolled during header drag (${hdr.scrollY} -> ${scrollY})`);
+    assert(await sheetCount(page, '#free-time-sheet') === 0, 'free-time sheet NOT opened after header scroll');
+  }
 
   // sanity: exact tap on a visible pill still opens the sheet
   const tapPt = await visibleFreePill(page);

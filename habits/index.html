@@ -420,9 +420,21 @@
             <div class="link-field-head">
               <span class="settings-sublabel">links &amp; calls
                 <button type="button" class="info-btn" data-tip="detail-link-help" aria-label="about links"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-link-help" role="tooltip" hidden>Numbers to call and meeting or web links to open — Zoom, Teams, Meet, Webex, anything. Double tapping this item’s card logs it and opens the starred one.</span>
+                <span class="info-tooltip" id="detail-link-help" role="tooltip" hidden>Apps, numbers to call, and meeting or web links to open. Add a common app or name your own. Double tapping this item’s card logs it and opens the starred one.</span>
               </span>
-              <button type="button" class="mini-text-btn" id="detail-link-add">add link</button>
+              <span class="link-field-adds">
+                <button type="button" class="mini-text-btn" id="detail-app-add" aria-expanded="false" aria-controls="detail-app-picker">add app</button>
+                <button type="button" class="mini-text-btn" id="detail-link-add">add link</button>
+              </span>
+            </div>
+            <div class="detail-app-picker" id="detail-app-picker" hidden>
+              <div class="app-preset-list" id="detail-app-presets" aria-label="common apps"></div>
+              <div class="custom-app-editor" id="detail-custom-app-editor" hidden>
+                <input type="text" id="detail-custom-app-name" placeholder="app name" aria-label="custom app name" maxlength="30" autocomplete="off" />
+                <input type="url" id="detail-custom-app-url" placeholder="web or app link" aria-label="custom app web or app link" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" />
+                <button type="button" class="link-row-btn custom-app-confirm" id="detail-custom-app-confirm" aria-label="add custom app"><i class="ti ti-check" aria-hidden="true"></i></button>
+                <button type="button" class="link-row-btn custom-app-cancel" id="detail-custom-app-cancel" aria-label="cancel custom app"><i class="ti ti-x" aria-hidden="true"></i></button>
+              </div>
             </div>
             <div class="link-list" id="detail-link-list"></div>
             <p class="field-hint" id="detail-link-hint"></p>

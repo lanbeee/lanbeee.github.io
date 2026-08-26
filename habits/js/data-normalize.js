@@ -5,16 +5,26 @@
 
 // ── Habit links ──────────────────────────────────────────────────────────
 // Whatever you launch when you actually do the habit: a phone or WhatsApp
-// number, a FaceTime call, or a meeting/web link (Zoom, Teams, Meet, Webex, or
-// anything else). Any habit can carry a few. The first one is primary — it is
-// what a double tap on the card opens, right after logging.
+// number, a FaceTime call, an app shortcut, or a meeting/web link (Zoom,
+// Teams, Meet, Webex, or anything else). Any habit can carry a few. The first
+// one is primary — it is what a double tap on the card opens, right after
+// logging.
 
-const LINK_KINDS = ['phone','whatsapp','facetime','link'];
+const LINK_KINDS = ['phone','whatsapp','facetime','app','link'];
 const MAX_HABIT_LINKS = 4;
 
-/** PURE: 'phone' | 'whatsapp' | 'facetime' | 'link'. */
+/** PURE: 'phone' | 'whatsapp' | 'facetime' | 'app' | 'link'. */
 function normalizeLinkKind(value){
   return LINK_KINDS.includes(value) ? value : 'link';
+}
+
+/** PURE: compact user-facing name for an app shortcut. */
+function normalizeLinkLabel(value){
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,30);
 }
 
 /** PURE: kinds whose value is a phone number rather than a URL. */
@@ -76,7 +86,8 @@ function normalizeLinks(raw){
     const value = normalizeLinkValue(kind,item.value);
     if(!value)continue;
     if(out.some(l => l.kind === kind && l.value === value))continue;
-    out.push({kind,value});
+    const label = kind === 'app' ? normalizeLinkLabel(item.label) : '';
+    out.push(label ? {kind,value,label} : {kind,value});
     if(out.length >= MAX_HABIT_LINKS)break;
   }
   return out;
@@ -93,7 +104,15 @@ const LINK_PROVIDERS = [
   {host:/(^|\.)meet\.jit\.si$/i, label:'jitsi'},
   {host:/(^|\.)discord\.(gg|com)$/i, label:'discord'},
   {host:/(^|\.)slack\.com$/i, label:'slack'},
-  {host:/(^|\.)skype\.com$/i, label:'skype'}
+  {host:/(^|\.)skype\.com$/i, label:'skype'},
+  {host:/^mail\.google\.com$/i, label:'gmail'},
+  {host:/(^|\.)outlook\.(live|office)\.com$/i, label:'outlook'},
+  {host:/(^|\.)facebook\.com$/i, label:'facebook'},
+  {host:/(^|\.)instagram\.com$/i, label:'instagram'},
+  {host:/(^|\.)(youtube\.com|youtu\.be)$/i, label:'youtube'},
+  {host:/(^|\.)reddit\.com$/i, label:'reddit'},
+  {host:/(^|\.)linkedin\.com$/i, label:'linkedin'},
+  {host:/(^|\.)(x\.com|twitter\.com)$/i, label:'x'}
 ];
 
 /** PURE: short name for a URL — the meeting service, else its host. */
@@ -120,11 +139,22 @@ function linkLabel(link){
   if(link.kind === 'phone')return 'call';
   if(link.kind === 'whatsapp')return 'whatsapp';
   if(link.kind === 'facetime')return 'facetime';
+  if(link.kind === 'app')return normalizeLinkLabel(link.label) || linkProviderLabel(link.value) || 'app';
   return linkProviderLabel(link.value);
 }
 
 // Meeting services share the video icon; everything else is a plain link.
 const VIDEO_PROVIDERS = ['zoom','teams','meet','webex','jitsi','discord','skype'];
+const APP_PROVIDER_ICONS = {
+  gmail:'ti-brand-gmail',
+  outlook:'ti-mail',
+  facebook:'ti-brand-facebook',
+  instagram:'ti-brand-instagram',
+  youtube:'ti-brand-youtube',
+  reddit:'ti-brand-reddit',
+  linkedin:'ti-brand-linkedin',
+  x:'ti-brand-x'
+};
 
 /** PURE: Tabler icon class for a link. */
 function linkIconClass(link){
@@ -132,7 +162,10 @@ function linkIconClass(link){
   if(link.kind === 'phone')return 'ti-phone';
   if(link.kind === 'whatsapp')return 'ti-brand-whatsapp';
   if(link.kind === 'facetime')return 'ti-video';
-  return VIDEO_PROVIDERS.includes(linkProviderLabel(link.value)) ? 'ti-video' : 'ti-link';
+  const provider = linkProviderLabel(link.value);
+  if(APP_PROVIDER_ICONS[provider])return APP_PROVIDER_ICONS[provider];
+  if(link.kind === 'app')return 'ti-apps';
+  return VIDEO_PROVIDERS.includes(provider) ? 'ti-video' : 'ti-link';
 }
 
 /**
@@ -389,4 +422,3 @@ function save(data){
     }
   }
 }
-

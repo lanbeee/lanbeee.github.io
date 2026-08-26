@@ -164,21 +164,44 @@ const LINK_PLACEHOLDERS = {
   phone:'+1 555 123 4567',
   whatsapp:'+1 555 123 4567',
   facetime:'+1 555 123 4567',
+  app:'https://app.example.com/…',
   link:'https://zoom.us/j/…'
 };
+
+const LINK_KIND_LABELS = {
+  phone:'phone',
+  whatsapp:'WhatsApp',
+  facetime:'FaceTime',
+  app:'app',
+  link:'link'
+};
+
+// Ready-to-use web entry points work on mobile and desktop; installed apps may
+// claim these HTTPS links through their normal universal-link handling.
+const APP_LINK_PRESETS = [
+  {id:'gmail',label:'Gmail',value:'https://mail.google.com/mail/u/0/',icon:'ti-brand-gmail'},
+  {id:'outlook',label:'Outlook',value:'https://outlook.live.com/mail/0/',icon:'ti-mail'},
+  {id:'facebook',label:'Facebook',value:'https://www.facebook.com/',icon:'ti-brand-facebook'},
+  {id:'instagram',label:'Instagram',value:'https://www.instagram.com/',icon:'ti-brand-instagram'},
+  {id:'youtube',label:'YouTube',value:'https://www.youtube.com/',icon:'ti-brand-youtube'},
+  {id:'reddit',label:'Reddit',value:'https://www.reddit.com/',icon:'ti-brand-reddit'},
+  {id:'linkedin',label:'LinkedIn',value:'https://www.linkedin.com/feed/',icon:'ti-brand-linkedin'},
+  {id:'x',label:'X',value:'https://x.com/home',icon:'ti-brand-x'}
+];
 
 // RENDER: one editable link row. The first row is primary — the star marks it
 // and the up arrow on the others promotes them.
 function detailLinkRowHtml(link,index){
   const kind = normalizeLinkKind(link.kind);
   const options = LINK_KINDS
-    .map(k => `<option value="${k}"${k === kind ? ' selected' : ''}>${k}</option>`)
+    .map(k => `<option value="${k}"${k === kind ? ' selected' : ''}>${LINK_KIND_LABELS[k] || k}</option>`)
     .join('');
   const lead = index === 0
     ? `<span class="link-primary-badge" title="opens on double tap" aria-label="primary link"><i class="ti ti-star" aria-hidden="true"></i></span>`
     : `<button type="button" class="link-row-btn" data-link-promote="${index}" title="make primary" aria-label="make primary"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>`;
-  return `<div class="link-row" data-link-index="${index}">
+  return `<div class="link-row${kind === 'app' ? ' is-app' : ''}" data-link-index="${index}">
     <select class="mini-select link-kind" aria-label="link type">${options}</select>
+    <input type="text" class="link-app-name" value="${escapeHtml(normalizeLinkLabel(link.label))}" placeholder="app name" aria-label="app name" autocomplete="off" maxlength="30"${kind === 'app' ? '' : ' hidden'} />
     <input type="text" class="link-value" value="${escapeHtml(link.value || '')}" placeholder="${escapeHtml(LINK_PLACEHOLDERS[kind] || '')}" aria-label="${kind} value" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" />
     ${lead}
     <button type="button" class="link-row-btn" data-link-remove="${index}" title="remove" aria-label="remove link"><i class="ti ti-x" aria-hidden="true"></i></button>
@@ -189,6 +212,7 @@ function detailLinkRowHtml(link,index){
 function renderDetailLinkRows(links){
   const list = $('detail-link-list');
   if(!list)return;
+  closeDetailAppPicker();
   list.innerHTML = (links || []).map(detailLinkRowHtml).join('');
   syncDetailLinkUi();
 }
@@ -198,7 +222,8 @@ function renderDetailLinkRows(links){
 function currentDetailLinkRows(){
   return Array.from(document.querySelectorAll('#detail-link-list .link-row')).map(row => ({
     kind:normalizeLinkKind(row.querySelector('.link-kind')?.value),
-    value:(row.querySelector('.link-value')?.value || '').trim()
+    value:(row.querySelector('.link-value')?.value || '').trim(),
+    label:normalizeLinkLabel(row.querySelector('.link-app-name')?.value)
   }));
 }
 
@@ -220,12 +245,18 @@ function syncDetailLinkUi(){
   document.querySelectorAll('#detail-link-list .link-row').forEach(row=>{
     const kind = normalizeLinkKind(row.querySelector('.link-kind')?.value);
     const input = row.querySelector('.link-value');
-    if(input)input.placeholder = LINK_PLACEHOLDERS[kind] || '';
+    const name = row.querySelector('.link-app-name');
+    row.classList.toggle('is-app',kind === 'app');
+    if(name)name.hidden = kind !== 'app';
+    if(input){
+      input.placeholder = LINK_PLACEHOLDERS[kind] || '';
+      input.setAttribute('aria-label',`${kind} value`);
+    }
   });
   const hint = $('detail-link-hint');
   if(hint){
     if(!links.length){
-      hint.textContent = 'Add a number to call or a meeting link to open. Double tapping this item’s card logs it and opens the starred one.';
+      hint.textContent = 'Add an app, number, or web link. Double tapping this item’s card logs it and opens the starred one.';
     }else{
       const primary = linkLabel(links[0]);
       const whatsapp = links.some(l => l.kind === 'whatsapp')
@@ -244,9 +275,97 @@ function addDetailLinkRow(){
     return;
   }
   rows.push({kind:rows.length ? 'link' : 'phone',value:''});
+  closeDetailAppPicker();
   renderDetailLinkRows(rows);
   const inputs = document.querySelectorAll('#detail-link-list .link-value');
   inputs[inputs.length - 1]?.focus();
+}
+
+// RENDER: compact, horizontally scrollable app chooser. It is hidden again
+// as soon as a preset is chosen so the Actions pane stays short.
+function renderDetailAppPresets(){
+  const list = $('detail-app-presets');
+  if(!list || list.childElementCount)return;
+  list.innerHTML = APP_LINK_PRESETS.map(app =>
+    `<button type="button" class="app-preset" data-app-preset="${app.id}" aria-label="add ${escapeHtml(app.label)}"><i class="ti ${app.icon}" aria-hidden="true"></i><span>${escapeHtml(app.label)}</span></button>`
+  ).join('') + '<button type="button" class="app-preset custom" data-app-custom><i class="ti ti-apps" aria-hidden="true"></i><span>custom</span></button>';
+}
+
+function toggleDetailAppPicker(){
+  const picker = $('detail-app-picker');
+  if(!picker)return;
+  renderDetailAppPresets();
+  picker.hidden = !picker.hidden;
+  if(picker.hidden)closeDetailAppPicker();
+}
+
+function closeDetailAppPicker(){
+  const picker = $('detail-app-picker');
+  const custom = $('detail-custom-app-editor');
+  if(picker)picker.hidden = true;
+  $('detail-app-add')?.setAttribute('aria-expanded','false');
+  if(custom)custom.hidden = true;
+  if($('detail-custom-app-name'))$('detail-custom-app-name').value = '';
+  if($('detail-custom-app-url'))$('detail-custom-app-url').value = '';
+}
+
+function detailLinkHasCapacity(){
+  if(currentDetailLinkRows().length < MAX_HABIT_LINKS)return true;
+  showToast(`up to ${MAX_HABIT_LINKS} links`);
+  return false;
+}
+
+function addDetailAppPreset(id){
+  if(!detailLinkHasCapacity())return;
+  const preset = APP_LINK_PRESETS.find(app => app.id === id);
+  if(!preset)return;
+  const rows = currentDetailLinkRows();
+  const value = normalizeUrlValue(preset.value);
+  if(rows.some(row => normalizeLinkValue(row.kind,row.value) === value)){
+    showToast(`${preset.label} is already added`);
+    return;
+  }
+  rows.push({kind:'app',label:preset.label,value});
+  renderDetailLinkRows(rows);
+  setDetailDirty();
+  closeDetailAppPicker();
+  showToast(`${preset.label} added`);
+}
+
+function showDetailCustomAppEditor(){
+  if(!detailLinkHasCapacity())return;
+  const editor = $('detail-custom-app-editor');
+  if(!editor)return;
+  editor.hidden = false;
+  $('detail-custom-app-name')?.focus();
+}
+
+function addCustomDetailApp(){
+  if(!detailLinkHasCapacity())return;
+  const nameInput = $('detail-custom-app-name');
+  const urlInput = $('detail-custom-app-url');
+  const label = normalizeLinkLabel(nameInput?.value);
+  const value = normalizeUrlValue(urlInput?.value);
+  if(!label){
+    showToast('name the custom app');
+    nameInput?.focus();
+    return;
+  }
+  if(!value){
+    showToast('add a valid web or app link');
+    urlInput?.focus();
+    return;
+  }
+  const rows = currentDetailLinkRows();
+  if(rows.some(row => normalizeLinkValue(row.kind,row.value) === value)){
+    showToast('that app link is already added');
+    return;
+  }
+  rows.push({kind:'app',label,value});
+  renderDetailLinkRows(rows);
+  setDetailDirty();
+  closeDetailAppPicker();
+  showToast(`${label} added`);
 }
 
 // HANDLER: drop a row.

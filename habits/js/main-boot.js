@@ -1020,6 +1020,23 @@ $('detail-schedule-view-seg').addEventListener('click',e=>{
   setScheduleView(opt.dataset.scheduleView);
 });
 $('detail-habit-message').addEventListener('input',()=>setDetailDirty());
+$('detail-app-add')?.addEventListener('click',()=>{
+  toggleDetailAppPicker();
+  $('detail-app-add')?.setAttribute('aria-expanded',String(!$('detail-app-picker')?.hidden));
+});
+$('detail-app-picker')?.addEventListener('click',e=>{
+  const preset = e.target.closest('[data-app-preset]');
+  if(preset){ addDetailAppPreset(preset.dataset.appPreset); return; }
+  if(e.target.closest('[data-app-custom]'))showDetailCustomAppEditor();
+});
+$('detail-custom-app-confirm')?.addEventListener('click',addCustomDetailApp);
+$('detail-custom-app-cancel')?.addEventListener('click',closeDetailAppPicker);
+$('detail-custom-app-url')?.addEventListener('keydown',e=>{
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    addCustomDetailApp();
+  }
+});
 $('detail-link-add')?.addEventListener('click',addDetailLinkRow);
 $('detail-link-list')?.addEventListener('input',()=>{
   setDetailDirty();

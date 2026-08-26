@@ -94,8 +94,31 @@
   .detail-sheet .detail-page .timer-row{grid-template-columns:1fr;}
 }
 .link-field{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
-.link-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.link-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
 .link-field-head .settings-sublabel{margin:0;}
+.link-field-adds{display:flex;align-items:center;gap:4px;margin-left:auto;}
+.detail-app-picker{
+  min-width:0;padding:6px;border-radius:var(--radius-sm);background:var(--field-bg);
+}
+.app-preset-list{
+  min-width:0;display:flex;gap:5px;overflow-x:auto;padding:1px;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+}
+.app-preset-list::-webkit-scrollbar{display:none;}
+.app-preset{
+  flex:0 0 auto;min-width:68px;height:36px;padding:4px 8px;border:0;
+  border-radius:8px;background:var(--bg3);color:var(--text);font:inherit;
+  font-size:10.5px;display:flex;align-items:center;justify-content:center;gap:5px;
+  cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.app-preset i{font-size:16px;color:var(--text2);}
+.app-preset:active{transform:scale(0.96);}
+.custom-app-editor{
+  display:grid;grid-template-columns:84px minmax(0,1fr) 30px 30px;
+  gap:5px;align-items:center;margin-top:6px;
+}
+.custom-app-editor[hidden]{display:none;}
+.custom-app-editor input{min-width:0;margin:0;height:34px;font-size:12px;padding:6px 8px;}
 .link-list{display:flex;flex-direction:column;gap:6px;}
 .link-list:empty{display:none;}
 .link-row{
@@ -103,7 +126,10 @@
   gap:5px;align-items:center;
 }
 .link-row .link-kind{margin:0;min-width:0;font-size:12px;}
+.link-row .link-app-name{display:none;grid-column:2;grid-row:1;margin:0;min-width:0;font-size:12.5px;padding-left:9px;padding-right:9px;}
 .link-row .link-value{margin:0;min-width:0;font-size:12.5px;padding-left:9px;padding-right:9px;}
+.link-row.is-app .link-app-name{display:block;}
+.link-row.is-app .link-value{grid-column:1/-1;grid-row:2;}
 .link-row-btn,.link-primary-badge{
   width:30px;height:30px;border-radius:50%;padding:0;
   display:flex;align-items:center;justify-content:center;

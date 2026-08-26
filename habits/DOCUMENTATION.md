@@ -406,7 +406,7 @@ else:
   preferredLocationId: string|null, // 👤 Legacy preferred location
   
   // ─── LINKS & ACTIONS ─────────────────────────────────────
-  links: {kind, value}[],    // 👤 Phone, WhatsApp, FaceTime, URL
+  links: {kind, value, label?}[], // 👤 Phone, WhatsApp, FaceTime, app, URL
   
   // ─── TASK & IMPORT FIELDS ───────────────────────────────
   dueDate: number|null,      // 👤 Task only: deadline
@@ -1094,13 +1094,21 @@ only window-scoped readout.
 
 #### Links Section
 Each link row has:
-- **Kind selector:** Phone, WhatsApp, FaceTime, Link
+- **Kind selector:** Phone, WhatsApp, FaceTime, App, Link
 - **Value:** The phone number, URL, or ID
+- **App name:** A short editable label for app shortcuts
 - **Star:** Marks as primary link (double tap uses this)
+
+**Add app** opens a compact chooser for Gmail, Outlook, Facebook, Instagram,
+YouTube, Reddit, LinkedIn and X. These use their normal HTTPS entry points, so
+they work in a browser and can hand off to an installed app when the device
+supports universal links. **Custom** accepts a user-defined name plus any safe
+web or app URL. Up to four links/app shortcuts can be stored on one item.
 
 | Link Kind | Icon | Format | Example |
 |-----------|------|--------|---------|
 | Link | 🔗 | Full URL | `https://zoom.us/j/123` |
+| App | App/provider icon | App name + web/app URL | `Gmail` + `https://mail.google.com/` |
 | Phone | 📞 | Phone number | `+1234567890` |
 | WhatsApp | 💬 | Phone number | `+1234567890` |
 | FaceTime | 🎥 | Email or phone | `user@example.com` |
@@ -1767,6 +1775,7 @@ Actions when habit is done:
 - Phone: Dial number
 - WhatsApp: Open chat
 - FaceTime: Start video call
+- App: Open a common preset or a custom named app shortcut
 - Link: Open URL (Zoom, etc.)
 - Double tap on card launches primary link
 
@@ -2070,7 +2079,7 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | Gesture | Action | Description |
 |---------|--------|-------------|
 | Tap | Primary action | Log the habit (if ready) |
-| Double Tap | Link action | Open primary link (phone, URL) |
+| Double Tap | Link action | Open primary link (phone, app, URL) |
 | Long Press | Edit | Opens Detail sheet |
 | Swipe Left/Right | Actions row | Shows pin, snooze, delete |
 

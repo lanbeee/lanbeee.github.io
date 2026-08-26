@@ -25,7 +25,8 @@ function assert(cond, msg){
       { name:'call mum', type:'keepup', target:7, logs:[], callNumber:'+15551234567', callApp:'ask' },
       { name:'standup', type:'keepup', target:1, logs:[], links:[{ kind:'link', value:'https://zoom.us/j/98765' }] },
       { name:'read', type:'keepup', target:7, logs:[] },
-      { name:'stretch', type:'keepup', target:7, logs:[] }
+      { name:'stretch', type:'keepup', target:7, logs:[] },
+      { name:'check inbox', type:'task', logs:[], dueDate:null }
     ]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', topics:[], travel:{},
@@ -51,6 +52,7 @@ function assert(cond, msg){
     bareHost:normalizeUrlValue('meet.google.com/abc-defg-hij'),
     keepsScheme:normalizeUrlValue('https://teams.microsoft.com/l/meetup-join/x'),
     appScheme:normalizeUrlValue('zoommtg://zoom.us/join?confno=1'),
+    app:normalizeLinks([{kind:'app',label:'  Proton   Mail  ',value:'mail.proton.me'}])[0],
     script:normalizeUrlValue('javascript:alert(1)'),
     blank:normalizeUrlValue('   ')
   }));
@@ -59,6 +61,8 @@ function assert(cond, msg){
   assert(values.bareHost === 'https://meet.google.com/abc-defg-hij', 'a bare host gets https');
   assert(values.keepsScheme.startsWith('https://teams.microsoft.com/'), 'full URLs pass through');
   assert(values.appScheme.startsWith('zoommtg://'), 'app schemes pass through');
+  assert(values.app.kind === 'app' && values.app.label === 'Proton Mail'
+    && values.app.value === 'https://mail.proton.me/', 'custom app names and safe links are normalized');
   assert(values.script === '' && values.blank === '', 'script-ish and empty links are dropped');
 
   // ── labels, icons, launch URLs ─────────────────────────────────────────
@@ -72,6 +76,8 @@ function assert(cond, msg){
       teams:l('link','https://teams.microsoft.com/l/meetup-join/x'),
       meet:l('link','https://meet.google.com/abc'),
       webex:l('link','https://acme.webex.com/meet/x'),
+      gmail:l('app','https://mail.google.com/mail/u/0/'),
+      custom:l('app','https://mail.proton.me/'),
       other:l('link','https://notes.example.com/agenda')
     };
   });
@@ -83,6 +89,8 @@ function assert(cond, msg){
   assert(meta.other.label === 'notes.example.com', 'an unknown link is named after its host');
   assert(meta.zoom.icon === 'ti-video' && meta.other.icon === 'ti-link',
     'meeting links get the video icon, other links the link icon');
+  assert(meta.gmail.label === 'gmail' && meta.gmail.icon === 'ti-brand-gmail'
+    && meta.custom.icon === 'ti-apps', 'app links get recognizable labels and icons');
 
   // ── legacy call fields migrate ─────────────────────────────────────────
   const migrated = await page.evaluate(() => load().find(h => h.name === 'call mum').links);
@@ -133,7 +141,61 @@ function assert(cond, msg){
   assert(savedLinks.length === 2 && savedLinks[0].value === 'https://meet.google.com/abc-defg-hij'
     && savedLinks[1].value === '+15559876543', 'links persist in order, normalized');
 
-  await page.evaluate(() => closeSheet('detail-sheet'));
+  // ── common + custom app shortcuts ─────────────────────────────────────
+  await page.waitForSelector('#detail-sheet:not(.open)');
+  await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'read')));
+  await page.waitForSelector('#detail-sheet.open');
+  await page.locator('#detail-app-add').click();
+  const presetState = await page.evaluate(() => ({
+    count:document.querySelectorAll('#detail-app-presets [data-app-preset]').length,
+    custom:Boolean(document.querySelector('#detail-app-presets [data-app-custom]')),
+    contained:document.documentElement.scrollWidth <= document.documentElement.clientWidth
+  }));
+  assert(presetState.count >= 8 && presetState.custom, 'the app chooser offers major apps plus custom');
+  assert(presetState.contained, 'the app chooser stays inside the mobile viewport');
+  await page.locator('#detail-app-presets [data-app-preset="facebook"]').click();
+  let appRows = await page.evaluate(() => currentDetailLinkRows());
+  assert(appRows.length === 3 && appRows[2].kind === 'app'
+    && appRows[2].label === 'Facebook', 'a common app adds a ready-to-use shortcut');
+
+  await page.locator('#detail-app-add').click();
+  await page.locator('#detail-app-presets [data-app-custom]').click();
+  await page.locator('#detail-custom-app-name').fill('Proton Mail');
+  await page.locator('#detail-custom-app-url').fill('mail.proton.me');
+
+  await page.setViewportSize({width:320,height:568});
+  const customMobile = await page.evaluate(() => {
+    const editor = $('detail-custom-app-editor');
+    const rect = editor.getBoundingClientRect();
+    return {
+      visible:!editor.hidden,
+      inside:rect.left >= 0 && rect.right <= document.documentElement.clientWidth,
+      docFits:document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    };
+  });
+  assert(customMobile.visible && customMobile.inside && customMobile.docFits,
+    'the custom app editor fits a 320px mobile viewport');
+  await page.locator('#detail-custom-app-confirm').click();
+  appRows = await page.evaluate(() => currentDetailLinks());
+  assert(appRows.length === 4 && appRows[3].kind === 'app'
+    && appRows[3].label === 'Proton Mail'
+    && appRows[3].value === 'https://mail.proton.me/', 'a named custom app is saveable');
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#detail-save').click();
+  const savedApps = await page.evaluate(() => load().find(h => h.name === 'read').links.slice(2));
+  assert(savedApps.length === 2 && savedApps[0].label === 'Facebook'
+    && savedApps[1].label === 'Proton Mail', 'common and custom app shortcuts persist');
+
+  await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'check inbox')));
+  await page.waitForSelector('#detail-sheet.open');
+  await page.locator('#detail-app-add').click();
+  await page.locator('#detail-app-presets [data-app-preset="gmail"]').click();
+  const taskApp = await page.evaluate(() => currentDetailLinks()[0]);
+  assert(taskApp.kind === 'app' && taskApp.label === 'Gmail', 'task details support the same app shortcuts as habits');
+  await page.locator('#detail-save').click();
+  const savedTaskApp = await page.evaluate(() => load().find(h => h.name === 'check inbox').links[0]);
+  assert(savedTaskApp.kind === 'app' && savedTaskApp.label === 'Gmail', 'task app shortcuts persist');
+
   await page.waitForTimeout(350);
 
   // ── double tap a card: log + launch ────────────────────────────────────

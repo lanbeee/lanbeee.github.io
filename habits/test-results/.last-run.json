@@ -1,53 +1,49 @@
 {
-  "status": "failed",
-  "plannerMode": "smart",
-  "suites": "planner,ui,data,integrations",
-  "timestamp": "2026-08-25T23:51:31Z",
-  "durationSeconds": 348,
+  "status": "passed",
+  "plannerMode": "default",
+  "suites": "ui",
+  "timestamp": "2026-08-26T04:08:21Z",
+  "durationSeconds": 8,
   "files": {
-    "passed": 71,
-    "failed": 1,
-    "executions": 72
+    "passed": 1,
+    "failed": 0,
+    "executions": 1
   },
   "assertions": {
-    "ok": 2516,
+    "ok": 19,
     "notOk": 0,
-    "total": 2516
+    "total": 19
   },
   "pageErrors": 0,
-  "failedTests": [
-    "planner-performance-regression-test.js.default"
-  ],
+  "failedTests": [],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260825-194543-26711.log",
+    "stamped": "test-results/run-20260826-000813-59828.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
     "status": "failed",
-    "plannerMode": "smart",
-    "suites": "planner,ui,data,integrations",
-    "timestamp": "2026-08-25T23:41:31Z",
-    "durationSeconds": 344,
+    "plannerMode": "default",
+    "suites": "ui",
+    "timestamp": "2026-08-26T04:01:27Z",
+    "durationSeconds": 8,
     "files": {
-      "passed": 69,
-      "failed": 3,
-      "executions": 72
+      "passed": 0,
+      "failed": 1,
+      "executions": 1
     },
     "assertions": {
-      "ok": 2499,
-      "notOk": 2,
-      "total": 2501
+      "ok": 18,
+      "notOk": 1,
+      "total": 19
     },
     "pageErrors": 0,
     "failedTests": [
-      "agenda-order-constraints-test.js.default",
-      "agenda-share-projection-test.js.default",
       "zz-verify-scroll-guard.js.default"
     ],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260825-193547-15367.log",
+      "stamped": "test-results/run-20260826-000119-52414.log",
       "failedDir": "test-results/failed"
     }
   }

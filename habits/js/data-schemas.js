@@ -125,7 +125,7 @@
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
  *
  * — LinkFields (optional, on every type) —
- * @property {{kind:'phone'|'whatsapp'|'facetime'|'link',value:string}[]} links — things to launch when doing this; links[0] is primary and fires on card double tap
+ * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label; links[0] is primary and fires on card double tap
  */
 
 /**
@@ -257,4 +257,3 @@
  * @property {'osrm'|'google'|'haversine'|'manual'} provider — which provider produced this edge (manual = user override)
  * @property {number} fetchedAt  — ms timestamp of the fetch (used for TTL)
  */
-

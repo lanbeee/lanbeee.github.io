@@ -924,8 +924,15 @@ document.addEventListener('pointerup',e=>{
   // Movement cap for the forgiving click. A sloppy tap drifts a few tens of
   // pixels at most (pointercancel recovery already caps at 32); anything
   // larger is a scroll or swipe gesture — including pans the scroll checks
-  // below can't observe (e.g. a cancelled flick whose scroller never moved).
-  if(Date.now() - time >= 1200 || moved > 32)return;
+  // below can't observe (e.g. a cancelled flick whose scroller never moved,
+  // or a downward drag at scrollTop 0 that never moves the page). Eat the
+  // trailing native click so a pan that starts on a button cannot activate it.
+  if(moved > 32){
+    suppressNativeButton = btn;
+    setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},400);
+    return;
+  }
+  if(Date.now() - time >= 1200)return;
 
   const headerPill = btn.matches('.free-pill,.dropped-pill');
   // Drift → forgiving click. Slop-armed header pills (finger never on the
@@ -940,7 +947,7 @@ document.addEventListener('pointerup',e=>{
   // Clear suppress if settle-wait bails (scroll/swipe) so later taps still work;
   // also covers a trailing native click after a cancelled-looking gesture.
   setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},400);
-  deferForgivingClick(scrollers,btn);
+  deferForgivingClick(scrollers,btn,{x,y,ended:true});
 },true);
 
 // The forgiving click must not land when the gesture actually scrolled or
@@ -950,9 +957,14 @@ document.addEventListener('pointerup',e=>{
 // a short timeout), then bail if any moved — CDP may trickle scroll slowly,
 // while real devices usually jump in one frame. Any real pan is "not a tap";
 // leftover smooth scrollIntoView animations are a test concern (use instant).
+// pointercancel also arrives a few pixels into a pan-y claim, *before* the
+// rest of the finger travel (and before a bounded overscroll that never
+// changes scrollTop). Wait for that touch to end and count its displacement
+// so a downward drag at scrollY 0 is not recovered as a tap.
 const FORGIVING_SCROLL_FLOOR = 2;
 const FORGIVING_SETTLE_MS = 150;
 const FORGIVING_MIN_WAIT_MS = 32;
+const FORGIVING_TOUCH_WAIT_MS = 500;
 
 function scrollerDelta(scrollers){
   let moved = 0;
@@ -965,14 +977,37 @@ function scrollerDelta(scrollers){
   return moved;
 }
 
-function deferForgivingClick(scrollers,btn){
+function deferForgivingClick(scrollers,btn,opts){
   const t0 = performance.now();
+  const startX = opts && Number.isFinite(opts.x) ? opts.x : null;
+  const startY = opts && Number.isFinite(opts.y) ? opts.y : null;
+  let touchEnded = !!(opts && opts.ended);
+  let maxFinger = 0;
   let lastMoved = scrollerDelta(scrollers);
   let stableFrames = 0;
   let done = false;
+
+  function finger(x,y){
+    if(startX == null)return;
+    const dist = Math.hypot(x - startX, y - startY);
+    if(dist > maxFinger)maxFinger = dist;
+    if(maxFinger > 32)finish(false);
+  }
+
   const onScroll = ()=>{
     if(done)return;
     if(scrollerDelta(scrollers) > FORGIVING_SCROLL_FLOOR)finish(false);
+  };
+  const onTouchMove = e=>{
+    if(done)return;
+    const t = e.changedTouches[0];
+    if(t)finger(t.clientX, t.clientY);
+  };
+  const onTouchEnd = e=>{
+    if(done)return;
+    const t = e.changedTouches[0];
+    if(t)finger(t.clientX, t.clientY);
+    touchEnded = true;
   };
   const listened = [];
   for(const [el] of scrollers){
@@ -981,17 +1016,27 @@ function deferForgivingClick(scrollers,btn){
     listened.push(el);
   }
   window.addEventListener('scroll',onScroll,{passive:true,capture:true});
+  window.addEventListener('touchmove',onTouchMove,{passive:true,capture:true});
+  window.addEventListener('touchend',onTouchEnd,{passive:true,capture:true});
+  window.addEventListener('touchcancel',onTouchEnd,{passive:true,capture:true});
 
   function cleanup(){
     for(const el of listened)el.removeEventListener('scroll',onScroll,{capture:true});
     window.removeEventListener('scroll',onScroll,{capture:true});
+    window.removeEventListener('touchmove',onTouchMove,{capture:true});
+    window.removeEventListener('touchend',onTouchEnd,{capture:true});
+    window.removeEventListener('touchcancel',onTouchEnd,{capture:true});
   }
 
   function finish(shouldClick){
     if(done)return;
     done = true;
     cleanup();
-    if(!shouldClick || btn.disabled)return;
+    if(!shouldClick || btn.disabled){
+      suppressNativeButton = btn;
+      setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},80);
+      return;
+    }
     // Let our own click through, then re-arm so the browser's own trailing
     // click (a cancelled gesture can still synthesize one over the button)
     // is eaten by the suppression listener.
@@ -1004,13 +1049,21 @@ function deferForgivingClick(scrollers,btn){
   function tick(){
     if(done)return;
     if(btn.disabled){finish(false);return;}
+    if(maxFinger > 32){finish(false);return;}
     const moved = scrollerDelta(scrollers);
     if(moved > FORGIVING_SCROLL_FLOOR){finish(false);return;}
     if(moved === lastMoved)stableFrames += 1;
     else{lastMoved = moved;stableFrames = 0;}
     const elapsed = performance.now() - t0;
+    // pointercancel often precedes the rest of a pan. Do not recover as a
+    // tap while that finger is still down.
+    if(!touchEnded){
+      if(elapsed >= FORGIVING_TOUCH_WAIT_MS){finish(false);return;}
+      requestAnimationFrame(tick);
+      return;
+    }
     if((stableFrames >= 2 && elapsed >= FORGIVING_MIN_WAIT_MS) || elapsed >= FORGIVING_SETTLE_MS){
-      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR);
+      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR && maxFinger <= 32);
       return;
     }
     requestAnimationFrame(tick);
@@ -1040,9 +1093,9 @@ document.addEventListener('pointercancel',e=>{
   // scroll/swipe check runs inside deferForgivingClick after the gesture has
   // settled.
   suppressNativeButton = tap.btn;
-  setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},400);
+  setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},500);
   if(tap.maxMove <= 32 && Date.now() - tap.time < 450){
-    deferForgivingClick(tap.scrollers,tap.btn);
+    deferForgivingClick(tap.scrollers,tap.btn,{x:tap.x,y:tap.y,ended:false});
   }
 },true);
 
