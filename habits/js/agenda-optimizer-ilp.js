@@ -330,18 +330,32 @@ function optimizerWindowsForCandidate(candidate,state){
 // anchor-preserving choice for an anywhere-allowed habit.
 function optimizerLocationVariants(fill,state){
   if(!fill || !fill.h || !state)return [undefined];
-  const ids = typeof normalizeLocationIds === 'function'
-    ? normalizeLocationIds(fill.h.locationIds,state.registry || [])
-    : (Array.isArray(fill.h.locationIds) ? fill.h.locationIds.filter(Boolean) : []);
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill.h);
+  const ids = optionMode
+    ? habitLocationIdsForDay(fill.h,state.dayBase,state.registry || [])
+    : (typeof normalizeLocationIds === 'function'
+      ? normalizeLocationIds(fill.h.locationIds,state.registry || [])
+      : (Array.isArray(fill.h.locationIds) ? fill.h.locationIds.filter(Boolean) : []));
   if(!ids.length)return [null];
-  return fill.h.anywhereAllowed ? [null,...ids] : ids;
+  const anywhereAllowed = optionMode
+    ? habitHasAnywhereScheduleOptionForDay(fill.h,state.dayBase)
+    : fill.h.anywhereAllowed;
+  return anywhereAllowed ? [null,...ids] : ids;
 }
 
 function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
   const out = [];
   const seen = new Set();
-  for(const locationId of optimizerLocationVariants(fill,state)){
-    const locatedFill = {...fill,locationId};
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill && fill.h);
+  const variants = optionMode
+    ? habitScheduleOptionsForDay(fill.h,state.dayBase).map(option=>({
+      ...fill,
+      h:{...fill.h,scheduleOptions:[option]},
+      locationId:option.locationId,
+      _scheduleOptionBound:true
+    }))
+    : optimizerLocationVariants(fill,state).map(locationId=>({...fill,locationId}));
+  for(const locatedFill of variants){
     for(const fit of listPlaceFitsOnDay(
       state,locatedFill,dayCandidates,candidateBoundaryEdges
     )){

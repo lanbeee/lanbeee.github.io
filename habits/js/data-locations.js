@@ -162,6 +162,72 @@ function normalizeLocationIds(value,registry){
     return true;
   });
 }
+
+const MAX_HABIT_SCHEDULE_OPTIONS = 32;
+
+// PURE: one habit-level alternative couples a weekday set, clock window, and
+// location. Multiple rows may deliberately use the same location: a class or
+// prayer can have several sessions at one venue on the same day. Empty
+// weekdays means every day; null locationId means an anywhere option.
+function normalizeHabitScheduleOptions(value,registry){
+  if(!Array.isArray(value))return [];
+  const valid = Array.isArray(registry)
+    ? new Set(normalizeLocationRegistry(registry).map(loc=>loc.id))
+    : null;
+  const out = [];
+  const seen = new Set();
+  for(const raw of value){
+    if(!raw || typeof raw !== 'object')continue;
+    const start = normalizeTimeMinutes(raw.start);
+    const end = normalizeTimeMinutes(raw.end);
+    if(start === null || end === null)continue;
+    const cleanedLocationId = cleanLocationId(raw.locationId);
+    const locationId = cleanedLocationId || null;
+    if(locationId && valid && !valid.has(locationId))continue;
+    const weekdays = normalizeAllowedWeekdays(raw.weekdays);
+    const key = `${weekdays.join(',')}|${start}|${end}|${locationId || ''}`;
+    if(seen.has(key))continue;
+    seen.add(key);
+    out.push({weekdays,start,end,locationId});
+    if(out.length >= MAX_HABIT_SCHEDULE_OPTIONS)break;
+  }
+  return out;
+}
+
+function hasHabitScheduleOptions(h){
+  return Boolean(h && Array.isArray(h.scheduleOptions) && h.scheduleOptions.length);
+}
+
+// PURE: alternatives offered on this calendar day. The habit's ordinary
+// allowed weekday/month-day schedule remains an outer eligibility gate.
+function habitScheduleOptionsForDay(h,dayBase,locationId = undefined){
+  const options = normalizeHabitScheduleOptions(h && h.scheduleOptions);
+  if(!options.length)return [];
+  const weekday = new Date(dayBase).getDay();
+  return options.filter(option=>{
+    if(option.weekdays.length && !option.weekdays.includes(weekday))return false;
+    return locationId === undefined || option.locationId === locationId;
+  });
+}
+
+// PURE: saved places that are real alternatives on this day. Unlike
+// h.locationIds this may contain the same location represented by several
+// separate clock windows; ids are de-duped only for route enumeration.
+function habitLocationIdsForDay(h,dayBase,registry){
+  if(!hasHabitScheduleOptions(h))return normalizeLocationIds(h && h.locationIds,registry);
+  const valid = Array.isArray(registry)
+    ? new Set(normalizeLocationRegistry(registry).map(loc=>loc.id))
+    : null;
+  const seen = new Set();
+  return habitScheduleOptionsForDay(h,dayBase)
+    .map(option=>option.locationId)
+    .filter(id=>id && (!valid || valid.has(id)) && !seen.has(id) && seen.add(id));
+}
+
+function habitHasAnywhereScheduleOptionForDay(h,dayBase){
+  return hasHabitScheduleOptions(h)
+    && habitScheduleOptionsForDay(h,dayBase,null).length > 0;
+}
 // PURE: null unless `value` is an id present in `ids`.
 function normalizePreferredLocation(value,ids){
   const id = cleanLocationId(value);
@@ -445,6 +511,17 @@ function intersectWindows(a,b){
 function effectiveLocationWindow(h,loc,weekday,dayBase){
   const locWin = loc ? resolveLocationWindow(loc,weekday) : {start:0,end:1440};
   if(!locWin)return [];
+  // Habit-level alternatives are authoritative when present. They replace
+  // the habit's single allowed-time/location pairing for this occurrence,
+  // while still respecting the venue's real opening hours.
+  if(hasHabitScheduleOptions(h)){
+    const locationId = loc ? loc.id : null;
+    const intervals = [];
+    for(const option of habitScheduleOptionsForDay(h,dayBase,locationId)){
+      intervals.push(...intersectWindows({start:option.start,end:option.end},locWin));
+    }
+    return mergeMinuteIntervals(intervals);
+  }
   // Both prayer anchors and habit anchors are dynamic; resolve through the
   // shared resolver. Habit anchors ignore the passed-in location (they use
   // the anchor habit's log); prayer anchors use the habit's resolved location
@@ -473,17 +550,21 @@ function reconcileLocations(data,settings){
   let changed = false;
   const next = (Array.isArray(data) ? data : []).map(h=>{
     const prev = Array.isArray(h.locationIds) ? h.locationIds : [];
-    const locationIds = prev.filter(id=>valid.has(id));
+    const scheduleOptions = normalizeHabitScheduleOptions(h.scheduleOptions,registry);
+    const locationIds = normalizeLocationIds([
+      ...prev.filter(id=>valid.has(id)),
+      ...scheduleOptions.map(option=>option.locationId).filter(Boolean)
+    ],registry);
     const locationPrefs = normalizeLocationPrefs(h.locationPrefs,locationIds,h.preferredLocationId);
     const preferredLocationId = primaryPreferredLocationId(locationPrefs,locationIds);
     const prevPref = h.preferredLocationId || null;
     const prevPrefs = JSON.stringify(h.locationPrefs || {});
     const moved = locationIds.length !== prev.length
       || preferredLocationId !== prevPref
-      || JSON.stringify(locationPrefs) !== prevPrefs;
+      || JSON.stringify(locationPrefs) !== prevPrefs
+      || JSON.stringify(scheduleOptions) !== JSON.stringify(h.scheduleOptions || []);
     if(moved)changed = true;
-    return moved ? {...h,locationIds,locationPrefs,preferredLocationId} : h;
+    return moved ? {...h,locationIds,locationPrefs,preferredLocationId,scheduleOptions} : h;
   });
   return {data:next,changed};
 }
-

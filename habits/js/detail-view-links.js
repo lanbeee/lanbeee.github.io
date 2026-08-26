@@ -248,6 +248,82 @@ function addBlankScheduleLinkRow(){
   setDetailDirty();
 }
 
+function habitScheduleOptionLocationOptions(selectedId){
+  const registry = typeof normalizeLocationRegistry === 'function'
+    ? normalizeLocationRegistry((sortSettings || {}).locations) : [];
+  const options = ['<option value="">anywhere</option>'];
+  for(const loc of locationsForDisplay(registry)){
+    options.push(`<option value="${escapeHtml(loc.id)}"${loc.id === selectedId ? ' selected' : ''}>${escapeHtml(loc.name)}</option>`);
+  }
+  return options.join('');
+}
+
+function habitScheduleOptionRowHtml(option,index){
+  const normalized = normalizeHabitScheduleOptions([option])[0]
+    || {weekdays:[],start:540,end:600,locationId:null};
+  const activeDays = normalized.weekdays.length
+    ? new Set(normalized.weekdays)
+    : new Set([0,1,2,3,4,5,6]);
+  return `<div class="habit-option-row" data-habit-option-index="${index}">
+    <div class="habit-option-main">
+      <select class="habit-option-location" aria-label="option location">${habitScheduleOptionLocationOptions(normalized.locationId)}</select>
+      <input type="time" step="900" class="habit-option-start" aria-label="option starts" value="${minutesToTimeInput(normalized.start)}" />
+      <span class="loc-sep">–</span>
+      <input type="time" step="900" class="habit-option-end" aria-label="option ends" value="${minutesToTimeInput(normalized.end)}" />
+      <button type="button" class="mini-text-btn habit-option-remove" aria-label="remove option"><i class="ti ti-x" aria-hidden="true"></i></button>
+    </div>
+    <div class="habit-option-days" role="group" aria-label="option weekdays">
+      ${WEEKDAY_LABELS.map((label,day)=>`<button type="button" class="schedule-chip${activeDays.has(day) ? ' on' : ''}" data-habit-option-day="${day}" aria-pressed="${activeDays.has(day)}">${label}</button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function syncHabitScheduleOptionsUi(){
+  const list = $('detail-habit-option-list');
+  const hasOptions = Boolean(list && list.children.length);
+  const timeRow = $('detail-allowed-time-row')?.closest('.schedule-time-row');
+  if(timeRow)timeRow.hidden = hasOptions;
+}
+
+function renderHabitScheduleOptions(h = {}){
+  const list = $('detail-habit-option-list');
+  if(!list)return;
+  const options = normalizeHabitScheduleOptions(h.scheduleOptions,(sortSettings || {}).locations);
+  list.innerHTML = options.map(habitScheduleOptionRowHtml).join('');
+  syncHabitScheduleOptionsUi();
+}
+
+function readHabitScheduleOptionsFromDetail(){
+  const raw = [];
+  document.querySelectorAll('#detail-habit-option-list .habit-option-row').forEach(row=>{
+    const selectedDays = [...row.querySelectorAll('[data-habit-option-day].on')]
+      .map(btn=>Number(btn.dataset.habitOptionDay));
+    raw.push({
+      weekdays:normalizeAllowedWeekdays(selectedDays),
+      start:timeInputToMinutes(row.querySelector('.habit-option-start')?.value),
+      end:timeInputToMinutes(row.querySelector('.habit-option-end')?.value),
+      locationId:cleanLocationId(row.querySelector('.habit-option-location')?.value) || null
+    });
+  });
+  return normalizeHabitScheduleOptions(raw,(sortSettings || {}).locations);
+}
+
+function addBlankHabitScheduleOption(){
+  const list = $('detail-habit-option-list');
+  if(!list)return;
+  if(list.children.length >= MAX_HABIT_SCHEDULE_OPTIONS){
+    showToast(`up to ${MAX_HABIT_SCHEDULE_OPTIONS} options`);
+    return;
+  }
+  const selected = selectedLocationIdsFrom('detail-tag-chips');
+  const locationId = selected[0] || normalizeLocationRegistry((sortSettings || {}).locations)[0]?.id || null;
+  list.insertAdjacentHTML('beforeend',habitScheduleOptionRowHtml({
+    weekdays:[],start:540,end:600,locationId
+  },list.children.length));
+  syncHabitScheduleOptionsUi();
+  setDetailDirty();
+}
+
 // PURE: snapshot the later/earlier-of fields for one endpoint into the tune object.
 function snapshotCombineFields(h, prefix){
   return {

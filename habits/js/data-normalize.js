@@ -315,6 +315,9 @@ function normalize(items){
       anywhereAllowed,
       locationPrefs,
       preferredLocationId,
+      scheduleOptions:typeof normalizeHabitScheduleOptions === 'function'
+        ? normalizeHabitScheduleOptions(raw.scheduleOptions)
+        : [],
       links:normalizeLinks(Array.isArray(raw.links) && raw.links.length ? raw.links : legacyCallLinks(raw)),
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
       source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,

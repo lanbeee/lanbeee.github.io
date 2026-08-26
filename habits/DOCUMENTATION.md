@@ -56,6 +56,7 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
+- Time/place alternatives: scheduleOptions (multiple weekday + time + location rows per habit)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, flexibilityDays
 - Calendar import: externalId, source, importedAt
@@ -404,6 +405,12 @@ else:
   anywhereAllowed: boolean,   // 👨‍💻 Legacy: may be done anywhere
   locationPrefs: Object<string, 'avoid'|'little'|'high'>, // 👤 Soft preferences
   preferredLocationId: string|null, // 👤 Legacy preferred location
+  scheduleOptions: {             // 👤 Alternative ways to do one occurrence
+    weekdays: number[],          // Empty = every weekday
+    start: number,               // Minutes from midnight
+    end: number,                 // Minutes from midnight
+    locationId: string|null      // Saved place, or null = anywhere
+  }[],
   
   // ─── LINKS & ACTIONS ─────────────────────────────────────
   links: {kind, value, label?}[], // 👤 Phone, WhatsApp, FaceTime, app, URL
@@ -2505,6 +2512,20 @@ Same agenda logic, but simplified display:
 | `locationPrefs` | object | Per-location preference (avoid/little/high) |
 | `anywhereAllowed` | boolean | Can be done anywhere |
 | `preferredLocationId` | string\|null | Preferred single location |
+| `scheduleOptions` | array | Alternative weekday/time/place windows for one occurrence; the same place may appear in multiple rows |
+
+### 25.3.1 Time & Place Options 👤👨‍💻
+
+- Add these under an item's **Schedule → Allowed → time & place options**.
+- Each row couples its own weekdays, start/end window, and location.
+- Rows are alternatives for one occurrence. If three rows fit, the planner
+  chooses one; it does not schedule or count the habit three times.
+- The same location may be used in any number of rows at different times.
+- When at least one row exists, these rows replace the item's single allowed
+  time window and general place choices for placement. The place's own opening
+  hours still apply as an outer constraint.
+- The Fast and GLPK planners both enumerate the rows independently, including
+  repeated-location rows, and account for travel before selecting one.
 
 ### 25.4 Location Preferences 👤
 | Level | Score Modifier | Meaning |

@@ -18,7 +18,8 @@ function preferredDays(h){
 }
 function hasDaySchedule(h){
   const schedule = scheduledDays(h);
-  return Boolean(schedule.weekdays.length || schedule.monthDays.length);
+  return Boolean(schedule.weekdays.length || schedule.monthDays.length
+    || (typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)));
 }
 const SCHEDULE_OPPORTUNITY_RATE_CACHE = new Map();
 // PURE (memoized): average eligible calendar dates per day. Weekday-only
@@ -27,11 +28,23 @@ const SCHEDULE_OPPORTUNITY_RATE_CACHE = new Map();
 // weekday + month-day intersections all have a stable exact rate.
 function scheduledOpportunityRate(h){
   const schedule = scheduledDays(h);
-  if(!schedule.weekdays.length && !schedule.monthDays.length)return 1;
-  if(!schedule.monthDays.length)return schedule.weekdays.length / 7;
-  const key = `${schedule.weekdays.join(',')}|${schedule.monthDays.join(',')}`;
+  let effectiveWeekdays = schedule.weekdays;
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
+  if(optionMode){
+    const options = normalizeHabitScheduleOptions(h.scheduleOptions);
+    const optionDays = options.some(option=>!option.weekdays.length)
+      ? [0,1,2,3,4,5,6]
+      : [...new Set(options.flatMap(option=>option.weekdays))].sort((a,b)=>a-b);
+    effectiveWeekdays = effectiveWeekdays.length
+      ? effectiveWeekdays.filter(day=>optionDays.includes(day))
+      : optionDays;
+  }
+  if(!effectiveWeekdays.length && (schedule.weekdays.length || optionMode))return 0;
+  if(!effectiveWeekdays.length && !schedule.monthDays.length)return 1;
+  if(!schedule.monthDays.length)return effectiveWeekdays.length / 7;
+  const key = `${effectiveWeekdays.join(',')}|${schedule.monthDays.join(',')}`;
   if(SCHEDULE_OPPORTUNITY_RATE_CACHE.has(key))return SCHEDULE_OPPORTUNITY_RATE_CACHE.get(key);
-  const weekdays = new Set(schedule.weekdays);
+  const weekdays = new Set(effectiveWeekdays);
   let opportunities = 0;
   for(let year = 2000;year < 2400;year += 1){
     for(let month = 0;month < 12;month += 1){
@@ -66,6 +79,7 @@ function hasPreferredDays(h){
   return Boolean(pref.weekdays.length || pref.monthDays.length);
 }
 function hasTimeWindow(h){
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h))return true;
   // Dynamic (prayer or habit) anchors count as a set window even when the
   // fixed minutes are null — they'll resolve to a real minute at render time.
   const startSet = Number.isFinite(h.allowedTimeStart) || cleanAnchor(h.allowedTimeStartAnchor);
@@ -87,10 +101,14 @@ function isPreferredDay(h,ts = Date.now()){
 }
 function isDateEligibleForHabit(h,ts = Date.now()){
   const schedule = scheduledDays(h);
-  if(!schedule.weekdays.length && !schedule.monthDays.length)return true;
   const d = new Date(ts);
   if(schedule.weekdays.length && !schedule.weekdays.includes(d.getDay()))return false;
   if(schedule.monthDays.length && !schedule.monthDays.includes(d.getDate()))return false;
+  // An option list is an additional day gate: at least one alternative must
+  // actually be offered today. The chosen time/location is decided later by
+  // the placement engine.
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)
+    && !habitScheduleOptionsForDay(h,dayStart(ts)).length)return false;
   return true;
 }
 function nextEligibleDate(h,fromTs = Date.now(),lookAheadDays = 370){
@@ -126,6 +144,10 @@ function formatTimeShort(minutes){
 }
 function timeWindowSummary(h){
   if(!hasTimeWindow(h))return '';
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+    const count = normalizeHabitScheduleOptions(h.scheduleOptions).length;
+    return `${count} time/place ${count === 1 ? 'option' : 'options'}`;
+  }
   // When either endpoint is an anchor (prayer OR habit), show anchor labels
   // (e.g. "sunrise +30 – after gym", or "later of isha +15m · sunrise −8h +1d").
   // Resolved clock times would mislead the moment the date or location changes.

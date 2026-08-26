@@ -811,6 +811,35 @@ $('detail-monthday-toggle')?.addEventListener('click',()=>{
 $('detail-preferred-monthday-toggle')?.addEventListener('click',()=>{
   toggleMonthDayDisclosure($('detail-preferred-monthday-toggle'));
 });
+$('detail-habit-options')?.addEventListener('input',()=>setDetailDirty());
+$('detail-habit-options')?.addEventListener('change',()=>setDetailDirty());
+$('detail-habit-options')?.addEventListener('click',e=>{
+  if(e.target.closest('#detail-habit-option-add')){
+    addBlankHabitScheduleOption();
+    return;
+  }
+  const row = e.target.closest('.habit-option-row');
+  if(!row)return;
+  const day = e.target.closest('[data-habit-option-day]');
+  if(day){
+    day.classList.toggle('on');
+    day.setAttribute('aria-pressed',String(day.classList.contains('on')));
+    // Never leave a row with no days selected: empty in storage means all.
+    if(!row.querySelector('[data-habit-option-day].on')){
+      row.querySelectorAll('[data-habit-option-day]').forEach(btn=>{
+        btn.classList.add('on');
+        btn.setAttribute('aria-pressed','true');
+      });
+    }
+    setDetailDirty();
+    return;
+  }
+  if(e.target.closest('.habit-option-remove')){
+    row.remove();
+    syncHabitScheduleOptionsUi();
+    setDetailDirty();
+  }
+});
 $('detail-schedule-order')?.addEventListener('change',e=>{
   if(!e.target.closest('.schedule-link-habit'))return;
   const editor = e.target.closest('.schedule-link-editor');
@@ -1202,6 +1231,15 @@ $('detail-save').addEventListener('click',()=>{
   h.topics = normalizeTopics(current.topics);
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
   h.anywhereAllowed = Boolean(current.anywhereAllowed);
+  h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,h.locationIds,current.preferredLocationId);
+  h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,h.locationIds);
+  h.scheduleOptions = normalizeHabitScheduleOptions(current.scheduleOptions,sortSettings.locations);
+  // Option locations are real habit locations for cards, prayer resolution,
+  // and one-day location pickers even when they were selected only in a row.
+  h.locationIds = normalizeLocationIds([
+    ...h.locationIds,
+    ...h.scheduleOptions.map(option=>option.locationId).filter(Boolean)
+  ],sortSettings.locations);
   h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,h.locationIds,current.preferredLocationId);
   h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,h.locationIds);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);

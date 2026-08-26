@@ -22,13 +22,38 @@ function tryPlaceOnDay(state,fill,opts = {}){
   // `undefined` is an omitted decision, not an instruction to erase a required
   // location (week-hours repair used to manufacture that property).
   const hasLocationProperty = Object.prototype.hasOwnProperty.call(fill,'locationId');
-  const candidateLocIds = normalizeLocationIds(fill.h.locationIds,registry);
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill.h);
+  const candidateLocIds = optionMode
+    ? habitLocationIdsForDay(fill.h,dayBase,registry)
+    : normalizeLocationIds(fill.h.locationIds,registry);
+  const anywhereToday = optionMode
+    ? habitHasAnywhereScheduleOptionForDay(fill.h,dayBase)
+    : fill.h.anywhereAllowed;
+  // Keep each time/place row as a distinct alternative. This is essential
+  // when two rows use the same venue: evaluating only the venue's first open
+  // interval would miss a later class at that exact location.
+  if(optionMode && !fill._scheduleOptionBound){
+    const explicitLocation = hasLocationProperty && fill.locationId !== undefined
+      ? fill.locationId : undefined;
+    const optionFits = [];
+    for(const option of habitScheduleOptionsForDay(fill.h,dayBase,explicitLocation)){
+      const optionHabit = {...fill.h,scheduleOptions:[option]};
+      const fitForOption = tryPlaceOnDay(state,{
+        ...fill,
+        h:optionHabit,
+        locationId:option.locationId,
+        _scheduleOptionBound:true
+      },opts);
+      if(fitForOption)optionFits.push(fitForOption);
+    }
+    return optionFits.length ? pickBestScoredFit(optionFits,fill,state,opts) : null;
+  }
   const hasForcedLocation = hasLocationProperty
     && fill.locationId !== undefined
-    && (fill.locationId !== null || fill.h.anywhereAllowed || !candidateLocIds.length);
+    && (fill.locationId !== null || anywhereToday || (!optionMode && !candidateLocIds.length));
   const resolveLoc = (anchor)=>hasForcedLocation
     ? fill.locationId
-    : pickHabitLocationId(fill.h,anchor,registry,mode);
+    : pickHabitLocationId(fill.h,anchor,registry,mode,dayBase);
   const fits = [];
 
   // Chronological list of all committed fills, reused per gap so the travel
@@ -98,8 +123,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
       const anchor = locationPresenceAt(state,gap.start,chron);
 
       const locId = resolveLoc(anchor);
-      if(locId){
-        const loc = registryLookup(locId);
+      if(locId || optionMode){
+        const loc = locId ? registryLookup(locId) : null;
         const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         if(!intervals.length)continue;
       }
@@ -115,8 +140,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
 
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
       let cap = gap.end;
-      if(locId){
-        const loc = registryLookup(locId);
+      if(locId || optionMode){
+        const loc = locId ? registryLookup(locId) : null;
         const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         const arriveMin = Math.floor((placeStart - dayBase) / 60000);
         let iv = intervals.find(x=>arriveMin >= x.start && arriveMin < x.end);
@@ -589,7 +614,31 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
   const budgetLeft = state.remaining;
   const usedMinutes = state.usedMinutes;
-  const resolveLoc = (anchor)=>fill.locationId || pickHabitLocationId(fill.h,anchor,registry,mode);
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill.h);
+  if(optionMode && !fill._scheduleOptionBound){
+    const hasLocationProperty = Object.prototype.hasOwnProperty.call(fill,'locationId');
+    const explicitLocation = hasLocationProperty && fill.locationId !== undefined
+      ? fill.locationId : undefined;
+    const alternatives = [];
+    for(const option of habitScheduleOptionsForDay(fill.h,dayBase,explicitLocation)){
+      const result = largestFeasibleBreakableFit(state,{
+        ...fill,
+        h:{...fill.h,scheduleOptions:[option]},
+        locationId:option.locationId,
+        _scheduleOptionBound:true
+      },remainingMinutes,minChunkMinutes,opts);
+      if(result && result.fit)alternatives.push(result.fit);
+    }
+    if(!alternatives.length)return null;
+    alternatives.sort((a,b)=>b.durMin - a.durMin);
+    const topDuration = alternatives[0].durMin;
+    const best = pickBestScoredFit(
+      alternatives.filter(fit=>fit.durMin === topDuration),fill,state,opts);
+    return best ? {fit:best,fill} : null;
+  }
+  const resolveLoc = (anchor)=>Object.prototype.hasOwnProperty.call(fill,'locationId')
+    ? fill.locationId
+    : pickHabitLocationId(fill.h,anchor,registry,mode,dayBase);
   const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   const candidates = [];
 
@@ -639,8 +688,8 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     for(const gap of gaps){
       const anchor = locationPresenceAt(state,gap.start,chron);
       const locId = resolveLoc(anchor);
-      if(locId){
-        const loc = registry.find(l=>l.id === locId);
+      if(locId || optionMode){
+        const loc = locId ? registry.find(l=>l.id === locId) : null;
         const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         if(!intervals.length)continue;
       }
@@ -648,8 +697,8 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       const travelMin = Math.ceil((edge.seconds || 0) / 60);
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
       let cap = gap.end;
-      if(locId){
-        const loc = registry.find(l=>l.id === locId);
+      if(locId || optionMode){
+        const loc = locId ? registry.find(l=>l.id === locId) : null;
         const intervals = effectiveLocationWindow(fill.h,loc,weekday,dayBase);
         const arriveMin = Math.floor((placeStart - dayBase) / 60000);
         let iv = intervals.find(x=>arriveMin >= x.start && arriveMin < x.end);
@@ -788,19 +837,27 @@ function committedFillLocationChoices(entry,state){
   const h = entry && entry.fill && entry.fill.h;
   const fit = entry && entry.fit;
   if(!h || !fit)return [];
-  const ids = normalizeLocationIds(h.locationIds,state.registry);
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
+  const ids = optionMode
+    ? habitLocationIdsForDay(h,state.dayBase,state.registry)
+    : normalizeLocationIds(h.locationIds,state.registry);
   if(Object.prototype.hasOwnProperty.call(entry.fill,'locationId')
     && entry.fill.locationId !== undefined){
     // Explicit null is legal only for genuinely anywhere/locationless work.
     // A malformed replay seed must never erase a required saved location.
-    if(entry.fill.locationId !== null || h.anywhereAllowed || !ids.length){
+    if(entry.fill.locationId !== null
+      || (optionMode ? habitHasAnywhereScheduleOptionForDay(h,state.dayBase) : h.anywhereAllowed)
+      || (!optionMode && !ids.length)){
       return [entry.fill.locationId || null];
     }
   }
   // Preserve an explicitly committed legacy/synthetic fit even when its habit
   // record has no locationIds. Normal planner fills derive choices from the
   // habit and therefore still expose every allowed location to the route DP.
-  const choices = h.anywhereAllowed
+  const anywhereAllowed = optionMode
+    ? habitHasAnywhereScheduleOptionForDay(h,state.dayBase)
+    : h.anywhereAllowed;
+  const choices = anywhereAllowed
     ? [null,...ids]
     : (ids.length ? ids : (fit.locId ? [fit.locId] : [null]));
   return choices.filter(locId=>{

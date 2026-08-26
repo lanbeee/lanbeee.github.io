@@ -50,6 +50,7 @@ function openDetail(i){
   renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
+  renderHabitScheduleOptions(h);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
@@ -93,6 +94,7 @@ function openDetail(i){
     preferredTimeStartAnchorHabitId:cleanHabitId(h.preferredTimeStartAnchorHabitId) || null,
     preferredTimeEndAnchorHabitId:cleanHabitId(h.preferredTimeEndAnchorHabitId) || null,
     scheduleLinks:normalizeScheduleLinks(h.scheduleLinks,h.hid),
+    scheduleOptions:normalizeHabitScheduleOptions(h.scheduleOptions,sortSettings.locations),
     ...snapshotCombineFields(h, 'allowedTimeStart'),
     ...snapshotCombineFields(h, 'allowedTimeEnd'),
     ...snapshotCombineFields(h, 'preferredTimeStart'),

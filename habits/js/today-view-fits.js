@@ -168,6 +168,14 @@ function includeInTodayAgenda(h,settings){
 // location before the task; absent it they fall back to lastKnown/registry.
 function fillTimeWindow(h,dayBase,contextLocId){
   if(!hasTimeWindow(h))return null;
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+    const windows = fillDayWindows(h,dayBase,contextLocId);
+    if(!windows || !windows.length)return null;
+    return {
+      start:windows.reduce((min,win)=>Math.min(min,win.start),windows[0].start),
+      end:windows.reduce((max,win)=>Math.max(max,win.end),windows[0].end)
+    };
+  }
   const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
   const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
   if(startMin == null || endMin == null)return null;
@@ -184,6 +192,22 @@ function fillTimeWindow(h,dayBase,contextLocId){
 // continuous start→next-day span remains useful for display/scoring.
 function fillDayWindows(h,dayBase,contextLocId){
   if(!hasTimeWindow(h))return null;
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+    const options = habitScheduleOptionsForDay(h,dayBase);
+    const dayEnd = dayBase + 24 * 3600000;
+    const intervals = [];
+    for(const option of options){
+      if(option.end === option.start){
+        intervals.push({start:dayBase,end:dayEnd});
+      }else if(option.end > option.start){
+        intervals.push({start:dayBase + option.start * 60000,end:dayBase + option.end * 60000});
+      }else{
+        intervals.push({start:dayBase,end:dayBase + option.end * 60000});
+        intervals.push({start:dayBase + option.start * 60000,end:dayEnd});
+      }
+    }
+    return mergeIntervals(intervals.filter(win=>win.end > win.start));
+  }
   const rawStart = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
   const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
   if(rawStart == null || rawEnd == null)return null;
@@ -253,7 +277,10 @@ function windowStillDoableToday(h,now = Date.now()){
   const weekday = new Date(now).getDay();
   const settings = (sortSettings || loadSortSettings());
   const registry = normalizeLocationRegistry(settings.locations);
-  const locIds = normalizeLocationIds(h.locationIds,registry);
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
+  const locIds = optionMode
+    ? habitLocationIdsForDay(h,dayBase,registry)
+    : normalizeLocationIds(h.locationIds,registry);
   const dayEnd = dayBase + 24 * 3600000;
   const todayKey = dateKey(now);
   const blocked = (typeof agendaBlockedIntervals === 'function')
@@ -263,19 +290,27 @@ function windowStillDoableToday(h,now = Date.now()){
     if(b.end <= from || b.start >= to)return sum;
     return sum + (Math.min(b.end,to) - Math.max(b.start,from));
   },0);
-  if(h.anywhereAllowed || !locIds.length){
+  const anywhereToday = optionMode
+    ? habitHasAnywhereScheduleOptionForDay(h,dayBase)
+    : h.anywhereAllowed;
+  if(anywhereToday || (!optionMode && !locIds.length)){
     if(!hasTimeWindow(h)){
       // No restriction: count time left today minus any blocked span.
       const remaining = dayEnd - now - blockedMsIn(now,dayEnd);
-      return remaining >= cost;
+      if(remaining >= cost)return true;
+    }else{
+      const windows = optionMode
+        ? effectiveLocationWindow(h,null,weekday,dayBase).map(iv=>({
+          start:dayBase + iv.start * 60000,end:dayBase + iv.end * 60000
+        }))
+        : fillDayWindows(h,dayBase);
+      if(!windows)return true;
+      if(windows.some(win=>{
+        const from = Math.max(now,win.start);
+        const remaining = win.end - from - blockedMsIn(from,win.end);
+        return remaining >= cost;
+      }))return true;
     }
-    const windows = fillDayWindows(h,dayBase);
-    if(!windows)return true;
-    return windows.some(win=>{
-      const from = Math.max(now,win.start);
-      const remaining = win.end - from - blockedMsIn(from,win.end);
-      return remaining >= cost;
-    });
   }
   return locIds.some(id=>{
     const loc = registry.find(l=>l.id === id);
@@ -410,12 +445,18 @@ function outboundLeaveByMs(state,fromLocId,afterTs,opts = {}){
 // PURE: choose a location id for a habit given the current anchor. Anywhere
 // items return null (no travel, anchor unchanged). When several are allowed,
 // prefer high/little preference, avoid last, then cheapest travel from anchor.
-function pickHabitLocationId(h,anchorId,registry,mode){
-  const ids = normalizeLocationIds(h.locationIds,registry);
+function pickHabitLocationId(h,anchorId,registry,mode,dayBase = dayStart(Date.now())){
+  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
+  const ids = optionMode
+    ? habitLocationIdsForDay(h,dayBase,registry)
+    : normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return null;
-  if(ids.length === 1 && !h.anywhereAllowed)return ids[0];
+  const anywhereAllowed = optionMode
+    ? habitHasAnywhereScheduleOptionForDay(h,dayBase)
+    : h.anywhereAllowed;
+  if(ids.length === 1 && !anywhereAllowed)return ids[0];
   let best = null;
-  let bestScore = h.anywhereAllowed ? 0 : Infinity;
+  let bestScore = anywhereAllowed ? 0 : Infinity;
   for(const id of ids){
     const edge = travelEdgeBetweenIds(anchorId,id,registry,mode);
     const pref = locationPrefLevel(h,id);
@@ -693,7 +734,7 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
     const planLoc = typeof dayPlanLocationId === 'function'
       ? dayPlanLocationId(item.h,dayKey) : null;
     if(planLoc)return planLoc;
-    return pickHabitLocationId(item.h,anchorId,registry,mode);
+    return pickHabitLocationId(item.h,anchorId,registry,mode,dayStart(now));
   };
   for(const band of bands){
     const left = [...band.items];
@@ -1000,7 +1041,7 @@ function explainUnplacedAgendaFill(state,fill,remainingLoad){
     if(locationGap < needed)return `location hours leave no ${needed}m open gap`;
   }
 
-  const locId = fill.locationId || pickHabitLocationId(h,state.seedLocId,state.registry,state.mode);
+  const locId = fill.locationId || pickHabitLocationId(h,state.seedLocId,state.registry,state.mode,state.dayBase);
   if(locId){
     const edge = travelEdgeBetweenIds(state.seedLocId,locId,state.registry,state.mode,{allowNetwork:false});
     const travelMin = Math.ceil((edge.seconds || 0) / 60);
@@ -1837,6 +1878,14 @@ function windowSlackMinutes(h,dayState,contextLocId){
   const loc = contextLocId != null ? contextLocId : dayState.seedLocId;
   let win = null;
   if(typeof hasTimeWindow === 'function' && hasTimeWindow(h)){
+    if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+      const windows = fillDayWindows(h,dayState.dayBase,loc) || [];
+      const duration = clampDuration(h.durationMinutes);
+      const slacks = windows
+        .map(item=>(item.end - item.start) / 60000 - duration)
+        .filter(slack=>slack >= 0);
+      return slacks.length ? Math.min(...slacks) : 0;
+    }
     win = fillTimeWindow(h,dayState.dayBase,loc);
   }else if(typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(h)){
     win = fillPreferredWindow(h,dayState.dayBase,loc);
@@ -1882,6 +1931,13 @@ function scarcityScoreInner(candidate,dayStates){
   const states = Array.isArray(dayStates) ? dayStates : [];
   if(!states.length){
     const todayBase = dayStart(Date.now());
+    if(hard && typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+      const windows = fillDayWindows(h,todayBase,null) || [];
+      const duration = clampDuration(h.durationMinutes);
+      const slacks = windows.map(win=>(win.end - win.start) / 60000 - duration).filter(value=>value >= 0);
+      if(!slacks.length)return SCARCITY_UNBOUNDED;
+      return Math.min(Math.min(...slacks),9999);
+    }
     const win = hard ? fillTimeWindow(h,todayBase,null) : fillPreferredWindow(h,todayBase,null);
     if(!win)return SCARCITY_UNBOUNDED;
     const slack = Math.max(0,(win.end - win.start) / 60000 - clampDuration(h.durationMinutes));

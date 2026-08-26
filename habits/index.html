@@ -295,6 +295,17 @@
               <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed"></div>
               <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
             </div>
+            <div class="habit-options-block" id="detail-habit-options">
+              <div class="habit-options-heading">
+                <span class="settings-sublabel">time &amp; place options
+                  <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                  <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Add every alternative for this habit. The same place can appear more than once at different times. The planner chooses one option for an occurrence; it does not create extra completions.</span>
+                </span>
+                <button type="button" class="mini-text-btn" id="detail-habit-option-add">add option</button>
+              </div>
+              <p class="field-hint">Optional. Rows replace the single time window and general place choices above.</p>
+              <div class="habit-option-list" id="detail-habit-option-list"></div>
+            </div>
           </div>
           <div id="detail-schedule-preferred" class="detail-full-only" hidden>
             <span class="settings-sublabel">days</span>

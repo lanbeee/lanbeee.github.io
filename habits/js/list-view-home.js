@@ -1316,7 +1316,14 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
     return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
   }
   const dayBase = typeof dayStart === 'function' ? dayStart(row.start) : row.start;
-  const win = typeof fillTimeWindow === 'function' ? fillTimeWindow(h,dayBase) : null;
+  let win = typeof fillTimeWindow === 'function' ? fillTimeWindow(h,dayBase) : null;
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)
+    && typeof fillDayWindows === 'function'){
+    const windows = fillDayWindows(h,dayBase) || [];
+    win = windows.find(item=>row.start >= item.start && row.start < item.end)
+      || windows.find(item=>item.start >= row.start)
+      || null;
+  }
   if(!win){
     return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
   }

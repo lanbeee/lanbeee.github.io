@@ -1425,7 +1425,7 @@ function routeCompactFillOrder(state){
     for(let i = 0;i < left.length;i += 1){
       const fill = left[i];
       const locId = fill.locationId
-        || pickHabitLocationId(fill.h,anchor,state.registry,state.mode);
+        || pickHabitLocationId(fill.h,anchor,state.registry,state.mode,state.dayBase);
       const seconds = travelEdgeBetweenIds(
         anchor,locId,state.registry,state.mode,{allowNetwork:false}
       ).seconds || 0;
@@ -1437,7 +1437,7 @@ function routeCompactFillOrder(state){
     const picked = left.splice(bestIdx,1)[0];
     out.push(picked);
     const locId = picked.locationId
-      || pickHabitLocationId(picked.h,anchor,state.registry,state.mode);
+      || pickHabitLocationId(picked.h,anchor,state.registry,state.mode,state.dayBase);
     if(locId)anchor = locId;
   }
   return reorderAgendaItemsByOrderConstraints(out,state.dayBase);

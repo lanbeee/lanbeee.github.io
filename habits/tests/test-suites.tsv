@@ -31,6 +31,7 @@ emoji-suggest-test.js	ui	once
 free-time-fit-test.js	planner	once
 free-time-indicator-test.js	ui	once
 general-refinements-test.js	ui	once
+habit-schedule-options-test.js	planner	once
 habits-agenda-e2e.js	planner	once
 habits-backup-e2e.js	data	once
 habits-calendar-open.js	integrations	once

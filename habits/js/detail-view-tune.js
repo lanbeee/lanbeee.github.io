@@ -57,6 +57,7 @@ function currentDetailTune(){
     preferredTimeStartAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-start'),
     preferredTimeEndAnchorHabitId:readHabitIdFromEndpoint('detail-preferred-time-end'),
     scheduleLinks:readScheduleLinksFromDetail(subjectHid),
+    scheduleOptions:readHabitScheduleOptionsFromDetail(),
     ...combineFieldsFromEndpoint('detail-time-start','allowedTimeStart'),
     ...combineFieldsFromEndpoint('detail-time-end','allowedTimeEnd'),
     ...combineFieldsFromEndpoint('detail-preferred-time-start','preferredTimeStart'),
@@ -152,6 +153,7 @@ function restoreDetailTune(){
   syncBreakableUi();
   renderScheduleChips('detail',detailTuneOriginal);
   renderScheduleLinkEditors(detailTuneOriginal);
+  renderHabitScheduleOptions(detailTuneOriginal);
   renderTimeWindowInputs(detailTuneOriginal);
   setDetailTypeUi(detailTuneOriginal.type);
   setDetailPriorityUi(detailTuneOriginal.priority);

@@ -123,6 +123,7 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
+ * @property {{weekdays:number[],start:number,end:number,locationId:string|null}[]} scheduleOptions — alternative habit-level weekday/time/place windows; duplicate locations are allowed
  *
  * — LinkFields (optional, on every type) —
  * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label; links[0] is primary and fires on card double tap

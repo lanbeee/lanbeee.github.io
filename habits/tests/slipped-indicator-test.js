@@ -53,6 +53,11 @@ function assert(cond,msg){
       }
     }catch{ /* ignore */ }
     localStorage.setItem('tings_v2', JSON.stringify([]));
+    // This suite exercises slipped-item interaction, not the first-run tour.
+    // Mark the coach complete before boot so its delayed offer cannot cover a
+    // pill between assertions on a slow/full-matrix run.
+    localStorage.setItem('tings_coach_essentials_v2', 'done');
+    localStorage.setItem('tings_coach_install_v2', 'done');
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', showWeekOnHome:false, agendaOptimizer:false,
       topics:[], locations:[], travel:{}, defaultTravelMode:'driving', blockedTimes:[]

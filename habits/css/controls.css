@@ -98,6 +98,20 @@
 .perday-row input[type=time]:disabled{opacity:0.45;}
 .perday-closed{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text3);}
 .location-empty-hint{margin-top:4px;}
+.habit-options-block{display:flex;flex-direction:column;gap:8px;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);}
+.habit-options-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.habit-option-list{display:flex;flex-direction:column;gap:10px;}
+.habit-option-row{display:flex;flex-direction:column;gap:8px;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg2);}
+.habit-option-main{display:grid;grid-template-columns:minmax(100px,1fr) 94px auto 94px auto;align-items:center;gap:7px;}
+.habit-option-main select,.habit-option-main input[type=time]{min-width:0;width:100%;height:34px;padding:0 7px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:12px;}
+.habit-option-remove{min-width:34px;min-height:34px;padding:0;color:var(--red-text);}
+.habit-option-days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.habit-option-days .schedule-chip{min-width:0;padding:6px 2px;font-size:10.5px;}
+.habit-options-active-copy{font-size:11px;color:var(--text3);}
+@media(max-width:520px){
+  .habit-option-main{grid-template-columns:minmax(0,1fr) 82px auto 82px auto;gap:5px;}
+  .habit-option-main select,.habit-option-main input[type=time]{font-size:11px;padding:0 5px;}
+}
 .location-coords{font-size:11px;white-space:nowrap;}
 .location-coords-btn{
   display:inline-flex;align-items:center;gap:4px;max-width:min(220px,55vw);
@@ -230,4 +244,3 @@ span:has(> .info-btn){position:relative;display:inline-block;}
 @media (pointer:coarse){
   .crown-dial{height:38px;}
 }
-
