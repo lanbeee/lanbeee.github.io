@@ -978,21 +978,41 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // (structural constraints) still win. Per the documented lex order this is
   // MINIMUM TRAVEL outranking ASAP/PRIORITY, which is exactly "travel time IS
   // time — extra trips are unacceptable."
-  const seedLoc = state.seedLocId || null;
-  // Only fire on a GENUINELY LIVE location (geolocation / manual pin), not a
-  // static last-known default. The "do the at-location task first, never
-  // away-and-back" override is only meaningful when we actually know where the
-  // user is right now; on static/future-day seeds the committed-route DP already
-  // minimizes travel, and firing here would perturb its carefully-routed layouts.
-  if(state.liveLocId && seedLoc && seedLoc === state.liveLocId
-    && typeof travelEdgeBetweenIds === 'function'){
+  // Today's start place — pin, geofence, lastKnown seed, or closest saved
+  // place when the seed is the ephemeral GPS coordinate. Future days keep
+  // null so the committed-route DP is not perturbed. Requiring liveLocationId
+  // (pin/geofence only) was the production miss: lastKnown=Walmart still
+  // drew "travel to Home" while GLPK sent the user home first, then back.
+  const seedLoc = (typeof todaySequencingLocationId === 'function'
+    ? todaySequencingLocationId(state)
+    : ((state.liveLocId && state.seedLocId === state.liveLocId)
+      ? state.seedLocId : null)) || null;
+  if(seedLoc && typeof travelEdgeBetweenIds === 'function'){
     const TRAVEL_PAIR_COEF = 0.01;   // 1s of saved commute ≈ 0.01 objective weight
     const TRAVEL_PAIR_CAP = 80;      // < min baseWeight (~100): reorder only
     const TRAVEL_PAIR_FLOOR = 12;    // still decisive over priority/ASAP deltas
     let tpIdx = 0;
+    // A null fit.locId is the anchor-preserving "anywhere" option, but when the
+    // habit HAS allowed locations the reconciled route still lands it at its
+    // preferred place (e.g. Lunch→Home). Such options must not escape the
+    // away-and-back penalty — that was the Walmart miss: GLPK picked the
+    // higher-weight null options for Lunch/Quran, paid zero travel-pair
+    // penalty, and the route painted Home→Walmart→Home anyway. Resolve null
+    // to the habit's preferred allowed place (the same reconciliation
+    // scheduled rows use); truly location-free habits stay null (anywhere
+    // includes the seed, so they are not provably away).
+    const awayLocForOption = (o) => {
+      if(!o || !o.fit)return null;
+      if(o.fit.locId)return o.fit.locId;
+      const h = o.c && o.c.h;
+      if(!h || !Array.isArray(h.locationIds) || !h.locationIds.length)return null;
+      if(typeof pickHabitLocationId !== 'function')return null;
+      const resolved = pickHabitLocationId(h,null,state.registry,state.mode);
+      return resolved || null;
+    };
     for(let ai = 0; ai < opts.length; ai += 1){
       const A = opts[ai];
-      const aLoc = A && A.fit && A.fit.locId;
+      const aLoc = awayLocForOption(A);
       if(!aLoc || aLoc === seedLoc)continue;            // A must be AWAY from seed
       const savedSec = Math.max(0,Number(travelEdgeBetweenIds(
         seedLoc,aLoc,state.registry,state.mode,{allowNetwork:false}
@@ -1101,7 +1121,23 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
 function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
   if(typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return [];
   const doing = doingNowForDay(state);
-  const ordered = dayCandidates.slice().sort(orderAwareOptimizerSort(state.dayBase));
+  const seqLoc = typeof todaySequencingLocationId === 'function'
+    ? todaySequencingLocationId(state) : null;
+  const byWeight = orderAwareOptimizerSort(state.dayBase);
+  const ordered = dayCandidates.slice().sort((a,b)=>{
+    if(seqLoc && typeof habitMatchesSequencingLocation === 'function'){
+      const la = habitMatchesSequencingLocation(a && a.h, seqLoc);
+      const lb = habitMatchesSequencingLocation(b && b.h, seqLoc);
+      if(la !== lb){
+        const atC = la ? a : b;
+        const awayC = la ? b : a;
+        const canWait = typeof sequencingAwayCanWait !== 'function'
+          || sequencingAwayCanWait(awayC, atC, state);
+        if(canWait)return la ? -1 : 1;
+      }
+    }
+    return byWeight(a,b);
+  });
   const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
   const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
   const chosen = [];

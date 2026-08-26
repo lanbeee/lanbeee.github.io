@@ -140,6 +140,40 @@ const PLACES = [
       `[${path}] at most one commute today (got ${JSON.stringify(t.commutes)})`);
   });
 
+  // Production miss: lastKnown=farA with no live pin/geofence. The home list
+  // still draws "travel from farA to Home" from that seed, but liveLocationId()
+  // is null so the old GLPK travel-pair never fired and ASAP sent you home
+  // first, then back (Walmart grocery vs Lunch).
+  await checkBoth('1c. lastKnown without a live pin still does at-location first', [
+    { name:'farA task', type:'task', dueDate: dayStartOf(0), durationMinutes:30, locationIds:['farA'], priority:2, flexibilityDays:0 },
+    { name:'home task', type:'task', dueDate: dayStartOf(0), durationMinutes:30, locationIds:['home'], priority:2, flexibilityDays:0 },
+  ], { locations:PLACES, lastKnownLocationId:'farA', pinnedLocationId:null, defaultTravelMode:'driving' }, (t, path) => {
+    const firstFill = t.fills[0];
+    assert(firstFill && firstFill.loc === 'farA',
+      `[${path}] lastKnown farA: first fill is at farA — got ${firstFill && firstFill.loc}`);
+    const commuteIntoFarA = t.commutes.filter(c => c.endsWith('->farA'));
+    assert(commuteIntoFarA.length === 0,
+      `[${path}] lastKnown farA: zero commutes INTO farA (got ${JSON.stringify(commuteIntoFarA)})`);
+  });
+
+  // Lunch-vs-grocery: a just-opened Home hard window (higher scarcity) must
+  // not outrank the at-location task when the window still fits after it.
+  await checkBoth('1d. tight Home window still yields to at-location task', [
+    { name:'farA grocery', type:'task', dueDate: dayStartOf(0), durationMinutes:45, locationIds:['farA'],
+      priority:2, flexibilityDays:0, allowedTimeStart:600, allowedTimeEnd:1350, pinned:true },
+    { name:'home lunch', type:'keepup', target:1, durationMinutes:15, locationIds:['home'],
+      priority:1, flexibilityDays:0, allowedTimeStart:600, allowedTimeEnd:720 },
+  ], { locations:PLACES, lastKnownLocationId:'farA', pinnedLocationId:null, defaultTravelMode:'driving' }, (t, path) => {
+    const firstFill = t.fills[0];
+    assert(firstFill && firstFill.name === 'farA grocery',
+      `[${path}] grocery at farA is first despite lunch's tighter window — got ${firstFill && firstFill.name}`);
+    const commuteIntoFarA = t.commutes.filter(c => c.endsWith('->farA'));
+    assert(commuteIntoFarA.length === 0,
+      `[${path}] no Home→farA bounce after lunch (got ${JSON.stringify(commuteIntoFarA)})`);
+    const lunch = t.fills.find(f => f.name === 'home lunch');
+    assert(lunch, `[${path}] lunch still places today after grocery`);
+  });
+
   // Near FarA but outside its saved radius: start from the ephemeral GPS
   // coordinate, not Home and not falsely claim that the user is already at
   // FarA. This is the state the production worker reconstructs from its
@@ -147,7 +181,7 @@ const PLACES = [
   console.log('\n[1b. nearby, unsaved GPS coordinate uses a truthful anchor]');
   const nearbyAnchor = await page.evaluate(() => {
     const base = dayStart(Date.now());
-    const settings = {...loadSortSettings(), lastKnownLocationId:'home'};
+    const settings = {...loadSortSettings(), lastKnownLocationId:'home', defaultTravelMode:'walking'};
     setPlannerCurrentCoord({lat:40.947,lng:-74.000}); // ~330m from FarA, outside 75m radius
     const state = createDayPlacementState({
       scheduled:[], totalMinutes:600, slots:[{start:base,end:base + 86400000}],

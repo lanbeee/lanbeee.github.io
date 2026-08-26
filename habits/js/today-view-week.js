@@ -691,28 +691,37 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
   const mode = dayStates[0] ? dayStates[0].mode : normalizeTravelMode(settings.defaultTravelMode);
   const weights = resolveAgendaScoreWeights(settings);
-  // Live presence only: within equal scarcity, place at-live-location work
-  // before away work so the week path does not away-and-back (priority alone
-  // would otherwise claim the early slot). Gated so static/preview seeds are
-  // unchanged.
-  const liveLocId = typeof liveLocationId === 'function' ? liveLocationId() : null;
+  // Today's sequencing place (pin, geofence, lastKnown seed, or closest
+  // saved place for a GPS coordinate). Matches GLPK travel-pair so Fast
+  // preview does not send you away-and-back from the same seed.
+  const seqLoc = (typeof todaySequencingLocationId === 'function' && dayStates[0])
+    ? todaySequencingLocationId(dayStates[0])
+    : (typeof liveLocationId === 'function' ? liveLocationId() : null);
   for(const c of candidates){
     if(c.scarcity == null)c.scarcity = scarcityScore(c,dayStates);
-    c.atLiveLocation = !!(liveLocId && c.h && Array.isArray(c.h.locationIds)
-      && c.h.locationIds.includes(liveLocId));
+    c.atLiveLocation = !!(seqLoc && typeof habitMatchesSequencingLocation === 'function'
+      ? habitMatchesSequencingLocation(c.h, seqLoc)
+      : (seqLoc && c.h && Array.isArray(c.h.locationIds) && c.h.locationIds.includes(seqLoc)));
   }
+  const awayCanWait = (awayC, atC) => typeof sequencingAwayCanWait === 'function'
+    ? sequencingAwayCanWait(awayC, atC, dayStates[0])
+    : true;
   const compareWeekPlacement = (a,b)=>{
     const pinA = a.pinned === true;
     const pinB = b.pinned === true;
     if(pinA !== pinB)return pinA ? -1 : 1;
+    if(seqLoc){
+      const la = a.atLiveLocation === true;
+      const lb = b.atLiveLocation === true;
+      if(la !== lb){
+        const atC = la ? a : b;
+        const awayC = la ? b : a;
+        if(awayCanWait(awayC, atC))return la ? -1 : 1;
+      }
+    }
     const sa = a.scarcity != null ? a.scarcity : SCARCITY_UNBOUNDED;
     const sb = b.scarcity != null ? b.scarcity : SCARCITY_UNBOUNDED;
     if(sa !== sb)return sa - sb;
-    if(liveLocId){
-      const la = a.atLiveLocation === true;
-      const lb = b.atLiveLocation === true;
-      if(la !== lb)return la ? -1 : 1;
-    }
     return compareScarcityThenPriority(a,b);
   };
   candidates.sort(compareWeekPlacement);
@@ -734,6 +743,15 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       const bh = b && b.h && b.h.hid;
       if(doing && ah === doing.hid && bh !== doing.hid)return -1;
       if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+      if(seqLoc){
+        const la = a.atLiveLocation === true;
+        const lb = b.atLiveLocation === true;
+        if(la !== lb){
+          const atC = la ? a : b;
+          const awayC = la ? b : a;
+          if(awayCanWait(awayC, atC))return la ? -1 : 1;
+        }
+      }
       const criticalA = mustPlaceCriticalOccurrence(a);
       const criticalB = mustPlaceCriticalOccurrence(b);
       if(criticalA !== criticalB)return criticalA ? -1 : 1;

@@ -840,9 +840,14 @@ function base(props) {
   check('total travel is grocery round-trip only (12m)',
     overlapResult.totalTravelMinutes === 12,
     `got ${overlapResult.totalTravelMinutes}m :: ${JSON.stringify(overlapResult.travelDetail)}`);
+  // Lunch and Zuhr share a Home window after the grocery return. LastKnown
+  // sequencing may put Lunch at the window open (13:22) and Zuhr later in
+  // its preferred range — that is valid. The e15fb67 bug was a commute
+  // painted on top of Zuhr, already asserted above; do not require a
+  // specific Lunch-after-Zuhr order.
   if(overlapZuhr && overlapLunch){
-    check('Lunch starts at or after Zuhr ends (no commute-on-Zuhr)',
-      overlapLunch.start >= overlapZuhr.end,
+    check('Lunch and Zuhr do not overlap at Home',
+      overlapLunch.end <= overlapZuhr.start || overlapZuhr.end <= overlapLunch.start,
       JSON.stringify({zuhr:overlapZuhr,lunch:overlapLunch,travel:overlapResult.travelDetail}));
   }
 

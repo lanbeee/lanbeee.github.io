@@ -393,22 +393,25 @@ function locationPresenceAt(state,atTs,chron){
   const marks = [];
   const at = Number(atTs) || 0;
   const startClock = Number(state && state.startClock) || 0;
-  // A genuinely LIVE location (geolocation fix or a manual "I am at" pin)
-  // reflects where the user is right now. It supersedes events that already
-  // ended before the start clock — last night's sleep at Home must not strand
-  // you there at 10am when your GPS says FarA. A stale last-known default gets
-  // no such treatment, so scheduled appointments still drive presence in the
-  // static/preview path (and keeps leave-by tests honest).
-  const seedOverrides = liveLoc && Number.isFinite(startClock) && startClock <= at;
+  // A genuine live fix (pin / geofence / GPS coordinate) supersedes events
+  // that already ended — last night's sleep at Home must not strand you when
+  // GPS says FarA. Today's lastKnown / day seed is weaker: it may skip ended
+  // BLOCKS (sleep) so a Walmart lastKnown is not painted as "travel home first",
+  // but it must not hide a just-ended appointment (leave-by after Oil Change).
+  const seqLoc = (!liveLoc && state && state.isTodayDay
+    && typeof todaySequencingLocationId === 'function')
+    ? todaySequencingLocationId(state) : null;
+  const liveOverrides = liveLoc && Number.isFinite(startClock) && startClock <= at;
+  const skipEndedBlocks = (liveOverrides || (seqLoc && Number.isFinite(startClock) && startClock <= at));
   for(const row of state && state.rows || []){
     if(row.kind !== 'scheduled' || !row.locationId)continue;
     if(!(row.start < at))continue;
-    if(seedOverrides && Number.isFinite(row.end) && row.end <= startClock)continue;
+    if(liveOverrides && Number.isFinite(row.end) && row.end <= startClock)continue;
     marks.push({start:row.start,locationId:row.locationId});
   }
   for(const block of locationTiedBlockedIntervals(state)){
     if(!(block.start < at))continue;
-    if(seedOverrides && Number.isFinite(block.end) && block.end <= startClock)continue;
+    if(skipEndedBlocks && Number.isFinite(block.end) && block.end <= startClock)continue;
     marks.push({start:block.start,locationId:block.locationId});
   }
   for(const entry of chron || []){
@@ -416,7 +419,7 @@ function locationPresenceAt(state,atTs,chron){
     if(!fit || !fit.locId || !(fit.placeStart < at))continue;
     marks.push({start:fit.placeStart,locationId:fit.locId});
   }
-  if(seedOverrides)marks.push({start:startClock,locationId:liveLoc});
+  if(liveOverrides)marks.push({start:startClock,locationId:liveLoc});
   if(!marks.length)return seedLoc;
   marks.sort((a,b)=>a.start - b.start);
   return marks[marks.length - 1].locationId;
@@ -708,10 +711,10 @@ function reorderAgendaItemsByLocation(items,settings,now = Date.now()){
   let anchor = (typeof currentLocationId === 'function' && currentLocationId())
     || settings.lastKnownLocationId
     || null;
-  // Genuine live presence only — never a stale lastKnown default. When live,
-  // travel (at-location-first) overrides priority within a scarcity tier.
-  const liveAnchor = typeof liveLocationId === 'function' ? liveLocationId() : null;
-  const travelOverridesPriority = !!(liveAnchor && anchor === liveAnchor);
+  // Same seed the first travel card uses (pin, geofence, or lastKnown).
+  // If we are willing to draw "travel from Walmart to Home", travel must
+  // also win the within-band order so we do not immediately bounce back.
+  const travelOverridesPriority = !!anchor;
   const bands = [];
   for(const item of items){
     const scarce = isScarceScore(item.scarcity)
@@ -1838,6 +1841,72 @@ function createDayPlacementState(day,settings,opts = {}){
     fills:[],
     placed:new Set()
   };
+}
+
+/**
+ * PURE: saved-place id today's packer should treat as "you are HERE" when
+ * deciding order. homeDaySequence already draws the first travel leg from
+ * seed / lastKnown, so GLPK must use the same place — otherwise it paints
+ * "travel to Home" and then a return trip to the seed (Walmart → Home →
+ * Walmart). liveLocationId() is intentionally stricter (pin / geofence only);
+ * this helper is for sequencing, not for overriding ended sleep blocks.
+ *
+ * When the seed is the ephemeral GPS coordinate (parking lot, outside every
+ * geofence), map to the closest saved place so a task there still wins
+ * against an away lunch. Travel minutes stay honest via CURRENT_COORD_ID.
+ */
+function todaySequencingLocationId(state){
+  if(!state || !state.isTodayDay)return null;
+  const currentId = (typeof CURRENT_COORD_ID !== 'undefined') ? CURRENT_COORD_ID : '__current__';
+  const savedId = id => (id && id !== currentId) ? id : null;
+  const closestSaved = ()=>{
+    if(typeof currentCoordLocation === 'function' && typeof closestLocation === 'function'){
+      const here = currentCoordLocation();
+      if(here){
+        const near = closestLocation(here.lat, here.lng, state.registry);
+        if(near && near.loc && near.loc.id)return near.loc.id;
+      }
+    }
+    const last = state.settings && state.settings.lastKnownLocationId;
+    return (typeof cleanLocationId === 'function' ? cleanLocationId(last) : last) || null;
+  };
+  const liveSaved = savedId(state.liveLocId);
+  if(liveSaved)return liveSaved;
+  if(state.liveLocId === currentId)return closestSaved();
+  const seedSaved = savedId(state.seedLocId);
+  if(seedSaved)return seedSaved;
+  if(state.seedLocId === currentId)return closestSaved();
+  return null;
+}
+
+function habitMatchesSequencingLocation(h, locId){
+  if(!h || !locId)return false;
+  if(Array.isArray(h.locationIds) && h.locationIds.includes(locId))return true;
+  if(h.preferredLocationId === locId)return true;
+  return false;
+}
+
+// PURE: can this away item still fit after an at-location item takes the
+// next slot? Used so Fast/heuristic "at-location first" cannot drop a
+// hard window that GLPK would keep via a later option (soft travel penalty).
+function sequencingAwayCanWait(awayC, atC, state){
+  if(!awayC || !awayC.h || !state)return true;
+  const now = Number(state.startClock) || Date.now();
+  const atDur = typeof clampDuration === 'function'
+    ? clampDuration(atC && atC.h && atC.h.durationMinutes)
+    : Math.max(1, Number(atC && atC.h && atC.h.durationMinutes) || 30);
+  const awayDur = typeof clampDuration === 'function'
+    ? clampDuration(awayC.h.durationMinutes)
+    : Math.max(1, Number(awayC.h.durationMinutes) || 30);
+  const travelMin = 20;
+  if(typeof hasTimeWindow === 'function' && hasTimeWindow(awayC.h)
+    && typeof fillDayWindows === 'function'){
+    const wins = fillDayWindows(awayC.h, state.dayBase, state.seedLocId) || [];
+    if(!wins.length)return true;
+    const needMs = (atDur + awayDur + travelMin) * 60000;
+    return wins.some(w => Number(w && w.end) - now >= needMs);
+  }
+  return true;
 }
 
 // PURE: snapshot mutable fields so week scoring can dry-run without commit.
