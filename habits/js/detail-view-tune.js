@@ -20,8 +20,8 @@ function currentDetailTune(){
     const mode = document.querySelector('#detail-mode-seg .seg-opt.on')?.dataset.mode || 'build';
     type = modeToType(mode);
   }
-  const locationIds = selectedLocationIdsFrom('detail-tag-chips');
-  const locationPrefs = selectedLocationPrefsFrom('detail-tag-chips');
+  const locationIds = selectedLocationIdsFrom('detail-place-chips');
+  const locationPrefs = selectedLocationPrefsFrom('detail-place-chips');
   const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
   return {
     name:$('detail-habit-message').value.trim(),
@@ -31,9 +31,9 @@ function currentDetailTune(){
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
     links:currentDetailLinks(),
-    topics:selectedTopicsFrom('detail-tag-chips'),
+    topics:selectedTopicsFrom('detail-topic-chips'),
     locationIds,
-    anywhereAllowed:selectedAnywhereFrom('detail-tag-chips'),
+    anywhereAllowed:selectedAnywhereFrom('detail-place-chips'),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
@@ -144,7 +144,8 @@ function restoreDetailTune(){
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = detailTuneOriginal.eventTime !== null ? timeInputValue(detailTuneOriginal.eventTime) : '';
   syncDetailDueUi();
-  renderTagChips('detail-tag-chips',detailTuneOriginal.topics,detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
+  renderTagChips('detail-place-chips',[],detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
+  renderTagChips('detail-topic-chips',detailTuneOriginal.topics,[]);
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');
@@ -426,6 +427,7 @@ function setScheduleView(view){
   const preferredGroup = $('detail-schedule-preferred');
   if(allowedGroup)allowedGroup.hidden = view !== 'allowed';
   if(preferredGroup)preferredGroup.hidden = view !== 'preferred';
+  if(typeof syncDetailSchedulePlacesUi === 'function')syncDetailSchedulePlacesUi();
 }
 
 // HYBRID: resets detail state and closes sheet

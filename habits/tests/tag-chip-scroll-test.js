@@ -73,26 +73,25 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
   await page.goto(baseUrl, { waitUntil:'load' });
   await page.waitForTimeout(300);
 
-  // ── Open detail sheet and scroll to identity pane (index 4) ──
+  // ── Open detail sheet and scroll to identity pane ──
   const habitCard = page.locator('#list .ting-card', { hasText:'Scroll Test Habit' }).first();
   await habitCard.click();
   await page.waitForSelector('#detail-sheet.open');
   await page.waitForTimeout(200);
   await page.evaluate(() => {
-    const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager) pager.scrollTo({ left:pager.clientWidth * 4, behavior:'instant' });
+    scrollDetailToNav('identity');
   });
   await page.waitForTimeout(300);
 
-  const tagChips = page.locator('#detail-tag-chips');
-  assert(await tagChips.isVisible(), 'detail tag chips visible');
+  const topicWrap = page.locator('#detail-topic-chips');
+  assert(await topicWrap.isVisible(), 'identity topic chips visible');
 
-  const topicChips = page.locator('#detail-tag-chips .topic-chip[data-topic]');
+  const topicChips = page.locator('#detail-topic-chips .topic-chip[data-topic]');
   const topicCount = await topicChips.count();
   console.log(`  topic chips: ${topicCount}`);
   assert(topicCount >= 10, 'enough topic chips to scroll (got ' + topicCount + ')');
 
-  const locCount = await page.locator('#detail-tag-chips .location-chip[data-location-id]').count();
+  const locCount = await page.locator('#detail-place-chips .location-chip[data-location-id]').count();
   console.log(`  location chips: ${locCount}`);
   assert(locCount >= 8, 'enough location chips to scroll (got ' + locCount + ')');
 
@@ -112,12 +111,12 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
 
   // ── 2. Horizontal scroll on topic row does NOT toggle chips ──
   console.log('\n--- 2. Horizontal scroll on topic row ---');
-  const topicRow = page.locator('#detail-tag-chips .tag-row-topics');
+  const topicRow = page.locator('#detail-topic-chips .tag-row-topics');
   const topicBox = await topicRow.boundingBox();
   assert(topicBox !== null, 'topic row has bounding box');
 
   const initTopicState = await page.evaluate(() =>
-    [...document.querySelectorAll('#detail-tag-chips .topic-chip[data-topic]')]
+    [...document.querySelectorAll('#detail-topic-chips .topic-chip[data-topic]')]
       .map(el => el.classList.contains('on'))
   );
 
@@ -133,7 +132,7 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
   assert(scrollAfter !== scrollBefore, 'topic row actually scrolled');
 
   const afterTopicState = await page.evaluate(() =>
-    [...document.querySelectorAll('#detail-tag-chips .topic-chip[data-topic]')]
+    [...document.querySelectorAll('#detail-topic-chips .topic-chip[data-topic]')]
       .map(el => el.classList.contains('on'))
   );
   assert(
@@ -143,12 +142,18 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
 
   // ── 3. Horizontal scroll on location row does NOT toggle chips ──
   console.log('\n--- 3. Horizontal scroll on location row ---');
-  const locRow = page.locator('#detail-tag-chips .tag-row-places');
+  await page.evaluate(() => scrollDetailToNav('schedule'));
+  await page.waitForTimeout(300);
+  const placeWrap = page.locator('#detail-place-chips');
+  assert(await placeWrap.isVisible(), 'schedule place chips visible');
+  const locRow = page.locator('#detail-place-chips .tag-row-places');
+  await locRow.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(100);
   const locBox = await locRow.boundingBox();
   assert(locBox !== null, 'location row has bounding box');
 
   const initLocState = await page.evaluate(() =>
-    [...document.querySelectorAll('#detail-tag-chips .location-chip[data-location-id]')]
+    [...document.querySelectorAll('#detail-place-chips .location-chip[data-location-id]')]
       .map(el => el.classList.contains('on'))
   );
 
@@ -164,7 +169,7 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
   assert(locScrollAfter !== locScrollBefore, 'location row actually scrolled');
 
   const afterLocState = await page.evaluate(() =>
-    [...document.querySelectorAll('#detail-tag-chips .location-chip[data-location-id]')]
+    [...document.querySelectorAll('#detail-place-chips .location-chip[data-location-id]')]
       .map(el => el.classList.contains('on'))
   );
   assert(
@@ -174,6 +179,8 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
 
   // ── 4. Normal tap still works after scroll (regression) ──
   console.log('\n--- 4. Tap still works after scroll ---');
+  await page.evaluate(() => scrollDetailToNav('identity'));
+  await page.waitForTimeout(300);
   const afterScrollWasOn = await firstTopic.evaluate(el => el.classList.contains('on'));
   await firstTopic.click();
   await page.waitForTimeout(100);

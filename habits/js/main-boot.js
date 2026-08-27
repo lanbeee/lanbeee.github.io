@@ -768,22 +768,18 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
   }
   toggleTopicChip(e);
 });
-$('detail-tag-chips')?.addEventListener('click',e=>{
+$('detail-place-chips')?.addEventListener('click',e=>{
   // Bail if the user was just scrolling the tag row (prevents accidental taps)
   if(e.target.closest('.tag-row')?._sg)return;
-  if(e.target.closest('[data-topic-add]')){
-    beginNewTopicInput('detail-tag-chips');
-    return;
-  }
   if(e.target.closest('[data-location-add]')){
     // Open the place picker; on save, auto-select the new place on this habit.
     if(typeof openLocationPicker === 'function'){
       openLocationPicker({
         onCreated:id=>{
-          const wrap = 'detail-tag-chips';
+          const wrap = 'detail-place-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
-          renderTagChips(wrap,selectedTopicsFrom(wrap),selected,null,prefs);
+          renderTagChips(wrap,[],selected,null,prefs);
           setDetailDirty();
         }
       });
@@ -791,12 +787,19 @@ $('detail-tag-chips')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-anywhere]')){
-    renderTagChips('detail-tag-chips',selectedTopicsFrom('detail-tag-chips'),selectedLocationIdsFrom('detail-tag-chips'),null,selectedLocationPrefsFrom('detail-tag-chips'),!selectedAnywhereFrom('detail-tag-chips'));
+    renderTagChips('detail-place-chips',[],selectedLocationIdsFrom('detail-place-chips'),null,selectedLocationPrefsFrom('detail-place-chips'),!selectedAnywhereFrom('detail-place-chips'));
     setDetailDirty();
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){
     toggleLocationChip(e);
+    return;
+  }
+});
+$('detail-topic-chips')?.addEventListener('click',e=>{
+  if(e.target.closest('.tag-row')?._sg)return;
+  if(e.target.closest('[data-topic-add]')){
+    beginNewTopicInput('detail-topic-chips');
     return;
   }
   toggleTopicChip(e);
@@ -812,7 +815,10 @@ $('detail-preferred-monthday-toggle')?.addEventListener('click',()=>{
   toggleMonthDayDisclosure($('detail-preferred-monthday-toggle'));
 });
 $('detail-habit-options')?.addEventListener('input',()=>setDetailDirty());
-$('detail-habit-options')?.addEventListener('change',()=>setDetailDirty());
+$('detail-habit-options')?.addEventListener('change',e=>{
+  if(e.target.closest('.habit-option-location'))syncHabitScheduleOptionsUi();
+  setDetailDirty();
+});
 $('detail-habit-options')?.addEventListener('click',e=>{
   if(e.target.closest('#detail-habit-option-add')){
     addBlankHabitScheduleOption();
@@ -1229,17 +1235,14 @@ $('detail-save').addEventListener('click',()=>{
   h.pinned = current.pinned;
   h.links = normalizeLinks(current.links);
   h.topics = normalizeTopics(current.topics);
-  h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
-  h.anywhereAllowed = Boolean(current.anywhereAllowed);
-  h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,h.locationIds,current.preferredLocationId);
-  h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,h.locationIds);
   h.scheduleOptions = normalizeHabitScheduleOptions(current.scheduleOptions,sortSettings.locations);
-  // Option locations are real habit locations for cards, prayer resolution,
-  // and one-day location pickers even when they were selected only in a row.
-  h.locationIds = normalizeLocationIds([
-    ...h.locationIds,
-    ...h.scheduleOptions.map(option=>option.locationId).filter(Boolean)
-  ],sortSettings.locations);
+  const optionLocationState = habitScheduleOptionLocationState(h.scheduleOptions,sortSettings.locations);
+  h.locationIds = h.scheduleOptions.length
+    ? optionLocationState.locationIds
+    : normalizeLocationIds(current.locationIds,sortSettings.locations);
+  h.anywhereAllowed = h.scheduleOptions.length
+    ? optionLocationState.anywhereAllowed
+    : Boolean(current.anywhereAllowed);
   h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,h.locationIds,current.preferredLocationId);
   h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,h.locationIds);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
@@ -1292,6 +1295,27 @@ $('detail-save').addEventListener('click',()=>{
     h[f + 'DayOffset'] = normalizeAnchorDayOffset(current[f + 'DayOffset']);
     h[f + 'DayOffset2'] = anchor2 && anchor2 !== 'fixed'
       ? normalizeAnchorDayOffset(current[f + 'DayOffset2']) : 0;
+  }
+  // Availability options are a complete hard schedule, not an extra filter.
+  // Clear the hidden simple fields so days/time/place have one authoritative
+  // source and stale values cannot silently intersect or override an option.
+  if(h.scheduleOptions.length){
+    h.allowedWeekdays = [];
+    h.allowedMonthDays = [];
+    h.allowedTimeStart = null;
+    h.allowedTimeEnd = null;
+    for(const f of ['allowedTimeStart','allowedTimeEnd']){
+      h[f + 'Anchor'] = null;
+      h[f + 'OffsetMin'] = 0;
+      h[f + 'AnchorHabitId'] = null;
+      h[f + 'Combine'] = null;
+      h[f + 'Anchor2'] = null;
+      h[f + 'OffsetMin2'] = 0;
+      h[f + 'AnchorHabitId2'] = null;
+      h[f + 'FixedMin2'] = null;
+      h[f + 'DayOffset'] = 0;
+      h[f + 'DayOffset2'] = 0;
+    }
   }
   // Block: a 'habit' endpoint without a picked habit is incomplete.
   const habitAnchorFields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];

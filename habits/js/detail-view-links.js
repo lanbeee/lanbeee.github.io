@@ -281,8 +281,45 @@ function habitScheduleOptionRowHtml(option,index){
 function syncHabitScheduleOptionsUi(){
   const list = $('detail-habit-option-list');
   const hasOptions = Boolean(list && list.children.length);
-  const timeRow = $('detail-allowed-time-row')?.closest('.schedule-time-row');
-  if(timeRow)timeRow.hidden = hasOptions;
+  const simpleFields = $('detail-simple-allowed-fields');
+  if(simpleFields)simpleFields.hidden = hasOptions;
+  const add = $('detail-habit-option-add');
+  if(add)add.textContent = hasOptions ? 'add option' : 'use options';
+  const hint = $('detail-habit-options-hint');
+  if(hint)hint.textContent = hasOptions
+    ? 'Each row is a valid alternative. Preferred rules rank them; only one is scheduled.'
+    : 'Keep the simple rules above, or switch to coupled day, time, and place alternatives.';
+
+  const tagWrap = $('detail-place-chips');
+  if(!tagWrap)return;
+  if(hasOptions){
+    const placeState = habitScheduleOptionLocationState(readHabitScheduleOptionsFromDetail(),(sortSettings || {}).locations);
+    const prefs = normalizeLocationPrefs(
+      selectedLocationPrefsFrom('detail-place-chips'),placeState.locationIds,null
+    );
+    tagWrap.dataset.locationChoiceMode = 'preference';
+    renderTagChips(
+      'detail-place-chips',[],placeState.locationIds,null,prefs,placeState.anywhereAllowed
+    );
+  }else{
+    renderTagChips(
+      'detail-place-chips',[],selectedLocationIdsFrom('detail-place-chips'),null,
+      selectedLocationPrefsFrom('detail-place-chips'),selectedAnywhereFrom('detail-place-chips')
+    );
+  }
+  syncDetailSchedulePlacesUi();
+}
+
+function syncDetailSchedulePlacesUi(){
+  const wrap = $('detail-place-chips');
+  const label = $('detail-places-label');
+  const hasOptions = Boolean($('detail-habit-option-list')?.children.length);
+  const preferenceOnly = hasOptions || detailScheduleView === 'preferred';
+  if(wrap){
+    wrap.dataset.locationChoiceMode = preferenceOnly ? 'preference' : 'allowed';
+    applyTagChipLocationMode(wrap);
+  }
+  if(label)label.textContent = preferenceOnly ? 'place preferences' : 'places';
 }
 
 function renderHabitScheduleOptions(h = {}){
@@ -315,10 +352,20 @@ function addBlankHabitScheduleOption(){
     showToast(`up to ${MAX_HABIT_SCHEDULE_OPTIONS} options`);
     return;
   }
-  const selected = selectedLocationIdsFrom('detail-tag-chips');
-  const locationId = selected[0] || normalizeLocationRegistry((sortSettings || {}).locations)[0]?.id || null;
+  const firstOption = list.children.length === 0;
+  const selected = selectedLocationIdsFrom('detail-place-chips');
+  const prefs = selectedLocationPrefsFrom('detail-place-chips');
+  const locationId = firstOption
+    ? (primaryPreferredLocationId(prefs,selected) || selected[0] || null)
+    : (selected[0] || normalizeLocationRegistry((sortSettings || {}).locations)[0]?.id || null);
+  const selectedDays = firstOption ? selectedWeekdaysFrom('detail-weekday-chips') : [];
+  const allowedStart = firstOption ? timeInputToMinutes($('detail-time-start')?.value) : null;
+  const allowedEnd = firstOption ? timeInputToMinutes($('detail-time-end')?.value) : null;
   list.insertAdjacentHTML('beforeend',habitScheduleOptionRowHtml({
-    weekdays:[],start:540,end:600,locationId
+    weekdays:selectedDays,
+    start:allowedStart ?? 540,
+    end:allowedEnd ?? 600,
+    locationId
   },list.children.length));
   syncHabitScheduleOptionsUi();
   setDetailDirty();

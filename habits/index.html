@@ -280,30 +280,32 @@
             <button class="seg-opt" data-schedule-view="preferred">preferred</button>
           </div>
           <div id="detail-schedule-allowed" class="detail-full-only">
-            <span class="settings-sublabel">days</span>
-            <div class="schedule-chip-row" id="detail-weekday-chips"></div>
-            <div class="monthday-disclosure">
-              <button type="button" class="monthday-disclosure-head" id="detail-monthday-toggle" aria-expanded="false" aria-controls="detail-monthday-chips">
-                <span class="monthday-disclosure-label">month days</span>
-                <span class="monthday-disclosure-summary" id="detail-monthday-summary">any</span>
-                <i class="ti ti-chevron-down" aria-hidden="true"></i>
-              </button>
-              <div class="monthday-chip-row" id="detail-monthday-chips" hidden></div>
-            </div>
-            <div class="schedule-time-row">
-              <span class="settings-sublabel compact-label">time window</span>
-              <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed"></div>
-              <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
+            <div id="detail-simple-allowed-fields">
+              <span class="settings-sublabel">days</span>
+              <div class="schedule-chip-row" id="detail-weekday-chips"></div>
+              <div class="monthday-disclosure">
+                <button type="button" class="monthday-disclosure-head" id="detail-monthday-toggle" aria-expanded="false" aria-controls="detail-monthday-chips">
+                  <span class="monthday-disclosure-label">month days</span>
+                  <span class="monthday-disclosure-summary" id="detail-monthday-summary">any</span>
+                  <i class="ti ti-chevron-down" aria-hidden="true"></i>
+                </button>
+                <div class="monthday-chip-row" id="detail-monthday-chips" hidden></div>
+              </div>
+              <div class="schedule-time-row">
+                <span class="settings-sublabel compact-label">time window</span>
+                <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed"></div>
+                <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
+              </div>
             </div>
             <div class="habit-options-block" id="detail-habit-options">
               <div class="habit-options-heading">
-                <span class="settings-sublabel">time &amp; place options
+                <span class="settings-sublabel">availability options
                   <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                  <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Add every alternative for this habit. The same place can appear more than once at different times. The planner chooses one option for an occurrence; it does not create extra completions.</span>
+                  <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Use options when the valid days, time, and place belong together. The same place can appear at several times. Preferred days, times, and places rank the valid options. Only one option is scheduled per occurrence.</span>
                 </span>
-                <button type="button" class="mini-text-btn" id="detail-habit-option-add">add option</button>
+                <button type="button" class="mini-text-btn" id="detail-habit-option-add">use options</button>
               </div>
-              <p class="field-hint">Optional. Rows replace the single time window and general place choices above.</p>
+              <p class="field-hint" id="detail-habit-options-hint">Keep the simple rules above, or switch to coupled day, time, and place alternatives.</p>
               <div class="habit-option-list" id="detail-habit-option-list"></div>
             </div>
           </div>
@@ -323,6 +325,10 @@
               <div class="time-endpoints detail-time-endpoints" id="detail-preferred-time-row" data-field-prefix="preferred"></div>
               <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
             </div>
+          </div>
+          <div class="detail-schedule-places detail-full-only">
+            <span class="settings-sublabel" id="detail-places-label">places</span>
+            <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
           </div>
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="effort">
@@ -415,8 +421,8 @@
               <div class="info-tooltip" id="detail-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
             <div class="seg priority-seg" id="detail-priority-seg" data-ui-priority="detail"></div>
           </div>
-          <span class="settings-sublabel detail-full-only" id="detail-topics-label">topics &amp; places</span>
-          <div class="topic-chip-row detail-full-only" id="detail-tag-chips"></div>
+          <span class="settings-sublabel detail-full-only" id="detail-topics-label">topics</span>
+          <div class="topic-chip-row detail-full-only" id="detail-topic-chips" data-tag-content="topics"></div>
         </section>
         <section class="detail-page detail-section tune-section detail-actions-page" data-detail-nav="actions">
           <span class="section-label">actions</span>

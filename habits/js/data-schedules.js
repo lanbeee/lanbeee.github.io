@@ -5,6 +5,13 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 function scheduledDays(h){
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+    const options = normalizeHabitScheduleOptions(h.scheduleOptions);
+    const weekdays = options.some(option=>!option.weekdays.length)
+      ? []
+      : [...new Set(options.flatMap(option=>option.weekdays))].sort((a,b)=>a-b);
+    return {weekdays,monthDays:[]};
+  }
   return {
     weekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     monthDays:normalizeAllowedMonthDays(h.allowedMonthDays)
@@ -28,18 +35,7 @@ const SCHEDULE_OPPORTUNITY_RATE_CACHE = new Map();
 // weekday + month-day intersections all have a stable exact rate.
 function scheduledOpportunityRate(h){
   const schedule = scheduledDays(h);
-  let effectiveWeekdays = schedule.weekdays;
-  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
-  if(optionMode){
-    const options = normalizeHabitScheduleOptions(h.scheduleOptions);
-    const optionDays = options.some(option=>!option.weekdays.length)
-      ? [0,1,2,3,4,5,6]
-      : [...new Set(options.flatMap(option=>option.weekdays))].sort((a,b)=>a-b);
-    effectiveWeekdays = effectiveWeekdays.length
-      ? effectiveWeekdays.filter(day=>optionDays.includes(day))
-      : optionDays;
-  }
-  if(!effectiveWeekdays.length && (schedule.weekdays.length || optionMode))return 0;
+  const effectiveWeekdays = schedule.weekdays;
   if(!effectiveWeekdays.length && !schedule.monthDays.length)return 1;
   if(!schedule.monthDays.length)return effectiveWeekdays.length / 7;
   const key = `${effectiveWeekdays.join(',')}|${schedule.monthDays.join(',')}`;
@@ -104,11 +100,6 @@ function isDateEligibleForHabit(h,ts = Date.now()){
   const d = new Date(ts);
   if(schedule.weekdays.length && !schedule.weekdays.includes(d.getDay()))return false;
   if(schedule.monthDays.length && !schedule.monthDays.includes(d.getDate()))return false;
-  // An option list is an additional day gate: at least one alternative must
-  // actually be offered today. The chosen time/location is decided later by
-  // the placement engine.
-  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)
-    && !habitScheduleOptionsForDay(h,dayStart(ts)).length)return false;
   return true;
 }
 function nextEligibleDate(h,fromTs = Date.now(),lookAheadDays = 370){

@@ -83,10 +83,8 @@ function selectedLocationPrefs(){
 }
 
 // RENDER: split chip layout — places on one horizontal-scroll row, topics on
-// another. Each row starts with its own "+ new" pill so a place or topic can
-// be created inline. The container keeps its id so the existing
-// selectedTopicsFrom / selectedLocationIdsFrom helpers (which walk by data
-// attribute, not by row) keep working unchanged.
+// another. A container may opt into only one row with data-tag-content so the
+// detail sheet can keep schedule places separate from identity topics.
 // Location pref cycle: off → on → little → high → avoid → off
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null,anywhereAllowed = null){
   const wrap = $(containerId);
@@ -157,6 +155,10 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   addScrollGuard(topicRow);
   wrap.appendChild(locRow);
   wrap.appendChild(topicRow);
+  applyTagChipLocationMode(wrap,selectedLocs);
+  const content = wrap.dataset.tagContent;
+  if(content === 'places')topicRow.hidden = true;
+  if(content === 'topics')locRow.hidden = true;
   // Restore horizontal scroll position saved before rebuild.
   locRow.scrollLeft = prevPlaceScroll;
   topicRow.scrollLeft = prevTopicScroll;
@@ -164,6 +166,25 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // which would swallow the next click within 500ms. Disarm on the next tick
   // (the scroll event is queued before this timeout so it fires first).
   setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
+}
+
+// RENDER: in availability-option mode, places are chosen by the coupled rows.
+// The shared chip row then edits only the soft preference among those places;
+// hiding add/anywhere/off chips prevents a second, conflicting allowed-place
+// control from appearing elsewhere in the detail sheet.
+function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(wrap && wrap.id)){
+  if(!wrap)return;
+  const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
+  const selected = new Set(normalizeLocationIds(selectedLocIds));
+  const add = wrap.querySelector('[data-location-add]');
+  const anywhere = wrap.querySelector('[data-anywhere]');
+  if(add)add.hidden = preferenceOnly;
+  if(anywhere)anywhere.hidden = preferenceOnly;
+  wrap.querySelectorAll('.location-chip[data-location-id]').forEach(btn=>{
+    btn.hidden = preferenceOnly && !selected.has(btn.dataset.locationId);
+  });
+  const placeRow = wrap.querySelector('.tag-row-places');
+  if(placeRow)placeRow.hidden = preferenceOnly && selected.size === 0;
 }
 
 // HANDLER: toggle a location chip — off → on → little → high → avoid → off
@@ -174,7 +195,18 @@ function toggleLocationChip(e){
   if(!wrap)return;
   const level = btn.dataset.pref || '';
   const isOn = btn.classList.contains('on');
-  if(!isOn){
+  const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
+  const allowedOnly = wrap.dataset.locationChoiceMode === 'allowed';
+  if(preferenceOnly){
+    btn.classList.add('on');
+    btn.dataset.pref = level === '' ? 'little'
+      : level === 'little' ? 'high'
+      : level === 'high' ? 'avoid'
+      : '';
+  }else if(allowedOnly){
+    btn.classList.toggle('on',!isOn);
+    btn.dataset.pref = '';
+  }else if(!isOn){
     btn.classList.add('on');
     btn.dataset.pref = '';
   }else if(level === ''){
@@ -190,7 +222,7 @@ function toggleLocationChip(e){
   const selected = selectedLocationIdsFrom(wrap.id);
   const prefs = selectedLocationPrefsFrom(wrap.id);
   renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,prefs,selectedAnywhereFrom(wrap.id));
-  if(wrap.id === 'detail-tag-chips')setDetailDirty();
+  if(wrap.id === 'detail-place-chips')setDetailDirty();
 }
 
 // PURE: resolve the place a home/agenda card is treated as being at.
@@ -576,7 +608,7 @@ function beginNewTopicInput(containerId){
     const prefs = selectedLocationPrefsFrom(containerId);
     renderTagChips(containerId,nextSelected,locs,null,prefs);
     renderTopicList();
-    if(containerId === 'detail-tag-chips')setDetailDirty();
+    if(containerId === 'detail-topic-chips')setDetailDirty();
     render();
   };
   input.addEventListener('blur',()=>{
@@ -604,7 +636,7 @@ function toggleTopicChip(e){
   const btn = e.target.closest('.topic-chip[data-topic]');
   if(!btn)return;
   btn.classList.toggle('on');
-  if(btn.closest('#detail-tag-chips'))setDetailDirty();
+  if(btn.closest('#detail-topic-chips'))setDetailDirty();
 }
 
 // RENDER: draw removable topic list
@@ -633,9 +665,9 @@ function addTopicFromInput(inputId,options = {}){
   renderTagChips('ting-tag-chips',addSelected,selectedLocationIds(),null,selectedLocationPrefs());
   if(detailIdx !== null){
     const detailSelected = autoSelect
-      ? normalizeTopics([...selectedTopicsFrom('detail-tag-chips'),topic])
+      ? normalizeTopics([...selectedTopicsFrom('detail-topic-chips'),topic])
       : currentDetailTune().topics;
-    renderTagChips('detail-tag-chips',detailSelected,selectedLocationIdsFrom('detail-tag-chips'),null,selectedLocationPrefsFrom('detail-tag-chips'));
+    renderTagChips('detail-topic-chips',detailSelected,[]);
     if(autoSelect)setDetailDirty();
   }
   render();
@@ -660,7 +692,7 @@ function removeTopic(topic){
   renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),null,selectedLocationPrefs());
   if(detailIdx !== null){
     const tune = currentDetailTune();
-    renderTagChips('detail-tag-chips',tune.topics,tune.locationIds,tune.preferredLocationId,tune.locationPrefs);
+    renderTagChips('detail-topic-chips',tune.topics,[]);
   }
   if(typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key){
     homeTopicFilter = 'all';

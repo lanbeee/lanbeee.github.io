@@ -956,8 +956,8 @@ Visible when type = task:
 
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
-| `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics and places |
-| `schedule` | 📅 | Rhythm or task deadline, flexibility, time windows, days, item order |
+| `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics |
+| `schedule` | 📅 | Rhythm or task deadline, flexibility, allowed/preferred days, times and places, item order |
 | `effort` | 📊 | Duration, breakable, min chunk, logging and session controls |
 | `history` (`calendar` key) | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
 | `actions` | ⋮ | Links/calls, pin, export, share, snooze and remove |
@@ -977,7 +977,7 @@ Fields shown (always visible, even in minimal mode):
     - `stop` = zero (completely stop doing)
   - When `task`: No kind sub-segment
 - **Priority** (P0-P5 segmented control, with info tooltip)
-- **Topics & Places** (topic chips + location chips)
+- **Topics** (topic chips)
 
 ### 9.4 Schedule Tab Details 👤
 
@@ -1005,6 +1005,13 @@ Fields shown (always visible, even in minimal mode):
 - **Allowed Month Days:** Dates 1-31
   - Empty = all dates
 - **Preferred Weekdays/Month Days:** Soft hints for sorting
+
+#### Places Section
+- **Allowed places:** Hard placement choices shown with the Allowed schedule.
+- **Place preferences:** Soft `little` / `high` / `avoid` rankings shown with
+  the Preferred schedule.
+- With availability options, allowed places come only from the coupled rows;
+  the place-preference row ranks those places without duplicating eligibility.
 
 #### Time Window Section
 ```
@@ -2516,14 +2523,20 @@ Same agenda logic, but simplified display:
 
 ### 25.3.1 Time & Place Options 👤👨‍💻
 
-- Add these under an item's **Schedule → Allowed → time & place options**.
+- Add these under an item's **Schedule → Allowed → availability options**.
 - Each row couples its own weekdays, start/end window, and location.
 - Rows are alternatives for one occurrence. If three rows fit, the planner
   chooses one; it does not schedule or count the habit three times.
 - The same location may be used in any number of rows at different times.
-- When at least one row exists, these rows replace the item's single allowed
-  time window and general place choices for placement. The place's own opening
-  hours still apply as an outer constraint.
+- The editor has two mutually exclusive hard-schedule modes: simple rules or
+  availability options. Once a row exists, the simple allowed day/time fields
+  and the separate allowed-place picker hide; option rows are the sole source
+  for allowed days, times, and places.
+- Preferred days, time, and place levels remain soft hints. They rank feasible
+  option rows but never make an otherwise valid row invalid. A place's own
+  opening hours still apply as an outer constraint.
+- `locationIds` and `anywhereAllowed` are derived summaries in option mode,
+  used by cards/search/prayer resolution; they are not a second hard filter.
 - The Fast and GLPK planners both enumerate the rows independently, including
   repeated-location rows, and account for travel before selecting one.
 

@@ -47,7 +47,8 @@ function openDetail(i){
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
   renderDetailLinkRows(normalizeLinks(h.links));
-  renderTagChips('detail-tag-chips',h.topics,h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
+  renderTagChips('detail-place-chips',[],h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
+  renderTagChips('detail-topic-chips',h.topics,[]);
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
   renderHabitScheduleOptions(h);

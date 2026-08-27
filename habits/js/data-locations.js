@@ -198,8 +198,21 @@ function hasHabitScheduleOptions(h){
   return Boolean(h && Array.isArray(h.scheduleOptions) && h.scheduleOptions.length);
 }
 
-// PURE: alternatives offered on this calendar day. The habit's ordinary
-// allowed weekday/month-day schedule remains an outer eligibility gate.
+// PURE: canonical location projection for option-mode habits. Option rows are
+// the hard allowed-place source; the ordinary location fields become a
+// de-duplicated summary used by cards, search, prayer resolution, and soft
+// location preferences.
+function habitScheduleOptionLocationState(value,registry){
+  const options = normalizeHabitScheduleOptions(value,registry);
+  return {
+    options,
+    locationIds:normalizeLocationIds(options.map(option=>option.locationId).filter(Boolean),registry),
+    anywhereAllowed:options.some(option=>option.locationId === null)
+  };
+}
+
+// PURE: alternatives offered on this calendar day. In option mode these rows
+// are the complete hard day schedule; simple allowed-day fields are ignored.
 function habitScheduleOptionsForDay(h,dayBase,locationId = undefined){
   const options = normalizeHabitScheduleOptions(h && h.scheduleOptions);
   if(!options.length)return [];
@@ -518,7 +531,10 @@ function effectiveLocationWindow(h,loc,weekday,dayBase){
     const locationId = loc ? loc.id : null;
     const intervals = [];
     for(const option of habitScheduleOptionsForDay(h,dayBase,locationId)){
-      intervals.push(...intersectWindows({start:option.start,end:option.end},locWin));
+      const optionWin = option.start === option.end
+        ? {start:0,end:1440}
+        : {start:option.start,end:option.end};
+      intervals.push(...intersectWindows(optionWin,locWin));
     }
     return mergeMinuteIntervals(intervals);
   }
@@ -550,11 +566,14 @@ function reconcileLocations(data,settings){
   let changed = false;
   const next = (Array.isArray(data) ? data : []).map(h=>{
     const prev = Array.isArray(h.locationIds) ? h.locationIds : [];
-    const scheduleOptions = normalizeHabitScheduleOptions(h.scheduleOptions,registry);
-    const locationIds = normalizeLocationIds([
-      ...prev.filter(id=>valid.has(id)),
-      ...scheduleOptions.map(option=>option.locationId).filter(Boolean)
-    ],registry);
+    const optionState = habitScheduleOptionLocationState(h.scheduleOptions,registry);
+    const scheduleOptions = optionState.options;
+    const locationIds = scheduleOptions.length
+      ? optionState.locationIds
+      : normalizeLocationIds(prev.filter(id=>valid.has(id)),registry);
+    const anywhereAllowed = scheduleOptions.length
+      ? optionState.anywhereAllowed
+      : Boolean(h.anywhereAllowed);
     const locationPrefs = normalizeLocationPrefs(h.locationPrefs,locationIds,h.preferredLocationId);
     const preferredLocationId = primaryPreferredLocationId(locationPrefs,locationIds);
     const prevPref = h.preferredLocationId || null;
@@ -562,9 +581,10 @@ function reconcileLocations(data,settings){
     const moved = locationIds.length !== prev.length
       || preferredLocationId !== prevPref
       || JSON.stringify(locationPrefs) !== prevPrefs
+      || anywhereAllowed !== Boolean(h.anywhereAllowed)
       || JSON.stringify(scheduleOptions) !== JSON.stringify(h.scheduleOptions || []);
     if(moved)changed = true;
-    return moved ? {...h,locationIds,locationPrefs,preferredLocationId,scheduleOptions} : h;
+    return moved ? {...h,locationIds,anywhereAllowed,locationPrefs,preferredLocationId,scheduleOptions} : h;
   });
   return {data:next,changed};
 }
