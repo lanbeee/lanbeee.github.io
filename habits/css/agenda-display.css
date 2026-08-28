@@ -66,7 +66,7 @@ header.agenda-chrome{margin-bottom:clamp(28px,4vw,50px);}
 .agenda-hide span{font-size:18px;line-height:1;transform:rotate(-20deg);}
 .agenda-hide:hover{background:var(--card-solid);color:var(--text);transform:translateY(-1px);}
 .agenda-hide:active{transform:translateY(0) scale(.98);}
-.agenda-hide:focus-visible,.agenda-clear:focus-visible,.agenda-enroll button:focus-visible{
+.agenda-hide:focus-visible,.agenda-clear:focus-visible,.agenda-enroll button:focus-visible,.agenda-done:focus-visible{
   outline:3px solid color-mix(in srgb,var(--now) 45%,transparent);outline-offset:3px;
 }
 #agenda-banner{
@@ -104,7 +104,7 @@ header.agenda-chrome{margin-bottom:clamp(28px,4vw,50px);}
 .agenda-day>header p{margin:0;color:var(--muted);font-size:13px;font-weight:680;letter-spacing:.04em;text-transform:uppercase;}
 .agenda-day.is-today>header h2{color:var(--now);}
 .agenda-row{
-  position:relative;display:grid;grid-template-columns:10.25rem minmax(0,1fr);align-items:center;gap:clamp(14px,2vw,24px);
+  position:relative;display:grid;grid-template-columns:10.25rem minmax(0,1fr) auto;align-items:center;gap:clamp(14px,2vw,24px);
   min-height:76px;margin-bottom:10px;padding:15px clamp(16px,2vw,22px);overflow:hidden;
   border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow);backdrop-filter:blur(16px);
 }
@@ -112,13 +112,27 @@ header.agenda-chrome{margin-bottom:clamp(28px,4vw,50px);}
   min-width:0;color:var(--muted);font-size:clamp(15px,1.35vw,18px);font-weight:680;letter-spacing:-.025em;
   font-variant-numeric:tabular-nums;font-feature-settings:"tnum";white-space:nowrap;text-wrap:nowrap;
 }
-.agenda-row>div{min-width:0;}
+.agenda-row-copy{min-width:0;}
 .agenda-row b{display:block;font-size:clamp(18px,1.8vw,23px);font-weight:710;line-height:1.22;letter-spacing:-.018em;overflow-wrap:anywhere;}
 .agenda-row small{display:block;margin-top:4px;color:var(--muted);font-size:13px;font-weight:560;}
 .agenda-row.is-now{border-color:color-mix(in srgb,var(--now) 40%,transparent);background:color-mix(in srgb,var(--now) 9%,var(--card-solid));}
 .agenda-row.is-now::before{content:"";position:absolute;inset:13px auto 13px 0;width:4px;border-radius:0 4px 4px 0;background:var(--now);}
 .agenda-row.is-next{border-color:color-mix(in srgb,var(--now) 18%,var(--line));}
 .agenda-row.busy b,.agenda-row.open b{font-weight:620;color:var(--muted);}
+.agenda-done{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:108px;min-height:44px;padding:9px 14px;
+  border:1px solid color-mix(in srgb,var(--now) 28%,var(--line));border-radius:999px;background:var(--now-soft);
+  color:var(--now);font-size:13px;font-weight:780;white-space:nowrap;cursor:pointer;
+  transition:transform .16s ease,background .16s ease,color .16s ease;
+}
+.agenda-done:hover{background:var(--now);color:var(--card-solid);transform:translateY(-1px);}
+.agenda-done:active{transform:scale(.97);}
+.agenda-done:disabled{cursor:default;transform:none;}
+.agenda-done.is-saving{opacity:.62;}
+.agenda-done.is-done{background:var(--now);color:var(--card-solid);border-color:transparent;}
+.agenda-done.is-done span{font-size:17px;line-height:1;}
+.agenda-row.is-complete .agenda-row-copy{opacity:.58;}
+.agenda-row.is-complete .agenda-row-copy b{text-decoration:line-through;text-decoration-thickness:1.5px;}
 .agenda-empty{margin:0;padding:22px;border:1px dashed var(--line);border-radius:18px;color:var(--muted);}
 .agenda-clear{
   margin-top:32px;padding:9px 0;border:0;background:transparent;color:var(--muted);font-size:13px;font-weight:650;cursor:pointer;
@@ -164,7 +178,8 @@ header.agenda-chrome{margin-bottom:clamp(28px,4vw,50px);}
   .agenda-hide{width:44px;padding:0;justify-content:center;}
   .agenda-hide span{font-size:20px;}
   .agenda-hide{font-size:0;}
-  .agenda-row{grid-template-columns:1fr;gap:4px;min-height:0;padding:15px 17px;}
-  .agenda-row time{font-size:14px;}
+  .agenda-row{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;min-height:0;padding:15px 17px;}
+  .agenda-row time{grid-column:1 / -1;font-size:14px;}
   .agenda-row b{font-size:19px;}
+  .agenda-done{min-width:78px;min-height:40px;padding:8px 11px;font-size:12px;}
 }

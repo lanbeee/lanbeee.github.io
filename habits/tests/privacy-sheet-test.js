@@ -57,7 +57,7 @@ async function launchBrowser(){
       labels,
       local: /localStorage|this browser/i.test(text),
       owner: /cannot see/i.test(text),
-      display: /shared display|household agenda|Cloudflare/i.test(text),
+      display: /shared display|Cloudflare/i.test(text),
       encrypt: /encrypt/i.test(text),
       photon: /Photon/i.test(text),
       nominatim: /Nominatim/i.test(text),

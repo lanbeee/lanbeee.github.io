@@ -260,6 +260,7 @@ $('do-save').addEventListener('click',()=>{
     emoji:cleanMark($('ting-emoji').value),
     emojiBgColor:selectedEmojiBgColor('ting-emoji-bg'),
     pinned:false,
+    showOnSharedDisplay:true,
     priority:selectedAddPriority(),
     topics:mergedTopics,
     locationIds,
@@ -1233,6 +1234,7 @@ $('detail-save').addEventListener('click',()=>{
   h.emoji = current.emoji;
   h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
+  h.showOnSharedDisplay = current.showOnSharedDisplay !== false;
   h.links = normalizeLinks(current.links);
   h.topics = normalizeTopics(current.topics);
   h.scheduleOptions = normalizeHabitScheduleOptions(current.scheduleOptions,sortSettings.locations);

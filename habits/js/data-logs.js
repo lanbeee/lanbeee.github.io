@@ -94,6 +94,10 @@ function normalizeLogs(logs){
         if(minutes !== null)entry.minutes = minutes;
         if(note)entry.note = note;
         if(log.source === 'calendar')entry.source = 'calendar';
+        if(log.source === 'shared_display' && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
+          entry.source = 'shared_display';
+          entry.operationId = String(log.operationId);
+        }
         if(entry.value !== undefined || entry.minutes !== undefined || entry.note !== undefined || entry.source)return entry;
       }
       return ts;
@@ -143,7 +147,11 @@ function makeActualLog(ts,opts = {}){
   if(Number.isFinite(minutes) && minutes > 0)entry.minutes = Math.round(minutes);
   const note = String(opts.note || opts.text || '').slice(0,MAX_NOTE_CHARS).trim();
   if(note)entry.note = note;
-  if(entry.value === undefined && entry.minutes === undefined && entry.note === undefined)return ts;
+  if(opts.source === 'shared_display' && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
+    entry.source = 'shared_display';
+    entry.operationId = String(opts.operationId);
+  }
+  if(entry.value === undefined && entry.minutes === undefined && entry.note === undefined && !entry.source)return ts;
   return entry;
 }
 function makeLog(ts){

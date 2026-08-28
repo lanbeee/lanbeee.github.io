@@ -66,8 +66,8 @@ function updateHouseholdScope(){
 function bindHouseholdAgendaSettings(){
   $('settings-agenda-create')?.addEventListener('click',async ()=>{
     try{
-      await createHouseholdAgendaFeed(($('settings-agenda-title')?.value || '').trim() || 'Household agenda');
-      await publishHouseholdAgendaNow(null,{ manual:true });
+      await createHouseholdAgendaFeed(($('settings-agenda-title')?.value || '').trim() || 'Shared display');
+      await publishHouseholdAgendaNow(null,{ manual:true,forceCompletionSync:true });
       toastShare(true,'secure feed created; open the display page and scan its QR','could not create display');
     }catch(_){
       toastShare(false,'',shareConfigured() ? 'could not create display' : 'sharing worker is not configured');
@@ -77,7 +77,7 @@ function bindHouseholdAgendaSettings(){
   $('settings-agenda-title')?.addEventListener('change',()=>{
     const feed = agendaFeedRecord();
     if(!feed) return;
-    feed.title = $('settings-agenda-title').value.trim().slice(0,80) || 'Household agenda';
+    feed.title = $('settings-agenda-title').value.trim().slice(0,80) || 'Shared display';
     saveAgendaFeedRecord(feed);
     scheduleHouseholdAgendaPublish();
   });
@@ -93,8 +93,8 @@ function bindHouseholdAgendaSettings(){
   $('settings-agenda-scope-value')?.addEventListener('change',updateHouseholdScope);
   $('settings-agenda-publish')?.addEventListener('click',async ()=>{
     try{
-      await publishHouseholdAgendaNow(null,{ manual:true });
-      toastShare(true,'agenda published','publish failed');
+      await publishHouseholdAgendaNow(null,{ manual:true,forceCompletionSync:true });
+      toastShare(true,'shared display updated','publish failed');
     }catch(_){ toastShare(false,'','publish failed'); }
   });
   $('settings-agenda-pause')?.addEventListener('click',async ()=>{

@@ -515,6 +515,11 @@ $('detail-track-value')?.addEventListener('click',function(){
   this.setAttribute('aria-pressed',String(!pressed));
   setDetailDirty();
 });
+$('detail-shared-display')?.addEventListener('click',function(){
+  const pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed',String(!pressed));
+  setDetailDirty();
+});
 bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
 function openDayLogsAfterCalendarGesture(key,{refreshOverview = false} = {}){
   if(!key)return;

@@ -7,6 +7,7 @@ let _agendaPairScannerStream = null;
 let _agendaPairScannerFrame = null;
 let _agendaPairScannerGeneration = 0;
 let _agendaPairScannerBusy = false;
+let _agendaCompletionSyncAt = 0;
 
 const HOUSEHOLD_AGENDA_MAX_DAYS = 2;
 const HOUSEHOLD_AGENDA_MAX_ROWS = 50;
@@ -14,6 +15,8 @@ const HOUSEHOLD_AGENDA_DEFAULT_ROWS = 20;
 const HOUSEHOLD_AGENDA_DEFAULT_HOURS = 24;
 const HOUSEHOLD_AGENDA_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const HOUSEHOLD_AGENDA_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const SHARED_DISPLAY_COMPLETION_POLL_MS = 30 * 1000;
+const SHARED_DISPLAY_ROW_MAP_REVISIONS = 3;
 
 function householdAgendaTimezone(){
   try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
@@ -51,6 +54,7 @@ function householdProjectionHabit(row,data){
 
 function householdProjectionHabitActive(habit,dayBase){
   if(!habit) return false;
+  if(habit.showOnSharedDisplay === false) return false;
   if(habit.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(habit)) return false;
   if(habit.breakable && typeof breakableBudgetMinutes === 'function'){
     return breakableBudgetMinutes(habit,dayBase) > 0;
@@ -59,7 +63,7 @@ function householdProjectionHabitActive(habit,dayBase){
   return true;
 }
 
-function householdProjectionRow(row, data, dayBase){
+function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
   const habit = householdProjectionHabit(row,data);
   const durationMinutes = Math.max(0, Math.round(((row.end || 0) - (row.start || 0)) / 60000));
   const base = {
@@ -88,9 +92,20 @@ function householdProjectionRow(row, data, dayBase){
   }
   if(row.kind === 'fill' || row.kind === 'scheduled'){
     if(!householdProjectionHabitActive(habit,dayBase)) return null;
+    if(habit && completedRowKeys && completedRowKeys.has(`${habit.hid}|${Number(row.start) || 0}`)) return null;
+    const completable = Boolean(habit && habit.type !== 'zero' && habit.hid);
+    if(completable && rowMap){
+      rowMap[base.rowId] = {
+        hid:habit.hid,
+        dayBase,
+        start:base.start,
+        minutes:durationMinutes
+      };
+    }
     return {
       ...base,
       kind:'item',
+      completable,
       title:habit && habit.name ? String(habit.name).slice(0,80) : 'Scheduled item',
       emoji:habit && habit.emoji ? String(habit.emoji).slice(0,8) : '',
       status:householdRowStatus(row, habit),
@@ -119,10 +134,12 @@ function buildHouseholdAgendaProjection(week, opts = {}){
   const horizon = scopeMode === 'hours' ? Math.min(hardEnd,now + scopeValue * 3600000) : hardEnd;
   let rowsLeft = scopeMode === 'count' ? scopeValue : HOUSEHOLD_AGENDA_MAX_ROWS;
   let totalRows = 0;
+  const rowMap = {};
+  const completedRowKeys = opts.completedRowKeys instanceof Set ? opts.completedRowKeys : new Set();
   const projection = {
     schemaVersion:SHARE_SCHEMA_VERSION,
     feedId:feed && feed.feedId,
-    title:String((feed && feed.title) || 'Household agenda').slice(0,80),
+    title:String((feed && feed.title) || 'Shared display').slice(0,80),
     revision:(feed && Number(feed.lastRevision) || 0) + 1,
     generatedAt:now,
     timezone:householdAgendaTimezone(),
@@ -134,7 +151,7 @@ function buildHouseholdAgendaProjection(week, opts = {}){
       const rows = [];
       for(const row of timeline){
         if(rowsLeft <= 0) break;
-        const projected = householdProjectionRow(row,data,day.dayBase);
+        const projected = householdProjectionRow(row,data,day.dayBase,rowMap,completedRowKeys);
         if(!projected) continue;
         if(projected.end && projected.end <= now) continue;
         if(projected.start && projected.start >= horizon) continue;
@@ -169,6 +186,7 @@ function buildHouseholdAgendaProjection(week, opts = {}){
       };
     })
   };
+  Object.defineProperty(projection,'_rowMap',{ value:rowMap,enumerable:false });
   return projection;
 }
 
@@ -188,6 +206,7 @@ function householdAgendaSignature(projection){
         title:row.title,
         emoji:row.emoji,
         status:row.status,
+        completable:Boolean(row.completable),
         durationMinutes:row.durationMinutes,
         locationLabel:row.locationLabel,
         travelFromLabel:row.travelFromLabel,
@@ -198,7 +217,7 @@ function householdAgendaSignature(projection){
   return JSON.stringify(slim);
 }
 
-async function createHouseholdAgendaFeed(title = 'Household agenda'){
+async function createHouseholdAgendaFeed(title = 'Shared display'){
   if(!shareConfigured()) throw new Error('share_unconfigured');
   const secrets = shareNewAgendaSecrets();
   await shareFetch('/v1/agendas', {
@@ -212,7 +231,7 @@ async function createHouseholdAgendaFeed(title = 'Household agenda'){
     feedId:secrets.id,
     contentKey:secrets.contentKey,
     ownerCredential:secrets.ownerCredential,
-    title:title || 'Household agenda',
+    title:title || 'Shared display',
     lastRevision:0,
     lastPublishedAt:null,
     plannerProvenance:null,
@@ -220,7 +239,8 @@ async function createHouseholdAgendaFeed(title = 'Household agenda'){
     status:'active',
     reauthDays:30,
     scopeMode:'count',
-    scopeValue:HOUSEHOLD_AGENDA_DEFAULT_ROWS
+    scopeValue:HOUSEHOLD_AGENDA_DEFAULT_ROWS,
+    rowMaps:[]
   };
   saveAgendaFeedRecord(feed);
   return feed;
@@ -318,7 +338,7 @@ async function startHouseholdAgendaQrScanner(){
   if(!modal || !status || !video) return false;
   stopHouseholdAgendaQrScanner();
   if(!agendaFeedRecord()){
-    status.textContent = 'This phone does not own a household agenda feed.';
+    status.textContent = 'This phone does not own a shared display feed.';
     modal.hidden = false;
     return false;
   }
@@ -381,7 +401,7 @@ async function openHouseholdAgendaPairingApproval(pairing){
   approve.disabled = true;
   input.disabled = true;
   input.value = '';
-  status.textContent = feed ? 'Checking this 30-second pairing request…' : 'This phone does not own a household agenda feed.';
+  status.textContent = feed ? 'Checking this 30-second pairing request…' : 'This phone does not own a shared display feed.';
   if(!feed) return;
   try{
     const result = await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}`);
@@ -405,6 +425,146 @@ async function openHouseholdAgendaPairingApproval(pairing){
   }
 }
 
+function sharedDisplayCompletionMap(feed,envelope){
+  const revision = Number(envelope && envelope.revision);
+  const rowId = String(envelope && envelope.logId || '');
+  const maps = Array.isArray(feed && feed.rowMaps) ? feed.rowMaps : [];
+  const revisionMap = maps.find(entry=>Number(entry && entry.revision) === revision);
+  const mapped = revisionMap && revisionMap.rows && revisionMap.rows[rowId];
+  if(!mapped || !cleanHabitId(mapped.hid)) return null;
+  return {
+    hid:cleanHabitId(mapped.hid),
+    dayBase:Number(mapped.dayBase) || 0,
+    start:Number(mapped.start) || 0,
+    minutes:Math.max(0,Math.min(720,Math.round(Number(mapped.minutes) || 0)))
+  };
+}
+
+function sharedDisplayCompletionAlreadyLogged(data,operationId){
+  return data.some(h=>normalizeLogs(h && h.logs).some(log=>
+    log && typeof log === 'object'
+      && log.source === 'shared_display'
+      && log.operationId === operationId
+  ));
+}
+
+async function syncHouseholdAgendaCompletions(feed,opts = {}){
+  const base = feed || agendaFeedRecord();
+  if(!base || !base.ownerCredential) return { feed:base,operationIds:[],completedRowKeys:new Set(),changed:false };
+  const now = Date.now();
+  if(!opts.force && now - _agendaCompletionSyncAt < SHARED_DISPLAY_COMPLETION_POLL_MS){
+    return { feed:base,operationIds:[],completedRowKeys:new Set(),changed:false };
+  }
+  _agendaCompletionSyncAt = now;
+  const result = await shareFetch(`/v1/agendas/${base.feedId}`,{ credential:base.ownerCredential });
+  const remoteRevision = Number(result.body && result.body.revision);
+  const nextFeed = Number.isInteger(remoteRevision) && remoteRevision >= 0
+    ? { ...base,lastRevision:remoteRevision }
+    : base;
+  const pending = Array.isArray(result.body && result.body.completions)
+    ? result.body.completions.slice(0,50)
+    : [];
+  if(!pending.length) return { feed:nextFeed,operationIds:[],completedRowKeys:new Set(),changed:false };
+
+  const data = load();
+  const safeToAck = [];
+  const applied = [];
+  const completedRowKeys = new Set();
+  let changed = false;
+  for(const record of pending){
+    const envelope = record && record.envelope;
+    const operationId = String(envelope && envelope.operationId || '');
+    const rowId = String(envelope && envelope.logId || '');
+    if(!/^[0-9a-f]{32}$/.test(operationId) || !/^[0-9a-f]{16}$/.test(rowId)) continue;
+    const mapped = sharedDisplayCompletionMap(nextFeed,envelope);
+    if(!mapped){
+      safeToAck.push(operationId);
+      continue;
+    }
+    if(sharedDisplayCompletionAlreadyLogged(data,operationId)){
+      completedRowKeys.add(`${mapped.hid}|${mapped.start}`);
+      safeToAck.push(operationId);
+      continue;
+    }
+    let payload;
+    try{ payload = await shareDecrypt(nextFeed.contentKey,envelope); }
+    catch(_){ continue; }
+    if(!payload
+      || payload.schemaVersion !== 1
+      || payload.action !== 'complete'
+      || payload.operationId !== operationId
+      || payload.rowId !== rowId){
+      safeToAck.push(operationId);
+      continue;
+    }
+    const index = data.findIndex(h=>h && h.hid === mapped.hid);
+    const h = index >= 0 ? data[index] : null;
+    const createdAt = Number(record && record.createdAt);
+    const serverTime = Number.isFinite(createdAt) && createdAt > 0 ? Math.min(createdAt,Date.now()) : Date.now();
+    if(!h || h.type === 'zero' || mapped.dayBase > dayStart(serverTime)){
+      safeToAck.push(operationId);
+      continue;
+    }
+    if(typeof completedOnDay === 'function' && completedOnDay(h,mapped.dayBase)){
+      safeToAck.push(operationId);
+      continue;
+    }
+    const logs = normalizeLogs(h.logs);
+    const consumedPlanTs = typeof planToConsumeForEntry === 'function'
+      ? planToConsumeForEntry(logs,serverTime)
+      : null;
+    if(consumedPlanTs !== null && typeof findEntryByKind === 'function'){
+      const pos = findEntryByKind(logs,consumedPlanTs,true);
+      if(pos >= 0) logs.splice(pos,1);
+    }
+    let minutes = null;
+    if(h.breakable){
+      const remaining = typeof breakableBudgetMinutes === 'function'
+        ? breakableBudgetMinutes(h,mapped.dayBase)
+        : mapped.minutes;
+      minutes = Math.max(0,Math.min(mapped.minutes,Math.round(Number(remaining) || 0)));
+      if(minutes <= 0){
+        safeToAck.push(operationId);
+        continue;
+      }
+    }
+    const entryTs = typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,serverTime) : serverTime;
+    const entry = makeActualLog(entryTs,{ minutes,source:'shared_display',operationId });
+    h.logs = normalizeLogs([...logs,entry]);
+    h.lastLog = latestActualLog(h.logs);
+    h.snoozedUntil = null;
+    if(typeof clearPlanByDateOnLog === 'function') clearPlanByDateOnLog(h);
+    if(typeof pruneOrderConstraintsOnLog === 'function') pruneOrderConstraintsOnLog(h);
+    applied.push(operationId);
+    completedRowKeys.add(`${mapped.hid}|${mapped.start}`);
+    changed = true;
+  }
+  if(changed && !save(data)){
+    return { feed:nextFeed,operationIds:safeToAck,completedRowKeys:new Set(),changed:false };
+  }
+  if(changed && typeof cancelPush === 'function' && typeof reminderSignature === 'function'){
+    data.forEach(h=>{
+      if(h && h.type === 'task' && isTaskDone(h)) cancelPush(reminderSignature(h));
+    });
+  }
+  return {
+    feed:nextFeed,
+    operationIds:[...new Set([...safeToAck,...applied])],
+    completedRowKeys,
+    changed
+  };
+}
+
+async function acknowledgeHouseholdAgendaCompletions(feed,operationIds){
+  const ids = [...new Set((operationIds || []).filter(id=>/^[0-9a-f]{32}$/.test(id)))].slice(0,50);
+  if(!feed || !ids.length) return;
+  await shareFetch(`/v1/agendas/${feed.feedId}/completion-acks`,{
+    method:'POST',
+    credential:feed.ownerCredential,
+    body:{ operationIds:ids }
+  });
+}
+
 async function approveHouseholdAgendaPairing(){
   const pairing = _agendaPairApproval;
   const feed = agendaFeedRecord();
@@ -426,6 +586,8 @@ async function approveHouseholdAgendaPairing(){
   status.textContent = 'Authorizing this exact display…';
   const nextContentKey = shareRandomHex(SHARE_KEY_BYTES);
   try{
+    try{ await syncHouseholdAgendaCompletions(feed,{ force:true }); }
+    catch(_){ /* A fresh snapshot below reflects any completion that was reachable. */ }
     const transfer = await shareAgendaPairEncrypt(
       nextContentKey,
       feed.feedId,
@@ -475,14 +637,23 @@ async function approveHouseholdAgendaPairing(){
 }
 
 async function publishHouseholdAgendaNow(week, opts = {}){
-  const feed = agendaFeedRecord();
+  let feed = agendaFeedRecord();
   if(!feed || !shareConfigured()) return null;
   if(feed.paused && !opts.manual) return null;
+  let completionSync = { feed,operationIds:[],completedRowKeys:new Set(),changed:false };
+  try{
+    completionSync = await syncHouseholdAgendaCompletions(feed,{ force:Boolean(opts.forceCompletionSync) });
+    feed = completionSync.feed || feed;
+  }catch(_){ /* Publishing remains available during a transient completion-read failure. */ }
   const source = week || (typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null);
   if(!source || !Array.isArray(source.days) || !source.days.length) return null;
-  const projection = buildHouseholdAgendaProjection(source, { feed, data:opts.data });
+  const projection = buildHouseholdAgendaProjection(source, {
+    feed,
+    data:completionSync.changed ? load() : opts.data,
+    completedRowKeys:completionSync.completedRowKeys
+  });
   const sig = householdAgendaSignature(projection);
-  if(!opts.manual && sig === _lastAgendaProjectionSig && feed.lastPublishedAt) return feed;
+  if(!opts.manual && !completionSync.operationIds.length && sig === _lastAgendaProjectionSig && feed.lastPublishedAt) return feed;
   const envelope = await shareEncrypt(feed.contentKey, projection, {
     schemaVersion:SHARE_SCHEMA_VERSION,
     recordKind:'agenda_snapshot',
@@ -503,11 +674,20 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       lastPublishedAt:projection.generatedAt,
       plannerProvenance:projection.plannerProvenance,
       paused:Boolean(result.body.paused),
-      status:result.body.status || feed.status
+      status:result.body.status || feed.status,
+      rowMaps:[
+        { revision:Number(result.body.revision),rows:projection._rowMap || {} },
+        ...(Array.isArray(feed.rowMaps) ? feed.rowMaps : [])
+          .filter(entry=>Number(entry && entry.revision) !== Number(result.body.revision))
+      ].slice(0,SHARED_DISPLAY_ROW_MAP_REVISIONS)
     };
     saveAgendaFeedRecord(next);
     _lastAgendaProjectionSig = sig;
     _pendingAgendaSnapshot = null;
+    if(completionSync.operationIds.length){
+      try{ await acknowledgeHouseholdAgendaCompletions(next,completionSync.operationIds); }
+      catch(_){ /* Encrypted operation ids make a later acknowledgement idempotent. */ }
+    }
     if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
     return next;
   }catch(error){
@@ -518,7 +698,7 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       if(!Number.isInteger(currentRevision) || currentRevision < 0) throw error;
       const fresh = { ...feed, lastRevision:currentRevision };
       saveAgendaFeedRecord(fresh);
-      return publishHouseholdAgendaNow(source, { ...opts, retried:true, manual:true });
+      return publishHouseholdAgendaNow(source, { ...opts, retried:true,manual:true });
     }
     throw error;
   }
@@ -575,7 +755,7 @@ function rejectExternalHouseholdAgendaPairingHash(){
     const modal = $('agenda-pair-scanner');
     const status = $('agenda-pair-scanner-status');
     if(modal) modal.hidden = false;
-    if(status) status.textContent = 'For security, a QR link opened by the phone’s Camera app cannot authorize a display. Return to the installed Tings app and use settings → household agenda display → scan display QR.';
+    if(status) status.textContent = 'For security, a QR link opened by the phone’s Camera app cannot authorize a display. Return to the installed Tings app and use settings → shared display → scan display QR.';
   }
 }
 
@@ -593,11 +773,17 @@ document.addEventListener('DOMContentLoaded',()=>{
     void approveHouseholdAgendaPairing();
   });
   $('agenda-pair-approval-cancel')?.addEventListener('click',closeHouseholdAgendaPairingApproval);
+  setInterval(()=>{
+    if(document.visibilityState === 'visible' && agendaFeedRecord()) scheduleHouseholdAgendaPublish();
+  },SHARED_DISPLAY_COMPLETION_POLL_MS);
 });
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden && _agendaPairScannerStream) stopHouseholdAgendaQrScanner();
 });
 window.addEventListener('pagehide',stopHouseholdAgendaQrScanner);
+window.addEventListener('online',()=>{
+  if(agendaFeedRecord()) scheduleHouseholdAgendaPublish();
+});
 window.addEventListener('keydown',event=>{
   if(event.key === 'Escape' && !$('agenda-pair-scanner')?.hidden) stopHouseholdAgendaQrScanner();
 });

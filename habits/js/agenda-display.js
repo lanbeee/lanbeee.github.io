@@ -11,6 +11,7 @@ let _displayPairPollTimer = null;
 let _displayPairExpiryTimer = null;
 let _displayFeed = null;
 let _displayPairing = null;
+let _displayProjection = null;
 let _displayWallpaperClockTimer = null;
 let _displayWallpaperTaps = [];
 
@@ -124,7 +125,7 @@ function clockLabel(ts,timeZone){
   return new Date(ts).toLocaleTimeString(undefined,{ hour:'numeric',minute:'2-digit',timeZone });
 }
 
-function renderDisplay(projection,meta){
+function renderDisplay(projection,meta,completedRowIds = []){
   const now = Date.now();
   const root = $('agenda-root');
   const banner = $('agenda-banner');
@@ -142,6 +143,9 @@ function renderDisplay(projection,meta){
   }else if(meta && meta.error === 'error'){
     banner.hidden = false;
     banner.textContent = 'Could not load the agenda. Check the connection and retry.';
+  }else if(meta && meta.paused){
+    banner.hidden = false;
+    banner.textContent = 'This shared display is paused. Marking items done is unavailable until publishing resumes.';
   }else if(meta && meta.generatedAt && now - meta.generatedAt > AGENDA_STALE_MS){
     banner.hidden = false;
     banner.textContent = 'This plan is more than a day old. The owner’s app has not published a newer agenda.';
@@ -151,12 +155,15 @@ function renderDisplay(projection,meta){
   }
   if(updated) updated.textContent = displayAge(meta && meta.generatedAt,now);
   if(!projection || !Array.isArray(projection.days)){
+    _displayProjection = null;
     root.innerHTML = '<p class="agenda-empty">No agenda on this display yet.</p>';
     return;
   }
+  _displayProjection = projection;
+  const completed = new Set(Array.isArray(completedRowIds) ? completedRowIds : []);
   const tz = displayTimezone(projection.timezone);
   const title = $('agenda-title');
-  if(title) title.textContent = String(projection.title || 'Household agenda').slice(0,80);
+  if(title) title.textContent = String(projection.title || 'Shared display').slice(0,80);
   const days = projection.days.slice(0,2);
   const todayKey = displayDateKey(now,tz);
   const currentDayIndex = Math.max(0,days.findIndex(day=>day && day.dateKey === todayKey));
@@ -173,12 +180,18 @@ function renderDisplay(projection,meta){
         : row.locationLabel;
       const currentRow = current && row.start && row.end && now >= row.start && now < row.end;
       const nextRow = current && row.start && now < row.start;
-      return `<article class="agenda-row ${kind}${currentRow ? ' is-now' : ''}${nextRow ? ' is-next' : ''}">
+      const canComplete = !meta?.paused && kind === 'item' && row.completable === true && day.dateKey <= todayKey;
+      const isComplete = canComplete && completed.has(row.rowId);
+      const doneButton = canComplete
+        ? `<button type="button" class="agenda-done${isComplete ? ' is-done' : ''}" data-complete-row="${escapeDisplay(row.rowId)}"${isComplete ? ' disabled' : ''} aria-label="${isComplete ? 'Done' : `Mark ${escapeDisplay(row.title)} done`}"><span aria-hidden="true">${isComplete ? '✓' : ''}</span>${isComplete ? 'done' : 'mark done'}</button>`
+        : '';
+      return `<article class="agenda-row ${kind}${currentRow ? ' is-now' : ''}${nextRow ? ' is-next' : ''}${isComplete ? ' is-complete' : ''}">
         <time>${when || (row.durationMinutes ? `${row.durationMinutes} min` : '')}</time>
-        <div>
+        <div class="agenda-row-copy">
           <b>${escapeDisplay(row.emoji ? `${row.emoji} ${row.title}` : row.title)}</b>
           ${extra ? `<small>${escapeDisplay(extra)}</small>` : ''}
         </div>
+        ${doneButton}
       </article>`;
     }).join('') || '<p class="agenda-empty">Nothing planned.</p>';
     return `<section class="agenda-day${current ? ' is-today' : ''}">
@@ -186,6 +199,62 @@ function renderDisplay(projection,meta){
       ${rows}
     </section>`;
   }).join('');
+}
+
+function displayCompletionRow(rowId){
+  if(!_displayProjection || !Array.isArray(_displayProjection.days)) return null;
+  for(const day of _displayProjection.days){
+    const row = Array.isArray(day && day.rows) ? day.rows.find(item=>item && item.rowId === rowId) : null;
+    if(row) return { row,day };
+  }
+  return null;
+}
+
+async function completeSharedDisplayRow(rowId,button){
+  const enrolled = _displayFeed || displayReadEnrollment();
+  const target = displayCompletionRow(rowId);
+  if(!enrolled || !enrolled.deviceCredential || !target || target.row.completable !== true) return false;
+  const tz = displayTimezone(_displayProjection && _displayProjection.timezone);
+  if(String(target.day.dateKey || '') > displayDateKey(Date.now(),tz)) return false;
+  if(button){
+    button.disabled = true;
+    button.classList.add('is-saving');
+    button.textContent = 'saving…';
+  }
+  const operationId = shareRandomHex(16);
+  const revision = Number(enrolled.meta && enrolled.meta.revision);
+  try{
+    if(!Number.isInteger(revision) || revision < 1) throw new Error('stale_snapshot');
+    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const envelope = await shareEncrypt(enrolled.contentKey,payload,{
+      schemaVersion:SHARE_SCHEMA_VERSION,
+      recordKind:'agenda_completion',
+      objectId:enrolled.feedId,
+      revision,
+      operationId,
+      logId:rowId
+    });
+    await shareFetch(`/v1/agendas/${enrolled.feedId}/completions`,{
+      method:'POST',
+      credential:enrolled.deviceCredential,
+      body:{ completion:envelope }
+    });
+    const completionRowIds = [...new Set([...(enrolled.completionRowIds || []),rowId])].slice(-50);
+    const next = { ...enrolled,completionRowIds };
+    _displayFeed = next;
+    displayWriteEnrollment(next);
+    renderDisplay(_displayProjection,next.meta || {},completionRowIds);
+    return true;
+  }catch(error){
+    if(button){
+      button.disabled = false;
+      button.classList.remove('is-saving');
+      button.textContent = error && error.status === 429 ? 'wait, then retry' : 'try again';
+    }
+    if(error && (error.status === 401 || error.status === 410)) clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
+    else if(error && error.status === 409) void refreshDisplay();
+    return false;
+  }
 }
 
 function escapeDisplay(value){
@@ -223,7 +292,7 @@ function renderDisplayPairingQr(pairing){
     cellSize:6,
     margin:4,
     scalable:true,
-    title:'Authorize this household agenda display',
+    title:'Authorize this shared display',
     alt:'Scan with the owner phone to open Tings'
   });
 }
@@ -350,9 +419,14 @@ async function refreshDisplay(opts = {}){
       snapshot:result.body.snapshot,
       meta
     };
+    const completionRowIds = (Array.isArray(result.body.completions) ? result.body.completions : [])
+      .map(record=>record && record.envelope && record.envelope.logId)
+      .filter(value=>/^[0-9a-f]{16}$/.test(String(value || '')))
+      .slice(-50);
+    next.completionRowIds = completionRowIds;
     _displayFeed = next;
     displayWriteEnrollment(next);
-    renderDisplay(projection,meta);
+    renderDisplay(projection,meta,completionRowIds);
   }catch(error){
     const code = error && error.payload && error.payload.error;
     const revoked = error && error.status === 410;
@@ -378,7 +452,7 @@ async function renderCachedDisplay(enrolled,error){
     try{ projection = await shareDecrypt(enrolled.contentKey,enrolled.snapshot); }
     catch(_){ projection = null; }
   }
-  renderDisplay(projection,{ generatedAt:projection && projection.generatedAt,error });
+  renderDisplay(projection,{ generatedAt:projection && projection.generatedAt,error },enrolled && enrolled.completionRowIds);
 }
 
 function startDisplayPolling(){
@@ -396,7 +470,7 @@ async function bootAgendaDisplay(){
     if(stored.snapshot && stored.contentKey){
       try{
         const projection = await shareDecrypt(stored.contentKey,stored.snapshot);
-        renderDisplay(projection,stored.meta || { generatedAt:projection.generatedAt });
+        renderDisplay(projection,stored.meta || { generatedAt:projection.generatedAt },stored.completionRowIds);
       }catch(_){}
     }
     await refreshDisplay();
@@ -424,6 +498,10 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   });
   $('agenda-pair-new')?.addEventListener('click',()=>void beginDisplayPairing('new'));
+  $('agenda-root')?.addEventListener('click',event=>{
+    const button = event.target.closest('[data-complete-row]');
+    if(button) void completeSharedDisplayRow(button.dataset.completeRow,button);
+  });
   $('agenda-clear')?.addEventListener('click',()=>{
     stopDisplayPairing();
     _displayFeed = null;

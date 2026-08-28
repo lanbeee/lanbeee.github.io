@@ -39,6 +39,7 @@ function openDetail(i){
   $('detail-days').value = h.target || '';
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
+  $('detail-shared-display')?.setAttribute('aria-pressed',h.showOnSharedDisplay !== false ? 'true' : 'false');
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-flexibility').value = h.flexibilityDays || 0;
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',h.breakable ? 'true' : 'false');
@@ -68,6 +69,7 @@ function openDetail(i){
     emojiBgColor:normalizeEmojiBgColor(h.emojiBgColor),
     target:h.target || '',
     pinned:Boolean(h.pinned),
+    showOnSharedDisplay:h.showOnSharedDisplay !== false,
     topics:normalizeTopics(h.topics),
     locationIds:normalizeLocationIds(h.locationIds),
     anywhereAllowed:Boolean(h.anywhereAllowed),

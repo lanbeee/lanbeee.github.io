@@ -457,6 +457,12 @@
             <p class="field-hint" id="detail-link-hint"></p>
           </div>
           <div class="habit-actions">
+            <label class="setting-toggle habit-toggle">
+              <span><b>show on shared display</b><small>On by default; turn off for private items</small></span>
+              <button class="setting-switch" id="detail-shared-display" type="button" aria-pressed="true">
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </label>
             <label class="setting-toggle habit-toggle detail-full-only">
               <span><b>pinned</b><small>Stay above auto order</small></span>
               <button class="setting-switch" id="detail-pinned" type="button" aria-pressed="false">
@@ -899,19 +905,19 @@
         <section class="settings-block settings-collapsible">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-agenda-head" data-collapse-target="settings-agenda-body" aria-expanded="false" aria-controls="settings-agenda-body">
-              <span class="settings-label">household agenda display</span>
+              <span class="settings-label">shared display</span>
               <i class="ti ti-chevron-down" aria-hidden="true"></i>
             </button>
             <span data-ui-leave="agenda"></span>
           </div>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Publish a limited view of today and tomorrow to a fridge or tablet. Pairing is QR-only: the owner phone must scan the display, type its separate 8-digit code, and explicitly approve it.</p>
+            <p class="field-hint">Publish a limited view of today and tomorrow to a fridge or tablet. Today’s habits and tasks can be marked done there; each item can opt out from its detail page. Pairing is QR-only: the owner phone must scan the display, type its separate 8-digit code, and explicitly approve it.</p>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
             <div id="settings-agenda-active" hidden>
               <span class="settings-sublabel">feed title</span>
-              <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Household agenda" autocomplete="off" />
+              <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Shared display" autocomplete="off" />
               <p class="field-hint" id="settings-agenda-status"></p>
               <span class="settings-sublabel">display reauthorization</span>
               <select id="settings-agenda-reauth" class="mini-select">
@@ -1300,7 +1306,7 @@
 <div class="agenda-pair-approval agenda-pair-scanner" id="agenda-pair-scanner" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-scanner-title" hidden>
   <div class="agenda-pair-approval-card">
     <h2 id="agenda-pair-scanner-title">Scan the display QR</h2>
-    <p>Point this phone at the QR on the household display. Tings reads it locally; the camera is turned off as soon as it is read or you cancel.</p>
+    <p>Point this phone at the QR on the shared display. Tings reads it locally; the camera is turned off as soon as it is read or you cancel.</p>
     <div class="agenda-pair-camera-frame">
       <video id="agenda-pair-scanner-video" autoplay muted playsinline aria-label="Camera preview for scanning the display QR"></video>
       <span aria-hidden="true"></span>
@@ -1315,7 +1321,7 @@
 
 <div class="agenda-pair-approval" id="agenda-pair-approval" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-approval-title" hidden>
   <div class="agenda-pair-approval-card">
-    <h2 id="agenda-pair-approval-title">Authorize household display</h2>
+    <h2 id="agenda-pair-approval-title">Authorize shared display</h2>
     <p>This permanently replaces any currently paired display. Only continue while you can see the display you just scanned.</p>
     <label for="agenda-pair-approval-code">8-digit code shown on display</label>
     <input id="agenda-pair-approval-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="1234-5678" />

@@ -45,6 +45,7 @@ Everything below is covered in this skeleton:
 
 ### ✅ All Habit Object Fields
 - Core: hid, name, emoji, sample, type, target, createdAt, logs, lastLog, snoozedUntil
+- Shared display: showOnSharedDisplay (defaults on; per-item opt-out)
 - Priority & Ranking: priority
 - Time Window: allowedWeekdays, allowedMonthDays, preferredWeekdays, preferredMonthDays
 - Time Start/End: allowedTimeStart, allowedTimeEnd, preferredTimeStart, preferredTimeEnd
@@ -335,6 +336,7 @@ else:
   emoji: string,            // 👤 Grapheme cluster(s), max 4 chars, "" = default icon
   emojiBgColor: string,     // 👤 Background color token: ''|teal|amber|red|purple|blue|green
   sample: boolean,          // 👨‍💻 Created by sort lab? (🧪 marker)
+  showOnSharedDisplay: boolean, // 👤 Include in the encrypted shared display; defaults true
   
   // ─── TYPE & SCHEDULE ─────────────────────────────────────
   type: 'keepup'|'reduce'|'zero'|'task',  // 👤 habit type
@@ -727,7 +729,7 @@ When `showPinnedOnCards: true`:
 A teal cloud-up icon (`ti-cloud-up`, class `.leave-btn`) sits next to any control that can send data off this device. Tap it for a one-line note (same pattern as the info “i”). About → **privacy** is the full explainer.
 
 Placed on:
-- Settings → household agenda display (encrypted Cloudflare relay)
+- Settings → shared display (encrypted Cloudflare relay)
 - Detail → share item (encrypted Cloudflare relay)
 - Locations / city / address search (Photon + Nominatim)
 - Travel time estimate (OSRM)
@@ -1129,6 +1131,7 @@ web or app URL. Up to four links/app shortcuts can be stored on one item.
 
 #### Item Actions
 - **Pinned:** Keeps the item above automatic ordering
+- **Show on shared display:** On by default. Turn off to keep this item out of every future shared-display snapshot.
 - **Export to calendar:** Tasks with a due date or fixed time
 - **Share item:** Sends an encrypted invitation for another person to track it
 - **Snooze:** Temporarily hides the item
@@ -2615,7 +2618,7 @@ Same agenda logic, but simplified display:
 ### 27.5 Sharing relay 👤👨‍💻
 | Service | URL | What leaves the device |
 |---------|-----|------------------------|
-| Cloudflare share Worker | `habits-share.contactnabilkhan.workers.dev` | Encrypted item shares and household agenda snapshots. Ciphertext only; keys stay on devices. |
+| Cloudflare share Worker | `habits-share.contactnabilkhan.workers.dev` | Encrypted item shares, shared-display snapshots, and encrypted display completion events. Ciphertext only; keys stay on devices. |
 
 ---
 

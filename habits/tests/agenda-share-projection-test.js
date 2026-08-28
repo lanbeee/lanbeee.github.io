@@ -1,4 +1,4 @@
-// Secure household agenda projection + QR-only display pairing.
+// Secure shared-display projection + QR-only display pairing.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/agenda-share-projection-test.js
 const { chromium } = require('playwright');
@@ -36,17 +36,22 @@ function assert(cond,msg){
       name:'Already logged',emoji:'✅',hid:'completed-hid',type:'keepup',target:1,
       logs:[now],lastLog:now,breakable:false,durationMinutes:30,locationIds:[]
     };
+    const privateHabit = {
+      name:'Private appointment',emoji:'🔒',hid:'private-hid',type:'task',target:null,
+      logs:[],lastLog:null,breakable:false,durationMinutes:30,locationIds:[],showOnSharedDisplay:false
+    };
     const extras = Array.from({ length:60 },(_,index)=>({
       name:`Extra ${index + 1}`,emoji:'',hid:`extra-${index}`,type:'keepup',target:1,
       logs:[],lastLog:null,breakable:false,durationMinutes:10,locationIds:[]
     }));
-    const data = [active,completed,...extras];
+    const data = [active,completed,privateHabit,...extras];
     const timeline = [
       { kind:'scheduled',start:now + 60 * 60000,end:now + 90 * 60000,h:{ ...active,notes:'stale private row' },i:0,locationId:'home' },
       { kind:'scheduled',start:now + 90 * 60000,end:now + 120 * 60000,h:{ ...completed,logs:[],lastLog:null },i:1 },
+      { kind:'scheduled',start:now + 120 * 60000,end:now + 125 * 60000,h:privateHabit,i:2 },
       ...extras.map((habit,index)=>({
         kind:'fill',start:now + (130 + index * 11) * 60000,end:now + (140 + index * 11) * 60000,
-        h:habit,i:index + 2
+        h:habit,i:index + 3
       })),
       { kind:'blocked',start:now + 20 * 3600000,end:now + 21 * 3600000,label:'Deep Work Session Project Alpha' },
       { kind:'travel',start:now + 21 * 3600000,end:now + 21.25 * 3600000,fromName:'Home',toName:'Clinic' }
@@ -63,6 +68,7 @@ function assert(cond,msg){
     const maxProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeValue:50 },data,now,dayCount:2 });
     const hourProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeMode:'hours',scopeValue:2 },data,now,dayCount:2 });
     const json = JSON.stringify(projection);
+    const firstItem = projection.days.flatMap(day=>day.rows).find(row=>row.kind === 'item');
 
     const key = shareRandomHex(32);
     const envelope = await shareEncrypt(key,projection,{
@@ -91,6 +97,9 @@ function assert(cond,msg){
       maxRows:maxProjection.days.reduce((sum,day)=>sum + day.rows.length,0),
       hourTitles:hourProjection.days.flatMap(day=>day.rows.map(row=>row.title)),
       json,provenance:projection.plannerProvenance,
+      rowMapCount:Object.keys(projection._rowMap || {}).length,
+      mappedHid:firstItem && projection._rowMap[firstItem.rowId] && projection._rowMap[firstItem.rowId].hid,
+      completable:firstItem && firstItem.completable,
       crypto:{
         title:back.title,tamperRejected,
         codeLength:shareNormalizeAgendaPairCode(pairing.confirmationCode).length,
@@ -108,8 +117,10 @@ function assert(cond,msg){
   assert(result.itemCount === 10,'next-activity scope caps projected habits');
   assert(result.maxRows <= 50,'hard-caps every snapshot at 50 total rows');
   assert(!result.titles.includes('Already logged'),'fresh logs remove a stale completed planner row');
+  assert(!result.titles.includes('Private appointment'),'an item-level privacy switch removes the item from the shared display');
   assert(!result.hourTitles.some(title=>title.startsWith('Extra')),'hours-ahead scope excludes later activity');
   assert(!result.json.includes('active-hid') && !result.json.includes('completed-hid'),'omits local habit ids');
+  assert(result.rowMapCount > 0 && result.mappedHid === 'active-hid' && result.completable,'keeps the completion target only in the owner-side non-enumerable row map');
   assert(!result.json.includes('stale private row'),'omits private local row fields');
   assert(result.crypto.title === 'Family','AES-GCM round-trip restores the projection');
   assert(result.crypto.tamperRejected,'tampered agenda ciphertext is rejected');
@@ -137,6 +148,7 @@ function assert(cond,msg){
   let approvalRequest = null;
   let publishedSnapshot = null;
   let agendaReads = 0;
+  let completionRequest = null;
   let displayAuthorized = true;
   const workerUrl = await page.evaluate(()=>shareWorkerBaseUrl());
 
@@ -167,7 +179,15 @@ function assert(cond,msg){
     }
     route.fulfill({ status:200,contentType:'application/json',headers:{ ETag:'"1"' },body:JSON.stringify({
       id:ownerFeed.feedId,status:'active',paused:false,revision:1,
-      sessionExpiresAt:Date.now() + 30 * 86400000,snapshot:publishedSnapshot
+      sessionExpiresAt:Date.now() + 30 * 86400000,snapshot:publishedSnapshot,completions:[]
+    }) });
+  });
+  await displayPage.route(`${workerUrl}/v1/agendas/${ownerFeed.feedId}/completions`,route=>{
+    completionRequest = route.request().postDataJSON();
+    route.fulfill({ status:201,contentType:'application/json',body:JSON.stringify({
+      operationId:completionRequest.completion.operationId,
+      rowId:completionRequest.completion.logId,
+      createdAt:Date.now()
     }) });
   });
   await displayPage.goto(new URL('agenda-display',baseUrl).href,{ waitUntil:'load' });
@@ -309,6 +329,16 @@ function assert(cond,msg){
   assert(!displayState.enrollment.includes(displayCode.replace('-','')) && !displayState.enrollment.includes(pairingRequest.pairingId),'display retains neither visible code nor pairing id');
   assert(displayState.title === 'Secure family agenda' && !displayState.appLoaded,'standalone display decrypts the feed without loading the main app');
 
+  await displayPage.click('[data-complete-row]');
+  await displayPage.waitForFunction(()=>document.querySelector('.agenda-done')?.textContent.includes('done'));
+  const completionUi = await displayPage.evaluate(()=>({
+    done:document.querySelector('.agenda-row.is-complete .agenda-done.is-done')?.textContent.trim(),
+    stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || 'null')?.completionRowIds || []
+  }));
+  assert(completionRequest && completionRequest.completion.recordKind === 'agenda_completion','the display submits only an encrypted completion envelope');
+  assert(completionRequest.completion.revision === 1 && completionRequest.completion.logId.length === 16,'the completion is bound to the current snapshot and opaque displayed row');
+  assert(completionUi.done === '✓done' && completionUi.stored.includes(completionRequest.completion.logId),'the shared display marks the accepted row done immediately and remembers it locally');
+
   const displayPresentation = await displayPage.evaluate(() => {
     const rowTime = document.querySelector('.agenda-row time');
     const hide = document.getElementById('agenda-hide');
@@ -329,6 +359,104 @@ function assert(cond,msg){
   assert(displayPresentation.timeWhiteSpace === 'nowrap','agenda time ranges stay together on one line');
   assert(displayPresentation.hiddenAfterTap && displayPresentation.stillHiddenAfterTwo,'one tap hides the agenda and fewer than three wallpaper taps keep it hidden');
   assert(displayPresentation.restoredAfterThree && displayPresentation.wallpaperPreferenceCleared,'the third wallpaper tap restores the agenda and clears the persisted privacy screen');
+
+  const inboundSync = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const contentKey = shareRandomHex(32);
+    const feedId = 'face'.repeat(8);
+    const ownerCredential = 'ab'.repeat(32);
+    const rowId = '12'.repeat(8);
+    const operationId = '34'.repeat(16);
+    const habit = normalize([{
+      hid:'shared-completion-hid',name:'Fridge task',type:'task',logs:[],lastLog:null,
+      durationMinutes:20,breakable:false,showOnSharedDisplay:true
+    }])[0];
+    save([habit]);
+    const feed = {
+      feedId,contentKey,ownerCredential,lastRevision:4,title:'Shared display',
+      rowMaps:[{ revision:4,rows:{ [rowId]:{ hid:habit.hid,dayBase:dayStart(now),start:now,minutes:20 } } }]
+    };
+    saveAgendaFeedRecord(feed);
+    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const envelope = await shareEncrypt(contentKey,payload,{
+      schemaVersion:1,recordKind:'agenda_completion',objectId:feedId,revision:4,operationId,logId:rowId
+    });
+    const original = shareFetch;
+    shareFetch = async ()=>({ body:{ revision:4,completions:[{ createdAt:now,envelope }] } });
+    _agendaCompletionSyncAt = 0;
+    try{
+      const synced = await syncHouseholdAgendaCompletions(feed,{ force:true });
+      const saved = load()[0];
+      const log = normalizeLogs(saved.logs).find(entry=>entry && typeof entry === 'object' && entry.operationId === operationId);
+      return {
+        changed:synced.changed,
+        ack:synced.operationIds.includes(operationId),
+        done:isTaskDone(saved),
+        source:log && log.source,
+        rowExcluded:synced.completedRowKeys.has(`${habit.hid}|${now}`)
+      };
+    }finally{
+      shareFetch = original;
+    }
+  });
+  assert(inboundSync.changed && inboundSync.ack && inboundSync.done,'the owner turns an authenticated display completion into a real local task completion');
+  assert(inboundSync.source === 'shared_display' && inboundSync.rowExcluded,`the imported log is idempotently tagged and its old displayed row is suppressed during republish (${JSON.stringify(inboundSync)})`);
+
+  const corruptInbound = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const contentKey = shareRandomHex(32);
+    const feedId = 'bead'.repeat(8);
+    const ownerCredential = 'cd'.repeat(32);
+    const rowId = '56'.repeat(8);
+    const operationId = '78'.repeat(16);
+    const habit = normalize([{
+      hid:'corrupt-completion-hid',name:'Still visible',type:'keepup',target:7,logs:[],lastLog:null,
+      durationMinutes:15,breakable:false,showOnSharedDisplay:true
+    }])[0];
+    save([habit]);
+    const feed = {
+      feedId,contentKey,ownerCredential,lastRevision:9,title:'Shared display',
+      rowMaps:[{ revision:9,rows:{ [rowId]:{ hid:habit.hid,dayBase:dayStart(now),start:now,minutes:15 } } }]
+    };
+    saveAgendaFeedRecord(feed);
+    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const encrypted = await shareEncrypt(contentKey,payload,{
+      schemaVersion:1,recordKind:'agenda_completion',objectId:feedId,revision:9,operationId,logId:rowId
+    });
+    const tail = encrypted.ciphertext.slice(-1);
+    const envelope = { ...encrypted,ciphertext:`${encrypted.ciphertext.slice(0,-1)}${tail === 'A' ? 'B' : 'A'}` };
+    const original = shareFetch;
+    shareFetch = async ()=>({ body:{ revision:9,completions:[{ createdAt:now,envelope }] } });
+    _agendaCompletionSyncAt = 0;
+    try{
+      const synced = await syncHouseholdAgendaCompletions(feed,{ force:true });
+      const saved = load()[0];
+      return {
+        changed:synced.changed,
+        acknowledged:synced.operationIds.includes(operationId),
+        rowExcluded:synced.completedRowKeys.has(`${habit.hid}|${now}`),
+        completed:completedOnDay(saved,dayStart(now))
+      };
+    }finally{
+      shareFetch = original;
+    }
+  });
+  assert(!corruptInbound.changed && !corruptInbound.acknowledged && !corruptInbound.rowExcluded && !corruptInbound.completed,
+    `corrupt encrypted completions fail closed without hiding or completing the row (${JSON.stringify(corruptInbound)})`);
+
+  const privacyToggle = await page.evaluate(()=>{
+    const data = load();
+    data[0].showOnSharedDisplay = undefined;
+    save(data);
+    openDetail(0);
+    const button = document.getElementById('detail-shared-display');
+    const defaultsOn = button?.getAttribute('aria-pressed') === 'true';
+    button?.click();
+    const tune = currentDetailTune();
+    closeDetail();
+    return { defaultsOn,turnedOff:tune.showOnSharedDisplay === false };
+  });
+  assert(privacyToggle.defaultsOn && privacyToggle.turnedOff,'each item defaults to shared and can be turned off from its detail Actions page');
 
   displayAuthorized = false;
   await displayPage.evaluate(()=>refreshDisplay());

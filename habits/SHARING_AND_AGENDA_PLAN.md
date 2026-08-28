@@ -1,11 +1,11 @@
-# Encrypted Item Sharing and Household Agenda Displays
+# Encrypted Item Sharing and Shared Displays
 
 ## Summary
 
 Add one dedicated Cloudflare sharing service with two distinct modes:
 
 1. **Collaborative item sharing** — two people independently track the same owner-managed habit or task.
-2. **Household agenda display** — one authorized read-only tablet, fridge screen, or family device displays a capped view of today and tomorrow.
+2. **Shared display** — one authorized tablet, fridge screen, or family device displays a capped view of today and tomorrow and can submit narrowly scoped completion events.
 
 Tailscale is not required. The owner’s browser remains the planner of record. It publishes an encrypted agenda projection whenever Tings opens or its plan changes; Cloudflare stores and serves ciphertext but cannot inspect item names, notes, addresses, or agenda content.
 
@@ -16,7 +16,7 @@ Use SQLite-backed Durable Objects rather than Workers KV. Durable Objects provid
 Create a new `habits-share` Worker, separate from the existing push Worker, with two Durable Object namespaces:
 
 - `ItemShare` for collaborative individual items.
-- `AgendaFeed` for read-only agenda projections.
+- `AgendaFeed` for encrypted agenda projections plus a bounded, completion-only event queue.
 
 Use client-generated random secrets:
 
@@ -140,11 +140,11 @@ Each operation contains a random operation ID and stable log ID. The relay accep
 
 Synchronize immediately after local changes, on startup/foreground/reconnect, and every three minutes while visible. Persist operations to the outbox before network delivery and retry with exponential backoff capped at three minutes.
 
-## Mode 2: Household Agenda Display
+## Mode 2: Shared Display
 
 ### Architecture
 
-Publish a derived, read-only agenda projection rather than the complete habit database.
+Publish a derived agenda projection rather than the complete habit database. The display cannot edit snapshots or item definitions; its only write capability is submitting a completion event tied to a row in the current encrypted snapshot.
 
 The owner PWA:
 
@@ -184,6 +184,7 @@ Use a versioned shape similar to:
       title,
       emoji,
       status,
+      completable,
       durationMinutes,
       locationLabel,
       travelFromLabel,
@@ -205,8 +206,9 @@ Projection rules:
 - Include travel endpoint labels only when already displayed by the owner.
 - Exclude notes, log history, numeric values, phone/web links, unrelated habits, planner diagnostics, scarcity scores, and settings.
 - Use random projection row IDs rather than local habit IDs or array indices.
+- Omit any item whose `showOnSharedDisplay` switch is off; legacy and new items default on.
 
-Publish the agenda currently shown to the owner. If an initial Fast plan is later replaced or refined by GLPK, publish a new revision. This keeps the household display aligned with the owner’s actual screen rather than claiming every projection is solver-optimal.
+Publish the agenda currently shown to the owner. If an initial Fast plan is later replaced or refined by GLPK, publish a new revision. This keeps the shared display aligned with the owner’s actual screen rather than claiming every projection is solver-optimal.
 
 ### QR-only viewer pairing
 
@@ -241,7 +243,8 @@ Display behavior:
 - Refresh on startup, focus, `pageshow`, and reconnect.
 - Continue showing the cached agenda offline.
 - Highlight the current day and current/next row.
-- Allow day navigation but no logging, editing, dragging, snoozing, or detail access.
+- Allow one-tap completion for completable rows scheduled for today. Tomorrow is view-only until its date; stop-type habits are never mislabeled as done.
+- Allow no definition editing, dragging, snoozing, detail access, or arbitrary log payloads.
 - Show `Updated … ago` at all times.
 - Show a prominent stale warning after 24 hours without a newer owner publication.
 - Erase the cached credential, key, and agenda as soon as expiry is known or the Worker returns `401`/`410`; an offline display cannot be remotely erased until it reconnects.
@@ -249,7 +252,7 @@ Display behavior:
 
 ### Owner controls
 
-Add a Settings section named “household agenda display” with:
+Add a Settings section named “shared display” with:
 
 - Create display feed.
 - Feed title.
@@ -262,7 +265,7 @@ Add a Settings section named “household agenda display” with:
 - Pause automatic publishing.
 - Revoke and delete feed.
 
-Only one household agenda feed and one enrolled display session are supported per owner installation in v1.
+Only one shared-display feed and one enrolled display session are supported per owner installation in v1.
 
 ### Publication triggers
 
@@ -297,6 +300,8 @@ If offline, retain only the newest pending agenda snapshot; older unsent snapsho
 - `POST /v1/agendas` — create feed and register the owner credential hash.
 - `GET /v1/agendas/:id` — owner/device-authorized latest encrypted snapshot.
 - `PUT /v1/agendas/:id` — owner-only conditional snapshot publication.
+- `POST /v1/agendas/:id/completions` — paired-display-only encrypted completion for an opaque row in the current snapshot revision.
+- `POST /v1/agendas/:id/completion-acks` — owner-only acknowledgement after the local log and replacement snapshot are saved.
 - `POST /v1/agendas/:id/pause` — owner-only pause/resume state.
 - `DELETE /v1/agendas/:id` — revoke viewers and begin retention window.
 
@@ -320,7 +325,7 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Role enforcement for owner, recipient, and viewer credentials.
 - One-time claim and QR-pairing consumption, 30-second pairing expiry/burning, and display-session expiry.
 - Conditional revision conflicts, retry idempotency, CORS, payload limits, rate limits, expiry, and purge behavior.
-- Agenda viewers cannot call any mutation endpoint.
+- Agenda viewers cannot mutate snapshots, definitions, pause state, acknowledgements, or feed lifecycle; their sole write capability is a bounded, deduplicated completion for a current opaque row.
 
 ### Collaborative items
 
@@ -333,7 +338,7 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Location preview, deduplication, fresh-ID remapping, limit fallback, and omitted habit dependencies.
 - Owner revocation produces a frozen recipient copy.
 
-### Agenda display
+### Shared display
 
 - Projection contains only approved display fields and never raw habits, addresses, coordinates, history, settings, or internal habit IDs.
 - Today/tomorrow dates remain correct across midnight and daylight-saving transitions.
@@ -344,6 +349,8 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Viewer polling, offline cache, reconnect, 24-hour stale warning, rotation, pause, revocation, and expiry.
 - Pairing secrets and the display-visible code never appear in the QR, Worker request URLs, referrers, history, or diagnostic logs.
 - Standalone display page works without loading GLPK or the owner application state.
+- Per-item opt-out defaults on, removes the item from future projections, and is available from the item detail Actions page.
+- Completion events use server timestamps, current-revision row binding, per-row deduplication, a 50-event queue cap, encrypted payloads, and owner-only acknowledgement after durable local application.
 
 ### Repository verification and rollout
 

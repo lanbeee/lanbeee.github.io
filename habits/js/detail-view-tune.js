@@ -30,6 +30,7 @@ function currentDetailTune(){
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
+    showOnSharedDisplay:$('detail-shared-display')?.getAttribute('aria-pressed') !== 'false',
     links:currentDetailLinks(),
     topics:selectedTopicsFrom('detail-topic-chips'),
     locationIds,
@@ -138,6 +139,7 @@ function restoreDetailTune(){
   $('detail-emoji').value = detailTuneOriginal.emoji;
   renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
   $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
+  $('detail-shared-display')?.setAttribute('aria-pressed',detailTuneOriginal.showOnSharedDisplay ? 'true' : 'false');
   renderDetailLinkRows(normalizeLinks(detailTuneOriginal.links));
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;

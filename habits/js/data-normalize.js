@@ -280,6 +280,7 @@ function normalize(items){
       emoji: raw.emoji || '',
       emojiBgColor:normalizeEmojiBgColor(raw.emojiBgColor),
       pinned:Boolean(raw.pinned),
+      showOnSharedDisplay:raw.showOnSharedDisplay !== false,
       sample:Boolean(raw.sample),
       snoozedUntil: raw.snoozedUntil || null,
       topics:normalizeTopics(raw.topics),

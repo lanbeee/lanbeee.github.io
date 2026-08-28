@@ -131,8 +131,8 @@ const UI_PRIVACY_BLOCKS = [
     'A few features below contact an outside service, each for a stated job. Nothing else is uploaded.'
   ]},
   {id:'privacy-display-body', label:'Shared display', summary:'Opt-in fridge or tablet view. Encrypted on this phone, then relayed by Cloudflare.', body:[
-    'Household agenda display publishes a capped view of today and tomorrow. This phone encrypts that snapshot first, then a Cloudflare relay stores the encrypted copy so a display can fetch it.',
-    'Cloudflare can see that a blob exists, its size, and when it was updated. It cannot read item names, notes, or places. The encryption key stays with your devices. Pairing is QR-only from inside Tings.',
+    'Shared display publishes a capped view of today and tomorrow. This phone encrypts that snapshot first, then a Cloudflare relay stores the encrypted copy so the paired display can fetch it.',
+    'The paired display can submit only encrypted completion events for rows in its current plan; it cannot edit the plan or item details. Cloudflare can see that encrypted blobs exist, their sizes, and when they were updated, but cannot read item names, notes, places, or completion contents. The encryption key stays with your devices. Pairing is QR-only from inside Tings.',
     'Look for the cloud-up mark on that setting. Pause or revoke anytime in Settings.'
   ]},
   {id:'privacy-share-body', label:'Share item', summary:'Opt-in. Encrypted on this phone; the key rides in the invitation link.', body:[
