@@ -1634,13 +1634,26 @@ Toasts appear after:
   close-this-tab visual: this browser page is not the app, so the user should
   close the tab and open Tings from the Home Screen (phone) or its own window
   (desktop). The guide is skipped when Tings already runs standalone.
-- About → **advanced coach** teaches the full, non-minimal surface: rich cards,
-  swipe/card actions, agenda ordering and audit, every major detail area,
-  calendar analysis and filters, home display, backup, calendar import, topics,
-  locations/travel, busy times, defaults, appearance, and smarter packing. When
-  minimal mode is on, the user turns it off from the real Settings control.
+- About → **advanced coach** opens a **chapter menu**, not one serial march:
+  five standalone chapters — home & cards (full mode, rich cards, swipe/card
+  actions, agenda ordering and audit), the detail pages (every major area:
+  calendar/insight, schedule, effort, identity, actions), calendar & search
+  (analysis and filters), backups & places (backup, calendar import,
+  topics/locations/travel), and time & tuning (home display, busy times,
+  defaults, appearance, smarter packing). The user picks a chapter in any
+  order; finishing one marks it with a check on the menu, and completion is
+  remembered per chapter. When minimal mode is on, the home chapter starts by
+  turning it off from the real Settings control. The menu also carries the
+  closing advice (start with duration and busy times; add windows, places, and
+  links only when they improve the plan) and a **Close** action; a chapter's
+  last step returns to the menu.
+- Tours show a **progress bar**, never a "3 of 21" step count — the number is
+  what makes a long tour daunting. Step position remains available to screen
+  readers through the progressbar's aria attributes.
 - Coach assets live in `onboarding/` and are loaded on demand. Completion is
-  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v2`.
+  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v2` (the
+  advanced key holds a per-chapter JSON map; a legacy `'done'` value counts as
+  every chapter seen).
 
 ### About and privacy 👤
 - Tapping the Tings wordmark opens **About**: a short Learn / Private pair, plus

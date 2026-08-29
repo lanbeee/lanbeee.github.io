@@ -47,6 +47,21 @@ async function primary(page,current,next){
   if(next)await stage(page,next);
 }
 
+// Tours show a bar, never a visible "3 of 21" count; position lives only in
+// the progressbar aria attributes.
+async function progressBar(page){
+  return page.evaluate(()=>{
+    const bar = document.querySelector('.tings-coach-progress');
+    return {
+      role:bar?.getAttribute('role'),
+      now:Number(bar?.getAttribute('aria-valuenow')),
+      max:Number(bar?.getAttribute('aria-valuemax')),
+      fill:Number((bar?.querySelector('i')?.style.width || '0%').replace('%','')),
+      headText:(document.querySelector('.tings-coach-head')?.textContent || '').trim()
+    };
+  });
+}
+
 (async()=>{
   const browser = await chromium.launch({headless:true});
   const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
@@ -60,7 +75,9 @@ async function primary(page,current,next){
   assert(await page.locator('script[data-tings-coach]').count() === 0,'coach assets stay lazy before the first-run offer');
   await stage(page,'iSteps',3500);
   assert(await page.locator('link[data-tings-coach]').count() === 1,'first-run coach loads its stylesheet on demand');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 2 · install app','a first-run browser user gets the install guide first');
+  const installBar = await progressBar(page);
+  assert(installBar.role === 'progressbar' && installBar.now === 1 && installBar.max === 2,'a first-run browser user gets the install guide first');
+  assert(!/\d/.test(installBar.headText),'the coach head shows a progress bar, never a step count');
   assert(await page.locator('.tings-step-glyph i').count() === 3,'install guidance shows numbered icon tiles');
   const stepNums = await page.locator('.tings-step-num').allTextContents();
   assert(stepNums.length === 3 && stepNums[0] === '1' && stepNums[2] === '3','install steps are numbered in order');
@@ -73,7 +90,8 @@ async function primary(page,current,next){
   assert((await page.locator('[data-coach-later]').textContent()) === 'Stay in this tab','staying in the browser is the secondary path');
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 28 · guided start','staying in the tab chains into the full essentials tour');
+  const essentialsBar = await progressBar(page);
+  assert(essentialsBar.now === 1 && essentialsBar.max === 28,'staying in the tab chains into the full essentials tour');
 
   await primary(page,'eIntro','eAdd');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','required action steps lock interaction to the highlighted target');
@@ -196,33 +214,56 @@ async function primary(page,current,next){
   assert(essentialState.taskType === 'task','guided start then walks through adding a real task');
   assert(essentialState.hasWater,'guided start almost finishes by adding the drink water sample');
 
+  // Advanced coach: a chapter menu, not a serial march. Each chapter runs
+  // standalone, checks itself off, and lands back on the menu.
   await page.evaluate(()=>window.startTingsCoach('advanced',{force:true}));
-  await primary(page,'aIntro','aFullMode');
+  await stage(page,'aIntro');
+  assert(await page.locator('[data-coach-chapter]').count() === 5,'the advanced coach offers five chapters');
+  assert(await page.locator('.tings-coach-chapter.is-done').count() === 0,'no chapter claims done before it is taken');
+
+  await page.locator('[data-coach-chapter="home"]').click();
+  await stage(page,'aFullMode');
   await page.locator('[data-setting-toggle="minimalMode"]').click();
   await stage(page,'aHome');
   assert(await page.evaluate(()=>JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}').minimalMode === false),'advanced coach teaches and enables full mode');
-
   await primary(page,'aHome','aActions');
-  await primary(page,'aActions','aDetailRead');
+  await primary(page,'aActions','aIntro');
+  assert(await page.locator('[data-coach-chapter="home"].is-done').count() === 1,'finishing a chapter checks it off on the menu');
+
+  await page.locator('[data-coach-chapter="detail"]').click();
+  await stage(page,'aDetailRead');
+  assert(await page.locator('#detail-sheet.open').count() === 1,'starting the detail chapter opens a real detail page');
   await primary(page,'aDetailRead','aSchedule');
   await primary(page,'aSchedule','aEffort');
   await primary(page,'aEffort','aIdentity');
   await primary(page,'aIdentity','aLifecycle');
-  await primary(page,'aLifecycle','aSearch');
+  await primary(page,'aLifecycle','aIntro');
+
+  await page.locator('[data-coach-chapter="plan"]').click();
+  await stage(page,'aSearch');
   await primary(page,'aSearch','aCalendar');
   await page.locator('#open-overview').click();
   await stage(page,'aOverview');
   await primary(page,'aOverview','aOverviewTools');
-  await primary(page,'aOverviewTools','aSettingsDisplay');
-  await primary(page,'aSettingsDisplay','aBackup');
+  await primary(page,'aOverviewTools','aIntro');
+
+  await page.locator('[data-coach-chapter="data"]').click();
+  await stage(page,'aBackup');
   await primary(page,'aBackup','aCalendarImport');
   await primary(page,'aCalendarImport','aOrganization');
-  await primary(page,'aOrganization','aBusy');
+  await primary(page,'aOrganization','aIntro');
+
+  await page.locator('[data-coach-chapter="tuning"]').click();
+  await stage(page,'aSettingsDisplay');
+  await primary(page,'aSettingsDisplay','aBusy');
   await primary(page,'aBusy','aDefaults');
   await primary(page,'aDefaults','aOptimizer');
-  await primary(page,'aOptimizer','aFinish');
+  await primary(page,'aOptimizer','aIntro');
+  assert(await page.locator('.tings-coach-chapter.is-done').count() === 5,'every chapter registers as done');
+  const advancedChapters = await page.evaluate(()=>JSON.parse(localStorage.getItem('tings_coach_advanced_v2') || '{}'));
+  assert(['home','detail','plan','data','tuning'].every(id=>advancedChapters[id] === 'done'),'chapter completion is remembered per chapter');
   await page.locator('[data-coach-primary]').click();
-  assert(await page.evaluate(()=>localStorage.getItem('tings_coach_advanced_v2') === 'done'),'advanced coach remembers completion after the full pro walkthrough');
+  assert(await page.locator('#tings-coach').count() === 0,'closing the chapter menu ends the advanced coach');
   assert(await page.locator('#settings-sheet.open').count() === 0,'advanced coach closes its final settings sheet');
 
   await page.locator('#open-about').click();
@@ -240,7 +281,8 @@ async function primary(page,current,next){
   assert(await page.locator('#open-install-guide').isVisible(),'browser About still offers install app');
   await page.locator('#open-install-guide').click();
   await stage(page,'iSteps');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 2 · install app','About runs the install guide as its own tour');
+  const aboutInstallBar = await progressBar(page);
+  assert(aboutInstallBar.role === 'progressbar' && aboutInstallBar.now === 1 && aboutInstallBar.max === 2,'About runs the install guide as its own tour');
   assert(await page.locator('.tings-step-glyph i').count() === 3,'install guidance lists three iconified steps');
   const desktopSteps = await page.locator('.tings-step-text').allTextContents();
   assert(desktopSteps.some(text=>text.includes('Cast, save, and share')),'desktop install guidance teaches the current Chrome menu path');
@@ -272,7 +314,8 @@ async function primary(page,current,next){
   await primary(page,'iSteps','iNext');
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
-  assert((await page.locator('.tings-coach-progress').textContent()) === '1 of 8 · guided start','staying in the tab chains into the guided start replay');
+  const replayBar = await progressBar(page);
+  assert(replayBar.now === 1 && replayBar.max === 8,'staying in the tab chains into the guided start replay');
   await page.evaluate(()=>window.TingsCoach.stop());
 
   // Live gesture upgrade: Chrome often fires beforeinstallprompt a beat

@@ -28,11 +28,37 @@
 .tings-coach-bubble.is-blocked{animation:tings-coach-nudge 220ms ease;}
 @keyframes tings-coach-nudge{0%,100%{transform:translateX(0)}35%{transform:translateX(-5px)}70%{transform:translateX(5px)}}
 .tings-coach-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px;}
-.tings-coach-progress{font-size:11px;line-height:1;text-transform:uppercase;letter-spacing:.09em;font-weight:800;color:var(--teal-text);}
+/* A slim bar instead of "3 of 21": the count is what makes a long tour feel
+   heavy before it starts. Position stays available to screen readers via the
+   progressbar attributes on the span. */
+.tings-coach-progress{flex:1;min-width:56px;height:5px;border-radius:999px;background:var(--bg3);overflow:hidden;}
+.tings-coach-progress i{display:block;height:100%;width:0;border-radius:inherit;background:var(--teal-icon);transition:width var(--dur-med,190ms) ease;}
 .tings-coach-skip{border:0;background:transparent;color:var(--text2);font:inherit;font-size:12px;padding:9px 8px;cursor:pointer;}
 .tings-coach-skip.is-armed{color:var(--amber-text);font-weight:700;}
 .tings-coach-title{font-size:20px;line-height:1.18;margin:0 0 7px;font-weight:760;letter-spacing:-.018em;}
 .tings-coach-copy{font-size:14px;line-height:1.48;color:var(--text2);margin:0;}
+/* Chapter menu (advanced coach): each chapter is a tappable row — icon, name,
+   one-line summary — with a check once that chapter has been finished. */
+.tings-coach-chapters{display:flex;flex-direction:column;gap:7px;margin:12px 0 0;padding:0;}
+.tings-coach-chapter{
+  display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;
+  border:0;border-radius:13px;padding:9px 10px;background:var(--bg3);
+  font:inherit;text-align:left;cursor:pointer;
+}
+.tings-coach-chapter.is-done{background:var(--teal-bg);}
+.tings-coach-chapter-glyph{
+  flex:0 0 38px;width:38px;height:38px;border-radius:11px;box-sizing:border-box;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;
+  font-size:20px;color:var(--teal-icon);
+}
+.tings-coach-chapter.is-done .tings-coach-chapter-glyph{background:var(--teal-icon);color:#fff;}
+.tings-coach-chapter-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.tings-coach-chapter-text strong{font-size:13.5px;font-weight:760;color:var(--text);letter-spacing:-.01em;}
+.tings-coach-chapter-text em{font-size:12px;line-height:1.35;font-style:normal;color:var(--text2);}
+.tings-coach-chapter-check{flex:0 0 auto;font-size:16px;line-height:1;color:var(--text2);}
+.tings-coach-chapter.is-done .tings-coach-chapter-check{color:var(--teal-icon);font-weight:800;}
+.tings-coach-note{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--border2);font-size:12px;line-height:1.45;color:var(--text2);}
+.tings-coach-chapter:focus-visible{outline:3px solid var(--teal-icon);outline-offset:2px;}
 .tings-coach-steps{list-style:none;margin:13px 0 0;padding:0;}
 .tings-coach-steps li{display:grid;grid-template-columns:46px 1fr;gap:12px;position:relative;padding-bottom:14px;}
 .tings-coach-steps li:last-child{padding-bottom:2px;}
@@ -179,6 +205,7 @@
 }
 @media (prefers-reduced-motion:reduce){
   .tings-coach-shade,.tings-coach-spotlight,.tings-coach-bubble{transition:none;}
+  .tings-coach-progress i{transition:none;}
   .tings-coach-bubble.is-blocked{animation:none;}
   .tings-coach-chrome-nudge{animation:none;}
 }

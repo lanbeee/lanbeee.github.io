@@ -9,10 +9,15 @@
     advanced:'tings_coach_advanced_v2',
     install:'tings_coach_install_v2'
   };
-  const ADVANCED_ORDER = [
-    'aIntro','aFullMode','aHome','aActions','aDetailRead','aSchedule','aEffort','aIdentity','aLifecycle',
-    'aSearch','aCalendar','aOverview','aOverviewTools','aSettingsDisplay','aBackup',
-    'aCalendarImport','aOrganization','aBusy','aDefaults','aOptimizer','aFinish'
+  // The advanced coach is a chapter menu, not one long march: each chapter is a
+  // short standalone tour of one surface, taken in any order. Completion is
+  // remembered per chapter so the menu can show what is left.
+  const ADVANCED_CHAPTERS = [
+    {id:'home',icon:'ti ti-home',title:'Home & cards',summary:'Full mode, rich cards, and acting straight from the list.',stages:['aFullMode','aHome','aActions']},
+    {id:'detail',icon:'ti ti-file-text',title:'The detail pages',summary:'Every control behind a Ting, page by page.',stages:['aDetailRead','aSchedule','aEffort','aIdentity','aLifecycle']},
+    {id:'plan',icon:'ti ti-calendar',title:'Calendar & search',summary:'Week pressure, filters, and finding things fast.',stages:['aSearch','aCalendar','aOverview','aOverviewTools']},
+    {id:'data',icon:'ti ti-database',title:'Backups & places',summary:'Export backups, import meetings, model places and travel.',stages:['aBackup','aCalendarImport','aOrganization']},
+    {id:'tuning',icon:'ti ti-settings-2',title:'Time & tuning',summary:'Busy blocks, home display, new-item defaults, planner engine.',stages:['aSettingsDisplay','aBusy','aDefaults','aOptimizer']}
   ];
   const SETTINGS_STAGES = new Set([
     'aFullMode','aSettingsDisplay','aBackup','aCalendarImport','aOrganization','aBusy','aDefaults','aOptimizer'
@@ -74,8 +79,10 @@
     catch(_){return true;}
   }
   function remember(value){
-    try{localStorage.setItem(KEYS[mode],value);}
-    catch(_){}
+    // The advanced coach records per-chapter completion instead of one marker;
+    // skipping the menu must not undo chapters already finished.
+    if(mode === 'advanced')return;
+    try{localStorage.setItem(KEYS[mode],value);}catch(_){}
   }
   function hasBox(el){
     if(!el || !el.isConnected)return false;
@@ -227,15 +234,49 @@
       'eSampleIntro','eSampleAdd','eAbout','eAboutMenu'
     ];
   }
+  function chapterStages(chapter){
+    return !isMinimal() && chapter.stages.includes('aFullMode') ? chapter.stages.filter(item=>item !== 'aFullMode') : chapter.stages;
+  }
+  function advancedChapter(){
+    return ADVANCED_CHAPTERS.find(chapter=>chapter.stages.includes(stage)) || null;
+  }
+  // Per-chapter completion. The key historically held 'done'/'skipped' for the
+  // whole serial tour; a legacy 'done' counts as every chapter seen.
+  function advancedDoneMap(){
+    let raw = null;
+    try{raw = localStorage.getItem(KEYS.advanced);}catch(_){}
+    if(raw === 'done')return Object.fromEntries(ADVANCED_CHAPTERS.map(chapter=>[chapter.id,'done']));
+    if(!raw)return {};
+    try{
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    }catch(_){return {};}
+  }
+  function markChapterDone(id){
+    const done = advancedDoneMap();
+    done[id] = 'done';
+    try{localStorage.setItem(KEYS.advanced,JSON.stringify(done));}catch(_){}
+  }
   function order(){
     if(mode === 'install')return ['iSteps','iNext'];
     if(mode !== 'advanced')return essentialsOrder();
-    return isMinimal() ? ADVANCED_ORDER : ADVANCED_ORDER.filter(item=>item !== 'aFullMode');
+    if(stage === 'aIntro')return ['aIntro'];
+    const chapter = advancedChapter();
+    return chapter ? chapterStages(chapter) : ['aIntro'];
   }
+  // Tours show a bar, never a "3 of 21" count — the number itself is what
+  // makes a long tour feel heavy. Position stays available to screen readers
+  // through the progressbar aria attributes.
   function progress(label){
+    if(mode === 'advanced' && stage === 'aIntro'){
+      const done = advancedDoneMap();
+      const total = ADVANCED_CHAPTERS.length;
+      const now = ADVANCED_CHAPTERS.filter(chapter=>done[chapter.id] === 'done').length;
+      return {fraction:total ? now / total : 0,now,total:Math.max(total,1),label};
+    }
     const steps = order();
     const index = Math.max(0,steps.indexOf(stage));
-    return `${index + 1} of ${steps.length} · ${label}`;
+    return {fraction:steps.length ? (index + 1) / steps.length : 1,now:index + 1,total:steps.length,label};
   }
 
   function essentialsModel(){
@@ -495,30 +536,47 @@
 
   function advancedModel(){
     const p = progress('advanced coach');
+    if(stage === 'aIntro' || !advancedChapter()){
+      const hasHabits = habits().length > 0;
+      const done = advancedDoneMap();
+      const chapters = hasHabits ? ADVANCED_CHAPTERS.map(chapter=>({...chapter,done:done[chapter.id] === 'done'})) : [];
+      const doneCount = chapters.filter(chapter=>chapter.done).length;
+      return {
+        progress:p,
+        title:'Advanced coach',
+        copy:!hasHabits
+          ? 'Create a Ting first, then come back — the tour walks through real items and real settings.'
+          : doneCount === chapters.length
+            ? 'You have covered every chapter. Replay any of them, or close the coach.'
+            : 'Short chapters, any order. Each one is a standalone tour of one surface.',
+        chapters,
+        note:'Start with duration and busy times. Add windows, places, and links only when they improve the plan.',
+        action:hasHabits ? 'Close' : 'Create a Ting first',
+        command:hasHabits ? 'finish' : 'startEssentials'
+      };
+    }
     const models = {
-      aIntro:{title:'Learn the full planning surface',copy:'This pro tour covers the agenda, rich cards, detail controls, calendar analysis, schedule setup, and the settings that shape real capacity.',action:habits().length ? 'Start pro tour' : 'Create a Ting first',command:habits().length ? 'advancedStart' : 'startEssentials'},
       aFullMode:{title:'Reveal full mode',copy:'Minimal mode changes presentation only. Turn it off here; your habits, logs, and planner decisions stay intact.',target:['[data-setting-toggle="minimalMode"]'],hint:'Turn minimal mode off',locked:true,back:'aIntro'},
-      aHome:{title:'Home is the live agenda',copy:'Rich cards can show placed time, status, two-week activity trail, duration, places, topics, priority cues, and whether the planner pulled something early.',target:['.ting-card','#list'],action:'Card actions',next:'aActions'},
-      aActions:{title:'Act without losing context',copy:'Use card buttons or swipe for activity, pin, timer, snooze, and remove. Drag eligible agenda rows to order them; triple-tap a day header for the planner audit.',target:['.ting-card .card-actions','.ting-card','.section-header'],action:'Open full detail',command:'openAdvancedDetail',back:'aHome'},
-      aDetailRead:{title:'Calendar and insight explain history',copy:'The first detail pages show entries, plans, completion patterns, and trend context. The pager controls at the bottom move across every full-mode page.',target:['[data-detail-nav="calendar"]','#detail-calendar'],action:'Scheduling controls',next:'aSchedule'},
+      aHome:{title:'Home is the live agenda',copy:'Rich cards can show placed time, status, two-week activity trail, duration, places, topics, priority cues, and whether the planner pulled something early.',target:['.ting-card','#list'],action:'Card actions',next:'aActions',back:'aIntro'},
+      aActions:{title:'Act without losing context',copy:'Use card buttons or swipe for activity, pin, timer, snooze, and remove. Drag eligible agenda rows to order them; triple-tap a day header for the planner audit.',target:['.ting-card .card-actions','.ting-card','.section-header'],action:'Back to chapters',command:'chapterDone',back:'aHome'},
+      aDetailRead:{title:'Calendar and insight explain history',copy:'The first detail pages show entries, plans, completion patterns, and trend context. The pager controls at the bottom move across every full-mode page.',target:['[data-detail-nav="calendar"]','#detail-calendar'],action:'Scheduling controls',next:'aSchedule',back:'aIntro'},
       aSchedule:{title:'Define eligibility, preference, and order',copy:'Set rhythm, allowed days, preferred days, clock or prayer-anchored windows, places, and before/after links. Allowed is a hard boundary; preferred is a scoring preference.',target:['[data-detail-nav="schedule"]','#detail-allowed-time-row'],action:'Effort and splitting',next:'aEffort',back:'aDetailRead'},
       aEffort:{title:'Describe the work itself',copy:'Duration reserves time. Flexibility lets work move earlier. Breakable work can split into chunks; priority protects critical occurrences; timers and auto-mark handle sessions.',target:['[data-detail-nav="effort"]','#detail-effort-duration-grid'],action:'Identity and links',next:'aIdentity',back:'aSchedule'},
       aIdentity:{title:'Classify and connect the Ting',copy:'Identity holds type, build/limit/stop mode, priority, call or meeting links, topics, and places. These fields affect meaning, filtering, and planner policy.',target:['[data-detail-nav="identity"]','#detail-habit-message'],action:'Item actions',next:'aLifecycle',back:'aEffort'},
-      aLifecycle:{title:'Control lifecycle and order',copy:'Actions holds pin, snooze, order state, export where available, and removal. Linked order can keep items before, after, adjacent, or on the same eligible day.',target:['[data-detail-nav="actions"]','#detail-pinned'],action:'Back to home',command:'advancedHome',back:'aIdentity'},
-      aSearch:{title:'Search and filters scale with the list',copy:'Search appears once the list is large enough. Topic and place filters narrow what you see without changing what is due or how the planner schedules.',target:['#home-tag-filter','#bar-open-search','#open-search'],action:'Open calendar',next:'aCalendar'},
+      aLifecycle:{title:'Control lifecycle and order',copy:'Actions holds pin, snooze, order state, export where available, and removal. Linked order can keep items before, after, adjacent, or on the same eligible day.',target:['[data-detail-nav="actions"]','#detail-pinned'],action:'Back to chapters',command:'chapterDone',back:'aIdentity'},
+      aSearch:{title:'Search and filters scale with the list',copy:'Search appears once the list is large enough. Topic and place filters narrow what you see without changing what is due or how the planner schedules.',target:['#home-tag-filter','#bar-open-search','#open-search'],action:'Open calendar',next:'aCalendar',back:'aIntro'},
       aCalendar:{title:'Open the planning overview',copy:'Tap Calendar for month context, open time, upcoming work, recent activity, and anything that needs attention.',target:['#open-overview','#bar-open-overview'],hint:'Tap calendar',locked:true,back:'aSearch'},
-      aOverview:{title:'Read week pressure',copy:'Open-time and light-day signals show capacity. Planned and fixed items appear beside habits that slipped, so you can distinguish a busy week from a broken rhythm.',target:['#overview-sheet .overview-sheet','#pane-overview .overview-sheet'],action:'Filters and drill-down',next:'aOverviewTools'},
-      aOverviewTools:{title:'Drill down without rebuilding the plan',copy:'Range, topic, and place filters change the view only. Tap days and list items to inspect logs or plans; use Today to return to the current date.',target:['#overview-filter','#overview-pane-filter','#overview-list'],action:'Open pro settings',command:'advancedSettings',back:'aOverview'},
-      aSettingsDisplay:{title:'Choose how Home presents the plan',copy:'Home settings control which planned, due, and fixed items appear. Card settings choose agenda time, trails, status, topics, places, and order marks.',target:['#settings-home-head'],action:'Backup and calendar data',next:'aBackup'},
-      aBackup:{title:'Protect local-only data',copy:'There is no account or cloud sync. Export JSON backups regularly. Import replaces device data only after confirmation.',target:['#backup-export'],action:'Calendar import',next:'aCalendarImport',back:'aSettingsDisplay'},
-      aCalendarImport:{title:'Bring fixed meetings into capacity',copy:'Calendar PDF import adds timed meetings. You can credit meeting minutes toward a habit and choose how all-day events become tasks.',target:['#settings-calendar-head'],action:'Topics, places, and travel',next:'aOrganization',back:'aBackup'},
-      aOrganization:{title:'Model context and movement',copy:'Topics organize search and history. Locations add opening hours, travel modes, and optional live presence; prayer or sunrise windows use the saved city or place.',target:['#settings-locations-head'],action:'Protect busy time',next:'aBusy',back:'aCalendarImport'},
-      aBusy:{title:'Busy times create the real gaps',copy:'Block sleep, work, meals, school, or commutes. The planner fits work around these clock blocks and travel instead of assuming the whole day is free.',target:['#settings-blocked-head'],action:'Defaults and appearance',next:'aDefaults',back:'aOrganization'},
+      aOverview:{title:'Read week pressure',copy:'Open-time and light-day signals show capacity. Planned and fixed items appear beside habits that slipped, so you can distinguish a busy week from a broken rhythm.',target:['#overview-sheet .overview-sheet','#pane-overview .overview-sheet'],action:'Filters and drill-down',next:'aOverviewTools',back:'aCalendar'},
+      aOverviewTools:{title:'Drill down without rebuilding the plan',copy:'Range, topic, and place filters change the view only. Tap days and list items to inspect logs or plans; use Today to return to the current date.',target:['#overview-filter','#overview-pane-filter','#overview-list'],action:'Back to chapters',command:'chapterDone',back:'aOverview'},
+      aBackup:{title:'Protect local-only data',copy:'There is no account or cloud sync. Export JSON backups regularly. Import replaces device data only after confirmation.',target:['#backup-export'],action:'Calendar import',next:'aCalendarImport',back:'aIntro'},
+      aCalendarImport:{title:'Bring fixed meetings into capacity',copy:'Calendar PDF import adds timed meetings. You can credit meeting minutes toward a habit and choose how all-day events become tasks.',target:['#settings-calendar-head'],action:'Topics and places',next:'aOrganization',back:'aBackup'},
+      aOrganization:{title:'Model context and movement',copy:'Topics organize search and history. Locations add opening hours, travel modes, and optional live presence; prayer or sunrise windows use the saved city or place.',target:['#settings-locations-head'],action:'Back to chapters',command:'chapterDone',back:'aCalendarImport'},
+      aSettingsDisplay:{title:'Choose how Home presents the plan',copy:'Home settings control which planned, due, and fixed items appear. Card settings choose agenda time, trails, status, topics, places, and order marks.',target:['#settings-home-head'],action:'Busy times',next:'aBusy',back:'aIntro'},
+      aBusy:{title:'Busy times create the real gaps',copy:'Block sleep, work, meals, school, or commutes. The planner fits work around these clock blocks and travel instead of assuming the whole day is free.',target:['#settings-blocked-head'],action:'Defaults',next:'aDefaults',back:'aSettingsDisplay'},
       aDefaults:{title:'Make repeated setup cheaper',copy:'New-habit defaults cover type, rhythm, priority, duration, flexibility, splitting, and topics. Appearance controls density, font size, and theme.',target:['#settings-defaults-head'],action:'Planner engine',next:'aOptimizer',back:'aBusy'},
-      aOptimizer:{title:'Choose speed or tighter packing',copy:'Smarter packing uses the optimizer for tighter days and scarce windows; Fast mode gives an immediate heuristic preview. Both obey the same hard scheduling rules.',target:['#settings-advanced-head'],action:'Finish',next:'aFinish',back:'aDefaults'},
-      aFinish:{title:'Build constraints gradually',copy:'Start with duration and busy times, then add windows, places, links, or splitting only when they improve the plan. Both coaches remain available from About.',action:'Done',command:'finish',back:'aOptimizer'}
+      aOptimizer:{title:'Choose speed or tighter packing',copy:'Smarter packing uses the optimizer for tighter days and scarce windows; Fast mode gives an immediate heuristic preview. Both obey the same hard scheduling rules.',target:['#settings-advanced-head'],action:'Back to chapters',command:'chapterDone',back:'aDefaults'}
     };
-    return {progress:p,...(models[stage] || models.aIntro)};
+    return {progress:p,...models[stage]};
   }
 
   function model(){
@@ -606,12 +664,19 @@
           ${compact && index < m.steps.length - 1 ? '<i class="tings-step-arrow ti ti-arrow-narrow-right" aria-hidden="true"></i>' : ''}
         </li>`).join('')}</ol>` : '';
     const copyHtml = `<p class="tings-coach-copy" id="tings-coach-copy">${m.copy}</p>`;
+    const chaptersHtml = m.chapters?.length ? `<div class="tings-coach-chapters" role="list">${m.chapters.map(chapter=>`
+        <button type="button" class="tings-coach-chapter${chapter.done ? ' is-done' : ''}" data-coach-chapter="${chapter.id}" role="listitem">
+          <span class="tings-coach-chapter-glyph"><i class="${chapter.icon}" aria-hidden="true"></i></span>
+          <span class="tings-coach-chapter-text"><strong>${chapter.title}</strong><em>${chapter.summary}</em></span>
+          <span class="tings-coach-chapter-check"><i class="ti ${chapter.done ? 'ti-check' : 'ti-chevron-right'}" aria-hidden="true"></i></span>
+        </button>`).join('')}</div>` : '';
+    const noteHtml = m.note ? `<p class="tings-coach-note">${m.note}</p>` : '';
     const chromeNudge = m.dock
       ? `<span class="tings-coach-chrome-nudge" aria-hidden="true"><i class="ti ${m.dock === 'bottom' ? 'ti-arrow-up-right' : 'ti-arrow-down-right'}"></i></span>`
       : '';
     bubble.innerHTML = `
       <div class="tings-coach-head">
-        <span class="tings-coach-progress">${m.progress}</span>
+        <span class="tings-coach-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${m.progress.total}" aria-valuenow="${Math.min(m.progress.now,m.progress.total)}" aria-label="${m.progress.label}"><i style="width:${Math.round(m.progress.fraction * 100)}%"></i></span>
         <button type="button" class="tings-coach-skip" data-coach-skip>skip</button>
       </div>
       <h2 class="tings-coach-title" id="tings-coach-title">${m.title}</h2>
@@ -630,7 +695,7 @@
         </figure>
       </div>` : ''}
       ${m.overlayHint ? `<p class="tings-coach-overlay-hint" role="status">${m.overlayHint}</p>` : ''}
-      ${compact ? `${stepsHtml}${copyHtml}` : `${copyHtml}${stepsHtml}`}
+      ${compact ? `${stepsHtml}${copyHtml}` : `${copyHtml}${chaptersHtml}${noteHtml}${stepsHtml}`}
       ${m.hint ? `<p class="tings-coach-hint">${m.hint}</p>` : ''}
       ${(m.back || m.action || m.later) ? `<div class="tings-coach-actions">
         ${m.back ? '<button type="button" class="tings-coach-action secondary" data-coach-back>Back</button>' : ''}
@@ -652,8 +717,15 @@
 
   function prepareStage(next){
     if(next === 'aIntro'){
+      // The chapter menu is a clean slate: chapters can end with the detail,
+      // settings, or overview sheet open, and all of it closes on return.
       closeGuidedSheet('settings-sheet');
       closeGuidedSheet('overview-sheet');
+      closeGuidedDayLogs();
+      closeGuidedSheet('detail-sheet');
+      closeGuidedSheet('add-sheet');
+      closeGuidedSheet('about-sheet');
+      closeGuidedSheet('sample-habits-sheet');
       return;
     }
     if(next === 'eAdd' || next === 'eAddTask'){
@@ -717,6 +789,24 @@
       };
       setTimeout(()=>showSettingsTarget(settingsTargets[next]),80);
     }
+  }
+
+  // Entering a chapter from the menu. The detail chapter is the only one whose
+  // first step needs a sheet the menu does not open: stage first, then open —
+  // reconcile() keys sheet allowances off the current stage, so the detail
+  // sheet must never appear while the menu stage (empty allowlist) is active.
+  function startChapter(id){
+    const chapter = ADVANCED_CHAPTERS.find(item=>item.id === id);
+    if(!chapter || !habits().length)return;
+    const stages = chapterStages(chapter);
+    if(!stages.length)return;
+    if(stages[0] === 'aDetailRead'){
+      setStage('aDetailRead');
+      const idx = trackedIndex();
+      if(idx >= 0 && typeof openDetail === 'function')openDetail(idx);
+      return;
+    }
+    setStage(stages[0]);
   }
 
   function showDetailPage(key){
@@ -811,6 +901,8 @@
       return;
     }
     if(event.target.closest('[data-coach-back]')){goBack();return;}
+    const chapterBtn = event.target.closest('[data-coach-chapter]');
+    if(chapterBtn){startChapter(chapterBtn.dataset.coachChapter);return;}
     if(event.target.closest('[data-coach-later]')){
       const laterModel = model();
       if(laterModel.laterCommand === 'startEssentials'){
@@ -870,28 +962,10 @@
       window.TingsCoach.start({kind:'essentials',force:true});
       return;
     }
-    if(m.command === 'advancedStart'){
-      setStage(isMinimal() ? 'aFullMode' : 'aHome');
-      return;
-    }
-    if(m.command === 'openAdvancedDetail'){
-      // Stage first, then open: reconcile() keys sheet allowances off the
-      // current stage, so the sheet must never appear while a home stage
-      // (empty allowlist) is still active.
-      setStage('aDetailRead');
-      const idx = trackedIndex();
-      if(idx >= 0 && typeof openDetail === 'function')openDetail(idx);
-      return;
-    }
-    if(m.command === 'advancedHome'){
-      closeGuidedSheet('detail-sheet');
-      setStage('aSearch');
-      return;
-    }
-    if(m.command === 'advancedSettings'){
-      closeGuidedSheet('overview-sheet');
-      openSettings();
-      setStage('aSettingsDisplay');
+    if(m.command === 'chapterDone'){
+      const chapter = advancedChapter();
+      if(chapter)markChapterDone(chapter.id);
+      setStage('aIntro');
       return;
     }
     if(m.next)setStage(m.next);
@@ -1031,7 +1105,7 @@
     }
     if(DETAIL_STAGES.has(stage) && !sheetOpen('detail-sheet')){
       if(stage === 'eTaskDetail')setStage('eSampleIntro');
-      else setStage(mode === 'essentials' ? 'eHomeCard' : 'aSearch');
+      else setStage(mode === 'essentials' ? 'eHomeCard' : 'aIntro');
       return;
     }
     if(stage === 'aFullMode' && !isMinimal()){
@@ -1040,7 +1114,7 @@
       return;
     }
     if(SETTINGS_STAGES.has(stage) && stage !== 'aFullMode' && !sheetOpen('settings-sheet')){
-      setStage('aSearch');
+      setStage('aIntro');
       return;
     }
     if(['eOverview','eOverviewPast','eOverviewLog','eOverviewMissed','eOverviewFuture','eOverviewPlan'].includes(stage)){

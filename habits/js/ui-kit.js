@@ -111,7 +111,7 @@ const UI_SETTING_TOGGLES = {
 };
 
 const UI_ABOUT_BLOCKS = [
-  {id:'about-learn-body', label:'Learn Tings', summary:'Guided start covers the daily loop. Advanced coach covers the full planning surface.', body:[
+  {id:'about-learn-body', label:'Learn Tings', summary:'Guided start covers the daily loop. Advanced coach covers the full surface in five short chapters — pick any of them.', body:[
     'The buttons below replay those tours anytime. Help &amp; docs is the written reference. Samples let you try a feature without building it from scratch.'
   ]},
   {id:'about-private-body', label:'Private by default', summary:'Your list stays on this device. The cloud-up mark flags the few features that contact a service.', body:[
