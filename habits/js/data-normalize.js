@@ -81,6 +81,16 @@ function normalizeLinkValue(kind,value){
     : normalizeUrlValue(value);
 }
 
+/**
+ * PURE: a valid direct-open target that differs from the stored value, or ''.
+ * The value stays the link's identity (store page); the launch target is
+ * only ever a second, different place to try first.
+ */
+function directLaunchValue(launch,value){
+  const clean = normalizeUrlValue(launch);
+  return clean && clean !== value ? clean : '';
+}
+
 /** PURE: clean a habit's link list — drops unusable and duplicate entries. */
 function normalizeLinks(raw){
   if(!Array.isArray(raw))return [];
@@ -92,7 +102,12 @@ function normalizeLinks(raw){
     if(!value)continue;
     if(out.some(l => l.kind === kind && l.value === value))continue;
     const label = kind === 'app' ? normalizeLinkLabel(item.label) : '';
-    out.push(label ? {kind,value,label} : {kind,value});
+    // App shortcuts may carry the app's own scheme (spotify:) to open the
+    // installed app directly; the stored value remains the fallback.
+    const launch = kind === 'app' ? directLaunchValue(item.launch,value) : '';
+    const entry = label ? {kind,value,label} : {kind,value};
+    if(launch)entry.launch = launch;
+    out.push(entry);
     if(out.length >= MAX_HABIT_LINKS)break;
   }
   return out;
@@ -228,6 +243,16 @@ function linkLaunchUrl(link){
   if(kind === 'whatsapp')return `https://wa.me/${value.replace(/\D/g,'')}`;
   if(kind === 'facetime')return `facetime://${value}`;
   return value;
+}
+
+/**
+ * PURE: an app shortcut's optional direct-open target — the app's own scheme
+ * (spotify:) or universal link — tried before the stored value at launch.
+ * '' for non-app links, unusable values, or targets equal to the value.
+ */
+function linkDirectLaunchUrl(link){
+  if(!link || normalizeLinkKind(link.kind) !== 'app')return '';
+  return directLaunchValue(link.launch,normalizeLinkValue('app',link.value));
 }
 
 /**

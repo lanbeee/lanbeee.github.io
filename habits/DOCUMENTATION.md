@@ -416,7 +416,7 @@ else:
   }[],
   
   // ─── LINKS & ACTIONS ─────────────────────────────────────
-  links: {kind, value, label?}[], // 👤 Phone, WhatsApp, FaceTime, app, URL
+  links: {kind, value, label?, launch?}[], // 👤 Phone, WhatsApp, FaceTime, app, URL; app shortcuts may carry a direct-open launch target (the app's own scheme)
   
   // ─── TASK & IMPORT FIELDS ───────────────────────────────
   dueDate: number|null,      // 👤 Task only: deadline
@@ -1114,6 +1114,10 @@ Each link row has:
 - **Kind selector:** Phone, WhatsApp, FaceTime, App, Link
 - **Value:** The phone number, URL, or ID
 - **App name:** A short editable label for app shortcuts
+- **Opens directly (optional):** The app's own link (e.g. `spotify://`),
+  tried first at launch — the stored page (store page, web URL) opens instead
+  when the app isn't installed. Apple exposes no way to derive an app's
+  scheme from its App Store link, so it's entered once per app.
 - **Star:** Marks as primary link (double tap uses this)
 
 **Add app** opens a compact chooser for Gmail, Outlook, Facebook, Instagram,
@@ -1135,6 +1139,7 @@ shortcuts can be stored on one item.
 | Link | 🔗 | Full URL | `https://zoom.us/j/123` |
 | App | App/provider icon | App name + web/app URL | `Gmail` + `https://mail.google.com/` |
 | App |  | App Store share link (name fills in) | `https://apps.apple.com/app/id1626186138` |
+| App |  | App scheme for direct open (optional) | `spotify://` — opens Spotify if installed, else its store page |
 | Phone | 📞 | Phone number | `+1234567890` |
 | WhatsApp | 💬 | Phone number | `+1234567890` |
 | FaceTime | 🎥 | Email or phone | `user@example.com` |

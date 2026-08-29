@@ -66,6 +66,26 @@ function assert(cond, msg){
     && values.app.value === 'https://mail.proton.me/', 'custom app names and safe links are normalized');
   assert(values.script === '' && values.blank === '', 'script-ish and empty links are dropped');
 
+  // ── optional direct-open targets on app shortcuts ──────────────────────
+  const direct = await page.evaluate(() => ({
+    kept:normalizeLinks([{kind:'app',label:'Roku',value:'https://apps.apple.com/app/id1626186138',launch:' roku:// '}])[0],
+    unsafe:normalizeLinks([{kind:'app',label:'X',value:'https://x.com/home',launch:'javascript:alert(1)'}])[0],
+    sameAsValue:normalizeLinks([{kind:'app',label:'Y',value:'https://notes.example.com/',launch:'notes.example.com'}])[0],
+    notApp:normalizeLinks([{kind:'link',value:'https://zoom.us/j/1',launch:'zoommtg://join'}])[0],
+    scheme:linkDirectLaunchUrl({kind:'app',value:'https://apps.apple.com/app/id1626186138',launch:'roku://'}),
+    web:linkDirectLaunchUrl({kind:'app',value:'https://apps.apple.com/app/id324684580',launch:'https://open.spotify.com/'}),
+    none:linkDirectLaunchUrl({kind:'app',value:'https://apps.apple.com/app/id1'}),
+    dropped:linkDirectLaunchUrl({kind:'app',value:'https://a.example.com/',launch:'https://a.example.com/'})
+  }));
+  assert(direct.kept.launch === 'roku://' && direct.kept.value === 'https://apps.apple.com/app/id1626186138',
+    'an app shortcut keeps its scheme alongside the store page');
+  assert(direct.unsafe.launch === undefined && direct.sameAsValue.launch === undefined,
+    'unsafe or redundant direct links are dropped while the value survives');
+  assert(direct.notApp.launch === undefined, 'only app shortcuts carry a direct link');
+  assert(direct.scheme === 'roku://' && direct.web === 'https://open.spotify.com/'
+    && direct.none === '' && direct.dropped === '',
+    'the direct target is the scheme or universal link, never the stored page');
+
   // ── App Store / Play Store share links ─────────────────────────────────
   const store = await page.evaluate(() => ({
     short:normalizeUrlValue('https://apps.apple.com/app/id1626186138'),
@@ -302,11 +322,48 @@ function assert(cond, msg){
     'a short link with no name and no lookup asks for a name instead of adding junk');
   await page.evaluate(() => { window.fetch = window.__realFetch; });
 
+  // The optional direct-open link rides along, and the row editor exposes it.
+  // (The blocked confirm above left the custom editor open.)
+  await page.locator('#detail-custom-app-name').fill('Spotify');
+  await page.locator('#detail-custom-app-url').fill('https://apps.apple.com/app/id324684580');
+  await page.locator('#detail-custom-app-launch').fill('spotify://');
+  await page.locator('#detail-custom-app-confirm').click();
+  await page.waitForTimeout(120);
+  const directRow = await page.evaluate(() => ({
+    link:currentDetailLinks()[1],
+    launchInput:document.querySelector('#detail-link-list .link-row[data-link-index="1"] .link-app-launch')?.value || '',
+    launchHidden:document.querySelector('#detail-link-list .link-row[data-link-index="1"] .link-app-launch')?.hidden
+  }));
+  assert(directRow.link?.kind === 'app' && directRow.link?.launch === 'spotify://'
+    && directRow.link?.value === 'https://apps.apple.com/app/id324684580'
+    && directRow.launchInput === 'spotify://' && !directRow.launchHidden,
+    'a custom app can carry the app scheme, editable on its row');
+
+  // Switching a row away from app hides the direct field and drops the target.
+  const kindAway = await page.evaluate(() => {
+    const select = document.querySelector('#detail-link-list .link-row[data-link-index="1"] .link-kind');
+    select.value = 'link';
+    select.dispatchEvent(new Event('change',{ bubbles:true }));
+    return {
+      hidden:document.querySelector('#detail-link-list .link-row[data-link-index="1"] .link-app-launch')?.hidden,
+      kept:currentDetailLinks()[1]?.launch
+    };
+  });
+  assert(kindAway.hidden && kindAway.kept === undefined,
+    'a plain link row hides the direct field and loses its target');
+  const kindBack = await page.evaluate(() => {
+    const select = document.querySelector('#detail-link-list .link-row[data-link-index="1"] .link-kind');
+    select.value = 'app';
+    select.dispatchEvent(new Event('change',{ bubbles:true }));
+    return document.querySelector('#detail-link-list .link-row[data-link-index="1"] .link-app-launch')?.hidden;
+  });
+  assert(kindBack === false, 'switching back to app shows the direct field again');
+
   await page.locator('#detail-save').click();
   const savedStore = await page.evaluate(() => load().find(h => h.name === 'spanish').links);
-  assert(savedStore.length === 1 && savedStore[0].label === 'Language Tutor'
-    && savedStore[0].value === 'https://apps.apple.com/us/app/language-tutor/id555000111',
-    'the store-link app shortcut persists');
+  assert(savedStore.length === 2 && savedStore[0].label === 'Language Tutor'
+    && savedStore[1].label === 'Spotify' && savedStore[1].launch === 'spotify://',
+    'store-link apps with and without a direct target persist');
 
   await page.waitForTimeout(350);
 
@@ -356,6 +413,28 @@ function assert(cond, msg){
   });
   assert(dialRouting.url === 'tel:+15551234567' && dialRouting.handsOff && !dialRouting.webHandsOff,
     'a migrated call habit dials via tel:, which replaces the location instead of opening a tab');
+
+  // ── direct-open: the app's scheme first, store page as fallback ────────
+  // launchFallbackUrl is stubbed so the test never leaves the app page.
+  const launchOrder = await page.evaluate(async () => {
+    window.__opened = [];
+    window.__fallback = '';
+    window.launchFallbackUrl = (url) => { window.__fallback = String(url); };
+    openHabitLink({ kind:'app', label:'Roku Smart Home', value:'https://apps.apple.com/app/id1626186138', launch:'roku://' });
+    const immediate = window.__opened.slice();
+    // The scheme handoff never hides a headless page, so the fallback fires.
+    const deadline = Date.now() + 5000;
+    while(Date.now() < deadline && !window.__fallback)await new Promise(r => setTimeout(r,100));
+    window.__opened = [];
+    openHabitLink({ kind:'app', label:'Roku Smart Home', value:'https://apps.apple.com/app/id1626186138' });
+    return { immediate, fallback:window.__fallback, plain:window.__opened.slice() };
+  });
+  assert(launchOrder.immediate.length === 0,
+    'a scheme handoff tries the app first, not a browser tab');
+  assert(launchOrder.fallback === 'https://apps.apple.com/app/id1626186138',
+    'when the app never takes over, the store page opens instead');
+  assert(launchOrder.plain.length === 1 && launchOrder.plain[0] === 'https://apps.apple.com/app/id1626186138',
+    'apps without a direct target still open their page directly');
 
   // ── travel card: tap edits the leg, double tap opens directions ─────────
   const travelPlaces = await page.evaluate(() => ({

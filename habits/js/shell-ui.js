@@ -487,15 +487,55 @@ function showToast(text,durationMs = 900){
   toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
 }
 
+// How long an app's own scheme gets to take over the page before the store
+// fallback fires — short enough to feel instant, long enough for a slow
+// handoff on an old phone.
+const LINK_DIRECT_WAIT_MS = 1500;
+
+// HANDLER: the fallback after a failed scheme handoff. A window.open this
+// late is past the user gesture, so popup blockers would eat it — the page
+// itself navigates instead. (Kept named so tests can observe it.)
+function launchFallbackUrl(url){
+  window.location.href = url;
+}
+
+/**
+ * HANDLER: hand the page to the app's own scheme first; if the app never
+ * takes over (usually: not installed), fall back to the stored page. Any
+ * hide or blur cancels the fallback — that is the handoff succeeding.
+ */
+function openDirectWithFallback(direct,fallback){
+  window.location.href = direct;
+  let tookOver = false;
+  const cancel = () => { tookOver = true; };
+  window.addEventListener('pagehide',cancel,{ once:true });
+  window.addEventListener('blur',cancel,{ once:true });
+  document.addEventListener('visibilitychange',() => {
+    if(document.visibilityState !== 'visible')cancel();
+  },{ once:true });
+  setTimeout(() => {
+    if(tookOver || document.visibilityState !== 'visible')return;
+    launchFallbackUrl(fallback);
+  },LINK_DIRECT_WAIT_MS);
+}
+
 /**
  * HANDLER: launch a habit link (a call, a meeting room, any URL).
  * Must be called straight from a tap — both the popup blocker and iOS's
  * scheme handling depend on the user gesture still being active.
+ * App shortcuts with a direct-open target (the app's own scheme) try that
+ * first and fall back to the stored page when the app isn't installed.
  * Returns true when something was launched.
  */
 function openHabitLink(link){
   const url = typeof linkLaunchUrl === 'function' ? linkLaunchUrl(link) : '';
   if(!url)return false;
+  const direct = typeof linkDirectLaunchUrl === 'function' ? linkDirectLaunchUrl(link) : '';
+  if(direct){
+    if(linkHandsOffToOs(direct))openDirectWithFallback(direct,url);
+    else window.open(direct,'_blank','noopener');
+    return true;
+  }
   if(linkHandsOffToOs(url))window.location.href = url;
   else window.open(url,'_blank','noopener');
   return true;

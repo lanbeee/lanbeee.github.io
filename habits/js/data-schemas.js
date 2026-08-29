@@ -128,7 +128,7 @@
  * @property {{weekdays:number[],start:number,end:number,locationId:string|null}[]} scheduleOptions — alternative habit-level weekday/time/place windows; duplicate locations are allowed
  *
  * — LinkFields (optional, on every type) —
- * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label; links[0] is primary and fires on card double tap
+ * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and fires on card double tap
  */
 
 /**

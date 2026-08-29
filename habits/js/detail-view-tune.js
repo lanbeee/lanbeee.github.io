@@ -229,6 +229,7 @@ function detailLinkRowHtml(link,index){
     <select class="mini-select link-kind" aria-label="link type">${options}</select>
     <input type="text" class="link-app-name" value="${escapeHtml(normalizeLinkLabel(link.label))}" placeholder="app name" aria-label="app name" autocomplete="off" maxlength="30"${kind === 'app' ? '' : ' hidden'} />
     <input type="text" class="link-value" value="${escapeHtml(link.value || '')}" placeholder="${escapeHtml(LINK_PLACEHOLDERS[kind] || '')}" aria-label="${kind} value" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" />
+    <input type="url" class="link-app-launch" value="${escapeHtml(link.launch || '')}" placeholder="opens the app directly — optional, e.g. spotify://" aria-label="direct open link" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"${kind === 'app' ? '' : ' hidden'} />
     ${lead}
     <button type="button" class="link-row-btn" data-link-remove="${index}" title="remove" aria-label="remove link"><i class="ti ti-x" aria-hidden="true"></i></button>
   </div>`;
@@ -249,7 +250,8 @@ function currentDetailLinkRows(){
   return Array.from(document.querySelectorAll('#detail-link-list .link-row')).map(row => ({
     kind:normalizeLinkKind(row.querySelector('.link-kind')?.value),
     value:(row.querySelector('.link-value')?.value || '').trim(),
-    label:normalizeLinkLabel(row.querySelector('.link-app-name')?.value)
+    label:normalizeLinkLabel(row.querySelector('.link-app-name')?.value),
+    launch:(row.querySelector('.link-app-launch')?.value || '').trim()
   }));
 }
 
@@ -272,8 +274,10 @@ function syncDetailLinkUi(){
     const kind = normalizeLinkKind(row.querySelector('.link-kind')?.value);
     const input = row.querySelector('.link-value');
     const name = row.querySelector('.link-app-name');
+    const launch = row.querySelector('.link-app-launch');
     row.classList.toggle('is-app',kind === 'app');
     if(name)name.hidden = kind !== 'app';
+    if(launch)launch.hidden = kind !== 'app';
     if(input){
       input.placeholder = LINK_PLACEHOLDERS[kind] || '';
       input.setAttribute('aria-label',`${kind} value`);
@@ -334,6 +338,7 @@ function closeDetailAppPicker(){
   const name = $('detail-custom-app-name');
   if(name){ name.value = ''; delete name.dataset.autoName; }
   if($('detail-custom-app-url'))$('detail-custom-app-url').value = '';
+  if($('detail-custom-app-launch'))$('detail-custom-app-launch').value = '';
 }
 
 function detailLinkHasCapacity(){
@@ -453,7 +458,10 @@ async function addCustomDetailApp(){
     showToast('that app link is already added');
     return;
   }
-  rows.push({kind:'app',label,value});
+  const entry = {kind:'app',label,value};
+  const launch = directLaunchValue($('detail-custom-app-launch')?.value,value);
+  if(launch)entry.launch = launch;
+  rows.push(entry);
   renderDetailLinkRows(rows);
   setDetailDirty();
   closeDetailAppPicker();
