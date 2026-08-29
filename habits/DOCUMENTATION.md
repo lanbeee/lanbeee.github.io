@@ -45,7 +45,7 @@ Everything below is covered in this skeleton:
 
 ### ✅ All Habit Object Fields
 - Core: hid, name, emoji, sample, type, target, createdAt, logs, lastLog, snoozedUntil
-- Shared display: showOnSharedDisplay (defaults on; per-item opt-out)
+- Shared display: showOnSharedDisplay + allowSharedDisplayCompletion (defaults to markable; each item can be hidden, view-only, or markable)
 - Priority & Ranking: priority
 - Time Window: allowedWeekdays, allowedMonthDays, preferredWeekdays, preferredMonthDays
 - Time Start/End: allowedTimeStart, allowedTimeEnd, preferredTimeStart, preferredTimeEnd
@@ -337,6 +337,7 @@ else:
   emojiBgColor: string,     // 👤 Background color token: ''|teal|amber|red|purple|blue|green
   sample: boolean,          // 👨‍💻 Created by sort lab? (🧪 marker)
   showOnSharedDisplay: boolean, // 👤 Include in the encrypted shared display; defaults true
+  allowSharedDisplayCompletion: boolean, // 👤 Permit marking done from the shared display; defaults true
   
   // ─── TYPE & SCHEDULE ─────────────────────────────────────
   type: 'keepup'|'reduce'|'zero'|'task',  // 👤 habit type
@@ -1131,7 +1132,8 @@ web or app URL. Up to four links/app shortcuts can be stored on one item.
 
 #### Item Actions
 - **Pinned:** Keeps the item above automatic ordering
-- **Show on shared display:** On by default. Turn off to keep this item out of every future shared-display snapshot.
+- **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot.
+- The standalone shared display includes fullscreen and privacy-wallpaper controls in its header.
 - **Export to calendar:** Tasks with a due date or fixed time
 - **Share item:** Sends an encrypted invitation for another person to track it
 - **Snooze:** Temporarily hides the item

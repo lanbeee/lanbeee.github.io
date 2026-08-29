@@ -42,7 +42,8 @@ function assert(cond,msg){
     };
     const extras = Array.from({ length:60 },(_,index)=>({
       name:`Extra ${index + 1}`,emoji:'',hid:`extra-${index}`,type:'keepup',target:1,
-      logs:[],lastLog:null,breakable:false,durationMinutes:10,locationIds:[]
+      logs:[],lastLog:null,breakable:false,durationMinutes:10,locationIds:[],
+      allowSharedDisplayCompletion:index !== 0
     }));
     const data = [active,completed,privateHabit,...extras];
     const timeline = [
@@ -69,6 +70,7 @@ function assert(cond,msg){
     const hourProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeMode:'hours',scopeValue:2 },data,now,dayCount:2 });
     const json = JSON.stringify(projection);
     const firstItem = projection.days.flatMap(day=>day.rows).find(row=>row.kind === 'item');
+    const viewOnlyItem = projection.days.flatMap(day=>day.rows).find(row=>row.title === 'Extra 1');
 
     const key = shareRandomHex(32);
     const envelope = await shareEncrypt(key,projection,{
@@ -100,6 +102,8 @@ function assert(cond,msg){
       rowMapCount:Object.keys(projection._rowMap || {}).length,
       mappedHid:firstItem && projection._rowMap[firstItem.rowId] && projection._rowMap[firstItem.rowId].hid,
       completable:firstItem && firstItem.completable,
+      viewOnlyCompletable:viewOnlyItem && viewOnlyItem.completable,
+      viewOnlyMapped:Boolean(viewOnlyItem && projection._rowMap[viewOnlyItem.rowId]),
       crypto:{
         title:back.title,tamperRejected,
         codeLength:shareNormalizeAgendaPairCode(pairing.confirmationCode).length,
@@ -121,6 +125,7 @@ function assert(cond,msg){
   assert(!result.hourTitles.some(title=>title.startsWith('Extra')),'hours-ahead scope excludes later activity');
   assert(!result.json.includes('active-hid') && !result.json.includes('completed-hid'),'omits local habit ids');
   assert(result.rowMapCount > 0 && result.mappedHid === 'active-hid' && result.completable,'keeps the completion target only in the owner-side non-enumerable row map');
+  assert(result.viewOnlyCompletable === false && !result.viewOnlyMapped,'view-only items are visible without a completion target or capability');
   assert(!result.json.includes('stale private row'),'omits private local row fields');
   assert(result.crypto.title === 'Family','AES-GCM round-trip restores the projection');
   assert(result.crypto.tamperRejected,'tampered agenda ciphertext is rejected');
@@ -328,16 +333,22 @@ function assert(cond,msg){
   assert(displayState.hash === '','display address contains no enrollment secret');
   assert(!displayState.enrollment.includes(displayCode.replace('-','')) && !displayState.enrollment.includes(pairingRequest.pairingId),'display retains neither visible code nor pairing id');
   assert(displayState.title === 'Secure family agenda' && !displayState.appLoaded,'standalone display decrypts the feed without loading the main app');
+  const fullscreenControl = await displayPage.evaluate(()=>({
+    exists:Boolean(document.getElementById('agenda-fullscreen')),
+    label:document.getElementById('agenda-fullscreen')?.getAttribute('aria-label') || ''
+  }));
+  assert(fullscreenControl.exists && /fullscreen/i.test(fullscreenControl.label),'shared display exposes an accessible fullscreen control when the browser supports it');
 
   await displayPage.click('[data-complete-row]');
-  await displayPage.waitForFunction(()=>document.querySelector('.agenda-done')?.textContent.includes('done'));
+  await displayPage.waitForSelector('.agenda-mark.is-done');
   const completionUi = await displayPage.evaluate(()=>({
-    done:document.querySelector('.agenda-row.is-complete .agenda-done.is-done')?.textContent.trim(),
+    done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
+    label:document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')?.getAttribute('aria-label'),
     stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || 'null')?.completionRowIds || []
   }));
   assert(completionRequest && completionRequest.completion.recordKind === 'agenda_completion','the display submits only an encrypted completion envelope');
   assert(completionRequest.completion.revision === 1 && completionRequest.completion.logId.length === 16,'the completion is bound to the current snapshot and opaque displayed row');
-  assert(completionUi.done === '✓done' && completionUi.stored.includes(completionRequest.completion.logId),'the shared display marks the accepted row done immediately and remembers it locally');
+  assert(completionUi.done && /is done/i.test(completionUi.label || '') && completionUi.stored.includes(completionRequest.completion.logId),'the shared display marks the accepted emoji tile done immediately and remembers it locally');
 
   const displayPresentation = await displayPage.evaluate(() => {
     const rowTime = document.querySelector('.agenda-row time');
@@ -444,19 +455,31 @@ function assert(cond,msg){
   assert(!corruptInbound.changed && !corruptInbound.acknowledged && !corruptInbound.rowExcluded && !corruptInbound.completed,
     `corrupt encrypted completions fail closed without hiding or completing the row (${JSON.stringify(corruptInbound)})`);
 
-  const privacyToggle = await page.evaluate(()=>{
+  const displayModes = await page.evaluate(()=>{
     const data = load();
     data[0].showOnSharedDisplay = undefined;
+    data[0].allowSharedDisplayCompletion = undefined;
     save(data);
     openDetail(0);
-    const button = document.getElementById('detail-shared-display');
-    const defaultsOn = button?.getAttribute('aria-pressed') === 'true';
-    button?.click();
-    const tune = currentDetailTune();
+    const defaultMode = currentDetailSharedDisplayMode();
+    document.querySelector('[data-shared-display-mode="view"]')?.click();
+    const view = currentDetailTune();
+    document.querySelector('[data-shared-display-mode="hidden"]')?.click();
+    const hidden = currentDetailTune();
+    setDetailSharedDisplayMode('complete');
+    setDetailTypeUi('zero');
+    const stop = {
+      mode:currentDetailSharedDisplayMode(),
+      completionDisabled:document.querySelector('[data-shared-display-mode="complete"]')?.disabled
+    };
     closeDetail();
-    return { defaultsOn,turnedOff:tune.showOnSharedDisplay === false };
+    return { defaultMode,view,hidden,stop };
   });
-  assert(privacyToggle.defaultsOn && privacyToggle.turnedOff,'each item defaults to shared and can be turned off from its detail Actions page');
+  assert(displayModes.defaultMode === 'complete'
+    && displayModes.view.showOnSharedDisplay && !displayModes.view.allowSharedDisplayCompletion
+    && !displayModes.hidden.showOnSharedDisplay
+    && displayModes.stop.mode === 'view' && displayModes.stop.completionDisabled,
+  'each item defaults to markable and can be changed to view-only or hidden from its detail Actions page');
 
   displayAuthorized = false;
   await displayPage.evaluate(()=>refreshDisplay());

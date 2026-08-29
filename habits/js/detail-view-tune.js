@@ -1,3 +1,22 @@
+function sharedDisplayModeForHabit(habit){
+  if(!habit || habit.showOnSharedDisplay === false)return 'hidden';
+  return habit.allowSharedDisplayCompletion === false ? 'view' : 'complete';
+}
+
+function setDetailSharedDisplayMode(mode){
+  const selected = ['hidden','view','complete'].includes(mode) ? mode : 'complete';
+  document.querySelectorAll('#detail-shared-display [data-shared-display-mode]').forEach(button=>{
+    const on = button.dataset.sharedDisplayMode === selected;
+    button.classList.toggle('on',on);
+    button.setAttribute('aria-checked',String(on));
+    button.tabIndex = on ? 0 : -1;
+  });
+}
+
+function currentDetailSharedDisplayMode(){
+  return document.querySelector('#detail-shared-display [data-shared-display-mode].on')?.dataset.sharedDisplayMode || 'complete';
+}
+
 function combineFieldsFromEndpoint(inputId, prefix){
   const c = readCombineFromEndpoint(inputId);
   return {
@@ -23,6 +42,7 @@ function currentDetailTune(){
   const locationIds = selectedLocationIdsFrom('detail-place-chips');
   const locationPrefs = selectedLocationPrefsFrom('detail-place-chips');
   const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
+  const sharedDisplayMode = currentDetailSharedDisplayMode();
   return {
     name:$('detail-habit-message').value.trim(),
     type,
@@ -30,7 +50,8 @@ function currentDetailTune(){
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
     pinned:$('detail-pinned').getAttribute('aria-pressed') === 'true',
-    showOnSharedDisplay:$('detail-shared-display')?.getAttribute('aria-pressed') !== 'false',
+    showOnSharedDisplay:sharedDisplayMode !== 'hidden',
+    allowSharedDisplayCompletion:sharedDisplayMode === 'complete',
     links:currentDetailLinks(),
     topics:selectedTopicsFrom('detail-topic-chips'),
     locationIds,
@@ -139,7 +160,7 @@ function restoreDetailTune(){
   $('detail-emoji').value = detailTuneOriginal.emoji;
   renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
   $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
-  $('detail-shared-display')?.setAttribute('aria-pressed',detailTuneOriginal.showOnSharedDisplay ? 'true' : 'false');
+  setDetailSharedDisplayMode(sharedDisplayModeForHabit(detailTuneOriginal));
   renderDetailLinkRows(normalizeLinks(detailTuneOriginal.links));
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
   $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;

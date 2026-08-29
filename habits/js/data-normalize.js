@@ -281,6 +281,7 @@ function normalize(items){
       emojiBgColor:normalizeEmojiBgColor(raw.emojiBgColor),
       pinned:Boolean(raw.pinned),
       showOnSharedDisplay:raw.showOnSharedDisplay !== false,
+      allowSharedDisplayCompletion:raw.allowSharedDisplayCompletion !== false,
       sample:Boolean(raw.sample),
       snoozedUntil: raw.snoozedUntil || null,
       topics:normalizeTopics(raw.topics),

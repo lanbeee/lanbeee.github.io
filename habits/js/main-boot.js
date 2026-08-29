@@ -261,6 +261,7 @@ $('do-save').addEventListener('click',()=>{
     emojiBgColor:selectedEmojiBgColor('ting-emoji-bg'),
     pinned:false,
     showOnSharedDisplay:true,
+    allowSharedDisplayCompletion:true,
     priority:selectedAddPriority(),
     topics:mergedTopics,
     locationIds,
@@ -366,6 +367,19 @@ function setDetailTypeUi(type){
   }
   const exportBtn = $('detail-export');
   if(exportBtn)exportBtn.hidden = type !== 'task';
+  const sharedComplete = document.querySelector('[data-shared-display-mode="complete"]');
+  if(sharedComplete){
+    const unavailable = type === 'zero';
+    sharedComplete.disabled = unavailable;
+    sharedComplete.setAttribute('aria-disabled',String(unavailable));
+    if(unavailable && typeof currentDetailSharedDisplayMode === 'function' && currentDetailSharedDisplayMode() === 'complete'){
+      setDetailSharedDisplayMode('view');
+    }
+  }
+  const sharedHelp = $('detail-shared-display-help');
+  if(sharedHelp)sharedHelp.textContent = type === 'zero'
+    ? 'Stop items may be shown, but cannot be marked done'
+    : 'Choose what this display may do with this item';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
 }
 
@@ -1235,6 +1249,7 @@ $('detail-save').addEventListener('click',()=>{
   h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
   h.showOnSharedDisplay = current.showOnSharedDisplay !== false;
+  h.allowSharedDisplayCompletion = current.allowSharedDisplayCompletion !== false;
   h.links = normalizeLinks(current.links);
   h.topics = normalizeTopics(current.topics);
   h.scheduleOptions = normalizeHabitScheduleOptions(current.scheduleOptions,sortSettings.locations);

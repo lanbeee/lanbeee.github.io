@@ -515,9 +515,23 @@ $('detail-track-value')?.addEventListener('click',function(){
   this.setAttribute('aria-pressed',String(!pressed));
   setDetailDirty();
 });
-$('detail-shared-display')?.addEventListener('click',function(){
-  const pressed = this.getAttribute('aria-pressed') === 'true';
-  this.setAttribute('aria-pressed',String(!pressed));
+$('detail-shared-display')?.addEventListener('click',event=>{
+  const button = event.target.closest('[data-shared-display-mode]');
+  if(!button)return;
+  setDetailSharedDisplayMode(button.dataset.sharedDisplayMode);
+  setDetailDirty();
+});
+$('detail-shared-display')?.addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+  const buttons = [...event.currentTarget.querySelectorAll('[data-shared-display-mode]:not(:disabled)')];
+  if(!buttons.length)return;
+  event.preventDefault();
+  const current = Math.max(0,buttons.indexOf(event.target.closest('[data-shared-display-mode]')));
+  const next = event.key === 'Home' ? 0
+    : event.key === 'End' ? buttons.length - 1
+    : (current + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+  setDetailSharedDisplayMode(buttons[next].dataset.sharedDisplayMode);
+  buttons[next].focus();
   setDetailDirty();
 });
 bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});

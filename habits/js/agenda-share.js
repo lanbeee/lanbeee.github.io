@@ -93,7 +93,7 @@ function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
   if(row.kind === 'fill' || row.kind === 'scheduled'){
     if(!householdProjectionHabitActive(habit,dayBase)) return null;
     if(habit && completedRowKeys && completedRowKeys.has(`${habit.hid}|${Number(row.start) || 0}`)) return null;
-    const completable = Boolean(habit && habit.type !== 'zero' && habit.hid);
+    const completable = Boolean(habit && habit.type !== 'zero' && habit.hid && habit.allowSharedDisplayCompletion !== false);
     if(completable && rowMap){
       rowMap[base.rowId] = {
         hid:habit.hid,
@@ -108,6 +108,7 @@ function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
       completable,
       title:habit && habit.name ? String(habit.name).slice(0,80) : 'Scheduled item',
       emoji:habit && habit.emoji ? String(habit.emoji).slice(0,8) : '',
+      emojiBgColor:habit && typeof normalizeEmojiBgColor === 'function' ? normalizeEmojiBgColor(habit.emojiBgColor) : '',
       status:householdRowStatus(row, habit),
       locationLabel:householdLocationLabel(row.locationId || (habit && habit.locationIds && habit.locationIds[0])).slice(0,80)
     };
@@ -205,6 +206,7 @@ function householdAgendaSignature(projection){
         end:row.end,
         title:row.title,
         emoji:row.emoji,
+        emojiBgColor:row.emojiBgColor,
         status:row.status,
         completable:Boolean(row.completable),
         durationMinutes:row.durationMinutes,

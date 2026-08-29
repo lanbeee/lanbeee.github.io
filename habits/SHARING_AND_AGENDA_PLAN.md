@@ -206,7 +206,7 @@ Projection rules:
 - Include travel endpoint labels only when already displayed by the owner.
 - Exclude notes, log history, numeric values, phone/web links, unrelated habits, planner diagnostics, scarcity scores, and settings.
 - Use random projection row IDs rather than local habit IDs or array indices.
-- Omit any item whose `showOnSharedDisplay` switch is off; legacy and new items default on.
+- Omit any item whose shared-display mode is hidden. Legacy and new items default to markable; view-only items are projected without a completion capability.
 
 Publish the agenda currently shown to the owner. If an initial Fast plan is later replaced or refined by GLPK, publish a new revision. This keeps the shared display aligned with the owner’s actual screen rather than claiming every projection is solver-optimal.
 

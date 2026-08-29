@@ -30,6 +30,7 @@
  * @property {string} emojiBgColor            — curated token for emoji icon background: ''|teal|amber|red|purple|blue|green
  * @property {boolean} pinned                 — stays above auto-sorted habits
  * @property {boolean} showOnSharedDisplay     — false keeps this item out of the encrypted shared-display projection; missing defaults true
+ * @property {boolean} allowSharedDisplayCompletion — false makes the item view-only on a shared display; missing defaults true
  * @property {boolean} sample                 — true if created by the sort-lab sample builder
  * @property {number|null} snoozedUntil       — ms timestamp; habit hidden on home until then
  * @property {string[]} topics                — user-defined tags (max 24, each max 32 chars)

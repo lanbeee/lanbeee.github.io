@@ -15,6 +15,36 @@ let _displayProjection = null;
 let _displayWallpaperClockTimer = null;
 let _displayWallpaperTaps = [];
 
+function syncDisplayFullscreenButton(){
+  const button = $('agenda-fullscreen');
+  if(!button)return;
+  const supported = typeof document.documentElement.requestFullscreen === 'function';
+  button.hidden = !supported;
+  if(!supported)return;
+  const active = Boolean(document.fullscreenElement);
+  const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
+  button.setAttribute('aria-label',label);
+  button.title = label;
+  button.lastChild.textContent = active ? ' exit full screen' : ' full screen';
+  const icon = button.querySelector('span');
+  if(icon)icon.textContent = active ? '↙' : '↗';
+}
+
+async function toggleDisplayFullscreen(){
+  try{
+    if(document.fullscreenElement)await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen({ navigationUI:'hide' });
+  }catch(_){
+    const button = $('agenda-fullscreen');
+    if(button){
+      button.classList.add('is-error');
+      setTimeout(()=>button.classList.remove('is-error'),1200);
+    }
+  }finally{
+    syncDisplayFullscreenButton();
+  }
+}
+
 function displayWallpaperStored(){
   try{ return localStorage.getItem(AGENDA_WALLPAPER_STORAGE_KEY) === 'hidden'; }
   catch(_){ return false; }
@@ -125,6 +155,23 @@ function clockLabel(ts,timeZone){
   return new Date(ts).toLocaleTimeString(undefined,{ hour:'numeric',minute:'2-digit',timeZone });
 }
 
+const DISPLAY_EMOJI_BG_TOKENS = new Set(['teal','amber','red','purple','blue','green','pink','orange','indigo','cyan','lime','slate']);
+
+function displayEmojiBgClass(value){
+  const token = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return DISPLAY_EMOJI_BG_TOKENS.has(token) ? ` emoji-bg-${token}` : '';
+}
+
+function displayRowMark(row,kind,canComplete,isComplete){
+  const symbol = row.emoji || (kind === 'travel' ? '↗' : kind === 'busy' ? '—' : kind === 'open' ? '+' : '•');
+  const symbolHtml = `<span class="agenda-mark-symbol" aria-hidden="true">${escapeDisplay(symbol)}</span>`;
+  if(canComplete){
+    const label = isComplete ? `${row.title} is done` : `Mark ${row.title} done`;
+    return `<button type="button" class="agenda-mark is-markable${displayEmojiBgClass(row.emojiBgColor)}${isComplete ? ' is-done' : ''}" data-complete-row="${escapeDisplay(row.rowId)}"${isComplete ? ' disabled' : ''} aria-label="${escapeDisplay(label)}">${symbolHtml}<span class="agenda-mark-check" aria-hidden="true">✓</span></button>`;
+  }
+  return `<span class="agenda-mark is-view-only${displayEmojiBgClass(row.emojiBgColor)}" aria-hidden="true">${symbolHtml}</span>`;
+}
+
 function renderDisplay(projection,meta,completedRowIds = []){
   const now = Date.now();
   const root = $('agenda-root');
@@ -182,16 +229,13 @@ function renderDisplay(projection,meta,completedRowIds = []){
       const nextRow = current && row.start && now < row.start;
       const canComplete = !meta?.paused && kind === 'item' && row.completable === true && day.dateKey <= todayKey;
       const isComplete = canComplete && completed.has(row.rowId);
-      const doneButton = canComplete
-        ? `<button type="button" class="agenda-done${isComplete ? ' is-done' : ''}" data-complete-row="${escapeDisplay(row.rowId)}"${isComplete ? ' disabled' : ''} aria-label="${isComplete ? 'Done' : `Mark ${escapeDisplay(row.title)} done`}"><span aria-hidden="true">${isComplete ? '✓' : ''}</span>${isComplete ? 'done' : 'mark done'}</button>`
-        : '';
       return `<article class="agenda-row ${kind}${currentRow ? ' is-now' : ''}${nextRow ? ' is-next' : ''}${isComplete ? ' is-complete' : ''}">
         <time>${when || (row.durationMinutes ? `${row.durationMinutes} min` : '')}</time>
+        ${displayRowMark(row,kind,canComplete,isComplete)}
         <div class="agenda-row-copy">
-          <b>${escapeDisplay(row.emoji ? `${row.emoji} ${row.title}` : row.title)}</b>
+          <b>${escapeDisplay(row.title)}</b>
           ${extra ? `<small>${escapeDisplay(extra)}</small>` : ''}
         </div>
-        ${doneButton}
       </article>`;
     }).join('') || '<p class="agenda-empty">Nothing planned.</p>';
     return `<section class="agenda-day${current ? ' is-today' : ''}">
@@ -219,7 +263,7 @@ async function completeSharedDisplayRow(rowId,button){
   if(button){
     button.disabled = true;
     button.classList.add('is-saving');
-    button.textContent = 'saving…';
+    button.setAttribute('aria-label',`Saving ${target.row.title || 'item'} as done`);
   }
   const operationId = shareRandomHex(16);
   const revision = Number(enrolled.meta && enrolled.meta.revision);
@@ -249,7 +293,8 @@ async function completeSharedDisplayRow(rowId,button){
     if(button){
       button.disabled = false;
       button.classList.remove('is-saving');
-      button.textContent = error && error.status === 429 ? 'wait, then retry' : 'try again';
+      button.classList.add('is-error');
+      button.setAttribute('aria-label',error && error.status === 429 ? 'Please wait, then try marking done again' : `Try marking ${target.row.title || 'item'} done again`);
     }
     if(error && (error.status === 401 || error.status === 410)) clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
     else if(error && error.status === 409) void refreshDisplay();
@@ -489,6 +534,8 @@ window.addEventListener('online',()=>void refreshDisplay());
 window.addEventListener('focus',()=>void refreshDisplay());
 document.addEventListener('DOMContentLoaded',()=>{
   purgeLegacyDisplayEnrollments();
+  syncDisplayFullscreenButton();
+  $('agenda-fullscreen')?.addEventListener('click',()=>void toggleDisplayFullscreen());
   $('agenda-hide')?.addEventListener('click',()=>setDisplayWallpaper(true));
   $('agenda-wallpaper')?.addEventListener('pointerup',registerDisplayWallpaperTap);
   $('agenda-wallpaper')?.addEventListener('keydown',event=>{
@@ -512,3 +559,4 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(displayWallpaperStored()) setDisplayWallpaper(true,{ focus:false });
   void bootAgendaDisplay();
 });
+document.addEventListener('fullscreenchange',syncDisplayFullscreenButton);

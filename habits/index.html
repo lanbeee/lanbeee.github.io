@@ -457,12 +457,14 @@
             <p class="field-hint" id="detail-link-hint"></p>
           </div>
           <div class="habit-actions">
-            <label class="setting-toggle habit-toggle">
-              <span><b>show on shared display</b><small>On by default; turn off for private items</small></span>
-              <button class="setting-switch" id="detail-shared-display" type="button" aria-pressed="true">
-                <span class="switch-ui" aria-hidden="true"></span>
-              </button>
-            </label>
+            <div class="detail-shared-display-control">
+              <span><b>shared display</b><small id="detail-shared-display-help">Choose what this display may do with this item</small></span>
+              <div class="seg detail-shared-display-seg" id="detail-shared-display" role="radiogroup" aria-label="Shared display access">
+                <button type="button" class="seg-opt" data-shared-display-mode="hidden" role="radio" aria-checked="false" tabindex="-1">hidden</button>
+                <button type="button" class="seg-opt" data-shared-display-mode="view" role="radio" aria-checked="false" tabindex="-1">view only</button>
+                <button type="button" class="seg-opt on" data-shared-display-mode="complete" role="radio" aria-checked="true">mark done</button>
+              </div>
+            </div>
             <label class="setting-toggle habit-toggle detail-full-only">
               <span><b>pinned</b><small>Stay above auto order</small></span>
               <button class="setting-switch" id="detail-pinned" type="button" aria-pressed="false">
