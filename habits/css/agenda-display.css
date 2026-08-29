@@ -131,24 +131,24 @@ header.agenda-chrome{margin-bottom:clamp(28px,4vw,50px);}
 .agenda-day>header p{margin:0;color:var(--muted);font-size:13px;font-weight:680;letter-spacing:.04em;text-transform:uppercase;}
 .agenda-day.is-today>header h2{color:var(--now);}
 .agenda-row{
-  position:relative;display:grid;grid-template-columns:10.25rem 60px minmax(0,1fr);align-items:center;gap:clamp(14px,2vw,24px);
-  min-height:76px;margin-bottom:10px;padding:15px clamp(16px,2vw,22px);overflow:hidden;
+  position:relative;display:grid;grid-template-columns:68px minmax(0,1fr) max-content;align-items:center;gap:clamp(12px,1.6vw,20px);
+  min-height:88px;margin-bottom:10px;padding:10px clamp(14px,1.7vw,20px) 10px 10px;overflow:hidden;
   border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow);backdrop-filter:blur(16px);
 }
 .agenda-row time{
-  min-width:0;color:var(--muted);font-size:clamp(15px,1.35vw,18px);font-weight:680;letter-spacing:-.025em;
+  min-width:max-content;color:var(--muted);font-size:clamp(14px,1.2vw,17px);font-weight:680;letter-spacing:-.018em;text-align:right;
   font-variant-numeric:tabular-nums;font-feature-settings:"tnum";white-space:nowrap;text-wrap:nowrap;
 }
 .agenda-row-copy{min-width:0;}
-.agenda-row b{display:block;font-size:clamp(18px,1.8vw,23px);font-weight:710;line-height:1.22;letter-spacing:-.018em;overflow-wrap:anywhere;}
+.agenda-row b{display:block;font-size:clamp(18px,1.65vw,22px);font-weight:680;line-height:1.22;letter-spacing:-.014em;overflow-wrap:anywhere;}
 .agenda-row small{display:block;margin-top:4px;color:var(--muted);font-size:13px;font-weight:560;}
 .agenda-row.is-now{border-color:color-mix(in srgb,var(--now) 40%,transparent);background:color-mix(in srgb,var(--now) 9%,var(--card-solid));}
 .agenda-row.is-now::before{content:"";position:absolute;inset:13px auto 13px 0;width:4px;border-radius:0 4px 4px 0;background:var(--now);}
 .agenda-row.is-next{border-color:color-mix(in srgb,var(--now) 18%,var(--line));}
 .agenda-row.busy b,.agenda-row.open b{font-weight:620;color:var(--muted);}
 .agenda-mark{
-  position:relative;display:grid;place-items:center;width:60px;height:54px;padding:0;
-  border:0;border-radius:15px;background:var(--now-soft);color:var(--now);
+  position:relative;display:grid;place-items:center;width:68px;height:68px;padding:0;
+  border:0;border-radius:16px;background:var(--now-soft);color:var(--now);
   font:inherit;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
   transition:transform .16s ease,filter .16s ease,opacity .16s ease;
 }
@@ -156,7 +156,7 @@ button.agenda-mark{cursor:pointer;}
 button.agenda-mark:hover{filter:brightness(.96);transform:translateY(-1px);}
 button.agenda-mark:active{transform:scale(.93);}
 button.agenda-mark:disabled{cursor:default;transform:none;}
-.agenda-mark-symbol{display:grid;place-items:center;width:100%;height:100%;font-size:34px;line-height:1;}
+.agenda-mark-symbol{display:grid;place-items:center;width:100%;height:100%;font-size:42px;line-height:1;}
 .agenda-mark.is-view-only:not([class*="emoji-bg-"]){background:color-mix(in srgb,var(--muted) 8%,var(--card-solid));color:var(--muted);}
 .agenda-mark-check{
   position:absolute;right:-5px;bottom:-5px;display:grid;place-items:center;width:21px;height:21px;
@@ -228,9 +228,16 @@ button.agenda-mark:disabled{cursor:default;transform:none;}
   .agenda-hide,.agenda-fullscreen{width:44px;padding:0;justify-content:center;}
   .agenda-hide span{font-size:20px;}
   .agenda-hide,.agenda-fullscreen{font-size:0;}
-  .agenda-row{grid-template-columns:52px minmax(0,1fr);gap:8px 13px;min-height:0;padding:15px 17px;}
-  .agenda-row time{grid-column:1 / -1;font-size:14px;}
-  .agenda-row b{font-size:19px;}
-  .agenda-mark{width:52px;height:49px;border-radius:13px;}
-  .agenda-mark-symbol{font-size:30px;}
+  .agenda-row{grid-template-columns:56px minmax(0,1fr) max-content;gap:10px;min-height:76px;padding:10px 12px 10px 10px;}
+  .agenda-row time{font-size:12.5px;letter-spacing:-.025em;}
+  .agenda-row b{font-size:17px;}
+  .agenda-row small{font-size:12px;}
+  .agenda-mark{width:56px;height:56px;border-radius:14px;}
+  .agenda-mark-symbol{font-size:34px;}
+}
+@media (max-width:380px){
+  .agenda-row{grid-template-columns:52px minmax(0,1fr);}
+  .agenda-row time{grid-column:2;grid-row:2;text-align:left;margin-top:-4px;}
+  .agenda-row-copy{align-self:end;}
+  .agenda-mark{grid-row:1 / span 2;width:52px;height:52px;border-radius:13px;}
 }

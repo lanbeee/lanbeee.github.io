@@ -150,9 +150,28 @@ function displayDateKey(ts,timeZone){
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function clockLabel(ts,timeZone){
-  if(!ts) return '';
-  return new Date(ts).toLocaleTimeString(undefined,{ hour:'numeric',minute:'2-digit',timeZone });
+function clockRangeLabel(start,end,timeZone){
+  if(!start) return '';
+  const parts = ts=>new Intl.DateTimeFormat(undefined,{
+    hour:'numeric',minute:'2-digit',timeZone
+  }).formatToParts(new Date(ts));
+  const label = ts=>{
+    const value = parts(ts);
+    const dayPeriod = value.find(part=>part.type === 'dayPeriod')?.value || '';
+    const clock = value
+      .filter(part=>part.type !== 'dayPeriod')
+      .map(part=>part.value)
+      .join('')
+      .trim();
+    return { clock,dayPeriod,full:dayPeriod ? `${clock} ${dayPeriod}` : clock };
+  };
+  const first = label(start);
+  if(!end) return first.full;
+  const last = label(end);
+  if(first.dayPeriod && first.dayPeriod === last.dayPeriod){
+    return `${first.clock}–${last.clock} ${last.dayPeriod}`;
+  }
+  return `${first.full}–${last.full}`;
 }
 
 const DISPLAY_EMOJI_BG_TOKENS = new Set(['teal','amber','red','purple','blue','green','pink','orange','indigo','cyan','lime','slate']);
@@ -221,7 +240,7 @@ function renderDisplay(projection,meta,completedRowIds = []){
     const rows = safeRows.slice(0,Math.max(0,50 - renderedRows)).map(row=>{
       renderedRows += 1;
       const kind = ['item','busy','travel','open'].includes(row.kind) ? row.kind : 'item';
-      const when = row.start ? `${clockLabel(row.start,tz)}${row.end ? `–${clockLabel(row.end,tz)}` : ''}` : '';
+      const when = clockRangeLabel(row.start,row.end,tz);
       const extra = kind === 'travel'
         ? [row.travelFromLabel,row.travelToLabel].filter(Boolean).join(' → ')
         : row.locationLabel;
@@ -230,12 +249,12 @@ function renderDisplay(projection,meta,completedRowIds = []){
       const canComplete = !meta?.paused && kind === 'item' && row.completable === true && day.dateKey <= todayKey;
       const isComplete = canComplete && completed.has(row.rowId);
       return `<article class="agenda-row ${kind}${currentRow ? ' is-now' : ''}${nextRow ? ' is-next' : ''}${isComplete ? ' is-complete' : ''}">
-        <time>${when || (row.durationMinutes ? `${row.durationMinutes} min` : '')}</time>
         ${displayRowMark(row,kind,canComplete,isComplete)}
         <div class="agenda-row-copy">
           <b>${escapeDisplay(row.title)}</b>
           ${extra ? `<small>${escapeDisplay(extra)}</small>` : ''}
         </div>
+        <time>${when || (row.durationMinutes ? `${row.durationMinutes} min` : '')}</time>
       </article>`;
     }).join('') || '<p class="agenda-empty">Nothing planned.</p>';
     return `<section class="agenda-day${current ? ' is-today' : ''}">
