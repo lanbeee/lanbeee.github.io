@@ -34,7 +34,7 @@ try{
     && typeof isAgendaDisplayPage === 'function' && !isAgendaDisplayPage()){
     location.replace(typeof agendaDisplayHref === 'function'
       ? agendaDisplayHref(location.hash)
-      : ('agenda-display/' + location.hash));
+      : ('agenda-display.html' + location.hash));
   }
 }catch(_){}
 if(typeof maybeClaimItemShareFromHash === 'function'){

@@ -1,4 +1,4 @@
-const CACHE = 'tings-v203';
+const CACHE = 'tings-v204';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -32,15 +32,13 @@ function isShareWorkerRequest(req){
 }
 
 function isAgendaDisplayPath(pathname){
-  return /\/agenda-display(\/index)?\.html$|\/agenda-display\/?$/.test(pathname || '');
+  return /\/agenda-display\.html$/.test(pathname || '');
 }
 
 const PRECACHE = [
   './',
   './index.html',
   './agenda-display.html',
-  './agenda-display/',
-  './agenda-display/index.html',
   './css/tokens.css',
   './css/base.css',
   './css/chrome.css',
@@ -206,8 +204,6 @@ self.addEventListener('fetch', event => {
         try { path = new URL(req.url).pathname; } catch (_) {}
         if (isAgendaDisplayPath(path)) {
           return (await caches.match('./agenda-display.html'))
-            || (await caches.match('./agenda-display/index.html'))
-            || (await caches.match('./agenda-display/'))
             || new Response('Offline', { status: 503, statusText: 'Offline' });
         }
         return (await caches.match('./index.html'))

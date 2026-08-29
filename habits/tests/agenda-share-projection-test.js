@@ -195,7 +195,7 @@ function assert(cond,msg){
       createdAt:Date.now()
     }) });
   });
-  await displayPage.goto(new URL('agenda-display',baseUrl).href,{ waitUntil:'load' });
+  await displayPage.goto(new URL('agenda-display.html',baseUrl).href,{ waitUntil:'load' });
   await displayPage.waitForFunction(()=>document.getElementById('agenda-pair-code')?.textContent.length === 9);
   const displayCode = await displayPage.textContent('#agenda-pair-code');
   assert(pairingRequest && !JSON.stringify(pairingRequest).includes(displayCode.replace('-','')),'QR request does not send or encode the visible confirmation code');
@@ -329,7 +329,7 @@ function assert(cond,msg){
     appLoaded:Boolean(document.getElementById('app')),
     enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || ''
   }));
-  assert(displayState.path.endsWith('/agenda-display.html'),'extensionless route resolves to the standalone display');
+  assert(displayState.path.endsWith('/agenda-display.html'),'canonical shared-display URL loads the standalone display');
   assert(displayState.hash === '','display address contains no enrollment secret');
   assert(!displayState.enrollment.includes(displayCode.replace('-','')) && !displayState.enrollment.includes(pairingRequest.pairingId),'display retains neither visible code nor pairing id');
   assert(displayState.title === 'Secure family agenda' && !displayState.appLoaded,'standalone display decrypts the feed without loading the main app');
@@ -512,9 +512,8 @@ function assert(cond,msg){
   assert(swSource.includes('isAgendaDisplayPath'),'display navigations do not fall back to the owner app shell');
   assert(swSource.includes('./js/sw-register.js'),'service worker precaches the external SW boot script');
   const displayHtml = fs.readFileSync(path.join(__dirname,'../agenda-display.html'),'utf8');
-  const nestedDisplayHtml = fs.readFileSync(path.join(__dirname,'../agenda-display/index.html'),'utf8');
-  assert(displayHtml.includes("frame-ancestors 'none'") && nestedDisplayHtml.includes("frame-ancestors 'none'"),'display CSP forbids framing');
-  assert(displayHtml.includes('agenda-display-boot.js') && nestedDisplayHtml.includes('agenda-display-boot.js'),'display loads the frame-bust first');
+  assert(displayHtml.includes("frame-ancestors 'none'"),'display CSP forbids framing');
+  assert(displayHtml.includes('agenda-display-boot.js'),'display loads the frame-bust first');
   assert(await page.evaluate(()=>AGENDA_DISPLAY_KEY === 'tings_agenda_display_v3'),'active display storage key is v3');
 
   const ownerHtml = fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');

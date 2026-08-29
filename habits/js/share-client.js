@@ -11,10 +11,6 @@ function shareAppDirectoryUrl(){
   url.hash = '';
   url.search = '';
   const path = url.pathname || '/';
-  if(/\/agenda-display\/?(index\.html)?$/.test(path)){
-    url.pathname = path.replace(/\/agenda-display\/?(index\.html)?$/, '/') || '/';
-    return url;
-  }
   if(path.endsWith('.html')){
     url.pathname = path.slice(0, path.lastIndexOf('/') + 1) || '/';
     return url;
@@ -43,7 +39,7 @@ function agendaPairingOwnerHref(pairing){
 }
 
 function isAgendaDisplayPage(){
-  return /\/agenda-display(\/index)?\.html$/.test(location.pathname);
+  return /\/agenda-display\.html$/.test(location.pathname);
 }
 
 async function shareFetch(path, opts = {}){
