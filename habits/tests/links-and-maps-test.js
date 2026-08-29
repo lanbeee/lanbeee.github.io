@@ -26,6 +26,7 @@ function assert(cond, msg){
       { name:'standup', type:'keepup', target:1, logs:[], links:[{ kind:'link', value:'https://zoom.us/j/98765' }] },
       { name:'read', type:'keepup', target:7, logs:[] },
       { name:'stretch', type:'keepup', target:7, logs:[] },
+      { name:'spanish', type:'keepup', target:7, logs:[] },
       { name:'check inbox', type:'task', logs:[], dueDate:null }
     ]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
@@ -64,6 +65,34 @@ function assert(cond, msg){
   assert(values.app.kind === 'app' && values.app.label === 'Proton Mail'
     && values.app.value === 'https://mail.proton.me/', 'custom app names and safe links are normalized');
   assert(values.script === '' && values.blank === '', 'script-ish and empty links are dropped');
+
+  // ── App Store / Play Store share links ─────────────────────────────────
+  const store = await page.evaluate(() => ({
+    short:normalizeUrlValue('https://apps.apple.com/app/id1626186138'),
+    itms:normalizeUrlValue('itms-apps://itunes.apple.com/app/id1626186138'),
+    idShort:appStoreIdFromUrl('https://apps.apple.com/app/id1626186138'),
+    idSlug:appStoreIdFromUrl('https://apps.apple.com/us/app/roku-smart-home/id1626186138'),
+    idItms:appStoreIdFromUrl('itms-apps://apps.apple.com/app/id1626186138'),
+    idOther:appStoreIdFromUrl('https://zoom.us/j/98765'),
+    slug:appStoreSlugName('https://apps.apple.com/us/app/roku-smart-home/id1626186138'),
+    slugShort:appStoreSlugName('https://apps.apple.com/app/id1626186138'),
+    labelApp:linkLabel({ kind:'app', value:'https://apps.apple.com/app/id1626186138' }),
+    iconApp:linkIconClass({ kind:'app', value:'https://apps.apple.com/app/id1626186138' }),
+    labelPlay:linkLabel({ kind:'app', value:'https://play.google.com/store/apps/details?id=com.example.app' }),
+    iconPlay:linkIconClass({ kind:'app', value:'https://play.google.com/store/apps/details?id=com.example.app' })
+  }));
+  assert(store.short === 'https://apps.apple.com/app/id1626186138',
+    'an App Store share link passes through unchanged');
+  assert(store.itms === 'https://apps.apple.com/app/id1626186138',
+    'itms-apps: share links are rewritten to the https form that opens everywhere');
+  assert(store.idShort === '1626186138' && store.idSlug === '1626186138'
+    && store.idItms === '1626186138' && store.idOther === '',
+    'the store id is pulled out of every share-link shape (short, slug, itms-apps)');
+  assert(store.slug === 'Roku Smart Home' && store.slugShort === '',
+    'a slug URL yields an offline fallback name; short share links carry none');
+  assert(store.labelApp === 'app store' && store.iconApp === 'ti-brand-appstore'
+    && store.labelPlay === 'play store' && store.iconPlay === 'ti-brand-google-play',
+    'store links get their own label and icon');
 
   // ── labels, icons, launch URLs ─────────────────────────────────────────
   const meta = await page.evaluate(() => {
@@ -195,6 +224,89 @@ function assert(cond, msg){
   await page.locator('#detail-save').click();
   const savedTaskApp = await page.evaluate(() => load().find(h => h.name === 'check inbox').links[0]);
   assert(savedTaskApp.kind === 'app' && savedTaskApp.label === 'Gmail', 'task app shortcuts persist');
+
+  await page.waitForTimeout(350);
+
+  // ── a pasted App Store share link names the custom app ────────────────
+  // The listing lookup is stubbed so the test never depends on Apple.
+  await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'spanish')));
+  await page.waitForSelector('#detail-sheet.open');
+  await page.locator('#detail-app-add').click();
+  await page.locator('#detail-app-presets [data-app-custom]').click();
+  const editorFocus = await page.evaluate(() => document.activeElement?.id);
+  assert(editorFocus === 'detail-custom-app-url',
+    'the custom editor starts on the link field, ready for a paste');
+
+  await page.evaluate(() => {
+    window.__realFetch = window.fetch;
+    window.fetch = (url, opts) => String(url).includes('itunes.apple.com/lookup')
+      ? Promise.resolve({ ok:true, json:async () => ({ resultCount:1, results:[{ trackName:'Roku Smart Home' }] }) })
+      : window.__realFetch(url, opts);
+  });
+  await page.locator('#detail-custom-app-url').fill('https://apps.apple.com/app/id1626186138');
+  await page.waitForFunction(() => document.querySelector('#detail-custom-app-name')?.value === 'Roku Smart Home');
+  const autoNamed = await page.evaluate(() => ({
+    name:$('detail-custom-app-name').value,
+    auto:$('detail-custom-app-name').dataset.autoName === '1'
+  }));
+  assert(autoNamed.name === 'Roku Smart Home' && autoNamed.auto,
+    'pasting a share link with no typed name fills the app name from the listing');
+
+  // A name typed by hand outranks the paste.
+  await page.locator('#detail-custom-app-name').fill('My Roku');
+  await page.locator('#detail-custom-app-url').fill('https://apps.apple.com/us/app/roku-smart-home/id1626186138');
+  await page.waitForTimeout(80);
+  assert(await page.evaluate(() => $('detail-custom-app-name').value) === 'My Roku',
+    'a hand-typed name is never overwritten');
+
+  // Offline: the lookup fails, but the slug inside the link still names it.
+  await page.locator('#detail-custom-app-cancel').click();
+  await page.locator('#detail-app-add').click();
+  await page.locator('#detail-app-presets [data-app-custom]').click();
+  await page.evaluate(() => {
+    window.fetch = (url, opts) => String(url).includes('itunes.apple.com/lookup')
+      ? Promise.reject(new Error('offline'))
+      : window.__realFetch(url, opts);
+  });
+  await page.locator('#detail-custom-app-url').fill('https://apps.apple.com/us/app/language-tutor/id555000111');
+  await page.waitForTimeout(80);
+  assert(await page.evaluate(() => $('detail-custom-app-name').value) === 'Language Tutor',
+    'offline, a slug URL still fills its fallback name instantly');
+  await page.locator('#detail-custom-app-confirm').click();
+  await page.waitForTimeout(120);
+  const offlineAdded = await page.evaluate(() => {
+    window.fetch = window.__realFetch;
+    return currentDetailLinks();
+  });
+  assert(offlineAdded.length === 1 && offlineAdded[0].kind === 'app'
+    && offlineAdded[0].label === 'Language Tutor'
+    && offlineAdded[0].value === 'https://apps.apple.com/us/app/language-tutor/id555000111',
+    'a slug link can be added with zero typing, even offline');
+
+  // Offline + short share link + empty name → clear error, nothing added.
+  await page.locator('#detail-app-add').click();
+  await page.locator('#detail-app-presets [data-app-custom]').click();
+  await page.evaluate(() => {
+    window.fetch = (url, opts) => String(url).includes('itunes.apple.com/lookup')
+      ? Promise.reject(new Error('offline'))
+      : window.__realFetch(url, opts);
+  });
+  await page.locator('#detail-custom-app-url').fill('https://apps.apple.com/app/id555000112');
+  await page.locator('#detail-custom-app-confirm').click();
+  await page.waitForTimeout(120);
+  const blocked = await page.evaluate(() => ({
+    toast:$('toast').textContent,
+    links:currentDetailLinks().length
+  }));
+  assert(blocked.toast === 'name the custom app' && blocked.links === 1,
+    'a short link with no name and no lookup asks for a name instead of adding junk');
+  await page.evaluate(() => { window.fetch = window.__realFetch; });
+
+  await page.locator('#detail-save').click();
+  const savedStore = await page.evaluate(() => load().find(h => h.name === 'spanish').links);
+  assert(savedStore.length === 1 && savedStore[0].label === 'Language Tutor'
+    && savedStore[0].value === 'https://apps.apple.com/us/app/language-tutor/id555000111',
+    'the store-link app shortcut persists');
 
   await page.waitForTimeout(350);
 

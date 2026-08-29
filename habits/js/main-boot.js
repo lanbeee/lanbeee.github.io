@@ -1081,6 +1081,11 @@ $('detail-app-picker')?.addEventListener('click',e=>{
 });
 $('detail-custom-app-confirm')?.addEventListener('click',addCustomDetailApp);
 $('detail-custom-app-cancel')?.addEventListener('click',closeDetailAppPicker);
+$('detail-custom-app-url')?.addEventListener('input',autoNameCustomApp);
+$('detail-custom-app-name')?.addEventListener('input',e=>{
+  // A name typed by hand outranks every auto-fill.
+  delete e.target.dataset.autoName;
+});
 $('detail-custom-app-url')?.addEventListener('keydown',e=>{
   if(e.key === 'Enter'){
     e.preventDefault();

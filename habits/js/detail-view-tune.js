@@ -190,7 +190,7 @@ const LINK_PLACEHOLDERS = {
   phone:'+1 555 123 4567',
   whatsapp:'+1 555 123 4567',
   facetime:'+1 555 123 4567',
-  app:'https://app.example.com/…',
+  app:'https://apps.apple.com/app/id…',
   link:'https://zoom.us/j/…'
 };
 
@@ -331,7 +331,8 @@ function closeDetailAppPicker(){
   if(picker)picker.hidden = true;
   $('detail-app-add')?.setAttribute('aria-expanded','false');
   if(custom)custom.hidden = true;
-  if($('detail-custom-app-name'))$('detail-custom-app-name').value = '';
+  const name = $('detail-custom-app-name');
+  if(name){ name.value = ''; delete name.dataset.autoName; }
   if($('detail-custom-app-url'))$('detail-custom-app-url').value = '';
 }
 
@@ -363,15 +364,80 @@ function showDetailCustomAppEditor(){
   const editor = $('detail-custom-app-editor');
   if(!editor)return;
   editor.hidden = false;
-  $('detail-custom-app-name')?.focus();
+  // Link first — pasting a store share link fills in the name for you.
+  $('detail-custom-app-url')?.focus();
 }
 
-function addCustomDetailApp(){
+// App Store share links (apps.apple.com/app/id1626186138) can name
+// themselves: Apple's public listing lookup returns the store name for the
+// numeric id. One lookup per id per session; failures are not cached so
+// retrying offline→online works. Only the id already inside the pasted link
+// is sent (About → privacy).
+const APP_STORE_NAME_PROMISES = new Map();
+
+async function fetchAppStoreName(url){
+  const id = appStoreIdFromUrl(url);
+  if(!id)return '';
+  const cached = APP_STORE_NAME_PROMISES.get(id);
+  if(cached)return cached;
+  const pending = (async () => {
+    try{
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(),5000);
+      const res = await fetch(`https://itunes.apple.com/lookup?id=${id}`,{ signal:ctrl.signal });
+      clearTimeout(timer);
+      if(!res.ok)return '';
+      const data = await res.json();
+      return data && data.resultCount > 0
+        ? normalizeLinkLabel(data.results?.[0]?.trackName)
+        : '';
+    }catch{
+      return '';
+    }
+  })();
+  APP_STORE_NAME_PROMISES.set(id,pending);
+  const name = await pending;
+  if(!name)APP_STORE_NAME_PROMISES.delete(id);
+  return name;
+}
+
+// HANDLER: a pasted store link names the app. The URL slug fills in
+// instantly, the listing lookup swaps in the real name when it lands, and a
+// name the user typed themselves is never overwritten (dataset.autoName).
+async function autoNameCustomApp(){
+  const urlInput = $('detail-custom-app-url');
+  const nameInput = $('detail-custom-app-name');
+  if(!urlInput || !nameInput)return;
+  const url = normalizeUrlValue(urlInput.value);
+  if(!appStoreIdFromUrl(url))return;
+  const free = () => !nameInput.value || nameInput.dataset.autoName === '1';
+  if(!free())return;
+  const slug = appStoreSlugName(url);
+  if(slug && !nameInput.value){
+    nameInput.value = slug;
+    nameInput.dataset.autoName = '1';
+  }
+  const name = await fetchAppStoreName(url);
+  if(!name || !free())return;
+  nameInput.value = name;
+  nameInput.dataset.autoName = '1';
+}
+
+async function addCustomDetailApp(){
   if(!detailLinkHasCapacity())return;
   const nameInput = $('detail-custom-app-name');
   const urlInput = $('detail-custom-app-url');
-  const label = normalizeLinkLabel(nameInput?.value);
   const value = normalizeUrlValue(urlInput?.value);
+  let label = normalizeLinkLabel(nameInput?.value);
+  if(!label && value){
+    // An App Store link can name itself — the store listing first, the URL
+    // slug as the offline fallback.
+    label = await fetchAppStoreName(value) || appStoreSlugName(value);
+    if(label && nameInput){
+      nameInput.value = label;
+      nameInput.dataset.autoName = '1';
+    }
+  }
   if(!label){
     showToast('name the custom app');
     nameInput?.focus();

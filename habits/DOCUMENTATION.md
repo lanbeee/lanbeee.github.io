@@ -1120,12 +1120,21 @@ Each link row has:
 YouTube, Reddit, LinkedIn and X. These use their normal HTTPS entry points, so
 they work in a browser and can hand off to an installed app when the device
 supports universal links. **Custom** accepts a user-defined name plus any safe
-web or app URL. Up to four links/app shortcuts can be stored on one item.
+web or app URL; the editor starts on the link field so a share link can be
+pasted first. Paste an App Store share link (`apps.apple.com/app/id…`) and the
+app's real name is fetched from Apple's public listing (only the numeric id
+already in the link is sent — see About → privacy); a hand-typed name is never
+overwritten, and offline the name falls back to the URL slug
+(`/us/app/roku-smart-home/id…` → "Roku Smart Home"). Store links show App
+Store / Play Store icons and labels, and `itms-apps://` share links are
+rewritten to the `https` form that opens everywhere. Up to four links/app
+shortcuts can be stored on one item.
 
 | Link Kind | Icon | Format | Example |
 |-----------|------|--------|---------|
 | Link | 🔗 | Full URL | `https://zoom.us/j/123` |
 | App | App/provider icon | App name + web/app URL | `Gmail` + `https://mail.google.com/` |
+| App |  | App Store share link (name fills in) | `https://apps.apple.com/app/id1626186138` |
 | Phone | 📞 | Phone number | `+1234567890` |
 | WhatsApp | 💬 | Phone number | `+1234567890` |
 | FaceTime | 🎥 | Email or phone | `user@example.com` |
@@ -1807,7 +1816,8 @@ Actions when habit is done:
 - Phone: Dial number
 - WhatsApp: Open chat
 - FaceTime: Start video call
-- App: Open a common preset or a custom named app shortcut
+- App: Open a common preset or a custom named app shortcut (an App Store
+  share link names itself)
 - Link: Open URL (Zoom, etc.)
 - Double tap on card launches primary link
 

@@ -147,6 +147,7 @@ const UI_PRIVACY_BLOCKS = [
   ]},
   {id:'privacy-others-body', label:'Other services', summary:'Icons and map/PDF libraries load from public CDNs. They do not receive your list.', body:[
     'Tabler icons (jsDelivr) and Leaflet (unpkg) draw buttons and the map. PDF import uses pdf.js in this browser; the file you pick is not uploaded.',
+    'Naming a pasted App Store link asks Apple’s public listing for that app’s name. It receives only the numeric id already inside the link, and only when you paste one. Offline, you simply type the name yourself.',
     'Prayer times are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
   ]}
 ];

@@ -63,6 +63,11 @@ function normalizeUrlValue(value){
     // payload in the opaque part instead.
     const webish = /^https?:$/i.test(url.protocol);
     if(webish && !url.hostname)return '';
+    // App Store share links sometimes arrive as itms-apps: URLs, which only
+    // Apple devices can open — the https form works everywhere.
+    if(/^itms-apps:?$/i.test(url.protocol) && /^(apps|itunes)\.apple\.com$/i.test(url.hostname)){
+      return `https://apps.apple.com${url.pathname}${url.search}`.slice(0,600);
+    }
     return url.href.slice(0,600);
   }catch{
     return '';
@@ -93,6 +98,42 @@ function normalizeLinks(raw){
   return out;
 }
 
+/**
+ * PURE: the numeric app id inside an App Store link (apps.apple.com,
+ * itunes.apple.com, or an itms-apps: share URL), else ''. The store page and
+ * the public listing lookup both key off just this number.
+ */
+function appStoreIdFromUrl(value){
+  const clean = normalizeUrlValue(value);
+  if(!clean)return '';
+  let url;
+  try{ url = new URL(clean); }catch{ return ''; }
+  if(!/^(apps|itunes)\.apple\.com$/i.test(url.hostname))return '';
+  const match = url.pathname.match(/\/id(\d{3,20})/);
+  return match ? match[1] : '';
+}
+
+/**
+ * PURE: an offline fallback name from a full App Store URL's slug, e.g.
+ * /us/app/roku-smart-home/id1626186138 → "Roku Smart Home". Short share
+ * links (/app/id…) carry no slug and return ''.
+ */
+function appStoreSlugName(value){
+  const clean = normalizeUrlValue(value);
+  if(!clean)return '';
+  let url;
+  try{ url = new URL(clean); }catch{ return ''; }
+  if(!/^(apps|itunes)\.apple\.com$/i.test(url.hostname))return '';
+  const match = url.pathname.match(/\/app\/([^/]+)\/id\d+/);
+  if(!match)return '';
+  let slug = match[1];
+  try{ slug = decodeURIComponent(slug); }catch{ /* keep the raw slug */ }
+  const words = slug.replace(/\+/g,'-').split('-')
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1));
+  return normalizeLinkLabel(words.join(' '));
+}
+
 // Hosts worth naming on the button. Anything unlisted falls back to its own
 // hostname, so a self-hosted room still reads as something recognisable.
 const LINK_PROVIDERS = [
@@ -112,7 +153,10 @@ const LINK_PROVIDERS = [
   {host:/(^|\.)(youtube\.com|youtu\.be)$/i, label:'youtube'},
   {host:/(^|\.)reddit\.com$/i, label:'reddit'},
   {host:/(^|\.)linkedin\.com$/i, label:'linkedin'},
-  {host:/(^|\.)(x\.com|twitter\.com)$/i, label:'x'}
+  {host:/(^|\.)(x\.com|twitter\.com)$/i, label:'x'},
+  {host:/^apps\.apple\.com$/i, label:'app store'},
+  {host:/^itunes\.apple\.com$/i, label:'app store'},
+  {host:/^play\.google\.com$/i, label:'play store'}
 ];
 
 /** PURE: short name for a URL — the meeting service, else its host. */
@@ -153,7 +197,9 @@ const APP_PROVIDER_ICONS = {
   youtube:'ti-brand-youtube',
   reddit:'ti-brand-reddit',
   linkedin:'ti-brand-linkedin',
-  x:'ti-brand-x'
+  x:'ti-brand-x',
+  'app store':'ti-brand-appstore',
+  'play store':'ti-brand-google-play'
 };
 
 /** PURE: Tabler icon class for a link. */
