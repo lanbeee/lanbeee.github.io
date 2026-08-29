@@ -120,6 +120,7 @@
 .custom-app-editor[hidden]{display:none;}
 .custom-app-editor input{min-width:0;margin:0;height:34px;font-size:12px;padding:6px 8px;}
 .custom-app-editor #detail-custom-app-launch{grid-column:1/3;grid-row:2;}
+.custom-app-editor .custom-app-hint{grid-column:1/-1;grid-row:3;margin:0;font-size:10.5px;line-height:1.4;color:var(--text3);}
 .link-list{display:flex;flex-direction:column;gap:6px;}
 .link-list:empty{display:none;}
 .link-row{

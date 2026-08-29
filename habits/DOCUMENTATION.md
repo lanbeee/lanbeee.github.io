@@ -1117,7 +1117,10 @@ Each link row has:
 - **Opens directly (optional):** The app's own link (e.g. `spotify://`),
   tried first at launch — the stored page (store page, web URL) opens instead
   when the app isn't installed. Apple exposes no way to derive an app's
-  scheme from its App Store link, so it's entered once per app.
+  scheme from its App Store link, so it's entered once per app. To find one:
+  try the app's name as a scheme, search "«app» URL scheme", or paste a link
+  shared from inside the app (a universal link). A wrong scheme safely falls
+  back to the stored page. The custom editor carries a short hint to this end.
 - **Star:** Marks as primary link (double tap uses this)
 
 **Add app** opens a compact chooser for Gmail, Outlook, Facebook, Instagram,

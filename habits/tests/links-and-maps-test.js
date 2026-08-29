@@ -219,11 +219,14 @@ function assert(cond, msg){
     return {
       visible:!editor.hidden,
       inside:rect.left >= 0 && rect.right <= document.documentElement.clientWidth,
-      docFits:document.documentElement.scrollWidth <= document.documentElement.clientWidth
+      docFits:document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      hint:document.querySelector('#detail-custom-app-editor .custom-app-hint')?.textContent || ''
     };
   });
   assert(customMobile.visible && customMobile.inside && customMobile.docFits,
     'the custom app editor fits a 320px mobile viewport');
+  assert(/spotify:\/\/|URL scheme|shared from inside/i.test(customMobile.hint),
+    'the editor hints how to find a direct-open link');
   await page.locator('#detail-custom-app-confirm').click();
   appRows = await page.evaluate(() => currentDetailLinks());
   assert(appRows.length === 4 && appRows[3].kind === 'app'
