@@ -334,10 +334,12 @@ function assert(cond,msg){
   assert(!displayState.enrollment.includes(displayCode.replace('-','')) && !displayState.enrollment.includes(pairingRequest.pairingId),'display retains neither visible code nor pairing id');
   assert(displayState.title === 'Secure family agenda' && !displayState.appLoaded,'standalone display decrypts the feed without loading the main app');
   const fullscreenControl = await displayPage.evaluate(()=>({
-    exists:Boolean(document.getElementById('agenda-fullscreen')),
-    label:document.getElementById('agenda-fullscreen')?.getAttribute('aria-label') || ''
+    standaloneButton:Boolean(document.getElementById('agenda-fullscreen')),
+    menuRowHidden:document.getElementById('agenda-menu-fullscreen-row')?.hidden,
+    menuButtonLabel:(document.getElementById('agenda-menu-fullscreen')?.textContent || '').trim()
   }));
-  assert(fullscreenControl.exists && /fullscreen/i.test(fullscreenControl.label),'shared display exposes an accessible fullscreen control when the browser supports it');
+  assert(!fullscreenControl.standaloneButton && fullscreenControl.menuRowHidden === false && /full screen/i.test(fullscreenControl.menuButtonLabel),
+    'fullscreen lives inside the ⋯ menu instead of a standalone header button when the browser supports it');
 
   await displayPage.click('[data-complete-row]');
   await displayPage.waitForSelector('.agenda-mark.is-done');
@@ -361,6 +363,9 @@ function assert(cond,msg){
     const wallpaper = document.getElementById('agenda-wallpaper');
     const hiddenAfterTap = !wallpaper.hidden && document.getElementById('agenda-page').hidden;
     wallpaper.click();
+    wallpaper.click();
+    const stillHiddenAfterTwoTaps = !wallpaper.hidden;
+    wallpaper.click();
     return {
       columnStack:rowTime ? getComputedStyle(rowTime).flexDirection === 'column' : false,
       startCopy:startLine ? startLine.textContent : '',
@@ -370,7 +375,8 @@ function assert(cond,msg){
       clockCopy:(document.getElementById('agenda-clock')?.textContent || '').trim(),
       rowChildren,
       hiddenAfterTap,
-      restoredAfterTap:wallpaper.hidden && !document.getElementById('agenda-page').hidden,
+      stillHiddenAfterTwoTaps,
+      restoredAfterTripleTap:wallpaper.hidden && !document.getElementById('agenda-page').hidden,
       wallpaperPreferenceCleared:localStorage.getItem('tings_agenda_wallpaper_v1') === null
     };
   });
@@ -378,7 +384,8 @@ function assert(cond,msg){
   assert(displayPresentation.columnStack && displayPresentation.endSmallerThanStart,'the end time renders below the start time in a smaller size');
   assert(/\d{1,2}:\d{2}/.test(displayPresentation.clockCopy),'the agenda header shows the current time');
   assert(/^agenda-mark/.test(displayPresentation.rowChildren[0] || '') && displayPresentation.rowChildren[1] === 'agenda-row-copy' && displayPresentation.rowChildren[2] === 'time','shared rows follow the Tings order: emoji, item copy, then schedule time');
-  assert(displayPresentation.hiddenAfterTap && displayPresentation.restoredAfterTap && displayPresentation.wallpaperPreferenceCleared,'one tap hides the agenda and a single tap on the night clock restores it and clears the persisted privacy screen');
+  assert(displayPresentation.hiddenAfterTap && displayPresentation.stillHiddenAfterTwoTaps && displayPresentation.restoredAfterTripleTap && displayPresentation.wallpaperPreferenceCleared,
+    'one tap hides the agenda and three taps on the night clock restore it and clear the persisted privacy screen');
 
   const displaySwipe = await displayPage.evaluate(() => {
     if(typeof TouchEvent !== 'function' || typeof Touch !== 'function') return { skipped:true };
@@ -400,22 +407,61 @@ function assert(cond,msg){
   const displaySettings = await displayPage.evaluate(() => {
     const storedBefore = JSON.parse(localStorage.getItem('tings_agenda_appearance_v1') || 'null');
     const defaultDark = document.documentElement.dataset.theme === 'dark';
+    const moreLabel = (document.getElementById('agenda-more').textContent || '').trim();
     document.getElementById('agenda-more').click();
     const menu = document.getElementById('agenda-menu');
     const opened = !menu.hidden && document.getElementById('agenda-more').getAttribute('aria-expanded') === 'true';
     document.querySelector('[data-theme-opt="light"]').click();
     const lightApplied = document.documentElement.dataset.theme === 'light';
-    const persisted = JSON.parse(localStorage.getItem('tings_agenda_appearance_v1') || 'null');
-    document.body.click();
+    const fontBefore = document.documentElement.dataset.font;
+    document.getElementById('agenda-font-plus').click();
+    const fontStepped = {
+      applied:document.documentElement.dataset.font,
+      stored:JSON.parse(localStorage.getItem('tings_agenda_appearance_v1') || 'null')?.font
+    };
+    document.getElementById('agenda-font-minus').click();
+    document.getElementById('agenda-fit-minus').click();
+    const fitStepped = {
+      applied:document.documentElement.dataset.squish,
+      squashed:getComputedStyle(document.body).transform !== 'none'
+    };
+    document.getElementById('agenda-fit-plus').click();
+    const fitRestored = document.documentElement.dataset.squish === '100' && getComputedStyle(document.body).transform === 'none';
     return {
-      nothingStored:!storedBefore,defaultDark,
-      opened,lightApplied,persistedTheme:persisted && persisted.theme,
-      closedAfterOutsideClick:menu.hidden
+      nothingStored:!storedBefore,defaultDark,moreLabel,fontBefore,
+      opened,lightApplied,fontStepped,fitStepped,fitRestored,
+      persistedTheme:JSON.parse(localStorage.getItem('tings_agenda_appearance_v1') || 'null')?.theme
     };
   });
   assert(displaySettings.nothingStored && displaySettings.defaultDark && displaySettings.opened && displaySettings.lightApplied &&
-    displaySettings.persistedTheme === 'light' && displaySettings.closedAfterOutsideClick,
-    'fresh displays default to the dark theme and the ⋯ menu switches, persists, and closes');
+    displaySettings.persistedTheme === 'light' && displaySettings.moreLabel === '⋯' &&
+    displaySettings.fontBefore === '100' && displaySettings.fontStepped.applied === '105' && displaySettings.fontStepped.stored === 105 &&
+    displaySettings.fitStepped.applied === '99' && displaySettings.fitStepped.squashed && displaySettings.fitRestored,
+    'fresh displays default to dark at 100% text; the ⋯ menu switches theme and the − / + steppers adjust text size and screen fit');
+
+  const toggleFullscreenFromMenu = async () => {
+    await displayPage.click('#agenda-menu-fullscreen');
+    try{ await displayPage.waitForFunction(() => document.fullscreenElement !== null,null,{ timeout:3000 }); }catch(_){}
+    const on = await displayPage.evaluate(()=>({
+      pressed:document.getElementById('agenda-menu-fullscreen').getAttribute('aria-pressed'),
+      active:document.fullscreenElement !== null
+    }));
+    await displayPage.click('#agenda-menu-fullscreen');
+    try{ await displayPage.waitForFunction(() => document.fullscreenElement === null,null,{ timeout:3000 }); }catch(_){}
+    const off = await displayPage.evaluate(()=>({
+      pressed:document.getElementById('agenda-menu-fullscreen').getAttribute('aria-pressed'),
+      active:document.fullscreenElement === null
+    }));
+    return { on,off };
+  };
+  const displayFullscreen = await toggleFullscreenFromMenu();
+  assert(displayFullscreen.on.pressed === 'true' && displayFullscreen.on.active &&
+    displayFullscreen.off.pressed === 'false' && displayFullscreen.off.active,
+    'the ⋯ menu fullscreen control enters and leaves fullscreen');
+
+  await displayPage.click('#agenda-updated');
+  const menuClosedAfterOutsideClick = await displayPage.evaluate(()=>document.getElementById('agenda-menu').hidden);
+  assert(menuClosedAfterOutsideClick,'clicking outside the ⋯ menu closes it');
 
   const inboundSync = await page.evaluate(async ()=>{
     const now = Date.now();

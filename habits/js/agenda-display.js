@@ -8,7 +8,19 @@ const AGENDA_WALLPAPER_STORAGE_KEY = 'tings_agenda_wallpaper_v1';
 const AGENDA_APPEARANCE_STORAGE_KEY = 'tings_agenda_appearance_v1';
 // Dark is the deliberate default: these displays live on photo frames and are
 // read across the room at night. Light/system stay one tap away in the menu.
-const AGENDA_APPEARANCE_DEFAULT = { theme:'dark', font:'medium' };
+// Text size is a percentage on a 5% ladder between 70 and 200 — the range is
+// deliberately wide so a small frame can be tuned precisely from across the room.
+const AGENDA_APPEARANCE_DEFAULT = { theme:'dark', font:100 };
+const AGENDA_FONT_MIN = 70;
+const AGENDA_FONT_MAX = 200;
+const AGENDA_FONT_STEP = 5;
+// The first menu shipped named sizes; map any stored legacy value onto the ladder.
+const AGENDA_FONT_LEGACY = { small:90, medium:100, large:115 };
+// Some frames stretch their panel vertically; "screen fit" pre-squashes the
+// page (85–100%) so geometry looks right on the glass. 100% = untouched.
+const AGENDA_FIT_MIN = 85;
+const AGENDA_FIT_MAX = 100;
+const AGENDA_FIT_STEP = 1;
 
 let _displayPollTimer = null;
 let _displayPairPollTimer = null;
@@ -19,20 +31,28 @@ let _displayProjection = null;
 let _displayClockTimer = null;
 let _displayTouchStart = null;
 let _displaySwipedAt = 0;
+let _displayWallpaperTaps = [];
 
-function syncDisplayFullscreenButton(){
-  const button = $('agenda-fullscreen');
-  if(!button)return;
+function clampDisplayFont(value){
+  const stepped = Math.round(value / AGENDA_FONT_STEP) * AGENDA_FONT_STEP;
+  return Math.min(AGENDA_FONT_MAX,Math.max(AGENDA_FONT_MIN,stepped));
+}
+
+function clampDisplayFit(value){
+  const stepped = Math.round(value / AGENDA_FIT_STEP) * AGENDA_FIT_STEP;
+  return Math.min(AGENDA_FIT_MAX,Math.max(AGENDA_FIT_MIN,stepped));
+}
+
+function syncDisplayFullscreenMenu(){
+  const row = $('agenda-menu-fullscreen-row');
+  const button = $('agenda-menu-fullscreen');
   const supported = typeof document.documentElement.requestFullscreen === 'function';
-  button.hidden = !supported;
-  if(!supported)return;
+  if(row) row.hidden = !supported;
+  if(!button || !supported)return;
   const active = Boolean(document.fullscreenElement);
-  const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
-  button.setAttribute('aria-label',label);
-  button.title = label;
-  button.lastChild.textContent = active ? ' exit full screen' : ' full screen';
-  const icon = button.querySelector('span');
-  if(icon)icon.textContent = active ? '↙' : '↗';
+  button.textContent = active ? 'exit full screen' : 'enter full screen';
+  button.setAttribute('aria-pressed',String(active));
+  button.classList.toggle('is-on',active);
 }
 
 async function toggleDisplayFullscreen(){
@@ -40,13 +60,13 @@ async function toggleDisplayFullscreen(){
     if(document.fullscreenElement)await document.exitFullscreen();
     else await document.documentElement.requestFullscreen({ navigationUI:'hide' });
   }catch(_){
-    const button = $('agenda-fullscreen');
+    const button = $('agenda-menu-fullscreen');
     if(button){
       button.classList.add('is-error');
       setTimeout(()=>button.classList.remove('is-error'),1200);
     }
   }finally{
-    syncDisplayFullscreenButton();
+    syncDisplayFullscreenMenu();
   }
 }
 
@@ -69,10 +89,16 @@ function readAgendaAppearance(){
   const theme = stored && (stored.theme === 'light' || stored.theme === 'dark' || stored.theme === 'system')
     ? stored.theme
     : AGENDA_APPEARANCE_DEFAULT.theme;
-  const font = stored && (stored.font === 'small' || stored.font === 'medium' || stored.font === 'large')
-    ? stored.font
-    : AGENDA_APPEARANCE_DEFAULT.font;
-  return { theme,font };
+  const rawFont = stored ? stored.font : null;
+  const font = clampDisplayFont(
+    typeof rawFont === 'number' ? rawFont
+      : typeof rawFont === 'string' && AGENDA_FONT_LEGACY[rawFont] ? AGENDA_FONT_LEGACY[rawFont]
+      : AGENDA_APPEARANCE_DEFAULT.font
+  );
+  const squish = clampDisplayFit(
+    stored && typeof stored.squish === 'number' ? stored.squish : AGENDA_FIT_MAX
+  );
+  return { theme,font,squish };
 }
 
 function writeAgendaAppearance(value){
@@ -84,15 +110,25 @@ function syncAgendaMenuState(settings){
   document.querySelectorAll('[data-theme-opt]').forEach(button=>{
     button.classList.toggle('is-on',button.dataset.themeOpt === settings.theme);
   });
-  document.querySelectorAll('[data-font-opt]').forEach(button=>{
-    button.classList.toggle('is-on',button.dataset.fontOpt === settings.font);
-  });
+  const fontValue = $('agenda-font-value');
+  if(fontValue) fontValue.textContent = `${settings.font}%`;
+  const fontMinus = $('agenda-font-minus');
+  if(fontMinus) fontMinus.disabled = settings.font <= AGENDA_FONT_MIN;
+  const fontPlus = $('agenda-font-plus');
+  if(fontPlus) fontPlus.disabled = settings.font >= AGENDA_FONT_MAX;
+  const fitValue = $('agenda-fit-value');
+  if(fitValue) fitValue.textContent = `${settings.squish}%`;
+  const fitMinus = $('agenda-fit-minus');
+  if(fitMinus) fitMinus.disabled = settings.squish <= AGENDA_FIT_MIN;
+  const fitPlus = $('agenda-fit-plus');
+  if(fitPlus) fitPlus.disabled = settings.squish >= AGENDA_FIT_MAX;
 }
 
 function applyAgendaAppearance(settings){
   const root = document.documentElement;
   root.dataset.theme = settings.theme;
-  root.dataset.font = settings.font;
+  root.dataset.font = String(settings.font);
+  root.dataset.squish = String(settings.squish);
   const meta = document.querySelector('meta[name="color-scheme"]');
   if(meta) meta.content = settings.theme === 'system' ? 'light dark' : settings.theme;
   syncAgendaMenuState(settings);
@@ -138,6 +174,10 @@ function setDisplayWallpaper(active,opts = {}){
   if(!page || !wallpaper) return;
   page.hidden = active;
   wallpaper.hidden = !active;
+  // Paint the root black while the night screen is up so the strip reclaimed
+  // by the "screen fit" squash stays invisible in every theme.
+  document.documentElement.dataset.night = String(active);
+  if(!active) _displayWallpaperTaps = [];
   displayWriteWallpaper(active);
   if(active){
     updateDisplayNightClock();
@@ -654,14 +694,21 @@ window.addEventListener('online',()=>void refreshDisplay());
 window.addEventListener('focus',()=>void refreshDisplay());
 document.addEventListener('DOMContentLoaded',()=>{
   purgeLegacyDisplayEnrollments();
-  syncDisplayFullscreenButton();
+  syncDisplayFullscreenMenu();
   startDisplayClock();
-  $('agenda-fullscreen')?.addEventListener('click',()=>void toggleDisplayFullscreen());
   $('agenda-hide')?.addEventListener('click',()=>setDisplayWallpaper(true));
   $('agenda-wallpaper')?.addEventListener('click',()=>{
     // Ignore the synthetic click that follows a swipe gesture.
     if(Date.now() - _displaySwipedAt < 450) return;
-    setDisplayWallpaper(false);
+    // Three taps within 900ms bring the agenda back — one accidental tap on
+    // the photo frame must not flash the agenda at night.
+    const now = Date.now();
+    _displayWallpaperTaps = _displayWallpaperTaps.filter(ts => now - ts <= 900);
+    _displayWallpaperTaps.push(now);
+    if(_displayWallpaperTaps.length >= 3){
+      _displayWallpaperTaps = [];
+      setDisplayWallpaper(false);
+    }
   });
   $('agenda-wallpaper')?.addEventListener('keydown',event=>{
     if(event.key === 'Enter' || event.key === ' '){
@@ -674,13 +721,31 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(menu) setAgendaMenuOpen(menu.hidden);
   });
   $('agenda-menu')?.addEventListener('click',event=>{
-    const option = event.target.closest('[data-theme-opt],[data-font-opt]');
-    if(!option) return;
-    const settings = readAgendaAppearance();
-    if(option.dataset.themeOpt) settings.theme = option.dataset.themeOpt;
-    if(option.dataset.fontOpt) settings.font = option.dataset.fontOpt;
-    writeAgendaAppearance(settings);
-    applyAgendaAppearance(settings);
+    const themeOption = event.target.closest('[data-theme-opt]');
+    if(themeOption){
+      const settings = readAgendaAppearance();
+      settings.theme = themeOption.dataset.themeOpt;
+      writeAgendaAppearance(settings);
+      applyAgendaAppearance(settings);
+      return;
+    }
+    const fontStep = event.target.closest('#agenda-font-minus,#agenda-font-plus');
+    if(fontStep){
+      const settings = readAgendaAppearance();
+      settings.font = clampDisplayFont(settings.font + (fontStep.id === 'agenda-font-plus' ? AGENDA_FONT_STEP : -AGENDA_FONT_STEP));
+      writeAgendaAppearance(settings);
+      applyAgendaAppearance(settings);
+      return;
+    }
+    const fitStep = event.target.closest('#agenda-fit-minus,#agenda-fit-plus');
+    if(fitStep){
+      const settings = readAgendaAppearance();
+      settings.squish = clampDisplayFit(settings.squish + (fitStep.id === 'agenda-fit-plus' ? AGENDA_FIT_STEP : -AGENDA_FIT_STEP));
+      writeAgendaAppearance(settings);
+      applyAgendaAppearance(settings);
+      return;
+    }
+    if(event.target.closest('#agenda-menu-fullscreen')) void toggleDisplayFullscreen();
   });
   document.addEventListener('click',event=>{
     const menu = $('agenda-menu');
@@ -706,4 +771,4 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(displayWallpaperStored()) setDisplayWallpaper(true,{ focus:false });
   void bootAgendaDisplay();
 });
-document.addEventListener('fullscreenchange',syncDisplayFullscreenButton);
+document.addEventListener('fullscreenchange',syncDisplayFullscreenMenu);

@@ -26,20 +26,21 @@
         <div class="agenda-side">
           <time class="agenda-clock" id="agenda-clock" aria-label="Current time"></time>
           <div class="agenda-heading-actions">
-            <button type="button" class="agenda-fullscreen" id="agenda-fullscreen" aria-label="Enter fullscreen" title="Enter fullscreen">
-              <span aria-hidden="true">↗</span>
-              full screen
-            </button>
             <button type="button" class="agenda-hide" id="agenda-hide" aria-label="Hide the agenda behind a night clock">
               <span aria-hidden="true">◐</span>
               hide agenda
             </button>
             <button type="button" class="agenda-more" id="agenda-more" aria-label="Display settings" title="Display settings" aria-haspopup="true" aria-expanded="false">
               <span aria-hidden="true">⋯</span>
-              more
             </button>
           </div>
           <div class="agenda-menu" id="agenda-menu" hidden>
+            <div class="agenda-menu-row" id="agenda-menu-fullscreen-row" hidden>
+              <span class="agenda-menu-label">display</span>
+              <div class="agenda-menu-options agenda-menu-options-single">
+                <button type="button" id="agenda-menu-fullscreen" aria-pressed="false">enter full screen</button>
+              </div>
+            </div>
             <div class="agenda-menu-row">
               <span class="agenda-menu-label">theme</span>
               <div class="agenda-menu-options" role="group" aria-label="Theme">
@@ -50,10 +51,18 @@
             </div>
             <div class="agenda-menu-row">
               <span class="agenda-menu-label">text size</span>
-              <div class="agenda-menu-options" role="group" aria-label="Text size">
-                <button type="button" data-font-opt="small">small</button>
-                <button type="button" data-font-opt="medium">medium</button>
-                <button type="button" data-font-opt="large">large</button>
+              <div class="agenda-menu-options agenda-font-steps" role="group" aria-label="Text size">
+                <button type="button" id="agenda-font-minus" aria-label="Decrease text size">−</button>
+                <span class="agenda-font-value" id="agenda-font-value">100%</span>
+                <button type="button" id="agenda-font-plus" aria-label="Increase text size">+</button>
+              </div>
+            </div>
+            <div class="agenda-menu-row">
+              <span class="agenda-menu-label">screen fit</span>
+              <div class="agenda-menu-options agenda-font-steps" role="group" aria-label="Screen fit">
+                <button type="button" id="agenda-fit-minus" aria-label="Squash vertically to cancel frame stretch">−</button>
+                <span class="agenda-font-value" id="agenda-fit-value">100%</span>
+                <button type="button" id="agenda-fit-plus" aria-label="Reduce vertical squash">+</button>
               </div>
             </div>
           </div>
@@ -75,13 +84,12 @@
     <main id="agenda-root"></main>
     <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
   </div>
-  <section class="agenda-wallpaper" id="agenda-wallpaper" aria-label="Agenda hidden. Tap anywhere or swipe right to show it again." hidden tabindex="0">
+  <section class="agenda-wallpaper" id="agenda-wallpaper" aria-label="Agenda hidden. Tap three times or swipe right to show it again." hidden tabindex="0">
     <div class="agenda-wallpaper-glow" aria-hidden="true"></div>
     <div class="agenda-wallpaper-clock">
       <time id="agenda-wallpaper-time"></time>
       <p id="agenda-wallpaper-date"></p>
     </div>
-    <button type="button" class="agenda-wallpaper-show" id="agenda-wallpaper-show">show agenda</button>
   </section>
   <script src="./js/agenda-display-boot.js"></script>
   <script src="./js/config.js"></script>
