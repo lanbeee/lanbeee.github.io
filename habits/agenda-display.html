@@ -17,19 +17,46 @@
   <div class="agenda-page" id="agenda-page">
     <header class="agenda-chrome">
       <div class="agenda-heading">
-        <div>
-          <span class="agenda-eyebrow">Tings · shared display</span>
-          <h1 id="agenda-title">Shared display</h1>
+        <div class="agenda-heading-meta">
+          <div class="agenda-eyebrow-row">
+            <span class="agenda-eyebrow">Tings · shared display</span>
+            <h1 id="agenda-title"></h1>
+          </div>
         </div>
-        <div class="agenda-heading-actions">
-          <button type="button" class="agenda-fullscreen" id="agenda-fullscreen" aria-label="Enter fullscreen" title="Enter fullscreen">
-            <span aria-hidden="true">↗</span>
-            full screen
-          </button>
-          <button type="button" class="agenda-hide" id="agenda-hide" aria-label="Hide the agenda behind a wallpaper">
-            <span aria-hidden="true">◐</span>
-            hide agenda
-          </button>
+        <div class="agenda-side">
+          <time class="agenda-clock" id="agenda-clock" aria-label="Current time"></time>
+          <div class="agenda-heading-actions">
+            <button type="button" class="agenda-fullscreen" id="agenda-fullscreen" aria-label="Enter fullscreen" title="Enter fullscreen">
+              <span aria-hidden="true">↗</span>
+              full screen
+            </button>
+            <button type="button" class="agenda-hide" id="agenda-hide" aria-label="Hide the agenda behind a night clock">
+              <span aria-hidden="true">◐</span>
+              hide agenda
+            </button>
+            <button type="button" class="agenda-more" id="agenda-more" aria-label="Display settings" title="Display settings" aria-haspopup="true" aria-expanded="false">
+              <span aria-hidden="true">⋯</span>
+              more
+            </button>
+          </div>
+          <div class="agenda-menu" id="agenda-menu" hidden>
+            <div class="agenda-menu-row">
+              <span class="agenda-menu-label">theme</span>
+              <div class="agenda-menu-options" role="group" aria-label="Theme">
+                <button type="button" data-theme-opt="light">light</button>
+                <button type="button" data-theme-opt="dark">dark</button>
+                <button type="button" data-theme-opt="system">system</button>
+              </div>
+            </div>
+            <div class="agenda-menu-row">
+              <span class="agenda-menu-label">text size</span>
+              <div class="agenda-menu-options" role="group" aria-label="Text size">
+                <button type="button" data-font-opt="small">small</button>
+                <button type="button" data-font-opt="medium">medium</button>
+                <button type="button" data-font-opt="large">large</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <p id="agenda-updated">Connecting…</p>
@@ -48,13 +75,13 @@
     <main id="agenda-root"></main>
     <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
   </div>
-  <section class="agenda-wallpaper" id="agenda-wallpaper" aria-label="Agenda hidden. Triple-tap anywhere to return." hidden tabindex="0">
+  <section class="agenda-wallpaper" id="agenda-wallpaper" aria-label="Agenda hidden. Tap anywhere or swipe right to show it again." hidden tabindex="0">
     <div class="agenda-wallpaper-glow" aria-hidden="true"></div>
     <div class="agenda-wallpaper-clock">
       <time id="agenda-wallpaper-time"></time>
       <p id="agenda-wallpaper-date"></p>
     </div>
-    <div class="agenda-wallpaper-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+    <button type="button" class="agenda-wallpaper-show" id="agenda-wallpaper-show">show agenda</button>
   </section>
   <script src="./js/agenda-display-boot.js"></script>
   <script src="./js/config.js"></script>

@@ -5,6 +5,10 @@ const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && 
   ? AGENDA_DISPLAY_KEY
   : 'tings_agenda_display_v3';
 const AGENDA_WALLPAPER_STORAGE_KEY = 'tings_agenda_wallpaper_v1';
+const AGENDA_APPEARANCE_STORAGE_KEY = 'tings_agenda_appearance_v1';
+// Dark is the deliberate default: these displays live on photo frames and are
+// read across the room at night. Light/system stay one tap away in the menu.
+const AGENDA_APPEARANCE_DEFAULT = { theme:'dark', font:'medium' };
 
 let _displayPollTimer = null;
 let _displayPairPollTimer = null;
@@ -12,8 +16,9 @@ let _displayPairExpiryTimer = null;
 let _displayFeed = null;
 let _displayPairing = null;
 let _displayProjection = null;
-let _displayWallpaperClockTimer = null;
-let _displayWallpaperTaps = [];
+let _displayClockTimer = null;
+let _displayTouchStart = null;
+let _displaySwipedAt = 0;
 
 function syncDisplayFullscreenButton(){
   const button = $('agenda-fullscreen');
@@ -57,12 +62,74 @@ function displayWriteWallpaper(active){
   }catch(_){}
 }
 
-function updateDisplayWallpaperClock(){
+function readAgendaAppearance(){
+  let stored = null;
+  try{ stored = JSON.parse(localStorage.getItem(AGENDA_APPEARANCE_STORAGE_KEY) || 'null'); }
+  catch(_){ stored = null; }
+  const theme = stored && (stored.theme === 'light' || stored.theme === 'dark' || stored.theme === 'system')
+    ? stored.theme
+    : AGENDA_APPEARANCE_DEFAULT.theme;
+  const font = stored && (stored.font === 'small' || stored.font === 'medium' || stored.font === 'large')
+    ? stored.font
+    : AGENDA_APPEARANCE_DEFAULT.font;
+  return { theme,font };
+}
+
+function writeAgendaAppearance(value){
+  try{ localStorage.setItem(AGENDA_APPEARANCE_STORAGE_KEY,JSON.stringify(value)); }
+  catch(_){}
+}
+
+function syncAgendaMenuState(settings){
+  document.querySelectorAll('[data-theme-opt]').forEach(button=>{
+    button.classList.toggle('is-on',button.dataset.themeOpt === settings.theme);
+  });
+  document.querySelectorAll('[data-font-opt]').forEach(button=>{
+    button.classList.toggle('is-on',button.dataset.fontOpt === settings.font);
+  });
+}
+
+function applyAgendaAppearance(settings){
+  const root = document.documentElement;
+  root.dataset.theme = settings.theme;
+  root.dataset.font = settings.font;
+  const meta = document.querySelector('meta[name="color-scheme"]');
+  if(meta) meta.content = settings.theme === 'system' ? 'light dark' : settings.theme;
+  syncAgendaMenuState(settings);
+}
+
+function setAgendaMenuOpen(open){
+  const menu = $('agenda-menu');
+  const button = $('agenda-more');
+  if(!menu || !button) return;
+  menu.hidden = !open;
+  button.setAttribute('aria-expanded',String(open));
+}
+
+function updateDisplayNightClock(){
   const now = new Date();
   const time = $('agenda-wallpaper-time');
   const date = $('agenda-wallpaper-date');
   if(time) time.textContent = now.toLocaleTimeString(undefined,{ hour:'numeric',minute:'2-digit' });
   if(date) date.textContent = now.toLocaleDateString(undefined,{ weekday:'long',month:'long',day:'numeric' });
+}
+
+function updateDisplayClocks(){
+  const now = new Date();
+  const clock = $('agenda-clock');
+  if(clock){
+    const parts = new Intl.DateTimeFormat(undefined,{ hour:'numeric',minute:'2-digit' }).formatToParts(now);
+    const dayPeriod = parts.find(part=>part.type === 'dayPeriod')?.value || '';
+    const digits = parts.filter(part=>part.type !== 'dayPeriod').map(part=>part.value).join('').trim();
+    clock.innerHTML = `${escapeDisplay(digits)}${dayPeriod ? `<span class="agenda-clock-mer">${escapeDisplay(dayPeriod)}</span>` : ''}`;
+  }
+  updateDisplayNightClock();
+}
+
+function startDisplayClock(){
+  if(_displayClockTimer) clearInterval(_displayClockTimer);
+  updateDisplayClocks();
+  _displayClockTimer = setInterval(updateDisplayClocks,10 * 1000);
 }
 
 function setDisplayWallpaper(active,opts = {}){
@@ -71,14 +138,9 @@ function setDisplayWallpaper(active,opts = {}){
   if(!page || !wallpaper) return;
   page.hidden = active;
   wallpaper.hidden = !active;
-  document.body.classList.toggle('agenda-wallpaper-active',active);
   displayWriteWallpaper(active);
-  _displayWallpaperTaps = [];
-  if(_displayWallpaperClockTimer) clearInterval(_displayWallpaperClockTimer);
-  _displayWallpaperClockTimer = null;
   if(active){
-    updateDisplayWallpaperClock();
-    _displayWallpaperClockTimer = setInterval(updateDisplayWallpaperClock,15 * 1000);
+    updateDisplayNightClock();
     if(opts.focus !== false) wallpaper.focus({ preventScroll:true });
   }else{
     if(opts.focus !== false) $('agenda-hide')?.focus({ preventScroll:true });
@@ -86,12 +148,40 @@ function setDisplayWallpaper(active,opts = {}){
   }
 }
 
-function registerDisplayWallpaperTap(){
-  const now = performance.now();
-  _displayWallpaperTaps = _displayWallpaperTaps.filter(ts=>now - ts <= 900);
-  _displayWallpaperTaps.push(now);
-  if(_displayWallpaperTaps.length >= 3) setDisplayWallpaper(false);
+function displaySwipeFromTouch(dx,dy){
+  if(Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.75) return;
+  _displaySwipedAt = Date.now();
+  setAgendaMenuOpen(false);
+  const wallpaper = $('agenda-wallpaper');
+  if(!wallpaper) return;
+  if(dx < 0 && wallpaper.hidden) setDisplayWallpaper(true);
+  else if(dx > 0 && !wallpaper.hidden) setDisplayWallpaper(false);
 }
+
+document.addEventListener('touchstart',event=>{
+  if(!event.touches || event.touches.length !== 1){
+    _displayTouchStart = null;
+    return;
+  }
+  const target = event.target;
+  if(target && target.closest && target.closest('button,.agenda-menu,a,input,textarea')){
+    _displayTouchStart = null;
+    return;
+  }
+  _displayTouchStart = { x:event.touches[0].clientX,y:event.touches[0].clientY };
+},{ passive:true });
+
+document.addEventListener('touchend',event=>{
+  if(!_displayTouchStart || !event.changedTouches || !event.changedTouches.length){
+    _displayTouchStart = null;
+    return;
+  }
+  const touch = event.changedTouches[0];
+  const dx = touch.clientX - _displayTouchStart.x;
+  const dy = touch.clientY - _displayTouchStart.y;
+  _displayTouchStart = null;
+  displaySwipeFromTouch(dx,dy);
+},{ passive:true });
 
 function purgeLegacyDisplayEnrollments(){
   // v2 was shared by the retired link/code enrollment and the first QR build.
@@ -150,28 +240,34 @@ function displayDateKey(ts,timeZone){
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function clockRangeLabel(start,end,timeZone){
-  if(!start) return '';
-  const parts = ts=>new Intl.DateTimeFormat(undefined,{
+function displayClockParts(ts,timeZone){
+  const value = new Intl.DateTimeFormat(undefined,{
     hour:'numeric',minute:'2-digit',timeZone
   }).formatToParts(new Date(ts));
-  const label = ts=>{
-    const value = parts(ts);
-    const dayPeriod = value.find(part=>part.type === 'dayPeriod')?.value || '';
-    const clock = value
-      .filter(part=>part.type !== 'dayPeriod')
-      .map(part=>part.value)
-      .join('')
-      .trim();
-    return { clock,dayPeriod,full:dayPeriod ? `${clock} ${dayPeriod}` : clock };
-  };
-  const first = label(start);
-  if(!end) return first.full;
-  const last = label(end);
-  if(first.dayPeriod && first.dayPeriod === last.dayPeriod){
-    return `${first.clock}–${last.clock} ${last.dayPeriod}`;
+  const dayPeriod = value.find(part=>part.type === 'dayPeriod')?.value || '';
+  const clock = value
+    .filter(part=>part.type !== 'dayPeriod')
+    .map(part=>part.value)
+    .join('')
+    .trim();
+  return { clock,dayPeriod };
+}
+
+// The start time leads in a large, bold line; the end time follows on its own
+// smaller, muted line. Duration-only rows fall back to "N min" in the start slot.
+function displayRowWhen(row,timeZone){
+  if(row.start){
+    const start = displayClockParts(row.start,timeZone);
+    const startHtml = `<span class="agenda-time-start">${escapeDisplay(start.clock)}${start.dayPeriod ? `<span class="agenda-time-mer">${escapeDisplay(start.dayPeriod)}</span>` : ''}</span>`;
+    if(row.end){
+      const end = displayClockParts(row.end,timeZone);
+      const endLabel = end.dayPeriod ? `${end.clock} ${end.dayPeriod}` : end.clock;
+      return `${startHtml}<span class="agenda-time-end">→ ${escapeDisplay(endLabel)}</span>`;
+    }
+    return startHtml;
   }
-  return `${first.full}–${last.full}`;
+  if(row.durationMinutes) return `<span class="agenda-time-start">${escapeDisplay(String(row.durationMinutes))} min</span>`;
+  return '';
 }
 
 const DISPLAY_EMOJI_BG_TOKENS = new Set(['teal','amber','red','purple','blue','green','pink','orange','indigo','cyan','lime','slate']);
@@ -240,7 +336,7 @@ function renderDisplay(projection,meta,completedRowIds = []){
     const rows = safeRows.slice(0,Math.max(0,50 - renderedRows)).map(row=>{
       renderedRows += 1;
       const kind = ['item','busy','travel','open'].includes(row.kind) ? row.kind : 'item';
-      const when = clockRangeLabel(row.start,row.end,tz);
+      const when = displayRowWhen(row,tz);
       const extra = kind === 'travel'
         ? [row.travelFromLabel,row.travelToLabel].filter(Boolean).join(' → ')
         : row.locationLabel;
@@ -254,7 +350,7 @@ function renderDisplay(projection,meta,completedRowIds = []){
           <b>${escapeDisplay(row.title)}</b>
           ${extra ? `<small>${escapeDisplay(extra)}</small>` : ''}
         </div>
-        <time>${when || (row.durationMinutes ? `${row.durationMinutes} min` : '')}</time>
+        <time>${when}</time>
       </article>`;
     }).join('') || '<p class="agenda-empty">Nothing planned.</p>';
     return `<section class="agenda-day${current ? ' is-today' : ''}">
@@ -545,6 +641,11 @@ async function bootAgendaDisplay(){
   await beginDisplayPairing();
 }
 
+// Scripts sit at the end of <body>, so the root and meta already exist: apply
+// the stored appearance now, before the first paint, to avoid a light flash
+// on displays configured for the true-dark theme.
+applyAgendaAppearance(readAgendaAppearance());
+
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState === 'visible') void refreshDisplay();
 });
@@ -554,14 +655,41 @@ window.addEventListener('focus',()=>void refreshDisplay());
 document.addEventListener('DOMContentLoaded',()=>{
   purgeLegacyDisplayEnrollments();
   syncDisplayFullscreenButton();
+  startDisplayClock();
   $('agenda-fullscreen')?.addEventListener('click',()=>void toggleDisplayFullscreen());
   $('agenda-hide')?.addEventListener('click',()=>setDisplayWallpaper(true));
-  $('agenda-wallpaper')?.addEventListener('pointerup',registerDisplayWallpaperTap);
+  $('agenda-wallpaper')?.addEventListener('click',()=>{
+    // Ignore the synthetic click that follows a swipe gesture.
+    if(Date.now() - _displaySwipedAt < 450) return;
+    setDisplayWallpaper(false);
+  });
   $('agenda-wallpaper')?.addEventListener('keydown',event=>{
     if(event.key === 'Enter' || event.key === ' '){
       event.preventDefault();
-      registerDisplayWallpaperTap();
+      setDisplayWallpaper(false);
     }
+  });
+  $('agenda-more')?.addEventListener('click',()=>{
+    const menu = $('agenda-menu');
+    if(menu) setAgendaMenuOpen(menu.hidden);
+  });
+  $('agenda-menu')?.addEventListener('click',event=>{
+    const option = event.target.closest('[data-theme-opt],[data-font-opt]');
+    if(!option) return;
+    const settings = readAgendaAppearance();
+    if(option.dataset.themeOpt) settings.theme = option.dataset.themeOpt;
+    if(option.dataset.fontOpt) settings.font = option.dataset.fontOpt;
+    writeAgendaAppearance(settings);
+    applyAgendaAppearance(settings);
+  });
+  document.addEventListener('click',event=>{
+    const menu = $('agenda-menu');
+    if(!menu || menu.hidden) return;
+    if(event.target.closest && event.target.closest('.agenda-side')) return;
+    setAgendaMenuOpen(false);
+  });
+  document.addEventListener('keydown',event=>{
+    if(event.key === 'Escape') setAgendaMenuOpen(false);
   });
   $('agenda-pair-new')?.addEventListener('click',()=>void beginDisplayPairing('new'));
   $('agenda-root')?.addEventListener('click',event=>{

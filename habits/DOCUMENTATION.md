@@ -1150,7 +1150,7 @@ shortcuts can be stored on one item.
 #### Item Actions
 - **Pinned:** Keeps the item above automatic ordering
 - **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot.
-- The standalone shared display includes fullscreen and privacy-wallpaper controls in its header.
+- The standalone shared display shows the current time in its header and includes fullscreen and night-clock controls. Swiping left (or "hide agenda") covers the agenda with a near-black night clock; a single tap or swipe right brings it back. The ⋯ menu switches light/dark/system theme (dark is the default) and text size; both persist per display.
 - **Export to calendar:** Tasks with a due date or fixed time
 - **Share item:** Sends an encrypted invitation for another person to track it
 - **Snooze:** Temporarily hides the item

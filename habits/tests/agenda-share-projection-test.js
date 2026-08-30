@@ -354,27 +354,68 @@ function assert(cond,msg){
     const rowTime = document.querySelector('.agenda-row time');
     const firstRow = document.querySelector('.agenda-row');
     const rowChildren = firstRow ? [...firstRow.children].map(child=>child.className || child.tagName.toLowerCase()) : [];
+    const startLine = rowTime ? rowTime.querySelector('.agenda-time-start') : null;
+    const endLine = rowTime ? rowTime.querySelector('.agenda-time-end') : null;
     const hide = document.getElementById('agenda-hide');
     hide.click();
     const wallpaper = document.getElementById('agenda-wallpaper');
     const hiddenAfterTap = !wallpaper.hidden && document.getElementById('agenda-page').hidden;
-    registerDisplayWallpaperTap();
-    registerDisplayWallpaperTap();
-    const stillHiddenAfterTwo = !wallpaper.hidden;
-    registerDisplayWallpaperTap();
+    wallpaper.click();
     return {
-      timeWhiteSpace:rowTime ? getComputedStyle(rowTime).whiteSpace : '',
-      timeCopy:rowTime?.textContent || '',rowChildren,
-      hiddenAfterTap,stillHiddenAfterTwo,
-      restoredAfterThree:wallpaper.hidden && !document.getElementById('agenda-page').hidden,
+      columnStack:rowTime ? getComputedStyle(rowTime).flexDirection === 'column' : false,
+      startCopy:startLine ? startLine.textContent : '',
+      endCopy:endLine ? endLine.textContent : '',
+      endSmallerThanStart:Boolean(startLine && endLine) &&
+        parseFloat(getComputedStyle(startLine).fontSize) > parseFloat(getComputedStyle(endLine).fontSize),
+      clockCopy:(document.getElementById('agenda-clock')?.textContent || '').trim(),
+      rowChildren,
+      hiddenAfterTap,
+      restoredAfterTap:wallpaper.hidden && !document.getElementById('agenda-page').hidden,
       wallpaperPreferenceCleared:localStorage.getItem('tings_agenda_wallpaper_v1') === null
     };
   });
-  assert(displayPresentation.timeWhiteSpace === 'nowrap','agenda time ranges stay together on one line');
-  assert(!/\b(AM|PM)–/.test(displayPresentation.timeCopy),'same-period agenda ranges show the meridiem only once');
+  assert(/\d{1,2}:\d{2}/.test(displayPresentation.startCopy) && /^→ \d{1,2}:\d{2}/.test(displayPresentation.endCopy),'the start time leads and the end time follows it on its own muted line');
+  assert(displayPresentation.columnStack && displayPresentation.endSmallerThanStart,'the end time renders below the start time in a smaller size');
+  assert(/\d{1,2}:\d{2}/.test(displayPresentation.clockCopy),'the agenda header shows the current time');
   assert(/^agenda-mark/.test(displayPresentation.rowChildren[0] || '') && displayPresentation.rowChildren[1] === 'agenda-row-copy' && displayPresentation.rowChildren[2] === 'time','shared rows follow the Tings order: emoji, item copy, then schedule time');
-  assert(displayPresentation.hiddenAfterTap && displayPresentation.stillHiddenAfterTwo,'one tap hides the agenda and fewer than three wallpaper taps keep it hidden');
-  assert(displayPresentation.restoredAfterThree && displayPresentation.wallpaperPreferenceCleared,'the third wallpaper tap restores the agenda and clears the persisted privacy screen');
+  assert(displayPresentation.hiddenAfterTap && displayPresentation.restoredAfterTap && displayPresentation.wallpaperPreferenceCleared,'one tap hides the agenda and a single tap on the night clock restores it and clears the persisted privacy screen');
+
+  const displaySwipe = await displayPage.evaluate(() => {
+    if(typeof TouchEvent !== 'function' || typeof Touch !== 'function') return { skipped:true };
+    const make = (x,y) => {
+      try{ return new Touch({ identifier:1,target:document.body,clientX:x,clientY:y }); }
+      catch(_){ return null; }
+    };
+    const start = make(420,300);
+    const end = make(140,300);
+    if(!start || !end) return { skipped:true };
+    document.body.dispatchEvent(new TouchEvent('touchstart',{ touches:[start],bubbles:true }));
+    document.body.dispatchEvent(new TouchEvent('touchend',{ changedTouches:[end],bubbles:true }));
+    const nightShown = !document.getElementById('agenda-wallpaper').hidden && document.getElementById('agenda-page').hidden;
+    setDisplayWallpaper(false,{ focus:false });
+    return { skipped:false,nightShown,restored:document.getElementById('agenda-wallpaper').hidden };
+  });
+  assert(displaySwipe.skipped || (displaySwipe.nightShown && displaySwipe.restored),'swiping left hides the agenda behind the night clock');
+
+  const displaySettings = await displayPage.evaluate(() => {
+    const storedBefore = JSON.parse(localStorage.getItem('tings_agenda_appearance_v1') || 'null');
+    const defaultDark = document.documentElement.dataset.theme === 'dark';
+    document.getElementById('agenda-more').click();
+    const menu = document.getElementById('agenda-menu');
+    const opened = !menu.hidden && document.getElementById('agenda-more').getAttribute('aria-expanded') === 'true';
+    document.querySelector('[data-theme-opt="light"]').click();
+    const lightApplied = document.documentElement.dataset.theme === 'light';
+    const persisted = JSON.parse(localStorage.getItem('tings_agenda_appearance_v1') || 'null');
+    document.body.click();
+    return {
+      nothingStored:!storedBefore,defaultDark,
+      opened,lightApplied,persistedTheme:persisted && persisted.theme,
+      closedAfterOutsideClick:menu.hidden
+    };
+  });
+  assert(displaySettings.nothingStored && displaySettings.defaultDark && displaySettings.opened && displaySettings.lightApplied &&
+    displaySettings.persistedTheme === 'light' && displaySettings.closedAfterOutsideClick,
+    'fresh displays default to the dark theme and the ⋯ menu switches, persists, and closes');
 
   const inboundSync = await page.evaluate(async ()=>{
     const now = Date.now();
