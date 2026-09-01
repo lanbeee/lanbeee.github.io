@@ -279,7 +279,9 @@ function matchesHomeLocation(h,id){
 // HYBRID: compact home context bar + the full on-demand filter sheet. The bar
 // only exposes current presence and active filters, so a large topic/location
 // library never turns the top of Home into an endless horizontal chip rail.
-function renderHomeTagFilter(data){
+// `precomputedIndices` (optional): render() shares its visibleIndices() pass —
+// the option counts don't depend on the search query, so don't re-sort for them.
+function renderHomeTagFilter(data,precomputedIndices = null){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
   const groups = $('home-filter-groups');
@@ -358,7 +360,7 @@ function renderHomeTagFilter(data){
       : 'Narrow your agenda by one place, one topic, or both.';
   }
   if(!groups)return;
-  const baseIndices = visibleIndices(data,sortSettings);
+  const baseIndices = precomputedIndices || visibleIndices(data,sortSettings);
   const optionMarkup = (choice,kind)=>{
     const on = kind === 'location' ? choice.key === homeLocationFilter : choice.key === homeTopicFilter;
     const count = choice.key === 'all'

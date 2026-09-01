@@ -172,10 +172,36 @@ $('bar-open-overview')?.addEventListener('click',()=>{
 });
 $('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
 let _searchRenderTimer = null;
-const SEARCH_RENDER_DEBOUNCE_MS = 500;
+let _searchRenderedQuery = null;
+// Trailing window for keystroke coalescing. A search render is a filter+rank
+// over already-loaded data, so the FIRST keystroke of a burst renders inside
+// rAF (glyph and results paint in the same frame); further keystrokes within
+// the window coalesce into one trailing render. Slow typing (gaps > window)
+// renders per key, immediately — no dead time either way.
+const SEARCH_RENDER_DEBOUNCE_MS = 120;
+const renderSearchNow = () => {
+  _searchRenderedQuery = searchQuery;
+  render();
+};
 const scheduleSearchRender = () => {
+  if(!searchQuery.trim()){
+    // Clearing restores the full home view — do it immediately.
+    clearTimeout(_searchRenderTimer);
+    _searchRenderTimer = null;
+    renderSearchNow();
+    return;
+  }
+  const firstOfBurst = _searchRenderTimer == null;
   clearTimeout(_searchRenderTimer);
-  _searchRenderTimer = setTimeout(render, SEARCH_RENDER_DEBOUNCE_MS);
+  _searchRenderTimer = setTimeout(()=>{
+    _searchRenderTimer = null;
+    if(searchQuery !== _searchRenderedQuery)renderSearchNow();
+  },SEARCH_RENDER_DEBOUNCE_MS);
+  if(!firstOfBurst || searchQuery === _searchRenderedQuery)return;
+  requestAnimationFrame(()=>{
+    if(_searchRenderTimer == null)return; // a clear/cancel already rendered
+    renderSearchNow();
+  });
 };
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
@@ -185,7 +211,13 @@ $('habit-search').addEventListener('keydown',e=>{
   if(e.key !== 'Escape')return;
 if(searchQuery){
     clearTimeout(_searchRenderTimer);
+    _searchRenderTimer = null;
     searchQuery = '';
+    _searchRenderedQuery = '';
+    // render() may hand off to the async week-plan path, which returns before
+    // updateSearchUi() would sync the field — clear the text explicitly so the
+    // box never shows a stale query over unfiltered results.
+    $('habit-search').value = '';
     render();
     e.preventDefault();
     return;
@@ -224,7 +256,9 @@ document.addEventListener('keydown',e=>{
 $('clear-search').addEventListener('click',()=>{
   if(searchQuery.trim()){
     clearTimeout(_searchRenderTimer);
+    _searchRenderTimer = null;
     searchQuery = '';
+    _searchRenderedQuery = '';
     $('habit-search').value = '';
     updateSearchUi();
     render();

@@ -639,13 +639,19 @@ function render(opts){
   _homeRenderedWeek = null;
   list.innerHTML = '';
   empty.onclick = null;
-  updateQuotaBar(sizeKb(data));
+  // Search is habit lookup — the quota bar can't move while typing (only a
+  // save() changes stored size, and save() refreshes the bar itself), so skip
+  // the full-dataset JSON.stringify it costs per keystroke render.
+  const searching = Boolean(searchQuery.trim());
+  if(!searching)updateQuotaBar(sizeKb(data));
   updateSortButton();
   updateSearchUi();
-  renderHomeTagFilter(data);
 
+  // One shared sort pass: empty-state logic, the filter sheet counts, and the
+  // match list all consume the same visibleIndices(data) order.
   const visible = visibleIndices(data);
-  const indices = filteredVisibleIndices(data);
+  const indices = filteredVisibleIndices(data,visible);
+  renderHomeTagFilter(data,visible);
   if(!indices.length){
     empty.style.display = 'block';
     if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
@@ -696,9 +702,9 @@ function render(opts){
   empty.style.display = 'none';
 
   const todayFirstActive = sortSettings.preset === 'todayFirst';
-  // Search is habit lookup — skip week-plan chrome (blocked times, travel,
-  // day sections) so results are just matching habits, ranked by relevance.
-  const searching = searchQuery.trim().length > 0;
+  // `searching` was computed above (before the quota bar) — search is habit
+  // lookup, so skip week-plan chrome (blocked times, travel, day sections) and
+  // render just matching habits, ranked by relevance.
   const deferAgenda = Boolean(o.deferAgenda);
   const weekMode = !deferAgenda && todayFirstActive
     && weekOnHomeEnabled(sortSettings)

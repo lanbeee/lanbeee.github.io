@@ -303,13 +303,16 @@ function invalidateLocationAffinity(){ _locationAffinityCache = { key:null, byId
 
 // PURE-ish: the per-habit location score, in the same 0..~110 range as the
 // other components. Capped to [-12, +14] so it can only break ties / nudge.
-function locationSignal(h,settings){
+// `affinity` (optional) is a precomputed locationAffinityMap — visibleIndices
+// passes one so a sort pass loads the dataset once instead of per habit
+// (per-habit load() here was O(n log n) full localStorage parses per render).
+function locationSignal(h,settings,affinity = null){
   if(h.type === 'zero')return 0;
   const registry = normalizeLocationRegistry(settings.locations);
   const ids = normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return 0;                                // anywhere → neutral
   const weekday = new Date().getDay();
-  const aff = locationAffinityMap(typeof load === 'function' ? load() : [],settings);
+  const aff = affinity || locationAffinityMap(typeof load === 'function' ? load() : [],settings);
   let signal = 0;
   let anyOpen = false, allClosed = true;
   for(const id of ids){
@@ -505,8 +508,8 @@ function typeSettingScale(h,settings){
  * @param {Settings} settings
  * @returns {Object} {now,plan,due,progress,trend,rhythm,newness,duration,availability,flexibility,schedule,preferred,location}
  */
-function priorityComponents(h,settings){
-  if(h.type === 'task')return taskPriorityComponents(h,settings);
+function priorityComponents(h,settings,affinity = null){
+  if(h.type === 'task')return taskPriorityComponents(h,settings,affinity);
   const plannerFit = plannerFitSignal(h,settings);
   return {
     now:todayActionSignal(h,settings),
@@ -521,7 +524,7 @@ function priorityComponents(h,settings){
     flexibility:plannerFit.flexibility,
     schedule:scheduleSignal(h),
     preferred:preferredSignal(h),
-    location:locationSignal(h,settings) * settingScale(settings.locationWeight)
+    location:locationSignal(h,settings,affinity) * settingScale(settings.locationWeight)
   };
 }
 
@@ -529,9 +532,9 @@ function priorityComponents(h,settings){
 // plus the planner-fit/schedule adjustments contribute. Same shape as the
 // habit components so attentionScore's mix + scaling paths are reused verbatim.
 // Completed tasks sink to the bottom but stay findable.
-function taskPriorityComponents(h,settings){
+function taskPriorityComponents(h,settings,affinity = null){
   const plannerFit = plannerFitSignal(h,settings);
-  const location = locationSignal(h,settings) * settingScale(settings.locationWeight);
+  const location = locationSignal(h,settings,affinity) * settingScale(settings.locationWeight);
   if(isTaskDone(h)){
     return {
       now:0,plan:0,due:0,progress:0,trend:0,rhythm:0,newness:0,
@@ -703,11 +706,11 @@ function mixedPriorityScore(parts,mix){
  * @param {Settings|null} [settingsOverride]
  * @returns {number}
  */
-function attentionScore(h,index,settingsOverride = null){
+function attentionScore(h,index,settingsOverride = null,affinity = null){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const focus = settings.focus || 'balanced';
-  const parts = priorityComponents(h,settings);
+  const parts = priorityComponents(h,settings,affinity);
   let score = mixedPriorityScore(parts,BASE_SORT_MIX);
   if(h.type === 'zero'){
     const policy = stopPolicy(settings);
@@ -809,6 +812,32 @@ function todayCategory(h,settings){
 function visibleIndices(data,settingsOverride = null){
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const todayFirst = settings.preset === 'todayFirst';
+  // The sort below calls attentionScore O(n log n) times; each call used to
+  // re-load() the whole dataset inside locationSignal (via locationAffinityMap)
+  // and recompute every signal per comparison. Compute the location affinity
+  // map once per pass and share it, and memoize score/category per index —
+  // both are pure for the duration of one synchronous pass.
+  const affinity = typeof locationAffinityMap === 'function'
+    ? locationAffinityMap(typeof load === 'function' ? load() : [],settings)
+    : null;
+  const scoreCache = new Map();
+  const scoreOf = i => {
+    let s = scoreCache.get(i);
+    if(s === undefined){
+      s = attentionScore(data[i],i,settings,affinity);
+      scoreCache.set(i,s);
+    }
+    return s;
+  };
+  const categoryCache = new Map();
+  const categoryOf = i => {
+    let c = categoryCache.get(i);
+    if(c === undefined){
+      c = todayCategory(data[i],settings);
+      categoryCache.set(i,c);
+    }
+    return c;
+  };
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
     if(h.type === 'task' && isTaskDone(h))return false;
@@ -819,11 +848,11 @@ function visibleIndices(data,settingsOverride = null){
     const pin = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
     if(pin)return pin;
     if(todayFirst){
-      const catA = todayCategory(data[a],settings);
-      const catB = todayCategory(data[b],settings);
+      const catA = categoryOf(a);
+      const catB = categoryOf(b);
       if(catA !== catB)return catA - catB;
     }
-    return attentionScore(data[b],b,settings) - attentionScore(data[a],a,settings);
+    return scoreOf(b) - scoreOf(a);
   });
   return indices;
 }
@@ -831,8 +860,10 @@ function visibleIndices(data,settingsOverride = null){
 // ─── Search filtering ─── IMPURE: reads `searchQuery` and `homeTopicFilter`
 // globals from config.js. searchText() itself is pure and produces the
 // haystack; filtering happens here. In the RN port, pass these as args.
+// `locationRegistry` (optional) is a hoisted locationOptions() result —
+// otherwise every haystack re-normalizes the registry per habit.
 
-function searchText(h){
+function searchText(h,locationRegistry = null){
   const typeLabel = h.type === 'keepup' ? 'build routine keepup'
     : h.type === 'reduce' ? 'limit reduce less'
     : h.type === 'task' ? (isTimedTask(h) ? 'task appointment scheduled fixed time' : 'task todo one-off due someday')
@@ -851,11 +882,12 @@ function searchText(h){
     ...pref.weekdays.flatMap(day=>[weekdayShort(day),'preferred']),
     ...pref.monthDays.flatMap(day=>[String(day),'preferred'])
   ].join(' ');
-  return `${h.name || ''} ${h.emoji || ''} ${typeLabel} ${(h.topics || []).join(' ')} ${locationSearchNames(h)} ${scheduleText} ${dueText}`.toLowerCase();
+  return `${h.name || ''} ${h.emoji || ''} ${typeLabel} ${(h.topics || []).join(' ')} ${locationSearchNames(h,locationRegistry)} ${scheduleText} ${dueText}`.toLowerCase();
 }
 
-function locationSearchNames(h){
-  const registry = typeof locationOptions === 'function' ? locationOptions() : normalizeLocationRegistry((sortSettings || {}).locations);
+function locationSearchNames(h,registryOverride = null){
+  const registry = registryOverride
+    || (typeof locationOptions === 'function' ? locationOptions() : normalizeLocationRegistry((sortSettings || {}).locations));
   return normalizeLocationIds(h.locationIds,registry)
     .map(id=>{
       const loc = registry.find(l=>l.id === id);
@@ -877,8 +909,11 @@ function searchRank(h,query){
   return 5;
 }
 
-function filteredVisibleIndices(data){
-  const indices = visibleIndices(data);
+function filteredVisibleIndices(data,baseIndices = null){
+  // `baseIndices` (optional): a visibleIndices(data) result the caller already
+  // computed — render() needs the same order for its empty-state logic, so let
+  // it share one sort pass instead of running three.
+  const indices = baseIndices || visibleIndices(data);
   const query = searchQuery.trim().toLowerCase();
   const topic = typeof homeTopicFilter !== 'undefined' ? homeTopicFilter : 'all';
   const location = typeof homeLocationFilter !== 'undefined' ? homeLocationFilter : 'all';
@@ -890,8 +925,11 @@ function filteredVisibleIndices(data){
     base = base.filter(i=>matchesHomeLocation(data[i],location));
   }
   if(!query)return base;
+  // One registry for every haystack — searchText re-normalizes it per habit
+  // otherwise (registry lookups dominate search filtering at scale).
+  const searchRegistry = typeof locationOptions === 'function' ? locationOptions() : null;
   const matches = base
-    .filter(i=>searchText(data[i]).includes(query))
+    .filter(i=>searchText(data[i],searchRegistry).includes(query))
     .sort((a,b)=>{
       const ra = searchRank(data[a],query);
       const rb = searchRank(data[b],query);
@@ -903,7 +941,7 @@ function filteredVisibleIndices(data){
     .filter(({h})=>h.type === 'task' && isTaskDone(h))
     .filter(({h})=>!topic || topic === 'all' || typeof matchesHomeTopic !== 'function' || matchesHomeTopic(h,topic))
     .filter(({h})=>!location || location === 'all' || typeof matchesHomeLocation !== 'function' || matchesHomeLocation(h,location))
-    .filter(({h})=>searchText(h).includes(query))
+    .filter(({h})=>searchText(h,searchRegistry).includes(query))
     .sort(({h:a},{h:b})=>{
       const ra = searchRank(a,query);
       const rb = searchRank(b,query);
