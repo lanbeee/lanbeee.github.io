@@ -47,12 +47,29 @@ async function shareFetch(path, opts = {}){
   const headers = { 'Content-Type':'application/json' };
   if(opts.credential) headers.Authorization = `Bearer ${opts.credential}`;
   if(opts.ifMatch != null) headers['If-Match'] = `"${opts.ifMatch}"`;
-  const res = await fetch(`${shareWorkerBaseUrl()}${path}`, {
-    method:opts.method || 'GET',
-    headers,
-    body:opts.body != null ? JSON.stringify(opts.body) : undefined,
-    cache:'no-store'
-  });
+  // Optional deadline so a hung connection surfaces as a normal error instead
+  // of a forever-pending request. Ignored where AbortController is missing.
+  const controller = opts.timeoutMs && typeof AbortController === 'function'
+    ? new AbortController()
+    : null;
+  if(controller) setTimeout(()=>controller.abort(),opts.timeoutMs);
+  let res;
+  try{
+    res = await fetch(`${shareWorkerBaseUrl()}${path}`, {
+      method:opts.method || 'GET',
+      headers,
+      body:opts.body != null ? JSON.stringify(opts.body) : undefined,
+      cache:'no-store',
+      signal:controller ? controller.signal : undefined
+    });
+  }catch(error){
+    if(error && error.name === 'AbortError'){
+      const timeout = new Error('share_timeout');
+      timeout.timedOut = true;
+      throw timeout;
+    }
+    throw error;
+  }
   let payload = null;
   try{ payload = await res.json(); }
   catch(_){ payload = null; }

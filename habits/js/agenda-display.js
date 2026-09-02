@@ -21,6 +21,14 @@ const AGENDA_FONT_LEGACY = { small:90, medium:100, large:115 };
 const AGENDA_FIT_MIN = 85;
 const AGENDA_FIT_MAX = 100;
 const AGENDA_FIT_STEP = 1;
+// A mark-done tap renders the row done immediately but only pushes the
+// completion to the feed once this toast expires; tapping Undo cancels the
+// push entirely. One pending mark at a time — marking another row pushes the
+// previous one right away.
+const AGENDA_COMPLETION_UNDO_MS = 5000;
+// Upper bound for the delayed push itself: a hung connection must release the
+// row back into a tappable, error-marked state instead of spinning forever.
+const AGENDA_COMPLETION_TIMEOUT_MS = 15000;
 
 let _displayPollTimer = null;
 let _displayPairPollTimer = null;
@@ -32,6 +40,8 @@ let _displayClockTimer = null;
 let _displayTouchStart = null;
 let _displaySwipedAt = 0;
 let _displayWallpaperTaps = [];
+let _displayPendingCompletion = null;
+const _displaySavingRowIds = new Set();
 
 function clampDisplayFont(value){
   const stepped = Math.round(value / AGENDA_FONT_STEP) * AGENDA_FONT_STEP;
@@ -190,12 +200,15 @@ function setDisplayWallpaper(active,opts = {}){
 
 function displaySwipeFromTouch(dx,dy){
   if(Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.75) return;
-  _displaySwipedAt = Date.now();
   setAgendaMenuOpen(false);
   const wallpaper = $('agenda-wallpaper');
-  if(!wallpaper) return;
-  if(dx < 0 && wallpaper.hidden) setDisplayWallpaper(true);
-  else if(dx > 0 && !wallpaper.hidden) setDisplayWallpaper(false);
+  // A swipe left still tucks the agenda behind the night clock, but a swipe
+  // never brings it back — restoring the agenda deliberately requires three
+  // taps so a stray brush of the frame cannot flash it.
+  if(dx < 0 && wallpaper && wallpaper.hidden){
+    _displaySwipedAt = Date.now();
+    setDisplayWallpaper(true);
+  }
 }
 
 document.addEventListener('touchstart',event=>{
@@ -358,10 +371,17 @@ function renderDisplay(projection,meta,completedRowIds = []){
   if(updated) updated.textContent = displayAge(meta && meta.generatedAt,now);
   if(!projection || !Array.isArray(projection.days)){
     _displayProjection = null;
+    dropPendingDisplayCompletion();
     root.innerHTML = '<p class="agenda-empty">No agenda on this display yet.</p>';
     return;
   }
   _displayProjection = projection;
+  // The undo toast promises a push that must still be possible: if a refresh
+  // made the pending row unmarkable (paused, unpublished, day rolled over),
+  // drop it here so the row and the toast can never disagree.
+  if(_displayPendingCompletion && !displayMarkableRow(_displayPendingCompletion.rowId)){
+    dropPendingDisplayCompletion();
+  }
   const completed = new Set(Array.isArray(completedRowIds) ? completedRowIds : []);
   const tz = displayTimezone(projection.timezone);
   const title = $('agenda-title');
@@ -383,7 +403,9 @@ function renderDisplay(projection,meta,completedRowIds = []){
       const currentRow = current && row.start && row.end && now >= row.start && now < row.end;
       const nextRow = current && row.start && now < row.start;
       const canComplete = !meta?.paused && kind === 'item' && row.completable === true && day.dateKey <= todayKey;
-      const isComplete = canComplete && completed.has(row.rowId);
+      const isComplete = canComplete && (completed.has(row.rowId)
+        || (_displayPendingCompletion && _displayPendingCompletion.rowId === row.rowId)
+        || _displaySavingRowIds.has(row.rowId));
       return `<article class="agenda-row ${kind}${currentRow ? ' is-now' : ''}${nextRow ? ' is-next' : ''}${isComplete ? ' is-complete' : ''}">
         ${displayRowMark(row,kind,canComplete,isComplete)}
         <div class="agenda-row-copy">
@@ -409,12 +431,96 @@ function displayCompletionRow(rowId){
   return null;
 }
 
-async function completeSharedDisplayRow(rowId,button){
+function displayMarkableRow(rowId){
+  // Owner projections issue 16-hex row ids; validating here keeps the
+  // template-literal querySelectors downstream safe for any input.
+  const key = String(rowId || '');
+  if(!/^[0-9a-f]{16}$/.test(key)) return null;
   const enrolled = _displayFeed || displayReadEnrollment();
-  const target = displayCompletionRow(rowId);
-  if(!enrolled || !enrolled.deviceCredential || !target || target.row.completable !== true) return false;
+  const target = displayCompletionRow(key);
+  if(!enrolled || !enrolled.deviceCredential || !target || target.row.completable !== true) return null;
+  if(enrolled.meta && enrolled.meta.paused) return null;
   const tz = displayTimezone(_displayProjection && _displayProjection.timezone);
-  if(String(target.day.dateKey || '') > displayDateKey(Date.now(),tz)) return false;
+  if(String(target.day.dateKey || '') > displayDateKey(Date.now(),tz)) return null;
+  return target;
+}
+
+// The commit captures the enrollment before its network round-trip. If the
+// display de-paired or re-paired meanwhile, the enroll screen owns the UI —
+// persisting or re-rendering then would resurrect stale credentials.
+function displayAuthorizationMatches(candidate){
+  const current = _displayFeed || displayReadEnrollment();
+  return Boolean(current && candidate
+    && current.feedId === candidate.feedId
+    && current.deviceCredential === candidate.deviceCredential);
+}
+
+function showDisplayUndoToast(text){
+  const toast = $('agenda-undo');
+  const label = $('agenda-undo-text');
+  if(!toast || !label) return;
+  label.textContent = text;
+  toast.hidden = false;
+}
+
+function hideDisplayUndoToast(){
+  const toast = $('agenda-undo');
+  if(toast) toast.hidden = true;
+}
+
+function renderCurrentDisplay(){
+  const enrolled = _displayFeed || displayReadEnrollment();
+  renderDisplay(_displayProjection,enrolled && enrolled.meta || {},enrolled && enrolled.completionRowIds);
+}
+
+function dropPendingDisplayCompletion(){
+  const pending = _displayPendingCompletion;
+  if(!pending) return;
+  if(pending.timer) clearTimeout(pending.timer);
+  _displayPendingCompletion = null;
+  hideDisplayUndoToast();
+}
+
+// Tap-to-undo: the row reads as done right away, the push happens only when
+// the toast expires, and Undo restores the row without any request.
+function beginDisplayCompletion(rowId){
+  if(_displaySavingRowIds.has(rowId)) return; // push already in flight
+  const target = displayMarkableRow(rowId);
+  if(!target) return;
+  if(_displayPendingCompletion && _displayPendingCompletion.rowId !== rowId){
+    void commitDisplayCompletion(_displayPendingCompletion.rowId);
+  }else if(_displayPendingCompletion){
+    dropPendingDisplayCompletion();
+  }
+  _displayPendingCompletion = {
+    rowId,
+    timer:setTimeout(()=>void commitDisplayCompletion(rowId),AGENDA_COMPLETION_UNDO_MS)
+  };
+  renderCurrentDisplay();
+  showDisplayUndoToast(`Marked “${target.row.title || 'item'}” done`);
+}
+
+function cancelDisplayCompletion(){
+  const pending = _displayPendingCompletion;
+  if(!pending) return;
+  dropPendingDisplayCompletion();
+  renderCurrentDisplay();
+  document.querySelector(`[data-complete-row="${pending.rowId}"]`)?.focus({ preventScroll:true });
+}
+
+async function commitDisplayCompletion(rowId){
+  const pending = _displayPendingCompletion && _displayPendingCompletion.rowId === rowId
+    ? _displayPendingCompletion
+    : null;
+  if(pending) dropPendingDisplayCompletion();
+  const enrolled = _displayFeed || displayReadEnrollment();
+  const target = displayMarkableRow(rowId);
+  if(!enrolled || !enrolled.deviceCredential || !target){
+    renderCurrentDisplay();
+    return;
+  }
+  _displaySavingRowIds.add(rowId);
+  const button = document.querySelector(`[data-complete-row="${rowId}"]`);
   if(button){
     button.disabled = true;
     button.classList.add('is-saving');
@@ -436,24 +542,40 @@ async function completeSharedDisplayRow(rowId,button){
     await shareFetch(`/v1/agendas/${enrolled.feedId}/completions`,{
       method:'POST',
       credential:enrolled.deviceCredential,
-      body:{ completion:envelope }
+      body:{ completion:envelope },
+      timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
     });
-    const completionRowIds = [...new Set([...(enrolled.completionRowIds || []),rowId])].slice(-50);
-    const next = { ...enrolled,completionRowIds };
+    // Merge into the live enrollment, never the captured one: a refresh may
+    // have stored a newer revision or acknowledged other rows meanwhile.
+    // And if the display de-paired or re-paired while the push was in flight,
+    // the enroll screen owns the UI — stale credentials must not come back.
+    if(!displayAuthorizationMatches(enrolled)){
+      _displaySavingRowIds.delete(rowId);
+      return;
+    }
+    const stored = _displayFeed || displayReadEnrollment();
+    const base = Array.isArray(stored.completionRowIds) ? stored.completionRowIds : [];
+    const completionRowIds = [...new Set([...base,rowId])].slice(-50);
+    const next = { ...stored,completionRowIds };
     _displayFeed = next;
     displayWriteEnrollment(next);
+    _displaySavingRowIds.delete(rowId);
     renderDisplay(_displayProjection,next.meta || {},completionRowIds);
-    return true;
   }catch(error){
-    if(button){
-      button.disabled = false;
-      button.classList.remove('is-saving');
-      button.classList.add('is-error');
-      button.setAttribute('aria-label',error && error.status === 429 ? 'Please wait, then try marking done again' : `Try marking ${target.row.title || 'item'} done again`);
+    _displaySavingRowIds.delete(rowId);
+    // Same guard as the success path: never paint the agenda (or an error
+    // state) back over an enroll screen that appeared while we were in flight.
+    if(!displayAuthorizationMatches(enrolled)) return;
+    renderCurrentDisplay();
+    const failed = document.querySelector(`[data-complete-row="${rowId}"]`);
+    if(failed){
+      failed.disabled = false;
+      failed.classList.remove('is-saving');
+      failed.classList.add('is-error');
+      failed.setAttribute('aria-label',error && error.status === 429 ? 'Please wait, then try marking done again' : `Try marking ${target.row.title || 'item'} done again`);
     }
     if(error && (error.status === 401 || error.status === 410)) clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
     else if(error && error.status === 409) void refreshDisplay();
-    return false;
   }
 }
 
@@ -640,6 +762,8 @@ async function refreshDisplay(opts = {}){
 }
 
 function clearDisplayAuthorization(error){
+  dropPendingDisplayCompletion();
+  _displaySavingRowIds.clear();
   _displayFeed = null;
   displayWriteEnrollment(null);
   renderDisplay(null,{ error });
@@ -759,8 +883,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('agenda-pair-new')?.addEventListener('click',()=>void beginDisplayPairing('new'));
   $('agenda-root')?.addEventListener('click',event=>{
     const button = event.target.closest('[data-complete-row]');
-    if(button) void completeSharedDisplayRow(button.dataset.completeRow,button);
+    if(button) beginDisplayCompletion(button.dataset.completeRow);
   });
+  $('agenda-undo-button')?.addEventListener('click',()=>cancelDisplayCompletion());
   $('agenda-clear')?.addEventListener('click',()=>{
     stopDisplayPairing();
     _displayFeed = null;

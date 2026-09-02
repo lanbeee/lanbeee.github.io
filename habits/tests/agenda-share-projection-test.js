@@ -154,7 +154,15 @@ function assert(cond,msg){
   let publishedSnapshot = null;
   let agendaReads = 0;
   let completionRequest = null;
+  const completionRequests = [];
+  // Fake server state: completions stay queued until the owner acks them, and
+  // every agenda read returns the queue — that is what lets the display
+  // rebuild its completionRowIds after a refresh.
+  const serverCompletions = [];
+  let completionGate = null;
+  let completionResponseStatus = 201;
   let displayAuthorized = true;
+  let displayPaused = false;
   const workerUrl = await page.evaluate(()=>shareWorkerBaseUrl());
 
   await displayPage.route(`${workerUrl}/v1/agenda-pairings`,async route=>{
@@ -183,13 +191,19 @@ function assert(cond,msg){
       return;
     }
     route.fulfill({ status:200,contentType:'application/json',headers:{ ETag:'"1"' },body:JSON.stringify({
-      id:ownerFeed.feedId,status:'active',paused:false,revision:1,
-      sessionExpiresAt:Date.now() + 30 * 86400000,snapshot:publishedSnapshot,completions:[]
+      id:ownerFeed.feedId,status:'active',paused:displayPaused,revision:1,
+      sessionExpiresAt:Date.now() + 30 * 86400000,snapshot:publishedSnapshot,
+      completions:serverCompletions.map(envelope=>({ createdAt:Date.now(),envelope }))
     }) });
   });
-  await displayPage.route(`${workerUrl}/v1/agendas/${ownerFeed.feedId}/completions`,route=>{
+  await displayPage.route(`${workerUrl}/v1/agendas/${ownerFeed.feedId}/completions`,async route=>{
     completionRequest = route.request().postDataJSON();
-    route.fulfill({ status:201,contentType:'application/json',body:JSON.stringify({
+    completionRequests.push(completionRequest);
+    if(completionGate) await completionGate;
+    // A 201 queues the completion server-side even if the display never learns
+    // of it; a failure leaves the server queue untouched.
+    if(completionResponseStatus === 201) serverCompletions.push(completionRequest.completion);
+    route.fulfill({ status:completionResponseStatus,contentType:'application/json',body:JSON.stringify({
       operationId:completionRequest.completion.operationId,
       rowId:completionRequest.completion.logId,
       createdAt:Date.now()
@@ -304,9 +318,20 @@ function assert(cond,msg){
     const base = dayStart(now);
     weekSnapshotForExport = () => ({ optimized:false,days:[{
       dayBase:base,dayKey:dateKey(base),isToday:true,usedMinutes:30,remainingMinutes:0,
-      timeline:[{ kind:'scheduled',start:now + 3600000,end:now + 5400000,h:{
-        name:'Medication',emoji:'💊',hid:'med',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
-      }}]
+      timeline:[
+        { kind:'scheduled',start:now + 3600000,end:now + 5400000,h:{
+          name:'Medication',emoji:'💊',hid:'med',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
+        }},
+        { kind:'scheduled',start:now + 2 * 3600000,end:now + 2 * 3600000 + 1800000,h:{
+          name:'Water plants',emoji:'🌱',hid:'water',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
+        }},
+        { kind:'scheduled',start:now + 4 * 3600000,end:now + 4 * 3600000 + 1800000,h:{
+          name:'Tidy desk',emoji:'🧹',hid:'desk',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
+        }},
+        { kind:'scheduled',start:now + 6 * 3600000,end:now + 6 * 3600000 + 1800000,h:{
+          name:'Stretch back',emoji:'🧘',hid:'stretch',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
+        }}
+      ]
     }] });
   });
   assert(approvalRequest === null,'in-app scanning still requires explicit owner approval');
@@ -343,14 +368,159 @@ function assert(cond,msg){
 
   await displayPage.click('[data-complete-row]');
   await displayPage.waitForSelector('.agenda-mark.is-done');
+  const pendingUi = await displayPage.evaluate(() => ({
+    done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
+    toastVisible:!document.getElementById('agenda-undo').hidden,
+    toastText:document.getElementById('agenda-undo-text')?.textContent || '',
+    stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || 'null')?.completionRowIds || []
+  }));
+  assert(pendingUi.done && pendingUi.toastVisible && /Marked .+ done/.test(pendingUi.toastText)
+    && !pendingUi.stored.length && !completionRequest,
+    'marking done renders the row optimistically behind an undo toast and does not push yet');
+
+  await displayPage.click('#agenda-undo-button');
+  const undoneUi = await displayPage.evaluate(() => ({
+    done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
+    toastVisible:!document.getElementById('agenda-undo').hidden,
+    markable:Boolean(document.querySelector('[data-complete-row]')) && !document.querySelector('[data-complete-row]').disabled
+  }));
+  assert(!undoneUi.done && !undoneUi.toastVisible && undoneUi.markable && !completionRequest,
+    'tapping undo within the window restores the row and no completion is ever sent');
+
+  await displayPage.click('[data-complete-row]');
+  await displayPage.waitForSelector('.agenda-mark.is-done');
+  await displayPage.waitForTimeout(5600);
   const completionUi = await displayPage.evaluate(()=>({
     done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
     label:document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')?.getAttribute('aria-label'),
+    toastVisible:!document.getElementById('agenda-undo').hidden,
     stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || 'null')?.completionRowIds || []
   }));
   assert(completionRequest && completionRequest.completion.recordKind === 'agenda_completion','the display submits only an encrypted completion envelope');
   assert(completionRequest.completion.revision === 1 && completionRequest.completion.logId.length === 16,'the completion is bound to the current snapshot and opaque displayed row');
-  assert(completionUi.done && /is done/i.test(completionUi.label || '') && completionUi.stored.includes(completionRequest.completion.logId),'the shared display marks the accepted emoji tile done immediately and remembers it locally');
+  assert(completionUi.done && /is done/i.test(completionUi.label || '') && completionUi.stored.includes(completionRequest.completion.logId) && !completionUi.toastVisible,'once the undo window expires the display pushes the completion and keeps the row marked done');
+
+  // --- Undo robustness: flush, refresh races, pause, and de-pair races. ---
+  completionRequests.length = 0;
+  completionRequest = null;
+  const waitForRoute = async condition => {
+    for(let i = 0;i < 50;i++){
+      if(condition()) return true;
+      await displayPage.waitForTimeout(100);
+    }
+    return false;
+  };
+  const enrollmentKey = await displayPage.evaluate(
+    "typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3'"
+  );
+  const rowIds = await displayPage.evaluate(()=>[...document.querySelectorAll('[data-complete-row]')].map(b=>b.dataset.completeRow));
+  const undoState = () => displayPage.evaluate(key=>({
+    doneRows:document.querySelectorAll('.agenda-row.is-complete').length,
+    toastVisible:!document.getElementById('agenda-undo').hidden,
+    stored:JSON.parse(localStorage.getItem(key) || 'null')?.completionRowIds || []
+  }),enrollmentKey);
+
+  // Marking a second row must push the first one at once (one pending mark),
+  // and undoing the newest mark must leave exactly the flushed push behind.
+  await displayPage.click('.agenda-day article.agenda-row:nth-of-type(2) [data-complete-row]');
+  let robustnessState = await undoState();
+  assert(robustnessState.doneRows === 2 && robustnessState.toastVisible && !completionRequest,
+    'a second mark stays pending behind its own undo toast');
+  await displayPage.click('.agenda-day article.agenda-row:nth-of-type(3) [data-complete-row]');
+  assert(await waitForRoute(()=>completionRequests.length === 1) && completionRequest.completion.logId === rowIds[1],
+    'marking another row pushes the previous pending completion immediately');
+  robustnessState = await undoState();
+  assert(robustnessState.doneRows === 3 && robustnessState.toastVisible,'the flushed row stays done while the newest mark stays undoable');
+  await displayPage.click('#agenda-undo-button');
+  await displayPage.waitForTimeout(5600);
+  robustnessState = await undoState();
+  assert(completionRequests.length === 1 && robustnessState.doneRows === 2 && robustnessState.stored.length === 2 && !robustnessState.toastVisible,
+    'undoing the newest mark never pushes it while the flushed one stays pushed');
+
+  // A snapshot refresh during the undo window must keep the optimistic state
+  // and still push the completion bound to the same snapshot revision.
+  await displayPage.click('.agenda-day article.agenda-row:nth-of-type(4) [data-complete-row]');
+  await displayPage.evaluate(()=>refreshDisplay());
+  robustnessState = await undoState();
+  assert(robustnessState.doneRows === 3 && robustnessState.toastVisible,'a refresh during the undo window keeps the row marked and the toast up');
+  await displayPage.waitForTimeout(5600);
+  assert(await waitForRoute(()=>completionRequests.length === 2) && completionRequest.completion.logId === rowIds[3]
+    && completionRequest.completion.revision === 1 && (await undoState()).stored.length === 3,
+    'after a mid-window refresh the delayed push still carries the displayed row and snapshot revision');
+
+  // Pausing the display mid-window must drop the toast and never push.
+  await displayPage.click('.agenda-day article.agenda-row:nth-of-type(3) [data-complete-row]');
+  robustnessState = await undoState();
+  assert(robustnessState.doneRows === 4 && robustnessState.toastVisible,'the unmarked row accepts a fresh pending mark');
+  displayPaused = true;
+  await displayPage.evaluate(()=>refreshDisplay());
+  robustnessState = await undoState();
+  // A paused display renders every row view-only, so the dropped mark must
+  // also take the optimistic done styling with it.
+  assert(!robustnessState.toastVisible && robustnessState.doneRows === 0,'pausing the display drops a pending mark, its toast, and the done styling');
+  await displayPage.waitForTimeout(5600);
+  assert(completionRequests.length === 2,'a pending mark dropped by a pause is never pushed');
+  displayPaused = false;
+  await displayPage.evaluate(()=>refreshDisplay());
+  assert(await displayPage.evaluate(()=>Boolean(document.querySelector('.agenda-day article.agenda-row:nth-of-type(3) [data-complete-row]:not([disabled])'))),
+    'unpausing makes the dropped row markable again');
+
+  // Authorization cleared while the push is in flight: neither a 201 nor a
+  // failure may resurrect the cleared enrollment or repaint the agenda.
+  const enrollmentBeforeRace = await displayPage.evaluate(key=>localStorage.getItem(key),enrollmentKey);
+  const raceCheck = () => displayPage.evaluate(key=>({
+    enrollment:localStorage.getItem(key),
+    rows:document.querySelectorAll('.agenda-row').length,
+    toastVisible:!document.getElementById('agenda-undo').hidden
+  }),enrollmentKey);
+  for(const raceStatus of [500,201]){
+    completionResponseStatus = raceStatus;
+    const pushesBefore = completionRequests.length;
+    let gateRelease;
+    completionGate = new Promise(resolve=>{ gateRelease = resolve; });
+    await displayPage.click('.agenda-day article.agenda-row:nth-of-type(3) [data-complete-row]');
+    await displayPage.waitForTimeout(5600);
+    await displayPage.waitForSelector('.agenda-mark.is-saving');
+    assert(await waitForRoute(()=>completionRequests.length === pushesBefore + 1),'the delayed push is in flight');
+    await displayPage.evaluate(()=>{
+      window.__origBeginDisplayPairing = beginDisplayPairing;
+      beginDisplayPairing = async ()=>{};
+      clearDisplayAuthorization('reauth');
+    });
+    let raceState = await raceCheck();
+    assert(raceState.enrollment === null && raceState.rows === 0 && !raceState.toastVisible,'clearing authorization mid-push removes the enrollment and the agenda');
+    gateRelease();
+    completionGate = null;
+    await displayPage.waitForTimeout(300);
+    raceState = await raceCheck();
+    assert(raceState.enrollment === null && raceState.rows === 0,
+      `a push finishing ${raceStatus === 201 ? 'successfully' : 'in failure'} after de-pairing does not resurrect the enrollment or repaint the agenda`);
+    await displayPage.evaluate(()=>{ beginDisplayPairing = window.__origBeginDisplayPairing; });
+    await displayPage.evaluate(({ key,enrollment })=>{
+      localStorage.setItem(key,enrollment);
+      _displayFeed = JSON.parse(enrollment);
+      return refreshDisplay();
+    },{ key:enrollmentKey,enrollment:enrollmentBeforeRace });
+  }
+  completionResponseStatus = 201;
+  robustnessState = await undoState();
+  assert(robustnessState.doneRows === 4 && robustnessState.stored.length === 4 && !robustnessState.toastVisible,
+    `the display recovers normally once the enrollment is restored after the de-pair races (${JSON.stringify(robustnessState)})`);
+
+  // A hung push must hit the deadline and surface as a retryable error
+  // instead of leaving the row in the saving state forever.
+  await displayPage.route('**/hang-forever',()=>{});
+  const hungFetch = await displayPage.evaluate(async ()=>{
+    try{
+      await shareFetch('/v1/hang-forever',{ credential:'probe',timeoutMs:150 });
+      return { threw:false };
+    }catch(error){
+      return { threw:true,timedOut:Boolean(error && error.timedOut),code:error && error.message };
+    }
+  });
+  await displayPage.unroute('**/hang-forever');
+  assert(hungFetch.threw && hungFetch.timedOut && hungFetch.code === 'share_timeout',
+    `a hung push aborts at the deadline into a retryable error instead of pending forever (${JSON.stringify(hungFetch)})`);
 
   const displayPresentation = await displayPage.evaluate(() => {
     const rowTime = document.querySelector('.agenda-row time');
@@ -387,22 +557,31 @@ function assert(cond,msg){
   assert(displayPresentation.hiddenAfterTap && displayPresentation.stillHiddenAfterTwoTaps && displayPresentation.restoredAfterTripleTap && displayPresentation.wallpaperPreferenceCleared,
     'one tap hides the agenda and three taps on the night clock restore it and clear the persisted privacy screen');
 
-  const displaySwipe = await displayPage.evaluate(() => {
+  const displaySwipe = await displayPage.evaluate(async () => {
     if(typeof TouchEvent !== 'function' || typeof Touch !== 'function') return { skipped:true };
     const make = (x,y) => {
       try{ return new Touch({ identifier:1,target:document.body,clientX:x,clientY:y }); }
       catch(_){ return null; }
     };
-    const start = make(420,300);
-    const end = make(140,300);
-    if(!start || !end) return { skipped:true };
-    document.body.dispatchEvent(new TouchEvent('touchstart',{ touches:[start],bubbles:true }));
-    document.body.dispatchEvent(new TouchEvent('touchend',{ changedTouches:[end],bubbles:true }));
-    const nightShown = !document.getElementById('agenda-wallpaper').hidden && document.getElementById('agenda-page').hidden;
+    const swipe = (fromX,toX) => {
+      const start = make(fromX,300);
+      const end = make(toX,300);
+      if(!start || !end) return false;
+      document.body.dispatchEvent(new TouchEvent('touchstart',{ touches:[start],bubbles:true }));
+      document.body.dispatchEvent(new TouchEvent('touchend',{ changedTouches:[end],bubbles:true }));
+      return true;
+    };
+    if(!swipe(420,140)) return { skipped:true };
+    const wallpaper = document.getElementById('agenda-wallpaper');
+    const agendaPage = document.getElementById('agenda-page');
+    const nightShown = !wallpaper.hidden && agendaPage.hidden;
+    if(!swipe(140,420)) return { skipped:true };
+    const stillHiddenAfterSwipeRight = !wallpaper.hidden && agendaPage.hidden;
     setDisplayWallpaper(false,{ focus:false });
-    return { skipped:false,nightShown,restored:document.getElementById('agenda-wallpaper').hidden };
+    return { skipped:false,nightShown,stillHiddenAfterSwipeRight,restored:wallpaper.hidden };
   });
-  assert(displaySwipe.skipped || (displaySwipe.nightShown && displaySwipe.restored),'swiping left hides the agenda behind the night clock');
+  assert(displaySwipe.skipped || (displaySwipe.nightShown && displaySwipe.stillHiddenAfterSwipeRight && displaySwipe.restored),
+    'swiping left hides the agenda behind the night clock and a swipe never brings it back');
 
   const displaySettings = await displayPage.evaluate(() => {
     const storedBefore = JSON.parse(localStorage.getItem('tings_agenda_appearance_v1') || 'null');
