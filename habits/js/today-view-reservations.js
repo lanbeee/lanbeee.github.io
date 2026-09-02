@@ -227,8 +227,9 @@ function tryPlaceOnDay(state,fill,opts = {}){
   // reservationWindows and the chosen fit overlaps one, move the movable into the
   // nearest free gap touching no reservation (if such a gap exists). This keeps
   // the daily breakable whole while still placing the movable TODAY. Skip direct
-  // order links because they must stay adjacent to a partner. Loose sometime
-  // links may move within their valid side of the partner.
+  // order links because they must stay adjacent to a partner. For a loose
+  // predecessor, only steer outside when the successor can still follow there;
+  // otherwise an evening Work boundary can erase a harmless pre-successor gap.
   const directOrderConstrained = !!(fill && fill.h && fill.h.hid
     && typeof plannerOrderConstraintsForDay === 'function'
     && plannerOrderConstraintsForDay(state.dayBase).some(e=>
@@ -242,7 +243,11 @@ function tryPlaceOnDay(state,fill,opts = {}){
     && opts.reservationWindows.some(w=>bestFit.placeEnd > w.start && bestFit.placeStart < w.end)){
     const outsideFit = typeof placementFitOutsideReservations === 'function'
       ? placementFitOutsideReservations(state,fill,opts.reservationWindows) : null;
-    if(outsideFit)return outsideFit;
+    const orderCompatible = !outsideFit
+      || typeof outsideFitKeepsEarlySuccessors !== 'function'
+      || outsideFitKeepsEarlySuccessors(
+        state,fill,outsideFit,opts.reservationCandidates || []);
+    if(outsideFit && orderCompatible)return outsideFit;
   }
   return bestFit;
 }
@@ -434,6 +439,29 @@ function movableCapacityForDay(state,candidates){
   return Math.max(0,spare);
 }
 
+// PURE: broad daily-breakable windows are protected by the hard movable-capacity
+// rule, so do not also treat permitted spare as scarce-window damage. Without
+// this normalization Fast can assign a due 10m item tomorrow merely because its
+// harmless 25m gap happens to lie inside Work's 8:30–19:00 clock window. Narrow
+// non-breakable windows remain in the score, and an item larger than the spare
+// keeps the full penalty.
+function movableEffectiveScarceOverlapMs(fill,fit,state,candidates,scarceWindows){
+  const raw = fitOverlapWithWindows(fit,scarceWindows || []);
+  if(raw <= 0 || !fill || !fill.h || !state)return raw;
+  const candidate = {
+    h:fill.h,i:fill.i,pinned:fill.pinned === true,
+    priority:fill.priority,scarcity:fill.scarcity
+  };
+  if(!isMovableWeekCandidate(candidate))return raw;
+  const cap = movableCapacityForDay(state,candidates);
+  const dur = fillDurationMinutes(fill);
+  if(!Number.isFinite(cap) || dur > cap)return raw;
+  const reservations = dailyBreakableReservations(state,candidates);
+  if(!reservations.length)return raw;
+  const protectedOverlap = fitOverlapWithReservationsMs(fit,reservations);
+  return Math.max(0,raw - protectedOverlap);
+}
+
 // PURE: ms of overlap between a fit and the reservation windows (reuses the
 // existing fitOverlapWithWindows shape but maps reservation→window).
 function fitOverlapWithReservationsMs(fit,reservations){
@@ -538,6 +566,37 @@ function placementFitOutsideReservations(state,fill,reservationWindows){
   return all.length ? all[0] : null;
 }
 
+// PURE: an outside-reservation fit is only useful when it does not jump over a
+// loose, still-unplaced successor. Probe that successor against the current
+// state (which already contains any earlier/direct ancestors). This catches the
+// real chain Exercise → Shower plus Trash → Shower: after Exercise is committed,
+// steering Trash past Work's 19:00 boundary would put it after Shower's 17:45
+// earliest legal start and defeat the user's visible order promise.
+function outsideFitKeepsEarlySuccessors(state,fill,fit,candidates){
+  if(!state || !fill || !fill.h || !fill.h.hid || !fit)return true;
+  if(typeof plannerOrderConstraintsForDay !== 'function')return true;
+  const edges = plannerOrderConstraintsForDay(state.dayBase)
+    .filter(edge=>edge && edge.beforeHid === fill.h.hid);
+  if(!edges.length)return true;
+  const pool = Array.isArray(candidates) ? candidates : [];
+  for(const edge of edges){
+    const alreadyPlaced = (state.fills || []).some(entry=>entry && entry.fill
+      && entry.fill.h && entry.fill.h.hid === edge.afterHid);
+    if(alreadyPlaced)continue; // tryPlaceOnDay already applied the hard ceiling.
+    const successor = pool.find(c=>c && c.h && c.h.hid === edge.afterHid
+      && (!c.eligible || c.eligible.has(state.dayBase)));
+    if(!successor)continue;
+    const successorFill = {
+      h:successor.h,i:successor.i,priority:successor.priority,scarcity:successor.scarcity
+    };
+    const successorFit = tryPlaceOnDay(state,successorFill,{allowNetwork:false});
+    if(!successorFit)continue;
+    // Order rows tolerate at most the existing one-minute boundary fuzz.
+    if(fit.placeEnd > successorFit.placeStart + 60000)return false;
+  }
+  return true;
+}
+
 // PURE: does this movable have a feasible fit on `state` that overlaps NO daily-
 // breakable reservation window? Such a fit cannot breach any daily breakable's
 // target, so the candidate should place here today instead of deferring. This
@@ -554,7 +613,8 @@ function movableFitsOutsideReservations(c,state,candidates){
   const resWindows = reservations.flatMap(r=>breakableReservationWindows(r));
   if(!resWindows.length)return false;
   const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-  return !!placementFitOutsideReservations(state,fill,resWindows);
+  const outside = placementFitOutsideReservations(state,fill,resWindows);
+  return !!(outside && outsideFitKeepsEarlySuccessors(state,fill,outside,candidates));
 }
 
 // PURE: should the fast scarcity planner DEFER candidate `c` away from `state`

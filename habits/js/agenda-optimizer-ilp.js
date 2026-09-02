@@ -675,13 +675,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       && typeof placementFitsOutsideReservations === 'function'){
       const outside = placementFitsOutsideReservations(state,fill,reservationWindows);
       if(outside.length){
-        // Match Fast steering for a can-wait movable: when a clean today slot
-        // exists, do not let the earlier aggregate-spare option fragment Work
-        // and trigger the later hours-repair deferral.
-        if(deferrable && deferrable.has(c.i)){
-          fits = fits.filter(f=>!reservationWindows.some(w=>
-            f.placeEnd > w.start && f.placeStart < w.end));
-        }
+        // Keep the ordinary in-window options too. The reserve row below caps
+        // their aggregate footprint; deleting them here made an outside option
+        // look usable before order rows were known, then left no option at all
+        // when that outside fit was after a linked successor. GLPK can now use a
+        // harmless short gap while still preferring/limiting clean alternatives.
         const seen = new Set(fits.map(f=>f.placeStart+':'+f.placeEnd));
         for(const f of outside){
           const key = f.placeStart+':'+f.placeEnd;
@@ -1158,7 +1156,9 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
     if(typeof fastPathDefersMovable === 'function'
       && fastPathDefersMovable(c,state,pool,states))continue;
     let fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    const placeOpts = {allowNetwork:true,reservationWindows};
+    const placeOpts = {
+      allowNetwork:true,reservationWindows,reservationCandidates:pool
+    };
     if(doing && fill.h && fill.h.hid === doing.hid){
       placeOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
       const sessionMin = Math.max(1,Number(doing.sessionMinutes)

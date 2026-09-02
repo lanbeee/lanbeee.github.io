@@ -1569,6 +1569,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     const dayOffset = Math.max(0,Math.round((dayBase - dayStart(now)) / 86400000));
     week = snapshot || buildWeekAgenda(data,settings,Math.max(7,dayOffset + 1),{diagnostics:true});
     agenda = week.days.find(day=>day.dayBase === dayBase) || buildDayAgenda(data,settings,dayBase,{weekMode:true});
+    if(snapshot && typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
     diagnostics = snapshot
       ? diagnosticsFromRenderedDay(data,settings,agenda)
       : agenda.placementDiagnostics;
@@ -1579,6 +1580,11 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     timeline = buildTodayTimeline(agenda,now,{diagnostics:true});
     diagnostics = agenda.placementDiagnostics || {items:[],placedMinutes:0,travelMinutes:0};
   }
+  // buildWeekAgenda/buildTodayAgenda own and clear their solve caches. Rebind
+  // the on-demand audit to the exact data it is explaining so later gap probes
+  // cannot fall back to unrelated localStorage when the caller supplied a
+  // rendered snapshot (tests, imports, background Worker handoff).
+  if(typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
   const scheduledMinutes = (agenda.scheduled || []).reduce((sum,event)=>{
     const startTs = scheduledEventStart(event);
     if(startTs == null)return sum;
@@ -1658,25 +1664,66 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   },0);
 
   const eligibleSet = new Set(eligible);
+  const placedTodayHids = new Set(timeline
+    .filter(row=>row && row.kind === 'fill' && row.i != null && data[row.i] && data[row.i].hid)
+    .map(row=>data[row.i].hid));
+  const auditOrderEdges = typeof plannerOrderConstraintsForDay === 'function'
+    ? plannerOrderConstraintsForDay(dayBase,data) : [];
+  // An elsewhere assignment is not automatically a planner miss: flexible
+  // work can intentionally choose a better future day. It becomes critical
+  // when the occurrence is already due/urgent, or when its visible order
+  // partner is on this day, AND it can be inserted into the final agenda
+  // without moving any committed row. That last condition is supplied by the
+  // exact final-gap probe below (hard windows, travel, ordering and budget).
+  const criticalElsewhereReason = i=>{
+    const h = data[i];
+    if(!h)return '';
+    const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
+    if(Number(urgency) >= 100)return 'due work';
+    if(h.hid && auditOrderEdges.some(edge=>edge
+      && (edge.beforeHid === h.hid || edge.afterHid === h.hid)
+      && placedTodayHids.has(edge.beforeHid === h.hid ? edge.afterHid : edge.beforeHid))){
+      return 'linked work';
+    }
+    return '';
+  };
   const gapAudit = diagnostics.gapAudit || {openSlotMinutes:0,openGapMinutes:0,largestGapMinutes:0,gaps:[]};
   const placementGaps = (gapAudit.gaps || []).map(gap=>{
     const feasible = (gap.feasibleCandidateIndices || []).filter(i=>eligibleSet.has(i));
     const budgetLimited = (gap.budgetLimitedCandidateIndices || []).filter(i=>eligibleSet.has(i));
     const unassignedFeasible = feasible.filter(i=>!assignmentLabel(i));
+    const criticalAssigned = feasible.filter(i=>assignmentLabel(i) && criticalElsewhereReason(i));
     const status = unassignedFeasible.length
       ? 'missed'
-      : (feasible.length ? 'assigned-elsewhere' : (budgetLimited.length ? 'budget-capped' : 'no-fit'));
-    const candidateNames = (status === 'budget-capped' ? budgetLimited : feasible)
+      : (criticalAssigned.length
+        ? 'critical-miss'
+        : (feasible.length ? 'assigned-elsewhere' : (budgetLimited.length ? 'budget-capped' : 'no-fit')));
+    const namedIndices = status === 'budget-capped'
+      ? budgetLimited
+      : (status === 'critical-miss' ? criticalAssigned : feasible);
+    const candidateNames = namedIndices
       .slice(0,3)
       .map(i=>data[i] && data[i].name)
       .filter(Boolean);
     let explanation = 'no remaining eligible item satisfies this gap';
     if(status === 'missed')explanation = `${candidateNames.join(', ')} can still fit with current constraints`;
+    if(status === 'critical-miss'){
+      const details = criticalAssigned.slice(0,3).map(i=>{
+        const label = assignmentLabel(i);
+        const reason = criticalElsewhereReason(i);
+        return `${data[i] && data[i].name || 'item'} is ${reason}${label ? ` but was assigned ${label}` : ''}`;
+      });
+      explanation = `${details.join('; ')}; it fits here without moving any committed row`;
+    }
     if(status === 'assigned-elsewhere')explanation = `${candidateNames.join(', ')} fits here but was assigned to another day`;
     if(status === 'budget-capped')explanation = `${candidateNames.join(', ')} fits the clock gap, but not the remaining agenda budget`;
-    return {...gap,status,candidateNames,explanation};
+    return {...gap,status,candidateNames,criticalCandidateIndices:criticalAssigned,explanation};
   });
-  const missedOpportunityCount = placementGaps.filter(gap=>gap.status === 'missed').length;
+  const missedOpportunityCount = placementGaps.filter(
+    gap=>gap.status === 'missed' || gap.status === 'critical-miss').length;
+  const criticalMissCount = new Set(placementGaps
+    .filter(gap=>gap.status === 'critical-miss')
+    .flatMap(gap=>gap.criticalCandidateIndices || [])).size;
   const budgetCappedGapCount = placementGaps.filter(gap=>gap.status === 'budget-capped').length;
   const homeTimeline = Array.isArray(agenda.homeDisplayedTimeline)
     ? agenda.homeDisplayedTimeline
@@ -1748,7 +1795,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     agenda,agendaRows:traceAgendaRows,dayBase,dayEnd,rangeStart,rawBlocks,eligible,
     unplacedItems,plannerEngine,candidateMeta:traceCandidateMeta
   });
-  return {
+  const report = {
     generatedAt:now,
     usesRenderedSnapshot:Boolean(opts.weekMode && opts.weekSnapshot),
     dayBase,
@@ -1775,6 +1822,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     openGapMinutes:Math.max(0,Math.round(gapAudit.openGapMinutes || 0)),
     largestGapMinutes:Math.max(0,Math.round(gapAudit.largestGapMinutes || 0)),
     missedOpportunityCount,
+    criticalMissCount,
     budgetCappedGapCount,
     placementGaps,
     agendaRows,
@@ -1788,6 +1836,8 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     unplacedItems,
     blockedBreakdown:[...blockedByLabel.entries()].map(([label,minutes])=>({label,minutes}))
   };
+  if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
+  return report;
 }
 
 // PURE: mutable placement state for one day. Scheduled tasks are hard rows;
@@ -2271,7 +2321,11 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       coLocHint:opts.coLocHint != null ? opts.coLocHint : 0,
       dayOffsetPenalty:opts.dayOffsetPenalty != null ? opts.dayOffsetPenalty : 0,
       asapDelayMin:(fit.placeStart - earliest) / 60000,
-      scarceOverlapMs:fitOverlapWithWindows(fit,spare),
+      scarceOverlapMs:typeof movableEffectiveScarceOverlapMs === 'function'
+        && Array.isArray(opts.reservationCandidates)
+        ? movableEffectiveScarceOverlapMs(
+          fill,fit,state,opts.reservationCandidates,spare)
+        : fitOverlapWithWindows(fit,spare),
       preferencePenalty:prefPen,
       urgency,
       orderPenalty:orderConstraintPenalty(fill,fit,state)

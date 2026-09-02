@@ -2048,10 +2048,14 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   push(String(report.missedOpportunityCount));
   push(`${capacityMinutesLabel(report.largestGapMinutes)} largest open gap`);
   push('PLACEMENT AUDIT');
-  push(report.missedOpportunityCount > 0
+  push(report.criticalMissCount > 0
+    ? `${report.criticalMissCount} critical placement miss${report.criticalMissCount === 1 ? '' : 'es'}`
+    : report.missedOpportunityCount > 0
     ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
     : 'no unexplained placement gaps');
-  push(report.missedOpportunityCount > 0
+  push(report.criticalMissCount > 0
+    ? 'due or linked work can be inserted today without moving any committed row'
+    : report.missedOpportunityCount > 0
     ? 'eligible work still fits under the scheduler\'s current constraints'
     : (report.budgetCappedGapCount > 0
       ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
@@ -2100,6 +2104,7 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   push(String(report.placementGaps.length));
   const gapLabels = {
     missed:'COULD PLACE',
+    'critical-miss':'CRITICAL MISS',
     'assigned-elsewhere':'PLACED ELSEWHERE',
     'budget-capped':'BUDGET CAPPED',
     'no-fit':'NO ELIGIBLE FIT'
@@ -2278,10 +2283,14 @@ function renderDayCapacityScorecard(report){
     </div>`;
   const coverage = `${Math.round((Number(report.eligibleCoverage) || 0) * 100)}%`;
   const budgetUse = `${Math.round((Number(report.budgetUtilization) || 0) * 100)}%`;
-  const auditHeadline = report.missedOpportunityCount > 0
+  const auditHeadline = report.criticalMissCount > 0
+    ? `${report.criticalMissCount} critical placement miss${report.criticalMissCount === 1 ? '' : 'es'}`
+    : report.missedOpportunityCount > 0
     ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
     : 'no unexplained placement gaps';
-  const auditDetail = report.missedOpportunityCount > 0
+  const auditDetail = report.criticalMissCount > 0
+    ? 'due or linked work can be inserted today without moving any committed row'
+    : report.missedOpportunityCount > 0
     ? 'eligible work still fits under the scheduler\'s current constraints'
     : (report.budgetCappedGapCount > 0
       ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
@@ -2297,6 +2306,7 @@ function renderDayCapacityScorecard(report){
     ? report.placementGaps.map(gap=>{
       const labels = {
         missed:'could place',
+        'critical-miss':'critical miss',
         'assigned-elsewhere':'placed elsewhere',
         'budget-capped':'budget capped',
         'no-fit':'no eligible fit'

@@ -1,47 +1,47 @@
 {
   "status": "passed",
   "plannerMode": "smart",
-  "suites": "data",
-  "timestamp": "2026-09-02T17:46:51Z",
-  "durationSeconds": 44,
+  "suites": "planner,ui,data,integrations",
+  "timestamp": "2026-09-02T21:06:07Z",
+  "durationSeconds": 397,
   "files": {
-    "passed": 6,
+    "passed": 74,
     "failed": 0,
-    "executions": 6
+    "executions": 74
   },
   "assertions": {
-    "ok": 221,
+    "ok": 2700,
     "notOk": 0,
-    "total": 221
+    "total": 2700
   },
   "pageErrors": 0,
   "failedTests": [],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260902-134607-82690.log",
+    "stamped": "test-results/run-20260902-165930-11222.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
     "status": "passed",
     "plannerMode": "smart",
     "suites": "data",
-    "timestamp": "2026-09-02T13:13:29Z",
-    "durationSeconds": 43,
+    "timestamp": "2026-09-02T17:46:51Z",
+    "durationSeconds": 44,
     "files": {
       "passed": 6,
       "failed": 0,
       "executions": 6
     },
     "assertions": {
-      "ok": 220,
+      "ok": 221,
       "notOk": 0,
-      "total": 220
+      "total": 221
     },
     "pageErrors": 0,
     "failedTests": [],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260902-091246-64361.log",
+      "stamped": "test-results/run-20260902-134607-82690.log",
       "failedDir": "test-results/failed"
     }
   }

@@ -300,6 +300,7 @@
 .capacity-gap-result strong{color:var(--text2);font-size:10px;text-transform:uppercase;}
 .capacity-gap-result small{margin-top:3px;color:var(--text3);font-size:11px;line-height:1.3;overflow-wrap:anywhere;}
 .capacity-gap.missed .capacity-gap-result strong{color:var(--red-text);}
+.capacity-gap.critical-miss .capacity-gap-result strong{color:var(--red-text);font-weight:900;}
 .capacity-gap.budget-capped .capacity-gap-result strong{color:var(--amber-text);}
 .capacity-gap.assigned-elsewhere .capacity-gap-result strong{color:var(--blue-text);}
 .capacity-unplaced{margin-top:7px;}

@@ -902,7 +902,8 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           weights,
           urgency:c.urgency,
           dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,pinned),
-          reservationWindows:resWindows
+          reservationWindows:resWindows,
+          reservationCandidates:candidates
         };
         if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
           dayOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
@@ -985,7 +986,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           coLocHint,
           dayOffsetPenalty:dayOpts.dayOffsetPenalty,
           asapDelayMin:0,
-          scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
+          scarceOverlapMs:typeof movableEffectiveScarceOverlapMs === 'function'
+            ? movableEffectiveScarceOverlapMs(
+              fill,fitProbe,state,candidates,dayOpts.spareWindows || [])
+            : fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
           preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
           urgency:c.urgency
         };
@@ -1270,7 +1274,10 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
         && typeof breakableReservationWindows === 'function')
         ? dailyBreakableReservations(state,deferPool).flatMap(r=>breakableReservationWindows(r))
         : [];
-      const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true,reservationWindows:resWindows});
+      const fit = tryPlaceOnDay(state,fill,{
+        settings,allowNetwork:true,reservationWindows:resWindows,
+        reservationCandidates:deferPool
+      });
       if(!fit)continue;
       commitPlacement(state,fill,fit);
       state.day.agendaItems.push({

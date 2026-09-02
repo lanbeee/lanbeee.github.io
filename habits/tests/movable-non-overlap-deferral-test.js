@@ -21,6 +21,7 @@
 //   [5]  CONTROL no-evening (windowedSettings) → movable still DEFERS (legit)
 //   [6]  two movables both fit evening → both place TODAY (chain in the gap)
 //   [7]  loose before-Dinner link still uses the clean evening gap
+//   [8]  in-window short gap before linked successor stays available; audit is critical
 //
 const {
   chromium, BASE, atTime, baseHabit:base,
@@ -243,6 +244,124 @@ function assert(cond, msg){
       assert(minutesOnDay(r,0,'Water Plants') >= 30, `${label}: Water Plants placed TODAY (got ${minutesOnDay(r,0,'Water Plants')})`);
       assert(minutesOnDay(r,0,'Work') >= 300, `${label}: Work not shorted with two movables (got ${minutesOnDay(r,0,'Work')})`);
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // [8] Exact production semantics without personal data. Work needs 51m with
+  // a 45m minimum chunk; Exercise/Shower begin at 17:00, leaving only a 25m
+  // pre-chain gap. A 10m sparse movable ordered before Shower belongs in that
+  // otherwise-unusable sliver. GLPK used to delete every in-Work-window option
+  // merely because an after-19:00 option existed, then the order row rejected
+  // that late option. Fast steering had the matching risk. A deliberately bad
+  // rendered snapshot also verifies that the audit treats this dominated,
+  // due-today deferral as a critical miss rather than "placed elsewhere".
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[8] short pre-successor gap places today; bad snapshot audits critical');
+  {
+    const now = atTime(16,33);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const homeSettings = openEveningSettings({blockedTimes:[
+      {label:'sleep',days:[],start:0,end:420},
+      {label:'night',days:[],start:1320,end:1440}
+    ]});
+    const data = [
+      base({
+        hid:'long-event',name:'Committed afternoon',type:'task',target:null,
+        eventTime:todayBase + 420*60000,durationMinutes:573,priority:0
+      }),
+      base({
+        hid:'work',name:'Work',type:'keepup',target:1,priority:0,
+        durationMinutes:360,breakable:true,minChunkMinutes:45,
+        allowedTimeStart:510,allowedTimeEnd:1140,
+        lastLog:todayBase + 510*60000,
+        logs:[{ts:todayBase + 510*60000,minutes:309}]
+      }),
+      base({
+        hid:'exercise',name:'Exercise',type:'keepup',target:1,priority:1,
+        durationMinutes:45,allowedTimeStart:1020,allowedTimeEnd:1065,
+        lastLog:todayBase - 86400000,logs:[todayBase - 86400000]
+      }),
+      base({
+        hid:'shower',name:'Shower',type:'keepup',target:1,priority:1,
+        durationMinutes:5,allowedTimeStart:1065,allowedTimeEnd:1070,
+        lastLog:todayBase - 86400000,logs:[todayBase - 86400000],
+        scheduleLinks:[{
+          anchorHid:'exercise',direction:'after',adjacency:'direct',requireSameDay:true
+        }]
+      }),
+      base({
+        hid:'trash',name:'Throw Trash',type:'reduce',target:3.5,priority:2,
+        durationMinutes:10,lastLog:todayBase - 4*86400000,
+        logs:[todayBase - 4*86400000],
+        scheduleLinks:[{
+          anchorHid:'shower',direction:'before',adjacency:'sometime',requireSameDay:false
+        }]
+      })
+    ];
+    const res = await runBoth(data,homeSettings,now);
+    for(const [label,r] of [['glpk',res.glpk],['fast',res.fast]]){
+      if(label === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
+      assert(!r.error,`${label}: linked short-gap week builds without error ${r.error || ''}`);
+      assert(minutesOnDay(r,0,'Throw Trash') === 10,
+        `${label}: Throw Trash uses today's pre-Shower sliver (got ${minutesOnDay(r,0,'Throw Trash')}; ${JSON.stringify(r.days)})`);
+      assert(minutesOnDay(r,0,'Work') === 51,
+        `${label}: exact remaining Work deficit is preserved (got ${minutesOnDay(r,0,'Work')})`);
+      assert(minutesOnDay(r,0,'Exercise') === 45 && minutesOnDay(r,0,'Shower') === 5,
+        `${label}: linked Exercise/Shower chain remains intact`);
+    }
+
+    const audit = await page.evaluate(({data,settings,now,todayBase})=>{
+      const RealDate = Date;
+      function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(now); }
+      FrozenDate.now = ()=>now;
+      FrozenDate.parse = RealDate.parse;
+      FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate,RealDate);
+      FrozenDate.prototype = RealDate.prototype;
+      globalThis.Date = FrozenDate;
+      try{
+        const week = buildWeekAgenda(data,{...settings,agendaOptimizer:false},7);
+        const trashIndex = data.findIndex(h=>h.hid === 'trash');
+        const today = week.days[0];
+        const trashRow = (today.timeline || []).find(row=>row.kind === 'fill' && row.i === trashIndex);
+        if(!trashRow)return {error:'planner did not produce the control Trash row'};
+        const minutes = Math.round((trashRow.end - trashRow.start) / 60000);
+        today.timeline = today.timeline.filter(row=>row !== trashRow);
+        today.homeDisplayedTimeline = (today.homeDisplayedTimeline || today.timeline)
+          .filter(row=>!(row.kind === 'fill' && row.i === trashIndex));
+        today.agendaItems = (today.agendaItems || []).filter(item=>item.i !== trashIndex);
+        today.usedMinutes = Math.max(0,(today.usedMinutes || 0) - minutes);
+        today.remainingMinutes = Math.max(0,(today.totalMinutes || 0) - today.usedMinutes);
+        const tomorrow = week.days[1];
+        if(!(tomorrow.timeline || []).some(row=>row.kind === 'fill' && row.i === trashIndex)){
+          const start = tomorrow.dayBase + 420*60000;
+          tomorrow.timeline = [...(tomorrow.timeline || []),{
+            ...trashRow,start,end:start + 10*60000
+          }];
+          tomorrow.homeDisplayedTimeline = tomorrow.timeline;
+        }
+        week.optimized = true;
+        const report = buildDayCapacityScorecard(data,settings,todayBase,now,{
+          weekMode:true,weekSnapshot:week
+        });
+        return {
+          criticalMissCount:report.criticalMissCount,
+          missedOpportunityCount:report.missedOpportunityCount,
+          statuses:report.placementGaps.map(gap=>gap.status),
+          explanations:report.placementGaps.map(gap=>gap.explanation),
+          text:formatDayCapacityScorecardText(report,'today agenda audit','synthetic bad snapshot')
+        };
+      }finally{
+        globalThis.Date = RealDate;
+      }
+    },{data,settings:homeSettings,now,todayBase});
+    assert(!audit.error,`audit control builds (${audit.error || 'ok'})`);
+    assert(audit.criticalMissCount > 0 && audit.missedOpportunityCount > 0
+      && audit.statuses.includes('critical-miss'),
+    `audit promotes the due elsewhere assignment to a critical miss: ${JSON.stringify(audit)}`);
+    assert((audit.explanations || []).some(text=>text.includes('without moving any committed row'))
+      && audit.text.includes('CRITICAL MISS'),
+    'audit explains why the elsewhere assignment is a dominated placement');
   }
 
   // ════════════════════════════════════════════════════════════════════════
