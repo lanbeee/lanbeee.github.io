@@ -330,39 +330,47 @@ function optimizerWindowsForCandidate(candidate,state){
 // anchor-preserving choice for an anywhere-allowed habit.
 function optimizerLocationVariants(fill,state){
   if(!fill || !fill.h || !state)return [undefined];
-  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill.h);
-  const ids = optionMode
+  const ids = typeof habitLocationIdsForDay === 'function'
     ? habitLocationIdsForDay(fill.h,state.dayBase,state.registry || [])
     : (typeof normalizeLocationIds === 'function'
       ? normalizeLocationIds(fill.h.locationIds,state.registry || [])
       : (Array.isArray(fill.h.locationIds) ? fill.h.locationIds.filter(Boolean) : []));
   if(!ids.length)return [null];
-  const anywhereAllowed = optionMode
-    ? habitHasAnywhereScheduleOptionForDay(fill.h,state.dayBase)
-    : fill.h.anywhereAllowed;
+  const anywhereAllowed = typeof habitHasAnywhereForDay === 'function'
+    ? habitHasAnywhereForDay(fill.h,state.dayBase,state.registry || [])
+    : Boolean(fill.h.anywhereAllowed);
   return anywhereAllowed ? [null,...ids] : ids;
 }
 
 function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
   const out = [];
-  const seen = new Set();
-  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill && fill.h);
-  const variants = optionMode
-    ? habitScheduleOptionsForDay(fill.h,state.dayBase).map(option=>({
-      ...fill,
-      h:{...fill.h,scheduleOptions:[option]},
-      locationId:option.locationId,
-      _scheduleOptionBound:true
-    }))
+  const seen = new Map();
+  const variants = typeof habitSchedulePlacementVariants === 'function'
+    ? habitSchedulePlacementVariants(fill,state.dayBase,state.registry)
+    : null;
+  const locatedFills = variants
+    ? variants.flatMap(variant=>{
+      if(Object.prototype.hasOwnProperty.call(variant,'locationId') && variant.locationId !== undefined){
+        return [variant];
+      }
+      return optimizerLocationVariants(variant,state).map(locationId=>({...variant,locationId}));
+    })
     : optimizerLocationVariants(fill,state).map(locationId=>({...fill,locationId}));
-  for(const locatedFill of variants){
+  for(const locatedFill of locatedFills){
     for(const fit of listPlaceFitsOnDay(
       state,locatedFill,dayCandidates,candidateBoundaryEdges
     )){
       const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
-      if(seen.has(key))continue;
-      seen.add(key);
-      out.push(fit);
+      if(!seen.has(key)){
+        seen.set(key,out.length);
+        out.push(fit);
+        continue;
+      }
+      // A specific row may overlap the general window at the same place and
+      // time. Keep the better-scored fit so its per-instance preference is not
+      // erased merely because the general variant was enumerated first.
+      const index = seen.get(key);
+      if((Number(fit.score) || 0) < (Number(out[index].score) || 0))out[index] = fit;
     }
   }
   return out;

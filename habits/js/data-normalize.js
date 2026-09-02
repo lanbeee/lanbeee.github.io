@@ -319,14 +319,13 @@ function normalize(items){
       ? habitScheduleOptionLocationState(raw.scheduleOptions)
       : {options:[],locationIds:[],anywhereAllowed:false};
     const scheduleOptions = optionLocationState.options;
-    const locationIds = scheduleOptions.length
-      ? optionLocationState.locationIds
-      : normalizeLocationIds(raw.locationIds);
-    const anywhereAllowed = scheduleOptions.length
-      ? optionLocationState.anywhereAllowed
-      : (raw.anywhereAllowed == null ? locationIds.length === 0 : Boolean(raw.anywhereAllowed));
-    const locationPrefs = normalizeLocationPrefs(raw.locationPrefs, locationIds, raw.preferredLocationId);
-    const preferredLocationId = primaryPreferredLocationId(locationPrefs, locationIds);
+    const locationIds = normalizeLocationIds(raw.locationIds);
+    const anywhereAllowed = raw.anywhereAllowed == null ? locationIds.length === 0 : Boolean(raw.anywhereAllowed);
+    const prefIds = typeof habitPrefLocationIds === 'function'
+      ? habitPrefLocationIds({locationIds,scheduleOptions})
+      : locationIds;
+    const locationPrefs = normalizeLocationPrefs(raw.locationPrefs, prefIds, raw.preferredLocationId);
+    const preferredLocationId = primaryPreferredLocationId(locationPrefs, prefIds);
     const isRhythmHabit = type === 'keepup' || type === 'reduce';
     const breakable = Boolean(raw.breakable);
     // Stable habit id. Used by other habits' time anchors ("habit B's window opens
@@ -402,27 +401,6 @@ function normalize(items){
       source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,
       importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
     };
-    // Option mode owns the complete hard day/time/place schedule. Discard
-    // hidden simple-mode constraints during normalization so imported/test
-    // data cannot carry two contradictory sources of truth.
-    if(scheduleOptions.length){
-      h.allowedWeekdays = [];
-      h.allowedMonthDays = [];
-      h.allowedTimeStart = null;
-      h.allowedTimeEnd = null;
-      for(const field of ['allowedTimeStart','allowedTimeEnd']){
-        h[field + 'Anchor'] = null;
-        h[field + 'OffsetMin'] = 0;
-        h[field + 'AnchorHabitId'] = null;
-        h[field + 'Combine'] = null;
-        h[field + 'Anchor2'] = null;
-        h[field + 'OffsetMin2'] = 0;
-        h[field + 'AnchorHabitId2'] = null;
-        h[field + 'FixedMin2'] = null;
-        h[field + 'DayOffset'] = 0;
-        h[field + 'DayOffset2'] = 0;
-      }
-    }
     // Only zero-offset, uncombined start anchors have an exact planner-order
     // equivalent. Move those out of Dynamic timing; preserve all other habit
     // expressions as explicit legacy completion-trigger timing.

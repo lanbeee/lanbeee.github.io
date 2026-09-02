@@ -125,7 +125,7 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
- * @property {{weekdays:number[],start:number,end:number,locationId:string|null}[]} scheduleOptions — alternative habit-level weekday/time/place windows; duplicate locations are allowed
+ * @property {{weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high'}[]} scheduleOptions — specific extra weekday/time/place windows; fixed or prayer-relative endpoints extend the general allowed schedule. Duplicate locations are allowed. Optional pref overrides locationPrefs for that instance.
  *
  * — LinkFields (optional, on every type) —
  * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and fires on card double tap

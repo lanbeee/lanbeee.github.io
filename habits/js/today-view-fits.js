@@ -170,7 +170,21 @@ function fillTimeWindow(h,dayBase,contextLocId){
   if(!hasTimeWindow(h))return null;
   if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
     const windows = fillDayWindows(h,dayBase,contextLocId);
-    if(!windows || !windows.length)return null;
+    if(!windows || !windows.length){
+      if(typeof hasGeneralAllowedSchedule === 'function' && hasGeneralAllowedSchedule(h)
+        && typeof hasSimpleAllowedTimeWindow === 'function' && hasSimpleAllowedTimeWindow(h)
+        && typeof isDateEligibleForGeneralSchedule === 'function'
+        && isDateEligibleForGeneralSchedule(h,dayBase)){
+        const startMin = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
+        const endMin = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
+        if(startMin == null || endMin == null)return null;
+        const start = dayBase + startMin * 60000;
+        let end = dayBase + endMin * 60000;
+        if(end <= start)end += 24 * 3600000;
+        return {start,end};
+      }
+      return null;
+    }
     return {
       start:windows.reduce((min,win)=>Math.min(min,win.start),windows[0].start),
       end:windows.reduce((max,win)=>Math.max(max,win.end),windows[0].end)
@@ -190,24 +204,17 @@ function fillTimeWindow(h,dayBase,contextLocId){
 // midnight→end (the tail opened yesterday) and start→midnight (today's
 // opening). This is the day-bounded counterpart to fillTimeWindow(), whose
 // continuous start→next-day span remains useful for display/scoring.
-function fillDayWindows(h,dayBase,contextLocId){
-  if(!hasTimeWindow(h))return null;
-  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
-    const options = habitScheduleOptionsForDay(h,dayBase);
-    const dayEnd = dayBase + 24 * 3600000;
-    const intervals = [];
-    for(const option of options){
-      if(option.end === option.start){
-        intervals.push({start:dayBase,end:dayEnd});
-      }else if(option.end > option.start){
-        intervals.push({start:dayBase + option.start * 60000,end:dayBase + option.end * 60000});
-      }else{
-        intervals.push({start:dayBase,end:dayBase + option.end * 60000});
-        intervals.push({start:dayBase + option.start * 60000,end:dayEnd});
-      }
-    }
-    return mergeIntervals(intervals.filter(win=>win.end > win.start));
-  }
+function fillClockWindowOnDay(startMin,endMin,dayBase){
+  const dayEnd = dayBase + 24 * 3600000;
+  if(endMin === startMin)return [{start:dayBase,end:dayEnd}];
+  if(endMin > startMin)return [{start:dayBase + startMin * 60000,end:dayBase + endMin * 60000}];
+  return [
+    {start:dayBase,end:dayBase + endMin * 60000},
+    {start:dayBase + startMin * 60000,end:dayEnd}
+  ].filter(win=>win.end > win.start);
+}
+
+function fillSimpleDayWindows(h,dayBase,contextLocId){
   const rawStart = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
   const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
   if(rawStart == null || rawEnd == null)return null;
@@ -217,16 +224,43 @@ function fillDayWindows(h,dayBase,contextLocId){
   const startMin = folded.startMin;
   const endMin = folded.endMin;
   if(!Number.isFinite(startMin) || !Number.isFinite(endMin))return null;
-  const dayEnd = dayBase + 24 * 3600000;
-  if(endMin > startMin){
-    return [{start:dayBase + startMin * 60000,end:dayBase + endMin * 60000}];
+  return fillClockWindowOnDay(startMin,endMin,dayBase);
+}
+
+function fillOptionDayWindows(h,dayBase,contextLocId){
+  const options = habitScheduleOptionsForDay(h,dayBase);
+  const intervals = [];
+  for(const option of options){
+    const bound = typeof habitBoundToScheduleOption === 'function'
+      ? habitBoundToScheduleOption(h,option) : h;
+    const windows = fillSimpleDayWindows(bound,dayBase,option.locationId || contextLocId);
+    if(windows)intervals.push(...windows);
   }
-  // Preserve the existing equal-endpoint meaning (a 24-hour window).
-  if(endMin === startMin)return [{start:dayBase,end:dayEnd}];
-  return [
-    {start:dayBase,end:dayBase + endMin * 60000},
-    {start:dayBase + startMin * 60000,end:dayEnd}
-  ].filter(win=>win.end > win.start);
+  return intervals;
+}
+
+function fillDayWindows(h,dayBase,contextLocId){
+  if(!hasTimeWindow(h))return null;
+  const intervals = [];
+  if(typeof hasGeneralAllowedSchedule === 'function'
+    && hasGeneralAllowedSchedule(h)
+    && typeof isDateEligibleForGeneralSchedule === 'function'
+    && isDateEligibleForGeneralSchedule(h,dayBase)
+    && typeof hasSimpleAllowedTimeWindow === 'function'
+    && hasSimpleAllowedTimeWindow(h)){
+    const general = fillSimpleDayWindows(h,dayBase,contextLocId);
+    if(general)intervals.push(...general);
+  }
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+    intervals.push(...fillOptionDayWindows(h,dayBase,contextLocId));
+    if(intervals.length)return mergeIntervals(intervals.filter(win=>win.end > win.start));
+    if(typeof hasGeneralAllowedSchedule === 'function' && hasGeneralAllowedSchedule(h)
+      && typeof hasSimpleAllowedTimeWindow === 'function' && !hasSimpleAllowedTimeWindow(h)){
+      return null;
+    }
+    return intervals.length ? mergeIntervals(intervals.filter(win=>win.end > win.start)) : [];
+  }
+  return fillSimpleDayWindows(h,dayBase,contextLocId);
 }
 
 // PURE: the soft preferred-time anchor for a fill item today, or null.
@@ -277,8 +311,7 @@ function windowStillDoableToday(h,now = Date.now()){
   const weekday = new Date(now).getDay();
   const settings = (sortSettings || loadSortSettings());
   const registry = normalizeLocationRegistry(settings.locations);
-  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
-  const locIds = optionMode
+  const locIds = typeof habitLocationIdsForDay === 'function'
     ? habitLocationIdsForDay(h,dayBase,registry)
     : normalizeLocationIds(h.locationIds,registry);
   const dayEnd = dayBase + 24 * 3600000;
@@ -290,20 +323,16 @@ function windowStillDoableToday(h,now = Date.now()){
     if(b.end <= from || b.start >= to)return sum;
     return sum + (Math.min(b.end,to) - Math.max(b.start,from));
   },0);
-  const anywhereToday = optionMode
-    ? habitHasAnywhereScheduleOptionForDay(h,dayBase)
+  const anywhereToday = typeof habitHasAnywhereForDay === 'function'
+    ? habitHasAnywhereForDay(h,dayBase,registry)
     : h.anywhereAllowed;
-  if(anywhereToday || (!optionMode && !locIds.length)){
+  if(anywhereToday || !locIds.length){
     if(!hasTimeWindow(h)){
       // No restriction: count time left today minus any blocked span.
       const remaining = dayEnd - now - blockedMsIn(now,dayEnd);
       if(remaining >= cost)return true;
     }else{
-      const windows = optionMode
-        ? effectiveLocationWindow(h,null,weekday,dayBase).map(iv=>({
-          start:dayBase + iv.start * 60000,end:dayBase + iv.end * 60000
-        }))
-        : fillDayWindows(h,dayBase);
+      const windows = fillDayWindows(h,dayBase);
       if(!windows)return true;
       if(windows.some(win=>{
         const from = Math.max(now,win.start);
@@ -449,13 +478,12 @@ function outboundLeaveByMs(state,fromLocId,afterTs,opts = {}){
 // items return null (no travel, anchor unchanged). When several are allowed,
 // prefer high/little preference, avoid last, then cheapest travel from anchor.
 function pickHabitLocationId(h,anchorId,registry,mode,dayBase = dayStart(Date.now())){
-  const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
-  const ids = optionMode
+  const ids = typeof habitLocationIdsForDay === 'function'
     ? habitLocationIdsForDay(h,dayBase,registry)
     : normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return null;
-  const anywhereAllowed = optionMode
-    ? habitHasAnywhereScheduleOptionForDay(h,dayBase)
+  const anywhereAllowed = typeof habitHasAnywhereForDay === 'function'
+    ? habitHasAnywhereForDay(h,dayBase,registry)
     : h.anywhereAllowed;
   if(ids.length === 1 && !anywhereAllowed)return ids[0];
   let best = null;
@@ -1947,7 +1975,14 @@ function windowSlackMinutes(h,dayState,contextLocId){
   const loc = contextLocId != null ? contextLocId : dayState.seedLocId;
   let win = null;
   if(typeof hasTimeWindow === 'function' && hasTimeWindow(h)){
-    if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
+    if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)
+      && typeof hasGeneralAllowedSchedule === 'function'
+      && hasGeneralAllowedSchedule(h)
+      && typeof hasSimpleAllowedTimeWindow === 'function'
+      && hasSimpleAllowedTimeWindow(h)){
+      win = fillTimeWindow(habitBoundToGeneralSchedule
+        ? habitBoundToGeneralSchedule(h) : h,dayState.dayBase,loc);
+    }else if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
       const windows = fillDayWindows(h,dayState.dayBase,loc) || [];
       const duration = clampDuration(h.durationMinutes);
       const slacks = windows
@@ -1955,7 +1990,7 @@ function windowSlackMinutes(h,dayState,contextLocId){
         .filter(slack=>slack >= 0);
       return slacks.length ? Math.min(...slacks) : 0;
     }
-    win = fillTimeWindow(h,dayState.dayBase,loc);
+    if(!win)win = fillTimeWindow(h,dayState.dayBase,loc);
   }else if(typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(h)){
     win = fillPreferredWindow(h,dayState.dayBase,loc);
   }

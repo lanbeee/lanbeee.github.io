@@ -168,10 +168,9 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
 }
 
-// RENDER: in availability-option mode, places are chosen by the coupled rows.
-// The shared chip row then edits only the soft preference among those places;
-// hiding add/anywhere/off chips prevents a second, conflicting allowed-place
-// control from appearing elsewhere in the detail sheet.
+// RENDER: allowed view edits which places are valid for the general time
+// window. Preferred view ranks those places. Specific option rows carry their
+// own place and optional preference.
 function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(wrap && wrap.id)){
   if(!wrap)return;
   const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
@@ -229,7 +228,9 @@ function toggleLocationChip(e){
 function cardLocationId(h,agendaRow){
   if(agendaRow && agendaRow.locationId)return agendaRow.locationId;
   const registry = locationOptions();
-  const ids = normalizeLocationIds(h && h.locationIds,registry);
+  const ids = typeof habitDisplayLocationIds === 'function'
+    ? habitDisplayLocationIds(h,registry)
+    : normalizeLocationIds(h && h.locationIds,registry);
   if(!ids.length)return null;
   return pickHabitLocationId(h,null,registry,normalizeTravelMode((sortSettings || {}).defaultTravelMode)) || ids[0];
 }

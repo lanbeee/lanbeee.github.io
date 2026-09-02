@@ -29,7 +29,9 @@ function reminderSignature(h){
 // PURE: optional " · Home" suffix for pushDetailed reminder bodies.
 function reminderLocationSuffix(h){
   const registry = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
-  const ids = normalizeLocationIds(h.locationIds,registry);
+  const ids = typeof habitDisplayLocationIds === 'function'
+    ? habitDisplayLocationIds(h,registry)
+    : normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return '';
   const pref = primaryPreferredLocationId(h.locationPrefs,ids) || normalizePreferredLocation(h.preferredLocationId,ids);
   // Prefer a non-avoid location for the label when no explicit preference.

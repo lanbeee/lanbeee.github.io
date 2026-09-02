@@ -863,9 +863,29 @@ $('detail-monthday-toggle')?.addEventListener('click',()=>{
 $('detail-preferred-monthday-toggle')?.addEventListener('click',()=>{
   toggleMonthDayDisclosure($('detail-preferred-monthday-toggle'));
 });
-$('detail-habit-options')?.addEventListener('input',()=>setDetailDirty());
+$('detail-habit-options')?.addEventListener('input',e=>{
+  const endpoint = e.target.closest('.time-endpoint');
+  if(endpoint && endpoint.classList.contains('is-dynamic'))refreshHabitScheduleOptionEndpoint(endpoint);
+  setDetailDirty();
+});
 $('detail-habit-options')?.addEventListener('change',e=>{
-  if(e.target.closest('.habit-option-location'))syncHabitScheduleOptionsUi();
+  const row = e.target.closest('.habit-option-row');
+  if(row && e.target.closest('.habit-option-location')){
+    row.querySelectorAll('.time-endpoint.is-dynamic').forEach(refreshHabitScheduleOptionEndpoint);
+  }
+  const endpoint = e.target.closest('.time-endpoint');
+  if(endpoint){
+    const combine = endpoint.querySelector('.time-combine');
+    const anchor2 = endpoint.querySelector('.time-anchor2');
+    const fixed2 = endpoint.querySelector('.time-fixed2');
+    if(e.target === combine && cleanTimeCombine(combine.value) && anchor2 && !anchor2.value){
+      anchor2.value = 'sunrise';
+    }
+    if(e.target === anchor2 && anchor2.value === 'fixed' && fixed2 && !fixed2.value){
+      fixed2.value = minutesToTimeInput(1200);
+    }
+    refreshHabitScheduleOptionEndpoint(endpoint);
+  }
   setDetailDirty();
 });
 $('detail-habit-options')?.addEventListener('click',e=>{
@@ -875,6 +895,32 @@ $('detail-habit-options')?.addEventListener('click',e=>{
   }
   const row = e.target.closest('.habit-option-row');
   if(!row)return;
+  const timeToggle = e.target.closest('.time-mode-toggle');
+  if(timeToggle){
+    const endpoint = timeToggle.closest('.time-endpoint');
+    const turningDynamic = !endpoint.classList.contains('is-dynamic');
+    endpoint.classList.toggle('is-dynamic',turningDynamic);
+    const anchor = endpoint.querySelector('.time-anchor');
+    if(turningDynamic && anchor && !anchor.value)anchor.value = 'fajr';
+    syncTimeModeVisibility(endpoint);
+    refreshHabitScheduleOptionEndpoint(endpoint);
+    setDetailDirty();
+    return;
+  }
+  const dayNext = e.target.closest('.time-day-next,.time-day-next2');
+  if(dayNext){
+    dayNext.setAttribute('aria-pressed',dayNext.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    refreshHabitScheduleOptionEndpoint(dayNext.closest('.time-endpoint'));
+    setDetailDirty();
+    return;
+  }
+  const prefBtn = e.target.closest('.habit-option-pref');
+  if(prefBtn){
+    const next = nextHabitScheduleOptionPref(prefBtn.dataset.pref);
+    prefBtn.outerHTML = habitScheduleOptionPrefButton(next);
+    setDetailDirty();
+    return;
+  }
   const day = e.target.closest('[data-habit-option-day]');
   if(day){
     day.classList.toggle('on');
@@ -1205,7 +1251,11 @@ document.addEventListener('click',e=>{
   const endpoint = input.closest('.time-endpoint');
   if(endpoint && typeof refreshTimeResolvedFor === 'function'){
     setDetailDirty();
-    refreshTimeResolvedFor(endpoint);
+    if(endpoint.closest('.habit-option-row') && typeof refreshHabitScheduleOptionEndpoint === 'function'){
+      refreshHabitScheduleOptionEndpoint(endpoint);
+    }else{
+      refreshTimeResolvedFor(endpoint);
+    }
   }
   // For blocked times, trigger change so the delegated handler saves.
   input.dispatchEvent(new Event('change', {bubbles:true}));
@@ -1292,15 +1342,11 @@ $('detail-save').addEventListener('click',()=>{
   h.links = normalizeLinks(current.links);
   h.topics = normalizeTopics(current.topics);
   h.scheduleOptions = normalizeHabitScheduleOptions(current.scheduleOptions,sortSettings.locations);
-  const optionLocationState = habitScheduleOptionLocationState(h.scheduleOptions,sortSettings.locations);
-  h.locationIds = h.scheduleOptions.length
-    ? optionLocationState.locationIds
-    : normalizeLocationIds(current.locationIds,sortSettings.locations);
-  h.anywhereAllowed = h.scheduleOptions.length
-    ? optionLocationState.anywhereAllowed
-    : Boolean(current.anywhereAllowed);
-  h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,h.locationIds,current.preferredLocationId);
-  h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,h.locationIds);
+  h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
+  h.anywhereAllowed = Boolean(current.anywhereAllowed);
+  const prefIds = habitPrefLocationIds(h,sortSettings.locations);
+  h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,prefIds,current.preferredLocationId);
+  h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,prefIds);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
   h.allowedMonthDays = normalizeAllowedMonthDays(current.allowedMonthDays);
   h.preferredWeekdays = normalizeAllowedWeekdays(current.preferredWeekdays);
@@ -1351,27 +1397,6 @@ $('detail-save').addEventListener('click',()=>{
     h[f + 'DayOffset'] = normalizeAnchorDayOffset(current[f + 'DayOffset']);
     h[f + 'DayOffset2'] = anchor2 && anchor2 !== 'fixed'
       ? normalizeAnchorDayOffset(current[f + 'DayOffset2']) : 0;
-  }
-  // Availability options are a complete hard schedule, not an extra filter.
-  // Clear the hidden simple fields so days/time/place have one authoritative
-  // source and stale values cannot silently intersect or override an option.
-  if(h.scheduleOptions.length){
-    h.allowedWeekdays = [];
-    h.allowedMonthDays = [];
-    h.allowedTimeStart = null;
-    h.allowedTimeEnd = null;
-    for(const f of ['allowedTimeStart','allowedTimeEnd']){
-      h[f + 'Anchor'] = null;
-      h[f + 'OffsetMin'] = 0;
-      h[f + 'AnchorHabitId'] = null;
-      h[f + 'Combine'] = null;
-      h[f + 'Anchor2'] = null;
-      h[f + 'OffsetMin2'] = 0;
-      h[f + 'AnchorHabitId2'] = null;
-      h[f + 'FixedMin2'] = null;
-      h[f + 'DayOffset'] = 0;
-      h[f + 'DayOffset2'] = 0;
-    }
   }
   // Block: a 'habit' endpoint without a picked habit is incomplete.
   const habitAnchorFields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];

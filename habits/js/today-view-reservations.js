@@ -27,23 +27,16 @@ function tryPlaceOnDay(state,fill,opts = {}){
     ? habitLocationIdsForDay(fill.h,dayBase,registry)
     : normalizeLocationIds(fill.h.locationIds,registry);
   const anywhereToday = optionMode
-    ? habitHasAnywhereScheduleOptionForDay(fill.h,dayBase)
+    ? (typeof habitHasAnywhereForDay === 'function'
+      ? habitHasAnywhereForDay(fill.h,dayBase,registry)
+      : habitHasAnywhereScheduleOptionForDay(fill.h,dayBase))
     : fill.h.anywhereAllowed;
-  // Keep each time/place row as a distinct alternative. This is essential
-  // when two rows use the same venue: evaluating only the venue's first open
-  // interval would miss a later class at that exact location.
-  if(optionMode && !fill._scheduleOptionBound){
-    const explicitLocation = hasLocationProperty && fill.locationId !== undefined
-      ? fill.locationId : undefined;
+  // Keep each time/place row as a distinct alternative, including the general
+  // allowed window and specific option rows (same venue at different times).
+  if(optionMode && !fill._scheduleOptionBound && typeof habitSchedulePlacementVariants === 'function'){
     const optionFits = [];
-    for(const option of habitScheduleOptionsForDay(fill.h,dayBase,explicitLocation)){
-      const optionHabit = {...fill.h,scheduleOptions:[option]};
-      const fitForOption = tryPlaceOnDay(state,{
-        ...fill,
-        h:optionHabit,
-        locationId:option.locationId,
-        _scheduleOptionBound:true
-      },opts);
+    for(const variant of habitSchedulePlacementVariants(fill,dayBase,registry) || []){
+      const fitForOption = tryPlaceOnDay(state,variant,opts);
       if(fitForOption)optionFits.push(fitForOption);
     }
     return optionFits.length ? pickBestScoredFit(optionFits,fill,state,opts) : null;
@@ -187,7 +180,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
         slotStart:slot.start,
         preferredHit:false,
         prevLocId:anchor,
-        placeKey
+        placeKey,
+        schedulePrefLevel:typeof locationPrefLevel === 'function' ? locationPrefLevel(fill.h,locId) : null
       };
       fits.push(baseFit);
       // Preferred time is a second soft candidate — score picks vs ASAP/scarce.
@@ -624,18 +618,10 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
   const budgetLeft = state.remaining;
   const usedMinutes = state.usedMinutes;
   const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill.h);
-  if(optionMode && !fill._scheduleOptionBound){
-    const hasLocationProperty = Object.prototype.hasOwnProperty.call(fill,'locationId');
-    const explicitLocation = hasLocationProperty && fill.locationId !== undefined
-      ? fill.locationId : undefined;
+  if(optionMode && !fill._scheduleOptionBound && typeof habitSchedulePlacementVariants === 'function'){
     const alternatives = [];
-    for(const option of habitScheduleOptionsForDay(fill.h,dayBase,explicitLocation)){
-      const result = largestFeasibleBreakableFit(state,{
-        ...fill,
-        h:{...fill.h,scheduleOptions:[option]},
-        locationId:option.locationId,
-        _scheduleOptionBound:true
-      },remainingMinutes,minChunkMinutes,opts);
+    for(const variant of habitSchedulePlacementVariants(fill,dayBase,registry) || []){
+      const result = largestFeasibleBreakableFit(state,variant,remainingMinutes,minChunkMinutes,opts);
       if(result && result.fit)alternatives.push(result.fit);
     }
     if(!alternatives.length)return null;
@@ -766,7 +752,8 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         slotStart:slot.start,
         preferredHit:false,
         prevLocId:anchor,
-        placeKey:fill.placeKey != null ? fill.placeKey : fill.i
+        placeKey:fill.placeKey != null ? fill.placeKey : fill.i,
+        schedulePrefLevel:typeof locationPrefLevel === 'function' ? locationPrefLevel(fill.h,locId) : null
       });
     }
   }
@@ -855,7 +842,9 @@ function committedFillLocationChoices(entry,state){
     // Explicit null is legal only for genuinely anywhere/locationless work.
     // A malformed replay seed must never erase a required saved location.
     if(entry.fill.locationId !== null
-      || (optionMode ? habitHasAnywhereScheduleOptionForDay(h,state.dayBase) : h.anywhereAllowed)
+      || (typeof habitHasAnywhereForDay === 'function'
+        ? habitHasAnywhereForDay(h,state.dayBase,state.registry)
+        : (optionMode ? habitHasAnywhereScheduleOptionForDay(h,state.dayBase) : h.anywhereAllowed))
       || (!optionMode && !ids.length)){
       return [entry.fill.locationId || null];
     }
@@ -863,9 +852,9 @@ function committedFillLocationChoices(entry,state){
   // Preserve an explicitly committed legacy/synthetic fit even when its habit
   // record has no locationIds. Normal planner fills derive choices from the
   // habit and therefore still expose every allowed location to the route DP.
-  const anywhereAllowed = optionMode
-    ? habitHasAnywhereScheduleOptionForDay(h,state.dayBase)
-    : h.anywhereAllowed;
+  const anywhereAllowed = typeof habitHasAnywhereForDay === 'function'
+    ? habitHasAnywhereForDay(h,state.dayBase,state.registry)
+    : (optionMode ? habitHasAnywhereScheduleOptionForDay(h,state.dayBase) : h.anywhereAllowed);
   const choices = anywhereAllowed
     ? [null,...ids]
     : (ids.length ? ids : (fit.locId ? [fit.locId] : [null]));
@@ -955,7 +944,11 @@ function optimalCommittedLocationRoute(state,chron){
         let cost = route.cost + travelSeconds;
         if(event.kind === 'fill' && choice){
           const h = event.entry.fill.h;
-          cost += -locationPrefScore(locationPrefLevel(h,choice)) * 30;
+          const fit = event.entry.fit;
+          const level = fit && choice === fit.locId && fit.schedulePrefLevel !== undefined
+            ? fit.schedulePrefLevel
+            : locationPrefLevel(h,choice);
+          cost += -locationPrefScore(level) * 30;
           if(route.loc && route.loc === choice)cost -= 60;
         }
         const assignments = new Map(route.assignments);

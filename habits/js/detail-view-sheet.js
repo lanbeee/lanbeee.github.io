@@ -74,7 +74,7 @@ function openDetail(i){
     topics:normalizeTopics(h.topics),
     locationIds:normalizeLocationIds(h.locationIds),
     anywhereAllowed:Boolean(h.anywhereAllowed),
-    locationPrefs:normalizeLocationPrefs(h.locationPrefs,h.locationIds,h.preferredLocationId),
+    locationPrefs:normalizeLocationPrefs(h.locationPrefs,typeof habitPrefLocationIds === 'function' ? habitPrefLocationIds(h) : h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
     links:normalizeLinks(h.links),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),

@@ -5,16 +5,34 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 function scheduledDays(h){
-  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
-    const options = normalizeHabitScheduleOptions(h.scheduleOptions);
-    const weekdays = options.some(option=>!option.weekdays.length)
+  const general = typeof habitSimpleAllowedDays === 'function'
+    ? habitSimpleAllowedDays(h)
+    : {
+      weekdays:normalizeAllowedWeekdays(h && h.allowedWeekdays),
+      monthDays:normalizeAllowedMonthDays(h && h.allowedMonthDays)
+    };
+  const options = typeof normalizeHabitScheduleOptions === 'function'
+    ? normalizeHabitScheduleOptions(h && h.scheduleOptions)
+    : [];
+  const hasGeneral = typeof hasGeneralAllowedSchedule === 'function'
+    ? hasGeneralAllowedSchedule(h)
+    : !options.length;
+  if(!options.length)return general;
+  const optionAllDays = options.some(option=>!option.weekdays.length);
+  const optionWeekdays = optionAllDays
+    ? []
+    : [...new Set(options.flatMap(option=>option.weekdays))].sort((a,b)=>a-b);
+  if(!hasGeneral)return {weekdays:optionWeekdays,monthDays:[]};
+  if(general.monthDays.length){
+    const weekdays = (!general.weekdays.length || optionAllDays)
       ? []
-      : [...new Set(options.flatMap(option=>option.weekdays))].sort((a,b)=>a-b);
+      : [...new Set([...general.weekdays,...optionWeekdays])].sort((a,b)=>a-b);
     return {weekdays,monthDays:[]};
   }
+  if(!general.weekdays.length || optionAllDays)return {weekdays:[],monthDays:[]};
   return {
-    weekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
-    monthDays:normalizeAllowedMonthDays(h.allowedMonthDays)
+    weekdays:[...new Set([...general.weekdays,...optionWeekdays])].sort((a,b)=>a-b),
+    monthDays:[]
   };
 }
 function preferredDays(h){
@@ -76,6 +94,7 @@ function hasPreferredDays(h){
 }
 function hasTimeWindow(h){
   if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h))return true;
+  if(typeof hasSimpleAllowedTimeWindow === 'function')return hasSimpleAllowedTimeWindow(h);
   // Dynamic (prayer or habit) anchors count as a set window even when the
   // fixed minutes are null — they'll resolve to a real minute at render time.
   const startSet = Number.isFinite(h.allowedTimeStart) || cleanAnchor(h.allowedTimeStartAnchor);
@@ -96,6 +115,20 @@ function isPreferredDay(h,ts = Date.now()){
   return true;
 }
 function isDateEligibleForHabit(h,ts = Date.now()){
+  const optionHit = typeof hasHabitScheduleOptions === 'function'
+    && hasHabitScheduleOptions(h)
+    && typeof habitScheduleOptionsForDay === 'function'
+    && habitScheduleOptionsForDay(h,typeof dayStart === 'function' ? dayStart(ts) : ts).length > 0;
+  const hasGeneral = typeof hasGeneralAllowedSchedule === 'function'
+    ? hasGeneralAllowedSchedule(h)
+    : !optionHit;
+  if(hasGeneral){
+    const generalHit = typeof isDateEligibleForGeneralSchedule === 'function'
+      ? isDateEligibleForGeneralSchedule(h,ts)
+      : true;
+    return generalHit || optionHit;
+  }
+  if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h))return optionHit;
   const schedule = scheduledDays(h);
   const d = new Date(ts);
   if(schedule.weekdays.length && !schedule.weekdays.includes(d.getDay()))return false;
@@ -137,7 +170,20 @@ function timeWindowSummary(h){
   if(!hasTimeWindow(h))return '';
   if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
     const count = normalizeHabitScheduleOptions(h.scheduleOptions).length;
-    return `${count} time/place ${count === 1 ? 'option' : 'options'}`;
+    const optionLabel = `${count} time/place ${count === 1 ? 'option' : 'options'}`;
+    if(typeof hasSimpleAllowedTimeWindow === 'function' && hasSimpleAllowedTimeWindow(h)){
+      const startAnchor = cleanAnchor(h.allowedTimeStartAnchor);
+      const endAnchor = cleanAnchor(h.allowedTimeEndAnchor);
+      const general = startAnchor || endAnchor
+        ? `${startAnchor
+          ? (typeof habitEndpointLabel === 'function' ? habitEndpointLabel(h,'allowedTimeStart') : prayerAnchorLabel(startAnchor,h.allowedTimeStartOffsetMin))
+          : formatTimeShort(h.allowedTimeStart)}–${endAnchor
+          ? (typeof habitEndpointLabel === 'function' ? habitEndpointLabel(h,'allowedTimeEnd') : prayerAnchorLabel(endAnchor,h.allowedTimeEndOffsetMin))
+          : formatTimeShort(h.allowedTimeEnd)}`
+        : `${formatTimeShort(h.allowedTimeStart)}–${formatTimeShort(h.allowedTimeEnd)}`;
+      return `${general} + ${optionLabel}`;
+    }
+    return optionLabel;
   }
   // When either endpoint is an anchor (prayer OR habit), show anchor labels
   // (e.g. "sunrise +30 – after gym", or "later of isha +15m · sunrise −8h +1d").

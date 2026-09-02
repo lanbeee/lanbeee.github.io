@@ -57,7 +57,7 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
-- Time/place alternatives: scheduleOptions (multiple weekday + time + location rows per habit)
+- Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, flexibilityDays
 - Calendar import: externalId, source, importedAt
@@ -408,11 +408,22 @@ else:
   anywhereAllowed: boolean,   // 👨‍💻 Legacy: may be done anywhere
   locationPrefs: Object<string, 'avoid'|'little'|'high'>, // 👤 Soft preferences
   preferredLocationId: string|null, // 👤 Legacy preferred location
-  scheduleOptions: {             // 👤 Alternative ways to do one occurrence
+  scheduleOptions: {             // 👤 Specific extra time/place windows
     weekdays: number[],          // Empty = every weekday
-    start: number,               // Minutes from midnight
-    end: number,                 // Minutes from midnight
-    locationId: string|null      // Saved place, or null = anywhere
+    start: number|null,          // Minutes from midnight, or null when dynamic
+    end: number|null,            // Minutes from midnight, or null when dynamic
+    startAnchor?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha',
+    startOffsetMin?: number,
+    startCombine?: 'later'|'earlier',
+    startAnchor2?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'fixed',
+    startOffsetMin2?: number,
+    startFixedMin2?: number|null,
+    startDayOffset?: 0|1,
+    startDayOffset2?: 0|1,
+    // endAnchor/endOffsetMin/endCombine/endAnchor2/endOffsetMin2/
+    // endFixedMin2/endDayOffset/endDayOffset2 mirror the start fields.
+    locationId: string|null,     // Saved place, or null = anywhere
+    pref?: 'avoid'|'little'|'high' // 👤 Overrides place ranking for this instance
   }[],
   
   // ─── LINKS & ACTIONS ─────────────────────────────────────
@@ -1010,11 +1021,12 @@ Fields shown (always visible, even in minimal mode):
 - **Preferred Weekdays/Month Days:** Soft hints for sorting
 
 #### Places Section
-- **Allowed places:** Hard placement choices shown with the Allowed schedule.
+- **Allowed places:** Hard placement choices shown with the Allowed schedule. The general time window applies at every allowed place.
 - **Place preferences:** Soft `little` / `high` / `avoid` rankings shown with
   the Preferred schedule.
-- With availability options, allowed places come only from the coupled rows;
-  the place-preference row ranks those places without duplicating eligibility.
+- **Specific times & places:** Extra rows for a particular place and window.
+  A row can carry its own preference, which overrides the place ranking for
+  that instance only.
 
 #### Time Window Section
 ```
@@ -2555,26 +2567,29 @@ Same agenda logic, but simplified display:
 | `locationPrefs` | object | Per-location preference (avoid/little/high) |
 | `anywhereAllowed` | boolean | Can be done anywhere |
 | `preferredLocationId` | string\|null | Preferred single location |
-| `scheduleOptions` | array | Alternative weekday/time/place windows for one occurrence; the same place may appear in multiple rows |
+| `scheduleOptions` | array | Specific extra weekday/time/place windows; optional per-row preference overrides the place ranking for that instance |
 
 ### 25.3.1 Time & Place Options 👤👨‍💻
 
-- Add these under an item's **Schedule → Allowed → availability options**.
-- Each row couples its own weekdays, start/end window, and location.
-- Rows are alternatives for one occurrence. If three rows fit, the planner
-  chooses one; it does not schedule or count the habit three times.
+- Add these under an item's **Schedule → Allowed → specific times & places**.
+- The general days, time window, and allowed places still apply at every
+  allowed place. Each option row is an extra specific case.
+- Many items only need the specific rows. Leave the general time blank then.
+- Each row couples its own weekdays, start/end window, and location, plus an
+  optional preference (`little` / `high` / `avoid`) that overrides the place
+  ranking for that instance.
+- Rows are alternatives for one occurrence. If a general window and two rows
+  fit, the planner chooses one; it does not schedule or count the habit three
+  times.
 - The same location may be used in any number of rows at different times.
-- The editor has two mutually exclusive hard-schedule modes: simple rules or
-  availability options. Once a row exists, the simple allowed day/time fields
-  and the separate allowed-place picker hide; option rows are the sole source
-  for allowed days, times, and places.
 - Preferred days, time, and place levels remain soft hints. They rank feasible
-  option rows but never make an otherwise valid row invalid. A place's own
-  opening hours still apply as an outer constraint.
-- `locationIds` and `anywhereAllowed` are derived summaries in option mode,
-  used by cards/search/prayer resolution; they are not a second hard filter.
-- The Fast and GLPK planners both enumerate the rows independently, including
-  repeated-location rows, and account for travel before selecting one.
+  general and specific windows but never make an otherwise valid window
+  invalid. A place's own opening hours still apply as an outer constraint.
+- `locationIds` is the general allowed-place list. Option rows may name extra
+  places that are valid only inside that row's window.
+- The Fast and GLPK planners both enumerate the general window and the rows
+  independently, including repeated-location rows, and account for travel
+  before selecting one.
 
 ### 25.4 Location Preferences 👤
 | Level | Score Modifier | Meaning |

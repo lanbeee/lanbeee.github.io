@@ -612,14 +612,14 @@ function weekPreferencePenalty(h,fit,day,registry){
   let penalty = 0;
   const ids = normalizeLocationIds(h.locationIds,registry);
   const pref = primaryPreferredLocationId(h.locationPrefs,ids) || normalizePreferredLocation(h.preferredLocationId,ids);
-  if(pref && fit.locId && pref !== fit.locId)penalty += 120;
+  const level = fit && fit.schedulePrefLevel !== undefined
+    ? fit.schedulePrefLevel
+    : (fit && fit.locId ? locationPrefLevel(h,fit.locId) : null);
+  if(level !== 'high' && pref && fit.locId && pref !== fit.locId)penalty += 120;
   // Honor avoid/little/high levels: reward high/little, strongly penalize avoid.
-  if(fit.locId){
-    const level = locationPrefLevel(h,fit.locId);
-    if(level === 'high')penalty -= 60;
-    else if(level === 'little')penalty -= 20;
-    else if(level === 'avoid')penalty += 80;
-  }
+  if(level === 'high')penalty -= 60;
+  else if(level === 'little')penalty -= 20;
+  else if(level === 'avoid')penalty += 80;
   if(fit.preferredHit)penalty -= 40;
   else{
     const loc = fit.locId ? registry.find(l=>l.id === fit.locId) : null;

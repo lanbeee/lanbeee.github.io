@@ -165,10 +165,95 @@ function normalizeLocationIds(value,registry){
 
 const MAX_HABIT_SCHEDULE_OPTIONS = 32;
 
-// PURE: one habit-level alternative couples a weekday set, clock window, and
-// location. Multiple rows may deliberately use the same location: a class or
-// prayer can have several sessions at one venue on the same day. Empty
-// weekdays means every day; null locationId means an anywhere option.
+function cleanLocationPrefLevel(value){
+  return LOCATION_PREF_LEVELS.includes(value) ? value : null;
+}
+
+function habitSimpleAllowedDays(h){
+  return {
+    weekdays:normalizeAllowedWeekdays(h && h.allowedWeekdays),
+    monthDays:normalizeAllowedMonthDays(h && h.allowedMonthDays)
+  };
+}
+
+function hasSimpleAllowedDays(h){
+  const schedule = habitSimpleAllowedDays(h);
+  return Boolean(schedule.weekdays.length || schedule.monthDays.length);
+}
+
+function hasSimpleAllowedTimeWindow(h){
+  if(!h)return false;
+  const startSet = Number.isFinite(h.allowedTimeStart)
+    || (typeof cleanAnchor === 'function' && cleanAnchor(h.allowedTimeStartAnchor));
+  const endSet = Number.isFinite(h.allowedTimeEnd)
+    || (typeof cleanAnchor === 'function' && cleanAnchor(h.allowedTimeEndAnchor));
+  return Boolean(startSet && endSet);
+}
+
+const HABIT_SCHEDULE_OPTION_TIME_SUFFIXES = [
+  'Anchor','OffsetMin','Combine','Anchor2','OffsetMin2','FixedMin2','DayOffset','DayOffset2'
+];
+
+// PURE: normalize one endpoint on a specific time/place row. Primary dynamic
+// values are prayer anchors; the optional second expression may also be a
+// fixed clock. Completion-relative habit anchors belong to the recurring
+// order editor and are intentionally not introduced by these rows.
+function normalizeHabitScheduleOptionEndpoint(raw,prefix){
+  const anchor = typeof cleanPrayerAnchor === 'function'
+    ? cleanPrayerAnchor(raw && raw[prefix + 'Anchor']) : null;
+  if(!anchor){
+    const fixed = normalizeTimeMinutes(raw && raw[prefix]);
+    return fixed == null ? null : {[prefix]:fixed};
+  }
+  const combine = typeof cleanTimeCombine === 'function'
+    ? cleanTimeCombine(raw && raw[prefix + 'Combine']) : null;
+  const anchor2 = combine
+    ? (raw && raw[prefix + 'Anchor2'] === 'fixed'
+      ? 'fixed'
+      : (typeof cleanPrayerAnchor === 'function'
+        ? cleanPrayerAnchor(raw && raw[prefix + 'Anchor2']) : null))
+    : null;
+  const out = {
+    [prefix]:null,
+    [prefix + 'Anchor']:anchor,
+    [prefix + 'OffsetMin']:normalizePrayerOffset(raw && raw[prefix + 'OffsetMin']),
+    [prefix + 'DayOffset']:typeof normalizeAnchorDayOffset === 'function'
+      ? normalizeAnchorDayOffset(raw && raw[prefix + 'DayOffset']) : 0
+  };
+  if(combine && anchor2){
+    out[prefix + 'Combine'] = combine;
+    out[prefix + 'Anchor2'] = anchor2;
+    out[prefix + 'OffsetMin2'] = anchor2 === 'fixed'
+      ? 0 : normalizePrayerOffset(raw && raw[prefix + 'OffsetMin2']);
+    out[prefix + 'FixedMin2'] = anchor2 === 'fixed'
+      ? (normalizeTimeMinutes(raw && raw[prefix + 'FixedMin2']) ?? 1200) : null;
+    out[prefix + 'DayOffset2'] = anchor2 === 'fixed'
+      ? 0
+      : (typeof normalizeAnchorDayOffset === 'function'
+        ? normalizeAnchorDayOffset(raw && raw[prefix + 'DayOffset2']) : 0);
+  }
+  return out;
+}
+
+function habitScheduleOptionEndpointIsDynamic(option,prefix){
+  return Boolean(option && typeof cleanPrayerAnchor === 'function'
+    && cleanPrayerAnchor(option[prefix + 'Anchor']));
+}
+
+// PURE: stable expression identity used to de-duplicate exact rows while
+// still allowing one place to appear at several fixed or dynamic times.
+function habitScheduleOptionTimeKey(option,prefix){
+  if(!habitScheduleOptionEndpointIsDynamic(option,prefix))return String(option[prefix]);
+  return HABIT_SCHEDULE_OPTION_TIME_SUFFIXES
+    .map(suffix=>String(option[prefix + suffix] ?? ''))
+    .join(':');
+}
+
+// PURE: one specific weekday/time/place window. These extend the general
+// allowed schedule rather than replacing it. Multiple rows may use the same
+// location at different times. Empty weekdays means every day; null
+// locationId means an anywhere option. Optional `pref` overrides the place
+// ranking for that instance only.
 function normalizeHabitScheduleOptions(value,registry){
   if(!Array.isArray(value))return [];
   const valid = Array.isArray(registry)
@@ -178,17 +263,19 @@ function normalizeHabitScheduleOptions(value,registry){
   const seen = new Set();
   for(const raw of value){
     if(!raw || typeof raw !== 'object')continue;
-    const start = normalizeTimeMinutes(raw.start);
-    const end = normalizeTimeMinutes(raw.end);
-    if(start === null || end === null)continue;
+    const startFields = normalizeHabitScheduleOptionEndpoint(raw,'start');
+    const endFields = normalizeHabitScheduleOptionEndpoint(raw,'end');
+    if(!startFields || !endFields)continue;
     const cleanedLocationId = cleanLocationId(raw.locationId);
     const locationId = cleanedLocationId || null;
     if(locationId && valid && !valid.has(locationId))continue;
     const weekdays = normalizeAllowedWeekdays(raw.weekdays);
-    const key = `${weekdays.join(',')}|${start}|${end}|${locationId || ''}`;
+    const pref = cleanLocationPrefLevel(raw.pref);
+    const option = {weekdays,...startFields,...endFields,locationId};
+    const key = `${weekdays.join(',')}|${habitScheduleOptionTimeKey(option,'start')}|${habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}`;
     if(seen.has(key))continue;
     seen.add(key);
-    out.push({weekdays,start,end,locationId});
+    out.push(pref ? {...option,pref} : option);
     if(out.length >= MAX_HABIT_SCHEDULE_OPTIONS)break;
   }
   return out;
@@ -198,10 +285,9 @@ function hasHabitScheduleOptions(h){
   return Boolean(h && Array.isArray(h.scheduleOptions) && h.scheduleOptions.length);
 }
 
-// PURE: canonical location projection for option-mode habits. Option rows are
-// the hard allowed-place source; the ordinary location fields become a
-// de-duplicated summary used by cards, search, prayer resolution, and soft
-// location preferences.
+// PURE: places named by option rows. Cards/search/prayer still union this
+// with the general locationIds; the planner treats option places as valid
+// only inside their own windows.
 function habitScheduleOptionLocationState(value,registry){
   const options = normalizeHabitScheduleOptions(value,registry);
   return {
@@ -211,8 +297,135 @@ function habitScheduleOptionLocationState(value,registry){
   };
 }
 
-// PURE: alternatives offered on this calendar day. In option mode these rows
-// are the complete hard day schedule; simple allowed-day fields are ignored.
+function habitPrefLocationIds(h,registry){
+  const optionState = habitScheduleOptionLocationState(h && h.scheduleOptions,registry);
+  return normalizeLocationIds([
+    ...normalizeLocationIds(h && h.locationIds,registry),
+    ...optionState.locationIds
+  ],registry);
+}
+
+function habitDisplayLocationIds(h,registry){
+  return habitPrefLocationIds(h,registry);
+}
+
+function habitDisplayAnywhereAllowed(h,registry){
+  const optionState = habitScheduleOptionLocationState(h && h.scheduleOptions,registry);
+  return Boolean(h && h.anywhereAllowed) || optionState.anywhereAllowed;
+}
+
+// PURE: the general allowed time/days/places still apply when options exist,
+// unless the stored places are only the derived summary from an older
+// options-only habit (no explicit general time or extra places).
+function hasGeneralAllowedSchedule(h,registry){
+  if(!h)return false;
+  if(!hasHabitScheduleOptions(h))return true;
+  if(hasSimpleAllowedTimeWindow(h) || hasSimpleAllowedDays(h))return true;
+  const optionState = habitScheduleOptionLocationState(h.scheduleOptions,registry);
+  const generalIds = normalizeLocationIds(h.locationIds,registry);
+  const optionIds = new Set(optionState.locationIds);
+  if(generalIds.some(id=>!optionIds.has(id)))return true;
+  return Boolean(h.anywhereAllowed) && generalIds.length > 0 && !optionState.anywhereAllowed;
+}
+
+function isDateEligibleForGeneralSchedule(h,ts = Date.now()){
+  if(!hasGeneralAllowedSchedule(h))return false;
+  const schedule = habitSimpleAllowedDays(h);
+  const d = new Date(ts);
+  if(schedule.weekdays.length && !schedule.weekdays.includes(d.getDay()))return false;
+  if(schedule.monthDays.length && !schedule.monthDays.includes(d.getDate()))return false;
+  return true;
+}
+
+// PURE: project a row's start/end expression into the ordinary allowed-time
+// field names so every existing planner primitive can resolve it unchanged.
+function habitScheduleOptionAllowedTimeFields(option){
+  const out = {};
+  for(const [source,target] of [['start','allowedTimeStart'],['end','allowedTimeEnd']]){
+    out[target] = option && option[source] != null ? option[source] : null;
+    out[target + 'Anchor'] = habitScheduleOptionEndpointIsDynamic(option,source)
+      ? cleanPrayerAnchor(option[source + 'Anchor']) : null;
+    out[target + 'OffsetMin'] = out[target + 'Anchor']
+      ? normalizePrayerOffset(option[source + 'OffsetMin']) : 0;
+    const combine = out[target + 'Anchor'] && typeof cleanTimeCombine === 'function'
+      ? cleanTimeCombine(option[source + 'Combine']) : null;
+    const anchor2 = combine
+      ? (option[source + 'Anchor2'] === 'fixed'
+        ? 'fixed' : cleanPrayerAnchor(option[source + 'Anchor2']))
+      : null;
+    out[target + 'Combine'] = combine && anchor2 ? combine : null;
+    out[target + 'Anchor2'] = anchor2;
+    out[target + 'OffsetMin2'] = anchor2 && anchor2 !== 'fixed'
+      ? normalizePrayerOffset(option[source + 'OffsetMin2']) : 0;
+    out[target + 'AnchorHabitId'] = null;
+    out[target + 'AnchorHabitId2'] = null;
+    out[target + 'FixedMin2'] = anchor2 === 'fixed'
+      ? (normalizeTimeMinutes(option[source + 'FixedMin2']) ?? 1200) : null;
+    out[target + 'DayOffset'] = out[target + 'Anchor']
+      ? normalizeAnchorDayOffset(option[source + 'DayOffset']) : 0;
+    out[target + 'DayOffset2'] = anchor2 && anchor2 !== 'fixed'
+      ? normalizeAnchorDayOffset(option[source + 'DayOffset2']) : 0;
+  }
+  return out;
+}
+
+function habitBoundToGeneralSchedule(h){
+  return {...(h || {}),scheduleOptions:[]};
+}
+
+function habitBoundToScheduleOption(h,option){
+  const normalized = normalizeHabitScheduleOptions([option])[0];
+  if(!normalized)return habitBoundToGeneralSchedule(h);
+  const pref = cleanLocationPrefLevel(normalized.pref);
+  const locationId = normalized.locationId;
+  const locationPrefs = {...((h && h.locationPrefs) || {})};
+  if(pref && locationId)locationPrefs[locationId] = pref;
+  return {
+    ...(h || {}),
+    ...habitScheduleOptionAllowedTimeFields(normalized),
+    scheduleOptions:[],
+    allowedWeekdays:normalized.weekdays,
+    allowedMonthDays:[],
+    locationIds:locationId ? [locationId] : [],
+    anywhereAllowed:locationId == null,
+    locationPrefs,
+    _scheduleOptionPref:pref,
+    preferredLocationId:pref === 'high' && locationId
+      ? locationId
+      : (h && h.preferredLocationId) || null
+  };
+}
+
+function habitSchedulePlacementVariants(fill,dayBase,registry){
+  const h = fill && fill.h;
+  if(!h || fill._scheduleOptionBound || !hasHabitScheduleOptions(h))return null;
+  const variants = [];
+  if(hasGeneralAllowedSchedule(h,registry) && isDateEligibleForGeneralSchedule(h,dayBase)){
+    const generalFill = {
+      ...fill,
+      h:habitBoundToGeneralSchedule(h),
+      _scheduleOptionBound:true
+    };
+    if(!(Object.prototype.hasOwnProperty.call(fill,'locationId') && fill.locationId !== undefined)){
+      delete generalFill.locationId;
+    }
+    variants.push(generalFill);
+  }
+  const hasLocationProperty = Object.prototype.hasOwnProperty.call(fill,'locationId');
+  const explicitLocation = hasLocationProperty && fill.locationId !== undefined
+    ? fill.locationId : undefined;
+  for(const option of habitScheduleOptionsForDay(h,dayBase,explicitLocation)){
+    variants.push({
+      ...fill,
+      h:habitBoundToScheduleOption(h,option),
+      locationId:option.locationId,
+      _scheduleOptionBound:true
+    });
+  }
+  return variants;
+}
+
+// PURE: specific rows that apply on this calendar day.
 function habitScheduleOptionsForDay(h,dayBase,locationId = undefined){
   const options = normalizeHabitScheduleOptions(h && h.scheduleOptions);
   if(!options.length)return [];
@@ -227,19 +440,35 @@ function habitScheduleOptionsForDay(h,dayBase,locationId = undefined){
 // h.locationIds this may contain the same location represented by several
 // separate clock windows; ids are de-duped only for route enumeration.
 function habitLocationIdsForDay(h,dayBase,registry){
-  if(!hasHabitScheduleOptions(h))return normalizeLocationIds(h && h.locationIds,registry);
   const valid = Array.isArray(registry)
     ? new Set(normalizeLocationRegistry(registry).map(loc=>loc.id))
     : null;
   const seen = new Set();
-  return habitScheduleOptionsForDay(h,dayBase)
-    .map(option=>option.locationId)
-    .filter(id=>id && (!valid || valid.has(id)) && !seen.has(id) && seen.add(id));
+  const ids = [];
+  const add = id=>{
+    if(!id || (valid && !valid.has(id)) || seen.has(id))return;
+    seen.add(id);
+    ids.push(id);
+  };
+  if(hasGeneralAllowedSchedule(h,registry) && isDateEligibleForGeneralSchedule(h,dayBase)){
+    for(const id of normalizeLocationIds(h && h.locationIds,registry))add(id);
+  }else if(!hasHabitScheduleOptions(h)){
+    return normalizeLocationIds(h && h.locationIds,registry);
+  }
+  for(const option of habitScheduleOptionsForDay(h,dayBase))add(option.locationId);
+  return ids;
 }
 
 function habitHasAnywhereScheduleOptionForDay(h,dayBase){
   return hasHabitScheduleOptions(h)
     && habitScheduleOptionsForDay(h,dayBase,null).length > 0;
+}
+
+function habitHasAnywhereForDay(h,dayBase,registry){
+  if(hasGeneralAllowedSchedule(h,registry) && isDateEligibleForGeneralSchedule(h,dayBase)
+    && h && h.anywhereAllowed)return true;
+  if(!hasHabitScheduleOptions(h) && h && h.anywhereAllowed)return true;
+  return habitHasAnywhereScheduleOptionForDay(h,dayBase);
 }
 // PURE: null unless `value` is an id present in `ids`.
 function normalizePreferredLocation(value,ids){
@@ -266,8 +495,11 @@ function normalizeLocationPrefs(rawPrefs,ids,legacyPreferred){
 }
 /** PURE: preference level for a location id on a habit (null = neutral allowed). */
 function locationPrefLevel(h,locationId){
+  if(!h)return null;
+  const instanceLevel = cleanLocationPrefLevel(h._scheduleOptionPref);
+  if(instanceLevel)return instanceLevel;
   const id = cleanLocationId(locationId);
-  if(!id || !h)return null;
+  if(!id)return null;
   const level = h.locationPrefs && h.locationPrefs[id];
   return LOCATION_PREF_LEVELS.includes(level) ? level : null;
 }
@@ -521,41 +753,65 @@ function intersectWindows(a,b){
 // (NOT the location passed in here — that may be a different allowed
 // location). If the habit has no usable location yet (e.g. mid-save), the
 // anchor endpoints degrade to "unset" and the window collapses to empty.
+function habitSimpleWindowIntervals(h,locWin,dayBase){
+  const base = dayBase != null ? dayBase : dayStart(Date.now());
+  const startAnchor = typeof cleanAnchor === 'function' ? cleanAnchor(h && h.allowedTimeStartAnchor) : null;
+  const endAnchor = typeof cleanAnchor === 'function' ? cleanAnchor(h && h.allowedTimeEndAnchor) : null;
+  if(startAnchor || endAnchor){
+    const rawStart = resolveHabitTimeField(h,'allowedTimeStart',base);
+    const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',base);
+    if(rawStart == null || rawEnd == null)return [];
+    const folded = typeof foldBlockedMinutes === 'function'
+      ? foldBlockedMinutes(rawStart,rawEnd)
+      : {startMin:rawStart,endMin:rawEnd};
+    const habitWin = folded.startMin === folded.endMin
+      ? {start:0,end:1440}
+      : {start:folded.startMin,end:folded.endMin};
+    return intersectWindows(habitWin,locWin);
+  }
+  if(!hasSimpleAllowedTimeWindow(h)){
+    return locWin.end > locWin.start ? [locWin] : unwrapMinuteWindow(locWin);
+  }
+  const habitWin = h.allowedTimeStart === h.allowedTimeEnd
+    ? {start:0,end:1440}
+    : {start:h.allowedTimeStart,end:h.allowedTimeEnd};
+  return intersectWindows(habitWin,locWin);
+}
+
+function habitOptionWindowIntervals(h,locationId,locWin,dayBase){
+  const intervals = [];
+  for(const option of habitScheduleOptionsForDay(h,dayBase,locationId)){
+    const bound = habitBoundToScheduleOption(h,option);
+    intervals.push(...habitSimpleWindowIntervals(bound,locWin,dayBase));
+  }
+  return intervals;
+}
+
+function habitGeneralAppliesAtLocation(h,loc,dayBase,registry){
+  if(!hasGeneralAllowedSchedule(h,registry))return false;
+  if(!isDateEligibleForGeneralSchedule(h,dayBase != null ? dayBase : Date.now()))return false;
+  const locationId = loc ? loc.id : null;
+  if(locationId)return normalizeLocationIds(h && h.locationIds,registry).includes(locationId);
+  return Boolean(h && h.anywhereAllowed) || !normalizeLocationIds(h && h.locationIds,registry).length;
+}
+
+// PURE: the feasible minute-intervals today for a habit at a location — the
+// union of the general allowed window (every allowed place) and any specific
+// time/place rows, each intersected with the venue's opening hours.
 function effectiveLocationWindow(h,loc,weekday,dayBase){
   const locWin = loc ? resolveLocationWindow(loc,weekday) : {start:0,end:1440};
   if(!locWin)return [];
-  // Habit-level alternatives are authoritative when present. They replace
-  // the habit's single allowed-time/location pairing for this occurrence,
-  // while still respecting the venue's real opening hours.
+  const locationId = loc ? loc.id : null;
+  const intervals = [];
+  if(habitGeneralAppliesAtLocation(h,loc,dayBase)){
+    intervals.push(...habitSimpleWindowIntervals(h,locWin,dayBase));
+  }
   if(hasHabitScheduleOptions(h)){
-    const locationId = loc ? loc.id : null;
-    const intervals = [];
-    for(const option of habitScheduleOptionsForDay(h,dayBase,locationId)){
-      const optionWin = option.start === option.end
-        ? {start:0,end:1440}
-        : {start:option.start,end:option.end};
-      intervals.push(...intersectWindows(optionWin,locWin));
-    }
-    return mergeMinuteIntervals(intervals);
+    intervals.push(...habitOptionWindowIntervals(h,locationId,locWin,dayBase));
   }
-  // Both prayer anchors and habit anchors are dynamic; resolve through the
-  // shared resolver. Habit anchors ignore the passed-in location (they use
-  // the anchor habit's log); prayer anchors use the habit's resolved location
-  // — NOT the location passed in here, which may be a different allowed one.
-  // dayBase must be the day being placed (not Date.now): otherwise a located
-  // habit's sunrise window is resolved for today and stamped onto tomorrow,
-  // which can miss the open post-sleep gap even when the real window is clear.
-  const base = dayBase != null ? dayBase : dayStart(Date.now());
-  const startAnchor = cleanAnchor(h && h.allowedTimeStartAnchor);
-  const endAnchor = cleanAnchor(h && h.allowedTimeEndAnchor);
-  if(startAnchor || endAnchor){
-    const startMin = resolveHabitTimeField(h,'allowedTimeStart',base);
-    const endMin = resolveHabitTimeField(h,'allowedTimeEnd',base);
-    if(startMin == null || endMin == null)return [];
-    return intersectWindows({start:startMin,end:endMin},locWin);
-  }
-  if(!hasTimeWindow(h))return locWin.end > locWin.start ? [locWin] : unwrapMinuteWindow(locWin);
-  return intersectWindows({start:h.allowedTimeStart,end:h.allowedTimeEnd},locWin);
+  if(intervals.length)return mergeMinuteIntervals(intervals);
+  if(hasHabitScheduleOptions(h) || hasGeneralAllowedSchedule(h))return [];
+  return habitSimpleWindowIntervals(h,locWin,dayBase);
 }
 // PURE: startup sweep — drop any locationIds from each habit that are no longer
 // in the registry, and prune locationPrefs / preferredLocationId accordingly.
@@ -568,14 +824,11 @@ function reconcileLocations(data,settings){
     const prev = Array.isArray(h.locationIds) ? h.locationIds : [];
     const optionState = habitScheduleOptionLocationState(h.scheduleOptions,registry);
     const scheduleOptions = optionState.options;
-    const locationIds = scheduleOptions.length
-      ? optionState.locationIds
-      : normalizeLocationIds(prev.filter(id=>valid.has(id)),registry);
-    const anywhereAllowed = scheduleOptions.length
-      ? optionState.anywhereAllowed
-      : Boolean(h.anywhereAllowed);
-    const locationPrefs = normalizeLocationPrefs(h.locationPrefs,locationIds,h.preferredLocationId);
-    const preferredLocationId = primaryPreferredLocationId(locationPrefs,locationIds);
+    const locationIds = normalizeLocationIds(prev.filter(id=>valid.has(id)),registry);
+    const anywhereAllowed = Boolean(h.anywhereAllowed);
+    const prefIds = normalizeLocationIds([...locationIds,...optionState.locationIds],registry);
+    const locationPrefs = normalizeLocationPrefs(h.locationPrefs,prefIds,h.preferredLocationId);
+    const preferredLocationId = primaryPreferredLocationId(locationPrefs,prefIds);
     const prevPref = h.preferredLocationId || null;
     const prevPrefs = JSON.stringify(h.locationPrefs || {});
     const moved = locationIds.length !== prev.length

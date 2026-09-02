@@ -258,18 +258,52 @@ function habitScheduleOptionLocationOptions(selectedId){
   return options.join('');
 }
 
+function habitScheduleOptionPrefButton(pref){
+  const level = cleanLocationPrefLevel(pref) || '';
+  const mark = level === 'high' ? '★' : level === 'little' ? '☆' : level === 'avoid' ? '–' : 'pref';
+  const title = level === 'high' ? 'high preference for this time and place'
+    : level === 'little' ? 'little preference for this time and place'
+    : level === 'avoid' ? 'avoid this time and place if possible'
+    : 'no extra preference — uses the place ranking';
+  return `<button type="button" class="mini-text-btn habit-option-pref${level ? ` pref-${level}` : ''}" data-pref="${escapeHtml(level)}" aria-label="preference for this time and place" title="${title}">${mark}</button>`;
+}
+
+function nextHabitScheduleOptionPref(level){
+  if(!level)return 'little';
+  if(level === 'little')return 'high';
+  if(level === 'high')return 'avoid';
+  return '';
+}
+
+let habitScheduleOptionRowSerial = 0;
+
+function habitScheduleOptionTimePairHtml(){
+  habitScheduleOptionRowSerial += 1;
+  const key = habitScheduleOptionRowSerial;
+  return `<div class="habit-option-time-window time-endpoints">
+    ${uiTimeEndpointHtml({
+      field:'start',inputId:`detail-habit-option-${key}-start`,prefix:'specific start',
+      endpointLabel:'starts',fixedClass:'habit-option-start'
+    })}
+    <span class="time-sep">–</span>
+    ${uiTimeEndpointHtml({
+      field:'end',inputId:`detail-habit-option-${key}-end`,prefix:'specific end',
+      endpointLabel:'ends',fixedClass:'habit-option-end'
+    })}
+  </div>`;
+}
+
 function habitScheduleOptionRowHtml(option,index){
   const normalized = normalizeHabitScheduleOptions([option])[0]
-    || {weekdays:[],start:540,end:600,locationId:null};
+    || {weekdays:[],start:540,end:600,locationId:null,pref:null};
   const activeDays = normalized.weekdays.length
     ? new Set(normalized.weekdays)
     : new Set([0,1,2,3,4,5,6]);
   return `<div class="habit-option-row" data-habit-option-index="${index}">
     <div class="habit-option-main">
       <select class="habit-option-location" aria-label="option location">${habitScheduleOptionLocationOptions(normalized.locationId)}</select>
-      <input type="time" step="900" class="habit-option-start" aria-label="option starts" value="${minutesToTimeInput(normalized.start)}" />
-      <span class="loc-sep">–</span>
-      <input type="time" step="900" class="habit-option-end" aria-label="option ends" value="${minutesToTimeInput(normalized.end)}" />
+      ${habitScheduleOptionTimePairHtml()}
+      ${habitScheduleOptionPrefButton(normalized.pref)}
       <button type="button" class="mini-text-btn habit-option-remove" aria-label="remove option"><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
     <div class="habit-option-days" role="group" aria-label="option weekdays">
@@ -278,34 +312,43 @@ function habitScheduleOptionRowHtml(option,index){
   </div>`;
 }
 
+function habitScheduleOptionContext(h,option){
+  const locationId = cleanLocationId(option && option.locationId) || null;
+  return {
+    ...(h || {}),
+    ...(option || {}),
+    locationIds:locationId ? [locationId] : [],
+    anywhereAllowed:locationId == null
+  };
+}
+
+function renderHabitScheduleOptionEndpoints(row,h,option){
+  if(!row)return;
+  populateAnchorOptions();
+  const context = habitScheduleOptionContext(h,option);
+  for(const field of ['start','end']){
+    const endpoint = row.querySelector(`.time-endpoint[data-field="${field}"]`);
+    renderTimeEndpoint(endpoint,field,context);
+  }
+}
+
+function initializeHabitScheduleOptionRows(h = {}){
+  const options = normalizeHabitScheduleOptions(h.scheduleOptions,(sortSettings || {}).locations);
+  document.querySelectorAll('#detail-habit-option-list .habit-option-row').forEach((row,index)=>{
+    renderHabitScheduleOptionEndpoints(row,h,options[index]);
+  });
+}
+
 function syncHabitScheduleOptionsUi(){
   const list = $('detail-habit-option-list');
   const hasOptions = Boolean(list && list.children.length);
-  const simpleFields = $('detail-simple-allowed-fields');
-  if(simpleFields)simpleFields.hidden = hasOptions;
   const add = $('detail-habit-option-add');
-  if(add)add.textContent = hasOptions ? 'add option' : 'use options';
+  if(add)add.textContent = 'add';
   const hint = $('detail-habit-options-hint');
-  if(hint)hint.textContent = hasOptions
-    ? 'Each row is a valid alternative. Preferred rules rank them; only one is scheduled.'
-    : 'Keep the simple rules above, or switch to coupled day, time, and place alternatives.';
-
-  const tagWrap = $('detail-place-chips');
-  if(!tagWrap)return;
-  if(hasOptions){
-    const placeState = habitScheduleOptionLocationState(readHabitScheduleOptionsFromDetail(),(sortSettings || {}).locations);
-    const prefs = normalizeLocationPrefs(
-      selectedLocationPrefsFrom('detail-place-chips'),placeState.locationIds,null
-    );
-    tagWrap.dataset.locationChoiceMode = 'preference';
-    renderTagChips(
-      'detail-place-chips',[],placeState.locationIds,null,prefs,placeState.anywhereAllowed
-    );
-  }else{
-    renderTagChips(
-      'detail-place-chips',[],selectedLocationIdsFrom('detail-place-chips'),null,
-      selectedLocationPrefsFrom('detail-place-chips'),selectedAnywhereFrom('detail-place-chips')
-    );
+  if(hint){
+    hint.textContent = hasOptions
+      ? 'Each row is an extra allowed time and place. Its preference overrides the place ranking for that instance. Only one is scheduled per occurrence.'
+      : 'Time above applies at every allowed place. Add a row for a specific time and place when you need one.';
   }
   syncDetailSchedulePlacesUi();
 }
@@ -313,8 +356,7 @@ function syncHabitScheduleOptionsUi(){
 function syncDetailSchedulePlacesUi(){
   const wrap = $('detail-place-chips');
   const label = $('detail-places-label');
-  const hasOptions = Boolean($('detail-habit-option-list')?.children.length);
-  const preferenceOnly = hasOptions || detailScheduleView === 'preferred';
+  const preferenceOnly = detailScheduleView === 'preferred';
   if(wrap){
     wrap.dataset.locationChoiceMode = preferenceOnly ? 'preference' : 'allowed';
     applyTagChipLocationMode(wrap);
@@ -327,22 +369,98 @@ function renderHabitScheduleOptions(h = {}){
   if(!list)return;
   const options = normalizeHabitScheduleOptions(h.scheduleOptions,(sortSettings || {}).locations);
   list.innerHTML = options.map(habitScheduleOptionRowHtml).join('');
+  initializeHabitScheduleOptionRows({...h,scheduleOptions:options});
   syncHabitScheduleOptionsUi();
+}
+
+function readHabitScheduleOptionEndpoint(endpoint,prefix){
+  if(!endpoint)return {};
+  if(!endpoint.classList.contains('is-dynamic')){
+    return {[prefix]:timeInputToMinutes(endpoint.querySelector('.time-fixed')?.value)};
+  }
+  const anchor = cleanPrayerAnchor(endpoint.querySelector('.time-anchor')?.value);
+  const combine = cleanTimeCombine(endpoint.querySelector('.time-combine')?.value);
+  const anchor2 = combine
+    ? (endpoint.querySelector('.time-anchor2')?.value === 'fixed'
+      ? 'fixed' : cleanPrayerAnchor(endpoint.querySelector('.time-anchor2')?.value))
+    : null;
+  return {
+    [prefix]:null,
+    [prefix + 'Anchor']:anchor,
+    [prefix + 'OffsetMin']:readSignedOffset(endpoint.querySelector('.time-offset')),
+    [prefix + 'DayOffset']:endpoint.querySelector('.time-day-next')?.getAttribute('aria-pressed') === 'true' ? 1 : 0,
+    [prefix + 'Combine']:combine,
+    [prefix + 'Anchor2']:anchor2,
+    [prefix + 'OffsetMin2']:anchor2 && anchor2 !== 'fixed'
+      ? readSignedOffset(endpoint.querySelector('.time-offset2')) : 0,
+    [prefix + 'FixedMin2']:anchor2 === 'fixed'
+      ? timeInputToMinutes(endpoint.querySelector('.time-fixed2')?.value) : null,
+    [prefix + 'DayOffset2']:anchor2 && anchor2 !== 'fixed'
+      && endpoint.querySelector('.time-day-next2')?.getAttribute('aria-pressed') === 'true' ? 1 : 0
+  };
+}
+
+function readHabitScheduleOptionRow(row){
+  const selectedDays = [...row.querySelectorAll('[data-habit-option-day].on')]
+    .map(btn=>Number(btn.dataset.habitOptionDay));
+  return {
+    weekdays:normalizeAllowedWeekdays(selectedDays),
+    ...readHabitScheduleOptionEndpoint(row.querySelector('.time-endpoint[data-field="start"]'),'start'),
+    ...readHabitScheduleOptionEndpoint(row.querySelector('.time-endpoint[data-field="end"]'),'end'),
+    locationId:cleanLocationId(row.querySelector('.habit-option-location')?.value) || null,
+    pref:cleanLocationPrefLevel(row.querySelector('.habit-option-pref')?.dataset.pref)
+  };
 }
 
 function readHabitScheduleOptionsFromDetail(){
   const raw = [];
   document.querySelectorAll('#detail-habit-option-list .habit-option-row').forEach(row=>{
-    const selectedDays = [...row.querySelectorAll('[data-habit-option-day].on')]
-      .map(btn=>Number(btn.dataset.habitOptionDay));
-    raw.push({
-      weekdays:normalizeAllowedWeekdays(selectedDays),
-      start:timeInputToMinutes(row.querySelector('.habit-option-start')?.value),
-      end:timeInputToMinutes(row.querySelector('.habit-option-end')?.value),
-      locationId:cleanLocationId(row.querySelector('.habit-option-location')?.value) || null
-    });
+    raw.push(readHabitScheduleOptionRow(row));
   });
   return normalizeHabitScheduleOptions(raw,(sortSettings || {}).locations);
+}
+
+function refreshHabitScheduleOptionEndpoint(endpoint){
+  const row = endpoint && endpoint.closest('.habit-option-row');
+  if(!row)return;
+  const saved = detailIdx != null && typeof load === 'function' ? load()[detailIdx] : null;
+  const context = habitScheduleOptionContext(saved || {},readHabitScheduleOptionRow(row));
+  const field = endpoint.dataset.field;
+  syncExprControls(endpoint,field,context,'');
+  const combine = cleanTimeCombine(context[field + 'Combine']);
+  const expr2 = endpoint.querySelector('.time-expr2');
+  if(expr2)expr2.hidden = !combine;
+  if(combine)syncExprControls(endpoint,field,context,'2');
+  updateTimeResolved(endpoint,field,context);
+}
+
+function habitScheduleOptionFromAllowedWindow(h){
+  const out = {};
+  for(const [source,target] of [['allowedTimeStart','start'],['allowedTimeEnd','end']]){
+    const anchor = cleanPrayerAnchor(h && h[source + 'Anchor']);
+    if(!anchor){
+      out[target] = h && h[source] != null ? h[source] : null;
+      continue;
+    }
+    out[target] = null;
+    out[target + 'Anchor'] = anchor;
+    out[target + 'OffsetMin'] = normalizePrayerOffset(h && h[source + 'OffsetMin']);
+    out[target + 'DayOffset'] = normalizeAnchorDayOffset(h && h[source + 'DayOffset']);
+    const combine = cleanTimeCombine(h && h[source + 'Combine']);
+    const rawAnchor2 = h && h[source + 'Anchor2'];
+    const anchor2 = rawAnchor2 === 'fixed' ? 'fixed' : cleanPrayerAnchor(rawAnchor2);
+    if(combine && anchor2){
+      out[target + 'Combine'] = combine;
+      out[target + 'Anchor2'] = anchor2;
+      out[target + 'OffsetMin2'] = anchor2 === 'fixed'
+        ? 0 : normalizePrayerOffset(h && h[source + 'OffsetMin2']);
+      out[target + 'FixedMin2'] = anchor2 === 'fixed'
+        ? normalizeTimeMinutes(h && h[source + 'FixedMin2']) : null;
+      out[target + 'DayOffset2'] = anchor2 === 'fixed'
+        ? 0 : normalizeAnchorDayOffset(h && h[source + 'DayOffset2']);
+    }
+  }
+  return out;
 }
 
 function addBlankHabitScheduleOption(){
@@ -359,14 +477,19 @@ function addBlankHabitScheduleOption(){
     ? (primaryPreferredLocationId(prefs,selected) || selected[0] || null)
     : (selected[0] || normalizeLocationRegistry((sortSettings || {}).locations)[0]?.id || null);
   const selectedDays = firstOption ? selectedWeekdaysFrom('detail-weekday-chips') : [];
-  const allowedStart = firstOption ? timeInputToMinutes($('detail-time-start')?.value) : null;
-  const allowedEnd = firstOption ? timeInputToMinutes($('detail-time-end')?.value) : null;
-  list.insertAdjacentHTML('beforeend',habitScheduleOptionRowHtml({
+  const current = firstOption && typeof currentDetailTune === 'function' ? currentDetailTune() : null;
+  const seededWindow = firstOption ? habitScheduleOptionFromAllowedWindow(current) : {};
+  const draft = {
     weekdays:selectedDays,
-    start:allowedStart ?? 540,
-    end:allowedEnd ?? 600,
+    ...seededWindow,
+    start:seededWindow.start ?? (seededWindow.startAnchor ? null : 540),
+    end:seededWindow.end ?? (seededWindow.endAnchor ? null : 600),
     locationId
-  },list.children.length));
+  };
+  list.insertAdjacentHTML('beforeend',habitScheduleOptionRowHtml(draft,list.children.length));
+  const row = list.lastElementChild;
+  const saved = detailIdx != null && typeof load === 'function' ? load()[detailIdx] : null;
+  renderHabitScheduleOptionEndpoints(row,saved || {},draft);
   syncHabitScheduleOptionsUi();
   setDetailDirty();
 }

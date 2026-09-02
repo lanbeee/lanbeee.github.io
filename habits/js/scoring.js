@@ -282,7 +282,9 @@ function locationAffinityMap(data,settings){
   if(!registry.length){ _locationAffinityCache = { key, byId }; return byId; }
   for(const h of (Array.isArray(data) ? data : [])){
     if(h.type === 'zero')continue;
-    const ids = normalizeLocationIds(h.locationIds,registry);
+    const ids = typeof habitDisplayLocationIds === 'function'
+      ? habitDisplayLocationIds(h,registry)
+      : normalizeLocationIds(h.locationIds,registry);
     if(!ids.length)continue;
     let weight = 0;
     if(h.type === 'task'){
@@ -309,7 +311,9 @@ function invalidateLocationAffinity(){ _locationAffinityCache = { key:null, byId
 function locationSignal(h,settings,affinity = null){
   if(h.type === 'zero')return 0;
   const registry = normalizeLocationRegistry(settings.locations);
-  const ids = normalizeLocationIds(h.locationIds,registry);
+  const ids = typeof habitDisplayLocationIds === 'function'
+    ? habitDisplayLocationIds(h,registry)
+    : normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return 0;                                // anywhere → neutral
   const weekday = new Date().getDay();
   const aff = affinity || locationAffinityMap(typeof load === 'function' ? load() : [],settings);
@@ -888,7 +892,9 @@ function searchText(h,locationRegistry = null){
 function locationSearchNames(h,registryOverride = null){
   const registry = registryOverride
     || (typeof locationOptions === 'function' ? locationOptions() : normalizeLocationRegistry((sortSettings || {}).locations));
-  return normalizeLocationIds(h.locationIds,registry)
+  return (typeof habitDisplayLocationIds === 'function'
+    ? habitDisplayLocationIds(h,registry)
+    : normalizeLocationIds(h.locationIds,registry))
     .map(id=>{
       const loc = registry.find(l=>l.id === id);
       return loc ? `${loc.name} ${loc.address || ''}` : '';
