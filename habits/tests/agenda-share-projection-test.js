@@ -400,6 +400,35 @@ function assert(cond,msg){
   assert(completionRequest.completion.revision === 1 && completionRequest.completion.logId.length === 16,'the completion is bound to the current snapshot and opaque displayed row');
   assert(completionUi.done && /is done/i.test(completionUi.label || '') && completionUi.stored.includes(completionRequest.completion.logId) && !completionUi.toastVisible,'once the undo window expires the display pushes the completion and keeps the row marked done');
 
+  // The undo toast is position:fixed. The screen-fit squash transforms the
+  // page content, and a transformed ancestor would otherwise become the
+  // toast's containing block — re-anchoring and squashing it to the page box
+  // instead of leaving it pinned to the real screen.
+  await displayPage.evaluate(()=>{
+    const settings = readAgendaAppearance();
+    settings.squish = 85;
+    writeAgendaAppearance(settings);
+    applyAgendaAppearance(settings);
+  });
+  await displayPage.click('.agenda-day article.agenda-row:nth-of-type(2) [data-complete-row]');
+  const squishedToast = await displayPage.evaluate(()=>{
+    const toast = document.getElementById('agenda-undo');
+    const rect = toast.getBoundingClientRect();
+    return {
+      squashed:getComputedStyle(document.getElementById('agenda-page')).transform !== 'none',
+      visible:!toast.hidden,
+      pinnedToViewport:rect.bottom <= window.innerHeight && rect.bottom >= window.innerHeight - 120,
+      unsquashed:Math.abs(rect.height / toast.offsetHeight - 1) < 0.05
+    };
+  });
+  await displayPage.click('#agenda-undo-button');
+  await displayPage.evaluate(()=>{
+    localStorage.removeItem('tings_agenda_appearance_v1');
+    applyAgendaAppearance(readAgendaAppearance());
+  });
+  assert(squishedToast.squashed && squishedToast.visible && squishedToast.pinnedToViewport && squishedToast.unsquashed,
+    `the undo toast stays pinned to the viewport at full height while screen fit squashes the page (${JSON.stringify(squishedToast)})`);
+
   // --- Undo robustness: flush, refresh races, pause, and de-pair races. ---
   completionRequests.length = 0;
   completionRequest = null;
@@ -602,10 +631,10 @@ function assert(cond,msg){
     document.getElementById('agenda-fit-minus').click();
     const fitStepped = {
       applied:document.documentElement.dataset.squish,
-      squashed:getComputedStyle(document.body).transform !== 'none'
+      squashed:getComputedStyle(document.getElementById('agenda-page')).transform !== 'none'
     };
     document.getElementById('agenda-fit-plus').click();
-    const fitRestored = document.documentElement.dataset.squish === '100' && getComputedStyle(document.body).transform === 'none';
+    const fitRestored = document.documentElement.dataset.squish === '100' && getComputedStyle(document.getElementById('agenda-page')).transform === 'none';
     return {
       nothingStored:!storedBefore,defaultDark,moreLabel,fontBefore,
       opened,lightApplied,fontStepped,fitStepped,fitRestored,

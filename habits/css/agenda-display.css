@@ -123,25 +123,28 @@
 :root[data-font="195"]{--font-scale:1.95;}
 :root[data-font="200"]{--font-scale:2;}
 /* Some photo frames stretch their panel vertically. "screen fit" pre-squashes
-   the page by a chosen percentage (a transform on <body>) so round things look
-   round again on the glass; 100% emits no transform at all, and the night
-   screen paints the root black so the reclaimed strip is invisible. */
-body{transform-origin:top center;}
-:root[data-squish="99"] body{transform:scaleY(.99);-webkit-transform:scaleY(.99);}
-:root[data-squish="98"] body{transform:scaleY(.98);-webkit-transform:scaleY(.98);}
-:root[data-squish="97"] body{transform:scaleY(.97);-webkit-transform:scaleY(.97);}
-:root[data-squish="96"] body{transform:scaleY(.96);-webkit-transform:scaleY(.96);}
-:root[data-squish="95"] body{transform:scaleY(.95);-webkit-transform:scaleY(.95);}
-:root[data-squish="94"] body{transform:scaleY(.94);-webkit-transform:scaleY(.94);}
-:root[data-squish="93"] body{transform:scaleY(.93);-webkit-transform:scaleY(.93);}
-:root[data-squish="92"] body{transform:scaleY(.92);-webkit-transform:scaleY(.92);}
-:root[data-squish="91"] body{transform:scaleY(.91);-webkit-transform:scaleY(.91);}
-:root[data-squish="90"] body{transform:scaleY(.90);-webkit-transform:scaleY(.90);}
-:root[data-squish="89"] body{transform:scaleY(.89);-webkit-transform:scaleY(.89);}
-:root[data-squish="88"] body{transform:scaleY(.88);-webkit-transform:scaleY(.88);}
-:root[data-squish="87"] body{transform:scaleY(.87);-webkit-transform:scaleY(.87);}
-:root[data-squish="86"] body{transform:scaleY(.86);-webkit-transform:scaleY(.86);}
-:root[data-squish="85"] body{transform:scaleY(.85);-webkit-transform:scaleY(.85);}
+   the page by a chosen percentage (a transform on the #agenda-page wrapper)
+   so round things look round again on the glass; 100% emits no transform at
+   all. The transform must stay OFF <body>: a transformed element becomes the
+   containing block for position:fixed descendants, which re-anchors and
+   squashes the fixed undo toast and night clock to the body box instead of
+   the real screen — both therefore live outside the wrapper. */
+#agenda-page{transform-origin:top center;}
+:root[data-squish="99"] #agenda-page{transform:scaleY(.99);-webkit-transform:scaleY(.99);}
+:root[data-squish="98"] #agenda-page{transform:scaleY(.98);-webkit-transform:scaleY(.98);}
+:root[data-squish="97"] #agenda-page{transform:scaleY(.97);-webkit-transform:scaleY(.97);}
+:root[data-squish="96"] #agenda-page{transform:scaleY(.96);-webkit-transform:scaleY(.96);}
+:root[data-squish="95"] #agenda-page{transform:scaleY(.95);-webkit-transform:scaleY(.95);}
+:root[data-squish="94"] #agenda-page{transform:scaleY(.94);-webkit-transform:scaleY(.94);}
+:root[data-squish="93"] #agenda-page{transform:scaleY(.93);-webkit-transform:scaleY(.93);}
+:root[data-squish="92"] #agenda-page{transform:scaleY(.92);-webkit-transform:scaleY(.92);}
+:root[data-squish="91"] #agenda-page{transform:scaleY(.91);-webkit-transform:scaleY(.91);}
+:root[data-squish="90"] #agenda-page{transform:scaleY(.90);-webkit-transform:scaleY(.90);}
+:root[data-squish="89"] #agenda-page{transform:scaleY(.89);-webkit-transform:scaleY(.89);}
+:root[data-squish="88"] #agenda-page{transform:scaleY(.88);-webkit-transform:scaleY(.88);}
+:root[data-squish="87"] #agenda-page{transform:scaleY(.87);-webkit-transform:scaleY(.87);}
+:root[data-squish="86"] #agenda-page{transform:scaleY(.86);-webkit-transform:scaleY(.86);}
+:root[data-squish="85"] #agenda-page{transform:scaleY(.85);-webkit-transform:scaleY(.85);}
 html[data-night="true"]{background:#000;}
 *{box-sizing:border-box;}
 [hidden]{display:none!important;}
