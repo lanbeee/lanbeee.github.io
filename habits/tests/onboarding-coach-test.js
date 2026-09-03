@@ -260,30 +260,20 @@ async function progressBar(page){
   await primary(page,'aHome','aActions');
   assert(/do it now/.test(await page.locator('#tings-coach-copy').textContent()),'card actions teach drag-to-top doing now alongside swipe and audit');
   await primary(page,'aActions','aMissed');
-  // The missed and open-time steps lock to the real day-header pills when the
-  // day has them; the tour must use the actual sheets either way.
-  const hasDropped = await page.locator('.dropped-pill').count() > 0;
-  if(hasDropped){
-    assert(await page.locator('#tings-coach[data-coach-stage="aMissed"]').getAttribute('data-locked') === 'true','the missed step locks to the real dropped pill');
-    await page.locator('.dropped-pill').first().click();
-    await stage(page,'aMissedList');
-    assert(await page.locator('#slipped-sheet.open').count() === 1,'tapping the missed count opens the real missed list');
-    await primary(page,'aMissedList','aOpenTime');
-  }else{
-    assert(/missed/i.test(await page.locator('#tings-coach-copy').textContent()),'without a dropped pill the missed step still teaches the count');
-    await primary(page,'aMissed','aOpenTime');
-  }
-  const hasFree = await page.locator('.free-pill').count() > 0;
-  if(hasFree){
-    assert(await page.locator('#tings-coach[data-coach-stage="aOpenTime"]').getAttribute('data-locked') === 'true','the open-time step locks to the real free pill in full mode');
-    await page.locator('.free-pill').first().click();
-    await stage(page,'aOpenStrip');
-    assert(await page.locator('#free-time-sheet.open').count() === 1,'tapping the open-time count opens the real day strip');
-    await primary(page,'aOpenStrip','aIntro');
-  }else{
-    assert(/open-time count/.test(await page.locator('#tings-coach-copy').textContent()),'without a free pill the open-time step still teaches the count');
-    await primary(page,'aOpenTime','aIntro');
-  }
+  // Demo state always seeds a missed pill and open-time pill, so these steps
+  // are always locked and always require the real controls.
+  // Wait for the dropped pill to appear (demo render may be async).
+  await page.waitForSelector('.dropped-pill', {timeout: 5000});
+  assert(await page.locator('#tings-coach[data-coach-stage="aMissed"]').getAttribute('data-locked') === 'true','the missed step is always locked to the dropped pill (demo state guarantees it)');
+  await page.locator('.dropped-pill').first().click();
+  await stage(page,'aMissedList');
+  assert(await page.locator('#slipped-sheet.open').count() === 1,'tapping the missed count opens the real missed list');
+  await primary(page,'aMissedList','aOpenTime');
+  assert(await page.locator('#tings-coach[data-coach-stage="aOpenTime"]').getAttribute('data-locked') === 'true','the open-time step is always locked to the free pill (demo state guarantees it)');
+  await page.locator('.free-pill').first().click();
+  await stage(page,'aOpenStrip');
+  assert(await page.locator('#free-time-sheet.open').count() === 1,'tapping the open-time count opens the real day strip');
+  await primary(page,'aOpenStrip','aIntro');
   assert(await page.locator('[data-coach-chapter="home"].is-done').count() === 1,'finishing a chapter checks it off on the menu');
 
   // Detail chapter: every step is a real control on the real page — tab, day
@@ -314,26 +304,11 @@ async function progressBar(page){
   assert(await page.locator('[data-coach-chapter="detail"].is-done').count() === 1,'tapping pin completes the detail chapter');
   assert(await page.locator('#detail-sheet.open').count() === 0,'the chapter menu closes the detail page again');
 
-  // Plan chapter: grow the list so search is real, then use it, then the
-  // calendar, then a real day tap.
-  await page.evaluate(()=>{
-    const data = load();
-    for(let i = 0;i < 10;i++){
-      data.push({hid:'coach-fill-' + i,name:'Coach filler ' + i,type:'task',target:'',logs:[],pinned:false,
-        flexibilityDays:0,durationMinutes:30,allowedTimeStart:null,allowedTimeEnd:null,
-        lastLog:null,emoji:'',sample:false,snoozedUntil:null,topics:[],allowedWeekdays:[],
-        allowedMonthDays:[],preferredWeekdays:[],preferredMonthDays:[],dueDate:null,
-        eventTime:null,hardDue:false,createdAt:Date.now(),breakable:false,anywhereAllowed:true,locationIds:[]});
-    }
-    save(data);
-    render();
-    // A real ten-item user's nav is already in this state; the optimized
-    // week render path defers updateSortButton, so refresh it directly.
-    if(typeof updateSortButton === 'function')updateSortButton();
-  });
+  // Plan chapter: demo state ensures >10 habits so search is always a real
+  // locked step — no manual injection needed.
   await page.locator('[data-coach-chapter="plan"]').click();
   await stage(page,'aSearch');
-  assert(await page.locator('#tings-coach[data-coach-stage="aSearch"]').getAttribute('data-locked') === 'true','a grown list turns search into a real locked step');
+  assert(await page.locator('#tings-coach[data-coach-stage="aSearch"]').getAttribute('data-locked') === 'true','demo state guarantees enough habits for search to be a locked step');
   await page.locator('#open-search').click();
   await stage(page,'aCalendar');
   await page.locator('#open-overview').click();
@@ -365,7 +340,16 @@ async function progressBar(page){
   assert(/block sleep/.test(await page.locator('#tings-coach-copy').textContent()),'busy times keep their making-plans-good emphasis');
   await primary(page,'aBusy','aDefaults');
   await primary(page,'aDefaults','aOptimizer');
-  await primary(page,'aOptimizer','aIntro');
+  // aOptimizer is now locked to the settings-advanced-head; opening it auto-advances to the toggle step.
+  assert(await page.locator('#tings-coach[data-coach-stage="aOptimizer"]').getAttribute('data-locked') === 'true','optimizer step locks to the Advanced section header');
+  await page.locator('#settings-advanced-head').click();
+  await stage(page,'aOptimizerToggle');
+  // Wait for the accordion to expand and toggle to become visible.
+  await page.waitForSelector('[data-setting-toggle="agendaOptimizer"]', {timeout: 3000});
+  await page.waitForTimeout(300); // allow position() to re-run after layout
+  assert(await page.locator('#tings-coach[data-coach-stage="aOptimizerToggle"]').getAttribute('data-locked') === 'true','optimizer toggle step locks to the real toggle control');
+  await page.locator('[data-setting-toggle="agendaOptimizer"],[data-ui-toggle="agendaOptimizer"]').first().click();
+  await stage(page,'aIntro');
   assert(await page.locator('.tings-coach-chapter.is-done').count() === 5,'every chapter registers as done');
   const advancedChapters = await page.evaluate(()=>JSON.parse(localStorage.getItem('tings_coach_advanced_v2') || '{}'));
   assert(['home','detail','plan','data','tuning'].every(id=>advancedChapters[id] === 'done'),'chapter completion is remembered per chapter');
@@ -597,7 +581,9 @@ async function progressBar(page){
   assert(await desk.locator('[data-coach-chapter="detail"].is-done').count() === 1,'desktop detail chapter finishes and checks off');
   await desk.locator('[data-coach-chapter="plan"]').click();
   await stage(desk,'aSearch');
-  await primary(desk,'aSearch','aOverview');
+  // aSearch is now locked: use tapTarget which waits for the element to be reachable.
+  await tapTarget(desk,'#open-search,#bar-open-search');
+  await stage(desk,'aOverview');
   assert(await desk.locator('#tings-coach[data-coach-stage="aOverview"]').count() === 1,'desktop plan chapter skips the calendar-open step and reads the live pane');
   await tapLiveCalDay(desk,'future');
   await stage(desk,'aOverviewTools');

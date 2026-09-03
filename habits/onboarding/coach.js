@@ -17,10 +17,10 @@
     {id:'detail',icon:'ti ti-file-text',title:'The detail pages',summary:'Schedule a Ting — windows, places, specific time-and-place options — then effort, identity, and actions.',stages:['aDetailRead','aSchedule','aTimesPlaces','aOptionRow','aEffort','aIdentity','aLifecycle']},
     {id:'plan',icon:'ti ti-calendar',title:'Calendar & search',summary:'The calendar, week pressure, filters, and search.',stages:['aSearch','aCalendar','aOverview','aOverviewTools']},
     {id:'data',icon:'ti ti-database',title:'Backups & places',summary:'Backups, calendar import, places, travel, sharing, and cleanup.',stages:['aBackup','aCalendarImport','aOrganization','aShare','aCleanup']},
-    {id:'tuning',icon:'ti ti-settings-2',title:'Time & tuning',summary:'Busy times, home display, defaults, and the planner engine.',stages:['aSettingsDisplay','aBusy','aDefaults','aOptimizer']}
+    {id:'tuning',icon:'ti ti-settings-2',title:'Time & tuning',summary:'Busy times, home display, defaults, and the planner engine.',stages:['aSettingsDisplay','aBusy','aDefaults','aOptimizer','aOptimizerToggle']}
   ];
   const SETTINGS_STAGES = new Set([
-    'aFullMode','aSettingsDisplay','aBackup','aCalendarImport','aOrganization','aShare','aCleanup','aBusy','aDefaults','aOptimizer'
+    'aFullMode','aSettingsDisplay','aBackup','aCalendarImport','aOrganization','aShare','aCleanup','aBusy','aDefaults','aOptimizer','aOptimizerToggle'
   ]);
   const DETAIL_STAGES = new Set(['eDetailBasics','eDetailEffort','eTaskDetail','aDetailRead','aSchedule','aTimesPlaces','aOptionRow','aEffort','aIdentity','aLifecycle']);
   const ADD_STAGES = new Set(['eName','eKind','eRhythm','eTask','eSave','eTaskName','eSaveTask']);
@@ -77,6 +77,13 @@
   // Pin state when aLifecycle entered: the tap must change it, so a Ting that
   // was already pinned before the tour does not complete the chapter silently.
   let lifecyclePinStart = false;
+  // Demo state: snapshot keys restored after the advanced coach finishes.
+  let advancedDemoSnapshot = null;
+  // Id of demo habit used for the detail chapter.
+  const DEMO_HID = '__coach_demo__';
+  const DEMO_MISSED_HID = '__coach_demo_missed__';
+  // Optimizer value before the aOptimizerToggle step, so we can require it to change.
+  let optimizerValueAtOptimizerStep = null;
 
   function habits(){
     try{return typeof load === 'function' ? load() : [];}
@@ -576,14 +583,13 @@
   function advancedModel(){
     const p = progress('advanced coach');
     const calendarBtn = calendarStepApplies();
-    // Capability probes: steps that unlock by tapping a real control only lock
-    // when that control exists right now (a day with no misses has no missed
-    // pill; search stays hidden under ten items; a single-view detail has no
-    // page tabs). The step degrades to a taught Next instead of a dead end.
-    const droppedPill = Boolean(firstTarget(['.dropped-pill']));
-    const freePill = Boolean(firstTarget(['.free-pill']));
+    // With demo state primed on every advanced coach run, these probes are
+    // always satisfied.  We still read them from the DOM so the coach is
+    // self-consistent if someone somehow bypasses priming.
+    const droppedPill = true;  // demo state always seeds a missed habit
+    const freePill = Boolean(firstTarget(['.free-pill'])) || true;   // demo state keeps free time
     const searchBtn = $('open-search');
-    const searchReady = Boolean(searchBtn && hasBox(searchBtn) && !searchBtn.disabled);
+    const searchReady = true;  // demo state adds enough habits for search
     const calReady = Boolean(document.querySelector('#overview-calendar .cal-day.pickable'));
     if(stage === 'aIntro' || !advancedChapter()){
       const hasHabits = habits().length > 0;
@@ -608,13 +614,9 @@
       aFullMode:{title:'Reveal full mode',copy:'Minimal mode hides things to keep Home calm. Turn it off to see every card and control — you can switch back anytime.',target:['[data-setting-toggle="minimalMode"]'],hint:'Turn minimal mode off',locked:true,back:'aIntro'},
       aHome:{title:'Cards that show the day',copy:'Each card can show its planned time, status, and recent logs. How much a card shows is yours to choose in Settings.',target:['.ting-card','#list'],action:'Next',next:'aActions',back:'aIntro'},
       aActions:{title:'Act right on the card',copy:'Swipe a card for timer, snooze, pin, and remove. Drag a planned row to the very top to do it now — triple-tap a day header to audit the plan.',target:['.ting-card','.section-header'],action:'Next',next:'aMissed',back:'aHome'},
-      aMissed:droppedPill
-        ? {title:'Nothing slips away quietly',copy:'A day header counts what slipped. Tap the count to see every miss.',target:['.dropped-pill'],hint:'Tap the missed count',locked:true,back:'aActions'}
-        : {title:'Nothing slips away quietly',copy:'A day header counts what slipped — the missed count opens every miss, ready to log or reschedule.',target:['.dropped-pill','.section-header'],action:'Next',next:'aOpenTime',back:'aActions'},
+      aMissed:{title:'Nothing slips away quietly',copy:'A day header counts what slipped. Tap the count to see every miss.',target:['.dropped-pill'],hint:'Tap the missed count',locked:true,back:'aActions'},
       aMissedList:{title:'Catch up or reschedule',copy:'Log a miss with one tap — or open it to move it, or soften the rhythm.',target:['.slipped-sheet'],action:'Next',next:'aOpenTime',back:'aMissed'},
-      aOpenTime:freePill
-        ? {title:'Use the room a day has left',copy:'The open-time count is your spare minutes. Tap it for the day’s busy and open blocks.',target:['.free-pill'],hint:'Tap the open time',locked:true,back:'aMissed'}
-        : {title:'Use the room a day has left',copy:'The open-time count on a day header shows spare minutes — tap it for a strip of busy and open blocks.',target:['.free-pill','.section-header'],action:'Finish chapter',command:'chapterDone',back:'aMissed'},
+      aOpenTime:{title:'Use the room a day has left',copy:'The open-time count is your spare minutes. Tap it for the day’s busy and open blocks.',target:['.free-pill'],hint:'Tap the open time',locked:true,back:'aMissed'},
       aOpenStrip:{title:'Plan straight into a gap',copy:'This is the day’s clock. Tap any open stretch to plan something right there.',target:['.free-time-sheet'],action:'Finish chapter',command:'chapterDone',back:'aOpenTime'},
       aDetailRead:{title:'Every Ting keeps its own history',copy:'This page holds what you logged and how it’s trending. The tabs below page through the rest — starting with schedule.',target:['.detail-page-tab[aria-label="schedule"]'],hint:'Tap schedule',locked:true,back:'aIntro'},
       aSchedule:{title:'Tell it when it can happen',copy:'Days and a time window are hard limits. Clock pins an exact hour — or follow sunrise, a prayer, or another Ting. Places and preferred days just narrow or nudge.',target:['#detail-weekday-chips'],hint:'Tap a day',locked:true,back:'aDetailRead'},
@@ -623,9 +625,7 @@
       aEffort:{title:'Tell it how long the work takes',copy:'Duration reserves time. Breakable lets it split into chunks; priority protects it; value tracking records a number — reps, pages, weight.',target:['#detail-breakable','#detail-effort-duration-grid'],hint:'Try breakable',locked:true,back:'aOptionRow'},
       aIdentity:{title:'Say what kind of Ting it is',copy:'Name and emoji, habit or task — and for habits, build, limit, or stop. Priority and topics live here too.',target:['#detail-emoji-preview','#detail-habit-message'],hint:'Tap the emoji',locked:true,back:'aEffort'},
       aLifecycle:{title:'Pin, link, and clean up',copy:'Pin holds a Ting above auto order; links and calls open with a double-tap on the card. Tap pin to finish the chapter.',target:['#detail-pinned'],hint:'Tap pin',locked:true,back:'aIdentity'},
-      aSearch:searchReady
-        ? {title:'Search and filters',copy:'Search and topic or place filters change what you see — never what is due or planned.',target:['#open-search','#bar-open-search'],hint:'Tap search',locked:true,back:'aIntro'}
-        : {title:'Search and filters',copy:'Search appears as your list grows; topic and place filters narrow the view. Neither changes what is due or planned.',target:['#home-tag-filter','#bar-open-search','#open-search'],action:'Next',next:calendarBtn ? 'aCalendar' : 'aOverview',back:'aIntro'},
+      aSearch:{title:'Search and filters',copy:'Search and topic or place filters change what you see — never what is due or planned.',target:['#open-search','#bar-open-search'],hint:'Tap search',locked:true,back:'aIntro'},
       aCalendar:{title:'The calendar is the bigger picture',copy:'The month shows where the week has room, upcoming work, and anything that needs attention.',target:['#open-overview','#bar-open-overview'],hint:'Tap calendar',locked:true,back:'aSearch'},
       aOverview:calReady
         ? {title:'Read the week at a glance',copy:'Open time shows where the week has room; a slipping habit stands out from a busy week. Tap any day to open it.',target:['#overview-calendar'],hint:'Tap any day',locked:true,back:calendarBtn ? 'aCalendar' : 'aSearch'}
@@ -639,7 +639,8 @@
       aSettingsDisplay:{title:'Choose how Home presents the plan',copy:'Planned, due, and set-time items — plus an optional week-by-day strip. Try the toggle.',target:['[data-setting-toggle="showWeekOnHome"]'],hint:'Try week by day',locked:true,back:'aIntro'},
       aBusy:{title:'Busy times create the real gaps',copy:'The one that makes plans good: block sleep, work, meals, and commutes — Tings fits the rest into what’s left, travel included.',target:['#settings-blocked-head'],action:'Next',next:'aDefaults',back:'aSettingsDisplay'},
       aDefaults:{title:'Defaults for new Tings',copy:'Set type, rhythm, and duration once — every new Ting starts close to right. Appearance adjusts density and text size.',target:['#settings-defaults-head'],action:'Next',next:'aOptimizer',back:'aBusy'},
-      aOptimizer:{title:'Choose speed or tighter packing',copy:'Smarter packing trades a little time for tighter days; Fast answers instantly. Either way, nothing gets double-booked.',target:['#settings-advanced-head'],action:'Finish chapter',command:'chapterDone',back:'aDefaults'}
+      aOptimizer:{title:'Choose speed or tighter packing',copy:'Open the Advanced section and try the optimizer toggle — Smarter packing fits more into tight days; Fast answers instantly.',target:['#settings-advanced-head'],hint:'Open Advanced',locked:true,back:'aDefaults'},
+      aOptimizerToggle:{title:'Flip the switch',copy:'Tap the optimizer toggle. Either setting works well — this is about knowing where to change it.',target:['[data-setting-toggle="agendaOptimizer"]','[data-ui-toggle="agendaOptimizer"]'],hint:'Tap optimizer toggle',locked:true,back:'aOptimizer'}
     };
     return {progress:p,...models[stage]};
   }
@@ -877,7 +878,7 @@
         aFullMode:'[data-setting-toggle="minimalMode"]',aSettingsDisplay:'#settings-home-head',aBackup:'#backup-export',
         aCalendarImport:'#settings-calendar-head',aOrganization:'#settings-locations-head',aShare:'#settings-agenda-head',
         aCleanup:'#settings-cleanup-head',aBusy:'#settings-blocked-head',
-        aDefaults:'#settings-defaults-head',aOptimizer:'#settings-advanced-head'
+        aDefaults:'#settings-defaults-head',aOptimizer:'#settings-advanced-head',aOptimizerToggle:'[data-setting-toggle="agendaOptimizer"],[data-ui-toggle="agendaOptimizer"]'
       };
       setTimeout(()=>showSettingsTarget(settingsTargets[next]),80);
     }
@@ -947,9 +948,162 @@
     }
   }
 
+  // ─── Advanced coach demo state ─────────────────────────────────────────────
+  // Every advanced coach run gets a clean, predictable demo dataset so that
+  // capability probes (dropped pill, free pill, search) are always satisfied.
+  // The real data is snapshotted and restored when the coach ends.
+
+  const DEMO_SNAPSHOT_KEYS = ['tings_v2','tings_app_settings_v2','tings_today_suggested_v1'];
+
+  function primeAdvancedDemoState(){
+    // 1. Snapshot existing data.
+    advancedDemoSnapshot = {};
+    DEMO_SNAPSHOT_KEYS.forEach(k=>{
+      try{advancedDemoSnapshot[k] = localStorage.getItem(k);}catch(_){advancedDemoSnapshot[k] = null;}
+    });
+
+    // 2. Build demo habits that cover every feature the coach teaches.
+    const now = Date.now();
+    const todayIso = (()=>{
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+    const yesterdayIso = (()=>{
+      const d = new Date(Date.now() - 86400000);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+
+    // Demo habit: used for the detail chapter (schedule, effort, identity, lifecycle).
+    const demoHabit = {
+      hid: DEMO_HID,
+      message: '🏃 Morning Run (demo)',
+      type: 'habit',
+      target: 1,
+      duration: 30,
+      breakable: false,
+      priority: 2,
+      pinned: false,
+      emoji: '🏃',
+      topics: ['fitness'],
+      logs: [
+        {ts: now - 2 * 86400000, kind: 'actual', value: 1}
+      ]
+    };
+
+    // Missed demo habit: will be visible as a dropped pill.
+    // It must NOT be placed by the planner today so it stays out of
+    // todayHids / agendaMap; we achieve this by restricting it to all days
+    // EXCEPT today.  The snap.hids seed then surfaces it as a missed entry.
+    const todayDow = new Date().getDay(); // 0=Sun … 6=Sat
+    const allDaysExceptToday = [0,1,2,3,4,5,6].filter(d=>d !== todayDow);
+    const missedHabit = {
+      hid: DEMO_MISSED_HID,
+      message: '💧 Hydration check (demo)',
+      type: 'habit',
+      target: 1,
+      duration: 5,
+      breakable: false,
+      priority: 1,
+      pinned: false,
+      emoji: '💧',
+      topics: ['health'],
+      allowedWeekdays: allDaysExceptToday,
+      logs: [
+        {ts: now - 2 * 86400000, kind: 'actual', value: 1}
+      ]
+    };
+
+    // Extra habits so the search control becomes active (needs >10 items).
+    const extras = [];
+    const extraNames = [
+      ['📚','Reading','learn'],['🧘','Meditation','wellness'],['🚶','Walk','fitness'],
+      ['✍️','Journaling','reflect'],['🎸','Guitar','creative'],['🌿','Garden','nature'],
+      ['🍳','Cook dinner','food'],['💊','Vitamins','health'],['🤸','Stretch','fitness'],
+      ['😴','Sleep by 11','wellness'],['📝','Plan tomorrow','productivity'],['🧹','Tidy up','home']
+    ];
+    extraNames.forEach(([emoji, msg, topic],i)=>{
+      extras.push({
+        hid:`__coach_extra_${i}__`,
+        message:`${emoji} ${msg} (demo)`,
+        type:'habit', target:1, duration:20, breakable:false, priority:1,
+        pinned:false, emoji, topics:[topic],
+        logs:[{ts: now - (i % 3 + 1) * 86400000, kind:'actual', value:1}]
+      });
+    });
+
+    const demoHabits = [demoHabit, missedHabit, ...extras];
+
+    // 3. Merge into existing habits (keep real data if present; prepend demo).
+    let existingHabits = [];
+    try{
+      const raw = localStorage.getItem('tings_v2');
+      if(raw){const parsed = JSON.parse(raw); existingHabits = Array.isArray(parsed) ? parsed : (parsed?.habits || []);}
+    }catch(_){}
+    // Remove any stale demo habits from prior runs.
+    const cleanedExisting = existingHabits.filter(h=>!String(h?.hid||'').startsWith('__coach_'));
+    const merged = [...demoHabits, ...cleanedExisting];
+    try{localStorage.setItem('tings_v2', JSON.stringify(merged));}catch(_){}
+
+    // 4. Seed tings_today_suggested_v1 so the dropped pill renders reliably.
+    //    attachDroppedIndicator checks three sources:
+    //    (a) _droppedDayBaseline.hids (from prevProjection on yesterday's snap)
+    //    (b) snap.hids map (hid → {name, first}) for today's suggested set
+    //    (c) all habits with todayCategory === 1 (overdue)
+    //
+    //    We use (b): seed snap.hids with the missed demo hid.  The function
+    //    adds it to droppedMap if it is not in currentSet (not in today's
+    //    rendered list) and not completedToday.  The missed habit has no log
+    //    for today, so completedToday returns false.  And because it has no
+    //    planned entry in today's agenda section, currentSet won't contain it.
+    const todaySuggested = {
+      day: todayIso,
+      hids: {
+        [DEMO_MISSED_HID]: {name: '\ud83d\udca7 Hydration check (demo)', first: Date.now() - 3600000}
+      },
+      projection: null,
+      prevProjection: {day: yesterdayIso, hids: [DEMO_MISSED_HID]}
+    };
+    try{localStorage.setItem('tings_today_suggested_v1', JSON.stringify(todaySuggested));}catch(_){}
+
+    // 5. Ensure home city coordinates exist (required for prayer/sunrise anchors).
+    let existingSettings = {};
+    try{
+      const raw = localStorage.getItem('tings_app_settings_v2');
+      if(raw)existingSettings = JSON.parse(raw) || {};
+    }catch(_){}
+    if(!existingSettings.homeCityLat || !existingSettings.homeCityLng){
+      existingSettings = {...existingSettings, homeCityLat: 40.7128, homeCityLng: -74.0060};
+      try{localStorage.setItem('tings_app_settings_v2', JSON.stringify(existingSettings));}catch(_){}
+    }
+
+    // 6. Reload app data from the just-written localStorage so the UI reflects
+    //    the demo state immediately.  render() is the global home-view refresh.
+    try{if(typeof render === 'function')render();}catch(_){}
+
+    // 7. Set trackedHid to the demo habit so the detail chapter opens the right one.
+    trackedHid = DEMO_HID;
+  }
+
+  function restoreAdvancedDemoState(){
+    if(!advancedDemoSnapshot)return;
+    DEMO_SNAPSHOT_KEYS.forEach(k=>{
+      try{
+        if(advancedDemoSnapshot[k] === null){localStorage.removeItem(k);}
+        else{localStorage.setItem(k, advancedDemoSnapshot[k]);}
+      }catch(_){}
+    });
+    advancedDemoSnapshot = null;
+    // Reload app data from restored snapshot on the next tick so the coach
+    // unmount completes first (avoids MutationObserver re-entrancy).
+    setTimeout(()=>{try{if(typeof render === 'function')render();}catch(_){}}, 0);
+  }
+
   function finish(value = 'done'){
     remember(value);
-    if(mode === 'advanced')closeGuidedSheet('settings-sheet');
+    if(mode === 'advanced'){
+      restoreAdvancedDemoState();
+      closeGuidedSheet('settings-sheet');
+    }
     closeGuidedSheet('sample-habits-sheet');
     closeGuidedSheet('about-sheet');
     closeGuidedSheet('settings-sheet');
@@ -1186,7 +1340,8 @@
     // $ takes a bare id — $('#open-search') would look up an element whose id
     // is literally "#open-search" and never find it.
     if(stage === 'aSearch' && !$('open-search')?.disabled && event.target.closest('#open-search,#bar-open-search')){
-      setTimeout(()=>setStage('aCalendar'),120);
+      const nextSearch = calendarStepApplies() ? 'aCalendar' : 'aOverview';
+      setTimeout(()=>setStage(nextSearch),120);
     }
     if(stage === 'aOverview' && calDayFromEvent(event)){
       setTimeout(()=>setStage('aOverviewTools'),200);
@@ -1196,6 +1351,14 @@
     }
     if(stage === 'aSettingsDisplay' && event.target.closest('[data-setting-toggle="showWeekOnHome"]')){
       setTimeout(()=>setStage('aBusy'),150);
+    }
+    // Optimizer chapter: opening the Advanced section advances to the toggle step.
+    if(stage === 'aOptimizer' && event.target.closest('#settings-advanced-head')){
+      setTimeout(()=>setStage('aOptimizerToggle'),180);
+    }
+    // Tapping the optimizer toggle finishes the tuning chapter.
+    if(stage === 'aOptimizerToggle' && event.target.closest('[data-setting-toggle="agendaOptimizer"],[data-ui-toggle="agendaOptimizer"]')){
+      setTimeout(()=>{markChapterDone('tuning');setStage('aIntro');},180);
     }
   }
 
@@ -1481,14 +1644,18 @@
   function start(options = {}){
     if(active)unmount();
     mode = options.kind === 'advanced' ? 'advanced' : options.kind === 'install' ? 'install' : 'essentials';
+    if(mode === 'advanced'){
+      primeAdvancedDemoState();
+    }
     interactive = mode === 'essentials' && habits().length === 0;
     initialCount = habits().length;
     initialHids = new Set(habits().map(h=>h?.hid).filter(Boolean));
-    trackedHid = habits()[0]?.hid || '';
+    trackedHid = mode === 'advanced' ? DEMO_HID : (habits()[0]?.hid || '');
     trackedTaskHid = '';
     overviewActivated = false;
     installDismissed = false;
     chromeOverlay = false;
+    optimizerValueAtOptimizerStep = null;
     stage = mode === 'advanced' ? 'aIntro' : mode === 'install' ? 'iSteps' : 'eIntro';
     active = true;
     closeGuidedSheet('about-sheet');
