@@ -34,6 +34,27 @@ async function tapCalDay(page,kind){
   },kind);
 }
 
+// Same tap, but the closing click goes to whatever node now sits under the
+// finger: the app's own reaction to the pointer events can re-render the
+// calendar and detach the tapped cell before the click dispatch.
+async function tapLiveCalDay(page,kind){
+  await page.evaluate(which=>{
+    const selector = which === 'future'
+      ? '#overview-calendar .cal-day.pickable.future'
+      : '#overview-calendar .cal-day.pickable:not(.today):not(.future)';
+    const day = document.querySelector(selector);
+    if(!day)return;
+    const box = day.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const opts = {bubbles:true,cancelable:true,clientX:x,clientY:y,pointerId:1,pointerType:'touch'};
+    day.dispatchEvent(new PointerEvent('pointerdown',opts));
+    day.dispatchEvent(new PointerEvent('pointerup',opts));
+    const hit = document.elementFromPoint(x,y);
+    (hit?.closest('.cal-day.pickable') || document.querySelector(selector))?.click();
+  },kind);
+}
+
 async function tapInPage(page,selector){
   await page.evaluate(sel=>{
     const el = document.querySelector(sel);
@@ -45,6 +66,16 @@ async function primary(page,current,next){
   await stage(page,current);
   await page.locator('[data-coach-primary]').click();
   if(next)await stage(page,next);
+}
+
+// A real DOM click on an in-sheet control: the app's own handler and the
+// coach's document listener both fire, without Playwright's hit-test racing
+// the spotlight geometry while the detail pager is still settling.
+async function tapTarget(page,selector){
+  await page.evaluate(sel=>{
+    const el = document.querySelector(sel);
+    if(el)el.click();
+  },selector);
 }
 
 // Tours show a bar, never a visible "3 of 21" count; position lives only in
@@ -227,38 +258,96 @@ async function progressBar(page){
   await stage(page,'aHome');
   assert(await page.evaluate(()=>JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}').minimalMode === false),'advanced coach teaches and enables full mode');
   await primary(page,'aHome','aActions');
-  assert(/do it now/.test(await page.locator('#tings-coach-copy').textContent()),'card actions teach drag-to-top doing now alongside reorder and audit');
+  assert(/do it now/.test(await page.locator('#tings-coach-copy').textContent()),'card actions teach drag-to-top doing now alongside swipe and audit');
   await primary(page,'aActions','aMissed');
-  assert(/missed/i.test(await page.locator('#tings-coach-copy').textContent()),'home chapter teaches the day-header missed count');
-  await primary(page,'aMissed','aOpenTime');
-  assert(await page.locator('#tings-coach[data-coach-stage="aOpenTime"]').getAttribute('data-has-target') === 'true','the open-time step spots the real free pill in full mode');
-  assert(/open stretch/.test(await page.locator('#tings-coach-copy').textContent()),'open-time step teaches planning straight into a free block');
-  await primary(page,'aOpenTime','aIntro');
+  // The missed and open-time steps lock to the real day-header pills when the
+  // day has them; the tour must use the actual sheets either way.
+  const hasDropped = await page.locator('.dropped-pill').count() > 0;
+  if(hasDropped){
+    assert(await page.locator('#tings-coach[data-coach-stage="aMissed"]').getAttribute('data-locked') === 'true','the missed step locks to the real dropped pill');
+    await page.locator('.dropped-pill').first().click();
+    await stage(page,'aMissedList');
+    assert(await page.locator('#slipped-sheet.open').count() === 1,'tapping the missed count opens the real missed list');
+    await primary(page,'aMissedList','aOpenTime');
+  }else{
+    assert(/missed/i.test(await page.locator('#tings-coach-copy').textContent()),'without a dropped pill the missed step still teaches the count');
+    await primary(page,'aMissed','aOpenTime');
+  }
+  const hasFree = await page.locator('.free-pill').count() > 0;
+  if(hasFree){
+    assert(await page.locator('#tings-coach[data-coach-stage="aOpenTime"]').getAttribute('data-locked') === 'true','the open-time step locks to the real free pill in full mode');
+    await page.locator('.free-pill').first().click();
+    await stage(page,'aOpenStrip');
+    assert(await page.locator('#free-time-sheet.open').count() === 1,'tapping the open-time count opens the real day strip');
+    await primary(page,'aOpenStrip','aIntro');
+  }else{
+    assert(/open-time count/.test(await page.locator('#tings-coach-copy').textContent()),'without a free pill the open-time step still teaches the count');
+    await primary(page,'aOpenTime','aIntro');
+  }
   assert(await page.locator('[data-coach-chapter="home"].is-done').count() === 1,'finishing a chapter checks it off on the menu');
 
+  // Detail chapter: every step is a real control on the real page — tab, day
+  // chip, add-option, the row's relative toggle, breakable, emoji, pin.
   await page.locator('[data-coach-chapter="detail"]').click();
   await stage(page,'aDetailRead');
   assert(await page.locator('#detail-sheet.open').count() === 1,'starting the detail chapter opens a real detail page');
-  await primary(page,'aDetailRead','aSchedule');
-  assert(/specific time-and-place/.test(await page.locator('#tings-coach-copy').textContent()),'schedule step names the specific time-and-place rows');
-  await primary(page,'aSchedule','aEffort');
+  await page.locator('.detail-page-tab[aria-label="schedule"]').click();
+  await stage(page,'aSchedule');
+  assert(/prayer/.test(await page.locator('#tings-coach-copy').textContent()),'schedule step teaches relative anchors and hard limits');
+  await tapTarget(page,'#detail-weekday-chips .schedule-chip');
+  await stage(page,'aTimesPlaces');
+  assert(/add an option/.test(await page.locator('#tings-coach-copy').textContent()),'specific times and places get their own hands-on step');
+  await tapTarget(page,'#detail-habit-option-add');
+  await stage(page,'aOptionRow');
+  assert(await page.locator('#detail-habit-option-list .habit-option-row').count() === 1,'add option builds a real specific time-and-place row');
+  assert(/alternatives/.test(await page.locator('#tings-coach-copy').textContent()),'the option row teaches the alternatives rule');
+  await tapTarget(page,'.habit-option-row .time-mode-toggle [data-time-mode="relative"]');
+  await stage(page,'aEffort');
   assert(/value tracking/.test(await page.locator('#tings-coach-copy').textContent()),'effort step teaches value tracking');
-  await primary(page,'aEffort','aIdentity');
-  await primary(page,'aIdentity','aLifecycle');
-  assert(/double-tapping/.test(await page.locator('#tings-coach-copy').textContent()),'actions step teaches the double-tap starred link');
-  await primary(page,'aLifecycle','aIntro');
+  await tapTarget(page,'#detail-breakable');
+  await stage(page,'aIdentity');
+  await tapTarget(page,'#detail-emoji-preview');
+  await stage(page,'aLifecycle');
+  assert(/double-tap/.test(await page.locator('#tings-coach-copy').textContent()),'actions step teaches the double-tap starred link');
+  await tapTarget(page,'#detail-pinned');
+  await stage(page,'aIntro');
+  assert(await page.locator('[data-coach-chapter="detail"].is-done').count() === 1,'tapping pin completes the detail chapter');
+  assert(await page.locator('#detail-sheet.open').count() === 0,'the chapter menu closes the detail page again');
 
+  // Plan chapter: grow the list so search is real, then use it, then the
+  // calendar, then a real day tap.
+  await page.evaluate(()=>{
+    const data = load();
+    for(let i = 0;i < 10;i++){
+      data.push({hid:'coach-fill-' + i,name:'Coach filler ' + i,type:'task',target:'',logs:[],pinned:false,
+        flexibilityDays:0,durationMinutes:30,allowedTimeStart:null,allowedTimeEnd:null,
+        lastLog:null,emoji:'',sample:false,snoozedUntil:null,topics:[],allowedWeekdays:[],
+        allowedMonthDays:[],preferredWeekdays:[],preferredMonthDays:[],dueDate:null,
+        eventTime:null,hardDue:false,createdAt:Date.now(),breakable:false,anywhereAllowed:true,locationIds:[]});
+    }
+    save(data);
+    render();
+    // A real ten-item user's nav is already in this state; the optimized
+    // week render path defers updateSortButton, so refresh it directly.
+    if(typeof updateSortButton === 'function')updateSortButton();
+  });
   await page.locator('[data-coach-chapter="plan"]').click();
   await stage(page,'aSearch');
-  await primary(page,'aSearch','aCalendar');
+  assert(await page.locator('#tings-coach[data-coach-stage="aSearch"]').getAttribute('data-locked') === 'true','a grown list turns search into a real locked step');
+  await page.locator('#open-search').click();
+  await stage(page,'aCalendar');
   await page.locator('#open-overview').click();
   await stage(page,'aOverview');
-  await primary(page,'aOverview','aOverviewTools');
+  await tapLiveCalDay(page,'future');
+  await stage(page,'aOverviewTools');
+  assert(await page.locator('#day-logs-sheet.open').count() === 0,'the tools step closes the opened day first');
   await primary(page,'aOverviewTools','aIntro');
 
   await page.locator('[data-coach-chapter="data"]').click();
   await stage(page,'aBackup');
-  await primary(page,'aBackup','aCalendarImport');
+  assert(await page.locator('#tings-coach[data-coach-stage="aBackup"]').getAttribute('data-locked') === 'true','the backup step locks to the real export button');
+  await page.locator('#backup-export').click();
+  await stage(page,'aCalendarImport');
   await primary(page,'aCalendarImport','aOrganization');
   await primary(page,'aOrganization','aShare');
   await page.waitForFunction(()=>document.getElementById('settings-agenda-head')?.getAttribute('aria-expanded') === 'true',null,{timeout:2000});
@@ -271,7 +360,9 @@ async function progressBar(page){
 
   await page.locator('[data-coach-chapter="tuning"]').click();
   await stage(page,'aSettingsDisplay');
-  await primary(page,'aSettingsDisplay','aBusy');
+  await page.locator('[data-setting-toggle="showWeekOnHome"]').click();
+  await stage(page,'aBusy');
+  assert(/block sleep/.test(await page.locator('#tings-coach-copy').textContent()),'busy times keep their making-plans-good emphasis');
   await primary(page,'aBusy','aDefaults');
   await primary(page,'aDefaults','aOptimizer');
   await primary(page,'aOptimizer','aIntro');
@@ -481,19 +572,35 @@ async function progressBar(page){
   await desk.evaluate(()=>window.startTingsCoach('advanced',{force:true}));
   await desk.locator('[data-coach-chapter="detail"]').click();
   await desk.waitForTimeout(400);
+  // Fresh desktop context is in minimal mode: the detail chapter must detour
+  // through the full-mode reveal before its full-only controls exist.
+  assert(await desk.locator('#tings-coach[data-coach-stage="aFullMode"]').count() === 1,'desktop detail chapter detours through the full-mode reveal in minimal mode');
+  await desk.locator('[data-setting-toggle="minimalMode"]').click();
+  await stage(desk,'aDetailRead');
   assert(await desk.locator('#tings-coach[data-coach-stage="aDetailRead"]').count() === 1,'desktop detail chapter survives the pane click-away');
   assert(await desk.evaluate(()=>document.getElementById('pane-detail').dataset.activeSheet === 'detail-sheet'),'desktop detail chapter mounts the real detail pane');
-  await primary(desk,'aDetailRead','aSchedule');
-  await primary(desk,'aSchedule','aEffort');
-  await primary(desk,'aEffort','aIdentity');
-  await primary(desk,'aIdentity','aLifecycle');
-  await primary(desk,'aLifecycle','aIntro');
+  // The same hands-on detail walk works on the desktop pane tier.
+  await desk.locator('.detail-page-tab[aria-label="schedule"]').click();
+  await stage(desk,'aSchedule');
+  await tapTarget(desk,'#detail-weekday-chips .schedule-chip');
+  await stage(desk,'aTimesPlaces');
+  await tapTarget(desk,'#detail-habit-option-add');
+  await stage(desk,'aOptionRow');
+  await tapTarget(desk,'.habit-option-row .time-mode-toggle [data-time-mode="relative"]');
+  await stage(desk,'aEffort');
+  await tapTarget(desk,'#detail-breakable');
+  await stage(desk,'aIdentity');
+  await tapTarget(desk,'#detail-emoji-preview');
+  await stage(desk,'aLifecycle');
+  await tapTarget(desk,'#detail-pinned');
+  await stage(desk,'aIntro');
   assert(await desk.locator('[data-coach-chapter="detail"].is-done').count() === 1,'desktop detail chapter finishes and checks off');
   await desk.locator('[data-coach-chapter="plan"]').click();
   await stage(desk,'aSearch');
   await primary(desk,'aSearch','aOverview');
   assert(await desk.locator('#tings-coach[data-coach-stage="aOverview"]').count() === 1,'desktop plan chapter skips the calendar-open step and reads the live pane');
-  await primary(desk,'aOverview','aOverviewTools');
+  await tapLiveCalDay(desk,'future');
+  await stage(desk,'aOverviewTools');
   await primary(desk,'aOverviewTools','aIntro');
   // Essentials replay: no calendar-open step on the desktop tier either.
   await desk.evaluate(()=>window.startTingsCoach('essentials',{force:true}));

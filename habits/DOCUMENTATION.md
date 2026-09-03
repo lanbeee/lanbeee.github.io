@@ -1673,17 +1673,23 @@ Toasts appear after:
   five standalone chapters — home & cards (full mode, rich cards, swipe/card
   actions, do-now, agenda ordering and audit, and the day-header missed /
   open-time pills with their sheets), the detail pages (every major area:
-  calendar/insight, schedule — including specific time-and-place rows and
-  time anchors, effort — including value tracking, identity, actions —
-  including the double-tap starred link), calendar & search (analysis and
-  filters), backups & places (backup, calendar import, topics/locations/
-  travel, shared display and share item, cleanup), and time & tuning (home
-  display, busy times, defaults, appearance, smarter packing). The user picks
-  a chapter in any
+  calendar/insight, schedule — day chips, clock vs relative time anchors,
+  places, and specific time-and-place options added live, effort — including
+  the breakable toggle and value tracking, identity, actions — including the
+  pin toggle), calendar & search (search on a grown list, calendar, day taps,
+  filters), backups & places (a real backup export, calendar import, topics/
+  locations/travel, shared display and share item, cleanup), and time & tuning
+  (home display with the week-by-day toggle, busy times, defaults, smarter
+  packing). The user picks a chapter in any
   order; finishing one marks it with a check on the menu, and completion is
-  remembered per chapter. When minimal mode is on, the home chapter starts by
-  turning it off from the real Settings control — the missed and open-time
-  pills only exist in full mode. The menu also carries the
+  remembered per chapter. Chapters are **hands-on, like the guided start**:
+  most steps lock to a real control and advance only when it is used (toggle,
+  chip, add-option, relative anchor, tab, pill, day, export), each with a
+  plain-language fallback when the control cannot exist (no misses today → no
+  missed pill; under ten items → no search). Entering the detail chapter in
+  minimal mode detours through the full-mode reveal first, because its controls
+  are stripped in minimal mode. The missed and open-time pill steps likewise
+  only lock in full mode, where the pills exist. The menu also carries the
   closing advice (start with duration and busy times; add windows, places, and
   links only when they improve the plan) and a **Close** action; a chapter's
   last step returns to the menu.

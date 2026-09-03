@@ -170,7 +170,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=19';
+      stylesheet.href = './onboarding/coach.css?v=20';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -187,7 +187,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=19';
+    script.src = './onboarding/coach.js?v=31';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
