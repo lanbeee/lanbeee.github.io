@@ -260,12 +260,12 @@ function habitScheduleOptionLocationOptions(selectedId){
 
 function habitScheduleOptionPrefButton(pref){
   const level = cleanLocationPrefLevel(pref) || '';
-  const mark = level === 'high' ? '★' : level === 'little' ? '☆' : level === 'avoid' ? '–' : 'pref';
-  const title = level === 'high' ? 'high preference for this time and place'
-    : level === 'little' ? 'little preference for this time and place'
+  const word = level === 'high' ? 'strong' : level === 'little' ? 'soft' : level === 'avoid' ? 'avoid' : 'neutral';
+  const title = level === 'high' ? 'strong preference for this time and place'
+    : level === 'little' ? 'soft preference for this time and place'
     : level === 'avoid' ? 'avoid this time and place if possible'
     : 'no extra preference — uses the place ranking';
-  return `<button type="button" class="mini-text-btn habit-option-pref${level ? ` pref-${level}` : ''}" data-pref="${escapeHtml(level)}" aria-label="preference for this time and place" title="${title}">${mark}</button>`;
+  return `<button type="button" class="mini-text-btn habit-option-pref${level ? ` pref-${level}` : ''}" data-pref="${escapeHtml(level)}" aria-label="preference for this time and place: ${word}" title="${title}">${word}</button>`;
 }
 
 function nextHabitScheduleOptionPref(level){
@@ -280,7 +280,7 @@ let habitScheduleOptionRowSerial = 0;
 function habitScheduleOptionTimePairHtml(){
   habitScheduleOptionRowSerial += 1;
   const key = habitScheduleOptionRowSerial;
-  return `<div class="habit-option-time-window time-endpoints">
+  return `<div class="habit-option-time-window time-endpoints detail-time-endpoints">
     ${uiTimeEndpointHtml({
       field:'start',inputId:`detail-habit-option-${key}-start`,prefix:'specific start',
       endpointLabel:'starts',fixedClass:'habit-option-start'
@@ -300,14 +300,26 @@ function habitScheduleOptionRowHtml(option,index){
     ? new Set(normalized.weekdays)
     : new Set([0,1,2,3,4,5,6]);
   return `<div class="habit-option-row" data-habit-option-index="${index}">
-    <div class="habit-option-main">
-      <select class="habit-option-location" aria-label="option location">${habitScheduleOptionLocationOptions(normalized.locationId)}</select>
-      ${habitScheduleOptionTimePairHtml()}
-      ${habitScheduleOptionPrefButton(normalized.pref)}
+    <div class="habit-option-head">
+      <span class="habit-option-number">option ${index + 1}</span>
       <button type="button" class="mini-text-btn habit-option-remove" aria-label="remove option"><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
-    <div class="habit-option-days" role="group" aria-label="option weekdays">
-      ${WEEKDAY_LABELS.map((label,day)=>`<button type="button" class="schedule-chip${activeDays.has(day) ? ' on' : ''}" data-habit-option-day="${day}" aria-pressed="${activeDays.has(day)}">${label}</button>`).join('')}
+    <div class="habit-option-meta">
+      <label class="habit-option-field">
+        <span class="habit-option-field-label">place</span>
+        <select class="habit-option-location" aria-label="option location">${habitScheduleOptionLocationOptions(normalized.locationId)}</select>
+      </label>
+      <div class="habit-option-field habit-option-pref-field">
+        <span class="habit-option-field-label">preference</span>
+        ${habitScheduleOptionPrefButton(normalized.pref)}
+      </div>
+    </div>
+    ${habitScheduleOptionTimePairHtml()}
+    <div class="habit-option-days-block">
+      <span class="habit-option-field-label">days</span>
+      <div class="habit-option-days" role="group" aria-label="option weekdays">
+        ${WEEKDAY_LABELS.map((label,day)=>`<button type="button" class="schedule-chip${activeDays.has(day) ? ' on' : ''}" data-habit-option-day="${day}" aria-pressed="${activeDays.has(day)}">${label}</button>`).join('')}
+      </div>
     </div>
   </div>`;
 }
@@ -343,12 +355,17 @@ function syncHabitScheduleOptionsUi(){
   const list = $('detail-habit-option-list');
   const hasOptions = Boolean(list && list.children.length);
   const add = $('detail-habit-option-add');
-  if(add)add.textContent = 'add';
+  if(add)add.textContent = 'add option';
+  // Keep the "option N" labels contiguous after mid-list removals.
+  if(list)list.querySelectorAll('.habit-option-row').forEach((row,index)=>{
+    const label = row.querySelector('.habit-option-number');
+    if(label)label.textContent = `option ${index + 1}`;
+  });
   const hint = $('detail-habit-options-hint');
   if(hint){
     hint.textContent = hasOptions
-      ? 'Each row is an extra allowed time and place. Its preference overrides the place ranking for that instance. Only one is scheduled per occurrence.'
-      : 'Time above applies at every allowed place. Add a row for a specific time and place when you need one.';
+      ? 'Each option is an alternative for one occurrence — the planner picks whichever fits. An option’s preference overrides the place ranking.'
+      : 'Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.';
   }
   syncDetailSchedulePlacesUi();
 }
@@ -362,6 +379,12 @@ function syncDetailSchedulePlacesUi(){
     applyTagChipLocationMode(wrap);
   }
   if(label)label.textContent = preferenceOnly ? 'place preferences' : 'places';
+  const hint = $('detail-places-hint');
+  if(hint){
+    hint.textContent = preferenceOnly
+      ? 'Tap a place to rank it: soft, strong, or avoid.'
+      : 'These places use the time window above.';
+  }
 }
 
 function renderHabitScheduleOptions(h = {}){
@@ -644,6 +667,10 @@ function renderTimeEndpoint(endpoint, field, h){
     if(combineSel)combineSel.value = '';
     if(expr2)expr2.hidden = true;
   }
+  // Sync the clock|relative seg AFTER the is-dynamic class reflects stored
+  // data — the generated markup always starts with "clock" on, so an
+  // endpoint saved as relative must re-sync here or the pill lies.
+  syncTimeModeWord(endpoint);
   updateTimeResolved(endpoint, field, h);
 }
 
@@ -692,7 +719,8 @@ function updateTimeResolved(endpoint, field, h){
   node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
 }
 // RENDER: toggles time-clear button visibility. A clear is offered whenever
-// any of the four endpoints has a value (fixed or dynamic).
+// any of the four endpoints has a value (fixed or dynamic). The "blank = any
+// time" hint is the inverse: it shows only while both endpoints are empty.
 function syncTimeClearBtn(){
   const allowedOn = endpointHasValue($('detail-time-start').closest('.time-endpoint'))
     || endpointHasValue($('detail-time-end').closest('.time-endpoint'));
@@ -702,6 +730,10 @@ function syncTimeClearBtn(){
   if(clear)clear.hidden = !allowedOn;
   const prefClear = $('detail-preferred-time-clear');
   if(prefClear)prefClear.hidden = !prefOn;
+  const emptyHint = $('detail-time-empty-hint');
+  if(emptyHint)emptyHint.hidden = allowedOn;
+  const prefEmptyHint = $('detail-preferred-time-empty-hint');
+  if(prefEmptyHint)prefEmptyHint.hidden = prefOn;
 }
 function endpointHasValue(endpoint){
   if(!endpoint)return false;
@@ -710,15 +742,16 @@ function endpointHasValue(endpoint){
   return Boolean(fixed && fixed.value);
 }
 // RENDER: sync the sign toggle button next to an offset input to reflect a
-// signed numeric value. The input stores the absolute value.
+// signed numeric value. The input stores the absolute value; the button shows
+// the plain-language direction ("after"/"before").
 function syncOffsetSign(input, signedVal){
   if(!input)return;
   const btn = input.nextElementSibling;
   if(!btn || !btn.classList.contains('time-offset-sign-btn'))return;
   const neg = signedVal < 0;
   btn.dataset.sign = neg ? '-' : '+';
-  btn.textContent = neg ? '−' : '+';
-  btn.setAttribute('aria-label', (neg ? 'negative' : 'positive') + ' offset');
+  btn.textContent = timeOffsetSignWord(btn.dataset.sign);
+  btn.setAttribute('aria-label', neg ? 'minutes before' : 'minutes after');
 }
 // PURE: read the signed offset from an input element by combining its value
 // with the sign from the adjacent .time-offset-sign-btn.

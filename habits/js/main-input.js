@@ -482,7 +482,11 @@ $('blocked-time-list')?.addEventListener('click',e=>{
     if(!block)return;
     const anchorKey = field + 'Anchor';
     const offsetKey = field + 'OffsetMin';
-    if(block[anchorKey]){
+    const currently = Boolean(block[anchorKey]);
+    const wantDynamic = typeof timeModeClickWantsDynamic === 'function'
+      ? timeModeClickWantsDynamic(e, currently) : !currently;
+    if(wantDynamic === currently)return;
+    if(!wantDynamic){
       // Leave dynamic → clear the anchor + combine; keep fixed minutes as-is.
       saveBlockedTimePatch(index,{
         [anchorKey]:null,[offsetKey]:0,
@@ -1022,27 +1026,33 @@ $('block-edit-dynamic-controls')?.addEventListener('change',e=>{
 });
 
 $('block-edit-dynamic-controls')?.addEventListener('click',e=>{
-  const target = e.target.closest('button');
+  const signBtn = e.target.closest('.time-offset-sign-btn');
+  const dayBtn = e.target.closest('.time-day-next,.time-day-next2');
+  const modeWrap = e.target.closest('.time-mode-toggle');
+  const target = signBtn || dayBtn || modeWrap;
   if(!target)return;
   const field = blockEditorField(target);
   if(!field)return;
   const block = blockEditContext?.draftBlock;
   if(!block)return;
-  if(target.classList.contains('time-offset-sign-btn')){
-    const second = Boolean(target.closest('.time-expr2'));
-    const input = target.parentElement?.querySelector(second ? '.time-offset2' : '.time-offset');
+  if(signBtn){
+    const second = Boolean(signBtn.closest('.time-expr2'));
+    const input = signBtn.parentElement?.querySelector(second ? '.time-offset2' : '.time-offset');
     if(input)saveBlockEditorRulePatch({[field + (second ? 'OffsetMin2' : 'OffsetMin')]:-readSignedOffset(input)});
     return;
   }
-  if(target.matches('.time-day-next,.time-day-next2')){
-    const second = target.classList.contains('time-day-next2');
+  if(dayBtn){
+    const second = dayBtn.classList.contains('time-day-next2');
     const key = field + (second ? 'DayOffset2' : 'DayOffset');
-    saveBlockEditorRulePatch({[key]:target.getAttribute('aria-pressed') === 'true' ? 0 : 1});
+    saveBlockEditorRulePatch({[key]:dayBtn.getAttribute('aria-pressed') === 'true' ? 0 : 1});
     return;
   }
-  if(!target.classList.contains('time-mode-toggle'))return;
+  const currently = Boolean(block[field + 'Anchor']);
+  const wantDynamic = typeof timeModeClickWantsDynamic === 'function'
+    ? timeModeClickWantsDynamic(e, currently) : !currently;
+  if(wantDynamic === currently)return;
   const anchorKey = field + 'Anchor';
-  if(block[anchorKey]){
+  if(!wantDynamic){
     saveBlockEditorRulePatch({[anchorKey]:null,[field + 'OffsetMin']:0,[field + 'Combine']:null,[field + 'Anchor2']:null,[field + 'OffsetMin2']:0,[field + 'FixedMin2']:null,[field + 'DayOffset']:0,[field + 'DayOffset2']:0});
   }else{
     const settings = loadSortSettings();

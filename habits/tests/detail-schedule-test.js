@@ -437,8 +437,8 @@ async function assertAttr(page, selector, attr, expected, msg){
   await page.setViewportSize({ width:390, height:667 });
   const startEndpoint = page.locator('.time-endpoint[data-field="allowedTimeStart"]');
   const endEndpoint = page.locator('.time-endpoint[data-field="allowedTimeEnd"]');
-  await startEndpoint.locator('.time-mode-toggle').click();
-  await endEndpoint.locator('.time-mode-toggle').click();
+  await startEndpoint.locator('[data-time-mode="relative"]').click();
+  await endEndpoint.locator('[data-time-mode="relative"]').click();
   await startEndpoint.locator('.time-combine').selectOption('later');
   await endEndpoint.locator('.time-combine').selectOption('earlier');
   await page.waitForTimeout(150);
@@ -495,8 +495,8 @@ async function assertAttr(page, selector, attr, expected, msg){
     const schedule = pager?.querySelectorAll('.detail-page')[2];
     if(schedule)schedule.scrollTop = 0;
   });
-  await startEndpoint.locator('.time-mode-toggle').click();
-  await endEndpoint.locator('.time-mode-toggle').click();
+  await startEndpoint.locator('[data-time-mode="clock"]').click();
+  await endEndpoint.locator('[data-time-mode="clock"]').click();
   await page.setViewportSize({ width:390, height:844 });
 
   // Cleanup

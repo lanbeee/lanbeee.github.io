@@ -30,6 +30,38 @@ function uiFilterSheetHtml({wrapId, extraClass, titleId, title, summaryId, close
   return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Choose a place or topic.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div></div></div>`;
 }
 
+// PURE: plain-language word for an offset direction. The button keeps
+// data-sign='+/-' (storage + readSignedOffset depend on it); only the visible
+// word changes, so an expression reads "Dawn · 30 · after · min".
+function timeOffsetSignWord(sign){
+  return sign === '-' ? 'before' : 'after';
+}
+
+// PURE: which mode a clock|relative click asked for. Clicking a labeled
+// option selects that mode; clicking the group (tests, padding) toggles.
+function timeModeClickWantsDynamic(e, currentlyDynamic){
+  const opt = e && e.target && e.target.closest && e.target.closest('[data-time-mode]');
+  if(opt)return opt.dataset.timeMode === 'relative';
+  return !currentlyDynamic;
+}
+
+// RENDER: clock|relative segmented control that owns one start or end.
+function uiTimeModeToggleHtml({which, isDynamic = false, extraAttrs = ''}){
+  const clockOn = !isDynamic;
+  return `<div class="time-mode-toggle time-mode-seg" role="group" aria-label="how this ${which} time is set"${extraAttrs}><button type="button" class="time-mode-opt${clockOn ? ' on' : ''}" data-time-mode="clock" aria-pressed="${clockOn ? 'true' : 'false'}">clock</button><button type="button" class="time-mode-opt${isDynamic ? ' on' : ''}" data-time-mode="relative" aria-pressed="${isDynamic ? 'true' : 'false'}">relative</button></div>`;
+}
+
+// RENDER: keep the clock|relative seg in step with an endpoint's mode.
+function syncTimeModeWord(endpoint){
+  if(!endpoint)return;
+  const dyn = endpoint.classList.contains('is-dynamic');
+  endpoint.querySelectorAll('.time-mode-toggle [data-time-mode]').forEach(opt=>{
+    const on = (opt.dataset.timeMode === 'relative') === dyn;
+    opt.classList.toggle('on', on);
+    opt.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
 function uiTimeExprHtml(prefix, second){
   const anchorCls = second ? 'time-anchor2' : 'time-anchor';
   const habitWrap = second ? 'time-habit-wrap2' : 'time-habit-wrap';
@@ -40,13 +72,13 @@ function uiTimeExprHtml(prefix, second){
   const offsetAria = second ? `${prefix} second offset minutes` : `${prefix} offset minutes`;
   const anchorAria = second ? `${prefix} second anchor` : `${prefix} anchor`;
   const clock = second ? `<input type="time" class="time-input time-fixed2" step="900" hidden aria-label="${prefix} clock time" />` : '';
-  return `<select class="${anchorCls} mini-select" aria-label="${anchorAria}"></select>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><input type="number" class="${offsetCls} mini-time-input" inputmode="numeric" placeholder="0" aria-label="${offsetAria}" /><button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="+" aria-label="positive offset">+</button><span class="time-offset-unit">min</span><button type="button" class="${dayCls} mini-text-btn" aria-pressed="false" title="use next day's prayer" aria-label="next day">+1d</button>`;
+  return `<select class="${anchorCls} mini-select" aria-label="${anchorAria}"></select>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><input type="number" class="${offsetCls} mini-time-input" inputmode="numeric" placeholder="0" aria-label="${offsetAria}" /><button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="+" aria-label="minutes after">after</button><span class="time-offset-unit">min</span><button type="button" class="${dayCls} mini-text-btn" aria-pressed="false" title="use next day's prayer" aria-label="next day">next day</button>`;
 }
 
 function uiTimeEndpointHtml({field, inputId, prefix, endpointLabel, fixedClass = ''}){
   const which = endpointLabel === 'starts' ? 'start' : 'end';
   const fixedCls = fixedClass ? ` ${fixedClass}` : '';
-  return `<div class="time-endpoint" data-field="${field}" data-endpoint-label="${endpointLabel}"><input type="time" class="time-input time-fixed${fixedCls}" id="${inputId}" step="900" aria-label="${prefix} time" /><div class="time-dynamic" hidden><div class="time-expr">${uiTimeExprHtml(prefix, false)}</div><select class="time-combine mini-select" aria-label="${prefix} combine"><option value="">just this</option><option value="later">later of…</option><option value="earlier">earlier of…</option></select><div class="time-expr time-expr2" hidden>${uiTimeExprHtml(prefix, true)}</div><span class="time-resolved" aria-live="polite"></span></div><button type="button" class="time-mode-toggle mini-text-btn" title="use a fixed or relative ${which} time" aria-label="switch ${which} between fixed and relative time"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button></div>`;
+  return `<div class="time-endpoint" data-field="${field}" data-endpoint-label="${endpointLabel}"><input type="time" class="time-input time-fixed${fixedCls}" id="${inputId}" step="900" aria-label="${prefix} time" /><div class="time-dynamic" hidden><div class="time-expr">${uiTimeExprHtml(prefix, false)}</div><select class="time-combine mini-select" aria-label="${prefix} combine"><option value="">just this time</option><option value="later">whichever is later</option><option value="earlier">whichever is earlier</option></select><div class="time-expr time-expr2" hidden>${uiTimeExprHtml(prefix, true)}</div><span class="time-resolved" aria-live="polite"></span></div>${uiTimeModeToggleHtml({which})}</div>`;
 }
 
 function uiTimePairHtml(kind){

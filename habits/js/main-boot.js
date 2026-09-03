@@ -898,13 +898,10 @@ $('detail-habit-options')?.addEventListener('click',e=>{
   const timeToggle = e.target.closest('.time-mode-toggle');
   if(timeToggle){
     const endpoint = timeToggle.closest('.time-endpoint');
-    const turningDynamic = !endpoint.classList.contains('is-dynamic');
-    endpoint.classList.toggle('is-dynamic',turningDynamic);
-    const anchor = endpoint.querySelector('.time-anchor');
-    if(turningDynamic && anchor && !anchor.value)anchor.value = 'fajr';
-    syncTimeModeVisibility(endpoint);
-    refreshHabitScheduleOptionEndpoint(endpoint);
-    setDetailDirty();
+    if(applyEndpointTimeMode(endpoint, e)){
+      refreshHabitScheduleOptionEndpoint(endpoint);
+      setDetailDirty();
+    }
     return;
   }
   const dayNext = e.target.closest('.time-day-next,.time-day-next2');
@@ -992,7 +989,7 @@ $('detail-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClea
 $('detail-time-clear').addEventListener('click',()=>{
   clearTimeEndpoint($('detail-time-start').closest('.time-endpoint'));
   clearTimeEndpoint($('detail-time-end').closest('.time-endpoint'));
-  $('detail-time-clear').hidden = true;
+  syncTimeClearBtn();
   setDetailDirty();
 });
 $('detail-preferred-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
@@ -1000,14 +997,15 @@ $('detail-preferred-time-end').addEventListener('input',()=>{setDetailDirty();sy
 $('detail-preferred-time-clear').addEventListener('click',()=>{
   clearTimeEndpoint($('detail-preferred-time-start').closest('.time-endpoint'));
   clearTimeEndpoint($('detail-preferred-time-end').closest('.time-endpoint'));
-  $('detail-preferred-time-clear').hidden = true;
+  syncTimeClearBtn();
   setDetailDirty();
 });
 
 // Dynamic-time mode toggle, anchor select, habit picker, and offset input.
-// Each endpoint (allowed start/end, preferred start/end) carries its own gear
-// toggle that swaps the fixed <input type="time"> for an anchor+offset picker.
-document.querySelectorAll('.time-endpoint').forEach(endpoint => {
+// Each endpoint (allowed start/end, preferred start/end) carries its own
+// clock|relative control that swaps the fixed <input type="time"> for an
+// anchor+offset picker.
+document.querySelectorAll('#detail-allowed-time-row .time-endpoint, #detail-preferred-time-row .time-endpoint').forEach(endpoint => {
   const toggle = endpoint.querySelector('.time-mode-toggle');
   const anchorSel = endpoint.querySelector('.time-anchor');
   const offsetInput = endpoint.querySelector('.time-offset');
@@ -1019,17 +1017,8 @@ document.querySelectorAll('.time-endpoint').forEach(endpoint => {
   const fixed2Input = endpoint.querySelector('.time-fixed2');
   const dayBtn = endpoint.querySelector('.time-day-next');
   const day2Btn = endpoint.querySelector('.time-day-next2');
-  if(toggle)toggle.addEventListener('click',()=>{
-    const turningDynamic = !endpoint.classList.contains('is-dynamic');
-    if(turningDynamic){
-      // First time switching to dynamic: default anchor to fajr and offset 0
-      // so the user sees immediately how it resolves; they can change after.
-      endpoint.classList.add('is-dynamic');
-      if(anchorSel && !anchorSel.value)anchorSel.value = 'fajr';
-    }else{
-      endpoint.classList.remove('is-dynamic');
-    }
-    syncTimeModeVisibility(endpoint);
+  if(toggle)toggle.addEventListener('click',e=>{
+    if(!applyEndpointTimeMode(endpoint, e))return;
     setDetailDirty();
     syncTimeClearBtn();
   });
@@ -1065,6 +1054,23 @@ document.querySelectorAll('.time-endpoint').forEach(endpoint => {
   });
 });
 
+// HYBRID: apply a clock|relative click to one endpoint. Returns false when
+// the click named the mode already in use (so a labeled seg is a no-op).
+function applyEndpointTimeMode(endpoint, e){
+  if(!endpoint)return false;
+  const currently = endpoint.classList.contains('is-dynamic');
+  const wantDynamic = typeof timeModeClickWantsDynamic === 'function'
+    ? timeModeClickWantsDynamic(e, currently) : !currently;
+  if(wantDynamic === currently)return false;
+  endpoint.classList.toggle('is-dynamic', wantDynamic);
+  if(wantDynamic){
+    const anchor = endpoint.querySelector('.time-anchor');
+    if(anchor && !anchor.value)anchor.value = 'fajr';
+  }
+  syncTimeModeVisibility(endpoint);
+  return true;
+}
+
 // RENDER: show fixed input vs anchor picker to match .is-dynamic class.
 function syncTimeModeVisibility(endpoint){
   if(!endpoint)return;
@@ -1073,6 +1079,7 @@ function syncTimeModeVisibility(endpoint){
   const dynWrap = endpoint.querySelector('.time-dynamic');
   if(fixed)fixed.hidden = dyn;
   if(dynWrap)dynWrap.hidden = !dyn;
+  if(typeof syncTimeModeWord === 'function')syncTimeModeWord(endpoint);
   refreshTimeResolvedFor(endpoint);
 }
 
@@ -1090,8 +1097,8 @@ function clearTimeEndpoint(endpoint){
     const btn = off.nextElementSibling;
     if(btn && btn.classList.contains('time-offset-sign-btn')){
       btn.dataset.sign = '+';
-      btn.textContent = '+';
-      btn.setAttribute('aria-label','positive offset');
+      btn.textContent = timeOffsetSignWord('+');
+      btn.setAttribute('aria-label','minutes after');
     }
   }
   const habitSel = endpoint.querySelector('.time-habit');
@@ -1243,8 +1250,8 @@ document.addEventListener('click',e=>{
   if(!input || !input.classList.contains('mini-time-input'))return;
   const neg = btn.dataset.sign !== '-';
   btn.dataset.sign = neg ? '-' : '+';
-  btn.textContent = neg ? '−' : '+';
-  btn.setAttribute('aria-label', (neg ? 'negative' : 'positive') + ' offset');
+  btn.textContent = timeOffsetSignWord(btn.dataset.sign);
+  btn.setAttribute('aria-label', (neg ? 'minutes before' : 'minutes after'));
   // Update preview for detail view endpoints directly (avoids relying on
   // synthetic input events on number inputs which are unreliable on some
   // mobile browsers).

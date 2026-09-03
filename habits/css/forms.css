@@ -44,7 +44,7 @@
 .tag-row.scrolling > *{pointer-events:none;}
 .topic-chip,.schedule-chip,.monthday-chip{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text2);
-  border-radius:999px;padding:7px 10px;font:inherit;font-size:12px;font-weight:650;
+  border-radius:999px;padding:9px 11px;font:inherit;font-size:12px;font-weight:650;
   cursor:pointer;-webkit-tap-highlight-color:transparent;
 }
 .topic-chip.on,.schedule-chip.on,.monthday-chip.on{background:var(--text);color:var(--bg);border-color:var(--text);}
@@ -100,9 +100,21 @@
 .schedule-chip.preferred.on,.monthday-chip.preferred.on{
   background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
 }
-.schedule-time-row{
-  display:flex;align-items:center;gap:8px;margin:-2px 0 10px;flex-wrap:wrap;
+.schedule-time-block{
+  margin:8px 0 12px;padding:10px 12px 8px;
+  border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);
 }
+.schedule-time-block .schedule-time-row{
+  display:flex;align-items:center;gap:8px;margin:0 0 4px;flex-wrap:nowrap;
+}
+.schedule-time-block .settings-sublabel.compact-label{margin:0;}
+.schedule-time-block .schedule-time-lead{margin:0 0 8px;max-width:none;}
+.schedule-time-block .detail-time-endpoints{
+  border:0;margin:0;
+}
+.schedule-time-block .time-empty-hint{margin:8px 0 0;}
+.detail-schedule-places{margin-top:4px;}
+.detail-schedule-places .field-hint{margin:0 0 6px;}
 .schedule-order-block{
   margin:10px 0 12px;padding:10px 12px;border:0.5px solid var(--border);
   border-radius:var(--radius-sm);background:var(--bg2);
@@ -161,12 +173,12 @@
 .time-endpoint{display:inline-flex;align-items:center;gap:4px;max-width:100%;min-width:0;}
 .time-endpoint .time-dynamic{
   display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;
-  width:100%;min-width:0;max-width:100%;overflow:hidden;
+  width:100%;min-width:0;max-width:100%;
 }
 .time-endpoint .time-dynamic[hidden]{display:none;}
 .time-endpoint .time-fixed[hidden]{display:none;}
 .time-endpoint .time-expr{
-  display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;
+  display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;
   width:100%;min-width:0;max-width:100%;
 }
 .time-endpoint .time-expr2[hidden]{display:none;}
@@ -179,7 +191,7 @@
 .time-endpoint .time-anchor,
 .time-endpoint .time-anchor2,
 .time-endpoint .time-combine{min-width:0;max-width:100%;}
-.time-endpoint .time-combine{max-width:110px;}
+.time-endpoint .time-combine{max-width:110px;height:34px;min-height:34px;padding-top:0;padding-bottom:0;}
 .time-endpoint .time-fixed2{min-width:0;max-width:100%;width:100%;}
 .time-endpoint .time-fixed2[hidden]{display:none;}
 .time-endpoint .time-day-next,
@@ -193,22 +205,43 @@
   opacity:1;background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
 }
 .time-endpoint .time-mode-toggle{
-  padding:4px 7px;font-size:12px;line-height:1;border-radius:999px;
+  display:inline-flex;align-items:stretch;padding:0;gap:0;
+  border:0.5px solid var(--border2);border-radius:999px;
+  background:var(--field-bg);line-height:1;
 }
+/* No overflow:hidden here: each option paints its own half-pill so the
+   invisible hit pads (::after) on the options are not clipped. */
+.time-mode-opt{
+  display:inline-flex;align-items:center;justify-content:center;
+  margin:0;padding:0 10px;border:0;background:transparent;color:var(--text3);
+  font:inherit;font-size:11px;font-weight:700;letter-spacing:0.01em;
+  min-height:28px;height:28px;cursor:pointer;white-space:nowrap;
+  position:relative;-webkit-tap-highlight-color:transparent;
+}
+.time-mode-opt:first-child{border-radius:999px 0 0 999px;}
+.time-mode-opt:last-child{border-radius:0 999px 999px 0;}
+/* 28px visual, ~44px finger target — same hit-pad idiom as .info-btn. */
+.time-mode-opt::after{content:"";position:absolute;inset:-8px -2px;}
+.time-mode-opt.on{background:var(--bg3);color:var(--text);}
+.time-mode-opt[data-time-mode="relative"].on{
+  background:var(--green-bg);color:var(--green-text);
+}
+.time-endpoint .time-mode-toggle i{display:none;}
 .time-endpoint.is-dynamic .time-mode-toggle{
-  background:var(--green-bg);color:var(--green-text);border-color:var(--green-icon);
+  border-color:color-mix(in srgb,var(--green-icon) 45%,var(--border2));
 }
 .blocked-time-hours.time-endpoints{flex-wrap:wrap;gap:6px;width:100%;min-width:0;}
 .blocked-endpoint{
   position:relative;width:100%;min-width:0;max-width:100%;
-  display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:start;gap:6px;
+  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px;
 }
 .blocked-endpoint .time-mode-toggle{
-  width:30px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;
+  width:auto;height:auto;padding:0;display:inline-flex;align-items:stretch;
+  justify-self:end;align-self:start;border-radius:999px;
 }
-.blocked-endpoint .time-mode-toggle i{font-size:15px;}
+.blocked-endpoint .time-mode-toggle i{display:none;}
 .blocked-endpoint .time-dynamic{
-  flex-direction:column;align-items:stretch;width:100%;min-width:0;overflow:hidden;
+  flex-direction:column;align-items:stretch;width:100%;min-width:0;
 }
 .blocked-endpoint .time-expr{
   position:relative;padding-left:21px;width:100%;min-width:0;
@@ -241,18 +274,30 @@ input[type=text].mini-time-input{
 .mini-time-input::-webkit-outer-spin-button,
 .mini-time-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 /* One shared row height for every control in a dynamic time expression —
-   anchor select, offset input, sign button, +1d pill. */
+   anchor select, offset input, sign button, next-day pill. 34px matches the
+   fixed time inputs so switching clock↔relative doesn't shift the row. */
 .time-expr .mini-select,
 .time-expr .time-offset-sign-btn,
 .time-expr .time-day-next,
 .time-expr .time-day-next2{
-  height:32px;min-height:32px;padding-top:0;padding-bottom:0;
+  height:34px;min-height:34px;padding-top:0;padding-bottom:0;
 }
+/* Read the offset as a sentence — "Sunrise · 30 · min · after · [next day]" —
+   without moving the button in the DOM (readSignedOffset walks
+   input.nextElementSibling). */
+.time-expr .time-offset-unit{order:1;}
+.time-expr .time-offset-sign-btn{order:2;}
+.time-expr .time-day-next,
+.time-expr .time-day-next2{order:3;}
 .time-offset-sign-btn{
   background:none;border:0.5px solid var(--border);border-radius:var(--radius-sm);
-  color:var(--text);font:inherit;font-size:11px;padding:6px 5px;cursor:pointer;
-  line-height:1.6;min-width:32px;min-height:32px;text-align:center;align-self:center;
+  color:var(--text);font:inherit;font-size:11px;padding:6px 9px;cursor:pointer;
+  line-height:1.6;min-width:0;min-height:34px;text-align:center;align-self:center;
+  position:relative;
 }
+/* "after/before" is a frequent tap with neighbors 6px away — pad the hit
+   area to ~44px without moving any visible pixels. */
+.time-offset-sign-btn::after{content:"";position:absolute;inset:-5px -3px;}
 .time-offset-sign-btn:hover{background:var(--hover);}
 .time-offset-unit{color:var(--text3);font-size:11px;}
 .time-resolved{
@@ -266,29 +311,31 @@ input[type=text].mini-time-input{
 .detail-time-endpoints > .time-sep{display:none;}
 .detail-time-endpoints > .time-endpoint{
   position:relative;width:100%;min-width:0;display:grid;
-  grid-template-columns:minmax(0,1fr) 34px;align-items:start;gap:8px;
-  padding:28px 0 12px;
+  grid-template-columns:minmax(0,1fr);align-items:start;gap:8px;
+  /* 36px of header air keeps the clock|relative seg clear of the field
+     it controls, so the two never read as one crammed strip. */
+  padding:36px 0 14px;
 }
 .detail-time-endpoints > .time-endpoint + .time-endpoint{border-top:0.5px solid var(--border);}
 .detail-time-endpoints > .time-endpoint::before{
-  content:attr(data-endpoint-label);position:absolute;top:10px;left:0;
+  content:attr(data-endpoint-label);position:absolute;top:13px;left:0;
   color:var(--text2);font-size:10px;font-weight:750;text-transform:uppercase;
   letter-spacing:0.04em;
 }
 .detail-time-endpoints .time-mode-toggle{
-  position:absolute;z-index:2;top:4px;right:0;width:30px;height:26px;padding:0;
-  display:inline-flex;align-items:center;justify-content:center;border-radius:8px;
+  position:absolute;z-index:2;top:6px;right:0;width:auto;height:auto;padding:0;
+  display:inline-flex;align-items:stretch;border-radius:999px;
 }
-.detail-time-endpoints .time-mode-toggle i{font-size:15px;}
+.detail-time-endpoints .time-mode-toggle i{display:none;}
 .detail-time-endpoints .time-fixed{grid-column:1;grid-row:1;width:100%;height:34px;}
 .detail-time-endpoints .time-dynamic{
-  grid-column:1 / -1;grid-row:1;width:100%;min-width:0;overflow:hidden;
+  grid-column:1 / -1;grid-row:1;width:100%;min-width:0;
   display:flex;flex-direction:column;align-items:stretch;gap:7px;
 }
 .detail-time-endpoints .time-dynamic[hidden]{display:none;}
 .detail-time-endpoints .time-expr{
-  position:relative;width:100%;min-width:0;overflow:hidden;
-  display:flex;flex-wrap:wrap;align-items:center;gap:4px;
+  position:relative;width:100%;min-width:0;overflow:visible;
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
   padding-left:21px;
 }
 .detail-time-endpoints .time-expr::before{
@@ -313,7 +360,7 @@ input[type=text].mini-time-input{
   min-width:0;margin-left:21px;padding:5px 8px;border-radius:6px;background:var(--bg3);
   color:var(--text2);font-weight:650;
 }
-.detail-time-endpoints .time-resolved::before{content:'result  ';color:var(--text3);font-weight:600;}
+.detail-time-endpoints .time-resolved::before{content:'today:  ';color:var(--text3);font-weight:600;}
 .detail-time-endpoints .time-resolved:empty{display:none;}
 /* Settings → locations → prayer times sub-block */
 .prayer-times-settings{

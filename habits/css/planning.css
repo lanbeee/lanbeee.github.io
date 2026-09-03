@@ -90,7 +90,10 @@
   box-shadow:inset 0 0 0 1px var(--green-icon);
 }
 .schedule-seg{margin:-2px 0 8px;}
-.schedule-seg .seg-opt{padding:7px 0;font-size:12px;}
+.schedule-seg .seg-opt{padding:9px 0;font-size:12px;}
+/* The clear action sits on the "time window" caption line, right-aligned: it
+   resets the whole window (start + end), so it belongs to the whole block. */
+.schedule-time-row .schedule-time-clear{margin-left:auto;flex-shrink:0;}
 .topic-manage-row{
   display:grid;grid-template-columns:minmax(0,1fr) 76px;gap:8px;margin-bottom:10px;
 }

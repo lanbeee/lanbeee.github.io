@@ -70,7 +70,7 @@ function assert(cond, msg){
 
   // Switch to dynamic mode for allowed start
   const startEndpoint = page.locator('.time-endpoint[data-field="allowedTimeStart"]');
-  await startEndpoint.locator('.time-mode-toggle').click();
+  await startEndpoint.locator('[data-time-mode="relative"]').click();
   await page.waitForTimeout(300);
 
   // Select fajr anchor
@@ -117,7 +117,7 @@ function assert(cond, msg){
     };
   });
   assert(state2 && state2.sign === '-', 'sign button toggled to - (' + state2.sign + ')');
-  assert(state2 && state2.btnText === '−', 'button text shows − (' + state2.btnText + ')');
+  assert(state2 && state2.btnText === 'before', 'button text shows before (' + state2.btnText + ')');
 
   // Verify readSignedOffset returns the negative value
   let offsetRead = await page.evaluate(() => {
@@ -179,7 +179,7 @@ function assert(cond, msg){
   });
   assert(state3 && state3.value === '30', 'offset restored as 30 (' + state3.value + ')');
   assert(state3 && state3.sign === '-', 'sign restored as - (' + state3.sign + ')');
-  assert(state3 && state3.btnText === '−', 'text restored as − (' + state3.btnText + ')');
+  assert(state3 && state3.btnText === 'before', 'text restored as before (' + state3.btnText + ')');
 
   // Close detail
   await page.evaluate(() => {
@@ -215,7 +215,7 @@ function assert(cond, msg){
   await page.waitForTimeout(200);
 
   // Toggle to dynamic mode
-  await rows.first().locator('[data-blocked-start-mode]').click();
+  await rows.first().locator('.blocked-endpoint[data-blocked-field="start"] [data-time-mode="relative"]').click();
   await page.waitForTimeout(300);
   const startDyn = await rows.first().locator('.blocked-endpoint[data-blocked-field="start"]').evaluate(
     el => el.classList.contains('is-dynamic')
@@ -257,7 +257,7 @@ function assert(cond, msg){
     };
   });
   assert(blockedDom && blockedDom.sign === '-', 'blocked sign toggled to - (' + (blockedDom && blockedDom.sign) + ')');
-  assert(blockedDom && blockedDom.btnText === '−', 'blocked button text shows − (' + (blockedDom && blockedDom.btnText) + ')');
+  assert(blockedDom && blockedDom.btnText === 'before', 'blocked button text shows before (' + (blockedDom && blockedDom.btnText) + ')');
 
   // Check that the blocked offset was saved with negative value
   let blockedSaved2 = await page.evaluate(() => {

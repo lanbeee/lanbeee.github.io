@@ -515,15 +515,24 @@ function syncDetailDueUi(){
 }
 
 // HYBRID: switches allowed/preferred schedule section
+const SCHEDULE_VIEW_HINTS = {
+  allowed:'Hard limits — the planner only places this inside these days and hours.',
+  preferred:'Soft preference — the planner aims for these when there’s room.'
+};
+
 function setScheduleView(view){
   detailScheduleView = view;
   document.querySelectorAll('#detail-schedule-view-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.scheduleView === view);
   });
+  const hint = $('detail-schedule-view-hint');
+  if(hint)hint.textContent = SCHEDULE_VIEW_HINTS[view] || '';
   const allowedGroup = $('detail-schedule-allowed');
   const preferredGroup = $('detail-schedule-preferred');
   if(allowedGroup)allowedGroup.hidden = view !== 'allowed';
   if(preferredGroup)preferredGroup.hidden = view !== 'preferred';
+  const options = $('detail-habit-options');
+  if(options)options.hidden = view !== 'allowed';
   if(typeof syncDetailSchedulePlacesUi === 'function')syncDetailSchedulePlacesUi();
 }
 

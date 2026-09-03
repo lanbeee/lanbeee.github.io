@@ -63,7 +63,7 @@ function blockedEndpointHtml(block, i, field){
       <div class="time-expr">
         <select class="time-anchor mini-select" data-blocked-${field}-anchor="${i}" aria-label="${aria} anchor">${blockedAnchorOptions(anchor)}</select>
         <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset="${i}" aria-label="${aria} offset minutes" value="${Math.abs(offsetVal)}" />
-        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offsetVal < 0 ? '-' : '+'}" aria-label="${offsetVal < 0 ? 'negative' : 'positive'} offset">${offsetVal < 0 ? '−' : '+'}</button>
+        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offsetVal < 0 ? '-' : '+'}" aria-label="${offsetVal < 0 ? 'minutes before' : 'minutes after'}">${timeOffsetSignWord(offsetVal < 0 ? '-' : '+')}</button>
         <span class="time-offset-unit">min</span>
         <button type="button" class="time-day-next mini-text-btn" data-blocked-${field}-day="${i}" aria-pressed="${dayOn ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day">next day</button>
       </div>
@@ -72,13 +72,13 @@ function blockedEndpointHtml(block, i, field){
         <select class="time-anchor2 mini-select" data-blocked-${field}-anchor2="${i}" aria-label="${aria} second anchor">${blockedAnchorOptions(anchor2, true)}</select>
         <input type="time" class="time-fixed2" step="900" data-blocked-${field}-fixed2="${i}" aria-label="${aria} clock time" value="${fixed2Val}"${isFixed2 ? '' : ' hidden'} />
         <input type="number" class="time-offset2 mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset2="${i}" aria-label="${aria} second offset minutes" value="${Math.abs(offset2Val)}"${isFixed2 ? ' hidden' : ''} />
-        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offset2Val < 0 ? '-' : '+'}" aria-label="${offset2Val < 0 ? 'negative' : 'positive'} offset"${isFixed2 ? ' hidden' : ''}>${offset2Val < 0 ? '−' : '+'}</button>
+        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offset2Val < 0 ? '-' : '+'}" aria-label="${offset2Val < 0 ? 'minutes before' : 'minutes after'}"${isFixed2 ? ' hidden' : ''}>${timeOffsetSignWord(offset2Val < 0 ? '-' : '+')}</button>
         <span class="time-offset-unit"${isFixed2 ? ' hidden' : ''}>min</span>
         <button type="button" class="time-day-next2 mini-text-btn" data-blocked-${field}-day2="${i}" aria-pressed="${day2On ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day"${isFixed2 ? ' hidden' : ''}>next day</button>
       </div>
       <span class="time-resolved" aria-live="polite">${escapeHtml(resolved)}</span>
     </div>
-    <button type="button" class="time-mode-toggle mini-text-btn" data-blocked-${field}-mode="${i}" title="use prayer time" aria-label="use prayer time"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
+    ${uiTimeModeToggleHtml({which:field,isDynamic:isDyn,extraAttrs:` data-blocked-${field}-mode="${i}"`})}
   </div>`;
 }
 

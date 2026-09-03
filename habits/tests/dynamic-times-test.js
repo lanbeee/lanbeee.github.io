@@ -464,7 +464,7 @@ async function toastText(page){
   const startEp2 = page.locator('.time-endpoint[data-field="allowedTimeStart"]');
   // Ensure dynamic mode is on (saved habit has habit anchor → should already be).
   const alreadyDyn = await startEp2.evaluate(el => el.classList.contains('is-dynamic'));
-  if(!alreadyDyn)await startEp2.locator('.time-mode-toggle').click();
+  if(!alreadyDyn)await startEp2.locator('[data-time-mode="relative"]').click();
   await startEp2.locator('.time-anchor').selectOption('fajr');
   await page.waitForTimeout(100);
   const habitWrapHidden = await startEp2.locator('.time-habit-wrap').evaluate(el => el.hidden);
@@ -513,16 +513,16 @@ async function toastText(page){
   const rows = page.locator('.blocked-time-row');
   assert(await rows.count() >= 1, 'add blocked time creates a row');
 
-  // Gear without location → toast.
-  await rows.first().locator('[data-blocked-start-mode]').click();
+  // Relative without location → toast.
+  await rows.first().locator('.blocked-endpoint[data-blocked-field="start"] [data-time-mode="relative"]').click();
   await page.waitForTimeout(300);
   toast = await toastText(page);
   assert(toast.indexOf('location') >= 0, 'blocked gear without location → toast (' + toast + ')');
 
-  // Assign location, then gear → dynamic.
+  // Assign location, then relative → dynamic.
   await rows.first().locator('[data-blocked-location]').selectOption('home');
   await page.waitForTimeout(200);
-  await rows.first().locator('[data-blocked-start-mode]').click();
+  await rows.first().locator('.blocked-endpoint[data-blocked-field="start"] [data-time-mode="relative"]').click();
   await page.waitForTimeout(300);
   const startDyn = await rows.first().locator('.blocked-endpoint[data-blocked-field="start"]').evaluate(
     el => el.classList.contains('is-dynamic')
@@ -556,8 +556,8 @@ async function toastText(page){
   // sunrise+30 should land ~30 min after plain sunrise (~341 in NYC summer).
   assert(savedBlock && savedBlock.resolved >= 360, 'offset shifts resolved start (' + (savedBlock && savedBlock.resolved) + ')');
 
-  // Toggle gear off → clears anchor.
-  await rows.first().locator('[data-blocked-start-mode]').click();
+  // Toggle clock → clears anchor.
+  await rows.first().locator('.blocked-endpoint[data-blocked-field="start"] [data-time-mode="clock"]').click();
   await page.waitForTimeout(300);
   const cleared = await page.evaluate(() => {
     const b = normalizeBlockedTimes(loadSortSettings().blockedTimes)[0];
@@ -568,7 +568,7 @@ async function toastText(page){
 
   // Clearing location while dynamic keeps the anchor — resolution now falls
   // back to the home city (see resolveBlockedTimeMinutes).
-  await rows.first().locator('[data-blocked-start-mode]').click();
+  await rows.first().locator('.blocked-endpoint[data-blocked-field="start"] [data-time-mode="relative"]').click();
   await page.waitForTimeout(200);
   await rows.first().locator('[data-blocked-location]').selectOption('');
   await page.waitForTimeout(300);

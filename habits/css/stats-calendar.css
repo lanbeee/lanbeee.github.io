@@ -329,7 +329,14 @@
 .tune-section[data-detail-nav="schedule"] > .field-hint{margin:-2px 0 8px;}
 .tune-section .range-row{margin:-2px 0 10px;}
 .tune-section[data-detail-nav="schedule"] .settings-sublabel{margin-top:8px;}
-.tune-section[data-detail-nav="schedule"] .schedule-time-row{margin-bottom:6px;}
+.tune-section[data-detail-nav="schedule"] .schedule-time-block{margin-top:10px;}
+.tune-section[data-detail-nav="schedule"] .schedule-time-row{margin-bottom:4px;}
+/* Every compact pill on the schedule pane (clear, add option, add link,
+   next day) gets an invisible +6px hit pad — 32px visuals, ~44px finger
+   target. Pads overlap gaps between neighbors by design; taps aimed at a
+   control's center are unaffected. */
+.tune-section[data-detail-nav="schedule"] .mini-text-btn{position:relative;}
+.tune-section[data-detail-nav="schedule"] .mini-text-btn::after{content:"";position:absolute;inset:-6px;}
 .detail-actions-page{
   display:flex;flex-direction:column;gap:8px;
   justify-content:flex-start;

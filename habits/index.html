@@ -276,9 +276,10 @@
             <div id="detail-schedule-link-list" class="schedule-link-list"></div>
           </div>
           <div class="seg schedule-seg detail-full-only" id="detail-schedule-view-seg">
-            <button class="seg-opt on" data-schedule-view="allowed">allowed</button>
-            <button class="seg-opt" data-schedule-view="preferred">preferred</button>
+            <button class="seg-opt on" data-schedule-view="allowed" aria-label="allowed — hard limits">allowed</button>
+            <button class="seg-opt" data-schedule-view="preferred" aria-label="preferred — soft preference">preferred</button>
           </div>
+          <p class="field-hint schedule-view-hint" id="detail-schedule-view-hint">Hard limits — the planner only places this inside these days and hours.</p>
           <div id="detail-schedule-allowed" class="detail-full-only">
             <div id="detail-simple-allowed-fields">
               <span class="settings-sublabel">days</span>
@@ -291,22 +292,15 @@
                 </button>
                 <div class="monthday-chip-row" id="detail-monthday-chips" hidden></div>
               </div>
-              <div class="schedule-time-row">
-                <span class="settings-sublabel compact-label">time window</span>
+              <div class="schedule-time-block">
+                <div class="schedule-time-row">
+                  <span class="settings-sublabel compact-label">time window</span>
+                  <button type="button" class="mini-text-btn schedule-time-clear" id="detail-time-clear" hidden>clear</button>
+                </div>
+                <p class="field-hint schedule-time-lead">Hours this item may run, at every place below. Clock is an exact time; relative is sunrise, sunset, or a prayer.</p>
                 <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed"></div>
-                <button type="button" class="mini-text-btn" id="detail-time-clear" hidden>clear</button>
+                <p class="field-hint time-empty-hint" id="detail-time-empty-hint">Leave blank for any time of day.</p>
               </div>
-            </div>
-            <div class="habit-options-block" id="detail-habit-options">
-              <div class="habit-options-heading">
-                <span class="settings-sublabel">specific times & places
-                  <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                  <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>The time window above applies at every allowed place. Add a row when a specific place has its own days and hours. Each row can use fixed or dynamic prayer-relative times. A row preference overrides the place ranking for that instance only. Rows are alternatives for one occurrence — the planner chooses one.</span>
-                </span>
-                <button type="button" class="mini-text-btn" id="detail-habit-option-add">add</button>
-              </div>
-              <p class="field-hint" id="detail-habit-options-hint">Time above applies at every allowed place. Add a row for a specific time and place when you need one.</p>
-              <div class="habit-option-list" id="detail-habit-option-list"></div>
             </div>
           </div>
           <div id="detail-schedule-preferred" class="detail-full-only" hidden>
@@ -320,15 +314,31 @@
               </button>
               <div class="monthday-chip-row preferred" id="detail-preferred-monthday-chips" hidden></div>
             </div>
-            <div class="schedule-time-row preferred">
-              <span class="settings-sublabel compact-label">best time</span>
+            <div class="schedule-time-block preferred">
+              <div class="schedule-time-row">
+                <span class="settings-sublabel compact-label">best time</span>
+                <button type="button" class="mini-text-btn schedule-time-clear" id="detail-preferred-time-clear" hidden>clear</button>
+              </div>
+              <p class="field-hint schedule-time-lead">Soft hours the planner aims for when there's room.</p>
               <div class="time-endpoints detail-time-endpoints" id="detail-preferred-time-row" data-field-prefix="preferred"></div>
-              <button type="button" class="mini-text-btn" id="detail-preferred-time-clear" hidden>clear</button>
+              <p class="field-hint time-empty-hint" id="detail-preferred-time-empty-hint">Leave blank for any time of day.</p>
             </div>
           </div>
           <div class="detail-schedule-places detail-full-only">
             <span class="settings-sublabel" id="detail-places-label">places</span>
+            <p class="field-hint" id="detail-places-hint">These places use the time window above.</p>
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
+          </div>
+          <div class="habit-options-block detail-full-only" id="detail-habit-options">
+            <div class="habit-options-heading">
+              <span class="settings-sublabel">specific times &amp; places
+                <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, and places above apply everywhere. Add an option when one place needs its own time — for example 30 min after Sunrise at the mosque. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference on a row overrides the place ranking. Options are alternatives: the planner picks one per occurrence.</span>
+              </span>
+              <button type="button" class="mini-text-btn" id="detail-habit-option-add">add option</button>
+            </div>
+            <p class="field-hint" id="detail-habit-options-hint">Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.</p>
+            <div class="habit-option-list" id="detail-habit-option-list"></div>
           </div>
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="effort">
