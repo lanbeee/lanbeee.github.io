@@ -227,16 +227,25 @@ async function progressBar(page){
   await stage(page,'aHome');
   assert(await page.evaluate(()=>JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}').minimalMode === false),'advanced coach teaches and enables full mode');
   await primary(page,'aHome','aActions');
-  await primary(page,'aActions','aIntro');
+  assert(/do it now/.test(await page.locator('#tings-coach-copy').textContent()),'card actions teach drag-to-top doing now alongside reorder and audit');
+  await primary(page,'aActions','aMissed');
+  assert(/missed/i.test(await page.locator('#tings-coach-copy').textContent()),'home chapter teaches the day-header missed count');
+  await primary(page,'aMissed','aOpenTime');
+  assert(await page.locator('#tings-coach[data-coach-stage="aOpenTime"]').getAttribute('data-has-target') === 'true','the open-time step spots the real free pill in full mode');
+  assert(/open stretch/.test(await page.locator('#tings-coach-copy').textContent()),'open-time step teaches planning straight into a free block');
+  await primary(page,'aOpenTime','aIntro');
   assert(await page.locator('[data-coach-chapter="home"].is-done').count() === 1,'finishing a chapter checks it off on the menu');
 
   await page.locator('[data-coach-chapter="detail"]').click();
   await stage(page,'aDetailRead');
   assert(await page.locator('#detail-sheet.open').count() === 1,'starting the detail chapter opens a real detail page');
   await primary(page,'aDetailRead','aSchedule');
+  assert(/specific time-and-place/.test(await page.locator('#tings-coach-copy').textContent()),'schedule step names the specific time-and-place rows');
   await primary(page,'aSchedule','aEffort');
+  assert(/value tracking/.test(await page.locator('#tings-coach-copy').textContent()),'effort step teaches value tracking');
   await primary(page,'aEffort','aIdentity');
   await primary(page,'aIdentity','aLifecycle');
+  assert(/double-tapping/.test(await page.locator('#tings-coach-copy').textContent()),'actions step teaches the double-tap starred link');
   await primary(page,'aLifecycle','aIntro');
 
   await page.locator('[data-coach-chapter="plan"]').click();
@@ -251,7 +260,14 @@ async function progressBar(page){
   await stage(page,'aBackup');
   await primary(page,'aBackup','aCalendarImport');
   await primary(page,'aCalendarImport','aOrganization');
-  await primary(page,'aOrganization','aIntro');
+  await primary(page,'aOrganization','aShare');
+  await page.waitForFunction(()=>document.getElementById('settings-agenda-head')?.getAttribute('aria-expanded') === 'true',null,{timeout:2000});
+  assert(true,'the shared display section opens for its step');
+  assert(/QR/.test(await page.locator('#tings-coach-copy').textContent()),'the share step teaches QR pairing for a display feed');
+  await primary(page,'aShare','aCleanup');
+  await page.waitForFunction(()=>document.getElementById('settings-cleanup-head')?.getAttribute('aria-expanded') === 'true',null,{timeout:2000});
+  assert(true,'the cleanup section opens for its step');
+  await primary(page,'aCleanup','aIntro');
 
   await page.locator('[data-coach-chapter="tuning"]').click();
   await stage(page,'aSettingsDisplay');
@@ -445,6 +461,53 @@ async function progressBar(page){
     }
     await ctx.close();
   }
+
+  // Desktop tier: wide layouts keep the overview as a permanent pane with no
+  // calendar button, and mount the detail page in a side pane instead of a
+  // modal. The pane click-away must not unmount what a chapter tap just
+  // mounted, and the calendar-open steps must not exist where nothing can be
+  // tapped.
+  const desktopCtx = await browser.newContext({viewport:{width:1280,height:800}});
+  const desk = await desktopCtx.newPage();
+  await desk.goto(coachUrl,{waitUntil:'load'});
+  await desk.evaluate(()=>localStorage.clear());
+  await desk.reload({waitUntil:'load'});
+  await desk.evaluate(()=>window.TingsCoach?.stop?.());
+  await desk.evaluate(()=>openSheet('add-sheet'));
+  await desk.fill('#ting-message','Walk the dog');
+  await desk.locator('#do-save').click();
+  await desk.waitForTimeout(300);
+  await desk.evaluate(()=>closeSheet('detail-sheet'));
+  await desk.evaluate(()=>window.startTingsCoach('advanced',{force:true}));
+  await desk.locator('[data-coach-chapter="detail"]').click();
+  await desk.waitForTimeout(400);
+  assert(await desk.locator('#tings-coach[data-coach-stage="aDetailRead"]').count() === 1,'desktop detail chapter survives the pane click-away');
+  assert(await desk.evaluate(()=>document.getElementById('pane-detail').dataset.activeSheet === 'detail-sheet'),'desktop detail chapter mounts the real detail pane');
+  await primary(desk,'aDetailRead','aSchedule');
+  await primary(desk,'aSchedule','aEffort');
+  await primary(desk,'aEffort','aIdentity');
+  await primary(desk,'aIdentity','aLifecycle');
+  await primary(desk,'aLifecycle','aIntro');
+  assert(await desk.locator('[data-coach-chapter="detail"].is-done').count() === 1,'desktop detail chapter finishes and checks off');
+  await desk.locator('[data-coach-chapter="plan"]').click();
+  await stage(desk,'aSearch');
+  await primary(desk,'aSearch','aOverview');
+  assert(await desk.locator('#tings-coach[data-coach-stage="aOverview"]').count() === 1,'desktop plan chapter skips the calendar-open step and reads the live pane');
+  await primary(desk,'aOverview','aOverviewTools');
+  await primary(desk,'aOverviewTools','aIntro');
+  // Essentials replay: no calendar-open step on the desktop tier either.
+  await desk.evaluate(()=>window.startTingsCoach('essentials',{force:true}));
+  await stage(desk,'eIntro');
+  const deskReplayBar = await progressBar(desk);
+  assert(deskReplayBar.max === 7,'desktop guided start replay drops the calendar-open step from its count');
+  await primary(desk,'eIntro','eAddInfo');
+  await primary(desk,'eAddInfo','eHomeCard');
+  await primary(desk,'eHomeCard','eHomeGroups');
+  await primary(desk,'eHomeGroups','eOverview');
+  assert(await desk.locator('#tings-coach[data-coach-stage="eOverview"]').count() === 1,'desktop replay jumps straight to the always-open calendar pane');
+  await desk.evaluate(()=>window.TingsCoach.stop());
+  await desktopCtx.close();
+
   await page.evaluate(()=>{
     localStorage.removeItem('tings_coach_essentials_v2');
     localStorage.removeItem('tings_coach_advanced_v2');

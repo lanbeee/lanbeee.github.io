@@ -1624,7 +1624,13 @@ Toasts appear after:
   Next/Back advance the tour. Wheel scrolling outside the spotlight is blocked
   too. When a step has no visible target (e.g. the welcome), the guards cover
   the full screen so only the coach bubble is usable — there is no open window
-  between stages.
+  between stages. Coach-internal taps (bubble buttons, guards, shade) never
+  reach app-level document click handlers — on wide tiers the pane click-away
+  would otherwise unmount the detail page a chapter tap just mounted.
+- **Wide tiers reshape the calendar steps.** There is no calendar button on
+  desktop — the overview is a permanent pane — so both tours drop the locked
+  "tap Calendar" step and teach the always-open pane directly; the calendar
+  chapters read the live pane instead of opening a modal.
 - The coach decides which page is on screen: each stage declares the sheets it
   may keep open (add/detail/settings/overview plus their pickers and
   inspectors), and any other sheet that appears — stray tap, system navigation,
@@ -1665,14 +1671,19 @@ Toasts appear after:
   (desktop). The guide is skipped when Tings already runs standalone.
 - About → **advanced coach** opens a **chapter menu**, not one serial march:
   five standalone chapters — home & cards (full mode, rich cards, swipe/card
-  actions, agenda ordering and audit), the detail pages (every major area:
-  calendar/insight, schedule, effort, identity, actions), calendar & search
-  (analysis and filters), backups & places (backup, calendar import,
-  topics/locations/travel), and time & tuning (home display, busy times,
-  defaults, appearance, smarter packing). The user picks a chapter in any
+  actions, do-now, agenda ordering and audit, and the day-header missed /
+  open-time pills with their sheets), the detail pages (every major area:
+  calendar/insight, schedule — including specific time-and-place rows and
+  time anchors, effort — including value tracking, identity, actions —
+  including the double-tap starred link), calendar & search (analysis and
+  filters), backups & places (backup, calendar import, topics/locations/
+  travel, shared display and share item, cleanup), and time & tuning (home
+  display, busy times, defaults, appearance, smarter packing). The user picks
+  a chapter in any
   order; finishing one marks it with a check on the menu, and completion is
   remembered per chapter. When minimal mode is on, the home chapter starts by
-  turning it off from the real Settings control. The menu also carries the
+  turning it off from the real Settings control — the missed and open-time
+  pills only exist in full mode. The menu also carries the
   closing advice (start with duration and busy times; add windows, places, and
   links only when they improve the plan) and a **Close** action; a chapter's
   last step returns to the menu.
