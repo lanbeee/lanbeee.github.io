@@ -751,6 +751,15 @@ function updateSearchUi(){
   if(!input || (!nav && !barSearchBtn))return;
   const open = isSearchOpen();
   const empty = !searchQuery.trim();
+  // The field must live in the active tier's wrapper before any chrome sync —
+  // a missed tierchange otherwise opens an empty pill that cannot take focus
+  // (the "search mode but nothing to type, no keyboard" failure).
+  if(typeof reparentSearch === 'function')reparentSearch();
+  const wide = paneTierActive();
+  // One tier owns the open state; strip classes the other tier left behind.
+  if(wide && nav)nav.classList.remove('search-open');
+  const barSearchWrap = $('app-bar-search');
+  if(!wide && barSearchWrap)barSearchWrap.classList.remove('is-open');
   input.value = searchQuery;
   document.body.classList.toggle('search-active',open);
   const syncSearchToggle = (btn)=>{
@@ -771,7 +780,6 @@ function updateSearchUi(){
     navSearchWrap.setAttribute('aria-hidden',String(!open));
     navSearchWrap.classList.toggle('is-empty',empty);
   }
-  const barSearchWrap = $('app-bar-search');
   if (barSearchWrap) {
     barSearchWrap.setAttribute('aria-hidden',String(!open));
     barSearchWrap.classList.toggle('is-open',open);
@@ -788,6 +796,10 @@ function setSearchOpen(open,options = {}){
   const nav = document.querySelector('.bottom-nav');
   const input = $('habit-search');
   if(!input)return;
+  // Put the field in the tier-correct wrapper FIRST: focus() silently no-ops
+  // on an input inside a display:none wrapper, which reads to the user as
+  // "search opened but there is nothing to type and no keyboard".
+  if(typeof reparentSearch === 'function')reparentSearch();
   const wide = paneTierActive();
   if(options.clear)searchQuery = '';
   if (wide) {
@@ -805,11 +817,17 @@ function setSearchOpen(open,options = {}){
     updateKeyboardLift();
     keepFocusedInputVisible();
     requestAnimationFrame(()=>{
+      // The render below can churn the DOM; re-guarantee the field's home
+      // before each retry or the retry itself focuses a hidden input.
+      if(typeof reparentSearch === 'function')reparentSearch();
       if(document.activeElement !== input)input.focus({preventScroll:true});
       updateKeyboardLift();
       keepFocusedInputVisible();
     });
     setTimeout(()=>{
+      if(!isSearchOpen())return; // user already closed — don't steal focus back
+      if(typeof reparentSearch === 'function')reparentSearch();
+      if(document.activeElement !== input)input.focus({preventScroll:true});
       updateKeyboardLift();
       keepFocusedInputVisible();
     },260);

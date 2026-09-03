@@ -678,6 +678,13 @@ function forgivingButtonTarget(target, clientX, clientY){
     if(btn.closest('#overview-pane-filter'))return null;
     if(btn.closest('#overview-insight'))return null;
     if(btn.closest('#overview-list'))return null;
+    // Search toggles open+focus the field in their click handler, and the soft
+    // keyboard only follows focus() made inside the trusted gesture task. A
+    // forgiving click is synthesized a few frames later from an untrusted
+    // event, so on phones it opens search with the keyboard withheld (or, if
+    // the field ended up in the other tier's wrapper, with no field at all).
+    // Let the native click through — browser tap slop already covers drift.
+    if(btn.matches('#open-search,#bar-open-search'))return null;
     return btn;
   }
   if(clientX == null || clientY == null)return null;
@@ -1157,6 +1164,10 @@ document.addEventListener('click',e=>{
 
 document.addEventListener('tierchange',()=>{
   reparentSearch();
+  // Re-sync open-state chrome to the new tier: the field moved wrappers above,
+  // so isSearchOpen() now reads the other tier's flag and updateSearchUi clears
+  // the stale class (list-view-home.js keeps one tier authoritative).
+  if (typeof updateSearchUi === 'function') updateSearchUi();
   updateKeyboardLift();
   ensureOverviewPlacement();
   // Show/hide the app bar based on tier
