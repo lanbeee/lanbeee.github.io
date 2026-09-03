@@ -6,6 +6,15 @@ function weatherMetricOptions(selected){
   ).join('');
 }
 
+// Every metric has an unfamiliar scale (UV 0–11, AQI 0–300, …). Show the
+// bands inline so min/max need no external lookup, and flag rules that do
+// nothing yet instead of letting them look configured but inert.
+function weatherRuleHintText(rule){
+  const meta=WEATHER_METRICS[rule.metric] || {};
+  const scale=meta.hint || '';
+  return weatherRuleActive(rule) ? scale : `inactive — set min, max, or a preference${scale ? ' · ' + scale : ''}`;
+}
+
 function renderWeatherProfileSelect(id,value = ''){
   const select=$(id);
   if(!select)return;
@@ -64,11 +73,13 @@ function renderWeatherControls(){
         <button class="mini-text-btn" type="button" data-weather-profile-remove>remove</button>
       </div>
       <div class="weather-rule-list">
-        ${profile.rules.map((rule,ruleIndex)=>`
+        ${profile.rules.map((rule,ruleIndex)=>{
+          const meta=WEATHER_METRICS[rule.metric] || {};
+          return `
           <div class="weather-rule" data-weather-rule-index="${ruleIndex}">
             <select class="settings-select" data-weather-rule-metric aria-label="weather metric">${weatherMetricOptions(rule.metric)}</select>
-            <label>min <input type="number" inputmode="decimal" data-weather-rule-min value="${rule.min??''}" placeholder="—" /></label>
-            <label>max <input type="number" inputmode="decimal" data-weather-rule-max value="${rule.max??''}" placeholder="—" /></label>
+            <label>min <input type="number" inputmode="decimal" data-weather-rule-min value="${rule.min??''}" placeholder="${escapeHtml(meta.range || '—')}" /></label>
+            <label>max <input type="number" inputmode="decimal" data-weather-rule-max value="${rule.max??''}" placeholder="${escapeHtml(meta.range || '—')}" /></label>
             <select class="settings-select" data-weather-rule-relative aria-label="relative preference">
               <option value="none"${rule.relative==='none'?' selected':''}>no preference</option>
               <option value="low"${rule.relative==='low'?' selected':''}>prefer lower</option>
@@ -76,7 +87,8 @@ function renderWeatherControls(){
             </select>
             <label class="weather-hard"><input type="checkbox" data-weather-rule-hard${rule.hard?' checked':''} /> hard</label>
             <button class="mini-nav" type="button" data-weather-rule-remove aria-label="remove weather rule"><i class="ti ti-x" aria-hidden="true"></i></button>
-          </div>`).join('')}
+            <div class="weather-rule-hint">${escapeHtml(weatherRuleHintText(rule))}</div>
+          </div>`;}).join('')}
       </div>
       <button class="mini-text-btn" type="button" data-weather-rule-add>add rule</button>
     </div>`).join('');

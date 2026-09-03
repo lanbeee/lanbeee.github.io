@@ -25,6 +25,13 @@ function assert(value,message){
   await page.locator('#weather-profile-add').click();
   assert(await page.locator('.weather-profile-card').count()===1,'settings creates a named weather profile');
   assert(await page.locator('#ting-weather-profile option').count()===2,'new profile appears in habit assignment');
+  assert(await page.locator('.weather-rule-hint').count()===1,'each rule shows its metric scale');
+  assert(/chance/.test(await page.locator('.weather-rule-hint').first().textContent()),'the hint names the metric scale bands');
+  await page.locator('[data-weather-rule-relative]').first().selectOption('none');
+  assert(await page.locator('.weather-profile-card .weather-rule').count()===1,'choosing "no preference" keeps the rule so bounds can be set after');
+  assert(!/inactive/.test(await page.locator('.weather-rule-hint').first().textContent()),'a bounds-only rule with no preference stays active');
+  assert(/inactive/.test(await page.evaluate(()=>weatherRuleHintText({metric:'uv_index',min:null,max:null,relative:'none'}))),'a rule without bounds or preference says it is inactive');
+  assert(/UV index/.test(await page.evaluate(()=>weatherRuleHintText({metric:'uv_index',min:null,max:null,relative:'none'}))),'the inactive note still shows the metric scale');
   await page.evaluate(()=>closeSheet('settings-sheet'));
 
   const result=await page.evaluate(()=>{
@@ -58,13 +65,20 @@ function assert(value,message){
       {ts:at(9)+15*60000,precipitation_probability:5,source:'near'}
     ]};
     const nearRows=weatherSamplesForInterval(nearContext,at(9),at(10));
+    const inertProfile={id:'inert',name:'Inert',rules:[{metric:'uv_index',min:null,max:null,hard:false,relative:'none'}]};
+    const inertSettings={...settings,weatherProfiles:[inertProfile],_weatherContext:{...context,profiles:[inertProfile]}};
+    const inertAssessment=weatherFitAssessment({h:{hid:'inert-h',weatherProfileId:'inert'},i:0,priority:3},
+      {placeStart:at(9),placeEnd:at(10)},{dayBase:base.getTime(),settings:inertSettings,fills:[],registry:[]},inertSettings);
+    const keptInert=normalizeWeatherProfiles([{...inertProfile}]);
     return {
       softHour:new Date(chosen.placeStart).getHours(),
       blocked:blocked===null,
       pinnedStatus:pinned?.weather?.status,
       missing:Boolean(missing),
       nearOnly:nearRows.length===1 && nearRows[0].source==='near',
-      normalized:normalizeWeatherProfiles([...profiles,...profiles,...profiles,...profiles,...profiles]).length
+      normalized:normalizeWeatherProfiles([...profiles,...profiles,...profiles,...profiles,...profiles]).length,
+      keptNoPrefRule:keptInert.length===1 && keptInert[0].rules.length===1,
+      inertIgnored:inertAssessment===null
     };
   });
 
@@ -74,6 +88,8 @@ function assert(value,message){
   assert(result.missing,'missing forecast fails open');
   assert(result.nearOnly,'near-term samples replace weekly samples in overlap');
   assert(result.normalized===4,'weather profiles are capped at four');
+  assert(result.keptNoPrefRule,'a no-preference rule without bounds survives normalization');
+  assert(result.inertIgnored,'a rule with no bounds and no preference does not steer or block');
 
   const weekChoice=await page.evaluate(async()=>{
     const RealDate=Date;

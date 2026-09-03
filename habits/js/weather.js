@@ -3,21 +3,27 @@
 // the home-city coordinate plus any rare far-away place a habit opts into.
 
 const WEATHER_METRICS = {
-  temperature_2m:{label:'temperature',unit:'°C',aggregate:'mean'},
-  apparent_temperature:{label:'feels like',unit:'°C',aggregate:'mean'},
-  precipitation_probability:{label:'rain chance',unit:'%',aggregate:'max'},
-  precipitation:{label:'precipitation',unit:'mm',aggregate:'sum'},
-  snowfall:{label:'snowfall',unit:'cm',aggregate:'sum'},
-  wind_speed_10m:{label:'wind',unit:'km/h',aggregate:'max'},
-  wind_gusts_10m:{label:'gusts',unit:'km/h',aggregate:'max'},
-  uv_index:{label:'UV',unit:'',aggregate:'max'},
-  us_aqi:{label:'US AQI',unit:'',aggregate:'max',air:true},
-  european_aqi:{label:'EU AQI',unit:'',aggregate:'max',air:true}
+  temperature_2m:{label:'temperature',unit:'°C',aggregate:'mean',range:'−20–40',hint:'°C · 0 freezes · 20 mild · 30+ hot'},
+  apparent_temperature:{label:'feels like',unit:'°C',aggregate:'mean',range:'−20–40',hint:'°C · temperature adjusted for wind and humidity'},
+  precipitation_probability:{label:'rain chance',unit:'%',aggregate:'max',range:'0–100',hint:'% chance · 0–20 dry · 30–60 unsettled · 70+ wet'},
+  precipitation:{label:'precipitation',unit:'mm',aggregate:'sum',range:'0–10',hint:'mm during the item · under 2.5 light · over 7.5 heavy'},
+  snowfall:{label:'snowfall',unit:'cm',aggregate:'sum',range:'0–10',hint:'cm during the item'},
+  wind_speed_10m:{label:'wind',unit:'km/h',aggregate:'max',range:'0–60',hint:'km/h · under 12 light · 20 fresh · 35+ strong'},
+  wind_gusts_10m:{label:'gusts',unit:'km/h',aggregate:'max',range:'0–90',hint:'km/h peak gusts · 60+ feels stormy'},
+  uv_index:{label:'UV',unit:'',aggregate:'max',range:'0–11',hint:'UV index · 0–2 low · 3–5 moderate · 6–7 high · 8+ very high'},
+  us_aqi:{label:'US AQI',unit:'',aggregate:'max',air:true,range:'0–300',hint:'air quality · 0–50 good · 51–100 moderate · 101+ unhealthy'},
+  european_aqi:{label:'EU AQI',unit:'',aggregate:'max',air:true,range:'0–100',hint:'air quality · 0–20 good · 21–40 fair · 41–60 moderate · 61+ poor'}
 };
 let _weatherRefreshLocks=[];
 
 function cleanWeatherProfileId(value){
   return typeof value === 'string' ? value.trim().slice(0,48) : '';
+}
+
+// A rule constrains only once it has a bound or a relative preference;
+// otherwise it is kept (so bounds can be added later) but ignored.
+function weatherRuleActive(rule){
+  return Boolean(rule && (rule.min != null || rule.max != null || rule.relative !== 'none'));
 }
 
 function normalizeWeatherRule(raw){
@@ -46,9 +52,10 @@ function normalizeWeatherProfiles(raw){
     let id = cleanWeatherProfileId(item.id);
     if(!id || seen.has(id))id = `weather-${Date.now().toString(36)}-${out.length}`;
     seen.add(id);
+    // Never drop configured rules here: selecting "no preference" before
+    // typing bounds must not delete the rule out from under the editor.
     const rules = (Array.isArray(item.rules) ? item.rules : [])
-      .slice(0,8).map(normalizeWeatherRule)
-      .filter(rule=>rule.relative !== 'none' || rule.min != null || rule.max != null);
+      .slice(0,8).map(normalizeWeatherRule);
     out.push({id,name:String(item.name || `Profile ${out.length + 1}`).trim().slice(0,32) || `Profile ${out.length + 1}`,rules});
     if(out.length >= MAX_WEATHER_PROFILES)break;
   }
@@ -373,14 +380,15 @@ function weatherCommitmentOverride(fill,state){
 
 function weatherFitAssessment(fill,fit,state,settings){
   const profile = weatherProfileById(fill?.h?.weatherProfileId,settings);
+  const activeRules = (profile && Array.isArray(profile.rules) ? profile.rules : []).filter(weatherRuleActive);
   const context = typeof weatherContextForHabit === 'function'
     ? weatherContextForHabit(fill?.h,settings)
     : (settings && settings._weatherContext);
-  if(!profile || !profile.rules.length)return null;
+  if(!activeRules.length)return null;
   if(!context)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable · planned normally'};
   const samples = weatherSamplesForInterval(context,fit.placeStart,fit.placeEnd);
   if(!samples.length)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable for this time · planned normally'};
-  const results = profile.rules.map(rule=>({rule,...weatherRuleResult(rule,samples,context,fit.placeStart)}));
+  const results = activeRules.map(rule=>({rule,...weatherRuleResult(rule,samples,context,fit.placeStart)}));
   const known = results.filter(result=>result.known);
   if(!known.length)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast metrics unavailable · planned normally'};
   const failing = known.filter(result=>!result.pass);
@@ -474,7 +482,7 @@ function weatherStatusForRow(h,row,settings){
 }
 
 function weatherProfileNeedsAir(profile){
-  return Boolean(profile && profile.rules && profile.rules.some(rule=>WEATHER_METRICS[rule.metric]?.air));
+  return Boolean(profile && profile.rules && profile.rules.some(rule=>weatherRuleActive(rule) && WEATHER_METRICS[rule.metric]?.air));
 }
 
 function weatherNeedsAir(settings,locationId){

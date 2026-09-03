@@ -590,9 +590,15 @@ weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
   forecast fills later or missing times. AQI is fetched separately only when a
   profile uses US or EU AQI (home: any such profile; a far place: only if an
   item there uses one).
-- Rules in one profile are AND-combined. Soft rules steer placement. Hard rules
-  reject flexible times, but active, pinned, critical, and direct-linked
-  commitments remain and show an override. Missing data always fails open.
+- Rules in one profile are AND-combined. `prefer lower`/`prefer higher` steers
+  placement; min/max set absolute bounds; `hard` rejects flexible times outside
+  the bounds, while active, pinned, critical, and direct-linked commitments
+  remain and show an override. Selecting "no preference" never deletes a rule —
+  a rule with no bounds and no preference is kept but inactive (the editor
+  labels it). The rule editor shows each metric's scale and typical bands
+  (UV 0–2 low … 8+ very high, US AQI 0–50 good … 101+ unhealthy, wind and
+  precipitation bands) and uses them as min/max placeholders. Missing data
+  always fails open.
 - Home cards for a weather-guided item show a compact status pill (`good`,
   `caution`, `override`, or `weather?`); tapping it shows a one-line reason
   naming the deciding or failing metric values.
