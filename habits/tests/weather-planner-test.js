@@ -32,6 +32,72 @@ function assert(value,message){
   assert(!/inactive/.test(await page.locator('.weather-rule-hint').first().textContent()),'a bounds-only rule with no preference stays active');
   assert(/inactive/.test(await page.evaluate(()=>weatherRuleHintText({metric:'uv_index',min:null,max:null,relative:'none'}))),'a rule without bounds or preference says it is inactive');
   assert(/UV index/.test(await page.evaluate(()=>weatherRuleHintText({metric:'uv_index',min:null,max:null,relative:'none'}))),'the inactive note still shows the metric scale');
+
+  // Transparency panel: seed a fake stored forecast (hourly + near-term) and
+  // check the settings screen shows exactly the rows the planner scores.
+  const inspect=await page.evaluate(()=>{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const now=Date.now();
+    const at=ms=>now+ms;
+    const hourly=[];const near=[];
+    for(let h=0;h<=24;h+=1)hourly.push({ts:at(h*3600000),precipitation_probability:80,precipitation:1.2,temperature_2m:12,wind_speed_10m:9,uv_index:2,source:'weekly'});
+    for(let m=0;m<=8;m+=1)near.push({ts:at(m*15*60000),precipitation_probability:20,temperature_2m:11,wind_speed_10m:9,uv_index:2,source:'near'});
+    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify({
+      weekly:{lat:52.52,lng:13.405,fetchedAt:now-3600000,timezone:tz,samples:hourly},
+      near:{lat:52.52,lng:13.405,fetchedAt:now-600000,timezone:tz,samples:near}}));
+    saveSortSettings({...loadSortSettings(),homeCityLat:52.52,homeCityLng:13.405,homeCityName:'Berlin'});
+    sortSettings=loadSortSettings();
+    const model=weatherInspectorModel(sortSettings,now);
+    renderWeatherControls();
+    return {
+      error:model.error,
+      firstNear:model.rows[0]?.source==='near' && model.rows[0]?.values?.precipitation_probability===20,
+      noWeeklyInsideNear:!model.rows.some(row=>row.source==='hourly' && row.ts<=model.nearUntil),
+      hasHourlyAfterNear:model.rows.some(row=>row.source==='hourly' && row.ts>model.nearUntil),
+      spans24h:model.rows[model.rows.length-1].ts>=now+23*3600000,
+      tableRows:document.querySelectorAll('#weather-forecast-data .weather-forecast-table tbody tr').length,
+      headText:document.querySelector('#weather-forecast-data thead')?.textContent || '',
+      metaText:document.querySelector('#weather-forecast-data .weather-forecast-meta')?.textContent || '',
+      firstRowNear:Boolean(document.querySelector('#weather-forecast-data tbody tr.near'))
+    };
+  });
+  assert(inspect.error===null,'the inspector reads a fresh merged forecast');
+  assert(inspect.firstNear,'the inspector leads with the fresher near-term sample');
+  assert(inspect.noWeeklyInsideNear,'hourly rows are hidden where 15-minute detail supersedes them');
+  assert(inspect.hasHourlyAfterNear,'hourly rows continue beyond the near-term horizon');
+  assert(inspect.spans24h,'the inspector covers the next 24 hours');
+  assert(inspect.tableRows>=20,'the table renders one row per forecast step');
+  assert(/rain chance/.test(inspect.headText),'the table columns name the rule metrics');
+  assert(/Berlin/.test(inspect.metaText) && /15-min detail until/.test(inspect.metaText),'the meta line names the city and the detail horizon');
+  assert(inspect.firstRowNear,'near-term rows are visually marked');
+
+  const usedBy=await page.evaluate(()=>{
+    const profileId=normalizeWeatherProfiles(loadSortSettings().weatherProfiles)[0].id;
+    save(normalize([{name:'Walk',type:'task',target:null,dueDate:null,eventTime:null,flexibilityDays:1,
+      durationMinutes:30,priority:3,weatherProfileId:profileId,logs:[],locationIds:[],anywhereAllowed:true,
+      allowedWeekdays:[],allowedMonthDays:[],preferredWeekdays:[],preferredMonthDays:[],createdAt:Date.now()}]));
+    renderWeatherControls();
+    return document.querySelector('.weather-profile-used')?.textContent || '';
+  });
+  assert(/Walk/.test(usedBy),'each profile lists the items it is attached to');
+
+  const states=await page.evaluate(()=>{
+    save([]);
+    localStorage.removeItem(WEATHER_CACHE_KEY);
+    renderWeatherControls();
+    const empty=document.querySelector('#weather-forecast-data')?.textContent || '';
+    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify({weekly:{lat:52.52,lng:13.405,
+      fetchedAt:Date.now()-9*3600000,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,samples:[]}}));
+    renderWeatherControls();
+    const stale=document.querySelector('#weather-forecast-data')?.textContent || '';
+    localStorage.removeItem(WEATHER_CACHE_KEY);
+    saveSortSettings({...loadSortSettings(),homeCityName:'',homeCityLat:null,homeCityLng:null});
+    sortSettings=loadSortSettings();
+    renderWeatherControls();
+    return {empty,stale};
+  });
+  assert(/No forecast stored yet/.test(states.empty),'a missing forecast says so instead of rendering an empty table');
+  assert(/too old/.test(states.stale),'a stale forecast is labelled instead of silently unused');
   await page.evaluate(()=>closeSheet('settings-sheet'));
 
   const result=await page.evaluate(()=>{

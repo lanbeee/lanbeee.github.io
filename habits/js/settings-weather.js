@@ -61,17 +61,72 @@ function weatherAgeLabel(ts){
   return `${Math.round(minutes/60)}h ago`;
 }
 
+const WEATHER_INSPECTOR_COLUMNS=['precipitation_probability','precipitation','snowfall','temperature_2m','apparent_temperature','wind_speed_10m','wind_gusts_10m','uv_index','us_aqi','european_aqi'];
+
+function weatherInspectorCell(metric,value){
+  if(!Number.isFinite(value))return '—';
+  if(metric==='precipitation' || metric==='snowfall')return (Math.round(value*10)/10).toFixed(1);
+  return String(Math.round(value));
+}
+
+// The panel under the profile editor: the actual forecast rows the planner
+// scores against, so "why did it pick 17:00" can be answered by reading the
+// numbers instead of guessing what the app fetched.
+function renderWeatherInspector(settings,now = Date.now()){
+  const model=weatherInspectorModel(settings,now);
+  if(!model || model.error==='no-home')return '<p class="weather-forecast-empty">Set your city under Locations to load a forecast.</p>';
+  if(model.error==='empty')return '<p class="weather-forecast-empty">No forecast stored yet — tap “refresh forecast”.</p>';
+  if(model.error==='stale')return `<p class="weather-forecast-empty">Stored forecast is from ${weatherAgeLabel(model.lastFetchedAt)} — too old to plan with. Tap “refresh forecast”.</p>`;
+  if(model.error==='window')return '<p class="weather-forecast-empty">The stored forecast has no rows for the next 24 hours.</p>';
+  const tzOptions=model.timezone ? {timeZone:model.timezone} : {};
+  let fmtDay,fmtTime;
+  try{
+    fmtDay=new Intl.DateTimeFormat('en-GB',{...tzOptions,weekday:'short'});
+    fmtTime=new Intl.DateTimeFormat('en-GB',{...tzOptions,hour:'2-digit',minute:'2-digit',hour12:false});
+  }catch{
+    fmtDay=new Intl.DateTimeFormat('en-GB',{weekday:'short'});
+    fmtTime=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false});
+  }
+  const present=WEATHER_INSPECTOR_COLUMNS.filter(metric=>model.rows.some(row=>Number.isFinite(row.values[metric])));
+  const head=`<tr><th scope="col">time</th>${present.map(metric=>`<th scope="col">${escapeHtml(WEATHER_METRICS[metric].label)}</th>`).join('')}</tr>`;
+  let lastDay='';
+  const body=model.rows.map(row=>{
+    const day=fmtDay.format(row.ts);
+    const newDay=day!==lastDay;
+    lastDay=day;
+    const time=newDay ? `${day} ${fmtTime.format(row.ts)}` : fmtTime.format(row.ts);
+    return `<tr${row.source==='near'?' class="near"':''}><td>${escapeHtml(time)}</td>${present.map(metric=>`<td>${weatherInspectorCell(metric,row.values[metric])}</td>`).join('')}</tr>`;
+  }).join('');
+  const parts=[];
+  parts.push(model.cityName ? escapeHtml(model.cityName) : 'home city');
+  parts.push(`7-day hourly · ${weatherAgeLabel(model.weeklyFetchedAt)}`);
+  parts.push(model.nearFetchedAt
+    ? `15-min detail until ${escapeHtml(fmtTime.format(model.nearUntil+15*60000))} · ${weatherAgeLabel(model.nearFetchedAt)}`
+    : '15-min detail starts when a weather item is within 90 min');
+  if(model.airFetchedAt)parts.push(`air quality ${weatherAgeLabel(model.airFetchedAt)}`);
+  if(model.timezone)parts.push(escapeHtml(model.timezone));
+  return `<p class="weather-forecast-meta">${parts.join(' · ')}</p>
+    <div class="weather-forecast-scroll"><table class="weather-forecast-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <p class="weather-forecast-legend">Shaded rows are 15-minute near-term samples — the planner reads them instead of the hourly value inside their span.</p>`;
+}
+
 function renderWeatherControls(){
   const list=$('weather-profile-list');
   if(!list)return;
   const settings=sortSettings || loadSortSettings();
   const profiles=normalizeWeatherProfiles(settings.weatherProfiles);
-  list.innerHTML=profiles.map((profile,profileIndex)=>`
+  const habits=load();
+  const usedByNames=id=>habits.filter(h=>h && h.weatherProfileId===id)
+    .map(h=>String(h.name || '').trim()).filter(Boolean).slice(0,5);
+  list.innerHTML=profiles.map((profile,profileIndex)=>{
+    const attached=usedByNames(profile.id);
+    return `
     <div class="weather-profile-card" data-weather-profile-index="${profileIndex}">
       <div class="weather-profile-head">
         <input class="settings-text-input" data-weather-profile-name value="${escapeHtml(profile.name)}" maxlength="32" aria-label="weather profile name" />
         <button class="mini-text-btn" type="button" data-weather-profile-remove>remove</button>
       </div>
+      <div class="weather-profile-used">${attached.length ? `used by ${escapeHtml(attached.join(', '))}` : 'not attached to any item yet'}</div>
       <div class="weather-rule-list">
         ${profile.rules.map((rule,ruleIndex)=>{
           const meta=WEATHER_METRICS[rule.metric] || {};
@@ -91,7 +146,7 @@ function renderWeatherControls(){
           </div>`;}).join('')}
       </div>
       <button class="mini-text-btn" type="button" data-weather-rule-add>add rule</button>
-    </div>`).join('');
+    </div>`;}).join('');
   const add=$('weather-profile-add');
   if(add)add.disabled=profiles.length>=MAX_WEATHER_PROFILES;
   const cache=weatherCacheRead();
@@ -113,6 +168,8 @@ function renderWeatherControls(){
       status.textContent=text;
     }
   }
+  const panel=$('weather-forecast-data');
+  if(panel)panel.innerHTML=renderWeatherInspector(settings);
   renderWeatherProfileSelect('ting-weather-profile',$('ting-weather-profile')?.value || '');
   renderWeatherLocationSelect('ting-weather-location',$('ting-weather-location')?.value || '');
   const detailHabit=detailIdx != null ? load()[detailIdx] : null;

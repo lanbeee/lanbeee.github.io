@@ -607,6 +607,16 @@ weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
 - Relative preferences compare the exact habit interval and its whole day with
   equal weight. Forecast cache is stored under `tings_weather_cache_v1`, outside
   backup data. Far-place payloads live in `places` on that cache.
+- Forecast transparency: the weather settings section shows each profile's
+  attached items ("used by …"), and a forecast panel below the status line with
+  the exact rows the planner scores — the next 24 hours of the stored home
+  forecast, one row per step (hourly, or 15-minute inside the near-term
+  horizon, shaded, where the detail supersedes the hourly value), with fetch
+  ages and the detail horizon in the header line. It reads the stored cache
+  even when no profile is attached yet, and says so when nothing is stored or
+  the stored forecast is past the freshness window instead of silently
+  planning without it. `weatherInspectorModel` (weather.js) builds the model;
+  `renderWeatherInspector` (settings-weather.js) renders it.
 
 #### 4.3.9 Reminders & Calendar 👤
 ```js

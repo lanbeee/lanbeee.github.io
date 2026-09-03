@@ -563,6 +563,51 @@ function weatherForecastIsDecisive(profile,samples,start,end,now,timezone){
   return true;
 }
 
+// Settings-screen transparency: expose exactly what the planner sees — the
+// merged home-city samples (hourly 7-day forecast + near-term 15-minute
+// detail), how old each source is, and where the detail horizon ends — so a
+// forecast dispute can be checked against another weather app before
+// debugging the planner itself.
+function weatherInspectorModel(settings,now = Date.now()){
+  const home = weatherHomeCoords(settings);
+  if(!home)return {error:'no-home'};
+  const cache = weatherCacheRead();
+  const stored = weatherSameCoords(cache.weekly,home.lat,home.lng) ? cache.weekly : null;
+  // The planner gates its context on profiles existing; the inspector shows
+  // the stored home forecast regardless, so it stays truthful about what is
+  // cached even before (or after) a profile is attached.
+  const context = weatherContextFromBucket(cache,home.lat,home.lng,now);
+  if(!context || !Array.isArray(context.samples) || !context.samples.length){
+    return {error:stored ? 'stale' : 'empty',lastFetchedAt:stored ? Number(stored.fetchedAt) : 0};
+  }
+  const nearUntil = (context.samples || []).reduce((max,sample)=>sample.source === 'near' ? Math.max(max,Number(sample.ts) || 0) : max,0);
+  const rows = (context.samples || [])
+    .filter(sample=>Number(sample.ts) >= now - 60 * 60 * 1000 && Number(sample.ts) <= now + 24 * 60 * 60 * 1000)
+    // Inside the near-term horizon the planner reads 15-minute rows, so the
+    // display mirrors that instead of showing the superseded hourly value.
+    .filter(sample=>!(nearUntil && sample.source === 'weekly' && Number(sample.ts) <= nearUntil))
+    .sort((a,b)=>a.ts-b.ts)
+    .map(sample=>{
+      const values = {};
+      for(const metric of Object.keys(WEATHER_METRICS)){
+        const value = Number(sample[metric]);
+        if(Number.isFinite(value))values[metric] = value;
+      }
+      return {ts:Number(sample.ts),source:sample.source === 'near' ? 'near' : 'hourly',values};
+    });
+  if(!rows.length)return {error:'window'};
+  return {
+    error:null,
+    timezone:context.timezone || '',
+    cityName:typeof settings.homeCityName === 'string' ? settings.homeCityName.trim() : '',
+    weeklyFetchedAt:context.weeklyFetchedAt || 0,
+    nearFetchedAt:context.nearFetchedAt || 0,
+    airFetchedAt:context.airFetchedAt || 0,
+    nearUntil,
+    rows
+  };
+}
+
 function weatherNearRefreshNeeded(rows,data,settings,context,now = Date.now()){
   if(!Array.isArray(rows) || !rows.length)return false;
   if(!context || !Array.isArray(context.samples) || !context.samples.length)return true;
