@@ -284,58 +284,58 @@
     if(stage === 'eIntro')return {
       progress:p,title:'Welcome to Tings',
       copy:interactive
-        ? 'Add one habit you want to keep doing, or one task you need to finish. Everything stays on this device.'
-        : 'A short look at habits, tasks, cards, and the calendar. This will not change your data.',
+        ? 'A Ting is a habit you repeat, or a task you finish once. Let’s add your first one together — everything stays on this device.'
+        : 'A quick refresher on habits, tasks, cards, and the calendar. Nothing you tap here changes your data.',
       action:interactive ? 'Add my first Ting' : 'Start refresher',next:interactive ? 'eAdd' : 'eAddInfo'
     };
     if(stage === 'eAdd')return {
-      progress:p,title:'Start with +',copy:'Tap +. We will add one thing together, then look at it.',
+      progress:p,title:'Start with +',copy:'Tap the + button. We’ll add one together, step by step.',
       target:['#open-add','#bar-open-add'],hint:'Tap +',locked:true
     };
     if(stage === 'eName')return {
-      progress:p,title:'Give it a name',copy:'Use a short name, like “Walk” or “Pay the bill.”',
+      progress:p,title:'Give it a name',copy:'Short and clear works best, like “Walk” or “Pay the bill.”',
       target:['#ting-message'],hint:'Type a name',locked:true,keyboard:true,
       action:'Continue',command:'nameDone',disabled:!String($('ting-message')?.value || '').trim(),back:'eAdd'
     };
     if(stage === 'eKind')return {
       progress:p,title:'Habit or task?',
-      copy:'A habit happens again and again. A task happens once. Tap the one you want.',
+      copy:'A habit repeats — walk, stretch, read. A task happens once, like paying a bill. Tap the one you’re adding.',
       target:['#type-seg'],hint:'Choose habit or task',locked:true,
       action:`Continue with ${addKind()}`,command:'kindDone',back:'eName'
     };
     if(stage === 'eRhythm')return {
       progress:p,title:'How often?',
-      copy:'3 times in 7 days means about three times a week. You can change these numbers.',
+      copy:'How many times, over how many days — say, 3 times in 7 days. A rough guess is fine; you can change it later.',
       target:['#target-slider-row'],action:'Continue',next:'eSave',back:'eKind',locked:true
     };
     if(stage === 'eTask')return {
       progress:p,title:'Add a date only if you need one',
-      copy:'Leave the date blank if this can wait. Pick a day to make it due. Add a time only if it must happen then.',
+      copy:'Leave the date blank if this can wait. Pick a day to set a deadline, and a time only if it must happen then.',
       target:['#task-due-row'],action:'Continue',next:inTaskFollowup() ? 'eSaveTask' : 'eSave',
       back:inTaskFollowup() ? 'eTaskName' : 'eKind',locked:true
     };
     if(stage === 'eSave')return {
-      progress:p,title:'Add it',copy:'That is enough. Tap add. Tings will save it here and open its page.',
+      progress:p,title:'Add it',copy:'That’s all it needs. Tap add — Tings saves it and opens its page.',
       target:['#do-save'],hint:'Tap add',locked:true,back:addKind() === 'task' ? 'eTask' : 'eRhythm'
     };
     if(stage === 'eDetailBasics')return {
       progress:p,title:'This page is for later changes',
-      copy:'You can change how often it happens, or the due date, any time. You do not need every control today.',
+      copy:'How often it happens, its due date — all of it can change later. You don’t need every control today.',
       target:['#detail-slider-row','#detail-due-row','[data-detail-nav="schedule"]'],action:'Next',next:'eDetailEffort'
     };
     if(stage === 'eDetailEffort')return {
       progress:p,title:'How long does it take?',
-      copy:'A time estimate helps Tings find a spot in the day. You can leave auto mark blank.',
+      copy:'A rough guess helps Tings find room for it in your day. Everything else here can wait.',
       target:['#detail-minimal-effort','#detail-duration-field','#detail-auto-mark-field'],action:'Back to home',command:'essentialsHome',back:'eDetailBasics'
     };
     if(stage === 'eAddInfo')return {
       progress:p,title:'Habits repeat. Tasks finish once.',
-      copy:'Use + for both. Habits happen on a rhythm. Tasks can wait, be due on a day, or have a set time.',
+      copy:'+ adds both. Habits run on a rhythm. Tasks can wait, carry a due date, or have a set time.',
       target:['#open-add','#bar-open-add'],action:'Next',next:'eHomeCard'
     };
     if(stage === 'eHomeCard')return {
-      progress:p,title:'The card is the everyday loop',
-      copy:'Tap the color icon to log it or mark it done. Tap the rest of the card to open its page.',
+      progress:p,title:'This is its card',
+      copy:'Every Ting gets a card here. Tap the color icon to log it or mark it done — tap the rest of the card to open its page.',
       target:[`.ting-card[data-real="${trackedIndex()}"]`,'.ting-card','#list','#empty'],action:'Next',next:interactive ? 'eLog' : 'eHomeGroups'
     };
     if(stage === 'eLog'){
@@ -347,84 +347,84 @@
         progress:p,title:task ? 'Mark it done with one tap' : 'Log it with one tap',
         copy:task
           ? 'Tap the icon to finish this task. If that was a mistake, you can undo.'
-          : 'Tap the icon to log this habit. If that was a mistake, you can undo.',
+          : 'Tap the icon to log it for today. If that was a mistake, you can undo.',
         target:[`[data-pulse="${idx}"]`,'.ting-card [data-pulse]'],hint:`Tap to ${label}`,locked:true,
         later:'I’ll log later',next:'eHomeGroups',back:'eHomeCard'
       };
     }
     if(stage === 'eHomeGroups')return {
       progress:p,title:'Home shows what to do now',
-      copy:'Look here for today, things that are late, and what is coming next.',
+      copy:'Your list is grouped — what’s due today, what’s late, and what’s coming up.',
       target:['.section-header','#list'],action:'Show calendar',next:'eCalendar',back:interactive ? 'eLog' : 'eHomeCard'
     };
     if(stage === 'eCalendar')return {
-      progress:p,title:'See other days too',copy:'Tap Calendar to look at past days, today, and days coming up.',
+      progress:p,title:'See other days too',copy:'Tap Calendar to look back at past days, or ahead at what’s coming.',
       target:['#open-overview','#bar-open-overview'],hint:'Tap calendar',locked:true,back:'eHomeGroups'
     };
     if(stage === 'eOverview')return {
       progress:p,title:'The calendar is the bigger picture',
       copy:interactive
-        ? 'Tap a day to look closer. Past days show what you did. Future days let you plan.'
-        : 'Tap a day to see what happened, log a missed day, or plan something coming up.',
+        ? 'Tap any day to open it. Past days show what you did; future days are for planning.'
+        : 'Tap a day to see what happened, catch up a missed log, or plan something ahead.',
       target:['#overview-sheet .overview-sheet','#pane-overview .overview-sheet'],
       action:'Next',next:interactive ? 'eOverviewPast' : 'eAbout',back:'eCalendar'
     };
     if(stage === 'eOverviewPast')return {
       progress:p,title:'Look at a past day',
-      copy:'Tap a day before today. You will see what was done, and you can add a missed log.',
+      copy:'Tap any day before today. You’ll see what was done — and you can add a missed log.',
       target:['#overview-calendar'],hint:'Tap a past day',locked:true,later:'Skip',next:'eOverviewFuture',back:'eOverview',pinBottom:true
     };
     if(stage === 'eOverviewLog')return {
       progress:p,title:'Catch up a missed day',
-      copy:'Forgot to log something? Tap Log a missed day. Empty days are fine — you can still add one.',
+      copy:'Forgot to log something? Tap Log a missed day — it works even on days with nothing planned.',
       target:['#day-logs-log'],hint:'Tap Log a missed day',locked:true,later:'Skip',next:'eOverviewFuture',back:'eOverviewPast'
     };
     if(stage === 'eOverviewMissed')return {
       progress:p,title:'Save the missed log',
-      copy:'Tap log it to add this missed day. Or tap Next if you want to skip.',
+      copy:'Tap log it to save this missed day — or tap Next to skip.',
       target:['#day-log-entry-save'],hint:'Tap log it',action:'Next',next:'eOverviewFuture',back:'eOverviewLog'
     };
     if(stage === 'eOverviewFuture')return {
       progress:p,title:'Look at a coming day',
-      copy:'Tap a day after today. Future days are for plans, not for logging the past.',
+      copy:'Now tap a day after today. Future days are for plans, not for logging the past.',
       target:['#overview-calendar'],hint:'Tap a coming day',locked:true,later:'Skip',next:afterCalendarNext(),back:'eOverview',pinBottom:true
     };
     if(stage === 'eOverviewPlan')return {
       progress:p,title:'Plan something ahead',
-      copy:'Tap Plan something. You can put an item on this day, and add a time if you want.',
+      copy:'Tap Plan something to put an item on this day — with a time, if you want one.',
       target:['#day-logs-plan'],hint:'Tap Plan something',locked:true,later:'Skip',next:afterCalendarNext(),back:'eOverviewFuture'
     };
     if(stage === 'eAddTaskIntro')return {
       progress:p,title:'Now add a task',
-      copy:'A habit happens again and again. A task happens once — like a bill or a call. Let’s add one.',
+      copy:'You’ve made a habit. A task is the once-only kind — a bill to pay, a call to make. Let’s add one.',
       action:'Add a task',next:'eAddTask',back:'eOverview'
     };
     if(stage === 'eAddTask')return {
-      progress:p,title:'Create from + again',copy:'Tap +. This time we will make a one-time task.',
+      progress:p,title:'Tap + again',copy:'Same button, different kind — this time we’ll make a one-time task.',
       target:['#open-add','#bar-open-add'],hint:'Tap +',locked:true,back:'eAddTaskIntro'
     };
     if(stage === 'eTaskName')return {
-      progress:p,title:'Name the task',copy:'Use a short name, like “Call the dentist” or “Pay rent.”',
+      progress:p,title:'Name the task',copy:'Something specific, like “Call the dentist” or “Pay rent.”',
       target:['#ting-message'],hint:'Type a name',locked:true,keyboard:true,
       action:'Continue',command:'nameDone',disabled:!String($('ting-message')?.value || '').trim(),back:'eAddTask'
     };
     if(stage === 'eSaveTask')return {
-      progress:p,title:'Add the task',copy:'Tap add. Next you will see the task page, just like the habit page.',
+      progress:p,title:'Add the task',copy:'Tap add. Its page opens, just like the habit’s did.',
       target:['#do-save'],hint:'Tap add',locked:true,back:'eTask'
     };
     if(stage === 'eTaskDetail')return {
       progress:p,title:'This is the task page',
-      copy:'You can add a due date or a time later. When you finish the task, it is done.',
+      copy:'A due date and time can wait until you need them. When the work is done, tap the icon and it’s finished.',
       target:['#detail-due-row','#detail-slider-row','[data-detail-nav="schedule"]'],action:'Next',next:'eSampleIntro',back:'eAddTaskIntro'
     };
     if(stage === 'eSampleIntro')return {
       progress:p,title:'Try a ready-made habit',
-      copy:'Samples are starter habits. Add one to see how a real day looks. You can keep it or remove it later.',
+      copy:'Samples are starter habits you can add in one tap — and remove just as easily. Add one to see a fuller day.',
       action:'See samples',command:'openSamples',later:'Not now',next:'eAbout',back:shouldTeachTask() ? 'eAddTaskIntro' : 'eOverview'
     };
     if(stage === 'eSampleAdd')return {
       progress:p,title:'Add drink water',
-      copy:'Tap add on drink water. It is a simple daily habit. You can remove it later from samples.',
+      copy:'Tap add on drink water — a simple daily habit. Samples can be removed anytime from the same place.',
       target:['#sample-habits-preview [data-add-sample="sample-feature-water"]','#sample-habits-preview [data-add-sample]:not([disabled])'],
       hint:'Tap add',locked:true,later:'Not now',next:'eAbout',back:'eSampleIntro'
     };
@@ -436,11 +436,11 @@
     };
     if(stage === 'eAboutMenu')return {
       progress:p,title:'Settings, help, and more',
-      copy:'Settings is this button — backup, busy times, and how the app looks. Help, samples, and privacy are on this same page. Tap the Tings name any time to come back.',
+      copy:'Settings is this button — backups, busy times, and how the app looks. Help, samples, and privacy are on this same page. Tap the Tings name anytime to get back here.',
       target:['#open-settings','.about-actions'],action:'Done',command:'finish',back:'eAbout'
     };
     return {
-      progress:p,title:'You are ready',
+      progress:p,title:'You’re ready',
       copy:'Tap the Tings name anytime for settings, help, samples, and privacy.',
       target:['#open-about','#bar-open-about'],action:'Done',command:'finish',
       back:interactive ? 'eSampleIntro' : 'eOverview'
@@ -990,7 +990,7 @@
     const hint = bubble.querySelector('.tings-coach-hint');
     if(hint){
       hint.classList.add('is-warning');
-      hint.textContent = 'Use the highlighted control';
+      hint.textContent = 'Tap the highlighted control to continue';
     }
     bubble.classList.remove('is-blocked');
     void bubble.offsetWidth;
