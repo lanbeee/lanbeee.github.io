@@ -829,15 +829,17 @@ function reconcileLocations(data,settings){
     const prefIds = normalizeLocationIds([...locationIds,...optionState.locationIds],registry);
     const locationPrefs = normalizeLocationPrefs(h.locationPrefs,prefIds,h.preferredLocationId);
     const preferredLocationId = primaryPreferredLocationId(locationPrefs,prefIds);
+    const weatherLocationId = valid.has(cleanLocationId(h.weatherLocationId)) ? cleanLocationId(h.weatherLocationId) : null;
     const prevPref = h.preferredLocationId || null;
     const prevPrefs = JSON.stringify(h.locationPrefs || {});
     const moved = locationIds.length !== prev.length
       || preferredLocationId !== prevPref
       || JSON.stringify(locationPrefs) !== prevPrefs
       || anywhereAllowed !== Boolean(h.anywhereAllowed)
-      || JSON.stringify(scheduleOptions) !== JSON.stringify(h.scheduleOptions || []);
+      || JSON.stringify(scheduleOptions) !== JSON.stringify(h.scheduleOptions || [])
+      || weatherLocationId !== (h.weatherLocationId || null);
     if(moved)changed = true;
-    return moved ? {...h,locationIds,anywhereAllowed,locationPrefs,preferredLocationId,scheduleOptions} : h;
+    return moved ? {...h,locationIds,anywhereAllowed,locationPrefs,preferredLocationId,scheduleOptions,weatherLocationId} : h;
   });
   return {data:next,changed};
 }

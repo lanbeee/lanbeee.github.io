@@ -956,6 +956,9 @@
   const DEMO_SNAPSHOT_KEYS = ['tings_v2','tings_app_settings_v2','tings_today_suggested_v1'];
 
   function primeAdvancedDemoState(){
+    // Background maintenance must not persist normalized settings while this
+    // temporary sandbox is mounted; restoration is intentionally byte-exact.
+    globalThis._coachDataIsolationActive = true;
     // 1. Snapshot existing data.
     advancedDemoSnapshot = {};
     DEMO_SNAPSHOT_KEYS.forEach(k=>{
@@ -1093,6 +1096,8 @@
       }catch(_){}
     });
     advancedDemoSnapshot = null;
+    globalThis._coachDataIsolationActive = false;
+    globalThis._coachDataIsolationUntil = Date.now() + 5000;
     // Reload app data from restored snapshot on the next tick so the coach
     // unmount completes first (avoids MutationObserver re-entrancy).
     setTimeout(()=>{try{if(typeof render === 'function')render();}catch(_){}}, 0);

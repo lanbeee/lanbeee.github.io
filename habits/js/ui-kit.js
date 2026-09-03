@@ -178,6 +178,11 @@ const UI_PRIVACY_BLOCKS = [
     '<b>Map picture</b> loads OpenStreetMap tiles for the area on screen.',
     'These are open mapping services. They receive the search or pin needed for that job — not your habit list, and not an ongoing location history. That is a narrower request than embedding Google Maps or Apple Maps.'
   ]},
+  {id:'privacy-weather-body', label:'Weather guidance', summary:'Opt-in profiles send home-city coordinates to Open-Meteo, plus any far-away place you attach to an item.', body:[
+    'When you create a weather profile, Tings sends your saved home-city latitude and longitude to Open-Meteo. A habit can optionally use a saved place instead when that item happens far from home. It does not send habit names, schedules, logs, or live GPS location.',
+    'The seven-day forecast is cached for six hours. A shorter 15-minute forecast refreshes only while Tings is visible, a weather-linked planned item is active or starts within 90 minutes, and the cached day is not already decisive (for example 0% rain and snow remaining). Air-quality rules use CAMS ENSEMBLE data through Open-Meteo.',
+    'Forecasts are guidance and may be wrong. Missing data never blocks planning.'
+  ]},
   {id:'privacy-others-body', label:'Other services', summary:'Icons and map/PDF libraries load from public CDNs. They do not receive your list.', body:[
     'Tabler icons (jsDelivr) and Leaflet (unpkg) draw buttons and the map. PDF import uses pdf.js in this browser; the file you pick is not uploaded.',
     'Naming a pasted App Store link asks Apple’s public listing for that app’s name. It receives only the numeric id already inside the link, and only when you paste one. Offline, you simply type the name yourself.',
@@ -205,6 +210,10 @@ const UI_LEAVE_HINTS = {
   map:{
     aria:'this loads map tiles from the web',
     body:'Map tiles come from OpenStreetMap. The request is the area on screen, not your habits, and not a location history. Full story: About → privacy.'
+  },
+  weather:{
+    aria:'this sends forecast coordinates off this device',
+    body:'Weather guidance sends your saved home-city coordinates to Open-Meteo, plus any far-away place you attach to an item. Habit names and logs stay here. Full story: About → privacy.'
   }
 };
 

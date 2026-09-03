@@ -771,6 +771,7 @@ function render(opts){
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
     const agendaPill = minimal ? '' : agendaCardPill(agendaRow,h);
+    const weatherPill = weatherCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
     const showOrderPills = sortSettings.showOrderPillsOnCards !== false;
     const orderPill = (!minimal && showOrderPills && dayBase != null && typeof orderLinkPillHtml === 'function')
@@ -859,6 +860,7 @@ function render(opts){
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
+            ${weatherPill}
           </div>
           ${(!minimal && isBreakable) ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}

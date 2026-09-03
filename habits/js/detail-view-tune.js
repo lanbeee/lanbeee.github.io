@@ -58,6 +58,10 @@ function currentDetailTune(){
     anywhereAllowed:selectedAnywhereFrom('detail-place-chips'),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
+    weatherProfileId:cleanWeatherProfileId($('detail-weather-profile')?.value) || null,
+    weatherLocationId:typeof readWeatherLocationId === 'function'
+      ? readWeatherLocationId('detail-weather-location',$('detail-weather-profile')?.value)
+      : null,
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
     allowedMonthDays:selectedMonthDaysFrom('detail-monthday-chips'),
     preferredWeekdays:selectedWeekdaysFrom('detail-preferred-weekday-chips'),
@@ -169,6 +173,9 @@ function restoreDetailTune(){
   syncDetailDueUi();
   renderTagChips('detail-place-chips',[],detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
   renderTagChips('detail-topic-chips',detailTuneOriginal.topics,[]);
+  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',detailTuneOriginal.weatherProfileId || '');
+  if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('detail-weather-location',detailTuneOriginal.weatherLocationId || '');
+  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');

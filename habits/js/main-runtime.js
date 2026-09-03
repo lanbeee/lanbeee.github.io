@@ -864,6 +864,7 @@ restoreHabitTimer();
 plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');
+if(typeof startWeatherLifecycle === 'function')setTimeout(startWeatherLifecycle,0);
 // First-run coach: defer until the real home UI has painted. A dismissal is
 // versioned, so it stays quiet until a future coach intentionally opts in.
 if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){

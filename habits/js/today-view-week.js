@@ -790,6 +790,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     const bh = b && b.h && b.h.hid;
     if(doing && ah === doing.hid && bh !== doing.hid)return -1;
     if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+    const lockState=dayStates[0] || null;
+    const lockedA=typeof weatherLockedPlacement==='function' && weatherLockedPlacement(a,lockState,settings);
+    const lockedB=typeof weatherLockedPlacement==='function' && weatherLockedPlacement(b,lockState,settings);
+    if(Boolean(lockedA)!==Boolean(lockedB))return lockedA?-1:1;
     const criticalA = mustPlaceCriticalOccurrence(a);
     const criticalB = mustPlaceCriticalOccurrence(b);
     if(criticalA !== criticalB)return criticalA ? -1 : 1;
@@ -959,6 +963,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
             asapDelayMin:0,
             scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
             preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
+            weatherPenalty:typeof weatherPenaltyForFit === 'function' ? weatherPenaltyForFit(fill,fitProbe,state,settings) : 0,
             urgency:c.urgency
           };
           const dueCand = {
@@ -991,6 +996,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
               fill,fitProbe,state,candidates,dayOpts.spareWindows || [])
             : fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
           preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
+          weatherPenalty:typeof weatherPenaltyForFit === 'function' ? weatherPenaltyForFit(fill,fitProbe,state,settings) : 0,
           urgency:c.urgency
         };
         const dueCand = {
@@ -1112,6 +1118,7 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
         asapDelayMin:0,
         scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
         preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
+        weatherPenalty:typeof weatherPenaltyForFit === 'function' ? weatherPenaltyForFit(fill,fitProbe,state,settings) : 0,
         urgency:c.urgency
       },weights);
       const cand = { state, fill, fit:fitProbe, score, durMin:fitProbe.durMin };
@@ -1154,6 +1161,7 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
           asapDelayMin:0,
           scarceOverlapMs:fitOverlapWithWindows(fitProbe,dayOpts.spareWindows || []),
           preferencePenalty:weekPreferencePenalty(c.h,fitProbe,state,registry),
+          weatherPenalty:typeof weatherPenaltyForFit === 'function' ? weatherPenaltyForFit(fill,fitProbe,state,settings) : 0,
           urgency:c.urgency
         },weights);
         // Prefer larger pieces, then better soft score.
@@ -1254,6 +1262,8 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
       // equal/lower priority must not steal a daily breakable chunk.
       if(typeof fastPathDefersMovable === 'function'
         && fastPathDefersMovable(c,state,deferPool,dayStates))continue;
+      if(typeof weatherShouldDeferCandidate === 'function'
+        && weatherShouldDeferCandidate(c,state,settings,dayStates))continue;
       const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
       if(breakableRhythm){
         const before = state.fills.length;

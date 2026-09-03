@@ -1433,6 +1433,20 @@ function agendaCardPill(row,h = null,now = Date.now()){
   return `<span class="context-pill agenda-lead ${cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i>${timeHtml}</span>`;
 }
 
+// PURE: compact forecast status. Tapping it explains the decision without
+// adding a permanent weather strip to home.
+function weatherCardPill(row,h = null){
+  if(!row || !h || !h.weatherProfileId || typeof weatherStatusForRow !== 'function')return '';
+  const assessment = weatherStatusForRow(h,row,sortSettings || loadSortSettings());
+  if(!assessment)return '';
+  const status = assessment.status || 'unknown';
+  const icon = typeof weatherConditionIcon === 'function' ? weatherConditionIcon(status) : 'ti-cloud';
+  // The amber pill must say whether the weather is good or bad at a glance;
+  // "weather" alone forced a tap to disambiguate caution from blocked.
+  const label = status === 'good' ? 'good' : (status === 'override' ? 'override' : (status === 'unknown' ? 'weather?' : 'caution'));
+  return `<button type="button" class="context-pill weather-pill ${status}" data-weather-info="${escapeHtml(assessment.summary)}" title="${escapeHtml(assessment.summary)}" aria-label="${escapeHtml(assessment.summary)}"><i class="ti ${icon}" aria-hidden="true"></i><span>${label}</span></button>`;
+}
+
 // PURE: the former score ring as a compact, readable metadata pill.
 function cardStatusPill(score,tone,cue,accent){
   const value = Number.isFinite(score) ? `${Math.round(score)}%` : 'new';
@@ -2027,8 +2041,9 @@ function plannerTraceScoreSummary(item){
     const delayMin = Math.round(Number(t.asapDelayMin) || 0);
     const scarceMin = Math.round((Number(t.scarceOverlapMs) || 0) / 60000);
     const pref = Math.round(Number(t.preferencePenalty) || 0);
+    const weather = Math.round(Number(t.weatherPenalty) || 0);
     const order = Math.round(Number(t.orderPenalty) || 0);
-    parts.push(`fit signals: travel ${travelMin}m, local delay ${delayMin}m, scarce overlap ${scarceMin}m, preference ${pref}, order ${order}`);
+    parts.push(`fit signals: travel ${travelMin}m, local delay ${delayMin}m, scarce overlap ${scarceMin}m, preference ${pref}, weather ${weather}, order ${order}`);
   }
   return parts.join(' / ');
 }

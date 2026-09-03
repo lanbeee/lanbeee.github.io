@@ -68,6 +68,7 @@ async function maybeInferHomeCityFromPlace(lat,lng){
   }
   updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng});
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+  if(typeof refreshWeatherForecast === 'function')void refreshWeatherForecast({force:true});
   syncHomeCityStatus();
   if(typeof showToast === 'function')showToast(`city: ${name}`);
   return true;
@@ -92,6 +93,7 @@ async function setHomeCity(){
     const name = feat.properties.name || query;
     updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng});
     if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
+    if(typeof refreshWeatherForecast === 'function')void refreshWeatherForecast({force:true});
     input.value = '';
     syncHomeCityStatus();
     if(typeof showToast === 'function')showToast(`city: ${name}`);

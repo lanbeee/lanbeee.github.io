@@ -550,4 +550,8 @@ body.reach-pad #list{padding-top:220px;}
 }
 .empty-sub{color:var(--text3);font-size:13px;display:inline-block;max-width:320px;}
 #empty.is-action{cursor:pointer;}
-
+.weather-pill{appearance:none;border:0;font:inherit;cursor:pointer;}
+.weather-pill.good{color:var(--teal-text);background:var(--teal-bg);}
+.weather-pill.caution,.weather-pill.blocked{color:var(--amber-text);background:var(--amber-bg);}
+.weather-pill.override{color:var(--red-icon);background:var(--red-bg);}
+.weather-pill.unknown{color:var(--text3);background:var(--bg2);}

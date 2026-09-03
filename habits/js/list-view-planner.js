@@ -433,6 +433,8 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     focus:s.focus || '',
     defaultTravelMode:s.defaultTravelMode || '',
     locations:(s.locations || []).map(l=>`${l.id}:${l.lat}:${l.lng}`).join('|'),
+    weatherProfiles:(s.weatherProfiles || []).map(p=>p && p.id).filter(Boolean).join('|'),
+    weatherRevision:s._weatherContext && s._weatherContext.revision || '',
     // attentionScore / sort-lab inputs (isSortSettingKey list).
     plansFirst:Boolean(s.plansFirst),
     planWindowDays:s.planWindowDays || 0,
@@ -768,7 +770,7 @@ function queueOptimizedHomeRender(data,opts){
       _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(stableData);
       saveHomeAgendaCache(stableData,week);
       _homeListFingerprint = homeListFingerprint();
-      if(exactMode)scheduleHomeAgendaRefinement(stableData,settings,week);
+      if(exactMode && !(opts && opts.__weatherChanged))scheduleHomeAgendaRefinement(stableData,settings,week);
       if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
       return;
     }
@@ -781,7 +783,7 @@ function queueOptimizedHomeRender(data,opts){
     _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(stableData);
     saveHomeAgendaCache(stableData,week);
     _homeListFingerprint = homeListFingerprint();
-    if(exactMode)scheduleHomeAgendaRefinement(stableData,settings,week);
+    if(exactMode && !(opts && opts.__weatherChanged))scheduleHomeAgendaRefinement(stableData,settings,week);
     if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
   }).catch(()=>{
     if(coldBootTimer != null)clearTimeout(coldBootTimer);
@@ -841,6 +843,7 @@ function renderHomeIfChanged(force,opts = {}){
       queueOptimizedHomeRender(data,{
         __backgroundRefresh:true,
         __forceReplan:Boolean(force),
+        __weatherChanged:Boolean(opts.__weatherChanged),
         __locationChanged:Boolean(opts.locationChanged)
       });
       return true;

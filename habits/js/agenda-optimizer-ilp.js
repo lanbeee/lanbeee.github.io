@@ -688,6 +688,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       }
     }
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
+    const weatherDefers = deferrable && deferrable.has(c.i)
+      && typeof weatherShouldDeferCandidate === 'function'
+      && weatherShouldDeferCandidate(c,state,state.settings || (typeof sortSettings !== 'undefined' ? sortSettings : null),solveOptions.dayStates || []);
     const earliestStart = fits.reduce(
       (min,fit)=>Math.min(min,fit.placeStart),Infinity);
     for(const fit of fits){
@@ -706,6 +709,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       const boundedFitScore = Math.max(-1000,Math.min(1000,Number(fit.score) || 0));
       const option = {c,fill,fit,
         weight:baseWeight
+          - (weatherDefers ? baseWeight + 50 : 0)
           - Math.min(1440,delayMin) * 0.001
           - boundedFitScore * 0.01,
         movable:typeof isMovableWeekCandidate === 'function' && isMovableWeekCandidate(c)};
@@ -805,6 +809,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     const required = candidate && candidate.h && (
       requiredHids.has(candidate.h.hid)
       || (doing && candidate.h.hid === doing.hid)
+      || (typeof weatherLockedPlacement === 'function'
+        && weatherLockedPlacement(candidate,state,state.settings || sortSettings))
       || (typeof mustPlaceCriticalOccurrence === 'function'
         && mustPlaceCriticalOccurrence(candidate))
     );
@@ -1155,8 +1161,11 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
     if(state.placed.has(c.i))continue;
     if(typeof fastPathDefersMovable === 'function'
       && fastPathDefersMovable(c,state,pool,states))continue;
+    if(typeof weatherShouldDeferCandidate === 'function'
+      && weatherShouldDeferCandidate(c,state,state.settings || sortSettings,states))continue;
     let fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     const placeOpts = {
+      settings:state.settings || sortSettings,
       allowNetwork:true,reservationWindows,reservationCandidates:pool
     };
     if(doing && fill.h && fill.h.hid === doing.hid){
@@ -1433,7 +1442,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       try{
         chosen = await withTimeout(
           packDayWithOptimizer(state,fixedCands,candidates,deferrable,{
-            ...solveOptions,solveBudgetMs:solveMs
+            ...solveOptions,dayStates,solveBudgetMs:solveMs
           }),
           solveMs
         );

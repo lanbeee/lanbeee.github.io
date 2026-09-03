@@ -395,6 +395,12 @@ function normalize(items){
       anywhereAllowed,
       locationPrefs,
       preferredLocationId,
+      weatherProfileId:(typeof cleanWeatherProfileId === 'function'
+        ? cleanWeatherProfileId(raw.weatherProfileId)
+        : (typeof raw.weatherProfileId === 'string' ? raw.weatherProfileId.trim().slice(0,48) : '')) || null,
+      weatherLocationId:(typeof cleanLocationId === 'function'
+        ? cleanLocationId(raw.weatherLocationId)
+        : String(raw.weatherLocationId || '').trim().slice(0,64)) || null,
       scheduleOptions,
       links:normalizeLinks(Array.isArray(raw.links) && raw.links.length ? raw.links : legacyCallLinks(raw)),
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,

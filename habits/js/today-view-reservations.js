@@ -187,6 +187,19 @@ function tryPlaceOnDay(state,fill,opts = {}){
       // Preferred time is a second soft candidate — score picks vs ASAP/scarce.
       // Doing-now always wants the earliest start, so skip preferred alternatives.
       if(opts.doingNowStart != null)continue;
+      // Weather-aware starts are generated from the merged hourly / 15-minute
+      // samples. Both planner engines pass through this primitive, so the
+      // candidate set and hard-rule behavior stay identical.
+      if(typeof weatherCandidateAnchors === 'function'){
+        const weatherStarts = weatherCandidateAnchors(
+          fill,state,placeStart,Math.min(cap,gap.end),cost,
+          opts.settings || state.settings || (typeof sortSettings !== 'undefined' ? sortSettings : null)
+        );
+        for(const weatherStart of weatherStarts){
+          if(weatherStart <= placeStart || weatherStart + cost > cap || weatherStart + cost > gap.end)continue;
+          fits.push({...baseFit,placeStart:weatherStart,placeEnd:weatherStart+cost,weatherCandidate:true});
+        }
+      }
       const loc = locId ? registry.find(l=>l.id === locId) : null;
       const locPref = loc && Number.isFinite(loc.preferredTimeStart) ? dayBase + loc.preferredTimeStart * 60000 : null;
       const habitPref = fillPreferredStart(fill.h,dayBase,anchor);
@@ -247,7 +260,14 @@ function tryPlaceOnDay(state,fill,opts = {}){
       || typeof outsideFitKeepsEarlySuccessors !== 'function'
       || outsideFitKeepsEarlySuccessors(
         state,fill,outsideFit,opts.reservationCandidates || []);
-    if(outsideFit && orderCompatible)return outsideFit;
+    if(outsideFit && orderCompatible){
+      const weather = typeof weatherFitAssessment === 'function'
+        ? weatherFitAssessment(fill,outsideFit,state,opts.settings || state.settings || sortSettings) : null;
+      if(!weather || !weather.hardFail){
+        if(weather)outsideFit.weather = weather;
+        return outsideFit;
+      }
+    }
   }
   return bestFit;
 }

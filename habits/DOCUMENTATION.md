@@ -57,6 +57,7 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
+- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override)
 - Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, flexibilityDays
@@ -408,6 +409,8 @@ else:
   anywhereAllowed: boolean,   // 👨‍💻 Legacy: may be done anywhere
   locationPrefs: Object<string, 'avoid'|'little'|'high'>, // 👤 Soft preferences
   preferredLocationId: string|null, // 👤 Legacy preferred location
+  weatherProfileId: string|null, // 👤 Optional weather profile
+  weatherLocationId: string|null, // 👤 Optional forecast place (far from home)
   scheduleOptions: {             // 👤 Specific extra time/place windows
     weekdays: number[],          // Empty = every weekday
     start: number|null,          // Minutes from midnight, or null when dynamic
@@ -566,7 +569,36 @@ homeCityLng: number|null,       // 👤 Longitude
 prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
+weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
 ```
+
+#### 4.3.8a Weather Guidance 👤👨‍💻
+- Uses Open-Meteo without an API key. The default forecast is the saved
+  home-city coordinate. An item can optionally pick a saved place when that
+  item happens far from home (`weatherLocationId`). Nearby places (about 40 km)
+  reuse the home forecast instead of a second request.
+- The seven-day hourly forecast refreshes every six hours per distinct place.
+  Extra places are fetched only for weather-linked items that opted in, capped
+  at four far places besides home.
+- When a weather-linked planned item is active or starts within 90 minutes, a
+  15-minute forecast can refresh every 15 minutes while the app is visible. It
+  covers at least two hours and 30 minutes after the item, capped at four hours.
+  That near-term refresh is skipped when the cached remaining day is already
+  decisive — for example 0% rain and snow, or values comfortably away from every
+  rule threshold. Borderline precipitation still refreshes.
+- Near-term samples replace hourly samples where they overlap; the weekly
+  forecast fills later or missing times. AQI is fetched separately only when a
+  profile uses US or EU AQI (home: any such profile; a far place: only if an
+  item there uses one).
+- Rules in one profile are AND-combined. Soft rules steer placement. Hard rules
+  reject flexible times, but active, pinned, critical, and direct-linked
+  commitments remain and show an override. Missing data always fails open.
+- Home cards for a weather-guided item show a compact status pill (`good`,
+  `caution`, `override`, or `weather?`); tapping it shows a one-line reason
+  naming the deciding or failing metric values.
+- Relative preferences compare the exact habit interval and its whole day with
+  equal weight. Forecast cache is stored under `tings_weather_cache_v1`, outside
+  backup data. Far-place payloads live in `places` on that cache.
 
 #### 4.3.9 Reminders & Calendar 👤
 ```js
@@ -1708,7 +1740,8 @@ Toasts appear after:
 - **Privacy** explains that Tings is open source, with no account; habits live
   in this browser’s `localStorage`; the site owner cannot see them. It lists
   third-party services (Photon, Nominatim, OSRM, OpenStreetMap tiles, jsDelivr /
-  unpkg CDNs) and the encrypted Cloudflare relay used by shared display and
+  unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
+  and the encrypted Cloudflare relay used by shared display and
   share item. Map lookups are described as a narrower request than embedding
   Google Maps or Apple Maps.
 - Settings → backup also links to Privacy.
@@ -1730,6 +1763,10 @@ The actual settings sections (in order of appearance):
 Settings sections (actual order):
 ├── display
 │   └── minimal mode toggle
+├── weather guidance
+│   ├── up to four named rule profiles
+│   ├── six-hour weekly / conditional 15-minute near-term status
+│   └── manual refresh and Open-Meteo/CAMS attribution
 ├── home page
 │   ├── bring planned items up
 │   ├── fixed-time tasks in agenda
@@ -2438,6 +2475,7 @@ Same agenda logic, but simplified display:
 | `homeCityName` | string | '' | City name for prayer times |
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
+| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |
@@ -2584,6 +2622,8 @@ Same agenda logic, but simplified display:
 | `locationPrefs` | object | Per-location preference (avoid/little/high) |
 | `anywhereAllowed` | boolean | Can be done anywhere |
 | `preferredLocationId` | string\|null | Preferred single location |
+| `weatherProfileId` | string\|null | Named weather profile used by the planner |
+| `weatherLocationId` | string\|null | Optional saved place whose forecast overrides home when far away |
 | `scheduleOptions` | array | Specific extra weekday/time/place windows; optional per-row preference overrides the place ranking for that instance |
 
 ### 25.3.1 Time & Place Options 👤👨‍💻

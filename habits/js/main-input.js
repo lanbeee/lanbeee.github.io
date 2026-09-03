@@ -187,7 +187,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=31';
+    script.src = './onboarding/coach.js?v=32';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{

@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -181,6 +181,13 @@
           <span class="settings-sublabel">topics &amp; places</span>
           <div class="topic-chip-row" id="ting-tag-chips"></div>
         </div>
+        <label class="field-label" for="ting-weather-profile">weather guidance</label>
+        <select id="ting-weather-profile" class="settings-select"><option value="">none</option></select>
+        <div id="ting-weather-location-wrap" class="weather-habit-location" hidden>
+          <label class="field-label" for="ting-weather-location">forecast place</label>
+          <select id="ting-weather-location" class="settings-select"><option value="">home city</option></select>
+          <p class="field-hint">Rare. Pick a saved place when this happens far from home.</p>
+        </div>
       </div>
 
       <div class="btn-row add-actions">
@@ -328,6 +335,15 @@
             <span class="settings-sublabel" id="detail-places-label">places</span>
             <p class="field-hint" id="detail-places-hint">These places use the time window above.</p>
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
+          </div>
+          <div class="detail-full-only weather-habit-field">
+            <label class="settings-sublabel" for="detail-weather-profile">weather guidance</label>
+            <select id="detail-weather-profile" class="settings-select"><option value="">none</option></select>
+            <div id="detail-weather-location-wrap" class="weather-habit-location" hidden>
+              <label class="settings-sublabel" for="detail-weather-location">forecast place</label>
+              <select id="detail-weather-location" class="settings-select"><option value="">home city</option></select>
+            </div>
+            <p class="field-hint">Uses your home-city forecast unless this item is far away.</p>
           </div>
           <div class="habit-options-block detail-full-only" id="detail-habit-options">
             <div class="habit-options-heading">
@@ -663,6 +679,25 @@
         <section class="settings-block">
           <span class="settings-label">display</span>
           <div class="settings-grid" data-ui-toggles="display"></div>
+        </section>
+        <section class="settings-block settings-collapsible">
+          <div class="settings-collapse-row">
+            <button type="button" class="settings-collapse-head" id="settings-weather-head" data-collapse-target="settings-weather-body" aria-expanded="false" aria-controls="settings-weather-body">
+              <span class="settings-label">weather guidance</span>
+              <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            </button>
+            <span data-ui-leave="weather"></span>
+          </div>
+          <div class="settings-collapse-body" id="settings-weather-body" hidden>
+            <p class="field-hint">Create up to four profiles, then attach one to an outdoor habit. Rules are combined. Soft rules steer timing; hard rules reject flexible times.</p>
+            <div id="weather-profile-list" class="weather-profile-list"></div>
+            <div class="btn-row weather-actions">
+              <button class="btn" id="weather-profile-add" type="button">add profile</button>
+              <button class="btn" id="weather-refresh" type="button">refresh forecast</button>
+            </div>
+            <p class="field-hint" id="weather-status" aria-live="polite"></p>
+            <p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away place you attach to an item, are sent only to retrieve forecasts; no API key or account is used.</p>
+          </div>
         </section>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-home-head" data-collapse-target="settings-home-body" aria-expanded="false" aria-controls="settings-home-body">
@@ -1379,6 +1414,7 @@
 <script src="./js/calendar-import.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
+<script src="./js/weather.js" defer></script>
 <script src="./js/scoring.js" defer></script>
 <!-- Large global scripts are sequential byte-exact slices; preserve this order. -->
 <script src="./js/list-view-home.js" defer></script>
@@ -1403,6 +1439,7 @@
 <script src="./js/shell-ui.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings-core.js" defer></script>
+<script src="./js/settings-weather.js" defer></script>
 <script src="./js/settings-backup.js" defer></script>
 <script src="./js/settings-blocked.js" defer></script>
 <script src="./js/settings-locations.js" defer></script>

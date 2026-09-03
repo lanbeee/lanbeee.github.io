@@ -50,6 +50,9 @@ function openDetail(i){
   renderDetailLinkRows(normalizeLinks(h.links));
   renderTagChips('detail-place-chips',[],h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderTagChips('detail-topic-chips',h.topics,[]);
+  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',h.weatherProfileId || '');
+  if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('detail-weather-location',h.weatherLocationId || '');
+  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
   renderHabitScheduleOptions(h);
@@ -76,6 +79,8 @@ function openDetail(i){
     anywhereAllowed:Boolean(h.anywhereAllowed),
     locationPrefs:normalizeLocationPrefs(h.locationPrefs,typeof habitPrefLocationIds === 'function' ? habitPrefLocationIds(h) : h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
+    weatherProfileId:cleanWeatherProfileId(h.weatherProfileId) || null,
+    weatherLocationId:(typeof cleanLocationId === 'function' ? cleanLocationId(h.weatherLocationId) : '') || null,
     links:normalizeLinks(h.links),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),

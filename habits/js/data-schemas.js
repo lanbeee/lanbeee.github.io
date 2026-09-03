@@ -125,10 +125,23 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
+ * @property {string|null} weatherProfileId — optional weather-guidance profile id; forecast failure never blocks planning
+ * @property {string|null} weatherLocationId — optional saved-place id whose forecast overrides home city when far away; null uses home
  * @property {{weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high'}[]} scheduleOptions — specific extra weekday/time/place windows; fixed or prayer-relative endpoints extend the general allowed schedule. Duplicate locations are allowed. Optional pref overrides locationPrefs for that instance.
  *
  * — LinkFields (optional, on every type) —
  * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and fires on card double tap
+ */
+
+/**
+ * A named set of AND-combined weather rules stored in Settings. `relative`
+ * compares both the exact interval and its whole day (50/50). Hard rules only
+ * reject flexible placements; active/pinned/critical/direct-linked rows may
+ * override them. Forecast payloads live separately under WEATHER_CACHE_KEY.
+ * @typedef {Object} WeatherProfile
+ * @property {string} id
+ * @property {string} name
+ * @property {{metric:string,min:number|null,max:number|null,hard:boolean,relative:'none'|'low'|'high'}[]} rules
  */
 
 /**
@@ -202,6 +215,7 @@
  * @property {Location[]} locations                            — master location registry (max 32)
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
+ * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)

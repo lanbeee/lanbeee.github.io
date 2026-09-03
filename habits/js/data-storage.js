@@ -159,6 +159,8 @@ function loadSortSettings(){
     merged.homeCityName = typeof merged.homeCityName === 'string' ? merged.homeCityName.trim() : '';
     merged.homeCityLat = Number.isFinite(merged.homeCityLat) ? merged.homeCityLat : null;
     merged.homeCityLng = Number.isFinite(merged.homeCityLng) ? merged.homeCityLng : null;
+    merged.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
+      ? normalizeWeatherProfiles(merged.weatherProfiles) : [];
     // Migrate legacy prayer-city fields into home city.
     if(!merged.homeCityName && typeof merged.prayerCityName === 'string' && merged.prayerCityName.trim()){
       merged.homeCityName = merged.prayerCityName.trim();
@@ -182,6 +184,8 @@ function loadSortSettings(){
     // them in saved settings, making a stale GPS coordinate look live forever.
     delete merged._plannerCurrentCoord;
     delete merged._plannerLiveLocationId;
+    delete merged._weatherContext;
+    if(typeof weatherPlannerContext === 'function')merged._weatherContext = weatherPlannerContext(merged);
     // Prefer worker-side GLPK warm. Main-thread preload only when workers cannot run.
     if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
       && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
@@ -241,6 +245,8 @@ function saveSortSettings(settings){
   next.homeCityName = typeof next.homeCityName === 'string' ? next.homeCityName.trim() : '';
   next.homeCityLat = Number.isFinite(next.homeCityLat) ? next.homeCityLat : null;
   next.homeCityLng = Number.isFinite(next.homeCityLng) ? next.homeCityLng : null;
+  next.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
+    ? normalizeWeatherProfiles(next.weatherProfiles) : [];
   if(!next.homeCityName && typeof next.prayerCityName === 'string' && next.prayerCityName.trim()){
     next.homeCityName = next.prayerCityName.trim();
     next.homeCityLat = Number.isFinite(next.prayerCityLat) ? next.prayerCityLat : null;
@@ -256,6 +262,7 @@ function saveSortSettings(settings){
   next.agendaScoreWeights = normalizeAgendaScoreWeights(next.agendaScoreWeights);
   delete next._plannerCurrentCoord;
   delete next._plannerLiveLocationId;
+  delete next._weatherContext;
   sortSettings = next;
   Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }

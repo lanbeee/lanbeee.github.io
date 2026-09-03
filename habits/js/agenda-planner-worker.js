@@ -40,6 +40,7 @@ importScripts(
   './data-format.js',
   './locations.js',
   './prayer-times.js',
+  './weather.js',
   './scoring.js'
 );
 
@@ -103,12 +104,15 @@ async function runPlannerMessage(message){
       ? message.settings : {};
     const requestCurrentCoord = requestSettings._plannerCurrentCoord || null;
     const requestLiveLocationId = requestSettings._plannerLiveLocationId || null;
+    const requestWeatherContext = requestSettings._weatherContext || null;
     const persistedSettings = {...requestSettings};
     delete persistedSettings._plannerCurrentCoord;
     delete persistedSettings._plannerLiveLocationId;
+    delete persistedSettings._weatherContext;
     Storage.write(SORT_SETTINGS_KEY,persistedSettings);
     sortSettings = loadSortSettings();
     if(requestLiveLocationId)sortSettings._plannerLiveLocationId = requestLiveLocationId;
+    if(requestWeatherContext)sortSettings._weatherContext = requestWeatherContext;
     // Raw GPS coordinates are normally page-local. Receive an ephemeral copy
     // for this one solve so a user near (but outside the geofence of) a saved
     // place begins from "here" instead of lastKnownLocationId. Never persist it.

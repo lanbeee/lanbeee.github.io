@@ -31,6 +31,32 @@ const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you a
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
 
+// ── Weather guidance (Open-Meteo; no API key) ──
+const WEATHER_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const WEATHER_AIR_URL = 'https://air-quality-api.open-meteo.com/v1/air-quality';
+const WEATHER_CACHE_KEY = 'tings_weather_cache_v1';
+const WEATHER_WEEKLY_TTL_MS = 6 * 60 * 60 * 1000;
+const WEATHER_NEAR_TTL_MS = 15 * 60 * 1000;
+const WEATHER_NEAR_TRIGGER_MS = 90 * 60 * 1000;
+const WEATHER_NEAR_MIN_HORIZON_MS = 2 * 60 * 60 * 1000;
+const WEATHER_NEAR_AFTER_END_MS = 30 * 60 * 1000;
+const WEATHER_NEAR_MAX_HORIZON_MS = 4 * 60 * 60 * 1000;
+const WEATHER_SAME_PLACE_M = 40000;               // reuse home/other forecast inside ~25 miles
+const MAX_WEATHER_PROFILES = 4;
+const MAX_WEATHER_EXTRA_PLACES = 4;               // far-away habit overrides besides home
+const WEATHER_STABLE_MARGINS = {
+  precipitation_probability:20,
+  precipitation:0.2,
+  snowfall:0.1,
+  temperature_2m:3,
+  apparent_temperature:3,
+  wind_speed_10m:8,
+  wind_gusts_10m:10,
+  uv_index:1.5,
+  us_aqi:20,
+  european_aqi:15
+};
+
 // ── Prayer times (dynamic habit windows) ──
 // Prayer-time anchors a habit's allowed/preferred time endpoint can be tied to.
 // 'maghrib' is the same moment as sunset; both keys are accepted as aliases.
@@ -211,6 +237,7 @@ const DEFAULT_SORT_SETTINGS = {
   homeCityName:'',
   homeCityLat:null,
   homeCityLng:null,
+  weatherProfiles:[],
   prayerIslamicNames:false,
 
   topics:[],

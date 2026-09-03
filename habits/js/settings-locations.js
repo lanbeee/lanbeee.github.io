@@ -201,6 +201,7 @@ function habitsUsingLocationId(locId, data){
     if(h.locationPrefs && typeof h.locationPrefs === 'object' && Object.prototype.hasOwnProperty.call(h.locationPrefs, id)){
       return true;
     }
+    if(cleanLocationId(h.weatherLocationId) === id)return true;
     return false;
   });
 }

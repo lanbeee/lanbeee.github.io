@@ -76,6 +76,7 @@ tight-rhythm-capacity-test.js	planner	once
 timed-day-plan-test.js	planner	once
 timer-session-test.js	ui	once
 wk-check.js	ui	once
+weather-planner-test.js	planner	once
 zz-chip-swipe-debug.js	diagnostics	once
 zz-daylogs-drift.js	diagnostics	once
 zz-debug-c.js	diagnostics	once

@@ -2194,7 +2194,7 @@ function resolveAgendaScoreWeights(settings){
 // before this runs; every soft signal is a weighted term here.
 // terms: {
 //   travelSeconds, clusterBonus, coLocHint, dayOffsetPenalty,
-//   asapDelayMin, scarceOverlapMs, preferencePenalty, urgency, orderPenalty
+//   asapDelayMin, scarceOverlapMs, preferencePenalty, weatherPenalty, urgency, orderPenalty
 // }
 function scoreAgendaPlacement(terms,weights){
   const W = weights || resolveAgendaScoreWeights(null);
@@ -2211,6 +2211,7 @@ function scoreAgendaPlacement(terms,weights){
   const asap = asapDelay * (1 + urgency / 50);
   const scarce = Number(t.scarceOverlapMs) || 0;
   const pref = Number(t.preferencePenalty) || 0;
+  const weather = Number(t.weatherPenalty) || 0;
   const orderPen = Number(t.orderPenalty) || 0;
   return (W.travel || 0) * travel
     - (W.cluster || 0) * cluster
@@ -2218,6 +2219,7 @@ function scoreAgendaPlacement(terms,weights){
     + (W.asap || 0) * asap
     + (W.scarce || 0) * scarce
     + (W.preference || 0) * pref
+    + weather
     + orderPen;
 }
 
@@ -2312,6 +2314,13 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
   let bestScore = Infinity;
   let bestTerms = null;
   for(const fit of fits){
+    const weatherSettings=opts.settings || (state && state.settings) || (typeof sortSettings !== 'undefined' ? sortSettings : null);
+    const locked=typeof weatherLockedPlacement==='function' ? weatherLockedPlacement(fill,state,weatherSettings) : null;
+    if(locked && Math.abs(Number(fit.placeStart)-Number(locked.start))>60000)continue;
+    const weather = typeof weatherFitAssessment === 'function'
+      ? weatherFitAssessment(fill,fit,state,weatherSettings)
+      : null;
+    if(weather && weather.hardFail)continue;
     const prefPen = typeof weekPreferencePenalty === 'function'
       ? weekPreferencePenalty(fill.h,fit,state,state.registry)
       : (fit.preferredHit ? -40 : 0);
@@ -2327,11 +2336,13 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
           fill,fit,state,opts.reservationCandidates,spare)
         : fitOverlapWithWindows(fit,spare),
       preferencePenalty:prefPen,
+      weatherPenalty:weather ? weather.penalty : 0,
       urgency,
       orderPenalty:orderConstraintPenalty(fill,fit,state)
     };
     const score = scoreAgendaPlacement(terms,weights);
     fit.score = score;
+    if(weather)fit.weather = weather;
     if(score < bestScore){ bestScore = score; best = fit; bestTerms = terms; }
   }
   // These values were already calculated to choose the fit. Keeping them only

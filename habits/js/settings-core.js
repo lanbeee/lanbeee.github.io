@@ -22,6 +22,9 @@ function applyAddDefaults(){
   syncRhythm('ting',target);
   const defTopics = Array.isArray(settings.defaultTopics) ? settings.defaultTopics : [];
   renderTagChips('ting-tag-chips',defTopics,[],null);
+  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('ting-weather-profile','');
+  if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('ting-weather-location','');
+  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   const topicsWrap = $('add-topics-section');
   if(topicsWrap)topicsWrap.hidden = false;
   document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.v === selectedType));
@@ -71,6 +74,7 @@ function syncSettingsControls(){
   renderTopicList();
   renderBlockedTimeControls();
   renderLocationControls();
+  if(typeof renderWeatherControls === 'function')renderWeatherControls();
   if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
@@ -119,4 +123,3 @@ function syncSettingsControls(){
   renderDefaultTopicsChips();
   applyAppearanceSettings();
 }
-

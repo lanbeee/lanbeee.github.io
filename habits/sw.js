@@ -1,4 +1,4 @@
-const CACHE = 'tings-v232';
+const CACHE = 'tings-v235';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -25,6 +25,10 @@ const GEOCODE_ORIGINS = [
 const SHARE_WORKER_ORIGINS = [
   'https://habits-share.contactnabilkhan.workers.dev',
   'https://habits-share-staging.contactnabilkhan.workers.dev'
+];
+const WEATHER_ORIGINS = [
+  'https://api.open-meteo.com',
+  'https://air-quality-api.open-meteo.com'
 ];
 
 function isShareWorkerRequest(req){
@@ -85,6 +89,7 @@ const PRECACHE = [
   './js/calendar-import.js',
   './js/locations.js',
   './js/prayer-times.js',
+  './js/weather.js',
   './js/scoring.js',
   './js/list-view-home.js',
   './js/list-view-sections.js',
@@ -111,6 +116,7 @@ const PRECACHE = [
   './js/shell-ui.js',
   './js/emoji-suggest.js',
   './js/settings-core.js',
+  './js/settings-weather.js',
   './js/settings-backup.js',
   './js/settings-blocked.js',
   './js/settings-locations.js',
@@ -187,6 +193,9 @@ self.addEventListener('fetch', event => {
   // ignores Cache-Control: no-store when cache.put() is used, and a cached 200
   // would hide later 401/410 revoke responses.
   if (isShareWorkerRequest(req)) return;
+  // Forecast freshness is owned by js/weather.js (6h weekly; 15m near-term only when needed).
+  // Never let the app-shell SW serve an older opaque response over that cache.
+  if (WEATHER_ORIGINS.some(origin => req.url.startsWith(origin))) return;
 
   if (req.mode === 'navigate') {
     event.respondWith((async () => {

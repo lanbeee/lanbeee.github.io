@@ -29,6 +29,10 @@ function retentionCleanupSummary(result,{automatic = false} = {}){
  */
 function applyRetentionCleanup(options = {}){
   const {force = false,automatic = false} = options;
+  if(automatic && (globalThis._coachDataIsolationActive
+    || Date.now() < Number(globalThis._coachDataIsolationUntil || 0))){
+    return {ran:false,changed:false};
+  }
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (sortSettings || {});
   const now = Date.now();
   if(automatic && !force && typeof shouldRunRetentionCleanup === 'function'

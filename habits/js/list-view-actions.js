@@ -588,6 +588,12 @@ function setupCardTap(row,realIdx){
     }
   });
   card.addEventListener('click',e=>{
+    const weatherInfo=e.target.closest('[data-weather-info]');
+    if(weatherInfo){
+      e.preventDefault();e.stopPropagation();
+      showToast(weatherInfo.dataset.weatherInfo || 'weather guidance');
+      return;
+    }
     if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){
       e.preventDefault();e.stopPropagation();return;
     }
