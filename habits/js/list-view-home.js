@@ -1433,18 +1433,16 @@ function agendaCardPill(row,h = null,now = Date.now()){
   return `<span class="context-pill agenda-lead ${cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i>${timeHtml}</span>`;
 }
 
-// PURE: compact forecast status. Tapping it explains the decision without
-// adding a permanent weather strip to home.
+// PURE: compact forecast status. Icon-only and tinted by state — sun/teal vs
+// rain/amber keeps good and caution apart at a glance without a text label;
+// tapping explains the decision via the data-weather-info toast.
 function weatherCardPill(row,h = null){
   if(!row || !h || !h.weatherProfileId || typeof weatherStatusForRow !== 'function')return '';
   const assessment = weatherStatusForRow(h,row,sortSettings || loadSortSettings());
   if(!assessment)return '';
   const status = assessment.status || 'unknown';
   const icon = typeof weatherConditionIcon === 'function' ? weatherConditionIcon(status) : 'ti-cloud';
-  // The amber pill must say whether the weather is good or bad at a glance;
-  // "weather" alone forced a tap to disambiguate caution from blocked.
-  const label = status === 'good' ? 'good' : (status === 'override' ? 'override' : (status === 'unknown' ? 'weather?' : 'caution'));
-  return `<button type="button" class="context-pill weather-pill ${status}" data-weather-info="${escapeHtml(assessment.summary)}" title="${escapeHtml(assessment.summary)}" aria-label="${escapeHtml(assessment.summary)}"><i class="ti ${icon}" aria-hidden="true"></i><span>${label}</span></button>`;
+  return `<button type="button" class="context-pill weather-pill icon-only ${status}" data-weather-info="${escapeHtml(assessment.summary)}" title="${escapeHtml(assessment.summary)}" aria-label="${escapeHtml(assessment.summary)}"><i class="ti ${icon}" aria-hidden="true"></i></button>`;
 }
 
 // PURE: the former score ring as a compact, readable metadata pill.

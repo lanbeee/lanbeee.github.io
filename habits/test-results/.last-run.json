@@ -2,8 +2,8 @@
   "status": "passed",
   "plannerMode": "smart",
   "suites": "ui",
-  "timestamp": "2026-09-03T20:31:33Z",
-  "durationSeconds": 136,
+  "timestamp": "2026-09-03T22:09:26Z",
+  "durationSeconds": 135,
   "files": {
     "passed": 22,
     "failed": 0,
@@ -18,30 +18,32 @@
   "failedTests": [],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260903-162917-99144.log",
+    "stamped": "test-results/run-20260903-180711-11089.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
-    "status": "passed",
+    "status": "failed",
     "plannerMode": "smart",
     "suites": "ui",
-    "timestamp": "2026-09-03T19:39:33Z",
-    "durationSeconds": 137,
+    "timestamp": "2026-09-03T21:58:03Z",
+    "durationSeconds": 114,
     "files": {
-      "passed": 22,
-      "failed": 0,
+      "passed": 21,
+      "failed": 1,
       "executions": 22
     },
     "assertions": {
-      "ok": 464,
+      "ok": 376,
       "notOk": 0,
-      "total": 464
+      "total": 376
     },
     "pageErrors": 0,
-    "failedTests": [],
+    "failedTests": [
+      "onboarding-coach-test.js.default"
+    ],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260903-153716-87221.log",
+      "stamped": "test-results/run-20260903-175609-9354.log",
       "failedDir": "test-results/failed"
     }
   }

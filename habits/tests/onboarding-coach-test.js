@@ -269,6 +269,10 @@ async function progressBar(page){
   await stage(page,'aMissedList');
   assert(await page.locator('#slipped-sheet.open').count() === 1,'tapping the missed count opens the real missed list');
   await primary(page,'aMissedList','aOpenTime');
+  // Closing the slipped sheet can re-render Home, so the free pill and the
+  // coach's lock re-mount on the next observer cycle — wait for the lock
+  // instead of reading it in the same frame as the stage flip.
+  await page.waitForFunction(()=>document.querySelector('#tings-coach[data-coach-stage="aOpenTime"]')?.dataset.locked === 'true',null,{timeout:5000}).catch(()=>{});
   assert(await page.locator('#tings-coach[data-coach-stage="aOpenTime"]').getAttribute('data-locked') === 'true','the open-time step is always locked to the free pill (demo state guarantees it)');
   await page.locator('.free-pill').first().click();
   await stage(page,'aOpenStrip');

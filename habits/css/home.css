@@ -551,7 +551,13 @@ body.reach-pad #list{padding-top:220px;}
 .empty-sub{color:var(--text3);font-size:13px;display:inline-block;max-width:320px;}
 #empty.is-action{cursor:pointer;}
 .weather-pill{appearance:none;border:0;font:inherit;cursor:pointer;}
-.weather-pill.good{color:var(--teal-text);background:var(--teal-bg);}
-.weather-pill.caution,.weather-pill.blocked{color:var(--amber-text);background:var(--amber-bg);}
-.weather-pill.override{color:var(--red-icon);background:var(--red-bg);}
-.weather-pill.unknown{color:var(--text3);background:var(--bg2);}
+/* Icon-only state chip in the meta pill stack: 'good' stays untinted so the
+   amber/red/rain states read as the exception, not as noise. */
+.weather-pill.good{background:transparent;border-color:transparent;}
+.weather-pill.good i{color:var(--teal-icon);}
+.weather-pill.caution,.weather-pill.blocked{background:var(--amber-bg);border-color:transparent;}
+.weather-pill.caution i,.weather-pill.blocked i{color:var(--amber-icon);}
+.weather-pill.override{background:var(--red-bg);border-color:transparent;}
+.weather-pill.override i{color:var(--red-icon);}
+.weather-pill.unknown{background:transparent;border-color:transparent;}
+.weather-pill.unknown i{color:var(--text3);}

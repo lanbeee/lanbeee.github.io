@@ -787,7 +787,7 @@ function render(opts){
     const agendaTimeHidden = agendaPill === '';
     const context = minimal
       ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
-      : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
+      : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     const trail = cardTrail(h);
     const showTrail = !minimal && sortSettings.showTrailOnCards !== false;
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
@@ -860,9 +860,8 @@ function render(opts){
           <div class="ting-main">
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
-            ${weatherPill}
           </div>
-          ${(!minimal && isBreakable) ? ((orderPill || nowPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
+          ${(!minimal && isBreakable) ? ((orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           ${minimal || !visualHtml ? '' : `<div class="ting-visual"${visualAria}>
             ${visualHtml}

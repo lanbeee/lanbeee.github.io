@@ -599,9 +599,11 @@ weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
   (UV 0–2 low … 8+ very high, US AQI 0–50 good … 101+ unhealthy, wind and
   precipitation bands) and uses them as min/max placeholders. Missing data
   always fails open.
-- Home cards for a weather-guided item show a compact status pill (`good`,
-  `caution`, `override`, or `weather?`); tapping it shows a one-line reason
-  naming the deciding or failing metric values.
+- Home cards for a weather-guided item show a compact icon-only status chip in
+  the card's second-row pill stack (never in the title row): quiet teal sun =
+  good, amber rain cloud = caution, red shield = override, gray question cloud
+  = unknown. Tapping it shows a one-line reason naming the deciding or failing
+  metric values.
 - Relative preferences compare the exact habit interval and its whole day with
   equal weight. Forecast cache is stored under `tings_weather_cache_v1`, outside
   backup data. Far-place payloads live in `places` on that cache.
