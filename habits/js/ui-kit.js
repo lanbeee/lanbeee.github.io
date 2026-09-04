@@ -106,6 +106,10 @@ const UI_SETTING_TOGGLES = {
     {key:'showDueHabitsInAgenda', title:'habits ready today', hint:'Habits that belong today fill open time.'},
     {key:'showWeekOnHome', title:'week by day', hint:'Show a day-by-day week instead of today / overdue / coming up.', extraClass:'settings-full-only'}
   ],
+  reminders:[
+    {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},
+    {key:'pushDetailed', title:'include details in notifications', hint:'Include item names, topics, and places instead of generic notification text.'}
+  ],
   cards:[
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'},
     {key:'showSampleOnCards', title:'show sample tag', hint:'Mark sample habits on the home list.', extraClass:'settings-full-only'},
@@ -144,7 +148,7 @@ const UI_SETTING_TOGGLES = {
 };
 
 const UI_ABOUT_BLOCKS = [
-  {id:'about-learn-body', label:'Learn Tings', summary:'Guided start covers the daily loop. Advanced coach covers the full surface in five short chapters — pick any of them.', body:[
+  {id:'about-learn-body', label:'Learn Tings', summary:'Guided start covers the daily loop. Advanced coach covers the full surface in seven focused chapters — pick any of them.', body:[
     'The buttons below replay those tours anytime. Help &amp; docs is the written reference. Samples let you try a feature without building it from scratch.'
   ]},
   {id:'about-private-body', label:'Private by default', summary:'Your list stays on this device. The cloud-up mark flags the few features that contact a service.', body:[

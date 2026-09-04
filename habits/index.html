@@ -716,6 +716,17 @@
             <p class="field-hint settings-full-only">How busy blocks and travel between places show on home.</p>
           </div>
         </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-reminders-head" data-collapse-target="settings-reminders-body" aria-expanded="false" aria-controls="settings-reminders-body">
+            <span class="settings-label">reminders</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-reminders-body" hidden>
+            <p class="field-hint">Heads-ups for dated tasks and fixed appointments only. Tings does not nag you about rhythm habits.</p>
+            <div class="settings-grid" data-ui-toggles="reminders"></div>
+            <p class="field-hint">The in-app banner works without notification permission. System alerts are best effort and may use the encrypted push relay when available. Detailed text is optional; leave it off to keep system alerts generic.</p>
+          </div>
+        </section>
         <section class="settings-block">
           <span class="settings-label"><span style="position:relative;display:inline-block">backup <button type="button" class="info-btn" data-tip="settings-backup-help" aria-label="about backup"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
             <div class="info-tooltip" id="settings-backup-help" role="tooltip" hidden>Everything is saved only on this device. Export a backup file now and then, and especially before clearing browser data or moving to a new phone.</div></span></span>

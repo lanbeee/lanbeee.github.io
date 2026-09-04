@@ -1720,34 +1720,31 @@ Toasts appear after:
   close the tab and open Tings from the Home Screen (phone) or its own window
   (desktop). The guide is skipped when Tings already runs standalone.
 - About → **advanced coach** opens a **chapter menu**, not one serial march:
-  five standalone chapters — home & cards (full mode, rich cards, swipe/card
-  actions, do-now, agenda ordering and audit, and the day-header missed /
-  open-time pills with their sheets), the detail pages (every major area:
-  calendar/insight, schedule — day chips, clock vs relative time anchors,
-  places, and specific time-and-place options added live, effort — including
-  the breakable toggle and value tracking, identity, actions — including the
-  pin toggle), calendar & search (search on a grown list, calendar, day taps,
-  filters), backups & places (a real backup export, calendar import, topics/
-  locations/travel, shared display and share item, cleanup), and time & tuning
-  (home display with the week-by-day toggle, busy times, defaults, smarter
-  packing). The user picks a chapter in any
+  seven standalone chapters — **Home & today**, **Schedule a Ting**,
+  **Progress & item tools**, **Calendar & planning**, **Places & weather**,
+  **Make Tings yours**, and **Data & sharing**. Together they cover the full
+  user-facing surface: card marks and gestures; logging, activity, timers,
+  snooze, undo, do-now and order links; habit kinds, task dates, history and
+  plan-by; hard and preferred schedule rules, dynamic time anchors, places,
+  weather and prayer guidance; calendar day actions, filters and availability;
+  Home/card/default/appearance/reminder/planner settings; backup and calendar
+  import; encrypted item/display sharing; privacy, retention and reset. The
+  user picks a chapter in any
   order; finishing one marks it with a check on the menu, and completion is
-  remembered per chapter. Chapters are **hands-on, like the guided start**:
+  remembered per chapter. The first unfinished chapter is gently marked
+  **start here**, but it is never required. Chapters are **hands-on, like the guided start**:
   most steps lock to a real control and advance only when it is used (toggle,
-  chip, add-option, relative anchor, tab, pill, day, export), each with a
-  plain-language fallback when the control cannot exist (no misses today → no
-  missed pill; under ten items → no search). Entering the detail chapter in
-  minimal mode detours through the full-mode reveal first, because its controls
-  are stripped in minimal mode. The missed and open-time pill steps likewise
-  only lock in full mode, where the pills exist. The menu also carries the
-  closing advice (start with duration and busy times; add windows, places, and
-  links only when they improve the plan) and a **Close** action; a chapter's
-  last step returns to the menu.
+  chip, add-option, relative anchor, tab, pill, day, export). Advanced Coach
+  mounts a predictable temporary demo list so those controls exist, then
+  restores the user's habits and settings byte-for-byte when the coach closes.
+  Chapters that need full-only controls detour through the full-mode reveal.
+  The menu explicitly explains the temporary demos and has a **Close** action;
+  a chapter's last step returns to the menu.
 - Tours show a **progress bar**, never a "3 of 21" step count — the number is
   what makes a long tour daunting. Step position remains available to screen
   readers through the progressbar's aria attributes.
 - Coach assets live in `onboarding/` and are loaded on demand. Completion is
-  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v2` (the
+  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v3` (the
   advanced key holds a per-chapter JSON map; a legacy `'done'` value counts as
   every chapter seen).
 
@@ -1793,6 +1790,9 @@ Settings sections (actual order):
 │   ├── habits ready today in agenda
 │   ├── week by day (full mode only)
 │   └── busy blocks & travel display
+├── reminders
+│   ├── dated task / fixed appointment heads-ups
+│   └── optional detailed notification text
 ├── backup
 │   ├── export backup
 │   └── import backup

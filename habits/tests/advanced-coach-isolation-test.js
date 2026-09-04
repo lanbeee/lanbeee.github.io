@@ -3,7 +3,7 @@
 // Verifies that the advanced coach's temporary demo state is fully restored
 // after the coach ends: tings_v2 and tings_app_settings_v2 are exactly the
 // same as before the coach started, while per-chapter completion markers
-// (tings_coach_advanced_v2) are preserved.
+// (tings_coach_advanced_v3) are preserved.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/advanced-coach-isolation-test.js
 
@@ -107,7 +107,7 @@ async function primary(page, current, next){
 
   // Chapter completion markers must survive (coach uses a separate key).
   // After a skip the marker should be 'skipped', not wiped.
-  const advancedMarkers = await page.evaluate(() => localStorage.getItem('tings_coach_advanced_v2'));
+  const advancedMarkers = await page.evaluate(() => localStorage.getItem('tings_coach_advanced_v3'));
   // The key may or may not exist depending on which chapter was active; but
   // it must not be the raw user-data key.
   assert(afterV2 !== null, 'tings_v2 is not null after coach ends');

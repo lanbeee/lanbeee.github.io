@@ -46,6 +46,7 @@
   font:inherit;text-align:left;cursor:pointer;
 }
 .tings-coach-chapter.is-done{background:var(--teal-bg);}
+.tings-coach-chapter.is-next{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--teal-icon) 34%,transparent);}
 .tings-coach-chapter-glyph{
   flex:0 0 38px;width:38px;height:38px;border-radius:11px;box-sizing:border-box;
   background:var(--bg);display:flex;align-items:center;justify-content:center;
@@ -53,12 +54,17 @@
 }
 .tings-coach-chapter.is-done .tings-coach-chapter-glyph{background:var(--teal-icon);color:#fff;}
 .tings-coach-chapter-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
-.tings-coach-chapter-text strong{font-size:13.5px;font-weight:760;color:var(--text);letter-spacing:-.01em;}
+.tings-coach-chapter-text strong{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:760;color:var(--text);letter-spacing:-.01em;}
+.tings-coach-chapter-text strong small{
+  border-radius:999px;padding:2px 6px;background:var(--teal-bg);color:var(--teal-text);
+  font-size:9.5px;line-height:1.2;font-weight:800;letter-spacing:.01em;text-transform:uppercase;
+}
 .tings-coach-chapter-text em{font-size:12px;line-height:1.35;font-style:normal;color:var(--text2);}
 .tings-coach-chapter-check{flex:0 0 auto;font-size:16px;line-height:1;color:var(--text2);}
 .tings-coach-chapter.is-done .tings-coach-chapter-check{color:var(--teal-icon);font-weight:800;}
 .tings-coach-note{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--border2);font-size:12px;line-height:1.45;color:var(--text2);}
 .tings-coach-chapter:focus-visible{outline:3px solid var(--teal-icon);outline-offset:2px;}
+.tings-coach-root[data-coach-stage="aIntro"] .tings-coach-bubble{width:min(420px,calc(100vw - 24px));}
 .tings-coach-steps{list-style:none;margin:13px 0 0;padding:0;}
 .tings-coach-steps li{display:grid;grid-template-columns:46px 1fr;gap:12px;position:relative;padding-bottom:14px;}
 .tings-coach-steps li:last-child{padding-bottom:2px;}
