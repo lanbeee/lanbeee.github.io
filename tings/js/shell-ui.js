@@ -374,6 +374,9 @@ function reparentSearch() {
 
 // RENDER: opens a sheet or mounts it in the pane
 function openSheet(id){
+  if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
+    syncInstallGuideVisibility();
+  }
   if (paneTierActive() && isFullPageSheet(id) && shouldMountInPane(id)) {
     mountInPane(id);
     return;
@@ -442,7 +445,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -457,7 +460,7 @@ function shouldMountInPane(id) {
 // Use overflow locking only — never position:fixed. Fixing the body forces
 // scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
-  const fullPageOpen = ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.body.classList.toggle('fullpage-open',fullPageOpen);
   if(modalOpen && !document.body.classList.contains('modal-open')){
@@ -484,15 +487,55 @@ function showToast(text,durationMs = 900){
   toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
 }
 
+// How long an app's own scheme gets to take over the page before the store
+// fallback fires — short enough to feel instant, long enough for a slow
+// handoff on an old phone.
+const LINK_DIRECT_WAIT_MS = 1500;
+
+// HANDLER: the fallback after a failed scheme handoff. A window.open this
+// late is past the user gesture, so popup blockers would eat it — the page
+// itself navigates instead. (Kept named so tests can observe it.)
+function launchFallbackUrl(url){
+  window.location.href = url;
+}
+
+/**
+ * HANDLER: hand the page to the app's own scheme first; if the app never
+ * takes over (usually: not installed), fall back to the stored page. Any
+ * hide or blur cancels the fallback — that is the handoff succeeding.
+ */
+function openDirectWithFallback(direct,fallback){
+  window.location.href = direct;
+  let tookOver = false;
+  const cancel = () => { tookOver = true; };
+  window.addEventListener('pagehide',cancel,{ once:true });
+  window.addEventListener('blur',cancel,{ once:true });
+  document.addEventListener('visibilitychange',() => {
+    if(document.visibilityState !== 'visible')cancel();
+  },{ once:true });
+  setTimeout(() => {
+    if(tookOver || document.visibilityState !== 'visible')return;
+    launchFallbackUrl(fallback);
+  },LINK_DIRECT_WAIT_MS);
+}
+
 /**
  * HANDLER: launch a habit link (a call, a meeting room, any URL).
  * Must be called straight from a tap — both the popup blocker and iOS's
  * scheme handling depend on the user gesture still being active.
+ * App shortcuts with a direct-open target (the app's own scheme) try that
+ * first and fall back to the stored page when the app isn't installed.
  * Returns true when something was launched.
  */
 function openHabitLink(link){
   const url = typeof linkLaunchUrl === 'function' ? linkLaunchUrl(link) : '';
   if(!url)return false;
+  const direct = typeof linkDirectLaunchUrl === 'function' ? linkDirectLaunchUrl(link) : '';
+  if(direct){
+    if(linkHandsOffToOs(direct))openDirectWithFallback(direct,url);
+    else window.open(direct,'_blank','noopener');
+    return true;
+  }
   if(linkHandsOffToOs(url))window.location.href = url;
   else window.open(url,'_blank','noopener');
   return true;
@@ -635,6 +678,13 @@ function forgivingButtonTarget(target, clientX, clientY){
     if(btn.closest('#overview-pane-filter'))return null;
     if(btn.closest('#overview-insight'))return null;
     if(btn.closest('#overview-list'))return null;
+    // Search toggles open+focus the field in their click handler, and the soft
+    // keyboard only follows focus() made inside the trusted gesture task. A
+    // forgiving click is synthesized a few frames later from an untrusted
+    // event, so on phones it opens search with the keyboard withheld (or, if
+    // the field ended up in the other tier's wrapper, with no field at all).
+    // Let the native click through — browser tap slop already covers drift.
+    if(btn.matches('#open-search,#bar-open-search'))return null;
     return btn;
   }
   if(clientX == null || clientY == null)return null;
@@ -920,10 +970,16 @@ document.addEventListener('pointerup',e=>{
   if(btn.classList.contains('timer-start-btn'))return;
   // Movement cap for the forgiving click. A sloppy tap drifts a few tens of
   // pixels at most (pointercancel recovery already caps at 32); anything
-  // larger is a scroll or swipe gesture (e.g. one that starts on a
-  // touch-action:none pill, which never moves the page and so can't be caught
-  // by the scroll checks below).
-  if(Date.now() - time >= 1200 || moved > 32)return;
+  // larger is a scroll or swipe gesture — including pans the scroll checks
+  // below can't observe (e.g. a cancelled flick whose scroller never moved,
+  // or a downward drag at scrollTop 0 that never moves the page). Eat the
+  // trailing native click so a pan that starts on a button cannot activate it.
+  if(moved > 32){
+    suppressNativeButton = btn;
+    setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},400);
+    return;
+  }
+  if(Date.now() - time >= 1200)return;
 
   const headerPill = btn.matches('.free-pill,.dropped-pill');
   // Drift → forgiving click. Slop-armed header pills (finger never on the
@@ -938,7 +994,7 @@ document.addEventListener('pointerup',e=>{
   // Clear suppress if settle-wait bails (scroll/swipe) so later taps still work;
   // also covers a trailing native click after a cancelled-looking gesture.
   setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},400);
-  deferForgivingClick(scrollers,btn);
+  deferForgivingClick(scrollers,btn,{x,y,ended:true});
 },true);
 
 // The forgiving click must not land when the gesture actually scrolled or
@@ -948,9 +1004,14 @@ document.addEventListener('pointerup',e=>{
 // a short timeout), then bail if any moved — CDP may trickle scroll slowly,
 // while real devices usually jump in one frame. Any real pan is "not a tap";
 // leftover smooth scrollIntoView animations are a test concern (use instant).
+// pointercancel also arrives a few pixels into a pan-y claim, *before* the
+// rest of the finger travel (and before a bounded overscroll that never
+// changes scrollTop). Wait for that touch to end and count its displacement
+// so a downward drag at scrollY 0 is not recovered as a tap.
 const FORGIVING_SCROLL_FLOOR = 2;
 const FORGIVING_SETTLE_MS = 150;
 const FORGIVING_MIN_WAIT_MS = 32;
+const FORGIVING_TOUCH_WAIT_MS = 500;
 
 function scrollerDelta(scrollers){
   let moved = 0;
@@ -963,14 +1024,37 @@ function scrollerDelta(scrollers){
   return moved;
 }
 
-function deferForgivingClick(scrollers,btn){
+function deferForgivingClick(scrollers,btn,opts){
   const t0 = performance.now();
+  const startX = opts && Number.isFinite(opts.x) ? opts.x : null;
+  const startY = opts && Number.isFinite(opts.y) ? opts.y : null;
+  let touchEnded = !!(opts && opts.ended);
+  let maxFinger = 0;
   let lastMoved = scrollerDelta(scrollers);
   let stableFrames = 0;
   let done = false;
+
+  function finger(x,y){
+    if(startX == null)return;
+    const dist = Math.hypot(x - startX, y - startY);
+    if(dist > maxFinger)maxFinger = dist;
+    if(maxFinger > 32)finish(false);
+  }
+
   const onScroll = ()=>{
     if(done)return;
     if(scrollerDelta(scrollers) > FORGIVING_SCROLL_FLOOR)finish(false);
+  };
+  const onTouchMove = e=>{
+    if(done)return;
+    const t = e.changedTouches[0];
+    if(t)finger(t.clientX, t.clientY);
+  };
+  const onTouchEnd = e=>{
+    if(done)return;
+    const t = e.changedTouches[0];
+    if(t)finger(t.clientX, t.clientY);
+    touchEnded = true;
   };
   const listened = [];
   for(const [el] of scrollers){
@@ -979,17 +1063,27 @@ function deferForgivingClick(scrollers,btn){
     listened.push(el);
   }
   window.addEventListener('scroll',onScroll,{passive:true,capture:true});
+  window.addEventListener('touchmove',onTouchMove,{passive:true,capture:true});
+  window.addEventListener('touchend',onTouchEnd,{passive:true,capture:true});
+  window.addEventListener('touchcancel',onTouchEnd,{passive:true,capture:true});
 
   function cleanup(){
     for(const el of listened)el.removeEventListener('scroll',onScroll,{capture:true});
     window.removeEventListener('scroll',onScroll,{capture:true});
+    window.removeEventListener('touchmove',onTouchMove,{capture:true});
+    window.removeEventListener('touchend',onTouchEnd,{capture:true});
+    window.removeEventListener('touchcancel',onTouchEnd,{capture:true});
   }
 
   function finish(shouldClick){
     if(done)return;
     done = true;
     cleanup();
-    if(!shouldClick || btn.disabled)return;
+    if(!shouldClick || btn.disabled){
+      suppressNativeButton = btn;
+      setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},80);
+      return;
+    }
     // Let our own click through, then re-arm so the browser's own trailing
     // click (a cancelled gesture can still synthesize one over the button)
     // is eaten by the suppression listener.
@@ -1002,13 +1096,21 @@ function deferForgivingClick(scrollers,btn){
   function tick(){
     if(done)return;
     if(btn.disabled){finish(false);return;}
+    if(maxFinger > 32){finish(false);return;}
     const moved = scrollerDelta(scrollers);
     if(moved > FORGIVING_SCROLL_FLOOR){finish(false);return;}
     if(moved === lastMoved)stableFrames += 1;
     else{lastMoved = moved;stableFrames = 0;}
     const elapsed = performance.now() - t0;
+    // pointercancel often precedes the rest of a pan. Do not recover as a
+    // tap while that finger is still down.
+    if(!touchEnded){
+      if(elapsed >= FORGIVING_TOUCH_WAIT_MS){finish(false);return;}
+      requestAnimationFrame(tick);
+      return;
+    }
     if((stableFrames >= 2 && elapsed >= FORGIVING_MIN_WAIT_MS) || elapsed >= FORGIVING_SETTLE_MS){
-      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR);
+      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR && maxFinger <= 32);
       return;
     }
     requestAnimationFrame(tick);
@@ -1038,9 +1140,9 @@ document.addEventListener('pointercancel',e=>{
   // scroll/swipe check runs inside deferForgivingClick after the gesture has
   // settled.
   suppressNativeButton = tap.btn;
-  setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},400);
+  setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},500);
   if(tap.maxMove <= 32 && Date.now() - tap.time < 450){
-    deferForgivingClick(tap.scrollers,tap.btn);
+    deferForgivingClick(tap.scrollers,tap.btn,{x:tap.x,y:tap.y,ended:false});
   }
 },true);
 
@@ -1062,6 +1164,10 @@ document.addEventListener('click',e=>{
 
 document.addEventListener('tierchange',()=>{
   reparentSearch();
+  // Re-sync open-state chrome to the new tier: the field moved wrappers above,
+  // so isSearchOpen() now reads the other tier's flag and updateSearchUi clears
+  // the stale class (list-view-home.js keeps one tier authoritative).
+  if (typeof updateSearchUi === 'function') updateSearchUi();
   updateKeyboardLift();
   ensureOverviewPlacement();
   // Show/hide the app bar based on tier
@@ -1086,7 +1192,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')) $(id).classList.remove('open');
   });
   unmountPane();
@@ -1121,7 +1227,7 @@ document.addEventListener('click',e=>{
 // not close the entire stack in a single keypress.
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape') return;
-  const modalIds = ['add-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -1138,6 +1244,7 @@ document.addEventListener('keydown',e=>{
     else if (id === 'overview-sheet') closeSheet('overview-sheet');
     else if (id === 'settings-sheet') closeSheet('settings-sheet');
     else if (id === 'about-sheet') closeSheet('about-sheet');
+    else if (id === 'privacy-sheet') closeSheet('privacy-sheet');
     else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');
     else if (id === 'home-filter-sheet') closeSheet('home-filter-sheet');
     else if (id === 'calendar-filter-sheet') closeSheet('calendar-filter-sheet');

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none'" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Shared display</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="./css/agenda-display.css" />
+</head>
+<body>
+  <div class="agenda-page" id="agenda-page">
+    <header class="agenda-chrome">
+      <div class="agenda-heading">
+        <div class="agenda-heading-meta">
+          <div class="agenda-eyebrow-row">
+            <span class="agenda-eyebrow">Tings · shared display</span>
+            <h1 id="agenda-title"></h1>
+          </div>
+        </div>
+        <div class="agenda-side">
+          <time class="agenda-clock" id="agenda-clock" aria-label="Current time"></time>
+          <div class="agenda-heading-actions">
+            <button type="button" class="agenda-hide" id="agenda-hide" aria-label="Hide the agenda behind a night clock">
+              <span aria-hidden="true">◐</span>
+              hide agenda
+            </button>
+            <button type="button" class="agenda-more" id="agenda-more" aria-label="Display settings" title="Display settings" aria-haspopup="true" aria-expanded="false">
+              <span aria-hidden="true">⋯</span>
+            </button>
+          </div>
+          <div class="agenda-menu" id="agenda-menu" hidden>
+            <div class="agenda-menu-row" id="agenda-menu-fullscreen-row" hidden>
+              <span class="agenda-menu-label">display</span>
+              <div class="agenda-menu-options agenda-menu-options-single">
+                <button type="button" id="agenda-menu-fullscreen" aria-pressed="false">enter full screen</button>
+              </div>
+            </div>
+            <div class="agenda-menu-row">
+              <span class="agenda-menu-label">theme</span>
+              <div class="agenda-menu-options" role="group" aria-label="Theme">
+                <button type="button" data-theme-opt="light">light</button>
+                <button type="button" data-theme-opt="dark">dark</button>
+                <button type="button" data-theme-opt="system">system</button>
+              </div>
+            </div>
+            <div class="agenda-menu-row">
+              <span class="agenda-menu-label">text size</span>
+              <div class="agenda-menu-options agenda-font-steps" role="group" aria-label="Text size">
+                <button type="button" id="agenda-font-minus" aria-label="Decrease text size">−</button>
+                <span class="agenda-font-value" id="agenda-font-value">100%</span>
+                <button type="button" id="agenda-font-plus" aria-label="Increase text size">+</button>
+              </div>
+            </div>
+            <div class="agenda-menu-row">
+              <span class="agenda-menu-label">screen fit</span>
+              <div class="agenda-menu-options agenda-font-steps" role="group" aria-label="Screen fit">
+                <button type="button" id="agenda-fit-minus" aria-label="Squash vertically to cancel frame stretch">−</button>
+                <span class="agenda-font-value" id="agenda-fit-value">100%</span>
+                <button type="button" id="agenda-fit-plus" aria-label="Reduce vertical squash">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p id="agenda-updated">Connecting…</p>
+    </header>
+      <p id="agenda-banner" hidden></p>
+      <section class="agenda-enroll" id="agenda-enroll" hidden>
+      <h2>Pair this display</h2>
+      <p>On the owner phone, open the installed Tings app, then go to settings → shared display → scan display QR. Do not use the phone’s Camera app. Tings will ask for the separate code shown below.</p>
+      <div class="agenda-pair-qr" id="agenda-pair-qr" aria-label="QR code for the owner phone"></div>
+      <span class="agenda-pair-label">code visible only on this display</span>
+      <strong class="agenda-pair-code" id="agenda-pair-code"></strong>
+      <p id="agenda-pair-expiry"></p>
+      <p id="agenda-enroll-status" role="status"></p>
+      <button type="button" id="agenda-pair-new" hidden>generate a fresh QR</button>
+    </section>
+    <main id="agenda-root"></main>
+    <button type="button" class="agenda-clear" id="agenda-clear">clear this display</button>
+  </div>
+  <div class="agenda-undo" id="agenda-undo" role="status" hidden>
+    <span id="agenda-undo-text"></span>
+    <button type="button" id="agenda-undo-button">undo</button>
+  </div>
+  <section class="agenda-wallpaper" id="agenda-wallpaper" aria-label="Agenda hidden. Tap three times to show it again." hidden tabindex="0">
+    <div class="agenda-wallpaper-glow" aria-hidden="true"></div>
+    <div class="agenda-wallpaper-clock">
+      <time id="agenda-wallpaper-time"></time>
+      <p id="agenda-wallpaper-date"></p>
+    </div>
+  </section>
+  <script src="./js/agenda-display-boot.js"></script>
+  <script src="./js/config.js"></script>
+  <script src="./js/share-crypto.js"></script>
+  <script src="./js/share-client.js"></script>
+  <script src="./lib/js/qrcode-generator.js"></script>
+  <script src="./js/agenda-display.js"></script>
+</body>
+</html>

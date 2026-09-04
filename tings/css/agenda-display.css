@@ -1,0 +1,416 @@
+/* Shared display styling. Dark is the default palette (photo frames, night
+   use); light applies when picked or when "system" reports a light scheme.
+   The photo frame renders with an older engine, so every modern declaration
+   (svh, env(), color-mix(), min()) is preceded by a plain fallback line and
+   no core layout depends on inset/backdrop-filter/mask/aspect-ratio.
+   The frame's low-res panel renders 1px strokes as jagged stair-steps, so
+   cards and controls separate by FILL contrast only — never borders. */
+:root{
+  color-scheme:dark;
+  --bg:#040706;
+  --bg-deep:#000;
+  --bg-glow:rgba(79,208,182,.05);
+  --text:#e8edea;
+  --muted:#8d9993;
+  --card:#0d1210;
+  --card-solid:#0d1210;
+  --line:rgba(220,235,229,.08);
+  --chip:rgba(220,235,229,.07);
+  --now:#4fd0b6;
+  --now-soft:rgba(79,208,182,.11);
+  --warn:#e8a765;
+  --shadow:none;
+  --font-scale:1;
+  --teal-bg:#085041;--teal-icon:#5DCAA5;
+  --amber-bg:#633806;--amber-icon:#EF9F27;
+  --red-bg:#791F1F;--red-icon:#F09595;
+  --purple-bg:#3C3489;--purple-icon:#AFA9EC;
+  --blue-bg:#0B4E6E;--blue-icon:#84CDEE;
+  --green-bg:#1B5E20;--green-icon:#81C784;
+  --pink-bg:#5C1A40;--pink-icon:#F4A6C8;
+  --orange-bg:#5A2A0E;--orange-icon:#F2A463;
+  --indigo-bg:#26307A;--indigo-icon:#AFA9EC;
+  --cyan-bg:#0A565D;--cyan-icon:#7CD4DC;
+  --lime-bg:#3F5E10;--lime-icon:#B3D66A;
+  --slate-bg:#37474F;--slate-icon:#90A4AE;
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f3f1ea;
+  --bg-deep:#e8e3d8;
+  --bg-glow:rgba(8,127,112,.07);
+  --text:#17201d;
+  --muted:#66706b;
+  --card:#fffef9;
+  --card-solid:#fffef9;
+  --line:rgba(44,64,57,.12);
+  --chip:rgba(44,64,57,.08);
+  --now:#087f70;
+  --now-soft:rgba(8,127,112,.11);
+  --warn:#ad5b12;
+  --shadow:none;
+  --teal-bg:#E1F5EE;--teal-icon:#0F6E56;
+  --amber-bg:#FAEEDA;--amber-icon:#BA7517;
+  --red-bg:#FCEBEB;--red-icon:#A32D2D;
+  --purple-bg:#EEEDFE;--purple-icon:#534AB7;
+  --blue-bg:#E6F2FA;--blue-icon:#176B91;
+  --green-bg:#E8F5E9;--green-icon:#2E7D32;
+  --pink-bg:#FCE7F0;--pink-icon:#B2347A;
+  --orange-bg:#FDE9D9;--orange-icon:#C75A1A;
+  --indigo-bg:#E8EAF6;--indigo-icon:#3949AB;
+  --cyan-bg:#E0F4F4;--cyan-icon:#0E7C86;
+  --lime-bg:#EEF6D8;--lime-icon:#5E8B1A;
+  --slate-bg:#ECEFF1;--slate-icon:#546E7A;
+}
+@media (prefers-color-scheme:light){
+  :root[data-theme="system"]{
+    color-scheme:light;
+    --bg:#f3f1ea;
+    --bg-deep:#e8e3d8;
+    --bg-glow:rgba(8,127,112,.07);
+    --text:#17201d;
+    --muted:#66706b;
+    --card:#fffef9;
+    --card-solid:#fffef9;
+    --line:rgba(44,64,57,.12);
+    --chip:rgba(44,64,57,.08);
+    --now:#087f70;
+    --now-soft:rgba(8,127,112,.11);
+    --warn:#ad5b12;
+    --shadow:none;
+    --teal-bg:#E1F5EE;--teal-icon:#0F6E56;
+    --amber-bg:#FAEEDA;--amber-icon:#BA7517;
+    --red-bg:#FCEBEB;--red-icon:#A32D2D;
+    --purple-bg:#EEEDFE;--purple-icon:#534AB7;
+    --blue-bg:#E6F2FA;--blue-icon:#176B91;
+    --green-bg:#E8F5E9;--green-icon:#2E7D32;
+    --pink-bg:#FCE7F0;--pink-icon:#B2347A;
+    --orange-bg:#FDE9D9;--orange-icon:#C75A1A;
+    --indigo-bg:#E8EAF6;--indigo-icon:#3949AB;
+    --cyan-bg:#E0F4F4;--cyan-icon:#0E7C86;
+    --lime-bg:#EEF6D8;--lime-icon:#5E8B1A;
+    --slate-bg:#ECEFF1;--slate-icon:#546E7A;
+  }
+}
+:root[data-theme="system"]{color-scheme:light dark;}
+/* Text size is a 5% ladder from 70% to 200%, applied via data-font so the
+   CSP-safe attribute theme keeps working; JS clamps clicks to these steps. */
+:root[data-font="70"]{--font-scale:.7;}
+:root[data-font="75"]{--font-scale:.75;}
+:root[data-font="80"]{--font-scale:.8;}
+:root[data-font="85"]{--font-scale:.85;}
+:root[data-font="90"]{--font-scale:.9;}
+:root[data-font="95"]{--font-scale:.95;}
+:root[data-font="100"]{--font-scale:1;}
+:root[data-font="105"]{--font-scale:1.05;}
+:root[data-font="110"]{--font-scale:1.1;}
+:root[data-font="115"]{--font-scale:1.15;}
+:root[data-font="120"]{--font-scale:1.2;}
+:root[data-font="125"]{--font-scale:1.25;}
+:root[data-font="130"]{--font-scale:1.3;}
+:root[data-font="135"]{--font-scale:1.35;}
+:root[data-font="140"]{--font-scale:1.4;}
+:root[data-font="145"]{--font-scale:1.45;}
+:root[data-font="150"]{--font-scale:1.5;}
+:root[data-font="155"]{--font-scale:1.55;}
+:root[data-font="160"]{--font-scale:1.6;}
+:root[data-font="165"]{--font-scale:1.65;}
+:root[data-font="170"]{--font-scale:1.7;}
+:root[data-font="175"]{--font-scale:1.75;}
+:root[data-font="180"]{--font-scale:1.8;}
+:root[data-font="185"]{--font-scale:1.85;}
+:root[data-font="190"]{--font-scale:1.9;}
+:root[data-font="195"]{--font-scale:1.95;}
+:root[data-font="200"]{--font-scale:2;}
+/* Some photo frames stretch their panel vertically. "screen fit" pre-squashes
+   the page by a chosen percentage (a transform on the #agenda-page wrapper)
+   so round things look round again on the glass; 100% emits no transform at
+   all. The transform must stay OFF <body>: a transformed element becomes the
+   containing block for position:fixed descendants, which re-anchors and
+   squashes the fixed undo toast and night clock to the body box instead of
+   the real screen — both therefore live outside the wrapper. */
+#agenda-page{transform-origin:top center;}
+:root[data-squish="99"] #agenda-page{transform:scaleY(.99);-webkit-transform:scaleY(.99);}
+:root[data-squish="98"] #agenda-page{transform:scaleY(.98);-webkit-transform:scaleY(.98);}
+:root[data-squish="97"] #agenda-page{transform:scaleY(.97);-webkit-transform:scaleY(.97);}
+:root[data-squish="96"] #agenda-page{transform:scaleY(.96);-webkit-transform:scaleY(.96);}
+:root[data-squish="95"] #agenda-page{transform:scaleY(.95);-webkit-transform:scaleY(.95);}
+:root[data-squish="94"] #agenda-page{transform:scaleY(.94);-webkit-transform:scaleY(.94);}
+:root[data-squish="93"] #agenda-page{transform:scaleY(.93);-webkit-transform:scaleY(.93);}
+:root[data-squish="92"] #agenda-page{transform:scaleY(.92);-webkit-transform:scaleY(.92);}
+:root[data-squish="91"] #agenda-page{transform:scaleY(.91);-webkit-transform:scaleY(.91);}
+:root[data-squish="90"] #agenda-page{transform:scaleY(.90);-webkit-transform:scaleY(.90);}
+:root[data-squish="89"] #agenda-page{transform:scaleY(.89);-webkit-transform:scaleY(.89);}
+:root[data-squish="88"] #agenda-page{transform:scaleY(.88);-webkit-transform:scaleY(.88);}
+:root[data-squish="87"] #agenda-page{transform:scaleY(.87);-webkit-transform:scaleY(.87);}
+:root[data-squish="86"] #agenda-page{transform:scaleY(.86);-webkit-transform:scaleY(.86);}
+:root[data-squish="85"] #agenda-page{transform:scaleY(.85);-webkit-transform:scaleY(.85);}
+html[data-night="true"]{background:#000;}
+*{box-sizing:border-box;}
+[hidden]{display:none!important;}
+html,body{margin:0;min-height:100%;}
+html{background:var(--bg-deep);}
+body{
+  min-height:100vh;
+  min-height:100svh;
+  color:var(--text);
+  font:18px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background-color:var(--bg);
+  background-image:radial-gradient(circle at 14% 0%,var(--bg-glow),transparent 36rem);
+}
+button{font:inherit;}
+.agenda-page{
+  width:90%;
+  width:min(1500px,100%);
+  min-height:100vh;
+  min-height:100svh;
+  margin:0 auto;
+  padding:28px 30px 34px;
+  padding:max(28px,env(safe-area-inset-top)) clamp(18px,4vw,64px) max(34px,env(safe-area-inset-bottom));
+}
+header.agenda-chrome{margin-bottom:clamp(24px,3.4vw,44px);}
+.agenda-heading{display:flex;align-items:center;justify-content:space-between;gap:24px;}
+.agenda-heading-meta{min-width:0;}
+.agenda-eyebrow-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 0;min-width:0;}
+.agenda-eyebrow{
+  display:inline;color:var(--now);font-size:12px;font-weight:800;
+  letter-spacing:.16em;text-transform:uppercase;
+}
+#agenda-title{
+  margin:0;font-size:calc(15px * var(--font-scale));font-weight:700;letter-spacing:0;
+  color:var(--text);line-height:1.4;overflow-wrap:anywhere;
+}
+#agenda-title:not(:empty)::before{content:"·";margin:0 12px;color:var(--muted);font-weight:400;}
+#agenda-updated{margin:8px 0 0;color:var(--muted);font-size:calc(14px * var(--font-scale));font-weight:600;}
+.agenda-side{position:relative;display:flex;flex-direction:column;align-items:flex-end;gap:14px;flex:none;}
+.agenda-clock{
+  margin:0;color:var(--text);font-size:calc(clamp(44px,9vw,96px) * var(--font-scale));
+  font-weight:240;line-height:.95;letter-spacing:-.03em;white-space:nowrap;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
+}
+.agenda-clock-mer{margin-left:.14em;font-size:.38em;font-weight:640;color:var(--now);letter-spacing:.02em;}
+.agenda-heading-actions{display:flex;align-items:center;gap:9px;flex:none;}
+.agenda-hide,.agenda-more{
+  display:inline-flex;align-items:center;gap:9px;flex:none;min-height:44px;margin-top:3px;
+  padding:9px 14px;border:0;border-radius:999px;color:var(--muted);
+  background:var(--chip);font-size:14px;font-weight:720;cursor:pointer;
+  transition:background .18s ease,color .18s ease;
+}
+.agenda-hide span{font-size:18px;line-height:1;transform:rotate(-20deg);}
+.agenda-more span{font-size:17px;font-weight:800;line-height:1;letter-spacing:.08em;}
+.agenda-hide:hover,.agenda-more:hover{background:var(--now-soft);color:var(--text);}
+.agenda-hide:active,.agenda-more:active{transform:scale(.98);}
+.agenda-hide:focus-visible,.agenda-more:focus-visible,
+.agenda-clear:focus-visible,.agenda-enroll button:focus-visible,.agenda-mark:focus-visible,
+.agenda-undo button:focus-visible,
+.agenda-menu-options button:focus-visible{
+  outline:3px solid var(--now);outline-offset:3px;
+}
+.agenda-menu{
+  position:absolute;top:calc(100% + 4px);right:0;z-index:60;min-width:264px;padding:16px;
+  border:0;border-radius:18px;background:var(--card-solid);
+  box-shadow:0 14px 38px rgba(0,0,0,.28);
+}
+.agenda-menu-row + .agenda-menu-row{margin-top:14px;}
+.agenda-menu-label{
+  display:block;margin-bottom:8px;color:var(--muted);font-size:11px;font-weight:750;
+  letter-spacing:.14em;text-transform:uppercase;
+}
+.agenda-menu-options{display:flex;gap:6px;}
+.agenda-menu-options button{
+  flex:1;min-height:40px;padding:8px 10px;border:0;border-radius:12px;
+  background:var(--chip);color:var(--muted);font-size:13px;font-weight:680;cursor:pointer;
+}
+.agenda-menu-options button:hover{color:var(--text);background:var(--line);}
+.agenda-menu-options button.is-on{background:var(--now-soft);color:var(--now);font-weight:780;}
+.agenda-menu-options button:disabled{opacity:.45;cursor:default;}
+.agenda-menu-options button.is-error{color:var(--warn);}
+.agenda-menu-options-single button.is-on{background:var(--now-soft);}
+.agenda-font-steps{align-items:stretch;}
+.agenda-font-steps button{flex:0 0 44px;font-size:18px;font-weight:760;}
+.agenda-font-value{
+  flex:1;display:grid;place-items:center;min-height:40px;color:var(--text);font-size:13px;
+  font-weight:720;font-variant-numeric:tabular-nums;
+}
+#agenda-banner{
+  margin:0 0 24px;padding:14px 17px;border:0;border-radius:16px;
+  background:var(--card-solid);
+  background:color-mix(in srgb,var(--warn) 10%,var(--card-solid));
+  color:var(--text);font-weight:650;
+}
+/* Transient "marked done" confirmation with an undo escape hatch. The push
+   only happens when the toast expires, so undo never touches the network. */
+.agenda-undo{
+  position:fixed;left:50%;bottom:18px;bottom:max(18px,env(safe-area-inset-bottom));z-index:70;
+  display:flex;align-items:center;gap:14px;max-width:min(92vw,560px);
+  padding:10px 10px 10px 20px;border:0;border-radius:999px;
+  background:var(--card-solid);box-shadow:0 14px 38px rgba(0,0,0,.28);
+  color:var(--text);font-size:calc(14px * var(--font-scale));font-weight:650;
+  transform:translateX(-50%);
+}
+.agenda-undo[hidden]{display:none;}
+.agenda-undo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.agenda-undo button{
+  flex:none;min-height:44px;padding:8px 18px;border:0;border-radius:999px;
+  background:var(--now);color:#04110d;font-size:14px;font-weight:800;cursor:pointer;
+}
+.agenda-undo button:active{transform:scale(.97);}
+#agenda-root{display:flex;flex-direction:column;gap:36px;}
+.agenda-enroll{
+  max-width:720px;margin:0 0 28px;padding:clamp(22px,4vw,36px);border:0;
+  border-radius:24px;background:var(--card);
+}
+.agenda-enroll h2{margin:0 0 8px;font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;}
+.agenda-enroll p{color:var(--muted);font-size:16px;}
+.agenda-enroll button{
+  width:100%;min-height:52px;padding:10px 12px;border:0;border-radius:16px;
+  background:var(--now);color:#04110d;font-weight:800;cursor:pointer;
+}
+.agenda-enroll button:disabled{opacity:.55;cursor:wait;}
+.agenda-pair-qr{width:min(420px,100%);margin:22px auto;padding:14px;border-radius:16px;background:#fff;}
+.agenda-pair-qr svg{display:block;width:100%;height:auto;}
+.agenda-pair-label{
+  display:block;margin-top:22px;color:var(--muted);font-size:12px;font-weight:750;text-align:center;
+  text-transform:uppercase;letter-spacing:.12em;
+}
+.agenda-pair-code{
+  display:block;margin:6px 0 10px;font:800 clamp(36px,8vw,64px)/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums;
+}
+#agenda-pair-expiry,#agenda-enroll-status{text-align:center;}
+.agenda-day{min-width:0;}
+.agenda-day>header{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:14px;}
+.agenda-day>header h2{
+  margin:0;font-size:calc(clamp(25px,3vw,34px) * var(--font-scale));font-weight:750;line-height:1;
+  letter-spacing:-.035em;text-transform:lowercase;
+}
+.agenda-day>header p{margin:0;color:var(--muted);font-size:calc(13px * var(--font-scale));font-weight:680;letter-spacing:.04em;text-transform:uppercase;}
+.agenda-day.is-today>header h2{color:var(--now);}
+/* Nested corners are concentric: the emoji tile's radius equals the card
+   radius minus the card inset (24 − 12 = 12px), so the curves track each
+   other the same way at every breakpoint. Cards carry no border — the fill
+   contrast against the page background is the only separation. */
+.agenda-row{
+  position:relative;display:grid;grid-template-columns:68px minmax(0,1fr) max-content;align-items:center;gap:clamp(12px,1.6vw,20px);
+  min-height:88px;margin-bottom:10px;padding:12px clamp(16px,1.8vw,22px) 12px 12px;overflow:hidden;
+  border:0;border-radius:24px;background:var(--card);
+}
+.agenda-row time{
+  display:flex;flex-direction:column;align-items:flex-end;gap:1px;text-align:right;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
+}
+.agenda-time-start{
+  color:var(--text);font-size:calc(clamp(19px,1.8vw,25px) * var(--font-scale));font-weight:760;
+  letter-spacing:-.02em;line-height:1.05;white-space:nowrap;
+}
+.agenda-time-mer{margin-left:3px;font-size:.56em;font-weight:620;color:var(--muted);letter-spacing:.01em;}
+.agenda-time-end{
+  margin-top:2px;color:var(--muted);font-size:calc(clamp(12px,1vw,14px) * var(--font-scale));font-weight:540;
+  letter-spacing:-.01em;line-height:1.2;white-space:nowrap;
+}
+.agenda-row-copy{min-width:0;}
+.agenda-row b{display:block;font-size:calc(clamp(18px,1.65vw,22px) * var(--font-scale));font-weight:680;line-height:1.22;letter-spacing:-.014em;overflow-wrap:anywhere;}
+.agenda-row small{display:block;margin-top:4px;color:var(--muted);font-size:calc(13px * var(--font-scale));font-weight:560;}
+.agenda-row.is-now{background:var(--card-solid);background:color-mix(in srgb,var(--now) 9%,var(--card-solid));}
+.agenda-row.is-now::before{content:"";position:absolute;top:13px;bottom:13px;left:0;right:auto;width:4px;border-radius:0 4px 4px 0;background:var(--now);}
+.agenda-row.busy b,.agenda-row.open b{font-weight:620;color:var(--muted);}
+.agenda-row.busy .agenda-time-start,.agenda-row.open .agenda-time-start{font-weight:640;}
+.agenda-mark{
+  position:relative;display:grid;place-items:center;width:68px;height:68px;padding:0;
+  border:0;border-radius:12px;background:var(--now-soft);color:var(--now);
+  font:inherit;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  transition:transform .16s ease,filter .16s ease,opacity .16s ease;
+}
+button.agenda-mark{cursor:pointer;}
+button.agenda-mark:hover{filter:brightness(.96);transform:translateY(-1px);}
+button.agenda-mark:active{transform:scale(.93);}
+button.agenda-mark:disabled{cursor:default;transform:none;}
+.agenda-mark-symbol{display:grid;place-items:center;width:100%;height:100%;font-size:42px;line-height:1;}
+.agenda-mark.is-view-only:not([class*="emoji-bg-"]){background:var(--card-solid);color:var(--muted);}
+.agenda-mark.is-view-only:not([class*="emoji-bg-"]){background:color-mix(in srgb,var(--muted) 8%,var(--card-solid));}
+.agenda-mark-check{
+  position:absolute;right:-5px;bottom:-5px;display:grid;place-items:center;width:22px;height:22px;
+  border:0;border-radius:999px;background:var(--text);color:var(--card-solid);
+  font-size:12px;font-weight:850;line-height:1;
+}
+.agenda-mark.is-saving{opacity:.6;}
+.agenda-mark.is-error .agenda-mark-check{background:var(--warn);}
+.agenda-mark.is-done{filter:saturate(.6);}
+.agenda-mark.is-done .agenda-mark-symbol{opacity:.48;}
+.agenda-mark.is-done .agenda-mark-check{background:var(--now);color:var(--card-solid);}
+.agenda-mark.emoji-bg-teal{background:var(--teal-bg);color:var(--teal-icon);}
+.agenda-mark.emoji-bg-amber{background:var(--amber-bg);color:var(--amber-icon);}
+.agenda-mark.emoji-bg-red{background:var(--red-bg);color:var(--red-icon);}
+.agenda-mark.emoji-bg-purple{background:var(--purple-bg);color:var(--purple-icon);}
+.agenda-mark.emoji-bg-blue{background:var(--blue-bg);color:var(--blue-icon);}
+.agenda-mark.emoji-bg-green{background:var(--green-bg);color:var(--green-icon);}
+.agenda-mark.emoji-bg-pink{background:var(--pink-bg);color:var(--pink-icon);}
+.agenda-mark.emoji-bg-orange{background:var(--orange-bg);color:var(--orange-icon);}
+.agenda-mark.emoji-bg-indigo{background:var(--indigo-bg);color:var(--indigo-icon);}
+.agenda-mark.emoji-bg-cyan{background:var(--cyan-bg);color:var(--cyan-icon);}
+.agenda-mark.emoji-bg-lime{background:var(--lime-bg);color:var(--lime-icon);}
+.agenda-mark.emoji-bg-slate{background:var(--slate-bg);color:var(--slate-icon);}
+.agenda-row.is-complete .agenda-row-copy{opacity:.58;}
+.agenda-row.is-complete .agenda-row-copy b{text-decoration:line-through;text-decoration-thickness:1.5px;}
+.agenda-empty{margin:0;padding:22px;border:0;border-radius:18px;background:var(--chip);color:var(--muted);}
+.agenda-clear{
+  margin-top:32px;padding:9px 0;border:0;background:transparent;color:var(--muted);font-size:13px;font-weight:650;cursor:pointer;
+}
+.agenda-clear:hover{color:var(--text);}
+
+/* Night screen: agenda fully hidden, near-black with a faint pattern. Kept
+   deliberately simple — no conic gradients, blurs, masks, or animations,
+   because the frame's renderer drops them. */
+.agenda-wallpaper{
+  position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:100;
+  display:grid;place-items:center;overflow:hidden;cursor:default;user-select:none;
+  touch-action:manipulation;color:#a9b8b1;
+  background-color:#000;
+  background-image:
+    radial-gradient(circle at 18% 14%,rgba(21,62,55,.55),transparent 44%),
+    radial-gradient(circle at 84% 86%,rgba(32,27,50,.55),transparent 48%),
+    radial-gradient(rgba(255,255,255,.05) 1px,transparent 1.5px);
+  background-size:auto,auto,26px 26px;
+}
+.agenda-wallpaper-glow{
+  position:absolute;top:50%;left:50%;
+  width:64vmin;height:64vmin;margin-top:-32vmin;margin-left:-32vmin;
+  width:min(64vmin,640px);height:min(64vmin,640px);
+  margin-top:calc(min(64vmin,640px) / -2);margin-left:calc(min(64vmin,640px) / -2);
+  border:0;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.05) 0%,rgba(255,255,255,.05) 54%,transparent 70%);
+}
+.agenda-wallpaper-clock{position:relative;z-index:1;text-align:center;}
+#agenda-wallpaper-time{
+  display:block;font-size:clamp(72px,16vw,210px);font-weight:220;line-height:.84;letter-spacing:-.07em;
+  color:#a9b8b1;font-variant-numeric:tabular-nums;
+}
+#agenda-wallpaper-date{margin:28px 0 0;font-size:clamp(15px,2vw,25px);font-weight:560;letter-spacing:.14em;text-transform:uppercase;color:#5f6f68;}
+.agenda-wallpaper:focus-visible{outline:3px solid rgba(255,255,255,.68);outline-offset:-10px;}
+@media (min-width:900px){
+  #agenda-root{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(32px,5vw,72px);}
+}
+@media (max-width:560px){
+  .agenda-page{padding-left:16px;padding-right:16px;}
+  .agenda-heading{align-items:start;}
+  .agenda-side{gap:8px;}
+  .agenda-clock{font-size:calc(clamp(40px,11vw,60px) * var(--font-scale));}
+  .agenda-heading-actions{gap:7px;}
+  .agenda-hide,.agenda-more{width:44px;padding:0;justify-content:center;}
+  .agenda-hide span{font-size:20px;}
+  .agenda-hide{font-size:0;}
+  .agenda-menu{right:0;left:12px;min-width:0;}
+  .agenda-row{grid-template-columns:56px minmax(0,1fr) max-content;gap:10px;min-height:76px;padding:10px 12px 10px 10px;border-radius:22px;}
+  .agenda-time-start{font-size:calc(16.5px * var(--font-scale));letter-spacing:-.025em;}
+  .agenda-time-end{font-size:calc(12px * var(--font-scale));margin-top:1px;}
+  .agenda-row b{font-size:calc(17px * var(--font-scale));}
+  .agenda-row small{font-size:calc(12px * var(--font-scale));}
+  .agenda-mark{width:56px;height:56px;border-radius:12px;}
+  .agenda-mark-symbol{font-size:34px;}
+}
+@media (max-width:380px){
+  .agenda-row{grid-template-columns:52px minmax(0,1fr);border-radius:22px;}
+  .agenda-row time{grid-column:2;grid-row:2;align-items:flex-start;text-align:left;margin-top:-2px;}
+  .agenda-row-copy{align-self:end;}
+  .agenda-mark{grid-row:1 / span 2;width:52px;height:52px;border-radius:12px;}
+}

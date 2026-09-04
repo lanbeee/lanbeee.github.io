@@ -8,6 +8,14 @@ const QUOTA_WARN_KB = 4096;
 const QUOTA_HARD_KB = 4800;
 const PUSH_WORKER_URL = 'https://habits-push.YOUR-ACCOUNT.workers.dev';
 const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+const SHARE_WORKER_PRODUCTION_URL = 'https://habits-share.contactnabilkhan.workers.dev';
+const SHARE_WORKER_STAGING_URL = 'https://habits-share-staging.contactnabilkhan.workers.dev';
+const SHARE_WORKER_URL = typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname)
+  ? SHARE_WORKER_STAGING_URL
+  : SHARE_WORKER_PRODUCTION_URL;
+const SHARE_STATE_KEY = 'tings_share_v1';
+const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v3';
+const AGENDA_SHARE_DAYS = 2;
 
 // ── Locations / travel-time ──
 const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())
@@ -22,6 +30,32 @@ const GEOCODE_FETCH_TIMEOUT_MS = 8000;             // address search / reverse c
 const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
+
+// ── Weather guidance (Open-Meteo; no API key) ──
+const WEATHER_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const WEATHER_AIR_URL = 'https://air-quality-api.open-meteo.com/v1/air-quality';
+const WEATHER_CACHE_KEY = 'tings_weather_cache_v1';
+const WEATHER_WEEKLY_TTL_MS = 6 * 60 * 60 * 1000;
+const WEATHER_NEAR_TTL_MS = 15 * 60 * 1000;
+const WEATHER_NEAR_TRIGGER_MS = 90 * 60 * 1000;
+const WEATHER_NEAR_MIN_HORIZON_MS = 2 * 60 * 60 * 1000;
+const WEATHER_NEAR_AFTER_END_MS = 30 * 60 * 1000;
+const WEATHER_NEAR_MAX_HORIZON_MS = 4 * 60 * 60 * 1000;
+const WEATHER_SAME_PLACE_M = 40000;               // reuse home/other forecast inside ~25 miles
+const MAX_WEATHER_PROFILES = 4;
+const MAX_WEATHER_EXTRA_PLACES = 4;               // far-away habit overrides besides home
+const WEATHER_STABLE_MARGINS = {
+  precipitation_probability:20,
+  precipitation:0.2,
+  snowfall:0.1,
+  temperature_2m:3,
+  apparent_temperature:3,
+  wind_speed_10m:8,
+  wind_gusts_10m:10,
+  uv_index:1.5,
+  us_aqi:20,
+  european_aqi:15
+};
 
 // ── Prayer times (dynamic habit windows) ──
 // Prayer-time anchors a habit's allowed/preferred time endpoint can be tied to.
@@ -54,11 +88,6 @@ const PRAYER_METHODS = [
   {key:'Other',         label:'Other'}
 ];
 const DEFAULT_PRAYER_METHOD = 'NorthAmerica';
-// Madhab affects only Asr time. Shafi = standard; Hanafi = later Asr.
-const PRAYER_MADHABS = [
-  {key:'shafi',  label:'Shafi (standard)'},
-  {key:'hanafi', label:'Hanafi (later Asr)'}
-];
 const DEFAULT_PRAYER_MADHAB = 'shafi';
 // Cap on the offset (signed minutes) a user can attach to an anchor. ±12 h is
 // well past any sane "sunrise + a few hours" / "isha - 30 min" use case but
@@ -177,17 +206,23 @@ const DEFAULT_SORT_SETTINGS = {
   defaultTopics:[],
   defaultAutoMarkMinutes:null,
 
-  showStatusOnCards:true,
-  showEarlyOnCards:true,
+  // Calm-card defaults: the insight decorations (progress pill, early pill,
+  // trail dots, order marks) are OFF so switching out of minimal mode reveals
+  // the fuller surface gradually instead of all extras at once. Each remains
+  // one toggle away in Settings. Pre-flip installs keep what they had (see
+  // loadSortSettings).
+  showStatusOnCards:false,
+  showEarlyOnCards:false,
   // Right-side scheduled time on each item: 'time' = clock + time,
   // 'icon' = symbol only, 'hide' = nothing.
   showAgendaTimesOnCards:'time',
   // Two-week dot history under each item.
   showTrailOnCards:true,
-  // One-line status ("due today", "on track", ...).
+  // One-line status ("due today", "on track", ...) — also part of minimal
+  // mode's core card, so it stays on.
   showCueOnCards:true,
   // Before/after, doing-now, and linked marks between items.
-  showOrderPillsOnCards:true,
+  showOrderPillsOnCards:false,
 
   // Simplified surface for new users: strips home cards, detail panes, and
   // calendar overview chrome, and groups home by today / overdue / coming up
@@ -195,13 +230,14 @@ const DEFAULT_SORT_SETTINGS = {
   // Installs that predate this default keep it off (see loadSortSettings).
   minimalMode:true,
 
-  compactMode:true,
+  compactMode:false,
   fontScale:'medium',
   themeMode:'system',
 
   homeCityName:'',
   homeCityLat:null,
   homeCityLng:null,
+  weatherProfiles:[],
   prayerIslamicNames:false,
 
   topics:[],
@@ -275,15 +311,12 @@ function isThreePaneTier() {
   return document.body && document.body.dataset && document.body.dataset.paneCount === '3';
 }
 
-function isTwoPaneTier() {
-  return document.body && document.body.dataset && document.body.dataset.paneCount === '2';
-}
-
 let detailIdx = null;
 let snoozeIdx = null;
 let snoozeFromDetail = false;
 let activityIdx = null;
-let detailMonthOffset = 0;
+let detailStripOffset = 0; // 14-day strip window shifts (see detailStripWindow)
+let detailVizMode = 'calendar'; // merged pane slot: 'calendar' strip | 'gaps' graph
 let overviewMonthOffset = 0;
 let overviewRecentOffset = 0;
 let overviewTopicFilter = 'all';
@@ -297,6 +330,14 @@ let dayLogsItemIndex = null;
 let dayLogsMoving = false;
 let overviewListPane = 'plan'; // plan | care | past (around-today only)
 let _overviewStretchCache = null;
+// Week snapshot for calendar overlay when home skipped week mode (minimal).
+// Independent of `_homeRenderedWeek` so a category-grouped home render cannot
+// wipe it and force a synchronous rebuild on the next calendar tap.
+let _overviewWeekSnapshot = null;
+let _overviewWeekSnapshotKey = '';
+let _overviewWeekFillToken = 0;
+let _overviewWeekFillInflightKey = '';
+let _overviewWeekFillCoverDays = 0;
 let selectedType = 'keepup';
 let sortSettings = null;
 let searchQuery = '';
@@ -324,5 +365,4 @@ let detailTuneOriginal = null;
 let detailScheduleView = 'allowed';
 let calendarPointer = null;
 let cardPointer = null;
-let suppressCardClick = null;
 let searchDismissPointer = null;

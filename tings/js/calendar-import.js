@@ -9,6 +9,8 @@ const CALENDAR_PDF_JS_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/bu
 const CALENDAR_PDF_WORKER_CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 const CALENDAR_PDF_JS_FALLBACK = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js';
 const CALENDAR_PDF_WORKER_FALLBACK = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const CALENDAR_PDF_JS_SRI = 'sha256-W1eZ5vjGgGYyB6xbQu4U7tKkBvp69I9QwVTwwLFWaUY=';
+const CALENDAR_PDF_WORKER_SRI = 'sha256-/qvfMJdw7SS7oxpUZ4Ns3Iz2OccFryfVK1hbBBu4Uns=';
 
 const OUTLOOK_TIME_LINE = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)\s*$/i;
 const OUTLOOK_DAY_HEADER = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}\s*$/i;
@@ -437,9 +439,37 @@ function clearCalendarImport(source = 'pdf'){
   return {removed: before - next.length};
 }
 
+function sriAlgoName(integrity){
+  const prefix = String(integrity || '').split('-')[0];
+  if(prefix === 'sha256')return 'SHA-256';
+  if(prefix === 'sha384')return 'SHA-384';
+  if(prefix === 'sha512')return 'SHA-512';
+  return '';
+}
+
+function bytesToBase64(bytes){
+  let bin = '';
+  const chunk = 0x8000;
+  for(let i = 0; i < bytes.length; i += chunk){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+async function sriMatches(buffer, integrity){
+  const algo = sriAlgoName(integrity);
+  const dash = String(integrity || '').indexOf('-');
+  const expected = dash >= 0 ? String(integrity).slice(dash + 1) : '';
+  if(!algo || !expected || !crypto?.subtle)return false;
+  const digest = await crypto.subtle.digest(algo, buffer);
+  return bytesToBase64(new Uint8Array(digest)) === expected;
+}
+
 // ASYNC: lazy-load pdf.js. Prefer a blob workerSrc so Safari PWAs (which often
 // choke on cross-origin workers) can still parse on the main thread path.
-function loadScriptOnce(src){
+// Worker() has no integrity attribute, so the fetched worker bytes are hashed
+// before the blob URL is installed.
+function loadScriptOnce(src, integrity){
   return new Promise((resolve, reject)=>{
     const existing = document.querySelector(`script[data-calendar-pdfjs="${src}"]`);
     if(existing){
@@ -451,6 +481,8 @@ function loadScriptOnce(src){
     const script = document.createElement('script');
     script.src = src;
     script.async = true;
+    script.crossOrigin = 'anonymous';
+    if(integrity)script.integrity = integrity;
     script.dataset.calendarPdfjs = src;
     script.onload = ()=>{
       if(!window.pdfjsLib)reject(new Error('pdf.js failed to load'));
@@ -461,16 +493,14 @@ function loadScriptOnce(src){
   });
 }
 
-async function configurePdfWorker(lib, workerUrl){
-  try{
-    const res = await fetch(workerUrl, {mode:'cors'});
-    if(!res.ok)throw new Error('worker fetch failed');
-    const blob = await res.blob();
-    lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-  }catch(_){
-    // Fall back to the CDN URL; pdf.js may still run via its fake-worker path.
-    lib.GlobalWorkerOptions.workerSrc = workerUrl;
+async function configurePdfWorker(lib, workerUrl, integrity){
+  const res = await fetch(workerUrl, {mode:'cors', credentials:'omit'});
+  if(!res.ok)throw new Error('worker fetch failed');
+  const buf = await res.arrayBuffer();
+  if(integrity && !(await sriMatches(buf, integrity))){
+    throw new Error('pdf.js worker integrity mismatch');
   }
+  lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([buf], {type:'application/javascript'}));
 }
 
 function ensurePdfJs(){
@@ -479,11 +509,11 @@ function ensurePdfJs(){
   pdfJsLoadPromise = (async()=>{
     let lib = null;
     try{
-      lib = await loadScriptOnce(CALENDAR_PDF_JS_CDN);
-      await configurePdfWorker(lib, CALENDAR_PDF_WORKER_CDN);
+      lib = await loadScriptOnce(CALENDAR_PDF_JS_CDN, CALENDAR_PDF_JS_SRI);
+      await configurePdfWorker(lib, CALENDAR_PDF_WORKER_CDN, CALENDAR_PDF_WORKER_SRI);
     }catch(_){
-      lib = await loadScriptOnce(CALENDAR_PDF_JS_FALLBACK);
-      await configurePdfWorker(lib, CALENDAR_PDF_WORKER_FALLBACK);
+      lib = await loadScriptOnce(CALENDAR_PDF_JS_FALLBACK, CALENDAR_PDF_JS_SRI);
+      await configurePdfWorker(lib, CALENDAR_PDF_WORKER_FALLBACK, CALENDAR_PDF_WORKER_SRI);
     }
     return lib;
   })().catch(err=>{
@@ -500,6 +530,10 @@ async function extractPdfText(arrayBuffer){
   try{
     doc = await pdfjsLib.getDocument({
       data:arrayBuffer,
+      // pdfjs-dist 3.x is retained for classic-script Safari compatibility.
+      // Disable its dynamic code path explicitly (CVE-2024-4367 mitigation),
+      // even though the page CSP also omits unsafe-eval.
+      isEvalSupported:false,
       // Helps Safari / low-memory PWAs; text extract does not need streaming.
       disableStream:true,
       disableAutoFetch:true

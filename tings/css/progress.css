@@ -1,0 +1,159 @@
+.breakable-card .ting-info{row-gap:7px;}
+.breakable-progress{display:flex;flex-direction:column;align-items:stretch;gap:7px;padding:9px;border:0.5px solid color-mix(in srgb,var(--purple-icon) 18%,var(--border));border-radius:14px;background:color-mix(in srgb,var(--purple-bg) 24%,var(--bg));}
+.breakable-progress-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.breakable-progress-title{display:inline-flex;align-items:center;gap:5px;color:var(--purple-text);font-size:9px;font-weight:780;letter-spacing:0.055em;text-transform:uppercase;}
+.breakable-progress-title i{font-size:12px;}
+.breakable-progress .breakable-progress-label{min-width:0;color:var(--text);font-size:11px;font-weight:760;text-align:right;font-variant-numeric:tabular-nums;}
+.breakable-progress .breakable-status-bar{width:100%;height:7px;flex:0 0 7px;border-radius:999px;background:color-mix(in srgb,var(--purple-icon) 9%,var(--bg3));}
+ .breakable-scrub-row{display:grid;grid-template-columns:minmax(0,1fr) 56px;align-items:center;gap:10px;}
+ .breakable-scrub-row .breakable-crown{
+   grid-column:1;grid-row:1;width:100%;min-width:0;height:38px;
+   border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible;
+ }
+ .breakable-scrub-row .breakable-crown::before{
+   content:"";position:absolute;left:50%;top:4px;bottom:4px;width:1.5px;z-index:1;
+   transform:translateX(-50%);border-radius:999px;background:var(--purple-icon);opacity:0.5;pointer-events:none;
+ }
+ /* Keep the invisible near-miss hit pad on the short vertical edges (the dial
+    is only 38px tall) but keep it off the left/right so the dedicated right-edge
+    swipe zone stays a clean swipe target. */
+ .breakable-scrub-row .breakable-crown::after{inset:-10px 0;}
+ .breakable-progress .crown-canvas{
+   -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14%,#000 86%,transparent 100%);
+   mask-image:linear-gradient(90deg,transparent 0,#000 14%,#000 86%,transparent 100%);
+   opacity:0.82;
+ }
+ .breakable-scrub-row .breakable-crown.active{background:transparent;}
+ .breakable-scrub-hint{
+   grid-column:2;grid-row:1;align-self:stretch;
+   display:inline-flex;align-items:center;justify-content:center;
+   width:56px;min-width:56px;color:var(--text3);white-space:nowrap;
+   border-left:0.5px solid color-mix(in srgb,var(--purple-icon) 14%,transparent);
+   cursor:grab;
+ }
+ .breakable-scrub-hint i{font-size:14px;color:var(--purple-icon);opacity:0.7;}
+ .breakable-progress.is-scrubbing{border-color:color-mix(in srgb,var(--purple-icon) 42%,var(--border));background:color-mix(in srgb,var(--purple-bg) 42%,var(--bg));}
+
+/* A running session should read as an active state, not a normal card with a
+   thin extra line appended to it. */
+.ting-card.timer-running{background:color-mix(in srgb,var(--teal-bg) 25%,var(--bg));border-color:color-mix(in srgb,var(--teal-icon) 42%,var(--border));box-shadow:inset 3px 0 0 var(--teal-icon),0 8px 24px color-mix(in srgb,var(--teal-icon) 9%,transparent);}
+.session-progress{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:7px 9px;border:0.5px solid color-mix(in srgb,var(--teal-icon) 20%,var(--border));border-radius:12px;background:color-mix(in srgb,var(--teal-bg) 42%,var(--bg));}
+.session-progress .session-progress-label{order:1;display:flex;align-items:center;gap:6px;color:var(--teal-text);font-size:10.5px;font-weight:730;line-height:1.15;}
+.session-progress .session-progress-label::before{content:"";width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--teal-icon);box-shadow:0 0 0 4px color-mix(in srgb,var(--teal-icon) 14%,transparent);}
+.session-progress .session-status-bar{order:2;width:100%;height:7px;border-radius:999px;background:color-mix(in srgb,var(--teal-icon) 10%,var(--bg3));}
+.session-progress.is-auto{border-color:color-mix(in srgb,var(--amber-icon) 22%,var(--border));background:color-mix(in srgb,var(--amber-bg) 42%,var(--bg));}
+.session-progress.is-auto .session-progress-label{color:var(--amber-text);}
+.session-progress.is-auto .session-progress-label::before{background:var(--amber-icon);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber-icon) 14%,transparent);}
+
+@media (max-width:340px){
+  .overview-page-head .sheet-title{font-size:25px;}
+  .overview-page-sub{font-size:11.5px;}
+  .overview-calendar-copy small{max-width:none;}
+  .overview-card .month-nav{grid-template-columns:30px minmax(64px,1fr) auto 30px;}
+  .overview-open-chips{gap:3px;}
+  .overview-open-chip{min-height:48px;padding-left:1px;padding-right:1px;}
+  .overview-open-chip span{font-size:7.5px;}
+  .overview-open-chip b{font-size:10px;}
+  .overview-detail-block{padding:10px;}
+  .day-availability-input-row{grid-template-columns:minmax(0,1fr) auto;}
+  .day-availability-input-row .mini-text-btn{grid-column:1 / -1;justify-self:start;}
+  .home-filter-option-grid{grid-template-columns:1fr;}
+  #action-toast{gap:7px;padding:9px;}
+  #action-undo,#action-open,#action-plan,#snooze-until-planned{padding:8px 10px;}
+  .app{padding:0 12px;}
+  .ting-card{gap:9px;padding-right:9px;}
+  .ting-card .pulse-btn{width:62px;min-width:62px;height:auto;}
+  .ting-card .pulse-btn .emoji-mark,.ting-card .pulse-btn.emoji-pulse .emoji-mark{font-size:35px;}
+  .breakable-scrub-row{grid-template-columns:minmax(0,1fr) 44px;gap:8px;}
+  .breakable-scrub-row .breakable-crown{width:100%;min-width:0;}
+  .breakable-scrub-hint{width:44px;min-width:44px;}
+  .free-fit-fields{grid-template-columns:minmax(0,1fr) 12px minmax(0,1fr);}
+  .free-fit-run{grid-column:1 / -1;width:100%;}
+  .free-day-tick:nth-last-child(2){display:none;}
+  .ting-main{gap:7px;}
+  .ting-name{font-size:calc(14.5px * var(--font-scale));-webkit-line-clamp:3;line-height:1.18;}
+  /* Below 341px the right-hand pill column makes both the status copy and
+     cue too narrow. Put metadata on its own full-width row instead of
+     clipping a third pill line or cutting place names against the edge. */
+  .ting-info{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;}
+  .ting-cue{grid-column:1;grid-row:2;font-size:calc(11.5px * var(--font-scale));}
+  .ting-meta{
+    grid-column:1;grid-row:3;align-self:start;justify-content:flex-start;
+    flex-wrap:wrap;gap:4px;max-width:100%;max-height:none;overflow:visible;
+  }
+  .context-pill{font-size:calc(9px * var(--font-scale));padding:2px 4px;max-width:100%;}
+  /* Chips can wrap at phone-zoom widths; a partially sliced chip is a poor
+     scroll affordance once the effective viewport is this narrow. */
+  .tag-row{flex-wrap:wrap;overflow-x:visible;scroll-snap-type:none;padding-right:0;}
+  .plan-field-main{flex-wrap:wrap;}
+  .ting-visual{margin-top:0;}
+  .trail-week{margin-right:4px;}
+  .sheet{padding-left:16px;padding-right:16px;}
+  .detail-head{gap:9px;}
+  .detail-page{min-height:min(392px,calc(100dvh - 210px));}
+  .monthday-chip-row{gap:5px;}
+  .monthday-chip{height:30px;font-size:11px;}
+  .schedule-chip{padding-left:8px;padding-right:8px;}
+  .about-hero{grid-template-columns:52px minmax(0,1fr);padding:13px;}
+  .about-hero img,.privacy-hero-icon{width:52px;height:52px;border-radius:15px;}
+  .about-block{padding:0;}
+  .about-collapse-head{padding:10px;}
+  .about-collapse-body{padding-left:10px;padding-right:10px;}
+  .about-label{font-size:12.5px;}
+  .about-summary,.about-collapse-body p{font-size:12px;line-height:1.32;}
+  .day-availability{grid-template-columns:1fr 72px;align-items:end;}
+  .day-availability .mini-text-btn{padding:7px 8px;}
+  .location-add-actions{align-items:stretch;flex-direction:column;}
+  .location-add-actions .btn{width:100%;}
+  .location-add-actions .field-hint{text-align:left;}
+  .location-row{padding:11px;}
+  .location-row-head{gap:6px;}
+  .location-row-icon{flex-basis:32px;width:32px;height:32px;}
+  .location-remove-btn span{display:none;}
+  .location-meta{align-items:stretch;flex-direction:column;}
+  .location-pin-btn{width:100%;justify-content:center;}
+  .picker-search-row{grid-template-columns:minmax(0,1fr) 78px;gap:6px;}
+  .picker-search-row .btn{min-width:0;padding-left:8px;padding-right:8px;}
+  .picker-map{height:min(32dvh,190px);min-height:150px;}
+  .picker-map-actions{gap:6px;}
+  .picker-map-actions .btn{padding-left:7px;padding-right:7px;font-size:12px;}
+}
+
+@media (max-height:680px){
+  .about-copy{font-size:13px;margin-bottom:10px;}
+  .about-stack{gap:6px;}
+  .about-block{padding-top:8px;padding-bottom:8px;}
+  .about-label{font-size:12px;}
+  .about-summary,.about-collapse-body p{font-size:11.5px;line-height:1.28;}
+  .detail-head{margin-bottom:8px;}
+  .detail-page{min-height:360px;}
+  .detail-card,.month-card,.tune-section{padding:12px;}
+  .detail-about{font-size:13px;line-height:1.35;margin-bottom:10px;}
+  .graph{min-height:142px;}
+  .graph-bars{height:84px;}
+  .rich-month-grid .cal-day{height:31px;}
+  .month-grid.strip-grid .cal-day{height:40px;}
+  .calendar-legend{margin-top:7px;}
+  .habit-action{min-height:50px;padding-top:8px;padding-bottom:8px;}
+  .detail-actions-page .habit-action,
+  .detail-actions-page .habit-toggle{min-height:42px;padding-top:7px;padding-bottom:7px;}
+  .detail-actions-page{padding:10px;}
+  .picker-map{height:min(30dvh,190px);min-height:150px;}
+  .location-picker-sheet .about-copy{margin-bottom:8px;}
+}
+
+@keyframes ring{
+  0%{box-shadow:0 0 0 0 rgba(15,110,86,0.32);}
+  100%{box-shadow:0 0 0 12px rgba(15,110,86,0);}
+}
+
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto;}
+  *,*::before,*::after{
+    animation-duration:1ms !important;
+    animation-iteration-count:1 !important;
+    scroll-behavior:auto !important;
+    transition-duration:1ms !important;
+  }
+}
+

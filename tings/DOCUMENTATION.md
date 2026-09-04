@@ -45,6 +45,7 @@ Everything below is covered in this skeleton:
 
 ### ✅ All Habit Object Fields
 - Core: hid, name, emoji, sample, type, target, createdAt, logs, lastLog, snoozedUntil
+- Shared display: showOnSharedDisplay + allowSharedDisplayCompletion (defaults to markable; each item can be hidden, view-only, or markable)
 - Priority & Ranking: priority
 - Time Window: allowedWeekdays, allowedMonthDays, preferredWeekdays, preferredMonthDays
 - Time Start/End: allowedTimeStart, allowedTimeEnd, preferredTimeStart, preferredTimeEnd
@@ -56,6 +57,8 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
+- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override)
+- Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, flexibilityDays
 - Calendar import: externalId, source, importedAt
@@ -91,7 +94,7 @@ Everything below is covered in this skeleton:
 - Home sections (Today, Overdue, Coming Up)
 - Home day headers with pills (missed, open time)
 - Add habit sheet (all fields)
-- Detail sheet (6 tabs: identity, schedule, effort, insight, calendar, actions)
+- Detail sheet (5 tabs: identity, schedule, effort, calendar+stats merged, actions)
 - Activity sheet (log history)
 - Settings sections (16 sections)
 - Calendar overview (heatmap, week strip, 3 panes)
@@ -134,7 +137,7 @@ Everything below is covered in this skeleton:
 - **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
 - **Capacity-based scheduling:** availabilityMinutes - durationMinutes
 - **Progressive urgency:** No hard deadlines by default, with the ability to add.
-- **Privacy-first:** All data stored locally, never transmitted
+- **Privacy-first:** All data is stored in this browser. There is no Tings account. A few opt-in features can send something outward (shared display, share item, address search); those controls carry a cloud-up mark. See About → privacy.
 
 ### 1.3 Who is Tings For? 👤
 - People managing recurring routines
@@ -334,6 +337,8 @@ else:
   emoji: string,            // 👤 Grapheme cluster(s), max 4 chars, "" = default icon
   emojiBgColor: string,     // 👤 Background color token: ''|teal|amber|red|purple|blue|green
   sample: boolean,          // 👨‍💻 Created by sort lab? (🧪 marker)
+  showOnSharedDisplay: boolean, // 👤 Include in the encrypted shared display; defaults true
+  allowSharedDisplayCompletion: boolean, // 👤 Permit marking done from the shared display; defaults true
   
   // ─── TYPE & SCHEDULE ─────────────────────────────────────
   type: 'keepup'|'reduce'|'zero'|'task',  // 👤 habit type
@@ -404,9 +409,28 @@ else:
   anywhereAllowed: boolean,   // 👨‍💻 Legacy: may be done anywhere
   locationPrefs: Object<string, 'avoid'|'little'|'high'>, // 👤 Soft preferences
   preferredLocationId: string|null, // 👤 Legacy preferred location
+  weatherProfileId: string|null, // 👤 Optional weather profile
+  weatherLocationId: string|null, // 👤 Optional forecast place (far from home)
+  scheduleOptions: {             // 👤 Specific extra time/place windows
+    weekdays: number[],          // Empty = every weekday
+    start: number|null,          // Minutes from midnight, or null when dynamic
+    end: number|null,            // Minutes from midnight, or null when dynamic
+    startAnchor?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha',
+    startOffsetMin?: number,
+    startCombine?: 'later'|'earlier',
+    startAnchor2?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'fixed',
+    startOffsetMin2?: number,
+    startFixedMin2?: number|null,
+    startDayOffset?: 0|1,
+    startDayOffset2?: 0|1,
+    // endAnchor/endOffsetMin/endCombine/endAnchor2/endOffsetMin2/
+    // endFixedMin2/endDayOffset/endDayOffset2 mirror the start fields.
+    locationId: string|null,     // Saved place, or null = anywhere
+    pref?: 'avoid'|'little'|'high' // 👤 Overrides place ranking for this instance
+  }[],
   
   // ─── LINKS & ACTIONS ─────────────────────────────────────
-  links: {kind, value}[],    // 👤 Phone, WhatsApp, FaceTime, URL
+  links: {kind, value, label?, launch?}[], // 👤 Phone, WhatsApp, FaceTime, app, URL; app shortcuts may carry a direct-open launch target (the app's own scheme)
   
   // ─── TASK & IMPORT FIELDS ───────────────────────────────
   dueDate: number|null,      // 👤 Task only: deadline
@@ -508,7 +532,7 @@ minimalMode: boolean,  // 👤 Simplified UI for new users
 
 #### 4.3.5 Mode & Theme 👤
 ```js
-compactMode: boolean,      // 👤 Square cards
+compactMode: boolean,      // 👤 Square cards (default OFF; pre-flip installs keep ON)
 fontScale: 'small'|'medium'|'large',
 themeMode: 'light'|'dark'|'system',
 ```
@@ -545,7 +569,54 @@ homeCityLng: number|null,       // 👤 Longitude
 prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
+weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
 ```
+
+#### 4.3.8a Weather Guidance 👤👨‍💻
+- Uses Open-Meteo without an API key. The default forecast is the saved
+  home-city coordinate. An item can optionally pick a saved place when that
+  item happens far from home (`weatherLocationId`). Nearby places (about 40 km)
+  reuse the home forecast instead of a second request.
+- The seven-day hourly forecast refreshes every six hours per distinct place.
+  Extra places are fetched only for weather-linked items that opted in, capped
+  at four far places besides home.
+- When a weather-linked planned item is active or starts within 90 minutes, a
+  15-minute forecast can refresh every 15 minutes while the app is visible. It
+  covers at least two hours and 30 minutes after the item, capped at four hours.
+  That near-term refresh is skipped when the cached remaining day is already
+  decisive — for example 0% rain and snow, or values comfortably away from every
+  rule threshold. Borderline precipitation still refreshes.
+- Near-term samples replace hourly samples where they overlap; the weekly
+  forecast fills later or missing times. AQI is fetched separately only when a
+  profile uses US or EU AQI (home: any such profile; a far place: only if an
+  item there uses one).
+- Rules in one profile are AND-combined. `prefer lower`/`prefer higher` steers
+  placement; min/max set absolute bounds; `hard` rejects flexible times outside
+  the bounds, while active, pinned, critical, and direct-linked commitments
+  remain and show an override. Selecting "no preference" never deletes a rule —
+  a rule with no bounds and no preference is kept but inactive (the editor
+  labels it). The rule editor shows each metric's scale and typical bands
+  (UV 0–2 low … 8+ very high, US AQI 0–50 good … 101+ unhealthy, wind and
+  precipitation bands) and uses them as min/max placeholders. Missing data
+  always fails open.
+- Home cards for a weather-guided item show a compact icon-only status chip in
+  the card's second-row pill stack (never in the title row): quiet teal sun =
+  good, amber rain cloud = caution, red shield = override, gray question cloud
+  = unknown. Tapping it shows a one-line reason naming the deciding or failing
+  metric values.
+- Relative preferences compare the exact habit interval and its whole day with
+  equal weight. Forecast cache is stored under `tings_weather_cache_v1`, outside
+  backup data. Far-place payloads live in `places` on that cache.
+- Forecast transparency: the weather settings section shows each profile's
+  attached items ("used by …"), and a forecast panel below the status line with
+  the exact rows the planner scores — the next 24 hours of the stored home
+  forecast, one row per step (hourly, or 15-minute inside the near-term
+  horizon, shaded, where the detail supersedes the hourly value), with fetch
+  ages and the detail horizon in the header line. It reads the stored cache
+  even when no profile is attached yet, and says so when nothing is stored or
+  the stored forecast is past the freshness window instead of silently
+  planning without it. `weatherInspectorModel` (weather.js) builds the model;
+  `renderWeatherInspector` (settings-weather.js) renders it.
 
 #### 4.3.9 Reminders & Calendar 👤
 ```js
@@ -716,13 +787,23 @@ When `showPinnedOnCards: true`:
 - Pin icon
 - Stays at top of lists
 
-### 5.14 Status Display 👤
+### 5.14 Leaves-device mark ☁️↑ 👤
+A teal cloud-up icon (`ti-cloud-up`, class `.leave-btn`) sits next to any control that can send data off this device. Tap it for a one-line note (same pattern as the info “i”). About → **privacy** is the full explainer.
+
+Placed on:
+- Settings → shared display (encrypted Cloudflare relay)
+- Detail → share item (encrypted Cloudflare relay)
+- Locations / city / address search (Photon + Nominatim)
+- Travel time estimate (OSRM)
+- Location map picker (OpenStreetMap tiles)
+
+### 5.15 Status Display 👤
 When `showStatusOnCards: true`:
 - Shows status word ("run", "overdue", "on track", etc.)
-- Default: ON for all new users
+- Default: OFF for new users (calm-card default); ON for installs saved before the flip
 - Toggle in Settings > Display > Card Customization
 
-### 5.15 Location Display 📍 👤
+### 5.16 Location Display 📍 👤
 When `showLocationOnCards: true`:
 - Shows location pin and name
 - Color-coded by location emoji
@@ -730,7 +811,7 @@ When `showLocationOnCards: true`:
 
 ---
 
-### 5.16 Complete Card Settings Field List (19 total) 👤
+### 5.17 Complete Card Settings Field List (19 total) 👤
 
 These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 
@@ -749,12 +830,16 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showFlexibilityOnCards | **false** | Flexibility days |
 | showTopicsOnCards | **false** | 💡 topic chips |
 | showLocationOnCards | **false** | 📍 location pin |
-| showStatusOnCards | **true** | Status word ("run", etc.) |
+| showStatusOnCards | **false** | Status word ("run", etc.) — calm-card default |
 | showAgendaTimesOnCards | **'time'** | Time display in agenda |
-| showTrailOnCards | **true** | Activity dots (recent logs) |
+| showTrailOnCards | **false** | Activity dots (recent logs) — calm-card default |
 | showCueOnCards | **true** | Status text below name |
-| showOrderPillsOnCards | **true** | ↗️↘️ schedule link markers |
-| showEarlyOnCards | **true** | 🌅 ready early indicator |
+| showOrderPillsOnCards | **false** | ↗️↘️ schedule link markers — calm-card default |
+| showEarlyOnCards | **false** | 🌅 ready early indicator — calm-card default |
+
+> **Calm-card defaults:** the four insight decorations above default OFF so
+> switching out of minimal mode doesn't unleash every extra at once. Installs
+> saved before the flip keep the look they had (see `loadSortSettings`).
 
 ---
 
@@ -922,27 +1007,27 @@ Visible when type = task:
 ┌─────────────────────────────────────┐
 │ ✕ habit name                       │
 ├─────────────────────────────────────┤
-│ Tab: identity  schedule  effort     │
-│        insight  calendar  actions  │
-│ (minimal hides: calendar, insight,  │
-│  effort - folded into schedule)   │
+│ Tab: history   schedule  effort     │
+│        identity  actions           │
+│ (minimal hides: calendar, effort - │
+│  folded into schedule)             │
 │                                     │
 │ [Tab content area]                  │
 └─────────────────────────────────────┘
 ```
 
-### 9.2 Detail Page Tabs (6 total) 👤👨‍💻
+### 9.2 Detail Page Tabs (5 total) 👤👨‍💻
 
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
-| `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, pinned |
-| `schedule` | 📅 | Time windows, rhythm, days |
-| `effort` | 📊 | Duration, breakable, min chunk |
-| `insight` | 📈 | Stats, streaks, progress graph |
-| `calendar` | 🗓️ | Activity heatmap, month view |
-| `actions` | ⋮ | Links (phone, web, etc.) |
+| `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics |
+| `schedule` | 📅 | Rhythm or task deadline, flexibility, allowed/preferred days, times and places, item order |
+| `effort` | 📊 | Duration, breakable, min chunk, logging and session controls |
+| `history` (`calendar` key) | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
+| `actions` | ⋮ | Links/calls, pin, export, share, snooze and remove |
 
-**Minimal Mode Hidden Tabs:** `calendar`, `insight`, `effort` (folded into `schedule`)
+**Minimal Mode Hidden Tabs:** `history` (internal key: `calendar`; the merged
+calendar+stats pane), `effort` (folded into `schedule`)
 
 ### 9.3 Identity Tab 👤
 
@@ -956,9 +1041,7 @@ Fields shown (always visible, even in minimal mode):
     - `stop` = zero (completely stop doing)
   - When `task`: No kind sub-segment
 - **Priority** (P0-P5 segmented control, with info tooltip)
-- **Links** (links & calls section with star for primary)
-- **Topics & Places** (topic chips + location chips)
-- **Delete** button (🗑️ with confirmation)
+- **Topics** (topic chips)
 
 ### 9.4 Schedule Tab Details 👤
 
@@ -967,12 +1050,33 @@ Fields shown (always visible, even in minimal mode):
 - **Cycle days:** Days per cycle (default 7, range 0.5-183)
 - For `habit` type only — visible as `[N] × in [N] d`
 
+#### Task Timing Section
+- For `task` type only
+- **Due date:** Date picker (`detail-due-date`)
+- **Due time:** Time picker (`detail-due-time`, makes it a fixed appointment)
+- Tasks open on Schedule by default so deadline and placement controls are the
+  first editable fields.
+
+#### Flexibility Section (full mode only) 👤
+- **Flexibility (days):** Scheduling buffer
+  - For tasks, how many days before the due date the task starts surfacing
+  - For habits, extra planning buffer beyond the rhythm target
+  - Input range: 0-60; default: 0
+
 #### Days Section
 - **Allowed Weekdays:** Mon Tue Wed Thu Fri Sat Sun (0-6)
   - Empty = all days
 - **Allowed Month Days:** Dates 1-31
   - Empty = all dates
 - **Preferred Weekdays/Month Days:** Soft hints for sorting
+
+#### Places Section
+- **Allowed places:** Hard placement choices shown with the Allowed schedule. The general time window applies at every allowed place.
+- **Place preferences:** Soft `little` / `high` / `avoid` rankings shown with
+  the Preferred schedule.
+- **Specific times & places:** Extra rows for a particular place and window.
+  A row can carry its own preference, which overrides the place ranking for
+  that instance only.
 
 #### Time Window Section
 ```
@@ -991,8 +1095,8 @@ time: | 9am | — | 9am | — | 9am | — |
 - **Offset:** ±720 minutes (±12 hours)
 - **Combine:** `later` / `earlier` of two expressions
 
-#### Schedule Links Section
-- Before/After relationships with other habits
+#### Item Order Section
+- Before/After relationships with other habits or tasks
 - `requireSameDay` option
 - Visual timeline showing order
 
@@ -1003,12 +1107,6 @@ time: | 9am | — | 9am | — | 9am | — |
   - Input range: 1-720 minutes
   - Default: 30 min
   - HTML input: `detail-duration`
-
-#### Flexibility Section (full mode only) 👤
-- **Flexibility (days):** Buffer added to target for planning
-  - Input range: 0-60
-  - Default: 0
-  - Tooltip: "Adds a buffer to your target for planning purposes."
 
 #### Breakable Section 👤
 - **Breakable into chunks:** Toggle switch
@@ -1038,59 +1136,89 @@ time: | 9am | — | 9am | — | 9am | — |
 - **Timer display:** Shows elapsed time (0:00 format)
 - **Session target:** Optional target minutes (uses duration if blank)
 
-#### Task Due Section (visible for tasks only) 👤
-- **Due date:** Date picker (`detail-due-date`)
-- **Due time:** Time picker (`detail-due-time`, makes it a fixed appointment)
-- Hint: "add a time to make this a fixed appointment"
+### 9.6 History Tab (merged calendar + stats) 👤
 
-### 9.6 Insight Tab 👤
+The old `insight` and `calendar` panes are one page. A two-option segment
+switches the middle slot between the **14-day strip** (default) and **gap
+history**; compact full-history stats sit below either view. Every stat number
+is computed over the **full log history** (a last entry 20+ days ago still
+shows), never windowed to the strip. The 14-day chips above the strip are the
+only window-scoped readout.
 
-#### Progress Graph
-- Shows last 30 days of logging
-- Each bar represents a day
-- Height = number of logs that day
-- Color = success status (teal/amber/red)
+#### 14-Day Strip
+- Window: past 7 days · today · next 6 (same default as the overview calendar)
+- Arrows shift by 14 days; "today" snaps back to the around-today window
+- Dots per day (max 4): `hit/warn/miss` (activity), `plan` (planned log, due /
+  scheduled / plan-by marker, purple ring), `agenda` (placed by the week
+  planner, blue ring)
+- Chips above the strip summarize the visible window: N days · N entries ·
+  N planned (agenda dots excluded from "planned")
+- Days the habit is schedule-eligible on (and free of entries) get a soft blue tint
+- Tap any day → scoped day sheet: **Log for this day** (today/past),
+  **Plan this item** (today/future), **Plan by this day** (future, keepup/reduce
+  only — sets `planByDate` to that day; **Clear plan-by** when that day already
+  is the plan-by date), **Move plan** / **Remove plan** for existing plans,
+  per-date open-time override
 
-#### Statistics
-- **Record Streak:** Longest consecutive success streak
-- **Current Streak:** Active streak count
-- **Total Logs:** Lifetime log count
-- **Success Rate:** Percentage of on-track days
-- **Average Interval:** Days between logs
+#### Compact Stats
+- Score card (ring + status) — unchanged data, smaller; rhythm/plan facts live
+  in the chip row
+- One chip row: since last / usual gap / last 30d / streak / total entries
+  (tone-colored; computed over all logs, not the 14-day window)
+- Slim "recent gaps" pace strip (good/close/care split)
+- Gap-history bar graph (last 14 intervals vs rhythm target) — behind the
+  **gaps** segment, not shown at the same time as the strip
 
-### 9.7 Calendar Tab 👤
-
-#### Month View
-- Heatmap of activity across the month
-- Dots show days with logs
-- Tap any date to plan a log
-
-#### Activity Heatmap
-- Color intensity = log frequency
-- Darker = more activity
-
-### 9.8 Actions Tab 👤
+### 9.7 Actions Tab 👤
 
 #### Links Section
 Each link row has:
-- **Kind selector:** Phone, WhatsApp, FaceTime, Link
+- **Kind selector:** Phone, WhatsApp, FaceTime, App, Link
 - **Value:** The phone number, URL, or ID
+- **App name:** A short editable label for app shortcuts
+- **Opens directly (optional):** The app's own link (e.g. `spotify://`),
+  tried first at launch — the stored page (store page, web URL) opens instead
+  when the app isn't installed. Apple exposes no way to derive an app's
+  scheme from its App Store link, so it's entered once per app. To find one:
+  try the app's name as a scheme, search "«app» URL scheme", or paste a link
+  shared from inside the app (a universal link). A wrong scheme safely falls
+  back to the stored page. The custom editor carries a short hint to this end.
 - **Star:** Marks as primary link (double tap uses this)
+
+**Add app** opens a compact chooser for Gmail, Outlook, Facebook, Instagram,
+YouTube, Reddit, LinkedIn and X. These use their normal HTTPS entry points, so
+they work in a browser and can hand off to an installed app when the device
+supports universal links. **Custom** accepts a user-defined name plus any safe
+web or app URL; the editor starts on the link field so a share link can be
+pasted first. Paste an App Store share link (`apps.apple.com/app/id…`) and the
+app's real name is fetched from Apple's public listing (only the numeric id
+already in the link is sent — see About → privacy); a hand-typed name is never
+overwritten, and offline the name falls back to the URL slug
+(`/us/app/roku-smart-home/id…` → "Roku Smart Home"). Store links show App
+Store / Play Store icons and labels, and `itms-apps://` share links are
+rewritten to the `https` form that opens everywhere. Up to four links/app
+shortcuts can be stored on one item.
 
 | Link Kind | Icon | Format | Example |
 |-----------|------|--------|---------|
 | Link | 🔗 | Full URL | `https://zoom.us/j/123` |
+| App | App/provider icon | App name + web/app URL | `Gmail` + `https://mail.google.com/` |
+| App |  | App Store share link (name fills in) | `https://apps.apple.com/app/id1626186138` |
+| App |  | App scheme for direct open (optional) | `spotify://` — opens Spotify if installed, else its store page |
 | Phone | 📞 | Phone number | `+1234567890` |
 | WhatsApp | 💬 | Phone number | `+1234567890` |
 | FaceTime | 🎥 | Email or phone | `user@example.com` |
 
-#### Notes Section
-- Free-form text field
-- Max 200 characters (`MAX_NOTE_CHARS`)
-- Visible in detail view
-- Not used in scoring
+#### Item Actions
+- **Pinned:** Keeps the item above automatic ordering
+- **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot.
+- The standalone shared display shows the current time in its header. Swiping left (or "hide agenda") covers the agenda with a near-black night clock; three taps within 900ms bring it back — a swipe never restores it, so a stray brush of the frame can't flash the agenda. Marking an item done shows an undo toast for a few seconds: the row reads as done immediately, but the completion is only pushed to the owner's feed when the toast expires, and tapping undo restores the row without any request. Only one mark waits at a time — marking another item pushes the previous one at once; a refresh that pauses the display or drops the row cancels the pending mark instead of pushing it, and de-pairing mid-push never writes the old authorization back. The ⋯ menu holds the fullscreen toggle, light/dark/system theme (dark is the default), a − / + text-size stepper (70–200%), and a "screen fit" − / + control that pre-squashes the page vertically (85–100%) to cancel frames that stretch their panel. Everything persists per display.
+- **Export to calendar:** Tasks with a due date or fixed time
+- **Share item:** Sends an encrypted invitation for another person to track it
+- **Snooze:** Temporarily hides the item
+- **Remove:** Deletes with an undo path
 
-### 9.9 Value Logging 👤
+### 9.8 Value Logging 👤
 When `trackValue: true`:
 - Log entry shows value input
 - Value can be:
@@ -1100,20 +1228,20 @@ When `trackValue: true`:
   - Any numeric metric
 - Value stored in log entry as `value` field
 
-### 9.10 Planned Logs 👤
+### 9.9 Planned Logs 👤
 - Planned entries (marked with `plan: true`)
 - Show as future commitments
 - Can be cancelled or rescheduled
 - Appear on calendar heatmap
 
-### 9.11 Session Timer 👤
+### 9.10 Session Timer 👤
 - Starts/stops timer for current session
 - Shows elapsed time (0:00 format)
 - Auto-stops at `timerAutoStopMinutes` if set
 - When stopped, prompts to log the session
 - Uses `habitTimer` global state object
 
-### 9.12 Doing Now Feature 👤👨‍💻
+### 9.11 Doing Now Feature 👤👨‍💻
 Tracks the currently active habit session:
 - `DoingNowState` object: `hid`, `startedAt`, `dayBase`, `sessionMinutes`, `targetAt`, `endsAt`, `completionMode`
 - Only one habit can be "in progress" at a time
@@ -1513,29 +1641,46 @@ Toasts appear after:
 
 ### Guided Coaches
 - A fresh, empty install offers the **install guide** first when it runs in a
-  browser: numbered, iconified per-platform steps (iOS Share → Add to Home
-  Screen; Android menu → Install app; desktop address-bar install) connected by
-  arrows, or a native **Install** button on Chrome-based browsers where a
-  `beforeinstallprompt` gesture was captured (declined prompts fall back to the
-  manual steps). The guide ends by handing over to the guided start; a user
-  already running the installed (standalone) app is offered the guided start
-  directly. About → **install app** replays the guide on demand, and About's
-  install button tells already-installed users where the guided start lives.
+  browser: numbered, iconified per-platform steps (details in the install-guide
+  bullet below) or a native **Install** button on Chrome-based browsers where a
+  `beforeinstallprompt` gesture was captured — at boot or mid-tour, whichever
+  comes first (declined prompts fall back to the
+  manual steps). The guide ends with a large close-this-tab / open-Tings
+  visual — the browser page is not the app — where **Got it** ends the guide
+  and **Stay in this tab** escapes into the guided start without leaving the
+  browser. A user already running the installed (standalone) app is offered
+  the guided start directly. About → **install app** replays the guide on
+  demand. When Tings is already installed (standalone) and the app can detect
+  that, About hides the install button.
 - A fresh, empty install offers the **guided start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
 - The guided start branches between a repeating habit and a one-off task. It
-  teaches times-in-days rhythms or optional task dates/times, then covers
-  duration, auto-mark, card logging, Home groups, and the minimal calendar.
-  After the card intro it makes the user **log (or complete) the Ting they just
-  created** with the real pulse button — with an “I’ll log later” escape — so the
-  daily loop is practiced, not just described; the replay refresher never logs.
+  teaches how often a habit happens, or an optional task date, then covers
+  how long it takes, card logging, Home, and the calendar. After the card intro
+  it makes the user **log (or complete) the Ting they just created** with the
+  real pulse button — with an “I’ll log later” escape. If they added a habit,
+  the tour later also walks through **adding a task** and that task’s page.
+  Near the end it opens **samples** and almost makes them add **drink water**
+  (with a Not now escape). Then it has them tap the **Tings name** and points
+  at **settings**, plus help, samples, and privacy on that same page. The
+  replay refresher never changes data.
+- On the calendar, the tour has them tap a **past day** (see what was done,
+  log a missed day) and a **coming day** (plan something). Day sheets use the
+  same words: past days offer **Log a missed day**, future days offer **Plan
+  something**.
 - **Every step gates the whole experience.** Locked (required-action) steps
   intercept taps outside the highlighted control with an amber warning; guided
   (read-and-continue) steps block outside taps silently while the bubble’s
   Next/Back advance the tour. Wheel scrolling outside the spotlight is blocked
   too. When a step has no visible target (e.g. the welcome), the guards cover
   the full screen so only the coach bubble is usable — there is no open window
-  between stages.
+  between stages. Coach-internal taps (bubble buttons, guards, shade) never
+  reach app-level document click handlers — on wide tiers the pane click-away
+  would otherwise unmount the detail page a chapter tap just mounted.
+- **Wide tiers reshape the calendar steps.** There is no calendar button on
+  desktop — the overview is a permanent pane — so both tours drop the locked
+  "tap Calendar" step and teach the always-open pane directly; the calendar
+  chapters read the live pane instead of opening a modal.
 - The coach decides which page is on screen: each stage declares the sheets it
   may keep open (add/detail/settings/overview plus their pickers and
   inspectors), and any other sheet that appears — stray tap, system navigation,
@@ -1548,20 +1693,73 @@ Toasts appear after:
   before teaching controls farther down the add sheet.
 - About → **guided start** replays a non-destructive refresher for an existing
   user.
-- Guided start finishes with the **install guide**: iOS learns
-  Share → Add to Home Screen, Android/desktop learns the menu or address-bar
-  install, and Chrome-based browsers with a captured `beforeinstallprompt`
-  gesture get a native Install button (with a Not-now escape and a manual-steps
-  fallback if the prompt is declined). The step is skipped when Tings already
-  runs standalone, and About → **install app** replays the same guide as a
-  one-step tour on demand.
-- About → **advanced coach** teaches the full, non-minimal surface: rich cards,
-  swipe/card actions, agenda ordering and audit, every major detail area,
-  calendar analysis and filters, home display, backup, calendar import, topics,
-  locations/travel, busy times, defaults, appearance, and smarter packing. When
-  minimal mode is on, the user turns it off from the real Settings control.
+- The **install guide** (first-run in a browser, or About → **install app**)
+  quotes each platform's real controls, exactly as the browser labels them.
+  Mobile cards render as a compact label rail docked to the edge the browser's
+  own UI leaves uncovered (top on iPhone, whose address bar and sheets rise
+  from the bottom; bottom on iPad and Android, whose menus drop from the top)
+  and collapse to a short reminder when the page blurs while a native menu is
+  open. iOS teaches **••• → Share → Add to Home Screen → Add** on every
+  version, with **View More** for the collapsed share-sheet actions, **Open
+  as Web App** left on when shown, and a one-sentence "no •••? tap the
+  toolbar Share button" hedge for older iOS layouts with no ••• menu — one
+  flow instead of UA-guessed branches. Android teaches **⋮ menu → Install
+  app → Confirm** (Chrome's
+  "Add to Home screen" wording and Samsung Internet's bottom-right ≡ noted in
+  the copy). Desktop teaches the address-bar install icon plus the current
+  Chrome menu path (⋮ → **Cast, save, and share** → **Install page as
+  app…**, with Edge's ⋯ → Apps → **Install this site as an app** variant).
+  Chrome-based browsers with a captured `beforeinstallprompt` gesture get a
+  native Install button instead (with a Not-now escape and a manual-steps
+  fallback if the prompt is declined). The swap is live: a gesture arriving
+  after the manual card rendered replaces it instantly, and an install
+  finished straight from browser chrome (address-bar icon, menu) jumps the
+  tour to the handoff step — the one-tap path always wins over teaching the
+  long way. The second step is a large
+  close-this-tab visual: this browser page is not the app, so the user should
+  close the tab and open Tings from the Home Screen (phone) or its own window
+  (desktop). The guide is skipped when Tings already runs standalone.
+- About → **advanced coach** opens a **chapter menu**, not one serial march:
+  seven standalone chapters — **Home & today**, **Schedule a Ting**,
+  **Progress & item tools**, **Calendar & planning**, **Places & weather**,
+  **Make Tings yours**, and **Data & sharing**. Together they cover the full
+  user-facing surface: card marks and gestures; logging, activity, timers,
+  snooze, undo, do-now and order links; habit kinds, task dates, history and
+  plan-by; hard and preferred schedule rules, dynamic time anchors, places,
+  weather and prayer guidance; calendar day actions, filters and availability;
+  Home/card/default/appearance/reminder/planner settings; backup and calendar
+  import; encrypted item/display sharing; privacy, retention and reset. The
+  user picks a chapter in any
+  order; finishing one marks it with a check on the menu, and completion is
+  remembered per chapter. The first unfinished chapter is gently marked
+  **start here**, but it is never required. Chapters are **hands-on, like the guided start**:
+  most steps lock to a real control and advance only when it is used (toggle,
+  chip, add-option, relative anchor, tab, pill, day, export). Advanced Coach
+  mounts a predictable temporary demo list so those controls exist, then
+  restores the user's habits and settings byte-for-byte when the coach closes.
+  Chapters that need full-only controls detour through the full-mode reveal.
+  The menu explicitly explains the temporary demos and has a **Close** action;
+  a chapter's last step returns to the menu.
+- Tours show a **progress bar**, never a "3 of 21" step count — the number is
+  what makes a long tour daunting. Step position remains available to screen
+  readers through the progressbar's aria attributes.
 - Coach assets live in `onboarding/` and are loaded on demand. Completion is
-  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v2`.
+  versioned in `tings_coach_essentials_v2` / `tings_coach_advanced_v3` (the
+  advanced key holds a per-chapter JSON map; a legacy `'done'` value counts as
+  every chapter seen).
+
+### About and privacy 👤
+- Tapping the Tings wordmark opens **About**: a short Learn / Private pair, plus
+  install (hidden when the app is already installed), guided start, advanced
+  coach, help, samples, settings, and **privacy**.
+- **Privacy** explains that Tings is open source, with no account; habits live
+  in this browser’s `localStorage`; the site owner cannot see them. It lists
+  third-party services (Photon, Nominatim, OSRM, OpenStreetMap tiles, jsDelivr /
+  unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
+  and the encrypted Cloudflare relay used by shared display and
+  share item. Map lookups are described as a narrower request than embedding
+  Google Maps or Apple Maps.
+- Settings → backup also links to Privacy.
 
 ---
 
@@ -1580,6 +1778,10 @@ The actual settings sections (in order of appearance):
 Settings sections (actual order):
 ├── display
 │   └── minimal mode toggle
+├── weather guidance
+│   ├── up to four named rule profiles
+│   ├── six-hour weekly / conditional 15-minute near-term status
+│   └── manual refresh and Open-Meteo/CAMS attribution
 ├── home page
 │   ├── bring planned items up
 │   ├── fixed-time tasks in agenda
@@ -1588,6 +1790,9 @@ Settings sections (actual order):
 │   ├── habits ready today in agenda
 │   ├── week by day (full mode only)
 │   └── busy blocks & travel display
+├── reminders
+│   ├── dated task / fixed appointment heads-ups
+│   └── optional detailed notification text
 ├── backup
 │   ├── export backup
 │   └── import backup
@@ -1703,6 +1908,8 @@ Actions when habit is done:
 - Phone: Dial number
 - WhatsApp: Open chat
 - FaceTime: Start video call
+- App: Open a common preset or a custom named app shortcut (an App Store
+  share link names itself)
 - Link: Open URL (Zoom, etc.)
 - Double tap on card launches primary link
 
@@ -2006,7 +2213,7 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | Gesture | Action | Description |
 |---------|--------|-------------|
 | Tap | Primary action | Log the habit (if ready) |
-| Double Tap | Link action | Open primary link (phone, URL) |
+| Double Tap | Link action | Open primary link (phone, app, URL) |
 | Long Press | Edit | Opens Detail sheet |
 | Swipe Left/Right | Actions row | Shows pin, snooze, delete |
 
@@ -2086,20 +2293,20 @@ When you swipe a card left or right, the following action buttons appear:
 | File | Lines | Purpose |
 |------|-------|---------|
 | **config.js** | 324 | Constants, sort presets, default settings |
-| **data.js** | 3554 | Data models (JSDoc typedefs), storage, normalization |
+| **data-*.js** | 50–939 each | Data models, storage, normalization, schedules, logs, backups |
 | **scoring.js** | 908 | Attention score, urgency, tone/color mapping |
-| **main.js** | 3100 | App initialization, state management, event handling |
-| **list-view.js** | 5680 | Home screen rendering, habit card list |
-| **detail-view.js** | 1881 | Detail sheet with tabs (about, insight, schedule, etc.) |
-| **today-view.js** | 5685 | Today agenda rendering & timeline |
+| **main-{boot,input,runtime}.js** | 909–1364 each | Initialization, input wiring, timers and refresh loop |
+| **list-view-{home,sections,planner,actions}.js** | 908–2513 each | Home rendering, sections, planner/cache, card actions |
+| **detail-view-*.js** | 236–554 each | Detail sheet tabs, links, tuning, stats |
+| **today-view-{fits,reservations,week,today}.js** | 118–2329 each | Fast agenda fitting, reservations, week planning, rendering |
 | **overview-view.js** | 1213 | Calendar heatmap and week views |
-| **settings.js** | 2312 | Settings sheet, form rendering, preferences |
+| **settings-*.js** | 122–746 each | Settings sheet, preferences, backup, locations, samples |
 | **locations.js** | 1059 | Location registry, geolocation, travel time |
 | **reminders.js** | 256 | Local reminder scheduling |
 | **push-client.js** | 139 | Web Push subscription management |
 | **calendar-import.js** | 548 | Microsoft Graph & Google Calendar import |
 | **prayer-times.js** | 549 | Islamic prayer time calculation |
-| **agenda-optimizer.js** | 1756 | ILP optimizer (lazy-loads GLPK) |
+| **agenda-optimizer.js** + **agenda-optimizer-ilp.js** | 313 + 1624 | GLPK loader/worker entry and ILP optimizer |
 | **agenda-order.js** | 774 | Agenda packing algorithm |
 | **agenda-planner-worker.js** | 209 | Web Worker for planning |
 | **emoji-suggest.js** | 702 | Emoji suggestions from habit names |
@@ -2107,10 +2314,17 @@ When you swipe a card left or right, the following action buttons appear:
 | **storage.js** | 48 | localStorage wrapper |
 | **viewport.js** | 110 | Responsive layout breakpoints |
 
+Large modules are loaded as sequential, byte-exact source slices because the
+app has no bundler and uses global-scope deferred scripts. Keep each fragment
+list in `index.html`, the planner worker's `importScripts`, and `sw.js`
+`PRECACHE` in the same order when making a change.
+
 ### 19.2 HTML Structure (index.html)
 Main sheet containers:
 - `#add-sheet` - New habit creation
 - `#detail-sheet` - Habit editing
+- `#about-sheet` - About / how it works
+- `#privacy-sheet` - Privacy explainer
 - Today sheet (added dynamically)
 - Settings sections
 
@@ -2153,7 +2367,7 @@ Same agenda logic, but simplified display:
 - Week strip only
 
 ### 20.4 Detail Sheet Changes
-- Fewer tabs visible
+- Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
 - Simplified scheduling UI
 - Basic info only
 
@@ -2279,6 +2493,7 @@ Same agenda logic, but simplified display:
 | `homeCityName` | string | '' | City name for prayer times |
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
+| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |
@@ -2425,6 +2640,31 @@ Same agenda logic, but simplified display:
 | `locationPrefs` | object | Per-location preference (avoid/little/high) |
 | `anywhereAllowed` | boolean | Can be done anywhere |
 | `preferredLocationId` | string\|null | Preferred single location |
+| `weatherProfileId` | string\|null | Named weather profile used by the planner |
+| `weatherLocationId` | string\|null | Optional saved place whose forecast overrides home when far away |
+| `scheduleOptions` | array | Specific extra weekday/time/place windows; optional per-row preference overrides the place ranking for that instance |
+
+### 25.3.1 Time & Place Options 👤👨‍💻
+
+- Add these under an item's **Schedule → Allowed → specific times & places**.
+- The general days, time window, and allowed places still apply at every
+  allowed place. Each option row is an extra specific case.
+- Many items only need the specific rows. Leave the general time blank then.
+- Each row couples its own weekdays, start/end window, and location, plus an
+  optional preference (`little` / `high` / `avoid`) that overrides the place
+  ranking for that instance.
+- Rows are alternatives for one occurrence. If a general window and two rows
+  fit, the planner chooses one; it does not schedule or count the habit three
+  times.
+- The same location may be used in any number of rows at different times.
+- Preferred days, time, and place levels remain soft hints. They rank feasible
+  general and specific windows but never make an otherwise valid window
+  invalid. A place's own opening hours still apply as an outer constraint.
+- `locationIds` is the general allowed-place list. Option rows may name extra
+  places that are valid only inside that row's window.
+- The Fast and GLPK planners both enumerate the general window and the rows
+  independently, including repeated-location rows, and account for travel
+  before selecting one.
 
 ### 25.4 Location Preferences 👤
 | Level | Score Modifier | Meaning |
@@ -2497,6 +2737,11 @@ Same agenda logic, but simplified display:
 - Uses `adhan` package for calculations
 - Methods: `adhan.CalculationMethod` factory names
 - Supports all major Islamic prayer time conventions
+
+### 27.5 Sharing relay 👤👨‍💻
+| Service | URL | What leaves the device |
+|---------|-----|------------------------|
+| Cloudflare share Worker | `habits-share.contactnabilkhan.workers.dev` | Encrypted item shares, shared-display snapshots, and encrypted display completion events. Ciphertext only; keys stay on devices. |
 
 ---
 

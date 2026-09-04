@@ -1,0 +1,156 @@
+/* completed tasks on the home list: faded + struck-through name */
+.ting-card.is-done{opacity:0.5;}
+.ting-card.is-done .ting-name{text-decoration:line-through;text-decoration-thickness:1.5px;text-decoration-color:var(--text3);}
+.ting-card.is-done .ting-cue{font-style:italic;}
+/* reminder banner — consolidated, anti-nag heads-up */
+.reminder-banner{
+  display:flex;align-items:stretch;margin:0 0 8px;
+  background:var(--red-bg);border:0.5px solid transparent;border-radius:var(--radius);
+  overflow:hidden;
+}
+
+/* plan move/remove actions + inline move date picker (day-logs sheet) */
+.overview-item.plan-item{flex-wrap:wrap;gap:6px 10px;}
+.plan-actions{display:flex;gap:6px;flex-shrink:0;}
+.plan-actions[hidden]{display:none;}
+.move-inline{display:flex;align-items:center;gap:6px;width:100%;flex-wrap:wrap;}
+.move-inline[hidden]{display:none;}
+.move-inline .move-date{
+  border:0.5px solid var(--border);background:var(--bg);color:var(--text);
+  border-radius:var(--radius-sm);padding:7px 9px;font:inherit;font-size:13px;
+  min-width:0;flex:1;
+}
+.reminder-banner[hidden]{display:none;}
+.reminder-main{
+  flex:1;display:flex;align-items:center;gap:10px;text-align:left;
+  background:transparent;border:0;padding:11px 12px;font:inherit;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;min-width:0;
+}
+.reminder-main i{font-size:20px;color:var(--red-icon);flex-shrink:0;}
+.reminder-text{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.reminder-text b{font-size:13px;font-weight:650;color:var(--red-text);line-height:1.2;}
+.reminder-text small{font-size:11.5px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.reminder-dismiss{
+  background:transparent;border:0;border-left:0.5px solid var(--border);
+  padding:0 14px;cursor:pointer;color:var(--text3);-webkit-tap-highlight-color:transparent;
+}
+.reminder-dismiss i{font-size:16px;}
+.reminder-dismiss:active{background:var(--bg3);}
+/* add-sheet progressive disclosure: priority/hard-deadline/scheduled-time/topics
+   stay collapsed until asked for, so a first habit only shows what it needs */
+.add-more-toggle{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  width:100%;margin:0 0 14px;padding:10px 0;
+  background:transparent;border:0;border-top:0.5px solid var(--border);
+  color:var(--text2);font:inherit;font-size:12.5px;font-weight:650;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.add-more-toggle:active{color:var(--text);}
+.add-more-toggle i{font-size:13px;transition:transform var(--dur-fast) ease;}
+.add-more-toggle[aria-expanded="true"] i{transform:rotate(180deg);}
+.add-more-options[hidden]{display:none;}
+.add-more-options{margin:-4px 0 4px;}
+/* task due-date + scheduled-time rows (add sheet + detail schedule) */
+.plan-field-row{
+  display:flex;align-items:center;gap:10px;margin:-2px 0 16px;
+  padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--bg2);flex-wrap:wrap;
+}
+.plan-field-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
+.plan-field-row .plan-date-label{
+  color:var(--text2);font-size:12px;font-weight:700;flex-shrink:0;
+}
+/* Date inputs and their sibling text buttons ("this week", "clear") share one
+   row height — the base input rule used to make inputs ~44px vs 29px buttons.
+   margin:0 cancels the global input[type=date] bottom margin, which otherwise
+   lifts the date box 6px above the time box in this center-aligned row. */
+.plan-field-row .plan-date-input,
+.plan-field-row .plan-time-input,
+.plan-field-row .mini-text-btn{
+  height:40px;padding-top:0;padding-bottom:0;margin:0;
+}
+.plan-field-row .mini-text-btn{display:inline-flex;align-items:center;}
+.plan-date-input{
+  border:0.5px solid var(--border);background:var(--bg);color:var(--text);
+  border-radius:var(--radius-sm);padding:8px 10px;font:inherit;font-size:14px;
+  min-width:0;flex:1;font-variant-numeric:tabular-nums;
+  -webkit-appearance:none;appearance:none;
+}
+.plan-time-input{
+  border:0.5px solid var(--border);background:var(--bg);color:var(--text);
+  border-radius:var(--radius-sm);padding:8px 10px;font:inherit;font-size:14px;
+  width:7.5em;flex-shrink:0;font-variant-numeric:tabular-nums;
+  -webkit-appearance:none;appearance:none;
+}
+.detail-section .plan-field-row{margin:0 0 12px;background:var(--bg);}
+.month-card .plan-field-row{margin:12px 0 0;background:var(--bg);}
+.context-pill.time{color:var(--text2);}
+.context-pill.time i{color:var(--text3);}
+.context-pill.schedule.has-preferred{
+  box-shadow:inset 0 0 0 1px var(--green-icon);
+}
+.schedule-seg{margin:-2px 0 8px;}
+.schedule-seg .seg-opt{padding:9px 0;font-size:12px;}
+/* The clear action sits on the "time window" caption line, right-aligned: it
+   resets the whole window (start + end), so it belongs to the whole block. */
+.schedule-time-row .schedule-time-clear{margin-left:auto;flex-shrink:0;}
+.topic-manage-row{
+  display:grid;grid-template-columns:minmax(0,1fr) 76px;gap:8px;margin-bottom:10px;
+}
+.topic-manage-row input{margin-bottom:0;}
+.topic-manage-row.inline-topic-row{margin:-4px 0 4px;}
+.topic-manage-row.inline-topic-row .btn{padding:11px 0;font-size:13px;}
+.topic-list .topic-chip{display:inline-flex;align-items:center;gap:6px;}
+.topic-list .topic-chip i{font-size:13px;}
+.planning-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px;
+}
+.planning-grid-single{grid-template-columns:minmax(0,1fr);}
+.planning-grid-single .planning-field .range-value{
+  width:max-content;min-width:72px;justify-self:start;
+}
+.settings-block .btn{width:100%;padding:12px 0;}
+.settings-block .btn-row .btn{flex:1;}
+.blocked-time-list{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.blocked-time-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  padding:10px;
+  border:0.5px solid var(--border);
+  border-radius:8px;
+  background:var(--bg2);
+}
+.blocked-time-row input[type=text]{
+  min-width:0;
+  width:100%;
+  height:34px;
+  padding:0 9px;
+  border-radius:8px;
+  border:0.5px solid var(--border2);
+  background:var(--bg);
+  color:var(--text);
+}
+.blocked-time-hours{
+  grid-column:1 / -1;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.blocked-time-hours input[type=time]{
+  width:116px;
+  height:34px;
+  padding:0 8px;
+  border-radius:8px;
+  border:0.5px solid var(--border2);
+  background:var(--bg);
+  color:var(--text);
+}
+.blocked-time-hours span{color:var(--text3);font-size:12px;}
+.compact-days{
+  grid-column:1 / -1;
+  gap:5px;
+}
+.compact-days .schedule-chip{padding:7px 8px;}
+.blocked-time-row .mini-text-btn{align-self:start;}
+

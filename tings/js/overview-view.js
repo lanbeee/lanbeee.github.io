@@ -27,40 +27,20 @@ function habitTypeLabel(type){
   return type || '';
 }
 
-// PURE: builds topic filter choice list
 function overviewTopicChoices(data){
-  const topics = normalizeTopics([...(sortSettings?.topics || []),...data.flatMap(h=>normalizeTopics(h.topics))]);
-  const hasNoTopic = data.some(h=>!normalizeTopics(h.topics).length);
-  return [{key:'all',label:'all'},...topics.map(topic=>({key:topic,label:topic})),...(hasNoTopic ? [{key:'__none__',label:'no topic'}] : [])];
+  return topicFilterChoices(data);
 }
 
-// PURE: tests habit against topic filter
 function matchesOverviewTopic(h,topic){
-  if(!topic || topic === 'all')return true;
-  const topics = normalizeTopics(h.topics);
-  if(topic === '__none__')return !topics.length;
-  return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
+  return matchesTopicFilter(h,topic);
 }
 
-// PURE: builds location filter choice list for overview
 function overviewLocationChoices(data){
-  const registry = locationsForDisplay(sortSettings?.locations);
-  const used = new Set(data.flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
-  const locs = registry.filter(loc=>used.has(loc.id));
-  const hasNone = data.some(h=>!normalizeLocationIds(h.locationIds,registry).length);
-  return [
-    {key:'all',label:'all places'},
-    ...locs.map(loc=>({key:loc.id,label:loc.name})),
-    ...(hasNone ? [{key:'__none__',label:'anywhere'}] : [])
-  ];
+  return locationFilterChoices(data);
 }
 
-// PURE: tests habit against overview location filter
 function matchesOverviewLocation(h,id){
-  if(!id || id === 'all')return true;
-  const ids = normalizeLocationIds(h.locationIds);
-  if(id === '__none__')return !ids.length;
-  return ids.includes(id);
+  return matchesLocationFilter(h,id);
 }
 
 // PURE: habit passes both overview filters
@@ -157,12 +137,6 @@ function renderOverviewFilters(data){
     </section>` : ''}`;
 }
 
-// Compat aliases (filters now share one row)
-function renderOverviewTagFilter(data){renderOverviewFilters(data);}
-function renderOverviewLocationFilter(data){renderOverviewFilters(data);}
-function renderOverviewTopicFilter(data){renderOverviewFilters(data);}
-function renderOverviewRangeFilter(){renderOverviewFilters(load());}
-
 // PURE: scheduled / due / plan-by markers for a habit (not yet in logs)
 function habitPlanMarkers(h){
   const markers = [];
@@ -219,8 +193,10 @@ function calDensityClass(count){
   return '';
 }
 
-// PURE: builds calendar day cell HTML (overview grid / strip)
-function cellMarkup(key,date,entries,extraSpans = ''){
+// PURE: builds calendar day cell HTML (overview grid / strip). `opts.entryDay`
+// marks per-habit cells (detail sheet) with data-entry-day instead of the
+// overview's data-log-day so each surface keeps its own tap binding.
+function cellMarkup(key,date,entries,extraSpans = '',opts = {}){
   const tones = ['hit','warn','miss','plan','agenda']
     .filter(tone=>entries.some(item=>item.tone === tone))
     .slice(0,4);
@@ -236,13 +212,15 @@ function cellMarkup(key,date,entries,extraSpans = ''){
     key === dayLogsKey ? 'selected' : '',
     'pickable'
   ].filter(Boolean).join(' ');
+  const dayAttr = opts.entryDay ? 'data-entry-day' : 'data-log-day';
+  const eligible = opts.eligible instanceof Set && !entries.length && opts.eligible.has(key) ? 'eligible' : '';
   const dateLabel = date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   const itemLabel = entries.length ? `, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}` : ', no items';
-  return `<button type="button" class="cal-day ${cls}" data-log-day="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
+  return `<button type="button" class="cal-day ${cls}${eligible ? ` ${eligible}` : ''}" ${dayAttr}="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
 }
 
 // PURE: build an N-day strip's tally + cell HTML starting at startTs.
-function dayStripMarkup(data,startTs,days,{agendaByDay = null} = {}){
+function dayStripMarkup(data,startTs,days,{agendaByDay = null,entryDay = false,eligible = null} = {}){
   const end = startTs + days * 86400000;
   const tally = buildDayTally(data,ts=>ts >= startTs && ts < end);
   if(agendaByDay instanceof Map){
@@ -266,23 +244,96 @@ function dayStripMarkup(data,startTs,days,{agendaByDay = null} = {}){
     const key = dateKey(ts);
     const entries = tally.map.get(key) || [];
     const labelSpans = `<span class="strip-wd">${weekdayShort(date.getDay())}</span><span class="strip-num">${date.getDate()}</span>`;
-    return cellMarkup(key,date,entries,labelSpans);
+    return cellMarkup(key,date,entries,labelSpans,{entryDay,eligible});
   }).join('');
   return {tally,html};
 }
 
-// PURE: week-agenda placements keyed by day (today → +6). Reuses home's
-// cached week when available so opening calendar stays cheap.
-function overviewAgendaByDay(data){
-  const byDay = new Map();
-  if(overviewRecentOffset !== 0)return byDay;
-  let week = (typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days))
-    ? _homeRenderedWeek
-    : null;
-  if(!week && typeof buildWeekAgenda === 'function' && sortSettings){
-    try{ week = buildWeekAgenda(data,sortSettings,7); }
-    catch(_err){ week = null; }
+// PURE: dirty key for the calendar's own week snapshot.
+function overviewWeekCacheKey(data){
+  if(typeof homePlannerDirtyKey === 'function')return homePlannerDirtyKey(data);
+  return String((data || []).length);
+}
+
+function overviewWeekCoversKey(week,key){
+  if(!week || !Array.isArray(week.days) || !key)return false;
+  return week.days.some(day=>dateKey(day.dayBase) === key);
+}
+
+// PURE: home's mounted week, else a calendar snapshot from an off-main fill.
+function cachedOverviewWeek(data){
+  if(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) && _homeRenderedWeek.days.length){
+    return _homeRenderedWeek;
   }
+  const key = overviewWeekCacheKey(data);
+  if(_overviewWeekSnapshot && _overviewWeekSnapshotKey === key && Array.isArray(_overviewWeekSnapshot.days) && _overviewWeekSnapshot.days.length){
+    return _overviewWeekSnapshot;
+  }
+  return null;
+}
+
+// PURE: week that actually contains `dayKey` (home week may only cover today+6).
+function weekForOverviewDay(data,dayKey){
+  if(typeof _homeRenderedWeek !== 'undefined' && overviewWeekCoversKey(_homeRenderedWeek,dayKey)){
+    return _homeRenderedWeek;
+  }
+  const dirty = overviewWeekCacheKey(data);
+  if(_overviewWeekSnapshot && _overviewWeekSnapshotKey === dirty && overviewWeekCoversKey(_overviewWeekSnapshot,dayKey)){
+    return _overviewWeekSnapshot;
+  }
+  return null;
+}
+
+function storeOverviewWeekSnapshot(week,data){
+  if(!week || !Array.isArray(week.days) || !week.days.length)return;
+  if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(week,data);
+  _overviewWeekSnapshot = week;
+  _overviewWeekSnapshotKey = overviewWeekCacheKey(data);
+}
+
+// ASYNC: pack a week that covers `dayKey` off the UI thread. Used by the day
+// sheet Agenda section — never by calendar-open.
+function ensureOverviewWeekForDay(dayKey){
+  if(!dayLogsCanPlan(dayKey))return;
+  if(typeof buildWeekAgendaOffMain !== 'function' || !sortSettings)return;
+  const data = typeof load === 'function' ? load() : [];
+  if(weekForOverviewDay(data,dayKey))return;
+  const dirty = overviewWeekCacheKey(data);
+  const dayBase = dayStart(new Date(`${dayKey}T12:00:00`).getTime());
+  const today = dayStart(Date.now());
+  const offset = Number.isFinite(dayBase) ? Math.max(0,Math.round((dayBase - today) / 86400000)) : 0;
+  const numDays = Math.max(7,offset + 1);
+  if(_overviewWeekFillInflightKey === dirty && _overviewWeekFillCoverDays >= numDays)return;
+  const token = ++_overviewWeekFillToken;
+  _overviewWeekFillInflightKey = dirty;
+  _overviewWeekFillCoverDays = numDays;
+  buildWeekAgendaOffMain(data,sortSettings,numDays,'fast').then(week=>{
+    if(token !== _overviewWeekFillToken)return;
+    const live = typeof load === 'function' ? load() : data;
+    storeOverviewWeekSnapshot(week,live);
+    if(dayLogsKey !== dayKey || dayLogsStep !== 'list')return;
+    if(typeof dayLogsScoped === 'function' && dayLogsScoped())return;
+    renderDayLogsListStep(dayKey);
+  }).catch(()=>{}).then(()=>{
+    if(_overviewWeekFillInflightKey === dirty){
+      _overviewWeekFillInflightKey = '';
+      _overviewWeekFillCoverDays = 0;
+    }
+  });
+}
+
+function overviewDayAgendaPending(dayKey){
+  if(!dayLogsCanPlan(dayKey))return false;
+  const data = typeof load === 'function' ? load() : [];
+  if(weekForOverviewDay(data,dayKey))return false;
+  const dirty = overviewWeekCacheKey(data);
+  return _overviewWeekFillInflightKey === dirty && _overviewWeekFillCoverDays > 0;
+}
+
+// PURE: week-agenda placements keyed by day, read from a packed week. Shared
+// by the overview strip and the detail sheet's per-habit strip.
+function weekAgendaByDay(week,data){
+  const byDay = new Map();
   if(!week || !Array.isArray(week.days))return byDay;
   week.days.forEach(day=>{
     const key = dateKey(day.dayBase);
@@ -304,6 +355,14 @@ function overviewAgendaByDay(data){
     if(items.length)byDay.set(key,items);
   });
   return byDay;
+}
+
+// PURE: week-agenda placements keyed by day (today → +6). Reuses a cached week
+// when available so opening calendar stays cheap. Missing cache is filled
+// off-main from the day sheet — never with a synchronous 7-day rebuild.
+function overviewAgendaByDay(data){
+  if(overviewRecentOffset !== 0)return new Map();
+  return weekAgendaByDay(cachedOverviewWeek(data),data);
 }
 
 // RENDER: most-active habits (month / all-time)
@@ -364,13 +423,7 @@ function overviewDayChipLabel(key){
 
 // PURE: week capacity summary for today → +6 (planning cue)
 function overviewWeekCapacity(data){
-  let week = (typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days))
-    ? _homeRenderedWeek
-    : null;
-  if(!week && typeof buildWeekAgenda === 'function' && sortSettings){
-    try{ week = buildWeekAgenda(data,sortSettings,7); }
-    catch(_err){ week = null; }
-  }
+  const week = cachedOverviewWeek(data);
   if(!week || !Array.isArray(week.days) || !week.days.length){
     // Fallback: availability only (no placements)
     const days = [];
@@ -663,9 +716,10 @@ function renderOverviewRecent(data){
   renderOverviewStretchLists(data,tally,start,end);
 }
 
-// PURE: label for the around-today window
-function recentRangeLabel(start,end){
-  if(overviewRecentOffset === 0)return 'around today';
+// PURE: label for the around-today window. `aroundToday` defaults to the
+// overview's own offset; the detail strip passes its own flag.
+function recentRangeLabel(start,end,aroundToday = overviewRecentOffset === 0){
+  if(aroundToday)return 'around today';
   const first = new Date(start);
   const last = new Date(end - 86400000);
   const fmt = d => d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
@@ -755,6 +809,165 @@ function collectDayLogRows(key){
   return rows;
 }
 
+// PURE: split journal rows into planned vs done so the day sheet can show
+// them as sibling sections (same pattern as the overview panes).
+function splitDayLogJournal(rows){
+  const planned = [];
+  const activity = [];
+  (rows || []).forEach(row=>{
+    const planLogs = (row.entries || []).filter(isPlanLog);
+    const actualLogs = (row.entries || []).filter(log=>!isPlanLog(log));
+    const scheduled = row.scheduled || [];
+    if(scheduled.length || planLogs.length){
+      planned.push({h:row.h,index:row.index,c:row.c,entries:planLogs,scheduled});
+    }
+    if(actualLogs.length){
+      activity.push({h:row.h,index:row.index,c:row.c,entries:actualLogs,scheduled:[]});
+    }
+  });
+  return {planned,activity};
+}
+
+function overviewIsMinimal(){
+  return typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+}
+
+function dayLogItemRowHtml(row){
+  const meta = dayRowMeta(row);
+  return `<button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
+      <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
+      ${meta ? `<span class="overview-meta">${escapeHtml(meta)}</span>` : ''}
+      <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
+    </button>`;
+}
+
+function dayLogSectionHtml(title,sectionKey,inner){
+  return `<section class="day-logs-section" data-day-section="${escapeHtml(sectionKey)}">
+    <p class="overview-section-title">${escapeHtml(title)}</p>
+    <div class="overview-list day-logs-list">${inner}</div>
+  </section>`;
+}
+
+function dayLogEmptyRowHtml(name,meta){
+  return `<div class="overview-item">
+      <span class="overview-name">${escapeHtml(name)}</span>
+      ${meta ? `<span class="overview-meta">${escapeHtml(meta)}</span>` : ''}
+    </div>`;
+}
+
+function overviewDayAgendaClock(ts){
+  if(typeof compactHomeTime === 'function')return compactHomeTime(ts);
+  if(!Number.isFinite(Number(ts)))return '';
+  return new Date(Number(ts)).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+
+function overviewDayAgendaDuration(row){
+  const mins = Number.isFinite(Number(row && row.chunkMinutes))
+    ? Number(row.chunkMinutes)
+    : Math.max(0,Math.round((Number(row && row.end) - Number(row && row.start)) / 60000));
+  if(typeof compactHomeDuration === 'function')return compactHomeDuration(mins);
+  return mins ? `${Math.round(mins)}m` : '';
+}
+
+function overviewDayAgendaTravelHtml(row){
+  if(overviewIsMinimal())return '';
+  const start = overviewDayAgendaClock(row.start);
+  const mins = Math.max(1,Math.round((Number(row.seconds) || Math.max(0,(Number(row.end) - Number(row.start)) / 1000)) / 60));
+  const dur = typeof compactHomeDuration === 'function' ? compactHomeDuration(mins) : `${mins}m`;
+  const from = row.fromName || 'here';
+  const to = row.toName || 'next';
+  const label = start ? `${start} · ${dur} · ${from} → ${to}` : `${dur} · ${from} → ${to}`;
+  return `<div class="extra-text-line travel-text day-agenda-travel">${escapeHtml(label)}</div>`;
+}
+
+function overviewDayAgendaHabitHtml(row,data){
+  const h = row.h || (row.i != null ? data[row.i] : null);
+  if(!h)return '';
+  const idx = row.i != null ? row.i : data.findIndex(item=>item === h || (item && h.hid && item.hid === h.hid));
+  const c = colors(daysSince(h.lastLog),h.target,h.type);
+  const meta = overviewIsMinimal() ? '' : [overviewDayAgendaClock(row.start),overviewDayAgendaDuration(row)].filter(Boolean).join(' · ');
+  const openAttr = Number.isInteger(idx) && idx >= 0 ? ` data-day-item="${idx}"` : '';
+  const tag = openAttr ? 'button' : 'div';
+  const type = openAttr ? ' type="button"' : '';
+  const chevron = openAttr ? '<i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>' : '';
+  return `<${tag} class="overview-item plan-item day-log-row"${type}${openAttr}>
+      <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
+      ${meta ? `<span class="overview-meta">${escapeHtml(meta)}</span>` : ''}
+      ${chevron}
+    </${tag}>`;
+}
+
+function overviewDayTimedAgendaHtml(week,key,data){
+  const day = (week && week.days || []).find(d=>dateKey(d.dayBase) === key);
+  if(!day)return '';
+  const rows = (day.homeDisplayedTimeline && day.homeDisplayedTimeline.length)
+    ? day.homeDisplayedTimeline
+    : (day.timeline || []);
+  const html = rows.map(row=>{
+    if(row.kind === 'travel')return overviewDayAgendaTravelHtml(row);
+    if(row.kind === 'fill' || row.kind === 'scheduled')return overviewDayAgendaHabitHtml(row,data);
+    return '';
+  }).filter(Boolean).join('');
+  return html;
+}
+
+function overviewDayAgendaIndexSet(week,key,data){
+  const ids = new Set();
+  const day = (week && week.days || []).find(d=>dateKey(d.dayBase) === key);
+  if(!day)return ids;
+  const rows = (day.homeDisplayedTimeline && day.homeDisplayedTimeline.length)
+    ? day.homeDisplayedTimeline
+    : (day.timeline || []);
+  rows.forEach(row=>{
+    if(row.kind !== 'fill' && row.kind !== 'scheduled')return;
+    if(row.i != null)ids.add(row.i);
+    const h = row.h || (row.i != null ? data[row.i] : null);
+    if(h && h.hid)ids.add(h.hid);
+  });
+  return ids;
+}
+
+function overviewDayRhythmPreview(key,data){
+  const dayBase = dayStart(new Date(`${key}T12:00:00`).getTime());
+  const weekday = new Date(dayBase).getDay();
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const items = [];
+  (data || []).forEach((h,i)=>{
+    if(!h)return;
+    if(!matchesOverviewFilters(h))return;
+    if(typeof isWeekCandidate !== 'function' || !isWeekCandidate(h,settings,dayBase,weekday))return;
+    items.push({h,index:i,c:colors(daysSince(h.lastLog),h.target,h.type)});
+  });
+  return items;
+}
+
+function overviewDayRhythmHtml(items){
+  const minimal = overviewIsMinimal();
+  return items.map(row=>`<button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
+      <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
+      ${minimal ? '' : '<span class="overview-meta">fits this day</span>'}
+      <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
+    </button>`).join('');
+}
+
+function overviewDayAgendaSectionHtml(key,data){
+  if(!dayLogsCanPlan(key))return '';
+  const week = weekForOverviewDay(data,key);
+  if(week){
+    const timed = overviewDayTimedAgendaHtml(week,key,data);
+    return dayLogSectionHtml('Agenda','agenda',timed || dayLogEmptyRowHtml('nothing placed',''));
+  }
+  const preview = overviewDayRhythmPreview(key,data);
+  const pending = overviewDayAgendaPending(key);
+  let inner = overviewDayRhythmHtml(preview);
+  if(!inner){
+    inner = pending
+      ? dayLogEmptyRowHtml('fitting this day…','')
+      : dayLogEmptyRowHtml('nothing placed','');
+  }
+  return dayLogSectionHtml('Agenda','agenda',inner);
+}
+
 // PURE: day-scoped meta line for a row
 function dayRowMeta(row){
   const planned = row.entries.filter(isPlanLog);
@@ -835,7 +1048,9 @@ function renderDayLogs(key){
     dayLogsItemIndex = dayLogsScopeIndex;
     if(dayLogsStep === 'list' || dayLogsStep === 'avail')dayLogsStep = 'item';
   }else if(dayLogsStep === 'item'){
-    if(dayLogsItemIndex == null || !collectDayLogRows(key).some(row=>row.index === dayLogsItemIndex)){
+    const data = typeof load === 'function' ? load() : [];
+    const valid = Number.isInteger(dayLogsItemIndex) && data[dayLogsItemIndex];
+    if(!valid){
       dayLogsStep = 'list';
       dayLogsItemIndex = null;
       dayLogsMoving = false;
@@ -853,42 +1068,52 @@ function renderDayLogs(key){
   if(dlSheet)setTimeout(()=>{ dlSheet._sg = 0; dlSheet.classList.remove('scrolling'); },0);
 }
 
-// RENDER: list step — items for the day (overview only)
+// RENDER: list step — agenda / planned / activity (overview only)
 function renderDayLogsListStep(key){
+  const data = typeof load === 'function' ? load() : [];
   const rows = collectDayLogRows(key);
+  const journal = splitDayLogJournal(rows);
   const ts = new Date(`${key}T12:00:00`).getTime();
-  const itemCount = rows.reduce((sum,row)=>sum + row.entries.length + row.scheduled.length,0);
+  const pastDay = key < todayIso();
+  const showAgenda = dayLogsCanPlan(key);
+  if(showAgenda)ensureOverviewWeekForDay(key);
+  const agendaHtml = showAgenda ? overviewDayAgendaSectionHtml(key,data) : '';
+  const week = showAgenda ? weekForOverviewDay(data,key) : null;
+  const onAgenda = week ? overviewDayAgendaIndexSet(week,key,data) : new Set();
+  const plannedRows = onAgenda.size
+    ? journal.planned.filter(row=>!onAgenda.has(row.index) && !(row.h && row.h.hid && onAgenda.has(row.h.hid)))
+    : journal.planned;
+  const plannedInner = plannedRows.map(dayLogItemRowHtml).join('');
+  const activityInner = journal.activity.map(dayLogItemRowHtml).join('');
+  const plannedHtml = plannedInner ? dayLogSectionHtml('Planned','planned',plannedInner) : '';
+  const activityHtml = activityInner ? dayLogSectionHtml('Activity','activity',activityInner) : '';
+  const hasJournal = Boolean(plannedInner || activityInner);
+  const hasAgendaRows = Boolean(showAgenda && !/nothing placed|fitting this day/.test(agendaHtml || ''));
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
-  $('day-logs-sub').textContent = rows.length
-    ? `${itemCount} ${itemCount === 1 ? 'item' : 'items'} · tap an item for actions`
-    : 'Nothing planned or completed yet';
+  $('day-logs-sub').textContent = (hasJournal || hasAgendaRows)
+    ? 'tap an item for actions'
+    : (pastDay ? 'Nothing logged yet' : 'Nothing planned or completed yet');
 
-  const body = $('day-logs-body');
-  const listHtml = rows.length ? `<div class="overview-list day-logs-list">${rows.map(row=>{
-    const meta = dayRowMeta(row);
-    return `
-    <button type="button" class="overview-item plan-item day-log-row" data-day-item="${row.index}">
-      <span class="overview-name">${iconHtml(row.h,row.c)} ${escapeHtml(row.h.name)}</span>
-      <span class="overview-meta">${escapeHtml(meta)}</span>
-      <i class="ti ti-chevron-right day-log-chevron" aria-hidden="true"></i>
-    </button>`;
-  }).join('')}</div>` : `<div class="day-empty-state">
+  const sections = `${agendaHtml}${plannedHtml}${activityHtml}`;
+  const listHtml = sections || `<div class="day-empty-state">
     <span class="day-empty-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
     <b>This day is open</b>
     <small>${dayLogsCanPlan(key)
-      ? 'Add a plan, log something you did, or adjust how much time the planner can use.'
-      : 'Log something you did on this day, or adjust how much time it had.'}</small>
+      ? (dayLogsCanLog(key)
+        ? 'Add a plan, log something you did, or change how much time this day has.'
+        : 'Add a plan for this day. You can pick a time if you want.')
+      : 'Log a missed day, or change how much time this day had.'}</small>
   </div>`;
-  body.innerHTML = `${listHtml}
+  $('day-logs-body').innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
       ${dayLogsCanPlan(key) ? `<button type="button" class="day-quick-action primary" id="day-logs-plan">
         <i class="ti ti-calendar-plus" aria-hidden="true"></i>
-        <span><b>Plan something</b><small>Add an item, with an optional time</small></span>
+        <span><b>Plan something</b><small>Put an item on this day. You can add a time.</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>` : ''}
       ${dayLogsCanLog(key) ? `<button type="button" class="day-quick-action${dayLogsCanPlan(key) ? '' : ' primary'}" id="day-logs-log">
         <i class="ti ti-check" aria-hidden="true"></i>
-        <span><b>Log something</b><small>Mark an item done on this day</small></span>
+        <span><b>${pastDay ? 'Log a missed day' : 'Log something'}</b><small>${pastDay ? 'Add something you forgot to log' : 'Mark an item done on this day'}</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>` : ''}
       <button type="button" class="day-quick-action" id="day-logs-day">
@@ -961,6 +1186,15 @@ function renderDayLogsItemStep(key){
   }
   if(dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving && dayLogsCanPlan(key)){
     actions.push(actionMarkup('id="day-logs-plan"','ti-calendar-plus','Plan this item','Add it to this day'));
+    // Rhythm habits: pin or clear a soft plan-by deadline on a future day.
+    if((h.type === 'keepup' || h.type === 'reduce') && key > todayIso()){
+      const isThisPlanBy = h.planByDate && dateKey(h.planByDate) === key;
+      if(isThisPlanBy){
+        actions.push(actionMarkup(`data-clear-plan-by-day="${idx}"`,'ti-calendar-off','Clear plan-by','Remove the plan-by date for this item'));
+      }else{
+        actions.push(actionMarkup(`data-plan-by-day="${idx}" data-plan-day="${key}"`,'ti-calendar-due','Plan by this day','Set the plan-by date to this day'));
+      }
+    }
   }
   if(!dayLogsScoped() && dayLogsHabitPlannable(h) && !dayLogsMoving && dayLogsCanPlan(key) && !plannedCount){
     actions.push(actionMarkup(`data-plan-day-item="${idx}"`,'ti-calendar-plus','Plan for this day','Add it to this day, with an optional time'));
@@ -1070,7 +1304,7 @@ function renderDayLogsLogStep(key){
   const data = load();
   const ts = new Date(`${key}T12:00:00`).getTime();
   const dateLabel = new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
-  $('day-logs-title').textContent = 'Log something';
+  $('day-logs-title').textContent = key < todayIso() ? 'Log a missed day' : 'Log something';
   $('day-logs-sub').textContent = dateLabel;
 
   const options = dayLogsScoped()
@@ -1092,7 +1326,7 @@ function renderDayLogsLogStep(key){
 
   $('day-logs-body').innerHTML = `
     <div class="day-add-step">
-      <div class="day-step-intro"><i class="ti ti-check" aria-hidden="true"></i><span><b>Mark it done on this day</b><small>Adds a real entry, exactly as if you had tapped it that day.</small></span></div>
+      <div class="day-step-intro"><i class="ti ti-check" aria-hidden="true"></i><span><b>${key < todayIso() ? 'Add a missed log' : 'Mark it done on this day'}</b><small>${key < todayIso() ? 'This counts as if you had done it that day.' : 'Adds a real entry, just like tapping it that day.'}</small></span></div>
       ${pickerHtml}
       <label class="field-label" for="day-log-entry-time">time <span class="field-optional">optional</span></label>
       <input type="time" id="day-log-entry-time" class="time-input" step="900" aria-label="optional entry time" />

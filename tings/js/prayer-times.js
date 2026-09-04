@@ -66,9 +66,15 @@ function normalizePrayerMadhab(value){
 function habitUsesPrayerAnchors(h){
   if(!h)return false;
   const fields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
-  return fields.some(f =>
+  if(fields.some(f =>
     cleanPrayerAnchor(h[f + 'Anchor']) || cleanPrayerAnchor(h[f + 'Anchor2'])
-  );
+  ))return true;
+  const options = typeof normalizeHabitScheduleOptions === 'function'
+    ? normalizeHabitScheduleOptions(h.scheduleOptions) : [];
+  return options.some(option=>['start','end'].some(prefix=>
+    cleanPrayerAnchor(option[prefix + 'Anchor'])
+      || cleanPrayerAnchor(option[prefix + 'Anchor2'])
+  ));
 }
 
 // PURE: build the adhan.CalculationMethod params object from settings. Each
@@ -108,7 +114,9 @@ function habitPrayerLocation(h, settings, contextLocId){
     return {id:'__home_city__', lat:s.prayerCityLat, lng:s.prayerCityLng, name:s.prayerCityName || 'Home city'};
   }
   const registry = normalizeLocationRegistry(s.locations);
-  const ids = normalizeLocationIds(h.locationIds, registry);
+  const ids = typeof habitDisplayLocationIds === 'function'
+    ? habitDisplayLocationIds(h, registry)
+    : normalizeLocationIds(h.locationIds, registry);
   if(ids.length){
     const prefId = primaryPreferredLocationId(h.locationPrefs, ids)
       || normalizePreferredLocation(h.preferredLocationId, ids);

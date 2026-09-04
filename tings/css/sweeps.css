@@ -1,0 +1,274 @@
+/* ── Flat Material surface sweep ───────────────────────────────────────────
+   The rules above retain their component-specific geometry.  This final pass
+   makes their shared chrome follow the surface contract: page → card →
+   recessed control, with no inline outlines or elevation. */
+.app-bar-search input,.nav-search input,
+input:not([type="range"]),select,textarea,
+.time-input,.mini-time-input,.settings-text-input,.mini-select,
+.block-edit-hours input,.free-fit-fields input{
+  border:0;background:var(--field-bg);
+}
+.app-bar-search input:focus-visible,.nav-search input:focus-visible,
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  border-color:transparent;box-shadow:none;
+}
+.btn{border:0;background:var(--bg3);transition:background var(--dur-fast) ease,color var(--dur-fast) ease,opacity var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.btn:active,.btn:hover{background:color-mix(in srgb,var(--bg3) 72%,var(--text) 7%);}
+.btn.primary{background:var(--text);color:var(--bg);}
+.detail-actions .btn,.about-actions .btn,.overview-actions .btn,.settings-actions .btn,.sample-habits-actions .btn{background:var(--bg3);box-shadow:none;}
+.detail-actions .btn.primary,.about-actions .btn.primary,.overview-actions .btn.primary,.settings-actions .btn.primary,.sample-habits-actions .btn.primary{background:var(--text);}
+.detail-head-btn,.link-row-btn,.mini-add,.mini-nav,.detail-head .icon-btn,
+.home-filter-close,.activity-calendar-btn{border:0;background:var(--bg3);}
+.detail-card,.score-card,.pace-card,.month-card,.overview-plan-tip,.overview-item,
+.tune-section,.habit-action,.detail-actions-page .habit-toggle,.schedule-order-block,
+.schedule-link-same-day-row,.sample-habit-row,.settings-block,.settings-group,
+.settings-row,.settings-card,.location-row,.location-result,.travel-card,.timeline-card,
+.blocked-card,.day-availability,.utility-sheet-panel,.travel-minute-field,
+.free-panel-metric,.free-day-strip,.free-gap-row,.free-fit-result,.dropped-item,
+.detail-order-block,.order-link-row,.activity-item,
+.capacity-metric,.free-fit-checker,.breakable-progress,.session-progress{
+  border:0;box-shadow:none;
+}
+.detail-card,.score-card,.pace-card,.month-card,.overview-plan-tip,.overview-item,
+.tune-section,.schedule-order-block,.settings-block,.settings-group,.settings-card,
+.location-row,.utility-sheet-panel,
+.free-panel-metric,.free-day-strip,.free-gap-row,.dropped-item,
+.detail-order-block,.order-link-row,.activity-item,.capacity-metric{background:var(--bg2);}
+.sheet .detail-card,.sheet .score-card,.sheet .pace-card,.sheet .month-card,
+.sheet .overview-item,.sheet .tune-section,.sheet .settings-block,.sheet .settings-group,
+.sheet .settings-card,.sheet .location-row{background:var(--bg2);}
+.travel-card,.sheet .travel-card{background:color-mix(in srgb,var(--teal-bg) 28%,var(--bg));}
+.blocked-card,.sheet .blocked-card{background:color-mix(in srgb,var(--amber-bg) 18%,var(--bg));}
+.timeline-card-icon{border:0;background:var(--bg3);box-shadow:none;}
+.travel-card .timeline-card-icon{background:var(--teal-bg);}
+.blocked-card .timeline-card-icon{background:var(--amber-bg);}
+.score-card.hit,.stat.hit{background:var(--teal-bg);}
+.score-card.warn,.stat.warn{background:var(--amber-bg);}
+.score-card.miss,.stat.miss{background:var(--red-bg);}
+.score-card.hit,.score-card.warn,.score-card.miss,.stat.hit,.stat.warn,.stat.miss{border-color:transparent;}
+.score-facts span,.overview-stat,.detail-stat-chip,.activity-metric,.context-pill,.topic-chip,.schedule-chip,
+.monthday-chip,.home-active-filter,.topic-filter,.dropped-pill,.free-pill{border:0;background:var(--bg3);}
+.topic-chip.on,.schedule-chip.on,.monthday-chip.on,.topic-filter.on{background:var(--text);color:var(--bg);}
+.topic-chip-add{border:0;background:var(--bg3);}
+.home-active-filter.location-filter,.topic-filter.location-filter{background:var(--teal-bg);}
+.home-active-filter.topic-active{background:var(--purple-bg);}
+.home-filter-trigger{border:0;background:var(--bg3);box-shadow:none;}
+.home-filter-option{border:0;background:var(--bg3);transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.home-filter-option.on{border-color:transparent;background:color-mix(in srgb,var(--teal-bg) 60%,var(--bg3));}
+.home-filter-option.topic.on{border-color:transparent;background:color-mix(in srgb,var(--purple-bg) 60%,var(--bg3));}
+.home-filter-sheet-actions,.capacity-section,.slipped-section-head:not(:first-child),
+.schedule-link-editor,.detail-time-endpoints,.detail-time-endpoints > .time-endpoint + .time-endpoint,
+.travel-edit-context,.utility-panel-hint,.about-collapse-body{border:0;}
+.capacity-section{margin-top:22px;padding-top:0;}
+.capacity-agenda-row,.capacity-trace-item,.capacity-gap,.capacity-unplaced-item{border:0;padding-top:10px;padding-bottom:10px;background:var(--bg2);border-radius:var(--radius-sm);}
+.capacity-agenda,.capacity-gaps,.capacity-trace,.capacity-unplaced{display:flex;flex-direction:column;gap:6px;}
+.overview-insight,.overview-sheet .overview-insight{border:0;background:var(--bg2);}
+.overview-card{box-shadow:none;}
+.overview-range-seg,.overview-detail-block{border:0;box-shadow:none;background:var(--bg3);}
+.overview-detail-block{padding:10px;border-radius:18px;}
+.overview-detail-block .overview-item{border-radius:8px;}
+.overview-range-option.on{background:var(--bg);box-shadow:none;}
+.overview-card .cal-day.today{background:var(--purple-bg);color:var(--purple-text);box-shadow:none;}
+.overview-card .cal-day.selected{background:var(--text);color:var(--bg);box-shadow:none;}
+.overview-open-chip{border:0;background:var(--bg3);transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);}
+.overview-open-chip.open{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--teal-bg) 62%,var(--bg3));}
+.overview-open-chip.mid{border-color:transparent;background:var(--bg3);}
+.overview-open-chip.tight{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--amber-bg) 62%,var(--bg3));}
+.overview-open-chip.closed{border-color:transparent;box-shadow:none;background:color-mix(in srgb,var(--red-bg) 62%,var(--bg3));}
+.seg{border:0;background:var(--field-bg);}
+.seg-opt,.preset-seg .seg-opt{border:0;}
+/* Active option inverts (text-on-bg) like the active nav icon — a white pill
+   on a white sheet reads as a hole even with a shadow; inversion is unambiguous
+   in both themes. Priority segs keep their accent edge bar. */
+.seg-opt.on{background:var(--text);color:var(--bg);font-weight:600;box-shadow:none;}
+.preset-seg .seg-opt{border-right:0;}
+.picker-map-crosshair-ring{border:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--teal-icon) 85%,#fff),0 0 0 3px color-mix(in srgb,#000 25%,transparent);}
+.free-day-seg:is(button)::after{border:0;box-shadow:inset 0 0 0 1.5px transparent;}
+.free-day-seg:is(button):focus-visible::after{box-shadow:inset 0 0 0 1.5px var(--teal-icon);}
+.free-day-track,.free-day-legend i.busy,.free-day-legend i.open{border:0;}
+.location-chip,.presence-filter{border:0;box-shadow:none;}
+.location-chip.gps-matched,.topic-chip.gps-matched,
+.location-chip.on.preferred,.location-chip.on.pref-high,.location-chip.on.pref-little{box-shadow:none;}
+.location-chip.on.pref-little{background:color-mix(in srgb,var(--teal-icon) 72%,var(--bg3));}
+.location-results{padding:6px;border:0;border-radius:14px;background:var(--bg2);}
+.location-result{border:0;border-radius:8px;background:var(--bg);}
+.home-filter-option-icon{border-radius:6px;}
+.picker-map{border:0;}
+.presence-signal{border:0;box-shadow:none;}
+.calendar-filter-sheet .home-filter-option.on{border:0;}
+.app-bar-search input,.nav-search input{border:0;background:var(--bg3);box-shadow:none;}
+.swipe-actions .swipe-action{background:transparent;}
+.breakable-progress,.session-progress{border-radius:10px;}
+.about-hero{border:0;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));}
+.about-hero img{box-shadow:none;}
+.about-sheet .about-actions{border:0;background:var(--bg2);}
+.info-tooltip{border:0;background:var(--bg);box-shadow:var(--floating-shadow);}
+.ting-card.timer-running{border-color:transparent;box-shadow:inset 3px 0 0 var(--teal-icon);}
+.breakable-scrub-hint{border-left:0;}
+.session-progress.is-auto,.breakable-progress.is-scrubbing{border-color:transparent;}
+#toast{box-shadow:var(--floating-shadow);}
+#action-toast{box-shadow:var(--floating-shadow);}
+.doing-now-link-row:empty{display:none;}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODERN POLISH PASS — subtle glass/glow accents + home quieting.
+   Builds on the flat surface sweep above; nothing here reintroduces borders
+   on component chrome. Two goals:
+   1. Quiet the home feed: meta pills lose their accent fills (semantic color
+      survives only in the small status/icon dot), trail dots and the priority
+      dot step down in chroma/size, heavy font weights relax by one notch.
+      Hard-due keeps a faint red tint — it is a genuine alert, not decoration.
+   2. Finish border removal on the components the first sweep missed, with
+      focus-visible teal rings preserved for keyboard users.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Home quieting ────────────────────────────────────────────────────────── */
+/* Ghost pills: neutral fill + neutral text; the leading icon keeps its
+   semantic color as the single chromatic signal. agenda-lead (time next to
+   the name) already renders transparent and keeps its colored text. */
+.ting-meta .context-pill{
+  background:var(--bg2);color:var(--text2);border:0;font-weight:580;
+}
+.ting-meta .context-pill:is(.plan,.agenda-suggested,.agenda-later,.agenda-closing,
+.due,.scheduled,.schedule,.pin){color:var(--text2);}
+.ting-meta .context-pill.due.hard{
+  color:var(--red-text);
+  background:color-mix(in srgb,var(--red-bg) 55%,var(--bg2));
+}
+.agenda-lead{font-weight:600;}
+/* Day headers mirror the install-guide 'install app' text: bold (800), wide
+   letter-spacing (.09em), uppercase, and teal color. Open/missed pills still
+   carry their own semantic tones (teal open, amber missed) but share the same
+   800 / .09em / uppercase typography. */
+.section-header{font-weight:800;}
+.dropped-pill,.free-pill{font-weight:800;letter-spacing:0.09em;}
+/* Trail: same hit/warn/miss vocabulary, mixed toward the page tone so a full
+   week of dots no longer out-shouts the card content. */
+.trail-dot.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
+.trail-dot.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
+.trail-dot.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
+.trail-dot.today{box-shadow:0 0 0 0.5px var(--border2);}
+.trail-week.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
+.trail-week.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
+.trail-week.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
+/* Priority dot: smaller, softer — a whisper, not a third color signal. */
+.ting-card::before{width:4.5px;height:4.5px;opacity:0.62;}
+/* Order-link chips inside cards: one more step toward neutral. */
+.ting-meta .order-mark{opacity:0.78;}
+
+/* ── Add-sheet field legibility ─────────────────────────────────────────────
+   Number-stepper boxes (.range-value) and the emoji circle kept their old
+   border + --bg/--bg2 fills, which vanish on a white sheet. Give them the
+   same recessed --field-bg fill as every other borderless field, and make
+   the name input match the 44px emoji circle so the row aligns. */
+.range-value{border:0;background:var(--field-bg);}
+.ting-emoji-preview{background:var(--field-bg);}
+#ting-message{min-height:44px;}
+
+/* ── Glass fallbacks ──────────────────────────────────────────────────────── */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .bottom-nav{background:var(--bg);}
+}
+@media (prefers-reduced-transparency:reduce){
+  .bottom-nav{background:var(--bg);}
+}
+
+/* ── Border sweep, round two (components the first pass missed) ──────────── */
+.travel-edit-row .icon-btn,
+.day-availability-preset,
+.time-offset-sign-btn,
+.mini-text-btn,
+.day-quick-action,
+.day-item-action,
+.ting-emoji-preview,
+.generic-emoji-chip,
+.stat,
+.monthday-disclosure-head,
+.plan-field-row,
+.blocked-time-row,
+.location-access-row,
+.day-scoped-habit,
+.crown-dial,
+.about-block,
+.setting-toggle,
+.calendar-pdf-preview,
+.reset-confirm,
+.day-empty-state,
+.day-move-inline,
+.day-availability-hero,
+.timer-auto-stop-field,
+.order-mark,
+.home-active-filter,
+.switch-ui{border:0;}
+/* Rows that relied on their border for separation get a tone step instead. */
+.plan-field-row,.blocked-time-row,.location-access-row,
+.day-scoped-habit,.about-block,.setting-toggle,.calendar-pdf-preview,
+.timer-auto-stop-field{background:var(--bg2);}
+/* Focus rings are keyboard-only and neutral — the old teal halo painted on
+   tap and read as an asymmetric green glow (clipped by overflow containers).
+   See the keyboard-only indicator at the end of this file. */
+.time-offset-sign-btn:focus-visible,
+.mini-text-btn:focus-visible,
+.day-quick-action:focus-visible,
+.day-item-action:focus-visible,
+.day-availability-preset:focus-visible,
+.home-active-filter:focus-visible,
+.travel-edit-row .icon-btn:focus-visible{
+  box-shadow:none;
+}
+
+/* ── Minimal-mode detail sheet ──────────────────────────────────────────────
+   #detail-minimal-effort is a 2-column planning GRID, but minimal mode moves
+   three differently-shaped children into it (duration field, the task due row,
+   the due hint). As grid columns the due row overflows the sheet and the hint
+   wraps into a ~50px skyscraper. Stack them vertically instead, like the other
+   single-column rows (planning-grid-single). */
+body.minimal-mode #detail-minimal-effort{
+  display:flex;flex-direction:column;gap:10px;margin:0 0 10px;
+}
+body.minimal-mode #detail-minimal-effort > *{margin:0;}
+/* Stacked pages read as separate sections — a small gap between the cards. */
+body.minimal-mode .detail-sheet > .detail-pager{gap:12px;}
+body.minimal-mode .detail-sheet > .detail-pager > .detail-page{margin-bottom:0;}
+/* Header gets a touch more separation from the now-stacked content. */
+body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
+
+/* ── Detail-header emoji tile ───────────────────────────────────────────────
+   The detail head is a .ting-card, so the home-card pulse-tile pass (68px,
+   radius card-radius − inset, 39px emoji) wins the cascade over the old
+   .detail-mark circle rules and the tile renders as a squashed 68×39 blob.
+   Scope a proper tile here: home-card geometry scaled to the header row,
+   tone-inverted (--bg tile on the --bg2 head card, or the habit's emoji bg). */
+.detail-head .detail-mark{
+  align-self:center;width:56px;min-width:56px;height:56px;
+  border-radius:14px;
+}
+.detail-head .detail-mark.emoji-pulse{
+  border-radius:14px;
+  background:var(--emoji-bg,var(--bg)) !important;
+}
+.detail-head .detail-mark .emoji-mark,
+.detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:30px;line-height:1;}
+.detail-head .detail-mark .ti{font-size:28px;}
+/* Keep the corner tick badge — it signals that tapping the tile logs the
+   habit/task. Same look as the home card; the header padding gives it room. */
+.detail-head .detail-mark{overflow:visible;}
+.detail-head .detail-mark::before,
+.detail-head .detail-mark::after{right:-4px;bottom:-4px;width:19px;height:19px;}
+
+/* ── Keyboard-only focus indicator ──────────────────────────────────────────
+   Touch taps no longer paint a ring (the old teal halo was clipped by
+   overflow containers and read as an asymmetric green glow). Keyboard users
+   still get a symmetric neutral outline so focus stays visible. */
+@media (hover:hover) and (pointer:fine){
+   input:focus-visible,select:focus-visible,textarea:focus-visible,
+   .home-filter-trigger:focus-visible,.home-active-filter:focus-visible,
+   .home-filter-option:focus-visible,.generic-emoji-chip:focus-visible,
+   .ting-emoji-preview:focus-visible,.time-offset-sign-btn:focus-visible,
+    .mini-text-btn:focus-visible,.day-quick-action:focus-visible,
+    .day-item-action:focus-visible,.day-availability-preset:focus-visible,
+    .travel-edit-row .icon-btn:focus-visible,
+    .settings-sheet .setting-switch:focus-visible .switch-ui{
+     outline:2px solid var(--text);outline-offset:2px;
+    }
+}

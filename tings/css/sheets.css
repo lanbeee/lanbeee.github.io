@@ -1,0 +1,215 @@
+.sheet-wrap{
+  display:flex;position:fixed;inset:0;
+  background:rgba(0,0,0,0.42);z-index:100;
+  align-items:flex-end;justify-content:center;
+  -webkit-tap-highlight-color:transparent;
+  padding-top:env(safe-area-inset-top);
+  opacity:0;pointer-events:none;
+  transition:opacity var(--dur-med) ease;
+}
+.sheet-wrap.open{opacity:1;pointer-events:auto;}
+/* Stacking tiers so a drilled-in detail sheet always paints above the page
+   sheet it was opened from (overview/today), while transient modals that can
+   open from detail (snooze/activity) and the day drill-down stay on top. */
+#detail-sheet{z-index:110;}
+#privacy-sheet{z-index:105;}
+#value-log-sheet{z-index:115;}
+#snooze-sheet,#activity-sheet,#day-capacity-sheet,#day-logs-sheet{z-index:120;}
+.sheet{
+  background:var(--bg);width:100%;max-width:480px;
+  border-radius:20px 20px 0 0;padding:20px 18px calc(36px + env(safe-area-inset-bottom));
+  max-height:calc(100dvh - env(safe-area-inset-top));
+  overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  transform:translateY(16px) scale(0.985);
+  transition:transform var(--dur-slow) var(--ease-snappy),opacity var(--dur-med) ease;
+  opacity:0;
+  will-change:transform,opacity;
+}
+.sheet-wrap.open .sheet{transform:translateY(0) scale(1);opacity:1;}
+#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet{
+  align-items:stretch;background:rgba(0,0,0,0.18);padding-top:0;
+}
+body[data-pane-count="2"] #add-sheet,
+body[data-pane-count="3"] #add-sheet,
+body[data-pane-count="2"] #about-sheet,
+body[data-pane-count="3"] #about-sheet,
+body[data-pane-count="2"] #privacy-sheet,
+body[data-pane-count="3"] #privacy-sheet,
+body[data-pane-count="2"] #detail-sheet,
+body[data-pane-count="3"] #detail-sheet,
+body[data-pane-count="2"] #overview-sheet,
+body[data-pane-count="3"] #overview-sheet,
+body[data-pane-count="2"] #settings-sheet,
+body[data-pane-count="3"] #settings-sheet,
+body[data-pane-count="2"] #sample-habits-sheet,
+body[data-pane-count="3"] #sample-habits-sheet{
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,0.36);
+  padding:24px;
+}
+.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet{
+  border-radius:0;min-height:100dvh;max-height:100dvh;
+  padding-top:calc(22px + env(safe-area-inset-top));
+  padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + env(safe-area-inset-bottom));
+  transform:none;opacity:1;
+  transition:none;
+  will-change:auto;
+}
+.add-sheet{
+  padding-bottom:calc(88px + var(--keyboard-lift) + env(safe-area-inset-bottom));
+  position:relative;
+}
+.about-sheet,.privacy-sheet,.overview-sheet,.sample-habits-sheet{
+  /* These pages all provide their own top close control or an end-of-page
+     action. Their footer belongs in the document flow so it never covers a
+     calendar cell, sample row, or expanded help block on a short screen. */
+  padding-bottom:calc(18px + env(safe-area-inset-bottom));
+}
+.settings-sheet{
+  /* Give Settings one dedicated scrolling region and a real footer. The old
+     fixed Done button floated over whichever toggle happened to be beneath
+     it at 320x568 or under browser zoom. */
+  display:flex;flex-direction:column;overflow:hidden;
+  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+}
+.settings-sheet > .sheet-title,
+.settings-sheet > .about-copy{flex:0 0 auto;}
+.settings-sheet > .settings-stack{
+  flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;
+  overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;padding:1px 2px 6px;margin-bottom:0;
+}
+.settings-sheet > .settings-stack > *{
+  /* A scroll container must overflow; its flex children must not shrink to
+     collectively fit the viewport. At high browser zoom, the default
+     flex-shrink:1 compressed every settings card and clipped its contents. */
+  flex:0 0 auto;
+}
+.settings-sheet > .settings-stack::-webkit-scrollbar{display:none;}
+.detail-sheet{
+  padding-top:0;
+  padding-bottom:calc(var(--nav-bottom) + 58px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sheet-wrap.open .add-sheet,
+.sheet-wrap.open .about-sheet,
+.sheet-wrap.open .detail-sheet,
+.sheet-wrap.open .overview-sheet,
+.sheet-wrap.open .settings-sheet,
+.sheet-wrap.open .sample-habits-sheet{transform:none;opacity:1;}
+
+body[data-pane-count="2"] .sheet-wrap,
+body[data-pane-count="3"] .sheet-wrap{
+  /* The ID-specific rules above handle align-items etc. */
+}
+body[data-pane-count="2"] .sheet,
+body[data-pane-count="3"] .sheet{
+  width:min(var(--sheet-max-width),calc(100vw - 48px));
+  max-width:var(--sheet-max-width);
+  max-height:calc(100dvh - 48px);
+  border-radius:var(--sheet-radius);
+  padding:24px 24px calc(24px + env(safe-area-inset-bottom));
+  transform:translateY(8px) scale(0.985);
+}
+body[data-pane-count="2"] .sheet-wrap.open .sheet,
+body[data-pane-count="3"] .sheet-wrap.open .sheet{
+  transform:translateY(0) scale(1);
+}
+body[data-pane-count="2"] .add-sheet,
+body[data-pane-count="2"] .about-sheet,
+body[data-pane-count="2"] .detail-sheet,
+body[data-pane-count="2"] .overview-sheet,
+body[data-pane-count="2"] .settings-sheet,
+body[data-pane-count="2"] .sample-habits-sheet,
+body[data-pane-count="3"] .add-sheet,
+body[data-pane-count="3"] .about-sheet,
+body[data-pane-count="3"] .detail-sheet,
+body[data-pane-count="3"] .overview-sheet,
+body[data-pane-count="3"] .settings-sheet,
+body[data-pane-count="3"] .sample-habits-sheet{
+  min-height:0;
+  max-height:calc(100dvh - 48px);
+  padding-top:24px;
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  border-radius:var(--sheet-radius);
+  transform:none;
+}
+body[data-pane-count="2"] .add-sheet,
+body[data-pane-count="3"] .add-sheet{
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+}
+
+.add-sheet .add-actions{
+  position:fixed;
+  left:50%;
+  bottom:calc(14px + var(--keyboard-lift) + env(safe-area-inset-bottom));
+  width:min(calc(100% - 36px),444px);
+  transform:translateX(-50%);
+  margin:0;
+  padding:8px;
+  background:var(--bg);
+  border-radius:calc(var(--radius-sm) + 4px);
+  box-shadow:var(--floating-shadow);
+  z-index:160;
+}
+body[data-pane-count="2"] .add-sheet .add-actions,
+body[data-pane-count="3"] .add-sheet .add-actions{
+  position:static;
+  left:auto;bottom:auto;transform:none;
+  width:auto;margin-top:8px;padding:0;
+  background:transparent;border:0;border-radius:0;
+  box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+
+.about-sheet .about-actions,.detail-sheet .detail-actions,.overview-sheet .overview-actions,.settings-sheet .settings-actions,.sample-habits-sheet .sample-habits-actions{
+  position:fixed;
+  left:50%;
+  bottom:calc(var(--nav-bottom) + env(safe-area-inset-bottom));
+  width:min(calc(100% - 36px),444px);
+  transform:translateX(-50%);
+  margin:0;
+  padding:0;
+  background:transparent;
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+  z-index:160;
+}
+body[data-pane-count="2"] .about-sheet .about-actions,
+body[data-pane-count="3"] .about-sheet .about-actions,
+body[data-pane-count="2"] .detail-sheet .detail-actions,
+body[data-pane-count="3"] .detail-sheet .detail-actions,
+body[data-pane-count="2"] .overview-sheet .overview-actions,
+body[data-pane-count="3"] .overview-sheet .overview-actions,
+body[data-pane-count="2"] .settings-sheet .settings-actions,
+body[data-pane-count="3"] .settings-sheet .settings-actions,
+body[data-pane-count="2"] .sample-habits-sheet .sample-habits-actions,
+body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
+  position:static;left:auto;bottom:auto;transform:none;
+  width:auto;margin-top:12px;padding:0;background:transparent;
+  border:0;border-radius:0;box-shadow:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+/* Long, scrollable page sheets must not share the floating mobile action
+   treatment used by the compact detail/add flows. */
+.about-sheet .about-actions,
+.overview-sheet .overview-actions,
+.sample-habits-sheet .sample-habits-actions,
+.settings-sheet .settings-actions{
+  position:static;left:auto;bottom:auto;transform:none;
+  width:auto;flex:0 0 auto;margin-top:10px;padding:0;
+  background:transparent;border:0;border-radius:0;box-shadow:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+.detail-sheet .tune-actions{display:none;}
+.detail-sheet.tune-dirty #detail-cool-row{display:none;}
+.detail-sheet.tune-dirty .tune-actions{display:flex;}
+.sheet-title{font-size:calc(15px * var(--font-scale));font-weight:500;margin-bottom:16px;color:var(--text);}
+.sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
+.sheet-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
+
