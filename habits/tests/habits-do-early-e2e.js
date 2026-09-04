@@ -146,7 +146,7 @@ function atDay(offset,hour = 12,minute = 0){
 
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'how it works' }).click();
+  await page.getByRole('button', { name: 'about Tings', exact: true }).click();
   await page.locator('#open-sample-habits').click();
   await page.evaluate(() => {
     updateSortSetting({ homeCityName:'New York, United States', homeCityLat:40.7128, homeCityLng:-74.0060 }, { renderNow:true, sync:true });

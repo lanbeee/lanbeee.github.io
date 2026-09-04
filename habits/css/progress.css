@@ -121,7 +121,9 @@
 
 @media (max-height:680px){
   .about-copy{font-size:13px;margin-bottom:10px;}
-  .about-stack{gap:6px;}
+  .about-stack,.about-hub{gap:6px;}
+  .about-hub-group{padding-top:8px;padding-bottom:6px;}
+  .about-hub-label{font-size:12px;margin-bottom:6px;}
   .about-block{padding-top:8px;padding-bottom:8px;}
   .about-label{font-size:12px;}
   .about-summary,.about-collapse-body p{font-size:11.5px;line-height:1.28;}

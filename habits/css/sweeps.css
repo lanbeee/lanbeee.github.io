@@ -102,6 +102,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .about-hero{border:0;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));}
 .about-hero img{box-shadow:none;}
 .about-sheet .about-actions{border:0;background:var(--bg2);}
+.about-hub-group,.about-sheet .about-hub .about-hub-foot{border:0;background:var(--bg2);}
+.about-sheet .about-hub .about-actions{background:transparent;}
 .info-tooltip{border:0;background:var(--bg);box-shadow:var(--floating-shadow);}
 .ting-card.timer-running{border-color:transparent;box-shadow:inset 3px 0 0 var(--teal-icon);}
 .breakable-scrub-hint{border-left:0;}

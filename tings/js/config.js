@@ -16,6 +16,8 @@ const SHARE_WORKER_URL = typeof location !== 'undefined' && ['localhost','127.0.
 const SHARE_STATE_KEY = 'tings_share_v1';
 const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v3';
 const AGENDA_SHARE_DAYS = 2;
+// Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
+const FEEDBACK_FORM_URL = 'https://forms.gle/KNnXKCH55VfzCNeo8';
 
 // ── Locations / travel-time ──
 const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())
@@ -297,6 +299,10 @@ const $ = id => document.getElementById(id);
 // in push-client.js: the 'YOUR_' prefix is the disabled sentinel.
 function mapsConfigured(){
   return Boolean(MAPS_API_KEY) && !MAPS_API_KEY.includes('YOUR_');
+}
+
+function feedbackFormConfigured(){
+  return Boolean(FEEDBACK_FORM_URL) && !String(FEEDBACK_FORM_URL).includes('YOUR_') && /^https:\/\//i.test(FEEDBACK_FORM_URL);
 }
 
 // "Is the layout wide enough to mount sheets in side panes?"  True whenever

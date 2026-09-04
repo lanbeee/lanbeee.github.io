@@ -122,6 +122,7 @@ Everything below is covered in this skeleton:
 - Push notifications: worker URL, VAPID key
 - Calendar: Microsoft Graph, Google Calendar
 - Prayer times: adhan library methods
+- Send feedback: Google Forms (`FEEDBACK_FORM_URL`)
 
 ---
 
@@ -137,7 +138,7 @@ Everything below is covered in this skeleton:
 - **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
 - **Capacity-based scheduling:** availabilityMinutes - durationMinutes
 - **Progressive urgency:** No hard deadlines by default, with the ability to add.
-- **Privacy-first:** All data is stored in this browser. There is no Tings account. A few opt-in features can send something outward (shared display, share item, address search); those controls carry a cloud-up mark. See About → privacy.
+- **Privacy-first:** All data is stored in this browser. There is no Tings account. A few opt-in features can send something outward (shared display, share item, address search, send feedback); those controls carry a cloud-up mark. See About → privacy.
 
 ### 1.3 Who is Tings For? 👤
 - People managing recurring routines
@@ -796,6 +797,7 @@ Placed on:
 - Locations / city / address search (Photon + Nominatim)
 - Travel time estimate (OSRM)
 - Location map picker (OpenStreetMap tiles)
+- About → send feedback (Google Form in a new browser tab)
 
 ### 5.15 Status Display 👤
 When `showStatusOnCards: true`:
@@ -1749,16 +1751,20 @@ Toasts appear after:
   every chapter seen).
 
 ### About and privacy 👤
-- Tapping the Tings wordmark opens **About**: a short Learn / Private pair, plus
-  install (hidden when the app is already installed), guided start, advanced
-  coach, help, samples, settings, and **privacy**.
+- Tapping the Tings wordmark opens **About**: a short intro, then grouped
+  destinations — **help** (guided start, advanced coach, help & docs) and
+  **this device** (install, hidden when already installed; samples; settings) —
+  plus **send feedback** (hidden until `FEEDBACK_FORM_URL` is set; opens a
+  Google Form in a new browser tab) and **privacy**. Help & docs is the written
+  reference; Privacy is the full explainer.
 - **Privacy** explains that Tings is open source, with no account; habits live
   in this browser’s `localStorage`; the site owner cannot see them. It lists
   third-party services (Photon, Nominatim, OSRM, OpenStreetMap tiles, jsDelivr /
   unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
-  and the encrypted Cloudflare relay used by shared display and
-  share item. Map lookups are described as a narrower request than embedding
-  Google Maps or Apple Maps.
+  the encrypted Cloudflare relay used by shared display and
+  share item, and optional send feedback via Google Forms. Map lookups are
+  described as a narrower request than embedding Google Maps or Apple Maps.
+  Send feedback does not attach the habit list; answers go to Google.
 - Settings → backup also links to Privacy.
 
 ---
@@ -2323,7 +2329,7 @@ list in `index.html`, the planner worker's `importScripts`, and `sw.js`
 Main sheet containers:
 - `#add-sheet` - New habit creation
 - `#detail-sheet` - Habit editing
-- `#about-sheet` - About / how it works
+- `#about-sheet` - About hub (help, this device, privacy)
 - `#privacy-sheet` - Privacy explainer
 - Today sheet (added dynamically)
 - Settings sections
@@ -2742,6 +2748,11 @@ Same agenda logic, but simplified display:
 | Service | URL | What leaves the device |
 |---------|-----|------------------------|
 | Cloudflare share Worker | `habits-share.contactnabilkhan.workers.dev` | Encrypted item shares, shared-display snapshots, and encrypted display completion events. Ciphertext only; keys stay on devices. |
+
+### 27.6 Send feedback 👤👨‍💻
+| Service | URL | What leaves the device |
+|---------|-----|------------------------|
+| Google Forms | `FEEDBACK_FORM_URL` in `js/config.js` | Whatever the person types in the form. Tings attaches nothing from the habit list. Hidden until the URL is set (no `YOUR_` prefix). |
 
 ---
 

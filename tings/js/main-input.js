@@ -127,8 +127,24 @@ function syncInstallGuideVisibility(){
   btn.hidden = installed;
   btn.setAttribute('aria-hidden', installed ? 'true' : 'false');
 }
+function syncFeedbackLink(){
+  const row = $('about-feedback-row');
+  const link = $('open-feedback');
+  const on = typeof feedbackFormConfigured === 'function' && feedbackFormConfigured();
+  if(row){
+    row.hidden = !on;
+    row.setAttribute('aria-hidden', on ? 'false' : 'true');
+  }
+  if(link){
+    link.hidden = !on;
+    link.setAttribute('aria-hidden', on ? 'false' : 'true');
+    if(on)link.href = FEEDBACK_FORM_URL;
+  }
+}
 window.syncInstallGuideVisibility = syncInstallGuideVisibility;
+window.syncFeedbackLink = syncFeedbackLink;
 syncInstallGuideVisibility();
+syncFeedbackLink();
 try{
   window.matchMedia('(display-mode: standalone)')?.addEventListener?.('change', syncInstallGuideVisibility);
 }catch(_){}
@@ -232,6 +248,9 @@ $('open-docs')?.addEventListener('click',()=>{
   // an installed PWA — window.open would keep the docs in the standalone app).
   closeSheet('about-sheet');
   closeSheet('sample-habits-sheet');
+});
+$('open-feedback')?.addEventListener('click',()=>{
+  closeSheet('about-sheet');
 });
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});

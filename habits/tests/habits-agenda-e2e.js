@@ -18,7 +18,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   if (await page.locator('#bar-open-today').count()) throw new Error('agenda bar button still exists');
   if (await page.locator('#home-agenda').count()) throw new Error('duplicate home agenda section still exists');
 
-  await page.getByRole('button', { name: 'how it works' }).click();
+  await page.getByRole('button', { name: 'about Tings', exact: true }).click();
   await page.locator('#open-sample-habits').click();
   await page.evaluate(() => {
     // This suite validates the full (non-minimal) card surface — agenda-lead
@@ -35,7 +35,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.locator('#detail-cool').click();
   await page.waitForTimeout(150);
 
-  await page.getByRole('button', { name: 'how it works' }).click();
+  await page.getByRole('button', { name: 'about Tings', exact: true }).click();
   await page.getByRole('button', { name: 'settings', exact: true }).click();
   await page.locator('#settings-blocked-head').click();
   await page.waitForSelector('#blocked-time-list');

@@ -300,13 +300,20 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .habit-action-with-leave .habit-action{flex:1;min-width:0;}
 .habit-action-with-leave .leave-btn{align-self:center;flex-shrink:0;z-index:1;}
 .habit-action-with-leave .leave-tooltip{left:auto;right:0;}
-.about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 18px;padding:16px;border-radius:20px;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));border:0;}
+.about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 12px;padding:16px;border-radius:20px;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));border:0;}
 .about-hero img{width:64px;height:64px;border-radius:18px;box-shadow:none;}
 .about-hero > div{padding-right:24px;}
 .about-hero-close{position:absolute;right:7px;top:7px;width:40px;height:40px;background:color-mix(in srgb,var(--bg) 76%,transparent);border-color:color-mix(in srgb,var(--teal-icon) 20%,var(--border));}
 .sheet-eyebrow{display:block;margin-bottom:3px;color:var(--teal-text);font-size:9px;font-weight:790;letter-spacing:0.095em;text-transform:uppercase;}
 .about-hero .sheet-title{margin:0 0 5px;font-size:25px;font-weight:760;letter-spacing:-0.035em;}
 .about-hero .about-copy{margin:0;font-size:12px;line-height:1.4;}
+.about-hub{display:flex;flex-direction:column;gap:8px;}
+.about-hub-group{
+  padding:10px 8px 8px;border-radius:18px;background:var(--bg);
+}
+.about-hub-label{
+  display:block;margin:0 8px 8px;color:var(--text);font-size:13px;font-weight:650;
+}
 .about-stack{gap:8px;}
 .about-block{padding:0;border-radius:15px;background:var(--bg);overflow:hidden;}
 .about-block.calm-block{background:var(--bg);}
@@ -322,8 +329,29 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
   background:var(--bg);border:0.5px solid var(--border);border-radius:18px;
   box-shadow:none;
 }
+.about-sheet .about-hub .about-actions{
+  margin-top:0;padding:0;background:transparent;border:0;border-radius:0;
+}
+.about-sheet .about-hub .about-hub-foot{
+  padding:8px;background:var(--bg);border:0.5px solid var(--border);border-radius:18px;
+}
+.about-sheet .about-hub-group .about-actions:has(#open-install-guide[hidden]){
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
 .about-sheet .about-actions .btn{min-width:0;min-height:44px;padding:7px 5px;display:flex;align-items:center;justify-content:center;gap:4px;font-size:10.5px;white-space:nowrap;}
 .about-sheet .about-actions .btn i{font-size:14px;}
+.about-sheet .about-actions .about-feedback-row{
+  grid-column:1 / -1;display:flex;align-items:center;gap:6px;
+  position:relative;
+}
+.about-sheet .about-actions .about-feedback-row[hidden]{display:none;}
+.about-sheet .about-actions .about-feedback-row .btn{flex:1;min-height:48px;font-size:12px;}
+.about-sheet .about-actions .about-feedback-row .leave-btn{flex-shrink:0;z-index:1;}
+.about-sheet .about-actions .about-feedback-row > span{position:static;}
+.about-sheet .about-hub .about-hub-foot{overflow:visible;}
+.about-sheet .about-actions .about-feedback-row .leave-tooltip{
+  top:auto;bottom:calc(100% + 6px);left:0;right:0;width:auto;max-width:none;z-index:30;
+}
 .about-sheet .about-actions #open-privacy,
 .about-sheet .about-actions #about-close,
 .privacy-sheet .about-actions #privacy-close{grid-column:1 / -1;min-height:48px;font-size:12px;}

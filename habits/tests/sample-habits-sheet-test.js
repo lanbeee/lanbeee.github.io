@@ -44,48 +44,39 @@ async function launchBrowser(){
   await page.reload({ waitUntil:'load' });
   await page.waitForTimeout(400);
 
-  console.log('\n[A] About footer + expandable cards');
+  console.log('\n[A] About hub + destinations');
   await page.locator('#open-about').click();
   await page.waitForSelector('#about-sheet.open');
   const aboutBtns = await page.evaluate(() => {
-    const blocks = [...document.querySelectorAll('#about-sheet .about-block')];
-    const labels = blocks.map(b => b.querySelector('.about-label')?.textContent || '');
-    const collapsed = blocks.every(b => {
-      const head = b.querySelector('.about-collapse-head');
-      const body = b.querySelector('.about-collapse-body');
-      return head?.getAttribute('aria-expanded') === 'false' && body?.hidden === true;
-    });
+    const labels = [...document.querySelectorAll('#about-sheet .about-hub-label')].map(el => (el.textContent || '').trim());
+    const blocks = document.querySelectorAll('#about-sheet .about-block').length;
+    const helpBtns = [...document.querySelectorAll('#about-sheet .about-hub-group:first-of-type .btn')].map(el => (el.textContent || '').replace(/\s+/g,' ').trim());
+    const deviceBtns = [...document.querySelectorAll('#about-sheet .about-hub-group:last-of-type .btn')].map(el => (el.textContent || '').replace(/\s+/g,' ').trim());
     return {
       sample: !!document.getElementById('open-sample-habits'),
       settings: !!document.getElementById('open-settings'),
       privacy: !!document.getElementById('open-privacy'),
+      feedback: !!document.getElementById('open-feedback'),
+      docs: !!document.getElementById('open-docs'),
+      guided: !!document.getElementById('start-essentials-coach'),
+      advanced: !!document.getElementById('start-advanced-coach'),
+      install: !!document.getElementById('open-install-guide'),
       done: !!document.getElementById('about-close'),
-      blocks: blocks.length,
+      blocks,
       labels,
-      collapsed,
-      learnSummary: document.querySelector('[data-collapse-target="about-learn-body"] .about-summary')?.textContent || ''
+      helpBtns,
+      deviceBtns,
+      copy: document.querySelector('#about-sheet .about-hero .about-copy')?.textContent || ''
     };
   });
   console.log(aboutBtns);
-  assert(aboutBtns.sample && aboutBtns.settings && aboutBtns.privacy && aboutBtns.done, 'About shows samples, settings, privacy, done');
-  assert(aboutBtns.blocks === 2, 'About keeps two short cards now that coaches exist');
-  assert(aboutBtns.labels.includes('Learn Tings') && /guided start|advanced coach/i.test(aboutBtns.learnSummary), 'Learn card points at the coaches');
-  assert(aboutBtns.labels.includes('Private by default'), 'Private card remains on About');
-  assert(aboutBtns.collapsed, 'About cards collapsed by default');
-
-  await page.locator('[data-collapse-target="about-learn-body"]').click();
-  const afterLearn = await page.evaluate(() => ({
-    learnOpen: !document.getElementById('about-learn-body')?.hidden,
-    learnExpanded: document.querySelector('[data-collapse-target="about-learn-body"]')?.getAttribute('aria-expanded') === 'true'
-  }));
-  assert(afterLearn.learnOpen && afterLearn.learnExpanded, 'Learn expands on tap');
-
-  await page.locator('[data-collapse-target="about-private-body"]').click();
-  const afterPrivate = await page.evaluate(() => ({
-    learnClosed: document.getElementById('about-learn-body')?.hidden === true,
-    privateOpen: !document.getElementById('about-private-body')?.hidden
-  }));
-  assert(afterPrivate.learnClosed && afterPrivate.privateOpen, 'accordion: Private open closes Learn');
+  assert(aboutBtns.sample && aboutBtns.settings && aboutBtns.privacy && aboutBtns.feedback && aboutBtns.done, 'About shows samples, settings, privacy, feedback, done');
+  assert(aboutBtns.guided && aboutBtns.advanced && aboutBtns.docs && aboutBtns.install, 'About shows tours, docs, and install');
+  assert(aboutBtns.blocks === 0, 'About has no explainer cards; help/docs and privacy cover that');
+  assert(aboutBtns.labels.join('|') === 'help|this device', 'About groups destinations as help and this device');
+  assert(aboutBtns.helpBtns.join('|') === 'guided start|advanced coach|help & docs', 'Help group is tours plus written docs');
+  assert(aboutBtns.deviceBtns.join('|') === 'install app|samples|settings', 'This-device group is install, samples, settings');
+  assert(/private by default/i.test(aboutBtns.copy) && aboutBtns.copy.length < 120, 'Hero stays a short product line');
 
   console.log('\n[B] Sample habits sheet layout');
   await page.locator('#open-sample-habits').click();

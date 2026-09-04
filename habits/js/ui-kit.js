@@ -147,16 +147,6 @@ const UI_SETTING_TOGGLES = {
   ]
 };
 
-const UI_ABOUT_BLOCKS = [
-  {id:'about-learn-body', label:'Learn Tings', summary:'Guided start covers the daily loop. Advanced coach covers the full surface in seven focused chapters — pick any of them.', body:[
-    'The buttons below replay those tours anytime. Help &amp; docs is the written reference. Samples let you try a feature without building it from scratch.'
-  ]},
-  {id:'about-private-body', label:'Private by default', summary:'Your list stays on this device. The cloud-up mark flags the few features that contact a service.', body:[
-    'Tings is open source, and it is not an account. Habits, logs, and places are saved in this browser. The site owner cannot see them.',
-    'A few features contact a service for a stated job — shared display, share item, address search, travel estimates. Each of those controls has a cloud-up mark; tap it for a short note, or open <b>privacy</b> for the full picture.'
-  ]}
-];
-
 const UI_PRIVACY_BLOCKS = [
   {id:'privacy-here-body', label:'On this device', summary:'Habits, logs, places, and settings live in this browser. There is no Tings account.', body:[
     'Tings is a set of files in your browser. Your list is saved in this browser’s own storage (localStorage) on this phone or computer — not in a Tings inbox.',
@@ -191,6 +181,11 @@ const UI_PRIVACY_BLOCKS = [
     'Tabler icons (jsDelivr) and Leaflet (unpkg) draw buttons and the map. PDF import uses pdf.js in this browser; the file you pick is not uploaded.',
     'Naming a pasted App Store link asks Apple’s public listing for that app’s name. It receives only the numeric id already inside the link, and only when you paste one. Offline, you simply type the name yourself.',
     'Prayer times are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
+  ]},
+  {id:'privacy-feedback-body', label:'Send feedback', summary:'Optional. Opens a Google Form in your browser. Answers go to Google, not into Tings.', body:[
+    'The send-feedback button on About opens a Google Form in a new browser tab. Tings does not receive those answers, and nothing from your list is attached.',
+    'Google collects whatever you type in that form. Skip habit names, addresses, notes, and logs. You can leave the form without sending anything.',
+    'Look for the cloud-up mark on that button.'
   ]}
 ];
 
@@ -218,6 +213,10 @@ const UI_LEAVE_HINTS = {
   weather:{
     aria:'this sends forecast coordinates off this device',
     body:'Weather guidance sends your saved home-city coordinates to Open-Meteo, plus any far-away place you attach to an item. Habit names and logs stay here. Full story: About → privacy.'
+  },
+  feedback:{
+    aria:'this opens a Google Form off this device',
+    body:'Send feedback opens a Google Form in your browser. Tings does not receive the answers, and nothing from your list is attached. Skip habit names, addresses, and logs. Full story: About → privacy.'
   }
 };
 
@@ -229,8 +228,6 @@ function mountUiKit(){
   document.querySelectorAll('[data-ui-priority]').forEach(host=>{
     host.innerHTML = uiPrioritySegHtml(host.dataset.uiPriority === 'add');
   });
-  const about = document.querySelector('[data-ui-about-stack]');
-  if(about)about.innerHTML = UI_ABOUT_BLOCKS.map(uiAboutBlockHtml).join('');
   const privacy = document.querySelector('[data-ui-privacy-stack]');
   if(privacy)privacy.innerHTML = UI_PRIVACY_BLOCKS.map(uiAboutBlockHtml).join('');
   document.querySelectorAll('[data-ui-leave]').forEach((host,i)=>{

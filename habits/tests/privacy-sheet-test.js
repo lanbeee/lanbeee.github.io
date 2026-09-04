@@ -46,6 +46,47 @@ async function launchBrowser(){
   await page.locator('#open-about').click();
   await page.waitForSelector('#about-sheet.open');
   assert(await page.locator('#open-privacy').count() === 1, 'About has a privacy button');
+  const feedback = await page.evaluate(() => {
+    const link = document.getElementById('open-feedback');
+    const row = document.getElementById('about-feedback-row');
+    const leave = document.querySelector('[data-ui-leave="feedback"] .leave-btn');
+    const configured = typeof feedbackFormConfigured === 'function' && feedbackFormConfigured();
+    return {
+      exists: Boolean(link && row),
+      target: link?.getAttribute('target') || '',
+      rel: link?.getAttribute('rel') || '',
+      configured,
+      rowHidden: Boolean(row?.hidden),
+      href: link?.getAttribute('href') || '',
+      leave: Boolean(leave),
+      leaveAria: leave?.getAttribute('aria-label') || ''
+    };
+  });
+  assert(feedback.exists, 'About has a send-feedback control');
+  assert(feedback.target === '_blank' && /noopener/.test(feedback.rel), 'Feedback opens in a real browser tab');
+  assert(feedback.leave && /Google Form/i.test(feedback.leaveAria), 'Feedback carries a leave-device mark naming Google Form');
+  assert(feedback.rowHidden === !feedback.configured, 'Feedback row is visible only when a form URL is configured');
+  if(feedback.configured){
+    assert(feedback.href === 'https://forms.gle/KNnXKCH55VfzCNeo8', 'Configured feedback URL is the published Google Form');
+    await page.locator('[data-ui-leave="feedback"] .leave-btn').click();
+    const tipFit = await page.evaluate(() => {
+      const tip = document.querySelector('[data-ui-leave="feedback"] .leave-tooltip');
+      const sheet = document.querySelector('#about-sheet .about-sheet');
+      if(!tip || !sheet || tip.hidden)return {open:false};
+      const t = tip.getBoundingClientRect();
+      const s = sheet.getBoundingClientRect();
+      return {
+        open:true,
+        text:(tip.textContent || ''),
+        clippedRight: t.right - s.right,
+        clippedLeft: s.left - t.left,
+        clippedBottom: t.bottom - s.bottom
+      };
+    });
+    assert(tipFit.open && /Google Form/i.test(tipFit.text), 'Feedback cloud-up note opens');
+    assert(tipFit.clippedRight <= 1 && tipFit.clippedLeft <= 1 && tipFit.clippedBottom <= 1, 'Feedback cloud-up note stays inside About');
+    await page.locator('[data-ui-leave="feedback"] .leave-btn').click();
+  }
   await page.locator('#open-privacy').click();
   await page.waitForSelector('#privacy-sheet.open');
   const privacy = await page.evaluate(() => {
@@ -64,7 +105,9 @@ async function launchBrowser(){
       osrm: /OSRM/i.test(text),
       openSource: /open source/i.test(text),
       mapsCompare: /Google Maps|Apple Maps/i.test(text),
-      legend: /this mark|stated job/i.test(text)
+      legend: /this mark|stated job/i.test(text),
+      feedback: labels.includes('Send feedback'),
+      googleForm: /Google Form/i.test(text)
     };
   });
   assert(privacy.aboutStillOpen, 'Privacy stacks over About');
@@ -74,6 +117,7 @@ async function launchBrowser(){
   assert(privacy.photon && privacy.nominatim && privacy.osrm, 'Privacy lists Photon, Nominatim, and OSRM');
   assert(privacy.openSource && privacy.mapsCompare, 'Privacy names open source and the narrower maps request');
   assert(privacy.legend, 'Privacy introduces the cloud-up mark');
+  assert(privacy.feedback && privacy.googleForm, 'Privacy explains that send feedback is a Google Form');
 
   await page.locator('#privacy-close').click();
   await page.waitForFunction(() => !document.getElementById('privacy-sheet')?.classList.contains('open'));

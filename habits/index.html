@@ -51,7 +51,7 @@
 <div class="app">
 
   <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
-    <button class="app-bar-logo" id="bar-open-about" aria-label="how it works">
+        <button class="app-bar-logo" id="bar-open-about" aria-label="about Tings">
       <img src="./favicon.svg" alt="" aria-hidden="true" />
       <span class="app-bar-title">Tings</span>
     </button>
@@ -76,7 +76,7 @@
 
     <div class="pane-list">
       <div class="topbar">
-        <button class="wordmark" id="open-about" aria-label="how it works">
+        <button class="wordmark" id="open-about" aria-label="about Tings">
           <img src="./favicon.svg" alt="" aria-hidden="true" />
           <span class="wordmark-copy">
             <span>Tings</span>
@@ -594,17 +594,33 @@
         </div>
         <button type="button" class="icon-btn about-hero-close" id="about-head-close" aria-label="close about Tings"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
-      <div class="about-stack" data-ui-about-stack></div>
-      <div class="btn-row about-actions">
-        <button class="btn" id="open-install-guide" type="button"><i class="ti ti-download" aria-hidden="true"></i> install app</button>
-        <button class="btn" id="start-essentials-coach" type="button"><i class="ti ti-route" aria-hidden="true"></i> guided start</button>
-        <button class="btn" id="start-advanced-coach" type="button"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> advanced coach</button>
-        <!-- real anchor + target=_blank so installed PWAs hand the docs to the actual browser instead of keeping them in the standalone window -->
-        <a class="btn" id="open-docs" href="https://aretefoundry.github.io/tings/" target="_blank" rel="noopener"><i class="ti ti-book-2" aria-hidden="true"></i> help &amp; docs</a>
-        <button class="btn" id="open-sample-habits"><i class="ti ti-sparkles" aria-hidden="true"></i> samples</button>
-        <button class="btn" id="open-settings"><i class="ti ti-settings" aria-hidden="true"></i> settings</button>
-        <button class="btn" id="open-privacy" type="button"><i class="ti ti-shield-lock" aria-hidden="true"></i> privacy</button>
-        <button class="btn primary" id="about-close"><i class="ti ti-check" aria-hidden="true"></i> done</button>
+      <div class="about-hub">
+        <section class="about-hub-group">
+          <span class="about-hub-label">help</span>
+          <div class="btn-row about-actions">
+            <button class="btn" id="start-essentials-coach" type="button"><i class="ti ti-route" aria-hidden="true"></i> guided start</button>
+            <button class="btn" id="start-advanced-coach" type="button"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> advanced coach</button>
+            <!-- real anchor + target=_blank so installed PWAs hand the docs to the actual browser instead of keeping them in the standalone window -->
+            <a class="btn" id="open-docs" href="https://aretefoundry.github.io/tings/" target="_blank" rel="noopener"><i class="ti ti-book-2" aria-hidden="true"></i> help &amp; docs</a>
+          </div>
+        </section>
+        <section class="about-hub-group">
+          <span class="about-hub-label">this device</span>
+          <div class="btn-row about-actions">
+            <button class="btn" id="open-install-guide" type="button"><i class="ti ti-download" aria-hidden="true"></i> install app</button>
+            <button class="btn" id="open-sample-habits"><i class="ti ti-sparkles" aria-hidden="true"></i> samples</button>
+            <button class="btn" id="open-settings"><i class="ti ti-settings" aria-hidden="true"></i> settings</button>
+          </div>
+        </section>
+        <div class="btn-row about-actions about-hub-foot">
+          <!-- real anchor + target=_blank so installed PWAs hand the form to the actual browser instead of keeping it in the standalone window -->
+          <div class="about-feedback-row" id="about-feedback-row" hidden>
+            <a class="btn" id="open-feedback" href="#" target="_blank" rel="noopener" hidden><i class="ti ti-message" aria-hidden="true"></i> send feedback</a>
+            <span data-ui-leave="feedback"></span>
+          </div>
+          <button class="btn" id="open-privacy" type="button"><i class="ti ti-shield-lock" aria-hidden="true"></i> privacy</button>
+          <button class="btn primary" id="about-close"><i class="ti ti-check" aria-hidden="true"></i> done</button>
+        </div>
       </div>
     </div>
   </div>

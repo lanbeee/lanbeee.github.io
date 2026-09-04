@@ -377,6 +377,9 @@ function openSheet(id){
   if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
     syncInstallGuideVisibility();
   }
+  if(id === 'about-sheet' && typeof syncFeedbackLink === 'function'){
+    syncFeedbackLink();
+  }
   if (paneTierActive() && isFullPageSheet(id) && shouldMountInPane(id)) {
     mountInPane(id);
     return;
