@@ -406,6 +406,10 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
     if(!myLocs.length)continue; // anywhere-allowed: no fixed cluster anchor
     for(const {dayBase,weekday} of dayMeta){
       if(c.eligible.has(dayBase))continue;
+      // Flex clustering may open an earlier day, but a logged occurrence has
+      // already consumed that day. Re-adding it here duplicates completed work
+      // and can manufacture an unnecessary trip to its saved place.
+      if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))continue;
       const ageOnDay = days + Math.round((dayBase - todayBase) / 86400000);
       if(ageOnDay >= rawTarget)continue;        // already natively due → already eligible
       if(ageOnDay < rawTarget - flex)continue;  // outside flex pull window
@@ -492,6 +496,10 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
         if(!anchor)continue;
         if(!anchor.eligible)anchor.eligible = new Set();
         if(anchor.eligible.has(dayBase))continue;
+        // A completion is a committed endpoint for this day's link, not a
+        // fresh occurrence to schedule. The candidate may still be present
+        // because it becomes cadence-eligible later in the week.
+        if(typeof completedOnDay === 'function' && completedOnDay(anchor.h,dayBase))continue;
         // No partnerPresent bypass: anchors keep their own rhythm/flex.
         if(scheduleLinkFlexAllowsDay(anchor.h,dayBase,weekday,cfg)){
           anchor.eligible.add(dayBase);
@@ -528,6 +536,10 @@ function applyPersistentLinkEligibility(candidates,dayStates,settings){
       const present = sameDayLinks.filter(link=>anchorPresent(link.anchorHid,dayBase));
       if(!present.length)continue;
       if(candidate.eligible.has(dayBase))continue;
+      // A linked partner being present can pull an otherwise-flexible subject
+      // onto this day, but must never resurrect a subject already completed
+      // on this day. Its committed completion still satisfies/pulls partners.
+      if(typeof completedOnDay === 'function' && completedOnDay(candidate.h,dayBase))continue;
       const scarcePartner = present.some(link=>{
         const anchor = byHid.get(link.anchorHid);
         // No candidate but anchorPresent said yes → the anchor is already

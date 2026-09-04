@@ -137,10 +137,12 @@ function assert(value,message){
         hid:'p-anchor',name:'Anchor',type:'keepup',target:7,logs:anchorLogs,
         durationMinutes:30,priority:1
       };
-      const direction = variant === 'before' || variant === 'completed-before' ? 'before' : 'after';
+      const direction = variant === 'before' || variant === 'completed-before'
+        || variant === 'completed-subject' ? 'before' : 'after';
       const requireSameDay = variant !== 'optional-absent';
       const subject = {
-        hid:'p-subject',name:'Subject',type:'keepup',target:7,logs:[],
+        hid:'p-subject',name:'Subject',type:'keepup',target:7,
+        logs:variant === 'completed-subject' ? [now - 60 * 60000] : [],
         durationMinutes:30,priority:1,
         scheduleLinks:[{
           anchorHid:'p-anchor',
@@ -224,13 +226,68 @@ function assert(value,message){
     assert(optionalAbsent.order.includes('p-subject'),`${label}: optional anchor does not gate dependent eligibility`);
     const completedAfter = await plannerScenario(useGlpk,'completed-after');
     assert(completedAfter.order.includes('p-subject'),`${label}: completed-today anchor satisfies after relationship`);
+    assert(!completedAfter.order.includes('p-anchor'),`${label}: completed-today anchor is not scheduled again`);
     const completedBefore = await plannerScenario(useGlpk,'completed-before');
     assert(!completedBefore.order.includes('p-subject'),`${label}: incomplete before-dependent is omitted after anchor completion`);
+    const completedSubject = await plannerScenario(useGlpk,'completed-subject');
+    assert(completedSubject.order.includes('p-anchor'),`${label}: completed linked subject still pulls its unfinished anchor`);
+    assert(!completedSubject.order.includes('p-subject'),`${label}: completed linked subject is not scheduled again`);
     const breakable = await plannerScenario(useGlpk,'breakable');
     const lastAnchor = breakable.order.lastIndexOf('p-anchor');
     const firstSubject = breakable.order.indexOf('p-subject');
     assert(lastAnchor >= 0 && firstSubject > lastAnchor,
       `${label}: breakable boundary chunks honor right-after (${breakable.order.join(' → ')})`);
+  }
+
+  console.log('\n[A2] completed occurrence cannot be pulled back by place clustering');
+  for(const useGlpk of FAST_ONLY ? [false] : [false,true]){
+    const label = useGlpk ? 'GLPK' : 'Fast';
+    const clustered = await page.evaluate(async useGlpk=>{
+      const today = dayStart(Date.now());
+      const now = today + 9 * 3600000;
+      const RealDate = Date;
+      function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(now); }
+      FrozenDate.now = ()=>now;
+      FrozenDate.parse = RealDate.parse;
+      FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate,RealDate);
+      FrozenDate.prototype = RealDate.prototype;
+      const originalDate = globalThis.Date;
+      globalThis.Date = FrozenDate;
+      try{
+        const settings = {
+          ...loadSortSettings(),agendaOptimizer:useGlpk,showWeekOnHome:true,
+          availabilityMinutes:Array(7).fill(120),availabilityOverrides:{},blockedTimes:[],travel:{},
+          locations:[{id:'home',name:'Home',lat:40,lng:-75,radiusM:75}],
+          showDueHabitsInAgenda:true,showDueTasksInAgenda:true,
+          showScheduledTasksInAgenda:true,showPlannedItemsInAgenda:true
+        };
+        for(let offset=0;offset<7;offset += 1){
+          settings.availabilityOverrides[dateKey(today + offset * 86400000)] = 120;
+        }
+        const completed = {
+          hid:'cluster-complete',name:'Completed',type:'keepup',target:3,
+          logs:[now - 60 * 60000],durationMinutes:15,priority:1,flexibilityDays:3,
+          locationIds:['home'],anywhereAllowed:false
+        };
+        const due = {
+          hid:'cluster-due',name:'Due',type:'keepup',target:1,
+          logs:[today - 2 * 86400000],durationMinutes:15,priority:1,flexibilityDays:0,
+          locationIds:['home'],anywhereAllowed:false
+        };
+        const data = normalize([completed,due]);
+        const week = useGlpk
+          ? await buildWeekAgendaAsync(data,settings,7)
+          : buildWeekAgenda(data,settings,7);
+        return (week.days[0].timeline || [])
+          .filter(row=>row.kind === 'fill')
+          .map(row=>row.h && row.h.hid);
+      }finally{
+        globalThis.Date = originalDate;
+      }
+    },useGlpk);
+    assert(clustered.includes('cluster-due'),`${label}: due co-located work remains scheduled`);
+    assert(!clustered.includes('cluster-complete'),`${label}: place clustering does not resurrect completed work`);
   }
 
   console.log('\n[B] flex pull + multi OR + early reason');
