@@ -228,9 +228,10 @@ $('open-sample-habits')?.addEventListener('click',()=>{
   if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
 });
 $('open-docs')?.addEventListener('click',()=>{
+  // The anchor itself navigates (target=_blank opens the real browser tab from
+  // an installed PWA — window.open would keep the docs in the standalone app).
   closeSheet('about-sheet');
   closeSheet('sample-habits-sheet');
-  window.open('https://aretefoundry.github.io/tings/', '_blank', 'noopener');
 });
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
