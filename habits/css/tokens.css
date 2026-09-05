@@ -143,7 +143,7 @@ body.compact-mode .ting-cue { font-size:calc(10.5px * var(--font-scale)); }
 
 /* Minimal mode — visual-only; planner/scoring unchanged */
 body.minimal-mode .ting-card.minimal-card .card-actions,
-body.minimal-mode .ting-card.minimal-card .ting-visual { display:none; }
+body.minimal-mode .ting-card.minimal-card .ting-visual > :not(.ting-trail) { display:none; }
 body.minimal-mode .ting-card.minimal-card::before { display:none; }
 body.minimal-mode #detail-sheet.minimal-detail .detail-full-only { display:none !important; }
 /* What survives minimal mode fits in one scroll, so the horizontal snap pager
@@ -162,6 +162,8 @@ body.minimal-mode .detail-bottom-bar .detail-actions{ flex:1 1 auto;width:auto; 
 body.minimal-mode #add-sheet.minimal-add .add-full-only { display:none !important; }
 /* Settings minimal mode already decides — showing them would be a dead switch. */
 body.minimal-mode .settings-full-only { display:none !important; }
+/* Mirror image: rows that only exist for minimal mode (opt-in card extras). */
+body:not(.minimal-mode) .settings-minimal-only { display:none !important; }
 body.minimal-mode #overview-list:empty { display:none; }
 body.minimal-mode #overview-insight,
 body.minimal-mode #overview-pane-filter { display:none !important; }

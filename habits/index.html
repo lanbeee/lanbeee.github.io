@@ -485,7 +485,7 @@
             <p class="field-hint" id="detail-link-hint"></p>
           </div>
           <div class="habit-actions">
-            <div class="detail-shared-display-control">
+            <div class="detail-shared-display-control detail-full-only">
               <span><b>shared display</b><small id="detail-shared-display-help">Choose what this display may do with this item</small></span>
               <div class="seg detail-shared-display-seg" id="detail-shared-display" role="radiogroup" aria-label="Shared display access">
                 <button type="button" class="seg-opt" data-shared-display-mode="hidden" role="radio" aria-checked="false" tabindex="-1">hidden</button>
@@ -499,7 +499,7 @@
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
             </label>
-            <button class="habit-action" id="detail-export" type="button" hidden>
+            <button class="habit-action detail-full-only" id="detail-export" type="button" hidden>
               <i class="ti ti-calendar-share" aria-hidden="true"></i>
               <span><b>export to calendar</b><small>Phone calendar alert</small></span>
             </button>
@@ -980,7 +980,7 @@
           </div>
         </section>
         <div class="settings-group-head">more</div>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-agenda-head" data-collapse-target="settings-agenda-body" aria-expanded="false" aria-controls="settings-agenda-body">
               <span class="settings-label">shared display</span>

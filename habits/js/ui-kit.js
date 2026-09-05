@@ -129,6 +129,7 @@ const UI_SETTING_TOGGLES = {
   ],
   cardsAfterTime:[
     {key:'showTrailOnCards', title:'show activity dots', hint:'Show the two-week dot history on each item.', extraClass:'settings-full-only'},
+    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Show the two-week dot history on each item.', extraClass:'settings-minimal-only'},
     {key:'showCueOnCards', title:'show status line', hint:'Show the one-line status like due today or on track.', pressed:true},
     {key:'showOrderPillsOnCards', title:'show agenda order marks', hint:'Show before / after, doing-now, and linked marks.', extraClass:'settings-full-only'},
     {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}

@@ -170,6 +170,11 @@ async function launchBrowser(){
   await page.locator('#privacy-close').click();
   await page.waitForFunction(() => !document.getElementById('privacy-sheet')?.classList.contains('open'));
 
+  // The shared display section (and its leave mark) is full-mode-only now, so
+  // leave minimal before tapping the agenda mark.
+  await page.locator('[data-setting-toggle="minimalMode"]').click();
+  await page.waitForFunction(() =>
+    document.querySelector('[data-ui-leave="agenda"] .leave-btn')?.offsetParent !== null, null, { timeout: 3000 });
   await page.locator('[data-ui-leave="agenda"] .leave-btn').click();
   const tipShown = await page.evaluate(() => {
     const btn = document.querySelector('[data-ui-leave="agenda"] .leave-btn');

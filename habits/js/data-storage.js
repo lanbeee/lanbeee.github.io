@@ -236,6 +236,7 @@ function saveSortSettings(settings){
   next.showEarlyOnCards = next.showEarlyOnCards !== false;
   next.showAgendaTimesOnCards = normalizeAgendaTimeMode(next.showAgendaTimesOnCards);
   next.showTrailOnCards = next.showTrailOnCards !== false;
+  next.minimalShowTrailOnCards = Boolean(next.minimalShowTrailOnCards);
   next.showCueOnCards = next.showCueOnCards !== false;
   next.showOrderPillsOnCards = next.showOrderPillsOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);

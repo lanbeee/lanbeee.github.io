@@ -789,15 +789,23 @@ function render(opts){
       ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
       : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     const trail = cardTrail(h);
-    const showTrail = !minimal && sortSettings.showTrailOnCards !== false;
+    // Minimal hides dots unless opted in for minimal specifically
+    // (minimalShowTrailOnCards, default off); full keeps its own toggle.
+    const showTrail = minimal
+      ? sortSettings.minimalShowTrailOnCards === true
+      : sortSettings.showTrailOnCards !== false;
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
     const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
     // so the user can see the session without opening detail.
     const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
-    const visualHtml = minimal ? '' : (showBreakableSlider
-      ? `${cardBreakableSlider(h)}${sessionHtml}`
-      : (sessionHtml || (showTrail ? `<div class="ting-trail">${trail}</div>` : '')));
+    // Minimal's visual row is trail-only when opted in — sliders/sessions stay
+    // full-mode features (guarded below by !minimal).
+    const visualHtml = minimal
+      ? (showTrail ? `<div class="ting-trail">${trail}</div>` : '')
+      : (showBreakableSlider
+        ? `${cardBreakableSlider(h)}${sessionHtml}`
+        : (sessionHtml || (showTrail ? `<div class="ting-trail">${trail}</div>` : '')));
     const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
@@ -863,7 +871,7 @@ function render(opts){
           </div>
           ${(!minimal && isBreakable) ? ((orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
-          ${minimal || !visualHtml ? '' : `<div class="ting-visual"${visualAria}>
+          ${!visualHtml ? '' : `<div class="ting-visual"${visualAria}>
             ${visualHtml}
           </div>`}
         </div>

@@ -237,6 +237,7 @@ Items appear in this order:
 | `showTopicsOnCards` | When enabled | 💡 topic chips at bottom |
 | `showLocationOnCards` | When enabled | 📍 location pin label |
 | `showTrailOnCards` | When enabled | ●●●●● activity dots |
+| `minimalShowTrailOnCards` | Minimal mode, when enabled | ●●●●● activity dots (off by default in minimal) |
 | `showCueOnCards` | Always | Status text below title |
 | `showOrderPillsOnCards` | Always | ↗️ ↘️ order markers |
 | `showEarlyOnCards` | Always | 🌅 early indicator |
@@ -514,7 +515,8 @@ showFlexibilityOnCards: boolean,   // 👤 Show flexibility days
 showTopicsOnCards: boolean,        // 👤 Show 💡 topic chips
 showLocationOnCards: boolean,      // 👤 Show 📍 location
 showAgendaTimesOnCards: 'time'|'icon'|'hide',
-showTrailOnCards: boolean,         // 👤 Show activity dots
+showTrailOnCards: boolean,         // 👤 Show activity dots (regular mode)
+minimalShowTrailOnCards: boolean,  // 👤 Activity dots opt-in for minimal mode (default OFF)
 showCueOnCards: boolean,           // 👤 Show status text
 showOrderPillsOnCards: boolean,    // 👤 Show ↗️ ↘️ markers
 showStatusOnCards: boolean,        // 👤 Show status word ("run", "overdue", etc.)
@@ -792,7 +794,7 @@ When `showPinnedOnCards: true`:
 A teal cloud-up icon (`ti-cloud-up`, class `.leave-btn`) sits next to any control that can send data off this device. Tap it for a one-line note (same pattern as the info “i”). About → **privacy** is the full explainer.
 
 Placed on:
-- Settings → shared display (encrypted Cloudflare relay)
+- Settings → shared display (encrypted Cloudflare relay; regular mode only — the section is hidden in minimal mode)
 - Detail → share item (encrypted Cloudflare relay)
 - Locations / city / address search (Photon + Nominatim)
 - Travel time estimate (OSRM)
@@ -1213,9 +1215,9 @@ shortcuts can be stored on one item.
 
 #### Item Actions
 - **Pinned:** Keeps the item above automatic ordering
-- **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot.
+- **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot. Regular mode only — hidden alongside the other full-mode action rows in minimal mode.
 - The standalone shared display shows the current time in its header. Swiping left (or "hide agenda") covers the agenda with a near-black night clock; three taps within 900ms bring it back — a swipe never restores it, so a stray brush of the frame can't flash the agenda. Marking an item done shows an undo toast for a few seconds: the row reads as done immediately, but the completion is only pushed to the owner's feed when the toast expires, and tapping undo restores the row without any request. Only one mark waits at a time — marking another item pushes the previous one at once; a refresh that pauses the display or drops the row cancels the pending mark instead of pushing it, and de-pairing mid-push never writes the old authorization back. The ⋯ menu holds the fullscreen toggle, light/dark/system theme (dark is the default), a − / + text-size stepper (70–200%), and a "screen fit" − / + control that pre-squashes the page vertically (85–100%) to cancel frames that stretch their panel. Everything persists per display.
-- **Export to calendar:** Tasks with a due date or fixed time
+- **Export to calendar:** Tasks with a due date or fixed time (regular mode only)
 - **Share item:** Sends an encrypted invitation for another person to track it
 - **Snooze:** Temporarily hides the item
 - **Remove:** Deletes with an undo path
@@ -2376,6 +2378,8 @@ Same agenda logic, but simplified display:
 - Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
 - Simplified scheduling UI
 - Basic info only
+- Action rows limited to remove: shared display, export to calendar, share
+  item, snooze, and pin are regular-mode only (saved values are untouched)
 
 ---
 
@@ -2414,6 +2418,7 @@ Same agenda logic, but simplified display:
 | showStatusOnCards | true | Status word | "run", "great", etc. |
 | showAgendaTimesOnCards | **'time'** | 'show time' / 'symbol only' / 'hide' |
 | showTrailOnCards | true | Activity dots history | ●●●●● dots |
+| minimalShowTrailOnCards | false | Minimal mode: opt-in activity dots | ●●●●● dots |
 | showCueOnCards | true | Status text below name | Colored text |
 
 *Note: 2 card settings are controlled by tab visibility, not boolean toggles: `showOrderPillsOnCards` (depends on schedule links) and `showEarlyOnCards` (depends on agenda state).*
