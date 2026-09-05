@@ -1669,7 +1669,9 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     applyClusterFlexEligibility(candidates,dayStates,settings);
   }
   for(let i = candidates.length - 1;i >= 0;i -= 1){
-    if(!candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
+    const h = candidates[i] && candidates[i].h;
+    const snoozed = h && h.snoozedUntil && Date.now() < h.snoozedUntil;
+    if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 

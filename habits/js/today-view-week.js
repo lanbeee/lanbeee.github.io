@@ -349,6 +349,10 @@ function locationsShareCluster(aIds,bIds,registry,mode){
 function clusterNativeDueOnDay(p,dayBase,weekday,cfg){
   const h = p && p.h;
   if(!h || h.type === 'zero')return false;
+  // Snooze is a hard eligibility gate. Candidate shells may be retained for
+  // schedule-link discovery even when their initial eligible Set is empty;
+  // they must not act as a native-due cluster anchor while snoozed.
+  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase))return true;
   if(h.type === 'task'){
@@ -394,6 +398,10 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
   for(const c of candidates){
     const h = c && c.h;
     if(!h || h.type !== 'keepup' || !c.eligible)continue;
+    // Cluster flex can only broaden calendar eligibility. It cannot override
+    // an explicit snooze, including for link-retained candidates whose
+    // eligible Set started empty.
+    if(h.snoozedUntil && Date.now() < h.snoozedUntil)continue;
     const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
     if(flex <= 0)continue;
     const days = daysSince(h.lastLog);

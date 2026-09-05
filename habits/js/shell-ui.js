@@ -663,7 +663,7 @@ function updateHeaderOnScroll(){
 }
 
 // PURE: resolves forgiving button target from an event target.
-// Optional clientX/clientY expand day-header open/missed pills by a small
+// Optional clientX/clientY expand day-header open/not-today pills by a small
 // hit slop so near-miss taps on sticky header chrome still arm the pill.
 function forgivingButtonTarget(target, clientX, clientY){
   if(!target || typeof target.closest !== "function")return null;

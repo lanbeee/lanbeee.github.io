@@ -869,9 +869,10 @@ Minimal mode (always):
 
 Each day section header can have two dynamic **pills**:
 
-### 6.2 Missed Pills (🔴 "N missed")
-- Appears on "Today" header when habits didn't make it into today's agenda
+### 6.2 Not-Today Pills (🔴 "N not today")
+- Appears on "Today" when previously suggested, behind, moved-later, or snoozed work isn't in today's current agenda
 - Tap to open the **Slipped Sheet** (see §X.1)
+- Uses neutral wording because a future assignment or snooze is not necessarily a missed occurrence
 - Shows items in reverse snooze order
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
@@ -1321,12 +1322,12 @@ Tracks the currently active habit session:
 
 ## X. CONTEXTUAL SHEETS (Right-Swipe / Drag Actions)
 
-### 10.1 Slipped Sheet (Missed Habits) 👤
+### 10.1 Not-Scheduled Sheet 👤
 
 ```
 ┌─────────────────────────────────────┐
 │ ←  needs a next step                │
-│ missed · today                     │
+│ not scheduled · today              │
 │ Open an item to reschedule it,     │
 │   log it, or adjust its rhythm.    │
 ├─────────────────────────────────────┤
@@ -1337,8 +1338,8 @@ Tracks the currently active habit session:
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N missed" pill on a day header, or right-swipe a card → "missed" action
-- Lists habits that were due but didn't fit in the agenda
+- **Access:** Tap "N not today" on the Today header, or right-swipe a card → "missed" action
+- Lists work that left today's current agenda, including true misses, later assignments, and snoozes
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
 - Items show snooze tags or day labels (behind/today/tomorrow)

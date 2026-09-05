@@ -69,6 +69,7 @@ swipe-crown-arbitration-test.js	ui	once
 slipped-indicator-test.js	planner	once
 snap-and-sleep-test.js	data	once
 snooze-until-planned.js	ui	once
+snoozed-cluster-eligibility-test.js	planner	once
 tag-chip-scroll-test.js	ui	once
 theme-mode-test.js	ui	once
 steered-outside-fit-no-duplicate-test.js	planner	once

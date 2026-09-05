@@ -117,7 +117,7 @@ function assert(cond,msg){
   if(pill){
     const text = await pill.textContent();
     assert(text.includes('1'), 'pill shows count of 1');
-    assert(/missed/i.test(text), `pill uses missed wording: "${text}"`);
+    assert(/not today/i.test(text), `pill distinguishes not-today items from true misses: "${text}"`);
   }
 
   // ══════════════════════════════════════════════════════════════════════

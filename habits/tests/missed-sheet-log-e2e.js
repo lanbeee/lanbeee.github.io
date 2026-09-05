@@ -115,8 +115,8 @@ async function freezeClock(page, clockTs){
 
   // Wait for today's card + the missed pill.
   await page.waitForSelector('.dropped-pill', { timeout:10000 });
-  assert((await page.locator('.dropped-pill').textContent()).includes('missed'), 'missed pill shows');
-  console.log('  ok: missed pill present');
+  assert((await page.locator('.dropped-pill').textContent()).includes('not today'), 'not-today pill shows');
+  console.log('  ok: not-today pill present');
 
   // Open the slipped sheet.
   await page.locator('.dropped-pill').click();

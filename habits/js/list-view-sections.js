@@ -127,7 +127,9 @@ function attachDroppedIndicator(header,list,todayHids){
   const pill = document.createElement('button');
   pill.type = 'button';
   pill.className = 'dropped-pill';
-  pill.textContent = `${dropped.length} missed`;
+  // This list is broader than true misses: it also includes work moved to a
+  // later day and intentionally snoozed items. Name the state, not a verdict.
+  pill.textContent = `${dropped.length} not today`;
   bindDayHeaderPill(pill,()=>openSlippedSheet(dropped,header.dataset.label || 'today'));
   header.appendChild(pill);
 }
@@ -174,7 +176,7 @@ function renderDroppedPanel(items,opts = {}){
     const finishLog = ()=>{
       // The habit is now completedToday, so it no longer belongs here. Drop the
       // row at once; if the sheet is empty, dismiss it. Then refresh home so the
-      // "missed" pill recount follows the log without a cold restart.
+      // "not today" pill recount follows the log without a cold restart.
       row.remove();
       if(!document.querySelector('#slipped-content .dropped-item'))closeSheet('slipped-sheet');
       if(typeof refreshOpenViews === 'function')refreshOpenViews();
@@ -194,7 +196,7 @@ function renderDroppedPanel(items,opts = {}){
 function openSlippedSheet(items,dayLabel){
   const content = document.getElementById('slipped-content');
   if(!content)return;
-  document.getElementById('slipped-title').textContent = `missed · ${dayLabel}`;
+  document.getElementById('slipped-title').textContent = `not scheduled · ${dayLabel}`;
   content.innerHTML = '';
 
   const data = load();
@@ -208,7 +210,7 @@ function openSlippedSheet(items,dayLabel){
   if(slippedWithTags.length){
     const head1 = document.createElement('div');
     head1.className = 'slipped-section-head';
-    head1.textContent = `missed · ${dayLabel}`;
+    head1.textContent = `not scheduled · ${dayLabel}`;
     content.appendChild(head1);
     content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
   }
@@ -337,7 +339,7 @@ function attachFreeTimeIndicator(header,day){
   header.appendChild(pill);
 }
 
-// WIRE: day-header open/missed pills. Activation must be click-based so the
+// WIRE: day-header open/not-today pills. Activation must be click-based so the
 // document forgiving-button path (near-miss drift / pointercancel → btn.click)
 // works. pointerup-only missed those taps because capture-phase forgiving
 // stopPropagation prevented the pill's pointerup from firing. Stop pointer
