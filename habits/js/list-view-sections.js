@@ -33,7 +33,8 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
 function missedPlannerFingerprint(data,settings){
   const habits = (data || []).map(h=>[
     h.hid,h.type,h.target,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
-    h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,h.flexibilityDays,h.pinned,
+    h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,
+    habitEarlyWindowDays(h),habitDelayAllowanceDays(h),h.pinned,
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
     h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
@@ -189,10 +190,10 @@ function missedOpportunityPassedToday(h,dayBase,now){
 }
 
 // TRUE only for a dated planner expectation whose usable opportunity passed
-// without a completion. This rejects the old broad "everything overdue"
-// sweep: an off-day, impossible window, or item the planner assigned elsewhere
-// has no expectation record and therefore cannot become a miss.
-function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null){
+// without a completion, including a row actually rendered today and later
+// dropped by replanning. This rejects the old broad "everything overdue"
+// sweep: an off-day or impossible item has no qualifying planner evidence.
+function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
   if(!h || !h.hid)return false;
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
   const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
@@ -204,7 +205,13 @@ function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null){
     && !isDateEligibleForHabit(h,expectedDayBase))return false;
   if(missedOccurrenceResolved(h,expectedDayBase,now))return false;
   if(expectedDayBase === todayBase){
-    if(!missedOpportunityPassedToday(h,expectedDayBase,now))return false;
+    // A row the user actually saw in today's agenda is a commitment, not just
+    // a broad eligibility guess. If a later/cold optimization drops that row,
+    // preserve it as missed even when its raw clock window is still open. This
+    // is intentionally narrower than treating every full-day reconstruction
+    // candidate as missed: only snap.hids contains previously rendered rows.
+    if(!evidence?.renderedToday
+      && !missedOpportunityPassedToday(h,expectedDayBase,now))return false;
   }
   return true;
 }
@@ -259,7 +266,8 @@ function attachDroppedIndicator(header,list,todayHids){
   const addMissed = (hid,name,emoji,idx,first,expectedDay)=>{
     const h = data[idx];
     if(!h)return;
-    if(!isMissedOccurrence(h,laterPlanned,now,expectedDay))return;
+    const renderedToday = expectedDay === today && Boolean(snap.hids?.[hid]);
+    if(!isMissedOccurrence(h,laterPlanned,now,expectedDay,{renderedToday}))return;
     const prior = droppedMap.get(hid);
     if(prior && prior.expectedDay >= expectedDay)return;
     droppedMap.set(hid,{

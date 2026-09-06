@@ -867,7 +867,7 @@ function effectiveAutoMarkTrigger(h,now = Date.now()){
   }
   if(h.type === 'task'){
     return h.eventTime ?? (h.dueDate !== null
-      ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+        ? dayStart(h.dueDate) - habitEarlyWindowDays(h) * 86400000
       : null);
   }
   return null;

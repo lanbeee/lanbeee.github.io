@@ -293,11 +293,12 @@ function normalize(items){
     const eventTime = type === 'task' ? clampTimestamp(raw.eventTime) : null;
     let dueDate = type === 'task' ? clampDayTimestamp(raw.dueDate) : null;
     if(wasEvent && eventTime !== null && dueDate === null)dueDate = clampDayTimestamp(eventTime);
-    const flexibilityDays = clampFlexibility(raw.flexibilityDays);
-    // hardDue is now inferred: a task with a due date and no flexibility is a
-    // firm deadline (escalates urgency past it and fires reminders). Any
-    // flexibility > 0 means the deadline is soft.
-    const hardDue = type === 'task' && dueDate !== null && flexibilityDays === 0;
+    const earlyWindowDays = habitEarlyWindowDays(raw);
+    const delayAllowanceDays = habitDelayAllowanceDays(raw);
+    // A firm deadline is about permission to run late, not permission to start
+    // early. A task may therefore have a generous early window and still be
+    // firm on its due day.
+    const hardDue = type === 'task' && dueDate !== null && delayAllowanceDays === 0;
     // autoMarkMinutes replaces the legacy markDone toggle. null/empty = manual;
     // a number = automatic logging with this delay. Breakables use planner
     // chunk ends; other items use their scheduled trigger. Legacy
@@ -384,7 +385,11 @@ function normalize(items){
       ...normalizeCombineFields(raw, 'allowedTimeEnd'),
       ...normalizeCombineFields(raw, 'preferredTimeStart'),
       ...normalizeCombineFields(raw, 'preferredTimeEnd'),
-      flexibilityDays,
+      earlyWindowDays,
+      delayAllowanceDays,
+      // Transitional export alias for older Tings builds. New scheduling code
+      // reads earlyWindowDays first, so this cannot grant delay permission.
+      flexibilityDays:earlyWindowDays,
       durationMinutes:clampDuration(raw.durationMinutes),
       breakable,
       minChunkMinutes:clampMinChunk(raw.minChunkMinutes),

@@ -46,6 +46,48 @@ function ok(value,message){
 
   await page.evaluate(()=>openDetail(0));
   await page.waitForSelector('#detail-sheet.open');
+  const migratedWindows = await page.evaluate(()=>{
+    const due = dayStart(Date.now());
+    const migrated = normalize([{
+      name:'legacy task',type:'task',dueDate:due,eventTime:null,
+      flexibilityDays:4,durationMinutes:15,logs:[]
+    }])[0];
+    return {
+      early:migrated.earlyWindowDays,
+      delay:migrated.delayAllowanceDays,
+      legacy:migrated.flexibilityDays,
+      hardDue:migrated.hardDue
+    };
+  });
+  ok(migratedWindows.early === 4 && migratedWindows.legacy === 4,
+    'legacy flexibility migrates only into the early window');
+  ok(migratedWindows.delay === 0 && migratedWindows.hardDue,
+    'legacy records gain no implicit delay permission');
+  const migratedDefaults = await page.evaluate(()=>{
+    const previous = localStorage.getItem(SORT_SETTINGS_KEY);
+    try{
+      localStorage.setItem(SORT_SETTINGS_KEY,JSON.stringify({
+        preset:'todayFirst',defaultFlexibilityDays:5
+      }));
+      const settings = loadSortSettings();
+      return {
+        early:settings.defaultEarlyWindowDays,
+        delay:settings.defaultDelayAllowanceDays,
+        legacy:Object.prototype.hasOwnProperty.call(settings,'defaultFlexibilityDays')
+      };
+    }finally{
+      if(previous == null)localStorage.removeItem(SORT_SETTINGS_KEY);
+      else localStorage.setItem(SORT_SETTINGS_KEY,previous);
+    }
+  });
+  ok(migratedDefaults.early === 5 && migratedDefaults.delay === 0 && !migratedDefaults.legacy,
+    'legacy default flexibility migrates to early-only scheduling');
+  ok(await page.locator('#detail-early-window').count() === 1
+    && await page.locator('#detail-delay-allowance').count() === 1,
+  'schedule UI exposes separate early and delay controls');
+  ok(await page.locator('#setting-default-early-window').count() === 1
+    && await page.locator('#setting-default-delay-allowance').count() === 1,
+  'settings exposes separate early and delay defaults');
   ok(await page.locator('.detail-page-tab').count() === 5,'detail exposes five labeled page tabs');
   ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'history|schedule|effort|identity|actions','page tabs name every pane');
   const compactShell = await page.evaluate(()=>{
@@ -97,6 +139,21 @@ function ok(value,message){
   ok(scheduleLayout.active === 'schedule','schedule tab follows pager position');
   ok(await page.locator('#detail-allowed-time-row .time-expr2').count() === 2,'both comparisons retain their second expressions');
   ok(await page.locator('#detail-allowed-time-row .time-resolved').evaluateAll(nodes=>nodes.every(node=>node.textContent.trim().length > 0)),'dynamic endpoints show resolved results');
+
+  await page.locator('#detail-early-window').fill('6');
+  await page.locator('#detail-delay-allowance').fill('2');
+  await page.locator('#detail-save').click();
+  const savedWindows = await page.evaluate(()=>{
+    const h = load()[0];
+    return {
+      early:h.earlyWindowDays,
+      delay:h.delayAllowanceDays,
+      legacy:h.flexibilityDays
+    };
+  });
+  ok(savedWindows.early === 6 && savedWindows.legacy === 6,
+    'early window saves independently and keeps the compatibility alias');
+  ok(savedWindows.delay === 2,'delay allowance saves independently');
 
   // Create a snapshot in the past, reload as if the app had been closed, then
   // sweep at each deadline. The live agenda is empty because this is a someday

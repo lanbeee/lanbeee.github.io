@@ -261,12 +261,20 @@
             </div>
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
-          <div class="planning-grid planning-grid-single detail-full-only detail-schedule-flexibility">
+          <div class="planning-grid detail-full-only detail-schedule-flexibility">
             <div class="planning-field">
-              <span class="flexibility-label">flexibility <button type="button" class="info-btn" data-tip="detail-flexibility-help" aria-label="about flexibility"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <div class="info-tooltip" id="detail-flexibility-help" role="tooltip" hidden>Adds a buffer to your target for planning purposes.</div></span>
-              <label class="range-value" aria-label="flexibility in days">
-                <input type="text" id="detail-flexibility" inputmode="numeric" maxlength="2" value="0" />
+              <span class="flexibility-label">early window <button type="button" class="info-btn" data-tip="detail-early-window-help" aria-label="about the early window"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-early-window-help" role="tooltip" hidden>How many days early the planner may bring this forward. This never permits postponing it.</div></span>
+              <label class="range-value" aria-label="early window in days">
+                <input type="text" id="detail-early-window" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
+            <div class="planning-field">
+              <span class="flexibility-label">delay allowance <button type="button" class="info-btn" data-tip="detail-delay-allowance-help" aria-label="about the delay allowance"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-delay-allowance-help" role="tooltip" hidden>How many days after the due or rhythm day this may remain on time. Zero means it must use its due day when it fits.</div></span>
+              <label class="range-value" aria-label="delay allowance in days">
+                <input type="text" id="detail-delay-allowance" inputmode="numeric" maxlength="2" value="0" />
                 <span>d</span>
               </label>
             </div>
@@ -945,8 +953,13 @@
             </label>
             <label class="settings-range simple-range">
               <span>can do early</span>
-              <input type="range" id="setting-default-flexibility" min="0" max="14" />
-              <output id="setting-default-flexibility-label"></output>
+              <input type="range" id="setting-default-early-window" min="0" max="14" />
+              <output id="setting-default-early-window-label"></output>
+            </label>
+            <label class="settings-range simple-range">
+              <span>may run late</span>
+              <input type="range" id="setting-default-delay-allowance" min="0" max="14" />
+              <output id="setting-default-delay-allowance-label"></output>
             </label>
             <div class="settings-grid" data-ui-toggles="defaults"></div>
             <label class="settings-range simple-range" id="default-chunk-row" hidden>

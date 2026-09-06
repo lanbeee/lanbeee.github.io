@@ -1623,10 +1623,12 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     const h = data[i];
     const pinned = typeof isWeekPinnedToday === 'function'
       ? isWeekPinnedToday(h,settings) : Boolean(h && h.pinned);
-    // A later day satisfies a one-shot/movable candidate, but it never
-    // satisfies today's separate daily occurrence.
-    if(typeof isMovableWeekCandidate === 'function'
-      && !isMovableWeekCandidate({h,i,pinned}))return '';
+    // A later row is meaningful for a one-shot/sparse occurrence even after
+    // its delay allowance expired: at that point it is catch-up evidence, not
+    // proof that today's due occurrence was legitimately postponed. Daily
+    // rhythms are separate obligations on each day and remain excluded.
+    if(h && h.type !== 'task' && Number.isFinite(Number(h.target))
+      && Number(h.target) <= 1)return '';
     const elsewhere = [...(assignedDayByIndex.get(i) || [])].find(base=>base !== dayBase);
     if(elsewhere == null)return '';
     return homeWeekDayLabel({

@@ -1097,7 +1097,12 @@ function cardMeta(h,options = {}){
     }
   }
   if((options.forceDuration || sortSettings.showDurationOnCards) && h.durationMinutes)parts.push(`<span class="context-pill" title="duration ${Math.round(h.durationMinutes)} minutes"><i class="ti ti-clock" aria-hidden="true"></i>${compactHomeDuration(h.durationMinutes)}</span>`);
-  if((options.forceFlexibility || sortSettings.showFlexibilityOnCards) && h.flexibilityDays)parts.push(`<span class="context-pill" title="can do up to ${h.flexibilityDays}d early"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>±${h.flexibilityDays}d</span>`);
+  if(options.forceFlexibility || sortSettings.showFlexibilityOnCards){
+    const earlyDays = habitEarlyWindowDays(h);
+    const delayDays = habitDelayAllowanceDays(h);
+    if(earlyDays)parts.push(`<span class="context-pill" title="may be scheduled up to ${earlyDays}d early"><i class="ti ti-arrow-left" aria-hidden="true"></i>${earlyDays}d</span>`);
+    if(delayDays)parts.push(`<span class="context-pill" title="may run up to ${delayDays}d late"><i class="ti ti-arrow-right" aria-hidden="true"></i>${delayDays}d</span>`);
+  }
   if(hasDaySchedule(h) && (options.forceDaySchedule || sortSettings.showDayScheduleOnCards)){
     const eligible = nextEligibleShort(h);
     const title = [scheduleSummary(h),nextEligibleCopy(h)].filter(Boolean).join(' · ');
@@ -1225,7 +1230,7 @@ function pendingAutoMarkWindow(h,now = Date.now()){
     : (h.eventTime != null
       ? h.eventTime
       : (h.dueDate !== null
-        ? dayStart(h.dueDate) - (h.flexibilityDays || 0) * 86400000
+        ? dayStart(h.dueDate) - habitEarlyWindowDays(h) * 86400000
         : null));
   if(trigger == null)return null;
   const delayMs = Math.max(0,Number(h.autoMarkMinutes) || 0) * 60000;
@@ -1502,7 +1507,7 @@ function canDoEarlyToday(h,targetTs){
     return ready !== null && today >= dayStart(ready);
   }
   if(h.lastLog === null)return true;
-  const flex = clampFlexibility(h.flexibilityDays);
+  const flex = habitEarlyWindowDays(h);
   if(flex <= 0)return false;
   return today >= dayStart(targetTs) - flex * 86400000;
 }

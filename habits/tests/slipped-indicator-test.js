@@ -11,6 +11,7 @@
 //  13. Morning-only window, first open after it closed → missed.
 //  14. Off-day/impossible overdue work is never swept into Missed.
 //  15. A dated planner expectation survives a skipped app day.
+//  16. A row actually shown today remains missed if a cold solve drops it.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/slipped-indicator-test.js
 //
@@ -30,7 +31,7 @@ function assert(cond,msg){
   page.on('pageerror', e => pageErrors.push(String(e)));
 
   // Late wall-clock: windowStillDoableToday needs duration fit before midnight,
-  // and missing flexibilityDays normalizes to DEFAULT_FLEXIBILITY_DAYS (1), which
+  // and missing flexibilityDays normalizes to DEFAULT_EARLY_WINDOW_DAYS (1), which
   // bumps effectiveTarget so "daily" seeds stop counting as today. Freeze mid-
   // morning like agenda-order / day-capacity suites.
   const testClock = new Date();
@@ -618,6 +619,55 @@ function assert(cond,msg){
     const tag = await page.locator('#slipped-sheet .dropped-item:has-text("Skipped-day plan") .dropped-tag').textContent();
     assert(row === 1,'skipped-day expected item appears once');
     assert(/yesterday/i.test(tag),'skipped-day miss keeps its dated label');
+    await page.click('#slipped-close');
+  }
+
+  // P. A previously rendered row is stronger evidence than an open clock
+  // window. This is the cold-open case where the exact optimizer moves an item
+  // later in the week even though the morning agenda showed it today.
+  console.log('\n[P] Cold solve cannot erase a row the user actually saw today');
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    const today = todayIso();
+    localStorage.setItem('tings_v2',JSON.stringify([{
+      hid:'cold-drop', name:'Throw trash', emoji:'🚮', type:'reduce', target:3.5,
+      logs:[now-5*dayMs], lastLog:now-5*dayMs, createdAt:now-40*dayMs,
+      flexibilityDays:0, durationMinutes:10, pinned:false,
+      allowedTimeStart:null, allowedTimeEnd:null
+    }]));
+    localStorage.setItem('tings_today_suggested_v1',JSON.stringify({
+      day:today,
+      hids:{'cold-drop':{name:'Throw trash',first:now-2*3600000}},
+      projection:null,
+      expectations:{
+        [today]:{hids:['cold-drop'],fingerprint:'morning-plan',recordedAt:now-2*3600000}
+      }
+    }));
+    const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}');
+    settings.blockedTimes = [];
+    localStorage.setItem('tings_app_settings_v2',JSON.stringify(settings));
+    if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+    _homeRenderedWeek = null;
+    const list = document.getElementById('list');
+    list.innerHTML = '';
+    const header = document.createElement('div');
+    header.className = 'section-header';
+    header.dataset.label = 'today';
+    header.textContent = 'today';
+    list.appendChild(header);
+    // Empty current set models the cold exact plan assigning the item later.
+    attachDroppedIndicator(header,list,[]);
+  });
+  await page.waitForTimeout(250);
+  pill = await page.$('.dropped-pill');
+  assert(Boolean(pill),'previously displayed anytime row appears as missed after a cold-plan drop');
+  if(pill){
+    assert((await pill.textContent()).trim() === '1 missed','cold-plan drop adds exactly one missed item');
+    await pill.click();
+    await page.waitForTimeout(200);
+    const names = await page.$$eval('#slipped-sheet .dropped-name',els=>els.map(el=>el.textContent.trim()));
+    assert(names.length === 1 && names[0] === 'Throw trash','the dropped rendered row is preserved precisely');
     await page.click('#slipped-close');
   }
 

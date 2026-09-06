@@ -100,7 +100,9 @@
  * @property {number|null} preferredTimeEndFixedMin2
  * @property {number}      preferredTimeEndDayOffset
  * @property {number}      preferredTimeEndDayOffset2
- * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
+ * @property {number} earlyWindowDays         — how many days before the due/rhythm day placement may begin; 0-60
+ * @property {number} delayAllowanceDays      — how many days after the due/rhythm day the same occurrence may remain on time; 0-60
+ * @property {number} flexibilityDays         — legacy compatibility alias for earlyWindowDays
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
@@ -118,7 +120,7 @@
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
  * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
- * @property {boolean} hardDue                — computed: true when dueDate is set and flexibilityDays is 0 (firm deadline, escalates urgency past it)
+ * @property {boolean} hardDue                — computed: true when dueDate is set and delayAllowanceDays is 0
  *
  * — LocationFields (optional, on every type) —
  * @property {string[]} locationIds           — selected allowed/preferred Location ids

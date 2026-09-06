@@ -22,6 +22,9 @@
 //   [6]  two movables both fit evening → both place TODAY (chain in the gap)
 //   [7]  loose before-Dinner link still uses the clean evening gap
 //   [8]  in-window short gap before linked successor stays available; audit is critical
+//   [9]  zero-flex due rhythm is pulled back from a later feasible incumbent
+//   [10] early and delay permissions remain directionally independent for
+//        tasks and sparse rhythms, without demoting strict P0 work
 //
 const {
   chromium, BASE, atTime, baseHabit:base,
@@ -50,6 +53,106 @@ function assert(cond, msg){
 
   const glpkOk = await glpkAvailable(page);
 
+  console.log('\n[10] early window and delay allowance are independent');
+  {
+    const policy = await page.evaluate(()=>{
+      const today = dayStart(Date.now());
+      const due = {
+        name:'Directional task',type:'task',target:null,dueDate:today,
+        eventTime:null,earlyWindowDays:7,delayAllowanceDays:0,
+        durationMinutes:30,breakable:false
+      };
+      const allowed = {...due,delayAllowanceDays:2};
+      const strictCandidate = {h:due,i:0,pinned:false};
+      const allowedCandidate = {h:allowed,i:1,pinned:false};
+      return {
+        early:habitEarlyWindowDays(due),
+        strictDelay:habitDelayAllowanceDays(due),
+        strictToday:mustPlaceOccurrenceByDay(strictCandidate,today),
+        strictMovable:isMovableWeekCandidate(strictCandidate,today),
+        allowedToday:mustPlaceOccurrenceByDay(allowedCandidate,today),
+        allowedMovable:isMovableWeekCandidate(allowedCandidate,today),
+        allowedLastDay:mustPlaceOccurrenceByDay(allowedCandidate,today + 2*86400000)
+      };
+    });
+    assert(policy.early === 7 && policy.strictDelay === 0,
+      `large early window grants no delay (${JSON.stringify(policy)})`);
+    assert(policy.strictToday && !policy.strictMovable,
+      'zero delay makes the due-today occurrence non-deferrable');
+    assert(!policy.allowedToday && policy.allowedMovable && policy.allowedLastDay,
+      'explicit delay keeps it movable only until its last allowed day');
+
+    const now = atTime(14);
+    const todayBase = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+    const strict = base({
+      name:'Strict directional task',type:'task',target:null,dueDate:todayBase,
+      earlyWindowDays:7,delayAllowanceDays:0,durationMinutes:30,priority:2,
+      createdAt:now - 86400000
+    });
+    const strictResult = await runBoth([work(),strict],openEveningSettings(),now);
+    for(const [label,r] of [['glpk',strictResult.glpk],['fast',strictResult.fast]]){
+      if(label === 'glpk' && !glpkOk)continue;
+      assert(minutesOnDay(r,0,'Strict directional task') === 30,
+        `${label}: early-only due task stays today`);
+    }
+
+    const mayDelay = base({
+      name:'Delay-permitted task',type:'task',target:null,dueDate:todayBase,
+      earlyWindowDays:0,delayAllowanceDays:2,durationMinutes:30,priority:2,
+      createdAt:now - 86400000
+    });
+    const delayedResult = await runBoth([work(),mayDelay],windowedSettings(),now);
+    for(const [label,r] of [['glpk',delayedResult.glpk],['fast',delayedResult.fast]]){
+      if(label === 'glpk' && !glpkOk)continue;
+      assert(minutesOnDay(r,0,'Delay-permitted task') === 0
+        && (minutesOnDay(r,1,'Delay-permitted task') === 30
+          || minutesOnDay(r,2,'Delay-permitted task') === 30),
+      `${label}: explicit delay permits a later placement when today cannot spare it`);
+    }
+
+    // Sparse rhythms are structurally day-choosing whenever target > 1. This
+    // pair proves that structural classification alone cannot grant deferral:
+    // with identical cadence, priority and capacity, only delayAllowanceDays
+    // decides whether the due P0 occurrence may wait. Work is P1 here so the
+    // strict P0 occurrence wins when the day is packed; when delay is explicit,
+    // the occurrence waits and Work retains today's capacity.
+    const rhythmWork = base({
+      name:'Rhythm Work',type:'keepup',target:1,durationMinutes:360,
+      breakable:true,minChunkMinutes:60,priority:1,
+      allowedTimeStart:540,allowedTimeEnd:1125
+    });
+    const strictRhythm = base({
+      name:'Strict sparse rhythm',type:'keepup',target:3,
+      lastLog:todayBase - 3*86400000,logs:[todayBase - 3*86400000],
+      earlyWindowDays:7,delayAllowanceDays:0,durationMinutes:30,priority:0,
+      createdAt:now - 30*86400000
+    });
+    const strictRhythmResult = await runBoth(
+      [rhythmWork,strictRhythm],windowedSettings(),now
+    );
+    for(const [label,r] of [['glpk',strictRhythmResult.glpk],['fast',strictRhythmResult.fast]]){
+      if(label === 'glpk' && !glpkOk)continue;
+      assert(minutesOnDay(r,0,'Strict sparse rhythm') === 30,
+        `${label}: zero-delay due P0 sparse rhythm is not deferred`);
+    }
+
+    const delayedRhythm = {
+      ...strictRhythm,name:'Delay-permitted sparse rhythm',delayAllowanceDays:2
+    };
+    const delayedRhythmResult = await runBoth(
+      [rhythmWork,delayedRhythm],windowedSettings(),now
+    );
+    for(const [label,r] of [['glpk',delayedRhythmResult.glpk],['fast',delayedRhythmResult.fast]]){
+      if(label === 'glpk' && !glpkOk)continue;
+      assert(minutesOnDay(r,0,'Delay-permitted sparse rhythm') === 0
+        && (minutesOnDay(r,1,'Delay-permitted sparse rhythm') === 30
+          || minutesOnDay(r,2,'Delay-permitted sparse rhythm') === 30),
+      `${label}: explicit delay alone lets the P0 sparse rhythm wait`);
+      assert(minutesOnDay(r,0,'Rhythm Work') >= 285,
+        `${label}: permitted deferral does not unnecessarily displace today's P1 habit`);
+    }
+  }
+
   // Run a scenario through both paths. `now` freezes the clock partway through the
   // day so TODAY is the binding target and an evening gap still lies ahead.
   async function runBoth(data, settings, now){
@@ -65,6 +168,66 @@ function assert(cond, msg){
     return base({ name:'Work', type:'keepup', target:1, durationMinutes:360,
       breakable:true, minChunkMinutes:60, priority:0,
       allowedTimeStart:540, allowedTimeEnd:1170 });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // [9] A time-limited feasible solve may assign a strict due rhythm later.
+  // If it fits today's finished agenda without moving anything, that later
+  // assignment is dominated and must be pulled back to today.
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[9] strict due rhythm pulls forward into an untouched gap');
+  {
+    const repaired = await page.evaluate(() => {
+      const today = dayStart(Date.now());
+      const now = today + 11 * 3600000;
+      const RealDate = Date;
+      function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(now); }
+      FrozenDate.now = ()=>now;
+      FrozenDate.parse = RealDate.parse;
+      FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate,RealDate);
+      FrozenDate.prototype = RealDate.prototype;
+      globalThis.Date = FrozenDate;
+      try{
+        const settings = {
+          ...loadSortSettings(),blockedTimes:[],locations:[],travel:{},
+          availabilityMinutes:Array(7).fill(600),availabilityOverrides:{}
+        };
+        settings.availabilityOverrides[dateKey(today)] = 600;
+        settings.availabilityOverrides[dateKey(today + 3*86400000)] = 600;
+        const data = normalize([{
+          hid:'strict-trash',name:'Throw Trash',type:'reduce',target:3.5,
+          flexibilityDays:0,durationMinutes:10,priority:2,
+          logs:[today - 4*86400000],lastLog:today - 4*86400000,
+          scheduleLinks:[]
+        }]);
+        const laterBase = today + 3*86400000;
+        const makeState = dayBase=>{
+          const day = buildDayAgenda([],settings,dayBase,{now,weekMode:true});
+          return createDayPlacementState(day,settings,{dayBase,weekday:new Date(dayBase).getDay(),weekMode:true});
+        };
+        const todayState = makeState(today);
+        const laterState = makeState(laterBase);
+        const candidate = {
+          h:data[0],i:0,pinned:false,priority:2,urgency:100,scarcity:null,
+          eligible:new Set([today,laterBase])
+        };
+        candidate.scarcity = scarcityScore(candidate,[todayState,laterState]);
+        const fill = {h:data[0],i:0,priority:2,scarcity:candidate.scarcity};
+        const laterFit = tryPlaceOnDay(laterState,fill,{settings,allowNetwork:false});
+        if(!laterFit)return {error:'control could not place later'};
+        commitPlacement(laterState,fill,laterFit);
+        syncDayAgendaItemsFromFills(laterState);
+        const moved = pullStrictDueMovablesForward([candidate],[todayState,laterState],settings);
+        const has = state=>(state.fills || []).some(entry=>entry.fill && entry.fill.i === 0);
+        return {moved,today:has(todayState),later:has(laterState)};
+      }finally{
+        globalThis.Date = RealDate;
+      }
+    });
+    assert(!repaired.error,`strict-due repair control builds (${repaired.error || 'ok'})`);
+    assert(repaired.moved === 1 && repaired.today && !repaired.later,
+      `strict due row moves from later assignment into today's untouched gap (${JSON.stringify(repaired)})`);
   }
 
   // ════════════════════════════════════════════════════════════════════════

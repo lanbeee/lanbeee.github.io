@@ -98,7 +98,8 @@ function syncSettingsControls(){
   });
   syncSettingRange('default-target',sortSettings.defaultTarget,'d');
   syncSettingRange('default-duration',sortSettings.defaultDurationMinutes,'m');
-  syncSettingRange('default-flexibility',sortSettings.defaultFlexibilityDays,'d');
+  syncSettingRange('default-early-window',sortSettings.defaultEarlyWindowDays,'d');
+  syncSettingRange('default-delay-allowance',sortSettings.defaultDelayAllowanceDays,'d');
   syncSettingRange('default-min-chunk',sortSettings.defaultMinChunkMinutes,'m');
   const chunkRow = $('default-chunk-row');
   if(chunkRow)chunkRow.hidden = !sortSettings.defaultBreakable;

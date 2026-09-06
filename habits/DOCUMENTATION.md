@@ -50,7 +50,7 @@ Everything below is covered in this skeleton:
 - Time Window: allowedWeekdays, allowedMonthDays, preferredWeekdays, preferredMonthDays
 - Time Start/End: allowedTimeStart, allowedTimeEnd, preferredTimeStart, preferredTimeEnd
 - Prayer Anchors: 8 anchor fields + combine + offset + habit linking
-- Flexibility: flexibilityDays
+- Scheduling windows: earlyWindowDays + delayAllowanceDays (legacy flexibilityDays migrates to early only)
 - Duration: durationMinutes, breakable, minChunkMinutes
 - Timers: timerAutoStopMinutes (legacy), autoMarkMinutes
 - Tracking: trackValue
@@ -60,7 +60,7 @@ Everything below is covered in this skeleton:
 - Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override)
 - Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
 - Links: links array (kind, value)
-- Task-specific: dueDate, eventTime, hardDue, flexibilityDays
+- Task-specific: dueDate, eventTime, hardDue, earlyWindowDays, delayAllowanceDays
 - Calendar import: externalId, source, importedAt
 
 ### ✅ All Settings Fields (40+ fields)
@@ -134,9 +134,11 @@ Everything below is covered in this skeleton:
 - Platform: Works on desktop, mobile, installable as PWA
 
 ### 1.2 Philosophy & Core Concepts 👤
-- **Rhythm-based planning:** Target + flexibilityDays instead of rigid deadlines
+- **Rhythm-based planning:** Target + separate early and delay windows instead of one ambiguous flexibility value
 - **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
 - **Capacity-based scheduling:** availabilityMinutes - durationMinutes
+- **Directional scheduling:** `earlyWindowDays` only permits bringing work forward. `delayAllowanceDays` alone permits moving the same occurrence past its due/rhythm day.
+- **Strict due placement:** On an occurrence's last allowed day, both planners treat it as non-deferrable and claim any compatible open or reserved-spare time. It may shorten a protected daily breakable only when it has strictly higher priority. If a later feasible incumbent leaves an untouched due-day gap, it is pulled back. A genuinely infeasible later row is catch-up and does not erase the original Missed expectation.
 - **Progressive urgency:** No hard deadlines by default, with the ability to add.
 - **Privacy-first:** All data is stored in this browser. There is no Tings account. A few opt-in features can send something outward (shared display, share item, address search, send feedback); those controls carry a cloud-up mark. See About → privacy.
 
@@ -309,12 +311,13 @@ if days < 4: score += red (keep going)
 | `dueDate` | number\|null | null | Soft deadline (day-level) |
 | `eventTime` | number\|null | null | Fixed time appointment |
 | `hardDue` | boolean | false | Hard deadline (escalates urgency) |
-| `flexibilityDays` | number | 1 | Days before due date it starts surfacing |
+| `earlyWindowDays` | number | 1 | Days before the due date it may start surfacing |
+| `delayAllowanceDays` | number | 0 | Days after the due date it may remain on time |
 
 #### Due Score Calculation:
 ```
 daysLeft = daysUntil(dueDate)
-window = max(1, flexibilityDays)
+window = max(1, earlyWindowDays)
 if daysLeft ≤ 0:
   overdueBoost = hardDue ? 1.4 : 1
   score = (1 + min(0.75, abs(daysLeft)/window)) * overdueBoost
@@ -392,7 +395,9 @@ else:
   ...  // Same pattern for end fields
   
   // ─── FLEXIBILITY & DURATION ───────────────────────────────
-  flexibilityDays: number,   // 👤 Buffer days (tasks), 0-60
+  earlyWindowDays: number,   // 👤 May be scheduled this many days early, 0-60
+  delayAllowanceDays: number,// 👤 May remain on time this many days late, 0-60
+  flexibilityDays: number,   // 👨‍💻 Legacy alias exported as earlyWindowDays
   durationMinutes: number,   // 👤 Planned session length (1-720)
   breakable: boolean,        // 👤 Can split across sessions
   minChunkMinutes: number,   // 👤 Minimum split size (15-720)
@@ -511,7 +516,7 @@ showTimeWindowOnCards: boolean,    // 👤 Show 🕐 time window
 showSnoozedUntilOnCards: boolean,  // 👤 Show snooze countdown
 showDurationOnCards: boolean,      // 👤 Show ⏱️ duration
 showRepetitionOnCards: boolean,    // 👤 Show rhythm (e.g., 1×)
-showFlexibilityOnCards: boolean,   // 👤 Show flexibility days
+showFlexibilityOnCards: boolean,   // 👤 Show early/delay scheduling windows (legacy key name)
 showTopicsOnCards: boolean,        // 👤 Show 💡 topic chips
 showLocationOnCards: boolean,      // 👤 Show 📍 location
 showAgendaTimesOnCards: 'time'|'icon'|'hide',
@@ -646,7 +651,8 @@ defaultType:'keepup',                  // New habit default type
 defaultTarget:7,                      // Default target cycle (days)
 defaultPriority:2,                   // Default priority (P2)
 defaultDurationMinutes:30,           // Default session length
-defaultFlexibilityDays:1,            // Default flexibility for tasks
+defaultEarlyWindowDays:1,            // Default early scheduling window
+defaultDelayAllowanceDays:0,         // Default permission to run late
 defaultBreakable:false,             // Default breakable setting
 defaultMinChunkMinutes:30,          // Default minimum chunk for breakables
 ```
@@ -831,7 +837,7 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showSnoozedUntilOnCards | **true** | Snooze countdown |
 | showDurationOnCards | **false** | ⏱️ session length |
 | showRepetitionOnCards | **true** | 1× rhythm display |
-| showFlexibilityOnCards | **false** | Flexibility days |
+| showFlexibilityOnCards | **false** | Early and delay windows (legacy key name) |
 | showTopicsOnCards | **false** | 💡 topic chips |
 | showLocationOnCards | **false** | 📍 location pin |
 | showStatusOnCards | **false** | Status word ("run", etc.) — calm-card default |
@@ -870,9 +876,9 @@ Minimal mode (always):
 Each day section header can have two dynamic **pills**:
 
 ### 6.2 Missed Pills (🔴 "N missed")
-- Appears on "Today" only after a planner-backed opportunity has passed without being completed
+- Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
 - Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
-- It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, and still-doable work are excluded
+- It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, and still-doable work that was never shown are excluded
 - Dated expectations are retained across skipped app days. To keep the list useful instead of becoming a backlog dump, only the newest unresolved miss for each item is shown; a later completion resolves earlier expectations.
 - Tap to open the **Slipped Sheet** (see §X.1)
 - Shows items in expected-day, then first-suggested order
@@ -1028,7 +1034,7 @@ Visible when type = task:
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
 | `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics |
-| `schedule` | 📅 | Rhythm or task deadline, flexibility, allowed/preferred days, times and places, item order |
+| `schedule` | 📅 | Rhythm or task deadline, early/delay windows, allowed/preferred days, times and places, item order |
 | `effort` | 📊 | Duration, breakable, min chunk, logging and session controls |
 | `history` (`calendar` key) | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
 | `actions` | ⋮ | Links/calls, pin, export, share, snooze and remove |
@@ -1064,11 +1070,13 @@ Fields shown (always visible, even in minimal mode):
 - Tasks open on Schedule by default so deadline and placement controls are the
   first editable fields.
 
-#### Flexibility Section (full mode only) 👤
-- **Flexibility (days):** Scheduling buffer
-  - For tasks, how many days before the due date the task starts surfacing
-  - For habits, extra planning buffer beyond the rhythm target
-  - Input range: 0-60; default: 0
+#### Scheduling Windows Section (full mode only) 👤
+- **Early window (days):** How far before the due/rhythm day the planner may bring the item forward
+  - This only grants earlier placement; it never makes postponement cheaper or legal
+- **Delay allowance (days):** How far after the due/rhythm day the same occurrence may remain on time
+  - This is a fallback ceiling, not a preference to wait
+  - `0` makes the due day non-deferrable whenever a valid fit exists
+- Both inputs range from 0-60. Existing `flexibilityDays` values migrate into the early window; delay defaults to 0.
 
 #### Days Section
 - **Allowed Weekdays:** Mon Tue Wed Thu Fri Sat Sun (0-6)
@@ -1341,7 +1349,7 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
-- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion. Off-day and never-feasible overdue work do not belong here.
+- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
 - Repeated unresolved occurrences of the same item collapse to one actionable row, labeled with its newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
@@ -1832,7 +1840,8 @@ Settings sections (actual order):
 │   │   ├── how often (rhythm)
 │   │   ├── importance (priority)
 │   │   ├── duration
-│   │   ├── can do early (flexibility)
+│   │   ├── can do early (early window)
+│   │   ├── may run late (delay allowance)
 │   │   ├── allow splitting (breakable)
 │   │   └── default topics
 │   ├── appearance
@@ -1879,10 +1888,11 @@ How long a habit session takes:
 - Maximum: 720 minutes (12 hours)
 - Used by agenda for capacity planning
 
-### 13.3 Flexibility Days 👤
-Only for Task type:
-- Days before `dueDate` when task starts being relevant
-- Example: due on 15th, flexibility 3 → starts appearing on 12th
+### 13.3 Scheduling Windows 👤
+- **Early window:** Days before the due/rhythm day when an item may be brought forward
+- **Delay allowance:** Days after the due/rhythm day when it may still be placed without being late
+- Example: due on the 15th, early window 3 and delay allowance 1 → it may surface from the 12th and must be placed no later than the 16th
+- An early window never grants delay. Once an occurrence reaches its last allowed day, a feasible placement is protected in both Fast and GLPK planning, subject to the existing rule that equal/lower-priority work cannot steal a daily breakable's required minutes.
 
 ### 13.4 Auto Mark Done (minutes) 👤
 - Blank: Manual completion (tap the pulse button)
@@ -1986,7 +1996,8 @@ Settings > Display > Minimal Mode (toggle off)
 | Term | Definition |
 |------|------------|
 | **Target** | Rhythm: times per N days |
-| **Flexibility** | Days before deadline for tasks |
+| **Early window** | Permission to schedule before the due/rhythm day |
+| **Delay allowance** | Permission to schedule after the due/rhythm day; zero is strict |
 | **Attendance Score** | Urgency based on overdue/on-track status |
 | **Agenda** | Today's scheduled timeline |
 | **Plan Signal** | Future logs marked "planned" |
@@ -2081,7 +2092,8 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
   defaultTarget: 7,
   defaultPriority: 2,
   defaultDurationMinutes: 30,
-  defaultFlexibilityDays: 1,
+  defaultEarlyWindowDays: 1,
+  defaultDelayAllowanceDays: 0,
   defaultBreakable: false,
   defaultMinChunkMinutes: 30,
 
@@ -2120,7 +2132,8 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `MIN_RHYTHM_DAYS` | 0.5 | Min cycle length |
 | `DEFAULT_DURATION_MINUTES` | 30 | Default session length |
 | `DEFAULT_MIN_CHUNK_MINUTES` | 30 | Default min chunk when breakable |
-| `DEFAULT_FLEXIBILITY_DAYS` | 1 | Default flexibility for tasks |
+| `DEFAULT_EARLY_WINDOW_DAYS` | 1 | Default number of days an item may be brought forward |
+| `DEFAULT_DELAY_ALLOWANCE_DAYS` | 0 | Default permission to place an occurrence after its due day |
 | `TIME_PICKER_STEP_MINUTES` | 15 | Time picker granularity |
 | `MAX_NOTE_CHARS` | 200 | Max free-form notes |
 | `DEFAULT_PRIORITY` | 2 | Default priority (P2) |
@@ -2417,7 +2430,7 @@ Same agenda logic, but simplified display:
 | showSnoozedUntilOnCards | true | Snooze countdown | "2h left" text |
 | showDurationOnCards | false | ⏱️ session length | ⏱️ |
 | showRepetitionOnCards | true | 1× rhythm display | "1×" text |
-| showFlexibilityOnCards | false | Flexibility days | "±2d" text |
+| showFlexibilityOnCards | false | Early/delay windows (legacy key name) | separate left/right day pills |
 | showTopicsOnCards | false | 💡 topic chips | 💡 tags |
 | showLocationOnCards | false | 📍 location pin | 📍 |
 | showStatusOnCards | true | Status word | "run", "great", etc. |
@@ -2544,7 +2557,8 @@ Same agenda logic, but simplified display:
 | `defaultTarget` | number | 7 | Default rhythm cycle (days) |
 | `defaultPriority` | number | 2 | Default priority (P2) |
 | `defaultDurationMinutes` | number | 30 | Default session length |
-| `defaultFlexibilityDays` | number | 1 | Default flexibility for tasks |
+| `defaultEarlyWindowDays` | number | 1 | Default early scheduling window |
+| `defaultDelayAllowanceDays` | number | 0 | Default delay allowance |
 | `defaultBreakable` | boolean | false | Default breakable setting |
 | `defaultMinChunkMinutes` | number | 30 | Default minimum chunk |
 | `defaultAutoMarkMinutes` | number\|null | null | Default auto-mark timeout |
@@ -2720,7 +2734,8 @@ Same agenda logic, but simplified display:
 | Location address | 120 characters |
 | Rhythm times | 183 |
 | Rhythm days | 183 |
-| Flexibility days | 60 |
+| Early-window days | 60 |
+| Delay-allowance days | 60 |
 | Duration | 720 minutes |
 | Min chunk | 720 minutes |
 | Prayer offset | ±720 minutes |

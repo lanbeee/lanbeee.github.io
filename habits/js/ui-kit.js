@@ -121,7 +121,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showSnoozedUntilOnCards', title:'show snooze label', hint:'Show when hidden items return.', extraClass:'settings-full-only'},
     {key:'showDurationOnCards', title:'show duration', hint:'Keep duration visible on the home list.', extraClass:'settings-full-only'},
     {key:'showRepetitionOnCards', title:'show how often', hint:'Show every N days or stop.', extraClass:'settings-full-only'},
-    {key:'showFlexibilityOnCards', title:'show early window', hint:'Show how many days early it can be done.', extraClass:'settings-full-only'},
+    {key:'showFlexibilityOnCards', title:'show scheduling windows', hint:'Show how many days early or late it may be planned.', extraClass:'settings-full-only'},
     {key:'showTopicsOnCards', title:'show topics', hint:'Show topic labels on the home list.', extraClass:'settings-full-only'},
     {key:'showLocationOnCards', title:'show place', hint:'Show the place on each item.', extraClass:'settings-full-only'},
     {key:'showStatusOnCards', title:'show progress', hint:'Show done / almost / behind (or new).', extraClass:'settings-full-only'},

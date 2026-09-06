@@ -146,7 +146,7 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // makes "first placed day" the wrong signal for clustering.
   await run('1. mixed habit+task far+co-located cluster', [
     homeRoutine,
-    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
+    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2, delayAllowanceDays:3 },
     { name:'farB task',  type:'task', dueDate: dayStartOf(2), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
@@ -195,7 +195,7 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // legitimately multiply travel and obscure the cluster check.
   await run('4. flexible far item defers to join day-pinned far partner', [
     homeRoutine,
-    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2 },
+    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2, delayAllowanceDays:5 },
     { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();
@@ -276,7 +276,7 @@ const homeRoutine = { name:'home routine', type:'keepup', target:1, logs:[today-
   // dynamic-times week tests instead).
   await run('9. soft preferred-weekday yields to min-travel clustering', [
     homeRoutine,
-    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2, preferredWeekdays:[new Date(sixAm).getDay()] },
+    { name:'farA habit', type:'keepup', target:7, logs:[today-8*86400000], durationMinutes:30, locationIds:['farA'], priority:2, delayAllowanceDays:5, preferredWeekdays:[new Date(sixAm).getDay()] },
     { name:'farB task',  type:'task', dueDate: dayStartOf(4), durationMinutes:30, locationIds:['farB'], priority:2, flexibilityDays:0 },
   ], { locations:PLACES }, async () => {
     const w = await week();

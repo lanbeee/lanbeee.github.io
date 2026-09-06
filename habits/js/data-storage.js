@@ -129,7 +129,14 @@ function loadSortSettings(){
     merged.lastRetentionCleanupAt = normalizeRetentionCleanupAt(merged.lastRetentionCleanupAt);
     merged.defaultPriority = clampPriority(merged.defaultPriority);
     merged.defaultDurationMinutes = clampDuration(merged.defaultDurationMinutes);
-    merged.defaultFlexibilityDays = clampFlexibility(merged.defaultFlexibilityDays);
+    const savedEarlyDefault = Object.prototype.hasOwnProperty.call(saved,'defaultEarlyWindowDays')
+      ? saved.defaultEarlyWindowDays
+      : saved.defaultFlexibilityDays;
+    merged.defaultEarlyWindowDays = clampFlexibility(
+      savedEarlyDefault != null ? savedEarlyDefault : merged.defaultEarlyWindowDays
+    );
+    merged.defaultDelayAllowanceDays = clampDelayAllowance(merged.defaultDelayAllowanceDays);
+    delete merged.defaultFlexibilityDays;
     merged.defaultBreakable = Boolean(merged.defaultBreakable);
     merged.defaultMinChunkMinutes = clampMinChunk(merged.defaultMinChunkMinutes);
     merged.defaultTopics = normalizeTopics(merged.defaultTopics);
@@ -227,7 +234,11 @@ function saveSortSettings(settings){
   next.lastRetentionCleanupAt = normalizeRetentionCleanupAt(next.lastRetentionCleanupAt);
   next.defaultPriority = clampPriority(next.defaultPriority);
   next.defaultDurationMinutes = clampDuration(next.defaultDurationMinutes);
-  next.defaultFlexibilityDays = clampFlexibility(next.defaultFlexibilityDays);
+  next.defaultEarlyWindowDays = clampFlexibility(
+    next.defaultEarlyWindowDays != null ? next.defaultEarlyWindowDays : next.defaultFlexibilityDays
+  );
+  next.defaultDelayAllowanceDays = clampDelayAllowance(next.defaultDelayAllowanceDays);
+  delete next.defaultFlexibilityDays;
   next.defaultBreakable = Boolean(next.defaultBreakable);
   next.defaultMinChunkMinutes = clampMinChunk(next.defaultMinChunkMinutes);
   next.defaultTopics = normalizeTopics(next.defaultTopics);

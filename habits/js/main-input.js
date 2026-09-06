@@ -629,7 +629,8 @@ $('location-list')?.addEventListener('click',e=>{
 });
 bindSettingRange('default-target','defaultTarget','d',{custom:false});
 bindSettingRange('default-duration','defaultDurationMinutes','m',{custom:false});
-bindSettingRange('default-flexibility','defaultFlexibilityDays','d',{custom:false});
+bindSettingRange('default-early-window','defaultEarlyWindowDays','d',{custom:false});
+bindSettingRange('default-delay-allowance','defaultDelayAllowanceDays','d',{custom:false});
 bindSettingRange('default-min-chunk','defaultMinChunkMinutes','m',{custom:false});
 $('default-priority-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-priority]');

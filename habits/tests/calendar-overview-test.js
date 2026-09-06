@@ -47,7 +47,7 @@ function seedScript(){
         name:'Scope Beta', type:'task', target:null,
         logs:[], emoji:'🅱️', pinned:false, sample:false, snoozedUntil:null,
         topics:['qa'], locationIds:['home'], durationMinutes:15, priority:2,
-        dueDate: day(2), hardDue:false, eventTime:null,
+        dueDate: day(2), hardDue:false, delayAllowanceDays:1, eventTime:null,
         createdAt:now - 5*86400000, lastLog:null
       },
       {

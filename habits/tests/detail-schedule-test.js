@@ -70,14 +70,15 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   const paneMap = await page.evaluate(() => Object.fromEntries([
     ['due','#detail-due-row'],
-    ['flexibility','#detail-flexibility'],
+    ['earlyWindow','#detail-early-window'],
+    ['delayAllowance','#detail-delay-allowance'],
     ['duration','#detail-duration'],
     ['links','#detail-link-field'],
     ['identity','#detail-type-seg'],
     ['pinned','#detail-pinned']
   ].map(([key,selector]) => [key,document.querySelector(selector)?.closest('.detail-page')?.dataset.detailNav])));
   const expectedPaneMap = {
-    due:'schedule',flexibility:'schedule',duration:'effort',
+    due:'schedule',earlyWindow:'schedule',delayAllowance:'schedule',duration:'effort',
     links:'actions',identity:'identity',pinned:'actions'
   };
   if(JSON.stringify(paneMap) !== JSON.stringify(expectedPaneMap)){
@@ -119,17 +120,23 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(durationAfter !== '45') throw new Error(`duration should be 45, got ${durationAfter}`);
   console.log('  OK');
 
-  // Test flexibility field
-  console.log('Testing flexibility field...');
+  // Test independent scheduling-direction fields.
+  console.log('Testing early/delay fields...');
   await scrollDetailToSchedule(page, 1);
-  const flexField = page.locator('#detail-flexibility');
-  const flexVal = await flexField.inputValue();
-  if(flexVal !== '1') throw new Error(`flexibility default should be 1, got ${flexVal}`);
-  await flexField.click();
-  await flexField.fill('3');
-  await flexField.blur();
-  const flexAfter = await flexField.inputValue();
-  if(flexAfter !== '3') throw new Error(`flexibility should be 3, got ${flexAfter}`);
+  const earlyField = page.locator('#detail-early-window');
+  const delayField = page.locator('#detail-delay-allowance');
+  const earlyVal = await earlyField.inputValue();
+  const delayVal = await delayField.inputValue();
+  if(earlyVal !== '1') throw new Error(`early window default should be 1, got ${earlyVal}`);
+  if(delayVal !== '0') throw new Error(`delay allowance default should be 0, got ${delayVal}`);
+  await earlyField.fill('3');
+  await earlyField.blur();
+  await delayField.fill('2');
+  await delayField.blur();
+  const earlyAfter = await earlyField.inputValue();
+  const delayAfter = await delayField.inputValue();
+  if(earlyAfter !== '3') throw new Error(`early window should be 3, got ${earlyAfter}`);
+  if(delayAfter !== '2') throw new Error(`delay allowance should be 2, got ${delayAfter}`);
   console.log('  OK');
 
   // Session target on same row as start button
@@ -207,8 +214,10 @@ async function assertAttr(page, selector, attr, expected, msg){
   await assertAttr(page, '#detail-track-value', 'aria-pressed', 'true', 'track-value persisted');
   const durPersisted = await page.locator('#detail-duration').inputValue();
   if(durPersisted !== '45') throw new Error(`duration should persist as 45, got ${durPersisted}`);
-  const flexPersisted = await page.locator('#detail-flexibility').inputValue();
-  if(flexPersisted !== '3') throw new Error(`flexibility should persist as 3, got ${flexPersisted}`);
+  const earlyPersisted = await page.locator('#detail-early-window').inputValue();
+  const delayPersisted = await page.locator('#detail-delay-allowance').inputValue();
+  if(earlyPersisted !== '3') throw new Error(`early window should persist as 3, got ${earlyPersisted}`);
+  if(delayPersisted !== '2') throw new Error(`delay allowance should persist as 2, got ${delayPersisted}`);
   console.log('  All values persisted: OK');
 
   // Home card for a breakable habit shows the progress slider (first instance).
@@ -278,14 +287,14 @@ async function assertAttr(page, selector, attr, expected, msg){
   await openCardDetail(page,taskName);
   await scrollDetailToSchedule(page, 1);
   await page.locator('#detail-due-time').fill('');
-  await page.locator('#detail-flexibility').fill('0');
-  await page.locator('#detail-flexibility').blur();
+  await page.locator('#detail-delay-allowance').fill('0');
+  await page.locator('#detail-delay-allowance').blur();
   await page.locator('#detail-save').click();
   await page.waitForTimeout(400);
   stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
   taskItem = stored.find(h => h.name === taskName);
   if(taskItem?.eventTime) throw new Error('date-only task should not have eventTime');
-  if(!taskItem?.hardDue) throw new Error('flexibility 0 should infer hardDue');
+  if(!taskItem?.hardDue) throw new Error('delay allowance 0 should infer hardDue');
   console.log('  Due/time + inferred hardDue: OK');
 
   // Save closes the sheet — reopen for schedule-pane tests.
