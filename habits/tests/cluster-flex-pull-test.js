@@ -141,7 +141,6 @@ async function runScenario(page,{
   console.log('\n[G] current location outranks the first block location');
   const g = await page.evaluate(() => {
     const today = dayStart(Date.now());
-    if(typeof currentCoord !== 'undefined')currentCoord = null;
     const settings = {
       ...loadSortSettings(),
       locations:[
@@ -154,19 +153,40 @@ async function runScenario(page,{
     };
     saveSortSettings(settings);
     if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+    if(typeof setPlannerCurrentCoord === 'function')setPlannerCurrentCoord({lat:40.7128,lng:-74.0060});
     const day = {
       dayBase:today,weekday:new Date(today).getDay(),isToday:true,
       dayKey:dateKey(today),totalMinutes:60,slots:[],scheduled:[]
     };
-    const state = createDayPlacementState(day,settings,{dayBase:today,weekMode:true});
-    return {
-      plannerSeed:state.seedLocId,
-      timelineSeed:dayTimelineSeedLocation(day,settings),
-      live:state.liveLocId
+    const pinnedState = createDayPlacementState(day,settings,{dayBase:today,weekMode:true});
+    const pinnedTimelineSeed = dayTimelineSeedLocation(day,settings);
+    const unpinnedSettings = {...settings,pinnedLocationId:null};
+    saveSortSettings(unpinnedSettings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,unpinnedSettings);
+    const gpsState = createDayPlacementState(day,unpinnedSettings,{dayBase:today,weekMode:true});
+    const tomorrow = today + 86400000;
+    const futureDay = {
+      dayBase:tomorrow,weekday:new Date(tomorrow).getDay(),isToday:false,
+      dayKey:dateKey(tomorrow),totalMinutes:60,slots:[],scheduled:[]
     };
+    const futureState = createDayPlacementState(futureDay,unpinnedSettings,{dayBase:tomorrow,weekMode:true});
+    const result = {
+      pinnedPlannerSeed:pinnedState.seedLocId,
+      pinnedLive:pinnedState.liveLocId,
+      timelineSeed:pinnedTimelineSeed,
+      gpsPlannerSeed:gpsState.seedLocId,
+      futurePlannerSeed:futureState.seedLocId,
+      currentCoordId:typeof CURRENT_COORD_ID !== 'undefined' ? CURRENT_COORD_ID : '__current__'
+    };
+    if(typeof setPlannerCurrentCoord === 'function')setPlannerCurrentCoord(null);
+    return result;
   });
-  assert(g.plannerSeed === 'away' && g.timelineSeed === 'away' && g.live === 'away',
-    'manual/live Away overrides the earlier Sleep at Home ' + JSON.stringify(g));
+  assert(g.pinnedPlannerSeed === 'away' && g.timelineSeed === 'away' && g.pinnedLive === 'away',
+    'manual Away overrides both conflicting GPS and the earlier Sleep at Home ' + JSON.stringify(g));
+  assert(g.gpsPlannerSeed === g.currentCoordId,
+    'without a pin, far live GPS overrides the earlier Sleep at Home ' + JSON.stringify(g));
+  assert(g.futurePlannerSeed === 'home',
+    'future planning ignores today GPS and uses the first block location ' + JSON.stringify(g));
 
   assert(!errors.length,'no page errors');
 

@@ -1880,7 +1880,15 @@ function createDayPlacementState(day,settings,opts = {}){
     && settings && settings._plannerLiveLocationId
     && registry.some(loc=>loc.id === settings._plannerLiveLocationId)
     ? settings._plannerLiveLocationId : null;
-  const coordAwayFromSaved = isTodayDay
+  // A sticky manual pin is an explicit correction from the user and must beat
+  // raw GPS, including a fix outside every saved geofence. This matches
+  // currentLocationId()/locationPresence() and prevents a noisy or stale fix
+  // from silently moving the planner away from "I am at …".
+  const pinnedLocId = isTodayDay
+    && settings && settings.pinnedLocationId
+    && registry.some(loc=>loc.id === settings.pinnedLocationId)
+    ? settings.pinnedLocationId : null;
+  const coordAwayFromSaved = isTodayDay && !pinnedLocId
     && typeof currentCoordLocation === 'function'
     && typeof isCurrentCoordAwayFromSaved === 'function'
     && typeof CURRENT_COORD_ID !== 'undefined'
@@ -1893,22 +1901,29 @@ function createDayPlacementState(day,settings,opts = {}){
     ? dayFirstBlockLocationId(blocks,weekday,dayBase)
     : (blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
       || null);
-  let prevLocId = isTodayDay
-    ? (coordAwayFromSaved ? CURRENT_COORD_ID
-      : (workerLiveLocId
-        || (typeof currentLocationId === 'function' && currentLocationId())
-        || settings.lastKnownLocationId
-        || blockOriginLocId
-        || null))
-    : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
+  let prevLocId;
+  if(isTodayDay){
+    prevLocId = pinnedLocId
+      || (coordAwayFromSaved ? CURRENT_COORD_ID : null)
+      || workerLiveLocId
+      || (typeof currentLocationId === 'function' && currentLocationId())
+      || settings.lastKnownLocationId
       || blockOriginLocId
-      || null);
+      || null;
+  }else{
+    prevLocId = blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
+      || blockOriginLocId
+      || null;
+  }
   // Genuine live fix only (geolocation / manual pin), not the last-known
   // default. Presence uses this to decide whether the seed supersedes ended
   // blocks. Null on future days and whenever the user has no active fix.
   const liveLocId = isTodayDay
-    ? (coordAwayFromSaved ? CURRENT_COORD_ID
-      : (workerLiveLocId || (typeof liveLocationId === 'function' ? liveLocationId() : null))) : null;
+    ? (pinnedLocId
+      || (coordAwayFromSaved ? CURRENT_COORD_ID : null)
+      || workerLiveLocId
+      || (typeof liveLocationId === 'function' ? liveLocationId() : null))
+    : null;
   return {
     day,
     dayBase,
