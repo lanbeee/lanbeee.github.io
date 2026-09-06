@@ -94,7 +94,8 @@ function currentDetailTune(){
     timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
     autoMarkMinutes:normalizeAutoMark($('detail-auto-mark')?.value),
     trackValue:$('detail-track-value')?.getAttribute('aria-pressed') === 'true',
-    flexibilityDays:clampFlexibility($('detail-flexibility').value),
+    earlyWindowDays:clampFlexibility($('detail-early-window').value),
+    delayAllowanceDays:clampDelayAllowance($('detail-delay-allowance').value),
     priority:clampPriority(document.querySelector('#detail-priority-seg .seg-opt.on')?.dataset.priority),
     dueDate:parseDateInput($('detail-due-date').value),
     eventTime:parseTaskWhen($('detail-due-date').value,$('detail-due-time')?.value || ''),
@@ -167,7 +168,8 @@ function restoreDetailTune(){
   setDetailSharedDisplayMode(sharedDisplayModeForHabit(detailTuneOriginal));
   renderDetailLinkRows(normalizeLinks(detailTuneOriginal.links));
   $('detail-duration').value = detailTuneOriginal.durationMinutes;
-  $('detail-flexibility').value = detailTuneOriginal.flexibilityDays;
+  $('detail-early-window').value = detailTuneOriginal.earlyWindowDays;
+  $('detail-delay-allowance').value = detailTuneOriginal.delayAllowanceDays;
   $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = detailTuneOriginal.eventTime !== null ? timeInputValue(detailTuneOriginal.eventTime) : '';
   syncDetailDueUi();
@@ -517,7 +519,7 @@ function syncDetailDueUi(){
   if(hint){
     if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
     else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
-    else hint.textContent = 'Due on this date — set flexibility to 0 for a firm deadline.';
+    else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
   }
 }
 

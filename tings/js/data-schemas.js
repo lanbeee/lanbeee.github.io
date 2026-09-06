@@ -100,7 +100,9 @@
  * @property {number|null} preferredTimeEndFixedMin2
  * @property {number}      preferredTimeEndDayOffset
  * @property {number}      preferredTimeEndDayOffset2
- * @property {number} flexibilityDays         — buffer added to (or subtracted from) target; 0-60. For tasks: days-before-due it starts surfacing.
+ * @property {number} earlyWindowDays         — how many days before the due/rhythm day placement may begin; 0-60
+ * @property {number} delayAllowanceDays      — how many days after the due/rhythm day the same occurrence may remain on time; 0-60
+ * @property {number} flexibilityDays         — legacy compatibility alias for earlyWindowDays
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
@@ -118,7 +120,7 @@
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
  * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
- * @property {boolean} hardDue                — computed: true when dueDate is set and flexibilityDays is 0 (firm deadline, escalates urgency past it)
+ * @property {boolean} hardDue                — computed: true when dueDate is set and delayAllowanceDays is 0
  *
  * — LocationFields (optional, on every type) —
  * @property {string[]} locationIds           — selected allowed/preferred Location ids
@@ -198,6 +200,7 @@
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
  * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
  * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
+ * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)
  * @property {boolean} showCueOnCards                          — show one-line status on home cards
  * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
  * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview
@@ -216,6 +219,7 @@
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
+ * @property {boolean} showWeatherTemperatureRanges           — add low/high °C to full-mode home/overview weather cues
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)

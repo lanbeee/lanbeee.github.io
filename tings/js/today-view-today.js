@@ -1,15 +1,26 @@
 function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
-  const todayBase = dayStart(Date.now());
+  const planningNow = opts.now != null ? Number(opts.now) : Date.now();
+  const todayBase = dayStart(planningNow);
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
   const days = [];
   for(let offset = 0;offset < count;offset += 1){
     const dayBase = todayBase + offset * 86400000;
-    days.push(buildDayAgenda(data,settings,dayBase,{weekMode:true}));
+    days.push(buildDayAgenda(data,settings,dayBase,{
+      weekMode:true,
+      now:planningNow,
+      fullDay:Boolean(opts.fullToday && offset === 0)
+    }));
   }
   const makeStates = () => days.map(day=>createDayPlacementState(day,settings,{
     dayBase:day.dayBase,
     weekday:day.weekday,
-    weekMode:true
+    weekMode:true,
+    now:planningNow,
+    startClock:opts.fullToday && day.isToday
+      ? day.dayBase + dayFirstOpenMinute(
+        normalizeBlockedTimes(settings.blockedTimes),day.weekday,day.dayBase
+      ) * 60000
+      : undefined
   }));
 
   const candidates = [];
@@ -55,16 +66,21 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   if(typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
   if(typeof plannerPerfResetTryPlace === 'function')plannerPerfResetTryPlace();
 
-  applyPersistentLinkEligibility(candidates,days,settings);
+  // Eligibility needs the same origin-aware placement context as the exact
+  // engine. In particular, a same-location pair at today's current/last-known
+  // place is not a travel-saving cluster.
+  let dayStates = makeStates();
+  applyPersistentLinkEligibility(candidates,dayStates,settings);
   if(typeof applyClusterFlexEligibility === 'function'){
-    applyClusterFlexEligibility(candidates,days,settings);
+    applyClusterFlexEligibility(candidates,dayStates,settings);
   }
   for(let i = candidates.length - 1;i >= 0;i -= 1){
-    if(!candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
+    const h = candidates[i] && candidates[i].h;
+    const snoozed = h && h.snoozedUntil && Date.now() < h.snoozedUntil;
+    if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
 
   // Pass 1 — greedy discovery of each location's natural day.
-  let dayStates = makeStates();
   assignWeekCandidatesByPlacement(candidates,dayStates,settings,null);
   const locHints = collectLocationHints(dayStates);
 

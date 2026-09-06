@@ -129,7 +129,14 @@ function loadSortSettings(){
     merged.lastRetentionCleanupAt = normalizeRetentionCleanupAt(merged.lastRetentionCleanupAt);
     merged.defaultPriority = clampPriority(merged.defaultPriority);
     merged.defaultDurationMinutes = clampDuration(merged.defaultDurationMinutes);
-    merged.defaultFlexibilityDays = clampFlexibility(merged.defaultFlexibilityDays);
+    const savedEarlyDefault = Object.prototype.hasOwnProperty.call(saved,'defaultEarlyWindowDays')
+      ? saved.defaultEarlyWindowDays
+      : saved.defaultFlexibilityDays;
+    merged.defaultEarlyWindowDays = clampFlexibility(
+      savedEarlyDefault != null ? savedEarlyDefault : merged.defaultEarlyWindowDays
+    );
+    merged.defaultDelayAllowanceDays = clampDelayAllowance(merged.defaultDelayAllowanceDays);
+    delete merged.defaultFlexibilityDays;
     merged.defaultBreakable = Boolean(merged.defaultBreakable);
     merged.defaultMinChunkMinutes = clampMinChunk(merged.defaultMinChunkMinutes);
     merged.defaultTopics = normalizeTopics(merged.defaultTopics);
@@ -161,6 +168,7 @@ function loadSortSettings(){
     merged.homeCityLng = Number.isFinite(merged.homeCityLng) ? merged.homeCityLng : null;
     merged.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
       ? normalizeWeatherProfiles(merged.weatherProfiles) : [];
+    merged.showWeatherTemperatureRanges = Boolean(merged.showWeatherTemperatureRanges);
     // Migrate legacy prayer-city fields into home city.
     if(!merged.homeCityName && typeof merged.prayerCityName === 'string' && merged.prayerCityName.trim()){
       merged.homeCityName = merged.prayerCityName.trim();
@@ -227,7 +235,11 @@ function saveSortSettings(settings){
   next.lastRetentionCleanupAt = normalizeRetentionCleanupAt(next.lastRetentionCleanupAt);
   next.defaultPriority = clampPriority(next.defaultPriority);
   next.defaultDurationMinutes = clampDuration(next.defaultDurationMinutes);
-  next.defaultFlexibilityDays = clampFlexibility(next.defaultFlexibilityDays);
+  next.defaultEarlyWindowDays = clampFlexibility(
+    next.defaultEarlyWindowDays != null ? next.defaultEarlyWindowDays : next.defaultFlexibilityDays
+  );
+  next.defaultDelayAllowanceDays = clampDelayAllowance(next.defaultDelayAllowanceDays);
+  delete next.defaultFlexibilityDays;
   next.defaultBreakable = Boolean(next.defaultBreakable);
   next.defaultMinChunkMinutes = clampMinChunk(next.defaultMinChunkMinutes);
   next.defaultTopics = normalizeTopics(next.defaultTopics);
@@ -236,6 +248,7 @@ function saveSortSettings(settings){
   next.showEarlyOnCards = next.showEarlyOnCards !== false;
   next.showAgendaTimesOnCards = normalizeAgendaTimeMode(next.showAgendaTimesOnCards);
   next.showTrailOnCards = next.showTrailOnCards !== false;
+  next.minimalShowTrailOnCards = Boolean(next.minimalShowTrailOnCards);
   next.showCueOnCards = next.showCueOnCards !== false;
   next.showOrderPillsOnCards = next.showOrderPillsOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);
@@ -247,6 +260,7 @@ function saveSortSettings(settings){
   next.homeCityLng = Number.isFinite(next.homeCityLng) ? next.homeCityLng : null;
   next.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
     ? normalizeWeatherProfiles(next.weatherProfiles) : [];
+  next.showWeatherTemperatureRanges = Boolean(next.showWeatherTemperatureRanges);
   if(!next.homeCityName && typeof next.prayerCityName === 'string' && next.prayerCityName.trim()){
     next.homeCityName = next.prayerCityName.trim();
     next.homeCityLat = Number.isFinite(next.prayerCityLat) ? next.prayerCityLat : null;

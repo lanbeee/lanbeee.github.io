@@ -16,11 +16,17 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   const header = document.createElement('div');
   header.className = 'section-header';
   header.dataset.label = label;
-  header.textContent = label;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'section-header-label';
+  labelEl.textContent = label;
+  header.appendChild(labelEl);
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-  if(!minimal && dayContext && dayContext.dayBase != null){
-    setupDayCapacityHeader(header,dayContext.dayBase,true);
-    attachFreeTimeIndicator(header,dayContext);
+  if(dayContext && dayContext.dayBase != null){
+    if(!minimal){
+      setupDayCapacityHeader(header,dayContext.dayBase,true);
+      attachFreeTimeIndicator(header,dayContext);
+    }
+    attachWeatherIndicator(header,dayContext);
   }else if(!minimal && label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
@@ -30,15 +36,95 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   list.appendChild(header);
 }
 
-function computeTomorrowProjection(data,settings){
-  if(typeof buildWeekAgenda !== 'function')return [];
-  const week = buildWeekAgenda(data,settings,2);
-  const tomorrow = week.days[1];
-  if(!tomorrow || !tomorrow.timeline)return [];
-  return tomorrow.timeline
-    .filter(r=>(r.kind === 'fill' || r.kind === 'scheduled') && r.i != null)
-    .map(r=>data[r.i]?.hid)
-    .filter(Boolean);
+function dayHeaderContextHost(header){
+  if(!header)return null;
+  let host=header.querySelector('.day-header-context');
+  if(host)return host;
+  host=document.createElement('div');
+  host.className='day-header-context';
+  header.classList.add('has-context');
+  header.appendChild(host);
+  return host;
+}
+
+function attachWeatherIndicator(header,day){
+  if(!header || !day || day.dayBase == null || typeof weatherDayCueHtml!=='function')return;
+  const cue=weatherDayCueHtml(day.dayBase,day,sortSettings,{data:load()});
+  if(!cue)return;
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='weather-day-button';
+  button.innerHTML=cue;
+  const accessible=button.querySelector('.weather-day-cue')?.getAttribute('title') || 'weather context';
+  button.setAttribute('aria-label',accessible);
+  bindDayHeaderPill(button,()=>openWeatherContextSheet(day.dayBase,day));
+  dayHeaderContextHost(header)?.appendChild(button);
+}
+
+function missedPlannerFingerprint(data,settings){
+  const habits = (data || []).map(h=>[
+    h.hid,h.type,h.target,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
+    h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,
+    habitEarlyWindowDays(h),habitDelayAllowanceDays(h),h.pinned,
+    h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
+    h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
+    h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
+    h.scheduleLinks,h.scheduleOptions
+  ]);
+  const plannerSettings = {
+    blockedTimes:settings?.blockedTimes,
+    blockedTimeOverrides:settings?.blockedTimeOverrides,
+    cancelledBlocks:settings?.cancelledBlocks,
+    availabilityOverrides:settings?.availabilityOverrides,
+    locations:settings?.locations,
+    travel:settings?.travel,
+    defaultTravelMode:settings?.defaultTravelMode,
+    showScheduledTasksInAgenda:settings?.showScheduledTasksInAgenda,
+    showDueTasksInAgenda:settings?.showDueTasksInAgenda,
+    showPlannedItemsInAgenda:settings?.showPlannedItemsInAgenda,
+    showDueHabitsInAgenda:settings?.showDueHabitsInAgenda
+  };
+  const source = JSON.stringify([habits,plannerSettings]);
+  let hash = 2166136261;
+  for(let i = 0;i < source.length;i += 1){
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash,16777619);
+  }
+  return `m2-${(hash >>> 0).toString(36)}`;
+}
+
+// Planner-backed fallback for a user who first opens after an allowed window
+// has closed. It reconstructs the Fast planner from the day's first open
+// minute, then keeps its dated week expectations so skipped app-days remain
+// auditable. This deliberately records committed rows, not the whole overdue
+// candidate pool.
+function computePlannerExpectationMap(data,settings,numDays = 7){
+  if(typeof buildWeekAgenda !== 'function')return {};
+  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true});
+  const out = {};
+  for(const day of week.days || []){
+    const key = day.dayKey || dateKey(day.dayBase);
+    out[key] = [...new Set((day.timeline || [])
+      .filter(r=>(r.kind === 'fill' || r.kind === 'scheduled') && r.i != null)
+      .map(r=>data[r.i]?.hid)
+      .filter(Boolean))];
+  }
+  return out;
+}
+
+function renderedPlannerExpectationMap(data,now = Date.now()){
+  const week = _homeRenderedWeek;
+  if(!week || !Array.isArray(week.days) || !week.days.length)return {};
+  if(dayStart(week.days[0].dayBase) !== dayStart(now))return {};
+  const out = {};
+  for(const day of week.days){
+    const key = day.dayKey || dateKey(day.dayBase);
+    out[key] = [...new Set((day.timeline || [])
+      .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i != null)
+      .map(row=>data[row.i]?.hid)
+      .filter(Boolean))];
+  }
+  return out;
 }
 
 function buildHidDayLabelMap(data,settings){
@@ -65,63 +151,175 @@ function buildHidDayLabelMap(data,settings){
   return map;
 }
 
+// Hids with a placement on a day after today: tomorrow's projection, a later
+// day of the rendered home week, or a persisted plan entry in the future.
+// Whether that evidence means the occurrence was rescheduled is decided per
+// item in isMissedOccurrence — overdue catch-up on a later day stays a miss;
+// for daily rhythms a future row is routine recurrence, not a move.
+function laterDayPlannedHids(data,projectionHids){
+  const set = new Set();
+  for(const hid of projectionHids || [])set.add(hid);
+  if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+    for(let d = 1; d < _homeRenderedWeek.days.length; d += 1){
+      const rows = _homeRenderedWeek.days[d].homeDisplayedTimeline || _homeRenderedWeek.days[d].timeline || [];
+      for(const row of rows){
+        if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
+          const hid = data[row.i] && data[row.i].hid;
+          if(hid)set.add(hid);
+        }
+      }
+    }
+  }
+  const todayKey = todayIso();
+  for(const h of data){
+    if(!h || !h.hid)continue;
+    if(plannedLogs(h.logs || []).some(ts => dateKey(ts) > todayKey))set.add(h.hid);
+  }
+  return set;
+}
+
+// TRUE: this occurrence is still eligible to be done today (calendar day +
+// clock window).
+function occurrenceStillDoableToday(h,now){
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof nextEligibleDistance === 'function' && nextEligibleDistance(h,now) !== 0){
+    return false;
+  }
+  return typeof windowStillDoableToday === 'function' ? windowStillDoableToday(h,now) : true;
+}
+
+function missedOccurrenceDayBase(day,now = Date.now()){
+  if(typeof day === 'number' && Number.isFinite(day))return dayStart(day);
+  if(typeof day === 'string'){
+    const parsed = new Date(`${day}T12:00:00`).getTime();
+    if(Number.isFinite(parsed))return dayStart(parsed);
+  }
+  return dayStart(now);
+}
+
+function missedOccurrenceResolved(h,expectedDayBase,now){
+  if(h.type === 'task')return isTaskDone(h);
+  if(typeof completedOnDay === 'function' && completedOnDay(h,expectedDayBase))return true;
+  if(typeof actualLogs !== 'function')return completedToday(h,now);
+  // This is an actionable catch-up list, not permanent history: a later real
+  // completion resolves earlier outstanding expectations for the same item.
+  return actualLogs(h.logs || []).some(ts=>ts >= expectedDayBase && ts <= now);
+}
+
+function missedOpportunityPassedToday(h,dayBase,now){
+  let fixedStart = null;
+  if(h.type === 'task' && h.eventTime != null && dateKey(h.eventTime) === dateKey(dayBase)){
+    fixedStart = Number(h.eventTime);
+  }else if(typeof timedPlanLogForDay === 'function'){
+    const plan = timedPlanLogForDay(h,dateKey(dayBase));
+    if(plan)fixedStart = logTime(plan);
+  }
+  if(Number.isFinite(fixedStart)){
+    return now >= fixedStart + clampDuration(h.durationMinutes) * 60000;
+  }
+  return !occurrenceStillDoableToday(h,now);
+}
+
+// TRUE only for a dated planner expectation whose usable opportunity passed
+// without a completion, including a row actually rendered today and later
+// dropped by replanning. This rejects the old broad "everything overdue"
+// sweep: an off-day or impossible item has no qualifying planner evidence.
+function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
+  if(!h || !h.hid)return false;
+  if(h.snoozedUntil && now < h.snoozedUntil)return false;
+  const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
+  const todayBase = dayStart(now);
+  if(expectedDayBase > todayBase)return false;
+  if(h.createdAt != null && Number(h.createdAt) >= expectedDayBase + 86400000)return false;
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof isDateEligibleForHabit === 'function'
+    && !isDateEligibleForHabit(h,expectedDayBase))return false;
+  if(missedOccurrenceResolved(h,expectedDayBase,now))return false;
+  if(expectedDayBase === todayBase){
+    // A row the user actually saw in today's agenda is a commitment, not just
+    // a broad eligibility guess. If a later/cold optimization drops that row,
+    // preserve it as missed even when its raw clock window is still open. This
+    // is intentionally narrower than treating every full-day reconstruction
+    // candidate as missed: only snap.hids contains previously rendered rows.
+    if(!evidence?.renderedToday
+      && !missedOpportunityPassedToday(h,expectedDayBase,now))return false;
+  }
+  return true;
+}
+
+function missedOccurrenceDayLabel(day,now = Date.now()){
+  const base = missedOccurrenceDayBase(day,now);
+  const diff = Math.round((dayStart(now) - base) / 86400000);
+  if(diff === 0)return 'today';
+  if(diff === 1)return 'yesterday';
+  if(diff < 7)return new Date(base).toLocaleDateString(undefined,{weekday:'short'}).toLowerCase();
+  return new Date(base).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toLowerCase();
+}
+
 function attachDroppedIndicator(header,list,todayHids){
   const data = load();
   const now = Date.now();
-  const snap = loadTodaySuggested();
+  let snap = loadTodaySuggested();
   const today = todayIso();
   if(_droppedDayBaselineDay !== today){
     _droppedDayBaseline = snap.prevProjection || null;
     _droppedDayBaselineDay = today;
   }
-  const fingerprint = dataFingerprint(data);
-  const needsProjection = !snap.projection
-    || snap.projection.day !== dateKey(now + 86400000)
-    || snap.projection.fingerprint !== fingerprint;
-  const projectionHids = needsProjection ? computeTomorrowProjection(data,sortSettings) : null;
-  recordTodaySuggested(data,todayHids,now,projectionHids,fingerprint);
+  const fingerprint = missedPlannerFingerprint(data,sortSettings);
+  const tomorrow = dateKey(now + 86400000);
+  const currentExpectation = snap.expectations && snap.expectations[today];
+  const tomorrowExpectation = snap.expectations && snap.expectations[tomorrow];
+  const needsProjection = !currentExpectation
+    || currentExpectation.fingerprint !== fingerprint
+    || !tomorrowExpectation
+    || tomorrowExpectation.fingerprint !== fingerprint;
+  const projectionByDay = needsProjection
+    ? computePlannerExpectationMap(data,sortSettings,7)
+    : {};
+  const renderedProjection = renderedPlannerExpectationMap(data,now);
+  for(const [day,hids] of Object.entries(renderedProjection)){
+    if(day === today && projectionByDay[day]){
+      projectionByDay[day] = [...new Set([...projectionByDay[day],...hids])];
+    }else{
+      projectionByDay[day] = hids;
+    }
+  }
+  const hasProjectionUpdate = Object.keys(projectionByDay).length > 0;
+  const projectionHids = hasProjectionUpdate ? projectionByDay[tomorrow] || [] : null;
+  snap = recordTodaySuggested(
+    data,todayHids,now,projectionHids,fingerprint,
+    hasProjectionUpdate ? projectionByDay : null
+  );
 
   const currentSet = new Set(todayHids);
+  const laterPlanned = laterDayPlannedHids(data,projectionHids || (snap.projection && snap.projection.hids));
   const droppedMap = new Map();
-  const addMissed = (hid,name,emoji,idx,first)=>{
-    if(droppedMap.has(hid))return;
+  const addMissed = (hid,name,emoji,idx,first,expectedDay)=>{
     const h = data[idx];
     if(!h)return;
-    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
-    droppedMap.set(hid,{hid,name,emoji:emoji || h.emoji,idx,snoozed,first});
+    const renderedToday = expectedDay === today && Boolean(snap.hids?.[hid]);
+    if(!isMissedOccurrence(h,laterPlanned,now,expectedDay,{renderedToday}))return;
+    const prior = droppedMap.get(hid);
+    if(prior && prior.expectedDay >= expectedDay)return;
+    droppedMap.set(hid,{
+      hid,name,emoji:emoji || h.emoji,idx,first,expectedDay,
+      dayLabel:missedOccurrenceDayLabel(expectedDay,now)
+    });
   };
 
-  if(_droppedDayBaseline && Array.isArray(_droppedDayBaseline.hids)){
-    for(const hid of _droppedDayBaseline.hids){
-      if(currentSet.has(hid))continue;
+  for(const [expectedDay,entry] of Object.entries(snap.expectations || {})){
+    if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
+    for(const hid of entry.hids){
+      if(expectedDay === today && currentSet.has(hid))continue;
       const idx = data.findIndex(h=>h && h.hid === hid);
       if(idx < 0)continue;
-      const h = data[idx];
-      if(completedToday(h,now))continue;
-      if(todayCategory(h,sortSettings) === 0)continue;
-      addMissed(hid,h.name,h.emoji,idx,now);
+      const info = expectedDay === today ? snap.hids[hid] : null;
+      addMissed(hid,data[idx].name,data[idx].emoji,idx,info?.first || entry.recordedAt || now,expectedDay);
     }
   }
 
-  for(const [hid,info] of Object.entries(snap.hids)){
-    if(currentSet.has(hid))continue;
-    const idx = data.findIndex(h=>h && h.hid === hid);
-    if(idx < 0)continue;
-    const h = data[idx];
-    if(completedToday(h,now))continue;
-    addMissed(hid,info.name || h.name,h.emoji,idx,info.first);
-  }
-
-  for(let i = 0; i < data.length; i++){
-    const h = data[i];
-    if(!h || !h.hid || currentSet.has(h.hid) || droppedMap.has(h.hid))continue;
-    if(completedToday(h,now))continue;
-    if(todayCategory(h,sortSettings) !== 1)continue;
-    addMissed(h.hid,h.name,h.emoji,i,now);
-  }
-
-  const dropped = [...droppedMap.values()]
-    .sort((a,b)=>Number(a.snoozed) - Number(b.snoozed) || a.first - b.first);
+  const dropped = [...droppedMap.values()].sort((a,b)=>
+    a.expectedDay.localeCompare(b.expectedDay) || a.first - b.first);
   if(!dropped.length)return;
   header.classList.add('has-dropped');
   const pill = document.createElement('button');
@@ -129,7 +327,7 @@ function attachDroppedIndicator(header,list,todayHids){
   pill.className = 'dropped-pill';
   pill.textContent = `${dropped.length} missed`;
   bindDayHeaderPill(pill,()=>openSlippedSheet(dropped,header.dataset.label || 'today'));
-  header.appendChild(pill);
+  dayHeaderContextHost(header)?.appendChild(pill);
 }
 
 function renderDroppedPanel(items,opts = {}){
@@ -142,13 +340,11 @@ function renderDroppedPanel(items,opts = {}){
     // The row is a div (not a button) so the log affordance below can be its
     // own button. Tapping anywhere on the row except the icon still reviews.
     const row = document.createElement('div');
-    row.className = 'dropped-item' + (item.snoozed ? ' snoozed' : '');
+    row.className = 'dropped-item';
     row.setAttribute('role','button');
     row.setAttribute('tabindex','0');
     row.dataset.hid = item.hid || '';
-    const tagHtml = item.snoozed
-      ? '<span class="dropped-tag">snoozed</span>'
-      : (showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '');
+    const tagHtml = showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '';
 
     // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
     // a missed habit can be cleared with one tap straight from this list.
@@ -202,7 +398,7 @@ function openSlippedSheet(items,dayLabel){
 
   const slippedWithTags = items.map(item=>({
     ...item,
-    dayLabel: dayLabelMap.get(item.hid) || 'behind'
+    dayLabel:item.dayLabel || dayLabelMap.get(item.hid) || 'behind'
   }));
 
   if(slippedWithTags.length){
@@ -334,7 +530,7 @@ function attachFreeTimeIndicator(header,day){
   pill.className = 'free-pill';
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
   bindDayHeaderPill(pill,()=>openFreeTimeSheet(info,header.dataset.label || 'today'));
-  header.appendChild(pill);
+  dayHeaderContextHost(header)?.appendChild(pill);
 }
 
 // WIRE: day-header open/missed pills. Activation must be click-based so the
@@ -789,15 +985,23 @@ function render(opts){
       ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
       : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     const trail = cardTrail(h);
-    const showTrail = !minimal && sortSettings.showTrailOnCards !== false;
+    // Minimal hides dots unless opted in for minimal specifically
+    // (minimalShowTrailOnCards, default off); full keeps its own toggle.
+    const showTrail = minimal
+      ? sortSettings.minimalShowTrailOnCards === true
+      : sortSettings.showTrailOnCards !== false;
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
     const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
     // so the user can see the session without opening detail.
     const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
-    const visualHtml = minimal ? '' : (showBreakableSlider
-      ? `${cardBreakableSlider(h)}${sessionHtml}`
-      : (sessionHtml || (showTrail ? `<div class="ting-trail">${trail}</div>` : '')));
+    // Minimal's visual row is trail-only when opted in — sliders/sessions stay
+    // full-mode features (guarded below by !minimal).
+    const visualHtml = minimal
+      ? (showTrail ? `<div class="ting-trail">${trail}</div>` : '')
+      : (showBreakableSlider
+        ? `${cardBreakableSlider(h)}${sessionHtml}`
+        : (sessionHtml || (showTrail ? `<div class="ting-trail">${trail}</div>` : '')));
     const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
@@ -863,7 +1067,7 @@ function render(opts){
           </div>
           ${(!minimal && isBreakable) ? ((orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
-          ${minimal || !visualHtml ? '' : `<div class="ting-visual"${visualAria}>
+          ${!visualHtml ? '' : `<div class="ting-visual"${visualAria}>
             ${visualHtml}
           </div>`}
         </div>
@@ -986,7 +1190,10 @@ function render(opts){
     })();
 
     dayPlans.forEach(({day,seq})=>{
-      if(!seq.length)return;
+      // Today still needs its header when the morning window has closed and
+      // nothing remains on the timeline — otherwise the missed pill has
+      // nowhere to attach.
+      if(!seq.length && !day.isToday)return;
       appendSectionHeader(list,homeWeekDayLabel(day),day,day.isToday ? weekTodayHids : null);
       for(let i = 0;i < seq.length;){
         const row = seq[i];
@@ -1130,12 +1337,11 @@ function render(opts){
     }
 
     const todayHids = (!searching && todayFirstActive)
-      ? renderIndices.filter(i=>{
-          const h = data[i];
-          if(h.pinned)return false;
-          const cat = todayCategory(h,sortSettings);
-          return cat === 0 || (cat === 2 && earlyToday(i));
-        }).map(i=>data[i].hid).filter(Boolean)
+      ? [...new Set(agendaRows
+        .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
+          && row.i != null && data[row.i])
+        .map(row=>data[row.i].hid)
+        .filter(Boolean))]
       : [];
 
     // Pinned-section pre-pass: pinned cards render up here (separate section,
@@ -1223,14 +1429,29 @@ function render(opts){
           _droppedDayBaseline = _snap.prevProjection;
           _droppedDayBaselineDay = todayIso();
         }
-        const _hasOverdue = data.some(h => h && h.hid && !completedToday(h) && todayCategory(h,sortSettings) === 1);
-        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline || _hasOverdue){
+        const _hasMissedEvidence = Object.entries(_snap.expectations || {})
+          .some(([day,entry])=>day <= todayIso() && entry && Array.isArray(entry.hids) && entry.hids.length);
+        const _hasExpiredDueCandidate = data.some(h=>h && h.hid
+          && !completedToday(h) && todayCategory(h,sortSettings) === 1);
+        const _hasClosedOpportunityCandidate = data.some(h=>h && h.hid
+          && !completedToday(h)
+          && (!hasDaySchedule(h) || isDateEligibleForHabit(h,Date.now()))
+          && !occurrenceStillDoableToday(h,Date.now()));
+        // The header is only a mount point here. attachDroppedIndicator applies
+        // the strict planner-backed verdict and may decide no pill is due.
+        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline
+          || _hasMissedEvidence || _hasExpiredDueCandidate || _hasClosedOpportunityCandidate){
           const header = document.createElement('div');
           header.className = 'section-header';
           header.dataset.label = 'today';
-          header.textContent = 'today';
+          const labelEl=document.createElement('span');
+          labelEl.className='section-header-label';
+          labelEl.textContent='today';
+          header.appendChild(labelEl);
+          const dayContext={dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows};
           setupDayCapacityHeader(header,dayStart(Date.now()),false);
-          attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
+          attachWeatherIndicator(header,dayContext);
+          attachFreeTimeIndicator(header,dayContext);
           attachDroppedIndicator(header,list,todayHids);
           if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
         }

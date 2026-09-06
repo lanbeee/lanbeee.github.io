@@ -71,7 +71,22 @@ function formatRhythmLabel(target){
 }
 function clampFlexibility(value){
   const n = parseInt(value,10);
-  return Math.max(0,Math.min(60,Number.isNaN(n) ? DEFAULT_FLEXIBILITY_DAYS : n));
+  return Math.max(0,Math.min(60,Number.isNaN(n) ? DEFAULT_EARLY_WINDOW_DAYS : n));
+}
+// Scheduling direction is explicit. Older records used `flexibilityDays` for
+// the early side only; missing delay permission must stay strict (zero) rather
+// than inheriting the early-window default.
+function clampDelayAllowance(value){
+  const n = parseInt(value,10);
+  return Math.max(0,Math.min(60,Number.isNaN(n) ? 0 : n));
+}
+function habitEarlyWindowDays(h){
+  if(!h)return 0;
+  return clampFlexibility(h.earlyWindowDays != null ? h.earlyWindowDays : h.flexibilityDays);
+}
+function habitDelayAllowanceDays(h){
+  if(!h)return 0;
+  return clampDelayAllowance(h.delayAllowanceDays);
 }
 function clampDuration(value){
   return Math.max(1,Math.min(720,parseInt(value,10) || DEFAULT_DURATION_MINUTES));
@@ -535,4 +550,3 @@ function restoreBlockedInstance(dayKey,label,startMin,endMin){
   saveSortSettings({...settings,cancelledBlocks:map});
   return true;
 }
-

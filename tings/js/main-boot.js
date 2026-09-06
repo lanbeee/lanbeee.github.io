@@ -315,10 +315,11 @@ $('do-save').addEventListener('click',()=>{
     record.dueDate = parseDateInput($('ting-due-date').value);
     record.eventTime = parseTaskWhen($('ting-due-date').value,$('ting-due-time')?.value || '');
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
-    record.flexibilityDays = record.dueDate === null ? 0 : 3;
+    record.earlyWindowDays = record.dueDate === null ? 0 : settings.defaultEarlyWindowDays;
   }else{
-    record.flexibilityDays = settings.defaultFlexibilityDays;
+    record.earlyWindowDays = settings.defaultEarlyWindowDays;
   }
+  record.delayAllowanceDays = settings.defaultDelayAllowanceDays;
   const manualAutoMark = normalizeAutoMark($('ting-auto-mark')?.value);
   record.autoMarkMinutes = manualAutoMark != null ? manualAutoMark : settings.defaultAutoMarkMinutes;
   data.push(record);
@@ -349,7 +350,7 @@ function syncTaskDueUi(){
   if(hint){
     if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
     else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
-    else hint.textContent = 'Due on this date — set flexibility to 0 for a firm deadline.';
+    else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
   }
 }
 $('ting-due-date').addEventListener('input',syncTaskDueUi);
@@ -402,11 +403,11 @@ function setDetailTypeUi(type){
   $('detail-target-help').textContent = rhythmHelp(type);
   $('detail-due-row').hidden = type !== 'task';
   $('detail-due-hint').hidden = type !== 'task';
-  const flexHelp = $('detail-flexibility-help');
-  if(flexHelp){
-    flexHelp.textContent = type === 'task'
-      ? 'How many days before the due date this task starts surfacing.'
-      : 'Adds a buffer to your target for planning purposes.';
+  const earlyHelp = $('detail-early-window-help');
+  if(earlyHelp){
+    earlyHelp.textContent = type === 'task'
+      ? 'How many days before the due date this task may enter the planner. This never permits postponing it.'
+      : 'How many days before the rhythm day the planner may bring this forward for a useful link or trip. This never permits postponing it.';
   }
   const exportBtn = $('detail-export');
   if(exportBtn)exportBtn.hidden = type !== 'task';
@@ -773,7 +774,8 @@ function bindAutoMarkField(id,onDirty){
 }
 
 bindCompactNumber('detail-duration',clampDuration,{maxLength:3});
-bindCompactNumber('detail-flexibility',clampFlexibility,{maxLength:2});
+bindCompactNumber('detail-early-window',clampFlexibility,{maxLength:2});
+bindCompactNumber('detail-delay-allowance',clampDelayAllowance,{maxLength:2});
 bindCompactNumber('detail-times',clampTimes,{maxLength:2});
 bindAutoMarkField('detail-auto-mark',()=>{ syncBreakableUi(); setDetailDirty(); });
 bindAutoMarkField('ting-auto-mark');
@@ -1233,7 +1235,8 @@ $('detail-pinned').addEventListener('click',function(){
   setDetailDirty();
 });
 $('detail-duration').addEventListener('input',()=>setDetailDirty());
-$('detail-flexibility').addEventListener('input',()=>setDetailDirty());
+$('detail-early-window').addEventListener('input',()=>setDetailDirty());
+$('detail-delay-allowance').addEventListener('input',()=>setDetailDirty());
 $('detail-priority-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-priority]');
   if(!opt)return;
@@ -1467,7 +1470,9 @@ $('detail-save').addEventListener('click',()=>{
   h.timerAutoStopMinutes = normalizeTimerAutoStop(current.timerAutoStopMinutes);
   h.autoMarkMinutes = normalizeAutoMark(current.autoMarkMinutes);
   h.trackValue = Boolean(current.trackValue);
-  h.flexibilityDays = current.flexibilityDays;
+  h.earlyWindowDays = current.earlyWindowDays;
+  h.delayAllowanceDays = current.delayAllowanceDays;
+  h.flexibilityDays = current.earlyWindowDays;
   h.priority = clampPriority(current.priority);
   const isHabit = current.type === 'keepup' || current.type === 'reduce';
   h.target = isHabit ? currentRhythmTarget('detail') : null;
@@ -1480,7 +1485,7 @@ $('detail-save').addEventListener('click',()=>{
     h.eventTime = null;
     h.planByDate = isHabit ? (current.planByDate ?? null) : null;
   }
-  h.hardDue = h.type === 'task' && h.dueDate !== null && h.flexibilityDays === 0;
+  h.hardDue = h.type === 'task' && h.dueDate !== null && h.delayAllowanceDays === 0;
   if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
   save(data);

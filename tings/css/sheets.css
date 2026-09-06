@@ -15,6 +15,7 @@
 #privacy-sheet{z-index:105;}
 #value-log-sheet{z-index:115;}
 #snooze-sheet,#activity-sheet,#day-capacity-sheet,#day-logs-sheet{z-index:120;}
+#weather-context-sheet{z-index:130;}
 .sheet{
   background:var(--bg);width:100%;max-width:480px;
   border-radius:20px 20px 0 0;padding:20px 18px calc(36px + env(safe-area-inset-bottom));
@@ -212,4 +213,3 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
 .sheet-title{font-size:calc(15px * var(--font-scale));font-weight:500;margin-bottom:16px;color:var(--text);}
 .sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
 .sheet-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
-

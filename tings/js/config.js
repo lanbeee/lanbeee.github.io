@@ -100,7 +100,8 @@ const MAX_RHYTHM_DAYS = 183;
 const MIN_RHYTHM_DAYS = 0.5;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_MIN_CHUNK_MINUTES = 30;
-const DEFAULT_FLEXIBILITY_DAYS = 1;
+const DEFAULT_EARLY_WINDOW_DAYS = 1;
+const DEFAULT_DELAY_ALLOWANCE_DAYS = 0;
 const TIME_PICKER_STEP_MINUTES = 15;
 const MAX_NOTE_CHARS = 200;
 /** Soft location preference among allowed places. */
@@ -202,7 +203,8 @@ const DEFAULT_SORT_SETTINGS = {
   defaultTarget:7,
   defaultPriority:DEFAULT_PRIORITY,
   defaultDurationMinutes:DEFAULT_DURATION_MINUTES,
-  defaultFlexibilityDays:DEFAULT_FLEXIBILITY_DAYS,
+  defaultEarlyWindowDays:DEFAULT_EARLY_WINDOW_DAYS,
+  defaultDelayAllowanceDays:DEFAULT_DELAY_ALLOWANCE_DAYS,
   defaultBreakable:false,
   defaultMinChunkMinutes:DEFAULT_MIN_CHUNK_MINUTES,
   defaultTopics:[],
@@ -220,6 +222,9 @@ const DEFAULT_SORT_SETTINGS = {
   showAgendaTimesOnCards:'time',
   // Two-week dot history under each item.
   showTrailOnCards:true,
+  // Minimal mode keeps the card quiet: dots stay off until switched on for
+  // minimal specifically (Settings → show activity dots while minimal is on).
+  minimalShowTrailOnCards:false,
   // One-line status ("due today", "on track", ...) — also part of minimal
   // mode's core card, so it stays on.
   showCueOnCards:true,
@@ -240,6 +245,9 @@ const DEFAULT_SORT_SETTINGS = {
   homeCityLat:null,
   homeCityLng:null,
   weatherProfiles:[],
+  // Keep ambient forecast chrome icon-only unless the user explicitly wants
+  // the low/high range beside each day.
+  showWeatherTemperatureRanges:false,
   prayerIslamicNames:false,
 
   topics:[],

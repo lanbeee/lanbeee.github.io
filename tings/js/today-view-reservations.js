@@ -290,17 +290,91 @@ function placedBreakableMinutes(state,habitIndex){
 // them instead. These helpers quantify that protection and are shared by both
 // the fast scarcity planner and the GLPK optimizer so the two paths agree.
 
-// PURE: is this week candidate "movable" — i.e. it places once and could be
-// deferred to another eligible day? Daily rhythms (target ≤ 1) must place on
-// every eligible day so they are NOT movable; pinned items stay on today.
-function isMovableWeekCandidate(c){
+// PURE: due day for the occurrence currently being considered. `lastLogTs`
+// may be a virtual week-plan completion, which lets both engines apply the
+// same delay rule to subsequent rhythm occurrences.
+function candidateOccurrenceDueDay(c,lastLogTs,completionOffset = 0){
+  const h = c && c.h;
+  if(!h)return null;
+  if(h.type === 'task')return h.dueDate == null ? null : dayStart(h.dueDate);
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy != null && lastLogTs === undefined)return dayStart(planBy);
+  if(!Number.isFinite(Number(h.target)))return null;
+  const reference = lastLogTs === undefined ? h.lastLog : lastLogTs;
+  if(reference == null)return dayStart(Date.now());
+  const cadence = typeof rhythmCadenceGapDays === 'function'
+    ? rhythmCadenceGapDays(h,completionOffset)
+    : Math.max(1,Number(h.target) || 1);
+  return dayStart(reference) + cadence * 86400000;
+}
+
+function candidateOccurrenceLastOnTimeDay(c,lastLogTs,completionOffset = 0){
+  const due = candidateOccurrenceDueDay(c,lastLogTs,completionOffset);
+  if(due == null)return null;
+  const delay = typeof habitDelayAllowanceDays === 'function'
+    ? habitDelayAllowanceDays(c && c.h) : 0;
+  return due + delay * 86400000;
+}
+
+// TRUE when this occurrence has reached its last permitted on-time day. If it
+// is already overdue, every new "today" is the earliest catch-up day and must
+// win over work that is still allowed to wait.
+function mustPlaceOccurrenceByDay(c,dayBase,lastLogTs,completionOffset = 0){
+  if(!c || !c.h || dayBase == null)return false;
+  if(c.h.type !== 'task' && !Number.isFinite(Number(c.h.target)))return false;
+  const lastOnTime = candidateOccurrenceLastOnTimeDay(c,lastLogTs,completionOffset);
+  return lastOnTime != null && dayBase >= lastOnTime;
+}
+
+// PURE: a non-breakable recurring occurrence that belongs to each eligible
+// day. It cannot be traded for a later occurrence the way a task or sparse
+// rhythm can, so it wins the first packing tier on overloaded days.
+function isIndependentDailyOccurrence(c){
+  if(!c || !c.h || c.h.type === 'task' || c.h.breakable)return false;
+  const target = Number(c.h.target);
+  return Number.isFinite(target) && target <= 1;
+}
+
+// PURE: does this candidate represent one occurrence that chooses a day rather
+// than an independent obligation on every eligible day? This structural test
+// deliberately ignores whether the occurrence has reached its last allowed
+// day. Capacity simulation must omit all such candidates and add only the
+// independent daily/fixed footprint; otherwise a due occurrence is counted
+// once in simulated capacity and again when the planner actually places it.
+function isDayChoosingWeekCandidate(c){
   if(!c || !c.h)return false;
   if(c.pinned === true)return false;
   if(c.h.breakable)return false;            // breakables reserve capacity, not deferred
-  if(c.h.type === 'task')return true;       // one-shot → chooses a day
+  if(c.h.type === 'task')return true;
   const target = Number(c.h && c.h.target);
-  if(Number.isFinite(target) && target <= 1)return false; // daily rhythm, must place today
-  return true;                              // sparse rhythm (target > 1) / plan-by
+  return !(Number.isFinite(target) && target <= 1);
+}
+
+// PURE: is this week candidate movable *from dayBase* — i.e. it chooses a day
+// and still has permission to wait for another eligible day? Pinned and
+// deadline-day occurrences stay put.
+function isMovableWeekCandidate(c,dayBase = dayStart(Date.now()),lastLogTs,completionOffset = 0){
+  if(!isDayChoosingWeekCandidate(c))return false;
+  return !mustPlaceOccurrenceByDay(c,dayBase,lastLogTs,completionOffset);
+}
+
+// PURE: may a last-day occurrence become a hard selection on this concrete
+// day without violating the daily-breakable policy? Due work claims ordinary
+// open time and protected-window spare. It may displace the reservation only
+// when it has strictly higher priority; otherwise the occurrence remains a
+// visible miss/catch-up instead of silently shortening an equal/higher daily.
+function requiredOccurrenceCanClaimDay(c,state,candidates,lastLogTs,completionOffset = 0){
+  if(!mustPlaceOccurrenceByDay(c,state && state.dayBase,lastLogTs,completionOffset))return false;
+  if(!state)return false;
+  const reservations = dailyBreakableReservations(state,candidates);
+  if(!reservations.length)return true;
+  const dur = clampDuration(c && c.h && c.h.durationMinutes);
+  const cap = movableCapacityForDay(state,candidates);
+  if(!Number.isFinite(cap) || dur <= cap)return true;
+  if(typeof movableFitsOutsideReservations === 'function'
+    && movableFitsOutsideReservations(c,state,candidates))return true;
+  return typeof movablePriorityBeatsReservations === 'function'
+    && movablePriorityBeatsReservations(c,reservations);
 }
 
 // PURE: P0 occurrences that cannot safely move to another horizon day. Daily
@@ -439,7 +513,10 @@ function movableCapacityForDay(state,candidates){
   for(const c of (candidates || [])){
     if(!c || !c.h)continue;
     if(c.h.breakable)continue;
-    if(isMovableWeekCandidate(c))continue;          // movables don't reserve footprint
+    // All day-choosing occurrences are omitted here, including ones whose last
+    // allowed day is today. The caller places that occurrence separately; only
+    // daily/fixed obligations belong in this background footprint simulation.
+    if(isDayChoosingWeekCandidate(c))continue;
     if(c.eligible && !c.eligible.has(state.dayBase))continue;
     if(clone.placed.has(c.i))continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
@@ -472,7 +549,7 @@ function movableEffectiveScarceOverlapMs(fill,fit,state,candidates,scarceWindows
     h:fill.h,i:fill.i,pinned:fill.pinned === true,
     priority:fill.priority,scarcity:fill.scarcity
   };
-  if(!isMovableWeekCandidate(candidate))return raw;
+  if(!isMovableWeekCandidate(candidate,state.dayBase))return raw;
   const cap = movableCapacityForDay(state,candidates);
   const dur = fillDurationMinutes(fill);
   if(!Number.isFinite(cap) || dur > cap)return raw;
@@ -645,8 +722,9 @@ function movableFitsOutsideReservations(c,state,candidates){
 //   - Week packed (no clean alternative) → priority decides: higher priority
 //     may take a breakable chunk; equal/lower yields (stay unplaced rather
 //     than short the daily).
-function fastPathDefersMovable(c,state,candidates,dayStates){
-  if(typeof isMovableWeekCandidate !== 'function' || !isMovableWeekCandidate(c))return false;
+function fastPathDefersMovable(c,state,candidates,dayStates,lastLogTs,completionOffset = 0){
+  if(typeof isDayChoosingWeekCandidate !== 'function'
+    || !isDayChoosingWeekCandidate(c))return false;
   if(typeof movableCapacityForDay !== 'function')return false;
   const cap = movableCapacityForDay(state,candidates);
   if(!Number.isFinite(cap))return false;                 // no daily breakable here
@@ -1362,6 +1440,18 @@ function dayFirstOpenMinute(blocks,weekday,dayBase){
   return cursor;
 }
 
+// PURE: best block-derived origin for a day. Prefer the location immediately
+// before its first open minute (normally an overnight Sleep block), then a
+// location-bearing block that begins exactly when the day opens. This is a
+// fallback only: callers must prefer live/manual and last-known presence for
+// today because an earlier block cannot prove where the user is now.
+function dayFirstBlockLocationId(blocks,weekday,dayBase){
+  const openMin = dayFirstOpenMinute(blocks,weekday,dayBase);
+  return blockLocationAtMinute(blocks,Math.max(0,openMin - 1),weekday,dayBase)
+    || blockLocationAtMinute(blocks,openMin,weekday,dayBase)
+    || null;
+}
+
 function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
   const start = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
   const end = start + 24 * 3600000;
@@ -1458,18 +1548,20 @@ function blockedTimelineRows(dayKey,settings,dayBase,{clipAfter} = {}){
 // start from the location-tied block covering the day's first open minute
 // (sleep→Home, work→Office) so travel into the first item is honest.
 function dayTimelineSeedLocation(day,settings){
+  const dayBase = day?.dayBase != null ? day.dayBase : dayStart(Date.now());
+  const weekday = day?.weekday ?? new Date(dayBase).getDay();
   if(day && day.isToday){
     return (typeof currentLocationId === 'function' && currentLocationId())
       || settings.lastKnownLocationId
+      || dayFirstBlockLocationId(
+        normalizeBlockedTimes(settings.blockedTimes),
+        weekday,
+        dayBase
+      )
       || null;
   }
-  const dayBase = day?.dayBase != null ? day.dayBase : dayStart(Date.now());
-  const weekday = day?.weekday ?? new Date(dayBase).getDay();
   const blocks = normalizeBlockedTimes(settings.blockedTimes);
-  const openMin = dayFirstOpenMinute(blocks,weekday,dayBase);
-  return blockLocationAtMinute(blocks,Math.max(0,openMin - 1),weekday,dayBase)
-    || blockLocationAtMinute(blocks,openMin,weekday,dayBase)
-    || null;
+  return dayFirstBlockLocationId(blocks,weekday,dayBase);
 }
 
 // PURE: decide whether to prepend a synthetic "from current location" travel

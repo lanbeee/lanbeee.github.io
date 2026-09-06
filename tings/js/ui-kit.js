@@ -110,6 +110,9 @@ const UI_SETTING_TOGGLES = {
     {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},
     {key:'pushDetailed', title:'include details in notifications', hint:'Include item names, topics, and places instead of generic notification text.'}
   ],
+  weather:[
+    {key:'showWeatherTemperatureRanges', title:'show temperature ranges', hint:'Add the daily low–high beside weather icons on Home and the Calendar week strip.', extraClass:'settings-full-only'}
+  ],
   cards:[
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'},
     {key:'showSampleOnCards', title:'show sample tag', hint:'Mark sample habits on the home list.', extraClass:'settings-full-only'},
@@ -121,7 +124,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showSnoozedUntilOnCards', title:'show snooze label', hint:'Show when hidden items return.', extraClass:'settings-full-only'},
     {key:'showDurationOnCards', title:'show duration', hint:'Keep duration visible on the home list.', extraClass:'settings-full-only'},
     {key:'showRepetitionOnCards', title:'show how often', hint:'Show every N days or stop.', extraClass:'settings-full-only'},
-    {key:'showFlexibilityOnCards', title:'show early window', hint:'Show how many days early it can be done.', extraClass:'settings-full-only'},
+    {key:'showFlexibilityOnCards', title:'show scheduling windows', hint:'Show how many days early or late it may be planned.', extraClass:'settings-full-only'},
     {key:'showTopicsOnCards', title:'show topics', hint:'Show topic labels on the home list.', extraClass:'settings-full-only'},
     {key:'showLocationOnCards', title:'show place', hint:'Show the place on each item.', extraClass:'settings-full-only'},
     {key:'showStatusOnCards', title:'show progress', hint:'Show done / almost / behind (or new).', extraClass:'settings-full-only'},
@@ -129,6 +132,7 @@ const UI_SETTING_TOGGLES = {
   ],
   cardsAfterTime:[
     {key:'showTrailOnCards', title:'show activity dots', hint:'Show the two-week dot history on each item.', extraClass:'settings-full-only'},
+    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Show the two-week dot history on each item.', extraClass:'settings-minimal-only'},
     {key:'showCueOnCards', title:'show status line', hint:'Show the one-line status like due today or on track.', pressed:true},
     {key:'showOrderPillsOnCards', title:'show agenda order marks', hint:'Show before / after, doing-now, and linked marks.', extraClass:'settings-full-only'},
     {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}

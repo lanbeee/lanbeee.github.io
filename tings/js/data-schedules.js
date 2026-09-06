@@ -150,13 +150,13 @@ function nextEligibleDistance(h,fromTs = Date.now()){
 }
 // Task readiness — mirrors nextEligibleDate's composition with day schedules.
 // A task surfaces as relevant once today is on/after its readyDate AND the
-// day-of schedule (if any) allows it. flexibilityDays flips direction for
-// tasks: days-before-due it starts surfacing, not a rhythm buffer.
+// day-of schedule (if any) allows it. The early window only moves readiness
+// toward the present; delayAllowanceDays is handled by week placement.
 function taskReadyDate(h){
   if(h.type !== 'task')return null;
   const when = taskWhen(h);
   if(when === null)return null;
-  const window = Math.max(0,clampFlexibility(h.flexibilityDays));
+  const window = Math.max(0,habitEarlyWindowDays(h));
   return when - window * 86400000;
 }
 function formatTimeShort(minutes){

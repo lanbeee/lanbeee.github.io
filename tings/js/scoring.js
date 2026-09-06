@@ -216,7 +216,7 @@ function progressScore(h){
     if(when === null)return null;
     const left = daysUntil(when);
     if(left === null)return null;
-    const windowDays = Math.max(1,h.flexibilityDays || 3);
+    const windowDays = Math.max(1,habitEarlyWindowDays(h) || 3);
     if(left <= 0)return Math.max(0,Math.round(30 - Math.min(30,Math.abs(left) * 6)));
     return Math.round(Math.min(100,100 - (left / windowDays) * 50));
   }
@@ -465,7 +465,7 @@ function taskUrgency(h){
   if(when === null)return null;
   const daysLeft = daysUntil(when);
   if(daysLeft === null)return null;
-  const window = Math.max(1,h.flexibilityDays || 3);
+  const window = Math.max(1,habitEarlyWindowDays(h) || 3);
   if(daysLeft <= 0){
     const overdueBoost = h.hardDue ? 1.4 : 1;
     return (1 + Math.min(0.75,Math.abs(daysLeft) / window)) * overdueBoost;
@@ -580,7 +580,9 @@ function plannerFitSignal(h,settings){
       : duration > todayMinutes * 0.75
         ? -12
         : 0;
-  const flex = clampFlexibility(h.flexibilityDays);
+  // Only permission to run late lowers immediate fit pressure. An early window
+  // opens useful earlier placements but must never make the item feel optional.
+  const flex = habitDelayAllowanceDays(h);
   const flexibility = flex ? -Math.min(18,flex * 1.4) : 0;
   const durationSignal = duration >= 120 ? -6 : duration >= 60 ? -2 : 0;
   return {duration:durationSignal,availability,flexibility};

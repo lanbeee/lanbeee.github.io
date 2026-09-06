@@ -41,7 +41,8 @@ function openDetail(i){
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
   setDetailSharedDisplayMode(sharedDisplayModeForHabit(h));
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
-  $('detail-flexibility').value = h.flexibilityDays || 0;
+  $('detail-early-window').value = habitEarlyWindowDays(h);
+  $('detail-delay-allowance').value = habitDelayAllowanceDays(h);
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',h.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
@@ -114,7 +115,8 @@ function openDetail(i){
     timerAutoStopMinutes:h.timerAutoStopMinutes ?? null,
     autoMarkMinutes:h.autoMarkMinutes ?? null,
     trackValue:Boolean(h.trackValue),
-    flexibilityDays:h.flexibilityDays || 0,
+    earlyWindowDays:habitEarlyWindowDays(h),
+    delayAllowanceDays:habitDelayAllowanceDays(h),
     priority:effectivePriority(h),
     dueDate:h.dueDate ?? null,
     eventTime:h.eventTime ?? null,

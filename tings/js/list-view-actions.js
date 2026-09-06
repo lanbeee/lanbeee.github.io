@@ -591,7 +591,12 @@ function setupCardTap(row,realIdx){
     const weatherInfo=e.target.closest('[data-weather-info]');
     if(weatherInfo){
       e.preventDefault();e.stopPropagation();
-      showToast(weatherInfo.dataset.weatherInfo || 'weather guidance');
+      const weatherDay=Number(weatherInfo.dataset.weatherDay);
+      if(Number.isFinite(weatherDay) && typeof openWeatherContextSheet==='function'){
+        openWeatherContextSheet(weatherDay,null,weatherInfo.dataset.weatherHid || '');
+      }else{
+        showToast(weatherInfo.dataset.weatherInfo || 'weather guidance');
+      }
       return;
     }
     if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){

@@ -20,7 +20,7 @@ function homeListFingerprint(now = Date.now()){
     h.name, h.type, h.lastLog, h.dueDate, h.eventTime,
     h.pinned ? 1 : 0, h.snoozedUntil || '',
     (h.locationIds || []).join(','),
-    h.durationMinutes, h.priority, h.flexibilityDays,
+    h.durationMinutes, h.priority, habitEarlyWindowDays(h), habitDelayAllowanceDays(h),
     h.breakable ? 1 : 0,
     h.minChunkMinutes || '',
     typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0,

@@ -21,18 +21,18 @@ function optimizerWeight(c){
   const criticalOccurrenceBonus = typeof mustPlaceCriticalOccurrence === 'function'
     && mustPlaceCriticalOccurrence(c)
     ? 1200 : 0;
-  // Flexibility tie-break (caps at 5, well under the priority/urgency/scarcity
-  // bands): among otherwise-equal candidates the lower-flex habit wins, since a
-  // stricter rhythm leaves less slack. Pure tie-break — never overrides a real
-  // priority, scarcity, or urgency gap.
-  const flex = Math.max(0,Math.min(60,parseInt(c && c.h && c.h.flexibilityDays,10) || 0));
-  const flexTiebreak = Math.min(5,flex * 0.5);
+  // Delay tie-break (caps at 5): among otherwise-equal candidates the one with
+  // less permission to run late wins. The early window is intentionally absent
+  // here; allowing early work cannot make it easier to postpone.
+  const delay = typeof habitDelayAllowanceDays === 'function'
+    ? habitDelayAllowanceDays(c && c.h) : 0;
+  const delayTiebreak = Math.min(5,delay * 0.5);
   // Hard-window tightness outranks ordinary priority; pinned and urgent items
   // still receive explicit value rather than depending on source array order.
   return 100 + pinnedBonus + criticalOccurrenceBonus + scarceBonus
     + (5 - Math.min(5,Math.max(0,pri))) * 5
     + urgencyBonus
-    - flexTiebreak;
+    - delayTiebreak;
 }
 
 // Soft boost so temporary day-order / doing-now still matter in the ILP objective.
@@ -621,6 +621,8 @@ function fitsExclusiveClash(a,b,state){
 function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions = {}){
   const options = [];
   const doing = doingNowForDay(state);
+  const requiredOccurrenceIndices = solveOptions.requiredOccurrenceIndices instanceof Set
+    ? solveOptions.requiredOccurrenceIndices : new Set();
   // One cheap probe per candidate exposes actual earliest completion
   // boundaries after blocks/startClock (not merely the end of its allowed
   // window). Other candidates can then start immediately after a short item:
@@ -670,10 +672,16 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     // exempts, so a movable that fits in the evening places today instead of
     // being deferred. Several fits are injected so multiple movables can chain.
     if(reservationWindows.length && typeof isMovableWeekCandidate === 'function'
-      && isMovableWeekCandidate(c)
+      && (requiredOccurrenceIndices.has(c.i) || isMovableWeekCandidate(c,state.dayBase))
       && !(c.h && c.h.hid && directOrderLinkedHids.has(c.h.hid))
       && typeof placementFitsOutsideReservations === 'function'){
-      const outside = placementFitsOutsideReservations(state,fill,reservationWindows);
+      let outside = placementFitsOutsideReservations(state,fill,reservationWindows);
+      if(requiredOccurrenceIndices.has(c.i)
+        && typeof outsideFitKeepsEarlySuccessors === 'function'){
+        outside = outside.filter(fit=>outsideFitKeepsEarlySuccessors(
+          state,fill,fit,allCandidates || dayCandidates
+        ));
+      }
       if(outside.length){
         // Keep the ordinary in-window options too. The reserve row below caps
         // their aggregate footprint; deleting them here made an outside option
@@ -685,6 +693,10 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
           const key = f.placeStart+':'+f.placeEnd;
           if(!seen.has(key)){ seen.add(key); fits.push(f); }
         }
+        // A due occurrence and a daily breakable are both commitments. When a
+        // clean compatible gap exists, publishing a time-limited incumbent
+        // that overlaps the breakable is dominated, so keep only clean fits.
+        if(requiredOccurrenceIndices.has(c.i))fits = outside;
       }
     }
     const baseWeight = optimizerWeight(c) + orderBoostForCandidate(c,state.dayBase);
@@ -712,7 +724,13 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
           - (weatherDefers ? baseWeight + 50 : 0)
           - Math.min(1440,delayMin) * 0.001
           - boundedFitScore * 0.01,
-        movable:typeof isMovableWeekCandidate === 'function' && isMovableWeekCandidate(c)};
+        // A due lower/equal-priority occurrence is still structurally a
+        // day-choosing candidate and must remain in the breakable reserve row
+        // when it was not promoted to a hard selection. Only a required
+        // occurrence that may legitimately claim this day is exempt.
+        movable:!requiredOccurrenceIndices.has(c.i)
+          && typeof isDayChoosingWeekCandidate === 'function'
+          && isDayChoosingWeekCandidate(c)};
       applyDoingNowWeight(option,doing);
       options.push(option);
     }
@@ -793,6 +811,29 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       optionNamesByHid.get(hid).push(o.varName);
     }
   });
+  // Cluster-flex eligibility is conditional, not a free extra day. If an
+  // early candidate is selected, at least one native-due partner that
+  // justified the saved-trip claim must also be selected on this day. This
+  // prevents an infeasible/dropped partner from leaving an orphan early trip.
+  let clusterPairRow = 0;
+  for(const c of dayCandidates){
+    const partnerIds = typeof clusterFlexPartnerIndicesForDay === 'function'
+      ? clusterFlexPartnerIndicesForDay(c,state.dayBase) : [];
+    if(!partnerIds.length)continue;
+    if(typeof clusterFlexPartnerPlacedForDay === 'function'
+      && clusterFlexPartnerPlacedForDay(c,state))continue;
+    const ownNames = byCand.get(c.i) || [];
+    if(!ownNames.length)continue;
+    const partnerNames = [...new Set(partnerIds.flatMap(i=>byCand.get(i) || []))];
+    subjectTo.push({
+      name:`cluster_pair_${clusterPairRow++}`,
+      vars:[
+        ...ownNames.map(name=>({name,coef:1})),
+        ...partnerNames.map(name=>({name,coef:-1}))
+      ],
+      bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+    });
+  }
   const requiredHids = new Set();
   const dayOrderEdges = typeof plannerOrderConstraintsForDay === 'function'
     ? plannerOrderConstraintsForDay(state.dayBase) : [];
@@ -813,6 +854,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
         && weatherLockedPlacement(candidate,state,state.settings || sortSettings))
       || (typeof mustPlaceCriticalOccurrence === 'function'
         && mustPlaceCriticalOccurrence(candidate))
+      || requiredOccurrenceIndices.has(i)
     );
     subjectTo.push({
       name:`cand_${i}`,
@@ -1130,13 +1172,23 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
 // Scarcity-order placement for one day when ILP times out or is infeasible.
 // Keeps the rest of the week on the optimizer path instead of aborting entirely.
 // Honours the same can-wait / packed-priority deferral as the ILP reserve.
-function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
+function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOptions = {}){
   if(typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return [];
   const doing = doingNowForDay(state);
   const seqLoc = typeof todaySequencingLocationId === 'function'
     ? todaySequencingLocationId(state) : null;
   const byWeight = orderAwareOptimizerSort(state.dayBase);
+  const requiredOccurrenceIndices = packOptions.requiredOccurrenceIndices instanceof Set
+    ? packOptions.requiredOccurrenceIndices : new Set();
   const ordered = dayCandidates.slice().sort((a,b)=>{
+    const dailyA = typeof isIndependentDailyOccurrence === 'function'
+      && isIndependentDailyOccurrence(a);
+    const dailyB = typeof isIndependentDailyOccurrence === 'function'
+      && isIndependentDailyOccurrence(b);
+    if(dailyA !== dailyB)return dailyA ? -1 : 1;
+    const requiredA = requiredOccurrenceIndices.has(a && a.i);
+    const requiredB = requiredOccurrenceIndices.has(b && b.i);
+    if(requiredA !== requiredB)return requiredA ? -1 : 1;
     if(seqLoc && typeof habitMatchesSequencingLocation === 'function'){
       const la = habitMatchesSequencingLocation(a && a.h, seqLoc);
       const lb = habitMatchesSequencingLocation(b && b.h, seqLoc);
@@ -1148,6 +1200,11 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
         if(canWait)return la ? -1 : 1;
       }
     }
+    const aNeedsB = typeof clusterFlexDependsOnCandidate === 'function'
+      && clusterFlexDependsOnCandidate(a,b);
+    const bNeedsA = typeof clusterFlexDependsOnCandidate === 'function'
+      && clusterFlexDependsOnCandidate(b,a);
+    if(aNeedsB !== bNeedsA)return aNeedsB ? 1 : -1;
     return byWeight(a,b);
   });
   const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
@@ -1159,7 +1216,10 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
     : [];
   for(const c of ordered){
     if(state.placed.has(c.i))continue;
-    if(typeof fastPathDefersMovable === 'function'
+    if(typeof clusterFlexPartnerPlacedForDay === 'function'
+      && !clusterFlexPartnerPlacedForDay(c,state))continue;
+    if(!requiredOccurrenceIndices.has(c.i)
+      && typeof fastPathDefersMovable === 'function'
       && fastPathDefersMovable(c,state,pool,states))continue;
     if(typeof weatherShouldDeferCandidate === 'function'
       && weatherShouldDeferCandidate(c,state,state.settings || sortSettings,states))continue;
@@ -1287,6 +1347,20 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       if(state.placed.has(c.i))continue;
       dayCands.push(c);
     }
+    const requiredOccurrenceIndices = new Set();
+    if(typeof mustPlaceOccurrenceByDay === 'function'){
+      for(const c of dayCands){
+        const hasVirtual = virtualLogs.has(c.i);
+        const reference = hasVirtual ? virtualLogs.get(c.i) : undefined;
+        const completionOffset = virtualCompletionCounts.get(c.i) || 0;
+        if((typeof requiredOccurrenceCanClaimDay === 'function'
+          && requiredOccurrenceCanClaimDay(c,state,candidates,reference,completionOffset))
+          || (typeof requiredOccurrenceCanClaimDay !== 'function'
+            && mustPlaceOccurrenceByDay(c,state.dayBase,reference,completionOffset))){
+          requiredOccurrenceIndices.add(c.i);
+        }
+      }
+    }
     let fixedCands = dayCands.filter(c=>!(c.h && c.h.breakable));
     if(!fixedCands.length)continue;
 
@@ -1296,6 +1370,26 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     // solve B and the rest around those committed chunks.
     const dayEdges = typeof plannerOrderConstraintsForDay === 'function'
       ? plannerOrderConstraintsForDay(state.dayBase) : [];
+    // A one-day drag/reorder is a stronger explicit promise than inferred due
+    // work. If the day is overloaded, keep the linked visible pair hard and
+    // let unrelated due candidates compete normally instead of making the
+    // entire model infeasible (which would discard the order guarantee in the
+    // heuristic fallback). Persistent rhythm links do not suppress ordinary
+    // due enforcement; they are coupling policy rather than a one-day promise.
+    const explicitCommitmentHids = new Set();
+    for(const edge of dayEdges){
+      if(!edge || (edge.persistent && !edge.temporaryUpgrade))continue;
+      if(edge.beforeHid)explicitCommitmentHids.add(edge.beforeHid);
+      if(edge.afterHid)explicitCommitmentHids.add(edge.afterHid);
+    }
+    if(explicitCommitmentHids.size){
+      for(const i of [...requiredOccurrenceIndices]){
+        const c = dayCands.find(item=>item && item.i === i);
+        if(!c || !c.h || !explicitCommitmentHids.has(c.h.hid)){
+          requiredOccurrenceIndices.delete(i);
+        }
+      }
+    }
     const byHid = new Map(dayCands
       .filter(c=>c && c.h && c.h.hid)
       .map(c=>[c.h.hid,c]));
@@ -1339,7 +1433,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         try{
           earlyChosen = await withTimeout(
             packDayWithOptimizer(state,stagedFixed,candidates,new Set(),{
-              ...solveOptions,solveBudgetMs:earlyMs
+              ...solveOptions,solveBudgetMs:earlyMs,requiredOccurrenceIndices
             }),
             earlyMs
           );
@@ -1350,7 +1444,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       budgetLeft = Math.max(0,budgetLeft - earlySpent);
       if(!earlyChosen){
         plannerSolveStatus = 'fallback';
-        earlyChosen = packDayWithHeuristic(state,stagedFixed,candidates,dayStates);
+        earlyChosen = packDayWithHeuristic(
+          state,stagedFixed,candidates,dayStates,{requiredOccurrenceIndices}
+        );
         // The heuristic commits its choices itself.
         for(const {fill} of earlyChosen){
           total += 1;
@@ -1411,7 +1507,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     if(typeof isMovableWeekCandidate === 'function'
       && typeof movableCapacityForDay === 'function'){
       for(const c of fixedCands){
-        if(!isMovableWeekCandidate(c))continue;
+        const reference = virtualLogs.has(c.i) ? virtualLogs.get(c.i) : undefined;
+        const completionOffset = virtualCompletionCounts.get(c.i) || 0;
+        if(!isMovableWeekCandidate(c,state.dayBase,reference,completionOffset))continue;
         const dur = clampDuration(c.h.durationMinutes);
         for(let j = 0;j < dayStates.length;j += 1){
           if(dayStates[j] === state)continue;
@@ -1442,7 +1540,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       try{
         chosen = await withTimeout(
           packDayWithOptimizer(state,fixedCands,candidates,deferrable,{
-            ...solveOptions,dayStates,solveBudgetMs:solveMs
+            ...solveOptions,dayStates,solveBudgetMs:solveMs,requiredOccurrenceIndices
           }),
           solveMs
         );
@@ -1460,7 +1558,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       if(!usedHeuristic){
         console.warn('[agenda-optimizer] day solve infeasible — using fast pack for this day');
       }
-      const heuristicChosen = packDayWithHeuristic(state,fixedCands,candidates,dayStates);
+      const heuristicChosen = packDayWithHeuristic(
+        state,fixedCands,candidates,dayStates,{requiredOccurrenceIndices}
+      );
       for(const {fill} of heuristicChosen){
         total += 1;
         const c = candidates.find(x=>x.i === fill.i);
@@ -1566,6 +1666,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       maxContiguityVictims:3
     });
   }
+  if(typeof pullStrictDueMovablesForward === 'function'){
+    pullStrictDueMovablesForward(candidates,dayStates,settings);
+  }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
   }
@@ -1669,7 +1772,9 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     applyClusterFlexEligibility(candidates,dayStates,settings);
   }
   for(let i = candidates.length - 1;i >= 0;i -= 1){
-    if(!candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
+    const h = candidates[i] && candidates[i].h;
+    const snoozed = h && h.snoozedUntil && Date.now() < h.snoozedUntil;
+    if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 

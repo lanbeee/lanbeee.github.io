@@ -1,10 +1,16 @@
 function buildDayAgenda(data,settings,dayBase,opts = {}){
   const dayKey = dateKey(dayBase);
   const weekday = new Date(dayBase).getDay();
-  const isToday = dayStart(Date.now()) === dayBase;
+  const planningNow = opts.now != null ? Number(opts.now) : Date.now();
+  const isToday = dayStart(planningNow) === dayBase;
   const scheduled = collectScheduledAgendaEvents(data,dayKey,settings);
   const totalMinutes = effectiveAvailabilityMinutes(dayKey,settings);
-  const clipAfter = isToday ? ceilToMinutes(Date.now(),5) : dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday,dayBase) * 60000;
+  const firstOpen = dayBase
+    + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday,dayBase) * 60000;
+  // Missed-occurrence reconstruction asks what the planner would have put on
+  // this day before any of its usable windows elapsed. Normal planning still
+  // clips today to the current clock.
+  const clipAfter = isToday && !opts.fullDay ? ceilToMinutes(planningNow,5) : firstOpen;
   const slots = buildOpenAgendaSlots(dayKey,scheduled,settings,{clipAfter});
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
   const totalCap = Math.min(totalMinutes,slotMinutes);
@@ -43,7 +49,12 @@ function isWeekPinnedToday(h,settings){
   if(h.type === 'task' && h.eventTime !== null)return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
-  if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false)return true;
+  // Only an explicit plan log is a manual pin. hasPlannedToday also includes
+  // computed task-due/plan-by markers; treating those as pins would erase an
+  // explicit delay allowance and force every soft due date onto today.
+  if(typeof hasPlannedEntryForDay === 'function'
+    && hasPlannedEntryForDay(h,dateKey(Date.now()))
+    && settings.showPlannedItemsInAgenda !== false)return true;
   if(h.type === 'task' && h.hardDue && h.dueDate !== null && settings.showDueTasksInAgenda !== false){
     const left = daysUntil(h.dueDate);
     return left !== null && left <= 0;
@@ -79,18 +90,19 @@ function weekUrgency(h){
   if(days === null)return 10;
   if(days > target)return 130;
   if(days >= target)return 100;
-  const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
-  if(flex > 0 && days >= target - flex)return 40;
+  const early = typeof habitEarlyWindowDays === 'function' ? habitEarlyWindowDays(h) : 0;
+  if(early > 0 && days >= target - early)return 40;
   return 20;
 }
 
-// PURE: day-offset cost. High-flex keepup/reduce barely care which day;
-// hard/urgent work prefers earlier. Travel/cluster still dominate.
+// PURE: day-offset cost. Only explicit delay permission reduces the cost of a
+// later day. A large early window must never make postponement cheaper.
 function flexAwareDayPenalty(h,offset,urgency,pinned){
-  const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
+  const delay = typeof habitDelayAllowanceDays === 'function'
+    ? habitDelayAllowanceDays(h) : 0;
   if(pinned && offset > 0)return 50000;
-  if((h.type === 'keepup' || h.type === 'reduce') && flex >= 4)return offset * 5;
-  if((h.type === 'keepup' || h.type === 'reduce') && flex > 0)return offset * Math.max(8, 70 - urgency / 2);
+  if((h.type === 'keepup' || h.type === 'reduce') && delay >= 4)return offset * 5;
+  if((h.type === 'keepup' || h.type === 'reduce') && delay > 0)return offset * Math.max(8, 70 - urgency / 2);
   if(urgency >= 180)return offset * 220;
   if(urgency >= 130)return offset * 50;
   return offset * Math.max(15, 140 - urgency);
@@ -114,8 +126,12 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     const todayBase = dayStart(Date.now());
     // Overdue: catch up any day in the week.
     if(dueBase < todayBase)return true;
-    // On/before deadline only — don't schedule past the due date.
-    if(dayBase > dueBase)return false;
+    const lastOnTime = dueBase + (typeof habitDelayAllowanceDays === 'function'
+      ? habitDelayAllowanceDays(h) : 0) * 86400000;
+    // Before the due window expires, the explicit delay allowance is the hard
+    // latest day. Once already overdue, future rows are catch-up rather than a
+    // claim that the original deadline was still on time.
+    if(todayBase <= lastOnTime && dayBase > lastOnTime)return false;
     const ready = typeof taskReadyDate === 'function' ? taskReadyDate(h) : dueBase;
     if(ready !== null && dayBase < dayStart(ready))return false;
     return true;
@@ -208,7 +224,7 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   // until done) must not unlock this — they would flood daily extras.
   if(opts && opts.partnerPresent && h.type === 'keepup')return true;
   const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
-  const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
+  const flex = typeof habitEarlyWindowDays === 'function' ? habitEarlyWindowDays(h) : 0;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
   if(ageOnDay >= rawTarget)return true;
@@ -343,12 +359,73 @@ function locationsShareCluster(aIds,bIds,registry,mode){
   }
   return false;
 }
+
+// PURE: flex-pulling a habit onto a cluster day is useful only when joining
+// the partner is cheaper than making a separate trip from the day's known
+// origin. An unknown origin is not evidence of a saved trip, so it cannot
+// manufacture early eligibility. The normal origin ladder (live/manual,
+// last-known, then first location-bearing block) still gives both engines the
+// best available evidence without inventing a default place.
+function clusterFlexPairSavesTravel(aIds,bIds,seedLocId,registry,mode){
+  if(!locationsShareCluster(aIds,bIds,registry,mode))return false;
+  if(!seedLocId)return false;
+  for(const a of aIds || []){
+    if(!a)continue;
+    const fromSeed = travelEdgeBetweenIds(seedLocId,a,registry,mode,{allowNetwork:false});
+    const standaloneSeconds = Number(fromSeed && fromSeed.seconds) || 0;
+    for(const b of bIds || []){
+      if(!b)continue;
+      const between = travelEdgeBetweenIds(b,a,registry,mode,{allowNetwork:false});
+      const joinedSeconds = Number(between && between.seconds) || 0;
+      if(joinedSeconds <= CLUSTER_FLEX_NEAR_SECONDS && standaloneSeconds > joinedSeconds){
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// PURE: candidate indexes whose native-due occurrence justified this
+// candidate's otherwise-early cluster eligibility on `dayBase`.
+function clusterFlexPartnerIndicesForDay(c,dayBase){
+  const byDay = c && c.clusterFlexPartnersByDay;
+  if(!(byDay instanceof Map))return [];
+  const ids = byDay.get(dayBase);
+  return ids instanceof Set ? [...ids] : (Array.isArray(ids) ? ids.slice() : []);
+}
+
+// PURE: an early cluster candidate is valid only beside at least one of the
+// native-due partners that unlocked it. Exact packing enforces this as an ILP
+// row; Fast/fallback/rescue paths call this after ordering partners first.
+function clusterFlexPartnerPlacedForDay(c,state){
+  const ids = clusterFlexPartnerIndicesForDay(c,state && state.dayBase);
+  if(!ids.length)return true; // natively eligible; no cluster dependency
+  return ids.some(i=>state && (
+    (state.placed && state.placed.has(i))
+    || (state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === i)
+  ));
+}
+
+function clusterFlexDependsOnCandidate(c,partner){
+  if(!c || !partner)return false;
+  const byDay = c.clusterFlexPartnersByDay;
+  if(!(byDay instanceof Map))return false;
+  for(const ids of byDay.values()){
+    if(ids instanceof Set && ids.has(partner.i))return true;
+    if(Array.isArray(ids) && ids.includes(partner.i))return true;
+  }
+  return false;
+}
 // Native (non-flex) eligibility of candidate p on a day — by raw rhythm,
 // schedule, plan, or task due-date. Reads the habit directly (not p.eligible)
 // so cluster pull-early cannot cascade from another pulled habit.
 function clusterNativeDueOnDay(p,dayBase,weekday,cfg){
   const h = p && p.h;
   if(!h || h.type === 'zero')return false;
+  // Snooze is a hard eligibility gate. Candidate shells may be retained for
+  // schedule-link discovery even when their initial eligible Set is empty;
+  // they must not act as a native-due cluster anchor while snoozed.
+  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase))return true;
   if(h.type === 'task'){
@@ -389,12 +466,17 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
     const day = item && item.day ? item.day : item;
     const weekday = day && day.weekday != null ? day.weekday
       : (dayBase != null ? new Date(dayBase).getDay() : null);
-    return {dayBase,weekday};
+    const seedLocId = item && item.seedLocId ? item.seedLocId : null;
+    return {dayBase,weekday,seedLocId};
   }).filter(d=>d.dayBase != null);
   for(const c of candidates){
     const h = c && c.h;
     if(!h || h.type !== 'keepup' || !c.eligible)continue;
-    const flex = typeof clampFlexibility === 'function' ? clampFlexibility(h.flexibilityDays) : 0;
+    // Cluster flex can only broaden calendar eligibility. It cannot override
+    // an explicit snooze, including for link-retained candidates whose
+    // eligible Set started empty.
+    if(h.snoozedUntil && Date.now() < h.snoozedUntil)continue;
+    const flex = typeof habitEarlyWindowDays === 'function' ? habitEarlyWindowDays(h) : 0;
     if(flex <= 0)continue;
     const days = daysSince(h.lastLog);
     if(days === null || days < 0)continue;
@@ -404,7 +486,7 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
       ? normalizeLocationIds(h.locationIds,registry)
       : (Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : []);
     if(!myLocs.length)continue; // anywhere-allowed: no fixed cluster anchor
-    for(const {dayBase,weekday} of dayMeta){
+    for(const {dayBase,weekday,seedLocId} of dayMeta){
       if(c.eligible.has(dayBase))continue;
       // Flex clustering may open an earlier day, but a logged occurrence has
       // already consumed that day. Re-adding it here duplicates completed work
@@ -413,16 +495,22 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
       const ageOnDay = days + Math.round((dayBase - todayBase) / 86400000);
       if(ageOnDay >= rawTarget)continue;        // already natively due → already eligible
       if(ageOnDay < rawTarget - flex)continue;  // outside flex pull window
-      let partner = false;
+      const partnerIds = new Set();
       for(const p of candidates){
         if(p === c || !p.h)continue;
         if(!clusterNativeDueOnDay(p,dayBase,weekday,cfg))continue;
         const pLocs = typeof normalizeLocationIds === 'function'
           ? normalizeLocationIds(p.h.locationIds,registry)
           : (Array.isArray(p.h.locationIds) ? p.h.locationIds.filter(Boolean) : []);
-        if(pLocs.length && locationsShareCluster(myLocs,pLocs,registry,mode)){ partner = true; break; }
+        if(pLocs.length && clusterFlexPairSavesTravel(
+          myLocs,pLocs,seedLocId,registry,mode
+        ))partnerIds.add(p.i);
       }
-      if(partner)c.eligible.add(dayBase);
+      if(partnerIds.size){
+        c.eligible.add(dayBase);
+        if(!(c.clusterFlexPartnersByDay instanceof Map))c.clusterFlexPartnersByDay = new Map();
+        c.clusterFlexPartnersByDay.set(dayBase,partnerIds);
+      }
     }
   }
   return candidates;
@@ -722,6 +810,11 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     const pinA = a.pinned === true;
     const pinB = b.pinned === true;
     if(pinA !== pinB)return pinA ? -1 : 1;
+    const dailyA = typeof isIndependentDailyOccurrence === 'function'
+      && isIndependentDailyOccurrence(a);
+    const dailyB = typeof isIndependentDailyOccurrence === 'function'
+      && isIndependentDailyOccurrence(b);
+    if(dailyA !== dailyB)return dailyA ? -1 : 1;
     if(seqLoc){
       const la = a.atLiveLocation === true;
       const lb = b.atLiveLocation === true;
@@ -809,6 +902,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     const criticalA = mustPlaceCriticalOccurrence(a);
     const criticalB = mustPlaceCriticalOccurrence(b);
     if(criticalA !== criticalB)return criticalA ? -1 : 1;
+    const aNeedsB = clusterFlexDependsOnCandidate(a,b);
+    const bNeedsA = clusterFlexDependsOnCandidate(b,a);
+    if(aNeedsB !== bNeedsA)return aNeedsB ? 1 : -1;
     return 0;
   });
   for(const c of ordered){
@@ -891,11 +987,13 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     while(true){
       let dueBest = null;
       let earlyBest = null;
+      let requiredBest = null;
       const rawTarget = rhythmHabit
         ? Math.max(1,Number(c.h && c.h.target) || 7) : null;
       for(const state of dayStates){
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(pinned && !state.isTodayDay)continue;
+        if(!clusterFlexPartnerPlacedForDay(c,state))continue;
         if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null){
           const afterLast = state.dayBase > dayStart(virtualLastLog);
           const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount);
@@ -905,8 +1003,21 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
         // Reservation: defer this movable to a quieter eligible day when placing
         // it here would breach a daily breakable's target. No-alternative and
         // higher-priority cases still place here (handled inside the helper).
-        if(typeof fastPathDefersMovable === 'function'
-          && fastPathDefersMovable(c,state,candidates,dayStates))continue;
+        const occurrenceReference = rhythmHabit && rhythmPlacementCount > 0
+          ? virtualLastLog : undefined;
+        const occurrenceRequired = typeof mustPlaceOccurrenceByDay === 'function'
+          && mustPlaceOccurrenceByDay(
+            c,state.dayBase,occurrenceReference,rhythmPlacementCount
+          );
+        const requiredCanClaim = occurrenceRequired
+          && typeof requiredOccurrenceCanClaimDay === 'function'
+          && requiredOccurrenceCanClaimDay(
+            c,state,candidates,occurrenceReference,rhythmPlacementCount
+          );
+        if(!requiredCanClaim && typeof fastPathDefersMovable === 'function'
+          && fastPathDefersMovable(
+            c,state,candidates,dayStates,occurrenceReference,rhythmPlacementCount
+          ))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const resWindows = (typeof dailyBreakableReservations === 'function'
@@ -929,6 +1040,13 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           if(spare.length)dayOpts.spareWindows = spare;
         }
         const consider = (cand,withLink,linkBonus)=>{
+          if(occurrenceRequired){
+            if(!requiredBest
+              || cand.state.dayBase < requiredBest.state.dayBase
+              || (cand.state.dayBase === requiredBest.state.dayBase && cand.score < requiredBest.score)){
+              requiredBest = cand;
+            }
+          }
           if(!rhythmHabit){
             // One-shots: shop with link bonus.
             if(!earlyBest || cand.score < earlyBest.score)earlyBest = cand;
@@ -1032,6 +1150,12 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       }else{
         best = dueBest || earlyBest;
       }
+      // Required is a latest-day guard, not a preference to wait until that
+      // day. Keep an earlier winning placement; only replace a missing or
+      // impermissibly later choice with the first required-day fit.
+      if(requiredBest && (!best || best.state.dayBase > requiredBest.state.dayBase)){
+        best = requiredBest;
+      }
       if(!best)break;
       if(best.breakable){
         const before = best.state.fills.length;
@@ -1067,6 +1191,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
   if(typeof repairWeekPlacedHours === 'function'){
     totalAssigned += repairWeekPlacedHours(candidates,dayStates,settings);
   }
+  // A feasible/soft solve may park a strict due rhythm later even though it
+  // fits an untouched gap today. Pull it forward only when no committed row
+  // needs to move; impossible/busy days remain safely deferrable.
+  pullStrictDueMovablesForward(candidates,dayStates,settings);
   compactFastTravelRoutes(dayStates,candidates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
   // Rebuild/link cleanup can uncover a gap after the normal rescue already
@@ -1091,8 +1219,12 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
   let preferredState = null;
   let gained = 0;
   while(left > 0){
+    // Keep chunks chronological. Once a larger valid session has been placed
+    // on a future day, a sub-minimum finish-up must not be backfilled onto an
+    // earlier day where it would actually be the first session performed.
     const orderedStates = preferredState
-      ? [preferredState,...dayStates.filter(s=>s !== preferredState)]
+      ? [preferredState,...dayStates.filter(s=>s !== preferredState
+        && s.dayBase >= preferredState.dayBase)]
       : dayStates.slice();
     let best = null;
     // Pass 1: continuous full remaining.
@@ -1117,6 +1249,8 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
       }
       const fitProbe = tryPlaceOnDay(state,fill,dayOpts);
       if(!fitProbe)continue;
+      if(typeof isValidChunkMinutes === 'function'
+        && !isValidChunkMinutes(fitProbe.durMin,left,min))continue;
       const travel = fitProbe.edge.seconds || 0;
       const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
       const coLocHint = colocateHintBonus(state,fitProbe.locId,c.i,locHints,registry,mode);
@@ -1263,6 +1397,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
     for(const state of dayStates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(c.pinned && !state.isTodayDay)continue;
+      if(!clusterFlexPartnerPlacedForDay(c,state))continue;
       if(hasOccurrence(state)){
         lastPlaced = state.dayBase;
         if(fillsEveryEligibleDay)rhythmPlacementCount += 1;
@@ -1312,6 +1447,65 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
     }
   }
   return gained;
+}
+
+// MUTATE: repair a one-shot/sparse occurrence assigned after its explicit last
+// on-time day even though that earlier finished agenda still has a direct fit.
+// This targets dominated feasible incumbents, not normal capacity deferral: it
+// never removes/repositions an earlier row or breaks a required later-day pair.
+function pullStrictDueMovablesForward(candidates,dayStates,settings){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
+  let moved = 0;
+  const hasOccurrence = (state,idx)=>Boolean(state && (state.fills || [])
+    .some(entry=>entry && entry.fill && entry.fill.i === idx));
+  for(const c of candidates){
+    const h = c && c.h;
+    if(!h || h.breakable || c.pinned)continue;
+    const target = Number(h.target);
+    if(h.type !== 'task' && (!Number.isFinite(target) || target <= 1))continue;
+    const days = typeof daysSince === 'function' ? daysSince(h.lastLog) : null;
+    if(days !== null && days < 0)continue;
+    const todayBase = dayStart(Date.now());
+    // Only repair the first planned occurrence after the real last log. Once
+    // an occurrence already exists on an earlier day, later rows represent a
+    // new cadence cycle and must retain their virtual spacing.
+    const placedState = dayStates.find(state=>hasOccurrence(state,c.i));
+    if(!placedState)continue;
+    const dueState = dayStates.find(state=>{
+      if(!state || state.dayBase < todayBase || state.dayBase >= placedState.dayBase)return false;
+      if(c.eligible && !c.eligible.has(state.dayBase))return false;
+      return typeof mustPlaceOccurrenceByDay === 'function'
+        && mustPlaceOccurrenceByDay(c,state.dayBase);
+    });
+    if(!dueState)continue;
+    const laterPair = typeof plannerOrderConstraintsForDay === 'function'
+      && plannerOrderConstraintsForDay(placedState.dayBase).some(edge=>edge && edge.persistent
+        && edge.requiresPair && (edge.beforeHid === h.hid || edge.afterHid === h.hid));
+    if(laterPair)continue;
+
+    const earlier = clonePlacementState(dueState);
+    const fill = {h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    const fit = tryPlaceOnDay(earlier,fill,{
+      settings,allowNetwork:true,
+      weights:typeof resolveAgendaScoreWeights === 'function'
+        ? resolveAgendaScoreWeights(settings) : null
+    });
+    if(!fit)continue;
+    commitPlacement(earlier,fill,fit);
+    syncDayAgendaItemsFromFills(earlier);
+
+    const laterKeep = (placedState.fills || [])
+      .filter(entry=>entry && entry.fill && entry.fill.i !== c.i)
+      .map(entry=>({...entry.fill}));
+    const later = rebuildDayFromFills(placedState,laterKeep,candidates,{
+      settings,allowNetwork:true
+    });
+    if(!later)continue;
+    applyPlacementState(dueState,earlier);
+    applyPlacementState(placedState,later);
+    moved += 1;
+  }
+  return moved;
 }
 
 // MUTATE: final hard-gap rescue for fixed daily/every-eligible-day rhythms.
@@ -1909,6 +2103,14 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
   let moves = 0;
   const byIndex = new Map(candidates.map(c=>[c.i,c]));
 
+  // The deep pass exists specifically for contiguity valleys. Search its
+  // bounded 2/3-item neighborhood before accepting a superficially improving
+  // one-item move; afterward the ordinary pass can still clean up any simple
+  // deficits left behind.
+  if(options && options.deep){
+    moves += repairBreakableContiguityNeighborhood(candidates,dayStates,settings,options);
+  }
+
   const shortBreakableOn = (state)=>{
     const reservations = dailyBreakableReservations(state,candidates);
     for(const r of reservations){
@@ -1920,7 +2122,7 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
   };
 
   const isDeferrableFrom = (c,fromState)=>{
-    if(!isMovableWeekCandidate(c))return false;
+    if(!isMovableWeekCandidate(c,fromState.dayBase))return false;
     const dur = clampDuration(c.h.durationMinutes);
     for(const other of dayStates){
       if(other === fromState)continue;
@@ -2060,16 +2262,6 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
     }
     if(!improved)break;
   }
-  // A one-at-a-time repair cannot cross a contiguity valley: removing one
-  // 30-minute blocker may still leave every opening below Work's 45-minute
-  // minimum chunk, so that individually neutral move is rejected even though
-  // moving a second blocker would recover the whole deficit. The background
-  // exact refinement enables a bounded 2/3-item neighborhood search for that
-  // case. Keep it out of the first-paint pass so heavy users still get a quick
-  // feasible incumbent.
-  if(options && options.deep){
-    moves += repairBreakableContiguityNeighborhood(candidates,dayStates,settings,options);
-  }
   return moves;
 }
 
@@ -2190,7 +2382,7 @@ function repairBreakableContiguityNeighborhood(candidates,dayStates,settings,opt
           return {entry,c};
         }).filter(({entry,c})=>{
           if(!entry || !entry.fit || !c || !c.h || c.i === short.i)return false;
-          if(!isMovableWeekCandidate(c) || c.pinned)return false;
+          if(!isMovableWeekCandidate(c,state.dayBase) || c.pinned)return false;
           if(c.h.hid && linked.has(c.h.hid))return false;
           if(typeof mustPlaceCriticalOccurrence === 'function'
             && mustPlaceCriticalOccurrence(c))return false;

@@ -50,7 +50,7 @@ Everything below is covered in this skeleton:
 - Time Window: allowedWeekdays, allowedMonthDays, preferredWeekdays, preferredMonthDays
 - Time Start/End: allowedTimeStart, allowedTimeEnd, preferredTimeStart, preferredTimeEnd
 - Prayer Anchors: 8 anchor fields + combine + offset + habit linking
-- Flexibility: flexibilityDays
+- Scheduling windows: earlyWindowDays + delayAllowanceDays (legacy flexibilityDays migrates to early only)
 - Duration: durationMinutes, breakable, minChunkMinutes
 - Timers: timerAutoStopMinutes (legacy), autoMarkMinutes
 - Tracking: trackValue
@@ -60,7 +60,7 @@ Everything below is covered in this skeleton:
 - Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override)
 - Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
 - Links: links array (kind, value)
-- Task-specific: dueDate, eventTime, hardDue, flexibilityDays
+- Task-specific: dueDate, eventTime, hardDue, earlyWindowDays, delayAllowanceDays
 - Calendar import: externalId, source, importedAt
 
 ### ✅ All Settings Fields (40+ fields)
@@ -134,9 +134,11 @@ Everything below is covered in this skeleton:
 - Platform: Works on desktop, mobile, installable as PWA
 
 ### 1.2 Philosophy & Core Concepts 👤
-- **Rhythm-based planning:** Target + flexibilityDays instead of rigid deadlines
+- **Rhythm-based planning:** Target + separate early and delay windows instead of one ambiguous flexibility value
 - **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
 - **Capacity-based scheduling:** availabilityMinutes - durationMinutes
+- **Directional scheduling:** `earlyWindowDays` only permits bringing work forward. `delayAllowanceDays` alone permits moving the same occurrence past its due/rhythm day.
+- **Strict due placement:** On an occurrence's last allowed day, both planners treat it as non-deferrable and claim any compatible open or reserved-spare time. It may shorten a protected daily breakable only when it has strictly higher priority. If a later feasible incumbent leaves an untouched due-day gap, it is pulled back. A genuinely infeasible later row is catch-up and does not erase the original Missed expectation.
 - **Progressive urgency:** No hard deadlines by default, with the ability to add.
 - **Privacy-first:** All data is stored in this browser. There is no Tings account. A few opt-in features can send something outward (shared display, share item, address search, send feedback); those controls carry a cloud-up mark. See About → privacy.
 
@@ -237,6 +239,7 @@ Items appear in this order:
 | `showTopicsOnCards` | When enabled | 💡 topic chips at bottom |
 | `showLocationOnCards` | When enabled | 📍 location pin label |
 | `showTrailOnCards` | When enabled | ●●●●● activity dots |
+| `minimalShowTrailOnCards` | Minimal mode, when enabled | ●●●●● activity dots (off by default in minimal) |
 | `showCueOnCards` | Always | Status text below title |
 | `showOrderPillsOnCards` | Always | ↗️ ↘️ order markers |
 | `showEarlyOnCards` | Always | 🌅 early indicator |
@@ -308,12 +311,13 @@ if days < 4: score += red (keep going)
 | `dueDate` | number\|null | null | Soft deadline (day-level) |
 | `eventTime` | number\|null | null | Fixed time appointment |
 | `hardDue` | boolean | false | Hard deadline (escalates urgency) |
-| `flexibilityDays` | number | 1 | Days before due date it starts surfacing |
+| `earlyWindowDays` | number | 1 | Days before the due date it may start surfacing |
+| `delayAllowanceDays` | number | 0 | Days after the due date it may remain on time |
 
 #### Due Score Calculation:
 ```
 daysLeft = daysUntil(dueDate)
-window = max(1, flexibilityDays)
+window = max(1, earlyWindowDays)
 if daysLeft ≤ 0:
   overdueBoost = hardDue ? 1.4 : 1
   score = (1 + min(0.75, abs(daysLeft)/window)) * overdueBoost
@@ -391,7 +395,9 @@ else:
   ...  // Same pattern for end fields
   
   // ─── FLEXIBILITY & DURATION ───────────────────────────────
-  flexibilityDays: number,   // 👤 Buffer days (tasks), 0-60
+  earlyWindowDays: number,   // 👤 May be scheduled this many days early, 0-60
+  delayAllowanceDays: number,// 👤 May remain on time this many days late, 0-60
+  flexibilityDays: number,   // 👨‍💻 Legacy alias exported as earlyWindowDays
   durationMinutes: number,   // 👤 Planned session length (1-720)
   breakable: boolean,        // 👤 Can split across sessions
   minChunkMinutes: number,   // 👤 Minimum split size (15-720)
@@ -510,11 +516,12 @@ showTimeWindowOnCards: boolean,    // 👤 Show 🕐 time window
 showSnoozedUntilOnCards: boolean,  // 👤 Show snooze countdown
 showDurationOnCards: boolean,      // 👤 Show ⏱️ duration
 showRepetitionOnCards: boolean,    // 👤 Show rhythm (e.g., 1×)
-showFlexibilityOnCards: boolean,   // 👤 Show flexibility days
+showFlexibilityOnCards: boolean,   // 👤 Show early/delay scheduling windows (legacy key name)
 showTopicsOnCards: boolean,        // 👤 Show 💡 topic chips
 showLocationOnCards: boolean,      // 👤 Show 📍 location
 showAgendaTimesOnCards: 'time'|'icon'|'hide',
-showTrailOnCards: boolean,         // 👤 Show activity dots
+showTrailOnCards: boolean,         // 👤 Show activity dots (regular mode)
+minimalShowTrailOnCards: boolean,  // 👤 Activity dots opt-in for minimal mode (default OFF)
 showCueOnCards: boolean,           // 👤 Show status text
 showOrderPillsOnCards: boolean,    // 👤 Show ↗️ ↘️ markers
 showStatusOnCards: boolean,        // 👤 Show status word ("run", "overdue", etc.)
@@ -571,6 +578,7 @@ prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
 weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
+showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode day forecast icons
 ```
 
 #### 4.3.8a Weather Guidance 👤👨‍💻
@@ -578,7 +586,9 @@ weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
   home-city coordinate. An item can optionally pick a saved place when that
   item happens far from home (`weatherLocationId`). Nearby places (about 40 km)
   reuse the home forecast instead of a second request.
-- The seven-day hourly forecast refreshes every six hours per distinct place.
+- The seven-day hourly forecast and normalized daily condition/temperature/
+  precipitation/wind summaries refresh together every six hours per distinct place.
+  A fresh legacy cache without daily summaries is refreshed automatically.
   Extra places are fetched only for weather-linked items that opted in, capped
   at four far places besides home.
 - When a weather-linked planned item is active or starts within 90 minutes, a
@@ -591,6 +601,18 @@ weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
   forecast fills later or missing times. AQI is fetched separately only when a
   profile uses US or EU AQI (home: any such profile; a far place: only if an
   item there uses one).
+- Weather stays supporting context: full-mode Home agenda-day headers and the
+  Overview seven-day open-time strip show one forecast icon. Optional low–high
+  Celsius ranges are off by default. The Overview calendar grid is unchanged.
+- Today/future Overview day sheets show a compact home-city forecast above the
+  agenda. Activating a Home day icon, weather-guided item icon, or that forecast
+  opens one shared detail sheet with conditions, full temperature range,
+  precipitation, wind, forecast age, and chronological guided-item explanations.
+  A far-away item names its saved place and uses that place's forecast.
+- Minimal mode hides ordinary and unavailable forecast cues and all temperature
+  text. It only shows caution/override icons that come from weather-guided items
+  scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
+  are never shown as day weather.
 - Rules in one profile are AND-combined. `prefer lower`/`prefer higher` steers
   placement; min/max set absolute bounds; `hard` rejects flexible times outside
   the bounds, while active, pinned, critical, and direct-linked commitments
@@ -644,7 +666,8 @@ defaultType:'keepup',                  // New habit default type
 defaultTarget:7,                      // Default target cycle (days)
 defaultPriority:2,                   // Default priority (P2)
 defaultDurationMinutes:30,           // Default session length
-defaultFlexibilityDays:1,            // Default flexibility for tasks
+defaultEarlyWindowDays:1,            // Default early scheduling window
+defaultDelayAllowanceDays:0,         // Default permission to run late
 defaultBreakable:false,             // Default breakable setting
 defaultMinChunkMinutes:30,          // Default minimum chunk for breakables
 ```
@@ -792,7 +815,7 @@ When `showPinnedOnCards: true`:
 A teal cloud-up icon (`ti-cloud-up`, class `.leave-btn`) sits next to any control that can send data off this device. Tap it for a one-line note (same pattern as the info “i”). About → **privacy** is the full explainer.
 
 Placed on:
-- Settings → shared display (encrypted Cloudflare relay)
+- Settings → shared display (encrypted Cloudflare relay; regular mode only — the section is hidden in minimal mode)
 - Detail → share item (encrypted Cloudflare relay)
 - Locations / city / address search (Photon + Nominatim)
 - Travel time estimate (OSRM)
@@ -829,7 +852,7 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showSnoozedUntilOnCards | **true** | Snooze countdown |
 | showDurationOnCards | **false** | ⏱️ session length |
 | showRepetitionOnCards | **true** | 1× rhythm display |
-| showFlexibilityOnCards | **false** | Flexibility days |
+| showFlexibilityOnCards | **false** | Early and delay windows (legacy key name) |
 | showTopicsOnCards | **false** | 💡 topic chips |
 | showLocationOnCards | **false** | 📍 location pin |
 | showStatusOnCards | **false** | Status word ("run", etc.) — calm-card default |
@@ -868,9 +891,12 @@ Minimal mode (always):
 Each day section header can have two dynamic **pills**:
 
 ### 6.2 Missed Pills (🔴 "N missed")
-- Appears on "Today" header when habits didn't make it into today's agenda
+- Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
+- Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
+- It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, and still-doable work that was never shown are excluded
+- Dated expectations are retained across skipped app days. To keep the list useful instead of becoming a backlog dump, only the newest unresolved miss for each item is shown; a later completion resolves earlier expectations.
 - Tap to open the **Slipped Sheet** (see §X.1)
-- Shows items in reverse snooze order
+- Shows items in expected-day, then first-suggested order
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
@@ -1023,7 +1049,7 @@ Visible when type = task:
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
 | `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics |
-| `schedule` | 📅 | Rhythm or task deadline, flexibility, allowed/preferred days, times and places, item order |
+| `schedule` | 📅 | Rhythm or task deadline, early/delay windows, allowed/preferred days, times and places, item order |
 | `effort` | 📊 | Duration, breakable, min chunk, logging and session controls |
 | `history` (`calendar` key) | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
 | `actions` | ⋮ | Links/calls, pin, export, share, snooze and remove |
@@ -1059,11 +1085,13 @@ Fields shown (always visible, even in minimal mode):
 - Tasks open on Schedule by default so deadline and placement controls are the
   first editable fields.
 
-#### Flexibility Section (full mode only) 👤
-- **Flexibility (days):** Scheduling buffer
-  - For tasks, how many days before the due date the task starts surfacing
-  - For habits, extra planning buffer beyond the rhythm target
-  - Input range: 0-60; default: 0
+#### Scheduling Windows Section (full mode only) 👤
+- **Early window (days):** How far before the due/rhythm day the planner may bring the item forward
+  - This only grants earlier placement; it never makes postponement cheaper or legal
+- **Delay allowance (days):** How far after the due/rhythm day the same occurrence may remain on time
+  - This is a fallback ceiling, not a preference to wait
+  - `0` makes the due day non-deferrable whenever a valid fit exists
+- Both inputs range from 0-60. Existing `flexibilityDays` values migrate into the early window; delay defaults to 0.
 
 #### Days Section
 - **Allowed Weekdays:** Mon Tue Wed Thu Fri Sat Sun (0-6)
@@ -1213,9 +1241,9 @@ shortcuts can be stored on one item.
 
 #### Item Actions
 - **Pinned:** Keeps the item above automatic ordering
-- **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot.
+- **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot. Regular mode only — hidden alongside the other full-mode action rows in minimal mode.
 - The standalone shared display shows the current time in its header. Swiping left (or "hide agenda") covers the agenda with a near-black night clock; three taps within 900ms bring it back — a swipe never restores it, so a stray brush of the frame can't flash the agenda. Marking an item done shows an undo toast for a few seconds: the row reads as done immediately, but the completion is only pushed to the owner's feed when the toast expires, and tapping undo restores the row without any request. Only one mark waits at a time — marking another item pushes the previous one at once; a refresh that pauses the display or drops the row cancels the pending mark instead of pushing it, and de-pairing mid-push never writes the old authorization back. The ⋯ menu holds the fullscreen toggle, light/dark/system theme (dark is the default), a − / + text-size stepper (70–200%), and a "screen fit" − / + control that pre-squashes the page vertically (85–100%) to cancel frames that stretch their panel. Everything persists per display.
-- **Export to calendar:** Tasks with a due date or fixed time
+- **Export to calendar:** Tasks with a due date or fixed time (regular mode only)
 - **Share item:** Sends an encrypted invitation for another person to track it
 - **Snooze:** Temporarily hides the item
 - **Remove:** Deletes with an undo path
@@ -1335,11 +1363,13 @@ Tracks the currently active habit session:
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N missed" pill on a day header, or right-swipe a card → "missed" action
-- Lists habits that were due but didn't fit in the agenda
+- **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
+- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here.
+- A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
+- Repeated unresolved occurrences of the same item collapse to one actionable row, labeled with its newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
-- Items show snooze tags or day labels (behind/today/tomorrow)
+- Items show day labels (behind/today/tomorrow)
 
 ### 10.2 Free Time Sheet (Open Gaps) 👤
 
@@ -1825,7 +1855,8 @@ Settings sections (actual order):
 │   │   ├── how often (rhythm)
 │   │   ├── importance (priority)
 │   │   ├── duration
-│   │   ├── can do early (flexibility)
+│   │   ├── can do early (early window)
+│   │   ├── may run late (delay allowance)
 │   │   ├── allow splitting (breakable)
 │   │   └── default topics
 │   ├── appearance
@@ -1872,10 +1903,11 @@ How long a habit session takes:
 - Maximum: 720 minutes (12 hours)
 - Used by agenda for capacity planning
 
-### 13.3 Flexibility Days 👤
-Only for Task type:
-- Days before `dueDate` when task starts being relevant
-- Example: due on 15th, flexibility 3 → starts appearing on 12th
+### 13.3 Scheduling Windows 👤
+- **Early window:** Days before the due/rhythm day when an item may be brought forward
+- **Delay allowance:** Days after the due/rhythm day when it may still be placed without being late
+- Example: due on the 15th, early window 3 and delay allowance 1 → it may surface from the 12th and must be placed no later than the 16th
+- An early window never grants delay. Once an occurrence reaches its last allowed day, a feasible placement is protected in both Fast and GLPK planning, subject to the existing rule that equal/lower-priority work cannot steal a daily breakable's required minutes.
 
 ### 13.4 Auto Mark Done (minutes) 👤
 - Blank: Manual completion (tap the pulse button)
@@ -1979,7 +2011,8 @@ Settings > Display > Minimal Mode (toggle off)
 | Term | Definition |
 |------|------------|
 | **Target** | Rhythm: times per N days |
-| **Flexibility** | Days before deadline for tasks |
+| **Early window** | Permission to schedule before the due/rhythm day |
+| **Delay allowance** | Permission to schedule after the due/rhythm day; zero is strict |
 | **Attendance Score** | Urgency based on overdue/on-track status |
 | **Agenda** | Today's scheduled timeline |
 | **Plan Signal** | Future logs marked "planned" |
@@ -2074,7 +2107,8 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
   defaultTarget: 7,
   defaultPriority: 2,
   defaultDurationMinutes: 30,
-  defaultFlexibilityDays: 1,
+  defaultEarlyWindowDays: 1,
+  defaultDelayAllowanceDays: 0,
   defaultBreakable: false,
   defaultMinChunkMinutes: 30,
 
@@ -2113,7 +2147,8 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `MIN_RHYTHM_DAYS` | 0.5 | Min cycle length |
 | `DEFAULT_DURATION_MINUTES` | 30 | Default session length |
 | `DEFAULT_MIN_CHUNK_MINUTES` | 30 | Default min chunk when breakable |
-| `DEFAULT_FLEXIBILITY_DAYS` | 1 | Default flexibility for tasks |
+| `DEFAULT_EARLY_WINDOW_DAYS` | 1 | Default number of days an item may be brought forward |
+| `DEFAULT_DELAY_ALLOWANCE_DAYS` | 0 | Default permission to place an occurrence after its due day |
 | `TIME_PICKER_STEP_MINUTES` | 15 | Time picker granularity |
 | `MAX_NOTE_CHARS` | 200 | Max free-form notes |
 | `DEFAULT_PRIORITY` | 2 | Default priority (P2) |
@@ -2376,6 +2411,8 @@ Same agenda logic, but simplified display:
 - Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
 - Simplified scheduling UI
 - Basic info only
+- Action rows limited to remove: shared display, export to calendar, share
+  item, snooze, and pin are regular-mode only (saved values are untouched)
 
 ---
 
@@ -2408,12 +2445,13 @@ Same agenda logic, but simplified display:
 | showSnoozedUntilOnCards | true | Snooze countdown | "2h left" text |
 | showDurationOnCards | false | ⏱️ session length | ⏱️ |
 | showRepetitionOnCards | true | 1× rhythm display | "1×" text |
-| showFlexibilityOnCards | false | Flexibility days | "±2d" text |
+| showFlexibilityOnCards | false | Early/delay windows (legacy key name) | separate left/right day pills |
 | showTopicsOnCards | false | 💡 topic chips | 💡 tags |
 | showLocationOnCards | false | 📍 location pin | 📍 |
 | showStatusOnCards | true | Status word | "run", "great", etc. |
 | showAgendaTimesOnCards | **'time'** | 'show time' / 'symbol only' / 'hide' |
 | showTrailOnCards | true | Activity dots history | ●●●●● dots |
+| minimalShowTrailOnCards | false | Minimal mode: opt-in activity dots | ●●●●● dots |
 | showCueOnCards | true | Status text below name | Colored text |
 
 *Note: 2 card settings are controlled by tab visibility, not boolean toggles: `showOrderPillsOnCards` (depends on schedule links) and `showEarlyOnCards` (depends on agenda state).*
@@ -2500,6 +2538,7 @@ Same agenda logic, but simplified display:
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
 | `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
+| `showWeatherTemperatureRanges` | boolean | false | Add daily low–high °C beside full-mode Home and Overview week-strip weather icons |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |
@@ -2534,7 +2573,8 @@ Same agenda logic, but simplified display:
 | `defaultTarget` | number | 7 | Default rhythm cycle (days) |
 | `defaultPriority` | number | 2 | Default priority (P2) |
 | `defaultDurationMinutes` | number | 30 | Default session length |
-| `defaultFlexibilityDays` | number | 1 | Default flexibility for tasks |
+| `defaultEarlyWindowDays` | number | 1 | Default early scheduling window |
+| `defaultDelayAllowanceDays` | number | 0 | Default delay allowance |
 | `defaultBreakable` | boolean | false | Default breakable setting |
 | `defaultMinChunkMinutes` | number | 30 | Default minimum chunk |
 | `defaultAutoMarkMinutes` | number\|null | null | Default auto-mark timeout |
@@ -2710,7 +2750,8 @@ Same agenda logic, but simplified display:
 | Location address | 120 characters |
 | Rhythm times | 183 |
 | Rhythm days | 183 |
-| Flexibility days | 60 |
+| Early-window days | 60 |
+| Delay-allowance days | 60 |
 | Duration | 720 minutes |
 | Min chunk | 720 minutes |
 | Prayer offset | ±720 minutes |

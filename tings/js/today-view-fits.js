@@ -1623,10 +1623,12 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     const h = data[i];
     const pinned = typeof isWeekPinnedToday === 'function'
       ? isWeekPinnedToday(h,settings) : Boolean(h && h.pinned);
-    // A later day satisfies a one-shot/movable candidate, but it never
-    // satisfies today's separate daily occurrence.
-    if(typeof isMovableWeekCandidate === 'function'
-      && !isMovableWeekCandidate({h,i,pinned}))return '';
+    // A later row is meaningful for a one-shot/sparse occurrence even after
+    // its delay allowance expired: at that point it is catch-up evidence, not
+    // proof that today's due occurrence was legitimately postponed. Daily
+    // rhythms are separate obligations on each day and remain excluded.
+    if(h && h.type !== 'task' && Number.isFinite(Number(h.target))
+      && Number(h.target) <= 1)return '';
     const elsewhere = [...(assignedDayByIndex.get(i) || [])].find(base=>base !== dayBase);
     if(elsewhere == null)return '';
     return homeWeekDayLabel({
@@ -1880,24 +1882,50 @@ function createDayPlacementState(day,settings,opts = {}){
     && settings && settings._plannerLiveLocationId
     && registry.some(loc=>loc.id === settings._plannerLiveLocationId)
     ? settings._plannerLiveLocationId : null;
-  const coordAwayFromSaved = isTodayDay
+  // A sticky manual pin is an explicit correction from the user and must beat
+  // raw GPS, including a fix outside every saved geofence. This matches
+  // currentLocationId()/locationPresence() and prevents a noisy or stale fix
+  // from silently moving the planner away from "I am at …".
+  const pinnedLocId = isTodayDay
+    && settings && settings.pinnedLocationId
+    && registry.some(loc=>loc.id === settings.pinnedLocationId)
+    ? settings.pinnedLocationId : null;
+  const coordAwayFromSaved = isTodayDay && !pinnedLocId
     && typeof currentCoordLocation === 'function'
     && typeof isCurrentCoordAwayFromSaved === 'function'
     && typeof CURRENT_COORD_ID !== 'undefined'
     && !!currentCoordLocation()
     && isCurrentCoordAwayFromSaved(registry);
-  let prevLocId = isTodayDay
-    ? (coordAwayFromSaved ? CURRENT_COORD_ID
-      : (workerLiveLocId || (typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null))
-    : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
-      || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
+  // A location-bearing first block is the weakest origin signal. It makes an
+  // otherwise unknown day start honestly (Sleep -> Home), while current/live
+  // and last-known presence always win for an in-progress day.
+  const blockOriginLocId = typeof dayFirstBlockLocationId === 'function'
+    ? dayFirstBlockLocationId(blocks,weekday,dayBase)
+    : (blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
       || null);
+  let prevLocId;
+  if(isTodayDay){
+    prevLocId = pinnedLocId
+      || (coordAwayFromSaved ? CURRENT_COORD_ID : null)
+      || workerLiveLocId
+      || (typeof currentLocationId === 'function' && currentLocationId())
+      || settings.lastKnownLocationId
+      || blockOriginLocId
+      || null;
+  }else{
+    prevLocId = blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
+      || blockOriginLocId
+      || null;
+  }
   // Genuine live fix only (geolocation / manual pin), not the last-known
   // default. Presence uses this to decide whether the seed supersedes ended
   // blocks. Null on future days and whenever the user has no active fix.
   const liveLocId = isTodayDay
-    ? (coordAwayFromSaved ? CURRENT_COORD_ID
-      : (workerLiveLocId || (typeof liveLocationId === 'function' ? liveLocationId() : null))) : null;
+    ? (pinnedLocId
+      || (coordAwayFromSaved ? CURRENT_COORD_ID : null)
+      || workerLiveLocId
+      || (typeof liveLocationId === 'function' ? liveLocationId() : null))
+    : null;
   return {
     day,
     dayBase,

@@ -134,8 +134,10 @@ shared primitive OR landing it in both engines.**
 ### 5.2 Vocabulary (precise — misuse here causes bugs)
 
 - **Movable** (`isMovableWeekCandidate`, `today-view-reservations.js`): a one-shot `task`
-  **or** a sparse rhythm (`target > 1`). NOT a daily rhythm (`target ≤ 1`), not
-  breakable, not pinned. Movables *choose a day* and can defer.
+  **or** a sparse rhythm (`target > 1`) that has not reached its last permitted
+  day. NOT a daily rhythm (`target ≤ 1`), not breakable, not pinned, and not an
+  occurrence whose `delayAllowanceDays` has expired. Movables *choose a day*;
+  `earlyWindowDays` never grants permission to defer.
 - **Daily breakable** (`dailyBreakableReservations`): a daily recurring
   breakable (e.g. "Work 6h") with a per-day **deficit** to protect inside its
   allowed window. Its "reservation" is the window minutes it still needs.
@@ -153,7 +155,10 @@ shared primitive OR landing it in both engines.**
 ### 5.3 Decision flow (GLPK, per day, today-first)
 
 1. Build `fixedCands` (non-breakable candidates eligible that day).
-2. Compute `deferrable` set: movables with another eligible day that has capacity.
+2. Compute `deferrable` set: movables still inside their explicit delay window
+   with another eligible day that has capacity. Last-day occurrences become
+   hard selection rows when a fit can coexist with daily-breakable protection;
+   only strictly higher priority may displace the protected deficit.
 3. Enumerate fits per candidate (`optimizerFitsForFill` → `listPlaceFitsOnDay`,
    anchors = candidate window edges + boundary probes; stepped grid only when
    order links / doing-now exist).
