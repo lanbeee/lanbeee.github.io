@@ -14,8 +14,11 @@ function assert(value,message){
   else { fail += 1; console.error('  not ok: ' + message); }
 }
 
-// Shared scenario runner. `partnerDueOffset` = null means no partner task.
-async function runScenario(page,{flex, type = 'keepup', withPartner = true}){
+// Shared scenario runner. `withPartner:false` removes the partner task.
+async function runScenario(page,{
+  flex, type = 'keepup', withPartner = true, atCluster = false,
+  partnerDueOffset = 2, optionalOrder = false, withDuePeer = false
+}){
   return await page.evaluate(async (cfg)=>{
     localStorage.removeItem('tings_v2');
     const today = dayStart(Date.now());
@@ -27,8 +30,10 @@ async function runScenario(page,{flex, type = 'keepup', withPartner = true}){
       const settings = {
         preset:'todayFirst',
         showDueHabitsInAgenda:true, showDueTasksInAgenda:true, showPlannedItemsInAgenda:true,
-        availabilityMinutes:Array(7).fill(360), availabilityOverrides:{},
-        blockedTimes:[], locations:[{id:'gym',name:'Gym',lat:1,lng:1}], travel:{}
+        availabilityMinutes:Array(7).fill(360),
+        availabilityOverrides:cfg.withDuePeer ? {[dateKey(today)]:60} : {},
+        blockedTimes:[], locations:[{id:'gym',name:'Gym',lat:1,lng:1}], travel:{},
+        lastKnownLocationId:cfg.atCluster ? 'gym' : null
       };
       saveSortSettings(settings);
       if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
@@ -36,9 +41,18 @@ async function runScenario(page,{flex, type = 'keepup', withPartner = true}){
       const data = [];
       if(cfg.withPartner){
         data.push({ hid:'partner',name:'Gym errand',type:'task',target:null,
-          dueDate:today + 2*dayMs, eventTime:null, durationMinutes:30, priority:2,
+          dueDate:today + cfg.partnerDueOffset*dayMs, eventTime:null, durationMinutes:30, priority:2,
           locationIds:['gym'], flexibilityDays:0, logs:[], emoji:'🏋️', pinned:false,
-          sample:false, snoozedUntil:null, topics:[], createdAt:now });
+          sample:false, snoozedUntil:null, topics:[], createdAt:now,
+          scheduleLinks:cfg.optionalOrder ? [{
+            anchorHid:'subject',direction:'after',adjacency:'direct',requireSameDay:false
+          }] : [] });
+      }
+      if(cfg.withDuePeer){
+        data.push({ hid:'due-peer',name:'Due peer',type:'task',target:null,
+          dueDate:today, eventTime:null, durationMinutes:30, priority:2,
+          locationIds:['gym'], flexibilityDays:0, logs:[], emoji:'✅', pinned:false,
+          sample:false, snoozedUntil:null, topics:[], createdAt:now, scheduleLinks:[] });
       }
       data.push({ hid:'subject',name: cfg.type === 'reduce' ? 'Skip snack' : 'Lift',
         type:cfg.type, target:5,
@@ -46,12 +60,18 @@ async function runScenario(page,{flex, type = 'keepup', withPartner = true}){
         priority:2, locationIds:['gym'], flexibilityDays:cfg.flex, emoji: cfg.type === 'reduce' ? '🍩' : '💪',
         pinned:false, sample:false, snoozedUntil:null, topics:[], createdAt:now - 30*dayMs });
       Storage.write(KEY,data);
-      const week = await buildWeekAgendaAsync(load(),loadSortSettings(),7,{});
-      const fills = day=>(week.days[day] && Array.isArray(week.days[day].agendaItems))
-        ? week.days[day].agendaItems.map(it=>it.h && it.h.hid).filter(Boolean) : [];
-      return { d2:fills(2), d4:fills(4) };
+      const summarize = week=>{
+        const fills = day=>(week.days[day] && Array.isArray(week.days[day].agendaItems))
+          ? week.days[day].agendaItems.map(it=>it.h && it.h.hid).filter(Boolean) : [];
+        return { d0:fills(0), d2:fills(2), d4:fills(4) };
+      };
+      const fast = summarize(buildWeekAgenda(load(),loadSortSettings(),7));
+      const exact = summarize(await buildWeekAgendaAsync(load(),loadSortSettings(),7,{}));
+      return {exact,fast};
     }finally{ globalThis.Date = RealDate; }
-  }, {flex, type, withPartner});
+  }, {
+    flex,type,withPartner,atCluster,partnerDueOffset,optionalOrder,withDuePeer
+  });
 }
 
 (async()=>{
@@ -64,23 +84,42 @@ async function runScenario(page,{flex, type = 'keepup', withPartner = true}){
 
   console.log('\n[A] keepup clusters onto a native-due same-location partner');
   const a = await runScenario(page,{flex:2});
-  assert(a.d2.includes('subject'),'subject clusters onto partner day 2 (same gym) ' + JSON.stringify(a.d2));
-  assert(a.d2.includes('partner'),'partner task placed on its due day 2 ' + JSON.stringify(a.d2));
-  assert(!a.d4.includes('subject'),'subject not also placed on native due day 4 (placed once, early) ' + JSON.stringify(a.d4));
+  for(const [engine,result] of Object.entries(a)){
+    assert(result.d2.includes('subject'),`${engine}: subject clusters onto partner day 2 (same gym) ` + JSON.stringify(result.d2));
+    assert(result.d2.includes('partner'),`${engine}: partner task placed on its due day 2 ` + JSON.stringify(result.d2));
+    assert(!result.d4.includes('subject'),`${engine}: subject not also placed on native due day 4 (placed once, early) ` + JSON.stringify(result.d4));
+  }
 
   console.log('\n[B] flex=0 → no pull-earlier; subject waits for native due day');
   const b = await runScenario(page,{flex:0});
-  assert(!b.d2.includes('subject'),'flex=0 subject NOT pulled to day 2 ' + JSON.stringify(b.d2));
-  assert(b.d4.includes('subject'),'flex=0 subject waits for native due day 4 ' + JSON.stringify(b.d4));
+  for(const [engine,result] of Object.entries(b)){
+    assert(!result.d2.includes('subject'),`${engine}: flex=0 subject NOT pulled to day 2 ` + JSON.stringify(result.d2));
+    assert(result.d4.includes('subject'),`${engine}: flex=0 subject waits for native due day 4 ` + JSON.stringify(result.d4));
+  }
 
   console.log('\n[C] reduce never pulls earlier onto a cluster day');
   const c = await runScenario(page,{flex:3, type:'reduce'});
-  assert(!c.d2.includes('subject'),'reduce NOT flex-pulled onto cluster day 2 ' + JSON.stringify(c.d2));
+  for(const [engine,result] of Object.entries(c)){
+    assert(!result.d2.includes('subject'),`${engine}: reduce NOT flex-pulled onto cluster day 2 ` + JSON.stringify(result.d2));
+  }
 
   console.log('\n[D] no partner → no pull-earlier (flex is not standalone-greedy)');
   const d = await runScenario(page,{flex:2, withPartner:false});
-  assert(!d.d2.includes('subject'),'no partner → subject not pulled to day 2 ' + JSON.stringify(d.d2));
-  assert(d.d4.includes('subject'),'subject still placed on native due day 4 ' + JSON.stringify(d.d4));
+  for(const [engine,result] of Object.entries(d)){
+    assert(!result.d2.includes('subject'),`${engine}: no partner → subject not pulled to day 2 ` + JSON.stringify(result.d2));
+    assert(result.d4.includes('subject'),`${engine}: subject still placed on native due day 4 ` + JSON.stringify(result.d4));
+  }
+
+  console.log('\n[E] a same-origin pair creates no travel-saving early occurrence');
+  const e = await runScenario(page,{
+    flex:4,atCluster:true,partnerDueOffset:0,optionalOrder:true,withDuePeer:true
+  });
+  for(const [engine,result] of Object.entries(e)){
+    assert(!result.d0.includes('subject'),
+      `${engine}: being at the shared location does not pull the flexible habit early ` + JSON.stringify(result.d0));
+    assert(result.d0.includes('partner') && result.d0.includes('due-peer'),
+      `${engine}: optional ordering leaves today's capacity to independently due work ` + JSON.stringify(result.d0));
+  }
 
   assert(!errors.length,'no page errors');
 

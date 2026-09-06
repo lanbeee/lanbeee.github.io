@@ -343,6 +343,31 @@ function locationsShareCluster(aIds,bIds,registry,mode){
   }
   return false;
 }
+
+// PURE: flex-pulling a habit onto a cluster day is useful only when joining
+// the partner is cheaper than making a separate trip from the day's known
+// origin. If the origin is unknown (common on future days), retain the normal
+// proximity rule and let the week optimizer compare complete routes. This
+// prevents co-located work at the place where the user already is from being
+// manufactured early: a Home + Home pair saves no trip.
+function clusterFlexPairSavesTravel(aIds,bIds,seedLocId,registry,mode){
+  if(!locationsShareCluster(aIds,bIds,registry,mode))return false;
+  if(!seedLocId)return true;
+  for(const a of aIds || []){
+    if(!a)continue;
+    const fromSeed = travelEdgeBetweenIds(seedLocId,a,registry,mode,{allowNetwork:false});
+    const standaloneSeconds = Number(fromSeed && fromSeed.seconds) || 0;
+    for(const b of bIds || []){
+      if(!b)continue;
+      const between = travelEdgeBetweenIds(b,a,registry,mode,{allowNetwork:false});
+      const joinedSeconds = Number(between && between.seconds) || 0;
+      if(joinedSeconds <= CLUSTER_FLEX_NEAR_SECONDS && standaloneSeconds > joinedSeconds){
+        return true;
+      }
+    }
+  }
+  return false;
+}
 // Native (non-flex) eligibility of candidate p on a day — by raw rhythm,
 // schedule, plan, or task due-date. Reads the habit directly (not p.eligible)
 // so cluster pull-early cannot cascade from another pulled habit.
@@ -393,7 +418,8 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
     const day = item && item.day ? item.day : item;
     const weekday = day && day.weekday != null ? day.weekday
       : (dayBase != null ? new Date(dayBase).getDay() : null);
-    return {dayBase,weekday};
+    const seedLocId = item && item.seedLocId ? item.seedLocId : null;
+    return {dayBase,weekday,seedLocId};
   }).filter(d=>d.dayBase != null);
   for(const c of candidates){
     const h = c && c.h;
@@ -412,7 +438,7 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
       ? normalizeLocationIds(h.locationIds,registry)
       : (Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : []);
     if(!myLocs.length)continue; // anywhere-allowed: no fixed cluster anchor
-    for(const {dayBase,weekday} of dayMeta){
+    for(const {dayBase,weekday,seedLocId} of dayMeta){
       if(c.eligible.has(dayBase))continue;
       // Flex clustering may open an earlier day, but a logged occurrence has
       // already consumed that day. Re-adding it here duplicates completed work
@@ -428,7 +454,9 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
         const pLocs = typeof normalizeLocationIds === 'function'
           ? normalizeLocationIds(p.h.locationIds,registry)
           : (Array.isArray(p.h.locationIds) ? p.h.locationIds.filter(Boolean) : []);
-        if(pLocs.length && locationsShareCluster(myLocs,pLocs,registry,mode)){ partner = true; break; }
+        if(pLocs.length && clusterFlexPairSavesTravel(
+          myLocs,pLocs,seedLocId,registry,mode
+        )){ partner = true; break; }
       }
       if(partner)c.eligible.add(dayBase);
     }

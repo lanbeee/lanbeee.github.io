@@ -55,9 +55,13 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   if(typeof beginPlannerSolveCaches === 'function')beginPlannerSolveCaches(data);
   if(typeof plannerPerfResetTryPlace === 'function')plannerPerfResetTryPlace();
 
-  applyPersistentLinkEligibility(candidates,days,settings);
+  // Eligibility needs the same origin-aware placement context as the exact
+  // engine. In particular, a same-location pair at today's current/last-known
+  // place is not a travel-saving cluster.
+  let dayStates = makeStates();
+  applyPersistentLinkEligibility(candidates,dayStates,settings);
   if(typeof applyClusterFlexEligibility === 'function'){
-    applyClusterFlexEligibility(candidates,days,settings);
+    applyClusterFlexEligibility(candidates,dayStates,settings);
   }
   for(let i = candidates.length - 1;i >= 0;i -= 1){
     const h = candidates[i] && candidates[i].h;
@@ -66,7 +70,6 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   }
 
   // Pass 1 — greedy discovery of each location's natural day.
-  let dayStates = makeStates();
   assignWeekCandidatesByPlacement(candidates,dayStates,settings,null);
   const locHints = collectLocationHints(dayStates);
 
