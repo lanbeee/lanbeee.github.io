@@ -1362,6 +1362,18 @@ function dayFirstOpenMinute(blocks,weekday,dayBase){
   return cursor;
 }
 
+// PURE: best block-derived origin for a day. Prefer the location immediately
+// before its first open minute (normally an overnight Sleep block), then a
+// location-bearing block that begins exactly when the day opens. This is a
+// fallback only: callers must prefer live/manual and last-known presence for
+// today because an earlier block cannot prove where the user is now.
+function dayFirstBlockLocationId(blocks,weekday,dayBase){
+  const openMin = dayFirstOpenMinute(blocks,weekday,dayBase);
+  return blockLocationAtMinute(blocks,Math.max(0,openMin - 1),weekday,dayBase)
+    || blockLocationAtMinute(blocks,openMin,weekday,dayBase)
+    || null;
+}
+
 function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
   const start = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
   const end = start + 24 * 3600000;
@@ -1458,18 +1470,20 @@ function blockedTimelineRows(dayKey,settings,dayBase,{clipAfter} = {}){
 // start from the location-tied block covering the day's first open minute
 // (sleep→Home, work→Office) so travel into the first item is honest.
 function dayTimelineSeedLocation(day,settings){
+  const dayBase = day?.dayBase != null ? day.dayBase : dayStart(Date.now());
+  const weekday = day?.weekday ?? new Date(dayBase).getDay();
   if(day && day.isToday){
     return (typeof currentLocationId === 'function' && currentLocationId())
       || settings.lastKnownLocationId
+      || dayFirstBlockLocationId(
+        normalizeBlockedTimes(settings.blockedTimes),
+        weekday,
+        dayBase
+      )
       || null;
   }
-  const dayBase = day?.dayBase != null ? day.dayBase : dayStart(Date.now());
-  const weekday = day?.weekday ?? new Date(dayBase).getDay();
   const blocks = normalizeBlockedTimes(settings.blockedTimes);
-  const openMin = dayFirstOpenMinute(blocks,weekday,dayBase);
-  return blockLocationAtMinute(blocks,Math.max(0,openMin - 1),weekday,dayBase)
-    || blockLocationAtMinute(blocks,openMin,weekday,dayBase)
-    || null;
+  return dayFirstBlockLocationId(blocks,weekday,dayBase);
 }
 
 // PURE: decide whether to prepend a synthetic "from current location" travel

@@ -1886,11 +1886,22 @@ function createDayPlacementState(day,settings,opts = {}){
     && typeof CURRENT_COORD_ID !== 'undefined'
     && !!currentCoordLocation()
     && isCurrentCoordAwayFromSaved(registry);
+  // A location-bearing first block is the weakest origin signal. It makes an
+  // otherwise unknown day start honestly (Sleep -> Home), while current/live
+  // and last-known presence always win for an in-progress day.
+  const blockOriginLocId = typeof dayFirstBlockLocationId === 'function'
+    ? dayFirstBlockLocationId(blocks,weekday,dayBase)
+    : (blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
+      || null);
   let prevLocId = isTodayDay
     ? (coordAwayFromSaved ? CURRENT_COORD_ID
-      : (workerLiveLocId || (typeof currentLocationId === 'function' && currentLocationId()) || settings.lastKnownLocationId || null))
+      : (workerLiveLocId
+        || (typeof currentLocationId === 'function' && currentLocationId())
+        || settings.lastKnownLocationId
+        || blockOriginLocId
+        || null))
     : (blockLocationAtMinute(blocks,Math.floor((startClock - dayBase) / 60000),weekday,dayBase)
-      || blockLocationAtMinute(blocks,Math.max(0,dayFirstOpenMinute(blocks,weekday,dayBase) - 1),weekday,dayBase)
+      || blockOriginLocId
       || null);
   // Genuine live fix only (geolocation / manual pin), not the last-known
   // default. Presence uses this to decide whether the seed supersedes ended

@@ -17,7 +17,8 @@ function assert(value,message){
 // Shared scenario runner. `withPartner:false` removes the partner task.
 async function runScenario(page,{
   flex, type = 'keepup', withPartner = true, atCluster = false,
-  partnerDueOffset = 2, optionalOrder = false, withDuePeer = false
+  partnerDueOffset = 2, optionalOrder = false, withDuePeer = false,
+  originFromFirstBlock = false
 }){
   return await page.evaluate(async (cfg)=>{
     localStorage.removeItem('tings_v2');
@@ -27,13 +28,17 @@ async function runScenario(page,{
     function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(now); }
     FrozenDate.now = ()=>now; globalThis.Date = FrozenDate;
     try{
+      const clusterId = cfg.originFromFirstBlock ? 'home' : 'gym';
       const settings = {
         preset:'todayFirst',
         showDueHabitsInAgenda:true, showDueTasksInAgenda:true, showPlannedItemsInAgenda:true,
         availabilityMinutes:Array(7).fill(360),
         availabilityOverrides:cfg.withDuePeer ? {[dateKey(today)]:60} : {},
-        blockedTimes:[], locations:[{id:'gym',name:'Gym',lat:1,lng:1}], travel:{},
-        lastKnownLocationId:cfg.atCluster ? 'gym' : null
+        blockedTimes:cfg.originFromFirstBlock
+          ? [{label:'sleep',days:[],start:0,end:420,locationId:'home'}] : [],
+        locations:[{id:clusterId,name:cfg.originFromFirstBlock ? 'Home' : 'Gym',lat:1,lng:1}],
+        travel:{}, pinnedLocationId:null,
+        lastKnownLocationId:cfg.atCluster ? clusterId : null
       };
       saveSortSettings(settings);
       if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
@@ -42,7 +47,7 @@ async function runScenario(page,{
       if(cfg.withPartner){
         data.push({ hid:'partner',name:'Gym errand',type:'task',target:null,
           dueDate:today + cfg.partnerDueOffset*dayMs, eventTime:null, durationMinutes:30, priority:2,
-          locationIds:['gym'], flexibilityDays:0, logs:[], emoji:'🏋️', pinned:false,
+          locationIds:[clusterId], flexibilityDays:0, logs:[], emoji:'🏋️', pinned:false,
           sample:false, snoozedUntil:null, topics:[], createdAt:now,
           scheduleLinks:cfg.optionalOrder ? [{
             anchorHid:'subject',direction:'after',adjacency:'direct',requireSameDay:false
@@ -51,13 +56,13 @@ async function runScenario(page,{
       if(cfg.withDuePeer){
         data.push({ hid:'due-peer',name:'Due peer',type:'task',target:null,
           dueDate:today, eventTime:null, durationMinutes:30, priority:2,
-          locationIds:['gym'], flexibilityDays:0, logs:[], emoji:'✅', pinned:false,
+          locationIds:[clusterId], flexibilityDays:0, logs:[], emoji:'✅', pinned:false,
           sample:false, snoozedUntil:null, topics:[], createdAt:now, scheduleLinks:[] });
       }
       data.push({ hid:'subject',name: cfg.type === 'reduce' ? 'Skip snack' : 'Lift',
         type:cfg.type, target:5,
         logs:[today - 1*dayMs], lastLog:today - 1*dayMs, durationMinutes: cfg.type === 'reduce' ? 5 : 30,
-        priority:2, locationIds:['gym'], flexibilityDays:cfg.flex, emoji: cfg.type === 'reduce' ? '🍩' : '💪',
+        priority:2, locationIds:[clusterId], flexibilityDays:cfg.flex, emoji: cfg.type === 'reduce' ? '🍩' : '💪',
         pinned:false, sample:false, snoozedUntil:null, topics:[], createdAt:now - 30*dayMs });
       Storage.write(KEY,data);
       const summarize = week=>{
@@ -70,7 +75,8 @@ async function runScenario(page,{
       return {exact,fast};
     }finally{ globalThis.Date = RealDate; }
   }, {
-    flex,type,withPartner,atCluster,partnerDueOffset,optionalOrder,withDuePeer
+    flex,type,withPartner,atCluster,partnerDueOffset,optionalOrder,withDuePeer,
+    originFromFirstBlock
   });
 }
 
@@ -120,6 +126,47 @@ async function runScenario(page,{
     assert(result.d0.includes('partner') && result.d0.includes('due-peer'),
       `${engine}: optional ordering leaves today's capacity to independently due work ` + JSON.stringify(result.d0));
   }
+
+  console.log('\n[F] first location-bearing block is an origin fallback');
+  const f = await runScenario(page,{
+    flex:4,originFromFirstBlock:true,partnerDueOffset:0,optionalOrder:true,withDuePeer:true
+  });
+  for(const [engine,result] of Object.entries(f)){
+    assert(!result.d0.includes('subject'),
+      `${engine}: ended Sleep at the shared place supplies an otherwise unknown origin ` + JSON.stringify(result.d0));
+    assert(result.d0.includes('partner') && result.d0.includes('due-peer'),
+      `${engine}: block-derived origin leaves today's capacity to independently due work ` + JSON.stringify(result.d0));
+  }
+
+  console.log('\n[G] current location outranks the first block location');
+  const g = await page.evaluate(() => {
+    const today = dayStart(Date.now());
+    if(typeof currentCoord !== 'undefined')currentCoord = null;
+    const settings = {
+      ...loadSortSettings(),
+      locations:[
+        {id:'home',name:'Home',lat:1,lng:1},
+        {id:'away',name:'Away',lat:2,lng:2}
+      ],
+      blockedTimes:[{label:'sleep',days:[],start:0,end:420,locationId:'home'}],
+      pinnedLocationId:'away',
+      lastKnownLocationId:null
+    };
+    saveSortSettings(settings);
+    if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+    const day = {
+      dayBase:today,weekday:new Date(today).getDay(),isToday:true,
+      dayKey:dateKey(today),totalMinutes:60,slots:[],scheduled:[]
+    };
+    const state = createDayPlacementState(day,settings,{dayBase:today,weekMode:true});
+    return {
+      plannerSeed:state.seedLocId,
+      timelineSeed:dayTimelineSeedLocation(day,settings),
+      live:state.liveLocId
+    };
+  });
+  assert(g.plannerSeed === 'away' && g.timelineSeed === 'away' && g.live === 'away',
+    'manual/live Away overrides the earlier Sleep at Home ' + JSON.stringify(g));
 
   assert(!errors.length,'no page errors');
 

@@ -44,7 +44,12 @@ async function primary(page, current, next){
        breakable:false, priority:1, pinned:false, emoji:'🌙', topics:['rest'], logs:[]}
     ];
     localStorage.setItem('tings_v2', JSON.stringify(userHabits));
-    const userSettings = {minimalMode: true, showWeekOnHome: false, agendaOptimizer: true};
+    // Keep the unrelated monthly retention timer from racing the byte-exact
+    // before/after assertion while the coach script loads asynchronously.
+    const userSettings = {
+      minimalMode:true,showWeekOnHome:false,agendaOptimizer:true,
+      lastRetentionCleanupAt:Date.now()
+    };
     localStorage.setItem('tings_app_settings_v2', JSON.stringify(userSettings));
   });
   await page.reload({waitUntil: 'load'});
