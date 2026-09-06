@@ -578,6 +578,7 @@ prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
 weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
+showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode day forecast icons
 ```
 
 #### 4.3.8a Weather Guidance 👤👨‍💻
@@ -585,7 +586,9 @@ weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
   home-city coordinate. An item can optionally pick a saved place when that
   item happens far from home (`weatherLocationId`). Nearby places (about 40 km)
   reuse the home forecast instead of a second request.
-- The seven-day hourly forecast refreshes every six hours per distinct place.
+- The seven-day hourly forecast and normalized daily condition/temperature/
+  precipitation/wind summaries refresh together every six hours per distinct place.
+  A fresh legacy cache without daily summaries is refreshed automatically.
   Extra places are fetched only for weather-linked items that opted in, capped
   at four far places besides home.
 - When a weather-linked planned item is active or starts within 90 minutes, a
@@ -598,6 +601,18 @@ weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
   forecast fills later or missing times. AQI is fetched separately only when a
   profile uses US or EU AQI (home: any such profile; a far place: only if an
   item there uses one).
+- Weather stays supporting context: full-mode Home agenda-day headers and the
+  Overview seven-day open-time strip show one forecast icon. Optional low–high
+  Celsius ranges are off by default. The Overview calendar grid is unchanged.
+- Today/future Overview day sheets show a compact home-city forecast above the
+  agenda. Activating a Home day icon, weather-guided item icon, or that forecast
+  opens one shared detail sheet with conditions, full temperature range,
+  precipitation, wind, forecast age, and chronological guided-item explanations.
+  A far-away item names its saved place and uses that place's forecast.
+- Minimal mode hides ordinary and unavailable forecast cues and all temperature
+  text. It only shows caution/override icons that come from weather-guided items
+  scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
+  are never shown as day weather.
 - Rules in one profile are AND-combined. `prefer lower`/`prefer higher` steers
   placement; min/max set absolute bounds; `hard` rejects flexible times outside
   the bounds, while active, pinned, critical, and direct-linked commitments
@@ -2523,6 +2538,7 @@ Same agenda logic, but simplified display:
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
 | `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
+| `showWeatherTemperatureRanges` | boolean | false | Add daily low–high °C beside full-mode Home and Overview week-strip weather icons |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |

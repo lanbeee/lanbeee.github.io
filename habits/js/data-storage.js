@@ -168,6 +168,7 @@ function loadSortSettings(){
     merged.homeCityLng = Number.isFinite(merged.homeCityLng) ? merged.homeCityLng : null;
     merged.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
       ? normalizeWeatherProfiles(merged.weatherProfiles) : [];
+    merged.showWeatherTemperatureRanges = Boolean(merged.showWeatherTemperatureRanges);
     // Migrate legacy prayer-city fields into home city.
     if(!merged.homeCityName && typeof merged.prayerCityName === 'string' && merged.prayerCityName.trim()){
       merged.homeCityName = merged.prayerCityName.trim();
@@ -259,6 +260,7 @@ function saveSortSettings(settings){
   next.homeCityLng = Number.isFinite(next.homeCityLng) ? next.homeCityLng : null;
   next.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
     ? normalizeWeatherProfiles(next.weatherProfiles) : [];
+  next.showWeatherTemperatureRanges = Boolean(next.showWeatherTemperatureRanges);
   if(!next.homeCityName && typeof next.prayerCityName === 'string' && next.prayerCityName.trim()){
     next.homeCityName = next.prayerCityName.trim();
     next.homeCityLat = Number.isFinite(next.prayerCityLat) ? next.prayerCityLat : null;

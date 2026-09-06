@@ -715,6 +715,7 @@
           </div>
           <div class="settings-collapse-body" id="settings-weather-body" hidden>
             <p class="field-hint">Create up to four profiles, then attach one to an outdoor habit. Rules combine: prefer lower/higher steers the time, min/max set bounds, and hard rejects flexible times outside them. Each rule shows its metric's scale; a rule with no preference and no bounds stays inactive until you set one.</p>
+            <div class="settings-grid weather-display-settings" data-ui-toggles="weather"></div>
             <div id="weather-profile-list" class="weather-profile-list"></div>
             <div class="btn-row weather-actions">
               <button class="btn" id="weather-profile-add" type="button">add profile</button>
@@ -1159,6 +1160,28 @@
         </button>
       </div>
       <div id="slipped-content"></div>
+    </div>
+  </div>
+
+  <!-- compact forecast context opened from Home and Calendar -->
+  <div class="sheet-wrap" id="weather-context-sheet" role="dialog" aria-modal="true" aria-labelledby="weather-context-title">
+    <div class="sheet context-sheet weather-context-sheet">
+      <div class="context-sheet-head">
+        <span class="context-sheet-icon weather" id="weather-context-icon"><i class="ti ti-cloud" aria-hidden="true"></i></span>
+        <div class="context-sheet-copy">
+          <span class="sheet-eyebrow" id="weather-context-eyebrow">forecast context</span>
+          <p class="sheet-name" id="weather-context-title">weather</p>
+          <p class="sheet-sub" id="weather-context-sub"></p>
+        </div>
+        <button class="mini-nav" id="weather-context-close" type="button" aria-label="close weather context">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div id="weather-context-content"></div>
+      <div class="btn-row weather-context-actions">
+        <button class="btn" id="weather-context-settings" type="button">weather settings</button>
+        <button class="btn primary" id="weather-context-done" type="button">done</button>
+      </div>
     </div>
   </div>
 

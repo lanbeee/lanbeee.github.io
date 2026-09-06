@@ -1,50 +1,47 @@
 {
   "status": "passed",
   "plannerMode": "smart",
-  "suites": "planner,ui,data,integrations",
-  "timestamp": "2026-09-05T20:42:20Z",
-  "durationSeconds": 409,
+  "suites": "ui",
+  "timestamp": "2026-09-06T19:55:10Z",
+  "durationSeconds": 145,
   "files": {
-    "passed": 76,
+    "passed": 22,
     "failed": 0,
-    "executions": 76
+    "executions": 22
   },
   "assertions": {
-    "ok": 2801,
+    "ok": 486,
     "notOk": 0,
-    "total": 2801
+    "total": 486
   },
   "pageErrors": 0,
   "failedTests": [],
   "logs": {
     "lastRun": "test-results/last-run.log",
-    "stamped": "test-results/run-20260905-163531-64459.log",
+    "stamped": "test-results/run-20260906-155245-64116.log",
     "failedDir": "test-results/failed"
   },
   "previousRun": {
-    "status": "failed",
+    "status": "passed",
     "plannerMode": "smart",
-    "suites": "planner,ui,data,integrations",
-    "timestamp": "2026-09-05T20:15:01Z",
-    "durationSeconds": 456,
+    "suites": "planner",
+    "timestamp": "2026-09-06T19:52:40Z",
+    "durationSeconds": 175,
     "files": {
-      "passed": 74,
-      "failed": 2,
-      "executions": 76
+      "passed": 38,
+      "failed": 0,
+      "executions": 38
     },
     "assertions": {
-      "ok": 2800,
+      "ok": 1627,
       "notOk": 0,
-      "total": 2800
+      "total": 1627
     },
     "pageErrors": 0,
-    "failedTests": [
-      "advanced-coach-isolation-test.js.default",
-      "privacy-sheet-test.js.default"
-    ],
+    "failedTests": [],
     "logs": {
       "lastRun": "test-results/last-run.log",
-      "stamped": "test-results/run-20260905-160725-59956.log",
+      "stamped": "test-results/run-20260906-154945-62782.log",
       "failedDir": "test-results/failed"
     }
   }

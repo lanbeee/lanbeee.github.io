@@ -110,6 +110,9 @@ const UI_SETTING_TOGGLES = {
     {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},
     {key:'pushDetailed', title:'include details in notifications', hint:'Include item names, topics, and places instead of generic notification text.'}
   ],
+  weather:[
+    {key:'showWeatherTemperatureRanges', title:'show temperature ranges', hint:'Add the daily low–high beside weather icons on Home and the Calendar week strip.', extraClass:'settings-full-only'}
+  ],
   cards:[
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'},
     {key:'showSampleOnCards', title:'show sample tag', hint:'Mark sample habits on the home list.', extraClass:'settings-full-only'},

@@ -392,7 +392,7 @@ function openSheet(id){
   // Day-header pill taps often go through the forgiving/synthesized click path.
   // The trailing native click then lands on the freshly opened wrap and would
   // immediately dismiss it — ignore backdrop taps briefly after open.
-  if(id === 'free-time-sheet' || id === 'slipped-sheet'){
+  if(id === 'free-time-sheet' || id === 'slipped-sheet' || id === 'weather-context-sheet'){
     armSheetBackdropGuard(id);
   }
   updateFullPageState();
@@ -1230,7 +1230,7 @@ document.addEventListener('click',e=>{
 // not close the entire stack in a single keypress.
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape') return;
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -1257,6 +1257,7 @@ document.addEventListener('keydown',e=>{
     else if (id === 'day-logs-sheet') { if(typeof closeDayLogsSheet === 'function') closeDayLogsSheet({refreshOverview:!dayLogsScoped()}); else { dayLogsKey = null; if(typeof resetDayLogsStep === 'function')resetDayLogsStep(); closeSheet('day-logs-sheet'); } }
     else if (id === 'slipped-sheet') closeSheet('slipped-sheet');
     else if (id === 'free-time-sheet') closeSheet('free-time-sheet');
+    else if (id === 'weather-context-sheet') closeSheet('weather-context-sheet');
     return;
   }
   const pane = getPane();

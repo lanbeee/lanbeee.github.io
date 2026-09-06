@@ -269,6 +269,138 @@ function assert(value,message){
   assert(extra.keptLocation==='boston','normalize keeps a forecast-place override');
   assert(extra.placeSelectShown,'forecast place appears after a profile is chosen');
   assert(extra.placeOptions>=3,'home city plus saved places fill the forecast place list');
+
+  const display=await page.evaluate(()=>{
+    const now=Date.now();
+    const base=dayStart(now);
+    const key=dateKey(base);
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const profile={id:'outdoor',name:'Outdoor',rules:[{metric:'precipitation_probability',min:null,max:40,hard:false,relative:'none'}]};
+    const homeSamples=[9,10,11].map(hour=>({ts:base+hour*3600000,temperature_2m:12+hour-9,
+      precipitation_probability:80,precipitation:.4,wind_speed_10m:18,wind_gusts_10m:29,
+      weather_code:61,source:'weekly'}));
+    const days=[{ts:base,weather_code:61,temperature_2m_min:7,temperature_2m_max:14,
+      apparent_temperature_min:5,apparent_temperature_max:13,precipitation_probability_max:80,
+      precipitation_sum:3.2,wind_speed_10m_max:18,wind_gusts_10m_max:29,uv_index_max:2}];
+    const context={profiles:[profile],timezone:tz,samples:homeSamples,days,weeklyFetchedAt:now-600000,places:{
+      boston:{timezone:tz,weeklyFetchedAt:now-600000,samples:homeSamples.map(row=>({...row,precipitation_probability:95})),days}
+    },locks:[]};
+    const h={hid:'walk',name:'Park walk',type:'keepup',target:7,priority:3,durationMinutes:30,
+      weatherProfileId:'outdoor',weatherLocationId:'boston',pinned:false};
+    const row={kind:'fill',i:0,h,start:base+9*3600000,end:base+9.5*3600000};
+    const day={dayBase:base,dayKey:key,isToday:true,timeline:[row],homeDisplayedTimeline:[row]};
+    save([h]);
+    let settings={...DEFAULT_SORT_SETTINGS,minimalMode:false,homeCityName:'New York',homeCityLat:40.71,homeCityLng:-74,
+      locations:[{id:'boston',name:'Boston',lat:42.36,lng:-71.06}],weatherProfiles:[profile],
+      showWeatherTemperatureRanges:false,_weatherContext:context};
+    sortSettings=settings;
+
+    const normalizedDefault=(()=>{
+      saveSortSettings({...loadSortSettings(),showWeatherTemperatureRanges:undefined});
+      return loadSortSettings().showWeatherTemperatureRanges;
+    })();
+    sortSettings=settings;
+    const noTemp=weatherDayCueHtml(base,day,settings,{data:[h]});
+    const withTemp=weatherDayCueHtml(base,day,{...settings,showWeatherTemperatureRanges:true},{data:[h]});
+    const stale=weatherDaySummary({...context,weeklyFetchedAt:now-9*3600000},base,settings);
+    const past=weatherDaySummary(context,base-86400000,settings);
+    const beyond=weatherDaySummary(context,base+8*86400000,settings);
+
+    const host=document.createElement('div');
+    document.body.appendChild(host);
+    appendSectionHeader(host,'today',day);
+    appendSectionHeader(host,'pinned');
+    const dayHeaderWeather=host.querySelectorAll('.section-header[data-label="today"] .weather-day-button').length;
+    const categoryWeather=host.querySelectorAll('.section-header[data-label="pinned"] .weather-day-button').length;
+    const separated=Boolean(host.querySelector('.section-header-label + .day-header-context'));
+
+    sortSettings={...settings,minimalMode:true};
+    const minimalCaution=weatherDayCueHtml(base,day,sortSettings,{data:[h]});
+    const goodContext={...context,samples:homeSamples.map(sample=>({...sample,precipitation_probability:10})),
+      places:{boston:{...context.places.boston,samples:homeSamples.map(sample=>({...sample,precipitation_probability:10}))}}};
+    const minimalGood=weatherDayCueHtml(base,{...day,timeline:[{...row,h}],homeDisplayedTimeline:[{...row,h}]},{...sortSettings,_weatherContext:goodContext},{data:[h]});
+
+    sortSettings=settings;
+    storeOverviewWeekSnapshot({days:[day]},[h]);
+    const capacity={openTotal:120,days:[{key,open:120,used:30,total:150,load:1}],lightest:null,busiest:null,tomorrow:null};
+    overviewRecentOffset=0;overviewRangeFilter='recent';
+    renderOverviewInsight(capacity);
+    const overviewIcon=document.querySelectorAll('#overview-insight .overview-weather-cue').length;
+    const overviewTempOff=/7–14°/.test(document.querySelector('#overview-insight')?.textContent || '');
+    sortSettings={...settings,showWeatherTemperatureRanges:true};
+    renderOverviewInsight(capacity);
+    const overviewTempOn=/7–14°/.test(document.querySelector('#overview-insight')?.textContent || '');
+    const calendarWeather=/weather-day-cue/.test(cellMarkup(key,new Date(base),[],'<span>1</span>'));
+    overviewRecentOffset=-1;
+    renderOverviewInsight(capacity);
+    const shiftedHidden=document.querySelector('#overview-insight').hidden;
+    overviewRecentOffset=0;
+
+    sortSettings=settings;
+    renderWeatherContextSheet(weatherContextSheetModel(base,day,'walk'));
+    const sheetText=document.querySelector('#weather-context-sheet')?.textContent || '';
+    const selectedBlock=overviewDayWeatherBlockHtml(key,day,[h]);
+    host.remove();
+    return {
+      normalizedDefault,noTemp,withTemp,stale,past,beyond,dayHeaderWeather,categoryWeather,separated,
+      minimalCaution,minimalGood,overviewIcon,overviewTempOff,overviewTempOn,calendarWeather,shiftedHidden,
+      sheetText,selectedBlock,
+      codeLabel:weatherCodePresentation(95).label,
+      codeIcon:weatherCodePresentation(71).icon
+    };
+  });
+  assert(display.normalizedDefault===false,'temperature ranges default off during settings normalization');
+  assert(!/7–14°/.test(display.noTemp) && /ti-cloud-rain/.test(display.noTemp),'full day cue defaults to icon only');
+  assert(/7–14°/.test(display.withTemp),'temperature range can be enabled for full-mode day cues');
+  assert(display.stale===null && display.past===null && display.beyond===null,'stale, past, and beyond-horizon days have no forecast summary');
+  assert(display.dayHeaderWeather===1 && display.categoryWeather===0,'home adds weather only to actual agenda-day headers');
+  assert(display.separated,'home day headers keep label and context in separate layout groups');
+  assert(/caution/.test(display.minimalCaution) && !/7–14°/.test(display.minimalCaution),'minimal mode shows an item-derived caution without temperature');
+  assert(display.minimalGood==='','minimal mode hides good weather guidance');
+  assert(display.overviewIcon===1 && !display.overviewTempOff && display.overviewTempOn,'overview week chips share the icon and optional range setting');
+  assert(!display.calendarWeather && display.shiftedHidden,'calendar cells and shifted past ranges stay weather-free');
+  assert(/rain/.test(display.selectedBlock) && /data-open-weather-context/.test(display.selectedBlock),'selected-day sheet gets a compact forecast opener');
+  assert(/7–14°C/.test(display.sheetText) && /80%/.test(display.sheetText) && /18 km\/h/.test(display.sheetText),'weather context shows temperature, precipitation, and wind');
+  assert(/Boston/.test(display.sheetText) && /Park walk/.test(display.sheetText) && /weather caution/.test(display.sheetText),'weather context separates and explains a far-place guided item');
+  assert(display.codeLabel==='thunderstorms' && display.codeIcon==='ti-snowflake','WMO conditions map to accessible labels and icons');
+
+  const cacheUpgrade=await page.evaluate(async()=>{
+    const now=Date.now();
+    const base=dayStart(now);
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const profile={id:'dry',name:'Dry',rules:[{metric:'precipitation_probability',max:40,min:null,hard:false,relative:'none'}]};
+    save([]);
+    saveSortSettings({...DEFAULT_SORT_SETTINGS,homeCityName:'Test City',homeCityLat:40.7,homeCityLng:-74,weatherProfiles:[profile]});
+    sortSettings=loadSortSettings();
+    weatherCacheWrite({weekly:{lat:40.7,lng:-74,fetchedAt:now-60000,timezone:tz,samples:[
+      {ts:base+12*3600000,temperature_2m:11,precipitation_probability:20,weather_code:2,source:'weekly'}
+    ]}});
+    const originalFetch=weatherFetchJson;
+    let requested='';
+    weatherFetchJson=async url=>{
+      requested=String(url);
+      return {
+        timezone:tz,utc_offset_seconds:0,
+        hourly:{time:[(base+12*3600000)/1000],temperature_2m:[11],apparent_temperature:[10],
+          precipitation_probability:[20],precipitation:[0],snowfall:[0],wind_speed_10m:[8],wind_gusts_10m:[13],uv_index:[2],weather_code:[2],is_day:[1]},
+        daily:{time:[base/1000],weather_code:[2],temperature_2m_min:[6],temperature_2m_max:[13],
+          apparent_temperature_min:[5],apparent_temperature_max:[12],precipitation_probability_max:[20],
+          precipitation_sum:[0],snowfall_sum:[0],wind_speed_10m_max:[8],wind_gusts_10m_max:[13],uv_index_max:[2]}
+      };
+    };
+    try{await refreshWeatherForecast();}finally{weatherFetchJson=originalFetch;}
+    const upgraded=weatherCacheRead().weekly;
+    const normalized=weatherNormalizePayload({timezone:tz,hourly:{time:[]},daily:{time:[base/1000],weather_code:[3],temperature_2m_min:[4],temperature_2m_max:[9]}},'weekly',now);
+    return {
+      requestedDaily:new URL(requested).searchParams.get('daily') || '',
+      upgradedDays:upgraded?.days?.length || 0,
+      upgradedCode:upgraded?.days?.[0]?.weather_code,
+      normalizedCode:normalized.days?.[0]?.weather_code
+    };
+  });
+  assert(/temperature_2m_min/.test(cacheUpgrade.requestedDaily) && /weather_code/.test(cacheUpgrade.requestedDaily),'weekly request adds daily fields without a second forecast request');
+  assert(cacheUpgrade.upgradedDays===1 && cacheUpgrade.upgradedCode===2,'fresh legacy forecast caches are refreshed with normalized daily summaries');
+  assert(cacheUpgrade.normalizedCode===3,'daily WMO summaries normalize alongside hourly samples');
   assert(errors.length===0,'page has no JavaScript errors: '+errors.join(' | '));
 
   await browser.close();

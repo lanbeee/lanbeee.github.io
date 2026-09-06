@@ -92,7 +92,7 @@ function atDay(offset,hour = 12,minute = 0){
   // still carrying their "early" pill. With 240 minutes free today, "Do early
   // laundry" fits and lives under "today"; "Normal upcoming" stays under
   // "upcoming" (no flexibility, so it never qualifies for do-early).
-  if (await page.locator('.section-header:text("do it early")').count()) {
+  if (await page.locator('.section-header:has-text("do it early")').count()) {
     throw new Error('do it early section header should be gone');
   }
   const laundrySection = await page.locator('.ting-card:has-text("Do early laundry")').first().evaluate(card => {
@@ -108,7 +108,7 @@ function atDay(offset,hour = 12,minute = 0){
   if (!(await page.locator('.ting-card:has-text("Do early laundry") .context-pill:has-text("early")').first().isVisible())) {
     throw new Error('early reason pill missing');
   }
-  if (!(await page.locator('.section-header:text("coming up")').isVisible())) {
+  if (!(await page.locator('.section-header:has-text("coming up")').isVisible())) {
     throw new Error('coming up section missing');
   }
 
@@ -157,7 +157,7 @@ function atDay(offset,hour = 12,minute = 0){
   // "do early because ..." item still renders — under "today" when today has
   // room for it (carrying the early pill), otherwise under "upcoming". Either
   // way the legacy section header must not appear.
-  if (await page.locator('.section-header:text("do it early")').count()) {
+  if (await page.locator('.section-header:has-text("do it early")').count()) {
     throw new Error('sample data should not create a do it early section');
   }
   if (!(await page.locator('.ting-card:has-text("do early because")').first().isVisible())) {

@@ -508,13 +508,32 @@ function buildOverviewStretchLists(data,tally,start,end){
   return {ahead,care,past:past.slice(0,12)};
 }
 
-// RENDER: compact future insight (open hours + where to plan)
-function renderOverviewInsight(capacity){
+function overviewDayContextForKey(data,key){
+  const week=weekForOverviewDay(data,key) || cachedOverviewWeek(data);
+  return week?.days?.find(day=>dateKey(day.dayBase)===key) || null;
+}
+
+// RENDER: compact future insight (open hours + quiet forecast context)
+function renderOverviewInsight(capacity,options={}){
   const wrap = $('overview-insight');
   if(!wrap)return;
   if(overviewRecentOffset !== 0 || overviewRangeFilter !== 'recent' || !capacity){
     wrap.hidden = true;
     wrap.innerHTML = '';
+    return;
+  }
+  const data=typeof load==='function' ? load() : [];
+  const weatherOnly=Boolean(options.weatherOnly);
+  const chipModels=capacity.days.slice(0,7).map(day=>{
+    const dayContext=overviewDayContextForKey(data,day.key);
+    const weather=typeof weatherDayCueHtml==='function'
+      ? weatherDayCueHtml(day.key,dayContext,sortSettings,{data,className:'overview-weather-cue'})
+      : '';
+    return {day,weather};
+  });
+  if(weatherOnly && !chipModels.some(item=>item.weather)){
+    wrap.hidden=true;
+    wrap.innerHTML='';
     return;
   }
   wrap.hidden = false;
@@ -534,14 +553,19 @@ function renderOverviewInsight(capacity){
   }else if(capacity.busiest && capacity.busiest.key !== capacity.lightest?.key && capacity.busiest.open < capacity.lightest?.open){
     cues.push(`${overviewDayChipLabel(capacity.busiest.key)} busier`);
   }
-  const chips = capacity.days.slice(0,7).map(day=>{
+  const chips = chipModels.filter(item=>!weatherOnly || item.weather).map(({day,weather})=>{
     const tone = day.open >= 120 ? 'open' : day.open <= 30 ? 'tight' : 'mid';
-    return `<button type="button" class="overview-open-chip ${tone}" data-log-day="${escapeHtml(day.key)}" title="${escapeHtml(overviewMinutesLabel(day.open))} open">
-      <span>${escapeHtml(overviewDayChipLabel(day.key))}</span>
-      <b>${escapeHtml(overviewMinutesLabel(day.open))}</b>
+    const weatherLabel=weather ? weather.match(/title="([^"]*)"/)?.[1] || '' : '';
+    const title=[weatherOnly?'':`${overviewMinutesLabel(day.open)} open`,weatherLabel].filter(Boolean).join(' · ');
+    return `<button type="button" class="overview-open-chip ${tone}${weatherOnly?' weather-only':''}" data-log-day="${escapeHtml(day.key)}" title="${escapeHtml(title)}">
+      <span class="overview-open-day">${escapeHtml(overviewDayChipLabel(day.key))}</span>
+      ${weather}
+      ${weatherOnly?'':`<b>${escapeHtml(overviewMinutesLabel(day.open))}</b>`}
     </button>`;
   }).join('');
-  wrap.innerHTML = `
+  wrap.innerHTML = weatherOnly
+    ? `<div class="overview-open-chips weather-only" aria-label="weather guidance by day">${chips}</div>`
+    : `
     <div class="overview-insight-head">
       <span class="overview-insight-stat"><b>${escapeHtml(openLabel)}</b> open this week</span>
       ${cues.length ? `<span class="overview-insight-cue">${escapeHtml(cues.join(' · '))}</span>` : ''}
@@ -619,6 +643,8 @@ function pickOverviewListPane(lists){
 function renderOverviewStretchLists(data,tally,start,end){
   if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode)){
     hideOverviewStretchChrome();
+    const capacity = overviewRecentOffset === 0 ? overviewWeekCapacity(data) : null;
+    renderOverviewInsight(capacity,{weatherOnly:true});
     const list = $('overview-list');
     if(list)list.innerHTML = '';
     syncOverviewLegend(true);
@@ -1032,6 +1058,24 @@ function dayLogsCanLog(key){
   return Boolean(key && key <= todayIso());
 }
 
+// PURE: selected-day forecast summary. The detailed values stay in the shared
+// context sheet, keeping this planner surface compact.
+function overviewDayWeatherBlockHtml(key,dayContext,data){
+  const presentation=weatherDayPresentation(key,dayContext,sortSettings,data);
+  if(!presentation)return '';
+  const summary=presentation.summary;
+  const minimal=typeof isMinimalMode==='function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  const heading=minimal ? 'weather guidance' : summary.condition.label;
+  const detail=minimal
+    ? presentation.label
+    : `${summary.cityName}${summary.precipitationChance==null?'':` · ${Math.round(summary.precipitationChance)}% rain`}`;
+  return `<button type="button" class="day-weather-block ${escapeHtml(presentation.status)}" data-open-weather-context="${escapeHtml(key)}" aria-label="${escapeHtml(`${heading}, ${detail}. Open forecast details`)}">
+    <span class="day-weather-icon"><i class="ti ${escapeHtml(presentation.icon)}" aria-hidden="true"></i></span>
+    <span><b>${escapeHtml(heading)}</b><small>${escapeHtml(detail)}</small></span>
+    <i class="ti ti-chevron-right" aria-hidden="true"></i>
+  </button>`;
+}
+
 // HYBRID: reset day-sheet step state
 function resetDayLogsStep(){
   dayLogsStep = 'list';
@@ -1079,6 +1123,10 @@ function renderDayLogsListStep(key){
   if(showAgenda)ensureOverviewWeekForDay(key);
   const agendaHtml = showAgenda ? overviewDayAgendaSectionHtml(key,data) : '';
   const week = showAgenda ? weekForOverviewDay(data,key) : null;
+  const weatherDay=showAgenda ? week?.days?.find(day=>dateKey(day.dayBase)===key) || null : null;
+  const weatherHtml=showAgenda && typeof weatherDayPresentation==='function'
+    ? overviewDayWeatherBlockHtml(key,weatherDay,data)
+    : '';
   const onAgenda = week ? overviewDayAgendaIndexSet(week,key,data) : new Set();
   const plannedRows = onAgenda.size
     ? journal.planned.filter(row=>!onAgenda.has(row.index) && !(row.h && row.h.hid && onAgenda.has(row.h.hid)))
@@ -1094,7 +1142,7 @@ function renderDayLogsListStep(key){
     ? 'tap an item for actions'
     : (pastDay ? 'Nothing logged yet' : 'Nothing planned or completed yet');
 
-  const sections = `${agendaHtml}${plannedHtml}${activityHtml}`;
+  const sections = `${weatherHtml}${agendaHtml}${plannedHtml}${activityHtml}`;
   const listHtml = sections || `<div class="day-empty-state">
     <span class="day-empty-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
     <b>This day is open</b>

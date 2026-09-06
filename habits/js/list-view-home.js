@@ -1446,8 +1446,11 @@ function weatherCardPill(row,h = null){
   const assessment = weatherStatusForRow(h,row,sortSettings || loadSortSettings());
   if(!assessment)return '';
   const status = assessment.status || 'unknown';
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  if(minimal && status !== 'caution' && status !== 'blocked' && status !== 'override')return '';
   const icon = typeof weatherConditionIcon === 'function' ? weatherConditionIcon(status) : 'ti-cloud';
-  return `<button type="button" class="context-pill weather-pill icon-only ${status}" data-weather-info="${escapeHtml(assessment.summary)}" title="${escapeHtml(assessment.summary)}" aria-label="${escapeHtml(assessment.summary)}"><i class="ti ${icon}" aria-hidden="true"></i></button>`;
+  const dayBase=typeof dayStart==='function' ? dayStart(row.start) : row.start;
+  return `<button type="button" class="context-pill weather-pill icon-only ${status}" data-weather-info="${escapeHtml(assessment.summary)}" data-weather-day="${dayBase}" data-weather-hid="${escapeHtml(h.hid || '')}" title="${escapeHtml(assessment.summary)}" aria-label="${escapeHtml(assessment.summary)}"><i class="ti ${icon}" aria-hidden="true"></i></button>`;
 }
 
 // PURE: the former score ring as a compact, readable metadata pill.

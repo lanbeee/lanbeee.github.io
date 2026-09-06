@@ -245,6 +245,9 @@ const DEFAULT_SORT_SETTINGS = {
   homeCityLat:null,
   homeCityLng:null,
   weatherProfiles:[],
+  // Keep ambient forecast chrome icon-only unless the user explicitly wants
+  // the low/high range beside each day.
+  showWeatherTemperatureRanges:false,
   prayerIslamicNames:false,
 
   topics:[],

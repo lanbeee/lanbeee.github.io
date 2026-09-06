@@ -16,11 +16,17 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   const header = document.createElement('div');
   header.className = 'section-header';
   header.dataset.label = label;
-  header.textContent = label;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'section-header-label';
+  labelEl.textContent = label;
+  header.appendChild(labelEl);
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-  if(!minimal && dayContext && dayContext.dayBase != null){
-    setupDayCapacityHeader(header,dayContext.dayBase,true);
-    attachFreeTimeIndicator(header,dayContext);
+  if(dayContext && dayContext.dayBase != null){
+    if(!minimal){
+      setupDayCapacityHeader(header,dayContext.dayBase,true);
+      attachFreeTimeIndicator(header,dayContext);
+    }
+    attachWeatherIndicator(header,dayContext);
   }else if(!minimal && label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
@@ -28,6 +34,31 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
     attachDroppedIndicator(header,list,todayHids);
   }
   list.appendChild(header);
+}
+
+function dayHeaderContextHost(header){
+  if(!header)return null;
+  let host=header.querySelector('.day-header-context');
+  if(host)return host;
+  host=document.createElement('div');
+  host.className='day-header-context';
+  header.classList.add('has-context');
+  header.appendChild(host);
+  return host;
+}
+
+function attachWeatherIndicator(header,day){
+  if(!header || !day || day.dayBase == null || typeof weatherDayCueHtml!=='function')return;
+  const cue=weatherDayCueHtml(day.dayBase,day,sortSettings,{data:load()});
+  if(!cue)return;
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='weather-day-button';
+  button.innerHTML=cue;
+  const accessible=button.querySelector('.weather-day-cue')?.getAttribute('title') || 'weather context';
+  button.setAttribute('aria-label',accessible);
+  bindDayHeaderPill(button,()=>openWeatherContextSheet(day.dayBase,day));
+  dayHeaderContextHost(header)?.appendChild(button);
 }
 
 function missedPlannerFingerprint(data,settings){
@@ -296,7 +327,7 @@ function attachDroppedIndicator(header,list,todayHids){
   pill.className = 'dropped-pill';
   pill.textContent = `${dropped.length} missed`;
   bindDayHeaderPill(pill,()=>openSlippedSheet(dropped,header.dataset.label || 'today'));
-  header.appendChild(pill);
+  dayHeaderContextHost(header)?.appendChild(pill);
 }
 
 function renderDroppedPanel(items,opts = {}){
@@ -499,7 +530,7 @@ function attachFreeTimeIndicator(header,day){
   pill.className = 'free-pill';
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
   bindDayHeaderPill(pill,()=>openFreeTimeSheet(info,header.dataset.label || 'today'));
-  header.appendChild(pill);
+  dayHeaderContextHost(header)?.appendChild(pill);
 }
 
 // WIRE: day-header open/missed pills. Activation must be click-based so the
@@ -1413,9 +1444,14 @@ function render(opts){
           const header = document.createElement('div');
           header.className = 'section-header';
           header.dataset.label = 'today';
-          header.textContent = 'today';
+          const labelEl=document.createElement('span');
+          labelEl.className='section-header-label';
+          labelEl.textContent='today';
+          header.appendChild(labelEl);
+          const dayContext={dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows};
           setupDayCapacityHeader(header,dayStart(Date.now()),false);
-          attachFreeTimeIndicator(header,{dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows});
+          attachWeatherIndicator(header,dayContext);
+          attachFreeTimeIndicator(header,dayContext);
           attachDroppedIndicator(header,list,todayHids);
           if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
         }
