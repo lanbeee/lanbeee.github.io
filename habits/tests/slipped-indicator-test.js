@@ -5,8 +5,10 @@
 //   3. Day rollover: yesterday's projection becomes baseline → slipped shows.
 //   4. Completion excludes: logging an item removes it from slipped.
 //   5. Projection refresh: data change (fingerprint) recomputes projection.
-//   6. Snoozed items: shown with muted tag in dropped panel.
+//   6. Snoozed items: excluded — a deliberate snooze is not a miss.
 //   7. Empty today: pill still renders when all today items drop out.
+//  12. Overdue weekly/task still missed when the planner catch-up-places them tomorrow.
+//  13. Morning-only window, first open after it closed → missed.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/slipped-indicator-test.js
 //
@@ -117,7 +119,7 @@ function assert(cond,msg){
   if(pill){
     const text = await pill.textContent();
     assert(text.includes('1'), 'pill shows count of 1');
-    assert(/not today/i.test(text), `pill distinguishes not-today items from true misses: "${text}"`);
+    assert(/missed/i.test(text), `pill uses missed wording: "${text}"`);
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -130,13 +132,14 @@ function assert(cond,msg){
     localStorage.setItem('tings_v2', JSON.stringify([
       { hid:'roll-x', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
       { hid:'roll-y', name:'Deep Work', emoji:'🎯', type:'keepup', target:5, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
+      { hid:'roll-z', name:'Errand', emoji:'🧾', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1 },
     ]));
     const d = new Date(now - dayMs);
     const yesterday = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
       day: yesterday,
-      hids: { 'roll-x':{first:now-dayMs,name:'Walk'}, 'roll-y':{first:now-dayMs,name:'Deep Work'} },
-      projection: { day:'stale', hids:['roll-x','roll-y'], fingerprint:'old' }
+      hids: { 'roll-x':{first:now-dayMs,name:'Walk'}, 'roll-y':{first:now-dayMs,name:'Deep Work'}, 'roll-z':{first:now-dayMs,name:'Errand'} },
+      projection: { day:'stale', hids:['roll-x','roll-y','roll-z'], fingerprint:'old' }
     }));
     _droppedDayBaselineDay = null;
     render();
@@ -148,8 +151,9 @@ function assert(cond,msg){
     await pill.click();
     await page.waitForTimeout(300);
     const items = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
-    assert(items.some(i => i.includes('Deep Work')), 'Deep Work shown as slipped (not due today)');
-    assert(!items.some(i => i.includes('Walk')), 'Walk NOT slipped (still in today section)');
+    assert(items.some(i => i.includes('Errand')), 'Errand shown as missed (due today, window closed)');
+    assert(!items.some(i => i.includes('Deep Work')), 'Deep Work NOT missed (upcoming, was never due today)');
+    assert(!items.some(i => i.includes('Walk')), 'Walk NOT missed (still in today section)');
     await page.click('#slipped-close');
     await page.waitForTimeout(300);
   }
@@ -160,8 +164,10 @@ function assert(cond,msg){
   console.log('\n[D] Completion excludes from slipped');
   await page.evaluate(() => {
     const data = JSON.parse(localStorage.getItem('tings_v2'));
-    data[1].logs.push(Date.now());
-    data[1].lastLog = Date.now();
+    // roll-z (Errand) is the true miss from section C; logging it must clear
+    // the pill even though roll-y (upcoming) is still not in today's list.
+    data[2].logs.push(Date.now());
+    data[2].lastLog = Date.now();
     localStorage.setItem('tings_v2', JSON.stringify(data));
     render();
   });
@@ -203,15 +209,16 @@ function assert(cond,msg){
   assert(!projAfter.includes('proj-a'), 'proj-a removed from projection after target changed to 7d');
 
   // ══════════════════════════════════════════════════════════════════════
-  // F. Snoozed items shown with tag
+  // F. Snoozed items are not misses
   // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[F] Snoozed items in dropped panel');
+  console.log('\n[F] Snoozed items excluded from missed');
   await page.evaluate(() => {
     const now = Date.now();
     const dayMs = 86400000;
     localStorage.setItem('tings_v2', JSON.stringify([
       { hid:'snz-1', name:'Meditate', emoji:'🧘', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
       { hid:'snz-2', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
+      { hid:'snz-3', name:'Run', emoji:'🏃', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
@@ -220,21 +227,28 @@ function assert(cond,msg){
   await page.waitForTimeout(800);
   await page.evaluate(() => {
     const data = JSON.parse(localStorage.getItem('tings_v2'));
+    // Snooze Meditate and let its window close: without the snooze it would be
+    // a true miss, but the user deliberately moved it out of today.
     data[0].snoozedUntil = Date.now() + 86400000;
     data[0].allowedTimeEnd = 1;
+    // Run keeps its window closed with no snooze → genuine miss.
+    data[2].allowedTimeEnd = 1;
     localStorage.setItem('tings_v2', JSON.stringify(data));
     render();
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
-  assert(Boolean(pill), 'pill shows for snoozed+dropped item');
+  assert(Boolean(pill), 'pill shows for the true miss alongside a snoozed item');
   if(pill){
+    const text = await pill.textContent();
+    assert(text.includes('1'), `pill counts only the true miss: "${text}"`);
     await pill.click();
     await page.waitForTimeout(300);
-    const snoozedItem = await page.$('#slipped-sheet .dropped-item.snoozed');
-    assert(Boolean(snoozedItem), 'snoozed item has .snoozed class');
-    const tag = await page.$('#slipped-sheet .dropped-tag');
-    assert(Boolean(tag), 'snoozed tag rendered');
+    const names = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
+    assert(names.some(i => i.includes('Run')), 'Run (not snoozed, window closed) shown as missed');
+    assert(!names.some(i => i.includes('Meditate')), 'Meditate NOT missed (deliberately snoozed)');
+    const tags = await page.$$eval('#slipped-sheet .dropped-tag', els => els.map(el => el.textContent.trim()));
+    assert(!tags.some(t => t.includes('snoozed')), 'no snoozed tag in the missed list');
     await page.click('#slipped-close');
     await page.waitForTimeout(300);
   }
@@ -390,6 +404,124 @@ function assert(cond,msg){
     await page.waitForTimeout(300);
   } else {
     assert(true, 'no pill when no baseline (expected)');
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // L. Overdue work stays missed even if planned tomorrow
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n[L] Overdue weekly/task still missed when catch-up is tomorrow');
+  const overduePolicy = await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    const later = new Set(['overdue-week','overdue-task','open-week']);
+    const weeklyOverdue = {
+      hid:'overdue-week', name:'Weekly Review', type:'keepup', target:7,
+      logs:[now-8*dayMs], lastLog:now-8*dayMs, createdAt:now-30*dayMs,
+      flexibilityDays:0, durationMinutes:30, pinned:false, snoozedUntil:null,
+      allowedTimeStart:360, allowedTimeEnd:540
+    };
+    const taskOverdue = {
+      hid:'overdue-task', name:'File taxes', type:'task', target:null,
+      logs:[], lastLog:null, createdAt:now-30*dayMs, dueDate:now-dayMs,
+      flexibilityDays:0, durationMinutes:30, pinned:false, snoozedUntil:null,
+      allowedTimeStart:360, allowedTimeEnd:540, eventTime:null
+    };
+    const weeklyOpen = {
+      hid:'open-week', name:'Deep Work', type:'keepup', target:7,
+      logs:[now-8*dayMs], lastLog:now-8*dayMs, createdAt:now-30*dayMs,
+      flexibilityDays:0, durationMinutes:15, pinned:false, snoozedUntil:null,
+      allowedTimeStart:0, allowedTimeEnd:1439
+    };
+    return {
+      overdueWeekly: isMissedOccurrence(weeklyOverdue, later, now),
+      overdueTask: isMissedOccurrence(taskOverdue, later, now),
+      stillDoableWeekly: isMissedOccurrence(weeklyOpen, later, now)
+    };
+  });
+  assert(overduePolicy.overdueWeekly, 'overdue weekly remains missed despite later-day placement');
+  assert(overduePolicy.overdueTask, 'overdue task remains missed despite later-day placement');
+  assert(!overduePolicy.stillDoableWeekly, 'still-doable weekly assigned later is not a miss');
+
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    localStorage.setItem('tings_v2', JSON.stringify([
+      { hid:'anchor-today', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
+      { hid:'overdue-week', name:'Weekly Review', emoji:'📋', type:'keepup', target:7, logs:[now-8*dayMs,{ts:now+dayMs+12*3600000,plan:true}], lastLog:now-8*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:30, pinned:false, allowedTimeStart:360, allowedTimeEnd:540 },
+      { hid:'overdue-task', name:'File taxes', emoji:'🧾', type:'task', target:null, logs:[{ts:now+dayMs+12*3600000,plan:true}], lastLog:null, createdAt:now-30*dayMs, dueDate:now-dayMs, flexibilityDays:0, durationMinutes:30, pinned:false, allowedTimeStart:360, allowedTimeEnd:540, eventTime:null, markDone:true }
+    ]));
+    localStorage.removeItem('tings_today_suggested_v1');
+    _droppedDayBaselineDay = null;
+    _droppedDayBaseline = null;
+    render();
+  });
+  await page.waitForTimeout(800);
+  pill = await page.$('.dropped-pill');
+  assert(Boolean(pill), 'pill shows for overdue weekly/task even if tomorrow catch-up exists');
+  if(pill){
+    await pill.click();
+    await page.waitForTimeout(300);
+    const names = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
+    assert(names.some(i => i.includes('Weekly Review')), 'Weekly Review (overdue, window closed) shown as missed');
+    assert(names.some(i => i.includes('File taxes')), 'File taxes (overdue task) shown as missed');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // M. Morning-only window, first open after it closed
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n[M] Morning-only window shows as missed after first open later in the day');
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    // 6:00–9:00 allowed window; the frozen clock is 10:00, so this is the
+    // same state as opening the app in the afternoon without having done it.
+    localStorage.setItem('tings_v2', JSON.stringify([
+      { hid:'morning-walk', name:'Morning Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:30, pinned:false, allowedTimeStart:360, allowedTimeEnd:540 }
+    ]));
+    localStorage.removeItem('tings_today_suggested_v1');
+    _droppedDayBaselineDay = null;
+    _droppedDayBaseline = null;
+    render();
+  });
+  await page.waitForTimeout(800);
+  pill = await page.$('.dropped-pill');
+  assert(Boolean(pill), 'pill shows on first open after the morning window closed');
+  if(pill){
+    const text = await pill.textContent();
+    assert(/missed/i.test(text), `pill uses missed wording: "${text}"`);
+    await pill.click();
+    await page.waitForTimeout(300);
+    const names = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
+    assert(names.some(i => i.includes('Morning Walk')), 'Morning Walk listed as missed');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
+  }
+
+  await page.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}');
+    settings.showWeekOnHome = true;
+    localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
+    if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+    localStorage.removeItem('tings_today_suggested_v1');
+    _droppedDayBaselineDay = null;
+    _droppedDayBaseline = null;
+    // Paint week-on-home on the frozen main-thread clock. The planner worker
+    // would use wall time and still think a 6–9am window is ahead.
+    const week = buildWeekAgenda(load(), sortSettings, 7);
+    render({__fromOptimizer:true,__optimizedWeek:week});
+  });
+  await page.waitForTimeout(800);
+  pill = await page.$('.dropped-pill');
+  assert(Boolean(pill), 'week-on-home: morning miss still has a today missed pill when today has no remaining rows');
+  if(pill){
+    await pill.click();
+    await page.waitForTimeout(300);
+    const names = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
+    assert(names.some(i => i.includes('Morning Walk')), 'week-on-home: Morning Walk listed as missed');
+    await page.click('#slipped-close');
+    await page.waitForTimeout(300);
   }
 
   // ══════════════════════════════════════════════════════════════════════

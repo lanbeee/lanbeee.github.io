@@ -73,7 +73,6 @@ body[data-pane-count="3"] .section-header{
   -webkit-tap-highlight-color:transparent;
 }
 .dropped-item:active{background:var(--bg2);}
-.dropped-item.snoozed{opacity:0.55;}
 .dropped-emoji{font-size:14px;flex:0 0 auto;}
 .dropped-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .dropped-tag{

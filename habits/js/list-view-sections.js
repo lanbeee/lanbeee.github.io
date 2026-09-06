@@ -65,6 +65,63 @@ function buildHidDayLabelMap(data,settings){
   return map;
 }
 
+// Hids with a placement on a day after today: tomorrow's projection, a later
+// day of the rendered home week, or a persisted plan entry in the future.
+// Whether that evidence means the occurrence was rescheduled is decided per
+// item in isMissedOccurrence — overdue catch-up on a later day stays a miss;
+// for daily rhythms a future row is routine recurrence, not a move.
+function laterDayPlannedHids(data,projectionHids){
+  const set = new Set();
+  for(const hid of projectionHids || [])set.add(hid);
+  if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+    for(let d = 1; d < _homeRenderedWeek.days.length; d += 1){
+      const rows = _homeRenderedWeek.days[d].homeDisplayedTimeline || _homeRenderedWeek.days[d].timeline || [];
+      for(const row of rows){
+        if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
+          const hid = data[row.i] && data[row.i].hid;
+          if(hid)set.add(hid);
+        }
+      }
+    }
+  }
+  const todayKey = todayIso();
+  for(const h of data){
+    if(!h || !h.hid)continue;
+    if(plannedLogs(h.logs || []).some(ts => dateKey(ts) > todayKey))set.add(h.hid);
+  }
+  return set;
+}
+
+// TRUE: this occurrence is still eligible to be done today (calendar day +
+// clock window). Used to tell planner catch-up on a later day apart from a
+// still-doable item that was actually assigned later.
+function occurrenceStillDoableToday(h,now){
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof nextEligibleDistance === 'function' && nextEligibleDistance(h,now) !== 0){
+    return false;
+  }
+  return typeof windowStillDoableToday === 'function' ? windowStillDoableToday(h,now) : true;
+}
+
+// TRUE: the user is or was actually supposed to do this today and it did not
+// happen — a miss. Snoozed work (deliberately not today) and merely upcoming
+// work are not misses. A later-day row is catch-up for overdue work, not a
+// reschedule: only still-doable tasks/sparse rhythms already assigned later
+// drop out. Daily rhythms (target ≤ 1) ignore future placements because their
+// next occurrence does not replace today's.
+function isMissedOccurrence(h,laterPlanned,now){
+  if(!h || !h.hid)return false;
+  if(h.snoozedUntil && now < h.snoozedUntil)return false;
+  if(todayCategory(h,sortSettings) > 1)return false;
+  if(completedToday(h,now))return false;
+  if(laterPlanned && laterPlanned.has(h.hid) && occurrenceStillDoableToday(h,now)){
+    if(h.type === 'task')return false;
+    const target = Number(h.target);
+    if(!(Number.isFinite(target) && target <= 1))return false;
+  }
+  return true;
+}
+
 function attachDroppedIndicator(header,list,todayHids){
   const data = load();
   const now = Date.now();
@@ -82,13 +139,16 @@ function attachDroppedIndicator(header,list,todayHids){
   recordTodaySuggested(data,todayHids,now,projectionHids,fingerprint);
 
   const currentSet = new Set(todayHids);
+  const laterPlanned = laterDayPlannedHids(data,projectionHids || (snap.projection && snap.projection.hids));
   const droppedMap = new Map();
+  // "Missed" is a verdict, so the bar is high: only work the user is or was
+  // actually supposed to do today (isMissedOccurrence).
   const addMissed = (hid,name,emoji,idx,first)=>{
     if(droppedMap.has(hid))return;
     const h = data[idx];
     if(!h)return;
-    const snoozed = Boolean(h.snoozedUntil && now < h.snoozedUntil);
-    droppedMap.set(hid,{hid,name,emoji:emoji || h.emoji,idx,snoozed,first});
+    if(!isMissedOccurrence(h,laterPlanned,now))return;
+    droppedMap.set(hid,{hid,name,emoji:emoji || h.emoji,idx,first});
   };
 
   if(_droppedDayBaseline && Array.isArray(_droppedDayBaseline.hids)){
@@ -96,10 +156,7 @@ function attachDroppedIndicator(header,list,todayHids){
       if(currentSet.has(hid))continue;
       const idx = data.findIndex(h=>h && h.hid === hid);
       if(idx < 0)continue;
-      const h = data[idx];
-      if(completedToday(h,now))continue;
-      if(todayCategory(h,sortSettings) === 0)continue;
-      addMissed(hid,h.name,h.emoji,idx,now);
+      addMissed(hid,data[idx].name,data[idx].emoji,idx,now);
     }
   }
 
@@ -107,29 +164,25 @@ function attachDroppedIndicator(header,list,todayHids){
     if(currentSet.has(hid))continue;
     const idx = data.findIndex(h=>h && h.hid === hid);
     if(idx < 0)continue;
-    const h = data[idx];
-    if(completedToday(h,now))continue;
-    addMissed(hid,info.name || h.name,h.emoji,idx,info.first);
+    addMissed(hid,info.name || data[idx].name,data[idx].emoji,idx,info.first);
   }
 
   for(let i = 0; i < data.length; i++){
     const h = data[i];
     if(!h || !h.hid || currentSet.has(h.hid) || droppedMap.has(h.hid))continue;
-    if(completedToday(h,now))continue;
+    // Sweep overdue work that never sat on today's agenda. Still-doable items
+    // only belong here if they left today (snap.hids / baseline) above.
     if(todayCategory(h,sortSettings) !== 1)continue;
     addMissed(h.hid,h.name,h.emoji,i,now);
   }
 
-  const dropped = [...droppedMap.values()]
-    .sort((a,b)=>Number(a.snoozed) - Number(b.snoozed) || a.first - b.first);
+  const dropped = [...droppedMap.values()].sort((a,b)=>a.first - b.first);
   if(!dropped.length)return;
   header.classList.add('has-dropped');
   const pill = document.createElement('button');
   pill.type = 'button';
   pill.className = 'dropped-pill';
-  // This list is broader than true misses: it also includes work moved to a
-  // later day and intentionally snoozed items. Name the state, not a verdict.
-  pill.textContent = `${dropped.length} not today`;
+  pill.textContent = `${dropped.length} missed`;
   bindDayHeaderPill(pill,()=>openSlippedSheet(dropped,header.dataset.label || 'today'));
   header.appendChild(pill);
 }
@@ -144,13 +197,11 @@ function renderDroppedPanel(items,opts = {}){
     // The row is a div (not a button) so the log affordance below can be its
     // own button. Tapping anywhere on the row except the icon still reviews.
     const row = document.createElement('div');
-    row.className = 'dropped-item' + (item.snoozed ? ' snoozed' : '');
+    row.className = 'dropped-item';
     row.setAttribute('role','button');
     row.setAttribute('tabindex','0');
     row.dataset.hid = item.hid || '';
-    const tagHtml = item.snoozed
-      ? '<span class="dropped-tag">snoozed</span>'
-      : (showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '');
+    const tagHtml = showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '';
 
     // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
     // a missed habit can be cleared with one tap straight from this list.
@@ -176,7 +227,7 @@ function renderDroppedPanel(items,opts = {}){
     const finishLog = ()=>{
       // The habit is now completedToday, so it no longer belongs here. Drop the
       // row at once; if the sheet is empty, dismiss it. Then refresh home so the
-      // "not today" pill recount follows the log without a cold restart.
+      // "missed" pill recount follows the log without a cold restart.
       row.remove();
       if(!document.querySelector('#slipped-content .dropped-item'))closeSheet('slipped-sheet');
       if(typeof refreshOpenViews === 'function')refreshOpenViews();
@@ -196,7 +247,7 @@ function renderDroppedPanel(items,opts = {}){
 function openSlippedSheet(items,dayLabel){
   const content = document.getElementById('slipped-content');
   if(!content)return;
-  document.getElementById('slipped-title').textContent = `not scheduled · ${dayLabel}`;
+  document.getElementById('slipped-title').textContent = `missed · ${dayLabel}`;
   content.innerHTML = '';
 
   const data = load();
@@ -210,7 +261,7 @@ function openSlippedSheet(items,dayLabel){
   if(slippedWithTags.length){
     const head1 = document.createElement('div');
     head1.className = 'slipped-section-head';
-    head1.textContent = `not scheduled · ${dayLabel}`;
+    head1.textContent = `missed · ${dayLabel}`;
     content.appendChild(head1);
     content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
   }
@@ -339,7 +390,7 @@ function attachFreeTimeIndicator(header,day){
   header.appendChild(pill);
 }
 
-// WIRE: day-header open/not-today pills. Activation must be click-based so the
+// WIRE: day-header open/missed pills. Activation must be click-based so the
 // document forgiving-button path (near-miss drift / pointercancel → btn.click)
 // works. pointerup-only missed those taps because capture-phase forgiving
 // stopPropagation prevented the pill's pointerup from firing. Stop pointer
@@ -996,7 +1047,10 @@ function render(opts){
     })();
 
     dayPlans.forEach(({day,seq})=>{
-      if(!seq.length)return;
+      // Today still needs its header when the morning window has closed and
+      // nothing remains on the timeline — otherwise the missed pill has
+      // nowhere to attach.
+      if(!seq.length && !day.isToday)return;
       appendSectionHeader(list,homeWeekDayLabel(day),day,day.isToday ? weekTodayHids : null);
       for(let i = 0;i < seq.length;){
         const row = seq[i];

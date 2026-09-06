@@ -143,16 +143,20 @@ async function stickyState(page, headerSel){
       createdAt:now - dayMs * (i + 2)
     });
   }
-  // Seed a dropped item so a missed pill can appear on today.
+  // Seed a dropped item so a missed pill can appear on today. It must be a
+  // true miss: due today (keepup, logged 3 days ago, target 1) with a window
+  // that has already closed, so todayCategory buckets it as overdue.
   seedData.push({
     hid:'miss-seed',
     name:'Missed Seed',
     emoji:'📉',
-    type:'habit',
+    type:'keepup',
     target:1,
     logs:[now - dayMs * 3],
     lastLog:now - dayMs * 3,
     durationMinutes:20,
+    allowedTimeStart:0,
+    allowedTimeEnd:1,
     createdAt:now - dayMs * 10
   });
 
@@ -269,6 +273,19 @@ async function stickyState(page, headerSel){
   if(stickyResult.ok){
     const state = await stickyState(page, '#list .section-header.has-pill');
     assert(state.sticky, 'section headers use position:sticky');
+    // Re-measure right before the gesture: sticky stacking can shift the bar
+    // between evaluates (same lesson as section C's one-turn measure), and a
+    // stale point lands on the header text instead of the pill.
+    const stuckPt = await page.evaluate(() => {
+      const pill = document.querySelector('#list .section-header.stuck .free-pill');
+      if(!pill)return null;
+      const r = pill.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    if(stuckPt){
+      stickyResult.x = stuckPt.x;
+      stickyResult.y = stuckPt.y;
+    }
     await cdpTap(client, stickyResult.x, stickyResult.y);
     await waitSheetOpen(page, '#free-time-sheet', 'sticky header open pill opens sheet');
     await sleep(250);
@@ -445,10 +462,12 @@ async function stickyState(page, headerSel){
         name:'Deep Work',
         emoji:'🎯',
         type:'keepup',
-        target:5,
-        logs:[now - dayMs],
-        lastLog:now - dayMs,
+        target:1,
+        logs:[now - dayMs * 2],
+        lastLog:now - dayMs * 2,
         createdAt:now - 30 * dayMs,
+        allowedTimeStart:0,
+        allowedTimeEnd:1,
         pinned:false
       });
       localStorage.setItem('tings_v2', JSON.stringify(existing));

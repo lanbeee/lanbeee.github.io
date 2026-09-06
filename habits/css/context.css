@@ -80,7 +80,6 @@
   -webkit-mask:center/10px 10px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
   mask:center/10px 10px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
 }
-.dropped-item.snoozed .dropped-log::before{display:none;}
 .dropped-emoji{font-size:20px;}
 .dropped-copy{min-width:0;display:flex;flex-direction:column;gap:2px;}
 .dropped-name{font-size:12.5px;font-weight:710;}

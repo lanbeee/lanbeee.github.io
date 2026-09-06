@@ -1038,15 +1038,14 @@
     };
 
     // Missed demo habit: will be visible as a dropped pill.
-    // It must NOT be placed by the planner today so it stays out of
-    // todayHids / agendaMap; we achieve this by restricting it to all days
-    // EXCEPT today.  The snap.hids seed then surfaces it as a missed entry.
-    const todayDow = new Date().getDay(); // 0=Sun … 6=Sat
-    const allDaysExceptToday = [0,1,2,3,4,5,6].filter(d=>d !== todayDow);
+    // The pill only counts true misses, so this habit must have been due
+    // today (keepup, logged 2 days ago, target 1) with today's window already
+    // closed. That keeps it out of todayHids / agendaMap without pretending
+    // it was never eligible today. The snap.hids seed then surfaces it.
     const missedHabit = {
       hid: DEMO_MISSED_HID,
       message: '💧 Hydration check (demo)',
-      type: 'habit',
+      type: 'keepup',
       target: 1,
       duration: 5,
       breakable: false,
@@ -1054,7 +1053,8 @@
       pinned: false,
       emoji: '💧',
       topics: ['health'],
-      allowedWeekdays: allDaysExceptToday,
+      allowedTimeStart: 0,
+      allowedTimeEnd: 1,
       logs: [
         {ts: now - 2 * 86400000, kind: 'actual', value: 1}
       ]
@@ -1095,13 +1095,12 @@
     //    attachDroppedIndicator checks three sources:
     //    (a) _droppedDayBaseline.hids (from prevProjection on yesterday's snap)
     //    (b) snap.hids map (hid → {name, first}) for today's suggested set
-    //    (c) all habits with todayCategory === 1 (overdue)
+    //    (c) overdue work that isMissedOccurrence accepts
     //
     //    We use (b): seed snap.hids with the missed demo hid.  The function
     //    adds it to droppedMap if it is not in currentSet (not in today's
-    //    rendered list) and not completedToday.  The missed habit has no log
-    //    for today, so completedToday returns false.  And because it has no
-    //    planned entry in today's agenda section, currentSet won't contain it.
+    //    rendered list) and isMissedOccurrence is true. The closed window
+    //    makes it overdue rather than upcoming, so it stays a true miss.
     const todaySuggested = {
       day: todayIso,
       hids: {

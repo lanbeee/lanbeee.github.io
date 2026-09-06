@@ -869,11 +869,11 @@ Minimal mode (always):
 
 Each day section header can have two dynamic **pills**:
 
-### 6.2 Not-Today Pills (🔴 "N not today")
-- Appears on "Today" when previously suggested, behind, moved-later, or snoozed work isn't in today's current agenda
+### 6.2 Missed Pills (🔴 "N missed")
+- Appears on "Today" when work the user is/was supposed to do today didn't happen: it left today's agenda without being completed
+- Only counts **true misses** — snoozed items, merely upcoming work, and still-doable work already assigned to a later day are excluded. Overdue work that the planner catch-up-places tomorrow still counts as missed.
 - Tap to open the **Slipped Sheet** (see §X.1)
-- Uses neutral wording because a future assignment or snooze is not necessarily a missed occurrence
-- Shows items in reverse snooze order
+- Shows items in first-suggested order
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
@@ -1322,12 +1322,12 @@ Tracks the currently active habit session:
 
 ## X. CONTEXTUAL SHEETS (Right-Swipe / Drag Actions)
 
-### 10.1 Not-Scheduled Sheet 👤
+### 10.1 Slipped Sheet (Missed Habits) 👤
 
 ```
 ┌─────────────────────────────────────┐
 │ ←  needs a next step                │
-│ not scheduled · today              │
+│ missed · today                     │
 │ Open an item to reschedule it,     │
 │   log it, or adjust its rhythm.    │
 ├─────────────────────────────────────┤
@@ -1338,11 +1338,11 @@ Tracks the currently active habit session:
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N not today" on the Today header, or right-swipe a card → "missed" action
-- Lists work that left today's current agenda, including true misses, later assignments, and snoozes
+- **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
+- Lists true misses only: work that was due today, wasn't done, and hasn't been snoozed. Overdue catch-up on a later day still belongs here; still-doable work already assigned later does not.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
-- Items show snooze tags or day labels (behind/today/tomorrow)
+- Items show day labels (behind/today/tomorrow)
 
 ### 10.2 Free Time Sheet (Open Gaps) 👤
 
