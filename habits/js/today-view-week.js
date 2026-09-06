@@ -346,13 +346,13 @@ function locationsShareCluster(aIds,bIds,registry,mode){
 
 // PURE: flex-pulling a habit onto a cluster day is useful only when joining
 // the partner is cheaper than making a separate trip from the day's known
-// origin. If the origin is unknown (common on future days), retain the normal
-// proximity rule and let the week optimizer compare complete routes. This
-// prevents co-located work at the place where the user already is from being
-// manufactured early: a Home + Home pair saves no trip.
+// origin. An unknown origin is not evidence of a saved trip, so it cannot
+// manufacture early eligibility. The normal origin ladder (live/manual,
+// last-known, then first location-bearing block) still gives both engines the
+// best available evidence without inventing a default place.
 function clusterFlexPairSavesTravel(aIds,bIds,seedLocId,registry,mode){
   if(!locationsShareCluster(aIds,bIds,registry,mode))return false;
-  if(!seedLocId)return true;
+  if(!seedLocId)return false;
   for(const a of aIds || []){
     if(!a)continue;
     const fromSeed = travelEdgeBetweenIds(seedLocId,a,registry,mode,{allowNetwork:false});
@@ -365,6 +365,38 @@ function clusterFlexPairSavesTravel(aIds,bIds,seedLocId,registry,mode){
         return true;
       }
     }
+  }
+  return false;
+}
+
+// PURE: candidate indexes whose native-due occurrence justified this
+// candidate's otherwise-early cluster eligibility on `dayBase`.
+function clusterFlexPartnerIndicesForDay(c,dayBase){
+  const byDay = c && c.clusterFlexPartnersByDay;
+  if(!(byDay instanceof Map))return [];
+  const ids = byDay.get(dayBase);
+  return ids instanceof Set ? [...ids] : (Array.isArray(ids) ? ids.slice() : []);
+}
+
+// PURE: an early cluster candidate is valid only beside at least one of the
+// native-due partners that unlocked it. Exact packing enforces this as an ILP
+// row; Fast/fallback/rescue paths call this after ordering partners first.
+function clusterFlexPartnerPlacedForDay(c,state){
+  const ids = clusterFlexPartnerIndicesForDay(c,state && state.dayBase);
+  if(!ids.length)return true; // natively eligible; no cluster dependency
+  return ids.some(i=>state && (
+    (state.placed && state.placed.has(i))
+    || (state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === i)
+  ));
+}
+
+function clusterFlexDependsOnCandidate(c,partner){
+  if(!c || !partner)return false;
+  const byDay = c.clusterFlexPartnersByDay;
+  if(!(byDay instanceof Map))return false;
+  for(const ids of byDay.values()){
+    if(ids instanceof Set && ids.has(partner.i))return true;
+    if(Array.isArray(ids) && ids.includes(partner.i))return true;
   }
   return false;
 }
@@ -447,7 +479,7 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
       const ageOnDay = days + Math.round((dayBase - todayBase) / 86400000);
       if(ageOnDay >= rawTarget)continue;        // already natively due → already eligible
       if(ageOnDay < rawTarget - flex)continue;  // outside flex pull window
-      let partner = false;
+      const partnerIds = new Set();
       for(const p of candidates){
         if(p === c || !p.h)continue;
         if(!clusterNativeDueOnDay(p,dayBase,weekday,cfg))continue;
@@ -456,9 +488,13 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
           : (Array.isArray(p.h.locationIds) ? p.h.locationIds.filter(Boolean) : []);
         if(pLocs.length && clusterFlexPairSavesTravel(
           myLocs,pLocs,seedLocId,registry,mode
-        )){ partner = true; break; }
+        ))partnerIds.add(p.i);
       }
-      if(partner)c.eligible.add(dayBase);
+      if(partnerIds.size){
+        c.eligible.add(dayBase);
+        if(!(c.clusterFlexPartnersByDay instanceof Map))c.clusterFlexPartnersByDay = new Map();
+        c.clusterFlexPartnersByDay.set(dayBase,partnerIds);
+      }
     }
   }
   return candidates;
@@ -845,6 +881,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
     const criticalA = mustPlaceCriticalOccurrence(a);
     const criticalB = mustPlaceCriticalOccurrence(b);
     if(criticalA !== criticalB)return criticalA ? -1 : 1;
+    const aNeedsB = clusterFlexDependsOnCandidate(a,b);
+    const bNeedsA = clusterFlexDependsOnCandidate(b,a);
+    if(aNeedsB !== bNeedsA)return aNeedsB ? 1 : -1;
     return 0;
   });
   for(const c of ordered){
@@ -932,6 +971,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       for(const state of dayStates){
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(pinned && !state.isTodayDay)continue;
+        if(!clusterFlexPartnerPlacedForDay(c,state))continue;
         if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null){
           const afterLast = state.dayBase > dayStart(virtualLastLog);
           const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount);
@@ -1299,6 +1339,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
     for(const state of dayStates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(c.pinned && !state.isTodayDay)continue;
+      if(!clusterFlexPartnerPlacedForDay(c,state))continue;
       if(hasOccurrence(state)){
         lastPlaced = state.dayBase;
         if(fillsEveryEligibleDay)rhythmPlacementCount += 1;

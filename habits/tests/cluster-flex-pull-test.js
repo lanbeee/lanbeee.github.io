@@ -18,7 +18,8 @@ function assert(value,message){
 async function runScenario(page,{
   flex, type = 'keepup', withPartner = true, atCluster = false,
   partnerDueOffset = 2, optionalOrder = false, withDuePeer = false,
-  originFromFirstBlock = false
+  originFromFirstBlock = false, unknownOrigin = false,
+  partnerImpossible = false
 }){
   return await page.evaluate(async (cfg)=>{
     localStorage.removeItem('tings_v2');
@@ -34,10 +35,16 @@ async function runScenario(page,{
         showDueHabitsInAgenda:true, showDueTasksInAgenda:true, showPlannedItemsInAgenda:true,
         availabilityMinutes:Array(7).fill(360),
         availabilityOverrides:cfg.withDuePeer ? {[dateKey(today)]:60} : {},
-        blockedTimes:cfg.originFromFirstBlock
-          ? [{label:'sleep',days:[],start:0,end:420,locationId:'home'}] : [],
-        locations:[{id:clusterId,name:cfg.originFromFirstBlock ? 'Home' : 'Gym',lat:1,lng:1}],
+        blockedTimes:cfg.unknownOrigin
+          ? [] : [{label:'sleep',days:[],start:0,end:420,locationId:'home'}],
+        locations:cfg.originFromFirstBlock
+          ? [{id:'home',name:'Home',lat:40.700,lng:-74.000}]
+          : [
+            {id:'home',name:'Home',lat:40.700,lng:-74.000},
+            {id:'gym',name:'Gym',lat:40.750,lng:-74.000}
+          ],
         travel:{}, pinnedLocationId:null,
+        defaultTravelMode:'walking',
         lastKnownLocationId:cfg.atCluster ? clusterId : null
       };
       saveSortSettings(settings);
@@ -49,6 +56,8 @@ async function runScenario(page,{
           dueDate:today + cfg.partnerDueOffset*dayMs, eventTime:null, durationMinutes:30, priority:2,
           locationIds:[clusterId], flexibilityDays:0, logs:[], emoji:'🏋️', pinned:false,
           sample:false, snoozedUntil:null, topics:[], createdAt:now,
+          allowedTimeStart:cfg.partnerImpossible ? 360 : null,
+          allowedTimeEnd:cfg.partnerImpossible ? 420 : null,
           scheduleLinks:cfg.optionalOrder ? [{
             anchorHid:'subject',direction:'after',adjacency:'direct',requireSameDay:false
           }] : [] });
@@ -76,7 +85,7 @@ async function runScenario(page,{
     }finally{ globalThis.Date = RealDate; }
   }, {
     flex,type,withPartner,atCluster,partnerDueOffset,optionalOrder,withDuePeer,
-    originFromFirstBlock
+    originFromFirstBlock,unknownOrigin,partnerImpossible
   });
 }
 
@@ -187,6 +196,24 @@ async function runScenario(page,{
     'without a pin, far live GPS overrides the earlier Sleep at Home ' + JSON.stringify(g));
   assert(g.futurePlannerSeed === 'home',
     'future planning ignores today GPS and uses the first block location ' + JSON.stringify(g));
+
+  console.log('\n[H] unknown origin cannot claim a travel-saving cluster');
+  const h = await runScenario(page,{flex:2,unknownOrigin:true});
+  for(const [engine,result] of Object.entries(h)){
+    assert(!result.d2.includes('subject'),
+      `${engine}: no origin evidence → no speculative pull to partner day ` + JSON.stringify(result.d2));
+    assert(result.d4.includes('subject'),
+      `${engine}: subject remains on its native due day when origin is unknown ` + JSON.stringify(result.d4));
+  }
+
+  console.log('\n[I] an unplaceable partner cannot leave an orphan early trip');
+  const i = await runScenario(page,{flex:2,partnerImpossible:true});
+  for(const [engine,result] of Object.entries(i)){
+    assert(!result.d2.includes('partner') && !result.d2.includes('subject'),
+      `${engine}: blocked partner means neither half of the claimed cluster is placed early ` + JSON.stringify(result.d2));
+    assert(result.d4.includes('subject'),
+      `${engine}: flexible subject remains available on its native due day ` + JSON.stringify(result.d4));
+  }
 
   assert(!errors.length,'no page errors');
 

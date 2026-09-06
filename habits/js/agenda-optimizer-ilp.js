@@ -793,6 +793,29 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       optionNamesByHid.get(hid).push(o.varName);
     }
   });
+  // Cluster-flex eligibility is conditional, not a free extra day. If an
+  // early candidate is selected, at least one native-due partner that
+  // justified the saved-trip claim must also be selected on this day. This
+  // prevents an infeasible/dropped partner from leaving an orphan early trip.
+  let clusterPairRow = 0;
+  for(const c of dayCandidates){
+    const partnerIds = typeof clusterFlexPartnerIndicesForDay === 'function'
+      ? clusterFlexPartnerIndicesForDay(c,state.dayBase) : [];
+    if(!partnerIds.length)continue;
+    if(typeof clusterFlexPartnerPlacedForDay === 'function'
+      && clusterFlexPartnerPlacedForDay(c,state))continue;
+    const ownNames = byCand.get(c.i) || [];
+    if(!ownNames.length)continue;
+    const partnerNames = [...new Set(partnerIds.flatMap(i=>byCand.get(i) || []))];
+    subjectTo.push({
+      name:`cluster_pair_${clusterPairRow++}`,
+      vars:[
+        ...ownNames.map(name=>({name,coef:1})),
+        ...partnerNames.map(name=>({name,coef:-1}))
+      ],
+      bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+    });
+  }
   const requiredHids = new Set();
   const dayOrderEdges = typeof plannerOrderConstraintsForDay === 'function'
     ? plannerOrderConstraintsForDay(state.dayBase) : [];
@@ -1148,6 +1171,11 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
         if(canWait)return la ? -1 : 1;
       }
     }
+    const aNeedsB = typeof clusterFlexDependsOnCandidate === 'function'
+      && clusterFlexDependsOnCandidate(a,b);
+    const bNeedsA = typeof clusterFlexDependsOnCandidate === 'function'
+      && clusterFlexDependsOnCandidate(b,a);
+    if(aNeedsB !== bNeedsA)return aNeedsB ? 1 : -1;
     return byWeight(a,b);
   });
   const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
@@ -1159,6 +1187,8 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates){
     : [];
   for(const c of ordered){
     if(state.placed.has(c.i))continue;
+    if(typeof clusterFlexPartnerPlacedForDay === 'function'
+      && !clusterFlexPartnerPlacedForDay(c,state))continue;
     if(typeof fastPathDefersMovable === 'function'
       && fastPathDefersMovable(c,state,pool,states))continue;
     if(typeof weatherShouldDeferCandidate === 'function'
