@@ -30,15 +30,69 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   list.appendChild(header);
 }
 
-function computeTomorrowProjection(data,settings){
-  if(typeof buildWeekAgenda !== 'function')return [];
-  const week = buildWeekAgenda(data,settings,2);
-  const tomorrow = week.days[1];
-  if(!tomorrow || !tomorrow.timeline)return [];
-  return tomorrow.timeline
-    .filter(r=>(r.kind === 'fill' || r.kind === 'scheduled') && r.i != null)
-    .map(r=>data[r.i]?.hid)
-    .filter(Boolean);
+function missedPlannerFingerprint(data,settings){
+  const habits = (data || []).map(h=>[
+    h.hid,h.type,h.target,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
+    h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,h.flexibilityDays,h.pinned,
+    h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
+    h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
+    h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
+    h.scheduleLinks,h.scheduleOptions
+  ]);
+  const plannerSettings = {
+    blockedTimes:settings?.blockedTimes,
+    blockedTimeOverrides:settings?.blockedTimeOverrides,
+    cancelledBlocks:settings?.cancelledBlocks,
+    availabilityOverrides:settings?.availabilityOverrides,
+    locations:settings?.locations,
+    travel:settings?.travel,
+    defaultTravelMode:settings?.defaultTravelMode,
+    showScheduledTasksInAgenda:settings?.showScheduledTasksInAgenda,
+    showDueTasksInAgenda:settings?.showDueTasksInAgenda,
+    showPlannedItemsInAgenda:settings?.showPlannedItemsInAgenda,
+    showDueHabitsInAgenda:settings?.showDueHabitsInAgenda
+  };
+  const source = JSON.stringify([habits,plannerSettings]);
+  let hash = 2166136261;
+  for(let i = 0;i < source.length;i += 1){
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash,16777619);
+  }
+  return `m2-${(hash >>> 0).toString(36)}`;
+}
+
+// Planner-backed fallback for a user who first opens after an allowed window
+// has closed. It reconstructs the Fast planner from the day's first open
+// minute, then keeps its dated week expectations so skipped app-days remain
+// auditable. This deliberately records committed rows, not the whole overdue
+// candidate pool.
+function computePlannerExpectationMap(data,settings,numDays = 7){
+  if(typeof buildWeekAgenda !== 'function')return {};
+  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true});
+  const out = {};
+  for(const day of week.days || []){
+    const key = day.dayKey || dateKey(day.dayBase);
+    out[key] = [...new Set((day.timeline || [])
+      .filter(r=>(r.kind === 'fill' || r.kind === 'scheduled') && r.i != null)
+      .map(r=>data[r.i]?.hid)
+      .filter(Boolean))];
+  }
+  return out;
+}
+
+function renderedPlannerExpectationMap(data,now = Date.now()){
+  const week = _homeRenderedWeek;
+  if(!week || !Array.isArray(week.days) || !week.days.length)return {};
+  if(dayStart(week.days[0].dayBase) !== dayStart(now))return {};
+  const out = {};
+  for(const day of week.days){
+    const key = day.dayKey || dateKey(day.dayBase);
+    out[key] = [...new Set((day.timeline || [])
+      .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i != null)
+      .map(row=>data[row.i]?.hid)
+      .filter(Boolean))];
+  }
+  return out;
 }
 
 function buildHidDayLabelMap(data,settings){
@@ -93,8 +147,7 @@ function laterDayPlannedHids(data,projectionHids){
 }
 
 // TRUE: this occurrence is still eligible to be done today (calendar day +
-// clock window). Used to tell planner catch-up on a later day apart from a
-// still-doable item that was actually assigned later.
+// clock window).
 function occurrenceStillDoableToday(h,now){
   if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
     && typeof nextEligibleDistance === 'function' && nextEligibleDistance(h,now) !== 0){
@@ -103,80 +156,131 @@ function occurrenceStillDoableToday(h,now){
   return typeof windowStillDoableToday === 'function' ? windowStillDoableToday(h,now) : true;
 }
 
-// TRUE: the user is or was actually supposed to do this today and it did not
-// happen — a miss. Snoozed work (deliberately not today) and merely upcoming
-// work are not misses. A later-day row is catch-up for overdue work, not a
-// reschedule: only still-doable tasks/sparse rhythms already assigned later
-// drop out. Daily rhythms (target ≤ 1) ignore future placements because their
-// next occurrence does not replace today's.
-function isMissedOccurrence(h,laterPlanned,now){
+function missedOccurrenceDayBase(day,now = Date.now()){
+  if(typeof day === 'number' && Number.isFinite(day))return dayStart(day);
+  if(typeof day === 'string'){
+    const parsed = new Date(`${day}T12:00:00`).getTime();
+    if(Number.isFinite(parsed))return dayStart(parsed);
+  }
+  return dayStart(now);
+}
+
+function missedOccurrenceResolved(h,expectedDayBase,now){
+  if(h.type === 'task')return isTaskDone(h);
+  if(typeof completedOnDay === 'function' && completedOnDay(h,expectedDayBase))return true;
+  if(typeof actualLogs !== 'function')return completedToday(h,now);
+  // This is an actionable catch-up list, not permanent history: a later real
+  // completion resolves earlier outstanding expectations for the same item.
+  return actualLogs(h.logs || []).some(ts=>ts >= expectedDayBase && ts <= now);
+}
+
+function missedOpportunityPassedToday(h,dayBase,now){
+  let fixedStart = null;
+  if(h.type === 'task' && h.eventTime != null && dateKey(h.eventTime) === dateKey(dayBase)){
+    fixedStart = Number(h.eventTime);
+  }else if(typeof timedPlanLogForDay === 'function'){
+    const plan = timedPlanLogForDay(h,dateKey(dayBase));
+    if(plan)fixedStart = logTime(plan);
+  }
+  if(Number.isFinite(fixedStart)){
+    return now >= fixedStart + clampDuration(h.durationMinutes) * 60000;
+  }
+  return !occurrenceStillDoableToday(h,now);
+}
+
+// TRUE only for a dated planner expectation whose usable opportunity passed
+// without a completion. This rejects the old broad "everything overdue"
+// sweep: an off-day, impossible window, or item the planner assigned elsewhere
+// has no expectation record and therefore cannot become a miss.
+function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null){
   if(!h || !h.hid)return false;
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
-  if(todayCategory(h,sortSettings) > 1)return false;
-  if(completedToday(h,now))return false;
-  if(laterPlanned && laterPlanned.has(h.hid) && occurrenceStillDoableToday(h,now)){
-    if(h.type === 'task')return false;
-    const target = Number(h.target);
-    if(!(Number.isFinite(target) && target <= 1))return false;
+  const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
+  const todayBase = dayStart(now);
+  if(expectedDayBase > todayBase)return false;
+  if(h.createdAt != null && Number(h.createdAt) >= expectedDayBase + 86400000)return false;
+  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
+    && typeof isDateEligibleForHabit === 'function'
+    && !isDateEligibleForHabit(h,expectedDayBase))return false;
+  if(missedOccurrenceResolved(h,expectedDayBase,now))return false;
+  if(expectedDayBase === todayBase){
+    if(!missedOpportunityPassedToday(h,expectedDayBase,now))return false;
   }
   return true;
+}
+
+function missedOccurrenceDayLabel(day,now = Date.now()){
+  const base = missedOccurrenceDayBase(day,now);
+  const diff = Math.round((dayStart(now) - base) / 86400000);
+  if(diff === 0)return 'today';
+  if(diff === 1)return 'yesterday';
+  if(diff < 7)return new Date(base).toLocaleDateString(undefined,{weekday:'short'}).toLowerCase();
+  return new Date(base).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toLowerCase();
 }
 
 function attachDroppedIndicator(header,list,todayHids){
   const data = load();
   const now = Date.now();
-  const snap = loadTodaySuggested();
+  let snap = loadTodaySuggested();
   const today = todayIso();
   if(_droppedDayBaselineDay !== today){
     _droppedDayBaseline = snap.prevProjection || null;
     _droppedDayBaselineDay = today;
   }
-  const fingerprint = dataFingerprint(data);
-  const needsProjection = !snap.projection
-    || snap.projection.day !== dateKey(now + 86400000)
-    || snap.projection.fingerprint !== fingerprint;
-  const projectionHids = needsProjection ? computeTomorrowProjection(data,sortSettings) : null;
-  recordTodaySuggested(data,todayHids,now,projectionHids,fingerprint);
+  const fingerprint = missedPlannerFingerprint(data,sortSettings);
+  const tomorrow = dateKey(now + 86400000);
+  const currentExpectation = snap.expectations && snap.expectations[today];
+  const tomorrowExpectation = snap.expectations && snap.expectations[tomorrow];
+  const needsProjection = !currentExpectation
+    || currentExpectation.fingerprint !== fingerprint
+    || !tomorrowExpectation
+    || tomorrowExpectation.fingerprint !== fingerprint;
+  const projectionByDay = needsProjection
+    ? computePlannerExpectationMap(data,sortSettings,7)
+    : {};
+  const renderedProjection = renderedPlannerExpectationMap(data,now);
+  for(const [day,hids] of Object.entries(renderedProjection)){
+    if(day === today && projectionByDay[day]){
+      projectionByDay[day] = [...new Set([...projectionByDay[day],...hids])];
+    }else{
+      projectionByDay[day] = hids;
+    }
+  }
+  const hasProjectionUpdate = Object.keys(projectionByDay).length > 0;
+  const projectionHids = hasProjectionUpdate ? projectionByDay[tomorrow] || [] : null;
+  snap = recordTodaySuggested(
+    data,todayHids,now,projectionHids,fingerprint,
+    hasProjectionUpdate ? projectionByDay : null
+  );
 
   const currentSet = new Set(todayHids);
   const laterPlanned = laterDayPlannedHids(data,projectionHids || (snap.projection && snap.projection.hids));
   const droppedMap = new Map();
-  // "Missed" is a verdict, so the bar is high: only work the user is or was
-  // actually supposed to do today (isMissedOccurrence).
-  const addMissed = (hid,name,emoji,idx,first)=>{
-    if(droppedMap.has(hid))return;
+  const addMissed = (hid,name,emoji,idx,first,expectedDay)=>{
     const h = data[idx];
     if(!h)return;
-    if(!isMissedOccurrence(h,laterPlanned,now))return;
-    droppedMap.set(hid,{hid,name,emoji:emoji || h.emoji,idx,first});
+    if(!isMissedOccurrence(h,laterPlanned,now,expectedDay))return;
+    const prior = droppedMap.get(hid);
+    if(prior && prior.expectedDay >= expectedDay)return;
+    droppedMap.set(hid,{
+      hid,name,emoji:emoji || h.emoji,idx,first,expectedDay,
+      dayLabel:missedOccurrenceDayLabel(expectedDay,now)
+    });
   };
 
-  if(_droppedDayBaseline && Array.isArray(_droppedDayBaseline.hids)){
-    for(const hid of _droppedDayBaseline.hids){
-      if(currentSet.has(hid))continue;
+  for(const [expectedDay,entry] of Object.entries(snap.expectations || {})){
+    if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
+    for(const hid of entry.hids){
+      if(expectedDay === today && currentSet.has(hid))continue;
       const idx = data.findIndex(h=>h && h.hid === hid);
       if(idx < 0)continue;
-      addMissed(hid,data[idx].name,data[idx].emoji,idx,now);
+      const info = expectedDay === today ? snap.hids[hid] : null;
+      addMissed(hid,data[idx].name,data[idx].emoji,idx,info?.first || entry.recordedAt || now,expectedDay);
     }
   }
 
-  for(const [hid,info] of Object.entries(snap.hids)){
-    if(currentSet.has(hid))continue;
-    const idx = data.findIndex(h=>h && h.hid === hid);
-    if(idx < 0)continue;
-    addMissed(hid,info.name || data[idx].name,data[idx].emoji,idx,info.first);
-  }
-
-  for(let i = 0; i < data.length; i++){
-    const h = data[i];
-    if(!h || !h.hid || currentSet.has(h.hid) || droppedMap.has(h.hid))continue;
-    // Sweep overdue work that never sat on today's agenda. Still-doable items
-    // only belong here if they left today (snap.hids / baseline) above.
-    if(todayCategory(h,sortSettings) !== 1)continue;
-    addMissed(h.hid,h.name,h.emoji,i,now);
-  }
-
-  const dropped = [...droppedMap.values()].sort((a,b)=>a.first - b.first);
+  const dropped = [...droppedMap.values()].sort((a,b)=>
+    a.expectedDay.localeCompare(b.expectedDay) || a.first - b.first);
   if(!dropped.length)return;
   header.classList.add('has-dropped');
   const pill = document.createElement('button');
@@ -255,7 +359,7 @@ function openSlippedSheet(items,dayLabel){
 
   const slippedWithTags = items.map(item=>({
     ...item,
-    dayLabel: dayLabelMap.get(item.hid) || 'behind'
+    dayLabel:item.dayLabel || dayLabelMap.get(item.hid) || 'behind'
   }));
 
   if(slippedWithTags.length){
@@ -1194,12 +1298,11 @@ function render(opts){
     }
 
     const todayHids = (!searching && todayFirstActive)
-      ? renderIndices.filter(i=>{
-          const h = data[i];
-          if(h.pinned)return false;
-          const cat = todayCategory(h,sortSettings);
-          return cat === 0 || (cat === 2 && earlyToday(i));
-        }).map(i=>data[i].hid).filter(Boolean)
+      ? [...new Set(agendaRows
+        .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
+          && row.i != null && data[row.i])
+        .map(row=>data[row.i].hid)
+        .filter(Boolean))]
       : [];
 
     // Pinned-section pre-pass: pinned cards render up here (separate section,
@@ -1287,8 +1390,18 @@ function render(opts){
           _droppedDayBaseline = _snap.prevProjection;
           _droppedDayBaselineDay = todayIso();
         }
-        const _hasOverdue = data.some(h => h && h.hid && !completedToday(h) && todayCategory(h,sortSettings) === 1);
-        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline || _hasOverdue){
+        const _hasMissedEvidence = Object.entries(_snap.expectations || {})
+          .some(([day,entry])=>day <= todayIso() && entry && Array.isArray(entry.hids) && entry.hids.length);
+        const _hasExpiredDueCandidate = data.some(h=>h && h.hid
+          && !completedToday(h) && todayCategory(h,sortSettings) === 1);
+        const _hasClosedOpportunityCandidate = data.some(h=>h && h.hid
+          && !completedToday(h)
+          && (!hasDaySchedule(h) || isDateEligibleForHabit(h,Date.now()))
+          && !occurrenceStillDoableToday(h,Date.now()));
+        // The header is only a mount point here. attachDroppedIndicator applies
+        // the strict planner-backed verdict and may decide no pill is due.
+        if(Object.keys(_snap.hids).length > 0 || _droppedDayBaseline
+          || _hasMissedEvidence || _hasExpiredDueCandidate || _hasClosedOpportunityCandidate){
           const header = document.createElement('div');
           header.className = 'section-header';
           header.dataset.label = 'today';

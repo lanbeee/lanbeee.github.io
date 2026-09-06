@@ -1,10 +1,16 @@
 function buildDayAgenda(data,settings,dayBase,opts = {}){
   const dayKey = dateKey(dayBase);
   const weekday = new Date(dayBase).getDay();
-  const isToday = dayStart(Date.now()) === dayBase;
+  const planningNow = opts.now != null ? Number(opts.now) : Date.now();
+  const isToday = dayStart(planningNow) === dayBase;
   const scheduled = collectScheduledAgendaEvents(data,dayKey,settings);
   const totalMinutes = effectiveAvailabilityMinutes(dayKey,settings);
-  const clipAfter = isToday ? ceilToMinutes(Date.now(),5) : dayBase + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday,dayBase) * 60000;
+  const firstOpen = dayBase
+    + dayFirstOpenMinute(normalizeBlockedTimes(settings.blockedTimes),weekday,dayBase) * 60000;
+  // Missed-occurrence reconstruction asks what the planner would have put on
+  // this day before any of its usable windows elapsed. Normal planning still
+  // clips today to the current clock.
+  const clipAfter = isToday && !opts.fullDay ? ceilToMinutes(planningNow,5) : firstOpen;
   const slots = buildOpenAgendaSlots(dayKey,scheduled,settings,{clipAfter});
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
   const totalCap = Math.min(totalMinutes,slotMinutes);

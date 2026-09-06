@@ -543,30 +543,74 @@ function dataFingerprint(data){
   return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
 }
 
+function normalizeSuggestedExpectations(raw){
+  const out = {};
+  const add = (day,value)=>{
+    if(typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day))return;
+    const source = Array.isArray(value) ? {hids:value} : value;
+    if(!source || !Array.isArray(source.hids))return;
+    const hids = [...new Set(source.hids.filter(hid=>typeof hid === 'string' && hid))];
+    out[day] = {
+      hids,
+      fingerprint:typeof source.fingerprint === 'string' ? source.fingerprint : '',
+      recordedAt:Number.isFinite(Number(source.recordedAt)) ? Number(source.recordedAt) : null
+    };
+  };
+  // Migrate the original one-day snapshot. `hids` are rows actually seen on
+  // that day's planner; `projection` is the next day the planner predicted.
+  if(raw && typeof raw.day === 'string' && raw.hids && typeof raw.hids === 'object'){
+    add(raw.day,{hids:Object.keys(raw.hids),recordedAt:null});
+  }
+  if(raw && raw.projection)add(raw.projection.day,raw.projection);
+  // Native dated entries win over their legacy compatibility mirrors.
+  if(raw && raw.expectations && typeof raw.expectations === 'object'){
+    for(const [day,value] of Object.entries(raw.expectations))add(day,value);
+  }
+  return out;
+}
+
 function loadTodaySuggested(){
   const raw = Storage.read(TODAY_SUGGESTED_KEY);
   const today = todayIso();
   if(!raw || typeof raw !== 'object' || typeof raw.hids !== 'object')
-    return {day:today,hids:{},projection:null,prevProjection:null};
-  if(raw.day === today)return raw;
-  if(raw.day === yesterdayIso())
-    return {day:today,hids:{},projection:raw.projection || null,prevProjection:raw.projection || null};
-  return {day:today,hids:{},projection:null,prevProjection:null};
+    return {day:today,hids:{},projection:null,prevProjection:null,expectations:{}};
+  const expectations = normalizeSuggestedExpectations(raw);
+  if(raw.day === today)return {...raw,expectations,prevProjection:null};
+  const priorProjection = raw.projection && raw.projection.day <= today
+    ? raw.projection : null;
+  return {
+    day:today,
+    hids:{},
+    projection:raw.projection || null,
+    prevProjection:priorProjection,
+    expectations
+  };
 }
 
 function saveTodaySuggested(snapshot){
   const current = Storage.read(TODAY_SUGGESTED_KEY);
   if(JSON.stringify(current) === JSON.stringify(snapshot))return false;
-  try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); bumpPlannerDataRevision(); return true; }
+  // This is derived planner-output history, not a planner input. Invalidating
+  // the planner revision here causes a cache paint to launch another solve.
+  try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); return true; }
   catch{ return false; }
 }
 
-function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids = null,fingerprint = null){
+function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids = null,fingerprint = null,projectionByDay = null){
   const snap = loadTodaySuggested();
   let changed = false;
   const validHids = new Set(data.filter(h=>h && h.hid).map(h=>h.hid));
   for(const hid of Object.keys(snap.hids)){
     if(!validHids.has(hid)){ delete snap.hids[hid]; changed = true; }
+  }
+  if(!snap.expectations || typeof snap.expectations !== 'object')snap.expectations = {};
+  for(const [day,entry] of Object.entries(snap.expectations)){
+    if(!entry || !Array.isArray(entry.hids)){ delete snap.expectations[day]; changed = true; continue; }
+    const clean = entry.hids.filter(hid=>validHids.has(hid));
+    if(clean.length !== entry.hids.length){
+      snap.expectations[day] = {...entry,hids:clean};
+      changed = true;
+    }
   }
   for(const hid of currentHids){
     if(!snap.hids[hid]){
@@ -575,6 +619,57 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
       changed = true;
     }
   }
+  const today = dateKey(now);
+  const currentExpected = new Set(snap.expectations[today]?.hids || []);
+  for(const hid of currentHids){
+    if(validHids.has(hid))currentExpected.add(hid);
+  }
+  if(currentExpected.size){
+    const previous = snap.expectations[today];
+    const next = {
+      hids:[...currentExpected],
+      fingerprint:previous?.fingerprint || fingerprint || '',
+      recordedAt:previous?.recordedAt || now
+    };
+    if(JSON.stringify(previous) !== JSON.stringify(next)){
+      snap.expectations[today] = next;
+      changed = true;
+    }
+  }
+  if(projectionByDay && typeof projectionByDay === 'object'){
+    for(const [day,hids] of Object.entries(projectionByDay)){
+      if(!Array.isArray(hids) || day < today)continue;
+      const clean = [...new Set(hids.filter(hid=>validHids.has(hid)))];
+      if(day === today){
+        const merged = new Set(snap.expectations[day]?.hids || []);
+        clean.forEach(hid=>merged.add(hid));
+        const previous = snap.expectations[day];
+        const next = {hids:[...merged],fingerprint:fingerprint || '',recordedAt:previous?.recordedAt || now};
+        if(JSON.stringify(previous) !== JSON.stringify(next)){
+          snap.expectations[day] = next;
+          changed = true;
+        }
+      }else{
+        const previous = snap.expectations[day];
+        const next = {
+          hids:clean,
+          fingerprint:fingerprint || '',
+          recordedAt:previous?.fingerprint === (fingerprint || '')
+            ? previous.recordedAt || now
+            : now
+        };
+        if(JSON.stringify(snap.expectations[day]) !== JSON.stringify(next)){
+          snap.expectations[day] = next;
+          changed = true;
+        }
+      }
+    }
+  }
+  const oldest = dateKey(dayStart(now) - 35 * 86400000);
+  const furthest = dateKey(dayStart(now) + 14 * 86400000);
+  for(const day of Object.keys(snap.expectations)){
+    if(day < oldest || day > furthest){ delete snap.expectations[day]; changed = true; }
+  }
   if(projectionHids && fingerprint){
     const tomorrow = dateKey(now + 86400000);
     if(!snap.projection || snap.projection.day !== tomorrow || snap.projection.fingerprint !== fingerprint){
@@ -582,7 +677,11 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
       changed = true;
     }
   }
-  if(changed)saveTodaySuggested(snap);
+  if(changed){
+    const saved = {...snap};
+    delete saved.prevProjection;
+    saveTodaySuggested(saved);
+  }
   return snap;
 }
 

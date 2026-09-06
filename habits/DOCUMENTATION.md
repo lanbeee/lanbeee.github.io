@@ -870,10 +870,12 @@ Minimal mode (always):
 Each day section header can have two dynamic **pills**:
 
 ### 6.2 Missed Pills (🔴 "N missed")
-- Appears on "Today" when work the user is/was supposed to do today didn't happen: it left today's agenda without being completed
-- Only counts **true misses** — snoozed items, merely upcoming work, and still-doable work already assigned to a later day are excluded. Overdue work that the planner catch-up-places tomorrow still counts as missed.
+- Appears on "Today" only after a planner-backed opportunity has passed without being completed
+- Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
+- It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, and still-doable work are excluded
+- Dated expectations are retained across skipped app days. To keep the list useful instead of becoming a backlog dump, only the newest unresolved miss for each item is shown; a later completion resolves earlier expectations.
 - Tap to open the **Slipped Sheet** (see §X.1)
-- Shows items in first-suggested order
+- Shows items in expected-day, then first-suggested order
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
@@ -1339,7 +1341,9 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
-- Lists true misses only: work that was due today, wasn't done, and hasn't been snoozed. Overdue catch-up on a later day still belongs here; still-doable work already assigned later does not.
+- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion. Off-day and never-feasible overdue work do not belong here.
+- A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
+- Repeated unresolved occurrences of the same item collapse to one actionable row, labeled with its newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
 - Items show day labels (behind/today/tomorrow)

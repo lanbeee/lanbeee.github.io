@@ -1,15 +1,26 @@
 function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
-  const todayBase = dayStart(Date.now());
+  const planningNow = opts.now != null ? Number(opts.now) : Date.now();
+  const todayBase = dayStart(planningNow);
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
   const days = [];
   for(let offset = 0;offset < count;offset += 1){
     const dayBase = todayBase + offset * 86400000;
-    days.push(buildDayAgenda(data,settings,dayBase,{weekMode:true}));
+    days.push(buildDayAgenda(data,settings,dayBase,{
+      weekMode:true,
+      now:planningNow,
+      fullDay:Boolean(opts.fullToday && offset === 0)
+    }));
   }
   const makeStates = () => days.map(day=>createDayPlacementState(day,settings,{
     dayBase:day.dayBase,
     weekday:day.weekday,
-    weekMode:true
+    weekMode:true,
+    now:planningNow,
+    startClock:opts.fullToday && day.isToday
+      ? day.dayBase + dayFirstOpenMinute(
+        normalizeBlockedTimes(settings.blockedTimes),day.weekday,day.dayBase
+      ) * 60000
+      : undefined
   }));
 
   const candidates = [];

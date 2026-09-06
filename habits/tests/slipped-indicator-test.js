@@ -9,6 +9,8 @@
 //   7. Empty today: pill still renders when all today items drop out.
 //  12. Overdue weekly/task still missed when the planner catch-up-places them tomorrow.
 //  13. Morning-only window, first open after it closed → missed.
+//  14. Off-day/impossible overdue work is never swept into Missed.
+//  15. A dated planner expectation survives a skipped app day.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/slipped-indicator-test.js
 //
@@ -132,13 +134,13 @@ function assert(cond,msg){
     localStorage.setItem('tings_v2', JSON.stringify([
       { hid:'roll-x', name:'Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
       { hid:'roll-y', name:'Deep Work', emoji:'🎯', type:'keepup', target:5, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
-      { hid:'roll-z', name:'Errand', emoji:'🧾', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1 },
+      { hid:'roll-z', name:'Errand', emoji:'🧾', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:360, allowedTimeEnd:540 },
     ]));
     const d = new Date(now - dayMs);
     const yesterday = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
       day: yesterday,
-      hids: { 'roll-x':{first:now-dayMs,name:'Walk'}, 'roll-y':{first:now-dayMs,name:'Deep Work'}, 'roll-z':{first:now-dayMs,name:'Errand'} },
+      hids: {},
       projection: { day:'stale', hids:['roll-x','roll-y','roll-z'], fingerprint:'old' }
     }));
     _droppedDayBaselineDay = null;
@@ -316,10 +318,12 @@ function assert(cond,msg){
     ]));
     const d = new Date(now - dayMs);
     const yesterday = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const t = new Date(now);
+    const today = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
     localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
       day: yesterday,
       hids: {},
-      projection: { day:'stale', hids:['miss-a','miss-b'], fingerprint:'old' }
+      projection: { day:today, hids:['miss-a','miss-b'], fingerprint:'old' }
     }));
     _droppedDayBaselineDay = null;
     render();
@@ -338,7 +342,7 @@ function assert(cond,msg){
     assert(allItems.some(i => i.includes('Yoga')), 'Yoga (overdue, window closed) shown');
     assert(!allItems.some(i => i.includes('Run')), 'Run (in today section) NOT shown as missed');
     const tags = await page.$$eval('#slipped-sheet .dropped-tag', els => els.map(el => el.textContent.trim()));
-    assert(tags.some(t => t.includes('behind') || t.includes('overdue')), 'behind day-tag rendered');
+    assert(tags.some(t => t.includes('today')), 'missed occurrence keeps its expected-day tag');
     await page.click('#slipped-close');
     await page.waitForTimeout(300);
   } else {
@@ -478,7 +482,7 @@ function assert(cond,msg){
     // 6:00–9:00 allowed window; the frozen clock is 10:00, so this is the
     // same state as opening the app in the afternoon without having done it.
     localStorage.setItem('tings_v2', JSON.stringify([
-      { hid:'morning-walk', name:'Morning Walk', emoji:'🚶', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:30, pinned:false, allowedTimeStart:360, allowedTimeEnd:540 }
+      { hid:'morning-walk', name:'Morning Walk', emoji:'🚶', type:'keepup', target:1, logs:[], lastLog:null, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:30, pinned:false, allowedTimeStart:360, allowedTimeEnd:540 }
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
@@ -525,6 +529,98 @@ function assert(cond,msg){
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  // N. Planner proof excludes off-day and impossible overdue work
+  console.log('\n[N] Missed requires a committed or reconstructable planner row');
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    const todayWeekday = new Date(now).getDay();
+    const otherWeekday = (todayWeekday + 1) % 7;
+    const offDay = Array.from({length:40},(_,i)=>({
+      hid:`off-day-${i}`, name:`Off-day ${i}`, emoji:'🗓️', type:'keepup', target:1,
+      logs:[now-4*dayMs], lastLog:now-4*dayMs, createdAt:now-30*dayMs,
+      flexibilityDays:0, durationMinutes:30, pinned:false,
+      allowedWeekdays:[otherWeekday], allowedTimeStart:360, allowedTimeEnd:540
+    }));
+    const valid = {
+      hid:'valid-morning', name:'Valid Morning', emoji:'☀️', type:'keepup', target:1,
+      logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs,
+      flexibilityDays:0, durationMinutes:30, pinned:false,
+      allowedWeekdays:[todayWeekday], allowedTimeStart:360, allowedTimeEnd:540
+    };
+    const fullyBlocked = {
+      hid:'fully-blocked', name:'Fully Blocked', emoji:'🚫', type:'keepup', target:1,
+      logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs,
+      flexibilityDays:0, durationMinutes:30, pinned:false,
+      allowedWeekdays:[todayWeekday], allowedTimeStart:720, allowedTimeEnd:780
+    };
+    const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}');
+    settings.showWeekOnHome = false;
+    settings.blockedTimes = [{label:'unavailable',days:[todayWeekday],start:720,end:780}];
+    localStorage.setItem('tings_app_settings_v2',JSON.stringify(settings));
+    localStorage.setItem('tings_v2',JSON.stringify([...offDay,fullyBlocked,valid]));
+    localStorage.removeItem('tings_today_suggested_v1');
+    if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+    _droppedDayBaselineDay = null;
+    _droppedDayBaseline = null;
+    render();
+  });
+  await page.waitForTimeout(1000);
+  pill = await page.$('.dropped-pill');
+  assert(Boolean(pill), 'the genuinely feasible morning item is still found on a first evening open');
+  if(pill){
+    assert((await pill.textContent()).trim() === '1 missed','40 off-day items and one impossible item do not inflate the count');
+    await pill.click();
+    await page.waitForTimeout(250);
+    const names = await page.$$eval('#slipped-sheet .dropped-name',els=>els.map(el=>el.textContent.trim()));
+    assert(names.length === 1 && names[0] === 'Valid Morning',`only planner-backed miss is listed: ${names.join(', ')}`);
+    await page.click('#slipped-close');
+  }
+
+  // O. A skipped app day keeps its dated planner expectation
+  console.log('\n[O] Dated expectation survives a skipped app day');
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    const key = ts=>{
+      const d = new Date(ts);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    };
+    const twoDaysAgo = key(now - 2*dayMs);
+    const yesterday = key(now - dayMs);
+    const yesterdayWeekday = new Date(now - dayMs).getDay();
+    localStorage.setItem('tings_v2',JSON.stringify([{
+      hid:'skipped-day', name:'Skipped-day plan', emoji:'📌', type:'keepup', target:1,
+      logs:[now-5*dayMs], lastLog:now-5*dayMs, createdAt:now-40*dayMs,
+      flexibilityDays:0, durationMinutes:20, pinned:false,
+      allowedWeekdays:[yesterdayWeekday], allowedTimeStart:600, allowedTimeEnd:720
+    }]));
+    localStorage.setItem('tings_today_suggested_v1',JSON.stringify({
+      day:twoDaysAgo,
+      hids:{},
+      projection:{day:yesterday,hids:['skipped-day'],fingerprint:'prior-plan'}
+    }));
+    const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}');
+    settings.blockedTimes = [];
+    localStorage.setItem('tings_app_settings_v2',JSON.stringify(settings));
+    if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+    _droppedDayBaselineDay = null;
+    _droppedDayBaseline = null;
+    render();
+  });
+  await page.waitForTimeout(1000);
+  pill = await page.$('.dropped-pill');
+  assert(Boolean(pill),'a planner row is not forgotten just because the app stayed closed the next day');
+  if(pill){
+    await pill.click();
+    await page.waitForTimeout(250);
+    const row = await page.locator('#slipped-sheet .dropped-item:has-text("Skipped-day plan")').count();
+    const tag = await page.locator('#slipped-sheet .dropped-item:has-text("Skipped-day plan") .dropped-tag').textContent();
+    assert(row === 1,'skipped-day expected item appears once');
+    assert(/yesterday/i.test(tag),'skipped-day miss keeps its dated label');
+    await page.click('#slipped-close');
+  }
+
   // Summary
   // ══════════════════════════════════════════════════════════════════════
   console.log('\n────────────────────────────────────────');

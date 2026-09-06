@@ -1581,7 +1581,10 @@ function earlyReason(data,i,settings){
 }
 
 function homeEarlyMap(data,settings){
-  const key = homePlannerDirtyKey(data);
+  // Readiness can change as today's clock crosses a window even when no data
+  // revision changes. Keep same-minute presentation renders cheap, but never
+  // reuse a pre-window/real-clock answer after the minute has moved.
+  const key = `${homePlannerDirtyKey(data)}|${Math.floor(Date.now() / 60000)}`;
   if(_homeEarlyMapCache.key === key && _homeEarlyMapCache.map)return _homeEarlyMapCache.map;
   const map = new Map();
   data.forEach((_,i)=>{
