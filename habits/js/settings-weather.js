@@ -39,6 +39,10 @@ function renderWeatherLocationSelect(id,value = ''){
   select.value=locations.some(loc=>loc.id===current)?current:'';
 }
 
+function weatherSwitchOn(id){
+  return $(id)?.getAttribute('aria-pressed') === 'true';
+}
+
 function syncWeatherHabitLocationUi(){
   const settings=sortSettings || loadSortSettings();
   const hasPlaces=(typeof locationsForDisplay === 'function' ? locationsForDisplay(settings.locations) : []).length > 0;
@@ -46,6 +50,22 @@ function syncWeatherHabitLocationUi(){
   const detailWrap=$('detail-weather-location-wrap');
   if(tingWrap)tingWrap.hidden = !hasPlaces || !cleanWeatherProfileId($('ting-weather-profile')?.value);
   if(detailWrap)detailWrap.hidden = !hasPlaces || !cleanWeatherProfileId($('detail-weather-profile')?.value);
+  syncWeatherDisplayUi();
+}
+
+function syncWeatherDisplayUi(){
+  const settings=sortSettings || loadSortSettings();
+  const hasPlaces=(typeof locationsForDisplay === 'function' ? locationsForDisplay(settings.locations) : []).length > 0;
+  const tingOn=weatherSwitchOn('ting-show-weather');
+  const detailOn=weatherSwitchOn('detail-show-weather');
+  const tingLoc=$('ting-show-weather-location-row');
+  const detailLoc=$('detail-show-weather-location-row');
+  const tingHint=$('ting-show-weather-location-hint');
+  const detailHint=$('detail-show-weather-location-hint');
+  if(tingLoc)tingLoc.hidden = !tingOn || !hasPlaces;
+  if(detailLoc)detailLoc.hidden = !detailOn || !hasPlaces;
+  if(tingHint)tingHint.hidden = !tingOn || !hasPlaces;
+  if(detailHint)detailHint.hidden = !detailOn || !hasPlaces;
 }
 
 function readWeatherLocationId(selectId,profileId){
@@ -271,3 +291,16 @@ document.addEventListener('change',event=>{
     if(event.target.matches('[data-weather-rule-hard]'))rule.hard=event.target.checked;
   },{deferRender});
 });
+
+function bindWeatherDisplaySwitch(id){
+  $(id)?.addEventListener('click',function(){
+    const pressed=this.getAttribute('aria-pressed')==='true';
+    this.setAttribute('aria-pressed',String(!pressed));
+    syncWeatherDisplayUi();
+    if(id.startsWith('detail-') && typeof setDetailDirty==='function')setDetailDirty();
+  });
+}
+bindWeatherDisplaySwitch('ting-show-weather');
+bindWeatherDisplaySwitch('ting-show-weather-location');
+bindWeatherDisplaySwitch('detail-show-weather');
+bindWeatherDisplaySwitch('detail-show-weather-location');

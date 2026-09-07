@@ -22,7 +22,8 @@ function assert(value,message){
     syncSettingsControls();
   });
   await page.locator('#settings-weather-head').click();
-  assert(await page.locator('#settings-weather-body [data-setting-toggle^="showWeatherOn"]').count()===4,'weather settings expose separate habit, task, busy-time, and travel toggles');
+  assert(await page.locator('#settings-weather-body [data-setting-toggle^="showWeatherOn"]').count()===2,'weather settings expose busy-time and travel toggles; habits and tasks opt in per item');
+  assert(await page.locator('#detail-show-weather').count()===1 && await page.locator('#ting-show-weather').count()===1,'habit and task weather display is a per-item toggle');
   await page.locator('#weather-profile-add').click();
   assert(await page.locator('.weather-profile-card').count()===1,'settings creates a named weather profile');
   assert(await page.locator('#ting-weather-profile option').count()===2,'new profile appears in habit assignment');
@@ -284,6 +285,7 @@ function assert(value,message){
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
     const profile={id:'outdoor',name:'Outdoor',rules:[{metric:'precipitation_probability',min:null,max:40,hard:false,relative:'none'}]};
     const homeSamples=[9,10,11].map(hour=>({ts:base+hour*3600000,temperature_2m:12+hour-9,
+      apparent_temperature:10+hour-9,
       precipitation_probability:80,precipitation:.4,wind_speed_10m:18,wind_gusts_10m:29,
       weather_code:61,source:'weekly'}));
     const days=[{ts:base,weather_code:61,temperature_2m_min:7,temperature_2m_max:14,
@@ -293,8 +295,9 @@ function assert(value,message){
       boston:{timezone:tz,weeklyFetchedAt:now-600000,samples:homeSamples.map(row=>({...row,precipitation_probability:95})),days}
     },locks:[]};
     const h={hid:'walk',name:'Park walk',type:'keepup',target:7,priority:3,durationMinutes:30,
-      weatherProfileId:'outdoor',weatherLocationId:'boston',pinned:false};
-    const row={kind:'fill',i:0,h,start:base+9*3600000,end:base+9.5*3600000};
+      weatherProfileId:'outdoor',weatherLocationId:'boston',locationIds:['boston'],
+      showWeather:true,showWeatherAtLocation:true,pinned:false};
+    const row={kind:'fill',i:0,h,start:base+9*3600000,end:base+9.5*3600000,locationId:'boston'};
     const day={dayBase:base,dayKey:key,isToday:true,timeline:[row],homeDisplayedTimeline:[row]};
     save([h]);
     let settings={...DEFAULT_SORT_SETTINGS,minimalMode:false,homeCityName:'New York',homeCityLat:40.71,homeCityLng:-74,
@@ -313,7 +316,8 @@ function assert(value,message){
       const normalized=loadSortSettings();
       return {
         temperature:normalized.showWeatherTemperatureRanges,
-        habits:normalized.showWeatherOnHabits,tasks:normalized.showWeatherOnTasks,
+        droppedHabits:'showWeatherOnHabits' in normalized,
+        droppedTasks:'showWeatherOnTasks' in normalized,
         busy:normalized.showWeatherOnBusyTimes,travel:normalized.showWeatherOnTravel
       };
     })();
@@ -344,10 +348,10 @@ function assert(value,message){
     overviewRecentOffset=0;overviewRangeFilter='recent';
     renderOverviewInsight(capacity);
     const overviewIcon=document.querySelectorAll('#overview-insight .overview-weather-cue').length;
-    const overviewTempOff=/7–14°/.test(document.querySelector('#overview-insight')?.textContent || '');
+    const overviewTempOff=/5–13°/.test(document.querySelector('#overview-insight')?.textContent || '');
     sortSettings={...settings,showWeatherTemperatureRanges:true};
     renderOverviewInsight(capacity);
-    const overviewTempOn=/7–14°/.test(document.querySelector('#overview-insight')?.textContent || '');
+    const overviewTempOn=/5–13°/.test(document.querySelector('#overview-insight')?.textContent || '');
     const calendarWeather=/weather-day-cue/.test(cellMarkup(key,new Date(base),[],'<span>1</span>'));
     overviewRecentOffset=-1;
     renderOverviewInsight(capacity);
@@ -359,16 +363,26 @@ function assert(value,message){
     const sheetText=document.querySelector('#weather-context-sheet')?.textContent || '';
     const selectedBlock=overviewDayWeatherBlockHtml(key,day,[h]);
 
-    sortSettings={...settings,showWeatherOnHabits:true,showWeatherOnTasks:true,showWeatherOnBusyTimes:true,showWeatherOnTravel:true};
+    sortSettings={...settings,showWeatherOnBusyTimes:true,showWeatherOnTravel:true};
     const habitPeriod=weatherCardPill(row,h);
-    const task={...h,hid:'errand',name:'Errand',type:'task',weatherProfileId:null,weatherLocationId:null};
-    const taskPeriod=weatherCardPill({...row,h:task},task);
+    const homeHabit={...h,showWeatherAtLocation:false};
+    const homePeriod=weatherCardPill({...row,h:homeHabit},homeHabit);
+    const quietHabit={...h,showWeather:false};
+    const quietPeriod=weatherCardPill({...row,h:quietHabit},quietHabit);
+    const task={...h,hid:'errand',name:'Errand',type:'task',weatherProfileId:null,weatherLocationId:null,showWeather:true,showWeatherAtLocation:false};
+    const taskPeriod=weatherCardPill({...row,h:task,locationId:null},task);
+    const silentTask={...task,showWeather:false};
+    const silentTaskPeriod=weatherCardPill({...row,h:silentTask},silentTask);
+    const longRange=weatherPeriodPillHtml(base+9*3600000,base+12*3600000,settings,{});
+    const shortRange=weatherPeriodPillHtml(base+9*3600000,base+9.5*3600000,settings,{});
     const periodHost=document.createElement('div');
     document.body.appendChild(periodHost);
     appendHomeBlockedCard(periodHost,{kind:'blocked',label:'sleep',start:row.start,end:row.end,locationId:null});
     appendHomeTravelCard(periodHost,'home','boston',row.start);
     const busyPeriod=periodHost.querySelector('.blocked-card .weather-period-pill')?.outerHTML || '';
     const travelPeriod=periodHost.querySelector('.travel-card .weather-period-pill')?.outerHTML || '';
+    const travelInTitle=Boolean(periodHost.querySelector('.travel-card .timeline-card-title-row .weather-period-pill'));
+    const busyInTitle=Boolean(periodHost.querySelector('.blocked-card .timeline-card-title-row .weather-period-pill'));
     const periodCardsFit=[...periodHost.querySelectorAll('.blocked-card,.travel-card')]
       .every(card=>card.scrollWidth<=card.clientWidth+1);
     const intensity=weatherCodePresentation(65);
@@ -379,30 +393,36 @@ function assert(value,message){
     return {
       normalizedDefault,noTemp,withTemp,stale,past,beyond,dayHeaderWeather,categoryWeather,separated,
       minimalCaution,minimalGood,overviewIcon,overviewTempOff,overviewTempOn,calendarWeather,shiftedHidden,
-      sheetText,selectedBlock,habitPeriod,taskPeriod,busyPeriod,travelPeriod,periodCardsFit,minimalAmbient,intensity,
+      sheetText,selectedBlock,habitPeriod,homePeriod,quietPeriod,taskPeriod,silentTaskPeriod,longRange,shortRange,
+      busyPeriod,travelPeriod,travelInTitle,busyInTitle,periodCardsFit,minimalAmbient,intensity,
       codeLabel:weatherCodePresentation(95).label,
       codeIcon:weatherCodePresentation(71).icon,
       codeEmoji:weatherCodePresentation(95).emoji
     };
   });
-  assert(display.normalizedDefault.temperature===false && !display.normalizedDefault.habits && !display.normalizedDefault.tasks && !display.normalizedDefault.busy && display.normalizedDefault.travel,'weather display settings normalize quiet by default, except travel');
-  assert(!/7–14°/.test(display.noTemp) && /🌦️/.test(display.noTemp) && /rain/.test(display.noTemp) && /80%/.test(display.noTemp),'full day cue defaults to an informative condition pill without temperature');
-  assert(/7–14°/.test(display.withTemp),'temperature range can be enabled for full-mode day cues');
+  assert(display.normalizedDefault.temperature===false && !display.normalizedDefault.droppedHabits && !display.normalizedDefault.droppedTasks && !display.normalizedDefault.busy && display.normalizedDefault.travel,'weather display settings normalize quiet by default, except travel, and drop the old global habit/task toggles');
+  assert(!/weather-condition-text/.test(display.noTemp) && /🌦️/.test(display.noTemp) && /80%/.test(display.noTemp) && !/5–13°/.test(display.noTemp),'full day cue stays compact: emoji and wet chance, no long condition label or temperature');
+  assert(/5–13°/.test(display.withTemp),'feels-like temperature range can be enabled for full-mode day cues');
   assert(display.stale===null && display.past===null && display.beyond===null,'stale, past, and beyond-horizon days have no forecast summary');
   assert(display.dayHeaderWeather===1 && display.categoryWeather===0,'home adds weather only to actual agenda-day headers');
   assert(display.separated,'home day headers keep label and context in separate layout groups');
-  assert(/caution/.test(display.minimalCaution) && !/7–14°/.test(display.minimalCaution),'minimal mode shows an item-derived caution without temperature');
+  assert(/caution/.test(display.minimalCaution) && !/5–13°/.test(display.minimalCaution),'minimal mode shows an item-derived caution without temperature');
   assert(display.minimalGood==='','minimal mode hides good weather guidance');
   assert(display.overviewIcon===1 && !display.overviewTempOff && display.overviewTempOn,'overview week chips share the compact visual cue and optional range setting');
   assert(!display.calendarWeather && display.shiftedHidden,'calendar cells and shifted past ranges stay weather-free');
-  assert(/rain/.test(display.selectedBlock) && /7–14°C/.test(display.selectedBlock) && /80% precipitation/.test(display.selectedBlock) && /18 km\/h wind/.test(display.selectedBlock) && /data-open-weather-context/.test(display.selectedBlock),'selected-day sheet shows the useful forecast metrics before opening details');
-  assert(/7–14°C/.test(display.sheetText) && /80%/.test(display.sheetText) && /18 km\/h/.test(display.sheetText),'weather context shows temperature, precipitation, and wind');
+  assert(/rain/.test(display.selectedBlock) && /feels like 5–13°C/.test(display.selectedBlock) && /80% precipitation/.test(display.selectedBlock) && /18 km\/h wind/.test(display.selectedBlock) && /data-open-weather-context/.test(display.selectedBlock),'selected-day sheet shows the useful forecast metrics before opening details');
+  assert(/feels like/.test(display.sheetText) && /5–13°C/.test(display.sheetText) && /80%/.test(display.sheetText) && /18 km\/h/.test(display.sheetText),'weather context shows feels-like temperature, precipitation, and wind');
   assert(/Boston/.test(display.sheetText) && /Park walk/.test(display.sheetText) && /weather caution/.test(display.sheetText),'weather context separates and explains a far-place guided item');
   assert(display.codeLabel==='thunderstorms' && display.codeIcon==='ti-snowflake' && display.codeEmoji==='⛈️','WMO conditions map to accessible labels, icons, and emoji');
-  assert(/weather-period-pill/.test(display.habitPeriod) && /12°/.test(display.habitPeriod) && /95%/.test(display.habitPeriod) && /weather-guidance-mark/.test(display.habitPeriod),'habit period pill combines condition, interval temperature, wet signal, and guidance status');
-  assert(/weather-period-pill/.test(display.taskPeriod) && /12°/.test(display.taskPeriod),'tasks can show ambient interval weather without a guidance profile');
-  assert(/weather-period-pill/.test(display.busyPeriod) && /12°/.test(display.busyPeriod),'busy-time cards show weather for their occupied interval when enabled');
-  assert(/weather-period-pill/.test(display.travelPeriod) && /12°/.test(display.travelPeriod),'travel cards show destination weather for the travel interval');
+  assert(/weather-period-pill/.test(display.habitPeriod) && /10°/.test(display.habitPeriod) && !/10–12°/.test(display.habitPeriod) && /95%/.test(display.habitPeriod) && /weather-guidance-mark/.test(display.habitPeriod),'habit period pill uses feels-like temperature, wet signal, and guidance status for the item location');
+  assert(/weather-period-signal">80%</.test(display.homePeriod) && !/weather-period-signal">95%</.test(display.homePeriod),'turning off item-location weather uses the home-city forecast');
+  assert(!/weather-period-pill/.test(display.quietPeriod) && /weather-pill/.test(display.quietPeriod),'habits without showWeather keep only the guidance marker');
+  assert(/weather-period-pill/.test(display.taskPeriod) && /10°/.test(display.taskPeriod) && /80%/.test(display.taskPeriod),'tasks can show ambient interval weather without a guidance profile');
+  assert(!/weather-period-pill/.test(display.silentTaskPeriod),'tasks stay weather-quiet until the item toggle is on');
+  assert(/10–12°/.test(display.longRange) && /10°/.test(display.shortRange) && !/10–12°/.test(display.shortRange),'temperature range appears only for long intervals with feels-like variation');
+  assert(/weather-period-pill/.test(display.busyPeriod) && /10°/.test(display.busyPeriod),'busy-time cards show weather for their occupied interval when enabled');
+  assert(/weather-period-pill/.test(display.travelPeriod) && /10°/.test(display.travelPeriod),'travel cards show destination weather for the travel interval');
+  assert(display.travelInTitle && display.busyInTitle,'travel and busy weather pills sit on the first row so the second line stays readable');
   assert(display.periodCardsFit,'busy-time and travel weather pills fit the mobile card width without overflow');
   assert(display.minimalAmbient==='', 'minimal mode suppresses ambient period weather pills');
   assert(display.intensity.label==='heavy rain' && display.intensity.emoji==='🌧️🌧️','WMO intensity is visible through the condition label and emoji combination');

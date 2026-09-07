@@ -57,7 +57,7 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
-- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override)
+- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override), showWeather / showWeatherAtLocation (per-item forecast pill)
 - Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, earlyWindowDays, delayAllowanceDays
@@ -418,6 +418,8 @@ else:
   preferredLocationId: string|null, // 👤 Legacy preferred location
   weatherProfileId: string|null, // 👤 Optional weather profile
   weatherLocationId: string|null, // 👤 Optional forecast place (far from home)
+  showWeather: boolean,       // 👤 Show interval forecast on this item's agenda card
+  showWeatherAtLocation: boolean, // 👤 When showWeather is on, use this item's place (off = home city)
   scheduleOptions: {             // 👤 Specific extra time/place windows
     weekdays: number[],          // Empty = every weekday
     start: number|null,          // Minutes from midnight, or null when dynamic
@@ -578,9 +580,7 @@ prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
 weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
-showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode day forecast icons
-showWeatherOnHabits: boolean,     // Interval forecast pill on scheduled habits (default false)
-showWeatherOnTasks: boolean,      // Interval forecast pill on scheduled tasks (default false)
+showWeatherTemperatureRanges: boolean, // Add feels-like low–high °C beside full-mode day forecast icons (default off)
 showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
 showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
 ```
@@ -606,27 +606,28 @@ showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default t
   profile uses US or EU AQI (home: any such profile; a far place: only if an
   item there uses one).
 - Weather stays supporting context: full-mode Home agenda-day headers show a
-  compact, tinted pill with an intuitive condition emoji, condition name, and
-  precipitation chance when relevant. The Overview seven-day open-time strip
-  uses the tighter emoji/chance form. Optional low–high Celsius ranges are off
-  by default and add to both persistent surfaces. The Overview calendar grid is
-  unchanged.
-- Four regular-mode display toggles add period-specific weather to scheduled
-  habits, scheduled tasks, busy times, and travel. Habits, tasks, and busy
-  times default off; travel defaults on. Each compact pill covers the row's
+  compact, tinted pill with an intuitive condition emoji and precipitation
+  chance when it is raining or snowing. Long WMO labels stay in the tooltip and
+  detail sheet. The Overview seven-day open-time strip uses the same compact
+  form. Optional feels-like low–high Celsius ranges are off by default and add
+  to both persistent surfaces. The Overview calendar grid is unchanged.
+- Busy-time and travel cards can show period weather from Settings. Habits and
+  tasks opt in per item (`showWeather`). Each compact pill covers the row's
   actual start/end interval and combines an intensity-aware condition emoji,
-  interval temperature span, and rain chance or snow amount when relevant.
-  Weather-guided items retain a caution/override mark inside that richer pill.
-  A far-away row uses its needed saved-place forecast; travel uses the
-  destination. These toggles change presentation only and never opt an item
-  into weather-guided scheduling.
+  a feels-like temperature, and rain chance or snow amount when relevant.
+  A temperature *range* appears only when the occupied interval is at least
+  two hours *and* feels-like temperature actually varies. Weather-guided items
+  retain a caution/override mark inside that richer pill. `showWeatherAtLocation`
+  uses the item's scheduled place; off (the default) uses the home-city
+  forecast. Travel uses the destination. These toggles change presentation
+  only and never opt an item into weather-guided scheduling.
 - Today/future Overview day sheets show a compact home-city forecast above the
   agenda, including condition, full range, precipitation, and wind so most days
   do not require another tap. Activating a Home weather pill, weather-guided
   item icon, or that forecast opens one shared detail sheet with conditions,
   full temperature range, precipitation, wind, forecast age, and chronological
-  guided-item explanations. A far-away item names its saved place and uses that
-  place's forecast.
+  guided-item explanations. Displayed temperatures are feels-like values. A
+  far-away item names its saved place and uses that place's forecast.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
@@ -2556,9 +2557,7 @@ Same agenda logic, but simplified display:
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
 | `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
-| `showWeatherTemperatureRanges` | boolean | false | Add daily low–high °C beside full-mode Home and Overview week-strip weather icons |
-| `showWeatherOnHabits` | boolean | false | Add exact-interval forecast pills to scheduled habit cards in regular mode |
-| `showWeatherOnTasks` | boolean | false | Add exact-interval forecast pills to scheduled task cards in regular mode |
+| `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high °C beside full-mode Home and Overview week-strip weather icons |
 | `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
 | `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
@@ -2710,6 +2709,8 @@ Same agenda logic, but simplified display:
 | `preferredLocationId` | string\|null | Preferred single location |
 | `weatherProfileId` | string\|null | Named weather profile used by the planner |
 | `weatherLocationId` | string\|null | Optional saved place whose forecast overrides home when far away |
+| `showWeather` | boolean | Show an interval forecast pill on this item's agenda card |
+| `showWeatherAtLocation` | boolean | When `showWeather` is on, use this item's place instead of the home city |
 | `scheduleOptions` | array | Specific extra weekday/time/place windows; optional per-row preference overrides the place ranking for that instance |
 
 ### 25.3.1 Time & Place Options 👤👨‍💻

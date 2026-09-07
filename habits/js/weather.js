@@ -185,11 +185,15 @@ function weatherHomeCoords(settings){
 
 // PURE: ambient interval weather is a display preference, separate from the
 // named profiles that steer planning. Minimal mode never turns it on.
-function weatherAmbientEnabled(settings){
-  return Boolean(settings && !settings.minimalMode && (
-    settings.showWeatherOnHabits || settings.showWeatherOnTasks
-    || settings.showWeatherOnBusyTimes || settings.showWeatherOnTravel
-  ));
+function weatherItemShowsAmbient(h){
+  return Boolean(h && h.showWeather);
+}
+
+function weatherAmbientEnabled(settings,data){
+  if(!settings || settings.minimalMode)return false;
+  if(settings.showWeatherOnBusyTimes || settings.showWeatherOnTravel)return true;
+  const list=Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  return list.some(weatherItemShowsAmbient);
 }
 
 function weatherCoordsForLocation(locationId,settings){
@@ -198,6 +202,11 @@ function weatherCoordsForLocation(locationId,settings){
   if(!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lng))return home;
   if(home && weatherCoordsClose(loc.lat,loc.lng,home.lat,home.lng))return home;
   return {lat:loc.lat,lng:loc.lng,locationId:loc.id};
+}
+
+function weatherDisplayLocationId(h,row){
+  if(!h || !h.showWeatherAtLocation)return null;
+  return (row && row.locationId) || (Array.isArray(h.locationIds) && h.locationIds[0]) || null;
 }
 
 function weatherCoordsForHabit(h,settings){
@@ -723,9 +732,31 @@ function weatherExceptionForDay(dayBase,dayContext,settings,data=null){
     .sort((a,b)=>(rank[b.assessment.status] || 0)-(rank[a.assessment.status] || 0))[0] || null;
 }
 
+function weatherFeelsBounds(summary){
+  if(!summary)return null;
+  const low=summary.apparentLow ?? summary.low;
+  const high=summary.apparentHigh ?? summary.high;
+  if(!Number.isFinite(Number(low)) && !Number.isFinite(Number(high)))return null;
+  const a=Math.round(Number.isFinite(Number(low)) ? Number(low) : Number(high));
+  const b=Math.round(Number.isFinite(Number(high)) ? Number(high) : Number(low));
+  return {low:Math.min(a,b),high:Math.max(a,b)};
+}
+
 function weatherTemperatureRange(summary){
-  if(!summary || summary.low==null || summary.high==null)return '';
-  return `${Math.round(summary.low)}–${Math.round(summary.high)}°`;
+  const bounds=weatherFeelsBounds(summary);
+  if(!bounds)return '';
+  return bounds.low===bounds.high ? `${bounds.low}°` : `${bounds.low}–${bounds.high}°`;
+}
+
+function weatherPeriodTemperatureRange(summary){
+  const bounds=weatherFeelsBounds(summary);
+  if(!bounds)return '';
+  const duration=Number(summary && summary.end)-Number(summary && summary.start);
+  const longEnough=duration>=WEATHER_PERIOD_RANGE_MIN_MS;
+  const varied=bounds.high-bounds.low>=WEATHER_PERIOD_RANGE_DELTA_C;
+  if(longEnough && varied)return `${bounds.low}–${bounds.high}°`;
+  if(Number.isFinite(Number(summary.apparentMean)))return `${Math.round(Number(summary.apparentMean))}°`;
+  return `${bounds.low}°`;
 }
 
 // PURE: summarize only the clock interval occupied by a card. The most
@@ -740,7 +771,9 @@ function weatherPeriodSummary(start,end,settings,locationId=null,now=Date.now())
   const samples=weatherSamplesForDisplayInterval(context,from,to);
   if(!samples.length)return null;
   const numbers=field=>samples.map(sample=>Number(sample && sample[field])).filter(Number.isFinite);
+  const apparent=numbers('apparent_temperature');
   const temps=numbers('temperature_2m');
+  const feel=apparent.length ? apparent : temps;
   const chances=numbers('precipitation_probability');
   const snow=numbers('snowfall');
   const rain=numbers('precipitation');
@@ -759,6 +792,9 @@ function weatherPeriodSummary(start,end,settings,locationId=null,now=Date.now())
     start:from,end:to,condition,
     low:temps.length?Math.min(...temps):null,
     high:temps.length?Math.max(...temps):null,
+    apparentLow:feel.length?Math.min(...feel):null,
+    apparentHigh:feel.length?Math.max(...feel):null,
+    apparentMean:feel.length?feel.reduce((sum,value)=>sum+value,0)/feel.length:null,
     precipitationChance:chances.length?Math.max(...chances):null,
     precipitation:rain.length?rain.reduce((sum,value)=>sum+value,0):null,
     snowfall:snow.length?snow.reduce((sum,value)=>sum+value,0):null,
@@ -767,12 +803,6 @@ function weatherPeriodSummary(start,end,settings,locationId=null,now=Date.now())
     timezone:context.timezone || '',
     placeName:loc?.name || String(settings.homeCityName || '').trim() || 'home city'
   };
-}
-
-function weatherPeriodTemperatureRange(summary){
-  if(!summary || summary.low==null || summary.high==null)return '';
-  const low=Math.round(summary.low);const high=Math.round(summary.high);
-  return low===high?`${low}°`:`${low}–${high}°`;
 }
 
 function weatherPeriodPillHtml(start,end,settings,options={}){
@@ -788,7 +818,7 @@ function weatherPeriodPillHtml(start,end,settings,options={}){
     ? `<i class="ti ${assessment.status==='override'?'ti-shield-exclamation':'ti-alert-triangle'} weather-guidance-mark" aria-hidden="true"></i>` : '';
   const detail=[
     `${summary.condition.label} in ${summary.placeName}`,
-    temp?`${temp} Celsius`:'',
+    temp?`feels like ${temp} Celsius`:'',
     summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,
     summary.snowfall>0?`${Math.round(summary.snowfall*10)/10} cm snow`:'',
     summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`,
@@ -828,19 +858,18 @@ function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
   const minimal=presentation.status!=='forecast';
   const temp=presentation.showTemperature ? weatherTemperatureRange(presentation.summary) : '';
   const summary=presentation.summary;
-  const condition=!minimal && !options.compact ? summary.condition.label : '';
   const wet=summary.condition.tone==='rain' || summary.condition.tone==='ice' || summary.condition.tone==='snow' || summary.condition.tone==='storm';
   const chance=!minimal && wet && summary.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
   const detail=[
     presentation.label,
-    temp ? `${temp} Celsius` : '',
+    temp ? `feels like ${temp} Celsius` : '',
     summary.precipitationChance==null ? '' : `${Math.round(summary.precipitationChance)}% precipitation`,
     summary.wind==null ? '' : `${Math.round(summary.wind)} km/h wind`,
     weatherFreshnessText(summary.fetchedAt)
   ].filter(Boolean).join(', ');
   const tone=presentation.tone || presentation.status;
   const cls=options.className ? ` ${options.className}` : '';
-  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(presentation.emoji || '☁️')}</span>${condition?`<span class="weather-condition-text">${escapeHtml(condition)}</span>`:''}${chance?`<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`:''}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
+  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(presentation.emoji || '☁️')}</span>${chance?`<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`:''}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
 }
 
 function weatherFreshnessText(ts,now=Date.now()){
@@ -897,7 +926,7 @@ function renderWeatherContextSheet(model){
       summary.gusts==null?'':`gusts ${Math.round(summary.gusts)}`
     ].filter(Boolean).join(' · ');
     const metrics=[
-      weatherMetricCard('ti-temperature', 'temperature', range ? `${range}C` : ''),
+      weatherMetricCard('ti-temperature', 'feels like', range ? `${range}C` : ''),
       weatherMetricCard('ti-umbrella', 'precipitation', precipitation),
       weatherMetricCard('ti-wind', 'wind', wind),
       weatherMetricCard('ti-sun-high', 'UV', summary.uv==null?'':String(Math.round(summary.uv)))
@@ -986,13 +1015,12 @@ function weatherNeededExtraPlaces(settings,data){
     if(!h || !h.weatherProfileId)continue;
     addLocation(h.weatherLocationId);
   }
-  if(weatherAmbientEnabled(settings)){
+  if(weatherAmbientEnabled(settings,list)){
     for(const row of weatherAgendaRows()){
       if(out.length>=MAX_WEATHER_EXTRA_PLACES)break;
       if(row.kind==='fill' || row.kind==='scheduled'){
         const h=row.h || (row.i!=null ? list[row.i] : null);
-        const enabled=h?.type==='task' ? settings.showWeatherOnTasks : settings.showWeatherOnHabits;
-        if(enabled)addLocation(h?.weatherLocationId || row.locationId);
+        if(weatherItemShowsAmbient(h))addLocation(weatherDisplayLocationId(h,row));
       }else if(row.kind==='blocked' && settings.showWeatherOnBusyTimes){
         addLocation(row.locationId);
       }else if(row.kind==='travel' && settings.showWeatherOnTravel){

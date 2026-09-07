@@ -306,6 +306,8 @@ $('do-save').addEventListener('click',()=>{
     weatherLocationId:typeof readWeatherLocationId === 'function'
       ? readWeatherLocationId('ting-weather-location',$('ting-weather-profile')?.value)
       : null,
+    showWeather:$('ting-show-weather')?.getAttribute('aria-pressed') === 'true',
+    showWeatherAtLocation:$('ting-show-weather-location')?.getAttribute('aria-pressed') === 'true',
     durationMinutes:settings.defaultDurationMinutes,
     breakable:Boolean(settings.defaultBreakable),
     minChunkMinutes:settings.defaultMinChunkMinutes,
@@ -327,7 +329,7 @@ $('do-save').addEventListener('click',()=>{
     cancelAdd();
     render();
     openDetailSchedule(data.length - 1);
-    if(record.weatherProfileId && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+    if((record.weatherProfileId || record.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
   }
 });
 
@@ -1372,6 +1374,8 @@ $('detail-save').addEventListener('click',()=>{
   h.weatherLocationId = current.weatherProfileId
     ? (typeof cleanLocationId === 'function' ? cleanLocationId(current.weatherLocationId) : '') || null
     : null;
+  h.showWeather = Boolean(current.showWeather);
+  h.showWeatherAtLocation = Boolean(current.showWeatherAtLocation);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
   h.allowedMonthDays = normalizeAllowedMonthDays(current.allowedMonthDays);
   h.preferredWeekdays = normalizeAllowedWeekdays(current.preferredWeekdays);
@@ -1494,7 +1498,7 @@ $('detail-save').addEventListener('click',()=>{
   detailIdx = null;
   detailTuneOriginal = null;
   render();
-  if(h.weatherProfileId && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+  if((h.weatherProfileId || h.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 });
 $('detail-mark').addEventListener('click',()=>{
   if(detailIdx === null)return;

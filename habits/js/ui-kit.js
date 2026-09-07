@@ -111,11 +111,9 @@ const UI_SETTING_TOGGLES = {
     {key:'pushDetailed', title:'include details in notifications', hint:'Include item names, topics, and places instead of generic notification text.'}
   ],
   weather:[
-    {key:'showWeatherTemperatureRanges', title:'day temperature ranges', hint:'Add the daily low–high beside weather icons on Home and the Calendar week strip.', extraClass:'settings-full-only'},
-    {key:'showWeatherOnHabits', title:'weather on habits', hint:'Show the condition and temperature during each scheduled habit.', extraClass:'settings-full-only'},
-    {key:'showWeatherOnTasks', title:'weather on tasks', hint:'Show the condition and temperature during each scheduled task.', extraClass:'settings-full-only'},
-    {key:'showWeatherOnBusyTimes', title:'weather on busy times', hint:'Show the condition and temperature during blocks such as sleep.', extraClass:'settings-full-only'},
-    {key:'showWeatherOnTravel', title:'weather on travel', hint:'Show the condition and temperature during travel. On by default.', extraClass:'settings-full-only'}
+    {key:'showWeatherTemperatureRanges', title:'day temperature ranges', hint:'Add the daily feels-like low–high beside weather icons on Home and the Calendar week strip. Off by default.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnBusyTimes', title:'weather on busy times', hint:'Show the condition and feels-like temperature during blocks such as sleep.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnTravel', title:'weather on travel', hint:'Show the condition and feels-like temperature during travel. On by default.', extraClass:'settings-full-only'}
   ],
   cards:[
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'},

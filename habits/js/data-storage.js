@@ -169,10 +169,10 @@ function loadSortSettings(){
     merged.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
       ? normalizeWeatherProfiles(merged.weatherProfiles) : [];
     merged.showWeatherTemperatureRanges = Boolean(merged.showWeatherTemperatureRanges);
-    merged.showWeatherOnHabits = Boolean(merged.showWeatherOnHabits);
-    merged.showWeatherOnTasks = Boolean(merged.showWeatherOnTasks);
     merged.showWeatherOnBusyTimes = Boolean(merged.showWeatherOnBusyTimes);
     merged.showWeatherOnTravel = merged.showWeatherOnTravel !== false;
+    delete merged.showWeatherOnHabits;
+    delete merged.showWeatherOnTasks;
     // Migrate legacy prayer-city fields into home city.
     if(!merged.homeCityName && typeof merged.prayerCityName === 'string' && merged.prayerCityName.trim()){
       merged.homeCityName = merged.prayerCityName.trim();
@@ -265,10 +265,10 @@ function saveSortSettings(settings){
   next.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
     ? normalizeWeatherProfiles(next.weatherProfiles) : [];
   next.showWeatherTemperatureRanges = Boolean(next.showWeatherTemperatureRanges);
-  next.showWeatherOnHabits = Boolean(next.showWeatherOnHabits);
-  next.showWeatherOnTasks = Boolean(next.showWeatherOnTasks);
   next.showWeatherOnBusyTimes = Boolean(next.showWeatherOnBusyTimes);
   next.showWeatherOnTravel = next.showWeatherOnTravel !== false;
+  delete next.showWeatherOnHabits;
+  delete next.showWeatherOnTasks;
   if(!next.homeCityName && typeof next.prayerCityName === 'string' && next.prayerCityName.trim()){
     next.homeCityName = next.prayerCityName.trim();
     next.homeCityLat = Number.isFinite(next.prayerCityLat) ? next.prayerCityLat : null;

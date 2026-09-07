@@ -46,6 +46,8 @@ const WEATHER_NEAR_MAX_HORIZON_MS = 4 * 60 * 60 * 1000;
 const WEATHER_SAME_PLACE_M = 40000;               // reuse home/other forecast inside ~25 miles
 const MAX_WEATHER_PROFILES = 4;
 const MAX_WEATHER_EXTRA_PLACES = 4;               // far-away habit overrides besides home
+const WEATHER_PERIOD_RANGE_MIN_MS = 2 * 60 * 60 * 1000; // range on a card only after ~2h
+const WEATHER_PERIOD_RANGE_DELTA_C = 2;                 // and only when feels-like actually moves
 const WEATHER_STABLE_MARGINS = {
   precipitation_probability:20,
   precipitation:0.2,
@@ -248,11 +250,10 @@ const DEFAULT_SORT_SETTINGS = {
   // Keep ambient forecast chrome icon-only unless the user explicitly wants
   // the low/high range beside each day.
   showWeatherTemperatureRanges:false,
-  // Optional interval forecasts on agenda surfaces. These are presentation
-  // only: they never opt an item into weather-guided placement. Travel keeps
-  // its forecast on by default because conditions directly affect the leg.
-  showWeatherOnHabits:false,
-  showWeatherOnTasks:false,
+  // Optional interval forecasts on busy/travel agenda surfaces. Habit and
+  // task cards opt in per item (`showWeather`). These are presentation only:
+  // they never opt an item into weather-guided placement. Travel keeps its
+  // forecast on by default because conditions directly affect the leg.
   showWeatherOnBusyTimes:false,
   showWeatherOnTravel:true,
   prayerIslamicNames:false,

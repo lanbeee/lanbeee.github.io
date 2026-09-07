@@ -129,6 +129,8 @@
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
  * @property {string|null} weatherProfileId — optional weather-guidance profile id; forecast failure never blocks planning
  * @property {string|null} weatherLocationId — optional saved-place id whose forecast overrides home city when far away; null uses home
+ * @property {boolean} showWeather — show an interval forecast pill on this item's agenda card in regular mode
+ * @property {boolean} showWeatherAtLocation — when showWeather is on, use this item's place instead of the home-city forecast
  * @property {{weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high'}[]} scheduleOptions — specific extra weekday/time/place windows; fixed or prayer-relative endpoints extend the general allowed schedule. Duplicate locations are allowed. Optional pref overrides locationPrefs for that instance.
  *
  * — LinkFields (optional, on every type) —
@@ -219,11 +221,9 @@
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
- * @property {boolean} showWeatherTemperatureRanges           — add low/high °C to full-mode home/overview weather cues
- * @property {boolean} showWeatherOnHabits                     — show interval condition/temperature pills on scheduled habit cards in regular mode
- * @property {boolean} showWeatherOnTasks                      — show interval condition/temperature pills on scheduled task cards in regular mode
- * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/temperature pills on busy-time cards in regular mode
- * @property {boolean} showWeatherOnTravel                     — show interval condition/temperature pills on travel cards in regular mode (default true)
+ * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high °C to full-mode home/overview weather cues (default false)
+ * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/feels-like pills on busy-time cards in regular mode
+ * @property {boolean} showWeatherOnTravel                     — show interval condition/feels-like pills on travel cards in regular mode (default true)
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)

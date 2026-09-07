@@ -181,6 +181,19 @@
           <span class="settings-sublabel">topics &amp; places</span>
           <div class="topic-chip-row" id="ting-tag-chips"></div>
         </div>
+        <label class="setting-toggle compact-toggle" id="ting-show-weather-row">
+          <span>show weather</span>
+          <button class="setting-switch" id="ting-show-weather" type="button" aria-pressed="false">
+            <span class="switch-ui" aria-hidden="true"></span>
+          </button>
+        </label>
+        <label class="setting-toggle compact-toggle" id="ting-show-weather-location-row" hidden>
+          <span>use this item's place</span>
+          <button class="setting-switch" id="ting-show-weather-location" type="button" aria-pressed="false">
+            <span class="switch-ui" aria-hidden="true"></span>
+          </button>
+        </label>
+        <p class="field-hint" id="ting-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
         <label class="field-label" for="ting-weather-profile">weather guidance</label>
         <select id="ting-weather-profile" class="settings-select"><option value="">none</option></select>
         <div id="ting-weather-location-wrap" class="weather-habit-location" hidden>
@@ -345,13 +358,26 @@
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
           </div>
           <div class="detail-full-only weather-habit-field">
+            <label class="setting-toggle compact-toggle" id="detail-show-weather-row">
+              <span>show weather</span>
+              <button class="setting-switch" id="detail-show-weather" type="button" aria-pressed="false">
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </label>
+            <label class="setting-toggle compact-toggle" id="detail-show-weather-location-row" hidden>
+              <span>use this item's place</span>
+              <button class="setting-switch" id="detail-show-weather-location" type="button" aria-pressed="false">
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+            </label>
+            <p class="field-hint" id="detail-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
             <label class="settings-sublabel" for="detail-weather-profile">weather guidance</label>
             <select id="detail-weather-profile" class="settings-select"><option value="">none</option></select>
             <div id="detail-weather-location-wrap" class="weather-habit-location" hidden>
               <label class="settings-sublabel" for="detail-weather-location">forecast place</label>
               <select id="detail-weather-location" class="settings-select"><option value="">home city</option></select>
             </div>
-            <p class="field-hint">Uses your home-city forecast unless this item is far away.</p>
+            <p class="field-hint">Guidance uses your home-city forecast unless this item is far away.</p>
           </div>
           <div class="habit-options-block detail-full-only" id="detail-habit-options">
             <div class="habit-options-heading">

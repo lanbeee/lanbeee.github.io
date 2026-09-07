@@ -53,6 +53,8 @@ function openDetail(i){
   renderTagChips('detail-topic-chips',h.topics,[]);
   if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',h.weatherProfileId || '');
   if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('detail-weather-location',h.weatherLocationId || '');
+  if($('detail-show-weather'))$('detail-show-weather').setAttribute('aria-pressed',h.showWeather ? 'true' : 'false');
+  if($('detail-show-weather-location'))$('detail-show-weather-location').setAttribute('aria-pressed',h.showWeatherAtLocation ? 'true' : 'false');
   if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
@@ -82,6 +84,8 @@ function openDetail(i){
     preferredLocationId:h.preferredLocationId || null,
     weatherProfileId:cleanWeatherProfileId(h.weatherProfileId) || null,
     weatherLocationId:(typeof cleanLocationId === 'function' ? cleanLocationId(h.weatherLocationId) : '') || null,
+    showWeather:Boolean(h.showWeather),
+    showWeatherAtLocation:Boolean(h.showWeatherAtLocation),
     links:normalizeLinks(h.links),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),

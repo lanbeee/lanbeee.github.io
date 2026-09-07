@@ -1438,9 +1438,13 @@ function agendaCardPill(row,h = null,now = Date.now()){
   return `<span class="context-pill agenda-lead ${cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i>${timeHtml}</span>`;
 }
 
+function timelineCardCopyHtml(titleHtml,subHtml,weatherHtml){
+  return `<span class="timeline-card-copy"><span class="timeline-card-title-row"><b>${titleHtml}</b>${weatherHtml || ''}</span><small>${subHtml}</small></span>`;
+}
+
 // PURE: compact forecast metadata for the exact scheduled interval. Opted-in
-// cards show condition + temperature (+ wet signal); weather-guided cards keep
-// their personalized exception marker even when ambient card weather is off.
+// cards show condition + feels-like temperature (+ wet signal); weather-guided
+// cards keep their personalized exception marker even when card weather is off.
 function weatherCardPill(row,h = null){
   if(!row || !h)return '';
   const settings=sortSettings || loadSortSettings();
@@ -1449,10 +1453,10 @@ function weatherCardPill(row,h = null){
   const status = assessment?.status || 'unknown';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(!minimal){
-    const show=h.type==='task' ? settings.showWeatherOnTasks : settings.showWeatherOnHabits;
+    const show=typeof weatherItemShowsAmbient === 'function' ? weatherItemShowsAmbient(h) : Boolean(h.showWeather);
     if(show && typeof weatherPeriodPillHtml==='function'){
       const period=weatherPeriodPillHtml(row.start,row.end,settings,{
-        locationId:h.weatherLocationId || row.locationId || null,
+        locationId:typeof weatherDisplayLocationId === 'function' ? weatherDisplayLocationId(h,row) : null,
         assessment,interactive:true,hid:h.hid || ''
       });
       if(period)return period;
@@ -1659,7 +1663,7 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   travelEl.dataset.travelTo = toId;
   if(Number.isFinite(startTs))travelEl.dataset.agendaStart = String(Math.round(startTs / 60000));
   travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
-  travelEl.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-route" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${compactHomeDuration(mins)} travel</b><small>${depart}${escapeHtml(fromName)} → ${escapeHtml(toName)}</small></span>${weather}${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-label="custom time"></i>' : ''}${fromCurrent ? '' : '<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i>'}`;
+  travelEl.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-route" aria-hidden="true"></i></span>${timelineCardCopyHtml(`${compactHomeDuration(mins)} travel`,`${depart}${escapeHtml(fromName)} → ${escapeHtml(toName)}`,weather)}${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-label="custom time"></i>' : ''}${fromCurrent ? '' : '<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i>'}`;
   const weatherLabel=travelEl.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}, ${weatherLabel}`);
   list.appendChild(travelEl);
@@ -1885,7 +1889,7 @@ function appendHomeBlockedCard(list,row){
   el.tabIndex = 0;
   el.setAttribute('role','button');
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
-  el.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${escapeHtml(row.label || 'blocked')}</b><small>${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</small></span>${weather}<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
+  el.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span>${timelineCardCopyHtml(escapeHtml(row.label || 'blocked'),`${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}`,weather)}<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
   const weatherLabel=el.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}, ${weatherLabel}`);
   const xBtn = el.querySelector('.blocked-cancel-mark');
@@ -1995,7 +1999,7 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
       ? `collapse ${blocks.length} busy times`
       : `${blocks.length} busy times ${start} to ${end}, tap to expand`
   );
-  toggle.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${blocks.length} busy times</b><small>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)}</small></span>${weather}<i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
+  toggle.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span>${timelineCardCopyHtml(`${blocks.length} busy times`,`${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)}`,weather)}<i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
   const weatherLabel=toggle.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)toggle.setAttribute('aria-label',`${toggle.getAttribute('aria-label')}, ${weatherLabel}`);
   let mergePointer = null;
