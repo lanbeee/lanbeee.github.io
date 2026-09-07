@@ -248,6 +248,12 @@ function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = nu
     // candidate as missed: only snap.hids contains previously rendered rows.
     if(!evidence?.renderedToday
       && !missedOpportunityPassedToday(h,expectedDayBase,now))return false;
+  }else if(occurrenceStillDoableToday(h,now)){
+    // Midnight is not an opportunity ending. Yesterday's dated row for a
+    // daily that is still doable today is the same live occurrence rolling
+    // forward, not a miss — otherwise 2am dumps every unfinished meal and
+    // prayer into the pill before those windows have even opened.
+    return false;
   }
   return true;
 }
@@ -315,7 +321,7 @@ function attachDroppedIndicator(header,list,todayHids){
   for(const [expectedDay,entry] of Object.entries(snap.expectations || {})){
     if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
     for(const hid of entry.hids){
-      if(expectedDay === today && currentSet.has(hid))continue;
+      if(currentSet.has(hid))continue;
       const idx = data.findIndex(h=>h && h.hid === hid);
       if(idx < 0)continue;
       const info = expectedDay === today ? snap.hids[hid] : null;

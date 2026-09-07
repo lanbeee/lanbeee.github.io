@@ -12,6 +12,7 @@
 //  14. Off-day/impossible overdue work is never swept into Missed.
 //  15. A dated planner expectation survives a skipped app day.
 //  16. A row actually shown today remains missed if a cold solve drops it.
+//  17. Yesterday's dated row is not missed while today's window is still open.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/slipped-indicator-test.js
 //
@@ -668,6 +669,75 @@ function assert(cond,msg){
     await page.waitForTimeout(200);
     const names = await page.$$eval('#slipped-sheet .dropped-name',els=>els.map(el=>el.textContent.trim()));
     assert(names.length === 1 && names[0] === 'Throw trash','the dropped rendered row is preserved precisely');
+    await page.click('#slipped-close');
+  }
+
+  // Q. Calendar midnight is not an opportunity ending. A yesterday-dated
+  // daily whose window is still open today must not dump into Missed — this
+  // is the 2am "18 missed" case. A morning window that has already closed
+  // today remains a real miss.
+  console.log('\n[Q] Yesterday expectation is not missed while still doable today');
+  const rolloverPolicy = await page.evaluate(() => {
+    const tenAm = Date.now();
+    const twoAm = dayStart(tenAm) + 2 * 3600000;
+    const yesterday = dateKey(twoAm - 86400000);
+    const daily = {
+      hid:'am-daily', name:'Fajr-like', type:'keepup', target:1,
+      logs:[twoAm-2*86400000], lastLog:twoAm-2*86400000, createdAt:twoAm-30*86400000,
+      flexibilityDays:0, durationMinutes:15, pinned:false, snoozedUntil:null
+    };
+    const morning = {
+      hid:'am-morning', name:'Breakfast-like', type:'keepup', target:1,
+      logs:[twoAm-2*86400000], lastLog:twoAm-2*86400000, createdAt:twoAm-30*86400000,
+      flexibilityDays:0, durationMinutes:15, pinned:false, snoozedUntil:null,
+      allowedTimeStart:360, allowedTimeEnd:540
+    };
+    return {
+      dailyAtTwo: isMissedOccurrence(daily, new Set(), twoAm, yesterday),
+      morningAtTwo: isMissedOccurrence(morning, new Set(), twoAm, yesterday),
+      dailyAtTen: isMissedOccurrence(daily, new Set(), tenAm, yesterday),
+      morningAtTen: isMissedOccurrence(morning, new Set(), tenAm, yesterday)
+    };
+  });
+  assert(!rolloverPolicy.dailyAtTwo, 'all-day daily is not missed at 2am just because yesterday ended');
+  assert(!rolloverPolicy.morningAtTwo, 'morning window still ahead is not missed at 2am');
+  assert(!rolloverPolicy.dailyAtTen, 'all-day daily is not missed at 10am while still doable today');
+  assert(rolloverPolicy.morningAtTen, 'closed morning window from yesterday remains missed at 10am');
+
+  await page.evaluate(() => {
+    const now = Date.now();
+    const dayMs = 86400000;
+    const yesterday = dateKey(now - dayMs);
+    localStorage.setItem('tings_v2', JSON.stringify([
+      { hid:'roll-daily', name:'Dinner', emoji:'🍽️', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
+      { hid:'roll-morning', name:'Breakfast', emoji:'🍳', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:360, allowedTimeEnd:540 }
+    ]));
+    localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
+      day: yesterday,
+      hids: {},
+      projection: { day: todayIso(), hids:['roll-daily','roll-morning'], fingerprint:'stale-open' },
+      expectations: {
+        [yesterday]: { hids:['roll-daily','roll-morning'], fingerprint:'stale-open', recordedAt: now-6*3600000 }
+      }
+    }));
+    const settings = JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}');
+    settings.blockedTimes = [];
+    localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
+    if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+    _droppedDayBaselineDay = null;
+    _droppedDayBaseline = null;
+    render();
+  });
+  await page.waitForTimeout(800);
+  pill = await page.$('.dropped-pill');
+  assert(Boolean(pill), 'closed morning item still produces a missed pill');
+  if(pill){
+    assert((await pill.textContent()).trim() === '1 missed', 'still-doable yesterday daily does not inflate the missed count');
+    await pill.click();
+    await page.waitForTimeout(250);
+    const names = await page.$$eval('#slipped-sheet .dropped-name', els => els.map(el => el.textContent.trim()));
+    assert(names.includes('Breakfast'), 'closed morning window is listed as missed');
+    assert(!names.includes('Dinner'), 'still-doable daily is not listed as missed after midnight');
     await page.click('#slipped-close');
   }
 
