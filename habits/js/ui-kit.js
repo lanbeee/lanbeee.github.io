@@ -111,7 +111,11 @@ const UI_SETTING_TOGGLES = {
     {key:'pushDetailed', title:'include details in notifications', hint:'Include item names, topics, and places instead of generic notification text.'}
   ],
   weather:[
-    {key:'showWeatherTemperatureRanges', title:'show temperature ranges', hint:'Add the daily low–high beside weather icons on Home and the Calendar week strip.', extraClass:'settings-full-only'}
+    {key:'showWeatherTemperatureRanges', title:'day temperature ranges', hint:'Add the daily low–high beside weather icons on Home and the Calendar week strip.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnHabits', title:'weather on habits', hint:'Show the condition and temperature during each scheduled habit.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnTasks', title:'weather on tasks', hint:'Show the condition and temperature during each scheduled task.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnBusyTimes', title:'weather on busy times', hint:'Show the condition and temperature during blocks such as sleep.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnTravel', title:'weather on travel', hint:'Show the condition and temperature during travel. On by default.', extraClass:'settings-full-only'}
   ],
   cards:[
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'},
@@ -176,8 +180,8 @@ const UI_PRIVACY_BLOCKS = [
     '<b>Map picture</b> loads OpenStreetMap tiles for the area on screen.',
     'These are open mapping services. They receive the search or pin needed for that job — not your habit list, and not an ongoing location history. That is a narrower request than embedding Google Maps or Apple Maps.'
   ]},
-  {id:'privacy-weather-body', label:'Weather guidance', summary:'Opt-in profiles send home-city coordinates to Open-Meteo, plus any far-away place you attach to an item.', body:[
-    'When you create a weather profile, Tings sends your saved home-city latitude and longitude to Open-Meteo. A habit can optionally use a saved place instead when that item happens far from home. It does not send habit names, schedules, logs, or live GPS location.',
+  {id:'privacy-weather-body', label:'Weather guidance', summary:'Forecast displays or guidance send home-city coordinates to Open-Meteo, plus only the far-away places needed on your plan.', body:[
+    'In regular mode, travel weather is on by default; the other period displays are optional. When a forecast display is on or you create a weather profile, Tings sends your saved home-city latitude and longitude to Open-Meteo. A planned item, busy time, or travel leg can use a saved place instead when it happens far from home. It does not send item names, schedules, logs, or live GPS location.',
     'The seven-day forecast is cached for six hours. A shorter 15-minute forecast refreshes only while Tings is visible, a weather-linked planned item is active or starts within 90 minutes, and the cached day is not already decisive (for example 0% rain and snow remaining). Air-quality rules use CAMS ENSEMBLE data through Open-Meteo.',
     'Forecasts are guidance and may be wrong. Missing data never blocks planning.'
   ]},
@@ -216,7 +220,7 @@ const UI_LEAVE_HINTS = {
   },
   weather:{
     aria:'this sends forecast coordinates off this device',
-    body:'Weather guidance sends your saved home-city coordinates to Open-Meteo, plus any far-away place you attach to an item. Habit names and logs stay here. Full story: About → privacy.'
+    body:'Forecast displays and weather guidance send your saved home-city coordinates to Open-Meteo, plus only far-away places needed on the plan. Item names and logs stay here. Full story: About → privacy.'
   },
   feedback:{
     aria:'this opens a Google Form off this device',

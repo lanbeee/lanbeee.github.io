@@ -183,6 +183,23 @@ function weatherHomeCoords(settings){
   return {lat:settings.homeCityLat,lng:settings.homeCityLng,locationId:null};
 }
 
+// PURE: ambient interval weather is a display preference, separate from the
+// named profiles that steer planning. Minimal mode never turns it on.
+function weatherAmbientEnabled(settings){
+  return Boolean(settings && !settings.minimalMode && (
+    settings.showWeatherOnHabits || settings.showWeatherOnTasks
+    || settings.showWeatherOnBusyTimes || settings.showWeatherOnTravel
+  ));
+}
+
+function weatherCoordsForLocation(locationId,settings){
+  const home=weatherHomeCoords(settings);
+  const loc=weatherLocationById(locationId,settings);
+  if(!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lng))return home;
+  if(home && weatherCoordsClose(loc.lat,loc.lng,home.lat,home.lng))return home;
+  return {lat:loc.lat,lng:loc.lng,locationId:loc.id};
+}
+
 function weatherCoordsForHabit(h,settings){
   const home = weatherHomeCoords(settings);
   const loc = weatherLocationById(h && h.weatherLocationId,settings);
@@ -243,7 +260,7 @@ function weatherContextFromBucket(bucket,lat,lng,now = Date.now()){
 
 function weatherPlannerContext(settings,now = Date.now()){
   const profiles = normalizeWeatherProfiles(settings && settings.weatherProfiles);
-  if(!profiles.length)return null;
+  if(!profiles.length && !weatherAmbientEnabled(settings))return null;
   const cache = weatherCacheRead();
   const homeCoords = weatherHomeCoords(settings);
   const home = homeCoords
@@ -294,6 +311,14 @@ function weatherContextForHabit(h,settings){
   return (root.places && root.places[coords.locationId]) || null;
 }
 
+function weatherContextForLocation(locationId,settings){
+  const root=settings && settings._weatherContext;
+  if(!root)return null;
+  const coords=weatherCoordsForLocation(locationId,settings);
+  if(!coords || !coords.locationId)return root;
+  return (root.places && root.places[coords.locationId]) || null;
+}
+
 function weatherAggregate(samples,metric){
   const values = (samples || []).map(sample=>Number(sample && sample[metric])).filter(Number.isFinite);
   if(!values.length)return null;
@@ -316,6 +341,23 @@ function weatherSamplesForInterval(context,start,end){
   return nearest && Math.abs(nearest.ts-start) <= 90 * 60 * 1000 ? [nearest] : [];
 }
 
+// PURE: display intervals need the hourly sample that covers a partial hour.
+// Keep later hourly rows when near-term detail covers only the start, while
+// suppressing an hourly duplicate at the same forecast timestamp.
+function weatherSamplesForDisplayInterval(context,start,end){
+  if(!context || !Array.isArray(context.samples))return [];
+  const rows=context.samples.filter(sample=>{
+    const lead=sample.source==='near' ? 15*60*1000 : 60*60*1000;
+    return sample.ts<end && sample.ts>=start-lead;
+  });
+  const near=rows.filter(sample=>sample.source==='near');
+  const merged=near.length ? rows.filter(sample=>sample.source!=='weekly'
+    || !near.some(detail=>Math.abs(detail.ts-sample.ts)<10*60*1000)) : rows;
+  if(merged.length)return merged.sort((a,b)=>a.ts-b.ts);
+  const nearest=context.samples.reduce((best,row)=>!best || Math.abs(row.ts-start)<Math.abs(best.ts-start)?row:best,null);
+  return nearest && Math.abs(nearest.ts-start)<=90*60*1000 ? [nearest] : [];
+}
+
 function weatherPlannerLocks(now = Date.now()){
   const data=typeof load==='function'?load():[];
   const limit=now+15*60*1000;
@@ -328,7 +370,12 @@ function weatherPlannerLocks(now = Date.now()){
 
 function weatherAgendaRows(){
   if(typeof _homeRenderedWeek!=='undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
-    return _homeRenderedWeek.days.flatMap(day=>day.timeline || []);
+    // The planner timeline owns fills/blocks; Home's presentation timeline
+    // additionally owns synthesized travel legs. Preserve both without
+    // duplicating the shared fill row objects.
+    return [...new Set(_homeRenderedWeek.days.flatMap(day=>[
+      ...(day.timeline || []),...(day.homeDisplayedTimeline || [])
+    ]))];
   }
   if(typeof homeAgendaRows==='function' && typeof load==='function'){
     try{return homeAgendaRows(load());}catch{return [];}
@@ -513,6 +560,13 @@ function weatherConditionIcon(status){
   return 'ti-cloud-rain';
 }
 
+function weatherConditionEmoji(status){
+  if(status==='good')return '☀️';
+  if(status==='unknown')return '☁️';
+  if(status==='override')return '⚠️';
+  return '🌧️';
+}
+
 function weatherStatusForRow(h,row,settings){
   if(!h || !row || !h.weatherProfileId)return null;
   const state = {dayBase:typeof dayStart === 'function' ? dayStart(row.start) : row.start, fills:[]};
@@ -522,17 +576,30 @@ function weatherStatusForRow(h,row,settings){
 
 function weatherCodePresentation(value){
   const code=Math.round(Number(value));
-  if(code===0)return {code,label:'clear',icon:'ti-sun',rank:0};
-  if(code===1)return {code,label:'mostly clear',icon:'ti-sun-low',rank:1};
-  if(code===2)return {code,label:'partly cloudy',icon:'ti-cloud-sun',rank:2};
-  if(code===3)return {code,label:'overcast',icon:'ti-cloud',rank:3};
-  if(code===45 || code===48)return {code,label:'fog',icon:'ti-mist',rank:4};
-  if([51,53,55].includes(code))return {code,label:'drizzle',icon:'ti-cloud-rain',rank:5};
-  if([56,57,66,67].includes(code))return {code,label:'freezing rain',icon:'ti-cloud-rain',rank:8};
-  if([61,63,65,80,81,82].includes(code))return {code,label:code>=80?'rain showers':'rain',icon:'ti-cloud-rain',rank:code===65||code===82?8:6};
-  if([71,73,75,77,85,86].includes(code))return {code,label:code>=85?'snow showers':'snow',icon:'ti-snowflake',rank:code===75||code===86?8:6};
-  if([95,96,99].includes(code))return {code,label:'thunderstorms',icon:'ti-cloud-storm',rank:10};
-  return {code:Number.isFinite(code)?code:null,label:'forecast',icon:'ti-cloud',rank:0};
+  if(code===0)return {code,label:'clear',icon:'ti-sun',emoji:'☀️',rank:0,tone:'sun'};
+  if(code===1)return {code,label:'mostly clear',icon:'ti-sun-low',emoji:'🌤️',rank:1,tone:'sun'};
+  if(code===2)return {code,label:'partly cloudy',icon:'ti-cloud-sun',emoji:'⛅',rank:2,tone:'cloud'};
+  if(code===3)return {code,label:'overcast',icon:'ti-cloud',emoji:'☁️',rank:3,tone:'cloud'};
+  if(code===45 || code===48)return {code,label:'fog',icon:'ti-mist',emoji:'🌫️',rank:4,tone:'fog'};
+  if(code===51)return {code,label:'light drizzle',icon:'ti-cloud-rain',emoji:'🌦️',rank:5,tone:'rain'};
+  if(code===53)return {code,label:'drizzle',icon:'ti-cloud-rain',emoji:'🌦️',rank:5.5,tone:'rain'};
+  if(code===55)return {code,label:'heavy drizzle',icon:'ti-cloud-rain',emoji:'🌧️',rank:6,tone:'rain'};
+  if(code===56 || code===57)return {code,label:code===56?'light freezing drizzle':'freezing drizzle',icon:'ti-cloud-rain',emoji:'🌧️❄️',rank:8,tone:'ice'};
+  if(code===61)return {code,label:'light rain',icon:'ti-cloud-rain',emoji:'🌦️',rank:6,tone:'rain'};
+  if(code===63)return {code,label:'rain',icon:'ti-cloud-rain',emoji:'🌧️',rank:7,tone:'rain'};
+  if(code===65)return {code,label:'heavy rain',icon:'ti-cloud-rain',emoji:'🌧️🌧️',rank:8,tone:'rain'};
+  if(code===66 || code===67)return {code,label:code===66?'light freezing rain':'freezing rain',icon:'ti-cloud-rain',emoji:'🌧️❄️',rank:8.5,tone:'ice'};
+  if(code===71)return {code,label:'light snow',icon:'ti-snowflake',emoji:'🌨️',rank:6,tone:'snow'};
+  if(code===73 || code===77)return {code,label:code===77?'snow grains':'snow',icon:'ti-snowflake',emoji:'🌨️',rank:7,tone:'snow'};
+  if(code===75)return {code,label:'heavy snow',icon:'ti-snowflake',emoji:'🌨️❄️',rank:8,tone:'snow'};
+  if(code===80)return {code,label:'light rain showers',icon:'ti-cloud-rain',emoji:'🌦️',rank:6,tone:'rain'};
+  if(code===81)return {code,label:'rain showers',icon:'ti-cloud-rain',emoji:'🌧️',rank:7,tone:'rain'};
+  if(code===82)return {code,label:'heavy rain showers',icon:'ti-cloud-rain',emoji:'🌧️🌧️',rank:8.5,tone:'rain'};
+  if(code===85)return {code,label:'snow showers',icon:'ti-snowflake',emoji:'🌨️',rank:7,tone:'snow'};
+  if(code===86)return {code,label:'heavy snow showers',icon:'ti-snowflake',emoji:'🌨️❄️',rank:8.5,tone:'snow'};
+  if(code===95)return {code,label:'thunderstorms',icon:'ti-cloud-storm',emoji:'⛈️',rank:10,tone:'storm'};
+  if(code===96 || code===99)return {code,label:code===99?'thunderstorms with heavy hail':'thunderstorms with hail',icon:'ti-cloud-storm',emoji:'⛈️🧊',rank:11,tone:'storm'};
+  return {code:Number.isFinite(code)?code:null,label:'forecast',icon:'ti-cloud',emoji:'☁️',rank:0,tone:'cloud'};
 }
 
 function weatherDayTimestamp(dayBase){
@@ -661,6 +728,81 @@ function weatherTemperatureRange(summary){
   return `${Math.round(summary.low)}–${Math.round(summary.high)}°`;
 }
 
+// PURE: summarize only the clock interval occupied by a card. The most
+// consequential WMO condition wins, while temperatures span the sampled
+// period. This is presentation-only and never feeds planner scoring.
+function weatherPeriodSummary(start,end,settings,locationId=null,now=Date.now()){
+  const from=Number(start);const to=Number(end);
+  if(!settings || settings.minimalMode || !Number.isFinite(from) || !Number.isFinite(to) || to<=from)return null;
+  if(weatherRequestedDayKey(from)<weatherRequestedDayKey(now))return null;
+  const context=weatherContextForLocation(locationId,settings);
+  if(!context || !Number(context.weeklyFetchedAt) || now-Number(context.weeklyFetchedAt)>8*60*60*1000)return null;
+  const samples=weatherSamplesForDisplayInterval(context,from,to);
+  if(!samples.length)return null;
+  const numbers=field=>samples.map(sample=>Number(sample && sample[field])).filter(Number.isFinite);
+  const temps=numbers('temperature_2m');
+  const chances=numbers('precipitation_probability');
+  const snow=numbers('snowfall');
+  const rain=numbers('precipitation');
+  const wind=numbers('wind_speed_10m');
+  const codes=numbers('weather_code').map(weatherCodePresentation).sort((a,b)=>b.rank-a.rank);
+  let condition=codes[0] || null;
+  if(!condition){
+    const snowTotal=snow.reduce((sum,value)=>sum+value,0);
+    const rainTotal=rain.reduce((sum,value)=>sum+value,0);
+    const chance=chances.length?Math.max(...chances):0;
+    condition=weatherCodePresentation(snowTotal>0?71:(rainTotal>0||chance>=50?61:0));
+  }
+  const coords=weatherCoordsForLocation(locationId,settings);
+  const loc=coords?.locationId ? weatherLocationById(coords.locationId,settings) : null;
+  return {
+    start:from,end:to,condition,
+    low:temps.length?Math.min(...temps):null,
+    high:temps.length?Math.max(...temps):null,
+    precipitationChance:chances.length?Math.max(...chances):null,
+    precipitation:rain.length?rain.reduce((sum,value)=>sum+value,0):null,
+    snowfall:snow.length?snow.reduce((sum,value)=>sum+value,0):null,
+    wind:wind.length?Math.max(...wind):null,
+    fetchedAt:Number(context.weeklyFetchedAt),
+    timezone:context.timezone || '',
+    placeName:loc?.name || String(settings.homeCityName || '').trim() || 'home city'
+  };
+}
+
+function weatherPeriodTemperatureRange(summary){
+  if(!summary || summary.low==null || summary.high==null)return '';
+  const low=Math.round(summary.low);const high=Math.round(summary.high);
+  return low===high?`${low}°`:`${low}–${high}°`;
+}
+
+function weatherPeriodPillHtml(start,end,settings,options={}){
+  const summary=weatherPeriodSummary(start,end,settings,options.locationId || null,options.now || Date.now());
+  if(!summary)return '';
+  const temp=weatherPeriodTemperatureRange(summary);
+  const wet=['rain','ice','snow','storm'].includes(summary.condition.tone);
+  const snow=summary.snowfall>0 ? `${Math.round(summary.snowfall*10)/10}cm` : '';
+  const chance=wet && summary.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
+  const signal=snow || chance;
+  const assessment=options.assessment || null;
+  const warning=assessment && ['caution','blocked','override'].includes(assessment.status)
+    ? `<i class="ti ${assessment.status==='override'?'ti-shield-exclamation':'ti-alert-triangle'} weather-guidance-mark" aria-hidden="true"></i>` : '';
+  const detail=[
+    `${summary.condition.label} in ${summary.placeName}`,
+    temp?`${temp} Celsius`:'',
+    summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,
+    summary.snowfall>0?`${Math.round(summary.snowfall*10)/10} cm snow`:'',
+    summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`,
+    assessment?.summary || '',weatherFreshnessText(summary.fetchedAt,options.now || Date.now())
+  ].filter(Boolean).join(', ');
+  const cls=`context-pill weather-period-pill weather-tone-${summary.condition.tone}${assessment?` guidance-${assessment.status || 'unknown'}`:''}${options.className?` ${options.className}`:''}`;
+  const inside=`<span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(summary.condition.emoji || '☁️')}</span>${temp?`<span class="weather-period-temperature">${escapeHtml(temp)}</span>`:''}${signal?`<span class="weather-period-signal">${escapeHtml(signal)}</span>`:''}${warning}`;
+  if(options.interactive){
+    const dayBase=typeof dayStart==='function'?dayStart(Number(start)):Number(start);
+    return `<button type="button" class="${escapeHtml(cls)}" data-weather-info="${escapeHtml(detail)}" data-weather-day="${dayBase}"${options.hid?` data-weather-hid="${escapeHtml(options.hid)}"`:''} title="${escapeHtml(detail)}" aria-label="${escapeHtml(detail)}">${inside}</button>`;
+  }
+  return `<span class="${escapeHtml(cls)}" title="${escapeHtml(detail)}" role="img" aria-label="${escapeHtml(detail)}">${inside}</span>`;
+}
+
 function weatherDayPresentation(dayBase,dayContext,settings,data=null){
   const s=settings || (typeof sortSettings!=='undefined' ? sortSettings : null) || (typeof loadSortSettings==='function' ? loadSortSettings() : {});
   const context=s?._weatherContext;
@@ -671,10 +813,10 @@ function weatherDayPresentation(dayBase,dayContext,settings,data=null){
     const exception=weatherExceptionForDay(dayBase,dayContext,s,data);
     if(!exception)return null;
     const status=exception.assessment.status || 'caution';
-    return {summary,status,icon:weatherConditionIcon(status),label:exception.assessment.summary,showTemperature:false};
+    return {summary,status,icon:weatherConditionIcon(status),emoji:weatherConditionEmoji(status),label:exception.assessment.summary,showTemperature:false};
   }
   return {
-    summary,status:'forecast',icon:summary.condition.icon,
+    summary,status:'forecast',tone:summary.condition.tone,icon:summary.condition.icon,emoji:summary.condition.emoji,
     label:`${summary.condition.label} in ${summary.cityName}`,
     showTemperature:Boolean(s.showWeatherTemperatureRanges)
   };
@@ -683,10 +825,22 @@ function weatherDayPresentation(dayBase,dayContext,settings,data=null){
 function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
   const presentation=weatherDayPresentation(dayBase,dayContext,settings,options.data || null);
   if(!presentation)return '';
+  const minimal=presentation.status!=='forecast';
   const temp=presentation.showTemperature ? weatherTemperatureRange(presentation.summary) : '';
-  const label=[presentation.label,temp ? `${temp} Celsius` : ''].filter(Boolean).join(', ');
+  const summary=presentation.summary;
+  const condition=!minimal && !options.compact ? summary.condition.label : '';
+  const wet=summary.condition.tone==='rain' || summary.condition.tone==='ice' || summary.condition.tone==='snow' || summary.condition.tone==='storm';
+  const chance=!minimal && wet && summary.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
+  const detail=[
+    presentation.label,
+    temp ? `${temp} Celsius` : '',
+    summary.precipitationChance==null ? '' : `${Math.round(summary.precipitationChance)}% precipitation`,
+    summary.wind==null ? '' : `${Math.round(summary.wind)} km/h wind`,
+    weatherFreshnessText(summary.fetchedAt)
+  ].filter(Boolean).join(', ');
+  const tone=presentation.tone || presentation.status;
   const cls=options.className ? ` ${options.className}` : '';
-  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)}" title="${escapeHtml(label)}"><i class="ti ${escapeHtml(presentation.icon)}" aria-hidden="true"></i>${temp?`<span>${escapeHtml(temp)}</span>`:''}</span>`;
+  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(presentation.emoji || '☁️')}</span>${condition?`<span class="weather-condition-text">${escapeHtml(condition)}</span>`:''}${chance?`<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`:''}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
 }
 
 function weatherFreshnessText(ts,now=Date.now()){
@@ -731,7 +885,7 @@ function renderWeatherContextSheet(model){
   if(title)title.textContent=summary.condition.label;
   if(sub)sub.textContent=`${date} · ${summary.cityName} · ${weatherFreshnessText(summary.fetchedAt)}`;
   if(eyebrow)eyebrow.textContent='forecast context';
-  if(icon)icon.innerHTML=`<i class="ti ${summary.condition.icon}" aria-hidden="true"></i>`;
+  if(icon)icon.innerHTML=`<span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(summary.condition.emoji || '☁️')}</span>`;
   if(content){
     const range=weatherTemperatureRange(summary);
     const precipitation=[
@@ -820,13 +974,31 @@ function weatherLinkedUpcomingRows(now = Date.now()){
 function weatherNeededExtraPlaces(settings,data){
   const out = [];
   const seen = new Set();
-  for(const h of Array.isArray(data) ? data : []){
-    if(!h || !h.weatherProfileId)continue;
-    const coords = weatherCoordsForHabit(h,settings);
-    if(!coords || !coords.locationId || seen.has(coords.locationId))continue;
+  const addLocation=id=>{
+    if(out.length>=MAX_WEATHER_EXTRA_PLACES)return;
+    const coords=weatherCoordsForLocation(id,settings);
+    if(!coords || !coords.locationId || seen.has(coords.locationId))return;
     seen.add(coords.locationId);
     out.push(coords);
-    if(out.length >= MAX_WEATHER_EXTRA_PLACES)break;
+  };
+  const list=Array.isArray(data) ? data : [];
+  for(const h of list){
+    if(!h || !h.weatherProfileId)continue;
+    addLocation(h.weatherLocationId);
+  }
+  if(weatherAmbientEnabled(settings)){
+    for(const row of weatherAgendaRows()){
+      if(out.length>=MAX_WEATHER_EXTRA_PLACES)break;
+      if(row.kind==='fill' || row.kind==='scheduled'){
+        const h=row.h || (row.i!=null ? list[row.i] : null);
+        const enabled=h?.type==='task' ? settings.showWeatherOnTasks : settings.showWeatherOnHabits;
+        if(enabled)addLocation(h?.weatherLocationId || row.locationId);
+      }else if(row.kind==='blocked' && settings.showWeatherOnBusyTimes){
+        addLocation(row.locationId);
+      }else if(row.kind==='travel' && settings.showWeatherOnTravel){
+        addLocation(row.to);
+      }
+    }
   }
   return out;
 }
@@ -970,7 +1142,7 @@ async function refreshWeatherForecast(options = {}){
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (sortSettings || {});
   const profiles = normalizeWeatherProfiles(settings.weatherProfiles);
   const home = weatherHomeCoords(settings);
-  if(!profiles.length || !home)return false;
+  if((!profiles.length && !weatherAmbientEnabled(settings)) || !home)return false;
   _weatherRefreshPromise = (async()=>{
     const now = Date.now();
     const cache = weatherCacheRead();

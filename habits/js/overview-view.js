@@ -527,7 +527,7 @@ function renderOverviewInsight(capacity,options={}){
   const chipModels=capacity.days.slice(0,7).map(day=>{
     const dayContext=overviewDayContextForKey(data,day.key);
     const weather=typeof weatherDayCueHtml==='function'
-      ? weatherDayCueHtml(day.key,dayContext,sortSettings,{data,className:'overview-weather-cue'})
+      ? weatherDayCueHtml(day.key,dayContext,sortSettings,{data,className:'overview-weather-cue',compact:true})
       : '';
     return {day,weather};
   });
@@ -1066,11 +1066,12 @@ function overviewDayWeatherBlockHtml(key,dayContext,data){
   const summary=presentation.summary;
   const minimal=typeof isMinimalMode==='function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   const heading=minimal ? 'weather guidance' : summary.condition.label;
+  const range=weatherTemperatureRange(summary);
   const detail=minimal
     ? presentation.label
-    : `${summary.cityName}${summary.precipitationChance==null?'':` · ${Math.round(summary.precipitationChance)}% rain`}`;
-  return `<button type="button" class="day-weather-block ${escapeHtml(presentation.status)}" data-open-weather-context="${escapeHtml(key)}" aria-label="${escapeHtml(`${heading}, ${detail}. Open forecast details`)}">
-    <span class="day-weather-icon"><i class="ti ${escapeHtml(presentation.icon)}" aria-hidden="true"></i></span>
+    : [summary.cityName,range ? `${range}C` : '',summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`].filter(Boolean).join(' · ');
+  return `<button type="button" class="day-weather-block ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(presentation.tone || presentation.status)}" data-open-weather-context="${escapeHtml(key)}" aria-label="${escapeHtml(`${heading}, ${detail}. Open forecast details`)}">
+    <span class="day-weather-icon"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(presentation.emoji || '☁️')}</span></span>
     <span><b>${escapeHtml(heading)}</b><small>${escapeHtml(detail)}</small></span>
     <i class="ti ti-chevron-right" aria-hidden="true"></i>
   </button>`;

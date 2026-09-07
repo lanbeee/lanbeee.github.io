@@ -1438,16 +1438,27 @@ function agendaCardPill(row,h = null,now = Date.now()){
   return `<span class="context-pill agenda-lead ${cls}" title="${escapeHtml(status.title)}"><i class="ti ${status.icon}" aria-hidden="true"></i>${timeHtml}</span>`;
 }
 
-// PURE: compact forecast status. Icon-only and tinted by state — sun/teal vs
-// rain/amber keeps good and caution apart at a glance without a text label;
-// tapping explains the decision via the data-weather-info toast.
+// PURE: compact forecast metadata for the exact scheduled interval. Opted-in
+// cards show condition + temperature (+ wet signal); weather-guided cards keep
+// their personalized exception marker even when ambient card weather is off.
 function weatherCardPill(row,h = null){
-  if(!row || !h || !h.weatherProfileId || typeof weatherStatusForRow !== 'function')return '';
-  const assessment = weatherStatusForRow(h,row,sortSettings || loadSortSettings());
-  if(!assessment)return '';
-  const status = assessment.status || 'unknown';
+  if(!row || !h)return '';
+  const settings=sortSettings || loadSortSettings();
+  const assessment=h.weatherProfileId && typeof weatherStatusForRow === 'function'
+    ? weatherStatusForRow(h,row,settings) : null;
+  const status = assessment?.status || 'unknown';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-  if(minimal && status !== 'caution' && status !== 'blocked' && status !== 'override')return '';
+  if(!minimal){
+    const show=h.type==='task' ? settings.showWeatherOnTasks : settings.showWeatherOnHabits;
+    if(show && typeof weatherPeriodPillHtml==='function'){
+      const period=weatherPeriodPillHtml(row.start,row.end,settings,{
+        locationId:h.weatherLocationId || row.locationId || null,
+        assessment,interactive:true,hid:h.hid || ''
+      });
+      if(period)return period;
+    }
+  }
+  if(!assessment || (minimal && status !== 'caution' && status !== 'blocked' && status !== 'override'))return '';
   const icon = typeof weatherConditionIcon === 'function' ? weatherConditionIcon(status) : 'ti-cloud';
   const dayBase=typeof dayStart==='function' ? dayStart(row.start) : row.start;
   return `<button type="button" class="context-pill weather-pill icon-only ${status}" data-weather-info="${escapeHtml(assessment.summary)}" data-weather-day="${dayBase}" data-weather-hid="${escapeHtml(h.hid || '')}" title="${escapeHtml(assessment.summary)}" aria-label="${escapeHtml(assessment.summary)}"><i class="ti ${icon}" aria-hidden="true"></i></button>`;
@@ -1639,6 +1650,8 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
   const toName = to ? to.name : 'next';
   const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
+  const weather = sortSettings?.showWeatherOnTravel && typeof weatherPeriodPillHtml==='function'
+    ? weatherPeriodPillHtml(startTs,startTs+mins*60000,sortSettings,{locationId:toId,className:'travel-weather-pill'}) : '';
   const travelEl = document.createElement('button');
   travelEl.type = 'button';
   travelEl.className = `travel-card${edited ? ' is-edited' : ''}${fromCurrent ? ' is-from-current' : ''}`;
@@ -1646,7 +1659,9 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   travelEl.dataset.travelTo = toId;
   if(Number.isFinite(startTs))travelEl.dataset.agendaStart = String(Math.round(startTs / 60000));
   travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}`);
-  travelEl.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-route" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${compactHomeDuration(mins)} travel</b><small>${depart}${escapeHtml(fromName)} → ${escapeHtml(toName)}</small></span>${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-label="custom time"></i>' : ''}${fromCurrent ? '' : '<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i>'}`;
+  travelEl.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-route" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${compactHomeDuration(mins)} travel</b><small>${depart}${escapeHtml(fromName)} → ${escapeHtml(toName)}</small></span>${weather}${edited ? '<i class="ti ti-pencil travel-edit-mark" aria-label="custom time"></i>' : ''}${fromCurrent ? '' : '<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i>'}`;
+  const weatherLabel=travelEl.querySelector('.weather-period-pill')?.getAttribute('aria-label');
+  if(weatherLabel)travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}, ${weatherLabel}`);
   list.appendChild(travelEl);
   let travelPointer = null;
   travelEl.addEventListener('pointerdown',e=>{
@@ -1738,12 +1753,14 @@ function appendHomeTravelText(list,fromId,toId,startTs){
   }
   const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
   const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
+  const weather = sortSettings?.showWeatherOnTravel && typeof weatherPeriodPillHtml==='function'
+    ? weatherPeriodPillHtml(startTs,startTs+mins*60000,sortSettings,{locationId:toId,className:'extra-text-weather'}) : '';
   const el = document.createElement('div');
   el.className = 'extra-text-line travel-text';
   el.dataset.travelFrom = fromId;
   el.dataset.travelTo = toId;
   if(Number.isFinite(startTs))el.dataset.agendaStart = String(Math.round(startTs / 60000));
-  el.textContent = `${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`;
+  el.innerHTML = `<span>${escapeHtml(`${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`)}</span>${weather}`;
   list.appendChild(el);
 }
 
@@ -1754,9 +1771,11 @@ function appendHomeBlockedText(list,row){
   const start = compactHomeTime(row.start);
   const end = compactHomeTime(row.end);
   const place = loc ? ` · ${loc.name}` : '';
+  const weather = sortSettings?.showWeatherOnBusyTimes && typeof weatherPeriodPillHtml==='function'
+    ? weatherPeriodPillHtml(row.start,row.end,sortSettings,{locationId:row.locationId || null,className:'extra-text-weather'}) : '';
   const el = document.createElement('div');
   el.className = 'extra-text-line blocked-text';
-  el.textContent = `${row.label || 'blocked'} · ${start}–${end}${place}`;
+  el.innerHTML = `<span>${escapeHtml(`${row.label || 'blocked'} · ${start}–${end}${place}`)}</span>${weather}`;
   list.appendChild(el);
 }
 
@@ -1857,6 +1876,8 @@ function appendHomeBlockedCard(list,row){
   const start = compactHomeTime(row.start);
   const end = compactHomeTime(row.end);
   const place = loc ? ` · ${loc.name}` : '';
+  const weather = sortSettings?.showWeatherOnBusyTimes && typeof weatherPeriodPillHtml==='function'
+    ? weatherPeriodPillHtml(row.start,row.end,sortSettings,{locationId:row.locationId || null,className:'blocked-weather-pill'}) : '';
   // Tap opens the per-instance editor; the X frees this occurrence for today.
   const el = document.createElement('div');
   el.className = 'blocked-card';
@@ -1864,7 +1885,9 @@ function appendHomeBlockedCard(list,row){
   el.tabIndex = 0;
   el.setAttribute('role','button');
   el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}`);
-  el.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${escapeHtml(row.label || 'blocked')}</b><small>${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</small></span><i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
+  el.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${escapeHtml(row.label || 'blocked')}</b><small>${escapeHtml(start)}–${escapeHtml(end)}${escapeHtml(place)}</small></span>${weather}<i class="ti ti-chevron-right timeline-card-chevron" aria-hidden="true"></i><button type="button" class="blocked-cancel-mark" aria-label="clear ${escapeHtml(row.label || 'blocked') || 'block'} for today"><i class="ti ti-x" aria-hidden="true"></i></button>`;
+  const weatherLabel=el.querySelector('.weather-period-pill')?.getAttribute('aria-label');
+  if(weatherLabel)el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}, ${weatherLabel}`);
   const xBtn = el.querySelector('.blocked-cancel-mark');
   let cancelPointer = null;
   if(xBtn)xBtn.addEventListener('pointerdown',e=>{
@@ -1954,6 +1977,10 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
   const summary = labels.length <= 3
     ? labels.join(', ')
     : `${labels.slice(0,2).join(', ')} +${labels.length - 2}`;
+  const sharedLocation=blocks.every(block=>block.locationId===(blocks[0].locationId || null))
+    ? (blocks[0].locationId || null) : null;
+  const weather = sortSettings?.showWeatherOnBusyTimes && typeof weatherPeriodPillHtml==='function'
+    ? weatherPeriodPillHtml(blocks[0].start,blocks[blocks.length-1].end,sortSettings,{locationId:sharedLocation,className:'blocked-weather-pill'}) : '';
   const wrap = document.createElement('div');
   wrap.className = `blocked-group${expanded ? ' is-expanded' : ''}`;
   wrap.dataset.blockedGroup = groupKey;
@@ -1968,7 +1995,9 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
       ? `collapse ${blocks.length} busy times`
       : `${blocks.length} busy times ${start} to ${end}, tap to expand`
   );
-  toggle.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${blocks.length} busy times</b><small>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)}</small></span><i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
+  toggle.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span><span class="timeline-card-copy"><b>${blocks.length} busy times</b><small>${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)}</small></span>${weather}<i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
+  const weatherLabel=toggle.querySelector('.weather-period-pill')?.getAttribute('aria-label');
+  if(weatherLabel)toggle.setAttribute('aria-label',`${toggle.getAttribute('aria-label')}, ${weatherLabel}`);
   let mergePointer = null;
   toggle.addEventListener('pointerdown',e=>{
     mergePointer = {el:toggle,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};

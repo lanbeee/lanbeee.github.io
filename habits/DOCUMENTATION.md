@@ -579,6 +579,10 @@ prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
 weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
 showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode day forecast icons
+showWeatherOnHabits: boolean,     // Interval forecast pill on scheduled habits (default false)
+showWeatherOnTasks: boolean,      // Interval forecast pill on scheduled tasks (default false)
+showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
+showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
 ```
 
 #### 4.3.8a Weather Guidance 👤👨‍💻
@@ -589,8 +593,8 @@ showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode da
 - The seven-day hourly forecast and normalized daily condition/temperature/
   precipitation/wind summaries refresh together every six hours per distinct place.
   A fresh legacy cache without daily summaries is refreshed automatically.
-  Extra places are fetched only for weather-linked items that opted in, capped
-  at four far places besides home.
+  Extra places are fetched only for weather-linked items or visible period
+  cards that need them, capped at four far places besides home.
 - When a weather-linked planned item is active or starts within 90 minutes, a
   15-minute forecast can refresh every 15 minutes while the app is visible. It
   covers at least two hours and 30 minutes after the item, capped at four hours.
@@ -601,14 +605,28 @@ showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode da
   forecast fills later or missing times. AQI is fetched separately only when a
   profile uses US or EU AQI (home: any such profile; a far place: only if an
   item there uses one).
-- Weather stays supporting context: full-mode Home agenda-day headers and the
-  Overview seven-day open-time strip show one forecast icon. Optional low–high
-  Celsius ranges are off by default. The Overview calendar grid is unchanged.
+- Weather stays supporting context: full-mode Home agenda-day headers show a
+  compact, tinted pill with an intuitive condition emoji, condition name, and
+  precipitation chance when relevant. The Overview seven-day open-time strip
+  uses the tighter emoji/chance form. Optional low–high Celsius ranges are off
+  by default and add to both persistent surfaces. The Overview calendar grid is
+  unchanged.
+- Four regular-mode display toggles add period-specific weather to scheduled
+  habits, scheduled tasks, busy times, and travel. Habits, tasks, and busy
+  times default off; travel defaults on. Each compact pill covers the row's
+  actual start/end interval and combines an intensity-aware condition emoji,
+  interval temperature span, and rain chance or snow amount when relevant.
+  Weather-guided items retain a caution/override mark inside that richer pill.
+  A far-away row uses its needed saved-place forecast; travel uses the
+  destination. These toggles change presentation only and never opt an item
+  into weather-guided scheduling.
 - Today/future Overview day sheets show a compact home-city forecast above the
-  agenda. Activating a Home day icon, weather-guided item icon, or that forecast
-  opens one shared detail sheet with conditions, full temperature range,
-  precipitation, wind, forecast age, and chronological guided-item explanations.
-  A far-away item names its saved place and uses that place's forecast.
+  agenda, including condition, full range, precipitation, and wind so most days
+  do not require another tap. Activating a Home weather pill, weather-guided
+  item icon, or that forecast opens one shared detail sheet with conditions,
+  full temperature range, precipitation, wind, forecast age, and chronological
+  guided-item explanations. A far-away item names its saved place and uses that
+  place's forecast.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
@@ -2539,6 +2557,10 @@ Same agenda logic, but simplified display:
 | `homeCityLng` | number\|null | null | Longitude |
 | `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
 | `showWeatherTemperatureRanges` | boolean | false | Add daily low–high °C beside full-mode Home and Overview week-strip weather icons |
+| `showWeatherOnHabits` | boolean | false | Add exact-interval forecast pills to scheduled habit cards in regular mode |
+| `showWeatherOnTasks` | boolean | false | Add exact-interval forecast pills to scheduled task cards in regular mode |
+| `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
+| `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |

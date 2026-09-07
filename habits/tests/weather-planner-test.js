@@ -22,6 +22,7 @@ function assert(value,message){
     syncSettingsControls();
   });
   await page.locator('#settings-weather-head').click();
+  assert(await page.locator('#settings-weather-body [data-setting-toggle^="showWeatherOn"]').count()===4,'weather settings expose separate habit, task, busy-time, and travel toggles');
   await page.locator('#weather-profile-add').click();
   assert(await page.locator('.weather-profile-card').count()===1,'settings creates a named weather profile');
   assert(await page.locator('#ting-weather-profile option').count()===2,'new profile appears in habit assignment');
@@ -240,6 +241,10 @@ function assert(value,message){
       {weatherProfileId:'outdoor',weatherLocationId:'boston'},
       {weatherProfileId:'outdoor',weatherLocationId:'park'}
     ]);
+    const previousRenderedWeek=_homeRenderedWeek;
+    _homeRenderedWeek={days:[{timeline:[],homeDisplayedTimeline:[{kind:'travel',from:'park',to:'boston',start:at(10),end:at(11)}]}]};
+    const ambientTravelExtras=weatherNeededExtraPlaces({...settings,minimalMode:false,weatherProfiles:[],showWeatherOnTravel:true},[]);
+    _homeRenderedWeek=previousRenderedWeek;
     const kept=normalize([{name:'Trip',type:'task',weatherProfileId:'outdoor',weatherLocationId:'boston',
       logs:[],locationIds:[],anywhereAllowed:true}]);
     saveSortSettings({...loadSortSettings(),locations:settings.locations,weatherProfiles:loadSortSettings().weatherProfiles});
@@ -255,6 +260,7 @@ function assert(value,message){
       skipNear,
       needNear,
       extraIds:extras.map(place=>place.locationId).join(','),
+      ambientTravelIds:ambientTravelExtras.map(place=>place.locationId).join(','),
       keptLocation:kept[0].weatherLocationId,
       placeSelectShown:Boolean(profileId) && !$('ting-weather-location-wrap')?.hidden,
       placeOptions:$('ting-weather-location')?.options.length || 0
@@ -266,6 +272,7 @@ function assert(value,message){
   assert(extra.skipNear,'0% remaining-day rain skips the 15-minute refresh');
   assert(extra.needNear,'borderline rain still requests a near-term refresh');
   assert(extra.extraIds==='boston','only far weather overrides fetch an extra forecast');
+  assert(extra.ambientTravelIds==='boston','a visible far-away travel leg fetches only its destination forecast');
   assert(extra.keptLocation==='boston','normalize keeps a forecast-place override');
   assert(extra.placeSelectShown,'forecast place appears after a profile is chosen');
   assert(extra.placeOptions>=3,'home city plus saved places fill the forecast place list');
@@ -296,8 +303,19 @@ function assert(value,message){
     sortSettings=settings;
 
     const normalizedDefault=(()=>{
-      saveSortSettings({...loadSortSettings(),showWeatherTemperatureRanges:undefined});
-      return loadSortSettings().showWeatherTemperatureRanges;
+      const previous=loadSortSettings();
+      delete previous.showWeatherTemperatureRanges;
+      delete previous.showWeatherOnHabits;
+      delete previous.showWeatherOnTasks;
+      delete previous.showWeatherOnBusyTimes;
+      delete previous.showWeatherOnTravel;
+      Storage.write(SORT_SETTINGS_KEY,previous);
+      const normalized=loadSortSettings();
+      return {
+        temperature:normalized.showWeatherTemperatureRanges,
+        habits:normalized.showWeatherOnHabits,tasks:normalized.showWeatherOnTasks,
+        busy:normalized.showWeatherOnBusyTimes,travel:normalized.showWeatherOnTravel
+      };
     })();
     sortSettings=settings;
     const noTemp=weatherDayCueHtml(base,day,settings,{data:[h]});
@@ -340,29 +358,54 @@ function assert(value,message){
     renderWeatherContextSheet(weatherContextSheetModel(base,day,'walk'));
     const sheetText=document.querySelector('#weather-context-sheet')?.textContent || '';
     const selectedBlock=overviewDayWeatherBlockHtml(key,day,[h]);
+
+    sortSettings={...settings,showWeatherOnHabits:true,showWeatherOnTasks:true,showWeatherOnBusyTimes:true,showWeatherOnTravel:true};
+    const habitPeriod=weatherCardPill(row,h);
+    const task={...h,hid:'errand',name:'Errand',type:'task',weatherProfileId:null,weatherLocationId:null};
+    const taskPeriod=weatherCardPill({...row,h:task},task);
+    const periodHost=document.createElement('div');
+    document.body.appendChild(periodHost);
+    appendHomeBlockedCard(periodHost,{kind:'blocked',label:'sleep',start:row.start,end:row.end,locationId:null});
+    appendHomeTravelCard(periodHost,'home','boston',row.start);
+    const busyPeriod=periodHost.querySelector('.blocked-card .weather-period-pill')?.outerHTML || '';
+    const travelPeriod=periodHost.querySelector('.travel-card .weather-period-pill')?.outerHTML || '';
+    const periodCardsFit=[...periodHost.querySelectorAll('.blocked-card,.travel-card')]
+      .every(card=>card.scrollWidth<=card.clientWidth+1);
+    const intensity=weatherCodePresentation(65);
+    sortSettings={...sortSettings,minimalMode:true};
+    const minimalAmbient=weatherCardPill({...row,h:task},task);
+    periodHost.remove();
     host.remove();
     return {
       normalizedDefault,noTemp,withTemp,stale,past,beyond,dayHeaderWeather,categoryWeather,separated,
       minimalCaution,minimalGood,overviewIcon,overviewTempOff,overviewTempOn,calendarWeather,shiftedHidden,
-      sheetText,selectedBlock,
+      sheetText,selectedBlock,habitPeriod,taskPeriod,busyPeriod,travelPeriod,periodCardsFit,minimalAmbient,intensity,
       codeLabel:weatherCodePresentation(95).label,
-      codeIcon:weatherCodePresentation(71).icon
+      codeIcon:weatherCodePresentation(71).icon,
+      codeEmoji:weatherCodePresentation(95).emoji
     };
   });
-  assert(display.normalizedDefault===false,'temperature ranges default off during settings normalization');
-  assert(!/7–14°/.test(display.noTemp) && /ti-cloud-rain/.test(display.noTemp),'full day cue defaults to icon only');
+  assert(display.normalizedDefault.temperature===false && !display.normalizedDefault.habits && !display.normalizedDefault.tasks && !display.normalizedDefault.busy && display.normalizedDefault.travel,'weather display settings normalize quiet by default, except travel');
+  assert(!/7–14°/.test(display.noTemp) && /🌦️/.test(display.noTemp) && /rain/.test(display.noTemp) && /80%/.test(display.noTemp),'full day cue defaults to an informative condition pill without temperature');
   assert(/7–14°/.test(display.withTemp),'temperature range can be enabled for full-mode day cues');
   assert(display.stale===null && display.past===null && display.beyond===null,'stale, past, and beyond-horizon days have no forecast summary');
   assert(display.dayHeaderWeather===1 && display.categoryWeather===0,'home adds weather only to actual agenda-day headers');
   assert(display.separated,'home day headers keep label and context in separate layout groups');
   assert(/caution/.test(display.minimalCaution) && !/7–14°/.test(display.minimalCaution),'minimal mode shows an item-derived caution without temperature');
   assert(display.minimalGood==='','minimal mode hides good weather guidance');
-  assert(display.overviewIcon===1 && !display.overviewTempOff && display.overviewTempOn,'overview week chips share the icon and optional range setting');
+  assert(display.overviewIcon===1 && !display.overviewTempOff && display.overviewTempOn,'overview week chips share the compact visual cue and optional range setting');
   assert(!display.calendarWeather && display.shiftedHidden,'calendar cells and shifted past ranges stay weather-free');
-  assert(/rain/.test(display.selectedBlock) && /data-open-weather-context/.test(display.selectedBlock),'selected-day sheet gets a compact forecast opener');
+  assert(/rain/.test(display.selectedBlock) && /7–14°C/.test(display.selectedBlock) && /80% precipitation/.test(display.selectedBlock) && /18 km\/h wind/.test(display.selectedBlock) && /data-open-weather-context/.test(display.selectedBlock),'selected-day sheet shows the useful forecast metrics before opening details');
   assert(/7–14°C/.test(display.sheetText) && /80%/.test(display.sheetText) && /18 km\/h/.test(display.sheetText),'weather context shows temperature, precipitation, and wind');
   assert(/Boston/.test(display.sheetText) && /Park walk/.test(display.sheetText) && /weather caution/.test(display.sheetText),'weather context separates and explains a far-place guided item');
-  assert(display.codeLabel==='thunderstorms' && display.codeIcon==='ti-snowflake','WMO conditions map to accessible labels and icons');
+  assert(display.codeLabel==='thunderstorms' && display.codeIcon==='ti-snowflake' && display.codeEmoji==='⛈️','WMO conditions map to accessible labels, icons, and emoji');
+  assert(/weather-period-pill/.test(display.habitPeriod) && /12°/.test(display.habitPeriod) && /95%/.test(display.habitPeriod) && /weather-guidance-mark/.test(display.habitPeriod),'habit period pill combines condition, interval temperature, wet signal, and guidance status');
+  assert(/weather-period-pill/.test(display.taskPeriod) && /12°/.test(display.taskPeriod),'tasks can show ambient interval weather without a guidance profile');
+  assert(/weather-period-pill/.test(display.busyPeriod) && /12°/.test(display.busyPeriod),'busy-time cards show weather for their occupied interval when enabled');
+  assert(/weather-period-pill/.test(display.travelPeriod) && /12°/.test(display.travelPeriod),'travel cards show destination weather for the travel interval');
+  assert(display.periodCardsFit,'busy-time and travel weather pills fit the mobile card width without overflow');
+  assert(display.minimalAmbient==='', 'minimal mode suppresses ambient period weather pills');
+  assert(display.intensity.label==='heavy rain' && display.intensity.emoji==='🌧️🌧️','WMO intensity is visible through the condition label and emoji combination');
 
   const cacheUpgrade=await page.evaluate(async()=>{
     const now=Date.now();
@@ -390,16 +433,19 @@ function assert(value,message){
     };
     try{await refreshWeatherForecast();}finally{weatherFetchJson=originalFetch;}
     const upgraded=weatherCacheRead().weekly;
+    const ambientContext=weatherPlannerContext({...sortSettings,weatherProfiles:[],minimalMode:false,showWeatherOnTravel:true},now);
     const normalized=weatherNormalizePayload({timezone:tz,hourly:{time:[]},daily:{time:[base/1000],weather_code:[3],temperature_2m_min:[4],temperature_2m_max:[9]}},'weekly',now);
     return {
       requestedDaily:new URL(requested).searchParams.get('daily') || '',
       upgradedDays:upgraded?.days?.length || 0,
       upgradedCode:upgraded?.days?.[0]?.weather_code,
+      ambientSamples:ambientContext?.samples?.length || 0,
       normalizedCode:normalized.days?.[0]?.weather_code
     };
   });
   assert(/temperature_2m_min/.test(cacheUpgrade.requestedDaily) && /weather_code/.test(cacheUpgrade.requestedDaily),'weekly request adds daily fields without a second forecast request');
   assert(cacheUpgrade.upgradedDays===1 && cacheUpgrade.upgradedCode===2,'fresh legacy forecast caches are refreshed with normalized daily summaries');
+  assert(cacheUpgrade.ambientSamples===1,'ambient travel weather can use the forecast cache without creating a guidance profile');
   assert(cacheUpgrade.normalizedCode===3,'daily WMO summaries normalize alongside hourly samples');
   assert(errors.length===0,'page has no JavaScript errors: '+errors.join(' | '));
 

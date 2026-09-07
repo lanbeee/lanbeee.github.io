@@ -45,6 +45,9 @@ function assert(condition,message){
   await page.goto(baseUrl,{waitUntil:'load'});
   await page.waitForTimeout(1500);
   await page.locator('.section-header:has-text("tomorrow") .free-pill').click();
+  // Header pills intentionally settle after pointerup so a sticky-header tap
+  // cannot be confused with a scroll. Wait for that deferred activation.
+  await page.waitForSelector('.free-fit-checker');
 
   assert(await page.locator('.free-fit-checker').count() === 1,'open-time sheet includes a compact what-if checker');
   assert(await page.locator('.free-day-seg[type="button"]').count() > 0,'timeline sections are tappable');

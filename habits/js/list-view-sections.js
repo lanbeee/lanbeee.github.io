@@ -1,9 +1,12 @@
 let _stuckHeadersRaf = false;
 function updateStuckSectionHeaders(){
   _stuckHeadersRaf = false;
-  document.querySelectorAll('.section-header').forEach(el=>{
-    el.classList.toggle('stuck', el.getBoundingClientRect().top <= 1);
-  });
+  const headers=[...document.querySelectorAll('.section-header')];
+  // Native sticky headers can occupy the same top coordinate while the next
+  // day replaces the previous one. Only the later, visibly painted header is
+  // the active stuck header; marking both makes hit targeting ambiguous.
+  const active=headers.filter(el=>el.getBoundingClientRect().top<=1).pop() || null;
+  headers.forEach(el=>el.classList.toggle('stuck',el===active));
 }
 document.addEventListener('scroll',()=>{
   if(_stuckHeadersRaf)return;
@@ -55,6 +58,8 @@ function attachWeatherIndicator(header,day){
   button.type='button';
   button.className='weather-day-button';
   button.innerHTML=cue;
+  const tone=button.querySelector('.weather-day-cue')?.dataset.weatherTone;
+  if(tone)button.classList.add(`weather-tone-${tone}`);
   const accessible=button.querySelector('.weather-day-cue')?.getAttribute('title') || 'weather context';
   button.setAttribute('aria-label',accessible);
   bindDayHeaderPill(button,()=>openWeatherContextSheet(day.dayBase,day));

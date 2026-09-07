@@ -248,6 +248,13 @@ const DEFAULT_SORT_SETTINGS = {
   // Keep ambient forecast chrome icon-only unless the user explicitly wants
   // the low/high range beside each day.
   showWeatherTemperatureRanges:false,
+  // Optional interval forecasts on agenda surfaces. These are presentation
+  // only: they never opt an item into weather-guided placement. Travel keeps
+  // its forecast on by default because conditions directly affect the leg.
+  showWeatherOnHabits:false,
+  showWeatherOnTasks:false,
+  showWeatherOnBusyTimes:false,
+  showWeatherOnTravel:true,
   prayerIslamicNames:false,
 
   topics:[],

@@ -220,6 +220,10 @@
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
  * @property {boolean} showWeatherTemperatureRanges           — add low/high °C to full-mode home/overview weather cues
+ * @property {boolean} showWeatherOnHabits                     — show interval condition/temperature pills on scheduled habit cards in regular mode
+ * @property {boolean} showWeatherOnTasks                      — show interval condition/temperature pills on scheduled task cards in regular mode
+ * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/temperature pills on busy-time cards in regular mode
+ * @property {boolean} showWeatherOnTravel                     — show interval condition/temperature pills on travel cards in regular mode (default true)
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
