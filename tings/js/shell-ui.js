@@ -663,7 +663,7 @@ function updateHeaderOnScroll(){
 }
 
 // PURE: resolves forgiving button target from an event target.
-// Optional clientX/clientY expand day-header open/missed pills by a small
+// Optional clientX/clientY expand day-header weather/open/missed pills by a small
 // hit slop so near-miss taps on sticky header chrome still arm the pill.
 function forgivingButtonTarget(target, clientX, clientY){
   if(!target || typeof target.closest !== "function")return null;
@@ -696,7 +696,7 @@ function forgivingButtonTarget(target, clientX, clientY){
   const HIT_SLOP = 16;
   let best = null;
   let bestDist = Infinity;
-  header.querySelectorAll('.free-pill,.dropped-pill').forEach(pill=>{
+  header.querySelectorAll('.weather-day-button,.free-pill,.dropped-pill').forEach(pill=>{
     const r = pill.getBoundingClientRect();
     if(clientX < r.left - HIT_SLOP || clientX > r.right + HIT_SLOP)return;
     if(clientY < r.top - HIT_SLOP || clientY > r.bottom + HIT_SLOP)return;
@@ -984,11 +984,11 @@ document.addEventListener('pointerup',e=>{
   }
   if(Date.now() - time >= 1200)return;
 
-  const headerPill = btn.matches('.free-pill,.dropped-pill');
-  // Drift → forgiving click. Slop-armed header pills (finger never on the
-  // button/::before) also need a synthesized click. Exact on-pill taps,
-  // including CSS hit-pad ::before hits, keep the native click path.
-  const shouldClick = moved > 8 || (headerPill && armedBySlop);
+  const headerPill = btn.matches('.weather-day-button,.free-pill,.dropped-pill');
+  // Header pills always use the settled synthesized path. Sticky repositioning
+  // can swallow a browser-native exact tap even when the pointer never moved;
+  // the scroll snapshots below still prevent a pan from activating a pill.
+  const shouldClick = moved > 8 || headerPill || armedBySlop;
   if(!shouldClick)return;
 
   suppressNativeButton = btn;

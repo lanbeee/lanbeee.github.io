@@ -103,8 +103,14 @@
 .weather-actions{margin-top:10px;flex-wrap:wrap;}
 .weather-attribution a{color:inherit;text-decoration:underline;}
 .weather-habit-field{margin-top:14px;}
+.weather-habit-field .compact-toggle{margin-top:8px;margin-bottom:0;}
+.weather-habit-field .compact-toggle + .compact-toggle{margin-top:6px;}
 .weather-habit-location{margin-top:8px;}
-.weather-habit-location[hidden]{display:none;}
+.weather-habit-location[hidden],
+#ting-show-weather-location-row[hidden],
+#detail-show-weather-location-row[hidden],
+#ting-show-weather-location-hint[hidden],
+#detail-show-weather-location-hint[hidden]{display:none;}
 @media (max-width:520px){.weather-rule{grid-template-columns:minmax(0,1fr) repeat(2,minmax(58px,.55fr));}.weather-rule [data-weather-rule-relative]{grid-column:1/3}.weather-rule .weather-hard{grid-column:3}.weather-rule .mini-nav{grid-column:4;grid-row:2}.weather-rule{grid-template-columns:minmax(0,1fr) minmax(58px,.55fr) minmax(58px,.55fr) 32px}}
 .setting-toggle{
   display:flex;align-items:center;justify-content:space-between;gap:14px;

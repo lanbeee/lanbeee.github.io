@@ -121,9 +121,11 @@ function toggleAppSettingButton(btn){
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     else render();
     if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
+    if(patch.minimalMode === false && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
     return;
   }
   updateSortSetting(patch);
+  if(key.startsWith('showWeather') && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
   if(key === 'agendaOptimizer' && patch.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
     && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
     preloadAgendaOptimizer();

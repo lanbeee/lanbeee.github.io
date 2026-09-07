@@ -406,6 +406,8 @@ function normalize(items){
       weatherLocationId:(typeof cleanLocationId === 'function'
         ? cleanLocationId(raw.weatherLocationId)
         : String(raw.weatherLocationId || '').trim().slice(0,64)) || null,
+      showWeather:Boolean(raw.showWeather),
+      showWeatherAtLocation:Boolean(raw.showWeatherAtLocation),
       scheduleOptions,
       links:normalizeLinks(Array.isArray(raw.links) && raw.links.length ? raw.links : legacyCallLinks(raw)),
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,

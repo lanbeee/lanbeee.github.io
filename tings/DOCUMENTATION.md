@@ -57,7 +57,7 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
-- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override)
+- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override), showWeather / showWeatherAtLocation (per-item forecast pill)
 - Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, earlyWindowDays, delayAllowanceDays
@@ -418,6 +418,8 @@ else:
   preferredLocationId: string|null, // 👤 Legacy preferred location
   weatherProfileId: string|null, // 👤 Optional weather profile
   weatherLocationId: string|null, // 👤 Optional forecast place (far from home)
+  showWeather: boolean,       // 👤 Show interval forecast on this item's agenda card
+  showWeatherAtLocation: boolean, // 👤 When showWeather is on, use this item's place (off = home city)
   scheduleOptions: {             // 👤 Specific extra time/place windows
     weekdays: number[],          // Empty = every weekday
     start: number|null,          // Minutes from midnight, or null when dynamic
@@ -578,7 +580,9 @@ prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
 weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
-showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode day forecast icons
+showWeatherTemperatureRanges: boolean, // Add feels-like low–high °C beside full-mode day forecast icons (default off)
+showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
+showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
 ```
 
 #### 4.3.8a Weather Guidance 👤👨‍💻
@@ -589,8 +593,8 @@ showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode da
 - The seven-day hourly forecast and normalized daily condition/temperature/
   precipitation/wind summaries refresh together every six hours per distinct place.
   A fresh legacy cache without daily summaries is refreshed automatically.
-  Extra places are fetched only for weather-linked items that opted in, capped
-  at four far places besides home.
+  Extra places are fetched only for weather-linked items or visible period
+  cards that need them, capped at four far places besides home.
 - When a weather-linked planned item is active or starts within 90 minutes, a
   15-minute forecast can refresh every 15 minutes while the app is visible. It
   covers at least two hours and 30 minutes after the item, capped at four hours.
@@ -601,14 +605,29 @@ showWeatherTemperatureRanges: boolean, // Add low–high °C beside full-mode da
   forecast fills later or missing times. AQI is fetched separately only when a
   profile uses US or EU AQI (home: any such profile; a far place: only if an
   item there uses one).
-- Weather stays supporting context: full-mode Home agenda-day headers and the
-  Overview seven-day open-time strip show one forecast icon. Optional low–high
-  Celsius ranges are off by default. The Overview calendar grid is unchanged.
+- Weather stays supporting context: full-mode Home agenda-day headers show a
+  compact, tinted pill with an intuitive condition emoji and precipitation
+  chance when it is raining or snowing. Long WMO labels stay in the tooltip and
+  detail sheet. The Overview seven-day open-time strip uses the same compact
+  form. Optional feels-like low–high Celsius ranges are off by default and add
+  to both persistent surfaces. The Overview calendar grid is unchanged.
+- Busy-time and travel cards can show period weather from Settings. Habits and
+  tasks opt in per item (`showWeather`). Each compact pill covers the row's
+  actual start/end interval and combines an intensity-aware condition emoji,
+  a feels-like temperature, and rain chance or snow amount when relevant.
+  A temperature *range* appears only when the occupied interval is at least
+  two hours *and* feels-like temperature actually varies. Weather-guided items
+  retain a caution/override mark inside that richer pill. `showWeatherAtLocation`
+  uses the item's scheduled place; off (the default) uses the home-city
+  forecast. Travel uses the destination. These toggles change presentation
+  only and never opt an item into weather-guided scheduling.
 - Today/future Overview day sheets show a compact home-city forecast above the
-  agenda. Activating a Home day icon, weather-guided item icon, or that forecast
-  opens one shared detail sheet with conditions, full temperature range,
-  precipitation, wind, forecast age, and chronological guided-item explanations.
-  A far-away item names its saved place and uses that place's forecast.
+  agenda, including condition, full range, precipitation, and wind so most days
+  do not require another tap. Activating a Home weather pill, weather-guided
+  item icon, or that forecast opens one shared detail sheet with conditions,
+  full temperature range, precipitation, wind, forecast age, and chronological
+  guided-item explanations. Displayed temperatures are feels-like values. A
+  far-away item names its saved place and uses that place's forecast.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
@@ -893,7 +912,7 @@ Each day section header can have two dynamic **pills**:
 ### 6.2 Missed Pills (🔴 "N missed")
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
 - Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
-- It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, and still-doable work that was never shown are excluded
+- It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, still-doable work that was never shown, and yesterday's dated row for an item whose usable window is still open today are excluded. Calendar midnight is not an opportunity ending.
 - Dated expectations are retained across skipped app days. To keep the list useful instead of becoming a backlog dump, only the newest unresolved miss for each item is shown; a later completion resolves earlier expectations.
 - Tap to open the **Slipped Sheet** (see §X.1)
 - Shows items in expected-day, then first-suggested order
@@ -1364,7 +1383,7 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
-- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here.
+- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
 - Repeated unresolved occurrences of the same item collapse to one actionable row, labeled with its newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
@@ -2538,7 +2557,9 @@ Same agenda logic, but simplified display:
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
 | `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
-| `showWeatherTemperatureRanges` | boolean | false | Add daily low–high °C beside full-mode Home and Overview week-strip weather icons |
+| `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high °C beside full-mode Home and Overview week-strip weather icons |
+| `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
+| `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |
@@ -2688,6 +2709,8 @@ Same agenda logic, but simplified display:
 | `preferredLocationId` | string\|null | Preferred single location |
 | `weatherProfileId` | string\|null | Named weather profile used by the planner |
 | `weatherLocationId` | string\|null | Optional saved place whose forecast overrides home when far away |
+| `showWeather` | boolean | Show an interval forecast pill on this item's agenda card |
+| `showWeatherAtLocation` | boolean | When `showWeather` is on, use this item's place instead of the home city |
 | `scheduleOptions` | array | Specific extra weekday/time/place windows; optional per-row preference overrides the place ranking for that instance |
 
 ### 25.3.1 Time & Place Options 👤👨‍💻

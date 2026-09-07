@@ -24,6 +24,8 @@ function applyAddDefaults(){
   renderTagChips('ting-tag-chips',defTopics,[],null);
   if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('ting-weather-profile','');
   if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('ting-weather-location','');
+  if($('ting-show-weather'))$('ting-show-weather').setAttribute('aria-pressed','false');
+  if($('ting-show-weather-location'))$('ting-show-weather-location').setAttribute('aria-pressed','false');
   if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   const topicsWrap = $('add-topics-section');
   if(topicsWrap)topicsWrap.hidden = false;

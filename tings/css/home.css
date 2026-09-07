@@ -40,6 +40,7 @@
    — the same look pills have on cards. */
 .section-header.stuck .dropped-pill,
 .section-header.stuck .free-pill{background:var(--bg);}
+.section-header.stuck .weather-day-button{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--bg) 38%,transparent);}
 /* Wider panes pad 20px; the bleed tracks it. Compensating padding keeps the
    label and pills at the same +4px offset in every layout. */
 body[data-pane-count="2"] .section-header,
@@ -109,23 +110,38 @@ body[data-pane-count="3"] .section-header{
 }
 .free-pill:active{transform:scale(0.97);}
 .weather-day-button{
-  appearance:none;-webkit-appearance:none;border:0;
-  min-width:32px;min-height:32px;padding:5px 7px;border-radius:999px;margin:0;
-  color:var(--text2);background:transparent;
-  font:inherit;line-height:1;cursor:pointer;position:relative;
+  appearance:none;-webkit-appearance:none;
+  min-width:32px;min-height:32px;max-width:min(132px,42vw);padding:5px 8px;border-radius:999px;margin:0;
+  border:.5px solid color-mix(in srgb,currentColor 30%,transparent);
+  color:var(--text2);background:var(--bg3);
+  font:inherit;font-size:10px;font-weight:800;letter-spacing:0;line-height:1;cursor:pointer;position:relative;
   -webkit-tap-highlight-color:transparent;touch-action:pan-y;
+  transition:background-color .18s ease,border-color .18s ease;
 }
 .weather-day-button::before{content:"";position:absolute;inset:-6px;}
 .weather-day-button:active{transform:scale(.97);}
-.weather-day-cue{display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;}
-.weather-day-cue i{font-size:16px;}
+.weather-day-cue{display:inline-flex;align-items:center;justify-content:center;gap:5px;max-width:100%;white-space:nowrap;}
+.weather-condition-emoji{display:inline-block;font-family:system-ui,sans-serif;font-style:normal;line-height:1;}
+.weather-day-cue .weather-condition-emoji{font-size:16px;flex:0 0 auto;}
 .weather-day-cue > span{font-size:10px;font-weight:800;letter-spacing:0;text-transform:none;}
+.weather-signal{display:inline-flex;align-items:center;gap:1px;flex:0 0 auto;}
+.weather-signal .ti{font-size:11px;}
+.weather-temperature{padding-left:5px;border-left:.5px solid color-mix(in srgb,currentColor 28%,transparent);flex:0 0 auto;}
+.weather-day-button.weather-tone-sun{color:var(--amber-text);background:var(--amber-bg);}
+.weather-day-button.weather-tone-cloud{color:var(--blue-text);background:var(--blue-bg);}
+.weather-day-button.weather-tone-fog{color:var(--text2);background:var(--bg3);}
+.weather-day-button.weather-tone-rain{color:var(--blue-text);background:var(--blue-bg);}
+.weather-day-button.weather-tone-snow,.weather-day-button.weather-tone-ice{color:var(--purple-text);background:var(--purple-bg);}
+.weather-day-button.weather-tone-storm{color:var(--red-text);background:var(--red-bg);}
+.weather-day-button.weather-tone-caution,.weather-day-button.weather-tone-blocked{color:var(--amber-text);background:var(--amber-bg);}
+.weather-day-button.weather-tone-override{color:var(--red-text);background:var(--red-bg);}
 .weather-day-cue.caution,.weather-day-cue.blocked{color:var(--amber-text);}
-.weather-day-cue.override{color:var(--red-text,var(--amber-text));}
+.weather-day-cue.override{color:var(--red-text);}
 @media(max-width:430px){
   .section-header.has-context{gap:6px;}
   .day-header-context{gap:4px;}
   .weather-day-button,.free-pill,.dropped-pill{padding-left:7px;padding-right:7px;}
+  .weather-day-button{max-width:52vw;}
 }
 .free-panel{
   padding:4px 3px 8px;display:flex;flex-direction:column;gap:3px;
@@ -574,3 +590,20 @@ body.reach-pad #list{padding-top:220px;}
 .weather-pill.override i{color:var(--red-icon);}
 .weather-pill.unknown{background:transparent;border-color:transparent;}
 .weather-pill.unknown i{color:var(--text3);}
+.weather-period-pill{
+  appearance:none;-webkit-appearance:none;max-width:none;gap:4px;padding:3px 6px;
+  border-color:transparent;font:inherit;font-size:calc(9.5px * var(--font-scale));
+  font-weight:760;font-variant-numeric:tabular-nums;cursor:default;
+}
+.weather-period-pill:is(button){cursor:pointer;}
+.weather-period-pill .weather-condition-emoji{font-size:13px;flex:0 0 auto;}
+.weather-period-temperature{white-space:nowrap;}
+.weather-period-signal{padding-left:4px;border-left:.5px solid color-mix(in srgb,currentColor 26%,transparent);white-space:nowrap;}
+.weather-guidance-mark{font-size:10px!important;color:currentColor!important;}
+.weather-period-pill.weather-tone-sun{color:var(--amber-text);background:var(--amber-bg);}
+.weather-period-pill.weather-tone-cloud,.weather-period-pill.weather-tone-rain{color:var(--blue-text);background:var(--blue-bg);}
+.weather-period-pill.weather-tone-fog{color:var(--text2);background:var(--bg3);}
+.weather-period-pill.weather-tone-snow,.weather-period-pill.weather-tone-ice{color:var(--purple-text);background:var(--purple-bg);}
+.weather-period-pill.weather-tone-storm{color:var(--red-text);background:var(--red-bg);}
+.weather-period-pill.guidance-caution,.weather-period-pill.guidance-blocked{box-shadow:inset 0 0 0 .5px var(--amber-icon);}
+.weather-period-pill.guidance-override{box-shadow:inset 0 0 0 .5px var(--red-icon);}
