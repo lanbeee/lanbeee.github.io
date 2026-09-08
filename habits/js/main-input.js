@@ -548,6 +548,8 @@ $('picker-results')?.addEventListener('click',e=>{
   if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
 });
 $('picker-gps')?.addEventListener('click',centerPickerOnGps);
+$('picker-layer-street')?.addEventListener('click',()=>setPickerBaseLayer('street'));
+$('picker-layer-satellite')?.addEventListener('click',()=>setPickerBaseLayer('satellite',{persist:true}));
 $('picker-apply-coords')?.addEventListener('click',applyPickerCoordsInputs);
 $('picker-save')?.addEventListener('click',saveLocationPicker);
 $('picker-cancel')?.addEventListener('click',closeLocationPicker);

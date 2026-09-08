@@ -1316,7 +1316,7 @@ function renderDayLogsAddStep(key){
       <div class="day-step-intro"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span><b>Add to this day</b><small>A time locks the slot. Location is optional for this day only.</small></span></div>
       ${pickerHtml}
       <label class="field-label" for="day-log-time">time <span class="field-optional">optional</span></label>
-      <input type="time" id="day-log-time" class="time-input" step="900" aria-label="optional plan time" />
+      <input type="time" id="day-log-time" class="time-input" step="300" aria-label="optional plan time" />
       ${locationHtml}
     </div>`;
 
@@ -1378,7 +1378,7 @@ function renderDayLogsLogStep(key){
       <div class="day-step-intro"><i class="ti ti-check" aria-hidden="true"></i><span><b>${key < todayIso() ? 'Add a missed log' : 'Mark it done on this day'}</b><small>${key < todayIso() ? 'This counts as if you had done it that day.' : 'Adds a real entry, just like tapping it that day.'}</small></span></div>
       ${pickerHtml}
       <label class="field-label" for="day-log-entry-time">time <span class="field-optional">optional</span></label>
-      <input type="time" id="day-log-entry-time" class="time-input" step="900" aria-label="optional entry time" />
+      <input type="time" id="day-log-entry-time" class="time-input" step="300" aria-label="optional entry time" />
     </div>`;
 
   $('day-logs-footer').innerHTML = `

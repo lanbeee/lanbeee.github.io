@@ -1,7 +1,8 @@
 let valueLogIdx = null;
 let valueLogAfter = null;
 let valueLogMinutes = null;
-function openValueLogSheet(idx,after,sessionMinutes){
+let valueLogContext = null;
+function openValueLogSheet(idx,after,sessionMinutes,context = null){
   const incomingSession = Number.isFinite(sessionMinutes) && sessionMinutes > 0;
   // Session confirm owns the sheet — don't silently overwrite it with a
   // plain value prompt (or another habit's session).
@@ -18,6 +19,7 @@ function openValueLogSheet(idx,after,sessionMinutes){
   valueLogIdx = idx;
   valueLogAfter = after || null;
   valueLogMinutes = incomingSession ? sessionMinutes : null;
+  valueLogContext = context;
   const h = load()[idx];
   const sheet = $('value-log-sheet');
   const copy = $('value-log-copy');
@@ -56,10 +58,12 @@ function finishValueLog(opts){
   const idx = valueLogIdx;
   const after = valueLogAfter;
   const minutes = valueLogMinutes;
+  const context = valueLogContext;
   const wasSession = minutes != null;
   valueLogIdx = null;
   valueLogAfter = null;
   valueLogMinutes = null;
+  valueLogContext = null;
   closeSheet('value-log-sheet');
   if(idx == null)return;
   const h = typeof load === 'function' ? load()[idx] : null;
@@ -70,7 +74,7 @@ function finishValueLog(opts){
     if(typeof render === 'function')render();
     return;
   }
-  const full = {...(opts || {})};
+  const full = {...(context || {}),...(opts || {})};
   if(minutes != null)full.minutes = minutes;
   if(!logTing(idx,full))return;
   if(typeof after === 'function')after();
@@ -94,6 +98,7 @@ function discardValueLogSheet(){
   valueLogIdx = null;
   valueLogAfter = null;
   valueLogMinutes = null;
+  valueLogContext = null;
   closeSheet('value-log-sheet');
   if(wasSession){
     const h = idx != null && typeof load === 'function' ? load()[idx] : null;
@@ -112,7 +117,7 @@ function requestLogTing(idx,after,opts){
   const h = load()[idx];
   if(!h)return;
   if(h.trackValue){
-    openValueLogSheet(idx,after,opts && opts.minutes);
+    openValueLogSheet(idx,after,opts && opts.minutes,opts || null);
     return;
   }
   if(!logTing(idx,opts || {}))return;

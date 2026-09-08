@@ -98,6 +98,39 @@ async function openSettings(page){
   };});
   await page.locator('#loc-open-picker').click();
   await page.waitForSelector('#location-picker-sheet.open');
+  const mapViews = await page.evaluate(()=>({
+    street:Boolean(document.querySelector('#picker-layer-street')),
+    satellite:Boolean(document.querySelector('#picker-layer-satellite')),
+    streetDefault:document.querySelector('#picker-layer-street')?.getAttribute('aria-pressed') === 'true'
+  }));
+  assert(mapViews.street && mapViews.satellite && mapViews.streetDefault,
+    'map exposes Street/Satellite switch with Street default');
+  const beforeLayerCoords = await page.evaluate(()=>({
+    center:pickerMap.getCenter(),zoom:pickerMap.getZoom(),lat:document.querySelector('#picker-lat').value,lng:document.querySelector('#picker-lng').value
+  }));
+  await page.locator('#picker-layer-satellite').click();
+  await page.evaluate(()=>pickerSatelliteTileLoaded());
+  const satelliteView = await page.evaluate(()=>({
+    selected:pickerBaseLayer,
+    persisted:loadSortSettings().mapBaseLayer,
+    center:pickerMap.getCenter(),zoom:pickerMap.getZoom(),
+    attribution:document.querySelector('.leaflet-control-attribution')?.textContent || ''
+  }));
+  assert(satelliteView.selected === 'satellite' && satelliteView.persisted === 'satellite'
+    && /Esri/.test(satelliteView.attribution),'satellite layer switches and persists after a successful tile');
+  assert(Math.abs(satelliteView.center.lat - beforeLayerCoords.center.lat) < 2e-5
+    && Math.abs(satelliteView.center.lng - beforeLayerCoords.center.lng) < 2e-5
+    && satelliteView.zoom === beforeLayerCoords.zoom,
+    `base-layer switch preserves center and zoom (${JSON.stringify({before:beforeLayerCoords,after:satelliteView})})`);
+  await page.evaluate(()=>{ pickerSatelliteLoaded = false; pickerSatelliteTileFailed(); });
+  const fallbackView = await page.evaluate(()=>({
+    selected:pickerBaseLayer,persisted:loadSortSettings().mapBaseLayer,
+    lat:document.querySelector('#picker-lat').value,lng:document.querySelector('#picker-lng').value
+  }));
+  assert(fallbackView.selected === 'street' && fallbackView.persisted === 'street',
+    'satellite tile failure falls back to Street without persisting failure');
+  assert(fallbackView.lat === beforeLayerCoords.lat && fallbackView.lng === beforeLayerCoords.lng,
+    'layer switching preserves the pin coordinates');
   await page.locator('#picker-name').fill('Office');
   await page.locator('#picker-search').fill('10 Downing Street');
   await page.locator('#picker-search-btn').click();
@@ -151,7 +184,7 @@ async function openSettings(page){
   assert(afterUncheck.on === false, 'All day turns off and stays off');
   assert(afterUncheck.start === 540 && afterUncheck.end === 1020, 'uncheck applies default 09:00–17:00');
   assert(afterUncheck.startDisabled === false, 'hours inputs enabled after uncheck');
-  await page.locator('[data-loc-start="0"]').fill('11:00');
+  await page.locator('[data-loc-start="0"]').fill('11:03');
   await page.locator('[data-loc-end="0"]').fill('17:00');
   await page.locator('[data-loc-end="0"]').blur();
   await page.waitForTimeout(200);
@@ -160,7 +193,7 @@ async function openSettings(page){
     return { start:loc.allowedTimeStart, end:loc.allowedTimeEnd };
   });
   console.log(hrs);
-  assert(hrs.start === 660 && hrs.end === 1020, 'open window persisted as 660/1020');
+  assert(hrs.start === 663 && hrs.end === 1020, 'typed 11:03 persists exactly as 663 minutes');
 
   // ── C2. Radius is editable ──
   console.log('\n[C2] radius edit');

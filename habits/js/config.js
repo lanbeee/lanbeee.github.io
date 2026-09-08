@@ -32,6 +32,7 @@ const GEOCODE_FETCH_TIMEOUT_MS = 8000;             // address search / reverse c
 const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
+const ESRI_WORLD_IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 // ── Weather guidance (Open-Meteo; no API key) ──
 const WEATHER_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -104,7 +105,8 @@ const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_MIN_CHUNK_MINUTES = 30;
 const DEFAULT_EARLY_WINDOW_DAYS = 1;
 const DEFAULT_DELAY_ALLOWANCE_DAYS = 0;
-const TIME_PICKER_STEP_MINUTES = 15;
+const TIME_PICKER_STEP_MINUTES = 5;
+const MIN_BREAKABLE_CHUNK_MINUTES = 15;
 const MAX_NOTE_CHARS = 200;
 /** Soft location preference among allowed places. */
 const LOCATION_PREF_LEVELS = ['avoid','little','high'];
@@ -176,6 +178,7 @@ const DEFAULT_SORT_SETTINGS = {
   // Exact ILP packer for tight windows (lazy-loads GLPK). This is the default
   // planner; the scarcity-first heuristic remains the explicit fast fallback.
   agendaOptimizer:true,
+  mapBaseLayer:'street',
   // Unified agenda placement score (lower = better). All soft signals share
   // one comparable scale — no special-case overrides for due/near/tonight.
   //   travel       — per second of commute for this placement

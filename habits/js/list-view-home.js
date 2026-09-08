@@ -502,12 +502,13 @@ function minutesToTimeInput(minutes){
   const m = minutes % 60;
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
-// PURE: parse HH:MM into minutes, snapped to the 15-minute picker grid
+// PURE: parse HH:MM losslessly. The native picker suggests five-minute values,
+// but a valid typed minute is never silently rewritten.
 function timeInputToMinutes(value){
   if(!value)return null;
   const [h,m] = value.split(':').map(Number);
   if(Number.isNaN(h) || Number.isNaN(m))return null;
-  return snapTimeMinutes(h * 60 + m);
+  return normalizeTimeMinutes(h * 60 + m);
 }
 // PURE: ms timestamp -> "YYYY-MM-DD" for <input type="date">
 function dateInputValue(ts){
@@ -712,15 +713,29 @@ function matchesHomeTopic(h,topic){
   return matchesTopicFilter(h,topic);
 }
 
-// RENDER: toggle sort and search buttons
-function updateSortButton(){
+let lastUnsearchedHomeCardCount = 0;
+
+function homeSearchAvailable(){
+  const data = load();
+  return lastUnsearchedHomeCardCount >= 10
+    || data.some(h=>h.type === 'task' && isTaskDone(h));
+}
+
+// RENDER: toggle overview and Search from the settled Home presentation.
+// Search results never overwrite the cached unsearched count, so narrowing a
+// query cannot make its own control disappear.
+function updateSortButton(settled = false){
   const data = load();
   const count = data.length;
+  if(settled && !searchQuery.trim()){
+    lastUnsearchedHomeCardCount = document.querySelectorAll('#list .ting-card').length;
+  }
   const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
+  const canSearch = lastUnsearchedHomeCardCount >= 10 || hasSearchableArchive;
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
-  $('open-search').classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
-  $('open-search').disabled = count < 10 && !hasSearchableArchive;
+  $('open-search').classList.toggle('is-hidden',!canSearch);
+  $('open-search').disabled = !canSearch;
   const barOverview = $('bar-open-overview');
   if (barOverview) {
     barOverview.classList.toggle('is-hidden',count < 1);
@@ -728,10 +743,10 @@ function updateSortButton(){
   }
   const barSearch = $('bar-open-search');
   if (barSearch) {
-    barSearch.classList.toggle('is-hidden',count < 10 && !hasSearchableArchive);
-    barSearch.disabled = count < 10 && !hasSearchableArchive;
+    barSearch.classList.toggle('is-hidden',!canSearch);
+    barSearch.disabled = !canSearch;
   }
-  if(count < 10 && !hasSearchableArchive)closeSearch({render:false});
+  if(!canSearch)closeSearch({render:false});
 }
 
 // PURE: whether the search chrome is open (phone nav or wide app bar).

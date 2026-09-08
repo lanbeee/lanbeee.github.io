@@ -135,16 +135,12 @@ $('open-add').addEventListener('click',()=>{
 });
 
 $('open-search').addEventListener('click',()=>{
-  const data = load();
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
-  if(data.length < 10 && !hasSearchableArchive)return;
+  if(typeof homeSearchAvailable === 'function' && !homeSearchAvailable())return;
   if(isSearchOpen())closeSearch();
   else setSearchOpen(true);
 });
 $('bar-open-search')?.addEventListener('click',()=>{
-  const data = load();
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
-  if(data.length < 10 && !hasSearchableArchive)return;
+  if(typeof homeSearchAvailable === 'function' && !homeSearchAvailable())return;
   if(isSearchOpen())closeSearch();
   else setSearchOpen(true);
 });
@@ -942,6 +938,7 @@ $('detail-habit-options')?.addEventListener('click',e=>{
         btn.setAttribute('aria-pressed','true');
       });
     }
+    syncHabitScheduleOptionOverlapUi();
     setDetailDirty();
     return;
   }
@@ -1341,6 +1338,8 @@ $('detail-save').addEventListener('click',()=>{
   const data = load();
   const h = data[detailIdx];
   if(!h)return;
+  if(typeof validateHabitScheduleOptionModes === 'function'
+    && !validateHabitScheduleOptionModes())return;
   const current = currentDetailTune();
   if(!current.name){$('detail-habit-message').focus();return;}
   h.scheduleLinks = normalizeScheduleLinks(current.scheduleLinks,h.hid);

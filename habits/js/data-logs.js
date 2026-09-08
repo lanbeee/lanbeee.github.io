@@ -68,6 +68,10 @@ function logNote(log){
   if(!log || typeof log !== 'object' || isPlanLog(log))return '';
   return String((log && log.note) || '').slice(0,MAX_NOTE_CHARS).trim();
 }
+function logOccurrenceKey(log){
+  if(!log || typeof log !== 'object' || isPlanLog(log))return '';
+  return String(log.occurrenceKey || '').slice(0,160);
+}
 /** PURE: true when a log is imported-calendar progress credit (not a manual session). */
 function isCalendarCreditLog(log){
   return Boolean(log && typeof log === 'object' && !isPlanLog(log) && log.source === 'calendar');
@@ -93,12 +97,20 @@ function normalizeLogs(logs){
         if(value !== null)entry.value = value;
         if(minutes !== null)entry.minutes = minutes;
         if(note)entry.note = note;
+        const occurrenceKey = logOccurrenceKey(log);
+        const optionId = String(log.scheduleOptionId || '').slice(0,64);
+        const scheduledDay = /^\d{4}-\d{2}-\d{2}$/.test(String(log.scheduledDay || ''))
+          ? String(log.scheduledDay) : '';
+        if(occurrenceKey)entry.occurrenceKey = occurrenceKey;
+        if(optionId)entry.scheduleOptionId = optionId;
+        if(scheduledDay)entry.scheduledDay = scheduledDay;
         if(log.source === 'calendar')entry.source = 'calendar';
         if(log.source === 'shared_display' && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
           entry.source = 'shared_display';
           entry.operationId = String(log.operationId);
         }
-        if(entry.value !== undefined || entry.minutes !== undefined || entry.note !== undefined || entry.source)return entry;
+        if(entry.value !== undefined || entry.minutes !== undefined || entry.note !== undefined
+          || entry.source || entry.occurrenceKey)return entry;
       }
       return ts;
     })
@@ -147,11 +159,19 @@ function makeActualLog(ts,opts = {}){
   if(Number.isFinite(minutes) && minutes > 0)entry.minutes = Math.round(minutes);
   const note = String(opts.note || opts.text || '').slice(0,MAX_NOTE_CHARS).trim();
   if(note)entry.note = note;
+  const occurrenceKey = String(opts.occurrenceKey || '').slice(0,160);
+  const optionId = String(opts.scheduleOptionId || '').slice(0,64);
+  const scheduledDay = /^\d{4}-\d{2}-\d{2}$/.test(String(opts.scheduledDay || ''))
+    ? String(opts.scheduledDay) : '';
+  if(occurrenceKey)entry.occurrenceKey = occurrenceKey;
+  if(optionId)entry.scheduleOptionId = optionId;
+  if(scheduledDay)entry.scheduledDay = scheduledDay;
   if(opts.source === 'shared_display' && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
     entry.source = 'shared_display';
     entry.operationId = String(opts.operationId);
   }
-  if(entry.value === undefined && entry.minutes === undefined && entry.note === undefined && !entry.source)return ts;
+  if(entry.value === undefined && entry.minutes === undefined && entry.note === undefined
+    && !entry.source && !entry.occurrenceKey)return ts;
   return entry;
 }
 function makeLog(ts){

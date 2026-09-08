@@ -267,17 +267,18 @@ async function progressBar(page){
   // Wait for the dropped pill to appear (demo render may be async).
   await page.waitForSelector('.dropped-pill', {timeout: 5000});
   assert(await page.locator('#tings-coach[data-coach-stage="aMissed"]').getAttribute('data-locked') === 'true','the missed step is always locked to the dropped pill (demo state guarantees it)');
-  await page.locator('.dropped-pill').first().click();
-  await stage(page,'aMissedList');
+  await tapTarget(page,'.dropped-pill');
+  await stage(page,'aMissedList',5000);
   assert(await page.locator('#slipped-sheet.open').count() === 1,'tapping the missed count opens the real missed list');
   await primary(page,'aMissedList','aOpenTime');
   // Closing the slipped sheet can re-render Home, so the free pill and the
   // coach's lock re-mount on the next observer cycle — wait for the lock
   // instead of reading it in the same frame as the stage flip.
-  await page.waitForFunction(()=>document.querySelector('#tings-coach[data-coach-stage="aOpenTime"]')?.dataset.locked === 'true',null,{timeout:5000}).catch(()=>{});
+  await page.waitForFunction(()=>document.querySelector('#tings-coach[data-coach-stage="aOpenTime"]')?.dataset.locked === 'true',null,{timeout:5000});
   assert(await page.locator('#tings-coach[data-coach-stage="aOpenTime"]').getAttribute('data-locked') === 'true','the open-time step is always locked to the free pill (demo state guarantees it)');
-  await page.locator('.free-pill').first().click();
-  await stage(page,'aOpenStrip');
+  await tapTarget(page,'.free-pill');
+  await page.waitForSelector('#free-time-sheet.open',{timeout:5000});
+  await stage(page,'aOpenStrip',5000);
   assert(await page.locator('#free-time-sheet.open').count() === 1,'tapping the open-time count opens the real day strip');
   await primary(page,'aOpenStrip','aIntro');
   assert(await page.locator('[data-coach-chapter="home"].is-done').count() === 1,'finishing a chapter checks it off on the menu');

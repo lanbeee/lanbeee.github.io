@@ -249,6 +249,25 @@ function habitScheduleOptionTimeKey(option,prefix){
     .join(':');
 }
 
+// PURE: compact deterministic identity for legacy rows that pre-date stored
+// option IDs. New/editor-saved rows keep their generated ID; old rows receive
+// the same derived ID on every load without rewriting localStorage.
+function habitScheduleOptionId(raw,key){
+  const saved = String(raw && raw.id || '').trim();
+  if(/^[A-Za-z0-9_-]{6,64}$/.test(saved))return saved;
+  let hash = 2166136261;
+  const source = String(key || 'schedule-option');
+  for(let i = 0;i < source.length;i += 1){
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash,16777619);
+  }
+  return `so_${(hash >>> 0).toString(36)}`;
+}
+
+function habitScheduleOptionSameDayMode(option){
+  return option && option.sameDayMode === 'separate' ? 'separate' : 'alternative';
+}
+
 // PURE: one specific weekday/time/place window. These extend the general
 // allowed schedule rather than replacing it. Multiple rows may use the same
 // location at different times. Empty weekdays means every day; null
@@ -275,7 +294,12 @@ function normalizeHabitScheduleOptions(value,registry){
     const key = `${weekdays.join(',')}|${habitScheduleOptionTimeKey(option,'start')}|${habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}`;
     if(seen.has(key))continue;
     seen.add(key);
-    out.push(pref ? {...option,pref} : option);
+    const identified = {
+      ...option,
+      id:habitScheduleOptionId(raw,key),
+      sameDayMode:habitScheduleOptionSameDayMode(raw)
+    };
+    out.push(pref ? {...identified,pref} : identified);
     if(out.length >= MAX_HABIT_SCHEDULE_OPTIONS)break;
   }
   return out;
@@ -390,6 +414,8 @@ function habitBoundToScheduleOption(h,option){
     anywhereAllowed:locationId == null,
     locationPrefs,
     _scheduleOptionPref:pref,
+    _scheduleOptionId:normalized.id,
+    _scheduleOptionSameDayMode:habitScheduleOptionSameDayMode(normalized),
     preferredLocationId:pref === 'high' && locationId
       ? locationId
       : (h && h.preferredLocationId) || null
@@ -404,7 +430,9 @@ function habitSchedulePlacementVariants(fill,dayBase,registry){
     const generalFill = {
       ...fill,
       h:habitBoundToGeneralSchedule(h),
-      _scheduleOptionBound:true
+      _scheduleOptionBound:true,
+      _scheduleOptionId:'general',
+      _scheduleOptionSameDayMode:'alternative'
     };
     if(!(Object.prototype.hasOwnProperty.call(fill,'locationId') && fill.locationId !== undefined)){
       delete generalFill.locationId;
@@ -414,12 +442,22 @@ function habitSchedulePlacementVariants(fill,dayBase,registry){
   const hasLocationProperty = Object.prototype.hasOwnProperty.call(fill,'locationId');
   const explicitLocation = hasLocationProperty && fill.locationId !== undefined
     ? fill.locationId : undefined;
-  for(const option of habitScheduleOptionsForDay(h,dayBase,explicitLocation)){
+  const dayOptions = habitScheduleOptionsForDay(h,dayBase,explicitLocation);
+  const ordinaryOptions = dayOptions.filter(option=>habitScheduleOptionSameDayMode(option) !== 'separate');
+  // Separate rows are extra lanes. The ordinary occurrence uses general or
+  // alternative rows when available; if a day consists only of separate rows,
+  // its first row can still serve as the day's ordinary lane.
+  const placementOptions = ordinaryOptions.length || variants.length
+    ? ordinaryOptions
+    : dayOptions.slice(0,1);
+  for(const option of placementOptions){
     variants.push({
       ...fill,
       h:habitBoundToScheduleOption(h,option),
       locationId:option.locationId,
-      _scheduleOptionBound:true
+      _scheduleOptionBound:true,
+      _scheduleOptionId:option.id,
+      _scheduleOptionSameDayMode:habitScheduleOptionSameDayMode(option)
     });
   }
   return variants;
@@ -516,7 +554,8 @@ function primaryPreferredLocationId(prefs,ids){
   const little = allowed.find(id=>map[id] === 'little');
   return little || null;
 }
-/** PURE: snap minutes-from-midnight to the time-picker grid (15 min). */
+/** PURE: snap minutes-from-midnight to the time-picker grid. Unused for
+ *  storage — typed clock values stay exact; picker UI uses five-minute steps. */
 function snapTimeMinutes(value,step = TIME_PICKER_STEP_MINUTES){
   const n = normalizeTimeMinutes(value);
   if(n === null)return null;

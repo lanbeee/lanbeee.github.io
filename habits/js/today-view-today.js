@@ -98,6 +98,9 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints);
   }
 
+  placeAdditionalSameDayOccurrences(candidates,dayStates,settings);
+  annotateAgendaOccurrenceKeys(candidates,dayStates);
+
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){
     const state = dayStates[d];

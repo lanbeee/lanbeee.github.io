@@ -721,6 +721,28 @@ function completedOnDay(h,dayBase){
   return actualLogs(h.logs).some(ts=>ts >= start && ts < end);
 }
 
+// PURE: completion filtering for a concrete agenda row. Identity-bearing logs
+// remove their matching session only; ordinary logs consume the earliest
+// unmatched row for that day and continue to count normally toward rhythm.
+function agendaRowsAfterCompletions(h,rows,dayBase){
+  const list = Array.isArray(rows) ? rows : [];
+  if(!h || h.type === 'task' || h.breakable || list.length <= 1){
+    return completedOnDay(h,dayBase) ? [] : list;
+  }
+  const start = dayStart(dayBase);
+  const end = start + 86400000;
+  const logs = normalizeLogs(h.logs).filter(log=>!isPlanLog(log)
+    && logTime(log) >= start && logTime(log) < end);
+  if(!logs.length)return list;
+  const matched = new Set(logs.map(logOccurrenceKey).filter(Boolean));
+  let ordinary = logs.filter(log=>!logOccurrenceKey(log)).length;
+  return [...list].sort((a,b)=>(a.start || 0) - (b.start || 0)).filter(row=>{
+    if(row.occurrenceKey && matched.has(row.occurrenceKey))return false;
+    if(ordinary > 0){ ordinary -= 1; return false; }
+    return true;
+  });
+}
+
 function autoChunkPlanScope(h,dayBase){
   if(!h || !h.hid)return null;
   return h.type === 'task' ? `task:${h.hid}` : `day:${h.hid}:${dateKey(dayBase)}`;

@@ -71,14 +71,14 @@ function uiTimeExprHtml(prefix, second){
   const habitAria = second ? `${prefix} second habit` : `${prefix} anchor habit`;
   const offsetAria = second ? `${prefix} second offset minutes` : `${prefix} offset minutes`;
   const anchorAria = second ? `${prefix} second anchor` : `${prefix} anchor`;
-  const clock = second ? `<input type="time" class="time-input time-fixed2" step="900" hidden aria-label="${prefix} clock time" />` : '';
+  const clock = second ? `<input type="time" class="time-input time-fixed2" step="300" hidden aria-label="${prefix} clock time" />` : '';
   return `<select class="${anchorCls} mini-select" aria-label="${anchorAria}"></select>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><input type="number" class="${offsetCls} mini-time-input" inputmode="numeric" placeholder="0" aria-label="${offsetAria}" /><button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="+" aria-label="minutes after">after</button><span class="time-offset-unit">min</span><button type="button" class="${dayCls} mini-text-btn" aria-pressed="false" title="use next day's prayer" aria-label="next day">next day</button>`;
 }
 
 function uiTimeEndpointHtml({field, inputId, prefix, endpointLabel, fixedClass = ''}){
   const which = endpointLabel === 'starts' ? 'start' : 'end';
   const fixedCls = fixedClass ? ` ${fixedClass}` : '';
-  return `<div class="time-endpoint" data-field="${field}" data-endpoint-label="${endpointLabel}"><input type="time" class="time-input time-fixed${fixedCls}" id="${inputId}" step="900" aria-label="${prefix} time" /><div class="time-dynamic" hidden><div class="time-expr">${uiTimeExprHtml(prefix, false)}</div><select class="time-combine mini-select" aria-label="${prefix} combine"><option value="">just this time</option><option value="later">whichever is later</option><option value="earlier">whichever is earlier</option></select><div class="time-expr time-expr2" hidden>${uiTimeExprHtml(prefix, true)}</div><span class="time-resolved" aria-live="polite"></span></div>${uiTimeModeToggleHtml({which})}</div>`;
+  return `<div class="time-endpoint" data-field="${field}" data-endpoint-label="${endpointLabel}"><input type="time" class="time-input time-fixed${fixedCls}" id="${inputId}" step="300" aria-label="${prefix} time" /><div class="time-dynamic" hidden><div class="time-expr">${uiTimeExprHtml(prefix, false)}</div><select class="time-combine mini-select" aria-label="${prefix} combine"><option value="">just this time</option><option value="later">whichever is later</option><option value="earlier">whichever is earlier</option></select><div class="time-expr time-expr2" hidden>${uiTimeExprHtml(prefix, true)}</div><span class="time-resolved" aria-live="polite"></span></div>${uiTimeModeToggleHtml({which})}</div>`;
 }
 
 function uiTimePairHtml(kind){
@@ -175,7 +175,7 @@ const UI_PRIVACY_BLOCKS = [
   {id:'privacy-maps-body', label:'Maps and places', summary:'Lookups use open mapping services, and only for that lookup.', body:[
     '<b>Address or city search</b> sends the text you type to Photon (Komoot) and Nominatim (OpenStreetMap).',
     '<b>Travel estimates</b> send the pins of two saved places to OSRM. You can type minutes yourself instead.',
-    '<b>Map picture</b> loads OpenStreetMap tiles for the area on screen.',
+    '<b>Map picture</b> loads OpenStreetMap street tiles or Esri World Imagery satellite tiles for the area on screen.',
     'These are open mapping services. They receive the search or pin needed for that job — not your habit list, and not an ongoing location history. That is a narrower request than embedding Google Maps or Apple Maps.'
   ]},
   {id:'privacy-weather-body', label:'Weather guidance', summary:'Forecast displays or guidance send home-city coordinates to Open-Meteo, plus only the far-away places needed on your plan.', body:[
@@ -214,7 +214,7 @@ const UI_LEAVE_HINTS = {
   },
   map:{
     aria:'this loads map tiles from the web',
-    body:'Map tiles come from OpenStreetMap. The request is the area on screen, not your habits, and not a location history. Full story: About → privacy.'
+    body:'Street tiles come from OpenStreetMap; Satellite tiles come from Esri World Imagery. The request is the area on screen, not your habits or a location history. Full story: About → privacy.'
   },
   weather:{
     aria:'this sends forecast coordinates off this device',

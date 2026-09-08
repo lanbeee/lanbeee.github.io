@@ -1105,6 +1105,9 @@ function buildPlacementDiagnostics(ordered,state){
   });
   const placements = (state.fills || []).map(entry=>({
     i:entry.fill.i,
+    occurrenceKey:entry.fill.occurrenceKey || entry.fit.occurrenceKey || null,
+    scheduleOptionId:entry.fit.scheduleOptionId || null,
+    scheduledDay:dateKey(state.dayBase),
     start:entry.fit.placeStart,
     end:entry.fit.placeEnd,
     minutes:Math.max(0,Math.round(Number(entry.fit.durMin) || 0)),
@@ -1154,7 +1157,8 @@ function diagnosticsFromRenderedDay(data,settings,day){
     const h = data[row.i] || row.h;
     const chunkIndex = row.chunkIndex != null ? row.chunkIndex : (chunkCounts.get(row.i) || 0);
     chunkCounts.set(row.i,chunkIndex + 1);
-    const placeKey = h && h.breakable ? `${row.i}:${chunkIndex}` : row.i;
+    const placeKey = row.occurrenceKey
+      || (h && h.breakable ? `${row.i}:${chunkIndex}` : row.i);
     const travel = travels.find(item=>Math.abs(item.end - row.start) < 1000
       && (!row.locationId || !item.to || item.to === row.locationId));
     const seconds = Math.max(0,Number(travel && travel.seconds) || 0);
@@ -1162,7 +1166,8 @@ function diagnosticsFromRenderedDay(data,settings,day){
       h,i:row.i,priority:effectivePriority(h),
       chunkMinutes:row.chunkMinutes != null ? row.chunkMinutes : Math.round((row.end - row.start) / 60000),
       chunkIndex,
-      placeKey
+      placeKey,
+      occurrenceKey:row.occurrenceKey || null
     };
     const fit = {
       placeStart:row.start,
@@ -1173,7 +1178,9 @@ function diagnosticsFromRenderedDay(data,settings,day){
       durMin:Math.max(0,Math.round((row.end - row.start) / 60000)),
       slotStart:row.start,
       prevLocId:travel && travel.from || null,
-      placeKey
+      placeKey,
+      occurrenceKey:row.occurrenceKey || null,
+      scheduleOptionId:row.scheduleOptionId || null
     };
     state.placed.add(placeKey);
     state.placed.add(row.i);
@@ -1742,6 +1749,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     end:row.end,
     minutes:Math.max(0,Math.round((row.end - row.start) / 60000)),
     locationId:row.locationId || null,
+    occurrenceKey:row.occurrenceKey || null,
+    scheduleOptionId:row.scheduleOptionId || null,
+    scheduledDay:row.scheduledDay || (row.start ? dateKey(row.start) : null),
     // Travel-leg endpoints are preserved so the on-demand planner trace can
     // reconstruct the location anchor at any fill without re-running placement.
     from:row.from || null,

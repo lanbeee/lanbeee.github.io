@@ -99,9 +99,9 @@ function locationRowMarkup(loc,i){
     </div>
     <div class="location-hours">
       <span class="loc-field-label">hours</span>
-      <input type="time" step="900" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <input type="time" step="300" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
       <span class="loc-sep">–</span>
-      <input type="time" step="900" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <input type="time" step="300" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
       <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}">All day</button>
     </div>
     <div class="location-radius">
@@ -121,9 +121,9 @@ function locationRowMarkup(loc,i){
       </div>
       <div class="loc-pref">
         <span class="loc-field-label">prefer</span>
-        <input type="time" step="900" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}" />
+        <input type="time" step="300" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}" />
         <span class="loc-sep">–</span>
-        <input type="time" step="900" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}" />
+        <input type="time" step="300" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}" />
         <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
       </div>
       <div class="loc-perday">
@@ -135,9 +135,9 @@ function locationRowMarkup(loc,i){
           const de = hd && Number.isFinite(hd.end) ? minutesToTimeInput(hd.end) : '';
           return `<div class="perday-row">
             <span class="perday-label">${label}</span>
-            <input type="time" step="900" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="300" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
             <span class="loc-sep">–</span>
-            <input type="time" step="900" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="300" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
             <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</label>
           </div>`;
         }).join('')}
@@ -298,6 +298,10 @@ function toggleLocationMore(index){
 // ── Location map picker (Leaflet) ───────────────────────────────────────
 let pickerMap = null;
 let pickerMarker = null;
+let pickerStreetLayer = null;
+let pickerSatelliteLayer = null;
+let pickerBaseLayer = 'street';
+let pickerSatelliteLoaded = false;
 let pickerEditIndex = null;
 let pickerReverseTimer = null;
 let pickerSuppressReverse = false;
@@ -318,12 +322,53 @@ function destroyLocationPickerMap(){
     }catch{ /* ignore */ }
     pickerMap = null;
     pickerMarker = null;
+    pickerStreetLayer = null;
+    pickerSatelliteLayer = null;
+    pickerSatelliteLoaded = false;
   }
   const el = $('picker-map');
   if(el){
     el.innerHTML = '';
     if(el._leaflet_id)delete el._leaflet_id;
   }
+}
+
+function syncPickerBaseLayerButtons(){
+  document.querySelectorAll('[data-picker-layer]').forEach(btn=>{
+    const active = btn.dataset.pickerLayer === pickerBaseLayer;
+    btn.classList.toggle('on',active);
+    btn.setAttribute('aria-pressed',String(active));
+  });
+}
+
+function setPickerBaseLayer(mode,{persist = true} = {}){
+  if(!pickerMap)return;
+  const next = mode === 'satellite' ? 'satellite' : 'street';
+  const layer = next === 'satellite' ? pickerSatelliteLayer : pickerStreetLayer;
+  const old = pickerBaseLayer === 'satellite' ? pickerSatelliteLayer : pickerStreetLayer;
+  if(!layer)return;
+  try{
+    if(old && old !== layer && pickerMap.hasLayer(old))pickerMap.removeLayer(old);
+    if(!pickerMap.hasLayer(layer))layer.addTo(pickerMap);
+  }catch{return;}
+  pickerBaseLayer = next;
+  syncPickerBaseLayerButtons();
+  if(persist && next === 'street')saveSortSettings({...sortSettings,mapBaseLayer:'street'});
+  if(persist && next === 'satellite' && pickerSatelliteLoaded){
+    saveSortSettings({...sortSettings,mapBaseLayer:'satellite'});
+  }
+}
+
+function pickerSatelliteTileLoaded(){
+  if(pickerBaseLayer !== 'satellite' || pickerSatelliteLoaded)return;
+  pickerSatelliteLoaded = true;
+  saveSortSettings({...sortSettings,mapBaseLayer:'satellite'});
+}
+
+function pickerSatelliteTileFailed(){
+  if(pickerBaseLayer !== 'satellite' || pickerSatelliteLoaded)return;
+  setPickerBaseLayer('street',{persist:true});
+  showToast('satellite view unavailable — showing Street');
 }
 
 function pickerPanTo(lat,lng,zoom){
@@ -392,10 +437,18 @@ function ensureLocationPickerMap(lat,lng){
       fadeAnimation:false,
       markerZoomAnimation:false
     }).setView([startLat,startLng],15,{animate:false});
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    pickerStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
       maxZoom:19,
       attribution:'&copy; OpenStreetMap'
-    }).addTo(pickerMap);
+    });
+    pickerSatelliteLayer = L.tileLayer(ESRI_WORLD_IMAGERY_TILES,{
+      maxZoom:19,
+      attribution:'Tiles &copy; Esri — Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+    });
+    pickerSatelliteLayer.on('tileload',pickerSatelliteTileLoaded);
+    pickerSatelliteLayer.on('tileerror',pickerSatelliteTileFailed);
+    pickerBaseLayer = (sortSettings && sortSettings.mapBaseLayer) === 'satellite' ? 'satellite' : 'street';
+    (pickerBaseLayer === 'satellite' ? pickerSatelliteLayer : pickerStreetLayer).addTo(pickerMap);
     // The fixed center target is the one pin the user positions. Keep an
     // invisible marker only as a lightweight coordinate holder for existing
     // map-sync code; showing both produced two competing pins on small maps.
@@ -409,6 +462,7 @@ function ensureLocationPickerMap(lat,lng){
     pickerPanTo(startLat,startLng,pickerMap.getZoom() || 15);
     try{ if(pickerMarker)pickerMarker.setLatLng([startLat,startLng]); }catch{ /* ignore */ }
   }
+  syncPickerBaseLayerButtons();
   const gen = pickerMapGen;
   setTimeout(()=>{ try{ if(pickerMap && gen === pickerMapGen)pickerMap.invalidateSize(); }catch{ /* ignore */ } },80);
   setTimeout(()=>{ try{ if(pickerMap && gen === pickerMapGen)pickerMap.invalidateSize(); }catch{ /* ignore */ } },320);

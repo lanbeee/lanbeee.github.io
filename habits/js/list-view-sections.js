@@ -699,9 +699,9 @@ function renderFreeWindowChecker(info){
     </button>
     <div class="free-fit-body" id="free-fit-body" hidden>
       <div class="free-fit-fields">
-        <label><span>from</span><input class="free-fit-start" type="time" step="900" value="${freeWindowInputValue(initial.start)}" /></label>
+        <label><span>from</span><input class="free-fit-start" type="time" step="300" value="${freeWindowInputValue(initial.start)}" /></label>
         <i class="ti ti-arrow-right" aria-hidden="true"></i>
-        <label><span>to</span><input class="free-fit-end" type="time" step="900" value="${freeWindowInputValue(initial.end)}" /></label>
+        <label><span>to</span><input class="free-fit-end" type="time" step="300" value="${freeWindowInputValue(initial.end)}" /></label>
         <button type="button" class="free-fit-run">check</button>
       </div>
       <div class="free-fit-result" role="status" aria-live="polite"><i class="ti ti-pointer" aria-hidden="true"></i><span><b>Choose a time</b><small>Or tap a section of the timeline above.</small></span></div>
@@ -851,7 +851,7 @@ function render(opts){
   // the full-dataset JSON.stringify it costs per keystroke render.
   const searching = Boolean(searchQuery.trim());
   if(!searching)updateQuotaBar(sizeKb(data));
-  updateSortButton();
+  updateSortButton(false);
   updateSearchUi();
 
   // One shared sort pass: empty-state logic, the filter sheet counts, and the
@@ -902,6 +902,7 @@ function render(opts){
       };
     }
     _homeListFingerprint = homeListFingerprint();
+    updateSortButton(true);
     restoreHomeReadingPosition(readingPosition,list);
     return;
   }
@@ -1043,6 +1044,9 @@ function render(opts){
     }
     if(canDrag)row.dataset.agendaDraggable = '1';
     if(h.hid)row.dataset.hid = h.hid;
+    if(agendaRow && agendaRow.occurrenceKey)row.dataset.occurrenceKey = agendaRow.occurrenceKey;
+    if(agendaRow && agendaRow.scheduleOptionId)row.dataset.scheduleOptionId = agendaRow.scheduleOptionId;
+    if(agendaRow && agendaRow.scheduledDay)row.dataset.scheduledDay = agendaRow.scheduledDay;
     if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
       row.dataset.chunkMinutes = String(Math.round(agendaRow.chunkMinutes));
     }
@@ -1155,14 +1159,28 @@ function render(opts){
       // chain around still-due habits. A partially-logged breakable is NOT
       // completedOnDay (progress < total), so it correctly stays due.
       const rawTimeline = Array.isArray(day.timeline) ? day.timeline : [];
-      const displayTimeline = (typeof completedOnDay === 'function')
-        ? rawTimeline.filter(r=>{
-            if(r.kind !== 'fill' && r.kind !== 'scheduled')return true;
-            if(r.i == null)return true;
-            const h = data[r.i];
-            return !(h && completedOnDay(h,day.dayBase));
-          })
-        : rawTimeline;
+      let displayTimeline = rawTimeline;
+      if(typeof agendaRowsAfterCompletions === 'function'){
+        const kept = new Set();
+        const byIndex = new Map();
+        rawTimeline.forEach(row=>{
+          if((row.kind !== 'fill' && row.kind !== 'scheduled') || row.i == null)return;
+          if(!byIndex.has(row.i))byIndex.set(row.i,[]);
+          byIndex.get(row.i).push(row);
+        });
+        for(const [idx,rows] of byIndex){
+          for(const row of agendaRowsAfterCompletions(data[idx],rows,day.dayBase))kept.add(row);
+        }
+        displayTimeline = rawTimeline.filter(row=>
+          (row.kind !== 'fill' && row.kind !== 'scheduled') || row.i == null || kept.has(row));
+      }else if(typeof completedOnDay === 'function'){
+        displayTimeline = rawTimeline.filter(r=>{
+          if(r.kind !== 'fill' && r.kind !== 'scheduled')return true;
+          if(r.i == null)return true;
+          const h = data[r.i];
+          return !(h && completedOnDay(h,day.dayBase));
+        });
+      }
       const seq = homeDaySequence(
         displayTimeline === rawTimeline ? day : { ...day, timeline: displayTimeline },
         sortSettings, { visibleSet }
@@ -1390,8 +1408,8 @@ function render(opts){
         }
       }
 
-      // Breakable tasks placed in the today section expand to one card per
-      // chunk so each time block is visible on the timeline.
+      // Every independently scheduled occurrence (and every breakable chunk)
+      // gets its own natural timeline card. The pinned pre-pass remains one.
       if(inTodaySection){
         const chunkRows = chunksByIndex.get(realIdx);
         if(chunkRows && chunkRows.length > 1){
@@ -1524,6 +1542,7 @@ function render(opts){
     scheduleHouseholdAgendaPublish(_homeRenderedWeek);
   }
   _homeListFingerprint = homeListFingerprint();
+  updateSortButton(true);
   restoreHomeReadingPosition(readingPosition,list);
   return true;
 }

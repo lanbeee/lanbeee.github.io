@@ -181,6 +181,10 @@ function tryPlaceOnDay(state,fill,opts = {}){
         preferredHit:false,
         prevLocId:anchor,
         placeKey,
+        occurrenceKey:fill.occurrenceKey || null,
+        scheduleOptionId:fill._scheduleOptionId || (fill.h && fill.h._scheduleOptionId) || null,
+        scheduleOptionSameDayMode:fill._scheduleOptionSameDayMode
+          || (fill.h && fill.h._scheduleOptionSameDayMode) || 'alternative',
         schedulePrefLevel:typeof locationPrefLevel === 'function' ? locationPrefLevel(fill.h,locId) : null
       };
       fits.push(baseFit);
@@ -1197,11 +1201,14 @@ function reconcileCommittedTravel(state){
   const patchFillRow = (entry,fit)=>{
     const entryChunk = entry.fill && entry.fill.chunkIndex != null
       ? entry.fill.chunkIndex : null;
+    const entryOccurrence = entry.fill && entry.fill.occurrenceKey || null;
     for(const r of state.rows || []){
       const rowChunk = r && r.chunkIndex != null ? r.chunkIndex : null;
+      const rowOccurrence = r && r.occurrenceKey || null;
       if(r && r.kind === 'fill'
         && r.i === (entry.fill && entry.fill.i)
-        && rowChunk === entryChunk){
+        && rowChunk === entryChunk
+        && (entryOccurrence || rowOccurrence ? entryOccurrence === rowOccurrence : true)){
         r.locationId = fit.locId;
         r.start = fit.placeStart;
         r.end = fit.placeEnd;
@@ -1209,7 +1216,9 @@ function reconcileCommittedTravel(state){
     }
     for(const item of state.day && state.day.agendaItems || []){
       const itemChunk = item && item.chunkIndex != null ? item.chunkIndex : null;
-      if(item && item.i === (entry.fill && entry.fill.i) && itemChunk === entryChunk){
+      const itemOccurrence = item && item.occurrenceKey || null;
+      if(item && item.i === (entry.fill && entry.fill.i) && itemChunk === entryChunk
+        && (entryOccurrence || itemOccurrence ? entryOccurrence === itemOccurrence : true)){
         item.locationId = fit.locId;
       }
     }
@@ -1359,6 +1368,9 @@ function commitPlacement(state,fill,fit){
     locationId:fit.locId,
     chunkMinutes:fit.durMin,
     chunkIndex:fill.chunkIndex != null ? fill.chunkIndex : null,
+    occurrenceKey:fill.occurrenceKey || fit.occurrenceKey || null,
+    scheduleOptionId:fit.scheduleOptionId || fill._scheduleOptionId || null,
+    scheduledDay:dateKey(state.dayBase),
     plannerScore:Number.isFinite(fit.score) ? fit.score : null,
     plannerScoreTerms:fit.scoreTerms || null,
     optimizerWeight:Number.isFinite(fit.optimizerWeight) ? fit.optimizerWeight : null,

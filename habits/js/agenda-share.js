@@ -52,14 +52,16 @@ function householdProjectionHabit(row,data){
   return row && row.i != null && items[row.i] ? items[row.i] : (row && row.h) || null;
 }
 
-function householdProjectionHabitActive(habit,dayBase){
+function householdProjectionHabitActive(habit,dayBase,row = null){
   if(!habit) return false;
   if(habit.showOnSharedDisplay === false) return false;
   if(habit.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(habit)) return false;
   if(habit.breakable && typeof breakableBudgetMinutes === 'function'){
     return breakableBudgetMinutes(habit,dayBase) > 0;
   }
-  if(typeof completedOnDay === 'function' && completedOnDay(habit,dayBase)) return false;
+  if(row && row.occurrenceKey){
+    if(normalizeLogs(habit.logs).some(log=>logOccurrenceKey(log) === row.occurrenceKey))return false;
+  }else if(typeof completedOnDay === 'function' && completedOnDay(habit,dayBase)) return false;
   return true;
 }
 
@@ -91,7 +93,7 @@ function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
     };
   }
   if(row.kind === 'fill' || row.kind === 'scheduled'){
-    if(!householdProjectionHabitActive(habit,dayBase)) return null;
+    if(!householdProjectionHabitActive(habit,dayBase,row)) return null;
     if(habit && completedRowKeys && completedRowKeys.has(`${habit.hid}|${Number(row.start) || 0}`)) return null;
     const completable = Boolean(habit && habit.type !== 'zero' && habit.hid && habit.allowSharedDisplayCompletion !== false);
     if(completable && rowMap){
@@ -99,7 +101,10 @@ function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
         hid:habit.hid,
         dayBase,
         start:base.start,
-        minutes:durationMinutes
+        minutes:durationMinutes,
+        occurrenceKey:row.occurrenceKey || '',
+        scheduleOptionId:row.scheduleOptionId || '',
+        scheduledDay:row.scheduledDay || (typeof dateKey === 'function' ? dateKey(dayBase) : '')
       };
     }
     return {
@@ -438,7 +443,10 @@ function sharedDisplayCompletionMap(feed,envelope){
     hid:cleanHabitId(mapped.hid),
     dayBase:Number(mapped.dayBase) || 0,
     start:Number(mapped.start) || 0,
-    minutes:Math.max(0,Math.min(720,Math.round(Number(mapped.minutes) || 0)))
+    minutes:Math.max(0,Math.min(720,Math.round(Number(mapped.minutes) || 0))),
+    occurrenceKey:String(mapped.occurrenceKey || '').slice(0,160),
+    scheduleOptionId:String(mapped.scheduleOptionId || '').slice(0,64),
+    scheduledDay:/^\d{4}-\d{2}-\d{2}$/.test(String(mapped.scheduledDay || '')) ? String(mapped.scheduledDay) : ''
   };
 }
 
@@ -507,7 +515,10 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       safeToAck.push(operationId);
       continue;
     }
-    if(typeof completedOnDay === 'function' && completedOnDay(h,mapped.dayBase)){
+    const mappedDone = mapped.occurrenceKey
+      ? normalizeLogs(h.logs).some(log=>logOccurrenceKey(log) === mapped.occurrenceKey)
+      : (typeof completedOnDay === 'function' && completedOnDay(h,mapped.dayBase));
+    if(mappedDone){
       safeToAck.push(operationId);
       continue;
     }
@@ -531,7 +542,12 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       }
     }
     const entryTs = typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,serverTime) : serverTime;
-    const entry = makeActualLog(entryTs,{ minutes,source:'shared_display',operationId });
+    const entry = makeActualLog(entryTs,{
+      minutes,source:'shared_display',operationId,
+      occurrenceKey:mapped.occurrenceKey,
+      scheduleOptionId:mapped.scheduleOptionId,
+      scheduledDay:mapped.scheduledDay
+    });
     h.logs = normalizeLogs([...logs,entry]);
     h.lastLog = latestActualLog(h.logs);
     h.snoozedUntil = null;

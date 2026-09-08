@@ -51,7 +51,14 @@ function settings(locations,blockedTimes = []){
       sortSettings = plannerSettings;
       const summarize = week=>(week.days || []).map(day=>(day.timeline || [])
         .filter(row=>row.kind === 'fill')
-        .map(row=>({name:row.h.name,start:new RealDate(row.start).getHours() * 60 + new RealDate(row.start).getMinutes(),locationId:row.locationId || null})));
+        .map(row=>({
+          name:row.h.name,
+          start:new RealDate(row.start).getHours() * 60 + new RealDate(row.start).getMinutes(),
+          locationId:row.locationId || null,
+          occurrenceKey:row.occurrenceKey || null,
+          scheduleOptionId:row.scheduleOptionId || null,
+          scheduledDay:row.scheduledDay || null
+        })));
       try{
         let glpk;
         try{ glpk = summarize(await buildWeekAgendaAsync(data,{...plannerSettings,agendaOptimizer:true},numDays)); }
@@ -78,7 +85,7 @@ function settings(locations,blockedTimes = []){
       anywhereAllowed:false,locationIds:['campus'],
       scheduleOptions:[
         {weekdays:[],start:540,end:600,locationId:'campus'},
-        {weekdays:[],start:900,end:960,locationId:'campus'}
+        {weekdays:[],start:903,end:963,locationId:'campus'}
       ]
     });
     const result = await runPair([habit],settings([campus],[{label:'morning',days:[],start:0,end:840}]),now,1);
@@ -86,9 +93,47 @@ function settings(locations,blockedTimes = []){
       if(engine === 'glpk' && !glpkOk){ console.log('  skip glpk (unavailable)'); continue; }
       assert(!days.error,`${engine}: planner builds`);
       assert(days[0]?.length === 1,`${engine}: alternatives create one occurrence`);
-      assert(days[0]?.[0]?.start === 900,`${engine}: later option at same place is selected`);
+      assert(days[0]?.[0]?.start === 903,`${engine}: later exact-minute option is selected without rounding`);
       assert(days[0]?.[0]?.locationId === 'campus',`${engine}: repeated place is retained`);
     }
+    const completionIdentity = await page.evaluate(({now})=>{
+      const today = new Date(now).getDay();
+      const h = {
+        hid:'identity-class',name:'Class',type:'keepup',target:7/4,priority:0,
+        durationMinutes:30,lastLog:null,logs:[],allowedWeekdays:[],allowedMonthDays:[],
+        allowedTimeStart:null,allowedTimeEnd:null,locationIds:[],locationPrefs:{},
+        anywhereAllowed:false,breakable:false,snoozedUntil:null,earlyWindowDays:0,
+        delayAllowanceDays:0,scheduleLinks:[],scheduleOptions:[
+          {id:'identity_a',weekdays:[today],start:540,end:600,locationId:null,sameDayMode:'alternative'},
+          {id:'identity_b',weekdays:[today],start:660,end:720,locationId:null,sameDayMode:'separate'}
+        ]
+      };
+      const rows = [
+        {i:0,start:now+3600000,occurrenceKey:'identity-class:day:identity_a',scheduleOptionId:'identity_a'},
+        {i:0,start:now+7200000,occurrenceKey:'identity-class:day:identity_b',scheduleOptionId:'identity_b'}
+      ];
+      h.logs = normalizeLogs([makeActualLog(now,{
+        occurrenceKey:rows[0].occurrenceKey,scheduleOptionId:'identity_a',scheduledDay:dateKey(now)
+      })]);
+      const exactLeft = agendaRowsAfterCompletions(h,rows,dayStart(now));
+      const preserved = normalizeLogs(h.logs)[0];
+      h.logs = normalizeLogs([now]);
+      const ordinaryLeft = agendaRowsAfterCompletions(h,rows,dayStart(now));
+      return {
+        exactLeft:exactLeft.map(row=>row.occurrenceKey),
+        ordinaryLeft:ordinaryLeft.map(row=>row.occurrenceKey),
+        preservedKey:logOccurrenceKey(preserved),
+        preservedOption:preserved.scheduleOptionId,
+        preservedDay:preserved.scheduledDay
+      };
+    },{now});
+    assert(completionIdentity.exactLeft.length === 1
+      && /identity_b$/.test(completionIdentity.exactLeft[0]),
+      'completing one identified session leaves its same-day sibling');
+    assert(completionIdentity.ordinaryLeft.length === 1,
+      'an ordinary log consumes one occurrence and leaves the planner to choose the sibling');
+    assert(completionIdentity.preservedKey && completionIdentity.preservedOption === 'identity_a'
+      && completionIdentity.preservedDay,'log normalization preserves occurrence metadata');
   }
 
   console.log('\n[2] same time, different locations');
@@ -108,6 +153,32 @@ function settings(locations,blockedTimes = []){
       if(engine === 'glpk' && !glpkOk)continue;
       assert(days[0]?.length === 1,`${engine}: one of two places is chosen`);
       assert(days[0]?.[0]?.locationId === 'downtown',`${engine}: closed-place option is rejected`);
+    }
+  }
+
+  console.log('\n[1b] explicit separate rows create occurrence sessions');
+  {
+    const today = new Date(now).getDay();
+    const tomorrow = (today + 1) % 7;
+    const next = (today + 2) % 7;
+    const scheduleOptions = [
+      {id:'class_a',weekdays:[today],start:540,end:600,locationId:'campus',sameDayMode:'alternative'},
+      {id:'class_b',weekdays:[today],start:660,end:720,locationId:'campus',sameDayMode:'separate'},
+      {id:'class_c',weekdays:[tomorrow],start:540,end:600,locationId:'campus',sameDayMode:'alternative'},
+      {id:'class_d',weekdays:[next],start:540,end:600,locationId:'campus',sameDayMode:'alternative'}
+    ];
+    for(const [times,target] of [[4,7/4],[3,7/3]]){
+      const habit = base({
+        hid:`class-${times}`,name:'Class',target,priority:0,durationMinutes:30,
+        anywhereAllowed:false,locationIds:['campus'],scheduleOptions
+      });
+      const result = await runPair([habit],settings([campus]),now,7);
+      for(const [engine,days] of [['glpk',result.glpk],['fast',result.fast]]){
+        if(engine === 'glpk' && !glpkOk)continue;
+        const placements = days.flat();
+        assert(placements.length === times,`${engine}: ${times}×/7d creates ${times} occurrence placements`);
+        if(times === 4)assert(days[0].length === 2,`${engine}: separate row retains two same-day cards`);
+      }
     }
   }
 
@@ -316,7 +387,7 @@ function settings(locations,blockedTimes = []){
   await page.locator('#detail-habit-option-add').click();
   await page.locator('.habit-option-location').nth(0).selectOption('campus');
   await page.locator('.habit-option-location').nth(1).selectOption('campus');
-  await page.locator('.habit-option-start').nth(0).fill('09:00');
+  await page.locator('.habit-option-start').nth(0).fill('09:03');
   await page.locator('.habit-option-end').nth(0).fill('10:00');
   await page.locator('.habit-option-start').nth(1).fill('13:00');
   await page.locator('.habit-option-end').nth(1).fill('14:00');
@@ -358,10 +429,14 @@ function settings(locations,blockedTimes = []){
     ? 'dynamic row stays within the compact-phone card'
     : `dynamic row stays within the compact-phone card (${JSON.stringify(dynamicLayout)})`);
   await page.locator('#detail-save').click();
+  assert((await page.locator('#toast').textContent()).includes('choose alternative time or separate session'),
+    'editor blocks an unresolved new weekday overlap');
+  await page.locator('.habit-option-same-day').nth(1).selectOption('alternative');
+  await page.locator('#detail-save').click();
   const saved = await page.evaluate(()=>load()[0]);
   assert(saved.scheduleOptions.length === 2,'editor saves two alternatives');
   assert(saved.scheduleOptions.every(option=>option.locationId === 'campus'),'editor permits the same saved place twice');
-  assert(saved.scheduleOptions[0].start === 540 && saved.scheduleOptions[1].start === null,'editor preserves fixed and dynamic option times');
+  assert(saved.scheduleOptions[0].start === 543 && saved.scheduleOptions[1].start === null,'editor preserves an exact typed minute and dynamic option times');
   assert(saved.scheduleOptions[1].startAnchor === 'dhuhr' && saved.scheduleOptions[1].startOffsetMin === 15,'editor saves the dynamic option start');
   assert(saved.scheduleOptions[1].endAnchor === 'dhuhr' && saved.scheduleOptions[1].endOffsetMin === 75,'editor saves the dynamic option end');
   assert(saved.scheduleOptions[1].pref === 'high','editor saves the instance preference');

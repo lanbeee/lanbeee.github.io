@@ -296,10 +296,11 @@ function habitScheduleOptionTimePairHtml(){
 function habitScheduleOptionRowHtml(option,index){
   const normalized = normalizeHabitScheduleOptions([option])[0]
     || {weekdays:[],start:540,end:600,locationId:null,pref:null};
+  const unresolvedMode = Boolean(option && option._requiresSameDayChoice);
   const activeDays = normalized.weekdays.length
     ? new Set(normalized.weekdays)
     : new Set([0,1,2,3,4,5,6]);
-  return `<div class="habit-option-row" data-habit-option-index="${index}">
+  return `<div class="habit-option-row" data-habit-option-index="${index}" data-habit-option-id="${normalized.id || ''}">
     <div class="habit-option-head">
       <span class="habit-option-number">option ${index + 1}</span>
       <button type="button" class="mini-text-btn habit-option-remove" aria-label="remove option"><i class="ti ti-x" aria-hidden="true"></i></button>
@@ -321,7 +322,42 @@ function habitScheduleOptionRowHtml(option,index){
         ${WEEKDAY_LABELS.map((label,day)=>`<button type="button" class="schedule-chip${activeDays.has(day) ? ' on' : ''}" data-habit-option-day="${day}" aria-pressed="${activeDays.has(day)}">${label}</button>`).join('')}
       </div>
     </div>
+    <label class="habit-option-field habit-option-same-day-field" hidden>
+      <span class="habit-option-field-label">when days overlap another option</span>
+      <select class="habit-option-same-day" aria-label="same-day option behavior">
+        ${unresolvedMode ? '<option value="" selected>choose…</option>' : ''}
+        <option value="alternative"${!unresolvedMode && habitScheduleOptionSameDayMode(normalized) === 'alternative' ? ' selected' : ''}>alternative time</option>
+        <option value="separate"${!unresolvedMode && habitScheduleOptionSameDayMode(normalized) === 'separate' ? ' selected' : ''}>separate session</option>
+      </select>
+    </label>
   </div>`;
+}
+
+function habitOptionSelectedDaySet(row){
+  const days = [...row.querySelectorAll('[data-habit-option-day].on')]
+    .map(btn=>Number(btn.dataset.habitOptionDay));
+  return new Set(days.length ? days : [0,1,2,3,4,5,6]);
+}
+
+function syncHabitScheduleOptionOverlapUi(){
+  const rows = [...document.querySelectorAll('#detail-habit-option-list .habit-option-row')];
+  const daySets = rows.map(habitOptionSelectedDaySet);
+  rows.forEach((row,index)=>{
+    const overlaps = rows.some((_,other)=>other !== index
+      && [...daySets[index]].some(day=>daySets[other].has(day)));
+    const field = row.querySelector('.habit-option-same-day-field');
+    if(field)field.hidden = !overlaps;
+  });
+}
+
+function validateHabitScheduleOptionModes(){
+  syncHabitScheduleOptionOverlapUi();
+  const unresolved = [...document.querySelectorAll('.habit-option-same-day-field:not([hidden]) .habit-option-same-day')]
+    .find(select=>!select.value);
+  if(!unresolved)return true;
+  showToast('choose alternative time or separate session for overlapping days');
+  unresolved.focus();
+  return false;
 }
 
 function habitScheduleOptionContext(h,option){
@@ -364,9 +400,10 @@ function syncHabitScheduleOptionsUi(){
   const hint = $('detail-habit-options-hint');
   if(hint){
     hint.textContent = hasOptions
-      ? 'Each option is an alternative for one occurrence — the planner picks whichever fits. An option’s preference overrides the place ranking.'
+      ? 'Overlapping options can be alternative times or separate sessions. Each window must fit the Ting’s duration.'
       : 'Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.';
   }
+  syncHabitScheduleOptionOverlapUi();
   syncDetailSchedulePlacesUi();
 }
 
@@ -427,11 +464,13 @@ function readHabitScheduleOptionRow(row){
   const selectedDays = [...row.querySelectorAll('[data-habit-option-day].on')]
     .map(btn=>Number(btn.dataset.habitOptionDay));
   return {
+    id:row.dataset.habitOptionId || undefined,
     weekdays:normalizeAllowedWeekdays(selectedDays),
     ...readHabitScheduleOptionEndpoint(row.querySelector('.time-endpoint[data-field="start"]'),'start'),
     ...readHabitScheduleOptionEndpoint(row.querySelector('.time-endpoint[data-field="end"]'),'end'),
     locationId:cleanLocationId(row.querySelector('.habit-option-location')?.value) || null,
-    pref:cleanLocationPrefLevel(row.querySelector('.habit-option-pref')?.dataset.pref)
+    pref:cleanLocationPrefLevel(row.querySelector('.habit-option-pref')?.dataset.pref),
+    sameDayMode:row.querySelector('.habit-option-same-day')?.value || 'alternative'
   };
 }
 
@@ -507,7 +546,9 @@ function addBlankHabitScheduleOption(){
     ...seededWindow,
     start:seededWindow.start ?? (seededWindow.startAnchor ? null : 540),
     end:seededWindow.end ?? (seededWindow.endAnchor ? null : 600),
-    locationId
+    locationId,
+    id:`so_${Date.now().toString(36)}_${habitScheduleOptionRowSerial.toString(36)}`,
+    _requiresSameDayChoice:list.children.length > 0
   };
   list.insertAdjacentHTML('beforeend',habitScheduleOptionRowHtml(draft,list.children.length));
   const row = list.lastElementChild;

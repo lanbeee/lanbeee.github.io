@@ -58,7 +58,7 @@ Everything below is covered in this skeleton:
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
 - Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override), showWeather / showWeatherAtLocation (per-item forecast pill)
-- Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
+- Time/place sessions: scheduleOptions (stable row id, weekday/time/place window, same-day alternative/separate mode, optional per-row preference)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, earlyWindowDays, delayAllowanceDays
 - Calendar import: externalId, source, importedAt
@@ -553,6 +553,7 @@ topics: string[],           // 👤 Master topic registry
 locations: Location[],    // 👤 Location registry
 travel: { [key: string]: TravelEdge },  // 👤 Cached travel times
 defaultTravelMode: 'driving'|'walking'|'bicycling'|'transit',
+mapBaseLayer: 'street'|'satellite', // last successfully loaded picker layer
 lastKnownLocationId: string|null,  // Auto-detected location
 locationOptIn: boolean,     // 👤 Geolocation permission
 pinnedLocationId: string|null,    // Manual location pin
@@ -838,7 +839,7 @@ Placed on:
 - Detail → share item (encrypted Cloudflare relay)
 - Locations / city / address search (Photon + Nominatim)
 - Travel time estimate (OSRM)
-- Location map picker (OpenStreetMap tiles)
+- Location map picker (OpenStreetMap Street or Esri World Imagery Satellite tiles)
 - About → send feedback (Google Form in a new browser tab)
 
 ### 5.15 Status Display 👤
@@ -950,6 +951,12 @@ Each day section header can have two dynamic **pills**:
 - Case-insensitive
 - Searches: habit names, topics, location names
 - Clears with ✕ button
+- Search is available when the settled, unsearched Home view contains at least
+  10 visible Ting cards across its sections. Pinned copies and separate-session
+  cards count because they are visible/searchable; travel and busy cards do not.
+- While Search is open, the last unsearched count is retained so a narrow result
+  set cannot hide Search. Completed tasks remain searchable through the archive
+  exception even below the card threshold.
 
 ### 7.2 Topic Filter
 - Chip row above habit list
@@ -1536,6 +1543,7 @@ Tracks the currently active habit session:
 │ [search address _______] [search]   │
 │                                     │
 │           [🗺️ MAP WITH PIN]        │
+│           [Street | Satellite]      │
 │              [My location]          │
 │                                     │
 │           [enter coordinates ▼]    │
@@ -1549,6 +1557,9 @@ Tracks the currently active habit session:
 - Saved places are shown in alphabetical/natural order across settings, habit forms, presence, and filters
 - A place created from a new/edit habit returns to that form already selected
 - Drag map to position pin (stays centered)
+- Street is the default base layer. Satellite uses Esri World Imagery with its
+  provider attribution. A successful choice is remembered; a tile failure
+  returns to Street without moving the map or pin and does not save the failed choice.
 - GPS button: "My location"
 - Coordinate input (lat/lng) via details disclosure
 - Save or cancel
@@ -1590,7 +1601,7 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Settings → Busy Times → "add busy time", or tap existing block
-- Set start/end time (15-min increments)
+- Set start/end time (five-minute picker steps; exact valid typed minutes are preserved)
 - Choose days of week
 - "Save this date" vs "Update recurring" (modifies one instance vs the series)
 
@@ -1808,7 +1819,8 @@ Toasts appear after:
   reference; Privacy is the full explainer.
 - **Privacy** explains that Tings is open source, with no account; habits live
   in this browser’s `localStorage`; the site owner cannot see them. It lists
-  third-party services (Photon, Nominatim, OSRM, OpenStreetMap tiles, jsDelivr /
+  third-party services (Photon, Nominatim, OSRM, OpenStreetMap Street tiles,
+  Esri World Imagery Satellite tiles, jsDelivr /
   unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
   the encrypted Cloudflare relay used by shared display and
   share item, and optional send feedback via Google Forms. Map lookups are
@@ -2168,7 +2180,8 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `DEFAULT_MIN_CHUNK_MINUTES` | 30 | Default min chunk when breakable |
 | `DEFAULT_EARLY_WINDOW_DAYS` | 1 | Default number of days an item may be brought forward |
 | `DEFAULT_DELAY_ALLOWANCE_DAYS` | 0 | Default permission to place an occurrence after its due day |
-| `TIME_PICKER_STEP_MINUTES` | 15 | Time picker granularity |
+| `TIME_PICKER_STEP_MINUTES` | 5 | Native time-picker granularity; typed valid `HH:mm` values remain exact |
+| `MIN_BREAKABLE_CHUNK_MINUTES` | 15 | Hard minimum for breakable chunks, independent of picker steps |
 | `MAX_NOTE_CHARS` | 200 | Max free-form notes |
 | `DEFAULT_PRIORITY` | 2 | Default priority (P2) |
 | `DEFAULT_PRAYER_METHOD` | `'NorthAmerica'` | Islamic prayer method |
@@ -2546,6 +2559,7 @@ Same agenda logic, but simplified display:
 | `locations` | Location[] | [] | Location registry |
 | `travel` | object | {} | Cached travel time edges |
 | `defaultTravelMode` | string | 'driving' | Default routing mode |
+| `mapBaseLayer` | string | 'street' | Last successfully loaded location-picker base layer |
 | `lastKnownLocationId` | string\|null | null | Auto-detected location ID |
 | `locationOptIn` | boolean | false | Geolocation permission granted |
 | `pinnedLocationId` | string\|null | null | Manually pinned location |
@@ -2711,7 +2725,7 @@ Same agenda logic, but simplified display:
 | `weatherLocationId` | string\|null | Optional saved place whose forecast overrides home when far away |
 | `showWeather` | boolean | Show an interval forecast pill on this item's agenda card |
 | `showWeatherAtLocation` | boolean | When `showWeather` is on, use this item's place instead of the home city |
-| `scheduleOptions` | array | Specific extra weekday/time/place windows; optional per-row preference overrides the place ranking for that instance |
+| `scheduleOptions` | array | Specific weekday/time/place windows with stable `id`; `sameDayMode` is `alternative` (legacy default) or `separate`; optional preference overrides place ranking |
 
 ### 25.3.1 Time & Place Options 👤👨‍💻
 
@@ -2722,9 +2736,19 @@ Same agenda logic, but simplified display:
 - Each row couples its own weekdays, start/end window, and location, plus an
   optional preference (`little` / `high` / `avoid`) that overrides the place
   ranking for that instance.
-- Rows are alternatives for one occurrence. If a general window and two rows
-  fit, the planner chooses one; it does not schedule or count the habit three
-  times.
+- Legacy rows and rows marked `alternative` are alternatives for the day's
+  ordinary occurrence. When weekdays overlap, a newly added row must be
+  classified as **alternative time** or **separate session** before saving.
+- A `separate` row contributes one additional same-day opportunity. Rhythm is
+  an occurrence quota: for example, 4×/7d can use four valid windows across
+  three days by placing two sessions on an explicitly separate day, while
+  3×/7d chooses only three. General allowed windows can fill remaining quota,
+  at most once per day. The planner never invents a time outside hard windows;
+  infeasible remainder stays unplaced for agenda diagnostics.
+- Each planned session carries an occurrence key, schedule-option id, and day.
+  Completing one same-day card removes only that session. An ordinary log still
+  counts toward the rhythm quota, after which replanning chooses the remaining
+  opportunities. Names and rhythm statistics remain Ting-level.
 - The same location may be used in any number of rows at different times.
 - Preferred days, time, and place levels remain soft hints. They rank feasible
   general and specific windows but never make an otherwise valid window

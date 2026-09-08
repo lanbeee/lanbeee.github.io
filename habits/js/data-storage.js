@@ -112,6 +112,7 @@ function loadSortSettings(){
     merged.locations = normalizeLocationRegistry(merged.locations);
     merged.travel = normalizeTravelCache(merged.travel);
     merged.defaultTravelMode = normalizeTravelMode(merged.defaultTravelMode);
+    merged.mapBaseLayer = merged.mapBaseLayer === 'satellite' ? 'satellite' : 'street';
     merged.prayerMethod = normalizePrayerMethod(merged.prayerMethod);
     merged.prayerMadhab = normalizePrayerMadhab(merged.prayerMadhab);
     merged.lastKnownLocationId = cleanLocationId(merged.lastKnownLocationId) || null;
@@ -222,6 +223,7 @@ function saveSortSettings(settings){
   next.locations = normalizeLocationRegistry(next.locations);
   next.travel = normalizeTravelCache(next.travel);
   next.defaultTravelMode = normalizeTravelMode(next.defaultTravelMode);
+  next.mapBaseLayer = next.mapBaseLayer === 'satellite' ? 'satellite' : 'street';
   next.prayerMethod = normalizePrayerMethod(next.prayerMethod);
   next.prayerMadhab = normalizePrayerMadhab(next.prayerMadhab);
   next.lastKnownLocationId = cleanLocationId(next.lastKnownLocationId) || null;

@@ -125,6 +125,7 @@
 .habit-option-days-block{display:flex;flex-direction:column;gap:4px;}
 .habit-option-days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
 .habit-option-days .schedule-chip{min-width:0;padding:9px 2px;font-size:10.5px;}
+.habit-option-same-day-field select{min-height:38px;width:100%;}
 .habit-options-active-copy{font-size:11px;color:var(--text3);}
 .location-coords{font-size:11px;white-space:nowrap;}
 .location-coords-btn{

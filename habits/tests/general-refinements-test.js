@@ -70,6 +70,17 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.waitForSelector('#list .ting-card');
   await page.waitForSelector('.blocked-card:not(.blocked-card-merge) span',{timeout:10000});
 
+  const clockInputs = await page.evaluate(()=>({
+    steps:[...document.querySelectorAll('input[type="time"]')].map(input=>input.step),
+    exact:timeInputToMinutes('09:03'),
+    minChunk:clampMinChunk(5)
+  }));
+  check('clock pickers use five-minute steps without rounding typed values',
+    clockInputs.steps.length > 0 && clockInputs.steps.every(step=>step === '300')
+      && clockInputs.exact === 543,
+    JSON.stringify(clockInputs));
+  check('breakable minimum chunks remain 15 minutes',clockInputs.minChunk === 15,JSON.stringify(clockInputs));
+
   const compact = await page.evaluate(()=>({
     nine:compactHomeTime(new Date(2026,6,22,9,0).getTime()),
     five:compactHomeTime(new Date(2026,6,22,17,0).getTime()),
@@ -183,6 +194,28 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
   check('scroll gestures do not activate blocked or travel cards',!scrollSafety.blockOpen && !scrollSafety.travelOpen,JSON.stringify(scrollSafety));
 
+  const searchThreshold = await page.evaluate(()=>{
+    const list = document.querySelector('#list');
+    const cards = [...list.querySelectorAll('.ting-card')];
+    const template = cards[0] && cards[0].cloneNode(true);
+    cards.slice(9).forEach(card=>card.remove());
+    updateSortButton(true);
+    const hiddenAtNine = document.querySelector('#open-search').classList.contains('is-hidden');
+    if(template)list.appendChild(template);
+    updateSortButton(true);
+    return {
+      hiddenAtNine,
+      count:list.querySelectorAll('.ting-card').length,
+      shownAtTen:!document.querySelector('#open-search').classList.contains('is-hidden')
+        && !document.querySelector('#open-search').disabled
+    };
+  });
+  check('Search uses the settled rendered-card threshold at 9/10',
+    searchThreshold.hiddenAtNine && searchThreshold.count === 10 && searchThreshold.shownAtTen,
+    JSON.stringify(searchThreshold));
+  await page.evaluate(()=>render({deferAgenda:true,preserveReadingPosition:false}));
+  await page.waitForSelector('#list .ting-card');
+
   await page.evaluate(()=>{ document.querySelector('.pane-list').scrollTop = 600; });
   await page.locator('#open-search').click();
   await page.locator('#habit-search').fill('Needle');
@@ -195,6 +228,9 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   }));
   check('search results start at the top even from a scrolled home list',search.scrollTop === 0 && search.cards === 1,JSON.stringify(search));
   check('phone search uses the reduced bottom gap',search.gap === '6px',JSON.stringify(search));
+  check('narrowed results keep Search available',await page.evaluate(()=>
+    !document.querySelector('#open-search').classList.contains('is-hidden')
+      && !document.querySelector('#open-search').disabled));
 
   await page.evaluate(()=>setSearchOpen(false,{clear:true,focus:false}));
   await page.evaluate(()=>openSheet('add-sheet'));
