@@ -546,7 +546,7 @@
             </div>
             <button class="habit-action detail-full-only" id="detail-snooze" type="button">
               <i class="ti ti-moon" aria-hidden="true"></i>
-              <span><b>snooze</b><small>Hide for a few days</small></span>
+              <span><b>snooze</b><small>Hide for a few hours or days</small></span>
             </button>
             <button class="habit-action danger" id="detail-delete" type="button">
               <i class="ti ti-trash" aria-hidden="true"></i>
@@ -1112,14 +1112,30 @@
   <div class="sheet-wrap" id="snooze-sheet">
     <div class="sheet">
       <p class="sheet-name" id="snooze-name"></p>
-      <p class="sheet-sub">Choose how long to hide this habit.</p>
+      <p class="sheet-sub" id="snooze-sub">Choose how long to hide this habit.</p>
+      <button class="btn primary" id="snooze-show-now" type="button" hidden>show now</button>
+      <div class="snooze-options snooze-options-hours">
+        <button class="btn" data-snooze-hours="1">1h</button>
+        <button class="btn" data-snooze-hours="3">3h</button>
+        <button class="btn" data-snooze-hours="8">8h</button>
+        <button class="btn" data-snooze-until="eod">today</button>
+      </div>
       <div class="snooze-options">
         <button class="btn" data-snooze-days="1">1d</button>
         <button class="btn" data-snooze-days="3">3d</button>
         <button class="btn" data-snooze-days="7">7d</button>
         <button class="btn" data-snooze-days="14">14d</button>
+      </div>
+      <div class="snooze-options snooze-options-reps">
         <button class="btn" data-snooze-repetitions="1">1 time</button>
         <button class="btn" data-snooze-repetitions="2">2 times</button>
+      </div>
+      <div class="snooze-hours-row">
+        <label class="snooze-hours-field">
+          <input id="snooze-hours" type="number" min="1" max="72" step="1" inputmode="numeric" aria-label="hours to hide">
+          <span>hours</span>
+        </label>
+        <button class="btn" id="snooze-hours-apply" type="button">hide</button>
       </div>
       <div class="btn-row">
         <button class="btn" id="snooze-cancel">cancel</button>

@@ -39,6 +39,7 @@ function openDetail(i){
   $('detail-days').value = h.target || '';
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
+  if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
   setDetailSharedDisplayMode(sharedDisplayModeForHabit(h));
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-early-window').value = habitEarlyWindowDays(h);

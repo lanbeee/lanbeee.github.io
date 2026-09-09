@@ -102,23 +102,62 @@ function unmountPane() {
   document.body.classList.remove('pane-active');
 }
 
+// RENDER: syncs the detail snooze row for the current hide state
+function syncDetailSnoozeAction(h){
+  const btn = $('detail-snooze');
+  if(!btn)return;
+  const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h && h.snoozedUntil && Date.now() < h.snoozedUntil);
+  const icon = btn.querySelector('i');
+  const title = btn.querySelector('b');
+  const sub = btn.querySelector('small');
+  if(icon)icon.className = snoozed ? 'ti ti-moon-off' : 'ti ti-moon';
+  if(title)title.textContent = snoozed ? 'show' : 'snooze';
+  if(sub)sub.textContent = snoozed ? 'Bring it back, or hide longer' : 'Hide for a few hours or days';
+}
+
 // HYBRID: opens snooze sheet and seeds its UI from state
 function openSnooze(i){
   const h = load()[i];
   if(!h)return;
   snoozeIdx = i;
   $('snooze-name').textContent = h.name;
+  const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+  const showNow = $('snooze-show-now');
+  if(showNow){
+    showNow.hidden = !snoozed;
+    showNow.setAttribute('aria-hidden',String(!snoozed));
+  }
+  const sub = $('snooze-sub');
+  if(sub){
+    sub.textContent = snoozed
+      ? 'Show this habit now, or hide it longer.'
+      : 'Choose how long to hide this habit.';
+  }
   document.querySelectorAll('[data-snooze-repetitions]').forEach(btn=>{
     btn.hidden = h.type === 'zero';
   });
+  const hoursInput = $('snooze-hours');
+  if(hoursInput)hoursInput.value = '';
   openSheet('snooze-sheet');
 }
 
 // PURE: computes the snooze undo label
 function snoozeUndoLabel(until,label){
   if(label)return label;
-  const days = Math.max(1,Math.ceil((until - Date.now()) / 86400000));
+  const ms = until - Date.now();
+  if(ms < 86400000){
+    const hours = Math.max(1,Math.ceil(ms / 3600000));
+    return hours === 1 ? 'Hidden 1h' : `Hidden ${hours}h`;
+  }
+  const days = Math.max(1,Math.ceil(ms / 86400000));
   return `Hidden ${days}d`;
+}
+
+function closeSnoozeSheet(closeDetailAfter){
+  if(closeDetailAfter && snoozeFromDetail)closeDetail();
+  snoozeIdx = null;
+  snoozeFromDetail = false;
+  closeSheet('snooze-sheet');
 }
 
 // HANDLER: applies snooze until timestamp and re-renders
@@ -134,9 +173,40 @@ function doSnoozeUntil(i,until,label = ''){
   }
 }
 
+// HANDLER: clears an active snooze so the habit is visible again
+function doUnsnooze(i){
+  const data = load();
+  if(!data[i])return;
+  const previous = data[i].snoozedUntil || null;
+  if(!previous || Date.now() >= previous)return;
+  const name = toastItemName(data[i]);
+  data[i].snoozedUntil = null;
+  if(save(data)){
+    showActionToast(`Showing · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'hide'});
+    if(typeof refreshOpenViews === 'function')refreshOpenViews();
+    else render();
+  }
+}
+
 // HANDLER: snoozes a habit by a number of days
 function doSnooze(i,days){
   doSnoozeUntil(i,Date.now() + days * 86400000,`Hidden ${days}d`);
+}
+
+// HANDLER: snoozes a habit by a number of hours
+function doSnoozeHours(i,hours){
+  const n = Math.round(Number(hours));
+  if(!Number.isFinite(n) || n < 1)return false;
+  const capped = Math.min(72, n);
+  const label = capped === 1 ? 'Hidden 1h' : `Hidden ${capped}h`;
+  doSnoozeUntil(i,Date.now() + capped * 3600000,label);
+  return true;
+}
+
+// HANDLER: snoozes until midnight tonight
+function doSnoozeEndOfDay(i){
+  const until = typeof snoozeUntilEndOfDay === 'function' ? snoozeUntilEndOfDay() : (dayStart(Date.now()) + 86400000);
+  doSnoozeUntil(i,until,'Hidden until tonight');
 }
 
 // PURE: computes repetition-based snooze until timestamp

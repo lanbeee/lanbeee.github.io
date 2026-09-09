@@ -778,19 +778,43 @@ $('day-logs-sheet').addEventListener('pointerup',e=>{
   }
 });
 
+function applySnoozeSheetChoice(kind,value){
+  if(snoozeIdx === null)return false;
+  if(kind === 'days')doSnooze(snoozeIdx,value);
+  else if(kind === 'hours'){
+    if(!doSnoozeHours(snoozeIdx,value))return false;
+  }else if(kind === 'eod')doSnoozeEndOfDay(snoozeIdx);
+  else if(kind === 'repetitions')doSnoozeRepetitions(snoozeIdx,value);
+  else if(kind === 'show')doUnsnooze(snoozeIdx);
+  else return false;
+  closeSnoozeSheet(kind !== 'show');
+  return true;
+}
 $('snooze-sheet').addEventListener('click',e=>{
-  const opt = e.target.closest('[data-snooze-days]');
-  const repeatOpt = e.target.closest('[data-snooze-repetitions]');
-  if((!opt && !repeatOpt) || snoozeIdx === null)return;
-  if(opt)doSnooze(snoozeIdx,parseInt(opt.dataset.snoozeDays,10));
-  if(repeatOpt)doSnoozeRepetitions(snoozeIdx,parseInt(repeatOpt.dataset.snoozeRepetitions,10));
-  if(snoozeFromDetail)closeDetail();
-  snoozeIdx = null;
-  snoozeFromDetail = false;
-  closeSheet('snooze-sheet');
+  if(e.target === e.currentTarget){
+    closeSnoozeSheet(false);
+    return;
+  }
+  const days = e.target.closest('[data-snooze-days]');
+  const hours = e.target.closest('[data-snooze-hours]');
+  const until = e.target.closest('[data-snooze-until]');
+  const reps = e.target.closest('[data-snooze-repetitions]');
+  const showNow = e.target.closest('#snooze-show-now');
+  const hoursApply = e.target.closest('#snooze-hours-apply');
+  if(!days && !hours && !until && !reps && !showNow && !hoursApply)return;
+  if(days)applySnoozeSheetChoice('days',parseInt(days.dataset.snoozeDays,10));
+  else if(hours)applySnoozeSheetChoice('hours',parseInt(hours.dataset.snoozeHours,10));
+  else if(until && until.dataset.snoozeUntil === 'eod')applySnoozeSheetChoice('eod');
+  else if(reps)applySnoozeSheetChoice('repetitions',parseInt(reps.dataset.snoozeRepetitions,10));
+  else if(showNow)applySnoozeSheetChoice('show');
+  else if(hoursApply)applySnoozeSheetChoice('hours',$('snooze-hours')?.value);
 });
-$('snooze-cancel').addEventListener('click',()=>{snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');});
-$('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');}});
+$('snooze-hours')?.addEventListener('keydown',e=>{
+  if(e.key !== 'Enter')return;
+  e.preventDefault();
+  applySnoozeSheetChoice('hours',$('snooze-hours').value);
+});
+$('snooze-cancel').addEventListener('click',()=>closeSnoozeSheet(false));
 
 $('activity-close').addEventListener('click',()=>{activityIdx = null;closeSheet('activity-sheet');});
 $('activity-calendar').addEventListener('click',()=>{

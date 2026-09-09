@@ -294,6 +294,14 @@ function dayStart(ts){
   const d = new Date(ts);
   return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
 }
+/** PURE: true while a habit is hidden by an active snooze. */
+function habitIsSnoozed(h, now = Date.now()){
+  return Boolean(h && h.snoozedUntil && now < h.snoozedUntil);
+}
+/** PURE: midnight at the start of tomorrow — “until the end of today”. */
+function snoozeUntilEndOfDay(now = Date.now()){
+  return dayStart(now) + 86400000;
+}
 function entryWhen(ts){
   const days = dayDistance(ts);
   if(days === null)return 'not yet';

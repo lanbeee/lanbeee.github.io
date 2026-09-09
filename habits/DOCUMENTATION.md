@@ -1274,7 +1274,7 @@ shortcuts can be stored on one item.
 - The standalone shared display shows the current time in its header. Swiping left (or "hide agenda") covers the agenda with a near-black night clock; three taps within 900ms bring it back — a swipe never restores it, so a stray brush of the frame can't flash the agenda. Marking an item done shows an undo toast for a few seconds: the row reads as done immediately, but the completion is only pushed to the owner's feed when the toast expires, and tapping undo restores the row without any request. Only one mark waits at a time — marking another item pushes the previous one at once; a refresh that pauses the display or drops the row cancels the pending mark instead of pushing it, and de-pairing mid-push never writes the old authorization back. The ⋯ menu holds the fullscreen toggle, light/dark/system theme (dark is the default), a − / + text-size stepper (70–200%), and a "screen fit" − / + control that pre-squashes the page vertically (85–100%) to cancel frames that stretch their panel. Everything persists per display.
 - **Export to calendar:** Tasks with a due date or fixed time (regular mode only)
 - **Share item:** Sends an encrypted invitation for another person to track it
-- **Snooze:** Temporarily hides the item
+- **Snooze:** Temporarily hides the item. When it is already hidden, Home swipe/card **show** brings it back immediately; Detail **show** opens the snooze sheet so you can unsnooze or hide it longer.
 - **Remove:** Deletes with an undo path
 
 ### 9.8 Value Logging 👤
@@ -1427,17 +1427,23 @@ Tracks the currently active habit session:
 │ Habit Name                         │
 │ Choose how long to hide this habit. │
 ├─────────────────────────────────────┤
+│ [show now]          ← if already hidden
+│ [1h] [3h] [8h] [today]             │
 │ [1d] [3d] [7d] [14d]               │
 │ [1 time] [2 times]                 │
+│ [  hours  ] [hide]                 │
 ├─────────────────────────────────────┤
 │ [cancel]                           │
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Left-swipe card → snooze, or from card actions
+- **Access:** Left-swipe card → snooze, or from card actions / Detail
+- Hour-based snooze: 1h, 3h, 8h, or a custom 1–72 hours
+- **today:** hide until midnight tonight
 - Time-based snooze: 1d, 3d, 7d, 14d
-- Repetition-based snooze: 1 time, 2 times (hides for N completions of another habit)
-- Hidden from list but still appears in search
+- Repetition-based snooze: 1 time, 2 times (hides until N more due dates pass)
+- **show now:** clears an active snooze (also available as swipe/card **show**)
+- Hidden from list but still appears in search; Settings → show hidden habits fades them on Home
 
 ### 10.4 Value Log Sheet 👤
 
@@ -2309,7 +2315,8 @@ When you swipe a card left or right, the following action buttons appear:
 
 | Icon | Action | Key | Condition | Description |
 |------|--------|-----|-----------|-------------|
-| 🌙 | Snooze | `snooze` | Non-minimal mode | Hide until chosen time |
+| 🌙 | Snooze | `snooze` | Non-minimal mode, not currently hidden | Hide until chosen time |
+| 🌙 | Show | `unsnooze` | Non-minimal mode, currently snoozed | Clear the snooze immediately |
 | 🗑️ | Remove | `nuke` | Always | Delete habit (with confirm) |
 
 **Minimal Mode Differences:**

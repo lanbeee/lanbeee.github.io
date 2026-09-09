@@ -1024,7 +1024,10 @@ function render(opts){
         ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
-    const snoozeAction = minimal ? '' : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`;
+    const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+    const snoozeAction = minimal ? '' : (snoozed
+      ? `<button class="swipe-action sa-snooze" data-action="unsnooze" aria-label="show"><i class="ti ti-moon-off" aria-hidden="true"></i>show</button>`
+      : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`);
     const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
@@ -1088,7 +1091,7 @@ function render(opts){
         </div>
         ${minimal || isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
-          <button class="card-action-btn" data-action="snooze" aria-label="snooze" title="snooze"><i class="ti ti-moon" aria-hidden="true"></i></button>
+          <button class="card-action-btn" data-action="${snoozed ? 'unsnooze' : 'snooze'}" aria-label="${snoozed ? 'show' : 'snooze'}" title="${snoozed ? 'show' : 'snooze'}"><i class="ti ${snoozed ? 'ti-moon-off' : 'ti-moon'}" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>`}
       </div>`;
@@ -1518,6 +1521,7 @@ function render(opts){
       }
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
+      if(btn.dataset.action === 'unsnooze')doUnsnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
       if(btn.dataset.action === 'timer'){
         if(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === idx){
@@ -1534,6 +1538,7 @@ function render(opts){
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
+      if(btn.dataset.action === 'unsnooze')doUnsnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
   });
