@@ -1476,6 +1476,18 @@
     </div>
   </div>
 </div>
+<div id="time-step-picker" role="dialog" aria-modal="true" aria-label="Time">
+  <div class="time-step-picker-panel">
+    <div class="time-step-picker-bar">
+      <button type="button" class="time-step-picker-clear" id="time-step-picker-clear" hidden>Clear</button>
+      <button type="button" class="time-step-picker-done" id="time-step-picker-done">Done</button>
+    </div>
+    <div class="time-step-picker-frame">
+      <div class="time-step-picker-highlight" aria-hidden="true"></div>
+      <div class="time-step-picker-wheels" id="time-step-picker-wheels"></div>
+    </div>
+  </div>
+</div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="action-toast" role="status" aria-live="polite">
   <span id="action-text"></span>
@@ -1532,6 +1544,7 @@
 <script src="./js/push-client.js" defer></script>
 <script src="./js/reminders.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
+<script src="./js/time-picker.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings-core.js" defer></script>
 <script src="./js/settings-weather.js" defer></script>

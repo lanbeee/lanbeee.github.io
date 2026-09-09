@@ -460,4 +460,80 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .travel-minute-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
 .travel-minute-field .travel-edit-unit{grid-row:2;justify-self:center;line-height:1;}
 
+/* iOS Clock-style time picker — keyboard slot, not a Tings sheet. Safari
+   ignores step on <input type="time">, so iPhone/iPad get hour / 5-minute /
+   AM-PM wheels here. Android keeps the native picker. */
+#time-step-picker{
+  position:fixed;inset:0;z-index:160;
+  display:flex;align-items:flex-end;justify-content:center;
+  pointer-events:none;visibility:hidden;
+}
+#time-step-picker.open{pointer-events:auto;visibility:visible;}
+.time-step-picker-panel{
+  width:100%;max-width:100%;
+  background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+  border-top:0.5px solid var(--border);
+  padding:0 0 env(safe-area-inset-bottom);
+  transform:translateY(110%);
+  transition:transform 280ms var(--ease-snappy);
+  box-shadow:0 -12px 40px rgba(20,30,26,0.12);
+}
+#time-step-picker.open .time-step-picker-panel{transform:translateY(0);}
+.time-step-picker-bar{
+  display:flex;align-items:center;gap:8px;
+  min-height:44px;padding:0 4px 0 8px;
+  border-bottom:0.5px solid var(--border);
+}
+.time-step-picker-clear,
+.time-step-picker-done{
+  border:0;background:none;font:inherit;cursor:pointer;
+  min-height:44px;padding:0 12px;
+  font-size:17px;font-weight:600;letter-spacing:-0.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.time-step-picker-clear{color:var(--text2);}
+.time-step-picker-done{margin-left:auto;color:var(--teal-text);}
+.time-step-picker-frame{
+  position:relative;height:calc(44px * 5);
+  overflow:hidden;
+}
+.time-step-picker-highlight{
+  position:absolute;left:10px;right:10px;top:50%;
+  height:44px;margin-top:-22px;border-radius:8px;
+  background:color-mix(in srgb,var(--bg3) 78%,transparent);
+  pointer-events:none;z-index:0;
+}
+.time-step-picker-wheels{
+  position:relative;z-index:1;
+  display:flex;align-items:stretch;height:100%;
+  mask-image:linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+}
+.time-step-picker-col{
+  flex:1 1 0;min-width:0;height:100%;
+  overflow-x:hidden;overflow-y:auto;
+  overscroll-behavior:contain;
+  scroll-snap-type:y mandatory;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+  scrollbar-width:none;
+  padding:88px 0;
+  outline:none;
+}
+.time-step-picker-col[data-col="period"]{flex:0.72 1 0;}
+.time-step-picker-wheels.is-24h .time-step-picker-col[data-col="period"]{display:none;}
+.time-step-picker-col::-webkit-scrollbar{display:none;}
+.time-step-picker-item{
+  height:44px;scroll-snap-align:center;scroll-snap-stop:always;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text);font-size:22px;font-weight:500;
+  font-variant-numeric:tabular-nums;line-height:1;
+  user-select:none;-webkit-user-select:none;
+}
+.time-step-picker-item.is-on{font-weight:650;}
+input[type="time"].time-step-picker-target{
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--teal-icon) 70%,transparent);
+}
+
 /* Open-time and missed-item menus */

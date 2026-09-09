@@ -1037,7 +1037,7 @@ Visible when type = habit (keepup):
 ### 8.6 Field: Task Due Date 👤
 Visible when type = task:
 - **Date input:** Calendar picker (day-level)
-- **Time input:** Time picker (makes it a fixed-time event)
+- **Time input:** Time picker (makes it a fixed-time event). Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
 - Hint: "add a time to make this a fixed appointment"
 - Default time: Next clean hour
 
@@ -1604,7 +1604,7 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Settings → Busy Times → "add busy time", or tap existing block
-- Set start/end time (five-minute picker steps; exact valid typed minutes are preserved)
+- Set start/end time (five-minute picker steps; iOS uses Clock-style wheels because Safari ignores `step`. Exact valid typed minutes are preserved until a wheel choice is confirmed)
 - Choose days of week
 - "Save this date" vs "Update recurring" (modifies one instance vs the series)
 
@@ -2183,7 +2183,7 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `DEFAULT_MIN_CHUNK_MINUTES` | 30 | Default min chunk when breakable |
 | `DEFAULT_EARLY_WINDOW_DAYS` | 1 | Default number of days an item may be brought forward |
 | `DEFAULT_DELAY_ALLOWANCE_DAYS` | 0 | Default permission to place an occurrence after its due day |
-| `TIME_PICKER_STEP_MINUTES` | 5 | Native time-picker granularity; typed valid `HH:mm` values remain exact |
+| `TIME_PICKER_STEP_MINUTES` | 5 | Time-picker granularity (12 minute stops). Android uses the native `step` picker; iOS Safari ignores `step`, so iPhone/iPad get Clock-style hour / 5-minute / AM-PM wheels. Typed valid `HH:mm` values remain exact until a wheel choice is confirmed |
 | `MIN_BREAKABLE_CHUNK_MINUTES` | 15 | Hard minimum for breakable chunks, independent of picker steps |
 | `MAX_NOTE_CHARS` | 200 | Max free-form notes |
 | `DEFAULT_PRIORITY` | 2 | Default priority (P2) |

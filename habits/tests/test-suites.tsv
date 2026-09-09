@@ -75,6 +75,7 @@ theme-mode-test.js	ui	once
 steered-outside-fit-no-duplicate-test.js	planner	once
 tight-rhythm-capacity-test.js	planner	once
 timed-day-plan-test.js	planner	once
+time-picker-test.js	ui	once
 timer-session-test.js	ui	once
 wk-check.js	ui	once
 weather-planner-test.js	planner	once
