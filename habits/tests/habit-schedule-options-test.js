@@ -117,7 +117,9 @@ function settings(locations,blockedTimes = []){
       })]);
       const exactLeft = agendaRowsAfterCompletions(h,rows,dayStart(now));
       const preserved = normalizeLogs(h.logs)[0];
-      h.logs = normalizeLogs([now]);
+      // Keep this an actual (unidentified) completion even when the suite runs
+      // before the fixture's 08:00 clock; future numeric logs are legacy plans.
+      h.logs = normalizeLogs([makeActualLog(now,{note:'unidentified completion'})]);
       const ordinaryLeft = agendaRowsAfterCompletions(h,rows,dayStart(now));
       return {
         exactLeft:exactLeft.map(row=>row.occurrenceKey),

@@ -1463,7 +1463,7 @@ function timelineCardCopyHtml(titleHtml,subHtml,weatherHtml){
 function weatherCardPill(row,h = null){
   if(!row || !h)return '';
   const settings=sortSettings || loadSortSettings();
-  const assessment=h.weatherProfileId && typeof weatherStatusForRow === 'function'
+  const assessment=typeof weatherStatusForRow === 'function'
     ? weatherStatusForRow(h,row,settings) : null;
   const status = assessment?.status || 'unknown';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
@@ -1477,6 +1477,7 @@ function weatherCardPill(row,h = null){
       if(period)return period;
     }
   }
+  if(assessment?.guidance?.source==='location')return '';
   if(!assessment || (minimal && status !== 'caution' && status !== 'blocked' && status !== 'override'))return '';
   const icon = typeof weatherConditionIcon === 'function' ? weatherConditionIcon(status) : 'ti-cloud';
   const dayBase=typeof dayStart==='function' ? dayStart(row.start) : row.start;

@@ -57,8 +57,8 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
-- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override), showWeather / showWeatherAtLocation (per-item forecast pill)
-- Time/place sessions: scheduleOptions (stable row id, weekday/time/place window, same-day alternative/separate mode, optional per-row preference)
+- Weather guidance: weatherProfileMode + weatherProfileId (inherit the scheduled place, choose a named profile, or opt out), weatherLocationId (anywhere-placement forecast override), showWeather / showWeatherAtLocation (per-item forecast pill)
+- Time/place/weather sessions: scheduleOptions (stable row id, weekday/time/place window, same-day alternative/separate mode, optional per-row preference and weather override)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, earlyWindowDays, delayAllowanceDays
 - Calendar import: externalId, source, importedAt
@@ -416,8 +416,9 @@ else:
   anywhereAllowed: boolean,   // 👨‍💻 Legacy: may be done anywhere
   locationPrefs: Object<string, 'avoid'|'little'|'high'>, // 👤 Soft preferences
   preferredLocationId: string|null, // 👤 Legacy preferred location
-  weatherProfileId: string|null, // 👤 Optional weather profile
-  weatherLocationId: string|null, // 👤 Optional forecast place (far from home)
+  weatherProfileMode: 'inherit'|'profile'|'none', // 👤 Place default, named profile, or explicit opt-out
+  weatherProfileId: string|null, // 👤 Named profile when mode = profile
+  weatherLocationId: string|null, // 👤 Anywhere-placement forecast fallback
   showWeather: boolean,       // 👤 Show interval forecast on this item's agenda card
   showWeatherAtLocation: boolean, // 👤 When showWeather is on, use this item's place (off = home city)
   scheduleOptions: {             // 👤 Specific extra time/place windows
@@ -435,7 +436,9 @@ else:
     // endAnchor/endOffsetMin/endCombine/endAnchor2/endOffsetMin2/
     // endFixedMin2/endDayOffset/endDayOffset2 mirror the start fields.
     locationId: string|null,     // Saved place, or null = anywhere
-    pref?: 'avoid'|'little'|'high' // 👤 Overrides place ranking for this instance
+    pref?: 'avoid'|'little'|'high', // 👤 Overrides place ranking for this instance
+    weatherProfileMode: 'inherit'|'profile'|'none', // 👤 Option-specific guidance choice
+    weatherProfileId: string|null // 👤 Named profile when mode = profile
   }[],
   
   // ─── LINKS & ACTIONS ─────────────────────────────────────
@@ -580,22 +583,28 @@ homeCityLng: number|null,       // 👤 Longitude
 prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
-weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
+weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles shared by items, options, and places
 showWeatherTemperatureRanges: boolean, // Add feels-like low–high °C beside full-mode day forecast icons (default off)
 showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
 showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
 ```
 
 #### 4.3.8a Weather Guidance 👤👨‍💻
-- Uses Open-Meteo without an API key. The default forecast is the saved
-  home-city coordinate. An item can optionally pick a saved place when that
-  item happens far from home (`weatherLocationId`). Nearby places (about 40 km)
-  reuse the home forecast instead of a second request.
+- Uses Open-Meteo without an API key. Guidance resolves for every placement in
+  this order: specific option → item → selected location. Both options and
+  items can explicitly choose **no weather**, which stops inheritance at that
+  layer. A legacy item with a profile becomes an explicit item profile; an item
+  without one inherits its selected place. Missing/dangling profiles fail open.
+- The forecast always comes from the selected scheduled place. Anywhere
+  placements use `weatherLocationId` when set, then the saved home city. Nearby
+  places (about 40 km) reuse the home forecast instead of a second request.
 - The seven-day hourly forecast and normalized daily condition/temperature/
   precipitation/wind summaries refresh together every six hours per distinct place.
   A fresh legacy cache without daily summaries is refreshed automatically.
-  Extra places are fetched only for weather-linked items or visible period
-  cards that need them, capped at four far places besides home.
+  Extra places are discovered from all effectively guided items, options, and
+  locations plus visible period cards that need them. Far coordinates are
+  fetched in bounded multi-coordinate batches; each place keeps its own cache
+  and freshness timestamps.
 - When a weather-linked planned item is active or starts within 90 minutes, a
   15-minute forecast can refresh every 15 minutes while the app is visible. It
   covers at least two hours and 30 minutes after the item, capped at four hours.
@@ -603,9 +612,8 @@ showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default t
   decisive — for example 0% rain and snow, or values comfortably away from every
   rule threshold. Borderline precipitation still refreshes.
 - Near-term samples replace hourly samples where they overlap; the weekly
-  forecast fills later or missing times. AQI is fetched separately only when a
-  profile uses US or EU AQI (home: any such profile; a far place: only if an
-  item there uses one).
+  forecast fills later or missing times. AQI is fetched separately only when an
+  effective profile uses US or EU AQI, including option and location defaults.
 - Weather stays supporting context: full-mode Home agenda-day headers show a
   compact, tinted pill with an intuitive condition emoji and precipitation
   chance when it is raining or snowing. Long WMO labels stay in the tooltip and
@@ -645,17 +653,21 @@ showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default t
   (UV 0–2 low … 8+ very high, US AQI 0–50 good … 101+ unhealthy, wind and
   precipitation bands) and uses them as min/max placeholders. Missing data
   always fails open.
-- Home cards for a weather-guided item show a compact icon-only status chip in
+- Home cards with explicit item/option guidance show a compact icon-only status chip in
   the card's second-row pill stack (never in the title row): quiet teal sun =
   good, amber rain cloud = caution, red shield = override, gray question cloud
-  = unknown. Tapping it shows a one-line reason naming the deciding or failing
-  metric values.
+  = unknown. Guidance inherited solely from a location adds no automatic badge;
+  the item/option and location editors explain that inheritance, and manually
+  enabled ambient weather display is unchanged. Tapping a visible status shows
+  a one-line reason naming the deciding or failing metric values.
 - Relative preferences compare the exact habit interval and its whole day with
   equal weight. Forecast cache is stored under `tings_weather_cache_v1`, outside
   backup data. Far-place payloads live in `places` on that cache.
 - Forecast transparency: the weather settings section shows each profile's
-  attached items ("used by …"), and a forecast panel below the status line with
-  the exact rows the planner scores — the next 24 hours of the stored home
+  attached items, specific options, and places ("used by …"). Referenced
+  profiles cannot be deleted until those uses are changed. A forecast panel
+  below the status line shows the exact rows the planner scores — the next 24
+  hours of the stored home
   forecast, one row per step (hourly, or 15-minute inside the near-term
   horizon, shaded, where the detail supersedes the hourly value), with fetch
   ages and the detail horizon in the header line. It reads the stored cache
@@ -715,6 +727,7 @@ lastRetentionCleanupAt: number,     // Timestamp of last cleanup
   lng: number,             // WGS84 longitude (-180 to 180)
   radiusM: number,         // 👤 Geofence radius (default 75m)
   emoji: string,           // 👤 Optional pin emoji
+  weatherProfileId: string|null, // 👤 Default guidance inherited by placements here
   
   // Hours (optional, default = 24/7)
   allowedTimeStart: number|null,  // Minutes from midnight
@@ -2580,7 +2593,7 @@ Same agenda logic, but simplified display:
 | `homeCityName` | string | '' | City name for prayer times |
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
-| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
+| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather profiles shared by items, options, and places |
 | `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high °C beside full-mode Home and Overview week-strip weather icons |
 | `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
 | `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
@@ -2731,21 +2744,24 @@ Same agenda logic, but simplified display:
 | `locationPrefs` | object | Per-location preference (avoid/little/high) |
 | `anywhereAllowed` | boolean | Can be done anywhere |
 | `preferredLocationId` | string\|null | Preferred single location |
-| `weatherProfileId` | string\|null | Named weather profile used by the planner |
-| `weatherLocationId` | string\|null | Optional saved place whose forecast overrides home when far away |
+| `weatherProfileMode` | inherit\|profile\|none | Use the selected place default, a named profile, or no weather |
+| `weatherProfileId` | string\|null | Named weather profile when `weatherProfileMode` is `profile` |
+| `weatherLocationId` | string\|null | Optional saved-place forecast fallback for anywhere placements |
 | `showWeather` | boolean | Show an interval forecast pill on this item's agenda card |
 | `showWeatherAtLocation` | boolean | When `showWeather` is on, use this item's place instead of the home city |
-| `scheduleOptions` | array | Specific weekday/time/place windows with stable `id`; `sameDayMode` is `alternative` (legacy default) or `separate`; optional preference overrides place ranking |
+| `scheduleOptions` | array | Specific weekday/time/place/weather windows with stable `id`; `sameDayMode` is `alternative` (legacy default) or `separate`; optional preference and weather choices override the item |
 
-### 25.3.1 Time & Place Options 👤👨‍💻
+### 25.3.1 Time, Place & Weather Options 👤👨‍💻
 
-- Add these under an item's **Schedule → Allowed → specific times & places**.
+- Add these under an item's **Schedule → Allowed → specific times, places & weather**.
 - The general days, time window, and allowed places still apply at every
   allowed place. Each option row is an extra specific case.
 - Many items only need the specific rows. Leave the general time blank then.
 - Each row couples its own weekdays, start/end window, and location, plus an
   optional preference (`little` / `high` / `avoid`) that overrides the place
-  ranking for that instance.
+  ranking for that instance. Its compact weather choice can inherit, select a
+  named profile, or explicitly opt out. The row explains the resolved source,
+  such as “Outdoor from Park.”
 - Legacy rows and rows marked `alternative` are alternatives for the day's
   ordinary occurrence. When weekdays overlap, a newly added row must be
   classified as **alternative time** or **separate session** before saving.
@@ -2763,6 +2779,9 @@ Same agenda logic, but simplified display:
 - Preferred days, time, and place levels remain soft hints. They rank feasible
   general and specific windows but never make an otherwise valid window
   invalid. A place's own opening hours still apply as an outer constraint.
+- A place can have optional weather guidance under **More**. It applies only
+  when the option and item both inherit, so more-specific choices remain
+  predictable and visible in the relevant editor.
 - `locationIds` is the general allowed-place list. Option rows may name extra
   places that are valid only inside that row's window.
 - The Fast and GLPK planners both enumerate the general window and the rows

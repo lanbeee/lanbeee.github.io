@@ -43,6 +43,9 @@ function currentDetailTune(){
   const locationPrefs = selectedLocationPrefsFrom('detail-place-chips');
   const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
   const sharedDisplayMode = currentDetailSharedDisplayMode();
+  const weatherChoice=typeof readWeatherProfileChoice==='function'
+    ? readWeatherProfileChoice('detail-weather-profile')
+    : {weatherProfileMode:$('detail-weather-profile')?.value?'profile':'inherit',weatherProfileId:cleanWeatherProfileId($('detail-weather-profile')?.value)};
   return {
     name:$('detail-habit-message').value.trim(),
     type,
@@ -58,7 +61,7 @@ function currentDetailTune(){
     anywhereAllowed:selectedAnywhereFrom('detail-place-chips'),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
-    weatherProfileId:cleanWeatherProfileId($('detail-weather-profile')?.value) || null,
+    ...weatherChoice,
     weatherLocationId:typeof readWeatherLocationId === 'function'
       ? readWeatherLocationId('detail-weather-location',$('detail-weather-profile')?.value)
       : null,
@@ -177,7 +180,10 @@ function restoreDetailTune(){
   syncDetailDueUi();
   renderTagChips('detail-place-chips',[],detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
   renderTagChips('detail-topic-chips',detailTuneOriginal.topics,[]);
-  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',detailTuneOriginal.weatherProfileId || '');
+  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',
+    typeof weatherProfileSelectValue==='function'
+      ? weatherProfileSelectValue(detailTuneOriginal.weatherProfileMode,detailTuneOriginal.weatherProfileId)
+      : (detailTuneOriginal.weatherProfileId || ''));
   if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('detail-weather-location',detailTuneOriginal.weatherLocationId || '');
   if($('detail-show-weather'))$('detail-show-weather').setAttribute('aria-pressed',detailTuneOriginal.showWeather ? 'true' : 'false');
   if($('detail-show-weather-location'))$('detail-show-weather-location').setAttribute('aria-pressed',detailTuneOriginal.showWeatherAtLocation ? 'true' : 'false');

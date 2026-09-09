@@ -74,7 +74,7 @@ function missedPlannerFingerprint(data,settings){
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
     h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
-    h.scheduleLinks,h.scheduleOptions
+    h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
   ]);
   const plannerSettings = {
     blockedTimes:settings?.blockedTimes,

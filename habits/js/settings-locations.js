@@ -81,9 +81,16 @@ function locationRowMarkup(loc,i){
   const moreOpen = expandedLocationMores.has(i);
   const radius = Number.isFinite(loc.radiusM) ? Math.round(loc.radiusM) : DEFAULT_LOCATION_RADIUS_M;
   const closedCount = closedSet.size;
+  const weatherProfiles=typeof normalizeWeatherProfiles==='function'
+    ? normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles) : [];
+  const weatherProfile=weatherProfiles.find(profile=>profile.id===loc.weatherProfileId) || null;
+  const weatherOptions='<option value="">none</option>'+weatherProfiles.map(profile=>
+    `<option value="${escapeHtml(profile.id)}"${profile.id===loc.weatherProfileId?' selected':''}>${escapeHtml(profile.name)}</option>`
+  ).join('');
   const moreSummary = [
     closedCount ? `closed ${closedCount}d` : null,
-    prefSet ? 'preferred time' : null
+    prefSet ? 'preferred time' : null,
+    weatherProfile ? `${weatherProfile.name} weather` : null
   ].filter(Boolean).join(' · ');
   return `<div class="location-row" data-location-row="${i}">
     <div class="location-row-head">
@@ -112,6 +119,11 @@ function locationRowMarkup(loc,i){
     </div>
     <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} more options${moreSummary ? ` · ${moreSummary}` : ''}</button>
     <div class="location-more" data-location-more="${i}" ${moreOpen ? '' : 'hidden'}>
+      <label class="loc-weather habit-option-field">
+        <span class="loc-field-label">weather guidance</span>
+        <select class="settings-select" data-loc-weather="${i}" aria-label="weather guidance for ${escapeHtml(loc.name)}">${weatherOptions}</select>
+        <span class="field-hint">Applies automatically to items scheduled here unless an item or option overrides it.</span>
+      </label>
       <div class="location-days">
         <span class="loc-field-label">closed</span>
         ${WEEKDAY_LABELS.map((label,day)=>{
@@ -154,11 +166,18 @@ function saveLocationPatch(index,patch){
   if(!locations[index])return;
   locations[index] = {...locations[index],...patch};
   updateSortSetting({locations},{renderNow:false});
+  const weatherChanged=Object.prototype.hasOwnProperty.call(patch,'weatherProfileId');
+  if(weatherChanged && typeof bumpPlannerDataRevision==='function')bumpPlannerDataRevision();
   // A renamed row may move alphabetically. `change` fires after editing is
   // complete, so a full list rebuild is safe and makes the order immediate.
   if(Object.prototype.hasOwnProperty.call(patch,'name'))renderLocationControls();
   else rerenderLocationRow(index);
   render();
+  if(weatherChanged){
+    if(typeof renderWeatherControls==='function')renderWeatherControls();
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
+    if(typeof refreshWeatherForecast==='function')void refreshWeatherForecast();
+  }
 }
 
 // HYBRID: add a location to the registry (called by the geocode pick, GPS, or a
@@ -178,7 +197,8 @@ function addLocation({name,address,lat,lng,emoji}){
     address:String(address || '').trim().slice(0,120),
     lat, lng,
     emoji:String(emoji || '').slice(0,4),
-    radiusM:DEFAULT_LOCATION_RADIUS_M
+    radiusM:DEFAULT_LOCATION_RADIUS_M,
+    weatherProfileId:null
   });
   updateSortSetting({locations},{renderNow:false});
   renderLocationControls();
@@ -202,6 +222,7 @@ function habitsUsingLocationId(locId, data){
       return true;
     }
     if(cleanLocationId(h.weatherLocationId) === id)return true;
+    if(Array.isArray(h.scheduleOptions) && h.scheduleOptions.some(option=>cleanLocationId(option && option.locationId)===id))return true;
     return false;
   });
 }

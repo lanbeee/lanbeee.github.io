@@ -195,11 +195,12 @@
         </label>
         <p class="field-hint" id="ting-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
         <label class="field-label" for="ting-weather-profile">weather guidance</label>
-        <select id="ting-weather-profile" class="settings-select"><option value="">none</option></select>
+        <select id="ting-weather-profile" class="settings-select"><option value="">use place default</option><option value="__none__">no weather</option></select>
+        <p class="field-hint" id="ting-weather-guidance-hint">Uses a saved place’s weather guidance when available.</p>
         <div id="ting-weather-location-wrap" class="weather-habit-location" hidden>
-          <label class="field-label" for="ting-weather-location">forecast place</label>
+          <label class="field-label" for="ting-weather-location">anywhere forecast</label>
           <select id="ting-weather-location" class="settings-select"><option value="">home city</option></select>
-          <p class="field-hint">Rare. Pick a saved place when this happens far from home.</p>
+          <p class="field-hint">Used only when the item can happen anywhere; a scheduled place uses its own forecast.</p>
         </div>
       </div>
 
@@ -372,18 +373,19 @@
             </label>
             <p class="field-hint" id="detail-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
             <label class="settings-sublabel" for="detail-weather-profile">weather guidance</label>
-            <select id="detail-weather-profile" class="settings-select"><option value="">none</option></select>
+            <select id="detail-weather-profile" class="settings-select"><option value="">use place default</option><option value="__none__">no weather</option></select>
+            <p class="field-hint" id="detail-weather-guidance-hint">Uses a saved place’s weather guidance when available.</p>
             <div id="detail-weather-location-wrap" class="weather-habit-location" hidden>
-              <label class="settings-sublabel" for="detail-weather-location">forecast place</label>
+              <label class="settings-sublabel" for="detail-weather-location">anywhere forecast</label>
               <select id="detail-weather-location" class="settings-select"><option value="">home city</option></select>
             </div>
-            <p class="field-hint">Guidance uses your home-city forecast unless this item is far away.</p>
+            <p class="field-hint">Location-bound guidance uses the place where the planner schedules this item.</p>
           </div>
           <div class="habit-options-block detail-full-only" id="detail-habit-options">
             <div class="habit-options-heading">
-              <span class="settings-sublabel">specific times &amp; places
+              <span class="settings-sublabel">specific times, places &amp; weather
                 <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, and places above apply everywhere. Add an option when one place needs its own time — for example 30 min after Sunrise at the mosque. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference on a row overrides the place ranking. Options are alternatives: the planner picks one per occurrence.</span>
+                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, places, and weather above apply generally. Add an option when one place needs its own time or weather guidance. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference and weather on a row override the item and place defaults. Options are alternatives: the planner picks one per occurrence.</span>
               </span>
               <button type="button" class="mini-text-btn" id="detail-habit-option-add">add option</button>
             </div>

@@ -7,6 +7,19 @@
 function cleanLocationId(value){
   return String(value || '').trim().slice(0,64);
 }
+// PURE: weather guidance is tri-state on habits and specific schedule rows.
+// Legacy records only stored weatherProfileId, so a present id means an
+// explicit profile while a missing id means inherit from the selected place.
+function cleanWeatherProfileRef(value){
+  return typeof value === 'string' ? value.trim().slice(0,48) : '';
+}
+function normalizeWeatherProfileMode(mode,profileId){
+  if(mode === 'none')return 'none';
+  if(mode === 'inherit')return 'inherit';
+  if(mode === 'profile')return cleanWeatherProfileRef(profileId) ? 'profile' : 'inherit';
+  if(cleanWeatherProfileRef(profileId))return 'profile';
+  return 'inherit';
+}
 // PURE: trim + cap a stable habit id. Empty string when falsy.
 function cleanHabitId(value){
   return String(value || '').trim().slice(0,64);
@@ -272,7 +285,8 @@ function habitScheduleOptionSameDayMode(option){
 // allowed schedule rather than replacing it. Multiple rows may use the same
 // location at different times. Empty weekdays means every day; null
 // locationId means an anywhere option. Optional `pref` overrides the place
-// ranking for that instance only.
+// ranking for that instance only. Weather follows option > item > location;
+// a row stores `none` when it explicitly opts out rather than inheriting.
 function normalizeHabitScheduleOptions(value,registry){
   if(!Array.isArray(value))return [];
   const valid = Array.isArray(registry)
@@ -290,8 +304,11 @@ function normalizeHabitScheduleOptions(value,registry){
     if(locationId && valid && !valid.has(locationId))continue;
     const weekdays = normalizeAllowedWeekdays(raw.weekdays);
     const pref = cleanLocationPrefLevel(raw.pref);
-    const option = {weekdays,...startFields,...endFields,locationId};
-    const key = `${weekdays.join(',')}|${habitScheduleOptionTimeKey(option,'start')}|${habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}`;
+    const weatherProfileMode = normalizeWeatherProfileMode(raw.weatherProfileMode,raw.weatherProfileId);
+    const weatherProfileId = weatherProfileMode === 'profile'
+      ? cleanWeatherProfileRef(raw.weatherProfileId) || null : null;
+    const option = {weekdays,...startFields,...endFields,locationId,weatherProfileMode,weatherProfileId};
+    const key = `${weekdays.join(',')}|${habitScheduleOptionTimeKey(option,'start')}|${habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}|${weatherProfileMode}|${weatherProfileId || ''}`;
     if(seen.has(key))continue;
     seen.add(key);
     const identified = {
@@ -416,6 +433,8 @@ function habitBoundToScheduleOption(h,option){
     _scheduleOptionPref:pref,
     _scheduleOptionId:normalized.id,
     _scheduleOptionSameDayMode:habitScheduleOptionSameDayMode(normalized),
+    _scheduleOptionWeatherProfileMode:normalized.weatherProfileMode,
+    _scheduleOptionWeatherProfileId:normalized.weatherProfileId,
     preferredLocationId:pref === 'high' && locationId
       ? locationId
       : (h && h.preferredLocationId) || null
@@ -619,6 +638,7 @@ function normalizeLocationRegistry(value){
     const radius = Number(raw.radiusM);
     const address = String(raw.address || '').trim().slice(0,120);
     const emoji = String(raw.emoji || '').slice(0,4);
+    const weatherProfileId = cleanWeatherProfileRef(raw.weatherProfileId) || null;
     out.push({
       id,
       name,
@@ -627,6 +647,7 @@ function normalizeLocationRegistry(value){
       lng:Math.round(lng * 1e6) / 1e6,
       radiusM:Number.isFinite(radius) ? Math.max(10,Math.min(5000,radius)) : DEFAULT_LOCATION_RADIUS_M,
       emoji,
+      weatherProfileId,
       ...normalizeLocationHours(raw)
     });
   }

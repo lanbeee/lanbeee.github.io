@@ -1486,6 +1486,19 @@ function buildPlannerDecisionTrace(data,settings,context){
         inputs.push(`location candidates ${parts.join('; ')}`);
       }
     }
+    if(first && typeof effectiveWeatherGuidance==='function'){
+      const weatherHabit=first.h || h;
+      const guidance=effectiveWeatherGuidance(weatherHabit,first.locationId,settings,{scheduleOptionId:first.scheduleOptionId});
+      const assessment=typeof weatherStatusForRow==='function'
+        ? weatherStatusForRow(weatherHabit,first,settings) : null;
+      if(guidance.disabled){
+        inputs.push(`weather off from ${guidance.source || 'item'}`);
+      }else if(guidance.profileId){
+        const forecastLoc=guidance.forecastLocationId
+          ? locNameById(guidance.forecastLocationId) : (settings.homeCityName || 'home city');
+        inputs.push(`weather ${assessment?.profile?.name || guidance.profile?.name || guidance.profileId} from ${guidance.source || 'unknown'} · forecast ${forecastLoc} · ${assessment?.status || 'inactive'}`);
+      }
+    }
     const selected = rows.length
       ? rows.map(row=>`${agendaTimeLabel(row.start)}–${agendaTimeLabel(row.end)}`).join('; ')
       : 'not placed';
@@ -1882,7 +1895,15 @@ function createDayPlacementState(day,settings,opts = {}){
       if(!known)locationId = null;
     }
     if(!locationId)locationId = pickHabitLocationId(ev.h,null,registry,mode) || locIds[0] || null;
-    rows.push({ kind:'scheduled', h:ev.h, i:ev.i, start, end, hard:true, locationId });
+    const guidance=typeof effectiveWeatherGuidance==='function'
+      ? effectiveWeatherGuidance(ev.h,locationId,settings) : null;
+    rows.push({
+      kind:'scheduled',h:ev.h,i:ev.i,start,end,hard:true,locationId,
+      weatherProfileId:guidance?.profileId || null,
+      weatherProfileSource:guidance?.source || null,
+      weatherForecastLocationId:guidance?.forecastLocationId || null,
+      weatherOptOut:Boolean(guidance?.disabled)
+    });
   });
   // `_plannerLiveLocationId` is an ephemeral matched place supplied when the
   // main page delegates planning to its Worker. A Worker cannot read the

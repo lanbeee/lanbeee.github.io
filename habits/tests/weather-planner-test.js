@@ -26,7 +26,7 @@ function assert(value,message){
   assert(await page.locator('#detail-show-weather').count()===1 && await page.locator('#ting-show-weather').count()===1,'habit and task weather display is a per-item toggle');
   await page.locator('#weather-profile-add').click();
   assert(await page.locator('.weather-profile-card').count()===1,'settings creates a named weather profile');
-  assert(await page.locator('#ting-weather-profile option').count()===2,'new profile appears in habit assignment');
+  assert(await page.locator('#ting-weather-profile option').count()===3,'new profile appears beside inherit and no-weather choices');
   assert(await page.locator('.weather-rule-hint').count()===1,'each rule shows its metric scale');
   assert(/chance/.test(await page.locator('.weather-rule-hint').first().textContent()),'the hint names the metric scale bands');
   await page.locator('[data-weather-rule-relative]').first().selectOption('none');
@@ -82,6 +82,38 @@ function assert(value,message){
     return document.querySelector('.weather-profile-used')?.textContent || '';
   });
   assert(/Walk/.test(usedBy),'each profile lists the items it is attached to');
+
+  const inheritedUi=await page.evaluate(()=>{
+    const profile=normalizeWeatherProfiles(loadSortSettings().weatherProfiles)[0];
+    const settings={...loadSortSettings(),weatherProfiles:[profile],locations:[
+      {id:'park',name:'Park',lat:52.52,lng:13.405,weatherProfileId:profile.id}
+    ]};
+    saveSortSettings(settings);sortSettings=loadSortSettings();
+    save(normalize([
+      {name:'Park run',type:'keepup',target:7,logs:[],locationIds:['park'],anywhereAllowed:false,weatherProfileMode:'inherit'},
+      {name:'Route choice',type:'keepup',target:7,logs:[],locationIds:[],anywhereAllowed:false,scheduleOptions:[
+        {id:'route_option',weekdays:[],start:540,end:600,locationId:'park',weatherProfileMode:'profile',weatherProfileId:profile.id}
+      ]}
+    ]));
+    renderLocationControls();renderWeatherControls();
+    openDetail(0);
+    const itemHint=$('detail-weather-guidance-hint')?.textContent || '';
+    openDetail(1);
+    const optionValue=document.querySelector('.habit-option-weather')?.value || '';
+    const optionHint=document.querySelector('.habit-option-weather-hint')?.textContent || '';
+    const usage=document.querySelector('.weather-profile-used')?.textContent || '';
+    const locationValue=document.querySelector('[data-loc-weather="0"]')?.value || '';
+    const before=normalizeWeatherProfiles(loadSortSettings().weatherProfiles).length;
+    document.querySelector('[data-weather-profile-remove]')?.click();
+    const after=normalizeWeatherProfiles(loadSortSettings().weatherProfiles).length;
+    closeSheet('detail-sheet');
+    return {itemHint,optionValue,optionHint,usage,locationValue,before,after};
+  });
+  assert(/Park.*Outdoor/.test(inheritedUi.itemHint),'item editor gently names the inherited place profile');
+  assert(inheritedUi.optionValue && /Outdoor/.test(inheritedUi.optionHint),'specific option editor saves and explains its explicit weather profile');
+  assert(/Park.*place/.test(inheritedUi.usage) && /Route choice.*option 1/.test(inheritedUi.usage),'profile usage includes locations and specific options');
+  assert(inheritedUi.locationValue===inheritedUi.optionValue,'location editor persists a named weather profile');
+  assert(inheritedUi.before===inheritedUi.after,'profile deletion is blocked while locations or options use it');
 
   const states=await page.evaluate(()=>{
     save([]);
@@ -159,6 +191,59 @@ function assert(value,message){
   assert(result.keptNoPrefRule,'a no-preference rule without bounds survives normalization');
   assert(result.inertIgnored,'a rule with no bounds and no preference does not steer or block');
 
+  const resolution=await page.evaluate(()=>{
+    const profiles=['outdoor','item','option'].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),rules:[{
+      metric:'precipitation_probability',min:null,max:40,hard:true,relative:'none'
+    }]}));
+    const settings={...DEFAULT_SORT_SETTINGS,weatherProfiles:profiles,locations:[
+      {id:'park',name:'Park',lat:40,lng:-74,weatherProfileId:'outdoor'},
+      {id:'gym',name:'Gym',lat:40.2,lng:-74.2},
+      {id:'boston',name:'Boston',lat:42.36,lng:-71.06}
+    ]};
+    const inherited={hid:'inherit',weatherProfileMode:'inherit',weatherProfileId:null,locationIds:['park']};
+    const explicit={hid:'explicit',weatherProfileMode:'profile',weatherProfileId:'item',weatherLocationId:'boston'};
+    const disabled={hid:'disabled',weatherProfileMode:'none',weatherProfileId:null};
+    const optionBase={...disabled,scheduleOptions:[
+      {id:'option1',weekdays:[],start:540,end:600,locationId:'park',weatherProfileMode:'profile',weatherProfileId:'option'},
+      {id:'option2',weekdays:[],start:600,end:660,locationId:'park',weatherProfileMode:'inherit',weatherProfileId:null}
+    ]};
+    const optionOff={...explicit,scheduleOptions:[
+      {id:'option3',weekdays:[],start:660,end:720,locationId:'park',weatherProfileMode:'none',weatherProfileId:null}
+    ]};
+    const legacy=normalize([{name:'Legacy',type:'keepup',target:7,weatherProfileId:'item',logs:[]}])[0];
+    const legacyBlank=normalize([{name:'Legacy blank',type:'keepup',target:7,logs:[]}])[0];
+    const loc=effectiveWeatherGuidance(inherited,'park',settings);
+    const itemAtPlace=effectiveWeatherGuidance(explicit,'park',settings);
+    const itemAnywhere=effectiveWeatherGuidance(explicit,null,settings);
+    const none=effectiveWeatherGuidance(disabled,'park',settings);
+    const option=effectiveWeatherGuidance(optionBase,'park',settings,{scheduleOptionId:'option1'});
+    const inheritedNone=effectiveWeatherGuidance(optionBase,'park',settings,{scheduleOptionId:'option2'});
+    const optionDisabled=effectiveWeatherGuidance(optionOff,'park',settings,{scheduleOptionId:'option3'});
+    const dangling=effectiveWeatherGuidance({weatherProfileMode:'profile',weatherProfileId:'missing'},'park',settings);
+    return {
+      loc:[loc.profileId,loc.source,loc.forecastLocationId,loc.inherited],
+      itemAtPlace:[itemAtPlace.profileId,itemAtPlace.source,itemAtPlace.forecastLocationId],
+      itemAnywhere:itemAnywhere.forecastLocationId,
+      none:[none.profileId,none.source,none.disabled],
+      option:[option.profileId,option.source,option.disabled],
+      inheritedNone:[inheritedNone.profileId,inheritedNone.source,inheritedNone.disabled],
+      optionDisabled:[optionDisabled.profileId,optionDisabled.source,optionDisabled.disabled],
+      dangling:[dangling.profile,dangling.source,dangling.profileId],
+      legacy:[legacy.weatherProfileMode,legacy.weatherProfileId],
+      legacyBlank:[legacyBlank.weatherProfileMode,legacyBlank.weatherProfileId]
+    };
+  });
+  assert(JSON.stringify(resolution.loc)===JSON.stringify(['outdoor','location','park',true]),'location profile is inherited with its scheduled-place forecast');
+  assert(JSON.stringify(resolution.itemAtPlace)===JSON.stringify(['item','item','park']),'item profile overrides location but still uses the scheduled place');
+  assert(resolution.itemAnywhere==='boston','anywhere item uses its explicit fallback forecast place');
+  assert(resolution.none[0]===null && resolution.none[1]==='item' && resolution.none[2],'item no-weather blocks location inheritance');
+  assert(JSON.stringify(resolution.option)===JSON.stringify(['option','option',false]),'specific option profile overrides item no-weather');
+  assert(resolution.inheritedNone[0]===null && resolution.inheritedNone[1]==='item' && resolution.inheritedNone[2],'inheriting option respects item no-weather');
+  assert(resolution.optionDisabled[0]===null && resolution.optionDisabled[1]==='option' && resolution.optionDisabled[2],'specific option no-weather overrides item profile');
+  assert(resolution.dangling[0]===null && resolution.dangling[1]==='item' && resolution.dangling[2]==='missing','dangling explicit profile fails open without silently inheriting location');
+  assert(JSON.stringify(resolution.legacy)===JSON.stringify(['profile','item']),'legacy item profile migrates to explicit profile mode');
+  assert(JSON.stringify(resolution.legacyBlank)===JSON.stringify(['inherit',null]),'legacy item without profile migrates to inherit mode');
+
   const weekChoice=await page.evaluate(async()=>{
     const RealDate=Date;
     const now=new RealDate();now.setHours(8,0,0,0);
@@ -197,6 +282,53 @@ function assert(value,message){
   });
   assert(weekChoice.fast===1,'Fast uses the weekly forecast to choose the drier day');
   assert(weekChoice.glpk===1 || weekChoice.glpk===-2,'GLPK uses the weekly forecast to choose the drier day (or is unavailable)');
+
+  const locationChoice=await page.evaluate(async()=>{
+    const RealDate=Date;
+    const now=new RealDate();now.setHours(8,0,0,0);
+    function FrozenDate(...args){return args.length?new RealDate(...args):new RealDate(now.getTime());}
+    FrozenDate.now=()=>now.getTime();FrozenDate.parse=RealDate.parse;FrozenDate.UTC=RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);FrozenDate.prototype=RealDate.prototype;
+    globalThis.Date=FrozenDate;
+    try{
+      const base=dayStart(now.getTime());
+      const profile={id:'outdoor',name:'Outdoor',rules:[{metric:'precipitation_probability',min:null,max:40,hard:true,relative:'none'}]};
+      const indoor={id:'indoor',name:'Indoor',rules:[{metric:'precipitation_probability',min:null,max:100,hard:true,relative:'none'}]};
+      const wet=[9,10].map(hour=>({ts:base+hour*3600000,precipitation_probability:95,source:'weekly'}));
+      const locations=[
+        {id:'park',name:'Park',lat:42.36,lng:-71.06,weatherProfileId:'outdoor'},
+        {id:'gym',name:'Gym',lat:40.72,lng:-74.01,weatherProfileId:'indoor'}
+      ];
+      const settings={...DEFAULT_SORT_SETTINGS,agendaOptimizer:true,showDueTasksInAgenda:true,
+        availabilityMinutes:[480,480,480,480,480,480,480],
+        blockedTimes:[{label:'night',days:[],start:0,end:540},{label:'night',days:[],start:1080,end:1440}],
+        homeCityLat:40.71,homeCityLng:-74,locations,weatherProfiles:[profile,indoor],
+        _weatherContext:{profiles:[profile,indoor],timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,samples:[],places:{
+          park:{timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,samples:wet,weeklyFetchedAt:now.getTime()},
+          gym:{timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,samples:wet,weeklyFetchedAt:now.getTime()}
+        },locks:[]}};
+      const data=normalize([{name:'Exercise',type:'keepup',target:7,earlyWindowDays:0,delayAllowanceDays:0,
+        durationMinutes:30,priority:3,logs:[],locationIds:[],anywhereAllowed:false,createdAt:base-86400000,
+        scheduleOptions:[
+          {id:'park_option',weekdays:[],start:540,end:600,locationId:'park',weatherProfileMode:'inherit'},
+          {id:'gym_option',weekdays:[],start:540,end:600,locationId:'gym',weatherProfileMode:'inherit'}
+        ]}]);
+      const chosen=week=>(week.days?.[0]?.timeline || []).find(row=>row.kind==='fill' && row.h?.name==='Exercise') || null;
+      const fastRow=chosen(buildWeekAgenda(data,{...settings,agendaOptimizer:false},1));
+      let glpk='unavailable';
+      try{glpk=chosen(await buildWeekAgendaAsync(data,settings,1)) || null;}catch(_){glpk='unavailable';}
+      return {
+        fast:fastRow?.locationId || null,
+        fastWeather:[fastRow?.weatherProfileId,fastRow?.weatherProfileSource,fastRow?.weatherForecastLocationId],
+        glpk:glpk==='unavailable'?glpk:(glpk?.locationId || null),
+        glpkWeather:glpk==='unavailable'?null:[glpk?.weatherProfileId,glpk?.weatherProfileSource,glpk?.weatherForecastLocationId]
+      };
+    }finally{globalThis.Date=RealDate;}
+  });
+  assert(locationChoice.fast==='gym','Fast rejects the wet Outdoor Park option and chooses the weather-compatible Indoor Gym option');
+  assert(locationChoice.glpk==='gym' || locationChoice.glpk==='unavailable','GLPK rejects the wet Outdoor Park option and chooses Indoor Gym (or is unavailable)');
+  assert(JSON.stringify(locationChoice.fastWeather)===JSON.stringify(['indoor','location','gym']),'Fast stores the effective location profile and forecast place on its planned row');
+  assert(locationChoice.glpk==='unavailable' || JSON.stringify(locationChoice.glpkWeather)===JSON.stringify(['indoor','location','gym']),'GLPK stores the effective location profile and forecast place on its planned row');
 
   const extra=await page.evaluate(()=>{
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -250,7 +382,8 @@ function assert(value,message){
       logs:[],locationIds:[],anywhereAllowed:true}]);
     saveSortSettings({...loadSortSettings(),locations:settings.locations,weatherProfiles:loadSortSettings().weatherProfiles});
     sortSettings=loadSortSettings();
-    const profileId=$('ting-weather-profile')?.querySelector('option:not([value=""])')?.value || '';
+    const profileId=[...($('ting-weather-profile')?.options || [])]
+      .find(option=>option.value && option.value!=='__none__')?.value || '';
     if($('ting-weather-profile'))$('ting-weather-profile').value=profileId;
     if(typeof renderWeatherLocationSelect==='function')renderWeatherLocationSelect('ting-weather-location','');
     if(typeof syncWeatherHabitLocationUi==='function')syncWeatherHabitLocationUi();
@@ -470,6 +603,27 @@ function assert(value,message){
   assert(display.minimalAmbient==='', 'minimal mode suppresses ambient period weather pills');
   assert(display.intensity.label==='heavy rain' && display.intensity.emoji==='🌧️🌧️','WMO intensity is visible through the condition label and emoji combination');
 
+  const inheritedVisibility=await page.evaluate(()=>{
+    const now=Date.now();const base=dayStart(now);const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const profile={id:'outdoor',name:'Outdoor',rules:[{metric:'precipitation_probability',max:40,min:null,hard:false,relative:'none'}]};
+    const samples=[{ts:base+12*3600000,temperature_2m:12,apparent_temperature:11,precipitation_probability:80,weather_code:61,source:'weekly'}];
+    const settings={...DEFAULT_SORT_SETTINGS,minimalMode:false,homeCityLat:40.7,homeCityLng:-74,weatherProfiles:[profile],
+      locations:[{id:'park',name:'Park',lat:42.36,lng:-71.06,weatherProfileId:'outdoor'}],
+      _weatherContext:{profiles:[profile],timezone:tz,samples:[],places:{park:{timezone:tz,samples,weeklyFetchedAt:now}},locks:[]}};
+    sortSettings=settings;
+    const inherited={hid:'inherited',name:'Inherited',type:'keepup',weatherProfileMode:'inherit',weatherProfileId:null,showWeather:false};
+    const explicit={...inherited,hid:'explicit',weatherProfileMode:'profile',weatherProfileId:'outdoor'};
+    const row={kind:'fill',i:0,start:base+12*3600000,end:base+12.5*3600000,locationId:'park'};
+    return {
+      inherited:weatherCardPill({...row,h:inherited},inherited),
+      ambient:weatherCardPill({...row,h:{...inherited,showWeather:true,showWeatherAtLocation:true}},{...inherited,showWeather:true,showWeatherAtLocation:true}),
+      explicit:weatherCardPill({...row,h:explicit},explicit)
+    };
+  });
+  assert(inheritedVisibility.inherited==='','location-only inheritance adds no automatic agenda badge');
+  assert(/weather-period-pill/.test(inheritedVisibility.ambient),'explicit ambient display still shows weather for a location-inherited item');
+  assert(/weather-pill/.test(inheritedVisibility.explicit),'explicit item guidance retains its compact agenda status');
+
   const cacheUpgrade=await page.evaluate(async()=>{
     const now=Date.now();
     const base=dayStart(now);
@@ -510,6 +664,37 @@ function assert(value,message){
   assert(cacheUpgrade.upgradedDays===1 && cacheUpgrade.upgradedCode===2,'fresh legacy forecast caches are refreshed with normalized daily summaries');
   assert(cacheUpgrade.ambientSamples===1,'ambient travel weather can use the forecast cache without creating a guidance profile');
   assert(cacheUpgrade.normalizedCode===3,'daily WMO summaries normalize alongside hourly samples');
+
+  const batchFetch=await page.evaluate(async()=>{
+    const now=Date.now();const base=dayStart(now);const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const profile={id:'outdoor',name:'Outdoor',rules:[{metric:'precipitation_probability',max:40,min:null,hard:false,relative:'none'}]};
+    const locations=Array.from({length:6},(_,index)=>({
+      id:`far${index}`,name:`Far ${index}`,lat:10+index,lng:20+index,weatherProfileId:'outdoor'
+    }));
+    const habits=locations.map((loc,index)=>({name:`Trip ${index}`,type:'task',dueDate:null,eventTime:null,logs:[],
+      durationMinutes:30,priority:3,locationIds:[loc.id],anywhereAllowed:false,weatherProfileMode:'inherit'}));
+    save(normalize(habits));
+    saveSortSettings({...DEFAULT_SORT_SETTINGS,homeCityName:'Home',homeCityLat:40.7,homeCityLng:-74,weatherProfiles:[profile],locations});
+    sortSettings=loadSortSettings();weatherCacheWrite({});
+    const originalFetch=weatherFetchJson;const coordinateCounts=[];
+    const payload=()=>({timezone:tz,utc_offset_seconds:0,hourly:{time:[(base+12*3600000)/1000],temperature_2m:[12],apparent_temperature:[11],
+      precipitation_probability:[10],precipitation:[0],snowfall:[0],wind_speed_10m:[8],wind_gusts_10m:[12],uv_index:[2],weather_code:[1],is_day:[1]},
+      daily:{time:[base/1000],weather_code:[1],temperature_2m_min:[8],temperature_2m_max:[14],apparent_temperature_min:[7],apparent_temperature_max:[13],
+        precipitation_probability_max:[10],precipitation_sum:[0],snowfall_sum:[0],wind_speed_10m_max:[8],wind_gusts_10m_max:[12],uv_index_max:[2]}});
+    weatherFetchJson=async url=>{
+      const count=(new URL(url).searchParams.get('latitude') || '').split(',').filter(Boolean).length;
+      coordinateCounts.push(count);
+      return count>1?Array.from({length:count},payload):payload();
+    };
+    try{await refreshWeatherForecast();}finally{weatherFetchJson=originalFetch;}
+    return {
+      needed:weatherNeededExtraPlaces(sortSettings,load()).length,
+      cached:Object.keys(weatherCacheRead().places || {}).length,
+      batched:coordinateCounts.some(count=>count===6)
+    };
+  });
+  assert(batchFetch.needed===6 && batchFetch.cached===6,'all guided far locations are discovered and cached beyond the old four-place limit');
+  assert(batchFetch.batched,'far-place forecasts use a bounded multi-coordinate request');
   assert(errors.length===0,'page has no JavaScript errors: '+errors.join(' | '));
 
   await browser.close();

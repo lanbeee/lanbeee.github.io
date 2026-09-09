@@ -540,7 +540,7 @@ function temporaryOrderConflict(dayBase,edges,data = null){
 }
 
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
 }
 
 function normalizeSuggestedExpectations(raw){

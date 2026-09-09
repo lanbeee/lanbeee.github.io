@@ -565,8 +565,11 @@ function onTimePickerWheelScroll(e){
     : e.target.closest('.time-step-picker-col');
   if(!col)return;
   if(_timePickerDrag && _timePickerDrag.col === col)_timePickerDrag.scrolled = true;
-  timePickerQueuePaint(col);
+  // Click-to-select owns the pending value while its wheel animates. Reading
+  // a half-finished programmatic scroll can otherwise restore the old AM/PM
+  // value when Done is tapped immediately.
   if(_timePickerProgrammatic)return;
+  timePickerQueuePaint(col);
   if(_timePickerDrag && _timePickerDrag.col){
     timePickerClearSettleTimer(col);
     return;

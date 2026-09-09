@@ -300,6 +300,12 @@ function habitScheduleOptionRowHtml(option,index){
   const activeDays = normalized.weekdays.length
     ? new Set(normalized.weekdays)
     : new Set([0,1,2,3,4,5,6]);
+  const weatherValue=typeof weatherProfileSelectValue==='function'
+    ? weatherProfileSelectValue(normalized.weatherProfileMode,normalized.weatherProfileId)
+    : (normalized.weatherProfileId || '');
+  const weatherOptions=typeof weatherProfileOptionsHtml==='function'
+    ? weatherProfileOptionsHtml(weatherValue,'inherit item / place')
+    : '<option value="">inherit item / place</option>';
   return `<div class="habit-option-row" data-habit-option-index="${index}" data-habit-option-id="${normalized.id || ''}">
     <div class="habit-option-head">
       <span class="habit-option-number">option ${index + 1}</span>
@@ -315,6 +321,11 @@ function habitScheduleOptionRowHtml(option,index){
         ${habitScheduleOptionPrefButton(normalized.pref)}
       </div>
     </div>
+    <label class="habit-option-field habit-option-weather-field">
+      <span class="habit-option-field-label">weather</span>
+      <select class="habit-option-weather settings-select" aria-label="option weather guidance">${weatherOptions}</select>
+      <span class="field-hint habit-option-weather-hint"></span>
+    </label>
     ${habitScheduleOptionTimePairHtml()}
     <div class="habit-option-days-block">
       <span class="habit-option-field-label">days</span>
@@ -331,6 +342,38 @@ function habitScheduleOptionRowHtml(option,index){
       </select>
     </label>
   </div>`;
+}
+
+function habitScheduleOptionWeatherHint(row){
+  if(!row)return '';
+  const settings=sortSettings || loadSortSettings();
+  const own=typeof weatherProfileChoiceFromValue==='function'
+    ? weatherProfileChoiceFromValue(row.querySelector('.habit-option-weather')?.value || '')
+    : {weatherProfileMode:'inherit',weatherProfileId:null};
+  if(own.weatherProfileMode==='none')return 'No weather guidance for this option.';
+  if(own.weatherProfileMode==='profile'){
+    const name=typeof weatherProfileName==='function' ? weatherProfileName(own.weatherProfileId,settings) : '';
+    return `${name || 'Selected profile'} set for this option.`;
+  }
+  const item=typeof weatherProfileChoiceFromValue==='function'
+    ? weatherProfileChoiceFromValue($('detail-weather-profile')?.value || '')
+    : {weatherProfileMode:'inherit',weatherProfileId:null};
+  if(item.weatherProfileMode==='none')return 'No weather · item setting.';
+  if(item.weatherProfileMode==='profile'){
+    const name=typeof weatherProfileName==='function' ? weatherProfileName(item.weatherProfileId,settings) : '';
+    return `${name || 'Item profile'} from item.`;
+  }
+  const locationId=cleanLocationId(row.querySelector('.habit-option-location')?.value) || null;
+  const loc=normalizeLocationRegistry(settings.locations).find(place=>place.id===locationId);
+  const name=loc && typeof weatherProfileName==='function' ? weatherProfileName(loc.weatherProfileId,settings) : '';
+  return name ? `${name} from ${loc.name}.` : 'No inherited weather guidance.';
+}
+
+function syncHabitScheduleOptionWeatherHints(){
+  document.querySelectorAll('#detail-habit-option-list .habit-option-row').forEach(row=>{
+    const hint=row.querySelector('.habit-option-weather-hint');
+    if(hint)hint.textContent=habitScheduleOptionWeatherHint(row);
+  });
 }
 
 function habitOptionSelectedDaySet(row){
@@ -385,6 +428,7 @@ function initializeHabitScheduleOptionRows(h = {}){
   document.querySelectorAll('#detail-habit-option-list .habit-option-row').forEach((row,index)=>{
     renderHabitScheduleOptionEndpoints(row,h,options[index]);
   });
+  syncHabitScheduleOptionWeatherHints();
 }
 
 function syncHabitScheduleOptionsUi(){
@@ -463,6 +507,9 @@ function readHabitScheduleOptionEndpoint(endpoint,prefix){
 function readHabitScheduleOptionRow(row){
   const selectedDays = [...row.querySelectorAll('[data-habit-option-day].on')]
     .map(btn=>Number(btn.dataset.habitOptionDay));
+  const weatherChoice=typeof weatherProfileChoiceFromValue==='function'
+    ? weatherProfileChoiceFromValue(row.querySelector('.habit-option-weather')?.value || '')
+    : {weatherProfileMode:'inherit',weatherProfileId:null};
   return {
     id:row.dataset.habitOptionId || undefined,
     weekdays:normalizeAllowedWeekdays(selectedDays),
@@ -470,7 +517,8 @@ function readHabitScheduleOptionRow(row){
     ...readHabitScheduleOptionEndpoint(row.querySelector('.time-endpoint[data-field="end"]'),'end'),
     locationId:cleanLocationId(row.querySelector('.habit-option-location')?.value) || null,
     pref:cleanLocationPrefLevel(row.querySelector('.habit-option-pref')?.dataset.pref),
-    sameDayMode:row.querySelector('.habit-option-same-day')?.value || 'alternative'
+    sameDayMode:row.querySelector('.habit-option-same-day')?.value || 'alternative',
+    ...weatherChoice
   };
 }
 
@@ -547,6 +595,8 @@ function addBlankHabitScheduleOption(){
     start:seededWindow.start ?? (seededWindow.startAnchor ? null : 540),
     end:seededWindow.end ?? (seededWindow.endAnchor ? null : 600),
     locationId,
+    weatherProfileMode:'inherit',
+    weatherProfileId:null,
     id:`so_${Date.now().toString(36)}_${habitScheduleOptionRowSerial.toString(36)}`,
     _requiresSameDayChoice:list.children.length > 0
   };

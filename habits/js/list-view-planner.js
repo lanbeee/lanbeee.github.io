@@ -432,7 +432,12 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     homeCityLng:Number.isFinite(s.homeCityLng) ? s.homeCityLng : null,
     focus:s.focus || '',
     defaultTravelMode:s.defaultTravelMode || '',
-    locations:(s.locations || []).map(l=>`${l.id}:${l.lat}:${l.lng}`).join('|'),
+    locations:(s.locations || []).map(l=>({
+      id:l.id,lat:l.lat,lng:l.lng,
+      allowedTimeStart:l.allowedTimeStart,allowedTimeEnd:l.allowedTimeEnd,
+      preferredTimeStart:l.preferredTimeStart,preferredTimeEnd:l.preferredTimeEnd,
+      closedDays:l.closedDays,hoursByDay:l.hoursByDay,weatherProfileId:l.weatherProfileId || null
+    })),
     weatherProfiles:(s.weatherProfiles || []).map(p=>p && p.id).filter(Boolean).join('|'),
     weatherRevision:s._weatherContext && s._weatherContext.revision || '',
     // attentionScore / sort-lab inputs (isSortSettingKey list).

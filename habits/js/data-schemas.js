@@ -127,11 +127,12 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
- * @property {string|null} weatherProfileId — optional weather-guidance profile id; forecast failure never blocks planning
- * @property {string|null} weatherLocationId — optional saved-place id whose forecast overrides home city when far away; null uses home
+ * @property {'inherit'|'profile'|'none'} weatherProfileMode — inherit selected-place guidance, use weatherProfileId, or explicitly opt out
+ * @property {string|null} weatherProfileId — explicit weather-guidance profile id when weatherProfileMode is profile; forecast failure never blocks planning
+ * @property {string|null} weatherLocationId — optional saved-place forecast for anywhere placements; location-bound fits use their actual place
  * @property {boolean} showWeather — show an interval forecast pill on this item's agenda card in regular mode
  * @property {boolean} showWeatherAtLocation — when showWeather is on, use this item's place instead of the home-city forecast
- * @property {{id:string,sameDayMode:'alternative'|'separate',weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high'}[]} scheduleOptions — specific weekday/time/place windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
+ * @property {{id:string,sameDayMode:'alternative'|'separate',weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high',weatherProfileMode:'inherit'|'profile'|'none',weatherProfileId:string|null}[]} scheduleOptions — specific weekday/time/place/weather windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
  *
  * — LinkFields (optional, on every type) —
  * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and fires on card double tap
@@ -262,6 +263,7 @@
  * @property {number} lng                   — WGS84 longitude, -180..180
  * @property {number} radiusM               — geofence radius in metres for "you are here" matching
  * @property {string} emoji                 — optional pin emoji ('' when none)
+ * @property {string|null} weatherProfileId — optional default weather profile inherited by placements at this location
  * @property {number|null} allowedTimeStart — minutes-from-midnight, open-window start (null = no window / 24h)
  * @property {number|null} allowedTimeEnd   — minutes-from-midnight, open-window end (null = no window / 24h)
  * @property {number|null} preferredTimeStart — soft hint: best arrival-time start

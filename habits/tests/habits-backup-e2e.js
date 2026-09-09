@@ -173,20 +173,36 @@ function assert(cond, msg){
 
   // ── 11. settings travel with the backup and are applied on restore ──
   const rt = await page.evaluate(()=>{
-    saveSortSettings({...sortSettings, dueWeight:123, topics:['roundtrip']});
-    save([{name:'rt-habit',type:'keepup'}]);
+    const profile={id:'backup-outdoor',name:'Outdoor',rules:[]};
+    saveSortSettings({...sortSettings,dueWeight:123,topics:['roundtrip'],weatherProfiles:[profile],locations:[{
+      id:'backup-park',name:'Park',address:'',lat:40,lng:-74,radiusM:75,weatherProfileId:'backup-outdoor'
+    }]});
+    save([{name:'rt-habit',type:'keepup',weatherProfileMode:'none',scheduleOptions:[{
+      id:'backup-option',weekdays:[],start:540,end:600,locationId:'backup-park',
+      weatherProfileMode:'profile',weatherProfileId:'backup-outdoor'
+    }]}]);
     const blob = JSON.stringify(buildBackup());
     localStorage.removeItem('tings_v2');
     localStorage.removeItem('tings_app_settings_v2');
     const res = restoreBackup(blob);
     const settings = loadSortSettings();
     const habits = load();
-    return { ok:res.ok, dueWeight:settings.dueWeight, topics:settings.topics, firstName:habits[0] && habits[0].name };
+    return {
+      ok:res.ok,dueWeight:settings.dueWeight,topics:settings.topics,
+      firstName:habits[0] && habits[0].name,
+      itemMode:habits[0] && habits[0].weatherProfileMode,
+      optionMode:habits[0] && habits[0].scheduleOptions[0] && habits[0].scheduleOptions[0].weatherProfileMode,
+      optionProfile:habits[0] && habits[0].scheduleOptions[0] && habits[0].scheduleOptions[0].weatherProfileId,
+      locationProfile:settings.locations[0] && settings.locations[0].weatherProfileId
+    };
   });
   assert(rt.ok, 'settings round-trip restore ok');
   assert(rt.dueWeight === 123, 'settings round-trip preserves dueWeight');
   assert(Array.isArray(rt.topics) && rt.topics.includes('roundtrip'), 'settings round-trip preserves topics');
   assert(rt.firstName === 'rt-habit', 'settings round-trip still restores habits');
+  assert(rt.itemMode === 'none', 'backup round-trip preserves an explicit item weather opt-out');
+  assert(rt.optionMode === 'profile' && rt.optionProfile === 'backup-outdoor', 'backup round-trip preserves specific-option weather guidance');
+  assert(rt.locationProfile === 'backup-outdoor', 'backup round-trip preserves location weather guidance');
 
   await page.locator('#settings-close').click();
   if(errors.length)throw new Error(errors.join('\n'));

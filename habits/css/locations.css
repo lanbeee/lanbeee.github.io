@@ -260,3 +260,5 @@
 }
 .blocked-cancel-mark:hover{border-color:color-mix(in srgb,var(--text3) 45%,var(--border));opacity:1;}
 .blocked-cancel-mark:active{background:color-mix(in srgb,var(--text3) 12%,var(--bg));}
+.loc-weather{display:flex;flex-direction:column;gap:5px;}
+.loc-weather .settings-select{width:100%;}

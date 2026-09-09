@@ -400,9 +400,12 @@ function normalize(items){
       anywhereAllowed,
       locationPrefs,
       preferredLocationId,
-      weatherProfileId:(typeof cleanWeatherProfileId === 'function'
+      weatherProfileMode:typeof normalizeWeatherProfileMode === 'function'
+        ? normalizeWeatherProfileMode(raw.weatherProfileMode,raw.weatherProfileId)
+        : (raw.weatherProfileMode === 'none' ? 'none' : (raw.weatherProfileId ? 'profile' : 'inherit')),
+      weatherProfileId:((raw.weatherProfileMode === 'none' || raw.weatherProfileMode === 'inherit') ? '' : (typeof cleanWeatherProfileId === 'function'
         ? cleanWeatherProfileId(raw.weatherProfileId)
-        : (typeof raw.weatherProfileId === 'string' ? raw.weatherProfileId.trim().slice(0,48) : '')) || null,
+        : (typeof raw.weatherProfileId === 'string' ? raw.weatherProfileId.trim().slice(0,48) : ''))) || null,
       weatherLocationId:(typeof cleanLocationId === 'function'
         ? cleanLocationId(raw.weatherLocationId)
         : String(raw.weatherLocationId || '').trim().slice(0,64)) || null,

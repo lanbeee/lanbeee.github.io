@@ -1,6 +1,6 @@
 // Keyless Open-Meteo forecasts and pure weather placement guidance.
 // Forecast data is cached separately from personal backups. Open-Meteo receives
-// the home-city coordinate plus any rare far-away place a habit opts into.
+// the home-city coordinate plus the effectively guided scheduled places.
 
 const WEATHER_METRICS = {
   temperature_2m:{label:'temperature',unit:'°C',aggregate:'mean',range:'−20–40',hint:'°C · 0 freezes · 20 mild · 30+ hot'},
@@ -328,6 +328,63 @@ function weatherContextForLocation(locationId,settings){
   return (root.places && root.places[coords.locationId]) || null;
 }
 
+// PURE: resolve one placement's weather policy. The schedule-option fields are
+// stamped onto bound planner variants by habitBoundToScheduleOption; callers
+// inspecting a published/original row may instead pass scheduleOptionId.
+function effectiveWeatherGuidance(h,locationId,settings,opts={}){
+  if(!h)return {profile:null,profileId:null,source:null,disabled:false,forecastLocationId:null,inherited:false};
+  const cfg=settings || (typeof loadSortSettings==='function'
+    ? loadSortSettings()
+    : (typeof sortSettings!=='undefined' ? sortSettings : {}));
+  const chosenLocationId=typeof cleanLocationId==='function' ? cleanLocationId(locationId) || null : (locationId || null);
+  let optionMode=h._scheduleOptionWeatherProfileMode;
+  let optionProfileId=h._scheduleOptionWeatherProfileId;
+  if(optionMode==null && opts.scheduleOptionId && Array.isArray(h.scheduleOptions)){
+    const option=normalizeHabitScheduleOptions(h.scheduleOptions,cfg.locations)
+      .find(item=>item.id===opts.scheduleOptionId);
+    if(option){optionMode=option.weatherProfileMode;optionProfileId=option.weatherProfileId;}
+  }
+  const finish=(profileId,source,disabled=false)=>{
+    const clean=cleanWeatherProfileId(profileId);
+    const forecastLocationId=chosenLocationId || (typeof cleanLocationId==='function' ? cleanLocationId(h.weatherLocationId) || null : null);
+    return {
+      profile:clean?weatherProfileById(clean,cfg):null,
+      profileId:clean || null,
+      source,
+      disabled,
+      forecastLocationId,
+      inherited:source==='location'
+    };
+  };
+  if(optionMode!=null){
+    const mode=normalizeWeatherProfileMode(optionMode,optionProfileId);
+    if(mode==='none')return finish(null,'option',true);
+    if(mode==='profile')return finish(optionProfileId,'option');
+  }
+  const itemMode=normalizeWeatherProfileMode(h.weatherProfileMode,h.weatherProfileId);
+  if(itemMode==='none')return finish(null,'item',true);
+  if(itemMode==='profile')return finish(h.weatherProfileId,'item');
+  const loc=chosenLocationId?weatherLocationById(chosenLocationId,cfg):null;
+  if(loc && cleanWeatherProfileId(loc.weatherProfileId))return finish(loc.weatherProfileId,'location');
+  return finish(null,null,false);
+}
+
+function weatherGuidanceForFit(fill,fit,settings){
+  const locationId=fit && Object.prototype.hasOwnProperty.call(fit,'locId')
+    ? fit.locId
+    : (fill && Object.prototype.hasOwnProperty.call(fill,'locationId') ? fill.locationId : null);
+  return effectiveWeatherGuidance(fill && fill.h,locationId,settings,{
+    scheduleOptionId:(fit && fit.scheduleOptionId) || fill?._scheduleOptionId || fill?.h?._scheduleOptionId || null
+  });
+}
+
+function weatherContextForGuidance(guidance,settings){
+  if(!guidance)return null;
+  return guidance.forecastLocationId
+    ? weatherContextForLocation(guidance.forecastLocationId,settings)
+    : settings && settings._weatherContext;
+}
+
 function weatherAggregate(samples,metric){
   const values = (samples || []).map(sample=>Number(sample && sample[metric])).filter(Number.isFinite);
   if(!values.length)return null;
@@ -474,18 +531,17 @@ function weatherCommitmentOverride(fill,state){
 }
 
 function weatherFitAssessment(fill,fit,state,settings){
-  const profile = weatherProfileById(fill?.h?.weatherProfileId,settings);
+  const guidance=weatherGuidanceForFit(fill,fit,settings);
+  const profile = guidance.profile;
   const activeRules = (profile && Array.isArray(profile.rules) ? profile.rules : []).filter(weatherRuleActive);
-  const context = typeof weatherContextForHabit === 'function'
-    ? weatherContextForHabit(fill?.h,settings)
-    : (settings && settings._weatherContext);
+  const context = weatherContextForGuidance(guidance,settings);
   if(!activeRules.length)return null;
-  if(!context)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable · planned normally'};
+  if(!context)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable · planned normally'};
   const samples = weatherSamplesForInterval(context,fit.placeStart,fit.placeEnd);
-  if(!samples.length)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable for this time · planned normally'};
+  if(!samples.length)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable for this time · planned normally'};
   const results = activeRules.map(rule=>({rule,...weatherRuleResult(rule,samples,context,fit.placeStart)}));
   const known = results.filter(result=>result.known);
-  if(!known.length)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast metrics unavailable · planned normally'};
+  if(!known.length)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast metrics unavailable · planned normally'};
   const failing = known.filter(result=>!result.pass);
   const hardFail = failing.some(result=>result.rule.hard);
   const overridden = hardFail && weatherCommitmentOverride(fill,state);
@@ -498,6 +554,7 @@ function weatherFitAssessment(fill,fit,state,settings){
     : `good for ${profile.name} · ${known.slice(0,2).map(describe).join(' · ')}`;
   return {
     profile,
+    guidance,
     status:overridden ? 'override' : (hardFail ? 'blocked' : (failing.length ? 'caution' : 'good')),
     hardFail:hardFail && !overridden,
     // Weather guidance outranks ordinary ASAP/preference tie-breaking, while
@@ -508,17 +565,20 @@ function weatherFitAssessment(fill,fit,state,settings){
   };
 }
 
-function weatherCandidateAnchors(fill,state,start,end,durationMs,settings){
+function weatherCandidateAnchors(fill,state,start,end,durationMs,settings,fit=null){
   const lock=weatherLockedPlacement(fill,state,settings);
   if(lock)return lock.start>=start && lock.start+durationMs<=end ? [lock.start] : [];
-  const profile = weatherProfileById(fill?.h?.weatherProfileId,settings);
-  const context = weatherContextForHabit(fill?.h,settings);
+  const guidance=weatherGuidanceForFit(fill,fit,settings);
+  const profile = guidance.profile;
+  const context = weatherContextForGuidance(guidance,settings);
   if(!profile || !context)return [];
   const candidates = context.samples
     .map(sample=>sample.ts)
     .filter(ts=>ts >= start && ts + durationMs <= end)
     .map(ts=>{
-      const assessment = weatherFitAssessment(fill,{placeStart:ts,placeEnd:ts+durationMs},state,settings);
+      const assessment = weatherFitAssessment(fill,{
+        ...(fit || {}),placeStart:ts,placeEnd:ts+durationMs
+      },state,settings);
       return {ts,score:assessment ? assessment.penalty + (assessment.hardFail ? 100000 : 0) : 0};
     })
     .sort((a,b)=>a.score-b.score || a.ts-b.ts);
@@ -532,20 +592,19 @@ function weatherPenaltyForFit(fill,fit,state,settings){
 }
 
 function weatherBestPenaltyForDay(candidate,state,settings){
-  const context=weatherContextForHabit(candidate?.h,settings);
-  const profile=weatherProfileById(candidate?.h?.weatherProfileId,settings);
-  if(!context || !profile || !state)return null;
+  if(!state)return null;
   if(typeof tryPlaceOnDay==='function' && typeof clonePlacementState==='function'){
     const fill={h:candidate.h,i:candidate.i,priority:candidate.priority,scarcity:candidate.scarcity};
     const fit=tryPlaceOnDay(clonePlacementState(state),fill,{settings,allowNetwork:false});
     if(!fit)return null;
-    return weatherPenaltyForFit(fill,fit,state,settings);
+    const assessment=fit.weather || weatherFitAssessment(fill,fit,state,settings);
+    return assessment ? weatherPenaltyForFit(fill,fit,state,settings) : null;
   }
   return null;
 }
 
 function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
-  if(!candidate?.h?.weatherProfileId || candidate.pinned===true)return false;
+  if(!candidate?.h || candidate.pinned===true)return false;
   if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate))return false;
   if(candidate.h.hid && typeof plannerOrderConstraintsForDay==='function'
     && plannerOrderConstraintsForDay(state.dayBase).some(edge=>edge && edge.adjacency==='direct'
@@ -577,10 +636,10 @@ function weatherConditionEmoji(status){
 }
 
 function weatherStatusForRow(h,row,settings){
-  if(!h || !row || !h.weatherProfileId)return null;
+  if(!h || !row)return null;
   const state = {dayBase:typeof dayStart === 'function' ? dayStart(row.start) : row.start, fills:[]};
   return weatherFitAssessment({h,i:row.i,pinned:Boolean(h.pinned) || row.kind === 'scheduled'},
-    {placeStart:row.start,placeEnd:row.end},state,settings || sortSettings || loadSortSettings());
+    {placeStart:row.start,placeEnd:row.end,locId:row.locationId,scheduleOptionId:row.scheduleOptionId},state,settings || sortSettings || loadSortSettings());
 }
 
 function weatherCodePresentation(value){
@@ -716,10 +775,12 @@ function weatherGuidedItemsForDay(dayBase,dayContext,settings,data=null){
   return weatherContextDayRows(dayBase,dayContext).map(row=>{
     if(row.kind!=='fill' && row.kind!=='scheduled')return null;
     const h=row.h || (row.i!=null ? list[row.i] : null);
-    if(!h?.weatherProfileId)return null;
+    if(!h)return null;
     const assessment=weatherStatusForRow(h,row,settings);
-    if(!assessment)return null;
-    const coords=weatherCoordsForHabit(h,settings);
+    if(!assessment || assessment.guidance?.source==='location')return null;
+    const coords=assessment.guidance?.forecastLocationId
+      ? weatherCoordsForLocation(assessment.guidance.forecastLocationId,settings)
+      : weatherHomeCoords(settings);
     const loc=coords?.locationId ? weatherLocationById(coords.locationId,settings) : null;
     return {h,row,assessment,locationName:loc?.name || String(settings?.homeCityName || '').trim() || 'home city'};
   }).filter(Boolean).sort((a,b)=>Number(a.row.start)-Number(b.row.start));
@@ -985,23 +1046,39 @@ function weatherProfileNeedsAir(profile){
   return Boolean(profile && profile.rules && profile.rules.some(rule=>weatherRuleActive(rule) && WEATHER_METRICS[rule.metric]?.air));
 }
 
-function weatherNeedsAir(settings,locationId){
-  const profiles = normalizeWeatherProfiles(settings && settings.weatherProfiles);
-  if(!locationId)return profiles.some(weatherProfileNeedsAir);
-  const data = typeof load === 'function' ? load() : [];
-  return data.some(h=>{
-    if(!h || !h.weatherProfileId)return false;
-    const coords = weatherCoordsForHabit(h,settings);
-    if(!coords || coords.locationId !== locationId)return false;
-    return weatherProfileNeedsAir(weatherProfileById(h.weatherProfileId,settings));
-  });
+function weatherPotentialGuidancesForHabit(h,settings){
+  if(!h)return [];
+  const registry=normalizeLocationRegistry(settings && settings.locations);
+  const out=[];
+  const seen=new Set();
+  const add=(locationId,scheduleOptionId=null)=>{
+    const guidance=effectiveWeatherGuidance(h,locationId,settings,{scheduleOptionId});
+    if(!guidance.profile)return;
+    const key=`${guidance.profileId}:${guidance.forecastLocationId || 'home'}:${guidance.source}`;
+    if(seen.has(key))return;
+    seen.add(key);
+    out.push(guidance);
+  };
+  const generalIds=normalizeLocationIds(h.locationIds,registry);
+  generalIds.forEach(id=>add(id));
+  if(Boolean(h.anywhereAllowed) || !generalIds.length)add(null);
+  for(const option of normalizeHabitScheduleOptions(h.scheduleOptions,registry))add(option.locationId,option.id);
+  return out;
 }
 
-function weatherLinkedUpcomingRows(now = Date.now()){
+function weatherNeedsAir(settings,locationId){
+  const data = typeof load === 'function' ? load() : [];
+  return data.some(h=>weatherPotentialGuidancesForHabit(h,settings).some(guidance=>
+    (guidance.forecastLocationId || null)===(locationId || null)
+      && weatherProfileNeedsAir(guidance.profile)));
+}
+
+function weatherLinkedUpcomingRows(now = Date.now(),settings=sortSettings || loadSortSettings()){
   const data = typeof load === 'function' ? load() : [];
   return weatherAgendaRows().filter(row=>{
-    const h = row && row.i != null ? data[row.i] : null;
-    return h && h.weatherProfileId && (row.kind === 'fill' || row.kind === 'scheduled')
+    const h = row?.h || (row && row.i != null ? data[row.i] : null);
+    const guidance=h?effectiveWeatherGuidance(h,row.locationId,settings,{scheduleOptionId:row.scheduleOptionId}):null;
+    return guidance?.profile && (row.kind === 'fill' || row.kind === 'scheduled')
       && Number(row.end) >= now && Number(row.start) <= now + WEATHER_NEAR_TRIGGER_MS;
   });
 }
@@ -1010,7 +1087,6 @@ function weatherNeededExtraPlaces(settings,data){
   const out = [];
   const seen = new Set();
   const addLocation=id=>{
-    if(out.length>=MAX_WEATHER_EXTRA_PLACES)return;
     const coords=weatherCoordsForLocation(id,settings);
     if(!coords || !coords.locationId || seen.has(coords.locationId))return;
     seen.add(coords.locationId);
@@ -1018,12 +1094,10 @@ function weatherNeededExtraPlaces(settings,data){
   };
   const list=Array.isArray(data) ? data : [];
   for(const h of list){
-    if(!h || !h.weatherProfileId)continue;
-    addLocation(h.weatherLocationId);
+    for(const guidance of weatherPotentialGuidancesForHabit(h,settings))addLocation(guidance.forecastLocationId);
   }
   if(weatherAmbientEnabled(settings,list)){
     for(const row of weatherAgendaRows()){
-      if(out.length>=MAX_WEATHER_EXTRA_PLACES)break;
       if(row.kind==='fill' || row.kind==='scheduled'){
         const h=row.h || (row.i!=null ? list[row.i] : null);
         if(weatherItemShowsAmbient(h))addLocation(weatherDisplayLocationId(h,row));
@@ -1129,8 +1203,8 @@ function weatherNearRefreshNeeded(rows,data,settings,context,now = Date.now()){
   if(!Array.isArray(rows) || !rows.length)return false;
   if(!context || !Array.isArray(context.samples) || !context.samples.length)return true;
   for(const row of rows){
-    const h = row && row.i != null && Array.isArray(data) ? data[row.i] : (row && row.h) || null;
-    const profile = weatherProfileById(h && h.weatherProfileId,settings);
+    const h = (row && row.h) || (row && row.i != null && Array.isArray(data) ? data[row.i] : null);
+    const profile = h?effectiveWeatherGuidance(h,row.locationId,settings,{scheduleOptionId:row.scheduleOptionId}).profile:null;
     if(!profile)continue;
     if(!weatherForecastIsDecisive(profile,context.samples,Number(row.start),Number(row.end),now,context.timezone))return true;
   }
@@ -1143,6 +1217,15 @@ function weatherFetchJson(url,timeoutMs = 10000){
   return fetch(url,{credentials:'omit',cache:'no-store',signal:controller?.signal})
     .then(response=>{if(!response.ok)throw new Error(`weather ${response.status}`);return response.json();})
     .finally(()=>{if(timer)clearTimeout(timer);});
+}
+
+async function weatherFetchPlaceBatches(base,places,params,apply,batchSize=WEATHER_FETCH_BATCH_SIZE){
+  for(let index=0;index<places.length;index+=batchSize){
+    const batch=places.slice(index,index+batchSize);
+    const payload=await weatherFetchJson(weatherUrl(base,batch.map(place=>place.lat),batch.map(place=>place.lng),params));
+    const rows=Array.isArray(payload)?payload:[payload];
+    batch.forEach((place,offset)=>{if(rows[offset])apply(place,rows[offset]);});
+  }
 }
 
 function weatherUrl(base,lat,lng,params){
@@ -1205,16 +1288,39 @@ async function refreshWeatherForecast(options = {}){
     };
     await fetchWeekly(cache,home.lat,home.lng);
     await fetchAir(cache,home.lat,home.lng,weatherNeedsAir(settings));
-    for(const place of extras){
-      const bucket = weatherEnsurePlaceBucket(cache,place.locationId);
-      await fetchWeekly(bucket,place.lat,place.lng);
-      await fetchAir(bucket,place.lat,place.lng,weatherNeedsAir(settings,place.locationId));
-    }
-    const upcoming = weatherLinkedUpcomingRows(now);
+    const weeklyExtras=extras.filter(place=>{
+      const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+      const displayReady=Array.isArray(bucket.weekly?.days) && bucket.weekly.days.some(day=>Number.isFinite(Number(day?.weather_code)));
+      return force || !displayReady || !weatherSameCoords(bucket.weekly,place.lat,place.lng)
+        || now-Number(bucket.weekly?.fetchedAt)>=WEATHER_WEEKLY_TTL_MS;
+    });
+    await weatherFetchPlaceBatches(WEATHER_FORECAST_URL,weeklyExtras,{hourly:common,daily,forecast_days:7},(place,payload)=>{
+      const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+      bucket.weekly={...weatherNormalizePayload(payload,'weekly',now),lat:place.lat,lng:place.lng};
+      changed=true;
+    });
+    const airExtras=extras.filter(place=>{
+      if(!weatherNeedsAir(settings,place.locationId))return false;
+      const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+      return force || !weatherSameCoords(bucket.air,place.lat,place.lng)
+        || now-Number(bucket.air?.fetchedAt)>=WEATHER_WEEKLY_TTL_MS;
+    });
+    try{
+      await weatherFetchPlaceBatches(WEATHER_AIR_URL,airExtras,{hourly:'us_aqi,european_aqi',forecast_days:7},(place,payload)=>{
+        const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+        bucket.air={...weatherNormalizePayload(payload,'weekly',now),lat:place.lat,lng:place.lng};
+        changed=true;
+      });
+    }catch(error){cache.lastError=String(error && error.message || error);}
+    const upcoming = weatherLinkedUpcomingRows(now,settings);
     const groups = new Map();
     for(const row of upcoming){
-      const h = data[row.i];
-      const coords = weatherCoordsForHabit(h,settings) || home;
+      const h = row.h || data[row.i];
+      const guidance=effectiveWeatherGuidance(h,row.locationId,settings,{scheduleOptionId:row.scheduleOptionId});
+      const coords = guidance.forecastLocationId
+        ? weatherCoordsForLocation(guidance.forecastLocationId,settings)
+        : home;
+      if(!coords)continue;
       const key = coords.locationId || 'home';
       if(!groups.has(key))groups.set(key,{coords,rows:[]});
       groups.get(key).rows.push(row);

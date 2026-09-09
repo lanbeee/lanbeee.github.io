@@ -1,5 +1,7 @@
 // Weather profile controls and per-habit profile selectors.
 
+const WEATHER_PROFILE_NONE_VALUE='__none__';
+
 function weatherMetricOptions(selected){
   return Object.entries(WEATHER_METRICS).map(([key,meta])=>
     `<option value="${key}"${key===selected?' selected':''}>${escapeHtml(meta.label)}${meta.unit ? ` (${escapeHtml(meta.unit)})` : ''}</option>`
@@ -15,15 +17,81 @@ function weatherRuleHintText(rule){
   return weatherRuleActive(rule) ? scale : `inactive — set min, max, or a preference${scale ? ' · ' + scale : ''}`;
 }
 
+function weatherProfileSelectValue(mode,profileId){
+  const normalized=typeof normalizeWeatherProfileMode==='function'
+    ? normalizeWeatherProfileMode(mode,profileId)
+    : (mode==='none'?'none':(profileId?'profile':'inherit'));
+  if(normalized==='none')return WEATHER_PROFILE_NONE_VALUE;
+  return normalized==='profile' ? cleanWeatherProfileId(profileId) : '';
+}
+
+function weatherProfileChoiceFromValue(value){
+  if(value===WEATHER_PROFILE_NONE_VALUE)return {weatherProfileMode:'none',weatherProfileId:null};
+  const id=cleanWeatherProfileId(value);
+  return id
+    ? {weatherProfileMode:'profile',weatherProfileId:id}
+    : {weatherProfileMode:'inherit',weatherProfileId:null};
+}
+
+function readWeatherProfileChoice(id){
+  return weatherProfileChoiceFromValue($(id)?.value || '');
+}
+
+function weatherProfileOptionsHtml(value='',inheritLabel='use place default'){
+  const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
+  const selected=String(value || '');
+  const missing=selected && selected!==WEATHER_PROFILE_NONE_VALUE && !profiles.some(profile=>profile.id===selected);
+  return `<option value=""${selected===''?' selected':''}>${escapeHtml(inheritLabel)}</option>`
+    +`<option value="${WEATHER_PROFILE_NONE_VALUE}"${selected===WEATHER_PROFILE_NONE_VALUE?' selected':''}>no weather</option>`
+    +profiles.map(profile=>
+      `<option value="${escapeHtml(profile.id)}"${profile.id===selected?' selected':''}>${escapeHtml(profile.name)}</option>`
+    ).join('')
+    +(missing?`<option value="${escapeHtml(selected)}" selected>missing profile · choose again</option>`:'');
+}
+
 function renderWeatherProfileSelect(id,value = ''){
   const select=$(id);
   if(!select)return;
   const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
-  // Empty state names itself: a bare "none" dropdown reads as broken UI.
-  select.innerHTML=`<option value="">${profiles.length ? 'none' : 'none · no profiles yet'}</option>`+profiles.map(profile=>
-    `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`
-  ).join('');
-  select.value=profiles.some(profile=>profile.id===value)?value:'';
+  select.innerHTML=weatherProfileOptionsHtml(value,profiles.length?'use place default':'use place default · no profiles yet');
+  select.value=value;
+}
+
+function weatherProfileName(id,settings=sortSettings || loadSortSettings()){
+  return weatherProfileById(id,settings)?.name || '';
+}
+
+function selectedWeatherLocationIds(selectId){
+  if(selectId==='detail-weather-profile' && typeof selectedLocationIdsFrom==='function'){
+    return selectedLocationIdsFrom('detail-place-chips');
+  }
+  if(selectId==='ting-weather-profile' && typeof selectedLocationIds==='function')return selectedLocationIds();
+  return [];
+}
+
+function weatherGuidanceHintText(selectId){
+  const settings=sortSettings || loadSortSettings();
+  const choice=weatherProfileChoiceFromValue($(selectId)?.value || '');
+  if(choice.weatherProfileMode==='none')return 'No weather guidance applies to this item unless a specific option overrides it.';
+  if(choice.weatherProfileMode==='profile'){
+    return `Uses ${weatherProfileName(choice.weatherProfileId,settings) || 'this profile'} at the scheduled place.`;
+  }
+  const ids=selectedWeatherLocationIds(selectId);
+  const inherited=ids.map(id=>{
+    const loc=normalizeLocationRegistry(settings.locations).find(item=>item.id===id);
+    const name=loc && weatherProfileName(loc.weatherProfileId,settings);
+    return name ? `${loc.name} · ${name}` : null;
+  }).filter(Boolean);
+  if(inherited.length)return `Place defaults: ${inherited.join('; ')}.`;
+  return 'No selected place has weather guidance; planning is unchanged.';
+}
+
+function syncWeatherGuidanceHints(){
+  for(const [selectId,hintId] of [['ting-weather-profile','ting-weather-guidance-hint'],['detail-weather-profile','detail-weather-guidance-hint']]){
+    const hint=$(hintId);
+    if(hint)hint.textContent=weatherGuidanceHintText(selectId);
+  }
+  if(typeof syncHabitScheduleOptionWeatherHints==='function')syncHabitScheduleOptionWeatherHints();
 }
 
 function renderWeatherLocationSelect(id,value = ''){
@@ -48,9 +116,10 @@ function syncWeatherHabitLocationUi(){
   const hasPlaces=(typeof locationsForDisplay === 'function' ? locationsForDisplay(settings.locations) : []).length > 0;
   const tingWrap=$('ting-weather-location-wrap');
   const detailWrap=$('detail-weather-location-wrap');
-  if(tingWrap)tingWrap.hidden = !hasPlaces || !cleanWeatherProfileId($('ting-weather-profile')?.value);
-  if(detailWrap)detailWrap.hidden = !hasPlaces || !cleanWeatherProfileId($('detail-weather-profile')?.value);
+  if(tingWrap)tingWrap.hidden = !hasPlaces || weatherProfileChoiceFromValue($('ting-weather-profile')?.value || '').weatherProfileMode!=='profile';
+  if(detailWrap)detailWrap.hidden = !hasPlaces || weatherProfileChoiceFromValue($('detail-weather-profile')?.value || '').weatherProfileMode!=='profile';
   syncWeatherDisplayUi();
+  syncWeatherGuidanceHints();
 }
 
 function syncWeatherDisplayUi(){
@@ -68,8 +137,8 @@ function syncWeatherDisplayUi(){
   if(detailHint)detailHint.hidden = !detailOn || !hasPlaces;
 }
 
-function readWeatherLocationId(selectId,profileId){
-  if(!cleanWeatherProfileId(profileId))return null;
+function readWeatherLocationId(selectId,profileValue){
+  if(weatherProfileChoiceFromValue(profileValue).weatherProfileMode!=='profile')return null;
   return (typeof cleanLocationId === 'function' ? cleanLocationId($(selectId)?.value) : '') || null;
 }
 
@@ -136,17 +205,16 @@ function renderWeatherControls(){
   const settings=sortSettings || loadSortSettings();
   const profiles=normalizeWeatherProfiles(settings.weatherProfiles);
   const habits=load();
-  const usedByNames=id=>habits.filter(h=>h && h.weatherProfileId===id)
-    .map(h=>String(h.name || '').trim()).filter(Boolean).slice(0,5);
   list.innerHTML=profiles.map((profile,profileIndex)=>{
-    const attached=usedByNames(profile.id);
+    const usages=weatherProfileUsages(profile.id,habits,settings);
+    const attached=usages.map(usage=>usage.label).slice(0,5);
     return `
     <div class="weather-profile-card" data-weather-profile-index="${profileIndex}">
       <div class="weather-profile-head">
         <input class="settings-text-input" data-weather-profile-name value="${escapeHtml(profile.name)}" maxlength="32" aria-label="weather profile name" />
         <button class="mini-text-btn" type="button" data-weather-profile-remove>remove</button>
       </div>
-      <div class="weather-profile-used">${attached.length ? `used by ${escapeHtml(attached.join(', '))}` : 'not attached to any item yet'}</div>
+      <div class="weather-profile-used">${attached.length ? `used by ${escapeHtml(attached.join(', '))}${usages.length>attached.length?` +${usages.length-attached.length}`:''}` : 'not attached yet'}</div>
       <div class="weather-rule-list">
         ${profile.rules.map((rule,ruleIndex)=>{
           const meta=WEATHER_METRICS[rule.metric] || {};
@@ -190,12 +258,46 @@ function renderWeatherControls(){
   }
   const panel=$('weather-forecast-data');
   if(panel)panel.innerHTML=renderWeatherInspector(settings);
-  renderWeatherProfileSelect('ting-weather-profile',$('ting-weather-profile')?.value || '');
+  const tingProfileValue=$('ting-weather-profile')?$('ting-weather-profile').value:'';
+  renderWeatherProfileSelect('ting-weather-profile',tingProfileValue);
   renderWeatherLocationSelect('ting-weather-location',$('ting-weather-location')?.value || '');
   const detailHabit=detailIdx != null ? load()[detailIdx] : null;
-  renderWeatherProfileSelect('detail-weather-profile',$('detail-weather-profile')?.value || detailHabit?.weatherProfileId || '');
+  const detailProfileValue=$('detail-weather-profile')
+    ? $('detail-weather-profile').value
+    : (detailHabit ? weatherProfileSelectValue(detailHabit.weatherProfileMode,detailHabit.weatherProfileId) : '');
+  renderWeatherProfileSelect('detail-weather-profile',detailProfileValue);
   renderWeatherLocationSelect('detail-weather-location',$('detail-weather-location')?.value || detailHabit?.weatherLocationId || '');
   syncWeatherHabitLocationUi();
+}
+
+function weatherProfileUsages(id,data=null,settings=null){
+  const clean=cleanWeatherProfileId(id);
+  if(!clean)return [];
+  const list=Array.isArray(data)?data:(typeof load==='function'?load():[]);
+  const cfg=settings || (typeof loadSortSettings==='function'?loadSortSettings():(sortSettings||{}));
+  const out=[];
+  const itemName=h=>String((typeof sampleDisplayName==='function'?sampleDisplayName(h):h?.name)||'habit').trim();
+  for(const h of list){
+    if(!h)continue;
+    const mode=typeof normalizeWeatherProfileMode==='function'
+      ? normalizeWeatherProfileMode(h.weatherProfileMode,h.weatherProfileId) : (h.weatherProfileId?'profile':'inherit');
+    if(mode==='profile' && cleanWeatherProfileId(h.weatherProfileId)===clean){
+      out.push({kind:'item',label:itemName(h),h});
+    }
+    const options=typeof normalizeHabitScheduleOptions==='function'
+      ? normalizeHabitScheduleOptions(h.scheduleOptions,cfg.locations) : [];
+    options.forEach((option,index)=>{
+      if(option.weatherProfileMode==='profile' && option.weatherProfileId===clean){
+        out.push({kind:'option',label:`${itemName(h)} · option ${index+1}`,h,option});
+      }
+    });
+  }
+  for(const loc of normalizeLocationRegistry(cfg.locations)){
+    if(cleanWeatherProfileId(loc.weatherProfileId)===clean){
+      out.push({kind:'location',label:`${loc.name} · place`,location:loc});
+    }
+  }
+  return out;
 }
 
 let _weatherListRenderTimer=null;
@@ -218,6 +320,7 @@ function saveWeatherProfilesFromUi(profiles,opts = {}){
   if(typeof bumpPlannerDataRevision==='function')bumpPlannerDataRevision();
   if(opts.deferRender)scheduleWeatherControlsRender();
   else renderWeatherControls();
+  if(typeof renderLocationControls==='function')renderLocationControls();
   if(typeof renderHomeIfChanged==='function')renderHomeIfChanged(true,{__forceReplan:true});
   void refreshWeatherForecast();
 }
@@ -249,13 +352,13 @@ document.addEventListener('click',event=>{
   const ruleIndex=Number(rule?.dataset.weatherRuleIndex);
   if(event.target.closest('[data-weather-profile-remove]')){
     const removed=normalizeWeatherProfiles(loadSortSettings().weatherProfiles)[profileIndex];
-    weatherProfilesMutate(profiles=>profiles.splice(profileIndex,1));
-    if(removed){
-      const data=load();
-      let changed=false;
-      data.forEach(h=>{if(h.weatherProfileId===removed.id){h.weatherProfileId=null;changed=true;}});
-      if(changed)save(data);
+    const usages=removed?weatherProfileUsages(removed.id):[];
+    if(usages.length){
+      const labels=usages.slice(0,4).map(usage=>usage.label);
+      if(typeof showToast==='function')showToast(`still used by ${labels.join(', ')}${usages.length>labels.length?` +${usages.length-labels.length}`:''}`);
+      return;
     }
+    weatherProfilesMutate(profiles=>profiles.splice(profileIndex,1));
   }else if(event.target.closest('[data-weather-rule-add]')){
     weatherProfilesMutate(profiles=>profiles[profileIndex]?.rules.push({metric:'temperature_2m',min:null,max:null,hard:false,relative:'low'}));
   }else if(event.target.closest('[data-weather-rule-remove]')){

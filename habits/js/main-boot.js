@@ -281,6 +281,9 @@ $('do-save').addEventListener('click',()=>{
   const userTopics = selectedAddTopics();
   const defTopics = Array.isArray(settings.defaultTopics) ? settings.defaultTopics : [];
   const mergedTopics = [...new Set([...defTopics,...userTopics])];
+  const weatherChoice=typeof readWeatherProfileChoice==='function'
+    ? readWeatherProfileChoice('ting-weather-profile')
+    : {weatherProfileMode:$('ting-weather-profile')?.value?'profile':'inherit',weatherProfileId:cleanWeatherProfileId($('ting-weather-profile')?.value)};
   const record = {
     name:name.slice(0,60),
     type,
@@ -298,7 +301,7 @@ $('do-save').addEventListener('click',()=>{
     anywhereAllowed:selectedAnywhere(),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
-    weatherProfileId:cleanWeatherProfileId($('ting-weather-profile')?.value) || null,
+    ...weatherChoice,
     weatherLocationId:typeof readWeatherLocationId === 'function'
       ? readWeatherLocationId('ting-weather-location',$('ting-weather-profile')?.value)
       : null,
@@ -325,7 +328,7 @@ $('do-save').addEventListener('click',()=>{
     cancelAdd();
     render();
     openDetailSchedule(data.length - 1);
-    if((record.weatherProfileId || record.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+    if((record.weatherProfileMode !== 'none' || record.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
   }
 });
 
@@ -811,6 +814,7 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
           renderTagChips(wrap,selectedTopicsFrom(wrap),selected,null,prefs,false);
+          if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
         }
       });
     }
@@ -818,10 +822,12 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
   }
   if(e.target.closest('[data-anywhere]')){
     renderTagChips('ting-tag-chips',selectedTopicsFrom('ting-tag-chips'),selectedLocationIds(),null,selectedLocationPrefs(),!selectedAnywhereFrom('ting-tag-chips'));
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){
     toggleLocationChip(e);
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     return;
   }
   toggleTopicChip(e);
@@ -838,6 +844,7 @@ $('detail-place-chips')?.addEventListener('click',e=>{
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
           renderTagChips(wrap,[],selected,null,prefs);
+          if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
           setDetailDirty();
         }
       });
@@ -846,11 +853,13 @@ $('detail-place-chips')?.addEventListener('click',e=>{
   }
   if(e.target.closest('[data-anywhere]')){
     renderTagChips('detail-place-chips',[],selectedLocationIdsFrom('detail-place-chips'),null,selectedLocationPrefsFrom('detail-place-chips'),!selectedAnywhereFrom('detail-place-chips'));
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     setDetailDirty();
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){
     toggleLocationChip(e);
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     return;
   }
 });
@@ -881,6 +890,9 @@ $('detail-habit-options')?.addEventListener('change',e=>{
   const row = e.target.closest('.habit-option-row');
   if(row && e.target.closest('.habit-option-location')){
     row.querySelectorAll('.time-endpoint.is-dynamic').forEach(refreshHabitScheduleOptionEndpoint);
+  }
+  if(row && (e.target.closest('.habit-option-location') || e.target.closest('.habit-option-weather'))){
+    syncHabitScheduleOptionWeatherHints();
   }
   const endpoint = e.target.closest('.time-endpoint');
   if(endpoint){
@@ -1369,8 +1381,9 @@ $('detail-save').addEventListener('click',()=>{
   const prefIds = habitPrefLocationIds(h,sortSettings.locations);
   h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,prefIds,current.preferredLocationId);
   h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,prefIds);
-  h.weatherProfileId = cleanWeatherProfileId(current.weatherProfileId) || null;
-  h.weatherLocationId = current.weatherProfileId
+  h.weatherProfileMode = normalizeWeatherProfileMode(current.weatherProfileMode,current.weatherProfileId);
+  h.weatherProfileId = h.weatherProfileMode === 'profile' ? cleanWeatherProfileId(current.weatherProfileId) || null : null;
+  h.weatherLocationId = h.weatherProfileMode === 'profile'
     ? (typeof cleanLocationId === 'function' ? cleanLocationId(current.weatherLocationId) : '') || null
     : null;
   h.showWeather = Boolean(current.showWeather);
@@ -1497,7 +1510,7 @@ $('detail-save').addEventListener('click',()=>{
   detailIdx = null;
   detailTuneOriginal = null;
   render();
-  if((h.weatherProfileId || h.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+  if((h.weatherProfileMode !== 'none' || h.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 });
 $('detail-mark').addEventListener('click',()=>{
   if(detailIdx === null)return;

@@ -574,6 +574,13 @@ $('location-list')?.addEventListener('change',e=>{
     saveLocationPatch(idx,{radiusM});
     return;
   }
+  const weather = e.target.closest('[data-loc-weather]');
+  if(weather){
+    saveLocationPatch(parseInt(weather.dataset.locWeather,10),{
+      weatherProfileId:typeof cleanWeatherProfileId==='function' ? cleanWeatherProfileId(weather.value) || null : null
+    });
+    return;
+  }
   const ps = e.target.closest('[data-loc-pref-start]');
   const pe = e.target.closest('[data-loc-pref-end]');
   if(ps || pe){ commitLocationPref(parseInt((ps?.dataset.locPrefStart || pe?.dataset.locPrefEnd),10)); return; }
