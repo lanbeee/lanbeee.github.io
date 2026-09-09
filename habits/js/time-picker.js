@@ -2,19 +2,29 @@
 // so iPhone/iPad get hour / 5-minute / AM-PM wheels in the keyboard slot.
 // Android keeps the native stepped picker. Typed HH:mm values stay exact
 // until the user confirms a wheel choice.
+//
+// CSS scroll-snap (especially snap-stop:always) kills iOS momentum, so
+// the wheels use native overflow inertia and only seat to a row after
+// the flick coasts. Hour and minute loops like Clock; AM/PM does not.
+// During a flick, do not restyle rows — the CSS mask fades the drum and
+// only the centered option class changes, so iOS can keep GPU scrolling.
 
 const TIME_PICKER_ITEM_H = 44;
+const TIME_PICKER_LOOP_COPIES = 5;
+const TIME_PICKER_SETTLE_MS = 88;
 
 let _timePickerInput = null;
 let _timePickerOriginal = '';
 let _timePickerParts = null;
 let _timePickerDirty = false;
 let _timePickerReady = false;
-let _timePickerScrollTimer = 0;
 let _timePickerGuardUntil = 0;
 let _timePickerOpenedMinutes = 0;
 let _timePickerProgrammatic = false;
 let _timePickerProgrammaticTimer = 0;
+let _timePickerPaintRaf = 0;
+let _timePickerDrag = null;
+const _timePickerColState = new Map();
 
 function timePickerStep(){
   const n = typeof TIME_PICKER_STEP_MINUTES === 'number' ? TIME_PICKER_STEP_MINUTES : 5;
@@ -114,6 +124,15 @@ function timePickerIsOpen(){
   return Boolean(timePickerHost()?.classList.contains('open'));
 }
 
+let _timePickerReduceMotion = null;
+function timePickerReduceMotion(){
+  if(_timePickerReduceMotion == null){
+    _timePickerReduceMotion = typeof matchMedia === 'function'
+      && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  return _timePickerReduceMotion;
+}
+
 function timeInputIsVisible(input){
   if(!input || input.disabled)return false;
   if(input.hidden || input.closest('[hidden]'))return false;
@@ -126,6 +145,39 @@ function timePickerCanClear(input){
   if(input.hasAttribute('data-blocked-start') || input.hasAttribute('data-blocked-end'))return false;
   if(input.hasAttribute('data-blocked-start-fixed2') || input.hasAttribute('data-blocked-end-fixed2'))return false;
   return true;
+}
+
+function timePickerColState(col){
+  let st = _timePickerColState.get(col);
+  if(!st){
+    st = {timer:0, raf:0, selected:-1, syncedIdx:-1, items:null, count:0, copies:1};
+    _timePickerColState.set(col, st);
+  }
+  return st;
+}
+
+function timePickerBindCol(col){
+  const st = timePickerColState(col);
+  st.items = col.children;
+  st.count = parseInt(col.dataset.count, 10) || st.items.length;
+  st.copies = parseInt(col.dataset.copies, 10) || 1;
+  st.selected = -1;
+  st.syncedIdx = -1;
+  return st;
+}
+
+function timePickerResetColState(){
+  _timePickerColState.forEach(st=>{
+    if(st.timer)window.clearTimeout(st.timer);
+    if(st.raf)cancelAnimationFrame(st.raf);
+  });
+  _timePickerColState.clear();
+}
+
+function timePickerSetProgrammatic(ms){
+  _timePickerProgrammatic = true;
+  window.clearTimeout(_timePickerProgrammaticTimer);
+  _timePickerProgrammaticTimer = window.setTimeout(()=>{ _timePickerProgrammatic = false; }, ms);
 }
 
 function timePickerApplyPreview(dispatchInput){
@@ -153,17 +205,28 @@ function timePickerCommit(value){
   }
 }
 
-function timePickerColHtml(name, values, labels, selected, aria){
-  const items = values.map((value, i)=>{
-    const on = value === selected || String(value) === String(selected);
-    return `<div class="time-step-picker-item${on ? ' is-on' : ''}" role="option" data-value="${value}" aria-selected="${on ? 'true' : 'false'}">${labels[i]}</div>`;
-  }).join('');
-  return `<div class="time-step-picker-col" data-col="${name}" role="listbox" tabindex="0" aria-label="${aria}">${items}</div>`;
+function timePickerItemHtml(value, label, selected, hidden, index){
+  const on = value === selected || String(value) === String(selected);
+  return `<div class="time-step-picker-item${on ? ' is-on' : ''}" role="option" data-value="${value}" data-i="${index}" aria-selected="${on ? 'true' : 'false'}"${hidden ? ' aria-hidden="true"' : ''}>${label}</div>`;
+}
+
+function timePickerColHtml(name, values, labels, selected, aria, loop){
+  const copies = loop ? TIME_PICKER_LOOP_COPIES : 1;
+  const mid = Math.floor(copies / 2);
+  let items = '';
+  for(let copy = 0; copy < copies; copy++){
+    const hidden = copy !== mid;
+    for(let i = 0; i < values.length; i++){
+      items += timePickerItemHtml(values[i], labels[i], copy === mid ? selected : null, hidden, copy * values.length + i);
+    }
+  }
+  return `<div class="time-step-picker-col" data-col="${name}" data-loop="${loop ? '1' : '0'}" data-count="${values.length}" data-copies="${copies}" role="listbox" tabindex="0" aria-label="${aria}">${items}</div>`;
 }
 
 function timePickerRenderWheels(){
   const wheels = $('time-step-picker-wheels');
   if(!wheels || !_timePickerParts)return;
+  timePickerResetColState();
   const twelveHour = timePickerUses12Hour();
   const step = timePickerStep();
   const minutes = timePickerMinuteValues(step);
@@ -171,55 +234,198 @@ function timePickerRenderWheels(){
   let html = '';
   if(twelveHour){
     const hours = [1,2,3,4,5,6,7,8,9,10,11,12];
-    html += timePickerColHtml('hour', hours, hours.map(String), _timePickerParts.hour, 'hour');
+    html += timePickerColHtml('hour', hours, hours.map(String), _timePickerParts.hour, 'hour', true);
   }else{
     const hours = Array.from({length:24}, (_, i)=>i);
-    html += timePickerColHtml('hour', hours, hours.map(h=>String(h).padStart(2,'0')), _timePickerParts.hour, 'hour');
+    html += timePickerColHtml('hour', hours, hours.map(h=>String(h).padStart(2,'0')), _timePickerParts.hour, 'hour', true);
   }
-  html += timePickerColHtml('minute', minutes, minuteLabels, _timePickerParts.minute, 'minute');
+  html += timePickerColHtml('minute', minutes, minuteLabels, _timePickerParts.minute, 'minute', true);
   if(twelveHour){
     const labels = timePickerPeriodLabels();
-    html += timePickerColHtml('period', ['am','pm'], [labels.am, labels.pm], _timePickerParts.period, 'AM or PM');
+    html += timePickerColHtml('period', ['am','pm'], [labels.am, labels.pm], _timePickerParts.period, 'AM or PM', false);
   }
   wheels.innerHTML = html;
   wheels.classList.toggle('is-24h', !twelveHour);
+  wheels.querySelectorAll('.time-step-picker-col').forEach(timePickerBindCol);
+}
+
+function timePickerItems(col){
+  const st = col && _timePickerColState.get(col);
+  if(st && st.items)return st.items;
+  return col ? col.children : [];
+}
+
+function timePickerCenteredIndex(col){
+  const items = timePickerItems(col);
+  const len = items.length;
+  if(!len)return 0;
+  return Math.max(0, Math.min(len - 1, Math.round(col.scrollTop / TIME_PICKER_ITEM_H)));
 }
 
 function timePickerIndexFor(col, value){
-  const items = [...col.querySelectorAll('.time-step-picker-item')];
-  const idx = items.findIndex(item=>item.dataset.value === String(value));
-  return idx < 0 ? 0 : idx;
+  const st = timePickerColState(col);
+  const n = st.count || parseInt(col.dataset.count, 10) || timePickerItems(col).length;
+  const copies = st.copies || parseInt(col.dataset.copies, 10) || 1;
+  const items = timePickerItems(col);
+  let local = 0;
+  for(let i = 0; i < n; i++){
+    if(items[i] && items[i].dataset.value === String(value)){ local = i; break; }
+  }
+  return Math.floor(copies / 2) * n + local;
 }
 
-function timePickerSyncColSelection(col){
-  const items = [...col.querySelectorAll('.time-step-picker-item')];
-  if(!items.length)return;
-  const idx = Math.max(0, Math.min(items.length - 1, Math.round(col.scrollTop / TIME_PICKER_ITEM_H)));
-  items.forEach((item, i)=>{
-    const on = i === idx;
-    item.classList.toggle('is-on', on);
-    item.setAttribute('aria-selected', on ? 'true' : 'false');
+function timePickerMarkCenter(col){
+  const items = timePickerItems(col);
+  const len = items.length;
+  if(!len)return -1;
+  const st = timePickerColState(col);
+  const selected = Math.max(0, Math.min(len - 1, Math.round(col.scrollTop / TIME_PICKER_ITEM_H)));
+  if(selected === st.selected)return selected;
+  const prev = st.selected >= 0 ? items[st.selected] : null;
+  if(prev){
+    prev.classList.remove('is-on');
+    prev.setAttribute('aria-selected', 'false');
+  }
+  const next = items[selected];
+  if(next){
+    next.classList.add('is-on');
+    next.setAttribute('aria-selected', 'true');
+  }
+  st.selected = selected;
+  return selected;
+}
+
+function timePickerQueuePaint(col){
+  if(col)timePickerColState(col).paint = true;
+  else{
+    $('time-step-picker-wheels')?.querySelectorAll('.time-step-picker-col').forEach(c=>{
+      timePickerColState(c).paint = true;
+    });
+  }
+  if(_timePickerPaintRaf)return;
+  _timePickerPaintRaf = requestAnimationFrame(()=>{
+    _timePickerPaintRaf = 0;
+    $('time-step-picker-wheels')?.querySelectorAll('.time-step-picker-col').forEach(c=>{
+      if(!timePickerColState(c).paint)return;
+      timePickerColState(c).paint = false;
+      timePickerMarkCenter(c);
+      timePickerSyncColSelection(c, false);
+    });
   });
-  const value = items[idx].dataset.value;
+}
+
+function timePickerSyncColSelection(col, dispatchInput){
+  const items = timePickerItems(col);
+  if(!items.length || !_timePickerParts)return;
+  const st = timePickerColState(col);
+  const idx = timePickerCenteredIndex(col);
+  const value = items[idx] && items[idx].dataset.value;
+  if(value == null)return;
+  if(idx === st.syncedIdx && !dispatchInput)return;
+  st.syncedIdx = idx;
   const name = col.dataset.col;
-  if(!_timePickerParts)return;
   if(name === 'hour' || name === 'minute')_timePickerParts[name] = parseInt(value, 10);
   else _timePickerParts[name] = value;
-  timePickerApplyPreview(true);
+  timePickerApplyPreview(Boolean(dispatchInput) && _timePickerReady);
+}
+
+function timePickerWrapCol(col){
+  if(!col || col.dataset.loop !== '1')return false;
+  const st = timePickerColState(col);
+  const n = st.count || parseInt(col.dataset.count, 10);
+  const copies = st.copies || parseInt(col.dataset.copies, 10);
+  if(!n || copies < 3)return false;
+  const idx = Math.round(col.scrollTop / TIME_PICKER_ITEM_H);
+  const mid = Math.floor(copies / 2);
+  const copy = Math.floor(idx / n);
+  if(copy === mid)return false;
+  const local = ((idx % n) + n) % n;
+  const next = (mid * n + local) * TIME_PICKER_ITEM_H;
+  if(Math.abs(col.scrollTop - next) < 0.5)return false;
+  timePickerSetProgrammatic(80);
+  col.scrollTop = next;
+  return true;
+}
+
+function timePickerCancelSnap(col){
+  const st = _timePickerColState.get(col);
+  if(!st)return;
+  if(st.timer){
+    window.clearTimeout(st.timer);
+    st.timer = 0;
+  }
+  if(st.raf){
+    cancelAnimationFrame(st.raf);
+    st.raf = 0;
+  }
+}
+
+function timePickerAnimateColTo(col, target, done){
+  timePickerCancelSnap(col);
+  const st = timePickerColState(col);
+  const start = col.scrollTop;
+  const dist = target - start;
+  if(Math.abs(dist) < 0.5 || timePickerReduceMotion()){
+    timePickerSetProgrammatic(80);
+    col.scrollTop = target;
+    timePickerMarkCenter(col);
+    if(done)done();
+    return;
+  }
+  const dur = Math.max(140, Math.min(240, 120 + Math.abs(dist) * 0.45));
+  const t0 = performance.now();
+  timePickerSetProgrammatic(dur + 80);
+  const step = now=>{
+    const t = Math.min(1, (now - t0) / dur);
+    const ease = 1 - Math.pow(1 - t, 3);
+    col.scrollTop = start + dist * ease;
+    timePickerMarkCenter(col);
+    if(t < 1){
+      st.raf = requestAnimationFrame(step);
+      return;
+    }
+    st.raf = 0;
+    col.scrollTop = target;
+    timePickerMarkCenter(col);
+    if(done)done();
+  };
+  st.raf = requestAnimationFrame(step);
+}
+
+function timePickerSettleCol(col){
+  if(!col || !_timePickerReady)return;
+  const items = timePickerItems(col);
+  if(!items.length)return;
+  const idx = timePickerCenteredIndex(col);
+  const target = idx * TIME_PICKER_ITEM_H;
+  timePickerAnimateColTo(col, target, ()=>{
+    timePickerWrapCol(col);
+    timePickerSyncColSelection(col, true);
+    timePickerMarkCenter(col);
+  });
+}
+
+function timePickerClearSettleTimer(col){
+  const st = _timePickerColState.get(col);
+  if(!st || !st.timer)return;
+  window.clearTimeout(st.timer);
+  st.timer = 0;
+}
+
+function timePickerScheduleSettle(col){
+  const st = timePickerColState(col);
+  if(st.timer)window.clearTimeout(st.timer);
+  st.timer = window.setTimeout(()=>{
+    st.timer = 0;
+    timePickerSettleCol(col);
+  }, TIME_PICKER_SETTLE_MS);
 }
 
 function timePickerScrollCol(col, value){
   const idx = timePickerIndexFor(col, value);
-  _timePickerProgrammatic = true;
-  window.clearTimeout(_timePickerProgrammaticTimer);
-  _timePickerProgrammaticTimer = window.setTimeout(()=>{ _timePickerProgrammatic = false; }, 160);
+  timePickerSetProgrammatic(160);
   col.scrollTop = idx * TIME_PICKER_ITEM_H;
-  const items = [...col.querySelectorAll('.time-step-picker-item')];
-  items.forEach((item, i)=>{
-    const on = i === idx;
-    item.classList.toggle('is-on', on);
-    item.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
+  timePickerMarkCenter(col);
 }
 
 function timePickerSnapOpenCols(){
@@ -246,6 +452,11 @@ function closeTimePicker(opts = {}){
   const input = _timePickerInput;
   const commit = opts.commit !== false;
   const clear = Boolean(opts.clear);
+  timePickerResetColState();
+  if(_timePickerPaintRaf){
+    cancelAnimationFrame(_timePickerPaintRaf);
+    _timePickerPaintRaf = 0;
+  }
   if(host)host.classList.remove('open');
   document.body.classList.remove('time-step-picker-open');
   if(input)input.classList.remove('time-step-picker-target');
@@ -267,6 +478,7 @@ function closeTimePicker(opts = {}){
   _timePickerParts = null;
   _timePickerDirty = false;
   _timePickerReady = false;
+  _timePickerDrag = null;
 }
 
 function openTimePicker(input){
@@ -292,7 +504,7 @@ function openTimePicker(input){
   host.classList.add('open');
   document.body.classList.add('time-step-picker-open');
   input.classList.add('time-step-picker-target');
-  _timePickerGuardUntil = Date.now() + 400;
+  _timePickerGuardUntil = Date.now() + 420;
   if(typeof input.blur === 'function')input.blur();
   requestAnimationFrame(()=>{
     timePickerSnapOpenCols();
@@ -347,20 +559,68 @@ function onTimePickerDismissTap(e){
 }
 
 function onTimePickerWheelScroll(e){
+  if(!_timePickerReady)return;
+  const col = e.target.classList && e.target.classList.contains('time-step-picker-col')
+    ? e.target
+    : e.target.closest('.time-step-picker-col');
+  if(!col)return;
+  if(_timePickerDrag && _timePickerDrag.col === col)_timePickerDrag.scrolled = true;
+  timePickerQueuePaint(col);
+  if(_timePickerProgrammatic)return;
+  if(_timePickerDrag && _timePickerDrag.col){
+    timePickerClearSettleTimer(col);
+    return;
+  }
+  timePickerScheduleSettle(col);
+}
+
+function onTimePickerScrollEnd(e){
   if(!_timePickerReady || _timePickerProgrammatic)return;
+  if(_timePickerDrag && _timePickerDrag.col)return;
   const col = e.target.closest('.time-step-picker-col');
   if(!col)return;
-  window.clearTimeout(_timePickerScrollTimer);
-  _timePickerScrollTimer = window.setTimeout(()=>timePickerSyncColSelection(col), 80);
+  timePickerClearSettleTimer(col);
+  timePickerSettleCol(col);
+}
+
+function onTimePickerColPointerDown(e){
+  const col = e.target.closest('.time-step-picker-col');
+  if(!col)return;
+  timePickerCancelSnap(col);
+  _timePickerProgrammatic = false;
+  _timePickerDrag = {col, scrolled:false};
+}
+
+function onTimePickerColPointerUp(){
+  if(!_timePickerDrag)return;
+  const col = _timePickerDrag.col;
+  const scrolled = _timePickerDrag.scrolled;
+  _timePickerDrag = scrolled ? {scrolled:true} : null;
+  if(scrolled && col)timePickerScheduleSettle(col);
 }
 
 function onTimePickerWheelClick(e){
+  if(_timePickerDrag && _timePickerDrag.scrolled){
+    _timePickerDrag = null;
+    return;
+  }
+  _timePickerDrag = null;
   const item = e.target.closest('.time-step-picker-item');
   if(!item)return;
   const col = item.closest('.time-step-picker-col');
   if(!col)return;
-  timePickerScrollCol(col, item.dataset.value);
-  timePickerSyncColSelection(col);
+  const idx = item.dataset.i != null ? parseInt(item.dataset.i, 10) : timePickerCenteredIndex(col);
+  if(!Number.isFinite(idx) || idx < 0)return;
+  const name = col.dataset.col;
+  const value = item.dataset.value;
+  if(!_timePickerParts)return;
+  if(name === 'hour' || name === 'minute')_timePickerParts[name] = parseInt(value, 10);
+  else _timePickerParts[name] = value;
+  timePickerApplyPreview(true);
+  timePickerAnimateColTo(col, idx * TIME_PICKER_ITEM_H, ()=>{
+    timePickerWrapCol(col);
+    timePickerMarkCenter(col);
+  });
 }
 
 function onTimePickerKey(e){
@@ -375,12 +635,15 @@ function onTimePickerKey(e){
   if(!col)return;
   if(e.key !== 'ArrowUp' && e.key !== 'ArrowDown')return;
   e.preventDefault();
-  const items = [...col.querySelectorAll('.time-step-picker-item')];
-  let idx = Math.round(col.scrollTop / TIME_PICKER_ITEM_H);
+  const items = timePickerItems(col);
+  let idx = timePickerCenteredIndex(col);
   idx += e.key === 'ArrowDown' ? 1 : -1;
   idx = Math.max(0, Math.min(items.length - 1, idx));
-  timePickerScrollCol(col, items[idx].dataset.value);
-  timePickerSyncColSelection(col);
+  timePickerAnimateColTo(col, idx * TIME_PICKER_ITEM_H, ()=>{
+    timePickerWrapCol(col);
+    timePickerSyncColSelection(col, true);
+    timePickerMarkCenter(col);
+  });
 }
 
 function bindTimePicker(){
@@ -389,8 +652,13 @@ function bindTimePicker(){
   host.dataset.bound = '1';
   host.addEventListener('pointerdown', onTimePickerDismissTap);
   host.querySelector('.time-step-picker-panel')?.addEventListener('pointerdown', e=>e.stopPropagation());
-  $('time-step-picker-wheels')?.addEventListener('scroll', onTimePickerWheelScroll, true);
-  $('time-step-picker-wheels')?.addEventListener('click', onTimePickerWheelClick);
+  const wheels = $('time-step-picker-wheels');
+  wheels?.addEventListener('scroll', onTimePickerWheelScroll, {capture:true, passive:true});
+  wheels?.addEventListener('scrollend', onTimePickerScrollEnd, {capture:true, passive:true});
+  wheels?.addEventListener('pointerdown', onTimePickerColPointerDown, {passive:true});
+  wheels?.addEventListener('pointerup', onTimePickerColPointerUp, {passive:true});
+  wheels?.addEventListener('pointercancel', onTimePickerColPointerUp, {passive:true});
+  wheels?.addEventListener('click', onTimePickerWheelClick);
   $('time-step-picker-done')?.addEventListener('click', ()=>closeTimePicker({commit:true, force:true}));
   $('time-step-picker-clear')?.addEventListener('click', ()=>closeTimePicker({clear:true, commit:true}));
   document.addEventListener('keydown', onTimePickerKey, true);

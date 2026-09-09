@@ -52,25 +52,54 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const wheel = await page.evaluate(()=>{
     const host = document.getElementById('time-step-picker');
     const minuteVals = [...host.querySelectorAll('[data-col="minute"] .time-step-picker-item')].map(el=>el.dataset.value);
+    const uniqueMinutes = [...new Set(minuteVals)];
     const hourCount = host.querySelectorAll('[data-col="hour"] .time-step-picker-item').length;
+    const hourUnique = new Set([...host.querySelectorAll('[data-col="hour"] .time-step-picker-item')].map(el=>el.dataset.value)).size;
     const periodCount = host.querySelectorAll('[data-col="period"] .time-step-picker-item').length;
+    const minuteCol = host.querySelector('[data-col="minute"]');
+    const hourCol = host.querySelector('[data-col="hour"]');
     const sheet = document.getElementById('add-sheet');
     return {
       open:host.classList.contains('open'),
-      minuteVals,
+      uniqueMinutes,
+      minuteCount:minuteVals.length,
       hourCount,
+      hourUnique,
       periodCount,
+      minuteLoops:minuteCol?.dataset.loop === '1',
+      hourLoops:hourCol?.dataset.loop === '1',
+      hasSnapStop:[...host.querySelectorAll('.time-step-picker-item')].some(el=>getComputedStyle(el).scrollSnapStop === 'always'),
       addStillOpen:sheet.classList.contains('open'),
       isSheetWrap:host.classList.contains('sheet-wrap')
     };
   });
   check('picker opens in the keyboard slot, not as another sheet', wheel.open && !wheel.isSheetWrap && wheel.addStillOpen);
-  check('minute wheel only lists 00, 05, … 55', wheel.minuteVals.join(',') === '0,5,10,15,20,25,30,35,40,45,50,55', wheel.minuteVals.join(','));
-  check('hour wheel has twelve Clock hours', wheel.hourCount === 12, String(wheel.hourCount));
+  check('minute wheel only lists 00, 05, … 55', wheel.uniqueMinutes.join(',') === '0,5,10,15,20,25,30,35,40,45,50,55', wheel.uniqueMinutes.join(','));
+  check('hour wheel has twelve Clock hours', wheel.hourUnique === 12, String(wheel.hourUnique));
   check('AM/PM is a third wheel', wheel.periodCount === 2, String(wheel.periodCount));
+  check('hour and minute wheels loop like Clock', wheel.hourLoops && wheel.minuteLoops && wheel.hourCount > 12 && wheel.minuteCount > 12, JSON.stringify({hour:wheel.hourCount, minute:wheel.minuteCount}));
+  check('wheels do not force a stop on every row', wheel.hasSnapStop === false);
 
-  await page.locator('[data-col="hour"] .time-step-picker-item[data-value="2"]').click();
-  await page.locator('[data-col="minute"] .time-step-picker-item[data-value="15"]').click();
+  await page.waitForFunction(()=>document.querySelector('#time-step-picker.open [data-col="minute"]')?.scrollHeight > 200);
+  const settled = await page.evaluate(()=>new Promise(resolve=>{
+    const col = document.querySelector('[data-col="minute"]');
+    const H = 44;
+    col.scrollTop = 3.4 * H;
+    timePickerSettleCol(col);
+    setTimeout(()=>{
+      const idx = Math.round(col.scrollTop / H);
+      const item = col.querySelectorAll('.time-step-picker-item')[idx];
+      resolve({
+        aligned:Math.abs(col.scrollTop - idx * H) < 1,
+        value:item && item.dataset.value,
+        fiveMinute:item ? Number(item.dataset.value) % 5 === 0 : false
+      });
+    }, 400);
+  }));
+  check('a flicked wheel seats onto a 5-minute row', settled.aligned && settled.fiveMinute, JSON.stringify(settled));
+
+  await page.locator('[data-col="hour"] .time-step-picker-item[data-value="2"]:not([aria-hidden="true"])').click();
+  await page.locator('[data-col="minute"] .time-step-picker-item[data-value="15"]:not([aria-hidden="true"])').click();
   await page.locator('[data-col="period"] .time-step-picker-item[data-value="pm"]').click();
   await page.locator('#time-step-picker-done').click();
   await page.waitForFunction(()=>!document.getElementById('time-step-picker')?.classList.contains('open'));
