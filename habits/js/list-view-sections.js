@@ -37,6 +37,7 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
     attachDroppedIndicator(header,list,todayHids);
   }
   list.appendChild(header);
+  fitDayHeaderChips(header);
 }
 
 function dayHeaderContextHost(header){
@@ -49,6 +50,39 @@ function dayHeaderContextHost(header){
   header.appendChild(host);
   return host;
 }
+
+// Day-header chips (free / weather / missed) are unsqueezable single-line
+// buttons. When their natural widths don't fit next to the label, degrade the
+// weather cue stepwise (drop temp range → drop droplet → emoji only) instead
+// of letting flexbox crush pill text onto two lines. Label ellipsis is the
+// last resort; the chip's title/aria still carries the full forecast.
+function fitDayHeaderChips(header){
+  if(!header || !header.isConnected)return;
+  const label = header.querySelector('.section-header-label');
+  const button = header.querySelector('.weather-day-button');
+  if(!label || !button)return;
+  let level = 0;
+  for(;;){
+    button.classList.toggle('cue-slim', level >= 1);
+    button.classList.toggle('cue-emoji', level >= 2);
+    const labelClipped = label.scrollWidth > label.clientWidth + 1;
+    const cue = button.querySelector('.weather-day-cue');
+    const cueClipped = Boolean(cue) && cue.scrollWidth > cue.clientWidth + 1;
+    if((!labelClipped && !cueClipped) || level >= 2)break;
+    level += 1;
+  }
+}
+
+let _headerFitRaf = false;
+function refitDayHeaderChips(){
+  if(_headerFitRaf)return;
+  _headerFitRaf = true;
+  requestAnimationFrame(()=>{
+    _headerFitRaf = false;
+    document.querySelectorAll('.section-header').forEach(fitDayHeaderChips);
+  });
+}
+window.addEventListener('resize',refitDayHeaderChips,{passive:true});
 
 function attachWeatherIndicator(header,day){
   if(!header || !day || day.dayBase == null || typeof weatherDayCueHtml!=='function')return;
@@ -1485,7 +1519,10 @@ function render(opts){
           attachWeatherIndicator(header,dayContext);
           attachFreeTimeIndicator(header,dayContext);
           attachDroppedIndicator(header,list,todayHids);
-          if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
+          if(header.classList.contains('has-dropped') || header.classList.contains('has-pill')){
+            list.prepend(header);
+            fitDayHeaderChips(header);
+          }
         }
       }
     }
