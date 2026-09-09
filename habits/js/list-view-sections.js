@@ -56,11 +56,34 @@ function dayHeaderContextHost(header){
 // weather cue stepwise (drop temp range → drop droplet → emoji only) instead
 // of letting flexbox crush pill text onto two lines. Label ellipsis is the
 // last resort; the chip's title/aria still carries the full forecast.
+//
+// One measurement at construction time is not enough: icon/text fonts finish
+// loading after the first paint (Tabler cue glyphs come from a CDN stylesheet),
+// chips can be attached or re-rendered late, and panes resize or become
+// visible later. So the label and weather button are observed — any box change
+// re-runs the fit. Each refit re-derives the minimal degradation level from
+// scratch, so applying it changes sizes once and the observer settles instead
+// of looping.
+const _headerFitTargets = typeof ResizeObserver !== 'undefined'
+  ? new ResizeObserver(entries=>{
+    let dirty = false;
+    for(const entry of entries){
+      if(!entry.target.isConnected){ _headerFitTargets.unobserve(entry.target); continue; }
+      dirty = true;
+    }
+    if(dirty)refitDayHeaderChips();
+  })
+  : null;
+
 function fitDayHeaderChips(header){
   if(!header || !header.isConnected)return;
   const label = header.querySelector('.section-header-label');
   const button = header.querySelector('.weather-day-button');
   if(!label || !button)return;
+  if(_headerFitTargets){
+    _headerFitTargets.observe(label);
+    _headerFitTargets.observe(button);
+  }
   let level = 0;
   for(;;){
     button.classList.toggle('cue-slim', level >= 1);
@@ -83,6 +106,15 @@ function refitDayHeaderChips(){
   });
 }
 window.addEventListener('resize',refitDayHeaderChips,{passive:true});
+// Web fonts (Tabler icons, system text swaps) often land after the headers
+// have already been fitted; refit when the loading set drains or a late swap
+// changes glyph widths.
+if(typeof document !== 'undefined' && document.fonts){
+  document.fonts.ready.then(refitDayHeaderChips);
+  if(typeof document.fonts.addEventListener === 'function'){
+    document.fonts.addEventListener('loadingdone',refitDayHeaderChips);
+  }
+}
 
 function attachWeatherIndicator(header,day){
   if(!header || !day || day.dayBase == null || typeof weatherDayCueHtml!=='function')return;
