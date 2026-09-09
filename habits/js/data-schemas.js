@@ -222,9 +222,11 @@
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
- * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high °C to full-mode home/overview weather cues (default false)
+ * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high to full-mode home/overview weather cues (default false)
  * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/feels-like pills on busy-time cards in regular mode
  * @property {boolean} showWeatherOnTravel                     — show interval condition/feels-like pills on travel cards in regular mode (default true)
+ * @property {'auto'|'c'|'f'} weatherTempUnit                  — display unit for temperatures; 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay °C.
+ * @property {string} homeCityCountry                          — two-letter country code of the home city, from the geocoder; drives 'auto' unit inference
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)

@@ -1070,7 +1070,7 @@ function overviewDayWeatherBlockHtml(key,dayContext,data){
   const range=weatherTemperatureRange(summary);
   const detail=minimal
     ? presentation.label
-    : [summary.cityName,range ? `feels like ${range}C` : '',summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`].filter(Boolean).join(' · ');
+    : [summary.cityName,range ? `feels like ${range}${weatherUsesFahrenheit() ? 'F' : 'C'}` : '',summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`].filter(Boolean).join(' · ');
   return `<button type="button" class="day-weather-block ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(presentation.tone || presentation.status)}" data-open-weather-context="${escapeHtml(key)}" aria-label="${escapeHtml(`${heading}, ${detail}. Open forecast details`)}">
     <span class="day-weather-icon"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(presentation.emoji || '☁️')}</span></span>
     <span><b>${escapeHtml(heading)}</b><small>${escapeHtml(detail)}</small></span>

@@ -56,17 +56,19 @@ async function maybeInferHomeCityFromPlace(lat,lng){
   }
   if(!Number.isFinite(lat) || !Number.isFinite(lng))return false;
   let name = 'Home area';
+  let countryCode = '';
   try{
     if(typeof reverseGeocodeCity === 'function'){
       const city = await reverseGeocodeCity(lat,lng);
       if(city && city.name)name = city.name;
+      countryCode = String(city && city.countryCode || '').trim().toUpperCase().slice(0,2);
     }
   }catch{ /* keep fallback name */ }
   // User may have set a city while the reverse lookup was in flight.
   if(typeof hasHomeCityCoords === 'function' ? hasHomeCityCoords() : (Number.isFinite(sortSettings.homeCityLat) && Number.isFinite(sortSettings.homeCityLng))){
     return false;
   }
-  updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng});
+  updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng, homeCityCountry:countryCode});
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
   if(typeof refreshWeatherForecast === 'function')void refreshWeatherForecast({force:true});
   syncHomeCityStatus();
@@ -91,7 +93,10 @@ async function setHomeCity(){
     }
     const [lng,lat] = feat.geometry.coordinates;
     const name = feat.properties.name || query;
-    updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng});
+    // ISO country code comes free with the geocode result and drives the
+    // 'auto' temperature unit (see weatherTempUnit in config.js).
+    const countryCode = String(feat.properties.countrycode || '').trim().toUpperCase().slice(0,2);
+    updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng, homeCityCountry:countryCode});
     if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
     if(typeof refreshWeatherForecast === 'function')void refreshWeatherForecast({force:true});
     input.value = '';
@@ -129,7 +134,7 @@ function clearHomeCity(){
     }
     return;
   }
-  updateSortSetting({homeCityName:'', homeCityLat:null, homeCityLng:null});
+  updateSortSetting({homeCityName:'', homeCityLat:null, homeCityLng:null, homeCityCountry:''});
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
   syncHomeCityStatus();
 }

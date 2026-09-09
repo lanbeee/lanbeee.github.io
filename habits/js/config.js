@@ -259,6 +259,13 @@ const DEFAULT_SORT_SETTINGS = {
   // forecast on by default because conditions directly affect the leg.
   showWeatherOnBusyTimes:false,
   showWeatherOnTravel:true,
+  // Temperature unit for weather display: 'auto' infers from the home city's
+  // country (Fahrenheit countries → °F, else °C); 'c'/'f' override. Forecast
+  // data and rule bounds are always stored in °C — this is display-only.
+  weatherTempUnit:'auto',
+  // Two-letter country code of the home city, captured from the geocoder when
+  // the city is set (and backfilled once for existing cities) to drive 'auto'.
+  homeCityCountry:'',
   prayerIslamicNames:false,
 
   topics:[],

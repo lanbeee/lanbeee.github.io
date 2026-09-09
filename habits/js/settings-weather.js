@@ -199,7 +199,28 @@ function renderWeatherInspector(settings,now = Date.now()){
     <p class="weather-forecast-legend">Shaded rows are 15-minute near-term samples — the planner reads them instead of the hourly value inside their span.</p>`;
 }
 
+// Seg + hint for the temperature display unit. 'auto' explains what it
+// currently resolves to so the inferred default is never a mystery.
+function syncWeatherTempUnitControls(){
+  const settings=sortSettings || loadSortSettings();
+  const mode=normalizeWeatherTempUnit(settings.weatherTempUnit);
+  document.querySelectorAll('#weather-temp-unit-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue===mode);
+  });
+  const hint=$('weather-temp-unit-hint');
+  if(!hint)return;
+  if(mode==='auto'){
+    const effective=weatherEffectiveTempUnit(settings)==='f' ? '°F' : '°C';
+    const city=String(settings.homeCityName || '').trim();
+    const source=settings.homeCityCountry && city ? `inferred from ${city}` : 'no city country yet · °C default';
+    hint.textContent=`auto — ${effective} (${source}). Forecast data and rule bounds stay in °C.`;
+  }else{
+    hint.textContent=`showing ${mode==='f'?'°F':'°C'} everywhere · forecast data and rule bounds stay in °C.`;
+  }
+}
+
 function renderWeatherControls(){
+  syncWeatherTempUnitControls();
   const list=$('weather-profile-list');
   if(!list)return;
   const settings=sortSettings || loadSortSettings();

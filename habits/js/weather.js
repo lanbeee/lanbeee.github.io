@@ -16,6 +16,86 @@ const WEATHER_METRICS = {
 };
 let _weatherRefreshLocks=[];
 
+// ── Temperature display unit ────────────────────────────────────────────
+// Forecast payloads, rule bounds, and margins are always °C (what Open-Meteo
+// returns and what the planner scores). These helpers convert only at the
+// last formatting step, so flipping the unit needs no refetch or replan.
+const WEATHER_FAHRENHEIT_COUNTRY_CODES = new Set([
+  'US','AS','GU','MP','PR','VI', // United States + territories
+  'BS','KY','TC','PW','FM','MH','LR','MM'
+]);
+
+function normalizeWeatherTempUnit(value){
+  return value === 'c' || value === 'f' ? value : 'auto';
+}
+
+function weatherTempUnitForCountry(countryCode){
+  return WEATHER_FAHRENHEIT_COUNTRY_CODES.has(String(countryCode || '').trim().toUpperCase()) ? 'f' : 'c';
+}
+
+//PURE: effective unit for the given settings ('auto' resolves via the home
+// city's country; unknown country defaults to Celsius).
+function weatherEffectiveTempUnit(settings){
+  const mode=normalizeWeatherTempUnit(settings && settings.weatherTempUnit);
+  return mode === 'auto' ? weatherTempUnitForCountry(settings && settings.homeCityCountry) : mode;
+}
+
+function weatherUsesFahrenheit(settings){
+  const s=settings || (typeof sortSettings!=='undefined' && sortSettings ? sortSettings : null)
+    || (typeof loadSortSettings==='function' ? loadSortSettings() : {});
+  return weatherEffectiveTempUnit(s)==='f';
+}
+
+//PURE: raw °C → display-unit number (unrounded; callers round as before).
+function weatherTempConverted(celsius){
+  const c=Number(celsius);
+  if(!Number.isFinite(c))return c;
+  return weatherUsesFahrenheit() ? c*9/5+32 : c;
+}
+
+function weatherTempDisplay(celsius){
+  return Math.round(weatherTempConverted(celsius));
+}
+
+function weatherTempUnitLabel(){
+  return weatherUsesFahrenheit() ? '°F' : '°C';
+}
+
+function weatherTempUnitWord(){
+  return weatherUsesFahrenheit() ? 'Fahrenheit' : 'Celsius';
+}
+
+// Home cities set before homeCityCountry existed have no stored country, so
+// 'auto' cannot infer. Reverse-geocode the home coords once per session
+// (offline-safe: failure just leaves the Celsius default until next boot).
+// Runs on the boot-time settings snapshot: installs without a home city bail
+// out before any request, and tests seed cities only after page load.
+let _homeCityCountryBackfillAttempted=false;
+async function maybeBackfillHomeCityCountry(){
+  if(_homeCityCountryBackfillAttempted)return;
+  _homeCityCountryBackfillAttempted=true;
+  if(typeof reverseGeocodeCity!=='function')return;
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  if(normalizeWeatherTempUnit(settings.weatherTempUnit)!=='auto')return;
+  if(String(settings.homeCityCountry || '').trim())return;
+  // Number.isFinite on the raw fields: Number(null) is 0, and a home city is
+  // genuinely required here — never infer from (0, 0).
+  if(!Number.isFinite(settings.homeCityLat) || !Number.isFinite(settings.homeCityLng))return;
+  try{
+    const city=await reverseGeocodeCity(settings.homeCityLat,settings.homeCityLng);
+    const code=String(city && city.countryCode || '').trim().toUpperCase().slice(0,2);
+    if(!code || code===String(settings.homeCityCountry || '').toUpperCase())return;
+    if(typeof updateSortSetting==='function'){
+      updateSortSetting({homeCityCountry:code},{sync:false,renderNow:false});
+    }else{
+      saveSortSettings({...loadSortSettings(),homeCityCountry:code});
+    }
+    // Presentation-only change: refresh the mounted surfaces without a replan.
+    if(typeof renderHomePresentationOnly==='function')renderHomePresentationOnly();
+    else if(typeof render==='function')render();
+  }catch{ /* stays Celsius until a later session */ }
+}
+
 function cleanWeatherProfileId(value){
   return typeof value === 'string' ? value.trim().slice(0,48) : '';
 }
@@ -547,7 +627,10 @@ function weatherFitAssessment(fill,fit,state,settings){
   const overridden = hardFail && weatherCommitmentOverride(fill,state);
   const describe = result=>{
     const meta = WEATHER_METRICS[result.rule.metric];
-    return `${meta.label} ${Math.round(result.value * 10) / 10}${meta.unit}`;
+    const isTemp = result.rule.metric==='temperature_2m' || result.rule.metric==='apparent_temperature';
+    const value = isTemp ? weatherTempConverted(result.value) : result.value;
+    const unit = isTemp ? weatherTempUnitLabel() : meta.unit;
+    return `${meta.label} ${Math.round(value * 10) / 10}${unit}`;
   };
   const summary = failing.length
     ? `${overridden ? 'weather override' : 'weather caution'} · ${failing.map(describe).join(' · ')}`
@@ -806,18 +889,26 @@ function weatherFeelsBounds(summary){
 function weatherTemperatureRange(summary){
   const bounds=weatherFeelsBounds(summary);
   if(!bounds)return '';
-  return bounds.low===bounds.high ? `${bounds.low}°` : `${bounds.low}–${bounds.high}°`;
+  const low=weatherTempDisplay(bounds.low);
+  const high=weatherTempDisplay(bounds.high);
+  return low===high ? `${low}°` : `${low}–${high}°`;
 }
 
 function weatherPeriodTemperatureRange(summary){
   const bounds=weatherFeelsBounds(summary);
   if(!bounds)return '';
+  // Range-vs-single is decided in °C so WEATHER_PERIOD_RANGE_DELTA_C keeps its
+  // meaning; only the rendered numbers are converted.
   const duration=Number(summary && summary.end)-Number(summary && summary.start);
   const longEnough=duration>=WEATHER_PERIOD_RANGE_MIN_MS;
   const varied=bounds.high-bounds.low>=WEATHER_PERIOD_RANGE_DELTA_C;
-  if(longEnough && varied)return `${bounds.low}–${bounds.high}°`;
-  if(Number.isFinite(Number(summary.apparentMean)))return `${Math.round(Number(summary.apparentMean))}°`;
-  return `${bounds.low}°`;
+  if(longEnough && varied){
+    const low=weatherTempDisplay(bounds.low);
+    const high=weatherTempDisplay(bounds.high);
+    return low===high ? `${low}°` : `${low}–${high}°`;
+  }
+  if(Number.isFinite(Number(summary.apparentMean)))return `${weatherTempDisplay(Number(summary.apparentMean))}°`;
+  return `${weatherTempDisplay(bounds.low)}°`;
 }
 
 // PURE: summarize only the clock interval occupied by a card. The most
@@ -879,7 +970,7 @@ function weatherPeriodPillHtml(start,end,settings,options={}){
     ? `<i class="ti ${assessment.status==='override'?'ti-shield-exclamation':'ti-alert-triangle'} weather-guidance-mark" aria-hidden="true"></i>` : '';
   const detail=[
     `${summary.condition.label} in ${summary.placeName}`,
-    temp?`feels like ${temp} Celsius`:'',
+    temp?`feels like ${temp} ${weatherTempUnitWord()}`:'',
     summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,
     summary.snowfall>0?`${Math.round(summary.snowfall*10)/10} cm snow`:'',
     summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`,
@@ -924,7 +1015,7 @@ function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
   const chance=!minimal && wet && summary.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
   const detail=[
     presentation.label,
-    temp ? `feels like ${temp} Celsius` : '',
+    temp ? `feels like ${temp} ${weatherTempUnitWord()}` : '',
     summary.precipitationChance==null ? '' : `${Math.round(summary.precipitationChance)}% precipitation`,
     summary.wind==null ? '' : `${Math.round(summary.wind)} km/h wind`,
     weatherFreshnessText(summary.fetchedAt)
@@ -993,7 +1084,7 @@ function renderWeatherContextSheet(model){
       summary.gusts==null?'':`gusts ${Math.round(summary.gusts)}`
     ].filter(Boolean).join(' · ');
     const metrics=[
-      weatherMetricCard('ti-temperature', 'feels like', range ? `${range}C` : ''),
+      weatherMetricCard('ti-temperature', 'feels like', range ? `${range}${weatherUsesFahrenheit() ? 'F' : 'C'}` : ''),
       weatherMetricCard('ti-umbrella', 'precipitation', precipitation),
       weatherMetricCard('ti-wind', 'wind', wind),
       weatherMetricCard('ti-sun-high', 'UV', summary.uv==null?'':String(Math.round(summary.uv)))

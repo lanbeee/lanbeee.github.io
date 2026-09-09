@@ -584,9 +584,11 @@ prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
 weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles shared by items, options, and places
-showWeatherTemperatureRanges: boolean, // Add feels-like low–high °C beside full-mode day forecast icons (default off)
+showWeatherTemperatureRanges: boolean, // Add feels-like low–high beside full-mode day forecast icons (default off)
 showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
 showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
+weatherTempUnit: 'auto'|'c'|'f',  // Display unit; 'auto' infers from the home city's country (default 'auto')
+homeCityCountry: string,          // Two-letter country code from the geocoder; drives 'auto' inference
 ```
 
 #### 4.3.8a Weather Guidance 👤👨‍💻
@@ -2594,9 +2596,11 @@ Same agenda logic, but simplified display:
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
 | `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather profiles shared by items, options, and places |
-| `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high °C beside full-mode Home and Overview week-strip weather icons |
+| `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high beside full-mode Home and Overview week-strip weather icons |
 | `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
 | `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
+| `weatherTempUnit` | 'auto'\|'c'\|'f' | 'auto' | Temperature display unit. 'auto' infers °F vs °C from the home city's country (°F regions: US and territories, BS, KY, TC, PW, FM, MH, LR, MM; unknown → °C). Display-only: forecast data and weather-rule bounds are always stored in °C. Settings → weather guidance → temperature unit |
+| `homeCityCountry` | string | '' | Two-letter country code of the home city, captured from the geocoder when the city is set (one-time reverse-geocode backfill for cities set before this field existed) |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |

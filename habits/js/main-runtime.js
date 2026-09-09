@@ -894,6 +894,10 @@ plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');
 if(typeof startWeatherLifecycle === 'function')setTimeout(startWeatherLifecycle,0);
+// Pre-homeCityCountry installs: resolve the home city's country once so the
+// 'auto' temperature unit can infer. Deferred: never competes with first
+// paint, and installs without a home city bail out before any request.
+if(typeof maybeBackfillHomeCityCountry === 'function')setTimeout(maybeBackfillHomeCityCountry,1200);
 // First-run coach: defer until the real home UI has painted. A dismissal is
 // versioned, so it stays quiet until a future coach intentionally opts in.
 if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){
