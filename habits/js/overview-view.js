@@ -412,12 +412,13 @@ function overviewMinutesLabel(minutes){
   return `${Math.round(hours)}h`;
 }
 
-// PURE: weekday short label for a day key
-function overviewDayChipLabel(key){
+// PURE: weekday short label for a day key (`compact` shortens tomorrow so the
+// seven-column chips never truncate the label)
+function overviewDayChipLabel(key,compact=false){
   const today = todayIso();
   if(key === today)return 'today';
   const tomorrow = dateKey(dayStart(Date.now()) + 86400000);
-  if(key === tomorrow)return 'tomorrow';
+  if(key === tomorrow)return compact ? 'tmrw' : 'tomorrow';
   return new Date(`${key}T12:00:00`).toLocaleDateString(undefined,{weekday:'short'});
 }
 
@@ -558,7 +559,7 @@ function renderOverviewInsight(capacity,options={}){
     const weatherLabel=weather ? weather.match(/title="([^"]*)"/)?.[1] || '' : '';
     const title=[weatherOnly?'':`${overviewMinutesLabel(day.open)} open`,weatherLabel].filter(Boolean).join(' · ');
     return `<button type="button" class="overview-open-chip ${tone}${weatherOnly?' weather-only':''}" data-log-day="${escapeHtml(day.key)}" title="${escapeHtml(title)}">
-      <span class="overview-open-day">${escapeHtml(overviewDayChipLabel(day.key))}</span>
+      <span class="overview-open-day">${escapeHtml(overviewDayChipLabel(day.key,true))}</span>
       ${weather}
       ${weatherOnly?'':`<b>${escapeHtml(overviewMinutesLabel(day.open))}</b>`}
     </button>`;

@@ -347,7 +347,45 @@ function assert(value,message){
     const capacity={openTotal:120,days:[{key,open:120,used:30,total:150,load:1}],lightest:null,busiest:null,tomorrow:null};
     overviewRecentOffset=0;overviewRangeFilter='recent';
     renderOverviewInsight(capacity);
+    const overviewCue=document.querySelector('#overview-insight .overview-weather-cue');
+    const overviewChip=document.querySelector('#overview-insight .overview-open-chip');
+    const compactHeavy=weatherDayCueHtml(base,day,{
+      ...settings,_weatherContext:{...context,days:[{...days[0],weather_code:65}]}
+    },{data:[h],compact:true,className:'overview-weather-cue'});
+    const overviewMeasure=(()=>{
+      if(!overviewChip || !overviewCue)return {fits:false,heavyFits:false,stacked:false};
+      const measureHost=document.createElement('div');
+      measureHost.style.cssText='position:absolute;left:-9999px;width:362px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;';
+      const clone=overviewChip.cloneNode(true);
+      const heavyChip=document.createElement('button');
+      heavyChip.type='button';
+      heavyChip.className='overview-open-chip open';
+      heavyChip.innerHTML=compactHeavy;
+      measureHost.appendChild(clone);
+      measureHost.appendChild(heavyChip);
+      document.body.appendChild(measureHost);
+      const cue=clone.querySelector('.overview-weather-cue');
+      const heavyCue=heavyChip.querySelector('.overview-weather-cue');
+      const heavyEmoji=heavyChip.querySelector('.weather-condition-emoji');
+      const measured={
+        fits:clone.scrollWidth<=clone.clientWidth+1,
+        heavyFits:Boolean(heavyCue && heavyEmoji) && heavyEmoji.scrollWidth<=heavyCue.clientWidth+1,
+        stacked:getComputedStyle(cue).flexDirection==='column'
+      };
+      measureHost.remove();
+      return measured;
+    })();
+    const overviewCompact={
+      compact:Boolean(overviewCue?.classList.contains('is-compact')),
+      chance:/80%/.test(overviewCue?.textContent || ''),
+      titleChance:/80% precipitation/.test(overviewCue?.getAttribute('title') || ''),
+      fits:overviewMeasure.fits,
+      heavyFits:overviewMeasure.heavyFits,
+      stacked:overviewMeasure.stacked
+    };
     const overviewIcon=document.querySelectorAll('#overview-insight .overview-weather-cue').length;
+    const tomorrowKey=dateKey(dayStart(Date.now())+86400000);
+    const chipTomorrow={compact:overviewDayChipLabel(tomorrowKey,true),full:overviewDayChipLabel(tomorrowKey)};
     const overviewTempOff=/5–13°/.test(document.querySelector('#overview-insight')?.textContent || '');
     sortSettings={...settings,showWeatherTemperatureRanges:true};
     renderOverviewInsight(capacity);
@@ -393,8 +431,10 @@ function assert(value,message){
     return {
       normalizedDefault,noTemp,withTemp,stale,past,beyond,dayHeaderWeather,categoryWeather,separated,
       minimalCaution,minimalGood,overviewIcon,overviewTempOff,overviewTempOn,calendarWeather,shiftedHidden,
+      chipTomorrow,
       sheetText,selectedBlock,habitPeriod,homePeriod,quietPeriod,taskPeriod,silentTaskPeriod,longRange,shortRange,
       busyPeriod,travelPeriod,travelInTitle,busyInTitle,periodCardsFit,minimalAmbient,intensity,
+      overviewCompact,compactHeavy,
       codeLabel:weatherCodePresentation(95).label,
       codeIcon:weatherCodePresentation(71).icon,
       codeEmoji:weatherCodePresentation(95).emoji
@@ -409,6 +449,9 @@ function assert(value,message){
   assert(/caution/.test(display.minimalCaution) && !/5–13°/.test(display.minimalCaution),'minimal mode shows an item-derived caution without temperature');
   assert(display.minimalGood==='','minimal mode hides good weather guidance');
   assert(display.overviewIcon===1 && !display.overviewTempOff && display.overviewTempOn,'overview week chips share the compact visual cue and optional range setting');
+  assert(display.overviewCompact.compact && !display.overviewCompact.chance && display.overviewCompact.titleChance && display.overviewCompact.stacked && display.overviewCompact.fits,'overview chips stay emoji-only so open minutes is the only number; the wet chance lives in the tooltip');
+  assert(display.chipTomorrow.compact==='tmrw' && display.chipTomorrow.full==='tomorrow','overview chips shorten tomorrow to tmrw so the seven-column labels never truncate');
+  assert(/is-compact/.test(display.compactHeavy) && /🌧️🌧️/.test(display.compactHeavy) && !/weather-signal/.test(display.compactHeavy) && /80% precipitation/.test(display.compactHeavy) && display.overviewCompact.heavyFits,'compact overview cues keep the full intensity emoji and move the wet chance to the tooltip');
   assert(!display.calendarWeather && display.shiftedHidden,'calendar cells and shifted past ranges stay weather-free');
   assert(/rain/.test(display.selectedBlock) && /feels like 5–13°C/.test(display.selectedBlock) && /80% precipitation/.test(display.selectedBlock) && /18 km\/h wind/.test(display.selectedBlock) && /data-open-weather-context/.test(display.selectedBlock),'selected-day sheet shows the useful forecast metrics before opening details');
   assert(/feels like/.test(display.sheetText) && /5–13°C/.test(display.sheetText) && /80%/.test(display.sheetText) && /18 km\/h/.test(display.sheetText),'weather context shows feels-like temperature, precipitation, and wind');

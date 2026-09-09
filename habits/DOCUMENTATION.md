@@ -609,8 +609,11 @@ showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default t
 - Weather stays supporting context: full-mode Home agenda-day headers show a
   compact, tinted pill with an intuitive condition emoji and precipitation
   chance when it is raining or snowing. Long WMO labels stay in the tooltip and
-  detail sheet. The Overview seven-day open-time strip uses the same compact
-  form. Optional feels-like low–high Celsius ranges are off by default and add
+  detail sheet. The Overview seven-day open-time strip shows the condition as an
+  emoji-only cue (full intensity emoji centered between the day label and the
+  open-minutes figure; the wet chance stays in the tooltip) so open time remains
+  the chip's only number.
+  Optional feels-like low–high Celsius ranges are off by default and add
   to both persistent surfaces. The Overview calendar grid is unchanged.
 - Busy-time and travel cards can show period weather from Settings. Habits and
   tasks opt in per item (`showWeather`). Each compact pill covers the row's

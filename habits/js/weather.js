@@ -855,6 +855,7 @@ function weatherDayPresentation(dayBase,dayContext,settings,data=null){
 function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
   const presentation=weatherDayPresentation(dayBase,dayContext,settings,options.data || null);
   if(!presentation)return '';
+  const compact=Boolean(options.compact);
   const minimal=presentation.status!=='forecast';
   const temp=presentation.showTemperature ? weatherTemperatureRange(presentation.summary) : '';
   const summary=presentation.summary;
@@ -868,8 +869,13 @@ function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
     weatherFreshnessText(summary.fetchedAt)
   ].filter(Boolean).join(', ');
   const tone=presentation.tone || presentation.status;
-  const cls=options.className ? ` ${options.className}` : '';
-  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(presentation.emoji || '☁️')}</span>${chance?`<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`:''}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
+  const cls=`${options.className ? ` ${options.className}` : ''}${compact?' is-compact':''}`;
+  const emoji=presentation.emoji || '☁️';
+  // Compact cues (Overview strip) stay emoji-only: the chip already carries an
+  // open-minutes figure, so the wet chance lives in the tooltip, not as a
+  // second number competing with it. Day headers keep the droplet + chance.
+  const signal=compact || !chance ? '' : `<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`;
+  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(emoji)}</span>${signal}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
 }
 
 function weatherFreshnessText(ts,now=Date.now()){

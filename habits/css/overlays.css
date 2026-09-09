@@ -44,20 +44,29 @@
 .overview-insight-cue{font-size:11.5px;}
 .overview-open-chips{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;overflow:visible;padding:0;}
 .overview-open-chip{
-  width:100%;min-width:0;min-height:62px;padding:6px 3px;align-items:center;justify-content:center;gap:2px;border-radius:12px;
+  width:100%;min-width:0;min-height:62px;padding:6px 2px;align-items:center;justify-content:center;gap:2px;border-radius:12px;
 }
-.overview-open-chip .overview-open-day{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:8px;text-align:center;}
-.overview-open-chip b{font-size:11px;}
-.overview-open-chip .overview-weather-cue{min-height:18px;gap:2px;color:var(--text2);}
+.overview-open-chip:has(.overview-weather-cue){min-height:74px;}
+.overview-open-chip .overview-open-day{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:8px;letter-spacing:0;text-align:center;}
+.overview-open-chip b{margin-top:auto;font-size:11px;}
+/* Compact cue is emoji-only — the wet chance stays in the tooltip so the
+   open-minutes figure remains the chip's only number. Auto side margins float
+   the intensity emoji (e.g. 🌧️🌧️) dead-center between label and minutes. */
+.overview-open-chip .overview-weather-cue{
+  display:inline-flex;flex-direction:column;gap:1px;align-items:center;justify-content:center;
+  margin:auto 0;flex:0 0 auto;max-width:100%;overflow:hidden;color:var(--text2);
+}
 .overview-open-chip .overview-weather-cue.weather-tone-sun{color:var(--amber-icon);}
 .overview-open-chip .overview-weather-cue.weather-tone-rain{color:var(--blue-icon);}
 .overview-open-chip .overview-weather-cue.weather-tone-snow,.overview-open-chip .overview-weather-cue.weather-tone-ice{color:var(--purple-icon);}
 .overview-open-chip .overview-weather-cue.weather-tone-storm{color:var(--red-icon);}
-.overview-open-chip .overview-weather-cue .weather-condition-emoji{font-size:15px;}
-.overview-open-chip .overview-weather-cue > span{font-size:8px;font-weight:750;letter-spacing:-0.02em;}
-.overview-open-chip .overview-weather-cue .weather-signal{gap:0;}
-.overview-open-chip .overview-weather-cue .weather-signal i{display:none;}
-.overview-open-chip .overview-weather-cue .weather-temperature{padding-left:2px;border-left:0;}
+.overview-open-chip .overview-weather-cue > span{
+  font-size:8px;font-weight:750;letter-spacing:0;text-transform:none;color:inherit;
+}
+.overview-open-chip .overview-weather-cue .weather-condition-emoji{
+  font-size:13px;line-height:1;max-width:100%;
+}
+.overview-open-chip .overview-weather-cue .weather-temperature{padding:0;border:0;}
 .overview-open-chips.weather-only{display:flex;justify-content:flex-start;gap:7px;}
 .overview-open-chip.weather-only{width:auto;min-width:58px;min-height:50px;padding:7px 9px;}
 .overview-card{
