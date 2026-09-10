@@ -32,9 +32,22 @@
   display:flex;align-items:center;justify-content:flex-end;gap:6px;
   min-width:0;flex:0 1 auto;
 }
+/* If even an emoji-only weather cue cannot share one line with the label and
+   other chips, give the context a deliberate second row as the last fallback.
+   The fitting helper adds these classes from actual rendered widths, so this
+   also handles text zoom and unusually large counts without a breakpoint. */
+.section-header.context-below{flex-wrap:wrap;row-gap:8px;}
+.section-header.context-below .section-header-label{
+  flex:0 0 100%;overflow:visible;text-overflow:clip;
+}
+.section-header.context-below .day-header-context{
+  flex:1 1 100%;width:100%;justify-content:flex-start;
+}
+.section-header.context-below.context-wrapped .day-header-context{flex-wrap:wrap;}
+/* Keep the missed pill's generous one-line hit pad out of the label row. */
+.section-header.context-below .dropped-pill::before{inset:-6px -8px -6px -4px;}
 /* Chips never shrink and never wrap internally: when the row is tight,
-   fitDayHeaderChips degrades the weather cue instead of crushing pill text
-   onto two lines. */
+   fitDayHeaderChips degrades the weather cue before moving context below. */
 .day-header-context > button{flex:0 0 auto;}
 /* Subtle half-step darker while pinned at the viewport top (`.stuck` toggled
    on scroll by updateStuckSectionHeaders in js/list-view.js). */

@@ -53,17 +53,17 @@ function dayHeaderContextHost(header){
 
 // Day-header chips (free / weather / missed) are unsqueezable single-line
 // buttons. When their natural widths don't fit next to the label, degrade the
-// weather cue stepwise (drop temp range → drop droplet → emoji only) instead
-// of letting flexbox crush pill text onto two lines. Label ellipsis is the
-// last resort; the chip's title/aria still carries the full forecast.
+// weather cue stepwise (drop temp range → emoji only) while keeping the row
+// intact. A deliberate second row, and then wrapping that row, are last-resort
+// fallbacks. This keeps the day label whole without routinely making headers
+// taller.
 //
 // One measurement at construction time is not enough: icon/text fonts finish
 // loading after the first paint (Tabler cue glyphs come from a CDN stylesheet),
 // chips can be attached or re-rendered late, and panes resize or become
-// visible later. So the label and weather button are observed — any box change
-// re-runs the fit. Each refit re-derives the minimal degradation level from
-// scratch, so applying it changes sizes once and the observer settles instead
-// of looping.
+// visible later. So the label and every context button are observed — any box
+// change re-runs the fit. Each refit re-derives the layout from scratch, so
+// applying it changes sizes once and the observer settles instead of looping.
 const _headerFitTargets = typeof ResizeObserver !== 'undefined'
   ? new ResizeObserver(entries=>{
     let dirty = false;
@@ -79,20 +79,54 @@ function fitDayHeaderChips(header){
   if(!header || !header.isConnected)return;
   const label = header.querySelector('.section-header-label');
   const button = header.querySelector('.weather-day-button');
-  if(!label || !button)return;
+  const host = header.querySelector('.day-header-context');
+  if(!label || !host)return;
   if(_headerFitTargets){
     _headerFitTargets.observe(label);
-    _headerFitTargets.observe(button);
+    host.querySelectorAll('button').forEach(chip=>_headerFitTargets.observe(chip));
   }
+  header.classList.remove('context-below','context-wrapped');
+  if(button)button.classList.remove('cue-slim','cue-emoji');
+
+  const css = getComputedStyle(header);
+  const gap = Number.parseFloat(css.columnGap || css.gap) || 0;
+  const availableWidth = header.clientWidth
+    - (Number.parseFloat(css.paddingLeft) || 0)
+    - (Number.parseFloat(css.paddingRight) || 0);
+  const chips = [...host.querySelectorAll(':scope > button')];
+  const hostCss = getComputedStyle(host);
+  const chipGap = Number.parseFloat(hostCss.columnGap || hostCss.gap) || 0;
+  const contextWidth = ()=>chips.reduce((sum,chip)=>sum + chip.getBoundingClientRect().width,0)
+    + Math.max(0,chips.length - 1) * chipGap;
+  const cue = button?.querySelector('.weather-day-cue');
+  const cueIsClipped = ()=>Boolean(cue) && cue.scrollWidth > cue.clientWidth + 1;
+  const inlineFits = ()=>label.scrollWidth + contextWidth() + gap <= availableWidth + 1
+    && !cueIsClipped();
+  if(!button && inlineFits())return;
   let level = 0;
-  for(;;){
+  while(button){
     button.classList.toggle('cue-slim', level >= 1);
     button.classList.toggle('cue-emoji', level >= 2);
-    const labelClipped = label.scrollWidth > label.clientWidth + 1;
-    const cue = button.querySelector('.weather-day-cue');
-    const cueClipped = Boolean(cue) && cue.scrollWidth > cue.clientWidth + 1;
-    if((!labelClipped && !cueClipped) || level >= 2)break;
+    if(inlineFits())return;
+    if(level >= 2)break;
     level += 1;
+  }
+
+  // The label plus emoji-only context genuinely cannot fit on one line. Give
+  // the chips their own row and restore as much forecast detail as it can hold.
+  header.classList.add('context-below');
+  if(button)button.classList.remove('cue-slim','cue-emoji');
+  level = 0;
+  while(button){
+    const rowClipped = contextWidth() > host.clientWidth + 1 || cueIsClipped();
+    if(!rowClipped)break;
+    level += 1;
+    button.classList.toggle('cue-slim', level >= 1);
+    button.classList.toggle('cue-emoji', level >= 2);
+    if(level >= 2)break;
+  }
+  if(contextWidth() > host.clientWidth + 1 || cueIsClipped()){
+    header.classList.add('context-wrapped');
   }
 }
 

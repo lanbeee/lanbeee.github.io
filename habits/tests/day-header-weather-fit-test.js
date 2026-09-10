@@ -1,7 +1,7 @@
-// Day-header chips must stay single-line and keep the label readable at any
-// width: the weather cue degrades stepwise (full → hide temp range → emoji
-// only) instead of crushing pill text onto two lines. Regression coverage for
-// fitDayHeaderChips (js/list-view-sections.js).
+// Day-header chips must keep the label readable at any width: weather degrades
+// stepwise (full → hide temp range → emoji only) on one line first. A
+// deliberate second row is reserved for widths where that cannot fit.
+// Regression coverage for fitDayHeaderChips (js/list-view-sections.js).
 //
 // Also covers the self-correcting re-fit: chip widths can legitimately change
 // AFTER the header was first fitted (icon/text fonts land late from CDN,
@@ -81,11 +81,16 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const lab = header.querySelector('.section-header-label');
     const btn = header.querySelector('.weather-day-button');
     const cue = btn.querySelector('.weather-day-cue');
+    const host = header.querySelector('.day-header-context');
     const chips = [...header.querySelectorAll('.day-header-context > button')];
+    const css = getComputedStyle(header);
     return {
       label: lab.textContent,
       labelClipped: lab.scrollWidth > lab.clientWidth + 1,
       cueClipped: cue.scrollWidth > cue.clientWidth + 1,
+      widths:{header:header.clientWidth,padding:[css.paddingLeft,css.paddingRight],label:[lab.scrollWidth,lab.clientWidth],host:[host.scrollWidth,host.clientWidth]},
+      contextBelow: header.classList.contains('context-below'),
+      contextWrapped: header.classList.contains('context-wrapped'),
       slim: btn.classList.contains('cue-slim'),
       emojiOnly: btn.classList.contains('cue-emoji'),
       chipHeights: chips.map(c => c.getBoundingClientRect().height),
@@ -115,6 +120,29 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const temp = btn.querySelector('.weather-temperature');
     if (temp) temp.textContent = '−12–3°';
   });
+  const setScreenshotCaseChips = () => page.evaluate(() => {
+    const host = document.querySelector('.section-header .day-header-context');
+    let free = host.querySelector('.free-pill');
+    if (!free) {
+      free = document.createElement('button');
+      free.type = 'button'; free.className = 'free-pill';
+      host.insertBefore(free, host.firstChild);
+    }
+    free.textContent = '18M OPEN';
+    let dropped = host.querySelector('.dropped-pill');
+    if (!dropped) {
+      dropped = document.createElement('button');
+      dropped.type = 'button'; dropped.className = 'dropped-pill';
+      host.appendChild(dropped);
+    }
+    dropped.textContent = '9 MISSED';
+    const btn = host.querySelector('.weather-day-button');
+    btn.querySelector('.weather-condition-emoji').textContent = '🌧️🌧️';
+    const sig = btn.querySelector('.weather-signal');
+    if (sig) sig.innerHTML = '<i class="ti ti-droplet" aria-hidden="true"></i>67%';
+    const temp = btn.querySelector('.weather-temperature');
+    if (temp) temp.textContent = '64–82°';
+  });
   const allSingleLine = m => m.chipHeights.every(h => h <= 34);
   const nothingClipped = m => !m.labelClipped && !m.cueClipped;
 
@@ -124,21 +152,29 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   fail('A2 430px: nothing clipped', nothingClipped(m), JSON.stringify(m));
   fail('A3 430px: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
 
-  // (B) Tight width + worst-case chips: degrade to slim (temp range hidden),
-  //     label and every chip stay single-line and unclipped.
+  // Screenshot regression: at an iPhone-width 393px, TODAY stays whole and
+  // the cue simplifies in place instead of leaving a clipped "TOD…" label.
+  await setScreenshotCaseChips();
+  await page.setViewportSize({ width: 393, height: 900 });
+  await twoRafs();
+  m = await todayHeader();
+  fail('A4 393px screenshot case: one-line adaptive header', m && !m.contextBelow && (m.slim || m.emojiOnly), JSON.stringify(m));
+  fail('A5 393px screenshot case: nothing clipped', nothingClipped(m), JSON.stringify(m));
+
+  // (B) Tight width + worst-case chips: simplify weather but keep one line.
   await setWorstCaseChips();
   await page.setViewportSize({ width: 402, height: 900 });
   await twoRafs();
   m = await todayHeader();
-  fail('B1 402px worst: slim degradation applied', m && m.slim && !m.emojiOnly, JSON.stringify(m));
+  fail('B1 402px worst: inline slim degradation applied', m && !m.contextBelow && m.slim && !m.emojiOnly, JSON.stringify(m));
   fail('B2 402px worst: nothing clipped', nothingClipped(m), JSON.stringify(m));
   fail('B3 402px worst: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
 
-  // (C) Very tight width: emoji-only cue.
+  // (C) Very tight width: only now use the deliberate second-line fallback.
   await page.setViewportSize({ width: 320, height: 900 });
   await twoRafs();
   m = await todayHeader();
-  fail('C1 320px worst: emoji-only degradation applied', m && m.emojiOnly, JSON.stringify(m));
+  fail('C1 320px worst: intentional second-line fallback', m && m.contextBelow, JSON.stringify(m));
   fail('C2 320px worst: nothing clipped', nothingClipped(m), JSON.stringify(m));
   fail('C3 320px worst: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
 
@@ -162,12 +198,12 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.setViewportSize({ width: 402, height: 900 }); // roomy chips fit here…
   await twoRafs();
   m = await todayHeader();
-  fail('D1 402px roomy: full cue, nothing degraded', m && !m.slim && !m.emojiOnly && nothingClipped(m), JSON.stringify(m));
+  fail('D1 402px roomy: full cue, nothing degraded', m && !m.contextBelow && !m.slim && !m.emojiOnly && nothingClipped(m), JSON.stringify(m));
 
   await setWorstCaseChips(); // …then widen chip text in place, same viewport
   await page.waitForTimeout(120); // RO callback + refit rAF
   m = await todayHeader();
-  fail('D2 late width growth: re-fit degrades automatically', m && (m.slim || m.emojiOnly), JSON.stringify(m));
+  fail('D2 late width growth: re-fit degrades automatically', m && !m.contextBelow && (m.slim || m.emojiOnly), JSON.stringify(m));
   fail('D3 late width growth: nothing clipped', nothingClipped(m), JSON.stringify(m));
   fail('D4 late width growth: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
 
@@ -182,7 +218,7 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
   await page.waitForTimeout(120);
   m = await todayHeader();
-  fail('E1 430px roomy: degradation cleared again', m && !m.slim && !m.emojiOnly, JSON.stringify(m));
+  fail('E1 430px roomy: stacked layout and degradation clear again', m && !m.contextBelow && !m.slim && !m.emojiOnly, JSON.stringify(m));
   fail('E2 430px roomy: nothing clipped', nothingClipped(m), JSON.stringify(m));
 
   fail('F   no page errors', pageErrors.length === 0, pageErrors.join(' | '));
