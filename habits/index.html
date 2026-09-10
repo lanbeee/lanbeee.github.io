@@ -1236,6 +1236,27 @@
     </div>
   </div>
 
+  <!-- weather metric drill-down sheet (hourly detail for one summary card) -->
+  <div class="sheet-wrap" id="weather-metric-sheet" role="dialog" aria-modal="true" aria-labelledby="weather-metric-title">
+    <div class="sheet context-sheet weather-metric-sheet">
+      <div class="context-sheet-head">
+        <span class="context-sheet-icon weather" id="weather-metric-icon"><i class="ti ti-temperature" aria-hidden="true"></i></span>
+        <div class="context-sheet-copy">
+          <span class="sheet-eyebrow" id="weather-metric-eyebrow">hourly forecast</span>
+          <p class="sheet-name" id="weather-metric-title">forecast</p>
+          <p class="sheet-sub" id="weather-metric-sub"></p>
+        </div>
+        <button class="mini-nav" id="weather-metric-close" type="button" aria-label="close hourly forecast">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div id="weather-metric-content"></div>
+      <div class="btn-row weather-context-actions">
+        <button class="btn primary" id="weather-metric-done" type="button">done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- free time sheet -->
   <div class="sheet-wrap" id="free-time-sheet" role="dialog" aria-modal="true" aria-labelledby="free-time-title">
     <div class="sheet context-sheet free-time-sheet">

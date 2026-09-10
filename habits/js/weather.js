@@ -1037,16 +1037,140 @@ function weatherFreshnessText(ts,now=Date.now()){
   return `updated ${Math.round(mins/60)}h ago`;
 }
 
-function weatherMetricCard(icon,label,value){
+// Hourly drill-down behind the context sheet's summary cards: the sample
+// field each card summarises (primary is required for a row, secondary is
+// shown as the dim right-hand detail).
+const WEATHER_METRIC_DETAILS={
+  temp:{icon:'ti-temperature',label:'feels like',primary:'apparent_temperature',secondary:'temperature_2m'},
+  precip:{icon:'ti-umbrella',label:'precipitation',primary:'precipitation_probability',secondary:'precipitation'},
+  wind:{icon:'ti-wind',label:'wind',primary:'wind_speed_10m',secondary:'wind_gusts_10m'},
+  uv:{icon:'ti-sun-high',label:'UV',primary:'uv_index'}
+};
+
+// Cards with a metricKey render as buttons that open the hourly detail sheet;
+// pass metricKey only when hourly data exists for that metric.
+function weatherMetricCard(icon,label,value,metricKey=null){
   if(value==null || value==='')return '';
-  return `<div class="weather-context-metric"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
+  const tag=metricKey ? 'button' : 'div';
+  const attrs=metricKey ? ` type="button" data-weather-metric="${escapeHtml(metricKey)}"` : '';
+  return `<${tag}${attrs} class="weather-context-metric"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></${tag}>`;
+}
+
+// Catmull-Rom → cubic Bézier: a gentle curve through every sample.
+function weatherSmoothPath(points){
+  if(points.length<3)return `M${points.map(p=>`${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('L')}`;
+  let d=`M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+  for(let i=0;i<points.length-1;i++){
+    const p0=points[Math.max(0,i-1)],p1=points[i],p2=points[i+1],p3=points[Math.min(points.length-1,i+2)];
+    d+=`C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)} ${(p1[1]+(p2[1]-p0[1])/6).toFixed(1)} ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)} ${(p2[1]-(p3[1]-p1[1])/6).toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+function weatherMetricMarkText(metricKey,value){
+  if(metricKey==='temp')return `${weatherTempDisplay(value)}°`;
+  if(metricKey==='precip')return `${Math.round(value)}%`;
+  return String(Math.round(value));
+}
+
+// Hero chart for the hourly drill-down: hand-rolled SVG (no chart library),
+// one smooth accent line with a soft gradient fill, min/max callouts, an hour
+// axis, and a 'now' line when the day is today. Precipitation renders as
+// 0–100% bars instead of a line.
+function weatherMetricChartHtml(metricKey,rows,summary){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  const W=340,H=152,top=24,bottom=H-24,left=8,right=8;
+  const pts=rows.map(row=>({ts:Number(row.ts),v:Number(row[detail.primary])}))
+    .filter(p=>Number.isFinite(p.v)).sort((a,b)=>a.ts-b.ts);
+  if(pts.length<2)return '';
+  const zeroBased=metricKey==='precip' || metricKey==='uv';
+  let vMin=Math.min(...pts.map(p=>p.v)),vMax=Math.max(...pts.map(p=>p.v));
+  if(zeroBased)vMin=0;
+  if(vMax<=vMin)vMax=vMin+1;
+  const pad=(vMax-vMin)*0.18;
+  vMax+=pad;
+  if(!zeroBased)vMin=Math.max(0,vMin-pad);
+  const xAt=i=>left+(i/(pts.length-1))*(W-left-right);
+  const yAt=v=>bottom-((v-vMin)/(vMax-vMin))*(bottom-top);
+  const maxIdx=pts.reduce((best,p,i)=>p.v>pts[best].v?i:best,0);
+  const minIdx=pts.reduce((best,p,i)=>p.v<pts[best].v?i:best,0);
+  const hourShort=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',hour12:false});
+  const hourFull=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
+  let inner='';
+  if(metricKey==='precip'){
+    const step=(W-left-right)/pts.length;
+    pts.forEach((p,i)=>{
+      const h=((p.v-vMin)/(vMax-vMin))*(bottom-top);
+      if(h<1.5)return; // 0% hours stay silent instead of stubbing the baseline
+      const barW=Math.min(12,Math.max(3,step*0.6));
+      inner+=`<rect class="bar" x="${(xAt(i)-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%`)}</title></rect>`;
+    });
+  }else{
+    const line=weatherSmoothPath(pts.map((p,i)=>[xAt(i),yAt(p.v)]));
+    inner+=`<path class="area" fill="url(#weather-grad-${escapeHtml(metricKey)})" d="${line}L${(W-right).toFixed(1)} ${bottom}L${left} ${bottom}Z"/>`;
+    inner+=`<path class="line" d="${line}"/>`;
+  }
+  const mark=(idx,cls,dy)=>{
+    const p=pts[idx],px=xAt(idx),py=yAt(p.v);
+    const anchor=px<32 ? 'start' : px>W-32 ? 'end' : 'middle';
+    return `<circle class="dot" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.2"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${weatherMetricMarkText(metricKey,p.v)}`)}</title></circle>`
+      +`<text class="mark ${cls}" x="${px.toFixed(1)}" y="${(py+dy).toFixed(1)}" text-anchor="${anchor}">${escapeHtml(weatherMetricMarkText(metricKey,p.v))}</text>`;
+  };
+  inner+=mark(maxIdx,'max',-7);
+  if(minIdx!==maxIdx && (metricKey==='temp' || metricKey==='wind'))inner+=mark(minIdx,'min',13);
+  pts.forEach((p,i)=>{
+    if(Number(hourShort.format(p.ts))%3===0)inner+=`<text class="hour" x="${xAt(i).toFixed(1)}" y="${H-8}" text-anchor="middle">${escapeHtml(hourShort.format(p.ts))}</text>`;
+  });
+  if(summary && weatherRequestedDayKey(Date.now())===summary.key){
+    const t=(Date.now()-pts[0].ts)/Math.max(1,pts[pts.length-1].ts-pts[0].ts);
+    if(t>=0 && t<=1){
+      const nx=left+t*(W-left-right);
+      inner+=`<line class="nowline" x1="${nx.toFixed(1)}" y1="${top-6}" x2="${nx.toFixed(1)}" y2="${bottom}"/><text class="now" x="${nx.toFixed(1)}" y="${top-10}" text-anchor="${nx>W-40 ? 'end' : 'middle'}">now</text>`;
+    }
+  }
+  return `<svg class="weather-metric-chart metric-${escapeHtml(metricKey)}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(`${detail.label} by hour`)}"><defs><linearGradient id="weather-grad-${escapeHtml(metricKey)}" x1="0" y1="0" x2="0" y2="1"><stop class="a" offset="0"/><stop class="b" offset="1"/></linearGradient></defs>${inner}</svg>`;
+}
+
+// A few glanceable facts instead of a full table: the extremes (with their
+// hour) and per-metric totals, formatted like the summary card above.
+function weatherMetricStatsHtml(metricKey,rows,summary){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  const hourFull=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
+  const pick=field=>rows.map(row=>({ts:Number(row.ts),v:Number(row[field])}))
+    .filter(p=>Number.isFinite(p.v)).sort((a,b)=>a.ts-b.ts);
+  const primary=pick(detail.primary);
+  if(!primary.length)return '';
+  const chip=(label,value)=>`<div class="weather-metric-stat"><small>${escapeHtml(label)}</small><b>${escapeHtml(value)}</b></div>`;
+  const at=p=>` · ${hourFull.format(p.ts)}`;
+  const peakOf=list=>list.reduce((a,p)=>p.v>a.v?p:a);
+  const lowOf=list=>list.reduce((a,p)=>p.v<a.v?p:a);
+  let chips='';
+  if(metricKey==='temp'){
+    const low=lowOf(primary),high=peakOf(primary);
+    chips=chip('coolest',`${weatherTempDisplay(low.v)}°${at(low)}`)+chip('warmest',`${weatherTempDisplay(high.v)}°${at(high)}`);
+  }else if(metricKey==='precip'){
+    const chance=peakOf(primary);
+    const total=pick(detail.secondary).reduce((sum,p)=>sum+p.v,0);
+    chips=chip('chance up to',`${Math.round(chance.v)}%`)+chip('total',`${Math.round(total*10)/10} mm`);
+  }else if(metricKey==='wind'){
+    const peak=peakOf(primary);
+    const gusts=pick(detail.secondary);
+    chips=chip('wind up to',`${Math.round(peak.v)} km/h${at(peak)}`);
+    if(gusts.length)chips+=chip('gusts up to',`${Math.round(peakOf(gusts).v)} km/h`);
+  }else{
+    const peak=peakOf(primary);
+    chips=chip('peak',`${Math.round(peak.v)}${at(peak)}`);
+  }
+  return `<div class="weather-metric-stats">${chips}</div>`;
 }
 
 function weatherContextSheetModel(dayBase,dayContext=null,focusHid=''){
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
   const summary=weatherDaySummary(settings?._weatherContext,dayBase,settings);
   if(!summary)return null;
-  return {summary,items:weatherGuidedItemsForDay(dayBase,dayContext,settings),focusHid:String(focusHid || '')};
+  return {summary,
+    dayRows:weatherDayRows(settings?._weatherContext,summary.dayBase),
+    items:weatherGuidedItemsForDay(dayBase,dayContext,settings),focusHid:String(focusHid || '')};
 }
 
 function weatherContextItemHtml(item,focusHid){
@@ -1062,7 +1186,7 @@ function weatherContextItemHtml(item,focusHid){
 
 function renderWeatherContextSheet(model){
   if(!model)return false;
-  const {summary,items,focusHid}=model;
+  const {summary,items,focusHid,dayRows=[]}=model;
   const date=new Date(summary.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   const title=document.getElementById('weather-context-title');
   const sub=document.getElementById('weather-context-sub');
@@ -1083,11 +1207,15 @@ function renderWeatherContextSheet(model){
       summary.wind==null?'':`${Math.round(summary.wind)} km/h`,
       summary.gusts==null?'':`gusts ${Math.round(summary.gusts)}`
     ].filter(Boolean).join(' · ');
+    // Only the weekly forecast's hourly grid backs the drill-down rows; the
+    // finer "near" samples only cover scattered scheduled intervals.
+    const hourlyRows=dayRows.filter(row=>row.source!=='near');
+    const hasHourly=field=>hourlyRows.some(row=>Number.isFinite(Number(row[field])));
     const metrics=[
-      weatherMetricCard('ti-temperature', 'feels like', range ? `${range}${weatherUsesFahrenheit() ? 'F' : 'C'}` : ''),
-      weatherMetricCard('ti-umbrella', 'precipitation', precipitation),
-      weatherMetricCard('ti-wind', 'wind', wind),
-      weatherMetricCard('ti-sun-high', 'UV', summary.uv==null?'':String(Math.round(summary.uv)))
+      weatherMetricCard('ti-temperature', 'feels like', range ? `${range}${weatherUsesFahrenheit() ? 'F' : 'C'}` : '', hasHourly(WEATHER_METRIC_DETAILS.temp.primary)?'temp':null),
+      weatherMetricCard('ti-umbrella', 'precipitation', precipitation, hasHourly(WEATHER_METRIC_DETAILS.precip.primary)?'precip':null),
+      weatherMetricCard('ti-wind', 'wind', wind, hasHourly(WEATHER_METRIC_DETAILS.wind.primary)?'wind':null),
+      weatherMetricCard('ti-sun-high', 'UV', summary.uv==null?'':String(Math.round(summary.uv)), hasHourly(WEATHER_METRIC_DETAILS.uv.primary)?'uv':null)
     ].filter(Boolean).join('');
     const itemHtml=items.map(item=>weatherContextItemHtml(item,focusHid)).join('');
     content.innerHTML=`<div class="weather-context-metrics">${metrics}</div>
@@ -1096,12 +1224,57 @@ function renderWeatherContextSheet(model){
   return true;
 }
 
+// The day the forecast context sheet is showing; the metric drill-down reads
+// it so it always describes the same day as the summary cards.
+let _weatherContextDay=null;
+
 function openWeatherContextSheet(dayBase,dayContext=null,focusHid=''){
   const model=weatherContextSheetModel(dayBase,dayContext,focusHid);
   if(!renderWeatherContextSheet(model))return false;
+  _weatherContextDay=model.summary.dayBase;
   if(typeof openSheet==='function')openSheet('weather-context-sheet');
   if(typeof armSheetBackdropGuard==='function')armSheetBackdropGuard('weather-context-sheet');
   if(focusHid)requestAnimationFrame(()=>document.querySelector(`#weather-context-content [data-weather-context-hid="${CSS.escape(focusHid)}"]`)?.scrollIntoView({block:'nearest'}));
+  return true;
+}
+
+function renderWeatherMetricSheet(metricKey){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  if(!detail || !_weatherContextDay)return false;
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const summary=weatherDaySummary(settings?._weatherContext,_weatherContextDay,settings);
+  if(!summary)return false;
+  const rows=(weatherDayRows(settings._weatherContext,_weatherContextDay) || [])
+    .filter(row=>row.source!=='near' && Number.isFinite(Number(row[detail.primary])));
+  const title=document.getElementById('weather-metric-title');
+  const sub=document.getElementById('weather-metric-sub');
+  const eyebrow=document.getElementById('weather-metric-eyebrow');
+  const icon=document.getElementById('weather-metric-icon');
+  const content=document.getElementById('weather-metric-content');
+  if(title)title.textContent=detail.label;
+  if(eyebrow)eyebrow.textContent='hourly forecast';
+  if(icon)icon.innerHTML=`<i class="ti ${detail.icon}" aria-hidden="true"></i>`;
+  const date=new Date(summary.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  if(sub)sub.textContent=`${date} · ${summary.cityName} · ${weatherFreshnessText(summary.fetchedAt)}`;
+  if(content){
+    if(!rows.length){
+      content.innerHTML='<p class="weather-context-empty">No hourly forecast is available for this day.</p>';
+    }else{
+      const stats=weatherMetricStatsHtml(metricKey,rows,summary);
+      const chart=weatherMetricChartHtml(metricKey,rows,summary);
+      const dualTemp=metricKey==='temp'
+        && rows.filter(row=>Number.isFinite(Number(row[WEATHER_METRIC_DETAILS.temp.secondary]))).length>1;
+      content.innerHTML=`${stats}${chart || '<p class="weather-context-empty">Not enough hourly data to chart this day.</p>'}`
+        +(dualTemp && chart ? '<p class="weather-metric-legend"><span class="key solid"></span>feels like<span class="key dash"></span>actual</p>' : '');
+    }
+  }
+  return true;
+}
+
+function openWeatherMetricSheet(metricKey){
+  if(!renderWeatherMetricSheet(String(metricKey || '')))return false;
+  if(typeof openSheet==='function')openSheet('weather-metric-sheet');
+  if(typeof armSheetBackdropGuard==='function')armSheetBackdropGuard('weather-metric-sheet');
   return true;
 }
 
@@ -1115,6 +1288,23 @@ if(typeof document!=='undefined')document.addEventListener('click',event=>{
   }
   if(event.target.closest('#weather-context-close,#weather-context-done')){
     if(typeof closeSheet==='function')closeSheet('weather-context-sheet');
+    return;
+  }
+  const metricCard=event.target.closest('[data-weather-metric]');
+  if(metricCard){
+    event.preventDefault();
+    event.stopPropagation();
+    openWeatherMetricSheet(metricCard.dataset.weatherMetric);
+    return;
+  }
+  if(event.target.closest('#weather-metric-close,#weather-metric-done')){
+    if(typeof closeSheet==='function')closeSheet('weather-metric-sheet');
+    return;
+  }
+  const metricWrap=event.target.closest('#weather-metric-sheet');
+  if(metricWrap && event.target===metricWrap){
+    if(typeof sheetBackdropArmed==='function' && sheetBackdropArmed('weather-metric-sheet'))return;
+    if(typeof closeSheet==='function')closeSheet('weather-metric-sheet');
     return;
   }
   if(event.target.closest('#weather-context-settings')){

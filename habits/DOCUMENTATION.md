@@ -641,7 +641,10 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   item icon, or that forecast opens one shared detail sheet with conditions,
   full temperature range, precipitation, wind, forecast age, and chronological
   guided-item explanations. Displayed temperatures are feels-like values. A
-  far-away item names its saved place and uses that place's forecast.
+  far-away item names its saved place and uses that place's forecast. Tapping a
+  summary card (feels like, precipitation, wind, UV) opens an hourly trend
+  chart of that metric for the same day on top of the sheet, with stat chips
+  for the extremes and totals.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
@@ -926,7 +929,11 @@ Minimal mode (always):
 ├── The Rest
 ```
 
-Each day section header can have two dynamic **pills**:
+Each day section header can have dynamic **pills** for open time, weather, and
+missed items. On a tight header, the weather pill progressively hides its
+temperature and precipitation text before the day label or action pills are
+allowed to clip. Only exceptionally narrow layouts move the pills to a tidy
+second row.
 
 ### 6.2 Missed Pills (🔴 "N missed")
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.

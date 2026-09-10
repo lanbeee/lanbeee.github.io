@@ -49,7 +49,7 @@ function assert(value,message){
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
     const samples=[9,10,11].map(hour=>({ts:base+hour*3600000,temperature_2m:12+hour-9,
       apparent_temperature:10+hour-9,precipitation_probability:20,precipitation:.2,
-      wind_speed_10m:9,wind_gusts_10m:14,weather_code:3,source:'weekly'}));
+      wind_speed_10m:9,wind_gusts_10m:14,uv_index:2,weather_code:3,source:'weekly'}));
     const days=[{ts:base,key:dateKey(base),weather_code:3,temperature_2m_min:7,temperature_2m_max:14,
       apparent_temperature_min:5,apparent_temperature_max:13,precipitation_probability_max:20,
       precipitation_sum:.5,wind_speed_10m_max:9,wind_gusts_10m_max:14,uv_index_max:2}];
@@ -142,6 +142,77 @@ function assert(value,message){
   assert(seg.savedF==='f' && seg.fOn==='f','tapping °F persists and reflects immediately');
   assert(/°F/.test(seg.fHint) && /°C/.test(seg.fHint),'the hint names the active unit and the stored °C data');
   assert(seg.savedC==='c','tapping °C persists too');
+
+  // Metric drill-down: summary cards with hourly data are buttons that open
+  // the stacked hourly sheet for the day the context sheet is showing.
+  const drill=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
+    sortSettings=loadSortSettings();
+    openWeatherContextSheet(base,null,'');
+    const cards=[...document.querySelectorAll('#weather-context-content [data-weather-metric]')]
+      .map(btn=>btn.dataset.weatherMetric);
+    const tempBtn=document.querySelector('[data-weather-metric="temp"]');
+    const tempIsButton=Boolean(tempBtn && tempBtn.tagName==='BUTTON');
+    tempBtn.click();
+    const open=document.getElementById('weather-metric-sheet').classList.contains('open');
+    const title=document.getElementById('weather-metric-title').textContent;
+    const eyebrow=document.getElementById('weather-metric-eyebrow').textContent;
+    const stats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    const chart=document.querySelector('#weather-metric-content svg.weather-metric-chart');
+    const chartHasLineAndArea=Boolean(chart?.querySelector('path.line') && chart?.querySelector('path.area'));
+    const firstDotTitle=chart?.querySelector('circle')?.getAttribute('title') || '';
+    const legend=document.querySelector('#weather-metric-content .weather-metric-legend')?.textContent || '';
+    document.getElementById('weather-metric-done').click();
+    const metricClosed=!document.getElementById('weather-metric-sheet').classList.contains('open');
+    const contextStillOpen=document.getElementById('weather-context-sheet').classList.contains('open');
+    return {cards,tempIsButton,open,title,eyebrow,stats,chartHasLineAndArea,firstDotTitle,legend,metricClosed,contextStillOpen};
+  },seeded);
+  assert(drill.cards.includes('temp') && drill.cards.includes('precip')
+    && drill.cards.includes('wind') && drill.cards.includes('uv'),'all four seeded metric cards are tappable');
+  assert(drill.tempIsButton,'the feels-like card renders as a button');
+  assert(drill.open && drill.title==='feels like' && drill.eyebrow==='hourly forecast',
+    'tapping feels-like opens the hourly sheet titled feels like');
+  assert(drill.chartHasLineAndArea,'the feels-like sheet opens with an SVG trend chart');
+  assert(/coolest\s*10°/.test(drill.stats.join(' ')) && /warmest\s*12°/.test(drill.stats.join(' ')),
+    'stat chips name the °C coolest and warmest feels-like extremes');
+  assert(/feels like/.test(drill.legend) && /actual/.test(drill.legend),'the temp chart legend explains both lines');
+  assert(drill.metricClosed && drill.contextStillOpen,'done closes the hourly sheet but keeps the context sheet open');
+
+  // °F converts the chart labels and stats too; each metric gets its own shape.
+  const drillF=await page.evaluate(()=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'f'});
+    sortSettings=loadSortSettings();
+    document.querySelector('[data-weather-metric="temp"]').click();
+    const tempStats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    const tempMarks=[...document.querySelectorAll('#weather-metric-content svg .mark')].map(m=>m.textContent);
+    document.getElementById('weather-metric-close').click();
+    document.querySelector('[data-weather-metric="wind"]').click();
+    const windTitle=document.getElementById('weather-metric-title').textContent;
+    const windStats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    const windBars=document.querySelectorAll('#weather-metric-content svg rect.bar').length;
+    document.getElementById('weather-metric-close').click();
+    document.querySelector('[data-weather-metric="precip"]').click();
+    const precipStats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    const precipBars=document.querySelectorAll('#weather-metric-content svg rect.bar').length;
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    const allClosed=!document.getElementById('weather-context-sheet').classList.contains('open');
+    return {tempStats,tempMarks,windTitle,windStats,windBars,precipStats,precipBars,allClosed};
+  });
+  assert(/coolest\s*50°/.test(drillF.tempStats.join(' ')) && /warmest\s*54°/.test(drillF.tempStats.join(' ')),
+    '°F converts the stat chips (10–12°C → 50–54°F)');
+  assert(drillF.tempMarks.includes('50°') && drillF.tempMarks.includes('54°'),'°F converts the on-chart callouts');
+  assert(drillF.windTitle==='wind' && /wind\s*up\s*to\s*9\s*km\/h/.test(drillF.windStats.join(' '))
+    && /gusts\s*up\s*to\s*14\s*km\/h/.test(drillF.windStats.join(' ')),'wind stats pair the peak speed with the gust figure');
+  assert(drillF.windBars===0,'wind renders as a line, not bars');
+  assert(/chance\s*up\s*to\s*20%/.test(drillF.precipStats.join(' ')) && /total\s*0\.6\s*mm/.test(drillF.precipStats.join(' ')),
+    'precipitation stats pair the chance with the total');
+  assert(drillF.precipBars===3,'precipitation renders as one bar per hour');
+  assert(drillF.allClosed,'done on the context sheet closes everything');
   assert(errors.length===0,'no page errors during unit switching');
 
   await browser.close();
