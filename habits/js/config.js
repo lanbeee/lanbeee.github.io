@@ -263,6 +263,14 @@ const DEFAULT_SORT_SETTINGS = {
   // country (Fahrenheit countries → °F, else °C); 'c'/'f' override. Forecast
   // data and rule bounds are always stored in °C — this is display-only.
   weatherTempUnit:'auto',
+  // Precipitation (and snowfall) display unit: 'auto' infers from the home
+  // city's country (US-aligned measure countries → in, else mm); 'mm'/'in'
+  // override. Forecast data and rule bounds are always stored in mm/cm.
+  weatherPrecipUnit:'auto',
+  // Wind display unit (speeds and gusts): 'auto' infers from the home city's
+  // country ('mph' regions, else km/h); 'kmh'/'mph' override. Forecast data
+  // and rule bounds are always stored in km/h.
+  weatherWindUnit:'auto',
   // Two-letter country code of the home city, captured from the geocoder when
   // the city is set (and backfilled once for existing cities) to drive 'auto'.
   homeCityCountry:'',

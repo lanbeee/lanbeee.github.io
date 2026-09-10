@@ -199,8 +199,20 @@ function renderWeatherInspector(settings,now = Date.now()){
     <p class="weather-forecast-legend">Shaded rows are 15-minute near-term samples — the planner reads them instead of the hourly value inside their span.</p>`;
 }
 
-// Seg + hint for the temperature display unit. 'auto' explains what it
-// currently resolves to so the inferred default is never a mystery.
+// Segs + hints for the temperature, precipitation, and wind display units.
+// 'auto' explains what it currently resolves to so the inferred default is
+// never a mystery. Every hint also names the metric unit the forecast data
+// and rule bounds stay stored in.
+function weatherUnitHintText(setting,effectiveLabel,defaultLabel,storedLabel){
+  const settings=sortSettings || loadSortSettings();
+  if(setting!=='auto'){
+    return `showing ${effectiveLabel} everywhere · forecast data and rule bounds stay in ${storedLabel}.`;
+  }
+  const city=String(settings.homeCityName || '').trim();
+  const source=settings.homeCityCountry && city ? `inferred from ${city}` : `no city country yet · ${defaultLabel} default`;
+  return `auto — ${effectiveLabel} (${source}). Forecast data and rule bounds stay in ${storedLabel}.`;
+}
+
 function syncWeatherTempUnitControls(){
   const settings=sortSettings || loadSortSettings();
   const mode=normalizeWeatherTempUnit(settings.weatherTempUnit);
@@ -209,18 +221,41 @@ function syncWeatherTempUnitControls(){
   });
   const hint=$('weather-temp-unit-hint');
   if(!hint)return;
-  if(mode==='auto'){
-    const effective=weatherEffectiveTempUnit(settings)==='f' ? '°F' : '°C';
-    const city=String(settings.homeCityName || '').trim();
-    const source=settings.homeCityCountry && city ? `inferred from ${city}` : 'no city country yet · °C default';
-    hint.textContent=`auto — ${effective} (${source}). Forecast data and rule bounds stay in °C.`;
-  }else{
-    hint.textContent=`showing ${mode==='f'?'°F':'°C'} everywhere · forecast data and rule bounds stay in °C.`;
-  }
+  hint.textContent=weatherUnitHintText(mode,weatherEffectiveTempUnit(settings)==='f' ? '°F' : '°C','°C','°C');
+}
+
+function syncWeatherPrecipUnitControls(){
+  const settings=sortSettings || loadSortSettings();
+  const mode=normalizeWeatherPrecipUnit(settings.weatherPrecipUnit);
+  document.querySelectorAll('#weather-precip-unit-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue===mode);
+  });
+  const hint=$('weather-precip-unit-hint');
+  if(!hint)return;
+  const imperial=weatherEffectivePrecipUnit(settings)==='in';
+  hint.textContent=`snowfall follows this setting · ${weatherUnitHintText(mode,imperial?'in':'mm',imperial?'in':'mm','mm')}`;
+}
+
+function syncWeatherWindUnitControls(){
+  const settings=sortSettings || loadSortSettings();
+  const mode=normalizeWeatherWindUnit(settings.weatherWindUnit);
+  document.querySelectorAll('#weather-wind-unit-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.segValue===mode);
+  });
+  const hint=$('weather-wind-unit-hint');
+  if(!hint)return;
+  const mph=weatherEffectiveWindUnit(settings)==='mph';
+  hint.textContent=weatherUnitHintText(mode,mph?'mph':'km/h',mph?'mph':'km/h','km/h');
+}
+
+function syncWeatherUnitControls(){
+  syncWeatherTempUnitControls();
+  syncWeatherPrecipUnitControls();
+  syncWeatherWindUnitControls();
 }
 
 function renderWeatherControls(){
-  syncWeatherTempUnitControls();
+  syncWeatherUnitControls();
   const list=$('weather-profile-list');
   if(!list)return;
   const settings=sortSettings || loadSortSettings();

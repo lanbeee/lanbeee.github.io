@@ -658,22 +658,28 @@ $('theme-mode-seg')?.addEventListener('click',e=>{
   updateSortSetting({themeMode:opt.dataset.segValue});
   applyAppearanceSettings();
 });
-$('weather-temp-unit-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-seg-value]');
-  if(!opt)return;
-  const unit = normalizeWeatherTempUnit(opt.dataset.segValue);
-  if(unit === normalizeWeatherTempUnit(sortSettings && sortSettings.weatherTempUnit))return;
-  // Display-only: reflect the tap and refresh weather surfaces without
-  // entering the planner (same presentation-only pattern as homeExtraMode).
-  document.querySelectorAll('#weather-temp-unit-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.segValue === unit);
+// Weather display-unit segs (temperature / precipitation / wind). Tapping a
+// unit is display-only: reflect the tap and refresh weather surfaces without
+// entering the planner (same presentation-only pattern as homeExtraMode).
+function bindWeatherUnitSeg(segId,normalize,settingKey){
+  $(segId)?.addEventListener('click',e=>{
+    const opt = e.target.closest('[data-seg-value]');
+    if(!opt)return;
+    const unit = normalize(opt.dataset.segValue);
+    if(unit === normalize(sortSettings && sortSettings[settingKey]))return;
+    document.querySelectorAll(`#${segId} .seg-opt`).forEach(btn=>{
+      btn.classList.toggle('on',btn.dataset.segValue === unit);
+    });
+    updateSortSetting({[settingKey]:unit},{sync:false,renderNow:false});
+    if(typeof renderWeatherControls === 'function')renderWeatherControls();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    else render();
+    if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
   });
-  updateSortSetting({weatherTempUnit:unit},{sync:false,renderNow:false});
-  if(typeof renderWeatherControls === 'function')renderWeatherControls();
-  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
-  else render();
-  if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
-});
+}
+bindWeatherUnitSeg('weather-temp-unit-seg',normalizeWeatherTempUnit,'weatherTempUnit');
+bindWeatherUnitSeg('weather-precip-unit-seg',normalizeWeatherPrecipUnit,'weatherPrecipUnit');
+bindWeatherUnitSeg('weather-wind-unit-seg',normalizeWeatherWindUnit,'weatherWindUnit');
 $('home-city-set')?.addEventListener('click',setHomeCity);
 $('home-city-input')?.addEventListener('keydown',e=>{if(e.key === 'Enter')setHomeCity();});
 $('home-city-clear')?.addEventListener('click',clearHomeCity);

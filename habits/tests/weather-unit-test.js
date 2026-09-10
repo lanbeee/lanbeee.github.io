@@ -1,7 +1,9 @@
-// Temperature display unit: forecast payloads stay °C; only the rendered
-// numbers convert. 'auto' infers from the home city's country, 'c'/'f' win.
-// No network: a pre-normalized forecast bucket is seeded straight into the
-// weather cache, so every loadSortSettings() rebuilds the same context.
+// Display units for temperature, precipitation (snowfall follows it), and
+// wind: forecast payloads stay in the metric API units (°C, mm, cm, km/h);
+// only the rendered numbers convert. 'auto' infers from the home city's
+// country, explicit values win. No network: a pre-normalized forecast bucket
+// is seeded straight into the weather cache, so every loadSortSettings()
+// rebuilds the same context.
 const { chromium, BASE } = require('./helpers/planner-test-helpers');
 
 let pass=0,fail=0;
@@ -32,7 +34,20 @@ function assert(value,message){
       explicitFEverywhere:weatherEffectiveTempUnit({...settings('GB'),weatherTempUnit:'f'}),
       junkUnit:normalizeWeatherTempUnit('nonsense'),
       bs:autoCheck('BS'),
-      mm:autoCheck('MM')
+      mm:autoCheck('MM'),
+      precipUs:weatherEffectivePrecipUnit(settings('US')),
+      precipGb:weatherEffectivePrecipUnit(settings('GB')),
+      precipEmpty:weatherEffectivePrecipUnit(settings('')),
+      windUs:weatherEffectiveWindUnit(settings('US')),
+      windGb:weatherEffectiveWindUnit(settings('GB')),
+      windEmpty:weatherEffectiveWindUnit(settings('')),
+      precipJunk:normalizeWeatherPrecipUnit('nonsense'),
+      windJunk:normalizeWeatherWindUnit('nonsense'),
+      precipExplicitIn:weatherEffectivePrecipUnit({...settings('GB'),weatherPrecipUnit:'in'}),
+      windExplicitKmh:weatherEffectiveWindUnit({...settings('US'),weatherWindUnit:'kmh'}),
+      lrTemp:weatherTempUnitForCountry('LR'),
+      lrMeasure:weatherMeasureUnitForCountry('LR'),
+      mmMeasure:weatherMeasureUnitForCountry('MM')
     };
   });
   assert(helpers.us==='f' && helpers.usLower==='f' && helpers.bs==='f' && helpers.mm==='f','Fahrenheit countries infer °F in auto mode');
@@ -40,6 +55,13 @@ function assert(value,message){
   assert(helpers.autoUs==='f','auto resolves to °F once a US home city country is stored');
   assert(helpers.explicitCEverywhere==='c' && helpers.explicitFEverywhere==='f','an explicit unit overrides the inferred country default');
   assert(helpers.junkUnit==='auto','junk unit values normalize back to auto');
+  assert(helpers.precipUs==='in' && helpers.windUs==='mph','US home cities infer inches and mph in auto mode');
+  assert(helpers.precipGb==='mm' && helpers.windGb==='kmh' && helpers.precipEmpty==='mm' && helpers.windEmpty==='kmh',
+    'unknown or non-measure countries keep the mm and km/h defaults');
+  assert(helpers.precipJunk==='auto' && helpers.windJunk==='auto','junk precip/wind values normalize back to auto');
+  assert(helpers.precipExplicitIn==='in' && helpers.windExplicitKmh==='kmh','explicit precip/wind units override the inferred country default');
+  assert(helpers.lrTemp==='f' && helpers.lrMeasure==='metric' && helpers.mmMeasure==='metric',
+    'Liberia and Myanmar temper in °F but stay on metric precipitation and wind');
 
   // Seed the persisted forecast at the home coords: daily feels-like 5–13°C,
   // hourly apparent 10–12°C across 9:00–12:00.
@@ -118,30 +140,54 @@ function assert(value,message){
   },seeded);
   assert(/41–55°/.test(autoUs.range) && autoUs.word==='Fahrenheit','auto + US home city renders Fahrenheit with no explicit override');
 
-  // Settings seg: state syncs, taps persist, and auto explains its inference.
+  // Settings segs: state syncs, taps persist, and auto explains its inference.
   const seg=await page.evaluate(()=>{
-    saveSortSettings({...loadSortSettings(),weatherTempUnit:'auto',homeCityCountry:'',homeCityName:''});
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'auto',weatherPrecipUnit:'auto',weatherWindUnit:'auto',homeCityCountry:'',homeCityName:''});
     openSheet('settings-sheet');
     syncSettingsControls();
     const body=$('settings-weather-body');
     if(body && body.hidden)$('settings-weather-head').click();
-    const onValue=()=>[...document.querySelectorAll('#weather-temp-unit-seg .seg-opt')]
+    const onValue=segId=>[...document.querySelectorAll(`#${segId} .seg-opt`)]
       .find(btn=>btn.classList.contains('on'))?.dataset.segValue || '';
-    const autoOn=onValue();
+    const autoOn=onValue('weather-temp-unit-seg');
     const autoHint=$('weather-temp-unit-hint').textContent;
     document.querySelector('#weather-temp-unit-seg [data-seg-value="f"]').click();
     const savedF=loadSortSettings().weatherTempUnit;
-    const fOn=onValue();
+    const fOn=onValue('weather-temp-unit-seg');
     const fHint=$('weather-temp-unit-hint').textContent;
     document.querySelector('#weather-temp-unit-seg [data-seg-value="c"]').click();
     const savedC=loadSortSettings().weatherTempUnit;
-    return {autoOn,autoHint,savedF,fOn,fHint,savedC};
+    const precipAutoOn=onValue('weather-precip-unit-seg');
+    const precipAutoHint=$('weather-precip-unit-hint').textContent;
+    const windAutoOn=onValue('weather-wind-unit-seg');
+    const windAutoHint=$('weather-wind-unit-hint').textContent;
+    document.querySelector('#weather-precip-unit-seg [data-seg-value="in"]').click();
+    const precipSavedIn=loadSortSettings().weatherPrecipUnit;
+    const precipInHint=$('weather-precip-unit-hint').textContent;
+    document.querySelector('#weather-wind-unit-seg [data-seg-value="mph"]').click();
+    const windSavedMph=loadSortSettings().weatherWindUnit;
+    const windMphHint=$('weather-wind-unit-hint').textContent;
+    document.querySelector('#weather-precip-unit-seg [data-seg-value="auto"]').click();
+    document.querySelector('#weather-wind-unit-seg [data-seg-value="auto"]').click();
+    const precipReset=loadSortSettings().weatherPrecipUnit;
+    const windReset=loadSortSettings().weatherWindUnit;
+    return {autoOn,autoHint,savedF,fOn,fHint,savedC,precipAutoOn,precipAutoHint,windAutoOn,windAutoHint,
+      precipSavedIn,precipInHint,windSavedMph,windMphHint,precipReset,windReset};
   });
   assert(seg.autoOn==='auto','the unit segment defaults to auto');
   assert(/°C/.test(seg.autoHint) && !/°F/.test(seg.autoHint),'auto hint admits it falls back to °C while no country is known');
   assert(seg.savedF==='f' && seg.fOn==='f','tapping °F persists and reflects immediately');
   assert(/°F/.test(seg.fHint) && /°C/.test(seg.fHint),'the hint names the active unit and the stored °C data');
   assert(seg.savedC==='c','tapping °C persists too');
+  assert(seg.precipAutoOn==='auto' && seg.windAutoOn==='auto','precipitation and wind segments default to auto');
+  assert(/snowfall follows this setting/.test(seg.precipAutoHint) && /mm/.test(seg.precipAutoHint),
+    'the precipitation auto hint names the mm default and the snowfall coupling');
+  assert(/km\/h/.test(seg.windAutoHint),'the wind auto hint names the km/h default');
+  assert(seg.precipSavedIn==='in' && /showing in everywhere/.test(seg.precipInHint) && /snowfall follows this setting/.test(seg.precipInHint),
+    'tapping in persists and the hint keeps the snowfall note');
+  assert(seg.windSavedMph==='mph' && /showing mph everywhere/.test(seg.windMphHint) && /km\/h/.test(seg.windMphHint),
+    'tapping mph persists and the hint names the stored km/h data');
+  assert(seg.precipReset==='auto' && seg.windReset==='auto','tapping auto restores inference for both new segments');
 
   // Metric drill-down: summary cards with hourly data are buttons that open
   // the stacked hourly sheet for the day the context sheet is showing.
@@ -392,6 +438,72 @@ function assert(value,message){
   assert(drillF.precipBars===3,'precipitation renders as one bar per hour');
   assert(drillF.allClosed,'done on the context sheet closes everything');
 
+  // Precipitation + wind imperial mode: every rendered speed and amount
+  // converts at the last formatting step; the stored forecast stays metric.
+  const imperial=await page.evaluate(({base,key})=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c',weatherPrecipUnit:'in',weatherWindUnit:'mph'});
+    sortSettings=loadSortSettings();
+    const settings=sortSettings;
+    const cue=weatherDayCueHtml(base,{dayBase:base,dayKey:key,isToday:true,timeline:[],homeDisplayedTimeline:[]},settings,{data:[]});
+    const sheet=renderWeatherContextSheet(weatherContextSheetModel(base,null,''))!==false
+      ? document.querySelector('#weather-context-sheet').textContent : '';
+    const block=overviewDayWeatherBlockHtml(key,{dayBase:base,dayKey:key,isToday:true,timeline:[],homeDisplayedTimeline:[]},[]);
+    const pill=weatherPeriodPillHtml(base+9*3600000,base+12*3600000,settings,{});
+    const storedDaily=loadSortSettings()._weatherContext.days[0];
+    return {
+      conversions:{wind:weatherWindConverted(9),mm:weatherPrecipConverted(25.4),cm:weatherSnowConverted(2.54)},
+      snowUnit:weatherSnowUnitLabel(),
+      cue,sheet,block,pill,
+      storedWind:storedDaily.wind_speed_10m_max,storedPrecip:storedDaily.precipitation_sum
+    };
+  },seeded);
+  assert(Math.abs(imperial.conversions.wind-5.592)<0.001 && imperial.conversions.mm===1 && imperial.conversions.cm===1,
+    '9 km/h converts to ~5.59 mph; 25.4 mm and 2.54 cm convert to exactly 1 in');
+  assert(imperial.snowUnit==='in','snowfall follows the precipitation setting (inches)');
+  assert(/6 mph wind/.test(imperial.cue) && !/km\/h/.test(imperial.cue),'mph converts the day-cue wind detail (9 km/h → 6 mph)');
+  assert(/6 mph/.test(imperial.sheet) && /gusts 9/.test(imperial.sheet) && /0 in/.test(imperial.sheet) && !/km\/h/.test(imperial.sheet),
+    'context sheet cards convert wind, gusts, and the mm total (0.6 mm → 0 in)');
+  assert(/6 mph wind/.test(imperial.block),'overview day block converts the wind detail');
+  assert(/6 mph wind/.test(imperial.pill),'period pills convert the wind accessibility detail');
+  assert(imperial.storedWind===9 && imperial.storedPrecip===0.5,'the stored forecast stays km/h and mm — conversion is display-only');
+
+  // Auto + a stored US country resolves to inches and mph with no override;
+  // Liberia stays on metric measures even though it tempers in Fahrenheit.
+  const imperialAuto=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),weatherPrecipUnit:'auto',weatherWindUnit:'auto',homeCityName:'New York',homeCityCountry:'US'});
+    sortSettings=loadSortSettings();
+    const cue=weatherDayCueHtml(base,{dayBase:base,dayKey:dateKey(base),isToday:true,timeline:[],homeDisplayedTimeline:[]},sortSettings,{data:[]});
+    return {cue,wind:weatherWindUnitLabel(),precip:weatherPrecipUnitLabel(),snow:weatherSnowUnitLabel()};
+  },seeded);
+  assert(imperialAuto.wind==='mph' && imperialAuto.precip==='in' && imperialAuto.snow==='in',
+    'auto + US home city resolves mph, inches, and snowfall in inches');
+  assert(/mph wind/.test(imperialAuto.cue),'auto + US renders mph on day cues with no explicit override');
+
+  // The hourly drill-down converts its stats, marks, and readout too.
+  const imperialDrill=await page.evaluate(({base})=>{
+    openWeatherContextSheet(base,null,'');
+    document.querySelector('[data-weather-metric="wind"]').click();
+    const windStats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    const windMarks=[...document.querySelectorAll('#weather-metric-content svg .mark')].map(m=>m.textContent);
+    const windReadout=document.getElementById('weather-metric-readout').textContent.replace(/\s+/g,' ').trim();
+    document.getElementById('weather-metric-close').click();
+    document.querySelector('[data-weather-metric="precip"]').click();
+    const precipStats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    // Reset to the metric defaults (no stored country) for the later blocks.
+    saveSortSettings({...loadSortSettings(),weatherPrecipUnit:'auto',weatherWindUnit:'auto',homeCityName:'',homeCityCountry:''});
+    sortSettings=loadSortSettings();
+    return {windStats,windMarks,windReadout,precipStats};
+  },seeded);
+  assert(/wind\s*up\s*to\s*6\s*mph/.test(imperialDrill.windStats.join(' ')) && /gusts\s*up\s*to\s*9\s*mph/.test(imperialDrill.windStats.join(' ')),
+    'wind stat chips pair the mph peak with the mph gust figure (9/14 km/h → 6/9 mph)');
+  assert(imperialDrill.windMarks.includes('6'),'mph converts the on-chart wind callout');
+  assert(/6 mph/.test(imperialDrill.windReadout) && /gusts/.test(imperialDrill.windReadout),'the wind readout pairs mph speed with gusts');
+  assert(/total\s*0\s*in/.test(imperialDrill.precipStats.join(' ')),'the precipitation total chip converts mm → in');
+
   // Interactive scrub: pointer drags and arrow keys move the crosshair and
   // readout; temp/wind draw their secondary series; UV overlays the sun.
   const scrub=await page.evaluate(({base})=>{
@@ -588,10 +700,15 @@ function assert(value,message){
     saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
     sortSettings=loadSortSettings();
     const wind=open('wind');
+    saveSortSettings({...loadSortSettings(),weatherWindUnit:'mph'});
+    sortSettings=loadSortSettings();
+    const windMph=open('wind');
+    saveSortSettings({...loadSortSettings(),weatherWindUnit:'auto'});
+    sortSettings=loadSortSettings();
     const precip=open('precip');
     const uv=open('uv');
     document.getElementById('weather-context-done').click();
-    return {temp,tempF,wind,precip,uv};
+    return {temp,tempF,wind,windMph,precip,uv};
   },seeded);
   assert(refLines.temp.refs.join()==='freezing 0°' && refLines.temp.meta.geom.yMin<0,
     'the freezing line draws inside a sub-zero day and the domain keeps the negative floor');
@@ -601,6 +718,7 @@ function assert(value,message){
   assert(refLines.tempF.refs.join()==='freezing 32°','°F converts the freezing reference label');
   assert(refLines.wind.refs.join()==='strong 39' && refLines.wind.meta.geom.yMax>=45,
     'the wind chart marks the strong-breeze threshold the shared frame still covers gusts');
+  assert(refLines.windMph.refs.join()==='strong 24','mph converts the wind reference label (39 km/h → 24 mph)');
   assert(refLines.precip.refs.join()==='even 50%','the precipitation chart marks the even-chance line');
   assert(refLines.uv.refs.join()==='moderate 3','the UV chart marks the moderate level when the peak reaches it');
   assert(errors.length===0,'no page errors during unit switching');

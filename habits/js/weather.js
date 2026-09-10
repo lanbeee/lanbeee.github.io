@@ -41,8 +41,7 @@ function weatherEffectiveTempUnit(settings){
 }
 
 function weatherUsesFahrenheit(settings){
-  const s=settings || (typeof sortSettings!=='undefined' && sortSettings ? sortSettings : null)
-    || (typeof loadSortSettings==='function' ? loadSortSettings() : {});
+  const s=settings || weatherSettings();
   return weatherEffectiveTempUnit(s)==='f';
 }
 
@@ -65,9 +64,111 @@ function weatherTempUnitWord(){
   return weatherUsesFahrenheit() ? 'Fahrenheit' : 'Celsius';
 }
 
+// ── Precipitation + wind display units ──────────────────────────────────
+// Same contract as temperature: forecast payloads and rule bounds stay in
+// the API's metric units (mm, cm, km/h); these helpers convert only at the
+// last formatting step. Snowfall follows the precipitation setting (cm↔in).
+// The measure country set drops Liberia and Myanmar from the Fahrenheit list:
+// both use °F for temperature but officially use metric distance and precipitation.
+const WEATHER_IMPERIAL_MEASURE_COUNTRY_CODES = new Set([
+  'US','AS','GU','MP','PR','VI', // United States + territories
+  'BS','KY','TC','PW','FM','MH'
+]);
+
+function normalizeWeatherPrecipUnit(value){
+  return value === 'mm' || value === 'in' ? value : 'auto';
+}
+
+function normalizeWeatherWindUnit(value){
+  return value === 'kmh' || value === 'mph' ? value : 'auto';
+}
+
+function weatherMeasureUnitForCountry(countryCode){
+  return WEATHER_IMPERIAL_MEASURE_COUNTRY_CODES.has(String(countryCode || '').trim().toUpperCase()) ? 'imperial' : 'metric';
+}
+
+//PURE: effective units for the given settings ('auto' resolves via the home
+// city's country; unknown countries default to metric).
+function weatherEffectivePrecipUnit(settings){
+  const mode=normalizeWeatherPrecipUnit(settings && settings.weatherPrecipUnit);
+  if(mode !== 'auto')return mode;
+  return weatherMeasureUnitForCountry(settings && settings.homeCityCountry) === 'imperial' ? 'in' : 'mm';
+}
+
+function weatherEffectiveWindUnit(settings){
+  const mode=normalizeWeatherWindUnit(settings && settings.weatherWindUnit);
+  if(mode !== 'auto')return mode;
+  return weatherMeasureUnitForCountry(settings && settings.homeCityCountry) === 'imperial' ? 'mph' : 'kmh';
+}
+
+function weatherSettings(){
+  return (typeof sortSettings!=='undefined' && sortSettings ? sortSettings : null)
+    || (typeof loadSortSettings==='function' ? loadSortSettings() : {});
+}
+
+function weatherUsesInches(settings){
+  const s=settings || weatherSettings();
+  return weatherEffectivePrecipUnit(s)==='in';
+}
+
+function weatherWindUsesMph(settings){
+  const s=settings || weatherSettings();
+  return weatherEffectiveWindUnit(s)==='mph';
+}
+
+//PURE: metric display values → display-unit numbers (unrounded; callers
+// round exactly as they did before).
+function weatherPrecipConverted(mm){
+  const value=Number(mm);
+  if(!Number.isFinite(value))return value;
+  return weatherUsesInches() ? value/25.4 : value;
+}
+
+function weatherSnowConverted(cm){
+  const value=Number(cm);
+  if(!Number.isFinite(value))return value;
+  return weatherUsesInches() ? value/2.54 : value;
+}
+
+function weatherWindConverted(kmh){
+  const value=Number(kmh);
+  if(!Number.isFinite(value))return value;
+  return weatherWindUsesMph() ? value*0.621371 : value;
+}
+
+function weatherPrecipUnitLabel(){
+  return weatherUsesInches() ? 'in' : 'mm';
+}
+
+function weatherSnowUnitLabel(){
+  return weatherUsesInches() ? 'in' : 'cm';
+}
+
+function weatherWindUnitLabel(){
+  return weatherWindUsesMph() ? 'mph' : 'km/h';
+}
+
+//PURE: one metric sample in raw API units → the display-unit number for its
+// class, so rule summaries and cards convert the same way per metric.
+function weatherMetricValueConverted(metric,value){
+  if(metric==='temperature_2m' || metric==='apparent_temperature')return weatherTempConverted(value);
+  if(metric==='wind_speed_10m' || metric==='wind_gusts_10m')return weatherWindConverted(value);
+  if(metric==='precipitation')return weatherPrecipConverted(value);
+  if(metric==='snowfall')return weatherSnowConverted(value);
+  return Number(value);
+}
+
+function weatherMetricUnitLabel(metric){
+  if(metric==='temperature_2m' || metric==='apparent_temperature')return weatherTempUnitLabel();
+  if(metric==='wind_speed_10m' || metric==='wind_gusts_10m')return weatherWindUnitLabel();
+  if(metric==='precipitation')return weatherPrecipUnitLabel();
+  if(metric==='snowfall')return weatherSnowUnitLabel();
+  return WEATHER_METRICS[metric]?.unit || '';
+}
+
 // Home cities set before homeCityCountry existed have no stored country, so
 // 'auto' cannot infer. Reverse-geocode the home coords once per session
-// (offline-safe: failure just leaves the Celsius default until next boot).
+// (offline-safe: failure just leaves the metric defaults until next boot).
 // Runs on the boot-time settings snapshot: installs without a home city bail
 // out before any request, and tests seed cities only after page load.
 let _homeCityCountryBackfillAttempted=false;
@@ -76,7 +177,10 @@ async function maybeBackfillHomeCityCountry(){
   _homeCityCountryBackfillAttempted=true;
   if(typeof reverseGeocodeCity!=='function')return;
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
-  if(normalizeWeatherTempUnit(settings.weatherTempUnit)!=='auto')return;
+  const anyAuto=normalizeWeatherTempUnit(settings.weatherTempUnit)==='auto'
+    || normalizeWeatherPrecipUnit(settings.weatherPrecipUnit)==='auto'
+    || normalizeWeatherWindUnit(settings.weatherWindUnit)==='auto';
+  if(!anyAuto)return;
   if(String(settings.homeCityCountry || '').trim())return;
   // Number.isFinite on the raw fields: Number(null) is 0, and a home city is
   // genuinely required here — never infer from (0, 0).
@@ -627,9 +731,8 @@ function weatherFitAssessment(fill,fit,state,settings){
   const overridden = hardFail && weatherCommitmentOverride(fill,state);
   const describe = result=>{
     const meta = WEATHER_METRICS[result.rule.metric];
-    const isTemp = result.rule.metric==='temperature_2m' || result.rule.metric==='apparent_temperature';
-    const value = isTemp ? weatherTempConverted(result.value) : result.value;
-    const unit = isTemp ? weatherTempUnitLabel() : meta.unit;
+    const value = weatherMetricValueConverted(result.rule.metric,result.value);
+    const unit = weatherMetricUnitLabel(result.rule.metric);
     return `${meta.label} ${Math.round(value * 10) / 10}${unit}`;
   };
   const summary = failing.length
@@ -962,7 +1065,7 @@ function weatherPeriodPillHtml(start,end,settings,options={}){
   if(!summary)return '';
   const temp=weatherPeriodTemperatureRange(summary);
   const wet=['rain','ice','snow','storm'].includes(summary.condition.tone);
-  const snow=summary.snowfall>0 ? `${Math.round(summary.snowfall*10)/10}cm` : '';
+  const snow=summary.snowfall>0 ? `${Math.round(weatherSnowConverted(summary.snowfall)*10)/10}${weatherSnowUnitLabel()}` : '';
   const chance=wet && summary.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
   const signal=snow || chance;
   const assessment=options.assessment || null;
@@ -972,8 +1075,8 @@ function weatherPeriodPillHtml(start,end,settings,options={}){
     `${summary.condition.label} in ${summary.placeName}`,
     temp?`feels like ${temp} ${weatherTempUnitWord()}`:'',
     summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,
-    summary.snowfall>0?`${Math.round(summary.snowfall*10)/10} cm snow`:'',
-    summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`,
+    summary.snowfall>0?`${Math.round(weatherSnowConverted(summary.snowfall)*10)/10} ${weatherSnowUnitLabel()} snow`:'',
+    summary.wind==null?'':`${Math.round(weatherWindConverted(summary.wind))} ${weatherWindUnitLabel()} wind`,
     assessment?.summary || '',weatherFreshnessText(summary.fetchedAt,options.now || Date.now())
   ].filter(Boolean).join(', ');
   const cls=`context-pill weather-period-pill weather-tone-${summary.condition.tone}${assessment?` guidance-${assessment.status || 'unknown'}`:''}${options.className?` ${options.className}`:''}`;
@@ -1017,7 +1120,7 @@ function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
     presentation.label,
     temp ? `feels like ${temp} ${weatherTempUnitWord()}` : '',
     summary.precipitationChance==null ? '' : `${Math.round(summary.precipitationChance)}% precipitation`,
-    summary.wind==null ? '' : `${Math.round(summary.wind)} km/h wind`,
+    summary.wind==null ? '' : `${Math.round(weatherWindConverted(summary.wind))} ${weatherWindUnitLabel()} wind`,
     weatherFreshnessText(summary.fetchedAt)
   ].filter(Boolean).join(', ');
   const tone=presentation.tone || presentation.status;
@@ -1052,12 +1155,14 @@ const WEATHER_METRIC_DETAILS={
 const WEATHER_METRIC_REF_LINES={
   temp:[{v:0,label:'freezing'},{v:30,label:'hot'}],
   precip:[{v:50,label:'even 50%'}],
-  wind:[{v:39,label:'strong 39'},{v:62,label:'gale 62'}],
+  // Thresholds stay in the plotted km/h domain; the label's number converts.
+  wind:[{v:39,label:'strong'},{v:62,label:'gale'}],
   uv:[{v:3,label:'moderate 3'},{v:6,label:'high 6'},{v:8,label:'very high 8'},{v:11,label:'extreme 11'}]
 };
 
 function weatherMetricRefText(metricKey,ref){
   if(metricKey==='temp')return `${ref.label} ${weatherTempDisplay(ref.v)}°`;
+  if(metricKey==='wind')return `${ref.label} ${Math.round(weatherWindConverted(ref.v))}`;
   return ref.label;
 }
 
@@ -1084,6 +1189,7 @@ function weatherSmoothPath(points){
 function weatherMetricMarkText(metricKey,value){
   if(metricKey==='temp')return `${weatherTempDisplay(value)}°`;
   if(metricKey==='precip')return `${Math.round(value)}%`;
+  if(metricKey==='wind')return String(Math.round(weatherWindConverted(value)));
   return String(Math.round(value));
 }
 
@@ -1119,15 +1225,15 @@ function weatherMetricReadoutHtml(meta,idx){
     value=`feels ${weatherTempDisplay(v)}°${weatherUsesFahrenheit() ? 'F' : 'C'}`;
     if(Number.isFinite(meta.secondary[idx]))extra=`actual ${weatherTempDisplay(meta.secondary[idx])}°`;
   }else if(meta.metricKey==='wind'){
-    value=`${Math.round(v)} km/h`;
-    if(Number.isFinite(meta.secondary[idx]))extra=`gusts ${Math.round(meta.secondary[idx])}`;
+    value=`${Math.round(weatherWindConverted(v))} ${weatherWindUnitLabel()}`;
+    if(Number.isFinite(meta.secondary[idx]))extra=`gusts ${Math.round(weatherWindConverted(meta.secondary[idx]))}`;
   }else if(meta.metricKey==='precip'){
     value=`${Math.round(v)}%`;
-    // Snow hours lead with centimetres; a 0 mm liquid figure is noise there.
+    // Snow hours lead with the snow unit; a 0 mm liquid figure is noise there.
     const mm=meta.secondary[idx],cm=meta.snow ? meta.snow[idx] : NaN;
     const parts=[];
-    if(Number.isFinite(mm) && (mm>0 || !(cm>0)))parts.push(`${Math.round(mm*10)/10} mm`);
-    if(Number.isFinite(cm) && cm>0)parts.push(`${Math.round(cm*10)/10} cm snow`);
+    if(Number.isFinite(mm) && (mm>0 || !(cm>0)))parts.push(`${Math.round(weatherPrecipConverted(mm)*10)/10} ${weatherPrecipUnitLabel()}`);
+    if(Number.isFinite(cm) && cm>0)parts.push(`${Math.round(weatherSnowConverted(cm)*10)/10} ${weatherSnowUnitLabel()} snow`);
     extra=parts.join(' · ');
   }else{
     value=`UV ${Math.round(v)}`;
@@ -1206,9 +1312,9 @@ function weatherMetricChartHtml(metricKey,rows,summary){
     pts.forEach((p,i)=>{
       const h=((p.v-vMin)/(vMax-vMin))*(bottom-top);
       if(h<1.5)return; // 0% hours stay silent instead of stubbing the baseline
-      const snowing=p.w>0; // snow hours get their own tint and a cm readout
+      const snowing=p.w>0; // snow hours get their own tint and a snow-unit readout
       const barW=Math.min(12,Math.max(3,step*0.6));
-      inner+=`<rect class="bar${snowing?' snow':''}" x="${(xs[i]-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%${snowing ? ` · ${Math.round(p.w*10)/10} cm snow` : ''}`)}</title></rect>`;
+      inner+=`<rect class="bar${snowing?' snow':''}" x="${(xs[i]-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%${snowing ? ` · ${Math.round(weatherSnowConverted(p.w)*10)/10} ${weatherSnowUnitLabel()} snow` : ''}`)}</title></rect>`;
     });
   }else{
     const line=weatherSmoothPath(pts.map((p,i)=>[xs[i],yAt(p.v)]));
@@ -1296,11 +1402,11 @@ function weatherAgendaMetricSummary(row,metricKey,weatherRows){
     },0);
     const amount=weightedTotal(detail.secondary);
     const snow=weightedTotal(detail.snow);
-    return [`rain ${Math.round(high)}%`,snow>0?`${Math.round(snow*10)/10} cm snow`:(amount>0?`${Math.round(amount*10)/10} mm`:'')].filter(Boolean).join(' · ');
+    return [`rain ${Math.round(high)}%`,snow>0?`${Math.round(weatherSnowConverted(snow)*10)/10} ${weatherSnowUnitLabel()} snow`:(amount>0?`${Math.round(weatherPrecipConverted(amount)*10)/10} ${weatherPrecipUnitLabel()}`:'')].filter(Boolean).join(' · ');
   }
   if(metricKey==='wind'){
     const gusts=values(detail.secondary);
-    return [`up to ${Math.round(high)} km/h`,gusts.length?`gusts ${Math.round(Math.max(...gusts))}`:''].filter(Boolean).join(' · ');
+    return [`up to ${Math.round(weatherWindConverted(high))} ${weatherWindUnitLabel()}`,gusts.length?`gusts ${Math.round(weatherWindConverted(Math.max(...gusts)))}`:''].filter(Boolean).join(' · ');
   }
   return `UV up to ${Math.round(high)}`;
 }
@@ -1318,14 +1424,14 @@ function weatherAgendaAssignLanes(rows){
 
 function weatherAgendaTraceLabel(metricKey,value){
   if(metricKey==='temp')return `${weatherTempDisplay(value)}°`;
-  if(metricKey==='wind')return `${Math.round(value)}`;
+  if(metricKey==='wind')return String(Math.round(weatherWindConverted(value)));
   if(metricKey==='uv')return `UV ${Math.round(value)}`;
   return `${Math.round(value)}%`;
 }
 
 // Semantic colour ramps shared by the narrow agenda trace and the compact
-// charts in the open-time sheet. Values remain in the API's native units
-// (temperature °C, wind km/h), even when the visible temperature is °F.
+// charts in the open-time sheet. Values stay in the API's native units
+// (temperature °C, wind km/h); the units display setting converts labels.
 function weatherMetricToneStops(metricKey){
   if(metricKey==='temp')return [
     {from:-Infinity,tone:'blue'},{from:0,tone:'cyan'},{from:10,tone:'green'},
@@ -1404,7 +1510,7 @@ function weatherAgendaTraceHtml(metricKey,weatherRows,domainStart,domainEnd,heig
       const start=Math.max(point.ts,domainStart),end=Math.min(point.ts+3600000,domainEnd);
       const top=(start-domainStart)/span*height;
       const cellHeight=Math.max(1,(end-start)/span*height);
-      const amount=point.snow>0 ? `${Math.round(point.snow*10)/10} cm` : (point.amount>0 ? `${Math.round(point.amount*10)/10} mm` : 'dry');
+      const amount=point.snow>0 ? `${Math.round(weatherSnowConverted(point.snow)*10)/10} ${weatherSnowUnitLabel()}` : (point.amount>0 ? `${Math.round(weatherPrecipConverted(point.amount)*10)/10} ${weatherPrecipUnitLabel()}` : 'dry');
       const tone=weatherMetricTone(metricKey,point.value);
       return `<div class="weather-agenda-rain-hour tone-${tone}" style="top:${top.toFixed(1)}px;height:${cellHeight.toFixed(1)}px" aria-label="${escapeHtml(`${Math.round(point.value)}% rain, ${amount}`)}"><span class="weather-agenda-rain-fill" style="width:${Math.max(1,Math.min(100,point.value)).toFixed(1)}%"></span><b>${Math.round(point.value)}%</b><small>${escapeHtml(amount)}</small></div>`;
     }).join('');
@@ -1557,14 +1663,14 @@ function weatherMetricStatsHtml(metricKey,rows,summary){
   }else if(metricKey==='precip'){
     const chance=peakOf(primary);
     const total=pick(detail.secondary).reduce((sum,p)=>sum+p.v,0);
-    chips=chip('chance up to',`${Math.round(chance.v)}%`)+chip('total',`${Math.round(total*10)/10} mm`);
+    chips=chip('chance up to',`${Math.round(chance.v)}%`)+chip('total',`${Math.round(weatherPrecipConverted(total)*10)/10} ${weatherPrecipUnitLabel()}`);
     const snowTotal=pick(detail.snow).reduce((sum,p)=>sum+p.v,0);
-    if(snowTotal>0)chips+=chip('snow',`${Math.round(snowTotal*10)/10} cm`);
+    if(snowTotal>0)chips+=chip('snow',`${Math.round(weatherSnowConverted(snowTotal)*10)/10} ${weatherSnowUnitLabel()}`);
   }else if(metricKey==='wind'){
     const peak=peakOf(primary);
     const gusts=pick(detail.secondary);
-    chips=chip('wind up to',`${Math.round(peak.v)} km/h${at(peak)}`);
-    if(gusts.length)chips+=chip('gusts up to',`${Math.round(peakOf(gusts).v)} km/h`);
+    chips=chip('wind up to',`${Math.round(weatherWindConverted(peak.v))} ${weatherWindUnitLabel()}${at(peak)}`);
+    if(gusts.length)chips+=chip('gusts up to',`${Math.round(weatherWindConverted(peakOf(gusts).v))} ${weatherWindUnitLabel()}`);
   }else{
     const peak=peakOf(primary);
     chips=chip('peak',`${Math.round(peak.v)}${at(peak)}`);
@@ -1615,12 +1721,12 @@ function renderWeatherContextSheet(model){
     const snowCm=Number(summary.snowfall);
     const precipitation=[
       summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}%`,
-      summary.precipitation==null?'':`${Math.round(summary.precipitation*10)/10} mm`,
-      Number.isFinite(snowCm) && snowCm>0 ? `${Math.round(snowCm*10)/10} cm snow` : ''
+      summary.precipitation==null?'':`${Math.round(weatherPrecipConverted(summary.precipitation)*10)/10} ${weatherPrecipUnitLabel()}`,
+      Number.isFinite(snowCm) && snowCm>0 ? `${Math.round(weatherSnowConverted(snowCm)*10)/10} ${weatherSnowUnitLabel()} snow` : ''
     ].filter(Boolean).join(' · ');
     const wind=[
-      summary.wind==null?'':`${Math.round(summary.wind)} km/h`,
-      summary.gusts==null?'':`gusts ${Math.round(summary.gusts)}`
+      summary.wind==null?'':`${Math.round(weatherWindConverted(summary.wind))} ${weatherWindUnitLabel()}`,
+      summary.gusts==null?'':`gusts ${Math.round(weatherWindConverted(summary.gusts))}`
     ].filter(Boolean).join(' · ');
     // The drill-down prefers the weekly forecast's hourly grid and falls back
     // to near detail per hour, so any row with the field makes it tappable.
@@ -1710,7 +1816,7 @@ function weatherFreeTimeMetricSummary(metricKey,rows){
     return `${a===b?a:`${a}–${b}`}°${weatherUsesFahrenheit()?'F':'C'}`;
   }
   if(metricKey==='precip')return `up to ${Math.round(high)}%`;
-  if(metricKey==='wind')return `up to ${Math.round(high)} km/h`;
+  if(metricKey==='wind')return `up to ${Math.round(weatherWindConverted(high))} ${weatherWindUnitLabel()}`;
   return `up to ${Math.round(high)}`;
 }
 

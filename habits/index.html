@@ -751,6 +751,20 @@
               <button type="button" class="seg-opt" data-seg-value="f">°F</button>
             </div>
             <p class="field-hint" id="weather-temp-unit-hint" aria-live="polite"></p>
+            <span class="settings-sublabel" id="weather-precip-unit-label">precipitation unit</span>
+            <div class="seg weather-unit-seg" id="weather-precip-unit-seg" data-setting-seg="weatherPrecipUnit" role="group" aria-labelledby="weather-precip-unit-label">
+              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+              <button type="button" class="seg-opt" data-seg-value="mm">mm</button>
+              <button type="button" class="seg-opt" data-seg-value="in">in</button>
+            </div>
+            <p class="field-hint" id="weather-precip-unit-hint" aria-live="polite"></p>
+            <span class="settings-sublabel" id="weather-wind-unit-label">wind unit</span>
+            <div class="seg weather-unit-seg" id="weather-wind-unit-seg" data-setting-seg="weatherWindUnit" role="group" aria-labelledby="weather-wind-unit-label">
+              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+              <button type="button" class="seg-opt" data-seg-value="kmh">km/h</button>
+              <button type="button" class="seg-opt" data-seg-value="mph">mph</button>
+            </div>
+            <p class="field-hint" id="weather-wind-unit-hint" aria-live="polite"></p>
             <div id="weather-profile-list" class="weather-profile-list"></div>
             <div class="btn-row weather-actions">
               <button class="btn" id="weather-profile-add" type="button">add profile</button>
@@ -758,7 +772,7 @@
             </div>
             <p class="field-hint" id="weather-status" aria-live="polite"></p>
             <div id="weather-forecast-data" class="weather-forecast-data"></div>
-            <p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away place you attach to an item, are sent only to retrieve forecasts (and, once, to infer your temperature unit); no API key or account is used.</p>
+            <p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away place you attach to an item, are sent only to retrieve forecasts (and, once, to infer your display units); no API key or account is used.</p>
           </div>
         </section>
         <section class="settings-block settings-collapsible">

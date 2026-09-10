@@ -171,6 +171,10 @@ function loadSortSettings(){
       ? merged.homeCityCountry.trim().toUpperCase().slice(0,2) : '';
     merged.weatherTempUnit = typeof normalizeWeatherTempUnit === 'function'
       ? normalizeWeatherTempUnit(merged.weatherTempUnit) : 'auto';
+    merged.weatherPrecipUnit = typeof normalizeWeatherPrecipUnit === 'function'
+      ? normalizeWeatherPrecipUnit(merged.weatherPrecipUnit) : 'auto';
+    merged.weatherWindUnit = typeof normalizeWeatherWindUnit === 'function'
+      ? normalizeWeatherWindUnit(merged.weatherWindUnit) : 'auto';
     merged.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
       ? normalizeWeatherProfiles(merged.weatherProfiles) : [];
     merged.showWeatherTemperatureRanges = Boolean(merged.showWeatherTemperatureRanges);
@@ -272,6 +276,10 @@ function saveSortSettings(settings){
     ? next.homeCityCountry.trim().toUpperCase().slice(0,2) : '';
   next.weatherTempUnit = typeof normalizeWeatherTempUnit === 'function'
     ? normalizeWeatherTempUnit(next.weatherTempUnit) : 'auto';
+  next.weatherPrecipUnit = typeof normalizeWeatherPrecipUnit === 'function'
+    ? normalizeWeatherPrecipUnit(next.weatherPrecipUnit) : 'auto';
+  next.weatherWindUnit = typeof normalizeWeatherWindUnit === 'function'
+    ? normalizeWeatherWindUnit(next.weatherWindUnit) : 'auto';
   next.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
     ? normalizeWeatherProfiles(next.weatherProfiles) : [];
   next.showWeatherTemperatureRanges = Boolean(next.showWeatherTemperatureRanges);
