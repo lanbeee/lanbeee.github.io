@@ -1462,13 +1462,19 @@ Tracks the currently active habit session:
 - Visual timeline of free vs busy blocks
 - `formatFreeDuration` shows total free time ("3h" / "45m")
 - Largest gap highlighted
-- Free blocks can be selected to schedule a habit/task into that window
+- Free blocks can be selected to schedule a habit/task into that window. The
+  timeline also supports horizontal drag selection in 15-minute steps. Any
+  chosen or manually entered range is drawn directly over the day map, with
+  its exact times and open/busy split, and changes colour with the what-if
+  result (open, rearrangeable, spill, or fixed conflict).
 - When a fresh forecast exists, only a quiet `add weather` affordance appears
   under the free/busy strip. Tapping it reveals feels-like, rain, wind, and UV
   choices; the user can add or remove up to two charts. Removing the final chart
   folds the module back to the compact affordance. Every mini chart shares the
-  strip's time range and shades already-busy spans, so weather and room can be
-  compared without competing with the open-time content. This is visual context
+  strip's time range and shades already-busy spans. When a time window is
+  selected, both weather charts highlight that same interval, dim everything
+  outside it, and summarize only the weather touching the selected window, so
+  weather and room can be compared without extra taps. This is visual context
   only and does not change the planner.
 
 ### 10.3 Snooze Sheet 👤

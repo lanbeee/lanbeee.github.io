@@ -1702,7 +1702,7 @@ function weatherHourlyRowsForMetric(metricKey,settings){
 
 function weatherFreeTimeMetricSummary(metricKey,rows){
   const detail=WEATHER_METRIC_DETAILS[metricKey];
-  const values=(rows || []).map(row=>Number(row[detail.primary])).filter(Number.isFinite);
+  const values=(rows || []).map(row=>Number.isFinite(Number(row?.value)) ? Number(row.value) : Number(row?.[detail.primary])).filter(Number.isFinite);
   if(!values.length)return '';
   const low=Math.min(...values),high=Math.max(...values);
   if(metricKey==='temp'){
@@ -1717,7 +1717,7 @@ function weatherFreeTimeMetricSummary(metricKey,rows){
 // A 64px shared-time-axis weather strip for the open-time sheet. Busy spans
 // sit behind the weather marks, so the chart answers both "what is it doing?"
 // and "is this time already occupied?" without another interaction.
-function weatherFreeTimeChartHtml(metricKey,rows,info){
+function weatherFreeTimeChartHtml(metricKey,rows,info,selection=null){
   const detail=WEATHER_METRIC_DETAILS[metricKey];
   if(!detail || !(info.windowEnd>info.windowStart))return '';
   const W=320,H=64,left=5,right=5,top=5,bottom=48;
@@ -1726,6 +1726,9 @@ function weatherFreeTimeChartHtml(metricKey,rows,info){
   })).filter(point=>Number.isFinite(point.ts) && Number.isFinite(point.value)
     && point.ts<info.windowEnd && point.ts+3600000>info.windowStart).sort((a,b)=>a.ts-b.ts);
   if(!visible.length)return '';
+  const focus=selection && selection.end>selection.start
+    ? visible.filter(point=>point.ts<selection.end && point.ts+3600000>selection.start)
+    : [];
   const values=visible.map(point=>point.value);
   const domain=weatherMetricVisualDomain(metricKey,values);
   const x=ts=>left+Math.max(0,Math.min(1,(ts-info.windowStart)/(info.windowEnd-info.windowStart)))*(W-left-right);
@@ -1736,6 +1739,15 @@ function weatherFreeTimeChartHtml(metricKey,rows,info){
     if(end<=start)return '';
     return `<rect class="free-weather-busy" x="${x(start).toFixed(1)}" y="${top}" width="${Math.max(1,x(end)-x(start)).toFixed(1)}" height="${bottom-top}"/>`;
   }).join('');
+  let selectionBack='',selectionFront='';
+  if(selection && selection.end>selection.start){
+    const start=Math.max(info.windowStart,selection.start),end=Math.min(info.windowEnd,selection.end);
+    if(end>start){
+      const sx=x(start),ex=x(end),width=Math.max(1,ex-sx);
+      selectionBack=`<rect class="free-weather-selection-band" x="${sx.toFixed(1)}" y="${top}" width="${width.toFixed(1)}" height="${bottom-top}" rx="2"/>`;
+      selectionFront=`${sx>left?`<rect class="free-weather-selection-shade" x="${left}" y="${top}" width="${(sx-left).toFixed(1)}" height="${bottom-top}"/>`:''}${ex<W-right?`<rect class="free-weather-selection-shade" x="${ex.toFixed(1)}" y="${top}" width="${(W-right-ex).toFixed(1)}" height="${bottom-top}"/>`:''}<line class="free-weather-selection-edge" x1="${sx.toFixed(1)}" y1="${top}" x2="${sx.toFixed(1)}" y2="${bottom}"/><line class="free-weather-selection-edge" x1="${ex.toFixed(1)}" y1="${top}" x2="${ex.toFixed(1)}" y2="${bottom}"/>`;
+    }
+  }
   let marks='';
   if(metricKey==='precip'){
     const hourWidth=(W-left-right)/Math.max(1,(info.windowEnd-info.windowStart)/3600000);
@@ -1757,7 +1769,12 @@ function weatherFreeTimeChartHtml(metricKey,rows,info){
     }
   }
   const startLabel=freeDayClockLabel(info.windowStart),endLabel=freeDayClockLabel(info.windowEnd);
-  return `<figure class="free-weather-chart metric-${escapeHtml(metricKey)}"><figcaption><span><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(detail.label)}</span><b>${escapeHtml(weatherFreeTimeMetricSummary(metricKey,visible))}</b></figcaption><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(`${detail.label} from ${startLabel} to ${endLabel}; shaded spans are busy`)}"><defs><linearGradient id="${gradientId}" x1="0" y1="1" x2="0" y2="0">${weatherMetricGradientStopsHtml(metricKey,domain.min,domain.max)}</linearGradient></defs><line class="free-weather-baseline" x1="${left}" y1="${bottom}" x2="${W-right}" y2="${bottom}"/>${busy}${marks}<text class="free-weather-time" x="${left}" y="${H-3}" text-anchor="start">${escapeHtml(startLabel)}</text><text class="free-weather-time" x="${W-right}" y="${H-3}" text-anchor="end">${escapeHtml(endLabel)}</text></svg></figure>`;
+  const selectionLabel=selection && selection.end>selection.start
+    ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)}`
+    : '';
+  const summary=weatherFreeTimeMetricSummary(metricKey,focus.length ? focus : visible);
+  const ariaSelection=selectionLabel ? `; ${selectionLabel} is selected` : '';
+  return `<figure class="free-weather-chart metric-${escapeHtml(metricKey)}${selectionLabel?' has-selection':''}"${selection?.tone?` data-selection-tone="${escapeHtml(selection.tone)}"`:''}><figcaption><span><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(detail.label)}</span><b${selectionLabel?` title="${escapeHtml(selectionLabel)} selected"`:''}>${escapeHtml(summary)}</b></figcaption><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(`${detail.label} from ${startLabel} to ${endLabel}; shaded spans are busy${ariaSelection}`)}"><defs><linearGradient id="${gradientId}" x1="0" y1="1" x2="0" y2="0">${weatherMetricGradientStopsHtml(metricKey,domain.min,domain.max)}</linearGradient></defs><line class="free-weather-baseline" x1="${left}" y1="${bottom}" x2="${W-right}" y2="${bottom}"/>${busy}${selectionBack}${marks}${selectionFront}<text class="free-weather-time" x="${left}" y="${H-3}" text-anchor="start">${escapeHtml(startLabel)}</text><text class="free-weather-time" x="${W-right}" y="${H-3}" text-anchor="end">${escapeHtml(endLabel)}</text></svg></figure>`;
 }
 
 // RENDER: optional weather context inside the free-time sheet. It starts off;
@@ -1775,19 +1792,22 @@ function renderFreeTimeWeatherContext(info){
   section.setAttribute('aria-label','weather context for open time');
   let selected=[];
   let choosing=false;
+  let selection=null;
   const shortLabel={temp:'feels',precip:'rain',wind:'wind',uv:'UV'};
   const draw=()=>{
     const inactive=!choosing && !selected.length;
     section.classList.toggle('is-collapsed',inactive);
     if(inactive){
-      section.innerHTML='<button type="button" class="free-weather-add" data-free-weather-add aria-expanded="false"><i class="ti ti-cloud-plus" aria-hidden="true"></i><span>add weather</span></button>';
+      const selectedLabel=selection ? ` for ${freeDayClockLabel(selection.start)} to ${freeDayClockLabel(selection.end)}` : '';
+      section.innerHTML=`<button type="button" class="free-weather-add" data-free-weather-add aria-expanded="false" aria-label="add weather${escapeHtml(selectedLabel)}"><i class="ti ti-cloud-plus" aria-hidden="true"></i><span>add weather</span></button>`;
       section.querySelector('[data-free-weather-add]').addEventListener('click',()=>{ choosing=true; draw(); });
       return;
     }
-    section.innerHTML=`<div class="free-weather-head"><span><b>weather context</b><small>choose up to 2 · busy time is shaded</small></span><span class="free-weather-head-actions"><em>${selected.length}/2</em><button type="button" data-free-weather-hide aria-label="hide weather context"><i class="ti ti-x" aria-hidden="true"></i></button></span></div><div class="free-weather-picker" aria-label="weather charts">${available.map(key=>{
+    const focusCopy=selection ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)} selected` : 'busy time is shaded';
+    section.innerHTML=`<div class="free-weather-head"><span><b>weather context</b><small>${escapeHtml(focusCopy)} · choose up to 2</small></span><span class="free-weather-head-actions"><em>${selected.length}/2</em><button type="button" data-free-weather-hide aria-label="hide weather context"><i class="ti ti-x" aria-hidden="true"></i></button></span></div><div class="free-weather-picker" aria-label="weather charts">${available.map(key=>{
       const detail=WEATHER_METRIC_DETAILS[key],on=selected.includes(key),locked=!on && selected.length>=2;
       return `<button type="button" data-free-weather-metric="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${locked?' disabled':''}><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(shortLabel[key])}</button>`;
-    }).join('')}</div><div class="free-weather-charts">${selected.map(key=>weatherFreeTimeChartHtml(key,weatherHourlyRowsForDayMetric(dayBase,key,settings),info)).join('')}</div>`;
+    }).join('')}</div><div class="free-weather-charts">${selected.map(key=>weatherFreeTimeChartHtml(key,weatherHourlyRowsForDayMetric(dayBase,key,settings),info,selection)).join('')}</div>`;
     section.querySelector('[data-free-weather-hide]').addEventListener('click',()=>{ selected=[]; choosing=false; draw(); });
     section.querySelectorAll('[data-free-weather-metric]').forEach(button=>button.addEventListener('click',()=>{
       const key=button.dataset.freeWeatherMetric;
@@ -1796,6 +1816,10 @@ function renderFreeTimeWeatherContext(info){
       if(!selected.length)choosing=false;
       draw();
     }));
+  };
+  section.setSelection=(start,end,tone='active')=>{
+    selection=Number.isFinite(start) && Number.isFinite(end) && end>start ? {start,end,tone} : null;
+    draw();
   };
   draw();
   return section;

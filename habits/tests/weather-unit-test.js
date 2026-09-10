@@ -308,6 +308,21 @@ function assert(value,message){
     context.querySelector('[data-free-weather-metric="temp"]').click();
     const twoCharts=context.querySelectorAll('.free-weather-chart').length;
     const disabledAtMax=context.querySelectorAll('[data-free-weather-metric]:disabled').length;
+    const start=panel.querySelector('.free-fit-start');
+    const end=panel.querySelector('.free-fit-end');
+    start.value='09:30';
+    start.dispatchEvent(new Event('input',{bubbles:true}));
+    end.value='10:30';
+    end.dispatchEvent(new Event('input',{bubbles:true}));
+    const linkedSelection={
+      dayMap:panel.querySelector('.free-day-strip')?.classList.contains('has-selection'),
+      dayMapCopy:panel.querySelector('.free-day-focus')?.textContent || '',
+      bands:context.querySelectorAll('.free-weather-selection-band').length,
+      edges:context.querySelectorAll('.free-weather-selection-edge').length,
+      focusHead:context.querySelector('.free-weather-head small')?.textContent || '',
+      focusedCaptions:[...context.querySelectorAll('.free-weather-chart figcaption b')].map(node=>node.textContent),
+      tones:[...context.querySelectorAll('.free-weather-chart')].map(node=>node.dataset.selectionTone)
+    };
     const busyMasks=[...context.querySelectorAll('.free-weather-chart')]
       .map(chart=>chart.querySelectorAll('.free-weather-busy').length);
     const heights=[...context.querySelectorAll('.free-weather-chart svg')]
@@ -321,7 +336,7 @@ function assert(value,message){
     const compactAgain=context.classList.contains('is-collapsed')
       && !!context.querySelector('[data-free-weather-add]')
       && !context.querySelector('.free-weather-picker');
-    return {initialCharts,compact,initialCount,choices,oneChart,twoCharts,disabledAtMax,busyMasks,heights,afterRemove,enabledAfterRemove,allOff,compactAgain};
+    return {initialCharts,compact,initialCount,choices,oneChart,twoCharts,disabledAtMax,linkedSelection,busyMasks,heights,afterRemove,enabledAfterRemove,allOff,compactAgain};
   },seeded);
   assert(freeWeather.initialCharts===0 && freeWeather.compact && freeWeather.initialCount==='0/2',
     'weather context is a single compact affordance until requested');
@@ -329,6 +344,13 @@ function assert(value,message){
     'open time offers all four measures and enforces a two-chart maximum');
   assert(freeWeather.busyMasks.every(count=>count===1) && freeWeather.heights.every(height=>height<=60),
     'each mini chart stays short and shades the same occupied time span');
+  assert(freeWeather.linkedSelection.dayMap && /9:30.*10:30/i.test(freeWeather.linkedSelection.dayMapCopy)
+    && freeWeather.linkedSelection.bands===2 && freeWeather.linkedSelection.edges===4
+    && /9:30.*10:30/i.test(freeWeather.linkedSelection.focusHead)
+    && freeWeather.linkedSelection.focusedCaptions.some(copy=>/20%/.test(copy))
+    && freeWeather.linkedSelection.focusedCaptions.some(copy=>/10–11°C/.test(copy))
+    && freeWeather.linkedSelection.tones.every(tone=>tone==='active'),
+    `changing the time fields links one exact focus window across the day map and both weather charts (${JSON.stringify(freeWeather.linkedSelection)})`);
   assert(freeWeather.afterRemove===1 && freeWeather.enabledAfterRemove===4,
     'removing one chart immediately makes every weather choice available again');
   assert(freeWeather.allOff===0 && freeWeather.compactAgain,

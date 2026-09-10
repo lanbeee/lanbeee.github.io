@@ -60,6 +60,20 @@ function assert(condition,message){
   assert(await page.locator('.free-fit-body').isHidden(),'expanded checker can be collapsed again');
   await page.locator('.free-fit-toggle').click();
 
+  const trackBox = await page.locator('.free-day-track').boundingBox();
+  await page.mouse.move(trackBox.x+trackBox.width*.70,trackBox.y+trackBox.height/2);
+  await page.mouse.down();
+  await page.mouse.move(trackBox.x+trackBox.width*.80,trackBox.y+trackBox.height/2,{steps:4});
+  await page.mouse.up();
+  await page.waitForFunction(()=>!document.querySelector('.free-fit-run')?.disabled,{timeout:20000});
+  const dragWindow = await page.evaluate(()=>({
+    start:document.querySelector('.free-fit-start')?.value,
+    end:document.querySelector('.free-fit-end')?.value,
+    width:parseFloat(document.querySelector('.free-day-selection')?.style.width || '')
+  }));
+  assert(dragWindow.start==='16:45' && dragWindow.end==='19:15' && Math.abs(dragWindow.width-10.4167)<.3,
+    `dragging the day map picks a snapped exact window (${dragWindow.start}–${dragWindow.end}, ${dragWindow.width}%)`);
+
   async function check(start,end){
     await page.locator('.free-fit-start').fill(start);
     await page.locator('.free-fit-end').fill(end);
@@ -70,6 +84,22 @@ function assert(condition,message){
 
   const open = await check('21:00','22:00');
   assert(/already open/i.test(open),`recognizes existing space: "${open.replace(/\n/g,' · ')}"`);
+  const selectedWindow = await page.evaluate(()=>{
+    const strip=document.querySelector('.free-day-strip');
+    const marker=strip?.querySelector('.free-day-selection');
+    return {
+      selected:strip?.classList.contains('has-selection'),
+      tone:strip?.dataset.selectionTone || '',
+      left:parseFloat(marker?.style.left || ''),
+      width:parseFloat(marker?.style.width || ''),
+      copy:strip?.querySelector('.free-day-focus')?.textContent || ''
+    };
+  });
+  assert(selectedWindow.selected && selectedWindow.tone==='open'
+    && Math.abs(selectedWindow.left-87.5)<.2 && Math.abs(selectedWindow.width-4.1667)<.2,
+    'the exact checked hour is highlighted proportionally on the day map');
+  assert(/9.*10.*1h open/i.test(selectedWindow.copy),
+    `the day map prints the selected range and its open/busy split: "${selectedWindow.copy}"`);
 
   const rearranged = await check('17:00','18:00');
   assert(/can be made open/i.test(rearranged) && /keep everything on this day/i.test(rearranged),`finds same-day rearrangement: "${rearranged.replace(/\n/g,' · ')}"`);

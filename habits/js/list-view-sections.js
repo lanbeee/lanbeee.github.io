@@ -589,6 +589,11 @@ function renderFreeDayStrip(info,onPick){
     `${formatFreeDuration(info.totalFreeMinutes)} open · ${formatFreeDuration(info.largestGapMinutes)} biggest stretch`
   );
 
+  const head = document.createElement('div');
+  head.className = 'free-day-head';
+  head.innerHTML = '<span><i class="ti ti-layout-dashboard" aria-hidden="true"></i>day map</span><span class="free-day-focus"><b>tap a block</b><small>or drag a window</small></span>';
+  wrap.appendChild(head);
+
   const track = document.createElement('div');
   track.className = 'free-day-track';
   if(!pieces.length){
@@ -611,6 +616,11 @@ function renderFreeDayStrip(info,onPick){
       track.appendChild(seg);
     });
   }
+  const selection = document.createElement('span');
+  selection.className = 'free-day-selection';
+  selection.setAttribute('aria-hidden','true');
+  selection.innerHTML = '<i></i><i></i>';
+  track.appendChild(selection);
   wrap.appendChild(track);
 
   const ticks = document.createElement('div');
@@ -628,6 +638,88 @@ function renderFreeDayStrip(info,onPick){
   legend.className = 'free-day-legend';
   legend.innerHTML = '<span><i class="busy" aria-hidden="true"></i>busy</span><span><i class="open" aria-hidden="true"></i>open</span>';
   wrap.appendChild(legend);
+
+  const focusCopy = head.querySelector('.free-day-focus');
+  wrap.setSelection = (start,end,tone='active')=>{
+    const clippedStart = Math.max(winStart,Number(start));
+    const clippedEnd = Math.min(winEnd,Number(end));
+    if(!Number.isFinite(clippedStart) || !Number.isFinite(clippedEnd) || clippedEnd <= clippedStart){
+      wrap.classList.remove('has-selection');
+      wrap.removeAttribute('data-selection-tone');
+      selection.style.left = '';
+      selection.style.width = '';
+      focusCopy.innerHTML = '<b>tap a block</b><small>or drag a window</small>';
+      return;
+    }
+    const duration = Math.max(1,Math.round((clippedEnd-clippedStart)/60000));
+    const openMinutes = freeWindowOverlapMinutes(info.gaps,clippedStart,clippedEnd);
+    const busyMinutes = Math.max(0,duration-openMinutes);
+    const range = `${freeDayClockLabel(clippedStart)}–${freeDayClockLabel(clippedEnd)}`;
+    wrap.classList.add('has-selection');
+    wrap.dataset.selectionTone = tone || 'active';
+    selection.style.left = `${((clippedStart-winStart)/span)*100}%`;
+    selection.style.width = `${((clippedEnd-clippedStart)/span)*100}%`;
+    focusCopy.innerHTML = `<b>${escapeHtml(range)}</b><small>${escapeHtml(formatFreeDuration(openMinutes))} open${busyMinutes ? ` · ${escapeHtml(formatFreeDuration(busyMinutes))} busy` : ''}</small>`;
+    wrap.setAttribute('aria-label',`${range} selected · ${formatFreeDuration(openMinutes)} open${busyMinutes ? ` · ${formatFreeDuration(busyMinutes)} busy` : ''}`);
+  };
+
+  // A horizontal drag chooses an exact 15-minute window. Ordinary taps keep
+  // their existing behavior and select the whole open/busy segment.
+  if(typeof onPick === 'function'){
+    const snapMs = 15*60000;
+    let drag = null;
+    let suppressTap = false;
+    const timeAt = clientX=>{
+      const rect = track.getBoundingClientRect();
+      const ratio = rect.width ? Math.max(0,Math.min(1,(clientX-rect.left)/rect.width)) : 0;
+      return Math.max(winStart,Math.min(winEnd,Math.round((winStart+ratio*span)/snapMs)*snapMs));
+    };
+    track.addEventListener('pointerdown',event=>{
+      if(event.button !== 0)return;
+      drag = {id:event.pointerId,x:event.clientX,y:event.clientY,start:timeAt(event.clientX),moved:false};
+    });
+    track.addEventListener('pointermove',event=>{
+      if(!drag || drag.id !== event.pointerId)return;
+      const dx = event.clientX-drag.x;
+      const dy = event.clientY-drag.y;
+      if(!drag.moved && Math.abs(dx) < 6)return;
+      if(!drag.moved && Math.abs(dy) > Math.abs(dx)){ drag=null; return; }
+      drag.moved = true;
+      track.classList.add('is-dragging');
+      track.setPointerCapture?.(event.pointerId);
+      let start = Math.min(drag.start,timeAt(event.clientX));
+      let end = Math.max(drag.start,timeAt(event.clientX));
+      if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
+      wrap.setSelection(start,end,'active');
+      event.preventDefault();
+    });
+    const finishDrag = event=>{
+      if(!drag || drag.id !== event.pointerId)return;
+      const moved = drag.moved;
+      const anchor = drag.start;
+      drag = null;
+      track.classList.remove('is-dragging');
+      if(!moved)return;
+      let start = Math.min(anchor,timeAt(event.clientX));
+      let end = Math.max(anchor,timeAt(event.clientX));
+      if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
+      suppressTap = true;
+      onPick(start,end,selection);
+      setTimeout(()=>{ suppressTap=false; },0);
+      event.preventDefault();
+    };
+    track.addEventListener('pointerup',finishDrag);
+    track.addEventListener('pointercancel',event=>{
+      if(!drag || drag.id !== event.pointerId)return;
+      drag = null;
+      track.classList.remove('is-dragging');
+    });
+    track.addEventListener('click',event=>{
+      if(!suppressTap)return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },true);
+  }
   return wrap;
 }
 
@@ -786,7 +878,7 @@ async function analyzeFreeWindow(info,start,end){
   return {tone:'spill',icon:'calendar-off',title:'Doesn’t fit cleanly',copy:`Making this space would push ${unscheduled.slice(0,2).join(' and ') || 'planned work'} out of this day.`};
 }
 
-function renderFreeWindowChecker(info){
+function renderFreeWindowChecker(info,onRangeChange){
   const checker = document.createElement('section');
   checker.className = 'free-fit-checker';
   checker.setAttribute('aria-label','check whether a time can be made open');
@@ -821,11 +913,22 @@ function renderFreeWindowChecker(info){
   };
   toggle.addEventListener('click',()=>setExpanded(toggle.getAttribute('aria-expanded') !== 'true'));
   let request = 0;
-  const check = async()=>{
+  const selectedRange = ()=>{
     const start = freeWindowTimestamp(info,startInput.value);
     let end = freeWindowTimestamp(info,endInput.value);
     if(start != null && end != null && end <= start && endInput.value === '00:00')end += 86400000;
-    if(start == null || end == null || end <= start){
+    return {start,end,valid:start != null && end != null && end > start};
+  };
+  const showRange = tone=>{
+    const range = selectedRange();
+    if(typeof onRangeChange === 'function')onRangeChange(range.valid ? range.start : null,range.valid ? range.end : null,tone);
+    return range;
+  };
+  const check = async()=>{
+    const range = showRange('checking');
+    const {start,end} = range;
+    if(!range.valid){
+      if(typeof onRangeChange === 'function')onRangeChange(null,null,'blocked');
       result.className = 'free-fit-result blocked';
       result.innerHTML = '<i class="ti ti-alert-circle" aria-hidden="true"></i><span><b>Check the times</b><small>The end needs to be after the start.</small></span>';
       return;
@@ -837,10 +940,12 @@ function renderFreeWindowChecker(info){
     try{
       const answer = await analyzeFreeWindow(info,start,end);
       if(token !== request)return;
+      if(typeof onRangeChange === 'function')onRangeChange(start,end,answer.tone);
       result.className = `free-fit-result ${answer.tone}`;
       result.innerHTML = `<i class="ti ti-${answer.icon}" aria-hidden="true"></i><span><b>${escapeHtml(answer.title)}</b><small>${escapeHtml(answer.copy)}</small></span>`;
     }catch(_){
       if(token !== request)return;
+      if(typeof onRangeChange === 'function')onRangeChange(start,end,'blocked');
       result.className = 'free-fit-result blocked';
       result.innerHTML = '<i class="ti ti-alert-circle" aria-hidden="true"></i><span><b>Couldn’t check this window</b><small>Your current open stretches are still shown above.</small></span>';
     }finally{
@@ -848,11 +953,21 @@ function renderFreeWindowChecker(info){
     }
   };
   run.addEventListener('click',check);
-  [startInput,endInput].forEach(input=>input.addEventListener('change',()=>{ result.className = 'free-fit-result'; result.innerHTML = '<i class="ti ti-arrow-right" aria-hidden="true"></i><span><b>Ready to check</b><small>This won’t change your plan.</small></span>'; }));
+  [startInput,endInput].forEach(input=>{
+    const update=()=>{
+      request += 1;
+      showRange('active');
+      result.className = 'free-fit-result';
+      result.innerHTML = '<i class="ti ti-arrow-right" aria-hidden="true"></i><span><b>Ready to check</b><small>The chosen window is highlighted above.</small></span>';
+    };
+    input.addEventListener('input',update);
+    input.addEventListener('change',update);
+  });
   checker.pickWindow = (start,end)=>{
     setExpanded(true);
     startInput.value = freeWindowInputValue(start);
     endInput.value = freeWindowInputValue(end);
+    if(typeof onRangeChange === 'function')onRangeChange(start,end,'checking');
     void check();
   };
   return checker;
@@ -865,10 +980,17 @@ function renderFreePanel(info){
   summary.className = 'free-panel-row free-panel-hero';
   summary.innerHTML = `<span class="free-panel-metric"><small>total room</small><b>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</b></span><span class="free-panel-metric"><small>biggest stretch</small><b>${escapeHtml(formatFreeDuration(info.largestGapMinutes))}</b></span>`;
   panel.appendChild(summary);
-  const checker = renderFreeWindowChecker(info);
-  panel.appendChild(renderFreeDayStrip(info,(start,end)=>checker.pickWindow(start,end)));
+  let strip = null;
+  let weather = null;
+  const syncRange = (start,end,tone)=>{
+    strip?.setSelection?.(start,end,tone);
+    weather?.setSelection?.(start,end,tone);
+  };
+  const checker = renderFreeWindowChecker(info,syncRange);
+  strip = renderFreeDayStrip(info,(start,end)=>checker.pickWindow(start,end));
+  panel.appendChild(strip);
   if(typeof renderFreeTimeWeatherContext === 'function'){
-    const weather = renderFreeTimeWeatherContext(info);
+    weather = renderFreeTimeWeatherContext(info);
     if(weather)panel.appendChild(weather);
   }
   panel.appendChild(checker);
