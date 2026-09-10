@@ -282,8 +282,8 @@ function assert(value,message){
     && /colour indicates low to high/.test(comparisonColour.aria),
     'temperature, wind, and UV share explicit low-to-high visual semantics');
 
-  // Open-time weather starts as one quiet affordance. Opening it reveals four
-  // compact controls that can add exactly two charts with shared busy shading.
+  // Open-time weather starts hidden; the sheet header's cloud toggle reveals
+  // four compact controls that can add exactly two charts with shared busy shading.
   const freeWeather=await page.evaluate(({base})=>{
     saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
     sortSettings=loadSortSettings();
@@ -296,11 +296,12 @@ function assert(value,message){
     const panel=renderFreePanel(info);
     document.body.appendChild(panel);
     const context=panel.querySelector('.free-weather-context');
+    const headerButton=document.getElementById('free-time-weather');
     const initialCharts=context.querySelectorAll('.free-weather-chart').length;
-    const compact=context.classList.contains('is-collapsed')
-      && !!context.querySelector('[data-free-weather-add]')
+    const compact=context.hidden && !context.textContent.trim()
+      && !headerButton.hidden && headerButton.getAttribute('aria-expanded')==='false'
       && !context.querySelector('.free-weather-picker');
-    context.querySelector('[data-free-weather-add]').click();
+    headerButton.click();
     const choices=context.querySelectorAll('[data-free-weather-metric]').length;
     const initialCount=context.querySelector('.free-weather-head em')?.textContent || '';
     context.querySelector('[data-free-weather-metric="precip"]').click();
@@ -333,13 +334,13 @@ function assert(value,message){
     context.remove();
     context.querySelector('[data-free-weather-metric="temp"]').click();
     const allOff=context.querySelectorAll('.free-weather-chart').length;
-    const compactAgain=context.classList.contains('is-collapsed')
-      && !!context.querySelector('[data-free-weather-add]')
+    const compactAgain=context.hidden && !context.textContent.trim()
+      && headerButton.getAttribute('aria-expanded')==='false'
       && !context.querySelector('.free-weather-picker');
     return {initialCharts,compact,initialCount,choices,oneChart,twoCharts,disabledAtMax,linkedSelection,busyMasks,heights,afterRemove,enabledAfterRemove,allOff,compactAgain};
   },seeded);
   assert(freeWeather.initialCharts===0 && freeWeather.compact && freeWeather.initialCount==='0/2',
-    'weather context is a single compact affordance until requested');
+    'weather context stays hidden until the header cloud toggle opens it');
   assert(freeWeather.choices===4 && freeWeather.oneChart===1 && freeWeather.twoCharts===2 && freeWeather.disabledAtMax===2,
     'open time offers all four measures and enforces a two-chart maximum');
   assert(freeWeather.busyMasks.every(count=>count===1) && freeWeather.heights.every(height=>height<=60),
@@ -354,7 +355,7 @@ function assert(value,message){
   assert(freeWeather.afterRemove===1 && freeWeather.enabledAfterRemove===4,
     'removing one chart immediately makes every weather choice available again');
   assert(freeWeather.allOff===0 && freeWeather.compactAgain,
-    'removing the final chart folds weather context back to its compact affordance');
+    'removing the final chart folds weather context away behind the header toggle');
 
   // °F converts the chart labels and stats too; each metric gets its own shape.
   const drillF=await page.evaluate(()=>{

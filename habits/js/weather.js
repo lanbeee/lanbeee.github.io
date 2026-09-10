@@ -1778,15 +1778,25 @@ function weatherFreeTimeChartHtml(metricKey,rows,info,selection=null){
 }
 
 // RENDER: optional weather context inside the free-time sheet. It starts off;
-// metric buttons add/remove up to two charts so dense free-time details remain
-// compact until the person explicitly asks for forecast context.
+// the cloud button in the sheet header adds/removes up to two charts so dense
+// free-time details remain compact until the person explicitly asks for
+// forecast context. The header button is the single toggle: hidden when no
+// forecast exists, pressed while the section is open.
 function renderFreeTimeWeatherContext(info){
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
   const dayBase=typeof dayStart==='function' ? dayStart(info?.windowStart) : null;
   const summary=dayBase==null ? null : weatherDaySummary(settings?._weatherContext,dayBase,settings);
-  if(!summary)return null;
+  const headerButton=document.getElementById('free-time-weather');
+  const syncHeader=active=>{
+    if(!headerButton)return;
+    headerButton.hidden=!summary;
+    headerButton.setAttribute('aria-expanded',active?'true':'false');
+    headerButton.setAttribute('aria-label',active?'hide weather context':'add weather context');
+    headerButton.innerHTML=`<i class="ti ${active?'ti-cloud':'ti-cloud-plus'}" aria-hidden="true"></i>`;
+  };
+  if(!summary){syncHeader(false);return null;}
   const available=Object.keys(WEATHER_METRIC_DETAILS).filter(key=>weatherHourlyRowsForDayMetric(dayBase,key,settings).length);
-  if(!available.length)return null;
+  if(!available.length){syncHeader(false);return null;}
   const section=document.createElement('section');
   section.className='free-weather-context';
   section.setAttribute('aria-label','weather context for open time');
@@ -1795,20 +1805,15 @@ function renderFreeTimeWeatherContext(info){
   let selection=null;
   const shortLabel={temp:'feels',precip:'rain',wind:'wind',uv:'UV'};
   const draw=()=>{
-    const inactive=!choosing && !selected.length;
-    section.classList.toggle('is-collapsed',inactive);
-    if(inactive){
-      const selectedLabel=selection ? ` for ${freeDayClockLabel(selection.start)} to ${freeDayClockLabel(selection.end)}` : '';
-      section.innerHTML=`<button type="button" class="free-weather-add" data-free-weather-add aria-expanded="false" aria-label="add weather${escapeHtml(selectedLabel)}"><i class="ti ti-cloud-plus" aria-hidden="true"></i><span>add weather</span></button>`;
-      section.querySelector('[data-free-weather-add]').addEventListener('click',()=>{ choosing=true; draw(); });
-      return;
-    }
+    const active=choosing || selected.length>0;
+    syncHeader(active);
+    section.hidden=!active;
+    if(!active){section.innerHTML='';return;}
     const focusCopy=selection ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)} selected` : 'busy time is shaded';
-    section.innerHTML=`<div class="free-weather-head"><span><b>weather context</b><small>${escapeHtml(focusCopy)} · choose up to 2</small></span><span class="free-weather-head-actions"><em>${selected.length}/2</em><button type="button" data-free-weather-hide aria-label="hide weather context"><i class="ti ti-x" aria-hidden="true"></i></button></span></div><div class="free-weather-picker" aria-label="weather charts">${available.map(key=>{
+    section.innerHTML=`<div class="free-weather-head"><span><b>weather</b><small>${escapeHtml(focusCopy)}</small></span><em>${selected.length}/2</em></div><div class="free-weather-picker" aria-label="weather charts">${available.map(key=>{
       const detail=WEATHER_METRIC_DETAILS[key],on=selected.includes(key),locked=!on && selected.length>=2;
       return `<button type="button" data-free-weather-metric="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${locked?' disabled':''}><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(shortLabel[key])}</button>`;
     }).join('')}</div><div class="free-weather-charts">${selected.map(key=>weatherFreeTimeChartHtml(key,weatherHourlyRowsForDayMetric(dayBase,key,settings),info,selection)).join('')}</div>`;
-    section.querySelector('[data-free-weather-hide]').addEventListener('click',()=>{ selected=[]; choosing=false; draw(); });
     section.querySelectorAll('[data-free-weather-metric]').forEach(button=>button.addEventListener('click',()=>{
       const key=button.dataset.freeWeatherMetric;
       if(selected.includes(key))selected=selected.filter(item=>item!==key);
@@ -1816,6 +1821,11 @@ function renderFreeTimeWeatherContext(info){
       if(!selected.length)choosing=false;
       draw();
     }));
+  };
+  if(headerButton)headerButton.onclick=()=>{
+    if(choosing || selected.length){choosing=false;selected=[];}
+    else choosing=true;
+    draw();
   };
   section.setSelection=(start,end,tone='active')=>{
     selection=Number.isFinite(start) && Number.isFinite(end) && end>start ? {start,end,tone} : null;
