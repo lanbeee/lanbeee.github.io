@@ -373,6 +373,54 @@ function assert(value,message){
     'a pure-snow hour reads in centimetres instead of 0 mm');
   assert(/cm\s*snow/.test(snowDay.mixedHour),'a mixed hour pairs liquid mm with snow cm');
   assert(/snow\s*1\.6\s*cm/.test(snowDay.stats.join(' ')),'the stats include the day\'s snow total');
+
+  // Reference lines give each curve its meaning (freezing, UV level, breeze
+  // strength, even chance); thresholds outside the day's range stay hidden.
+  // A sub-zero day must also keep its whole curve inside the frame.
+  const refLines=await page.evaluate(({base})=>{
+    const now=Date.now();
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const samples=[9,10,11].map((hour,i)=>({ts:base+hour*3600000,temperature_2m:i,
+      apparent_temperature:-1+i*1.5,precipitation_probability:20,precipitation:.2,
+      snowfall:0,wind_speed_10m:30,wind_gusts_10m:45,uv_index:5,weather_code:71,source:'weekly'}));
+    const days=[{ts:base,key:dateKey(base),weather_code:71,temperature_2m_min:-2,temperature_2m_max:1,
+      apparent_temperature_min:-3,apparent_temperature_max:2,precipitation_probability_max:20,
+      precipitation_sum:.6,snowfall_sum:0,wind_speed_10m_max:30,wind_gusts_10m_max:45,uv_index_max:5}];
+    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify({
+      weekly:{lat:52.52,lng:13.405,fetchedAt:now-600000,timezone:tz,samples,days}
+    }));
+    sortSettings=loadSortSettings();
+    const open=metric=>{
+      openWeatherContextSheet(base,null,'');
+      document.querySelector(`[data-weather-metric="${metric}"]`).click();
+      const out={refs:[...document.querySelectorAll('#weather-metric-content svg .reflabel')].map(t=>t.textContent),
+        meta:_weatherChartMeta,
+        sunMarks:document.querySelectorAll('#weather-metric-content svg .sunmark').length};
+      document.getElementById('weather-metric-close').click();
+      return out;
+    };
+    const temp=open('temp');
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'f'});
+    sortSettings=loadSortSettings();
+    const tempF=open('temp');
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
+    sortSettings=loadSortSettings();
+    const wind=open('wind');
+    const precip=open('precip');
+    const uv=open('uv');
+    document.getElementById('weather-context-done').click();
+    return {temp,tempF,wind,precip,uv};
+  },seeded);
+  assert(refLines.temp.refs.join()==='freezing 0°' && refLines.temp.meta.geom.yMin<0,
+    'the freezing line draws inside a sub-zero day and the domain keeps the negative floor');
+  assert(refLines.temp.meta.primary.every(v=>v>=refLines.temp.meta.geom.yMin && v<=refLines.temp.meta.geom.yMax),
+    'every feels-like sample stays inside the chart frame on a sub-zero day');
+  assert(refLines.temp.sunMarks===2,'the feels-like chart carries the sunrise/sunset context too');
+  assert(refLines.tempF.refs.join()==='freezing 32°','°F converts the freezing reference label');
+  assert(refLines.wind.refs.join()==='strong 39' && refLines.wind.meta.geom.yMax>=45,
+    'the wind chart marks the strong-breeze threshold the shared frame still covers gusts');
+  assert(refLines.precip.refs.join()==='even 50%','the precipitation chart marks the even-chance line');
+  assert(refLines.uv.refs.join()==='moderate 3','the UV chart marks the moderate level when the peak reaches it');
   assert(errors.length===0,'no page errors during unit switching');
 
   await browser.close();

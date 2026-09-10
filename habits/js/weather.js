@@ -1047,6 +1047,20 @@ const WEATHER_METRIC_DETAILS={
   uv:{icon:'ti-sun-high',label:'UV',primary:'uv_index'}
 };
 
+// Horizontal context lines per metric: thresholds that give the curve meaning
+// without a y-axis. Only thresholds strictly inside the day's domain draw.
+const WEATHER_METRIC_REF_LINES={
+  temp:[{v:0,label:'freezing'},{v:30,label:'hot'}],
+  precip:[{v:50,label:'even 50%'}],
+  wind:[{v:39,label:'strong 39'},{v:62,label:'gale 62'}],
+  uv:[{v:3,label:'moderate 3'},{v:6,label:'high 6'},{v:8,label:'very high 8'},{v:11,label:'extreme 11'}]
+};
+
+function weatherMetricRefText(metricKey,ref){
+  if(metricKey==='temp')return `${ref.label} ${weatherTempDisplay(ref.v)}°`;
+  return ref.label;
+}
+
 // Cards with a metricKey render as buttons that open the hourly detail sheet;
 // pass metricKey only when hourly data exists for that metric.
 function weatherMetricCard(icon,label,value,metricKey=null){
@@ -1144,7 +1158,9 @@ function weatherMetricChartHtml(metricKey,rows,summary){
   if(vMax<=vMin)vMax=vMin+1;
   const pad=metricKey==='precip' ? 0 : (vMax-vMin)*0.18;
   vMax+=pad;
-  if(!zeroBased)vMin=Math.max(0,vMin-pad);
+  // Lift the floor to 0 only for all-positive data; clamping a sub-zero day
+  // to 0 would push its whole curve below the plot.
+  if(!zeroBased)vMin=vMin<0 ? vMin-pad : Math.max(0,vMin-pad);
   const xAt=i=>left+(i/(pts.length-1))*(W-left-right);
   const yAt=v=>bottom-((v-vMin)/(vMax-vMin))*(bottom-top);
   const xs=pts.map((p,i)=>xAt(i));
@@ -1158,7 +1174,9 @@ function weatherMetricChartHtml(metricKey,rows,summary){
     const t=(Date.now()-pts[0].ts)/Math.max(1,pts[pts.length-1].ts-pts[0].ts);
     if(t>=0 && t<=1)idx0=Math.max(0,Math.min(pts.length-1,Math.round(t*(pts.length-1))));
   }
-  const sun=metricKey==='uv' ? weatherSunTimesFor(summary) : null;
+  // Sun context on UV (its whole scale is daylight) and temp (overnight lows
+  // read against the night); wind/precip stay clean.
+  const sun=metricKey==='uv' || metricKey==='temp' ? weatherSunTimesFor(summary) : null;
   _weatherChartMeta={metricKey,ts:pts.map(p=>p.ts),xs,
     labels:pts.map(p=>hourFull.format(p.ts)),
     primary:pts.map(p=>p.v),secondary:pts.map(p=>p.s),snow:detail.snow ? pts.map(p=>p.w) : null,
@@ -1195,6 +1213,15 @@ function weatherMetricChartHtml(metricKey,rows,summary){
       const secPts=pts.map((p,i)=>Number.isFinite(p.s) ? [xs[i],yAt(p.s)] : null).filter(Boolean);
       if(secPts.length>1)inner+=`<path class="line secondary" d="${weatherSmoothPath(secPts)}"/>`;
     }
+  }
+  // Threshold context lines (freezing / UV levels / breeze strength / even
+  // chance): dashed, labelled at the left edge (the right corner is the now
+  // line's and sunset mark's), skipped outside the domain.
+  for(const ref of WEATHER_METRIC_REF_LINES[metricKey] || []){
+    if(ref.v<=vMin || ref.v>=vMax)continue;
+    const ry=yAt(ref.v).toFixed(1);
+    inner+=`<g class="ref"><line class="refline" x1="${left}" y1="${ry}" x2="${W-right}" y2="${ry}"/>`
+      +`<text class="reflabel" x="${left+3}" y="${(yAt(ref.v)-2.5).toFixed(1)}" text-anchor="start">${escapeHtml(weatherMetricRefText(metricKey,ref))}</text></g>`;
   }
   const mark=(idx,cls,dy)=>{
     const px=xs[idx],py=yAt(pts[idx].v);
