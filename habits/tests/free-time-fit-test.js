@@ -74,6 +74,73 @@ function assert(condition,message){
   assert(dragWindow.start==='16:45' && dragWindow.end==='19:15' && Math.abs(dragWindow.width-10.4167)<.3,
     `dragging the day map picks a snapped exact window (${dragWindow.start}–${dragWindow.end}, ${dragWindow.width}%)`);
 
+  // Gesture model: grabbing a handle stretches one edge, dragging inside the
+  // window slides it whole, open ground draws a fresh window, and a press on
+  // a handle that never moves must not fall through to the segment click.
+  const windowState = ()=>page.evaluate(()=>{
+    const track = document.querySelector('.free-day-track');
+    const marker = document.querySelector('.free-day-selection');
+    const rect = track.getBoundingClientRect();
+    const left = parseFloat(marker?.style.left || '0');
+    const width = parseFloat(marker?.style.width || '0');
+    return {
+      start:document.querySelector('.free-fit-start')?.value || '',
+      end:document.querySelector('.free-fit-end')?.value || '',
+      leftX:left/100*rect.width + rect.left,
+      rightX:(left + width)/100*rect.width + rect.left,
+      hasSelection:marker && marker.style.width !== ''
+    };
+  });
+  const minutes = value=>{
+    const [h,m] = value.split(':').map(Number);
+    return h*60 + m;
+  };
+  const settled = ()=>page.waitForFunction(()=>!document.querySelector('.free-fit-run')?.disabled,{timeout:20000});
+
+  await settled();
+  const drawn = await windowState();
+  const trackY = (await page.locator('.free-day-track').boundingBox()).y + 13;
+
+  await page.mouse.move(drawn.rightX,trackY);
+  await page.mouse.down();
+  await page.mouse.move(drawn.rightX + 25,trackY,{steps:6});
+  await page.mouse.up();
+  await settled();
+  const stretched = await windowState();
+  assert(stretched.hasSelection && stretched.start === drawn.start && stretched.end > drawn.end,
+    `grabbing the end handle stretches only the end (${drawn.start}–${drawn.end} → ${stretched.start}–${stretched.end})`);
+
+  await page.mouse.move(stretched.rightX,trackY);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(80);
+  const edgeTap = await windowState();
+  assert(edgeTap.start === stretched.start && edgeTap.end === stretched.end,
+    'pressing a handle without dragging never selects the segment beneath it');
+
+  const slideBefore = await windowState();
+  const midX = (slideBefore.leftX + slideBefore.rightX)/2;
+  await page.mouse.move(midX,trackY);
+  await page.mouse.down();
+  await page.mouse.move(midX + 18,trackY,{steps:5});
+  await page.mouse.up();
+  await settled();
+  const slid = await windowState();
+  const beforeSpan = minutes(slideBefore.end) - minutes(slideBefore.start);
+  const slidSpan = minutes(slid.end) - minutes(slid.start);
+  assert(slid.start > slideBefore.start && Math.abs(slidSpan - beforeSpan) <= 1,
+    `dragging inside the window slides it whole, keeping its span (${slideBefore.start}–${slideBefore.end} → ${slid.start}–${slid.end})`);
+
+  const trackBox2 = await page.locator('.free-day-track').boundingBox();
+  await page.mouse.move(trackBox2.x + trackBox2.width*0.2,trackY);
+  await page.mouse.down();
+  await page.mouse.move(trackBox2.x + trackBox2.width*0.2 + 25,trackY,{steps:6});
+  await page.mouse.up();
+  await settled();
+  const redrawn = await windowState();
+  assert(redrawn.rightX < slideBefore.leftX && minutes(redrawn.end) - minutes(redrawn.start) >= 15,
+    'dragging on open ground away from the window still draws a fresh one');
+
   async function check(start,end){
     await page.locator('.free-fit-start').fill(start);
     await page.locator('.free-fit-end').fill(end);

@@ -534,6 +534,10 @@ function assert(value,message){
     const snowBars=document.querySelectorAll('#weather-metric-content svg rect.bar.snow').length;
     const yMax=_weatherChartMeta.geom.yMax;
     const readout=()=>document.getElementById('weather-metric-readout').textContent.replace(/\s+/g,' ').trim();
+    // The scrub starts at the current wall-clock hour, so walk to the last
+    // seeded hour first — otherwise this block only passes in the afternoon.
+    const chart=document.querySelector('#weather-metric-content svg.weather-metric-chart');
+    for(let i=0;i<24;i++)chart.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
     const snowyHour=readout();
     document.querySelector('#weather-metric-content svg.weather-metric-chart')
       .dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));

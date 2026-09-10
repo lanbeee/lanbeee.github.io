@@ -740,6 +740,11 @@ function forgivingButtonTarget(target, clientX, clientY){
   const btn = target.closest('button');
   if(btn){
     if(btn.closest('.ting-card'))return null;
+    // Day-map segments sit inside a custom gesture surface (tap / draw / slide /
+    // stretch) that classifies each press itself. A forgiving click synthesized
+    // after a track drag would select the whole segment under the press and make
+    // a stretch read as "both ends jumped". Clean taps still fire native clicks.
+    if(btn.closest('.free-day-track'))return null;
     // These live directly in the vertically scrolling home feed and have their
     // own movement-aware activation. Synthesizing a forgiving click here can
     // open an editor or cancel a block before their scroll guards see pointerup.

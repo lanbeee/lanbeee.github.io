@@ -636,14 +636,16 @@ function renderFreeDayStrip(info,onPick){
 
   const legend = document.createElement('div');
   legend.className = 'free-day-legend';
-  legend.innerHTML = '<span><i class="busy" aria-hidden="true"></i>busy</span><span><i class="open" aria-hidden="true"></i>open</span>';
+  legend.innerHTML = '<span><i class="busy" aria-hidden="true"></i>busy</span><span><i class="open" aria-hidden="true"></i>open</span><span><i class="ti ti-arrows-horizontal" aria-hidden="true"></i>drag edges to stretch</span>';
   wrap.appendChild(legend);
 
   const focusCopy = head.querySelector('.free-day-focus');
+  let sel = null; // live selection mirrored here so gestures can find its edges
   wrap.setSelection = (start,end,tone='active')=>{
     const clippedStart = Math.max(winStart,Number(start));
     const clippedEnd = Math.min(winEnd,Number(end));
     if(!Number.isFinite(clippedStart) || !Number.isFinite(clippedEnd) || clippedEnd <= clippedStart){
+      sel = null;
       wrap.classList.remove('has-selection');
       wrap.removeAttribute('data-selection-tone');
       selection.style.left = '';
@@ -655,6 +657,7 @@ function renderFreeDayStrip(info,onPick){
     const openMinutes = freeWindowOverlapMinutes(info.gaps,clippedStart,clippedEnd);
     const busyMinutes = Math.max(0,duration-openMinutes);
     const range = `${freeDayClockLabel(clippedStart)}–${freeDayClockLabel(clippedEnd)}`;
+    sel = {start:clippedStart,end:clippedEnd};
     wrap.classList.add('has-selection');
     wrap.dataset.selectionTone = tone || 'active';
     selection.style.left = `${((clippedStart-winStart)/span)*100}%`;
@@ -663,49 +666,134 @@ function renderFreeDayStrip(info,onPick){
     wrap.setAttribute('aria-label',`${range} selected · ${formatFreeDuration(openMinutes)} open${busyMinutes ? ` · ${formatFreeDuration(busyMinutes)} busy` : ''}`);
   };
 
-  // A horizontal drag chooses an exact 15-minute window. Ordinary taps keep
-  // their existing behavior and select the whole open/busy segment.
+  // The day map behaves like a range control. A press is classified once, at
+  // pointerdown, so gestures can't be misread mid-drag: within a handle's grab
+  // zone it stretches that edge alone, inside the window it slides the whole
+  // window, and anywhere else it draws a fresh window. A press that never
+  // moves is a tap — except on a handle, where it must never fall through to
+  // the segment click (that fall-through read as "both ends jumped").
   if(typeof onPick === 'function'){
     const snapMs = 15*60000;
+    const EDGE_GRAB_PX = 14;
     let drag = null;
     let suppressTap = false;
-    const timeAt = clientX=>{
+    const rectAt = ()=>{
       const rect = track.getBoundingClientRect();
-      const ratio = rect.width ? Math.max(0,Math.min(1,(clientX-rect.left)/rect.width)) : 0;
-      return Math.max(winStart,Math.min(winEnd,Math.round((winStart+ratio*span)/snapMs)*snapMs));
+      return rect.width ? rect : null;
     };
+    const rawTimeAt = clientX=>{
+      const rect = rectAt();
+      const ratio = rect ? Math.max(0,Math.min(1,(clientX-rect.left)/rect.width)) : 0;
+      return winStart + ratio*span;
+    };
+    const timeAt = clientX=>Math.max(winStart,Math.min(winEnd,Math.round(rawTimeAt(clientX)/snapMs)*snapMs));
+    const edgeAt = clientX=>{
+      if(!sel)return null;
+      const rect = rectAt();
+      if(!rect)return null;
+      const startX = rect.left + ((sel.start-winStart)/span)*rect.width;
+      const endX = rect.left + ((sel.end-winStart)/span)*rect.width;
+      const dStart = Math.abs(clientX-startX);
+      const dEnd = Math.abs(clientX-endX);
+      if(dStart <= EDGE_GRAB_PX && dEnd <= EDGE_GRAB_PX)return dStart <= dEnd ? 'start' : 'end';
+      if(dStart <= EDGE_GRAB_PX)return 'start';
+      if(dEnd <= EDGE_GRAB_PX)return 'end';
+      return null;
+    };
+    const insideSel = clientX=>{
+      if(!sel)return false;
+      const t = rawTimeAt(clientX);
+      return t > sel.start && t < sel.end;
+    };
+    track.addEventListener('pointermove',event=>{
+      if(drag || event.pointerType !== 'mouse')return;
+      const edge = edgeAt(event.clientX);
+      track.classList.toggle('is-over-edge',!!edge);
+      track.classList.toggle('is-over-move',!edge && insideSel(event.clientX));
+    });
+    track.addEventListener('pointerleave',()=>track.classList.remove('is-over-edge','is-over-move'));
     track.addEventListener('pointerdown',event=>{
       if(event.button !== 0)return;
-      drag = {id:event.pointerId,x:event.clientX,y:event.clientY,start:timeAt(event.clientX),moved:false};
+      const edge = edgeAt(event.clientX);
+      drag = {
+        id:event.pointerId,x:event.clientX,y:event.clientY,moved:false,
+        mode:edge ? 'stretch' : !insideSel(event.clientX) ? 'draw' : 'slide',
+        edge,start:timeAt(event.clientX)
+      };
+      if(drag.mode === 'slide' && sel){
+        drag.grabOffset = rawTimeAt(event.clientX) - sel.start;
+        drag.duration = sel.end - sel.start;
+      }
+      if(drag.mode === 'stretch' && sel)drag.fixed = edge === 'start' ? sel.end : sel.start;
     });
     track.addEventListener('pointermove',event=>{
       if(!drag || drag.id !== event.pointerId)return;
       const dx = event.clientX-drag.x;
       const dy = event.clientY-drag.y;
       if(!drag.moved && Math.abs(dx) < 6)return;
-      if(!drag.moved && Math.abs(dy) > Math.abs(dx)){ drag=null; return; }
+      if(!drag.moved && Math.abs(dy) > Math.abs(dx)){
+        // Vertical intent: cancel. A press aimed at the window (handle/slide)
+        // still swallows the click so the segment beneath never hijacks it.
+        if(drag.mode !== 'draw')suppressNextTap();
+        drag = null;
+        return;
+      }
       drag.moved = true;
       track.classList.add('is-dragging');
-      track.setPointerCapture?.(event.pointerId);
-      let start = Math.min(drag.start,timeAt(event.clientX));
-      let end = Math.max(drag.start,timeAt(event.clientX));
-      if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
-      wrap.setSelection(start,end,'active');
+      try{track.setPointerCapture(event.pointerId);}catch(_){/* synthetic pointers cannot capture */}
+      if(drag.mode === 'slide'){
+        const start = Math.max(winStart,Math.min(winEnd - drag.duration,rawTimeAt(event.clientX) - drag.grabOffset));
+        wrap.setSelection(start,start + drag.duration,'active');
+      }else if(drag.mode === 'stretch'){
+        const t = timeAt(event.clientX);
+        if(drag.edge === 'start')wrap.setSelection(Math.max(winStart,Math.min(t,drag.fixed - snapMs)),drag.fixed,'active');
+        else wrap.setSelection(drag.fixed,Math.min(winEnd,Math.max(t,drag.fixed + snapMs)),'active');
+      }else{
+        let start = Math.min(drag.start,timeAt(event.clientX));
+        let end = Math.max(drag.start,timeAt(event.clientX));
+        if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
+        wrap.setSelection(start,end,'active');
+      }
       event.preventDefault();
     });
+    const suppressNextTap = ()=>{
+      // The trailing click can arrive a task or two after pointerup (pointer
+      // capture retargeting), so a zero timeout would clear the flag too early.
+      // Consume it on the first suppressed click; the timer is the fallback for
+      // gestures whose click never comes.
+      suppressTap = true;
+      setTimeout(()=>{ suppressTap = false; },400);
+    };
     const finishDrag = event=>{
       if(!drag || drag.id !== event.pointerId)return;
       const moved = drag.moved;
+      const mode = drag.mode;
+      const edge = drag.edge;
       const anchor = drag.start;
+      const fixed = drag.fixed;
+      const grabOffset = drag.grabOffset;
+      const duration = drag.duration;
       drag = null;
       track.classList.remove('is-dragging');
-      if(!moved)return;
-      let start = Math.min(anchor,timeAt(event.clientX));
-      let end = Math.max(anchor,timeAt(event.clientX));
-      if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
-      suppressTap = true;
+      if(!moved){
+        if(edge)suppressNextTap(); // a press on a handle is never a segment tap
+        return;
+      }
+      let start,end;
+      if(mode === 'slide'){
+        start = Math.max(winStart,Math.min(winEnd - duration,rawTimeAt(event.clientX) - grabOffset));
+        end = start + duration;
+      }else if(mode === 'stretch'){
+        const t = timeAt(event.clientX);
+        if(edge === 'start'){ end = fixed; start = Math.max(winStart,Math.min(t,end - snapMs)); }
+        else{ start = fixed; end = Math.min(winEnd,Math.max(t,start + snapMs)); }
+      }else{
+        start = Math.min(anchor,timeAt(event.clientX));
+        end = Math.max(anchor,timeAt(event.clientX));
+        if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
+      }
+      suppressNextTap();
       onPick(start,end,selection);
-      setTimeout(()=>{ suppressTap=false; },0);
       event.preventDefault();
     };
     track.addEventListener('pointerup',finishDrag);
@@ -718,6 +806,7 @@ function renderFreeDayStrip(info,onPick){
       if(!suppressTap)return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      suppressTap = false;
     },true);
   }
   return wrap;
