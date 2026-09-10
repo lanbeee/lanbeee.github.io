@@ -337,8 +337,8 @@ function assert(value,message){
   assert(/3 items · 1 busy time/.test(busyAndTiny.overview),'the overview separates items from busy times');
   assert(busyAndTiny.firstHour==='00:00' && busyAndTiny.chartHeight>=1000,
     'a midnight sleep block pulls the chart domain up to 00:00 so earlier hours are scrollable');
-  assert(busyAndTiny.found.tinyA.height<12,
-    'a tiny item wedged against the next block keeps its exact height instead of covering it');
+  assert(busyAndTiny.found.tinyA.height>=19 && busyAndTiny.found.tinyA.height<40,
+    'a tiny item wedged against the next block takes its own lane and still grows tall enough for its name');
   assert(busyAndTiny.found.tinyB.height>=22 && busyAndTiny.found.tinyB.height<40,
     'a tiny item with free room below grows tall enough to print its name');
   assert(busyAndTiny.found.normal.height>=50,'ordinary items keep their proportional height');
@@ -371,6 +371,59 @@ function assert(value,message){
     && busyFromSettings.withBlock[0].blocked===false,
     'busy times absent from the day timeline are pulled from settings and sorted into the day');
   assert(busyFromSettings.withoutCount===1,'no configured busy times keeps the comparison items-only');
+
+  // Today's comparison is anchored to the current time: a now line marks the
+  // position on the chart, the block it falls inside reads as happening now,
+  // and the sheet opens scrolled so the line sits under the sticky head. The
+  // marker only exists when the render carries a current timestamp, so other
+  // days keep the plain top-down view.
+  const agendaNow=await page.evaluate(async ({base})=>{
+    const now=Date.now();
+    const dayRows=[{start:base+9*3600000,end:base+10*3600000,label:'X',hid:'',kind:'fill',blocked:false}];
+    const htmlPlain=weatherAgendaTimelineHtml(dayRows,{timezone:''},'temp',[],null);
+    const htmlNow=weatherAgendaTimelineHtml(dayRows,{timezone:''},'temp',[],base+9.5*3600000);
+    const timeline=[
+      {kind:'fill',start:base+9*3600000,end:base+9.5*3600000,
+        h:{hid:'morning',name:'Morning run',type:'habit',target:1,weatherProfileMode:'none'}},
+      {kind:'fill',start:now-30*60000,end:now+30*60000,
+        h:{hid:'current',name:'Deep work',type:'habit',target:1,weatherProfileMode:'none'}}
+    ];
+    openWeatherContextSheet(base,{dayBase:base,dayKey:dateKey(base),isToday:true,timeline},'');
+    document.querySelector('[data-weather-metric="temp"]').click();
+    document.getElementById('weather-metric-agenda').click();
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const content=document.getElementById('weather-agenda-content');
+    const line=document.querySelector('.weather-agenda-now');
+    const current=document.querySelector('.weather-agenda-item.current');
+    const track=document.querySelector('.weather-agenda-vertical');
+    const result={
+      plainMarker:htmlPlain.includes('weather-agenda-now'),
+      nowMarker:htmlNow.includes('weather-agenda-now'),
+      hasLine:Boolean(line),
+      lineText:line ? line.textContent.trim() : '',
+      offset:line ? line.getBoundingClientRect().top-content.getBoundingClientRect().top : -1,
+      scrolled:content.scrollTop,
+      maxScroll:content.scrollHeight-content.clientHeight,
+      viewport:content.clientHeight,
+      currentLabel:current ? current.querySelector('b')?.textContent || '' : '',
+      currentAria:current?.getAttribute('aria-label') || ''
+    };
+    document.getElementById('weather-agenda-done').click();
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    return result;
+  },seeded);
+  assert(!agendaNow.plainMarker && agendaNow.nowMarker,
+    'the now marker renders only when the comparison carries a current timestamp');
+  assert(agendaNow.hasLine && /^now · \d{2}:\d{2}$/.test(agendaNow.lineText),
+    'today’s comparison draws a labelled now line at the current time');
+  const anchored=Math.abs(agendaNow.offset-31)<=12;
+  const clamped=Math.abs(agendaNow.scrolled-agendaNow.maxScroll)<=1
+    && agendaNow.offset>0 && agendaNow.offset<agendaNow.viewport;
+  assert(anchored || clamped,
+    'opening today’s comparison starts at the now position — anchored under the sticky head when the day continues below, fully scrolled toward it otherwise');
+  assert(agendaNow.currentLabel==='Deep work' && /happening now/.test(agendaNow.currentAria),
+    'the block containing the current time is highlighted as happening now');
 
   // The narrow comparison traces use semantic value colour, subtle zones,
   // and a filled ribbon instead of one flat-colour legacy line.

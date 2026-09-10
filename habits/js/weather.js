@@ -1411,12 +1411,16 @@ function weatherAgendaMetricSummary(row,metricKey,weatherRows){
   return `UV up to ${Math.round(high)}`;
 }
 
-function weatherAgendaAssignLanes(rows){
+// Lanes split overlapping blocks into side-by-side columns. `gapAfter(row)`
+// lets a row claim extra room past its end: a short block grows to a readable
+// height, so the next block in its lane must start below that growth or take
+// the next lane — otherwise the grown block is painted over and its name lost.
+function weatherAgendaAssignLanes(rows,gapAfter){
   const laneEnds=[];
   const placed=rows.map(row=>{
     let lane=laneEnds.findIndex(end=>end<=row.start);
     if(lane<0)lane=laneEnds.length;
-    laneEnds[lane]=row.end;
+    laneEnds[lane]=row.end+(typeof gapAfter==='function'?gapAfter(row):0);
     return {...row,lane};
   });
   return {rows:placed,count:Math.max(1,laneEnds.length)};
@@ -1534,7 +1538,7 @@ function weatherAgendaTraceHtml(metricKey,weatherRows,domainStart,domainEnd,heig
   return `<svg class="weather-agenda-weather-svg metric-${escapeHtml(metricKey)}" viewBox="0 0 100 ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(`${detail.label} changing down the day; colour indicates low to high conditions`)}"><defs><linearGradient id="${gradientId}" x1="0" y1="0" x2="1" y2="0">${weatherMetricGradientStopsHtml(metricKey,min,max)}</linearGradient></defs>${zones}<line class="scale-line" x1="${mid}" y1="0" x2="${mid}" y2="${height}"/><path class="trace-area" d="${area}" fill="url(#${gradientId})"/><path class="trace-halo" d="${path}" vector-effect="non-scaling-stroke"/><path class="trace" d="${path}" stroke="url(#${gradientId})" vector-effect="non-scaling-stroke"/>${marks}</svg>`;
 }
 
-function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
+function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows,nowTs){
   if(!Array.isArray(rows) || !rows.length)return '<p class="weather-context-empty">No timed agenda or busy times are available for this day.</p>';
   const HOUR=3600000;
   // Give the shortest item enough vertical room for its name and direct
@@ -1543,11 +1547,24 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
   const shortestHours=Math.max(1/12,Math.min(...rows.map(row=>(row.end-row.start)/HOUR)));
   const PX_PER_HOUR=Math.min(112,Math.max(72,28/shortestHours));
   const time=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
-  const domainStart=Math.floor(Math.min(...rows.map(row=>row.start))/HOUR)*HOUR;
-  const domainEnd=Math.ceil(Math.max(...rows.map(row=>row.end))/HOUR)*HOUR;
+  let domainStart=Math.floor(Math.min(...rows.map(row=>row.start))/HOUR)*HOUR;
+  let domainEnd=Math.ceil(Math.max(...rows.map(row=>row.end))/HOUR)*HOUR;
+  // Today's comparison is anchored to the current time, so the domain grows
+  // to reach it even when the agenda has already ended (or not yet begun).
+  const nowActive=Number.isFinite(nowTs);
+  if(nowActive){
+    domainStart=Math.min(domainStart,Math.floor(nowTs/HOUR)*HOUR);
+    domainEnd=Math.max(domainEnd,Math.ceil(nowTs/HOUR)*HOUR);
+  }
   const span=Math.max(1,domainEnd-domainStart);
   const height=Math.max(240,Math.round(span/HOUR*PX_PER_HOUR));
-  const {rows:placed,count:laneCount}=weatherAgendaAssignLanes(rows);
+  const pxPerMs=height/span;
+  // Very short items (a 5-minute coffee) would render as a clipped sliver, so
+  // each block grows to this minimum readable height — capped at the next
+  // block in the same lane, which lane assignment guarantees starts below.
+  const MIN_BLOCK_PX=22;
+  const {rows:placed,count:laneCount}=weatherAgendaAssignLanes(rows,row=>
+    Math.max(0,MIN_BLOCK_PX-(row.end-row.start)*pxPerMs)/pxPerMs);
   const hours=[];
   for(let ts=domainStart;ts<=domainEnd;ts+=HOUR)hours.push(ts);
   const hourLabels=hours.map(ts=>{
@@ -1558,10 +1575,6 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
     const top=(ts-domainStart)/span*height;
     return `<span class="weather-agenda-hour-line" style="top:${top.toFixed(1)}px"></span>`;
   }).join('');
-  // Very short items (a 5-minute coffee) would render as a clipped sliver, so
-  // each block grows to a minimum readable height — capped at the next block
-  // in the same lane so grown blocks never cover their neighbour.
-  const MIN_BLOCK_PX=22;
   const nextStartInLane=new Array(placed.length).fill(null);
   const laneLast=new Map();
   placed.forEach((row,i)=>{
@@ -1572,14 +1585,18 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
     const top=(row.start-domainStart)/span*height;
     const blockHeight=Math.max(1,(row.end-row.start)/span*height);
     const capPx=nextStartInLane[i]!=null ? (nextStartInLane[i]-row.start)/span*height : Infinity;
-    const visHeight=Math.max(blockHeight,Math.min(Number.isFinite(capPx)?capPx-2:Infinity,MIN_BLOCK_PX));
+    const visHeight=Math.max(blockHeight,Math.min(Number.isFinite(capPx)?capPx-1:Infinity,MIN_BLOCK_PX));
     const width=100/laneCount,left=row.lane*width;
-    const cls=(blockHeight<25?' tiny':blockHeight<39?' compact':'')+(row.blocked?' blocked':'');
+    const current=nowActive && nowTs>=row.start && nowTs<row.end;
+    const cls=(blockHeight<25?' tiny':blockHeight<39?' compact':'')+(row.blocked?' blocked':'')+(current?' current':'');
     const weather=weatherAgendaMetricSummary(row,metricKey,weatherRows);
     const exact=`${time.format(row.start)}–${time.format(row.end)}`;
-    const spoken=`${row.blocked?'busy time ':''}${row.label}, ${exact}, ${weather}`;
+    const spoken=`${row.blocked?'busy time ':''}${row.label}, ${exact}, ${weather}${current?', happening now':''}`;
     return `<div class="weather-agenda-item${cls}" style="top:${top.toFixed(1)}px;height:${visHeight.toFixed(1)}px;left:calc(${left.toFixed(3)}% + ${row.lane?2:0}px);right:auto;width:calc(${width.toFixed(3)}% - ${laneCount>1?2:0}px)" aria-label="${escapeHtml(spoken)}"><b>${escapeHtml(row.label)}</b><small>${escapeHtml(`${exact} · ${weather}`)}</small></div>`;
   }).join('');
+  const nowHtml=nowActive
+    ? `<div class="weather-agenda-now" style="top:${((nowTs-domainStart)/span*height).toFixed(1)}px" aria-hidden="true"><span>${escapeHtml(`now · ${time.format(nowTs)}`)}</span></div>`
+    : '';
   const first=time.format(Math.min(...rows.map(row=>row.start)));
   const last=time.format(Math.max(...rows.map(row=>row.end)));
   const detail=WEATHER_METRIC_DETAILS[metricKey];
@@ -1595,7 +1612,7 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
     <div class="weather-agenda-vertical" style="height:${height}px" role="group" aria-label="${escapeHtml(`${itemCount} agenda items${busyCount?` and ${busyCount} busy ${busyCount===1?'time':'times'}`:''} aligned vertically with ${detail.label} from ${first} to ${last}`)}">
       <div class="weather-agenda-hour-lines" aria-hidden="true">${hourLines}</div>
       <div class="weather-agenda-hours" aria-hidden="true">${hourLabels}</div>
-      <div class="weather-agenda-items">${items}</div>
+      <div class="weather-agenda-items">${items}${nowHtml}</div>
       <div class="weather-agenda-weather">${weatherAgendaTraceHtml(metricKey,weatherRows,domainStart,domainEnd,height)}</div>
     </div>
   `;
@@ -2042,10 +2059,26 @@ function renderWeatherAgendaSheet(metricKey){
     }).join('');
   }
   if(content){
-    content.innerHTML=weatherAgendaTimelineHtml(_weatherContextAgendaRows,summary,metricKey,rows);
+    const nowTs=todayIso()===dateKey(_weatherContextDay) ? Date.now() : null;
+    content.innerHTML=weatherAgendaTimelineHtml(_weatherContextAgendaRows,summary,metricKey,rows,nowTs);
     content.scrollTop=0;
+    if(nowTs!=null)weatherScrollAgendaToNow(content);
   }
   return true;
+}
+
+// Today's comparison opens anchored to the current time: the now line lands
+// just below the sticky column head rather than at the top of the day.
+function weatherScrollAgendaToNow(content){
+  requestAnimationFrame(()=>{
+    const line=content.querySelector('.weather-agenda-now');
+    if(!line)return;
+    const head=content.querySelector('.weather-agenda-column-head');
+    const headH=head?head.getBoundingClientRect().height:28;
+    const target=line.getBoundingClientRect().top-content.getBoundingClientRect().top
+      +content.scrollTop-headH-6;
+    content.scrollTop=Math.max(0,Math.round(target));
+  });
 }
 
 function openWeatherAgendaSheet(metricKey){

@@ -232,6 +232,11 @@
 .weather-agenda-item.blocked{border-left-color:var(--text3);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--text) 5%,var(--bg)) 0 6px,color-mix(in srgb,var(--text) 9%,var(--bg)) 6px 12px);box-shadow:inset 0 0 0 .5px var(--border);}
 .weather-agenda-item.blocked b{color:var(--text2);font-weight:700;}
 .weather-agenda-item.blocked small{color:var(--text3);}
+/* The block containing the current time stays tinted ahead of the striping
+   and hatching rules above, so "happening now" reads at a glance. */
+.weather-agenda-item.current{border-left-color:var(--teal-icon);background:color-mix(in srgb,var(--teal-bg) 62%,var(--bg));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--teal-icon) 45%,transparent);}
+.weather-agenda-now{position:absolute;left:0;right:0;z-index:5;border-top:1.5px solid var(--teal-icon);pointer-events:none;}
+.weather-agenda-now span{position:absolute;right:3px;top:-9px;padding:2px 6px;border-radius:7px;background:var(--teal-bg);color:var(--teal-text);font-size:8px;font-weight:760;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;}
 .weather-agenda-weather{z-index:2;background:color-mix(in srgb,var(--bg2) 72%,transparent);border-radius:8px;overflow:hidden;}
 .weather-agenda-rain-hour{position:absolute;left:0;right:0;padding:4px 5px;overflow:hidden;}
 .weather-agenda-rain-fill{position:absolute;left:0;top:3px;bottom:3px;min-width:1px;border-radius:5px;background:color-mix(in srgb,var(--blue-icon) 31%,transparent);}
