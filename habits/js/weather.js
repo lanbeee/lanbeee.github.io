@@ -1042,7 +1042,7 @@ function weatherFreshnessText(ts,now=Date.now()){
 // shown as the dim right-hand detail).
 const WEATHER_METRIC_DETAILS={
   temp:{icon:'ti-temperature',label:'feels like',primary:'apparent_temperature',secondary:'temperature_2m'},
-  precip:{icon:'ti-umbrella',label:'precipitation',primary:'precipitation_probability',secondary:'precipitation'},
+  precip:{icon:'ti-umbrella',label:'precipitation',primary:'precipitation_probability',secondary:'precipitation',snow:'snowfall'},
   wind:{icon:'ti-wind',label:'wind',primary:'wind_speed_10m',secondary:'wind_gusts_10m'},
   uv:{icon:'ti-sun-high',label:'UV',primary:'uv_index'}
 };
@@ -1109,7 +1109,12 @@ function weatherMetricReadoutHtml(meta,idx){
     if(Number.isFinite(meta.secondary[idx]))extra=`gusts ${Math.round(meta.secondary[idx])}`;
   }else if(meta.metricKey==='precip'){
     value=`${Math.round(v)}%`;
-    if(Number.isFinite(meta.secondary[idx]))extra=`${Math.round(meta.secondary[idx]*10)/10} mm`;
+    // Snow hours lead with centimetres; a 0 mm liquid figure is noise there.
+    const mm=meta.secondary[idx],cm=meta.snow ? meta.snow[idx] : NaN;
+    const parts=[];
+    if(Number.isFinite(mm) && (mm>0 || !(cm>0)))parts.push(`${Math.round(mm*10)/10} mm`);
+    if(Number.isFinite(cm) && cm>0)parts.push(`${Math.round(cm*10)/10} cm snow`);
+    extra=parts.join(' · ');
   }else{
     value=`UV ${Math.round(v)}`;
     if(meta.sun)extra=meta.ts[idx]<meta.sun.sunrise || meta.ts[idx]>meta.sun.sunset ? 'night' : '';
@@ -1120,7 +1125,8 @@ function weatherMetricReadoutHtml(meta,idx){
 function weatherMetricChartHtml(metricKey,rows,summary){
   const detail=WEATHER_METRIC_DETAILS[metricKey];
   const W=340,H=152,top=24,bottom=H-24,left=8,right=8;
-  const pts=rows.map(row=>({ts:Number(row.ts),v:Number(row[detail.primary]),s:Number(row[detail.secondary])}))
+  const pts=rows.map(row=>({ts:Number(row.ts),v:Number(row[detail.primary]),s:Number(row[detail.secondary]),
+    w:detail.snow ? Number(row[detail.snow]) : NaN}))
     .filter(p=>Number.isFinite(p.v)).sort((a,b)=>a.ts-b.ts);
   if(pts.length<2){_weatherChartMeta=null;return '';}
   const zeroBased=metricKey==='precip' || metricKey==='uv';
@@ -1155,7 +1161,7 @@ function weatherMetricChartHtml(metricKey,rows,summary){
   const sun=metricKey==='uv' ? weatherSunTimesFor(summary) : null;
   _weatherChartMeta={metricKey,ts:pts.map(p=>p.ts),xs,
     labels:pts.map(p=>hourFull.format(p.ts)),
-    primary:pts.map(p=>p.v),secondary:pts.map(p=>p.s),
+    primary:pts.map(p=>p.v),secondary:pts.map(p=>p.s),snow:detail.snow ? pts.map(p=>p.w) : null,
     geom:{W,H,top,bottom,left,right,yMin:vMin,yMax:vMax},idx0,idx:idx0,sun};
   let inner='';
   if(sun){
@@ -1177,8 +1183,9 @@ function weatherMetricChartHtml(metricKey,rows,summary){
     pts.forEach((p,i)=>{
       const h=((p.v-vMin)/(vMax-vMin))*(bottom-top);
       if(h<1.5)return; // 0% hours stay silent instead of stubbing the baseline
+      const snowing=p.w>0; // snow hours get their own tint and a cm readout
       const barW=Math.min(12,Math.max(3,step*0.6));
-      inner+=`<rect class="bar" x="${(xs[i]-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%`)}</title></rect>`;
+      inner+=`<rect class="bar${snowing?' snow':''}" x="${(xs[i]-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%${snowing ? ` · ${Math.round(p.w*10)/10} cm snow` : ''}`)}</title></rect>`;
     });
   }else{
     const line=weatherSmoothPath(pts.map((p,i)=>[xs[i],yAt(p.v)]));
@@ -1305,6 +1312,8 @@ function weatherMetricStatsHtml(metricKey,rows,summary){
     const chance=peakOf(primary);
     const total=pick(detail.secondary).reduce((sum,p)=>sum+p.v,0);
     chips=chip('chance up to',`${Math.round(chance.v)}%`)+chip('total',`${Math.round(total*10)/10} mm`);
+    const snowTotal=pick(detail.snow).reduce((sum,p)=>sum+p.v,0);
+    if(snowTotal>0)chips+=chip('snow',`${Math.round(snowTotal*10)/10} cm`);
   }else if(metricKey==='wind'){
     const peak=peakOf(primary);
     const gusts=pick(detail.secondary);
@@ -1357,18 +1366,19 @@ function renderWeatherContextSheet(model){
   if(icon)icon.innerHTML=`<span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(summary.condition.emoji || '☁️')}</span>`;
   if(content){
     const range=weatherTemperatureRange(summary);
+    const snowCm=Number(summary.snowfall);
     const precipitation=[
       summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}%`,
-      summary.precipitation==null?'':`${Math.round(summary.precipitation*10)/10} mm`
+      summary.precipitation==null?'':`${Math.round(summary.precipitation*10)/10} mm`,
+      Number.isFinite(snowCm) && snowCm>0 ? `${Math.round(snowCm*10)/10} cm snow` : ''
     ].filter(Boolean).join(' · ');
     const wind=[
       summary.wind==null?'':`${Math.round(summary.wind)} km/h`,
       summary.gusts==null?'':`gusts ${Math.round(summary.gusts)}`
     ].filter(Boolean).join(' · ');
-    // Only the weekly forecast's hourly grid backs the drill-down rows; the
-    // finer "near" samples only cover scattered scheduled intervals.
-    const hourlyRows=dayRows.filter(row=>row.source!=='near');
-    const hasHourly=field=>hourlyRows.some(row=>Number.isFinite(Number(row[field])));
+    // The drill-down prefers the weekly forecast's hourly grid and falls back
+    // to near detail per hour, so any row with the field makes it tappable.
+    const hasHourly=field=>dayRows.some(row=>Number.isFinite(Number(row[field])));
     const metrics=[
       weatherMetricCard('ti-temperature', 'feels like', range ? `${range}${weatherUsesFahrenheit() ? 'F' : 'C'}` : '', hasHourly(WEATHER_METRIC_DETAILS.temp.primary)?'temp':null),
       weatherMetricCard('ti-umbrella', 'precipitation', precipitation, hasHourly(WEATHER_METRIC_DETAILS.precip.primary)?'precip':null),

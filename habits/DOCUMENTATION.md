@@ -647,8 +647,10 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   always spans the whole day — a near-term refresh cannot truncate it — and
   drag or arrow keys read any hour: feels like pairs with actual temperature,
   wind with gusts inside one shared frame, precipitation chance renders as bars
-  on the natural 0–100% scale. UV shades the night and marks sunrise/sunset
-  with a daylight figure; stat chips summarize the extremes.
+  on the natural 0–100% scale with snowfall hours tinted and read in
+  centimetres (the summary card adds the day's snow total). UV shades the
+  night and marks sunrise/sunset with a daylight figure; stat chips summarize
+  the extremes.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts

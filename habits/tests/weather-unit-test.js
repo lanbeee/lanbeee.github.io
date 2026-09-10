@@ -330,6 +330,49 @@ function assert(value,message){
   assert(nearTail.tempStacked==='140','the metric sheet pins its stacking tier inline when it opens');
   assert(nearTail.precipMax===100,'precipitation bars use the natural 0–100% scale');
   assert(nearTail.precipBars===5,'every hour keeps its precipitation bar on the shared scale');
+
+  // Winter preview: snowfall rides in the same precipitation drill-down —
+  // the card names the day's snow total, snow hours get their own bar tint,
+  // the readout switches to centimetres, and a snow chip joins the stats.
+  const snowDay=await page.evaluate(({base})=>{
+    const now=Date.now();
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const samples=[9,10,11].map((hour,i)=>({ts:base+hour*3600000,temperature_2m:-2+i/10,
+      apparent_temperature:-6+i/10,precipitation_probability:40+i*20,
+      precipitation:i===0?.2:(i===1?.1:0),snowfall:i===0?0:(i===1?.4:1.2),
+      wind_speed_10m:9,wind_gusts_10m:14,uv_index:0,weather_code:73,source:'weekly'}));
+    const days=[{ts:base,key:dateKey(base),weather_code:73,temperature_2m_min:-4,temperature_2m_max:0,
+      apparent_temperature_min:-8,apparent_temperature_max:-4,precipitation_probability_max:80,
+      precipitation_sum:.3,snowfall_sum:1.6,wind_speed_10m_max:9,wind_gusts_10m_max:14,uv_index_max:0}];
+    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify({
+      weekly:{lat:52.52,lng:13.405,fetchedAt:now-600000,timezone:tz,samples,days}
+    }));
+    sortSettings=loadSortSettings();
+    openWeatherContextSheet(base,null,'');
+    const precipCard=[...document.querySelectorAll('#weather-context-content [data-weather-metric="precip"] b')]
+      .map(b=>b.textContent).join(' ');
+    document.querySelector('[data-weather-metric="precip"]').click();
+    const bars=document.querySelectorAll('#weather-metric-content svg rect.bar').length;
+    const snowBars=document.querySelectorAll('#weather-metric-content svg rect.bar.snow').length;
+    const yMax=_weatherChartMeta.geom.yMax;
+    const readout=()=>document.getElementById('weather-metric-readout').textContent.replace(/\s+/g,' ').trim();
+    const snowyHour=readout();
+    document.querySelector('#weather-metric-content svg.weather-metric-chart')
+      .dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));
+    const mixedHour=readout();
+    const stats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    return {precipCard,bars,snowBars,yMax,snowyHour,mixedHour,stats};
+  },seeded);
+  assert(/1\.6\s*cm\s*snow/.test(snowDay.precipCard),'the precipitation card names the day\'s snow total');
+  assert(snowDay.bars===3 && snowDay.snowBars===2,'snowfall hours render their bars with the snow tint');
+  assert(snowDay.yMax===100,'snowy days keep the 0–100% bar scale');
+  assert(/1\.2\s*cm\s*snow/.test(snowDay.snowyHour) && !/0\s*mm/.test(snowDay.snowyHour),
+    'a pure-snow hour reads in centimetres instead of 0 mm');
+  assert(/cm\s*snow/.test(snowDay.mixedHour),'a mixed hour pairs liquid mm with snow cm');
+  assert(/snow\s*1\.6\s*cm/.test(snowDay.stats.join(' ')),'the stats include the day\'s snow total');
   assert(errors.length===0,'no page errors during unit switching');
 
   await browser.close();
