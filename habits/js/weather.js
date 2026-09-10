@@ -1535,7 +1535,7 @@ function weatherAgendaTraceHtml(metricKey,weatherRows,domainStart,domainEnd,heig
 }
 
 function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
-  if(!Array.isArray(rows) || !rows.length)return '<p class="weather-context-empty">No timed agenda items are available for this day.</p>';
+  if(!Array.isArray(rows) || !rows.length)return '<p class="weather-context-empty">No timed agenda or busy times are available for this day.</p>';
   const HOUR=3600000;
   // Give the shortest item enough vertical room for its name and direct
   // time/weather line, without making a day of ordinary 30–60 minute blocks
@@ -1558,14 +1558,27 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
     const top=(ts-domainStart)/span*height;
     return `<span class="weather-agenda-hour-line" style="top:${top.toFixed(1)}px"></span>`;
   }).join('');
-  const items=placed.map(row=>{
+  // Very short items (a 5-minute coffee) would render as a clipped sliver, so
+  // each block grows to a minimum readable height — capped at the next block
+  // in the same lane so grown blocks never cover their neighbour.
+  const MIN_BLOCK_PX=22;
+  const nextStartInLane=new Array(placed.length).fill(null);
+  const laneLast=new Map();
+  placed.forEach((row,i)=>{
+    if(laneLast.has(row.lane))nextStartInLane[laneLast.get(row.lane)]=row.start;
+    laneLast.set(row.lane,i);
+  });
+  const items=placed.map((row,i)=>{
     const top=(row.start-domainStart)/span*height;
     const blockHeight=Math.max(1,(row.end-row.start)/span*height);
+    const capPx=nextStartInLane[i]!=null ? (nextStartInLane[i]-row.start)/span*height : Infinity;
+    const visHeight=Math.max(blockHeight,Math.min(Number.isFinite(capPx)?capPx-2:Infinity,MIN_BLOCK_PX));
     const width=100/laneCount,left=row.lane*width;
-    const cls=blockHeight<25?' tiny':blockHeight<39?' compact':'';
+    const cls=(blockHeight<25?' tiny':blockHeight<39?' compact':'')+(row.blocked?' blocked':'');
     const weather=weatherAgendaMetricSummary(row,metricKey,weatherRows);
     const exact=`${time.format(row.start)}–${time.format(row.end)}`;
-    return `<div class="weather-agenda-item${cls}" style="top:${top.toFixed(1)}px;height:${blockHeight.toFixed(1)}px;left:calc(${left.toFixed(3)}% + ${row.lane?2:0}px);right:auto;width:calc(${width.toFixed(3)}% - ${laneCount>1?2:0}px)" aria-label="${escapeHtml(`${row.label}, ${exact}, ${weather}`)}"><b>${escapeHtml(row.label)}</b><small>${escapeHtml(`${exact} · ${weather}`)}</small></div>`;
+    const spoken=`${row.blocked?'busy time ':''}${row.label}, ${exact}, ${weather}`;
+    return `<div class="weather-agenda-item${cls}" style="top:${top.toFixed(1)}px;height:${visHeight.toFixed(1)}px;left:calc(${left.toFixed(3)}% + ${row.lane?2:0}px);right:auto;width:calc(${width.toFixed(3)}% - ${laneCount>1?2:0}px)" aria-label="${escapeHtml(spoken)}"><b>${escapeHtml(row.label)}</b><small>${escapeHtml(`${exact} · ${weather}`)}</small></div>`;
   }).join('');
   const first=time.format(Math.min(...rows.map(row=>row.start)));
   const last=time.format(Math.max(...rows.map(row=>row.end)));
@@ -1574,9 +1587,12 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows){
   const scale=metricKey==='precip' ? '0–100% chance'
     : metricKey==='uv' && weatherValues.length ? `${Math.round(Math.min(...weatherValues))}–${Math.round(Math.max(...weatherValues))}`
     : weatherValues.length ? `${weatherAgendaTraceLabel(metricKey,Math.min(...weatherValues))}–${weatherAgendaTraceLabel(metricKey,Math.max(...weatherValues))}` : '';
-  return `<div class="weather-agenda-overview"><b>${rows.length} timed ${rows.length===1?'item':'items'}</b><span>${escapeHtml(`${first}–${last}`)}</span></div>
+  const busyCount=rows.filter(row=>row.blocked).length;
+  const itemCount=rows.length-busyCount;
+  const countLabel=[`${itemCount} ${itemCount===1?'item':'items'}`,busyCount?`${busyCount} busy ${busyCount===1?'time':'times'}`:''].filter(Boolean).join(' · ');
+  return `<div class="weather-agenda-overview"><b>${escapeHtml(countLabel)}</b><span>${escapeHtml(`${first}–${last}`)}</span></div>
     <div class="weather-agenda-column-head" aria-hidden="true"><span>time</span><span>agenda</span><span>${escapeHtml(`${detail.label} ${scale}`)}</span></div>
-    <div class="weather-agenda-vertical" style="height:${height}px" role="group" aria-label="${escapeHtml(`${rows.length} agenda items aligned vertically with ${detail.label} from ${first} to ${last}`)}">
+    <div class="weather-agenda-vertical" style="height:${height}px" role="group" aria-label="${escapeHtml(`${itemCount} agenda items${busyCount?` and ${busyCount} busy ${busyCount===1?'time':'times'}`:''} aligned vertically with ${detail.label} from ${first} to ${last}`)}">
       <div class="weather-agenda-hour-lines" aria-hidden="true">${hourLines}</div>
       <div class="weather-agenda-hours" aria-hidden="true">${hourLabels}</div>
       <div class="weather-agenda-items">${items}</div>
@@ -1751,19 +1767,40 @@ let _weatherContextAgendaRows=[];
 let _weatherMetricKey='';
 
 // Timed habit/task rows shown in the day's agenda, regardless of whether the
-// item opted into weather guidance. This is intentionally presentation-only:
-// it lets a person spot a rainy walk or windy errand without changing planner
-// eligibility or inferring that an item is outdoors.
+// item opted into weather guidance. Blocked (busy) times are included so the
+// chart spans the whole day — sleep anchored at midnight must be visible and
+// the time domain must reach it. Blocked rows live outside the planner week
+// timelines (Home's displayed timeline intentionally drops them), so when the
+// day's rows carry none they are resolved here from settings. This is
+// intentionally presentation-only: it lets a person spot a rainy walk or windy
+// errand without changing planner eligibility or inferring that an item is
+// outdoors.
 function weatherAgendaComparisonRows(dayBase,dayContext=null,data=null){
   const list=Array.isArray(data) ? data : (typeof load==='function' ? load() : []);
-  return weatherContextDayRows(dayBase,dayContext).map((row,index)=>{
-    if(row.kind!=='fill' && row.kind!=='scheduled')return null;
+  const rows=weatherContextDayRows(dayBase,dayContext).map((row,index)=>{
+    const blocked=row.kind==='blocked';
+    if(!blocked && row.kind!=='fill' && row.kind!=='scheduled')return null;
     const start=Number(row.start),end=Number(row.end);
     if(!Number.isFinite(start) || !Number.isFinite(end) || end<=start)return null;
-    const h=row.h || (row.i!=null ? list[row.i] : null);
-    const label=String(h?.name || row.label || 'agenda item').trim() || 'agenda item';
-    return {start,end,label,hid:String(h?.hid || ''),kind:row.kind,index};
-  }).filter(Boolean).sort((a,b)=>a.start-b.start || a.end-b.end || a.index-b.index);
+    const h=blocked ? null : (row.h || (row.i!=null ? list[row.i] : null));
+    const label=String(h?.name || row.label || (blocked?'busy time':'agenda item')).trim() || (blocked?'busy time':'agenda item');
+    return {start,end,label,hid:String(h?.hid || ''),kind:row.kind,blocked,index};
+  }).filter(Boolean);
+  const ts=weatherDayTimestamp(dayBase);
+  if(ts!=null && typeof blockedTimelineRows==='function' && !rows.some(row=>row.blocked)){
+    const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings
+      : (typeof loadSortSettings==='function' ? loadSortSettings() : null);
+    const key=settings && typeof dateKey==='function' ? dateKey(ts) : '';
+    // No clipAfter: the comparison describes the whole day, so a block that
+    // already ran (last night's sleep side) still bounds the chart.
+    const blocked=key ? blockedTimelineRows(key,settings,ts,{clipAfter:null}) : [];
+    for(const row of blocked){
+      const start=Number(row.start),end=Number(row.end);
+      if(!Number.isFinite(start) || !Number.isFinite(end) || end<=start)continue;
+      rows.push({start,end,label:String(row.label || '').trim() || 'busy time',hid:'',kind:'blocked',blocked:true,index:rows.length});
+    }
+  }
+  return rows.sort((a,b)=>a.start-b.start || a.end-b.end || a.index-b.index);
 }
 
 function syncWeatherAgendaCompareButton(){
@@ -2064,6 +2101,21 @@ if(typeof document!=='undefined')document.addEventListener('click',event=>{
   }
   if(event.target.closest('#weather-agenda-close,#weather-agenda-done')){
     if(typeof closeSheet==='function')closeSheet('weather-agenda-sheet');
+    return;
+  }
+  // Home exits the whole weather drill-down (comparison → hourly → context) and
+  // puts the user back at the top of the home list, like the day sheet's home.
+  if(event.target.closest('#weather-agenda-home')){
+    if(typeof closeSheet==='function'){
+      closeSheet('weather-agenda-sheet');
+      closeSheet('weather-metric-sheet');
+      closeSheet('weather-context-sheet');
+    }
+    requestAnimationFrame(()=>{
+      const pane=document.querySelector('.pane-list');
+      if(pane)pane.scrollTop=0;
+      window.scrollTo({top:0,left:0,behavior:'auto'});
+    });
     return;
   }
   const agendaWrap=event.target.closest('#weather-agenda-sheet');

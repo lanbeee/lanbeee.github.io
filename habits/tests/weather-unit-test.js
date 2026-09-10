@@ -229,7 +229,7 @@ function assert(value,message){
   // vertical day view, even when the item explicitly has no weather guidance.
   // Names, exact times, and weather are printed without requiring selection.
   const agendaCompare=await page.evaluate(({base})=>{
-    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c',blockedTimes:[]});
     sortSettings=loadSortSettings();
     const walk={hid:'walk',name:'Park walk',type:'habit',target:1,weatherProfileMode:'none'};
     const day={dayBase:base,dayKey:dateKey(base),isToday:true,timeline:[
@@ -264,6 +264,8 @@ function assert(value,message){
   assert(agendaCompare.hiddenAgain && agendaCompare.chartStillOpen,'back to chart closes only the comparison and preserves the hourly chart');
 
   const denseAgenda=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),blockedTimes:[]});
+    sortSettings=loadSortSettings();
     const timeline=Array.from({length:12},(_,i)=>({
       kind:'fill',start:base+(9+i*.25)*3600000,end:base+(9+(i+1)*.25)*3600000,
       h:{hid:`dense-${i}`,name:`Packed item ${i+1}`,type:'habit',target:1,weatherProfileMode:'none'}
@@ -289,6 +291,86 @@ function assert(value,message){
   assert(denseAgenda.directDetails && Math.abs(denseAgenda.tenthTop-252)<2,
     'packed items directly print their time/weather and retain exact proportional positions');
   assert(denseAgenda.rainHours>=3,'switching to rain replaces the trace with aligned hourly probability bands');
+
+  // Busy (blocked) times belong in the comparison: sleep anchored at midnight
+  // must widen the chart's domain so the block is reachable by scrolling, and
+  // very short items must grow to a readable height without covering the next
+  // block in the same lane.
+  const busyAndTiny=await page.evaluate(({base})=>{
+    const timeline=[
+      {kind:'blocked',label:'sleep',start:base,end:base+5*3600000,locationId:null},
+      {kind:'fill',start:base+9*3600000,end:base+9*3600000+5*60000,
+        h:{hid:'tiny-a',name:'Quick check',type:'habit',target:1,weatherProfileMode:'none'}},
+      {kind:'fill',start:base+9*3600000+5*60000,end:base+9*3600000+10*60000,
+        h:{hid:'tiny-b',name:'Quick follow-up',type:'habit',target:1,weatherProfileMode:'none'}},
+      {kind:'fill',start:base+10*3600000,end:base+10.5*3600000,
+        h:{hid:'normal-c',name:'Midmorning read',type:'habit',target:1,weatherProfileMode:'none'}}
+    ];
+    openWeatherContextSheet(base,{dayBase:base,dayKey:dateKey(base),isToday:true,timeline},'');
+    document.querySelector('[data-weather-metric="temp"]').click();
+    document.getElementById('weather-metric-agenda').click();
+    const track=document.querySelector('.weather-agenda-vertical');
+    const blocks=[...track.querySelectorAll('.weather-agenda-item')];
+    const read=block=>block ? {
+      cls:block.className,
+      label:block.querySelector('b')?.textContent || '',
+      aria:block.getAttribute('aria-label') || '',
+      height:parseFloat(block.style.height)
+    } : {cls:'',label:'',aria:'',height:0};
+    const found={
+      sleep:read(blocks.find(block=>block.classList.contains('blocked'))),
+      tinyA:read(blocks[1]),tinyB:read(blocks[2]),normal:read(blocks[3])
+    };
+    const overview=document.querySelector('.weather-agenda-overview b')?.textContent || '';
+    const firstHour=track.querySelector('.weather-agenda-hour')?.textContent || '';
+    const chartHeight=Math.round(track.getBoundingClientRect().height);
+    const homePresent=Boolean(document.getElementById('weather-agenda-home'));
+    document.getElementById('weather-agenda-home').click();
+    const homeClosesAll=!document.getElementById('weather-agenda-sheet').classList.contains('open')
+      && !document.getElementById('weather-metric-sheet').classList.contains('open')
+      && !document.getElementById('weather-context-sheet').classList.contains('open');
+    return {found,overview,firstHour,chartHeight,homePresent,homeClosesAll};
+  },seeded);
+  assert(busyAndTiny.found.sleep.cls.includes('blocked') && busyAndTiny.found.sleep.label==='sleep'
+    && /^busy time sleep/.test(busyAndTiny.found.sleep.aria),
+    'blocked times render as distinct busy blocks whose accessibility name says busy time');
+  assert(/3 items · 1 busy time/.test(busyAndTiny.overview),'the overview separates items from busy times');
+  assert(busyAndTiny.firstHour==='00:00' && busyAndTiny.chartHeight>=1000,
+    'a midnight sleep block pulls the chart domain up to 00:00 so earlier hours are scrollable');
+  assert(busyAndTiny.found.tinyA.height<12,
+    'a tiny item wedged against the next block keeps its exact height instead of covering it');
+  assert(busyAndTiny.found.tinyB.height>=22 && busyAndTiny.found.tinyB.height<40,
+    'a tiny item with free room below grows tall enough to print its name');
+  assert(busyAndTiny.found.normal.height>=50,'ordinary items keep their proportional height');
+  assert(busyAndTiny.homePresent && busyAndTiny.homeClosesAll,
+    'home exits the whole comparison → hourly → context stack at once');
+
+  // Home's displayed timeline carries no blocked rows — the comparison must
+  // resolve them from settings itself, and skip them when none are defined.
+  const busyFromSettings=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),blockedTimes:[{label:'sleep',days:[],start:23*60,end:24*60}]});
+    sortSettings=loadSortSettings();
+    const day={dayBase:base,dayKey:dateKey(base),isToday:true,timeline:[
+      {kind:'fill',start:base+9*3600000,end:base+10*3600000,
+        h:{hid:'walk',name:'Park walk',type:'habit',target:1,weatherProfileMode:'none'}}
+    ]};
+    const withBlock=weatherAgendaComparisonRows(base,day,[]);
+    saveSortSettings({...loadSortSettings(),blockedTimes:[]});
+    sortSettings=loadSortSettings();
+    const withoutBlock=weatherAgendaComparisonRows(base,day,[]);
+    return {
+      withBlock:withBlock.map(row=>({blocked:row.blocked,label:row.label,start:startOfDayOffset(row.start,base)})),
+      withoutCount:withoutBlock.length
+    };
+    function startOfDayOffset(ts,dayBase){return Math.round((ts-dayBase)/60000);}
+  },seeded);
+  assert(busyFromSettings.withBlock.length===2
+    && busyFromSettings.withBlock[1].blocked===true
+    && busyFromSettings.withBlock[1].label==='sleep'
+    && busyFromSettings.withBlock[1].start===23*60
+    && busyFromSettings.withBlock[0].blocked===false,
+    'busy times absent from the day timeline are pulled from settings and sorted into the day');
+  assert(busyFromSettings.withoutCount===1,'no configured busy times keeps the comparison items-only');
 
   // The narrow comparison traces use semantic value colour, subtle zones,
   // and a filled ribbon instead of one flat-colour legacy line.
