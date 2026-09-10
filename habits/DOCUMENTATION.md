@@ -643,10 +643,12 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   guided-item explanations. Displayed temperatures are feels-like values. A
   far-away item names its saved place and uses that place's forecast. Tapping a
   summary card (feels like, precipitation, wind, UV) opens an interactive hourly
-  trend chart of that metric for the same day on top of the sheet: drag or use
-  arrow keys to read any hour (feels like pairs with actual temperature, wind
-  with gusts, precipitation chance with amount). UV shades the night and marks
-  sunrise/sunset with a daylight figure; stat chips summarize the extremes.
+  trend chart of that metric for the same day on top of the sheet. The chart
+  always spans the whole day — a near-term refresh cannot truncate it — and
+  drag or arrow keys read any hour: feels like pairs with actual temperature,
+  wind with gusts inside one shared frame, precipitation chance renders as bars
+  on the natural 0–100% scale. UV shades the night and marks sunrise/sunset
+  with a daylight figure; stat chips summarize the extremes.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts

@@ -1125,9 +1125,18 @@ function weatherMetricChartHtml(metricKey,rows,summary){
   if(pts.length<2){_weatherChartMeta=null;return '';}
   const zeroBased=metricKey==='precip' || metricKey==='uv';
   let vMin=Math.min(...pts.map(p=>p.v)),vMax=Math.max(...pts.map(p=>p.v));
+  // The dashed background series must stay inside the frame too, so the
+  // domain spans both series whenever that line is actually drawn.
+  if((metricKey==='temp' || metricKey==='wind') && detail.secondary){
+    const secs=pts.map(p=>p.s).filter(Number.isFinite);
+    if(secs.length>1){vMin=Math.min(vMin,...secs);vMax=Math.max(vMax,...secs);}
+  }
   if(zeroBased)vMin=0;
+  // Probability has a natural 0–100 scale; scaling to the day's max would
+  // render a 3% chance as a near-full-height bar.
+  if(metricKey==='precip')vMax=100;
   if(vMax<=vMin)vMax=vMin+1;
-  const pad=(vMax-vMin)*0.18;
+  const pad=metricKey==='precip' ? 0 : (vMax-vMin)*0.18;
   vMax+=pad;
   if(!zeroBased)vMin=Math.max(0,vMin-pad);
   const xAt=i=>left+(i/(pts.length-1))*(W-left-right);
@@ -1188,9 +1197,19 @@ function weatherMetricChartHtml(metricKey,rows,summary){
   };
   inner+=mark(maxIdx,'max',-7);
   if(minIdx!==maxIdx && (metricKey==='temp' || metricKey==='wind'))inner+=mark(minIdx,'min',13);
-  pts.forEach((p,i)=>{
-    if(Number(hourShort.format(p.ts))%3===0)inner+=`<text class="hour" x="${xs[i].toFixed(1)}" y="${H-8}" text-anchor="middle">${escapeHtml(hourShort.format(p.ts))}</text>`;
-  });
+  // Hour axis: every 3rd hour plus the final hour, so the chart's extent is
+  // explicit even when the last sample falls between ticks (23:00 does).
+  let hourIdxs=pts.map((p,i)=>Number(hourShort.format(p.ts))%3===0?i:-1).filter(i=>i>=0);
+  const lastIdx=pts.length-1;
+  if(!hourIdxs.includes(lastIdx)){
+    hourIdxs=hourIdxs.filter(i=>Math.abs(xs[i]-xs[lastIdx])>=24);
+    hourIdxs.push(lastIdx);
+  }
+  for(const i of hourIdxs){
+    const px=xs[i];
+    const anchor=px<32?'start':px>W-32?'end':'middle';
+    inner+=`<text class="hour" x="${px.toFixed(1)}" y="${H-8}" text-anchor="${anchor}">${escapeHtml(hourShort.format(pts[i].ts))}</text>`;
+  }
   if(weatherRequestedDayKey(Date.now())===summary.key){
     const t=(Date.now()-pts[0].ts)/Math.max(1,pts[pts.length-1].ts-pts[0].ts);
     if(t>=0 && t<=1){
@@ -1383,8 +1402,19 @@ function renderWeatherMetricSheet(metricKey){
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
   const summary=weatherDaySummary(settings?._weatherContext,_weatherContextDay,settings);
   if(!summary)return false;
-  const rows=(weatherDayRows(settings._weatherContext,_weatherContextDay) || [])
-    .filter(row=>row.source!=='near' && Number.isFinite(Number(row[detail.primary])));
+  // One row per hour: the near-term refresh re-stamps the weekly hourly rows
+  // it overlaps as 'near', so dropping near rows outright would truncate the
+  // chart at the refresh horizon (the "day ends at 9 PM" bug). Prefer the
+  // weekly hourly sample per hour bucket and fall back to near detail when
+  // it is the only coverage that hour.
+  const byHour=new Map();
+  for(const row of (weatherDayRows(settings._weatherContext,_weatherContextDay) || [])){
+    if(!Number.isFinite(Number(row[detail.primary])))continue;
+    const bucket=Math.floor(Number(row.ts)/3600000);
+    const prev=byHour.get(bucket);
+    if(!prev || (prev.source==='near' && row.source!=='near'))byHour.set(bucket,row);
+  }
+  const rows=[...byHour.values()].sort((a,b)=>a.ts-b.ts);
   const title=document.getElementById('weather-metric-title');
   const sub=document.getElementById('weather-metric-sub');
   const eyebrow=document.getElementById('weather-metric-eyebrow');
@@ -1415,6 +1445,12 @@ function renderWeatherMetricSheet(metricKey){
 
 function openWeatherMetricSheet(metricKey){
   if(!renderWeatherMetricSheet(String(metricKey || '')))return false;
+  // Inline fallback for the stylesheet rule: a stale service-worker cache
+  // could serve sheets.css without the new z-index tier, leaving this sheet
+  // painted behind the context sheet it drills into. The style travels with
+  // this JS, so the stacking can't decouple from the feature.
+  const wrap=document.getElementById('weather-metric-sheet');
+  if(wrap)wrap.style.zIndex='140';
   if(typeof openSheet==='function')openSheet('weather-metric-sheet');
   if(typeof armSheetBackdropGuard==='function')armSheetBackdropGuard('weather-metric-sheet');
   return true;

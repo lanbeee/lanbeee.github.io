@@ -274,6 +274,62 @@ function assert(value,message){
     assert(scrub.sunMarks===0 && scrub.nightRects===0,'without sun times the UV chart stays clean');
   }
   assert(scrub.allClosed,'done on the context sheet closes everything');
+
+  // Near-term refreshes re-stamp the hourly rows they overlap as 'near'; the
+  // drill-down must still chart those hours (one row per hour bucket) instead
+  // of truncating the day at the refresh horizon. The domain must also span
+  // the dashed secondary series, and probability bars keep the 0–100 scale.
+  const nearTail=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c',homeCityName:'Berlin',homeCityCountry:''});
+    sortSettings=loadSortSettings();
+    const now=Date.now();
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const weeklySamples=[9,10].map(hour=>({ts:base+hour*3600000,temperature_2m:12+hour-9,
+      apparent_temperature:10+hour-9,precipitation_probability:20,precipitation:.2,
+      wind_speed_10m:9,wind_gusts_10m:14,uv_index:2,weather_code:3,source:'weekly'}));
+    // Production shape after a near refresh: the weekly rows inside the
+    // horizon were enriched and re-sourced, and 15-minute detail was added.
+    const nearSamples=[{ts:base+11*3600000,temperature_2m:25,apparent_temperature:11,
+      precipitation_probability:20,precipitation:.2,wind_speed_10m:9,wind_gusts_10m:30,
+      uv_index:2,weather_code:3,is_day:1},
+      {ts:base+11.25*3600000,temperature_2m:25,apparent_temperature:11,
+      precipitation_probability:20,precipitation:.2,wind_speed_10m:9,wind_gusts_10m:30,
+      uv_index:2,weather_code:3,is_day:1},
+      {ts:base+12*3600000,temperature_2m:25,apparent_temperature:11,
+      precipitation_probability:20,precipitation:.2,wind_speed_10m:9,wind_gusts_10m:30,
+      uv_index:2,weather_code:3,is_day:1},
+      {ts:base+13*3600000,temperature_2m:25,apparent_temperature:11,
+      precipitation_probability:20,precipitation:.2,wind_speed_10m:9,wind_gusts_10m:30,
+      uv_index:2,weather_code:3,is_day:1}].map(sample=>({...sample,source:'near'}));
+    const days=[{ts:base,key:dateKey(base),weather_code:3,temperature_2m_min:7,temperature_2m_max:14,
+      apparent_temperature_min:5,apparent_temperature_max:13,precipitation_probability_max:20,
+      precipitation_sum:.5,wind_speed_10m_max:9,wind_gusts_10m_max:14,uv_index_max:2}];
+    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify({
+      weekly:{lat:52.52,lng:13.405,fetchedAt:now-600000,timezone:tz,samples:weeklySamples,days},
+      near:{lat:52.52,lng:13.405,fetchedAt:now-600000,timezone:tz,samples:nearSamples,horizonMs:14400000}
+    }));
+    sortSettings=loadSortSettings();
+    openWeatherContextSheet(base,null,'');
+    document.querySelector('[data-weather-metric="temp"]').click();
+    const meta=_weatherChartMeta;
+    const hours=[...document.querySelectorAll('#weather-metric-content svg .hour')].map(t=>t.textContent);
+    const secInBounds=meta.secondary.every(v=>!Number.isFinite(v)||(v>=meta.geom.yMin&&v<=meta.geom.yMax));
+    const tempStacked=document.getElementById('weather-metric-sheet').style.zIndex;
+    document.getElementById('weather-metric-close').click();
+    document.querySelector('[data-weather-metric="precip"]').click();
+    const precipMeta=_weatherChartMeta;
+    const precipBars=document.querySelectorAll('#weather-metric-content svg rect.bar').length;
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    return {count:meta.ts.length,hours,yMax:meta.geom.yMax,secInBounds,tempStacked,
+      precipMax:precipMeta.geom.yMax,precipBars};
+  },seeded);
+  assert(nearTail.count===5,'near-enriched hours stay on the chart (5 hourly points, not 2)');
+  assert(nearTail.hours.includes('13'),'the axis labels the final hour even when it is not a 3-hour tick');
+  assert(nearTail.yMax>=25 && nearTail.secInBounds,'the chart frame spans the secondary series so gusts/actual stay inside');
+  assert(nearTail.tempStacked==='140','the metric sheet pins its stacking tier inline when it opens');
+  assert(nearTail.precipMax===100,'precipitation bars use the natural 0–100% scale');
+  assert(nearTail.precipBars===5,'every hour keeps its precipitation bar on the shared scale');
   assert(errors.length===0,'no page errors during unit switching');
 
   await browser.close();
