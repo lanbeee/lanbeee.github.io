@@ -652,7 +652,21 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   reference lines name the thresholds that matter per metric — freezing and
   hot, even-chance 50%, strong/gale breeze, moderate→extreme UV — and UV and
   feels-like shade the night and mark sunrise/sunset (feels-like with a
-  daylight figure); stat chips summarize the extremes.
+  daylight figure); stat chips summarize the extremes. When that day has timed
+  agenda items, **day × weather** opens a separate, full-height comparison
+  instead of compressing the agenda into the hourly chart. Time runs downward:
+  every scheduled habit/task keeps its proportional start/end position in a
+  wide agenda lane, while the selected weather measure runs beside it on the
+  exact same time axis. Each block directly prints its name, exact interval,
+  and the weather across that interval, so a fully booked day is readable by
+  scrolling and never requires selecting tiny marks. Rain uses aligned hourly
+  probability bands and accumulation labels; feels-like, wind, and UV use
+  vertical traces with hourly values. Those traces use compact semantic colour
+  ramps and faint value zones (cool→hot, calm→strong, low→extreme UV), so a
+  narrow weather lane communicates intensity without needing another axis or
+  legend. Four always-visible measure buttons swap the comparison in place.
+  Items with no weather guidance are included. The comparison is visual only
+  and does not infer that an item is outdoors or change its placement.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
@@ -1449,6 +1463,13 @@ Tracks the currently active habit session:
 - `formatFreeDuration` shows total free time ("3h" / "45m")
 - Largest gap highlighted
 - Free blocks can be selected to schedule a habit/task into that window
+- When a fresh forecast exists, only a quiet `add weather` affordance appears
+  under the free/busy strip. Tapping it reveals feels-like, rain, wind, and UV
+  choices; the user can add or remove up to two charts. Removing the final chart
+  folds the module back to the compact affordance. Every mini chart shares the
+  strip's time range and shades already-busy spans, so weather and room can be
+  compared without competing with the open-time content. This is visual context
+  only and does not change the planner.
 
 ### 10.3 Snooze Sheet 👤
 

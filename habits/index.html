@@ -1252,7 +1252,30 @@
       </div>
       <div id="weather-metric-content"></div>
       <div class="btn-row weather-context-actions">
+        <button class="btn" id="weather-metric-agenda" type="button" hidden><i class="ti ti-calendar-time" aria-hidden="true"></i> day × weather</button>
         <button class="btn primary" id="weather-metric-done" type="button">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- full-height agenda/weather comparison opened from an hourly metric -->
+  <div class="sheet-wrap" id="weather-agenda-sheet" role="dialog" aria-modal="true" aria-labelledby="weather-agenda-title">
+    <div class="sheet context-sheet weather-agenda-sheet">
+      <div class="context-sheet-head">
+        <span class="context-sheet-icon weather" id="weather-agenda-icon"><i class="ti ti-calendar-time" aria-hidden="true"></i></span>
+        <div class="context-sheet-copy">
+          <span class="sheet-eyebrow">day comparison</span>
+          <p class="sheet-name" id="weather-agenda-title">agenda × weather</p>
+          <p class="sheet-sub" id="weather-agenda-sub"></p>
+        </div>
+        <button class="mini-nav" id="weather-agenda-close" type="button" aria-label="back to hourly forecast">
+          <i class="ti ti-arrow-left" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="weather-agenda-metrics" id="weather-agenda-metrics" aria-label="Weather metric"></div>
+      <div id="weather-agenda-content"></div>
+      <div class="btn-row weather-context-actions weather-agenda-actions">
+        <button class="btn primary" id="weather-agenda-done" type="button">back to chart</button>
       </div>
     </div>
   </div>

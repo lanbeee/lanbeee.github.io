@@ -867,6 +867,10 @@ function renderFreePanel(info){
   panel.appendChild(summary);
   const checker = renderFreeWindowChecker(info);
   panel.appendChild(renderFreeDayStrip(info,(start,end)=>checker.pickWindow(start,end)));
+  if(typeof renderFreeTimeWeatherContext === 'function'){
+    const weather = renderFreeTimeWeatherContext(info);
+    if(weather)panel.appendChild(weather);
+  }
   panel.appendChild(checker);
   const bigGaps = info.gaps.filter(g=>Math.round((g.end - g.start) / 60000) >= 30);
   const shortMinutes = info.totalFreeMinutes - bigGaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);

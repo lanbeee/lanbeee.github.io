@@ -18,6 +18,8 @@
 #weather-context-sheet{z-index:130;}
 /* Hourly metric drill-down opens on top of the weather context sheet. */
 #weather-metric-sheet{z-index:140;}
+/* The full-height comparison opens above the hourly chart it came from. */
+#weather-agenda-sheet{z-index:150;}
 .sheet{
   background:var(--bg);width:100%;max-width:480px;
   border-radius:20px 20px 0 0;padding:20px 18px calc(36px + env(safe-area-inset-bottom));

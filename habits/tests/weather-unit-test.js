@@ -179,6 +179,161 @@ function assert(value,message){
   assert(/feels like/.test(drill.legend) && /actual/.test(drill.legend),'the temp chart legend explains both lines');
   assert(drill.metricClosed && drill.contextStillOpen,'done closes the hourly sheet but keeps the context sheet open');
 
+  // Agenda comparison: all timed agenda rows are available in a dedicated
+  // vertical day view, even when the item explicitly has no weather guidance.
+  // Names, exact times, and weather are printed without requiring selection.
+  const agendaCompare=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
+    sortSettings=loadSortSettings();
+    const walk={hid:'walk',name:'Park walk',type:'habit',target:1,weatherProfileMode:'none'};
+    const day={dayBase:base,dayKey:dateKey(base),isToday:true,timeline:[
+      {kind:'fill',h:walk,i:0,start:base+9.5*3600000,end:base+10.5*3600000}
+    ]};
+    openWeatherContextSheet(base,day,'');
+    document.querySelector('[data-weather-metric="temp"]').click();
+    const button=document.getElementById('weather-metric-agenda');
+    const offered=!button.hidden && /day × weather/.test(button.textContent);
+    const cleanBefore=!document.querySelector('#weather-metric-content .weather-agenda-vertical');
+    button.click();
+    const compared=document.getElementById('weather-agenda-sheet').classList.contains('open');
+    const items=document.querySelectorAll('#weather-agenda-content .weather-agenda-item').length;
+    const label=document.querySelector('.weather-agenda-item b')?.textContent || '';
+    const detail=document.querySelector('.weather-agenda-item small')?.textContent || '';
+    const vertical=document.querySelector('.weather-agenda-vertical');
+    const trace=document.querySelector('.weather-agenda-weather-svg .trace');
+    const metricButtons=document.querySelectorAll('#weather-agenda-metrics button').length;
+    document.getElementById('weather-agenda-done').click();
+    const hiddenAgain=!document.getElementById('weather-agenda-sheet').classList.contains('open');
+    const chartStillOpen=document.getElementById('weather-metric-sheet').classList.contains('open');
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    return {offered,cleanBefore,compared,items,label,detail,height:vertical?.getBoundingClientRect().height || 0,trace:Boolean(trace),metricButtons,hiddenAgain,chartStillOpen};
+  },seeded);
+  assert(agendaCompare.offered && agendaCompare.cleanBefore,'a timed day offers a dedicated comparison without cluttering the default chart');
+  assert(agendaCompare.compared && agendaCompare.items===1 && agendaCompare.height>=110 && agendaCompare.trace,
+    'day × weather opens a tall time-aligned agenda and weather trace');
+  assert(agendaCompare.label==='Park walk' && /09:30–10:30/.test(agendaCompare.detail) && /feels\s+10–11°C/.test(agendaCompare.detail),
+    'the agenda block directly prints its name, exact interval, and weather across that interval');
+  assert(agendaCompare.metricButtons===4,'the dedicated comparison can switch among all four weather measures');
+  assert(agendaCompare.hiddenAgain && agendaCompare.chartStillOpen,'back to chart closes only the comparison and preserves the hourly chart');
+
+  const denseAgenda=await page.evaluate(({base})=>{
+    const timeline=Array.from({length:12},(_,i)=>({
+      kind:'fill',start:base+(9+i*.25)*3600000,end:base+(9+(i+1)*.25)*3600000,
+      h:{hid:`dense-${i}`,name:`Packed item ${i+1}`,type:'habit',target:1,weatherProfileMode:'none'}
+    }));
+    openWeatherContextSheet(base,{dayBase:base,dayKey:dateKey(base),isToday:true,timeline},'');
+    document.querySelector('[data-weather-metric="temp"]').click();
+    document.getElementById('weather-metric-agenda').click();
+    const track=document.querySelector('.weather-agenda-vertical');
+    const blocks=[...track.querySelectorAll('.weather-agenda-item')];
+    const height=Math.round(track.getBoundingClientRect().height);
+    const names=blocks.map(block=>block.querySelector('b')?.textContent || '');
+    const directDetails=blocks.every(block=>/\d{2}:\d{2}–\d{2}:\d{2} · feels/.test(block.querySelector('small')?.textContent || ''));
+    const tenthTop=parseFloat(blocks[9].style.top);
+    document.querySelector('[data-weather-agenda-metric="precip"]').click();
+    const rainHours=document.querySelectorAll('.weather-agenda-rain-hour').length;
+    document.getElementById('weather-agenda-done').click();
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    return {blocks:blocks.length,height,names,directDetails,tenthTop,rainHours};
+  },seeded);
+  assert(denseAgenda.blocks===12 && denseAgenda.height>=330 && denseAgenda.names.includes('Packed item 10'),
+    'a packed day expands vertically so all twelve item names remain directly visible');
+  assert(denseAgenda.directDetails && Math.abs(denseAgenda.tenthTop-252)<2,
+    'packed items directly print their time/weather and retain exact proportional positions');
+  assert(denseAgenda.rainHours>=3,'switching to rain replaces the trace with aligned hourly probability bands');
+
+  // The narrow comparison traces use semantic value colour, subtle zones,
+  // and a filled ribbon instead of one flat-colour legacy line.
+  const comparisonColour=await page.evaluate(({base})=>{
+    const uvRows=[
+      {ts:base+9*3600000,uv_index:1},
+      {ts:base+10*3600000,uv_index:5},
+      {ts:base+11*3600000,uv_index:9},
+      {ts:base+12*3600000,uv_index:12}
+    ];
+    const html=weatherAgendaTraceHtml('uv',uvRows,base+9*3600000,base+13*3600000,320);
+    const host=document.createElement('div');
+    host.innerHTML=html;
+    const svg=host.querySelector('svg');
+    return {
+      zones:svg.querySelectorAll('.trace-zone').length,
+      ribbon:Boolean(svg.querySelector('.trace-area')),
+      halo:Boolean(svg.querySelector('.trace-halo')),
+      gradientStroke:svg.querySelector('.trace')?.getAttribute('stroke') || '',
+      dotTones:[...svg.querySelectorAll('.trace-dot')].map(dot=>dot.getAttribute('class')),
+      aria:svg.getAttribute('aria-label') || '',
+      uvLow:weatherMetricTone('uv',1),uvHigh:weatherMetricTone('uv',9),
+      windLow:weatherMetricTone('wind',8),windHigh:weatherMetricTone('wind',48),
+      tempLow:weatherMetricTone('temp',-4),tempHigh:weatherMetricTone('temp',35)
+    };
+  },seeded);
+  assert(comparisonColour.zones>=4 && comparisonColour.ribbon && comparisonColour.halo
+    && /^url\(#weather-agenda-gradient-uv\)$/.test(comparisonColour.gradientStroke),
+    'comparison line charts use zoned gradient ribbons with a clean halo');
+  assert(comparisonColour.dotTones.some(value=>/tone-green/.test(value))
+    && comparisonColour.dotTones.some(value=>/tone-red/.test(value))
+    && comparisonColour.dotTones.some(value=>/tone-purple/.test(value)),
+    'UV points change colour from low through high and extreme');
+  assert(comparisonColour.uvLow==='green' && comparisonColour.uvHigh==='red'
+    && comparisonColour.windLow==='green' && comparisonColour.windHigh==='orange'
+    && comparisonColour.tempLow==='blue' && comparisonColour.tempHigh==='red'
+    && /colour indicates low to high/.test(comparisonColour.aria),
+    'temperature, wind, and UV share explicit low-to-high visual semantics');
+
+  // Open-time weather starts as one quiet affordance. Opening it reveals four
+  // compact controls that can add exactly two charts with shared busy shading.
+  const freeWeather=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
+    sortSettings=loadSortSettings();
+    const info={
+      windowStart:base+9*3600000,windowEnd:base+12*3600000,
+      gaps:[{start:base+9*3600000,end:base+10*3600000},{start:base+11*3600000,end:base+12*3600000}],
+      busy:[{start:base+10*3600000,end:base+11*3600000}],
+      totalFreeMinutes:120,largestGapMinutes:60,nextGapStart:base+9*3600000
+    };
+    const panel=renderFreePanel(info);
+    document.body.appendChild(panel);
+    const context=panel.querySelector('.free-weather-context');
+    const initialCharts=context.querySelectorAll('.free-weather-chart').length;
+    const compact=context.classList.contains('is-collapsed')
+      && !!context.querySelector('[data-free-weather-add]')
+      && !context.querySelector('.free-weather-picker');
+    context.querySelector('[data-free-weather-add]').click();
+    const choices=context.querySelectorAll('[data-free-weather-metric]').length;
+    const initialCount=context.querySelector('.free-weather-head em')?.textContent || '';
+    context.querySelector('[data-free-weather-metric="precip"]').click();
+    const oneChart=context.querySelectorAll('.free-weather-chart').length;
+    context.querySelector('[data-free-weather-metric="temp"]').click();
+    const twoCharts=context.querySelectorAll('.free-weather-chart').length;
+    const disabledAtMax=context.querySelectorAll('[data-free-weather-metric]:disabled').length;
+    const busyMasks=[...context.querySelectorAll('.free-weather-chart')]
+      .map(chart=>chart.querySelectorAll('.free-weather-busy').length);
+    const heights=[...context.querySelectorAll('.free-weather-chart svg')]
+      .map(svg=>Math.round(svg.getBoundingClientRect().height));
+    context.querySelector('[data-free-weather-metric="precip"]').click();
+    const afterRemove=context.querySelectorAll('.free-weather-chart').length;
+    const enabledAfterRemove=context.querySelectorAll('[data-free-weather-metric]:not(:disabled)').length;
+    context.remove();
+    context.querySelector('[data-free-weather-metric="temp"]').click();
+    const allOff=context.querySelectorAll('.free-weather-chart').length;
+    const compactAgain=context.classList.contains('is-collapsed')
+      && !!context.querySelector('[data-free-weather-add]')
+      && !context.querySelector('.free-weather-picker');
+    return {initialCharts,compact,initialCount,choices,oneChart,twoCharts,disabledAtMax,busyMasks,heights,afterRemove,enabledAfterRemove,allOff,compactAgain};
+  },seeded);
+  assert(freeWeather.initialCharts===0 && freeWeather.compact && freeWeather.initialCount==='0/2',
+    'weather context is a single compact affordance until requested');
+  assert(freeWeather.choices===4 && freeWeather.oneChart===1 && freeWeather.twoCharts===2 && freeWeather.disabledAtMax===2,
+    'open time offers all four measures and enforces a two-chart maximum');
+  assert(freeWeather.busyMasks.every(count=>count===1) && freeWeather.heights.every(height=>height<=60),
+    'each mini chart stays short and shades the same occupied time span');
+  assert(freeWeather.afterRemove===1 && freeWeather.enabledAfterRemove===4,
+    'removing one chart immediately makes every weather choice available again');
+  assert(freeWeather.allOff===0 && freeWeather.compactAgain,
+    'removing the final chart folds weather context back to its compact affordance');
+
   // °F converts the chart labels and stats too; each metric gets its own shape.
   const drillF=await page.evaluate(()=>{
     saveSortSettings({...loadSortSettings(),weatherTempUnit:'f'});
