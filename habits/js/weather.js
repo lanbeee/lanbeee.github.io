@@ -1720,7 +1720,10 @@ function weatherFreeTimeMetricSummary(metricKey,rows){
 function weatherFreeTimeChartHtml(metricKey,rows,info,selection=null){
   const detail=WEATHER_METRIC_DETAILS[metricKey];
   if(!detail || !(info.windowEnd>info.windowStart))return '';
-  const W=320,H=64,left=5,right=5,top=5,bottom=48;
+  // left/right stay 0: the time domain spans the whole viewBox because the
+  // svg is stretched (preserveAspectRatio="none") to exactly the day map's
+  // track width, so busy spans and selection edges must land on the same x.
+  const W=320,H=64,left=0,right=0,top=5,bottom=48;
   const visible=(rows || []).map(row=>({
     ts:Number(row.ts),value:Number(row[detail.primary]),amount:Number(row[detail.secondary]),snow:Number(row[detail.snow])
   })).filter(point=>Number.isFinite(point.ts) && Number.isFinite(point.value)
