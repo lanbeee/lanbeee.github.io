@@ -1073,16 +1073,56 @@ function weatherMetricMarkText(metricKey,value){
   return String(Math.round(value));
 }
 
+// Daylight bounds for the charted day, from the shared adhan computation.
+// Null when adhan or home coords are unavailable — the chart stays clean.
+function weatherSunTimesFor(summary){
+  try{
+    if(!summary || typeof prayerTimesFor!=='function' || typeof prayerParams!=='function')return null;
+    const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+    const lat=Number(settings.homeCityLat),lng=Number(settings.homeCityLng);
+    if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
+    const times=prayerTimesFor({latitude:lat,longitude:lng},new Date(summary.dayBase),prayerParams(settings));
+    const rise=times && times.sunrise instanceof Date ? times.sunrise.getTime() : NaN;
+    const set=times && times.sunset instanceof Date ? times.sunset.getTime() : NaN;
+    return Number.isFinite(rise) && Number.isFinite(set) ? {sunrise:rise,sunset:set} : null;
+  }catch{ return null; }
+}
+
 // Hero chart for the hourly drill-down: hand-rolled SVG (no chart library),
 // one smooth accent line with a soft gradient fill, min/max callouts, an hour
 // axis, and a 'now' line when the day is today. Precipitation renders as
-// 0–100% bars instead of a line.
+// 0–100% bars instead of a line. Temp/wind draw their secondary series
+// (actual temperature / gusts) as a dashed background line; UV overlays
+// night shading and sunrise/sunset. The scrub group + _weatherChartMeta back
+// the pointer/keyboard readout bound in weatherBindMetricChartScrub.
+let _weatherChartMeta=null;
+
+function weatherMetricReadoutHtml(meta,idx){
+  const hour=meta.labels[idx] || '';
+  const v=meta.primary[idx];
+  let value='',extra='';
+  if(meta.metricKey==='temp'){
+    value=`feels ${weatherTempDisplay(v)}°${weatherUsesFahrenheit() ? 'F' : 'C'}`;
+    if(Number.isFinite(meta.secondary[idx]))extra=`actual ${weatherTempDisplay(meta.secondary[idx])}°`;
+  }else if(meta.metricKey==='wind'){
+    value=`${Math.round(v)} km/h`;
+    if(Number.isFinite(meta.secondary[idx]))extra=`gusts ${Math.round(meta.secondary[idx])}`;
+  }else if(meta.metricKey==='precip'){
+    value=`${Math.round(v)}%`;
+    if(Number.isFinite(meta.secondary[idx]))extra=`${Math.round(meta.secondary[idx]*10)/10} mm`;
+  }else{
+    value=`UV ${Math.round(v)}`;
+    if(meta.sun)extra=meta.ts[idx]<meta.sun.sunrise || meta.ts[idx]>meta.sun.sunset ? 'night' : '';
+  }
+  return `<b>${escapeHtml(hour)}</b><span>${escapeHtml(value)}</span>${extra?`<span class="dim">${escapeHtml(extra)}</span>`:''}`;
+}
+
 function weatherMetricChartHtml(metricKey,rows,summary){
   const detail=WEATHER_METRIC_DETAILS[metricKey];
   const W=340,H=152,top=24,bottom=H-24,left=8,right=8;
-  const pts=rows.map(row=>({ts:Number(row.ts),v:Number(row[detail.primary])}))
+  const pts=rows.map(row=>({ts:Number(row.ts),v:Number(row[detail.primary]),s:Number(row[detail.secondary])}))
     .filter(p=>Number.isFinite(p.v)).sort((a,b)=>a.ts-b.ts);
-  if(pts.length<2)return '';
+  if(pts.length<2){_weatherChartMeta=null;return '';}
   const zeroBased=metricKey==='precip' || metricKey==='uv';
   let vMin=Math.min(...pts.map(p=>p.v)),vMax=Math.max(...pts.map(p=>p.v));
   if(zeroBased)vMin=0;
@@ -1092,43 +1132,137 @@ function weatherMetricChartHtml(metricKey,rows,summary){
   if(!zeroBased)vMin=Math.max(0,vMin-pad);
   const xAt=i=>left+(i/(pts.length-1))*(W-left-right);
   const yAt=v=>bottom-((v-vMin)/(vMax-vMin))*(bottom-top);
+  const xs=pts.map((p,i)=>xAt(i));
   const maxIdx=pts.reduce((best,p,i)=>p.v>pts[best].v?i:best,0);
   const minIdx=pts.reduce((best,p,i)=>p.v<pts[best].v?i:best,0);
   const hourShort=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',hour12:false});
   const hourFull=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
+  // The readout starts at "now" on today, else on the day's peak.
+  let idx0=maxIdx;
+  if(weatherRequestedDayKey(Date.now())===summary.key){
+    const t=(Date.now()-pts[0].ts)/Math.max(1,pts[pts.length-1].ts-pts[0].ts);
+    if(t>=0 && t<=1)idx0=Math.max(0,Math.min(pts.length-1,Math.round(t*(pts.length-1))));
+  }
+  const sun=metricKey==='uv' ? weatherSunTimesFor(summary) : null;
+  _weatherChartMeta={metricKey,ts:pts.map(p=>p.ts),xs,
+    labels:pts.map(p=>hourFull.format(p.ts)),
+    primary:pts.map(p=>p.v),secondary:pts.map(p=>p.s),
+    geom:{W,H,top,bottom,left,right,yMin:vMin,yMax:vMax},idx0,idx:idx0,sun};
   let inner='';
+  if(sun){
+    // Shade the night bookends and mark sunrise/sunset with their times.
+    const xOfTs=t=>left+Math.max(0,Math.min(1,(t-pts[0].ts)/Math.max(1,pts[pts.length-1].ts-pts[0].ts)))*(W-left-right);
+    const riseX=xOfTs(sun.sunrise),setX=xOfTs(sun.sunset);
+    if(riseX-left>1)inner+=`<rect class="night" x="${left}" y="${top-4}" width="${(riseX-left).toFixed(1)}" height="${bottom-top+4}"/>`;
+    if(W-right-setX>1)inner+=`<rect class="night" x="${setX.toFixed(1)}" y="${top-4}" width="${(W-right-setX).toFixed(1)}" height="${bottom-top+4}"/>`;
+    for(const [x,arrow] of [[riseX,'↑'],[setX,'↓']]){
+      const anchor=x<52 ? 'start' : x>W-52 ? 'end' : 'middle';
+      const label=`${arrow} ${hourFull.format(arrow==='↑' ? sun.sunrise : sun.sunset)}`;
+      // Inside the plot (below the top edge) so it never collides with the
+      // 'now' label, which owns the strip above the chart.
+      inner+=`<line class="sunline" x1="${x.toFixed(1)}" y1="${top-4}" x2="${x.toFixed(1)}" y2="${bottom}"/><text class="sunmark" x="${x.toFixed(1)}" y="${top+11}" text-anchor="${anchor}">${escapeHtml(label)}</text>`;
+    }
+  }
   if(metricKey==='precip'){
     const step=(W-left-right)/pts.length;
     pts.forEach((p,i)=>{
       const h=((p.v-vMin)/(vMax-vMin))*(bottom-top);
       if(h<1.5)return; // 0% hours stay silent instead of stubbing the baseline
       const barW=Math.min(12,Math.max(3,step*0.6));
-      inner+=`<rect class="bar" x="${(xAt(i)-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%`)}</title></rect>`;
+      inner+=`<rect class="bar" x="${(xs[i]-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%`)}</title></rect>`;
     });
   }else{
-    const line=weatherSmoothPath(pts.map((p,i)=>[xAt(i),yAt(p.v)]));
+    const line=weatherSmoothPath(pts.map((p,i)=>[xs[i],yAt(p.v)]));
     inner+=`<path class="area" fill="url(#weather-grad-${escapeHtml(metricKey)})" d="${line}L${(W-right).toFixed(1)} ${bottom}L${left} ${bottom}Z"/>`;
     inner+=`<path class="line" d="${line}"/>`;
+    if((metricKey==='temp' || metricKey==='wind') && detail.secondary){
+      const secPts=pts.map((p,i)=>Number.isFinite(p.s) ? [xs[i],yAt(p.s)] : null).filter(Boolean);
+      if(secPts.length>1)inner+=`<path class="line secondary" d="${weatherSmoothPath(secPts)}"/>`;
+    }
   }
   const mark=(idx,cls,dy)=>{
-    const p=pts[idx],px=xAt(idx),py=yAt(p.v);
+    const px=xs[idx],py=yAt(pts[idx].v);
     const anchor=px<32 ? 'start' : px>W-32 ? 'end' : 'middle';
-    return `<circle class="dot" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.2"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${weatherMetricMarkText(metricKey,p.v)}`)}</title></circle>`
-      +`<text class="mark ${cls}" x="${px.toFixed(1)}" y="${(py+dy).toFixed(1)}" text-anchor="${anchor}">${escapeHtml(weatherMetricMarkText(metricKey,p.v))}</text>`;
+    return `<circle class="dot" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.2"><title>${escapeHtml(`${hourFull.format(pts[idx].ts)} · ${weatherMetricMarkText(metricKey,pts[idx].v)}`)}</title></circle>`
+      +`<text class="mark ${cls}" x="${px.toFixed(1)}" y="${(py+dy).toFixed(1)}" text-anchor="${anchor}">${escapeHtml(weatherMetricMarkText(metricKey,pts[idx].v))}</text>`;
   };
   inner+=mark(maxIdx,'max',-7);
   if(minIdx!==maxIdx && (metricKey==='temp' || metricKey==='wind'))inner+=mark(minIdx,'min',13);
   pts.forEach((p,i)=>{
-    if(Number(hourShort.format(p.ts))%3===0)inner+=`<text class="hour" x="${xAt(i).toFixed(1)}" y="${H-8}" text-anchor="middle">${escapeHtml(hourShort.format(p.ts))}</text>`;
+    if(Number(hourShort.format(p.ts))%3===0)inner+=`<text class="hour" x="${xs[i].toFixed(1)}" y="${H-8}" text-anchor="middle">${escapeHtml(hourShort.format(p.ts))}</text>`;
   });
-  if(summary && weatherRequestedDayKey(Date.now())===summary.key){
+  if(weatherRequestedDayKey(Date.now())===summary.key){
     const t=(Date.now()-pts[0].ts)/Math.max(1,pts[pts.length-1].ts-pts[0].ts);
     if(t>=0 && t<=1){
       const nx=left+t*(W-left-right);
-      inner+=`<line class="nowline" x1="${nx.toFixed(1)}" y1="${top-6}" x2="${nx.toFixed(1)}" y2="${bottom}"/><text class="now" x="${nx.toFixed(1)}" y="${top-10}" text-anchor="${nx>W-40 ? 'end' : 'middle'}">now</text>`;
+      inner+=`<line class="nowline" x1="${nx.toFixed(1)}" y1="${top-4}" x2="${nx.toFixed(1)}" y2="${bottom}"/><text class="now" x="${nx.toFixed(1)}" y="${top-9}" text-anchor="${nx>W-40 ? 'end' : 'middle'}">now</text>`;
     }
   }
-  return `<svg class="weather-metric-chart metric-${escapeHtml(metricKey)}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(`${detail.label} by hour`)}"><defs><linearGradient id="weather-grad-${escapeHtml(metricKey)}" x1="0" y1="0" x2="0" y2="1"><stop class="a" offset="0"/><stop class="b" offset="1"/></linearGradient></defs>${inner}</svg>`;
+  const sVal=pts[idx0].s;
+  inner+=`<g class="scrub"><line class="scrubline" x1="${xs[idx0].toFixed(1)}" y1="${top-4}" x2="${xs[idx0].toFixed(1)}" y2="${bottom}"/>`
+    +`<circle class="scrubdot" cx="${xs[idx0].toFixed(1)}" cy="${yAt(pts[idx0].v).toFixed(1)}" r="3.6"/>`
+    +(Number.isFinite(sVal) && metricKey!=='precip' && metricKey!=='uv' ? `<circle class="scrubdot secondary" cx="${xs[idx0].toFixed(1)}" cy="${yAt(sVal).toFixed(1)}" r="3"/>` : `<circle class="scrubdot secondary" r="3" style="display:none"/>`)
+    +`</g>`;
+  return `<svg class="weather-metric-chart metric-${escapeHtml(metricKey)}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(`${detail.label} by hour, drag or use arrow keys to read a specific hour`)}"><defs><linearGradient id="weather-grad-${escapeHtml(metricKey)}" x1="0" y1="0" x2="0" y2="1"><stop class="a" offset="0"/><stop class="b" offset="1"/></linearGradient></defs>${inner}</svg>`;
+}
+
+// Wire the open chart's scrub layer: pointer drag/hover and arrow keys move
+// the crosshair and update the readout line. Bound once per render.
+function weatherBindMetricChartScrub(){
+  const meta=_weatherChartMeta;
+  const svg=document.querySelector('#weather-metric-content svg.weather-metric-chart');
+  const readout=document.getElementById('weather-metric-readout');
+  if(!meta || !svg || !readout)return;
+  const {geom}=meta;
+  const yAt=v=>geom.bottom-((v-geom.yMin)/(geom.yMax-geom.yMin))*(geom.bottom-geom.top);
+  const setIdx=idx=>{
+    meta.idx=Math.max(0,Math.min(meta.xs.length-1,idx));
+    const x=meta.xs[meta.idx].toFixed(1);
+    svg.querySelector('.scrubline').setAttribute('x1',x);
+    svg.querySelector('.scrubline').setAttribute('x2',x);
+    const dot=svg.querySelector('.scrubdot');
+    dot.setAttribute('cx',x);
+    dot.setAttribute('cy',yAt(meta.primary[meta.idx]).toFixed(1));
+    // Only temp/wind draw a secondary series on the chart; precip/uv carry
+    // their second value in the readout alone.
+    const sdot=svg.querySelector('.scrubdot.secondary');
+    if(sdot && (meta.metricKey==='temp' || meta.metricKey==='wind')){
+      const s=meta.secondary[meta.idx];
+      if(Number.isFinite(s)){
+        sdot.style.display='';
+        sdot.setAttribute('cx',x);
+        sdot.setAttribute('cy',yAt(s).toFixed(1));
+      }else sdot.style.display='none';
+    }
+    readout.innerHTML=weatherMetricReadoutHtml(meta,meta.idx);
+  };
+  setIdx(meta.idx0);
+  svg.tabIndex=0;
+  const idxFromEvent=event=>{
+    const rect=svg.getBoundingClientRect();
+    if(!rect.width)return meta.idx;
+    const x=(event.clientX-rect.left)/rect.width*geom.W;
+    const frac=(x-geom.left)/(geom.W-geom.left-geom.right);
+    return Math.round(Math.max(0,Math.min(1,frac))*(meta.xs.length-1));
+  };
+  let scrubbing=false;
+  svg.addEventListener('pointerdown',event=>{
+    scrubbing=true;
+    try{svg.setPointerCapture(event.pointerId);}catch{ /* synthetic events carry no active pointer */ }
+    setIdx(idxFromEvent(event));
+  });
+  svg.addEventListener('pointermove',event=>{
+    if(scrubbing || event.pointerType==='mouse')setIdx(idxFromEvent(event));
+  });
+  const stop=()=>{scrubbing=false;};
+  svg.addEventListener('pointerup',stop);
+  svg.addEventListener('pointercancel',stop);
+  svg.addEventListener('keydown',event=>{
+    if(event.key==='ArrowLeft' || event.key==='ArrowRight'){
+      event.preventDefault();
+      setIdx(meta.idx+(event.key==='ArrowLeft' ? -1 : 1));
+    }
+  });
 }
 
 // A few glanceable facts instead of a full table: the extremes (with their
@@ -1160,6 +1294,11 @@ function weatherMetricStatsHtml(metricKey,rows,summary){
   }else{
     const peak=peakOf(primary);
     chips=chip('peak',`${Math.round(peak.v)}${at(peak)}`);
+    const sun=weatherSunTimesFor(summary);
+    if(sun){
+      const mins=Math.max(0,Math.round((sun.sunset-sun.sunrise)/60000));
+      chips+=chip('daylight',`${Math.floor(mins/60)}h ${String(mins%60).padStart(2,'0')}m`);
+    }
   }
   return `<div class="weather-metric-stats">${chips}</div>`;
 }
@@ -1262,10 +1401,13 @@ function renderWeatherMetricSheet(metricKey){
     }else{
       const stats=weatherMetricStatsHtml(metricKey,rows,summary);
       const chart=weatherMetricChartHtml(metricKey,rows,summary);
-      const dualTemp=metricKey==='temp'
-        && rows.filter(row=>Number.isFinite(Number(row[WEATHER_METRIC_DETAILS.temp.secondary]))).length>1;
-      content.innerHTML=`${stats}${chart || '<p class="weather-context-empty">Not enough hourly data to chart this day.</p>'}`
-        +(dualTemp && chart ? '<p class="weather-metric-legend"><span class="key solid"></span>feels like<span class="key dash"></span>actual</p>' : '');
+      const dual=metricKey==='temp' ? ['feels like','actual']
+        : metricKey==='wind' ? ['wind','gusts'] : null;
+      const dualReady=dual && chart
+        && rows.filter(row=>Number.isFinite(Number(row[WEATHER_METRIC_DETAILS[metricKey].secondary]))).length>1;
+      const legend=dualReady ? `<p class="weather-metric-legend"><span class="key solid"></span>${dual[0]}<span class="key dash"></span>${dual[1]}</p>` : '';
+      content.innerHTML=`${stats}<div class="weather-metric-readout" id="weather-metric-readout"></div>${chart || '<p class="weather-context-empty">Not enough hourly data to chart this day.</p>'}${legend}`;
+      weatherBindMetricChartScrub();
     }
   }
   return true;

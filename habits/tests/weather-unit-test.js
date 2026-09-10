@@ -213,6 +213,67 @@ function assert(value,message){
     'precipitation stats pair the chance with the total');
   assert(drillF.precipBars===3,'precipitation renders as one bar per hour');
   assert(drillF.allClosed,'done on the context sheet closes everything');
+
+  // Interactive scrub: pointer drags and arrow keys move the crosshair and
+  // readout; temp/wind draw their secondary series; UV overlays the sun.
+  const scrub=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
+    sortSettings=loadSortSettings();
+    openWeatherContextSheet(base,null,'');
+    document.querySelector('[data-weather-metric="temp"]').click();
+    const readout=()=>document.getElementById('weather-metric-readout').textContent.replace(/\s+/g,' ').trim();
+    const svg=document.querySelector('#weather-metric-content svg.weather-metric-chart');
+    const focusable=Boolean(svg && svg.getAttribute('tabindex')==='0');
+    const hasSecondaryLine=Boolean(svg.querySelector('path.line.secondary'));
+    const initial=readout();
+    const rect=svg.getBoundingClientRect();
+    const midX=rect.left+rect.width*0.5;
+    svg.dispatchEvent(new PointerEvent('pointerdown',{clientX:midX,clientY:rect.top+rect.height/2,bubbles:true,pointerId:7}));
+    svg.dispatchEvent(new PointerEvent('pointermove',{clientX:midX,clientY:rect.top+rect.height/2,bubbles:true,pointerId:7}));
+    const scrubbed=readout();
+    svg.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));
+    const afterKey=readout();
+    document.getElementById('weather-metric-close').click();
+    document.querySelector('[data-weather-metric="wind"]').click();
+    const windSvg=document.querySelector('#weather-metric-content svg.weather-metric-chart');
+    const windSecondary=Boolean(windSvg.querySelector('path.line.secondary'));
+    const windLegend=document.querySelector('#weather-metric-content .weather-metric-legend')?.textContent || '';
+    const windReadout=readout();
+    document.getElementById('weather-metric-close').click();
+    document.querySelector('[data-weather-metric="uv"]').click();
+    const uvSvg=document.querySelector('#weather-metric-content svg.weather-metric-chart');
+    const summary=weatherDaySummary(sortSettings._weatherContext,base,sortSettings);
+    const sun=weatherSunTimesFor(summary);
+    const sunMarks=uvSvg.querySelectorAll('.sunmark').length;
+    const nightRects=uvSvg.querySelectorAll('rect.night').length;
+    const uvStats=[...document.querySelectorAll('#weather-metric-content .weather-metric-stat')]
+      .map(stat=>stat.textContent.replace(/\s+/g,' ').trim());
+    const uvReadout=readout();
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    const allClosed=!document.getElementById('weather-context-sheet').classList.contains('open');
+    return {focusable,hasSecondaryLine,initial,scrubbed,afterKey,windSecondary,windLegend,windReadout,
+      sun,sunMarks,nightRects,uvStats,uvReadout,allClosed};
+  },seeded);
+  assert(scrub.focusable,'the chart is keyboard-focusable for scrubbing');
+  assert(scrub.hasSecondaryLine,'the feels-like chart draws the actual temperature behind the main line');
+  assert(/feels\s*\d+°/.test(scrub.initial),'the readout names the feels-like value for the opening hour');
+  assert(/feels\s*11°/.test(scrub.scrubbed),'scrubbing to mid-chart reads the 11°C hour');
+  assert(/feels\s*10°/.test(scrub.afterKey),'arrow keys step the readout an hour back');
+  assert(scrub.windSecondary && /wind/.test(scrub.windLegend) && /gusts/.test(scrub.windLegend),
+    'the wind chart draws gusts as its secondary line with a legend');
+  assert(/km\/h/.test(scrub.windReadout) && /gusts/.test(scrub.windReadout),'the wind readout pairs speed with gusts');
+  if(scrub.sun){
+    assert(scrub.sunMarks===2,'the UV chart marks sunrise and sunset');
+    // The seeded samples span 09:00–11:00 — all daylight — so the night
+    // bookends correctly collapse away (full shading verified visually).
+    assert(scrub.nightRects===0,'night shading stays off when the charted span is all daylight');
+    assert(/daylight/.test(scrub.uvStats.join(' ')),'the UV stats include a daylight chip');
+    assert(/UV\s*\d/.test(scrub.uvReadout),'the UV readout names the index');
+  }else{
+    assert(scrub.sunMarks===0 && scrub.nightRects===0,'without sun times the UV chart stays clean');
+  }
+  assert(scrub.allClosed,'done on the context sheet closes everything');
   assert(errors.length===0,'no page errors during unit switching');
 
   await browser.close();
