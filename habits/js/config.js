@@ -252,7 +252,7 @@ const DEFAULT_SORT_SETTINGS = {
   weatherProfiles:[],
   // Keep ambient forecast chrome icon-only unless the user explicitly wants
   // the low/high range beside each day.
-  showWeatherTemperatureRanges:false,
+  showWeatherTemperatureRanges:true,
   // Optional interval forecasts on busy/travel agenda surfaces. Habit and
   // task cards opt in per item (`showWeather`). These are presentation only:
   // they never opt an item into weather-guided placement. Travel keeps its
