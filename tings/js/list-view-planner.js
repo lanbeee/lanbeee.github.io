@@ -67,8 +67,88 @@ let _optimizerHomeReadyDirtyKey = '';
 let _optimizerHomeRefinementKey = '';
 let _optimizerHomeRefinementDoneKey = '';
 let _optimizerHomeRefinementToken = 0;
+let _optimizerHomeRefinementPass = 0;
+let _optimizerHomeRefinementRetryTimer = null;
+let _optimizerHomeRefinementIdleTimer = null;
+let _optimizerHomeRefinementIdleCallback = false;
+let _optimizerHomeRefinementTrackedDirty = '';
+let _optimizerHomeProvenDayKeys = new Set();
 let _idlePlannerRefreshTimer = null;
 let _homeEarlyMapCache = {key:'',map:null};
+
+// PURE: translate optimizer/runtime provenance into one quiet home-header cue.
+// "Optimal" is deliberately reserved for a GLPK proof. A refined feasible
+// result is the best plan found in the deeper budget, but is not mislabeled as
+// mathematically optimal.
+function homePlannerRuntimeState(week = _homeRenderedWeek){
+  const settings = (typeof sortSettings !== 'undefined' && sortSettings)
+    || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const exact = Boolean(settings && settings.agendaOptimizer)
+    && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast());
+  if(!exact)return {state:'hidden',label:'',detail:'Fast planner selected',running:false};
+  if(_optimizerHomeRequestKey){
+    return {
+      state:'planning',label:'planning',running:true,
+      detail:'GLPK is building a new agenda; the visible plan may still change.'
+    };
+  }
+  if(_optimizerHomeRefinementKey){
+    return {
+      state:'refining',label:'refining',running:true,
+      detail:'GLPK is refining the current feasible agenda in the background.'
+    };
+  }
+  if(!week || !Array.isArray(week.days)){
+    return {state:'planning',label:'planning',running:true,detail:'GLPK is preparing the agenda.'};
+  }
+  let refinementFinished = Boolean(week.refined);
+  try{
+    const liveRefinementKey = `${dateKey(Date.now())}\n${homePlannerDirtyKey(load())}`;
+    refinementFinished = refinementFinished || _optimizerHomeRefinementDoneKey === liveRefinementKey;
+  }catch(_){ /* provenance remains usable without storage access */ }
+  const status = week.plannerSolveStatus || (week.optimized ? 'feasible' : 'fallback');
+  if(week.optimized && status === 'optimal'){
+    return {
+      state:'optimal',label:'optimal',running:false,
+      detail:'GLPK proved the fixed-item agenda optimal; breakable gap fill and route reconciliation are complete.'
+    };
+  }
+  if(week.optimized && refinementFinished){
+    return {
+      state:'refined',label:'refined',running:false,
+      detail:'Background refinement finished with the best feasible agenda found; optimality was not proved.'
+    };
+  }
+  if(week.optimized && status === 'feasible'){
+    return {
+      state:'feasible',label:'feasible',running:false,
+      detail:'A valid GLPK agenda is ready, but optimality was not proved within the foreground time budget.'
+    };
+  }
+  return {
+    state:'fallback',label:'fallback',running:false,
+    detail:'GLPK did not return a usable result for every day, so part or all of this agenda used the fast fallback.'
+  };
+}
+
+// WRITE: status changes often preserve every placement, so update the tiny cue
+// without forcing a list repaint or moving the card currently being read.
+function applyHomePlannerStatusIndicator(button,state = homePlannerRuntimeState()){
+  if(!button)return;
+  button.hidden = !state || state.state === 'hidden';
+  if(button.hidden)return;
+  button.dataset.plannerState = state.state;
+  button.title = state.detail;
+  button.setAttribute('aria-label',`agenda ${state.label}: ${state.detail}`);
+}
+
+function syncHomePlannerStatusIndicators(){
+  if(typeof document === 'undefined')return;
+  const state = homePlannerRuntimeState();
+  document.querySelectorAll('.planner-state-indicator').forEach(button=>{
+    applyHomePlannerStatusIndicator(button,state);
+  });
+}
 
 // PURE: the visible scheduling result, without solver bookkeeping. Comparing
 // this after a background solve lets the current DOM stay mounted when GLPK
@@ -112,6 +192,7 @@ function homeAgendaRefinementQuality(week,data,settings){
   const now = Date.now();
   for(let dayOffset = 0;dayOffset < days.length;dayOffset += 1){
     const rows = Array.isArray(days[dayOffset].timeline) ? days[dayOffset].timeline : [];
+    const occurrenceOrdinals = new Map();
     for(const row of rows){
       if(!row)continue;
       if(row.kind === 'travel'){
@@ -131,7 +212,10 @@ function homeAgendaRefinementQuality(week,data,settings){
       const pinned = typeof isWeekPinnedToday === 'function'
         ? isWeekPinnedToday(h,settings || {}) : Boolean(h.pinned);
       if((priority === 0 && !h.breakable) || pinned){
-        const key = `${dayOffset}:${row.i}`;
+        const ordinal = (occurrenceOrdinals.get(row.i) || 0) + 1;
+        occurrenceOrdinals.set(row.i,ordinal);
+        const occurrence = row.occurrenceKey || `${row.i}:occurrence-${ordinal}`;
+        const key = `${dayOffset}:${occurrence}`;
         required.set(key,(required.get(key) || 0) + minutes);
       }
       const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
@@ -190,10 +274,18 @@ function homeAgendaRefinementIsBetter(baseline,candidate,data,settings){
 }
 
 function homeAgendaNeedsBackgroundRefinement(week,data,settings){
-  if(!week || !week.optimized || week.refined)return false;
-  if(week.plannerSolveStatus && week.plannerSolveStatus !== 'optimal')return true;
+  if(!week || !week.optimized)return false;
+  // A refined feasible week is not a GLPK proof. Keep searching while the app
+  // is open. Missing provenance is treated as feasible, not as a proof.
+  // A fixed-item proof can still leave a daily P0 breakable short when reserved
+  // minutes were split below min-chunk, so that case keeps searching too.
+  const proven = (week.plannerSolveStatus || 'feasible') === 'optimal';
   const day = week.days && week.days[0];
-  if(!day)return false;
+  if(proven){
+    if(!day)return false;
+  }else if(!day){
+    return true;
+  }
   const placed = new Map();
   for(const row of day.timeline || []){
     if(row && row.kind === 'fill' && row.i != null){
@@ -213,84 +305,280 @@ function homeAgendaNeedsBackgroundRefinement(week,data,settings){
       ? todayCandidateLoadMinutes(h,day.dayBase) : Number(h.durationMinutes) || 0;
     if((placed.get(i) || 0) + 0.01 < need)return true;
   }
-  return false;
+  return !proven;
 }
 
-function homeAgendaRefinementBudgetMs(week){
+function homeAgendaProvenDayKeys(week){
+  const solves = week && week.plannerDiagnostics && Array.isArray(week.plannerDiagnostics.daySolves)
+    ? week.plannerDiagnostics.daySolves : [];
+  const keys = [];
+  for(const solve of solves){
+    if(!solve || solve.phase !== 'fixed-pack' || !solve.dayKey)continue;
+    if(solve.status === 'optimal')keys.push(solve.dayKey);
+  }
+  return keys;
+}
+
+// An unchanged packing keeps every proof already established for that exact
+// packing. A later time-limited run can add proofs, but merely returning
+// feasible/fallback does not invalidate an earlier GLPK proof for the same
+// rows and unchanged planner revision.
+function mergeHomeAgendaSamePlanProvenance(incumbent,candidate){
+  if(!incumbent || !candidate)return candidate;
+  const rank = status=>status === 'optimal' ? 2 : (status === 'feasible' ? 1 : 0);
+  const incumbentStatus = incumbent.plannerSolveStatus || (incumbent.optimized ? 'feasible' : 'fallback');
+  const candidateStatus = candidate.plannerSolveStatus || (candidate.optimized ? 'feasible' : 'fallback');
+  const preservedKeys = new Set(homeAgendaProvenDayKeys(incumbent));
+  const incumbentSolves = incumbent.plannerDiagnostics
+    && Array.isArray(incumbent.plannerDiagnostics.daySolves)
+    ? incumbent.plannerDiagnostics.daySolves : [];
+  const incumbentDiagnostics = incumbent.plannerDiagnostics || {};
+  const candidateDiagnostics = candidate.plannerDiagnostics || {};
+  const candidateSolves = Array.isArray(candidateDiagnostics.daySolves)
+    ? candidateDiagnostics.daySolves : [];
+  const mergedSolves = candidateSolves.filter(solve=>!(
+    solve && solve.phase === 'fixed-pack' && preservedKeys.has(solve.dayKey)
+      && solve.status !== 'optimal'
+  ));
+  const representedProofs = new Set(mergedSolves.filter(solve=>
+    solve && solve.phase === 'fixed-pack' && solve.status === 'optimal'
+  ).map(solve=>solve.dayKey));
+  for(const solve of incumbentSolves){
+    if(!solve || solve.phase !== 'fixed-pack' || solve.status !== 'optimal'
+      || representedProofs.has(solve.dayKey))continue;
+    mergedSolves.push({...solve,selectionStatus:'preserved-identical-proof'});
+    representedProofs.add(solve.dayKey);
+  }
+  return {
+    ...candidate,
+    plannerSolveStatus:rank(incumbentStatus) > rank(candidateStatus)
+      ? incumbentStatus : candidateStatus,
+    plannerDiagnostics:{...incumbentDiagnostics,...candidateDiagnostics,daySolves:mergedSolves}
+  };
+}
+
+function homeAgendaRefinementBudgetMs(week,pass = 0){
   const now = Date.now();
   const day = week && week.days && week.days[0];
   const nextHardStart = (day && day.timeline || [])
     .filter(row=>row && row.kind === 'scheduled' && Number(row.start) > now)
     .reduce((best,row)=>Math.min(best,Number(row.start)),Infinity);
+  const firstCap = typeof HOME_AGENDA_REFINEMENT_FIRST_BUDGET_MS === 'number'
+    ? HOME_AGENDA_REFINEMENT_FIRST_BUDGET_MS : 30000;
+  const laterCap = typeof HOME_AGENDA_REFINEMENT_LATER_BUDGET_MS === 'number'
+    ? HOME_AGENDA_REFINEMENT_LATER_BUDGET_MS : 55000;
+  const cap = pass > 0 ? laterCap : firstCap;
   const untilBoundary = Number.isFinite(nextHardStart)
-    ? nextHardStart - now - 5000 : 30000;
+    ? nextHardStart - now - 5000 : cap;
   if(untilBoundary < 6000)return 0;
-  return Math.max(5000,Math.min(30000,Math.round(untilBoundary)));
+  const floor = pass > 0 ? 12000 : 5000;
+  return Math.max(floor,Math.min(cap,Math.round(untilBoundary)));
+}
+
+function resetHomeAgendaRefinementProgress(dirtyKey){
+  if(_optimizerHomeRefinementTrackedDirty === dirtyKey)return;
+  _optimizerHomeRefinementTrackedDirty = dirtyKey;
+  _optimizerHomeRefinementPass = 0;
+  _optimizerHomeRefinementDoneKey = '';
+  _optimizerHomeProvenDayKeys = new Set();
+}
+
+function absorbHomeAgendaProvenDayKeys(week){
+  const solves = week && week.plannerDiagnostics && Array.isArray(week.plannerDiagnostics.daySolves)
+    ? week.plannerDiagnostics.daySolves : [];
+  for(const solve of solves){
+    if(!solve || solve.phase !== 'fixed-pack' || !solve.dayKey)continue;
+    if(solve.status === 'optimal')_optimizerHomeProvenDayKeys.add(solve.dayKey);
+    else if(solve.status === 'feasible' || solve.status === 'fallback'){
+      _optimizerHomeProvenDayKeys.delete(solve.dayKey);
+    }
+  }
+}
+
+function cancelHomeAgendaRefinement(reason){
+  if(_optimizerHomeRefinementRetryTimer != null){
+    clearTimeout(_optimizerHomeRefinementRetryTimer);
+    _optimizerHomeRefinementRetryTimer = null;
+  }
+  if(_optimizerHomeRefinementIdleTimer != null){
+    if(_optimizerHomeRefinementIdleCallback && typeof cancelIdleCallback === 'function'){
+      cancelIdleCallback(_optimizerHomeRefinementIdleTimer);
+    }else{
+      clearTimeout(_optimizerHomeRefinementIdleTimer);
+    }
+    _optimizerHomeRefinementIdleTimer = null;
+    _optimizerHomeRefinementIdleCallback = false;
+  }
+  if(!_optimizerHomeRefinementKey)return false;
+  ++_optimizerHomeRefinementToken;
+  _optimizerHomeRefinementKey = '';
+  syncHomePlannerStatusIndicators();
+  if(reason && typeof cancelAgendaPlannerWorkerRequests === 'function'){
+    cancelAgendaPlannerWorkerRequests(reason);
+  }
+  return true;
+}
+
+function queueHomeAgendaRefinementRetry(data,settings,week){
+  if(_optimizerHomeRefinementRetryTimer != null){
+    clearTimeout(_optimizerHomeRefinementRetryTimer);
+  }
+  const retryMs = typeof HOME_AGENDA_REFINEMENT_RETRY_MS === 'number'
+    ? HOME_AGENDA_REFINEMENT_RETRY_MS : 8000;
+  _optimizerHomeRefinementRetryTimer = setTimeout(()=>{
+    _optimizerHomeRefinementRetryTimer = null;
+    if(typeof document !== 'undefined' && document.visibilityState === 'hidden')return;
+    scheduleHomeAgendaRefinement(
+      typeof load === 'function' ? load() : data,
+      (typeof sortSettings !== 'undefined' && sortSettings) || settings,
+      _homeRenderedWeek || week
+    );
+  },retryMs);
+}
+
+function maybeScheduleHomeAgendaRefinement(week = _homeRenderedWeek){
+  if(!week || !Array.isArray(week.days))return false;
+  if(typeof document !== 'undefined' && document.visibilityState === 'hidden')return false;
+  const data = typeof load === 'function' ? load() : [];
+  const settings = (typeof sortSettings !== 'undefined' && sortSettings)
+    || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  if(!settings || !settings.agendaOptimizer)return false;
+  if(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())return false;
+  return scheduleHomeAgendaRefinement(data,settings,week);
 }
 
 function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
   if(!homeAgendaNeedsBackgroundRefinement(baselineWeek,data,settings))return false;
   if(typeof buildWeekAgendaOffMain !== 'function')return false;
+  if(_optimizerHomeRequestKey)return false;
+  if(typeof document !== 'undefined' && document.visibilityState === 'hidden')return false;
   const dirtyKey = homePlannerDirtyKey(data);
+  resetHomeAgendaRefinementProgress(dirtyKey);
   const refinementKey = `${dateKey(Date.now())}\n${dirtyKey}`;
-  if(_optimizerHomeRefinementKey === refinementKey
-    || _optimizerHomeRefinementDoneKey === refinementKey)return false;
-  const budgetMs = homeAgendaRefinementBudgetMs(baselineWeek);
+  if(_optimizerHomeRefinementKey)return false;
+  if(_optimizerHomeRefinementDoneKey === refinementKey)return false;
+  const maxPasses = typeof HOME_AGENDA_REFINEMENT_MAX_PASSES === 'number'
+    ? HOME_AGENDA_REFINEMENT_MAX_PASSES : 4;
+  if(_optimizerHomeRefinementPass >= maxPasses){
+    _optimizerHomeRefinementDoneKey = refinementKey;
+    return false;
+  }
+  const budgetMs = homeAgendaRefinementBudgetMs(baselineWeek,_optimizerHomeRefinementPass);
   if(budgetMs <= 0)return false;
+  if(_optimizerHomeRefinementRetryTimer != null){
+    clearTimeout(_optimizerHomeRefinementRetryTimer);
+    _optimizerHomeRefinementRetryTimer = null;
+  }
+  absorbHomeAgendaProvenDayKeys(baselineWeek);
   const token = ++_optimizerHomeRefinementToken;
   _optimizerHomeRefinementKey = refinementKey;
-  const deadline = Date.now() + budgetMs + 3000;
+  syncHomePlannerStatusIndicators();
+  const deadline = Date.now() + budgetMs + 8000;
   const run = ()=>{
+    _optimizerHomeRefinementIdleTimer = null;
+    _optimizerHomeRefinementIdleCallback = false;
     if(token !== _optimizerHomeRefinementToken)return;
     if(typeof document !== 'undefined' && document.visibilityState === 'hidden'){
       _optimizerHomeRefinementKey = '';
+      syncHomePlannerStatusIndicators();
       return;
     }
     if(homePlannerDirtyKey(load()) !== dirtyKey){
       _optimizerHomeRefinementKey = '';
+      syncHomePlannerStatusIndicators();
       return;
     }
     const refineSettings = {...settings};
+    const livePlannerLocationId = typeof liveLocationId === 'function' ? liveLocationId() : null;
+    if(livePlannerLocationId)refineSettings._plannerLiveLocationId = livePlannerLocationId;
     void buildWeekAgendaOffMain(data,refineSettings,7,'exact',{
       dirtyKey,
       day0Only:false,
       refine:true,
-      refineBudgetMs:budgetMs
+      refinePass:_optimizerHomeRefinementPass,
+      refineBudgetMs:budgetMs,
+      provenDayKeys:[..._optimizerHomeProvenDayKeys],
+      priorPlacements:typeof agendaPriorPlacementsFromWeek === 'function'
+        ? agendaPriorPlacementsFromWeek(baselineWeek || _homeRenderedWeek)
+        : []
     }).then(week=>{
       if(token !== _optimizerHomeRefinementToken)return;
       _optimizerHomeRefinementKey = '';
-      _optimizerHomeRefinementDoneKey = refinementKey;
-      if(Date.now() > deadline || homePlannerDirtyKey(load()) !== dirtyKey)return;
-      if(!week || !Array.isArray(week.days))return;
+      _optimizerHomeRefinementPass += 1;
+      if(Date.now() > deadline || homePlannerDirtyKey(load()) !== dirtyKey){
+        syncHomePlannerStatusIndicators();
+        return;
+      }
+      if(!week || !Array.isArray(week.days)){
+        _optimizerHomeRefinementDoneKey = refinementKey;
+        syncHomePlannerStatusIndicators();
+        return;
+      }
       const liveData = load();
       if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(week,liveData);
       const incumbent = _homeRenderedWeek || baselineWeek;
-      if(!homeAgendaRefinementIsBetter(incumbent,week,liveData,sortSettings || settings)){
+      const samePlan = homeAgendaPlanSignature(incumbent,liveData) === homeAgendaPlanSignature(week,liveData);
+      if(samePlan)week = mergeHomeAgendaSamePlanProvenance(incumbent,week);
+      const better = homeAgendaRefinementIsBetter(incumbent,week,liveData,sortSettings || settings);
+      // Only absorb proofs from a week we actually keep. A rejected pass that
+      // proved day 0 while heuristic-packing later days would otherwise freeze
+      // the incumbent's day 0 and never apply the better packing.
+      if(better || samePlan)absorbHomeAgendaProvenDayKeys(week);
+      if(!better){
         // A proof/status improvement with identical placements is still useful
         // audit/cache metadata, but it should not repaint the DOM.
-        if(homeAgendaPlanSignature(incumbent,liveData) === homeAgendaPlanSignature(week,liveData)){
+        if(samePlan){
           _homeRenderedWeek = week;
           _optimizerHomeReadyWeek = week;
           _optimizerHomeReadyKey = optimizerHomeStateKey(liveData);
           _optimizerHomeReadyDirtyKey = dirtyKey;
           saveHomeAgendaCache(liveData,week);
         }
-        return;
+      }else{
+        render({__fromBackgroundRefresh:true,__fromOptimizer:true,__optimizedWeek:week});
+        const stableData = load();
+        _optimizerHomeReadyWeek = week;
+        _optimizerHomeReadyKey = optimizerHomeStateKey(stableData);
+        _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(stableData);
+        saveHomeAgendaCache(stableData,week);
+        _homeListFingerprint = homeListFingerprint();
       }
-      render({__fromBackgroundRefresh:true,__fromOptimizer:true,__optimizedWeek:week});
-      const stableData = load();
-      _optimizerHomeReadyWeek = week;
-      _optimizerHomeReadyKey = optimizerHomeStateKey(stableData);
-      _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(stableData);
-      saveHomeAgendaCache(stableData,week);
-      _homeListFingerprint = homeListFingerprint();
+      const mounted = _homeRenderedWeek || week;
+      const stillNeeds = homeAgendaNeedsBackgroundRefinement(mounted,load(),sortSettings || settings);
+      const passesLeft = _optimizerHomeRefinementPass < maxPasses;
+      if(stillNeeds && passesLeft
+        && !(typeof document !== 'undefined' && document.visibilityState === 'hidden')){
+        queueHomeAgendaRefinementRetry(liveData,settings,mounted);
+      }else{
+        _optimizerHomeRefinementDoneKey = refinementKey;
+      }
+      syncHomePlannerStatusIndicators();
     }).catch(()=>{
       if(token !== _optimizerHomeRefinementToken)return;
       _optimizerHomeRefinementKey = '';
-      _optimizerHomeRefinementDoneKey = refinementKey;
+      _optimizerHomeRefinementPass += 1;
+      const passesLeft = _optimizerHomeRefinementPass < maxPasses;
+      if(passesLeft
+        && !(typeof document !== 'undefined' && document.visibilityState === 'hidden')){
+        queueHomeAgendaRefinementRetry(data,settings,baselineWeek);
+      }else{
+        _optimizerHomeRefinementDoneKey = refinementKey;
+      }
+      syncHomePlannerStatusIndicators();
     });
   };
-  setTimeout(run,0);
+  // Refinement is deliberately opportunistic: the usable incumbent is already
+  // mounted, so wait for a quiet main-thread interval before asking the worker
+  // to consume CPU. The timeout guarantees eventual progress on browsers that
+  // rarely report idle time while animations/timers are active.
+  const idleTimeout = typeof HOME_AGENDA_REFINEMENT_IDLE_TIMEOUT_MS === 'number'
+    ? HOME_AGENDA_REFINEMENT_IDLE_TIMEOUT_MS : 1500;
+  if(typeof requestIdleCallback === 'function'){
+    _optimizerHomeRefinementIdleCallback = true;
+    _optimizerHomeRefinementIdleTimer = requestIdleCallback(run,{timeout:idleTimeout});
+  }else{
+    _optimizerHomeRefinementIdleTimer = setTimeout(run,Math.min(250,idleTimeout));
+  }
   return true;
 }
 
@@ -299,12 +587,8 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
 // first usable agenda is already mounted by the time this flag is set.
 if(typeof document !== 'undefined' && document.addEventListener){
   document.addEventListener('visibilitychange',()=>{
-    if(!document.hidden || !_optimizerHomeRefinementKey)return;
-    ++_optimizerHomeRefinementToken;
-    _optimizerHomeRefinementKey = '';
-    if(typeof cancelAgendaPlannerWorkerRequests === 'function'){
-      cancelAgendaPlannerWorkerRequests('background refinement paused while hidden');
-    }
+    if(!document.hidden)return;
+    cancelHomeAgendaRefinement('background refinement paused while hidden');
   });
 }
 
@@ -392,7 +676,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 9;
+const HOME_PLANNER_ALGORITHM_VERSION = 14;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -585,10 +869,18 @@ function renderHomePresentationOnly(){
 // ASYNC COORDINATOR: keep week planning outside the UI thread in both modes.
 // A same-day cached or currently mounted week provides a stable view while the
 // worker solves. A first-ever cold open keeps its skeleton until that result.
+function adoptHomeAgendaReadyState(week,data,claimLiveKey){
+  if(!week || !Array.isArray(week.days))return;
+  _optimizerHomeReadyWeek = week;
+  _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(data);
+  if(claimLiveKey)_optimizerHomeReadyKey = optimizerHomeStateKey(data);
+}
+
 function scheduleIdlePlannerWarmAndBuild(data,opts){
   if(_idlePlannerRefreshTimer != null)return;
   const run = ()=>{
     _idlePlannerRefreshTimer = null;
+    if(typeof document !== 'undefined' && document.visibilityState === 'hidden')return;
     // Warm is fire-and-forget and exact-mode only — never block the replan
     // behind a GLPK compile (especially in fast mode).
     const exact = Boolean(
@@ -598,12 +890,30 @@ function scheduleIdlePlannerWarmAndBuild(data,opts){
     if(exact && typeof warmAgendaPlannerWorker === 'function'){
       void warmAgendaPlannerWorker();
     }
-    queueOptimizedHomeRender(typeof load === 'function' ? load() : data,{
+    const live = typeof load === 'function' ? load() : data;
+    // Fresh cache already is a solved week. Keep or slide it on idle so cold
+    // open does not immediately spend the 4s GLPK budget. A day-0 re-solve
+    // only runs when the clock actually needs a new packing. If that mounted
+    // plan is still only feasible, spend idle time on background refinement.
+    let reuseFarDays = true;
+    if(_homeRenderedWeek && typeof homeAgendaTickPlan === 'function'){
+      const plan = homeAgendaTickPlan(_homeRenderedWeek,Date.now());
+      if(plan.kind === 'keep' || plan.kind === 'clock-shift'){
+        if(typeof tickHomeAgendaWhileOpen === 'function')tickHomeAgendaWhileOpen();
+        adoptHomeAgendaReadyState(_homeRenderedWeek,live,true);
+        _homeListFingerprint = homeListFingerprint();
+        if(exact)maybeScheduleHomeAgendaRefinement(_homeRenderedWeek);
+        return;
+      }
+      if(plan.reuseFarDays === false)reuseFarDays = false;
+    }
+    queueOptimizedHomeRender(live,{
       ...(opts || {}),
       __backgroundRefresh:true,
       __fromIdleRefresh:true,
       __skipFreshnessGate:true,
-      __forceReplan:true
+      __forceReplan:true,
+      __reuseFarDays:reuseFarDays
     });
   };
   if(typeof requestIdleCallback === 'function'){
@@ -613,22 +923,32 @@ function scheduleIdlePlannerWarmAndBuild(data,opts){
   }
 }
 
+// Unfinished morning work, weather, and location changes must reopen later
+// days. Clock-driven keep/shift/imminent ticks of the same revision may reuse.
+function homeAgendaClockRefreshMayReuseFarDays(opts){
+  if(!opts)return true;
+  if(opts.__reuseFarDays === false)return false;
+  if(opts.__weatherChanged || opts.__locationChanged)return false;
+  return true;
+}
+
+// Only a clock-driven refresh of the same planner revision may replay the
+// mounted packing. Forced weather/location/data refreshes need a real solve so
+// their changed costs and deferral signals can affect the agenda. An unfinished
+// fill that may need another day also cannot replay tomorrow's clocks.
+function homeAgendaShouldReuseIncumbent(day0Only,opts,dirtyKey,priorPlacements){
+  if(!homeAgendaClockRefreshMayReuseFarDays(opts))return false;
+  if(day0Only)return true;
+  if(!Array.isArray(priorPlacements) || !priorPlacements.length)return false;
+  if(_optimizerHomeReadyDirtyKey !== dirtyKey)return false;
+  return Boolean(opts && (opts.__tickReplan || opts.__fromIdleRefresh));
+}
+
 function queueOptimizedHomeRender(data,opts){
   plannerPerfMark('planner-queue-start');
   const key = optimizerHomeStateKey(data);
   const dirtyKey = homePlannerDirtyKey(data);
   const exactMode = Boolean(sortSettings && sortSettings.agendaOptimizer);
-  const refinementKey = `${dateKey(Date.now())}\n${dirtyKey}`;
-  // A real edit/location change invalidates an in-flight refinement. Kill the
-  // old worker so the new foreground plan never queues behind up to 30 seconds
-  // of obsolete work. Merely crossing a minute keeps the same dirty revision.
-  if(_optimizerHomeRefinementKey && _optimizerHomeRefinementKey !== refinementKey){
-    ++_optimizerHomeRefinementToken;
-    _optimizerHomeRefinementKey = '';
-    if(typeof cancelAgendaPlannerWorkerRequests === 'function'){
-      cancelAgendaPlannerWorkerRequests('planner state changed during refinement');
-    }
-  }
   if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
     if(opts && opts.__backgroundRefresh
       && homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(_optimizerHomeReadyWeek,data)){
@@ -669,6 +989,7 @@ function queueOptimizedHomeRender(data,opts){
     && (!(opts && opts.__backgroundRefresh) || (opts && opts.__locationChanged))){
     ++_optimizerHomeRequestToken;
     _optimizerHomeRequestKey = '';
+    syncHomePlannerStatusIndicators();
     if(typeof cancelAgendaPlannerWorkerRequests === 'function'){
       cancelAgendaPlannerWorkerRequests('planner state changed during solve');
     }
@@ -676,13 +997,16 @@ function queueOptimizedHomeRender(data,opts){
 
   // Background refreshes keep the current DOM. Direct/cold renders use the
   // latest compatible plan, avoiding both a blank launch and reordered phases.
-  let paintedFromFreshCache = false;
+  let paintedFromCache = false;
   if(!(opts && opts.__backgroundRefresh)){
     plannerPerfMark('planner-cache-read');
     const cached = cachedHomeAgenda(data);
     if(cached){
       render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
-      paintedFromFreshCache = !(opts && opts.__skipFreshnessGate) && homeAgendaCacheIsFresh(data);
+      paintedFromCache = !(opts && opts.__skipFreshnessGate);
+      // Seed day0Only without claiming the live minute key, so idle can still
+      // refresh today when the clock has moved, while far days reuse this week.
+      adoptHomeAgendaReadyState(cached,data,false);
     }else if(_homeRenderedWeek && $('list')?.querySelector('.ting-card')){
       // A done/log/add render keeps the existing agenda mounted. The action has
       // already been persisted; replace the agenda only when its new solve is
@@ -698,15 +1022,22 @@ function queueOptimizedHomeRender(data,opts){
     plannerPerfMark('planner-first-paint');
   }
 
-  // Fresh same-day cache: let idle warm+build own the refresh so cold open
-  // does not immediately pay a full worker replan.
-  if(paintedFromFreshCache && !(opts && opts.__skipFreshnessGate)){
+  // Compatible same-day cache: paint now and let idle keep/shift or day-0
+  // reuse own any clock update so cold open does not pay a full-week GLPK.
+  if(paintedFromCache && !(opts && opts.__skipFreshnessGate)){
     scheduleIdlePlannerWarmAndBuild(data,opts);
     return true;
   }
 
+  // A foreground or imminent re-solve must not wait behind background
+  // refinement, even when the dirty revision is unchanged.
+  if(_optimizerHomeRefinementKey){
+    cancelHomeAgendaRefinement('planner request superseded refinement');
+  }
+
   const token = ++_optimizerHomeRequestToken;
   _optimizerHomeRequestKey = key;
+  syncHomePlannerStatusIndicators();
   const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
   // The planner runs in a Worker, where the page's ephemeral GPS coordinate is
   // intentionally unavailable. Carry only its matched saved-place id across
@@ -723,8 +1054,37 @@ function queueOptimizedHomeRender(data,opts){
     opts && opts.__forceReplan
     && _optimizerHomeReadyDirtyKey === dirtyKey
     && _optimizerHomeReadyWeek
+    && homeAgendaClockRefreshMayReuseFarDays(opts)
   );
-  const buildOpts = {dirtyKey,day0Only};
+  const sourceWeek = _homeRenderedWeek || _optimizerHomeReadyWeek;
+  const priorPlacements = Array.isArray(opts && opts.__priorPlacements)
+    ? opts.__priorPlacements
+    : (typeof agendaPriorPlacementsFromWeek === 'function'
+      ? agendaPriorPlacementsFromWeek(sourceWeek)
+      : (typeof agendaPriorPlacementsFromTimeline === 'function'
+        ? agendaPriorPlacementsFromTimeline(
+          sourceWeek && sourceWeek.days && sourceWeek.days[0]
+            && sourceWeek.days[0].timeline || [],
+          sourceWeek && sourceWeek.days && sourceWeek.days[0] && sourceWeek.days[0].dayBase
+        )
+        : []));
+  const buildOpts = {
+    dirtyKey,
+    day0Only,
+    reuseIncumbent:homeAgendaShouldReuseIncumbent(
+      day0Only,opts,dirtyKey,priorPlacements
+    ),
+    tickReplan:Boolean(opts && opts.__tickReplan),
+    glpkLimitSeconds:opts && opts.__tickReplan
+      ? (typeof HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS === 'number'
+        ? HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS : 10)
+      : 0,
+    incumbentSolveStatus:sourceWeek && sourceWeek.plannerSolveStatus || '',
+    priorPlacements,
+    memoDays:day0Only && typeof memoDaysFromWeek === 'function'
+      ? memoDaysFromWeek(sourceWeek)
+      : []
+  };
   const optimizerBuild = typeof buildWeekAgendaOffMain === 'function'
     ? buildWeekAgendaOffMain(data,settings,7,exactMode ? 'exact' : 'fast',buildOpts)
     : buildWeekAgendaAsync(data,settings,7,buildOpts);
@@ -741,6 +1101,7 @@ function queueOptimizedHomeRender(data,opts){
     if(coldBootTimer != null)clearTimeout(coldBootTimer);
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
+    syncHomePlannerStatusIndicators();
     const live = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
     if(!live)return;
     if(key !== optimizerHomeStateKey(load())){
@@ -776,6 +1137,7 @@ function queueOptimizedHomeRender(data,opts){
       saveHomeAgendaCache(stableData,week);
       _homeListFingerprint = homeListFingerprint();
       if(exactMode && !(opts && opts.__weatherChanged))scheduleHomeAgendaRefinement(stableData,settings,week);
+      syncHomePlannerStatusIndicators();
       if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
       return;
     }
@@ -794,6 +1156,7 @@ function queueOptimizedHomeRender(data,opts){
     if(coldBootTimer != null)clearTimeout(coldBootTimer);
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
+    syncHomePlannerStatusIndicators();
     // Keep the fast planner already on screen. A cold open still sitting on
     // the skeleton animation gets the basic list instead of loading forever.
     // (If the skeleton behavior is disabled above, this guard never fires:
@@ -821,6 +1184,132 @@ function markHomeTravelEdgeEdited(fromId,toId,minutes){
       card.appendChild(icon);
     }
   });
+}
+
+function nextPendingAgendaIndex(rows,now){
+  if(!Array.isArray(rows))return -1;
+  for(let i = 0;i < rows.length;i += 1){
+    const row = rows[i];
+    if(row && (row.kind === 'fill' || row.kind === 'scheduled') && Number(row.end) > now){
+      return i;
+    }
+  }
+  return -1;
+}
+
+function shiftAgendaFillToNow(rows,idx,now){
+  const row = rows[idx];
+  if(!row || row.kind !== 'fill')return null;
+  const newStart = typeof ceilToMinutes === 'function' ? ceilToMinutes(now,1) : Math.ceil(now / 60000) * 60000;
+  const delta = newStart - Number(row.start);
+  if(!(delta > 0))return null;
+  const maxShift = typeof HOME_AGENDA_SHIFT_MAX_MS === 'number' ? HOME_AGENDA_SHIFT_MAX_MS : 15 * 60 * 1000;
+  if(delta > maxShift)return null;
+  let prevEnd = null;
+  for(let i = idx - 1;i >= 0;i -= 1){
+    if(rows[i] && (rows[i].kind === 'fill' || rows[i].kind === 'scheduled')){
+      prevEnd = Number(rows[i].end);
+      break;
+    }
+  }
+  const inbound = idx > 0 && rows[idx - 1] && rows[idx - 1].kind === 'travel' ? rows[idx - 1] : null;
+  if(inbound && prevEnd != null && Number(inbound.start) + delta < prevEnd - 1)return null;
+  let nextStart = Infinity;
+  for(let i = idx + 1;i < rows.length;i += 1){
+    if(rows[i] && (rows[i].kind === 'fill' || rows[i].kind === 'scheduled')){
+      nextStart = Number(rows[i].start);
+      break;
+    }
+  }
+  const outbound = rows[idx + 1] && rows[idx + 1].kind === 'travel' ? rows[idx + 1] : null;
+  const outboundDur = outbound ? Number(outbound.end) - Number(outbound.start) : 0;
+  if(Number(row.end) + delta + outboundDur > nextStart + 1)return null;
+  const start = inbound ? idx - 1 : idx;
+  const end = outbound ? idx + 1 : idx;
+  return rows.map((entry,i)=>{
+    if(i < start || i > end)return entry;
+    return {...entry,start:Number(entry.start) + delta,end:Number(entry.end) + delta};
+  });
+}
+
+// PURE: decide what the 60-second home loop should do with the last plan.
+//   keep            — next item is still well in the future; reuse the week
+//   clock-shift     — next fill started in the past; slide it by a few minutes
+//   imminent-solve  — next row is a couple of minutes away, or a slide would clash
+function homeAgendaTickPlan(week,now = Date.now()){
+  const day = week && Array.isArray(week.days) ? week.days[0] : null;
+  if(!day || !Array.isArray(day.timeline))return {kind:'keep'};
+  const todayBase = typeof dayStart === 'function' ? dayStart(now) : now;
+  if(Number(day.dayBase) && Number(day.dayBase) !== todayBase)return {kind:'imminent-solve'};
+  // A cached fill that has passed without a matching log is unfinished work,
+  // not reusable history. Repack it instead of keeping a stale morning plan
+  // merely because the next still-future row is hours away.
+  if(day.timeline.some(row=>row && row.kind === 'fill' && Number(row.end) <= now)){
+    // Unfinished work may need another day. Do not freeze tomorrow's memo.
+    return {kind:'imminent-solve',reuseFarDays:false};
+  }
+  const idx = nextPendingAgendaIndex(day.timeline,now);
+  if(idx < 0)return {kind:'keep'};
+  const row = day.timeline[idx];
+  const until = Number(row.start) - now;
+  const imminentMs = typeof HOME_AGENDA_IMMINENT_MS === 'number' ? HOME_AGENDA_IMMINENT_MS : 3 * 60 * 1000;
+  if(typeof getDoingNow === 'function' && typeof isDoingNowActive === 'function'){
+    const doing = getDoingNow();
+    if(doing && isDoingNowActive(doing) && row.h && row.h.hid === doing.hid)return {kind:'keep'};
+  }
+  if(row.kind === 'scheduled'){
+    return until <= imminentMs ? {kind:'imminent-solve'} : {kind:'keep'};
+  }
+  if(until > imminentMs)return {kind:'keep'};
+  if(until > 0)return {kind:'imminent-solve'};
+  const timeline = shiftAgendaFillToNow(day.timeline,idx,now);
+  if(!timeline)return {kind:'imminent-solve'};
+  return {kind:'clock-shift',timeline};
+}
+
+function tickHomeAgendaWhileOpen(){
+  if(!_homeRenderedWeek || !Array.isArray(_homeRenderedWeek.days))return false;
+  const plan = homeAgendaTickPlan(_homeRenderedWeek,Date.now());
+  if(plan.kind === 'keep'){
+    maybeScheduleHomeAgendaRefinement(_homeRenderedWeek);
+    return true;
+  }
+  if(plan.kind === 'clock-shift'){
+    const week = {
+      ..._homeRenderedWeek,
+      days:_homeRenderedWeek.days.map((day,index)=>index === 0
+        ? {...day,timeline:plan.timeline,homeDisplayedTimeline:null}
+        : day)
+    };
+    render({__fromOptimizer:true,__fromBackgroundRefresh:true,__optimizedWeek:week});
+    _homeRenderedWeek = week;
+    _optimizerHomeReadyWeek = week;
+    const data = typeof load === 'function' ? load() : [];
+    if(typeof saveHomeAgendaCache === 'function')saveHomeAgendaCache(data,week);
+    _homeListFingerprint = homeListFingerprint();
+    maybeScheduleHomeAgendaRefinement(week);
+    return true;
+  }
+  if(plan.kind === 'imminent-solve'){
+    if(_optimizerHomeRequestKey)return true;
+    const data = typeof load === 'function' ? load() : [];
+    queueOptimizedHomeRender(data,{
+      __backgroundRefresh:true,
+      __forceReplan:true,
+      __tickReplan:true,
+      __reuseFarDays:plan.reuseFarDays !== false,
+      __priorPlacements:typeof agendaPriorPlacementsFromWeek === 'function'
+        ? agendaPriorPlacementsFromWeek(_homeRenderedWeek)
+        : (typeof agendaPriorPlacementsFromTimeline === 'function'
+          ? agendaPriorPlacementsFromTimeline(
+            _homeRenderedWeek.days[0] && _homeRenderedWeek.days[0].timeline,
+            _homeRenderedWeek.days[0] && _homeRenderedWeek.days[0].dayBase
+          )
+          : [])
+    });
+    return true;
+  }
+  return false;
 }
 
 // RENDER: sync home list only when the freshness key moved. Background paths

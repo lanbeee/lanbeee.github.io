@@ -166,6 +166,67 @@ function weatherMetricUnitLabel(metric){
   return WEATHER_METRICS[metric]?.unit || '';
 }
 
+//PURE: display-unit number → raw API units (inverse of
+// weatherMetricValueConverted), so the profile editor accepts bounds in the
+// user's display unit while storage and the planner stay metric. Non-numeric
+// input (including '' for "no bound") passes through untouched.
+function weatherMetricValueToStored(metric,value){
+  if(value === '' || value == null)return value;
+  const n=Number(value);
+  if(!Number.isFinite(n))return value;
+  if(metric==='temperature_2m' || metric==='apparent_temperature')return weatherUsesFahrenheit() ? (n-32)*5/9 : n;
+  if(metric==='wind_speed_10m' || metric==='wind_gusts_10m')return weatherWindUsesMph() ? n/0.621371 : n;
+  if(metric==='precipitation')return weatherUsesInches() ? n*25.4 : n;
+  if(metric==='snowfall')return weatherUsesInches() ? n*2.54 : n;
+  return n;
+}
+
+//PURE: stored metric number → the display-unit number shown in rule fields
+// (rounded to a typable precision; storage keeps full precision).
+function weatherMetricDisplayValue(metric,value){
+  const converted=weatherMetricValueConverted(metric,value);
+  if(!Number.isFinite(converted))return converted;
+  const decimals=(metric==='precipitation' || metric==='snowfall') && weatherUsesInches() ? 2 : 1;
+  return Math.round(converted*10**decimals)/10**decimals;
+}
+
+//PURE: the suggested min–max placeholder range for a rule, converted to the
+// effective display unit (meta.range is written against stored API units).
+function weatherMetricRangeText(metric){
+  const meta=WEATHER_METRICS[metric] || {};
+  const parts=String(meta.range || '').split('–');
+  if(parts.length!==2)return meta.range || '';
+  const toDisplay=text=>weatherMetricDisplayValue(metric,String(text).replace('−','-'));
+  const lo=toDisplay(parts[0]);
+  const hi=toDisplay(parts[1]);
+  if(!Number.isFinite(lo) || !Number.isFinite(hi))return meta.range || '';
+  const fmt=n=>String(n).replace('-','−');
+  return `${fmt(lo)}–${fmt(hi)}`;
+}
+
+// The rule-field scale hint, written against the effective display unit so
+// the thresholds match what the user types. Unitless metrics (% / index
+// scales) reuse their canonical wording.
+function weatherMetricHintText(metric){
+  const meta=WEATHER_METRICS[metric] || {};
+  const unit=weatherMetricUnitLabel(metric);
+  const fmt=v=>{const n=weatherMetricDisplayValue(metric,v);return Number.isFinite(n) ? String(Math.round(n*100)/100).replace('-','−') : String(v);};
+  switch(metric){
+    case 'temperature_2m':case 'apparent_temperature':
+      return `${unit} · ${fmt(0)} freezes · ${fmt(20)} mild · ${fmt(30)}+ hot`;
+    case 'precipitation':
+      return `${unit} during the item · under ${fmt(2.5)} light · over ${fmt(7.5)} heavy`;
+    case 'snowfall':
+      return `${unit} during the item`;
+    case 'wind_speed_10m':
+      return `${unit} · under ${fmt(12)} light · ${fmt(20)} fresh · ${fmt(35)}+ strong`;
+    case 'wind_gusts_10m':
+      return `${unit} peak gusts · ${fmt(60)}+ feels stormy`;
+    default:
+      return meta.hint || '';
+  }
+}
+
 // Home cities set before homeCityCountry existed have no stored country, so
 // 'auto' cannot infer. Reverse-geocode the home coords once per session
 // (offline-safe: failure just leaves the metric defaults until next boot).

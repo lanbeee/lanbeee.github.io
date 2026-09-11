@@ -3,17 +3,18 @@
 const WEATHER_PROFILE_NONE_VALUE='__none__';
 
 function weatherMetricOptions(selected){
-  return Object.entries(WEATHER_METRICS).map(([key,meta])=>
-    `<option value="${key}"${key===selected?' selected':''}>${escapeHtml(meta.label)}${meta.unit ? ` (${escapeHtml(meta.unit)})` : ''}</option>`
-  ).join('');
+  return Object.entries(WEATHER_METRICS).map(([key,meta])=>{
+    const unit=weatherMetricUnitLabel(key) || meta.unit;
+    return `<option value="${key}"${key===selected?' selected':''}>${escapeHtml(meta.label)}${unit ? ` (${escapeHtml(unit)})` : ''}</option>`;
+  }).join('');
 }
 
 // Every metric has an unfamiliar scale (UV 0–11, AQI 0–300, …). Show the
 // bands inline so min/max need no external lookup, and flag rules that do
-// nothing yet instead of letting them look configured but inert.
+// nothing yet instead of letting them look configured but inert. Bands follow
+// the display unit (weatherMetricHintText) so they match what the user types.
 function weatherRuleHintText(rule){
-  const meta=WEATHER_METRICS[rule.metric] || {};
-  const scale=meta.hint || '';
+  const scale=weatherMetricHintText(rule && rule.metric);
   return weatherRuleActive(rule) ? scale : `inactive — set min, max, or a preference${scale ? ' · ' + scale : ''}`;
 }
 
@@ -154,8 +155,14 @@ const WEATHER_INSPECTOR_COLUMNS=['precipitation_probability','precipitation','sn
 
 function weatherInspectorCell(metric,value){
   if(!Number.isFinite(value))return '—';
-  if(metric==='precipitation' || metric==='snowfall')return (Math.round(value*10)/10).toFixed(1);
-  return String(Math.round(value));
+  // Inspector shows the planner's rows in the display unit; the planner
+  // itself keeps scoring the stored metric values.
+  const converted=weatherMetricValueConverted(metric,value);
+  if(metric==='precipitation' || metric==='snowfall'){
+    const decimals=weatherUsesInches() ? 2 : 1;
+    return (Math.round(converted*10**decimals)/10**decimals).toFixed(decimals);
+  }
+  return String(Math.round(converted));
 }
 
 // The panel under the profile editor: the actual forecast rows the planner
@@ -177,7 +184,10 @@ function renderWeatherInspector(settings,now = Date.now()){
     fmtTime=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false});
   }
   const present=WEATHER_INSPECTOR_COLUMNS.filter(metric=>model.rows.some(row=>Number.isFinite(row.values[metric])));
-  const head=`<tr><th scope="col">time</th>${present.map(metric=>`<th scope="col">${escapeHtml(WEATHER_METRICS[metric].label)}</th>`).join('')}</tr>`;
+  const head=`<tr><th scope="col">time</th>${present.map(metric=>{
+    const unit=weatherMetricUnitLabel(metric);
+    return `<th scope="col">${escapeHtml(WEATHER_METRICS[metric].label)}${unit ? ` <small>(${escapeHtml(unit)})</small>` : ''}</th>`;
+  }).join('')}</tr>`;
   let lastDay='';
   const body=model.rows.map(row=>{
     const day=fmtDay.format(row.ts);
@@ -196,21 +206,21 @@ function renderWeatherInspector(settings,now = Date.now()){
   if(model.timezone)parts.push(escapeHtml(model.timezone));
   return `<p class="weather-forecast-meta">${parts.join(' · ')}</p>
     <div class="weather-forecast-scroll"><table class="weather-forecast-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <p class="weather-forecast-legend">Shaded rows are 15-minute near-term samples — the planner reads them instead of the hourly value inside their span.</p>`;
+    <p class="weather-forecast-legend">Shaded rows are 15-minute near-term samples — the planner reads them instead of the hourly value inside their span. Values show in your display unit; the planner scores the stored metric equivalents.</p>`;
 }
 
 // Segs + hints for the temperature, precipitation, and wind display units.
 // 'auto' explains what it currently resolves to so the inferred default is
-// never a mystery. Every hint also names the metric unit the forecast data
-// and rule bounds stay stored in.
+// never a mystery. Every hint also names how rule bounds and the stored
+// forecast data relate: bounds follow the display unit, storage stays metric.
 function weatherUnitHintText(setting,effectiveLabel,defaultLabel,storedLabel){
   const settings=sortSettings || loadSortSettings();
   if(setting!=='auto'){
-    return `showing ${effectiveLabel} everywhere · forecast data and rule bounds stay in ${storedLabel}.`;
+    return `showing ${effectiveLabel} everywhere · rule bounds use ${effectiveLabel}; forecast data stays ${storedLabel} behind the scenes.`;
   }
   const city=String(settings.homeCityName || '').trim();
   const source=settings.homeCityCountry && city ? `inferred from ${city}` : `no city country yet · ${defaultLabel} default`;
-  return `auto — ${effectiveLabel} (${source}). Forecast data and rule bounds stay in ${storedLabel}.`;
+  return `auto — ${effectiveLabel} (${source}). Rule bounds use ${effectiveLabel}; forecast data stays ${storedLabel} behind the scenes.`;
 }
 
 function syncWeatherTempUnitControls(){
@@ -274,11 +284,14 @@ function renderWeatherControls(){
       <div class="weather-rule-list">
         ${profile.rules.map((rule,ruleIndex)=>{
           const meta=WEATHER_METRICS[rule.metric] || {};
+          // Bounds display in the effective unit (weatherMetricValueToStored
+          // converts back on save); storage keeps API units either way.
+          const boundValue=v=>v==null ? '' : weatherMetricDisplayValue(rule.metric,v);
           return `
           <div class="weather-rule" data-weather-rule-index="${ruleIndex}">
             <select class="settings-select" data-weather-rule-metric aria-label="weather metric">${weatherMetricOptions(rule.metric)}</select>
-            <label>min <input type="number" inputmode="decimal" data-weather-rule-min value="${rule.min??''}" placeholder="${escapeHtml(meta.range || '—')}" /></label>
-            <label>max <input type="number" inputmode="decimal" data-weather-rule-max value="${rule.max??''}" placeholder="${escapeHtml(meta.range || '—')}" /></label>
+            <label>min <input type="number" inputmode="decimal" data-weather-rule-min value="${boundValue(rule.min)}" placeholder="${escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}" /></label>
+            <label>max <input type="number" inputmode="decimal" data-weather-rule-max value="${boundValue(rule.max)}" placeholder="${escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}" /></label>
             <select class="settings-select" data-weather-rule-relative aria-label="relative preference">
               <option value="none"${rule.relative==='none'?' selected':''}>no preference</option>
               <option value="low"${rule.relative==='low'?' selected':''}>prefer lower</option>
@@ -444,8 +457,8 @@ document.addEventListener('change',event=>{
     const rule=profile.rules[ruleIndex];
     if(!rule)return;
     if(event.target.matches('[data-weather-rule-metric]'))rule.metric=event.target.value;
-    if(event.target.matches('[data-weather-rule-min]'))rule.min=event.target.value;
-    if(event.target.matches('[data-weather-rule-max]'))rule.max=event.target.value;
+    if(event.target.matches('[data-weather-rule-min]'))rule.min=weatherMetricValueToStored(rule.metric,event.target.value);
+    if(event.target.matches('[data-weather-rule-max]'))rule.max=weatherMetricValueToStored(rule.metric,event.target.value);
     if(event.target.matches('[data-weather-rule-relative]'))rule.relative=event.target.value;
     if(event.target.matches('[data-weather-rule-hard]'))rule.hard=event.target.checked;
   },{deferRender});

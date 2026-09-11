@@ -925,7 +925,10 @@ if(typeof warmAgendaPlannerWorker === 'function'
   && agendaPlannerWorkerAvailable()
   && sortSettings && sortSettings.agendaOptimizer
   && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
-  const warm = ()=>{ void warmAgendaPlannerWorker(); };
+  const warm = ()=>{
+    if(typeof document !== 'undefined' && document.hidden)return;
+    void warmAgendaPlannerWorker();
+  };
   if(typeof requestIdleCallback === 'function')requestIdleCallback(warm,{timeout:300});
   else setTimeout(warm,100);
 }
@@ -982,10 +985,11 @@ window.addEventListener('pageshow',e=>{
   if(e && e.persisted)scheduleReopenRefresh();
 });
 
-// WHILE OPEN: keep the home agenda fresh. The fast planner compares its result
-// off-screen; GLPK solves in the background. Both keep the mounted list when
-// the resulting days/order/times are unchanged.
-const HOME_AGENDA_REFRESH_MS = 60 * 1000;
+// WHILE OPEN: keep the home agenda fresh without a cold-open-length GLPK
+// solve. Most 60s ticks only slide the next pending fill; a real re-solve
+// runs only when that row is a couple of minutes away, using the last plan
+// as a warm start. If the mounted plan is still only feasible, ticks also
+// kick background refinement so idle time can search toward a GLPK proof.
 let _homeAgendaRefreshId = null;
 let _homeAgendaRefreshTick = 0;
 
@@ -996,6 +1000,10 @@ function refreshHomeAgendaWhileOpen(){
   if(typeof sweepAutoDoneTasks === 'function'){
     const swept = sweepAutoDoneTasks();
     if(swept > 0)return; // refreshOpenViews already re-rendered
+  }
+  if(typeof tickHomeAgendaWhileOpen === 'function' && tickHomeAgendaWhileOpen()){
+    if(typeof updateHomeSessionProgress === 'function')updateHomeSessionProgress();
+    return;
   }
   if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged();
   else if(typeof render === 'function')render();

@@ -33,6 +33,24 @@ const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you a
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
 const ESRI_WORLD_IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+// Parking, walking to the car, and starting the trip — charged in the
+// objective only, not as extra clock duration on the timeline.
+const TRAVEL_LEG_OVERHEAD_SECONDS = 5 * 60;
+// While-open home loop: cheap clock-shift most minutes; a real re-solve only
+// when the next pending row is this close. Cold open keeps the existing
+// 4-second GLPK cap and never uses the imminent budget.
+const HOME_AGENDA_REFRESH_MS = 60 * 1000;
+const HOME_AGENDA_IMMINENT_MS = 3 * 60 * 1000;
+const HOME_AGENDA_SHIFT_MAX_MS = 15 * 60 * 1000;
+const HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS = 10;
+// After the agenda is on screen, keep searching in the background while the
+// app stays visible and the fixed-item ILP is not yet a GLPK proof. Cold open
+// still uses the 4-second cap; these only bound the off-main refine worker.
+const HOME_AGENDA_REFINEMENT_RETRY_MS = 8 * 1000;
+const HOME_AGENDA_REFINEMENT_IDLE_TIMEOUT_MS = 1500;
+const HOME_AGENDA_REFINEMENT_MAX_PASSES = 4;
+const HOME_AGENDA_REFINEMENT_FIRST_BUDGET_MS = 30 * 1000;
+const HOME_AGENDA_REFINEMENT_LATER_BUDGET_MS = 55 * 1000;
 
 // ── Weather guidance (Open-Meteo; no API key) ──
 const WEATHER_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -261,15 +279,18 @@ const DEFAULT_SORT_SETTINGS = {
   showWeatherOnTravel:true,
   // Temperature unit for weather display: 'auto' infers from the home city's
   // country (Fahrenheit countries → °F, else °C); 'c'/'f' override. Forecast
-  // data and rule bounds are always stored in °C — this is display-only.
+  // data and rule bounds are always stored in °C — display-only: the profile
+  // editor converts rule bounds to/from this unit at the last step.
   weatherTempUnit:'auto',
   // Precipitation (and snowfall) display unit: 'auto' infers from the home
   // city's country (US-aligned measure countries → in, else mm); 'mm'/'in'
-  // override. Forecast data and rule bounds are always stored in mm/cm.
+  // override. Forecast data and rule bounds are always stored in mm/cm;
+  // the profile editor converts rule bounds to/from this unit.
   weatherPrecipUnit:'auto',
   // Wind display unit (speeds and gusts): 'auto' infers from the home city's
   // country ('mph' regions, else km/h); 'kmh'/'mph' override. Forecast data
-  // and rule bounds are always stored in km/h.
+  // and rule bounds are always stored in km/h; the profile editor converts
+  // rule bounds to/from this unit.
   weatherWindUnit:'auto',
   // Two-letter country code of the home city, captured from the geocoder when
   // the city is set (and backfilled once for existing cities) to drive 'auto'.

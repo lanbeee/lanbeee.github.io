@@ -1353,7 +1353,8 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
   const min = typeof clampMinChunk === 'function'
     ? clampMinChunk(c.h.minChunkMinutes)
     : (c.h.minChunkMinutes || 30);
-  let left = breakableMinutesLeft(c.h,c.i,dayStates);
+  let left = Math.max(0,breakableMinutesLeft(c.h,c.i,dayStates)
+    - Math.max(0,Number(ctx.preplannedMinutes) || 0));
   let chunkIndex = 0;
   let preferredState = null;
   let gained = 0;

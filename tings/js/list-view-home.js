@@ -2156,6 +2156,30 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   push(`scheduled events\n${capacityMinutesLabel(report.scheduledMinutes)}`);
   push(`travel committed\n${capacityMinutesLabel(report.travelMinutes)}`);
   push('');
+  push('SOLVE & ROUTE DIAGNOSTICS');
+  push(`visible snapshot ${report.plannerSolveStatus || (report.plannerIsPreview ? 'fast preview' : 'fast')}`);
+  push(`runtime ${report.plannerRuntimeState || 'not recorded'}${report.plannerIsRunning ? ' (running)' : ''}`);
+  if(report.plannerRuntimeDetail)push(report.plannerRuntimeDetail);
+  push(`background refinement ${report.plannerWasRefined ? 'incorporated' : (report.plannerIsRunning && report.plannerRuntimeState === 'refining' ? 'in progress' : 'not incorporated')}`);
+  if(report.plannerDiagnostics){
+    push(`GLPK solve ${Math.round(Number(report.plannerDiagnostics.solveDurationMs) || 0)}ms; requested refinement ${report.plannerDiagnostics.requestedRefinement ? 'yes' : 'no'}`);
+    for(const solve of report.plannerDiagnostics.daySolves || []){
+      const detail = [
+        solve.selectionStatus ? `selection ${solve.selectionStatus}` : '',
+        solve.routePolishStatus ? `route polish ${solve.routePolishStatus}${solve.routePolishApplied ? ' applied' : ''}` : '',
+        Number.isFinite(Number(solve.candidateCount)) ? `${solve.candidateCount} candidates` : '',
+        Number.isFinite(Number(solve.optionCount)) ? `${solve.optionCount} options` : '',
+        Number.isFinite(Number(solve.routeTermCount)) ? `${solve.routeTermCount} route terms` : '',
+        solve.reason || ''
+      ].filter(Boolean).join('; ');
+      push(`${solve.dayKey || 'day'} ${solve.phase || 'solve'} ${solve.status || 'unknown'} in ${Math.round(Number(solve.elapsedMs) || 0)}ms${detail ? `; ${detail}` : ''}`);
+    }
+  }
+  push(`route legs ${(report.routeLegs || []).length}`);
+  for(const leg of report.routeLegs || [])push(`${leg.from} -> ${leg.to} ${capacityMinutesLabel(leg.minutes)}`);
+  push(`location runs ${(report.routeLocationSequence || []).join(' -> ') || 'none'}`);
+  push(`revisited locations ${(report.routeRevisitedLocations || []).join(', ') || 'none'}`);
+  push('');
   push('HOME AGENDA OUTPUT');
   push(String(report.agendaRows.length));
   for(const row of report.agendaRows){
@@ -2446,6 +2470,20 @@ function renderDayCapacityScorecard(report){
         </details>`;
     }).join('')
     : '<p class="capacity-empty">No planner decisions were present for this day.</p>';
+  const daySolveRows = report.plannerDiagnostics && (report.plannerDiagnostics.daySolves || []).length
+    ? report.plannerDiagnostics.daySolves.map(solve=>{
+      const parts = [
+        solve.selectionStatus ? `selection ${solve.selectionStatus}` : '',
+        solve.routePolishStatus ? `route polish ${solve.routePolishStatus}${solve.routePolishApplied ? ' applied' : ''}` : '',
+        Number.isFinite(Number(solve.optionCount)) ? `${solve.optionCount} options` : '',
+        Number.isFinite(Number(solve.routeTermCount)) ? `${solve.routeTermCount} route terms` : '',
+        solve.reason || ''
+      ].filter(Boolean).join(' · ');
+      return `<span>${escapeHtml(`${solve.dayKey || 'day'} ${solve.phase || 'solve'}`)} <b>${escapeHtml(solve.status || 'unknown')}</b><small>${Math.round(Number(solve.elapsedMs) || 0)}ms${parts ? ` · ${escapeHtml(parts)}` : ''}</small></span>`;
+    }).join('')
+    : '<span>per-day solve detail <b>not recorded</b></span>';
+  const routeSequence = (report.routeLocationSequence || []).join(' → ') || 'none';
+  const revisits = (report.routeRevisitedLocations || []).join(', ') || 'none';
   content.innerHTML = `
     ${report.plannerIsPreview
       ? '<p class="capacity-note capacity-preview-note"><b>Fast preview:</b> the GLPK optimizer is still running, so placements and totals may change.</p>'
@@ -2470,6 +2508,20 @@ function renderDayCapacityScorecard(report){
       <span>scheduled events <b>${capacityMinutesLabel(report.scheduledMinutes)}</b></span>
       <span>travel committed <b>${capacityMinutesLabel(report.travelMinutes)}</b></span>
     </div>
+    <section class="capacity-section">
+      <h3>solve &amp; route diagnostics</h3>
+      <div class="capacity-breakdown">
+        <span>visible snapshot <b>${escapeHtml(report.plannerSolveStatus || (report.plannerIsPreview ? 'fast preview' : 'fast'))}</b></span>
+        <span>runtime <b>${escapeHtml(report.plannerRuntimeState || 'not recorded')}${report.plannerIsRunning ? ' · running' : ''}</b></span>
+        <span>background refinement <b>${report.plannerWasRefined ? 'incorporated' : (report.plannerIsRunning && report.plannerRuntimeState === 'refining' ? 'in progress' : 'not incorporated')}</b></span>
+        ${report.plannerDiagnostics ? `<span>GLPK solve <b>${Math.round(Number(report.plannerDiagnostics.solveDurationMs) || 0)}ms</b></span>` : ''}
+        ${daySolveRows}
+        <span>route legs <b>${(report.routeLegs || []).length}</b></span>
+        <span>location runs <b>${escapeHtml(routeSequence)}</b></span>
+        <span>revisited locations <b>${escapeHtml(revisits)}</b></span>
+      </div>
+      ${report.plannerRuntimeDetail ? `<p class="capacity-note">${escapeHtml(report.plannerRuntimeDetail)}</p>` : ''}
+    </section>
     <section class="capacity-section">
       <div class="capacity-section-head"><h3>home agenda output</h3><span>${report.agendaRows.length}</span></div>
       <div class="capacity-agenda">${agendaRows}</div>
@@ -2504,7 +2556,9 @@ function openDayCapacityScorecard(dayBase,weekMode = false){
   const now = Date.now();
   const report = buildDayCapacityScorecard(load(),sortSettings,dayBase,now,{
     weekMode,
-    weekSnapshot:weekMode ? _homeRenderedWeek : null
+    weekSnapshot:weekMode ? _homeRenderedWeek : null,
+    plannerRuntime:typeof homePlannerRuntimeState === 'function'
+      ? homePlannerRuntimeState(_homeRenderedWeek) : null
   });
   const title = $('day-capacity-title');
   const sub = $('day-capacity-sub');

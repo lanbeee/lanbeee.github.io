@@ -1114,7 +1114,11 @@ function optimalCommittedLocationRoute(state,chron){
         // also prevents travel from overlapping work between two locations.
         if(route.end + travelSeconds * 1000 > event.start)continue;
 
-        let cost = route.cost + travelSeconds;
+        const locChanged = Boolean(route.loc && destination && route.loc !== destination);
+        const legCost = locChanged && typeof travelLegCostSeconds === 'function'
+          ? travelLegCostSeconds(travelSeconds,route.loc,destination)
+          : travelSeconds;
+        let cost = route.cost + legCost;
         if(event.kind === 'fill'){
           const h = event.entry.fill.h;
           const fit = event.entry.fit;

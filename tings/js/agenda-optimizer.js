@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v98';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v106';
 const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;
@@ -193,6 +193,7 @@ function leanAgendaWeek(week){
     candidateCount:week.candidateCount,
     optimized:week.optimized,
     plannerSolveStatus:week.plannerSolveStatus,
+    plannerDiagnostics:week.plannerDiagnostics,
     refined:Boolean(week.refined),
     __lean:true
   };
@@ -221,6 +222,12 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
   const id = ++_plannerWorkerSeq;
   plannerPerfMark('planner-request-post');
   return new Promise((resolve,reject)=>{
+    const timeoutMs = opts.refine
+      ? Math.max(
+          AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS,
+          Math.round(Number(opts.refineBudgetMs) || 0) + 15000
+        )
+      : AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS;
     const timeoutId = setTimeout(()=>{
       if(!_plannerWorkerRequests.has(id))return;
       if(_plannerWorker === worker){
@@ -229,7 +236,7 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
         _plannerWorkerRequests.delete(id);
         reject(new Error('planner worker timed out'));
       }
-    },AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS);
+    },timeoutMs);
     _plannerWorkerRequests.set(id,{
       resolve:week=>{
         clearTimeout(timeoutId);
@@ -252,6 +259,14 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
         day0Only:Boolean(opts.day0Only),
         refine:Boolean(opts.refine),
         refineBudgetMs:Math.max(0,Math.round(Number(opts.refineBudgetMs) || 0)),
+        refinePass:Math.max(0,Math.round(Number(opts.refinePass) || 0)),
+        provenDayKeys:Array.isArray(opts.provenDayKeys) ? opts.provenDayKeys : [],
+        tickReplan:Boolean(opts.tickReplan),
+        reuseIncumbent:Boolean(opts.reuseIncumbent || opts.day0Only),
+        glpkLimitSeconds:Math.max(0,Math.round(Number(opts.glpkLimitSeconds) || 0)),
+        incumbentSolveStatus:opts.incumbentSolveStatus || '',
+        priorPlacements:Array.isArray(opts.priorPlacements) ? opts.priorPlacements : [],
+        memoDays:Array.isArray(opts.memoDays) ? opts.memoDays : [],
         storage:plannerWorkerStorageSnapshot()
       });
     }catch(error){
@@ -309,4 +324,17 @@ function daySolveTimeoutMs(dayOffset,budgetLeft,weightsFromHere){
     AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS,
     Math.min(AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS,Math.round(share))
   );
+}
+
+// Background refinement must search every unproven day, not spend the whole
+// pass budget on day 0 and heuristic-pack the rest. The last remaining
+// unproven day may use whatever time is left (aligned with the native cap).
+function refineUnprovenSolveTimeoutMs(budgetLeft,unprovenLeft){
+  const left = Math.max(0,Math.round(Number(budgetLeft) || 0));
+  const n = Math.max(1,Math.round(Number(unprovenLeft) || 1));
+  if(left < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS)return 0;
+  if(n <= 1)return left;
+  const weights = [];
+  for(let i = 0;i < n;i += 1)weights.push(daySolveWeight(i));
+  return daySolveTimeoutMs(0,left,weights);
 }

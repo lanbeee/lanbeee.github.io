@@ -30,7 +30,7 @@
 .section-header-label{min-width:0;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .day-header-context{
   display:flex;align-items:center;justify-content:flex-end;gap:6px;
-  min-width:0;flex:0 1 auto;
+  min-width:0;flex:0 1 auto;position:relative;
 }
 /* If even an emoji-only weather cue cannot share one line with the label and
    other chips, give the context a deliberate second row as the last fallback.
@@ -49,6 +49,32 @@
 /* Chips never shrink and never wrap internally: when the row is tight,
    fitDayHeaderChips degrades the weather cue before moving context below. */
 .day-header-context > button{flex:0 0 auto;}
+.planner-state-indicator{
+  appearance:none;-webkit-appearance:none;width:16px;height:32px;padding:0;margin:0;
+  border:0;background:transparent;color:var(--text3);cursor:pointer;
+  position:absolute;right:100%;top:50%;transform:translateY(-50%);
+  -webkit-tap-highlight-color:transparent;touch-action:pan-y;
+}
+.planner-state-indicator::before{
+  content:"";position:absolute;left:50%;top:50%;width:5px;height:5px;
+  border-radius:50%;background:currentColor;transform:translate(-50%,-50%);
+  opacity:.62;
+}
+.planner-state-indicator[data-planner-state="optimal"]{color:var(--teal-icon);}
+.planner-state-indicator[data-planner-state="refined"]{color:var(--blue-icon,var(--teal-icon));}
+.planner-state-indicator[data-planner-state="fallback"]::before{
+  background:transparent;box-shadow:inset 0 0 0 1px currentColor;
+}
+.planner-state-indicator[data-planner-state="planning"]::before,
+.planner-state-indicator[data-planner-state="refining"]::before{
+  color:var(--teal-icon);animation:planner-state-breathe 1.6s ease-in-out infinite;
+}
+.planner-state-indicator:focus-visible{outline:1px solid var(--teal-icon);outline-offset:-5px;border-radius:999px;}
+@keyframes planner-state-breathe{50%{opacity:.2;transform:translate(-50%,-50%) scale(.72);}}
+@media (prefers-reduced-motion:reduce){
+  .planner-state-indicator[data-planner-state="planning"]::before,
+  .planner-state-indicator[data-planner-state="refining"]::before{animation:none;opacity:.42;}
+}
 /* Subtle half-step darker while pinned at the viewport top (`.stuck` toggled
    on scroll by updateStuckSectionHeaders in js/list-view.js). */
 .section-header.stuck{background:color-mix(in srgb,var(--bg3) 50%,var(--bg2));}

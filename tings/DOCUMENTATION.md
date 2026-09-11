@@ -2594,10 +2594,12 @@ Same agenda logic, but simplified display:
 | `showPlannedItemsInAgenda` | boolean | true | Show planned future logs |
 | `showDueHabitsInAgenda` | boolean | true | Show due-rhythm habits |
 
+While the app stays open, home refreshes every 60 seconds. Most ticks only slide the next pending fill by a few minutes or keep the last week. A deeper GLPK re-solve runs only when that row is a couple of minutes away *and* the last packing is no longer feasible; it still starts from those prior clocks. After the agenda is on screen, background refinement keeps searching while the app is visible if the fixed-item plan is not yet a GLPK proof — later passes reuse days already proved optimal and only replace the visible week when quality strictly improves. Compatible same-day cache on cold open is reused instead of paying another full-week solve. Cold open keeps the existing 4-second solve cap.
+
 #### Agenda Score Weights 👨‍💻
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `travel` | number | 1 | Per second of travel time |
+| `travel` | number | 1 | Per second of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car). Overhead is objective-only and does not add clock minutes to travel cards. |
 | `cluster` | number | 1 | Per unit of co-location savings |
 | `day` | number | 1 | Day-offset multiplier |
 | `asap` | number | 0.12 | Per minute of clock delay |
@@ -2643,9 +2645,9 @@ Same agenda logic, but simplified display:
 | `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high beside full-mode Home and Overview week-strip weather icons |
 | `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
 | `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
-| `weatherTempUnit` | 'auto'\|'c'\|'f' | 'auto' | Temperature display unit. 'auto' infers °F vs °C from the home city's country (°F regions: US and territories, BS, KY, TC, PW, FM, MH, LR, MM; unknown → °C). Display-only: forecast data and weather-rule bounds are always stored in °C. Settings → weather guidance → temperature unit |
-| `weatherPrecipUnit` | 'auto'\|'mm'\|'in' | 'auto' | Precipitation display unit; snowfall follows it (cm ↔ in). 'auto' infers mm vs in from the home city's country (measure regions: US and territories, BS, KY, TC, PW, FM, MH; unknown → mm). Display-only: forecast data and weather-rule bounds are always stored in mm/cm. Settings → weather guidance → precipitation unit |
-| `weatherWindUnit` | 'auto'\|'kmh'\|'mph' | 'auto' | Wind display unit (speeds and gusts). 'auto' infers km/h vs mph from the home city's country (same measure regions as precipitation; unknown → km/h). Display-only: forecast data and weather-rule bounds are always stored in km/h. Settings → weather guidance → wind unit |
+| `weatherTempUnit` | 'auto'\|'c'\|'f' | 'auto' | Temperature display unit. 'auto' infers °F vs °C from the home city's country (°F regions: US and territories, BS, KY, TC, PW, FM, MH, LR, MM; unknown → °C). Display-only: forecast data is always stored in °C; the weather-profile editor shows and accepts rule bounds in this unit and stores their °C equivalents. Settings → weather guidance → temperature unit |
+| `weatherPrecipUnit` | 'auto'\|'mm'\|'in' | 'auto' | Precipitation display unit; snowfall follows it (cm ↔ in). 'auto' infers mm vs in from the home city's country (measure regions: US and territories, BS, KY, TC, PW, FM, MH; unknown → mm). Display-only: forecast data is always stored in mm/cm; the weather-profile editor shows and accepts rule bounds in this unit. Settings → weather guidance → precipitation unit |
+| `weatherWindUnit` | 'auto'\|'kmh'\|'mph' | 'auto' | Wind display unit (speeds and gusts). 'auto' infers km/h vs mph from the home city's country (same measure regions as precipitation; unknown → km/h). Display-only: forecast data is always stored in km/h; the weather-profile editor shows and accepts rule bounds in this unit. Settings → weather guidance → wind unit |
 | `homeCityCountry` | string | '' | Two-letter country code of the home city, captured from the geocoder when the city is set (one-time reverse-geocode backfill for cities set before this field existed) |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |

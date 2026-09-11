@@ -71,6 +71,21 @@ dumps in `failed/`). Normal runner output is intentionally compact; pass
    A time-limited GLPK `GLP_FEAS` result is a valid incumbent, not a failed
    solve; keep it when all non-negotiable policy is represented by hard rows.
 
+6. **Cold-open GLPK stays at 4 seconds.** That wait is already the product
+   limit. Do not raise `nativeLimitSeconds` on first paint, idle cache refresh,
+   or user edits. Extra budget is only the while-open 60s tick when the next
+   pending row is within `HOME_AGENDA_IMMINENT_MS`, via `tickReplan`, **or**
+   background refinement after a usable agenda is already on screen. Most
+   ticks must `clock-shift` or `keep` the last week instead of resolving.
+   When a re-solve does run, replay the last fills and skip GLPK if they still
+   fit; otherwise inject those clocks as ILP options. `day0Only` must seed the
+   worker with `memoDays` from the mounted week so far days are not re-solved
+   just because the worker was cold. If the mounted week is not a GLPK proof
+   (`plannerSolveStatus !== 'optimal'`), keep searching off-main while the
+   page is visible: replay days already proved optimal, spend remaining
+   budget on the rest, and publish only if the lexicographic quality tuple
+   strictly improves. Cancel on hide, edit, or an imminent tick replan.
+
 ---
 
 ## 3. Codebase map
@@ -220,10 +235,15 @@ duration-spaced starts; overflow defers gracefully (verified for up to 8).
   a bounded 2/3-item neighborhood; do not regress it to one-victim greedy repair
   or an unbounded power-set search.
 - **Background refinement is revision-guarded and improvement-only.** Publish
-  the quick incumbent first, then refine off-main within the bounded budget.
-  Cancel on a data/location revision or hidden page. A replacement must preserve
-  active rows and every placed critical/pinned occurrence, must not reduce total
-  week work, and must strictly improve the lexicographic agenda-quality tuple.
+  the quick incumbent first, then keep searching off-main while the app stays
+  visible if the fixed-item ILP is not yet a GLPK proof. Replay days already
+  proved `optimal` so extra time lands on remaining feasible days. Cancel on a
+  data/location revision, hidden page, or a foreground/imminent re-solve. A
+  replacement must preserve active rows and every placed critical/pinned
+  occurrence, must not reduce total week work, and must strictly improve the
+  lexicographic agenda-quality tuple. Stop after a proof, after the deeper
+  neighborhood pass when only breakable fill remains, or after a bounded
+  number of while-open passes.
 - **Order links are coupled placement policy.** A critical successor must claim
   its narrow window before a flexible predecessor is backfilled under the order
   ceiling; otherwise placing the predecessor independently can invalidate the
