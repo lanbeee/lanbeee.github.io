@@ -449,6 +449,13 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
       windowEdges.push(...predecessorEnds);
     }
     const doingFill = doing && placeHid === doing.hid;
+    const routeLocationIds = placeFill && placeFill.h
+      ? (typeof habitLocationIdsForDay === 'function'
+        ? habitLocationIdsForDay(placeFill.h,state.dayBase,state.registry)
+        : (Array.isArray(placeFill.h.locationIds) ? placeFill.h.locationIds : []))
+      : [];
+    const routeAnchorDay = Boolean(routeLocationIds.length
+      && (state.rows || []).some(row=>row && row.kind === 'scheduled' && row.locationId));
     if(linkedFill || doingFill){
       const step = 30 * 60000;
       // Cap the stepped grid by THIS fill's latest relevant window end — not
@@ -506,7 +513,17 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
       }
     }
     for(const slot of state.slots || []){
-      const anchors = [slot.start,state.startClock,...windowEdges]
+      // Fixed-location anchors create distinct route segments. A small
+      // half-hour grid in each open segment gives GLPK enough chained starts
+      // to put several flexible errands on the same side of the anchor. Keep
+      // this conditional and bounded; ordinary days retain the sparse edge
+      // enumeration above.
+      const routeAnchors = [];
+      if(routeAnchorDay){
+        const step = 30 * 60000;
+        for(let n = 0;n < 8;n += 1)routeAnchors.push(slot.start + n * step);
+      }
+      const anchors = [slot.start,state.startClock,...windowEdges,...routeAnchors]
         .filter(ts=>Number.isFinite(ts) && ts < slot.end)
         .sort((a,b)=>a-b);
       for(const anchor of anchors){
@@ -521,9 +538,11 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         fits.push(fit);
       }
     }
-    // ASAP scoring keeps only the earliest 16 fits — that erases afternoon
-    // pack-before-Juma options before GLPK can prefer them. Pin fits that end
-    // near a direct successor window so right-after stays in the solver.
+    // ASAP scoring keeps only the earliest 16 fits. Preserve one feasible
+    // option from every open slot as well: a fixed-location appointment splits
+    // the day into route alternatives, and GLPK cannot choose the cheaper side
+    // of that anchor if every post-appointment option was trimmed here before
+    // the model was built. Direct-link abutments receive the same protection.
     const fillHid = placeFill && placeFill.h && placeFill.h.hid;
     const successorStarts = [];
     if(fillHid && orderEdges.length){
@@ -542,8 +561,23 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         }
       }
     }
-    const isPinnedAbut = (fit)=>{
+    const fitsBySlot = new Map();
+    for(const fit of fits){
+      const key = Number(fit && fit.slotStart);
+      if(!Number.isFinite(key))continue;
+      if(!fitsBySlot.has(key))fitsBySlot.set(key,[]);
+      fitsBySlot.get(key).push(fit);
+    }
+    const slotBoundaryFits = new Set();
+    for(const slotFits of fitsBySlot.values()){
+      slotFits.sort((a,b)=>a.placeStart - b.placeStart
+        || (a.score || 0) - (b.score || 0));
+      const keep = routeAnchorDay ? 8 : 1;
+      slotFits.slice(0,keep).forEach(fit=>slotBoundaryFits.add(fit));
+    }
+    const isPinnedRouteOrAbut = (fit)=>{
       if(!fit)return false;
+      if(slotBoundaryFits.has(fit))return true;
       const beforeSuccessor = successorStarts.some(start=>{
         if(fit.placeEnd > start + 60000)return false;
         const gapMin = Math.max(0,(start - fit.placeEnd) / 60000);
@@ -556,9 +590,9 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         return gapMin <= 90;
       });
     };
-    const pinned = fits.filter(isPinnedAbut)
+    const pinned = fits.filter(isPinnedRouteOrAbut)
       .sort((a,b)=>(a.score || 0) - (b.score || 0) || a.placeStart - b.placeStart);
-    const rest = fits.filter(f=>!isPinnedAbut(f))
+    const rest = fits.filter(f=>!isPinnedRouteOrAbut(f))
       .sort((a,b)=>(a.score || 0) - (b.score || 0) || a.placeStart - b.placeStart);
     const out = [];
     const outSeen = new Set();
@@ -567,7 +601,7 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
       if(outSeen.has(key))continue;
       outSeen.add(key);
       out.push(fit);
-      // Always keep every pinned abut; fill remaining slots from ASAP rest.
+      // Always keep every protected route/abut fit; fill the rest by score.
       if(out.length >= Math.max(16,pinned.length))break;
     }
     return out;
@@ -1027,23 +1061,38 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // scheduled BEFORE an AT-SEED option (loc = seed), pay a penalty proportional
   // to the saved commute. Linearize the joint "both selected" condition with one
   // auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
-  // penalty is soft and capped below the minimum placement weight (~100), so it
-  // only reorders — it can never drop a placeable task, and hard windows/pins
-  // (structural constraints) still win. Per the documented lex order this is
-  // MINIMUM TRAVEL outranking ASAP/PRIORITY, which is exactly "travel time IS
-  // time — extra trips are unacceptable."
+  // route term is activated only in the frozen-selection pass below, so it can
+  // reorder but cannot drop a placeable task; hard windows and pins remain
+  // structural constraints. Per the documented lex order this makes MINIMUM
+  // TRAVEL outrank ASAP/PRIORITY once the work set is fixed.
   // Today's start place — pin, geofence, lastKnown seed, or closest saved
   // place when the seed is the ephemeral GPS coordinate. Future days keep
   // null so the committed-route DP is not perturbed. Requiring liveLocationId
   // (pin/geofence only) was the production miss: lastKnown=Walmart still
   // drew "travel to Home" while GLPK sent the user home first, then back.
+  // Resolve a model option to the saved place where route reconciliation will
+  // actually land it. A null option for a habit with allowed locations is not
+  // necessarily locationless: the reconciler will choose one of those places.
+  const routeLocForOption = (o) => {
+    if(!o || !o.fit)return null;
+    if(o.fit.locId)return o.fit.locId;
+    const h = o.c && o.c.h;
+    if(!h || !Array.isArray(h.locationIds) || !h.locationIds.length)return null;
+    if(typeof pickHabitLocationId !== 'function')return null;
+    return pickHabitLocationId(h,null,state.registry,state.mode,state.dayBase) || null;
+  };
+  // Route coefficients are applied in a second lexicographic GLPK pass after
+  // candidate selection is frozen. Keeping them out of the first objective is
+  // what makes "never drop work merely to save a trip" a structural guarantee
+  // instead of relying on a fragile coefficient cap.
+  const routeObjectiveVars = [];
   const seedLoc = (typeof todaySequencingLocationId === 'function'
     ? todaySequencingLocationId(state)
     : ((state.liveLocId && state.seedLocId === state.liveLocId)
       ? state.seedLocId : null)) || null;
   if(seedLoc && typeof travelEdgeBetweenIds === 'function'){
-    const TRAVEL_PAIR_COEF = 0.01;   // 1s of saved commute ≈ 0.01 objective weight
-    const TRAVEL_PAIR_CAP = 80;      // < min baseWeight (~100): reorder only
+    const TRAVEL_PAIR_COEF = 0.1;    // 1s of saved commute ≈ 0.1 objective weight
+    const TRAVEL_PAIR_CAP = 80;      // bound route vs same-item clock preferences
     const TRAVEL_PAIR_FLOOR = 12;    // still decisive over priority/ASAP deltas
     let tpIdx = 0;
     // A null fit.locId is the anchor-preserving "anywhere" option, but when the
@@ -1055,18 +1104,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     // to the habit's preferred allowed place (the same reconciliation
     // scheduled rows use); truly location-free habits stay null (anywhere
     // includes the seed, so they are not provably away).
-    const awayLocForOption = (o) => {
-      if(!o || !o.fit)return null;
-      if(o.fit.locId)return o.fit.locId;
-      const h = o.c && o.c.h;
-      if(!h || !Array.isArray(h.locationIds) || !h.locationIds.length)return null;
-      if(typeof pickHabitLocationId !== 'function')return null;
-      const resolved = pickHabitLocationId(h,null,state.registry,state.mode);
-      return resolved || null;
-    };
     for(let ai = 0; ai < opts.length; ai += 1){
       const A = opts[ai];
-      const aLoc = awayLocForOption(A);
+      const aLoc = routeLocForOption(A);
       if(!aLoc || aLoc === seedLoc)continue;            // A must be AWAY from seed
       const savedSec = Math.max(0,Number(travelEdgeBetweenIds(
         seedLoc,aLoc,state.registry,state.mode,{allowNetwork:false}
@@ -1077,13 +1117,14 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       for(let bi = 0; bi < opts.length;bi += 1){
         if(bi === ai)continue;
         const B = opts[bi];
-        const bLoc = B && B.fit && B.fit.locId;
+        const bLoc = routeLocForOption(B);
         if(!bLoc || bLoc !== seedLoc)continue;           // B must be AT-SEED
         if(A.c.i === B.c.i)continue;                     // different candidates
         if(!(A.fit.placeStart < B.fit.placeStart))continue; // A scheduled before B
         const z = `tp_${tpIdx++}`;
         binaries.push(z);
-        vars.push({name:z,coef:-pen});
+        vars.push({name:z,coef:0});
+        routeObjectiveVars.push({name:z,coef:-pen});
         subjectTo.push({
           name:`${z}_ubA`,
           vars:[{name:z,coef:1},{name:A.varName,coef:-1}],
@@ -1099,6 +1140,147 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
           vars:[{name:z,coef:1},{name:A.varName,coef:-1},{name:B.varName,coef:-1}],
           bnds:{type:GLPK.GLP_LO,ub:0,lb:-1}
         });
+      }
+    }
+  }
+
+  // A fixed-location appointment can divide one nearby errand cluster into two
+  // visits even when every errand would fit on the same side. Per-option travel
+  // is blind to that interaction: each option sees a plausible inbound leg,
+  // while the committed route becomes stores→Home→stores. Model the split
+  // directly in GLPK. For each fixed anchor and connected location cluster,
+  // side binaries indicate whether any selected option lies before/after the
+  // anchor; their conjunction pays only the extra route seconds introduced by
+  // crossing the anchor. This is generic route cost—no item/place names and no
+  // post-solve relocation—and runs only after candidate selection is frozen.
+  if(typeof travelEdgeBetweenIds === 'function'){
+    const hardAnchors = (state.rows || []).filter(row=>
+      row && row.kind === 'scheduled' && row.locationId
+      && Number.isFinite(Number(row.start)) && Number.isFinite(Number(row.end)));
+    const SPLIT_ROUTE_NEAR_SECONDS = typeof CLUSTER_FLEX_NEAR_SECONDS !== 'undefined'
+      ? CLUSTER_FLEX_NEAR_SECONDS : 15 * 60;
+    const SPLIT_ROUTE_COEF = 0.1;
+    // Bound each anchor's route influence relative to same-item clock hints.
+    const splitRouteCap = Math.max(1,80 / Math.max(1,hardAnchors.length));
+    const splitRouteFloor = Math.min(12,splitRouteCap);
+    let splitIdx = 0;
+    for(const hard of hardAnchors){
+      const located = opts.map((option,index)=>({
+        option,index,locId:routeLocForOption(option)
+      })).filter(item=>item.locId && item.locId !== hard.locationId);
+      const locIds = [...new Set(located.map(item=>item.locId))];
+      const unseen = new Set(locIds);
+      const components = [];
+      while(unseen.size){
+        const first = unseen.values().next().value;
+        unseen.delete(first);
+        const component = [first];
+        for(let cursor = 0;cursor < component.length;cursor += 1){
+          const here = component[cursor];
+          for(const other of [...unseen]){
+            const seconds = Math.max(0,Number(travelEdgeBetweenIds(
+              here,other,state.registry,state.mode,{allowNetwork:false}
+            ).seconds) || 0);
+            if(here !== other && (seconds <= 0 || seconds > SPLIT_ROUTE_NEAR_SECONDS))continue;
+            unseen.delete(other);
+            component.push(other);
+          }
+        }
+        components.push(new Set(component));
+      }
+      for(const component of components){
+        const before = located.filter(item=>component.has(item.locId)
+          && item.option.fit.placeEnd <= hard.start);
+        const after = located.filter(item=>component.has(item.locId)
+          && item.option.fit.placeStart >= hard.end);
+        if(!before.length || !after.length)continue;
+        // A candidate cannot be on both sides simultaneously, so a one-item
+        // component cannot create a split trip by itself.
+        const beforeCandidates = new Set(before.map(item=>item.option.c.i));
+        if(!after.some(item=>!beforeCandidates.has(item.option.c.i)))continue;
+        let minimumExtraSeconds = Infinity;
+        for(const left of before){
+          for(const right of after){
+            if(left.option.c.i === right.option.c.i)continue;
+            const toAnchor = Math.max(0,Number(travelEdgeBetweenIds(
+              left.locId,hard.locationId,state.registry,state.mode,{allowNetwork:false}
+            ).seconds) || 0);
+            const fromAnchor = Math.max(0,Number(travelEdgeBetweenIds(
+              hard.locationId,right.locId,state.registry,state.mode,{allowNetwork:false}
+            ).seconds) || 0);
+            const joined = Math.max(0,Number(travelEdgeBetweenIds(
+              left.locId,right.locId,state.registry,state.mode,{allowNetwork:false}
+            ).seconds) || 0);
+            minimumExtraSeconds = Math.min(
+              minimumExtraSeconds,
+              Math.max(0,toAnchor + fromAnchor - joined)
+            );
+          }
+        }
+        if(!Number.isFinite(minimumExtraSeconds) || minimumExtraSeconds <= 0)continue;
+        const penalty = Math.max(splitRouteFloor,
+          Math.min(splitRouteCap,minimumExtraSeconds * SPLIT_ROUTE_COEF));
+        if(penalty <= 0)continue;
+        const beforeVar = `split_before_${splitIdx}`;
+        const afterVar = `split_after_${splitIdx}`;
+        const splitVar = `split_route_${splitIdx}`;
+        splitIdx += 1;
+        binaries.push(beforeVar,afterVar,splitVar);
+        vars.push({name:beforeVar,coef:0},{name:afterVar,coef:0},{name:splitVar,coef:0});
+        routeObjectiveVars.push({name:splitVar,coef:-penalty});
+        for(const item of before){
+          subjectTo.push({
+            name:`${beforeVar}_has_${item.index}`,
+            vars:[{name:beforeVar,coef:1},{name:item.option.varName,coef:-1}],
+            bnds:{type:GLPK.GLP_LO,ub:0,lb:0}
+          });
+        }
+        for(const item of after){
+          subjectTo.push({
+            name:`${afterVar}_has_${item.index}`,
+            vars:[{name:afterVar,coef:1},{name:item.option.varName,coef:-1}],
+            bnds:{type:GLPK.GLP_LO,ub:0,lb:0}
+          });
+        }
+        subjectTo.push(
+          {
+            name:`${beforeVar}_only_if_selected`,
+            vars:[
+              {name:beforeVar,coef:1},
+              ...before.map(item=>({name:item.option.varName,coef:-1}))
+            ],
+            bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+          },
+          {
+            name:`${afterVar}_only_if_selected`,
+            vars:[
+              {name:afterVar,coef:1},
+              ...after.map(item=>({name:item.option.varName,coef:-1}))
+            ],
+            bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+          }
+        );
+        subjectTo.push(
+          {
+            name:`${splitVar}_ub_before`,
+            vars:[{name:splitVar,coef:1},{name:beforeVar,coef:-1}],
+            bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+          },
+          {
+            name:`${splitVar}_ub_after`,
+            vars:[{name:splitVar,coef:1},{name:afterVar,coef:-1}],
+            bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
+          },
+          {
+            name:`${splitVar}_lb`,
+            vars:[
+              {name:splitVar,coef:1},
+              {name:beforeVar,coef:-1},
+              {name:afterVar,coef:-1}
+            ],
+            bnds:{type:GLPK.GLP_LO,ub:0,lb:-1}
+          }
+        );
       }
     }
   }
@@ -1130,7 +1312,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     tmlim:nativeLimitSeconds
   });
   // glpk.js may return a Promise or a sync result depending on build.
-  return {result,opts};
+  return {
+    result,opts,problem,
+    candidateOptionNames:[...byCand.entries()],
+    routeObjectiveVars
+  };
 }
 
 async function resolveSolve(maybe){
@@ -1144,14 +1330,69 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
     GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions
   );
   if(Array.isArray(packed) && packed.length === 0)return [];
-  const {result:raw,opts} = packed;
-  const result = await resolveSolve(raw);
-  const status = result && result.result && result.result.status;
+  const {result:raw,opts,problem,candidateOptionNames,routeObjectiveVars} = packed;
+  let result = await resolveSolve(raw);
+  let status = result && result.result && result.result.status;
   // GLP_OPT=5, GLP_FEAS=2. A time-limited incumbent is safe to publish because
   // critical one-day/daily P0 occurrences are hard rows above. Retaining it is
   // preferable to replacing the whole day with a greedy chain; the latter can
   // consume Juma's only weekly window while arranging flexible predecessors.
   if(status !== 5 && status !== 2)return null;
+  // A full day can find a valid incumbent before proving its route objective.
+  // Give GLPK a second, much smaller search: freeze exactly which candidates
+  // the incumbent selected, then optimize their existing clock/location
+  // options. This cannot drop work or weaken any hard policy row, and unlike a
+  // post-solve compactor it is still the same ILP model making the arrangement.
+  // It is especially valuable on mobile, where the first four-second solve can
+  // spend nearly all its budget establishing selection feasibility.
+  const incumbentVars = (result.result && result.result.vars) || {};
+  const hasRouteObjective = Array.isArray(routeObjectiveVars)
+    && routeObjectiveVars.length > 0;
+  if(hasRouteObjective && Array.isArray(candidateOptionNames)){
+    const frozenSelectionRows = candidateOptionNames.map(([candidateIndex,names],rowIndex)=>{
+      const selected = names.some(name=>(incumbentVars[name] || 0) > 0.5) ? 1 : 0;
+      return {
+        name:`route_polish_cand_${candidateIndex}_${rowIndex}`,
+        vars:names.map(name=>({name,coef:1})),
+        bnds:{type:GLPK.GLP_FX,ub:selected,lb:selected}
+      };
+    });
+    const routeCoefficients = new Map(routeObjectiveVars.map(item=>[item.name,item.coef]));
+    const polishProblem = {
+      ...problem,
+      name:'AgendaDayRoutePolish',
+      objective:{
+        ...problem.objective,
+        vars:problem.objective.vars.map(item=>routeCoefficients.has(item.name)
+          ? {...item,coef:routeCoefficients.get(item.name)} : item)
+      },
+      subjectTo:[...problem.subjectTo,...frozenSelectionRows]
+    };
+    try{
+      const polished = await resolveSolve(GLPK.solve(polishProblem,{
+        msglev:GLPK.GLP_MSG_OFF,
+        presol:true,
+        tmlim:2
+      }));
+      const polishedStatus = polished && polished.result && polished.result.status;
+      if(polishedStatus === 5 || polishedStatus === 2){
+        const objectiveValue = solved=>{
+          const values = (solved && solved.result && solved.result.vars) || {};
+          return polishProblem.objective.vars.reduce((sum,item)=>
+            sum + (Number(item.coef) || 0) * (Number(values[item.name]) || 0),0);
+        };
+        const improves = objectiveValue(polished) > objectiveValue(result) + 1e-7;
+        if(improves){
+          result = polished;
+        }
+        // "Optimal" now means both candidate selection and the frozen-set
+        // clock/route arrangement were proved; otherwise retain FEAS provenance.
+        status = status === 5 && polishedStatus === 5 ? 5 : 2;
+      }
+    }catch{
+      // The original feasible incumbent remains valid and publishable.
+    }
+  }
   const vars = (result.result && result.result.vars) || {};
   const chosen = [];
   opts.forEach(o=>{

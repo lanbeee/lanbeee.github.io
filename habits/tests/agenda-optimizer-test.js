@@ -988,6 +988,112 @@ function base(props) {
     routeOptimum.locations[0] === 'a' && routeOptimum.locations[1] === 'b',
     JSON.stringify(routeOptimum));
 
+  // The ILP must price the route implied by its clock choices, not optimize
+  // each option in isolation and ask the location-only reconciler to repair an
+  // already-fixed chronology. There is room for the two short returns before
+  // a fixed Home appointment, but not the longer same-location grocery. The
+  // minimum-travel solution moves the entire flexible errand cluster after the
+  // appointment instead of Home→stores→Home→stores.
+  console.log('\n[Optimizer] Home activities do not split one errand cluster');
+  const splitTripResult = await page.evaluate(async ({now,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const previous = localStorage.getItem('tings_app_settings_v2');
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      if(typeof saveSortSettings === 'function')saveSortSettings(settings);
+      const week = await buildWeekAgendaAsync(data,settings,1);
+      const day = week.days[0];
+      const errands = (day.timeline || []).filter(row=>
+        row.kind === 'fill' && /^Errand /.test(row.h && row.h.name || ''));
+      const flexibleHome = (day.timeline || []).find(row=>
+        row.kind === 'fill' && row.h && row.h.name === 'Flexible Home task');
+      const travels = (day.timeline || []).filter(row=>row.kind === 'travel');
+      return {
+        optimized:Boolean(week.optimized),
+        solveStatus:week.plannerSolveStatus || '',
+        starts:errands.map(row=>({
+          name:row.h.name,
+          minute:Math.round((row.start - day.dayBase) / 60000),
+          loc:row.locationId
+        })),
+        flexibleHomeMinute:flexibleHome
+          ? Math.round((flexibleHome.start - day.dayBase) / 60000) : null,
+        travels:travels.map(row=>`${row.from}->${row.to}`),
+        outboundTrips:travels.filter(row=>
+          row.from === 'home' && (row.to === 'walmart' || row.to === 'wholefoods')).length
+      };
+    }finally{
+      if(previous == null)localStorage.removeItem('tings_app_settings_v2');
+      else localStorage.setItem('tings_app_settings_v2',previous);
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(6,21),
+    data:[
+      base({
+        hid:'errand-walmart-return',name:'Errand Walmart return',type:'task',
+        target:null,durationMinutes:15,priority:2,pinned:true,
+        dueDate:atTime(0),locationIds:['walmart'],anywhereAllowed:false
+      }),
+      base({
+        hid:'errand-wholefoods-return',name:'Errand WholeFoods return',type:'task',
+        target:null,durationMinutes:10,priority:2,pinned:true,
+        dueDate:atTime(0),locationIds:['wholefoods'],anywhereAllowed:false
+      }),
+      base({
+        hid:'errand-walmart-grocery',name:'Errand Walmart grocery',type:'task',
+        target:null,durationMinutes:45,priority:2,pinned:true,
+        dueDate:atTime(0),locationIds:['walmart'],anywhereAllowed:false
+      }),
+      base({
+        hid:'fixed-home-meeting',name:'Fixed Home meeting',type:'task',
+        target:null,durationMinutes:10,priority:0,
+        dueDate:atTime(0),eventTime:atTime(9,30),
+        locationIds:['home'],anywhereAllowed:false
+      }),
+      base({
+        hid:'flex-home-shower',name:'Flexible Home task',type:'task',
+        target:null,durationMinutes:5,priority:2,pinned:true,
+        dueDate:atTime(0),allowedTimeStart:600,allowedTimeEnd:620,
+        locationIds:['home'],anywhereAllowed:false
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[300,300,300,300,300,300,300],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      lastKnownLocationId:'home',defaultTravelMode:'walking',
+      locations:[
+        {id:'home',name:'Home',lat:40.700,lng:-74.000},
+        {id:'walmart',name:'Walmart',lat:40.710,lng:-74.000},
+        {id:'wholefoods',name:'WholeFoods',lat:40.711,lng:-74.001}
+      ],
+      travel:{
+        'home|walmart':{a:'home',b:'walmart',seconds:5*60,metres:800,provider:'manual',fetchedAt:Date.now()},
+        'home|wholefoods':{a:'home',b:'wholefoods',seconds:6*60,metres:950,provider:'manual',fetchedAt:Date.now()},
+        'walmart|wholefoods':{a:'walmart',b:'wholefoods',seconds:2*60,metres:250,provider:'manual',fetchedAt:Date.now()}
+      },
+      blockedTimes:[{label:'morning',days:[],start:0,end:520,locationId:'home'}]
+    }
+  });
+  check('split-trip scenario uses GLPK',splitTripResult.optimized,
+    JSON.stringify(splitTripResult));
+  check('all flexible errands remain placed',splitTripResult.starts.length === 3,
+    JSON.stringify(splitTripResult));
+  check('the flexible Home activity remains placed',
+    Number.isFinite(splitTripResult.flexibleHomeMinute),JSON.stringify(splitTripResult));
+  check('all flexible errands choose the post-appointment side',
+    splitTripResult.starts.length === 3
+      && splitTripResult.starts.every(item=>item.minute >= 580),
+    JSON.stringify(splitTripResult));
+  check('the selected clock options produce one outbound store trip',
+    splitTripResult.outboundTrips === 1,
+    JSON.stringify(splitTripResult));
+
   console.log('\n[Optimizer] deep refinement crosses a two-blocker contiguity valley');
   const contiguityRepair = await page.evaluate(({ now })=>{
     const RealDate = Date;
