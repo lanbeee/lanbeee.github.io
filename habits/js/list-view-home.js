@@ -346,7 +346,6 @@ function renderHomeTagFilter(data,precomputedIndices = null){
       ${statusHtml}
       ${activeLoc ? `<button type="button" class="home-active-filter location-filter" data-clear-home-location="1" aria-label="clear place filter ${escapeHtml(activeLoc.label)}"><i class="ti ti-map-pin" aria-hidden="true"></i><span>${escapeHtml(activeLoc.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       ${activeTopic ? `<button type="button" class="home-active-filter topic-active" data-clear-home-topic="1" aria-label="clear topic filter ${escapeHtml(activeTopic.label)}"><i class="ti ti-tag" aria-hidden="true"></i><span>${escapeHtml(activeTopic.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
-      ${!hasPresence && !activeCount ? '<span class="home-filter-default">All habits</span>' : ''}
     </div>
     <button type="button" class="home-filter-trigger${activeCount ? ' has-active' : ''}" data-open-home-filters="1" aria-label="open filters${activeCount ? `, ${activeCount} active` : ''}">
       <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
