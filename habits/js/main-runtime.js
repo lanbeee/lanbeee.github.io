@@ -985,7 +985,8 @@ window.addEventListener('pageshow',e=>{
 // WHILE OPEN: keep the home agenda fresh without a cold-open-length GLPK
 // solve. Most 60s ticks only slide the next pending fill; a real re-solve
 // runs only when that row is a couple of minutes away, using the last plan
-// as a warm start.
+// as a warm start. If the mounted plan is still only feasible, ticks also
+// kick background refinement so idle time can search toward a GLPK proof.
 let _homeAgendaRefreshId = null;
 let _homeAgendaRefreshTick = 0;
 

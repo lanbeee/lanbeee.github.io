@@ -2594,7 +2594,7 @@ Same agenda logic, but simplified display:
 | `showPlannedItemsInAgenda` | boolean | true | Show planned future logs |
 | `showDueHabitsInAgenda` | boolean | true | Show due-rhythm habits |
 
-While the app stays open, home refreshes every 60 seconds. Most ticks only slide the next pending fill by a few minutes or keep the last week. A deeper GLPK re-solve runs only when that row is a couple of minutes away *and* the last packing is no longer feasible; it still starts from those prior clocks. Compatible same-day cache on cold open is reused instead of paying another full-week solve. Cold open keeps the existing 4-second solve cap.
+While the app stays open, home refreshes every 60 seconds. Most ticks only slide the next pending fill by a few minutes or keep the last week. A deeper GLPK re-solve runs only when that row is a couple of minutes away *and* the last packing is no longer feasible; it still starts from those prior clocks. After the agenda is on screen, background refinement keeps searching while the app is visible if the fixed-item plan is not yet a GLPK proof — later passes reuse days already proved optimal and only replace the visible week when quality strictly improves. Compatible same-day cache on cold open is reused instead of paying another full-week solve. Cold open keeps the existing 4-second solve cap.
 
 #### Agenda Score Weights 👨‍💻
 | Field | Type | Default | Purpose |

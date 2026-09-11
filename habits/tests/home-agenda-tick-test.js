@@ -26,24 +26,34 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const tick = String(homeAgendaTickPlan);
     const idle = String(scheduleIdlePlannerWarmAndBuild);
     const queue = String(queueOptimizedHomeRender);
+    const tickFn = String(tickHomeAgendaWhileOpen);
     return {
       coldOpenFourSeconds:ilp.includes(': 4)'),
       tickReplanGate:ilp.includes('solveOptions.tickReplan'),
       replaySkip:assign.includes('replayPriorFixedChoices')
         && assign.includes("status:'reused'"),
+      provenReplay:assign.includes('reused-optimal')
+        && assign.includes('provenDayKeys'),
       priorAnchors:ilp.includes('priorPlacementsForDay'),
       idleKeep:idle.includes("plan.kind === 'keep'")
         && idle.includes('adoptHomeAgendaReadyState'),
+      idleRefines:idle.includes('maybeScheduleHomeAgendaRefinement'),
+      tickRefines:tickFn.includes('maybeScheduleHomeAgendaRefinement'),
       memoDays:queue.includes('memoDaysFromWeek')
         && queue.includes('agendaPriorPlacementsFromWeek'),
+      cancelRefineForSolve:queue.includes('planner request superseded refinement'),
       tickHelper:typeof homeAgendaTickPlan === 'function'
         && typeof shiftAgendaFillToNow === 'function'
-        && typeof replayPriorFixedChoices === 'function',
+        && typeof replayPriorFixedChoices === 'function'
+        && typeof maybeScheduleHomeAgendaRefinement === 'function'
+        && typeof homeAgendaProvenDayKeys === 'function',
       overhead:typeof travelLegCostSeconds === 'function'
         && typeof TRAVEL_LEG_OVERHEAD_SECONDS === 'number'
         && TRAVEL_LEG_OVERHEAD_SECONDS >= 60,
       imminentMs:typeof HOME_AGENDA_IMMINENT_MS === 'number' ? HOME_AGENDA_IMMINENT_MS : 0,
-      tickMentionsKeep:tick.includes("kind:'keep'")
+      tickMentionsKeep:tick.includes("kind:'keep'"),
+      laterBudget:typeof HOME_AGENDA_REFINEMENT_LATER_BUDGET_MS === 'number'
+        && HOME_AGENDA_REFINEMENT_LATER_BUDGET_MS > HOME_AGENDA_REFINEMENT_FIRST_BUDGET_MS
     };
   });
   check('cold-open GLPK cap remains 4 seconds',source.coldOpenFourSeconds,JSON.stringify(source));
@@ -51,6 +61,11 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   check('tick/day0 skip GLPK when the last packing still fits',source.replaySkip,JSON.stringify(source));
   check('prior clocks are injected as ILP options',source.priorAnchors,JSON.stringify(source));
   check('idle cache refresh keeps or slides instead of a full-week solve',source.idleKeep,JSON.stringify(source));
+  check('idle keep still schedules background refinement when not a GLPK proof',source.idleRefines,JSON.stringify(source));
+  check('while-open keep ticks keep searching toward a proof',source.tickRefines,JSON.stringify(source));
+  check('later refine passes reuse days already proved optimal',source.provenReplay,JSON.stringify(source));
+  check('a real re-solve cancels in-flight refinement',source.cancelRefineForSolve,JSON.stringify(source));
+  check('later while-open refine passes get a larger budget',source.laterBudget,JSON.stringify(source));
   check('day0Only sends the mounted week so far days are reused',source.memoDays,JSON.stringify(source));
   check('tick helpers are on the page',source.tickHelper,JSON.stringify(source));
   check('travel overhead is a real per-leg cost',source.overhead,JSON.stringify(source));

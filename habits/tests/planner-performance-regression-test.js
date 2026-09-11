@@ -570,7 +570,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
         && optSrc.includes('tmlim:nativeLimitSeconds'),
       backgroundRefinement:listSrc.includes('scheduleHomeAgendaRefinement')
         && listSrc.includes('homeAgendaRefinementIsBetter')
+        && listSrc.includes('maybeScheduleHomeAgendaRefinement')
+        && listSrc.includes('provenDayKeys')
         && workerSrc.includes('refineBudgetMs')
+        && workerSrc.includes('provenDayKeys')
         && listSrc.includes('background refinement paused while hidden'),
       criticalMustPlace:optSrc.includes('mustPlaceCriticalOccurrence(candidate)')
         && todaySrc.includes('function mustPlaceCriticalOccurrence'),
@@ -614,18 +617,36 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     const incumbent = week([row(0,900,60),row(1,840,25)]);
     const better = week([row(0,900,120),row(1,840,25),row(2,1100,30)]);
     const losesCritical = week([row(0,900,120),row(2,1100,30)]);
+    const refinedFeasible = {...incumbent,refined:true};
+    const optimalRefined = {...incumbent,plannerSolveStatus:'optimal',refined:true};
+    const proven = homeAgendaProvenDayKeys({
+      plannerDiagnostics:{daySolves:[
+        {dayKey:'2026-09-11',phase:'fixed-pack',status:'optimal'},
+        {dayKey:'2026-09-12',phase:'fixed-pack',status:'feasible'},
+        {dayKey:'2026-09-13',phase:'linked-stage',status:'optimal'}
+      ]}
+    });
     return {
       acceptsMoreP0Work:homeAgendaRefinementIsBetter(incumbent,better,data,{}),
       rejectsLostCritical:!homeAgendaRefinementIsBetter(incumbent,losesCritical,data,{}),
       rejectsEqual:!homeAgendaRefinementIsBetter(incumbent,incumbent,data,{}),
-      feasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(incumbent,data,{})
+      feasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(incumbent,data,{}),
+      refinedFeasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(refinedFeasible,data,{}),
+      optimalRefinedStops:!homeAgendaNeedsBackgroundRefinement(optimalRefined,data,{}),
+      laterBudgetLarger:homeAgendaRefinementBudgetMs(incumbent,1)
+        > homeAgendaRefinementBudgetMs(incumbent,0),
+      provenOnlyFixedOptimal:proven.length === 1 && proven[0] === '2026-09-11'
     };
   });
   check('background refinement accepts more P0 breakable work without losing critical rows',
     refinementPolicy.acceptsMoreP0Work
       && refinementPolicy.rejectsLostCritical
       && refinementPolicy.rejectsEqual
-      && refinementPolicy.feasibleNeedsRefine,
+      && refinementPolicy.feasibleNeedsRefine
+      && refinementPolicy.refinedFeasibleNeedsRefine
+      && refinementPolicy.optimalRefinedStops
+      && refinementPolicy.laterBudgetLarger
+      && refinementPolicy.provenOnlyFixedOptimal,
     JSON.stringify(refinementPolicy));
 
   const plannerCueStates = await page.evaluate(()=>{

@@ -1506,11 +1506,18 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // kept running and every later day queued behind it, routinely consuming the
   // full 45-second week budget.
   // Cold open / ordinary solves stay at 4s — that wait is already the product
-  // limit. The while-open tick may raise it only when the next row is imminent.
+  // limit. The while-open tick may raise it when the next row is imminent.
+  // Background refinement may raise it further after a usable agenda is mounted.
   const nativeLimitSeconds = solveOptions.refine
-    ? Math.max(4,Math.min(30,Math.floor(((Number(solveOptions.solveBudgetMs)
-      || Number(solveOptions.refineBudgetMs)
-      || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS) - 750) / 1000)))
+    ? Math.max(4,Math.min(
+        50,
+        Number(solveOptions.refineNativeCapSeconds) > 0
+          ? Number(solveOptions.refineNativeCapSeconds)
+          : 30,
+        Math.floor(((Number(solveOptions.solveBudgetMs)
+          || Number(solveOptions.refineBudgetMs)
+          || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS) - 750) / 1000)
+      ))
     : (solveOptions.tickReplan
       ? Math.max(4,Math.min(10,Math.round(Number(solveOptions.glpkLimitSeconds)
         || (typeof HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS === 'number'
@@ -1742,14 +1749,40 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   const oneShotPlaced = new Set();
   let total = 0;
   let budgetLeft = solveOptions.refine
-    ? Math.max(5000,Math.min(
-        AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
-        Number(solveOptions.refineBudgetMs) || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS
-      ))
+    ? Math.max(5000, Number(solveOptions.refineBudgetMs) > 0
+        ? Number(solveOptions.refineBudgetMs)
+        : AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS)
     : AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS;
   let plannerSolveStatus = 'optimal';
   const daySolves = [];
   const dayWeights = dayStates.map((_,offset)=>daySolveWeight(offset));
+  const provenDays = new Set(
+    solveOptions.refine && Array.isArray(solveOptions.provenDayKeys)
+      ? solveOptions.provenDayKeys.filter(Boolean)
+      : []
+  );
+
+  const collectDeferrable = (state,fixedCands)=>{
+    const deferrable = new Set();
+    if(typeof isMovableWeekCandidate !== 'function'
+      || typeof movableCapacityForDay !== 'function')return deferrable;
+    for(const c of fixedCands){
+      const reference = virtualLogs.has(c.i) ? virtualLogs.get(c.i) : undefined;
+      const completionOffset = virtualCompletionCounts.get(c.i) || 0;
+      if(!isMovableWeekCandidate(c,state.dayBase,reference,completionOffset))continue;
+      if(!c.eligible)continue;
+      const dur = clampDuration(c.h.durationMinutes);
+      for(let j = 0;j < dayStates.length;j += 1){
+        if(dayStates[j] === state)continue;
+        if(!c.eligible.has(dayStates[j].dayBase))continue;
+        if(movableCapacityForDay(dayStates[j],candidates) >= dur){
+          deferrable.add(c.i);
+          break;
+        }
+      }
+    }
+    return deferrable;
+  };
 
   const recordFixedChoices = (state,chosen)=>{
     for(const {fill,fit} of chosen || []){
@@ -1841,6 +1874,24 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     }
     let fixedCands = dayCands.filter(c=>!(c.h && c.h.breakable));
     if(!fixedCands.length)continue;
+
+    // A later refine pass should not spend GLPK on a day already proved
+    // optimal. Replay that packing; if the clocks no longer fit, fall through
+    // and search again.
+    if(solveOptions.refine && provenDays.has(dateKey(state.dayBase))){
+      const replayed = replayPriorFixedChoices(
+        state,fixedCands,solveOptions.priorPlacements,collectDeferrable(state,fixedCands)
+      );
+      if(replayed && replayed.length){
+        daySolves.push({
+          dayKey:dateKey(state.dayBase),phase:'fixed-pack',status:'optimal',
+          elapsedMs:0,...(replayed.solveDiagnostics || {}),
+          selectionStatus:'reused-optimal'
+        });
+        recordFixedChoices(state,replayed);
+        continue;
+      }
+    }
 
     // GLPK deliberately solves fixed-duration work first and normally fills
     // breakables afterward. A drag chain such as A → breakable X → B needs a
@@ -1989,28 +2040,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     // otherwise forcing deferral would drop the item entirely. The reservation
     // constraint below applies solely to deferrable movables, so a plan-by item
     // whose only viable day is this busy one still places here.
-    const deferrable = new Set();
-    if(typeof isMovableWeekCandidate === 'function'
-      && typeof movableCapacityForDay === 'function'){
-      for(const c of fixedCands){
-        const reference = virtualLogs.has(c.i) ? virtualLogs.get(c.i) : undefined;
-        const completionOffset = virtualCompletionCounts.get(c.i) || 0;
-        if(!isMovableWeekCandidate(c,state.dayBase,reference,completionOffset))continue;
-        const dur = clampDuration(c.h.durationMinutes);
-        for(let j = 0;j < dayStates.length;j += 1){
-          if(dayStates[j] === state)continue;
-          if(!c.eligible.has(dayStates[j].dayBase))continue;
-          if(movableCapacityForDay(dayStates[j],candidates) >= dur){
-            deferrable.add(c.i);
-            break;
-          }
-        }
-      }
-    }
+    const deferrable = collectDeferrable(state,fixedCands);
     const solveMs = solveOptions.refine
       ? Math.max(5000,Math.min(
-          AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
-          Number(solveOptions.refineBudgetMs) || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
+          Number(solveOptions.refineBudgetMs) > 0
+            ? Number(solveOptions.refineBudgetMs)
+            : AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
           budgetLeft
         ))
       : daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
@@ -2037,12 +2072,18 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     if(budgetLeft < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS){
       usedHeuristic = true;
     }else{
+      let unprovenLeft = 1;
+      for(let later = dayOffset + 1;later < dayStates.length;later += 1){
+        if(!provenDays.has(dateKey(dayStates[later].dayBase)))unprovenLeft += 1;
+      }
+      const refineNativeCapSeconds = unprovenLeft <= 1 ? 50 : 30;
       const solveStarted = (typeof performance !== 'undefined' && performance.now)
         ? performance.now() : Date.now();
       try{
         chosen = await withTimeout(
           packDayWithOptimizer(state,fixedCands,candidates,deferrable,{
-            ...solveOptions,dayStates,solveBudgetMs:solveMs,requiredOccurrenceIndices
+            ...solveOptions,dayStates,solveBudgetMs:solveMs,requiredOccurrenceIndices,
+            refineNativeCapSeconds
           }),
           solveMs
         );
@@ -2372,6 +2413,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     plannerDiagnostics:{
       solveDurationMs:Math.round(solveDurationMs),
       requestedRefinement:Boolean(opts.refine),
+      refinePass:Math.max(0,Math.round(Number(opts.refinePass) || 0)),
       daySolves:solveSummary.daySolves || []
     }
   };

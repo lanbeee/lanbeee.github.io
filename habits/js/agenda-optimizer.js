@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v100';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v101';
 const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;
@@ -222,6 +222,12 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
   const id = ++_plannerWorkerSeq;
   plannerPerfMark('planner-request-post');
   return new Promise((resolve,reject)=>{
+    const timeoutMs = opts.refine
+      ? Math.max(
+          AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS,
+          Math.round(Number(opts.refineBudgetMs) || 0) + 15000
+        )
+      : AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS;
     const timeoutId = setTimeout(()=>{
       if(!_plannerWorkerRequests.has(id))return;
       if(_plannerWorker === worker){
@@ -230,7 +236,7 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
         _plannerWorkerRequests.delete(id);
         reject(new Error('planner worker timed out'));
       }
-    },AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS);
+    },timeoutMs);
     _plannerWorkerRequests.set(id,{
       resolve:week=>{
         clearTimeout(timeoutId);
@@ -253,6 +259,8 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
         day0Only:Boolean(opts.day0Only),
         refine:Boolean(opts.refine),
         refineBudgetMs:Math.max(0,Math.round(Number(opts.refineBudgetMs) || 0)),
+        refinePass:Math.max(0,Math.round(Number(opts.refinePass) || 0)),
+        provenDayKeys:Array.isArray(opts.provenDayKeys) ? opts.provenDayKeys : [],
         tickReplan:Boolean(opts.tickReplan),
         reuseIncumbent:Boolean(opts.reuseIncumbent || opts.tickReplan || opts.day0Only),
         glpkLimitSeconds:Math.max(0,Math.round(Number(opts.glpkLimitSeconds) || 0)),

@@ -126,6 +126,8 @@ async function runPlannerMessage(message){
       day0Only:Boolean(message.day0Only),
       refine:Boolean(message.refine),
       refineBudgetMs:Math.max(0,Math.round(Number(message.refineBudgetMs) || 0)),
+      refinePass:Math.max(0,Math.round(Number(message.refinePass) || 0)),
+      provenDayKeys:Array.isArray(message.provenDayKeys) ? message.provenDayKeys : [],
       tickReplan:Boolean(message.tickReplan),
       reuseIncumbent:Boolean(message.reuseIncumbent || message.tickReplan || message.day0Only),
       glpkLimitSeconds:Math.max(0,Math.round(Number(message.glpkLimitSeconds) || 0)),
