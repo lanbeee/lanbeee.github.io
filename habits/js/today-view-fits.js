@@ -1796,17 +1796,39 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const placementRatio = netAvailable > 0 ? outstandingLoad / netAvailable : (outstandingLoad > 0 ? Infinity : 0);
   const plannerIsPreview = Boolean(week && !week.optimized && settings && settings.agendaOptimizer);
   const solveStatus = week && week.plannerSolveStatus ? week.plannerSolveStatus : '';
+  const plannerRuntime = opts.plannerRuntime && typeof opts.plannerRuntime === 'object'
+    ? opts.plannerRuntime : null;
   const plannerEngine = week
     ? (week.optimized
       ? (week.refined
         ? `GLPK background refinement (fixed-pack ${solveStatus || 'feasible'}) + complete-day route`
         : (solveStatus === 'feasible'
-          ? 'GLPK feasible fixed-item incumbent + complete-day route; refinement pending'
+          ? `GLPK feasible fixed-item incumbent + complete-day route; refinement ${plannerRuntime && plannerRuntime.state === 'refining' ? 'running' : 'not yet incorporated'}`
           : (solveStatus === 'fallback'
             ? 'GLPK requested; heuristic day fallback + complete-day route'
             : 'GLPK optimal fixed-item pack + complete-day route')))
       : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner'))
     : 'fast day planner';
+  const placeNameById = new Map((settings && settings.locations || [])
+    .filter(location=>location && location.id)
+    .map(location=>[location.id,location.name || location.id]));
+  const routeLegs = agendaRows.filter(row=>row.kind === 'travel').map(row=>({
+    from:row.fromName || placeNameById.get(row.from) || row.from || 'current location',
+    to:row.toName || placeNameById.get(row.to) || row.to || 'next location',
+    minutes:row.minutes
+  }));
+  const routeLocationRuns = [];
+  for(const row of agendaRows){
+    if((row.kind !== 'fill' && row.kind !== 'scheduled') || !row.locationId)continue;
+    if(routeLocationRuns[routeLocationRuns.length - 1] === row.locationId)continue;
+    routeLocationRuns.push(row.locationId);
+  }
+  const seenRouteLocations = new Set();
+  const revisitIds = new Set();
+  for(const id of routeLocationRuns){
+    if(seenRouteLocations.has(id))revisitIds.add(id);
+    seenRouteLocations.add(id);
+  }
   const traceCandidateMeta = new Map();
   const metaDays = week && Array.isArray(week.days) ? week.days : [agenda];
   for(const metaDay of metaDays){
@@ -1854,7 +1876,14 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     plannerEngine,
     plannerSolveStatus:solveStatus,
     plannerWasRefined:Boolean(week && week.refined),
+    plannerRuntimeState:plannerRuntime && plannerRuntime.state || '',
+    plannerRuntimeDetail:plannerRuntime && plannerRuntime.detail || '',
+    plannerIsRunning:Boolean(plannerRuntime && plannerRuntime.running),
+    plannerDiagnostics:week && week.plannerDiagnostics || null,
     plannerIsPreview,
+    routeLegs,
+    routeLocationSequence:routeLocationRuns.map(id=>placeNameById.get(id) || id),
+    routeRevisitedLocations:[...revisitIds].map(id=>placeNameById.get(id) || id),
     plannerTraceGeneratedOnDemand:true,
     plannerTrace,
     hiddenAgendaRowCount:Math.max(0,schedulerPlacementRowCount - displayedPlacementRowCount),

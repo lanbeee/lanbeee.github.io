@@ -264,27 +264,41 @@ function assert(value,message){
   assert(agendaCompare.hiddenAgain && agendaCompare.chartStillOpen,'back to chart closes only the comparison and preserves the hourly chart');
 
   const denseAgenda=await page.evaluate(({base})=>{
-    saveSortSettings({...loadSortSettings(),blockedTimes:[]});
-    sortSettings=loadSortSettings();
-    const timeline=Array.from({length:12},(_,i)=>({
-      kind:'fill',start:base+(9+i*.25)*3600000,end:base+(9+(i+1)*.25)*3600000,
-      h:{hid:`dense-${i}`,name:`Packed item ${i+1}`,type:'habit',target:1,weatherProfileMode:'none'}
-    }));
-    openWeatherContextSheet(base,{dayBase:base,dayKey:dateKey(base),isToday:true,timeline},'');
-    document.querySelector('[data-weather-metric="temp"]').click();
-    document.getElementById('weather-metric-agenda').click();
-    const track=document.querySelector('.weather-agenda-vertical');
-    const blocks=[...track.querySelectorAll('.weather-agenda-item')];
-    const height=Math.round(track.getBoundingClientRect().height);
-    const names=blocks.map(block=>block.querySelector('b')?.textContent || '');
-    const directDetails=blocks.every(block=>/\d{2}:\d{2}–\d{2}:\d{2} · feels/.test(block.querySelector('small')?.textContent || ''));
-    const tenthTop=parseFloat(blocks[9].style.top);
-    document.querySelector('[data-weather-agenda-metric="precip"]').click();
-    const rainHours=document.querySelectorAll('.weather-agenda-rain-hour').length;
-    document.getElementById('weather-agenda-done').click();
-    document.getElementById('weather-metric-close').click();
-    document.getElementById('weather-context-done').click();
-    return {blocks:blocks.length,height,names,directDetails,tenthTop,rainHours};
+    // Today's comparison anchors its domain to the now line, so freeze the
+    // clock mid-agenda: otherwise a suite run between midnight and 09:00
+    // drags the domain below the packed day and shifts every proportional top.
+    const realNow=Date.now;
+    Date.now=()=>base+10.5*3600000;
+    try{
+      // Re-freshen the seeded fetch against the frozen clock: the context
+      // expires once the fetch is more than 8h old (weatherDaySummary).
+      const bucket=JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY) || 'null');
+      if(bucket?.weekly){
+        bucket.weekly.fetchedAt=Date.now()-600000;
+        localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify(bucket));
+      }
+      saveSortSettings({...loadSortSettings(),blockedTimes:[]});
+      sortSettings=loadSortSettings();
+      const timeline=Array.from({length:12},(_,i)=>({
+        kind:'fill',start:base+(9+i*.25)*3600000,end:base+(9+(i+1)*.25)*3600000,
+        h:{hid:`dense-${i}`,name:`Packed item ${i+1}`,type:'habit',target:1,weatherProfileMode:'none'}
+      }));
+      openWeatherContextSheet(base,{dayBase:base,dayKey:dateKey(base),isToday:true,timeline},'');
+      document.querySelector('[data-weather-metric="temp"]').click();
+      document.getElementById('weather-metric-agenda').click();
+      const track=document.querySelector('.weather-agenda-vertical');
+      const blocks=[...track.querySelectorAll('.weather-agenda-item')];
+      const height=Math.round(track.getBoundingClientRect().height);
+      const names=blocks.map(block=>block.querySelector('b')?.textContent || '');
+      const directDetails=blocks.every(block=>/\d{2}:\d{2}–\d{2}:\d{2} · feels/.test(block.querySelector('small')?.textContent || ''));
+      const tenthTop=parseFloat(blocks[9].style.top);
+      document.querySelector('[data-weather-agenda-metric="precip"]').click();
+      const rainHours=document.querySelectorAll('.weather-agenda-rain-hour').length;
+      document.getElementById('weather-agenda-done').click();
+      document.getElementById('weather-metric-close').click();
+      document.getElementById('weather-context-done').click();
+      return {blocks:blocks.length,height,names,directDetails,tenthTop,rainHours};
+    }finally{Date.now=realNow;}
   },seeded);
   assert(denseAgenda.blocks===12 && denseAgenda.height>=330 && denseAgenda.names.includes('Packed item 10'),
     'a packed day expands vertically so all twelve item names remain directly visible');

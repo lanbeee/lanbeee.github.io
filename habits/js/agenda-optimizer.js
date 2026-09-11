@@ -193,6 +193,7 @@ function leanAgendaWeek(week){
     candidateCount:week.candidateCount,
     optimized:week.optimized,
     plannerSolveStatus:week.plannerSolveStatus,
+    plannerDiagnostics:week.plannerDiagnostics,
     refined:Boolean(week.refined),
     __lean:true
   };

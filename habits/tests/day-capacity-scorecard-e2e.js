@@ -182,6 +182,10 @@ function task(name,dueDate,priority = 1){
         traceOnDemand:today.plannerTraceGeneratedOnDemand,
         preview:today.plannerIsPreview,
         previewText:formatDayCapacityScorecardText(today,'today','current home agenda'),
+        hasSolveRouteDiagnostics:formatDayCapacityScorecardText(today,'today','current home agenda')
+          .includes('SOLVE & ROUTE DIAGNOSTICS'),
+        hasRouteRunSummary:formatDayCapacityScorecardText(today,'today','current home agenda')
+          .includes('location runs '),
         traceHasInputs:today.plannerTrace.some(item=>
           item.inputs.some(input=>input.startsWith('allowed '))
           && item.inputs.some(input=>input.includes('priority'))
@@ -202,6 +206,8 @@ function task(name,dueDate,priority = 1){
   assert(model.today.rows > 0,'Scorecard should expose the actual agenda output rows');
   assert(model.today.traceCount > 0,'Scorecard should expose planner decisions');
   assert(model.today.traceOnDemand === true,'Planner trace should identify itself as on-demand');
+  assert(model.today.hasSolveRouteDiagnostics && model.today.hasRouteRunSummary,
+    'Copied audit should include compact solve provenance and route-run diagnostics');
   if(FAST_ONLY){
     assert(model.today.preview === false,'Forced-fast audit should be a settled fast result');
     assert(!model.today.previewText.includes('FAST PREVIEW'),

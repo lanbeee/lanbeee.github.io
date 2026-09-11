@@ -36,8 +36,39 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   if(!minimal && label === 'today' && todayHids){
     attachDroppedIndicator(header,list,todayHids);
   }
+  if(!minimal && ((dayContext && dayContext.isToday) || label === 'today')){
+    attachPlannerStatusIndicator(header);
+  }
   list.appendChild(header);
   fitDayHeaderChips(header);
+}
+
+// RENDER: a five-pixel status dot is the only persistent optimizer chrome.
+// It remains tappable/keyboard-accessible so touch users can ask what the dot
+// means, while ordinary viewing stays silent.
+function attachPlannerStatusIndicator(header){
+  if(!header || typeof homePlannerRuntimeState !== 'function')return;
+  const state = homePlannerRuntimeState();
+  if(!state || state.state === 'hidden')return;
+  const host = dayHeaderContextHost(header);
+  if(!host || host.querySelector('.planner-state-indicator'))return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'planner-state-indicator';
+  if(typeof applyHomePlannerStatusIndicator === 'function'){
+    applyHomePlannerStatusIndicator(button,state);
+  }
+  button.addEventListener('click',event=>{
+    event.preventDefault();
+    event.stopPropagation();
+    const live = typeof homePlannerRuntimeState === 'function'
+      ? homePlannerRuntimeState() : state;
+    if(typeof applyHomePlannerStatusIndicator === 'function'){
+      applyHomePlannerStatusIndicator(button,live);
+    }
+    if(typeof showToast === 'function')showToast(live.detail);
+  });
+  host.appendChild(button);
 }
 
 function dayHeaderContextHost(header){
@@ -83,7 +114,7 @@ function fitDayHeaderChips(header){
   if(!label || !host)return;
   if(_headerFitTargets){
     _headerFitTargets.observe(label);
-    host.querySelectorAll('button').forEach(chip=>_headerFitTargets.observe(chip));
+    host.querySelectorAll('button:not(.planner-state-indicator)').forEach(chip=>_headerFitTargets.observe(chip));
   }
   header.classList.remove('context-below','context-wrapped');
   if(button)button.classList.remove('cue-slim','cue-emoji');
@@ -93,7 +124,7 @@ function fitDayHeaderChips(header){
   const availableWidth = header.clientWidth
     - (Number.parseFloat(css.paddingLeft) || 0)
     - (Number.parseFloat(css.paddingRight) || 0);
-  const chips = [...host.querySelectorAll(':scope > button')];
+  const chips = [...host.querySelectorAll(':scope > button:not(.planner-state-indicator)')];
   const hostCss = getComputedStyle(host);
   const chipGap = Number.parseFloat(hostCss.columnGap || hostCss.gap) || 0;
   const contextWidth = ()=>chips.reduce((sum,chip)=>sum + chip.getBoundingClientRect().width,0)

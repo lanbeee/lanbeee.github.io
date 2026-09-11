@@ -628,6 +628,67 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && refinementPolicy.feasibleNeedsRefine,
     JSON.stringify(refinementPolicy));
 
+  const plannerCueStates = await page.evaluate(()=>{
+    const saved = {
+      settings:sortSettings,
+      week:_homeRenderedWeek,
+      request:_optimizerHomeRequestKey,
+      refining:_optimizerHomeRefinementKey,
+      refinedDone:_optimizerHomeRefinementDoneKey
+    };
+    try{
+      sortSettings={...(sortSettings || loadSortSettings()),agendaOptimizer:true};
+      const baseWeek={optimized:true,plannerSolveStatus:'feasible',refined:false,days:[]};
+      _homeRenderedWeek=baseWeek;
+      _optimizerHomeRefinementDoneKey='';
+      _optimizerHomeRefinementKey='';
+      _optimizerHomeRequestKey='active';
+      const planning=homePlannerRuntimeState().state;
+      _optimizerHomeRequestKey='';
+      _optimizerHomeRefinementKey='active';
+      const refining=homePlannerRuntimeState().state;
+      _optimizerHomeRefinementKey='';
+      const feasible=homePlannerRuntimeState().state;
+      _homeRenderedWeek={...baseWeek,refined:true};
+      const refined=homePlannerRuntimeState().state;
+      _homeRenderedWeek={...baseWeek,plannerSolveStatus:'optimal'};
+      const optimal=homePlannerRuntimeState().state;
+      const host=document.createElement('div');
+      document.body.appendChild(host);
+      const header=document.createElement('div');
+      host.appendChild(header);
+      attachPlannerStatusIndicator(header);
+      const button=header.querySelector('.planner-state-indicator');
+      const dom={state:button?.dataset.plannerState,title:button?.title,aria:button?.getAttribute('aria-label')};
+      host.remove();
+      return {planning,refining,feasible,refined,optimal,dom};
+    }finally{
+      sortSettings=saved.settings;
+      _homeRenderedWeek=saved.week;
+      _optimizerHomeRequestKey=saved.request;
+      _optimizerHomeRefinementKey=saved.refining;
+      _optimizerHomeRefinementDoneKey=saved.refinedDone;
+    }
+  });
+  const plannerCueOkay = EXPECTED_MODE === 'fast'
+    ? plannerCueStates.planning === 'hidden'
+      && plannerCueStates.refining === 'hidden'
+      && plannerCueStates.feasible === 'hidden'
+      && plannerCueStates.refined === 'hidden'
+      && plannerCueStates.optimal === 'hidden'
+      && !plannerCueStates.dom.state
+    : plannerCueStates.planning === 'planning'
+      && plannerCueStates.refining === 'refining'
+      && plannerCueStates.feasible === 'feasible'
+      && plannerCueStates.refined === 'refined'
+      && plannerCueStates.optimal === 'optimal'
+      && plannerCueStates.dom.state === 'optimal'
+      && /proved/i.test(plannerCueStates.dom.title || '')
+      && /agenda optimal/i.test(plannerCueStates.dom.aria || '');
+  check('quiet planner cue distinguishes exact-planner states and stays absent in forced-fast mode',
+    plannerCueOkay,
+    JSON.stringify(plannerCueStates));
+
   const revisionPersist = await page.evaluate(()=>{
     const before = plannerDataRevision();
     const data = load();

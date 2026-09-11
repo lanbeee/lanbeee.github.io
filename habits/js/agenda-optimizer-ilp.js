@@ -1345,10 +1345,19 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
   // post-solve compactor it is still the same ILP model making the arrangement.
   // It is especially valuable on mobile, where the first four-second solve can
   // spend nearly all its budget establishing selection feasibility.
+  const selectionStatus = status === 5 ? 'optimal' : 'feasible';
+  let routePolishStatus = 'not-needed';
+  let routePolishApplied = false;
+  let routeObjectiveBefore = null;
+  let routeObjectiveAfter = null;
   const incumbentVars = (result.result && result.result.vars) || {};
   const hasRouteObjective = Array.isArray(routeObjectiveVars)
     && routeObjectiveVars.length > 0;
   if(hasRouteObjective && Array.isArray(candidateOptionNames)){
+    // Until the frozen-selection route pass returns an optimum, the complete
+    // result is only feasible even when candidate selection itself was proved.
+    status = 2;
+    routePolishStatus = 'no-incumbent';
     const frozenSelectionRows = candidateOptionNames.map(([candidateIndex,names],rowIndex)=>{
       const selected = names.some(name=>(incumbentVars[name] || 0) > 0.5) ? 1 : 0;
       return {
@@ -1376,20 +1385,25 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
       }));
       const polishedStatus = polished && polished.result && polished.result.status;
       if(polishedStatus === 5 || polishedStatus === 2){
+        routePolishStatus = polishedStatus === 5 ? 'optimal' : 'feasible';
         const objectiveValue = solved=>{
           const values = (solved && solved.result && solved.result.vars) || {};
           return polishProblem.objective.vars.reduce((sum,item)=>
             sum + (Number(item.coef) || 0) * (Number(values[item.name]) || 0),0);
         };
-        const improves = objectiveValue(polished) > objectiveValue(result) + 1e-7;
+        routeObjectiveBefore = objectiveValue(result);
+        routeObjectiveAfter = objectiveValue(polished);
+        const improves = routeObjectiveAfter > routeObjectiveBefore + 1e-7;
         if(improves){
           result = polished;
+          routePolishApplied = true;
         }
         // "Optimal" now means both candidate selection and the frozen-set
         // clock/route arrangement were proved; otherwise retain FEAS provenance.
         status = status === 5 && polishedStatus === 5 ? 5 : 2;
       }
     }catch{
+      routePolishStatus = 'error';
       // The original feasible incumbent remains valid and publishable.
     }
   }
@@ -1407,6 +1421,16 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
   });
   chosen.sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   chosen.solveStatus = status === 5 ? 'optimal' : 'feasible';
+  chosen.solveDiagnostics = {
+    selectionStatus,
+    routePolishStatus,
+    routePolishApplied,
+    routeObjectiveBefore,
+    routeObjectiveAfter,
+    candidateCount:Array.isArray(candidateOptionNames) ? candidateOptionNames.length : dayCandidates.length,
+    optionCount:opts.length,
+    routeTermCount:Array.isArray(routeObjectiveVars) ? routeObjectiveVars.length : 0
+  };
   return chosen;
 }
 
@@ -1512,6 +1536,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       ))
     : AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS;
   let plannerSolveStatus = 'optimal';
+  const daySolves = [];
   const dayWeights = dayStates.map((_,offset)=>daySolveWeight(offset));
 
   const recordFixedChoices = (state,chosen)=>{
@@ -1685,6 +1710,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       budgetLeft = Math.max(0,budgetLeft - earlySpent);
       if(!earlyChosen){
         plannerSolveStatus = 'fallback';
+        daySolves.push({
+          dayKey:dateKey(state.dayBase),phase:'linked-stage',status:'fallback',
+          candidateCount:stagedFixed.length,elapsedMs:Math.round(earlySpent)
+        });
         earlyChosen = packDayWithHeuristic(
           state,stagedFixed,candidates,dayStates,{requiredOccurrenceIndices}
         );
@@ -1698,6 +1727,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
           }
         }
       }else{
+        daySolves.push({
+          dayKey:dateKey(state.dayBase),phase:'linked-stage',status:earlyChosen.solveStatus || 'feasible',
+          elapsedMs:Math.round(earlySpent),...(earlyChosen.solveDiagnostics || {})
+        });
         if(earlyChosen.solveStatus === 'feasible' && plannerSolveStatus === 'optimal'){
           plannerSolveStatus = 'feasible';
         }
@@ -1771,6 +1804,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       : daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
     let chosen = null;
     let usedHeuristic = false;
+    let spent = 0;
     // Far days still enter GLPK while budget remains; structural dayOffset>=3
     // cutoff was reverted — it skipped exact packing for scarce far-day windows.
     if(budgetLeft < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS){
@@ -1790,12 +1824,17 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         chosen = null;
         usedHeuristic = true;
       }
-      const spent = Math.max(0,((typeof performance !== 'undefined' && performance.now)
+      spent = Math.max(0,((typeof performance !== 'undefined' && performance.now)
         ? performance.now() : Date.now()) - solveStarted);
       budgetLeft = Math.max(0,budgetLeft - spent);
     }
     if(!chosen){
       plannerSolveStatus = 'fallback';
+      daySolves.push({
+        dayKey:dateKey(state.dayBase),phase:'fixed-pack',status:'fallback',
+        candidateCount:fixedCands.length,elapsedMs:Math.round(spent),
+        reason:usedHeuristic ? 'time-budget' : 'no-usable-incumbent'
+      });
       if(!usedHeuristic){
         console.warn('[agenda-optimizer] day solve infeasible — using fast pack for this day');
       }
@@ -1813,6 +1852,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       }
       continue;
     }
+    daySolves.push({
+      dayKey:dateKey(state.dayBase),phase:'fixed-pack',status:chosen.solveStatus || 'feasible',
+      elapsedMs:Math.round(spent),...(chosen.solveDiagnostics || {})
+    });
     if(chosen.solveStatus === 'feasible' && plannerSolveStatus === 'optimal'){
       plannerSolveStatus = 'feasible';
     }
@@ -1920,7 +1963,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
   }
-  return {ok:total >= 0,plannerSolveStatus};
+  return {ok:total >= 0,plannerSolveStatus,daySolves};
 }
 
 let _plannerWeekDayMemo = {dirtyKey:'',todayBase:0,days:null};
@@ -2021,9 +2064,13 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
 
   const solveStates = reuseFarDays ? dayStates.slice(0,1) : dayStates;
   plannerPerfMark('planner-exact-solve-start');
+  const solveStarted = (typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now();
   const solveSummary = await assignWeekCandidatesOptimized(
     candidates,solveStates,settings,opts
   );
+  const solveDurationMs = Math.max(0,((typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now()) - solveStarted);
   plannerPerfMark('planner-exact-solve-end');
   if(!solveSummary || !solveSummary.ok){
     // Packing timed out or a day was infeasible — use the fast planner quietly.
@@ -2069,7 +2116,12 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   const week = {
     days,totalTravelSeconds,candidateCount:candidates.length,optimized:true,
     plannerSolveStatus:solveSummary.plannerSolveStatus || 'feasible',
-    refined:Boolean(opts.refine)
+    refined:Boolean(opts.refine),
+    plannerDiagnostics:{
+      solveDurationMs:Math.round(solveDurationMs),
+      requestedRefinement:Boolean(opts.refine),
+      daySolves:solveSummary.daySolves || []
+    }
   };
   if(dirtyKey){
     _plannerWeekDayMemo = {

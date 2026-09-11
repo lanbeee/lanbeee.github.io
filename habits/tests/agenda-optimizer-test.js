@@ -1014,6 +1014,7 @@ function base(props) {
       return {
         optimized:Boolean(week.optimized),
         solveStatus:week.plannerSolveStatus || '',
+        solveDiagnostics:week.plannerDiagnostics || null,
         starts:errands.map(row=>({
           name:row.h.name,
           minute:Math.round((row.start - day.dayBase) / 60000),
@@ -1093,6 +1094,14 @@ function base(props) {
   check('the selected clock options produce one outbound store trip',
     splitTripResult.outboundTrips === 1,
     JSON.stringify(splitTripResult));
+  check('optimizer records selection and route-polish provenance for audits',
+    Boolean(splitTripResult.solveDiagnostics
+      && Number.isFinite(splitTripResult.solveDiagnostics.solveDurationMs)
+      && splitTripResult.solveDiagnostics.daySolves.some(solve=>
+        solve.phase === 'fixed-pack'
+        && /^(optimal|feasible)$/.test(solve.selectionStatus || '')
+        && solve.routePolishStatus)),
+    JSON.stringify(splitTripResult.solveDiagnostics));
 
   console.log('\n[Optimizer] deep refinement crosses a two-blocker contiguity valley');
   const contiguityRepair = await page.evaluate(({ now })=>{
