@@ -261,15 +261,18 @@ const DEFAULT_SORT_SETTINGS = {
   showWeatherOnTravel:true,
   // Temperature unit for weather display: 'auto' infers from the home city's
   // country (Fahrenheit countries → °F, else °C); 'c'/'f' override. Forecast
-  // data and rule bounds are always stored in °C — this is display-only.
+  // data and rule bounds are always stored in °C — display-only: the profile
+  // editor converts rule bounds to/from this unit at the last step.
   weatherTempUnit:'auto',
   // Precipitation (and snowfall) display unit: 'auto' infers from the home
   // city's country (US-aligned measure countries → in, else mm); 'mm'/'in'
-  // override. Forecast data and rule bounds are always stored in mm/cm.
+  // override. Forecast data and rule bounds are always stored in mm/cm;
+  // the profile editor converts rule bounds to/from this unit.
   weatherPrecipUnit:'auto',
   // Wind display unit (speeds and gusts): 'auto' infers from the home city's
   // country ('mph' regions, else km/h); 'kmh'/'mph' override. Forecast data
-  // and rule bounds are always stored in km/h.
+  // and rule bounds are always stored in km/h; the profile editor converts
+  // rule bounds to/from this unit.
   weatherWindUnit:'auto',
   // Two-letter country code of the home city, captured from the geocoder when
   // the city is set (and backfilled once for existing cities) to drive 'auto'.

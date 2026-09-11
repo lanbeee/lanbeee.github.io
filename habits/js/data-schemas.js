@@ -222,12 +222,12 @@
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
- * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high to full-mode home/overview weather cues (default false)
+ * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high to full-mode home/overview weather cues (default true)
  * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/feels-like pills on busy-time cards in regular mode
  * @property {boolean} showWeatherOnTravel                     — show interval condition/feels-like pills on travel cards in regular mode (default true)
- * @property {'auto'|'c'|'f'} weatherTempUnit                  — display unit for temperatures; 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay °C.
- * @property {'auto'|'mm'|'in'} weatherPrecipUnit              — display unit for precipitation (snowfall follows it); 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay mm/cm.
- * @property {'auto'|'kmh'|'mph'} weatherWindUnit              — display unit for wind speeds and gusts; 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay km/h.
+ * @property {'auto'|'c'|'f'} weatherTempUnit                  — display unit for temperatures; 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay °C; the profile editor converts bounds to/from this unit.
+ * @property {'auto'|'mm'|'in'} weatherPrecipUnit              — display unit for precipitation (snowfall follows it); 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay mm/cm; the profile editor converts bounds to/from this unit.
+ * @property {'auto'|'kmh'|'mph'} weatherWindUnit              — display unit for wind speeds and gusts; 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay km/h; the profile editor converts bounds to/from this unit.
  * @property {string} homeCityCountry                          — two-letter country code of the home city, from the geocoder; drives 'auto' unit inference
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')

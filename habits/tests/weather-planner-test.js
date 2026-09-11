@@ -35,6 +35,52 @@ function assert(value,message){
   assert(/inactive/.test(await page.evaluate(()=>weatherRuleHintText({metric:'uv_index',min:null,max:null,relative:'none'}))),'a rule without bounds or preference says it is inactive');
   assert(/UV index/.test(await page.evaluate(()=>weatherRuleHintText({metric:'uv_index',min:null,max:null,relative:'none'}))),'the inactive note still shows the metric scale');
 
+  // Rule bounds follow the display units (°F / in / mph) everywhere in the
+  // editor while storage and the planner keep the metric API units.
+  const unitEdit=await page.evaluate(()=>{
+    saveSortSettings({...loadSortSettings(),
+      weatherTempUnit:'f',weatherPrecipUnit:'in',weatherWindUnit:'mph',
+      weatherProfiles:[{id:'weather-unit-check',name:'UnitCheck',rules:[
+        {metric:'temperature_2m',min:30,max:null,hard:false,relative:'none'},
+        {metric:'wind_gusts_10m',min:null,max:50,hard:false,relative:'none'},
+        {metric:'precipitation',min:null,max:2.5,hard:false,relative:'low'}]}]});
+    sortSettings=loadSortSettings();
+    renderWeatherControls();
+    const maxInputs=[...document.querySelectorAll('[data-weather-rule-max]')];
+    return {
+      minValue:document.querySelector('[data-weather-rule-min]')?.value,
+      placeholder:document.querySelector('[data-weather-rule-min]')?.placeholder,
+      tempHint:weatherRuleHintText({metric:'temperature_2m',min:30,max:null,relative:'none'}),
+      gustHint:weatherRuleHintText({metric:'wind_gusts_10m',min:null,max:50,relative:'none'}),
+      tempOption:/\(°F\)/.test(weatherMetricOptions('temperature_2m')),
+      gustMax:maxInputs[1]?.value,
+      precipMax:maxInputs[2]?.value
+    };
+  });
+  assert(unitEdit.tempOption,'the metric dropdown labels temperature with the effective °F unit');
+  assert(unitEdit.minValue==='86','a stored 30 °C bound shows as 86 °F in the rule field');
+  assert(/−4–104/.test(unitEdit.placeholder),'the suggested range placeholder converts to °F');
+  assert(/°F · 32 freezes · 68 mild · 86\+ hot/.test(unitEdit.tempHint),'temperature rule bands render in °F');
+  assert(/mph peak gusts/.test(unitEdit.gustHint) && unitEdit.gustMax==='31.1','gust bounds and bands render in mph (50 km/h → 31.1)');
+  assert(unitEdit.precipMax==='0.1','a stored 2.5 mm precip bound shows as inches');
+  const unitStoreBack=await page.evaluate(()=>{
+    const minInput=document.querySelector('[data-weather-rule-min]');
+    minInput.value='86.5';
+    minInput.dispatchEvent(new Event('change',{bubbles:true}));
+    const stored=normalizeWeatherProfiles(loadSortSettings().weatherProfiles)[0].rules[0].min;
+    renderWeatherControls();
+    return {stored,shown:document.querySelector('[data-weather-rule-min]')?.value};
+  });
+  assert(Math.abs(unitStoreBack.stored-30.28)<0.01 && unitStoreBack.shown==='86.5','typing 86.5 °F stores 30.28 °C and renders back as 86.5');
+  await page.evaluate(()=>{
+    // Restore the units and an "Outdoor"-named profile so the following
+    // inherit/option-editor sections keep seeing the default profile name.
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'auto',weatherPrecipUnit:'auto',weatherWindUnit:'auto',
+      weatherProfiles:[{id:'weather-unit-check',name:'Outdoor',rules:[{metric:'precipitation_probability',min:null,max:40,hard:false,relative:'none'}]}]});
+    sortSettings=loadSortSettings();
+    renderWeatherControls();
+  });
+
   // Transparency panel: seed a fake stored forecast (hourly + near-term) and
   // check the settings screen shows exactly the rows the planner scores.
   const inspect=await page.evaluate(()=>{
@@ -72,6 +118,21 @@ function assert(value,message){
   assert(/rain chance/.test(inspect.headText),'the table columns name the rule metrics');
   assert(/Berlin/.test(inspect.metaText) && /15-min detail until/.test(inspect.metaText),'the meta line names the city and the detail horizon');
   assert(inspect.firstRowNear,'near-term rows are visually marked');
+  const inspectorUnits=await page.evaluate(()=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'f',weatherWindUnit:'mph',weatherPrecipUnit:'in'});
+    sortSettings=loadSortSettings();
+    renderWeatherControls();
+    const table=document.querySelector('#weather-forecast-data .weather-forecast-table');
+    const heads=[...(table?.querySelectorAll('thead th') || [])];
+    const tempCol=heads.findIndex(th=>/temperature/.test(th.textContent));
+    const cell=table?.querySelector('tbody tr')?.cells[tempCol]?.textContent || '';
+    const headHasUnits=heads.some(th=>/\(°F\)/.test(th.textContent)) && heads.some(th=>/\(mph\)/.test(th.textContent));
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'auto',weatherWindUnit:'auto',weatherPrecipUnit:'auto'});
+    sortSettings=loadSortSettings();
+    renderWeatherControls();
+    return {cell,headHasUnits};
+  });
+  assert(inspectorUnits.cell==='52' && inspectorUnits.headHasUnits,'inspector table converts values and labels columns in the display unit (11 °C → 52 °F)');
 
   const usedBy=await page.evaluate(()=>{
     const profileId=normalizeWeatherProfiles(loadSortSettings().weatherProfiles)[0].id;
@@ -573,7 +634,7 @@ function assert(value,message){
       codeEmoji:weatherCodePresentation(95).emoji
     };
   });
-  assert(display.normalizedDefault.temperature===false && !display.normalizedDefault.droppedHabits && !display.normalizedDefault.droppedTasks && !display.normalizedDefault.busy && display.normalizedDefault.travel,'weather display settings normalize quiet by default, except travel, and drop the old global habit/task toggles');
+  assert(display.normalizedDefault.temperature===true && !display.normalizedDefault.droppedHabits && !display.normalizedDefault.droppedTasks && !display.normalizedDefault.busy && display.normalizedDefault.travel,'weather display settings default to showing temperature ranges, stay quiet except travel, and drop the old global habit/task toggles');
   assert(!/weather-condition-text/.test(display.noTemp) && /🌦️/.test(display.noTemp) && /80%/.test(display.noTemp) && !/5–13°/.test(display.noTemp),'full day cue stays compact: emoji and wet chance, no long condition label or temperature');
   assert(/5–13°/.test(display.withTemp),'feels-like temperature range can be enabled for full-mode day cues');
   assert(display.stale===null && display.past===null && display.beyond===null,'stale, past, and beyond-horizon days have no forecast summary');
