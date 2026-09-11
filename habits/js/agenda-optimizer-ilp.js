@@ -94,6 +94,191 @@ function applyDoingNowWeight(o,doing){
   o.weight += DOING_NOW_WEIGHT_BONUS - Math.min(DOING_NOW_WEIGHT_BONUS,delayMin);
 }
 
+function priorPlacementsForDay(prior,dayBase){
+  if(!Array.isArray(prior) || !prior.length)return [];
+  const hasDay = prior.some(p=>p && Number.isFinite(Number(p.dayBase)));
+  if(!hasDay || !Number.isFinite(Number(dayBase)))return prior.filter(Boolean);
+  return prior.filter(p=>p && Number(p.dayBase) === Number(dayBase));
+}
+
+function matchPriorPlacement(c,prior){
+  if(!c || !Array.isArray(prior) || !prior.length)return null;
+  for(let i = 0;i < prior.length;i += 1){
+    const p = prior[i];
+    if(!p)continue;
+    if(Number.isFinite(Number(p.i)) && p.i === c.i)return p;
+  }
+  const hid = c.h && c.h.hid;
+  if(!hid)return null;
+  for(let i = 0;i < prior.length;i += 1){
+    const p = prior[i];
+    if(p && p.hid === hid)return p;
+  }
+  return null;
+}
+
+// Soft MIP-start: prefer the previous plan's clock/location when it is still a
+// feasible option. Bonus is small so route polish can still merge extra trips.
+// Never large enough to drop an item (candidate baseWeight stays dominant).
+function applyPriorPlacementWeights(opts,prior,dayBase){
+  if(!opts || !opts.length)return;
+  const dayPrior = priorPlacementsForDay(prior,dayBase);
+  if(!dayPrior.length)return;
+  const PRIOR_SLOT_BONUS = 6;
+  for(const o of opts){
+    if(!o || !o.fit || !o.c)continue;
+    const p = matchPriorPlacement(o.c,dayPrior);
+    if(!p || !Number.isFinite(Number(p.start)))continue;
+    if(p.locId && o.fit.locId && p.locId !== o.fit.locId)continue;
+    const delayMin = Math.abs((Number(o.fit.placeStart) || 0) - Number(p.start)) / 60000;
+    if(delayMin > 20)continue;
+    o.weight += PRIOR_SLOT_BONUS * (1 - delayMin / 20);
+  }
+}
+
+function restorePriorPlacementOptions(opts,allOptions,prior,dayBase){
+  if(!opts || !allOptions || !allOptions.length)return opts;
+  const dayPrior = priorPlacementsForDay(prior,dayBase);
+  if(!dayPrior.length)return opts;
+  const kept = new Set(opts);
+  for(const p of dayPrior){
+    let best = null;
+    let bestAbs = Infinity;
+    for(const o of allOptions){
+      if(!o || !o.fit || !o.c)continue;
+      const hid = o.fill && o.fill.h && o.fill.h.hid;
+      if(o.c.i !== p.i && !(p.hid && hid === p.hid))continue;
+      if(p.locId && o.fit.locId && p.locId !== o.fit.locId)continue;
+      const d = Math.abs((Number(o.fit.placeStart) || 0) - Number(p.start));
+      if(d < bestAbs){
+        bestAbs = d;
+        best = o;
+      }
+    }
+    if(best && bestAbs <= 2 * 60000 && !kept.has(best)){
+      opts.push(best);
+      kept.add(best);
+    }
+  }
+  return opts;
+}
+
+function agendaPriorPlacementsFromTimeline(timeline,dayBase){
+  if(!Array.isArray(timeline))return [];
+  const base = Number.isFinite(Number(dayBase)) ? Number(dayBase) : null;
+  return timeline.filter(row=>row && row.kind === 'fill' && row.i != null).map(row=>{
+    const item = {
+      i:row.i,
+      hid:row.h && row.h.hid || '',
+      start:Number(row.start) || 0,
+      end:Number(row.end) || 0,
+      locId:row.locationId || null
+    };
+    if(base != null)item.dayBase = base;
+    return item;
+  });
+}
+
+function agendaPriorPlacementsFromWeek(week){
+  if(!week || !Array.isArray(week.days))return [];
+  const out = [];
+  for(const day of week.days){
+    if(!day)continue;
+    const rows = agendaPriorPlacementsFromTimeline(day.timeline,day.dayBase);
+    for(let i = 0;i < rows.length;i += 1)out.push(rows[i]);
+  }
+  return out;
+}
+
+function memoDaysFromWeek(week){
+  if(!week || !Array.isArray(week.days))return [];
+  return week.days.map(day=>({
+    dayBase:Number(day && day.dayBase) || 0,
+    usedMinutes:day && day.usedMinutes,
+    remainingMinutes:day && day.remainingMinutes,
+    travelSeconds:(day && day.travelSeconds) || 0,
+    timeline:Array.isArray(day && day.timeline)
+      ? day.timeline.map(row=>{
+        if(!row || typeof row !== 'object')return row;
+        const out = {...row};
+        delete out.h;
+        return out;
+      })
+      : []
+  }));
+}
+
+// Replay the last day's non-breakable fills onto a clone. Returns chosen
+// options when that packing is still feasible; otherwise null so GLPK runs.
+function replayPriorFixedChoices(state,dayCandidates,priorPlacements,deferrable){
+  if(!state || typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return null;
+  if(!Array.isArray(dayCandidates) || !dayCandidates.length)return null;
+  if(typeof doingNowForDay === 'function' && doingNowForDay(state))return null;
+  const dayPrior = priorPlacementsForDay(priorPlacements,state.dayBase);
+  if(!dayPrior.length)return null;
+  const candByI = new Map();
+  const candByHid = new Map();
+  for(const c of dayCandidates){
+    if(!c || (c.h && c.h.breakable))continue;
+    candByI.set(c.i,c);
+    if(c.h && c.h.hid)candByHid.set(c.h.hid,c);
+  }
+  const startClock = Number(state.startClock) || 0;
+  const remaining = dayPrior.filter(p=>{
+    const end = Number(p.end) || Number(p.start) || 0;
+    return end > startClock;
+  }).sort((a,b)=>(Number(a.start) || 0) - (Number(b.start) || 0));
+  if(!remaining.length)return null;
+  const clone = typeof clonePlacementState === 'function'
+    ? clonePlacementState(state)
+    : null;
+  if(!clone)return null;
+  const chosen = [];
+  const placed = new Set();
+  for(const p of remaining){
+    const c = candByI.has(p.i) ? candByI.get(p.i) : (p.hid ? candByHid.get(p.hid) : null);
+    if(!c)continue;
+    if(placed.has(c.i) || clone.placed.has(c.i)){
+      placed.add(c.i);
+      continue;
+    }
+    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    if(p.locId)fill.locationId = p.locId;
+    const probe = clonePlacementState(clone);
+    probe.startClock = Math.max(Number(clone.startClock) || 0,Number(p.start) || 0);
+    const fit = tryPlaceOnDay(probe,fill,{allowNetwork:false});
+    if(!fit)return null;
+    const priorStart = Number(p.start) || 0;
+    if(priorStart >= startClock + 60000){
+      if(Math.abs((Number(fit.placeStart) || 0) - priorStart) > 2 * 60000)return null;
+      if(p.locId && fit.locId && p.locId !== fit.locId)return null;
+    }
+    commitPlacement(clone,fill,fit);
+    chosen.push({fill,fit});
+    placed.add(c.i);
+  }
+  if(!chosen.length)return null;
+  for(const c of dayCandidates){
+    if(!c || (c.h && c.h.breakable))continue;
+    if(placed.has(c.i))continue;
+    if(deferrable && deferrable.has(c.i))continue;
+    const stillDue = remaining.some(p=>p.i === c.i || (p.hid && c.h && p.hid === c.h.hid));
+    if(stillDue)return null;
+    if(c.pinned)return null;
+    if(typeof mustPlaceCriticalOccurrence === 'function' && mustPlaceCriticalOccurrence(c))return null;
+    if(typeof isDayChoosingWeekCandidate === 'function' && isDayChoosingWeekCandidate(c))continue;
+    return null;
+  }
+  chosen.solveStatus = 'reused';
+  chosen.solveDiagnostics = {
+    selectionStatus:'reused',
+    routePolishStatus:'not-needed',
+    reusedCount:chosen.length,
+    candidateCount:dayCandidates.length
+  };
+  return chosen;
+}
+
 function applyDirectOrderGapWeights(opts,dayBase){
   if(!opts || !opts.length || typeof plannerOrderConstraintsForDay !== 'function')return;
   const edges = plannerOrderConstraintsForDay(dayBase).filter(e=>e.adjacency === 'direct');
@@ -691,6 +876,13 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       candidateBoundaryEdges.push(probe.placeStart,probe.placeEnd);
     }
   }
+  // Last plan's clocks must be enumerated options. Sparse window-edge
+  // probes otherwise miss 11:05 grocery and the prior-weight bonus never fires.
+  const dayPrior = priorPlacementsForDay(solveOptions.priorPlacements,state.dayBase);
+  for(const p of dayPrior){
+    if(Number.isFinite(Number(p.start)))candidateBoundaryEdges.push(Number(p.start));
+    if(Number.isFinite(Number(p.end)))candidateBoundaryEdges.push(Number(p.end));
+  }
   for(const c of dayCandidates){
     // Breakable budgets are continuous resources, not one all-or-nothing event.
     // They are fitted after this exact fixed-duration solve has reserved narrow
@@ -815,10 +1007,12 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       round += 1;
     }
   }
+  restorePriorPlacementOptions(opts,options,solveOptions.priorPlacements,state.dayBase);
 
   applyDirectOrderGapWeights(opts,state.dayBase);
   applyPlacedOrderWeights(opts,state);
   applyEarlyBeforeWeights(opts,state);
+  applyPriorPlacementWeights(opts,solveOptions.priorPlacements,state.dayBase);
 
   const vars = [];
   const binaries = [];
@@ -1095,32 +1289,34 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     const TRAVEL_PAIR_CAP = 80;      // bound route vs same-item clock preferences
     const TRAVEL_PAIR_FLOOR = 12;    // still decisive over priority/ASAP deltas
     let tpIdx = 0;
-    // A null fit.locId is the anchor-preserving "anywhere" option, but when the
-    // habit HAS allowed locations the reconciled route still lands it at its
-    // preferred place (e.g. Lunch→Home). Such options must not escape the
-    // away-and-back penalty — that was the Walmart miss: GLPK picked the
-    // higher-weight null options for Lunch/Quran, paid zero travel-pair
-    // penalty, and the route painted Home→Walmart→Home anyway. Resolve null
-    // to the habit's preferred allowed place (the same reconciliation
-    // scheduled rows use); truly location-free habits stay null (anywhere
-    // includes the seed, so they are not provably away).
+    // One z per (away option × seed candidate), not per seed clock option.
+    // At most one option per candidate is selected, so pairing every Breakfast
+    // start with every Walmart start exploded to thousands of binaries and the
+    // 2-second polish pass returned no-incumbent on real days.
+    const seedOptionsByCandidate = new Map();
+    for(let bi = 0; bi < opts.length; bi += 1){
+      const B = opts[bi];
+      const bLoc = routeLocForOption(B);
+      if(!bLoc || bLoc !== seedLoc)continue;
+      if(!seedOptionsByCandidate.has(B.c.i))seedOptionsByCandidate.set(B.c.i,[]);
+      seedOptionsByCandidate.get(B.c.i).push(B);
+    }
     for(let ai = 0; ai < opts.length; ai += 1){
       const A = opts[ai];
       const aLoc = routeLocForOption(A);
       if(!aLoc || aLoc === seedLoc)continue;            // A must be AWAY from seed
-      const savedSec = Math.max(0,Number(travelEdgeBetweenIds(
+      const driveSec = Math.max(0,Number(travelEdgeBetweenIds(
         seedLoc,aLoc,state.registry,state.mode,{allowNetwork:false}
       ).seconds) || 0);
+      const savedSec = typeof travelLegCostSeconds === 'function'
+        ? travelLegCostSeconds(driveSec,seedLoc,aLoc) : driveSec;
       if(savedSec <= 0)continue;                         // co-located: no away-and-back risk
       const pen = Math.max(TRAVEL_PAIR_FLOOR,
         Math.min(TRAVEL_PAIR_CAP,savedSec * TRAVEL_PAIR_COEF));
-      for(let bi = 0; bi < opts.length;bi += 1){
-        if(bi === ai)continue;
-        const B = opts[bi];
-        const bLoc = routeLocForOption(B);
-        if(!bLoc || bLoc !== seedLoc)continue;           // B must be AT-SEED
-        if(A.c.i === B.c.i)continue;                     // different candidates
-        if(!(A.fit.placeStart < B.fit.placeStart))continue; // A scheduled before B
+      for(const [candI,seedOpts] of seedOptionsByCandidate){
+        if(candI === A.c.i)continue;
+        const later = seedOpts.filter(B=>A.fit.placeStart < B.fit.placeStart);
+        if(!later.length)continue;
         const z = `tp_${tpIdx++}`;
         binaries.push(z);
         vars.push({name:z,coef:0});
@@ -1132,12 +1328,12 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
         });
         subjectTo.push({
           name:`${z}_ubB`,
-          vars:[{name:z,coef:1},{name:B.varName,coef:-1}],
+          vars:[{name:z,coef:1},...later.map(B=>({name:B.varName,coef:-1}))],
           bnds:{type:GLPK.GLP_UP,ub:0,lb:0}
         });
         subjectTo.push({
           name:`${z}_lb`,
-          vars:[{name:z,coef:1},{name:A.varName,coef:-1},{name:B.varName,coef:-1}],
+          vars:[{name:z,coef:1},{name:A.varName,coef:-1},...later.map(B=>({name:B.varName,coef:-1}))],
           bnds:{type:GLPK.GLP_LO,ub:0,lb:-1}
         });
       }
@@ -1211,9 +1407,17 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
             const joined = Math.max(0,Number(travelEdgeBetweenIds(
               left.locId,right.locId,state.registry,state.mode,{allowNetwork:false}
             ).seconds) || 0);
+            const extraDrive = Math.max(0,toAnchor + fromAnchor - joined);
+            const extraLegs = (left.locId !== hard.locationId ? 1 : 0)
+              + (hard.locationId !== right.locId ? 1 : 0)
+              - (left.locId !== right.locId ? 1 : 0);
+            const extraOverhead = extraLegs > 0
+              && typeof TRAVEL_LEG_OVERHEAD_SECONDS === 'number'
+              ? extraLegs * TRAVEL_LEG_OVERHEAD_SECONDS
+              : 0;
             minimumExtraSeconds = Math.min(
               minimumExtraSeconds,
-              Math.max(0,toAnchor + fromAnchor - joined)
+              extraDrive + extraOverhead
             );
           }
         }
@@ -1301,11 +1505,17 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // cancel glpk.js's nested Worker; without the native limit a timed-out solve
   // kept running and every later day queued behind it, routinely consuming the
   // full 45-second week budget.
+  // Cold open / ordinary solves stay at 4s — that wait is already the product
+  // limit. The while-open tick may raise it only when the next row is imminent.
   const nativeLimitSeconds = solveOptions.refine
     ? Math.max(4,Math.min(30,Math.floor(((Number(solveOptions.solveBudgetMs)
       || Number(solveOptions.refineBudgetMs)
       || AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS) - 750) / 1000)))
-    : 4;
+    : (solveOptions.tickReplan
+      ? Math.max(4,Math.min(10,Math.round(Number(solveOptions.glpkLimitSeconds)
+        || (typeof HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS === 'number'
+          ? HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS : 10))))
+      : 4);
   const result = GLPK.solve(problem,{
     msglev:GLPK.GLP_MSG_OFF,
     presol:true,
@@ -1315,7 +1525,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   return {
     result,opts,problem,
     candidateOptionNames:[...byCand.entries()],
-    routeObjectiveVars
+    routeObjectiveVars,
+    nativeLimitSeconds
   };
 }
 
@@ -1330,7 +1541,7 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
     GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions
   );
   if(Array.isArray(packed) && packed.length === 0)return [];
-  const {result:raw,opts,problem,candidateOptionNames,routeObjectiveVars} = packed;
+  const {result:raw,opts,problem,candidateOptionNames,routeObjectiveVars,nativeLimitSeconds} = packed;
   let result = await resolveSolve(raw);
   let status = result && result.result && result.result.status;
   // GLP_OPT=5, GLP_FEAS=2. A time-limited incumbent is safe to publish because
@@ -1381,7 +1592,8 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
       const polished = await resolveSolve(GLPK.solve(polishProblem,{
         msglev:GLPK.GLP_MSG_OFF,
         presol:true,
-        tmlim:2
+        tmlim:Number(nativeLimitSeconds) > 4
+          ? Math.max(2,Math.min(6,Number(nativeLimitSeconds) - 2)) : 2
       }));
       const polishedStatus = polished && polished.result && polished.result.status;
       if(polishedStatus === 5 || polishedStatus === 2){
@@ -1807,6 +2019,21 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     let spent = 0;
     // Far days still enter GLPK while budget remains; structural dayOffset>=3
     // cutoff was reverted — it skipped exact packing for scarce far-day windows.
+    const canReuseIncumbent = !solveOptions.refine
+      && (solveOptions.tickReplan || solveOptions.day0Only || solveOptions.reuseIncumbent);
+    if(canReuseIncumbent){
+      const replayed = replayPriorFixedChoices(
+        state,fixedCands,solveOptions.priorPlacements,deferrable
+      );
+      if(replayed && replayed.length){
+        daySolves.push({
+          dayKey:dateKey(state.dayBase),phase:'fixed-pack',status:'reused',
+          elapsedMs:0,...(replayed.solveDiagnostics || {})
+        });
+        recordFixedChoices(state,replayed);
+        continue;
+      }
+    }
     if(budgetLeft < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS){
       usedHeuristic = true;
     }else{
@@ -1990,6 +2217,19 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
 
   const dirtyKey = opts.dirtyKey || '';
   const todayBase = dayStart(Date.now());
+  if(opts.day0Only && Array.isArray(opts.memoDays) && opts.memoDays.length){
+    const memoToday = Number(opts.memoDays[0] && opts.memoDays[0].dayBase);
+    if(memoToday === todayBase){
+      _plannerWeekDayMemo = {
+        dirtyKey,
+        todayBase,
+        days:opts.memoDays
+      };
+      if(typeof rehydrateAgendaWeekHabits === 'function'){
+        rehydrateAgendaWeekHabits({days:_plannerWeekDayMemo.days},data);
+      }
+    }
+  }
   const reuseFarDays = Boolean(
     opts.day0Only
     && dirtyKey
@@ -1998,6 +2238,18 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     && Array.isArray(_plannerWeekDayMemo.days)
     && _plannerWeekDayMemo.days.length
   );
+  if((!Array.isArray(opts.priorPlacements) || !opts.priorPlacements.length)
+    && reuseFarDays){
+    opts = {
+      ...opts,
+      priorPlacements:typeof agendaPriorPlacementsFromWeek === 'function'
+        ? agendaPriorPlacementsFromWeek({days:_plannerWeekDayMemo.days})
+        : agendaPriorPlacementsFromTimeline(
+          _plannerWeekDayMemo.days[0] && _plannerWeekDayMemo.days[0].timeline,
+          _plannerWeekDayMemo.days[0] && _plannerWeekDayMemo.days[0].dayBase
+        )
+    };
+  }
 
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
   const days = [];
@@ -2128,6 +2380,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
       dirtyKey,
       todayBase,
       days:days.map(day=>({
+        dayBase:day.dayBase,
         timeline:day.timeline,
         usedMinutes:day.usedMinutes,
         remainingMinutes:day.remainingMinutes,

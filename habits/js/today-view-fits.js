@@ -512,20 +512,25 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId,actualChosen
   if(ids.length === 1 && !h.anywhereAllowed){
     const chosenId = actualChosenId === undefined ? ids[0] : actualChosenId;
     const requiredLocationMissing = chosenId !== ids[0];
+    const edgeSeconds = Number(travelEdgeBetweenIds(anchorId,ids[0],registry,mode).seconds) || 0;
+    const outboundSeconds = nextLocId
+      ? Number(travelEdgeBetweenIds(ids[0],nextLocId,registry,mode).seconds) || 0 : null;
+    const inboundCost = typeof travelLegCostSeconds === 'function'
+      ? travelLegCostSeconds(edgeSeconds,anchorId,ids[0]) : edgeSeconds;
+    const outboundCost = nextLocId && typeof travelLegCostSeconds === 'function'
+      ? travelLegCostSeconds(outboundSeconds,ids[0],nextLocId) : outboundSeconds;
     const c = {
       id:ids[0],
       name:locName(ids[0]),
       prefLevel:locationPrefLevel(h,ids[0]) || 'neutral',
-      edgeSeconds:Number(travelEdgeBetweenIds(anchorId,ids[0],registry,mode).seconds) || 0,
-      outboundSeconds:nextLocId
-        ? Number(travelEdgeBetweenIds(ids[0],nextLocId,registry,mode).seconds) || 0 : null,
+      edgeSeconds,
+      outboundSeconds,
       prefBias:0,
       sameAnchorBonus:(anchorId && ids[0] === anchorId) ? -60 : 0,
       total:0,
-      roundTrip:null,
+      roundTrip:nextLocId ? inboundCost + outboundCost : null,
       isWinner:!requiredLocationMissing
     };
-    if(nextLocId)c.roundTrip = c.edgeSeconds + c.outboundSeconds;
     return {
       anchorId:anchorId || null,
       nextLocId:nextLocId || null,
@@ -545,9 +550,13 @@ function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId,actualChosen
     const edgeSeconds = Number(edge && edge.seconds) || 0;
     const outboundSeconds = nextLocId
       ? Number(travelEdgeBetweenIds(id,nextLocId,registry,mode).seconds) || 0 : null;
-    const inboundTotal = edgeSeconds + prefBias + sameAnchorBonus;
+    const inboundCost = typeof travelLegCostSeconds === 'function'
+      ? travelLegCostSeconds(edgeSeconds,anchorId,id) : edgeSeconds;
+    const outboundCost = nextLocId && typeof travelLegCostSeconds === 'function'
+      ? travelLegCostSeconds(outboundSeconds,id,nextLocId) : outboundSeconds;
+    const inboundTotal = inboundCost + prefBias + sameAnchorBonus;
     const roundTrip = nextLocId
-      ? (edgeSeconds + outboundSeconds + prefBias + sameAnchorBonus) : null;
+      ? (inboundCost + outboundCost + prefBias + sameAnchorBonus) : null;
     return {
       id,
       name:locName(id),
@@ -2287,7 +2296,9 @@ function resolveAgendaScoreWeights(settings){
 function scoreAgendaPlacement(terms,weights){
   const W = weights || resolveAgendaScoreWeights(null);
   const t = terms || {};
-  const travel = Number(t.travelSeconds) || 0;
+  const drive = Number(t.travelSeconds) || 0;
+  const travel = typeof travelLegCostSeconds === 'function'
+    ? travelLegCostSeconds(drive,t.fromLocId,t.toLocId) : drive;
   const cluster = (Number(t.clusterBonus) || 0) + (Number(t.coLocHint) || 0);
   const dayPen = Number(t.dayOffsetPenalty) || 0;
   const urgency = Number(t.urgency) || 0;
@@ -2414,6 +2425,8 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       : (fit.preferredHit ? -40 : 0);
     const terms = {
       travelSeconds:fit.edge && fit.edge.seconds || 0,
+      fromLocId:fit.prevLocId || null,
+      toLocId:fit.locId || null,
       clusterBonus:opts.clusterBonus != null ? opts.clusterBonus : 0,
       coLocHint:opts.coLocHint != null ? opts.coLocHint : 0,
       dayOffsetPenalty:opts.dayOffsetPenalty != null ? opts.dayOffsetPenalty : 0,

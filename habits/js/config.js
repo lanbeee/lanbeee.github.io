@@ -33,6 +33,16 @@ const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you a
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
 const ESRI_WORLD_IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+// Parking, walking to the car, and starting the trip — charged in the
+// objective only, not as extra clock duration on the timeline.
+const TRAVEL_LEG_OVERHEAD_SECONDS = 5 * 60;
+// While-open home loop: cheap clock-shift most minutes; a real re-solve only
+// when the next pending row is this close. Cold open keeps the existing
+// 4-second GLPK cap and never uses the imminent budget.
+const HOME_AGENDA_REFRESH_MS = 60 * 1000;
+const HOME_AGENDA_IMMINENT_MS = 3 * 60 * 1000;
+const HOME_AGENDA_SHIFT_MAX_MS = 15 * 60 * 1000;
+const HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS = 10;
 
 // ── Weather guidance (Open-Meteo; no API key) ──
 const WEATHER_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';

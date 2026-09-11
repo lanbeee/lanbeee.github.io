@@ -913,7 +913,9 @@ function base(props) {
 
   // Whole-route location optimum. A one-step/round-trip picker misses the
   // final scheduled anchor here: A is closest to Home and staying at A looks
-  // locally cheap, but A→End is expensive. The globally best chain is A→B→End.
+  // locally cheap, but A→End is expensive. With a per-leg parking overhead the
+  // globally cheapest chain may skip A and sit at B (near End); it must not
+  // stick at A then A.
   console.log('\n[Optimizer] multi-stop locations minimize the complete route');
   const routeOptimum = await page.evaluate(({now,settings})=>{
     const previous = localStorage.getItem('tings_app_settings_v2');
@@ -984,8 +986,8 @@ function base(props) {
   });
   check('complete route has a feasible solution',
     routeOptimum.found && routeOptimum.applied,JSON.stringify(routeOptimum));
-  check('complete route chooses A then B (not locally-sticky A then A)',
-    routeOptimum.locations[0] === 'a' && routeOptimum.locations[1] === 'b',
+  check('complete route does not stick at A then A when End is beyond B',
+    routeOptimum.locations[1] === 'b',
     JSON.stringify(routeOptimum));
 
   // The ILP must price the route implied by its clock choices, not optimize
@@ -1102,6 +1104,95 @@ function base(props) {
         && /^(optimal|feasible)$/.test(solve.selectionStatus || '')
         && solve.routePolishStatus)),
     JSON.stringify(splitTripResult.solveDiagnostics));
+
+  // Same-store errands split by a Home breakfast window: the morning return is
+  // flexible, grocery cannot start until 10:00, and a 9:30 Home meeting sits
+  // between them. ASAP wants two Walmart trips; min-travel must keep one.
+  console.log('\n[Optimizer] same-store errands do not revisit after a Home breakfast');
+  const revisitResult = await page.evaluate(async ({now,data,settings})=>{
+    const RealDate = Date;
+    function FD(...a){ return a.length === 0 ? new RealDate(now) : new RealDate(...a); }
+    FD.now = ()=>now; FD.parse = RealDate.parse; FD.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FD,RealDate); FD.prototype = RealDate.prototype;
+    const previous = localStorage.getItem('tings_app_settings_v2');
+    const orig = globalThis.Date; globalThis.Date = FD;
+    try{
+      if(typeof saveSortSettings === 'function')saveSortSettings(settings);
+      const week = await buildWeekAgendaAsync(data,settings,1);
+      const day = week.days[0];
+      const fills = (day.timeline || []).filter(row=>row.kind === 'fill').map(row=>({
+        name:row.h && row.h.name, loc:row.locationId,
+        minute:Math.round((row.start - day.dayBase) / 60000)
+      }));
+      const travels = (day.timeline || []).filter(row=>row.kind === 'travel');
+      return {
+        optimized:Boolean(week.optimized),
+        fills,
+        walmartTrips:travels.filter(row=>
+          (row.from === 'home' && row.to === 'walmart')
+          || (row.from === 'walmart' && row.to === 'home')).length,
+        outboundWalmart:travels.filter(row=>row.from === 'home' && row.to === 'walmart').length,
+        routeTerms:(week.plannerDiagnostics && week.plannerDiagnostics.daySolves
+          && week.plannerDiagnostics.daySolves[0] && week.plannerDiagnostics.daySolves[0].routeTermCount) || 0
+      };
+    }finally{
+      if(previous == null)localStorage.removeItem('tings_app_settings_v2');
+      else localStorage.setItem('tings_app_settings_v2',previous);
+      globalThis.Date = orig;
+    }
+  },{
+    now:atTime(6,21),
+    data:[
+      base({
+        hid:'jeans-return',name:'Namra jeans Walmart return',type:'task',
+        target:null,durationMinutes:15,priority:2,
+        dueDate:atTime(0),flexibilityDays:60,earlyWindowDays:60,
+        locationIds:['walmart'],anywhereAllowed:false
+      }),
+      base({
+        hid:'weekly-grocery',name:'Weekly grocery',type:'task',
+        target:null,durationMinutes:45,priority:2,pinned:true,
+        dueDate:atTime(0),allowedTimeStart:600,allowedTimeEnd:1350,
+        locationIds:['walmart'],anywhereAllowed:false
+      }),
+      base({
+        hid:'breakfast',name:'Breakfast',type:'keepup',target:1,durationMinutes:10,
+        priority:2,lastLog:atTime(6)-86400000,logs:[atTime(6)-86400000],
+        allowedTimeStart:510,allowedTimeEnd:630,
+        locationIds:['home'],anywhereAllowed:false
+      }),
+      base({
+        hid:'fixed-home-meeting',name:'Task meeting',type:'task',
+        target:null,durationMinutes:10,priority:0,
+        dueDate:atTime(0),eventTime:atTime(9,30),
+        locationIds:['home'],anywhereAllowed:false
+      })
+    ],
+    settings:{
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[720,720,720,720,720,720,720],availabilityOverrides:{},
+      showScheduledTasksInAgenda:true,showDueTasksInAgenda:true,
+      showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      lastKnownLocationId:'home',defaultTravelMode:'walking',
+      locations:[
+        {id:'home',name:'Home',lat:40.700,lng:-74.000},
+        {id:'walmart',name:'Walmart',lat:40.710,lng:-74.000}
+      ],
+      travel:{
+        'home|walmart':{a:'home',b:'walmart',seconds:5*60,metres:800,provider:'manual',fetchedAt:Date.now()}
+      },
+      blockedTimes:[{label:'sleep',days:[],start:0,end:380,locationId:'home'}]
+    }
+  });
+  check('revisit scenario uses GLPK',revisitResult.optimized,JSON.stringify(revisitResult));
+  check('jeans and grocery both place',
+    revisitResult.fills.some(f=>f.name === 'Namra jeans Walmart return')
+      && revisitResult.fills.some(f=>f.name === 'Weekly grocery'),
+    JSON.stringify(revisitResult));
+  check('one outbound Walmart trip',
+    revisitResult.outboundWalmart === 1,JSON.stringify(revisitResult));
+  check('route-pair terms stay well below the old option×option explosion',
+    revisitResult.routeTerms < 800,JSON.stringify(revisitResult));
 
   console.log('\n[Optimizer] deep refinement crosses a two-blocker contiguity valley');
   const contiguityRepair = await page.evaluate(({ now })=>{

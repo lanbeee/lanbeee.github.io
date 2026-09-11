@@ -100,6 +100,19 @@ async function setMock(page, routes){
   assert(Math.abs(secs.transit - 1800) < 5, 'transit 10km ≈ 1800s');
   assert(secs.badMode === secs.driving, 'unknown mode falls back to driving');
 
+  console.log('\n[B2] travelLegCostSeconds — parking overhead');
+  const legCost = await page.evaluate(() => ({
+    same:travelLegCostSeconds(300,'home','home'),
+    hop:travelLegCostSeconds(300,'home','walmart'),
+    none:travelLegCostSeconds(0),
+    driveOnly:travelLegCostSeconds(300),
+    overhead:typeof TRAVEL_LEG_OVERHEAD_SECONDS === 'number' ? TRAVEL_LEG_OVERHEAD_SECONDS : 300
+  }));
+  assert(legCost.same === 0, 'same-place leg is free (got ' + legCost.same + ')');
+  assert(legCost.hop === 300 + legCost.overhead, 'away hop is drive + overhead (got ' + legCost.hop + ')');
+  assert(legCost.none === 0, 'zero drive without ids is free');
+  assert(legCost.driveOnly === 300 + legCost.overhead, 'drive-only still pays overhead');
+
   // ── C. PURE: edgeKey symmetry + haversineEdge shape ──
   console.log('\n[C] edgeKey + haversineEdge');
   const ek = await page.evaluate(([a,b]) => ({

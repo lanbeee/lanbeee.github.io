@@ -2594,10 +2594,12 @@ Same agenda logic, but simplified display:
 | `showPlannedItemsInAgenda` | boolean | true | Show planned future logs |
 | `showDueHabitsInAgenda` | boolean | true | Show due-rhythm habits |
 
+While the app stays open, home refreshes every 60 seconds. Most ticks only slide the next pending fill by a few minutes or keep the last week. A deeper GLPK re-solve runs only when that row is a couple of minutes away *and* the last packing is no longer feasible; it still starts from those prior clocks. Compatible same-day cache on cold open is reused instead of paying another full-week solve. Cold open keeps the existing 4-second solve cap.
+
 #### Agenda Score Weights 👨‍💻
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `travel` | number | 1 | Per second of travel time |
+| `travel` | number | 1 | Per second of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car). Overhead is objective-only and does not add clock minutes to travel cards. |
 | `cluster` | number | 1 | Per unit of co-location savings |
 | `day` | number | 1 | Day-offset multiplier |
 | `asap` | number | 0.12 | Per minute of clock delay |

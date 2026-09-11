@@ -71,6 +71,16 @@ dumps in `failed/`). Normal runner output is intentionally compact; pass
    A time-limited GLPK `GLP_FEAS` result is a valid incumbent, not a failed
    solve; keep it when all non-negotiable policy is represented by hard rows.
 
+6. **Cold-open GLPK stays at 4 seconds.** That wait is already the product
+   limit. Do not raise `nativeLimitSeconds` on first paint, idle cache refresh,
+   or user edits. Extra budget is only the while-open 60s tick when the next
+   pending row is within `HOME_AGENDA_IMMINENT_MS`, via `tickReplan`. Most
+   ticks must `clock-shift` or `keep` the last week instead of resolving.
+   When a re-solve does run, replay the last fills and skip GLPK if they still
+   fit; otherwise inject those clocks as ILP options. `day0Only` must seed the
+   worker with `memoDays` from the mounted week so far days are not re-solved
+   just because the worker was cold.
+
 ---
 
 ## 3. Codebase map

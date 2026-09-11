@@ -125,7 +125,12 @@ async function runPlannerMessage(message){
       dirtyKey:message.dirtyKey || '',
       day0Only:Boolean(message.day0Only),
       refine:Boolean(message.refine),
-      refineBudgetMs:Math.max(0,Math.round(Number(message.refineBudgetMs) || 0))
+      refineBudgetMs:Math.max(0,Math.round(Number(message.refineBudgetMs) || 0)),
+      tickReplan:Boolean(message.tickReplan),
+      reuseIncumbent:Boolean(message.reuseIncumbent || message.tickReplan || message.day0Only),
+      glpkLimitSeconds:Math.max(0,Math.round(Number(message.glpkLimitSeconds) || 0)),
+      priorPlacements:Array.isArray(message.priorPlacements) ? message.priorPlacements : [],
+      memoDays:Array.isArray(message.memoDays) ? message.memoDays : []
     };
     const data = load();
     const week = message.mode === 'exact' && typeof buildWeekAgendaAsync === 'function'

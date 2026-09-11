@@ -53,6 +53,21 @@ function haversineTravelSeconds(metres,mode){
   return Math.round(metres / speed);
 }
 
+// PURE: objective cost of one location-changing leg. Drive time is the clock
+// duration; the overhead is parking / getting in and out of the car, so two
+// 5-minute round trips cost more than one combined visit even when the roads
+// are short. Same-place or zero-drive legs stay free.
+function travelLegCostSeconds(driveSeconds,fromId,toId){
+  const drive = Math.max(0,Number(driveSeconds) || 0);
+  const overhead = typeof TRAVEL_LEG_OVERHEAD_SECONDS === 'number'
+    ? TRAVEL_LEG_OVERHEAD_SECONDS : 5 * 60;
+  if(fromId && toId){
+    if(fromId === toId)return 0;
+    return drive + overhead;
+  }
+  return drive > 0 ? drive + overhead : 0;
+}
+
 // PURE: the cache key for an id pair, lexically ordered so A→B and B→A collide.
 function edgeKey(aId,bId){
   const a = cleanLocationId(aId);
