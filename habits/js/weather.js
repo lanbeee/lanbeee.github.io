@@ -1581,18 +1581,33 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows,nowTs){
     if(laneLast.has(row.lane))nextStartInLane[laneLast.get(row.lane)]=row.start;
     laneLast.set(row.lane,i);
   });
-  const items=placed.map((row,i)=>{
-    const top=(row.start-domainStart)/span*height;
+  const tops=placed.map(row=>(row.start-domainStart)/span*height);
+  const heights=placed.map((row,i)=>{
     const blockHeight=Math.max(1,(row.end-row.start)/span*height);
     const capPx=nextStartInLane[i]!=null ? (nextStartInLane[i]-row.start)/span*height : Infinity;
-    const visHeight=Math.max(blockHeight,Math.min(Number.isFinite(capPx)?capPx-1:Infinity,MIN_BLOCK_PX));
-    const width=100/laneCount,left=row.lane*width;
+    return Math.max(blockHeight,Math.min(Number.isFinite(capPx)?capPx-1:Infinity,MIN_BLOCK_PX));
+  });
+  // A block stretches right across lanes that are empty over its painted
+  // extent (grown short blocks included) — one overlap elsewhere in the day
+  // must not shrink unrelated blocks to a slice of the column.
+  const spans=placed.map((row,i)=>{
+    const top=tops[i],bottom=top+heights[i];
+    let spanCols=1;
+    for(let lane=row.lane+1;lane<laneCount;lane++){
+      const taken=placed.some((other,j)=>other.lane===lane && tops[j]<bottom && tops[j]+heights[j]>top);
+      if(taken)break;
+      spanCols++;
+    }
+    return spanCols;
+  });
+  const items=placed.map((row,i)=>{
+    const colWidth=100/laneCount,left=row.lane*colWidth;
     const current=nowActive && nowTs>=row.start && nowTs<row.end;
-    const cls=(blockHeight<25?' tiny':blockHeight<39?' compact':'')+(row.blocked?' blocked':'')+(current?' current':'');
+    const cls=(heights[i]<25?' tiny':heights[i]<39?' compact':'')+(row.blocked?' blocked':'')+(current?' current':'');
     const weather=weatherAgendaMetricSummary(row,metricKey,weatherRows);
     const exact=`${time.format(row.start)}–${time.format(row.end)}`;
     const spoken=`${row.blocked?'busy time ':''}${row.label}, ${exact}, ${weather}${current?', happening now':''}`;
-    return `<div class="weather-agenda-item${cls}" style="top:${top.toFixed(1)}px;height:${visHeight.toFixed(1)}px;left:calc(${left.toFixed(3)}% + ${row.lane?2:0}px);right:auto;width:calc(${width.toFixed(3)}% - ${laneCount>1?2:0}px)" aria-label="${escapeHtml(spoken)}"><b>${escapeHtml(row.label)}</b><small>${escapeHtml(`${exact} · ${weather}`)}</small></div>`;
+    return `<div class="weather-agenda-item${cls}" style="top:${tops[i].toFixed(1)}px;height:${heights[i].toFixed(1)}px;left:calc(${left.toFixed(3)}% + ${row.lane?2:0}px);right:auto;width:calc(${(spans[i]*colWidth).toFixed(3)}% - ${laneCount>1?2:0}px)" aria-label="${escapeHtml(spoken)}"><b>${escapeHtml(row.label)}</b><small>${escapeHtml(`${exact} · ${weather}`)}</small></div>`;
   }).join('');
   const nowHtml=nowActive
     ? `<div class="weather-agenda-now" style="top:${((nowTs-domainStart)/span*height).toFixed(1)}px" aria-hidden="true"><span>${escapeHtml(`now · ${time.format(nowTs)}`)}</span></div>`

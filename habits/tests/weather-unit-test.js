@@ -311,12 +311,14 @@ function assert(value,message){
     document.getElementById('weather-metric-agenda').click();
     const track=document.querySelector('.weather-agenda-vertical');
     const blocks=[...track.querySelectorAll('.weather-agenda-item')];
+    const itemsWidth=track.querySelector('.weather-agenda-items').getBoundingClientRect().width;
     const read=block=>block ? {
       cls:block.className,
       label:block.querySelector('b')?.textContent || '',
       aria:block.getAttribute('aria-label') || '',
-      height:parseFloat(block.style.height)
-    } : {cls:'',label:'',aria:'',height:0};
+      height:parseFloat(block.style.height),
+      widthRatio:block.getBoundingClientRect().width/itemsWidth
+    } : {cls:'',label:'',aria:'',height:0,widthRatio:0};
     const found={
       sleep:read(blocks.find(block=>block.classList.contains('blocked'))),
       tinyA:read(blocks[1]),tinyB:read(blocks[2]),normal:read(blocks[3])
@@ -339,6 +341,10 @@ function assert(value,message){
     'a midnight sleep block pulls the chart domain up to 00:00 so earlier hours are scrollable');
   assert(busyAndTiny.found.tinyA.height>=19 && busyAndTiny.found.tinyA.height<40,
     'a tiny item wedged against the next block takes its own lane and still grows tall enough for its name');
+  assert(busyAndTiny.found.tinyA.widthRatio<0.6 && busyAndTiny.found.tinyB.widthRatio<0.6,
+    'the overlapping tiny pair keeps sharing the column side by side at half width');
+  assert(busyAndTiny.found.sleep.widthRatio>0.9 && busyAndTiny.found.normal.widthRatio>0.9,
+    'blocks with no neighbour beside them stretch across the free lanes instead of hugging the left half');
   assert(busyAndTiny.found.tinyB.height>=22 && busyAndTiny.found.tinyB.height<40,
     'a tiny item with free room below grows tall enough to print its name');
   assert(busyAndTiny.found.normal.height>=50,'ordinary items keep their proportional height');
