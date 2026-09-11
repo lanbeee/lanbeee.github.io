@@ -617,6 +617,15 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     const incumbent = week([row(0,900,60),row(1,840,25)]);
     const better = week([row(0,900,120),row(1,840,25),row(2,1100,30)]);
     const losesCritical = week([row(0,900,120),row(2,1100,30)]);
+    const occurrenceA = {...row(1,840,10),occurrenceKey:'critical:a'};
+    const occurrenceB = {...row(1,860,10),occurrenceKey:'critical:b'};
+    const multiCritical = week([
+      occurrenceA,occurrenceB,
+      {kind:'travel',start:base + 870 * 60000,end:base + 880 * 60000,seconds:600}
+    ]);
+    const collapsesOccurrence = week([
+      {...row(1,840,20),occurrenceKey:'critical:a'}
+    ]);
     const refinedFeasible = {...incumbent,refined:true};
     const optimalRefined = {...incumbent,plannerSolveStatus:'optimal',refined:true};
     const proven = homeAgendaProvenDayKeys({
@@ -629,6 +638,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     return {
       acceptsMoreP0Work:homeAgendaRefinementIsBetter(incumbent,better,data,{}),
       rejectsLostCritical:!homeAgendaRefinementIsBetter(incumbent,losesCritical,data,{}),
+      rejectsCollapsedCritical:!homeAgendaRefinementIsBetter(
+        multiCritical,collapsesOccurrence,data,{}
+      ),
       rejectsEqual:!homeAgendaRefinementIsBetter(incumbent,incumbent,data,{}),
       feasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(incumbent,data,{}),
       refinedFeasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(refinedFeasible,data,{}),
@@ -641,6 +653,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
   check('background refinement accepts more P0 breakable work without losing critical rows',
     refinementPolicy.acceptsMoreP0Work
       && refinementPolicy.rejectsLostCritical
+      && refinementPolicy.rejectsCollapsedCritical
       && refinementPolicy.rejectsEqual
       && refinementPolicy.feasibleNeedsRefine
       && refinementPolicy.refinedFeasibleNeedsRefine

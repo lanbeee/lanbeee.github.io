@@ -92,6 +92,77 @@ function base(props) {
   }
   check('optimizer glpk loads', glpkOk.ok, glpkOk.reason);
 
+  console.log('\n[Optimizer] today-only rebuild preserves later memo commitments');
+  const memoReuse = await page.evaluate(async()=>{
+    const now = Date.now();
+    const today = dayStart(now);
+    const tomorrow = today + 86400000;
+    const at = (base,minute)=>base + minute * 60000;
+    const settings = {
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,focus:'balanced',
+      availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440],
+      availabilityOverrides:{},blockedTimes:[],showScheduledTasksInAgenda:true,
+      showDueTasksInAgenda:true,showPlannedItemsInAgenda:true,showDueHabitsInAgenda:true,
+      locations:[],travel:{},defaultTravelMode:'walking'
+    };
+    const task = {
+      hid:'memo-task',name:'Memo task',type:'task',target:null,durationMinutes:30,
+      allowedTimeStart:null,allowedTimeEnd:null,preferredTimeStart:null,preferredTimeEnd:null,
+      lastLog:null,logs:[],pinned:false,snoozedUntil:null,topics:[],
+      allowedWeekdays:[],allowedMonthDays:[],preferredWeekdays:[],preferredMonthDays:[],
+      dueDate:tomorrow,hardDue:false,createdAt:today - 86400000,eventTime:null,
+      locationIds:[],anywhereAllowed:true,breakable:false,priority:2,
+      earlyWindowDays:7,delayAllowanceDays:0,flexibilityDays:7
+    };
+    const memoDays = Array.from({length:7},(_,i)=>({
+      dayBase:today + i * 86400000,usedMinutes:i === 1 ? 30 : 0,
+      remainingMinutes:i === 1 ? 1410 : 1440,travelSeconds:0,
+      timeline:i === 1 ? [{
+        kind:'fill',i:0,start:at(tomorrow,600),end:at(tomorrow,630),locationId:null
+      }] : [],
+      agendaItems:i === 1 ? [{i:0,priority:2,scarcity:12345}] : []
+    }));
+    const oneShotWeek = await buildWeekAgendaAsync([task],settings,7,{
+      dirtyKey:'memo-one-shot',day0Only:true,memoDays,priorPlacements:[],
+      incumbentSolveStatus:'feasible'
+    });
+    const chunks = memoDays.map((day,i)=>({...day,
+      usedMinutes:i === 1 ? 120 : 0,remainingMinutes:i === 1 ? 1320 : 1440,
+      timeline:i === 1 ? [{
+        kind:'fill',i:0,start:at(tomorrow,600),end:at(tomorrow,720),
+        chunkMinutes:120,chunkIndex:0,locationId:null
+      }] : []
+    }));
+    const chunkTask = {...task,hid:'memo-chunk-task',name:'Memo chunk task',
+      durationMinutes:180,breakable:true,minChunkMinutes:30};
+    const chunkWeek = await buildWeekAgendaAsync([chunkTask],settings,7,{
+      dirtyKey:'memo-chunk',day0Only:true,memoDays:chunks,priorPlacements:[],
+      incumbentSolveStatus:'feasible'
+    });
+    const fillsFor = week=>week.days.flatMap((day,offset)=>(day.timeline || [])
+      .filter(row=>row.kind === 'fill' && row.i === 0)
+      .map(row=>({offset,minutes:(row.end - row.start) / 60000})));
+    return {
+      oneShot:fillsFor(oneShotWeek),
+      oneShotStatus:oneShotWeek.plannerSolveStatus,
+      farAgendaMeta:oneShotWeek.days[1].agendaItems,
+      chunks:fillsFor(chunkWeek)
+    };
+  });
+  check('today-only rebuild does not duplicate a one-shot already memoized tomorrow',
+    memoReuse.oneShot.length === 1 && memoReuse.oneShot[0].offset === 1,
+    JSON.stringify(memoReuse));
+  check('reused feasible provenance is not relabeled optimal',
+    memoReuse.oneShotStatus === 'feasible',JSON.stringify(memoReuse));
+  check('today-only reuse preserves later-day decision metadata',
+    memoReuse.farAgendaMeta.length === 1
+      && memoReuse.farAgendaMeta[0].scarcity === 12345,
+    JSON.stringify(memoReuse));
+  check('today-only rebuild subtracts future memo chunks from a breakable task',
+    memoReuse.chunks.reduce((sum,row)=>sum + row.minutes,0) === 180
+      && memoReuse.chunks.some(row=>row.offset === 1 && row.minutes === 120),
+    JSON.stringify(memoReuse));
+
   console.log('\n[Optimizer] overnight morning tail refills immediately after Fajr');
   const overnightResult = await page.evaluate(async ({now,data,settings})=>{
     const RealDate = Date;

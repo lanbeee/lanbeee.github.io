@@ -192,6 +192,12 @@ function agendaPriorPlacementsFromWeek(week){
 
 function memoDaysFromWeek(week){
   if(!week || !Array.isArray(week.days))return [];
+  const strip = item=>{
+    if(!item || typeof item !== 'object')return item;
+    const out = {...item};
+    delete out.h;
+    return out;
+  };
   return week.days.map(day=>({
     dayBase:Number(day && day.dayBase) || 0,
     usedMinutes:day && day.usedMinutes,
@@ -199,12 +205,11 @@ function memoDaysFromWeek(week){
     travelSeconds:(day && day.travelSeconds) || 0,
     timeline:Array.isArray(day && day.timeline)
       ? day.timeline.map(row=>{
-        if(!row || typeof row !== 'object')return row;
-        const out = {...row};
-        delete out.h;
-        return out;
+        return strip(row);
       })
-      : []
+      : [],
+    agendaItems:Array.isArray(day && day.agendaItems)
+      ? day.agendaItems.map(strip) : []
   }));
 }
 
@@ -1737,6 +1742,13 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOp
 // Assign candidates onto dayStates using per-day ILP packing. Individual days
 // can fall back to the scarcity heuristic; the returned summary records that
 // provenance so the UI can decide whether to request a deeper refinement.
+function combinedPlannerSolveStatus(a,b){
+  const rank = status=>status === 'fallback' ? 0 : (status === 'optimal' ? 2 : 1);
+  const left = a === 'fallback' || a === 'feasible' || a === 'optimal' ? a : 'feasible';
+  const right = b === 'fallback' || b === 'feasible' || b === 'optimal' ? b : 'feasible';
+  return rank(left) <= rank(right) ? left : right;
+}
+
 async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solveOptions = {}){
   for(const c of candidates){
     if(c.scarcity == null && typeof scarcityScore === 'function'){
@@ -1760,6 +1772,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     solveOptions.refine && Array.isArray(solveOptions.provenDayKeys)
       ? solveOptions.provenDayKeys.filter(Boolean)
       : []
+  );
+  const memoFutureBreakableMinutes = solveOptions.memoFutureBreakableMinutes
+    && typeof solveOptions.memoFutureBreakableMinutes === 'object'
+    ? solveOptions.memoFutureBreakableMinutes : {};
+  const futureBreakableMinutesFor = c=>Math.max(
+    0,Number(memoFutureBreakableMinutes[c && c.i]) || 0
   );
 
   const collectDeferrable = (state,fixedCands)=>{
@@ -1841,7 +1859,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         const left = typeof breakableMinutesLeft === 'function'
           ? breakableMinutesLeft(c.h,c.i,dayStates)
           : (typeof remainingDurationMinutes === 'function' ? remainingDurationMinutes(c.h) : 0);
-        if(left <= 0)continue;
+        if(left - futureBreakableMinutesFor(c) <= 0)continue;
         dayCands.push(c);
         continue;
       }
@@ -2022,13 +2040,14 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       const left = typeof breakableMinutesLeft === 'function'
         ? breakableMinutesLeft(c.h,c.i,c.h.type === 'task' ? dayStates : state)
         : clampDuration(c.h.durationMinutes);
-      if(left <= 0)continue;
+      const availableLeft = Math.max(0,left - (c.h.type === 'task' ? futureBreakableMinutesFor(c) : 0));
+      if(availableLeft <= 0)continue;
       const beforeCount = state.fills.length;
       const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
       if(placeBreakableSessions(state,fill,{
         settings,
         allowNetwork:true,
-        remainingMinutes:left
+        remainingMinutes:availableLeft
       })){
         recordBreakableAdds(state,c,beforeCount);
       }
@@ -2066,6 +2085,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
           elapsedMs:0,...(replayed.solveDiagnostics || {})
         });
         recordFixedChoices(state,replayed);
+        plannerSolveStatus = combinedPlannerSolveStatus(
+          plannerSolveStatus,solveOptions.incumbentSolveStatus || 'feasible'
+        );
         continue;
       }
     }
@@ -2165,7 +2187,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     if(!c || !c.h || !c.h.breakable)continue;
     if(c.h.type === 'task' && typeof placeBreakableAcrossWeek === 'function'){
       total += placeBreakableAcrossWeek(c,dayStates,settings,null,{
-        todayBase,registry,mode,weights,candidates,pinned:c.pinned === true
+        todayBase,registry,mode,weights,candidates,pinned:c.pinned === true,
+        preplannedMinutes:futureBreakableMinutesFor(c)
       });
       continue;
     }
@@ -2353,6 +2376,40 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     const snoozed = h && h.snoozedUntil && Date.now() < h.snoozedUntil;
     if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
+  const memoFutureBreakableMinutes = {};
+  if(reuseFarDays){
+    const todayMemoCounts = new Map();
+    const futureMemoCounts = new Map();
+    const addCount = (map,row)=>{
+      if(!row || row.kind !== 'fill' || row.i == null)return;
+      map.set(row.i,(map.get(row.i) || 0) + 1);
+    };
+    for(const row of _plannerWeekDayMemo.days[0] && _plannerWeekDayMemo.days[0].timeline || []){
+      addCount(todayMemoCounts,row);
+    }
+    for(const day of _plannerWeekDayMemo.days.slice(1)){
+      for(const row of day && day.timeline || []){
+        addCount(futureMemoCounts,row);
+        if(row && row.kind === 'fill' && row.i != null){
+          const h = data[row.i];
+          if(h && h.type === 'task' && h.breakable){
+            memoFutureBreakableMinutes[row.i] = (memoFutureBreakableMinutes[row.i] || 0)
+              + Math.max(0,(Number(row.end) - Number(row.start)) / 60000);
+          }
+        }
+      }
+    }
+    // Later memo days are commitments during a today-only refresh. A one-shot
+    // or sparse occurrence that was intentionally assigned later must not be
+    // selected a second time today when the old today packing cannot replay.
+    for(let i = candidates.length - 1;i >= 0;i -= 1){
+      const c = candidates[i];
+      if((todayMemoCounts.get(c.i) || 0) > 0 || !(futureMemoCounts.get(c.i) > 0))continue;
+      if(typeof isDayChoosingWeekCandidate === 'function' && isDayChoosingWeekCandidate(c)){
+        candidates.splice(i,1);
+      }
+    }
+  }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 
   const solveStates = reuseFarDays ? dayStates.slice(0,1) : dayStates;
@@ -2360,7 +2417,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   const solveStarted = (typeof performance !== 'undefined' && performance.now)
     ? performance.now() : Date.now();
   const solveSummary = await assignWeekCandidatesOptimized(
-    candidates,solveStates,settings,opts
+    candidates,solveStates,settings,{...opts,memoFutureBreakableMinutes}
   );
   const solveDurationMs = Math.max(0,((typeof performance !== 'undefined' && performance.now)
     ? performance.now() : Date.now()) - solveStarted);
@@ -2392,6 +2449,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
       const memoDay = _plannerWeekDayMemo.days[d];
       if(memoDay){
         day.timeline = memoDay.timeline;
+        day.agendaItems = memoDay.agendaItems || [];
         day.usedMinutes = memoDay.usedMinutes;
         day.remainingMinutes = memoDay.remainingMinutes;
         day.travelSeconds = memoDay.travelSeconds || 0;
@@ -2406,9 +2464,15 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
+  const plannerSolveStatus = reuseFarDays
+    ? combinedPlannerSolveStatus(
+        solveSummary.plannerSolveStatus || 'feasible',
+        opts.incumbentSolveStatus || 'feasible'
+      )
+    : (solveSummary.plannerSolveStatus || 'feasible');
   const week = {
     days,totalTravelSeconds,candidateCount:candidates.length,optimized:true,
-    plannerSolveStatus:solveSummary.plannerSolveStatus || 'feasible',
+    plannerSolveStatus,
     refined:Boolean(opts.refine),
     plannerDiagnostics:{
       solveDurationMs:Math.round(solveDurationMs),
@@ -2424,6 +2488,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
       days:days.map(day=>({
         dayBase:day.dayBase,
         timeline:day.timeline,
+        agendaItems:day.agendaItems,
         usedMinutes:day.usedMinutes,
         remainingMinutes:day.remainingMinutes,
         travelSeconds:day.travelSeconds

@@ -25,6 +25,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const assign = String(assignWeekCandidatesOptimized);
     const tick = String(homeAgendaTickPlan);
     const idle = String(scheduleIdlePlannerWarmAndBuild);
+    const refinement = String(scheduleHomeAgendaRefinement);
     const queue = String(queueOptimizedHomeRender);
     const tickFn = String(tickHomeAgendaWhileOpen);
     return {
@@ -38,6 +39,9 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       idleKeep:idle.includes("plan.kind === 'keep'")
         && idle.includes('adoptHomeAgendaReadyState'),
       idleRefines:idle.includes('maybeScheduleHomeAgendaRefinement'),
+      refinementWaitsForIdle:refinement.includes('requestIdleCallback')
+        && refinement.includes('HOME_AGENDA_REFINEMENT_IDLE_TIMEOUT_MS'),
+      hiddenIdleNoop:idle.includes("document.visibilityState === 'hidden'"),
       tickRefines:tickFn.includes('maybeScheduleHomeAgendaRefinement'),
       memoDays:queue.includes('memoDaysFromWeek')
         && queue.includes('agendaPriorPlacementsFromWeek'),
@@ -62,6 +66,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   check('prior clocks are injected as ILP options',source.priorAnchors,JSON.stringify(source));
   check('idle cache refresh keeps or slides instead of a full-week solve',source.idleKeep,JSON.stringify(source));
   check('idle keep still schedules background refinement when not a GLPK proof',source.idleRefines,JSON.stringify(source));
+  check('deep refinement waits for an idle interval',source.refinementWaitsForIdle,JSON.stringify(source));
+  check('an idle callback does no planner work after the page is hidden',source.hiddenIdleNoop,JSON.stringify(source));
   check('while-open keep ticks keep searching toward a proof',source.tickRefines,JSON.stringify(source));
   check('later refine passes reuse days already proved optimal',source.provenReplay,JSON.stringify(source));
   check('a real re-solve cancels in-flight refinement',source.cancelRefineForSolve,JSON.stringify(source));
@@ -88,6 +94,12 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     week,now:at(2,9)
   });
   check('hours before the next fill keeps the last plan',far.kind === 'keep',JSON.stringify(far));
+
+  const stale = await page.evaluate(({week,now}) => homeAgendaTickPlan(week,now),{
+    week,now:at(10,0)
+  });
+  check('an unfinished fill from earlier today forces a re-solve',
+    stale.kind === 'imminent-solve',JSON.stringify(stale));
 
   const imminent = await page.evaluate(({week,now}) => homeAgendaTickPlan(week,now),{
     week,now:at(6,58)
@@ -174,6 +186,69 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     JSON.stringify(replay));
   check('replay refuses when the last start is now blocked',
     replay.blockedIsNull,JSON.stringify(replay));
+
+  const idleDispatch = await page.evaluate(async()=>{
+    const saved = {
+      requestIdleCallback:window.requestIdleCallback,
+      cancelIdleCallback:window.cancelIdleCallback,
+      buildWeekAgendaOffMain:window.buildWeekAgendaOffMain,
+      settings:sortSettings,
+      rendered:_homeRenderedWeek,
+      ready:_optimizerHomeReadyWeek,
+      requestKey:_optimizerHomeRequestKey,
+      refinementKey:_optimizerHomeRefinementKey,
+      doneKey:_optimizerHomeRefinementDoneKey,
+      pass:_optimizerHomeRefinementPass,
+      tracked:_optimizerHomeRefinementTrackedDirty
+    };
+    let idleCallback = null;
+    let builds = 0;
+    const data = load();
+    const baseline = {
+      optimized:true,plannerSolveStatus:'feasible',refined:false,
+      days:[{dayBase:dayStart(Date.now()),timeline:[],agendaItems:[]}]
+    };
+    try{
+      sortSettings = {...loadSortSettings(),agendaOptimizer:true};
+      _homeRenderedWeek = baseline;
+      _optimizerHomeReadyWeek = baseline;
+      _optimizerHomeRequestKey = '';
+      _optimizerHomeRefinementKey = '';
+      _optimizerHomeRefinementDoneKey = '';
+      _optimizerHomeRefinementPass = 0;
+      _optimizerHomeRefinementTrackedDirty = '';
+      window.requestIdleCallback = callback=>{
+        idleCallback = callback;
+        return 4242;
+      };
+      window.cancelIdleCallback = ()=>{};
+      window.buildWeekAgendaOffMain = ()=>{
+        builds += 1;
+        return Promise.resolve({...baseline,plannerSolveStatus:'optimal',refined:true});
+      };
+      const scheduled = scheduleHomeAgendaRefinement(data,sortSettings,baseline);
+      const beforeIdle = builds;
+      if(idleCallback)idleCallback({didTimeout:false,timeRemaining:()=>20});
+      await new Promise(resolve=>setTimeout(resolve,0));
+      return {scheduled,beforeIdle,afterIdle:builds};
+    }finally{
+      cancelHomeAgendaRefinement();
+      window.requestIdleCallback = saved.requestIdleCallback;
+      window.cancelIdleCallback = saved.cancelIdleCallback;
+      window.buildWeekAgendaOffMain = saved.buildWeekAgendaOffMain;
+      sortSettings = saved.settings;
+      _homeRenderedWeek = saved.rendered;
+      _optimizerHomeReadyWeek = saved.ready;
+      _optimizerHomeRequestKey = saved.requestKey;
+      _optimizerHomeRefinementKey = saved.refinementKey;
+      _optimizerHomeRefinementDoneKey = saved.doneKey;
+      _optimizerHomeRefinementPass = saved.pass;
+      _optimizerHomeRefinementTrackedDirty = saved.tracked;
+    }
+  });
+  check('background solve is posted only after the idle callback runs',
+    idleDispatch.scheduled && idleDispatch.beforeIdle === 0 && idleDispatch.afterIdle === 1,
+    JSON.stringify(idleDispatch));
 
   await browser.close();
   if(failures.length){

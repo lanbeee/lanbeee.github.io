@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v101';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v103';
 const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;
@@ -264,6 +264,7 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
         tickReplan:Boolean(opts.tickReplan),
         reuseIncumbent:Boolean(opts.reuseIncumbent || opts.tickReplan || opts.day0Only),
         glpkLimitSeconds:Math.max(0,Math.round(Number(opts.glpkLimitSeconds) || 0)),
+        incumbentSolveStatus:opts.incumbentSolveStatus || '',
         priorPlacements:Array.isArray(opts.priorPlacements) ? opts.priorPlacements : [],
         memoDays:Array.isArray(opts.memoDays) ? opts.memoDays : [],
         storage:plannerWorkerStorageSnapshot()

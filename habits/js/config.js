@@ -47,6 +47,7 @@ const HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS = 10;
 // app stays visible and the fixed-item ILP is not yet a GLPK proof. Cold open
 // still uses the 4-second cap; these only bound the off-main refine worker.
 const HOME_AGENDA_REFINEMENT_RETRY_MS = 8 * 1000;
+const HOME_AGENDA_REFINEMENT_IDLE_TIMEOUT_MS = 1500;
 const HOME_AGENDA_REFINEMENT_MAX_PASSES = 4;
 const HOME_AGENDA_REFINEMENT_FIRST_BUDGET_MS = 30 * 1000;
 const HOME_AGENDA_REFINEMENT_LATER_BUDGET_MS = 55 * 1000;

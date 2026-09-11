@@ -925,7 +925,10 @@ if(typeof warmAgendaPlannerWorker === 'function'
   && agendaPlannerWorkerAvailable()
   && sortSettings && sortSettings.agendaOptimizer
   && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
-  const warm = ()=>{ void warmAgendaPlannerWorker(); };
+  const warm = ()=>{
+    if(typeof document !== 'undefined' && document.hidden)return;
+    void warmAgendaPlannerWorker();
+  };
   if(typeof requestIdleCallback === 'function')requestIdleCallback(warm,{timeout:300});
   else setTimeout(warm,100);
 }

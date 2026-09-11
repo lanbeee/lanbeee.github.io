@@ -69,6 +69,8 @@ let _optimizerHomeRefinementDoneKey = '';
 let _optimizerHomeRefinementToken = 0;
 let _optimizerHomeRefinementPass = 0;
 let _optimizerHomeRefinementRetryTimer = null;
+let _optimizerHomeRefinementIdleTimer = null;
+let _optimizerHomeRefinementIdleCallback = false;
 let _optimizerHomeRefinementTrackedDirty = '';
 let _optimizerHomeProvenDayKeys = new Set();
 let _idlePlannerRefreshTimer = null;
@@ -190,6 +192,7 @@ function homeAgendaRefinementQuality(week,data,settings){
   const now = Date.now();
   for(let dayOffset = 0;dayOffset < days.length;dayOffset += 1){
     const rows = Array.isArray(days[dayOffset].timeline) ? days[dayOffset].timeline : [];
+    const occurrenceOrdinals = new Map();
     for(const row of rows){
       if(!row)continue;
       if(row.kind === 'travel'){
@@ -209,7 +212,10 @@ function homeAgendaRefinementQuality(week,data,settings){
       const pinned = typeof isWeekPinnedToday === 'function'
         ? isWeekPinnedToday(h,settings || {}) : Boolean(h.pinned);
       if((priority === 0 && !h.breakable) || pinned){
-        const key = `${dayOffset}:${row.i}`;
+        const ordinal = (occurrenceOrdinals.get(row.i) || 0) + 1;
+        occurrenceOrdinals.set(row.i,ordinal);
+        const occurrence = row.occurrenceKey || `${row.i}:occurrence-${ordinal}`;
+        const key = `${dayOffset}:${occurrence}`;
         required.set(key,(required.get(key) || 0) + minutes);
       }
       const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
@@ -351,6 +357,15 @@ function cancelHomeAgendaRefinement(reason){
     clearTimeout(_optimizerHomeRefinementRetryTimer);
     _optimizerHomeRefinementRetryTimer = null;
   }
+  if(_optimizerHomeRefinementIdleTimer != null){
+    if(_optimizerHomeRefinementIdleCallback && typeof cancelIdleCallback === 'function'){
+      cancelIdleCallback(_optimizerHomeRefinementIdleTimer);
+    }else{
+      clearTimeout(_optimizerHomeRefinementIdleTimer);
+    }
+    _optimizerHomeRefinementIdleTimer = null;
+    _optimizerHomeRefinementIdleCallback = false;
+  }
   if(!_optimizerHomeRefinementKey)return false;
   ++_optimizerHomeRefinementToken;
   _optimizerHomeRefinementKey = '';
@@ -417,6 +432,8 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
   syncHomePlannerStatusIndicators();
   const deadline = Date.now() + budgetMs + 8000;
   const run = ()=>{
+    _optimizerHomeRefinementIdleTimer = null;
+    _optimizerHomeRefinementIdleCallback = false;
     if(token !== _optimizerHomeRefinementToken)return;
     if(typeof document !== 'undefined' && document.visibilityState === 'hidden'){
       _optimizerHomeRefinementKey = '';
@@ -494,7 +511,18 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
       syncHomePlannerStatusIndicators();
     });
   };
-  setTimeout(run,0);
+  // Refinement is deliberately opportunistic: the usable incumbent is already
+  // mounted, so wait for a quiet main-thread interval before asking the worker
+  // to consume CPU. The timeout guarantees eventual progress on browsers that
+  // rarely report idle time while animations/timers are active.
+  const idleTimeout = typeof HOME_AGENDA_REFINEMENT_IDLE_TIMEOUT_MS === 'number'
+    ? HOME_AGENDA_REFINEMENT_IDLE_TIMEOUT_MS : 1500;
+  if(typeof requestIdleCallback === 'function'){
+    _optimizerHomeRefinementIdleCallback = true;
+    _optimizerHomeRefinementIdleTimer = requestIdleCallback(run,{timeout:idleTimeout});
+  }else{
+    _optimizerHomeRefinementIdleTimer = setTimeout(run,Math.min(250,idleTimeout));
+  }
   return true;
 }
 
@@ -592,7 +620,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 9;
+const HOME_PLANNER_ALGORITHM_VERSION = 11;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -796,6 +824,7 @@ function scheduleIdlePlannerWarmAndBuild(data,opts){
   if(_idlePlannerRefreshTimer != null)return;
   const run = ()=>{
     _idlePlannerRefreshTimer = null;
+    if(typeof document !== 'undefined' && document.visibilityState === 'hidden')return;
     // Warm is fire-and-forget and exact-mode only — never block the replan
     // behind a GLPK compile (especially in fast mode).
     const exact = Boolean(
@@ -967,6 +996,7 @@ function queueOptimizedHomeRender(data,opts){
       ? (typeof HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS === 'number'
         ? HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS : 10)
       : 0,
+    incumbentSolveStatus:sourceWeek && sourceWeek.plannerSolveStatus || '',
     priorPlacements,
     memoDays:day0Only && typeof memoDaysFromWeek === 'function'
       ? memoDaysFromWeek(sourceWeek)
@@ -1128,6 +1158,12 @@ function homeAgendaTickPlan(week,now = Date.now()){
   if(!day || !Array.isArray(day.timeline))return {kind:'keep'};
   const todayBase = typeof dayStart === 'function' ? dayStart(now) : now;
   if(Number(day.dayBase) && Number(day.dayBase) !== todayBase)return {kind:'imminent-solve'};
+  // A cached fill that has passed without a matching log is unfinished work,
+  // not reusable history. Repack it instead of keeping a stale morning plan
+  // merely because the next still-future row is hours away.
+  if(day.timeline.some(row=>row && row.kind === 'fill' && Number(row.end) <= now)){
+    return {kind:'imminent-solve'};
+  }
   const idx = nextPendingAgendaIndex(day.timeline,now);
   if(idx < 0)return {kind:'keep'};
   const row = day.timeline[idx];

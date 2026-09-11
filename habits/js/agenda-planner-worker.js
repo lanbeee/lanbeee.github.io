@@ -131,6 +131,7 @@ async function runPlannerMessage(message){
       tickReplan:Boolean(message.tickReplan),
       reuseIncumbent:Boolean(message.reuseIncumbent || message.tickReplan || message.day0Only),
       glpkLimitSeconds:Math.max(0,Math.round(Number(message.glpkLimitSeconds) || 0)),
+      incumbentSolveStatus:message.incumbentSolveStatus || '',
       priorPlacements:Array.isArray(message.priorPlacements) ? message.priorPlacements : [],
       memoDays:Array.isArray(message.memoDays) ? message.memoDays : []
     };
