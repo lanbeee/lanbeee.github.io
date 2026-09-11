@@ -574,7 +574,11 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
         && listSrc.includes('provenDayKeys')
         && workerSrc.includes('refineBudgetMs')
         && workerSrc.includes('provenDayKeys')
-        && listSrc.includes('background refinement paused while hidden'),
+        && listSrc.includes('background refinement paused while hidden')
+        && listSrc.includes('function homeAgendaClockRefreshMayReuseFarDays')
+        && optSrc.includes('function refineUnprovenSolveTimeoutMs')
+        && !optSrc.includes('opts.reuseIncumbent || opts.tickReplan || opts.day0Only')
+        && !workerSrc.includes('message.reuseIncumbent || message.tickReplan || message.day0Only'),
       criticalMustPlace:optSrc.includes('mustPlaceCriticalOccurrence(candidate)')
         && todaySrc.includes('function mustPlaceCriticalOccurrence'),
       noInterimUnordered:listSrc.includes('function showHomeAgendaLoading')
@@ -628,6 +632,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     ]);
     const refinedFeasible = {...incumbent,refined:true};
     const optimalRefined = {...incumbent,plannerSolveStatus:'optimal',refined:true};
+    const optimalFull = week([row(0,900,120),row(1,840,25)]);
+    optimalFull.plannerSolveStatus = 'optimal';
+    optimalFull.refined = true;
     const proven = homeAgendaProvenDayKeys({
       plannerDiagnostics:{daySolves:[
         {dayKey:'2026-09-11',phase:'fixed-pack',status:'optimal'},
@@ -635,6 +642,23 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
         {dayKey:'2026-09-13',phase:'linked-stage',status:'optimal'}
       ]}
     });
+    const samePlanMerged = mergeHomeAgendaSamePlanProvenance({
+      ...optimalFull,
+      plannerDiagnostics:{daySolves:[
+        {dayKey:'2026-09-11',phase:'fixed-pack',status:'optimal'}
+      ]}
+    },{
+      ...optimalFull,plannerSolveStatus:'feasible',refined:true,
+      plannerDiagnostics:{daySolves:[
+        {dayKey:'2026-09-11',phase:'fixed-pack',status:'feasible'},
+        {dayKey:'2026-09-12',phase:'fixed-pack',status:'optimal'}
+      ]}
+    });
+    const samePlanProofs = homeAgendaProvenDayKeys(samePlanMerged);
+    const todayOnlyCandidate = {
+      i:0,h:{type:'task',breakable:false},eligible:new Set([base])
+    };
+    const futureState = {dayBase:base + 86400000,placed:new Set()};
     return {
       acceptsMoreP0Work:homeAgendaRefinementIsBetter(incumbent,better,data,{}),
       rejectsLostCritical:!homeAgendaRefinementIsBetter(incumbent,losesCritical,data,{}),
@@ -644,10 +668,17 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       rejectsEqual:!homeAgendaRefinementIsBetter(incumbent,incumbent,data,{}),
       feasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(incumbent,data,{}),
       refinedFeasibleNeedsRefine:homeAgendaNeedsBackgroundRefinement(refinedFeasible,data,{}),
-      optimalRefinedStops:!homeAgendaNeedsBackgroundRefinement(optimalRefined,data,{}),
+      optimalShortP0KeepsSearching:homeAgendaNeedsBackgroundRefinement(optimalRefined,data,{}),
+      optimalRefinedStops:!homeAgendaNeedsBackgroundRefinement(optimalFull,data,{}),
       laterBudgetLarger:homeAgendaRefinementBudgetMs(incumbent,1)
         > homeAgendaRefinementBudgetMs(incumbent,0),
-      provenOnlyFixedOptimal:proven.length === 1 && proven[0] === '2026-09-11'
+      provenOnlyFixedOptimal:proven.length === 1 && proven[0] === '2026-09-11',
+      identicalPlanKeepsStrongestProof:samePlanMerged.plannerSolveStatus === 'optimal'
+        && samePlanProofs.includes('2026-09-11')
+        && samePlanProofs.includes('2026-09-12'),
+      emptyFutureDayDoesNotDiluteBudget:!refinementDayMayNeedFixedSolve(
+        futureState,[todayOnlyCandidate],new Set()
+      )
     };
   });
   check('background refinement accepts more P0 breakable work without losing critical rows',
@@ -657,9 +688,12 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && refinementPolicy.rejectsEqual
       && refinementPolicy.feasibleNeedsRefine
       && refinementPolicy.refinedFeasibleNeedsRefine
+      && refinementPolicy.optimalShortP0KeepsSearching
       && refinementPolicy.optimalRefinedStops
       && refinementPolicy.laterBudgetLarger
-      && refinementPolicy.provenOnlyFixedOptimal,
+      && refinementPolicy.provenOnlyFixedOptimal
+      && refinementPolicy.identicalPlanKeepsStrongestProof
+      && refinementPolicy.emptyFutureDayDoesNotDiluteBudget,
     JSON.stringify(refinementPolicy));
 
   const plannerCueStates = await page.evaluate(()=>{

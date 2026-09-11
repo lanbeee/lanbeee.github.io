@@ -234,6 +234,16 @@ function replayPriorFixedChoices(state,dayCandidates,priorPlacements,deferrable)
     return end > startClock;
   }).sort((a,b)=>(Number(a.start) || 0) - (Number(b.start) || 0));
   if(!remaining.length)return null;
+  // A still-due non-breakable whose last slot has already ended is unfinished
+  // work, not a successful replay. Skipping it as "day-choosing" would drop it
+  // from today while frozen far days never receive it.
+  for(const p of dayPrior){
+    const end = Number(p.end) || Number(p.start) || 0;
+    if(end > startClock)continue;
+    const c = candByI.has(p.i) ? candByI.get(p.i) : (p.hid ? candByHid.get(p.hid) : null);
+    if(!c || (c.h && c.h.breakable))continue;
+    return null;
+  }
   const clone = typeof clonePlacementState === 'function'
     ? clonePlacementState(state)
     : null;
@@ -1749,6 +1759,20 @@ function combinedPlannerSolveStatus(a,b){
   return rank(left) <= rank(right) ? left : right;
 }
 
+// Conservative look-ahead for refinement budgeting. A day with no eligible
+// non-breakable work cannot consume a fixed-pack solve, so it must not dilute
+// the time available to earlier hard days. Day-choosing candidates still count
+// on every eligible future day because the current solve may defer them there.
+function refinementDayMayNeedFixedSolve(state,candidates,oneShotPlaced){
+  if(!state || !Array.isArray(candidates))return false;
+  return candidates.some(c=>{
+    if(!c || !c.h || c.h.breakable)return false;
+    if(c.h.type === 'task' && oneShotPlaced && oneShotPlaced.has(c.i))return false;
+    if(state.placed && state.placed.has(c.i))return false;
+    return !c.eligible || c.eligible.has(state.dayBase);
+  });
+}
+
 async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solveOptions = {}){
   for(const c of candidates){
     if(c.scarcity == null && typeof scarcityScore === 'function'){
@@ -2060,21 +2084,33 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     // constraint below applies solely to deferrable movables, so a plan-by item
     // whose only viable day is this busy one still places here.
     const deferrable = collectDeferrable(state,fixedCands);
+    let unprovenLeft = 1;
+    for(let later = dayOffset + 1;later < dayStates.length;later += 1){
+      if(!provenDays.has(dateKey(dayStates[later].dayBase))
+        && refinementDayMayNeedFixedSolve(dayStates[later],candidates,oneShotPlaced)){
+        unprovenLeft += 1;
+      }
+    }
     const solveMs = solveOptions.refine
-      ? Math.max(5000,Math.min(
-          Number(solveOptions.refineBudgetMs) > 0
-            ? Number(solveOptions.refineBudgetMs)
-            : AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
-          budgetLeft
-        ))
+      ? (typeof refineUnprovenSolveTimeoutMs === 'function'
+        ? refineUnprovenSolveTimeoutMs(budgetLeft,unprovenLeft)
+        : Math.min(
+            Number(solveOptions.refineBudgetMs) > 0
+              ? Number(solveOptions.refineBudgetMs)
+              : AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS,
+            budgetLeft
+          ))
       : daySolveTimeoutMs(dayOffset,budgetLeft,dayWeights.slice(dayOffset));
     let chosen = null;
     let usedHeuristic = false;
     let spent = 0;
     // Far days still enter GLPK while budget remains; structural dayOffset>=3
     // cutoff was reverted — it skipped exact packing for scarce far-day windows.
+    // Replay only when this request asked to reuse, or day0Only copied memo
+    // days. tickReplan alone raises the GLPK cap for an imminent row; it must
+    // not freeze tomorrow when unfinished morning work reopened the week.
     const canReuseIncumbent = !solveOptions.refine
-      && (solveOptions.tickReplan || solveOptions.day0Only || solveOptions.reuseIncumbent);
+      && (solveOptions.day0Only || solveOptions.reuseIncumbent);
     if(canReuseIncumbent){
       const replayed = replayPriorFixedChoices(
         state,fixedCands,solveOptions.priorPlacements,deferrable
@@ -2091,13 +2127,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         continue;
       }
     }
-    if(budgetLeft < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS){
+    if(budgetLeft < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS
+      || (solveOptions.refine && solveMs < AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS)){
       usedHeuristic = true;
     }else{
-      let unprovenLeft = 1;
-      for(let later = dayOffset + 1;later < dayStates.length;later += 1){
-        if(!provenDays.has(dateKey(dayStates[later].dayBase)))unprovenLeft += 1;
-      }
       const refineNativeCapSeconds = unprovenLeft <= 1 ? 50 : 30;
       const solveStarted = (typeof performance !== 'undefined' && performance.now)
         ? performance.now() : Date.now();

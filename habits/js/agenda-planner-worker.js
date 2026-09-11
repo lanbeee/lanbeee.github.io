@@ -129,7 +129,7 @@ async function runPlannerMessage(message){
       refinePass:Math.max(0,Math.round(Number(message.refinePass) || 0)),
       provenDayKeys:Array.isArray(message.provenDayKeys) ? message.provenDayKeys : [],
       tickReplan:Boolean(message.tickReplan),
-      reuseIncumbent:Boolean(message.reuseIncumbent || message.tickReplan || message.day0Only),
+      reuseIncumbent:Boolean(message.reuseIncumbent || message.day0Only),
       glpkLimitSeconds:Math.max(0,Math.round(Number(message.glpkLimitSeconds) || 0)),
       incumbentSolveStatus:message.incumbentSolveStatus || '',
       priorPlacements:Array.isArray(message.priorPlacements) ? message.priorPlacements : [],

@@ -35,6 +35,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
         && assign.includes("status:'reused'"),
       provenReplay:assign.includes('reused-optimal')
         && assign.includes('provenDayKeys'),
+      refineSplitsBudget:typeof refineUnprovenSolveTimeoutMs === 'function'
+        && assign.includes('refineUnprovenSolveTimeoutMs'),
       priorAnchors:ilp.includes('priorPlacementsForDay'),
       idleKeep:idle.includes("plan.kind === 'keep'")
         && idle.includes('adoptHomeAgendaReadyState'),
@@ -45,6 +47,18 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       tickRefines:tickFn.includes('maybeScheduleHomeAgendaRefinement'),
       memoDays:queue.includes('memoDaysFromWeek')
         && queue.includes('agendaPriorPlacementsFromWeek'),
+      reuseFarDaysGate:idle.includes('plan.reuseFarDays === false')
+        && idle.includes('__reuseFarDays')
+        && tickFn.includes('__reuseFarDays')
+        && String(homeAgendaClockRefreshMayReuseFarDays).includes('__reuseFarDays === false'),
+      scopedIncumbentReuse:typeof homeAgendaShouldReuseIncumbent === 'function'
+        && typeof homeAgendaClockRefreshMayReuseFarDays === 'function'
+        && queue.includes('homeAgendaShouldReuseIncumbent')
+        && queue.includes('homeAgendaClockRefreshMayReuseFarDays'),
+      tickDoesNotForceReplay:!assign.includes(
+        'solveOptions.tickReplan || solveOptions.day0Only || solveOptions.reuseIncumbent'
+      ) && assign.includes('solveOptions.day0Only || solveOptions.reuseIncumbent'),
+      absorbOnlyKept:refinement.includes('if(better || samePlan)absorbHomeAgendaProvenDayKeys'),
       cancelRefineForSolve:queue.includes('planner request superseded refinement'),
       tickHelper:typeof homeAgendaTickPlan === 'function'
         && typeof shiftAgendaFillToNow === 'function'
@@ -70,11 +84,80 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   check('an idle callback does no planner work after the page is hidden',source.hiddenIdleNoop,JSON.stringify(source));
   check('while-open keep ticks keep searching toward a proof',source.tickRefines,JSON.stringify(source));
   check('later refine passes reuse days already proved optimal',source.provenReplay,JSON.stringify(source));
+  check('idle refinement splits remaining budget across unproven days',source.refineSplitsBudget,JSON.stringify(source));
   check('a real re-solve cancels in-flight refinement',source.cancelRefineForSolve,JSON.stringify(source));
   check('later while-open refine passes get a larger budget',source.laterBudget,JSON.stringify(source));
+  const later = await page.evaluate(() => ({
+    split:typeof refineUnprovenSolveTimeoutMs === 'function'
+      ? refineUnprovenSolveTimeoutMs(30000,7) : null,
+    last:typeof refineUnprovenSolveTimeoutMs === 'function'
+      ? refineUnprovenSolveTimeoutMs(40000,1) : null
+  }));
+  check('a 30s refine pass does not give day 0 the entire budget',
+    later.split > 0 && later.split < 30000,JSON.stringify(later));
+  check('the last unproven refine day may use remaining time',
+    later.last === 40000,JSON.stringify(later));
   check('day0Only sends the mounted week so far days are reused',source.memoDays,JSON.stringify(source));
+  check('unfinished morning fills reopen the week instead of freezing tomorrow',source.reuseFarDaysGate,JSON.stringify(source));
+  check('incumbent replay is explicitly scoped to unchanged clock refreshes',source.scopedIncumbentReuse,JSON.stringify(source));
+  check('tickReplan extra GLPK time does not by itself replay later days',source.tickDoesNotForceReplay,JSON.stringify(source));
+  check('rejected refine passes do not freeze later days as already proved',source.absorbOnlyKept,JSON.stringify(source));
   check('tick helpers are on the page',source.tickHelper,JSON.stringify(source));
   check('travel overhead is a real per-leg cost',source.overhead,JSON.stringify(source));
+
+  const replayScope = await page.evaluate(()=>{
+    const saved = {
+      dirty:_optimizerHomeReadyDirtyKey,
+      week:_optimizerHomeReadyWeek
+    };
+    try{
+      _optimizerHomeReadyDirtyKey = 'same';
+      _optimizerHomeReadyWeek = {days:[{timeline:[]}]};
+      const prior = [{i:0,start:Date.now() + 60000,end:Date.now() + 120000}];
+      const weatherOpts = {__forceReplan:true,__weatherChanged:true};
+      const locationOpts = {__forceReplan:true,__locationChanged:true};
+      const unfinishedTick = {__forceReplan:true,__tickReplan:true,__reuseFarDays:false};
+      const unfinishedIdle = {__forceReplan:true,__fromIdleRefresh:true,__reuseFarDays:false};
+      const weatherDay0 = Boolean(
+        weatherOpts.__forceReplan
+        && _optimizerHomeReadyDirtyKey === 'same'
+        && _optimizerHomeReadyWeek
+        && homeAgendaClockRefreshMayReuseFarDays(weatherOpts)
+      );
+      const unfinishedDay0 = Boolean(
+        unfinishedTick.__forceReplan
+        && _optimizerHomeReadyDirtyKey === 'same'
+        && _optimizerHomeReadyWeek
+        && homeAgendaClockRefreshMayReuseFarDays(unfinishedTick)
+      );
+      return {
+        idleSame:homeAgendaShouldReuseIncumbent(false,{__fromIdleRefresh:true},'same',prior),
+        tickSame:homeAgendaShouldReuseIncumbent(false,{__tickReplan:true},'same',prior),
+        weatherSameDirty:!weatherDay0 && !homeAgendaShouldReuseIncumbent(
+          true,weatherOpts,'same',prior
+        ),
+        locationSameDirty:!homeAgendaShouldReuseIncumbent(
+          true,locationOpts,'same',prior
+        ),
+        unfinishedTickOpensWeek:!unfinishedDay0 && !homeAgendaShouldReuseIncumbent(
+          false,unfinishedTick,'same',prior
+        ),
+        unfinishedIdleOpensWeek:!homeAgendaShouldReuseIncumbent(
+          false,unfinishedIdle,'same',prior
+        )
+      };
+    }finally{
+      _optimizerHomeReadyDirtyKey = saved.dirty;
+      _optimizerHomeReadyWeek = saved.week;
+    }
+  });
+  check('weather/location changes cannot replay an old feasible packing',
+    replayScope.idleSame && replayScope.tickSame
+      && replayScope.weatherSameDirty && replayScope.locationSameDirty,
+    JSON.stringify(replayScope));
+  check('unfinished morning work does not replay tomorrow even on a tick/idle re-solve',
+    replayScope.unfinishedTickOpensWeek && replayScope.unfinishedIdleOpensWeek,
+    JSON.stringify(replayScope));
 
   const now = Date.now();
   const dayBase = new Date();
@@ -99,7 +182,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     week,now:at(10,0)
   });
   check('an unfinished fill from earlier today forces a re-solve',
-    stale.kind === 'imminent-solve',JSON.stringify(stale));
+    stale.kind === 'imminent-solve' && stale.reuseFarDays === false,JSON.stringify(stale));
 
   const imminent = await page.evaluate(({week,now}) => homeAgendaTickPlan(week,now),{
     week,now:at(6,58)
@@ -164,21 +247,34 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       locationIds:['home'],anywhereAllowed:false,priority:2,
       flexibilityDays:0,breakable:false,pinned:false,eventTime:null,dueDate:null
     };
+    const errand = {
+      hid:'er',name:'Errand',type:'task',target:null,durationMinutes:15,
+      lastLog:null,logs:[],locationIds:['home'],anywhereAllowed:false,priority:2,
+      flexibilityDays:0,breakable:false,pinned:false,eventTime:null,
+      dueDate:now + 86400000,earlyWindowDays:7,delayAllowanceDays:0
+    };
     const data = [h];
     const day = buildDayAgenda(data,settings,dayBase,{weekMode:true,now});
     const state = createDayPlacementState(day,settings,{dayBase,weekMode:true,now,startClock:now});
     const c = {h,i:0,priority:2,scarcity:1};
+    const taskCand = {h:errand,i:1,priority:2,scarcity:1};
     const start = now + 60 * 60000;
     const prior = [{i:0,hid:'ex',start,end:start + 20 * 60000,locId:'home',dayBase}];
     const ok = replayPriorFixedChoices(state,[c],prior,new Set());
     const blockedState = createDayPlacementState(day,settings,{dayBase,weekMode:true,now,startClock:now});
     blockedState.slots = [{start:blockedState.startClock,end:start}];
     const blocked = replayPriorFixedChoices(blockedState,[c],prior,new Set());
+    const mixedState = createDayPlacementState(day,settings,{dayBase,weekMode:true,now,startClock:now});
+    const mixed = replayPriorFixedChoices(mixedState,[c,taskCand],[
+      {i:1,hid:'er',start:now - 30 * 60000,end:now - 15 * 60000,locId:'home',dayBase},
+      {i:0,hid:'ex',start,end:start + 20 * 60000,locId:'home',dayBase}
+    ],new Set());
     return {
       reused:Boolean(ok && ok.length === 1 && ok.solveStatus === 'reused'),
       start:ok && ok[0] && ok[0].fit && ok[0].fit.placeStart,
       want:start,
-      blockedIsNull:blocked == null
+      blockedIsNull:blocked == null,
+      expiredTaskFailsReplay:mixed == null
     };
   },{now:at(6,0),dayBase:dayBase.getTime()});
   check('replay recommits the last start when that slot is still free',
@@ -186,6 +282,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     JSON.stringify(replay));
   check('replay refuses when the last start is now blocked',
     replay.blockedIsNull,JSON.stringify(replay));
+  check('replay refuses when a still-due task slot has already ended',
+    replay.expiredTaskFailsReplay,JSON.stringify(replay));
 
   const idleDispatch = await page.evaluate(async()=>{
     const saved = {
